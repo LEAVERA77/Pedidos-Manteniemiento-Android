@@ -18,6 +18,7 @@ import android.os.Environment;
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -382,6 +383,96 @@ public class MainActivity extends AppCompatActivity {
                 return false;
             }
         }
+
+        /** Abre la carpeta Descargas/PedidosMG en el gestor de archivos del sistema (API 24+). */
+        @JavascriptInterface
+        public void openExportsFolder() {
+            runOnUiThread(() -> {
+                File dir = new File(Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS), "PedidosMG");
+                if (!dir.exists()) {
+                    dir.mkdirs();
+                }
+                String absPath = dir.getAbsolutePath();
+                if (openExportsFolderTryAll()) {
+                    return;
+                }
+                copyFolderPathToClipboard(absPath);
+                Toast.makeText(MainActivity.this,
+                        getString(R.string.open_downloads_fallback_clipboard, absPath),
+                        Toast.LENGTH_LONG).show();
+            });
+        }
+    }
+
+    /** Intentos sucesivos para abrir Descargas/PedidosMG en el gestor del sistema. */
+    private boolean openExportsFolderTryAll() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false;
+        if (tryLaunchDirectoryView(DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", "primary:Download/PedidosMG"))) return true;
+        if (tryLaunchDirectoryView(DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", "primary:Download"))) return true;
+        if (tryLaunchDirectoryView(Uri.parse(
+                "content://com.android.externalstorage.documents/document/primary%3ADownload%2FPedidosMG"))) return true;
+        if (tryLaunchDirectoryView(Uri.parse(
+                "content://com.android.externalstorage.documents/document/primary%3ADownload"))) return true;
+        if (tryLaunchDirectoryWithPackage(
+                DocumentsContract.buildDocumentUri(
+                        "com.android.externalstorage.documents", "primary:Download/PedidosMG"),
+                "com.google.android.apps.nbu.files")) return true;
+        if (tryLaunchDirectoryWithPackage(
+                DocumentsContract.buildDocumentUri(
+                        "com.android.externalstorage.documents", "primary:Download"),
+                "com.google.android.apps.nbu.files")) return true;
+        return false;
+    }
+
+    private boolean tryLaunchDirectoryView(Uri uri) {
+        if (uri == null) return false;
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        }
+        try {
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            try {
+                Intent chooser = Intent.createChooser(intent, getString(R.string.open_downloads_chooser));
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(chooser);
+                return true;
+            } catch (Exception e2) {
+                return false;
+            }
+        }
+    }
+
+    private boolean tryLaunchDirectoryWithPackage(Uri uri, String packageName) {
+        if (uri == null || packageName == null) return false;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setPackage(packageName);
+            intent.setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            }
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void copyFolderPathToClipboard(String path) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null) return;
+            cm.setPrimaryClip(ClipData.newPlainText("PedidosMG", path));
+        } catch (Exception ignored) {}
     }
 
     private void mostrarNotificacionPedido(String rowId, String title, String body, String pedidoId) {

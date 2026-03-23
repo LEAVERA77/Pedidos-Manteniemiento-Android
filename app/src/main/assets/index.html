@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Pedidos de Mantenimiento</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -113,7 +115,9 @@ textarea{resize:vertical;min-height:80px}
 .dr{display:flex;margin-bottom:.4rem;font-size:.88rem;align-items:flex-start;gap:.5rem}
 .dl{min-width:115px;color:var(--tm);flex-shrink:0;font-size:.82rem}
 .dv{flex:1;color:var(--td);font-weight:500;word-break:break-word;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
-.coord-proy-meta{font-size:.76rem;color:var(--tm);font-weight:600;margin:.2rem 0 .35rem;line-height:1.3}
+.coord-proy-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:.35rem .55rem;margin:.25rem 0 .4rem;line-height:1.25}
+.coord-faja{font-size:.82rem;font-weight:700;color:var(--bd);flex-shrink:0}
+.coord-sys{font-size:.72rem;color:var(--tm);font-weight:500;word-break:break-word}
 .dr.coord-proy-row{flex-direction:column;align-items:stretch;gap:.25rem}
 .dr.coord-proy-row .dl{min-width:0;max-width:100%}
 .dr.coord-proy-row .dv{width:100%;justify-content:flex-start;align-items:center}
@@ -817,10 +821,10 @@ function proyectarCoordPedido(lat, lng) {
         return null;
     }
     const titulo = PMG_COORD_TITULO[fam] || fam;
-    const modoTxt = /^[1-7]$/.test(modo) ? 'Faja ' + z + ' (fija)' : (modo === 'instal' ? 'Faja ' + z + ' (1.ª GPS)' : 'Faja ' + z);
-    const crsLinea = titulo + ' · Faja ' + z;
-    const lx = 'X (este, m)';
-    const ly = 'Y (norte, m)';
+    const modoTxt = /^[1-7]$/.test(modo) ? 'F' + z + ' fija' : (modo === 'instal' ? 'F' + z + ' (1.ª GPS)' : 'F' + z);
+    const crsLinea = 'Faja ' + z;
+    const lx = 'X (m)';
+    const ly = 'Y (m)';
     const vx = e.toFixed(3).replace('.', ',');
     const vy = n.toFixed(3).replace('.', ',');
     return { titulo, z, modoTxt, crsLinea, lx, ly, vx, vy, e, n };
@@ -2436,7 +2440,7 @@ window.imprimirPedido = function(p) {
     const filasCoordsPrint = (() => {
         const pc = proyectarCoordPedido(p.la, p.ln);
         if (pc) {
-            return `<tr><td colspan="2" style="font-size:10pt;color:#64748b;padding-bottom:4px">${pc.crsLinea}</td></tr>
+            return `<tr><td colspan="2" style="font-size:10pt;color:#64748b;padding-bottom:4px"><b>${pc.crsLinea}</b> · ${pc.titulo}</td></tr>
                 <tr><td>${pc.lx}</td><td>${pc.vx}</td></tr>
                 <tr><td>${pc.ly}</td><td>${pc.vy}</td></tr>`;
         }
@@ -3476,7 +3480,7 @@ function detalle(p) {
         const qx = String(pcDet.vx).replace(/'/g, "\\'");
         const qy = String(pcDet.vy).replace(/'/g, "\\'");
         filasProyectadas = `
-            <div class="coord-proy-meta">${pcDet.crsLinea}</div>
+            <div class="coord-proy-meta"><span class="coord-faja">${pcDet.crsLinea}</span><span class="coord-sys">${pcDet.titulo}</span></div>
             <div class="dr coord-proy-row"><span class="dl">${pcDet.lx}</span><span class="dv">${pcDet.vx} <span class="dv-copy" onclick="copiarTexto('${qx}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
             <div class="dr coord-proy-row"><span class="dl">${pcDet.ly}</span><span class="dv">${pcDet.vy} <span class="dv-copy" onclick="copiarTexto('${qy}')"><i class="fas fa-copy"></i> Copiar</span></span></div>`;
     } else if (cfgFam === 'none' && p.x_inchauspe && p.y_inchauspe) {
@@ -3602,7 +3606,7 @@ function exportPedido(pedidos, nombre) {
         let xPlano = '';
         let yPlano = '';
         if (pc) {
-            crsAdm = pc.crsLinea + ' · ' + pc.modoTxt;
+            crsAdm = pc.titulo + ' · ' + pc.crsLinea + ' · ' + pc.modoTxt;
             xPlano = pc.vx;
             yPlano = pc.vy;
         } else if (cf === 'none' && p.x_inchauspe != null && p.y_inchauspe != null) {
@@ -4920,7 +4924,7 @@ if (typeof cargarFormEmpresa !== "undefined") window.cargarFormEmpresa = cargarF
     var esWebView=/wv |WebView/.test(navigator.userAgent)||window.location.protocol==='file:';
     if('serviceWorker' in navigator&&!esWebView){
         window.addEventListener('load',function(){
-            navigator.serviceWorker.register('./sw.js')
+            navigator.serviceWorker.register('./sw.js?pmg=3')
                 .then(r=>console.log('[SW]',r.scope))
                 .catch(e=>console.warn('[SW]',e.message));
         });
