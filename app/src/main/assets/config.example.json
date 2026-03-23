@@ -1,0 +1,13 @@
+{
+  "neon": {
+    "connectionString": "postgresql://USUARIO:CONTRASEÑA@HOST.neon.tech/neondb?sslmode=require"
+  },
+  "emailjs": {
+    "publicKey": "TU_PUBLIC_KEY",
+    "serviceId": "TU_SERVICE_ID",
+    "templateId": "TU_TEMPLATE_ID"
+  },
+  "app": {
+    "version": "2.0.0"
+  }
+}
