@@ -112,7 +112,21 @@ textarea{resize:vertical;min-height:80px}
 .ds h4{color:var(--bd);margin-bottom:.65rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:.4rem}
 .dr{display:flex;margin-bottom:.4rem;font-size:.88rem;align-items:flex-start;gap:.5rem}
 .dl{min-width:115px;color:var(--tm);flex-shrink:0;font-size:.82rem}
-.dv{flex:1;color:var(--td);font-weight:500;word-break:break-word;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap}
+.dv{flex:1;color:var(--td);font-weight:500;word-break:break-word;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap;min-width:0}
+.coord-proy-meta{font-size:.76rem;color:var(--tm);font-weight:600;margin:.2rem 0 .35rem;line-height:1.3}
+.dr.coord-proy-row{flex-direction:column;align-items:stretch;gap:.25rem}
+.dr.coord-proy-row .dl{min-width:0;max-width:100%}
+.dr.coord-proy-row .dv{width:100%;justify-content:flex-start;align-items:center}
+@media print{
+  .no-print,.print-preview-toolbar{display:none!important}
+}
+.print-preview-wrap{min-height:100%;padding-bottom:5.5rem;box-sizing:border-box}
+.print-preview-toolbar{position:fixed;bottom:0;left:0;right:0;z-index:10001;display:flex;gap:.65rem;justify-content:center;align-items:center;flex-wrap:wrap;padding:.75rem 1rem;background:linear-gradient(180deg,rgba(255,255,255,.97),#fff);border-top:1px solid #e2e8f0;box-shadow:0 -6px 24px rgba(15,23,42,.12)}
+.ppt-btn{border:none;border-radius:.65rem;padding:.65rem 1.1rem;font-size:.9rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;font-family:inherit}
+.ppt-cancel{background:#f1f5f9;color:#334155;border:1.5px solid #e2e8f0}
+.ppt-cancel:active{background:#e2e8f0}
+.ppt-ok{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff}
+.ppt-ok:active{opacity:.92}
 .dv-copy{cursor:pointer;padding:.2rem .5rem;background:var(--bg);border-radius:.5rem;font-size:.75rem;color:var(--bd);display:inline-flex;align-items:center;gap:.25rem}
 .dv-copy:hover{background:var(--bo)}
 .dv-copy.copied{background:var(--gr);color:white}
@@ -287,6 +301,7 @@ textarea{resize:vertical;min-height:80px}
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
       <button id="ub" class="ib"><i class="fas fa-user-circle"></i></button>
+      <button id="btn-android-descargas" type="button" class="ib" title="Abrir carpeta Descargas (exports)" style="display:none" onclick="if(window.AndroidDevice&amp;&amp;typeof AndroidDevice.openExportsFolder==='function')AndroidDevice.openExportsFolder();"><i class="fas fa-folder-open"></i></button>
       <button id="btn-admin" class="ib" onclick="abrirAdmin()" title="Panel Admin" style="display:none"><i class="fas fa-cog"></i></button>
     </div>
   </div>
@@ -472,6 +487,28 @@ textarea{resize:vertical;min-height:80px}
         <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
+        <div class="full"><label>Coordenadas en detalle de pedido (además de WGS84)</label>
+          <select id="cfg-coord-familia" onchange="syncCoordModoVisibility()">
+            <option value="none">Solo WGS84</option>
+            <option value="inchauspe">Campo Inchauspe 1969 (Gauss-Krüger)</option>
+            <option value="posgar94">POSGAR 1994</option>
+            <option value="posgar98">POSGAR 1998</option>
+            <option value="posgar2007">POSGAR 2007 (oficial vigente)</option>
+          </select></div>
+        <div class="full" id="cfg-coord-modo-wrap" style="display:none"><label>Faja / modo de faja</label>
+          <select id="cfg-coord-modo">
+            <option value="punto">Automática según ubicación de cada pedido</option>
+            <option value="instal">Fija: faja de la primera ubicación GPS en este dispositivo</option>
+            <option value="1">Faja 1 (meridiano ~72°W)</option>
+            <option value="2">Faja 2 (~69°W)</option>
+            <option value="3">Faja 3 (~66°W)</option>
+            <option value="4">Faja 4 (~63°W)</option>
+            <option value="5">Faja 5 (~60°W)</option>
+            <option value="6">Faja 6 (~57°W)</option>
+            <option value="7">Faja 7 (~54°W)</option>
+          </select>
+          <p style="font-size:.76rem;color:var(--tl);margin:.4rem 0 0;line-height:1.35">Las fajas siguen el esquema IGN (franjas de 3°). La opción «primera ubicación» guarda la faja al obtener GPS por primera vez en este navegador o app.</p>
+        </div>
       </div>
       <button class="bp" style="margin-top:1rem;max-width:200px" onclick="guardarConfigEmpresa()"><i class="fas fa-save"></i> Guardar</button>
     </div>
@@ -663,7 +700,140 @@ textarea{resize:vertical;min-height:80px}
 
 
 
-// Proj4 INCHAUSPE removido — coordenadas locales opcionales
+// ── Proyecciones Argentina (EPSG / IGN) — defs para proj4 ─────────────
+const PMG_AR_PROJ4 = {
+    inchauspe: [
+        '+proj=tmerc +lat_0=-90 +lon_0=-72 +k=1 +x_0=1500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-69 +k=1 +x_0=2500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-66 +k=1 +x_0=3500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-63 +k=1 +x_0=4500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-60 +k=1 +x_0=5500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-57 +k=1 +x_0=6500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-54 +k=1 +x_0=7500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs'
+    ],
+    posgar94: [
+        '+proj=tmerc +lat_0=-90 +lon_0=-72 +k=1 +x_0=1500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-69 +k=1 +x_0=2500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-66 +k=1 +x_0=3500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-63 +k=1 +x_0=4500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-60 +k=1 +x_0=5500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-57 +k=1 +x_0=6500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-54 +k=1 +x_0=7500000 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs'
+    ],
+    posgar98: [
+        '+proj=tmerc +lat_0=-90 +lon_0=-72 +k=1 +x_0=1500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-69 +k=1 +x_0=2500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-66 +k=1 +x_0=3500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-63 +k=1 +x_0=4500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-60 +k=1 +x_0=5500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-57 +k=1 +x_0=6500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-54 +k=1 +x_0=7500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs'
+    ],
+    posgar2007: [
+        '+proj=tmerc +lat_0=-90 +lon_0=-72 +k=1 +x_0=1500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-69 +k=1 +x_0=2500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-66 +k=1 +x_0=3500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-63 +k=1 +x_0=4500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-60 +k=1 +x_0=5500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-57 +k=1 +x_0=6500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs',
+        '+proj=tmerc +lat_0=-90 +lon_0=-54 +k=1 +x_0=7500000 +y_0=0 +ellps=WGS84 +towgs84=-0.41,0.46,-0.35,0,0,0,0 +units=m +no_defs'
+    ]
+};
+
+const PMG_COORD_TITULO = {
+    inchauspe: 'Campo Inchauspe 1969',
+    posgar94: 'POSGAR 1994',
+    posgar98: 'POSGAR 1998',
+    posgar2007: 'POSGAR 2007'
+};
+
+let _pmgProjRegistrado = false;
+function asegurarDefsProyeccionesARG() {
+    if (_pmgProjRegistrado || typeof proj4 === 'undefined') return;
+    _pmgProjRegistrado = true;
+    Object.keys(PMG_AR_PROJ4).forEach(fam => {
+        PMG_AR_PROJ4[fam].forEach((defStr, i) => {
+            proj4.defs('PMG_' + fam + '_Z' + (i + 1), defStr);
+        });
+    });
+}
+
+/** Faja 1–7 según longitud WGS84 (franjas ~3° al oeste de Argentina continental). */
+function fajaArgentinaPorLongitud(lon) {
+    const w = Number(lon);
+    if (!isFinite(w)) return 4;
+    if (w < -70.5) return 1;
+    if (w < -67.5) return 2;
+    if (w < -64.5) return 3;
+    if (w < -61.5) return 4;
+    if (w < -58.5) return 5;
+    if (w < -55.5) return 6;
+    return 7;
+}
+
+function registrarFajaInstalacionSiFalta(lon) {
+    try {
+        if (localStorage.getItem('pmg_faja_instl') != null) return;
+        const w = Number(lon);
+        if (!isFinite(w)) return;
+        localStorage.setItem('pmg_faja_instl', String(fajaArgentinaPorLongitud(w)));
+    } catch (_) {}
+}
+
+function resolverFajaProyeccion(modo, lngPedido) {
+    const m = (modo || 'punto').trim();
+    if (/^[1-7]$/.test(m)) return parseInt(m, 10);
+    if (m === 'instal') {
+        try {
+            const z = parseInt(localStorage.getItem('pmg_faja_instl') || '', 10);
+            if (z >= 1 && z <= 7) return z;
+        } catch (_) {}
+        return fajaArgentinaPorLongitud(lngPedido);
+    }
+    return fajaArgentinaPorLongitud(lngPedido);
+}
+
+/**
+ * Proyecta WGS84 según empresa_config (visible en detalle / impresión / export).
+ * Retorna { titulo, z, modoTxt, crsLinea, lx, ly, vx, vy } o null.
+ * Etiquetas cortas: crsLinea = sistema + faja; lx/ly = X/Y en metros.
+ */
+function proyectarCoordPedido(lat, lng) {
+    const cfg = window.EMPRESA_CFG || {};
+    const fam = (cfg.coord_proy_familia || 'none').trim();
+    if (!fam || fam === 'none' || typeof proj4 === 'undefined') return null;
+    const arr = PMG_AR_PROJ4[fam];
+    if (!arr || !isFinite(lat) || !isFinite(lng)) return null;
+    const modo = (cfg.coord_proy_modo || 'punto').trim();
+    const z = resolverFajaProyeccion(modo, lng);
+    asegurarDefsProyeccionesARG();
+    const defName = 'PMG_' + fam + '_Z' + z;
+    let e;
+    let n;
+    try {
+        [e, n] = proj4('EPSG:4326', defName, [lng, lat]);
+    } catch (err) {
+        console.warn('[coords]', err);
+        return null;
+    }
+    const titulo = PMG_COORD_TITULO[fam] || fam;
+    const modoTxt = /^[1-7]$/.test(modo) ? 'Faja ' + z + ' (fija)' : (modo === 'instal' ? 'Faja ' + z + ' (1.ª GPS)' : 'Faja ' + z);
+    const crsLinea = titulo + ' · Faja ' + z;
+    const lx = 'X (este, m)';
+    const ly = 'Y (norte, m)';
+    const vx = e.toFixed(3).replace('.', ',');
+    const vy = n.toFixed(3).replace('.', ',');
+    return { titulo, z, modoTxt, crsLinea, lx, ly, vx, vy, e, n };
+}
+window.proyectarCoordPedido = proyectarCoordPedido;
+
+function syncCoordModoVisibility() {
+    const sel = document.getElementById('cfg-coord-familia');
+    const w = document.getElementById('cfg-coord-modo-wrap');
+    if (!sel || !w) return;
+    w.style.display = sel.value === 'none' ? 'none' : '';
+}
+window.syncCoordModoVisibility = syncCoordModoVisibility;
 
 let NEON_OK = false;
 let _sql = null;
@@ -852,6 +1022,7 @@ async function solicitarPermisos() {
             navigator.geolocation.getCurrentPosition(
                 p => { ultimaUbicacion = { lat: p.coords.latitude, lon: p.coords.longitude };
                        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                       registrarFajaInstalacionSiFalta(p.coords.longitude);
                        res(); },
                 e => rej(e),
                 { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
@@ -1516,10 +1687,13 @@ async function cargarPedidos() {
 
 function convertirAInchauspe(lat, lng) {
     try {
-        const inchauspe = proj4('WGS84', 'INCHAUSPE', [lng, lat]);
+        asegurarDefsProyeccionesARG();
+        const z = fajaArgentinaPorLongitud(lng);
+        const defName = 'PMG_inchauspe_Z' + z;
+        const xy = proj4('EPSG:4326', defName, [lng, lat]);
         return {
-            x: inchauspe[0].toFixed(2).replace('.', ','),
-            y: inchauspe[1].toFixed(2).replace('.', ',')
+            x: xy[0].toFixed(2).replace('.', ','),
+            y: xy[1].toFixed(2).replace('.', ',')
         };
     } catch (e) {
         console.error('Error al convertir coordenadas:', e);
@@ -1754,6 +1928,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
     function procesarPosicion(position, esWatchUpdate = false) {
         const { latitude, longitude, accuracy } = position.coords;
         const acc = Math.round(accuracy);
+        registrarFajaInstalacionSiFalta(longitude);
 
         
         if (esWatchUpdate && acc >= _mejorPrecision && acc > 200) return;
@@ -1850,6 +2025,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
                 
                 const { latitude, longitude, accuracy } = pos.coords;
                 const acc = Math.round(accuracy);
+                registrarFajaInstalacionSiFalta(longitude);
                 ultimaUbicacion = { lat: latitude, lon: longitude, acc };
                 try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
                 
@@ -1887,6 +2063,7 @@ document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => 
     closeAll();
 
     function aplicarUbicacionAlFormulario(lat, lon, acc) {
+        registrarFajaInstalacionSiFalta(lon);
         app.sel = { lat, lng: lon };
         document.getElementById('li').value = lat;
         document.getElementById('gi').value = lon;
@@ -2221,14 +2398,57 @@ window.confirmarEnviarNotifPedido = confirmarEnviarNotifPedido;
 window.abrirModalNotificarPedidoPorId = abrirModalNotificarPedidoPorId;
 
 
+window.cerrarVistaImpresion = function() {
+    const contenedor = document.getElementById('print-container');
+    if (!contenedor) return;
+    contenedor.classList.remove('printing');
+    contenedor.innerHTML = '';
+};
+
+window.confirmarImpresionPedido = function() {
+    document.querySelectorAll('#print-container .print-preview-toolbar').forEach(el => { el.style.display = 'none'; });
+    try {
+        if (window.AndroidPrint && typeof window.AndroidPrint.printWebContent === 'function') {
+            window.AndroidPrint.printWebContent();
+            setTimeout(() => { window.cerrarVistaImpresion(); }, 900);
+        } else {
+            let listo = false;
+            const fin = () => {
+                if (listo) return;
+                listo = true;
+                window.cerrarVistaImpresion();
+            };
+            window.addEventListener('afterprint', fin, { once: true });
+            window.print();
+            setTimeout(fin, 60000);
+        }
+    } catch (_) {
+        window.cerrarVistaImpresion();
+    }
+};
+
 window.imprimirPedido = function(p) {
     const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
     const f = p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
     const fc = p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
     const fa = p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
-    
-    const contenido = `
-        <div class="print-content">
+
+    const filasCoordsPrint = (() => {
+        const pc = proyectarCoordPedido(p.la, p.ln);
+        if (pc) {
+            return `<tr><td colspan="2" style="font-size:10pt;color:#64748b;padding-bottom:4px">${pc.crsLinea}</td></tr>
+                <tr><td>${pc.lx}</td><td>${pc.vx}</td></tr>
+                <tr><td>${pc.ly}</td><td>${pc.vy}</td></tr>`;
+        }
+        const cf = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
+        if (cf === 'none' && p.x_inchauspe && p.y_inchauspe) {
+            return `<tr><td>Inchauspe X (hist.)</td><td>${String(p.x_inchauspe).replace('.', ',')}</td></tr>
+                <tr><td>Inchauspe Y (hist.)</td><td>${String(p.y_inchauspe).replace('.', ',')}</td></tr>`;
+        }
+        return '';
+    })();
+
+    const contenidoCuerpo = `
             <h1>Pedido de Mantenimiento N° ${p.np}</h1>
             
             <h2>📋 Información General</h2>
@@ -2265,32 +2485,23 @@ window.imprimirPedido = function(p) {
             <table>
                 <tr><td>WGS84 Lat:</td><td>${p.la?.toFixed(5).replace('.', ',')}</td></tr>
                 <tr><td>WGS84 Lng:</td><td>${p.ln?.toFixed(5).replace('.', ',')}</td></tr>
-                ${p.x_inchauspe && p.y_inchauspe ? `
-                <tr><td>Inchauspe X:</td><td>${p.x_inchauspe.toString().replace('.', ',')}</td></tr>
-                <tr><td>Inchauspe Y:</td><td>${p.y_inchauspe.toString().replace('.', ',')}</td></tr>
-                ` : ''}
+                ${filasCoordsPrint}
             </table>
             
             <div style="margin-top:3rem; text-align:center; color:#94a3b8; font-size:0.8rem;">
                 Documento generado el ${new Date().toLocaleString('es-AR', {timeZone:'America/Argentina/Buenos_Aires', hour12:false})}
-            </div>
-        </div>
-    `;
-    
-    const contenedor = document.getElementById('print-container');
-    contenedor.innerHTML = contenido;
-    contenedor.classList.add('printing');
+            </div>`;
 
-    try {
-        if (window.AndroidPrint && typeof window.AndroidPrint.printWebContent === 'function') {
-            window.AndroidPrint.printWebContent();
-        } else {
-            window.print();
-        }
-    } finally {
-        contenedor.classList.remove('printing');
-        contenedor.innerHTML = '';
-    }
+    const contenedor = document.getElementById('print-container');
+    contenedor.innerHTML = `
+        <div class="print-preview-wrap">
+            <div class="print-preview-toolbar no-print">
+                <button type="button" class="ppt-btn ppt-cancel" onclick="window.cerrarVistaImpresion()"><i class="fas fa-times"></i> Cancelar</button>
+                <button type="button" class="ppt-btn ppt-ok" onclick="window.confirmarImpresionPedido()"><i class="fas fa-print"></i> Imprimir</button>
+            </div>
+            <div class="print-content">${contenidoCuerpo}</div>
+        </div>`;
+    contenedor.classList.add('printing');
 };
 
 
@@ -2965,10 +3176,12 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const fotosString = fotosTemporales.join('||');
         let xInchauspe = null, yInchauspe = null;
         try {
-            const inchauspe = proj4('WGS84', 'INCHAUSPE', [app.sel.lng, app.sel.lat]);
-            xInchauspe = inchauspe[0].toFixed(2);
-            yInchauspe = inchauspe[1].toFixed(2);
-        } catch(_) {}
+            asegurarDefsProyeccionesARG();
+            const zNuevo = fajaArgentinaPorLongitud(app.sel.lng);
+            const xyNuevo = proj4('EPSG:4326', 'PMG_inchauspe_Z' + zNuevo, [app.sel.lng, app.sel.lat]);
+            xInchauspe = xyNuevo[0].toFixed(2);
+            yInchauspe = xyNuevo[1].toFixed(2);
+        } catch (_) {}
 
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
@@ -3256,6 +3469,23 @@ function detalle(p) {
     
     const latFormateada = p.la ? p.la.toFixed(5).replace('.', ',') : '';
     const lngFormateada = p.ln ? p.ln.toFixed(5).replace('.', ',') : '';
+    const pcDet = proyectarCoordPedido(p.la, p.ln);
+    const cfgFam = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
+    let filasProyectadas = '';
+    if (pcDet) {
+        const qx = String(pcDet.vx).replace(/'/g, "\\'");
+        const qy = String(pcDet.vy).replace(/'/g, "\\'");
+        filasProyectadas = `
+            <div class="coord-proy-meta">${pcDet.crsLinea}</div>
+            <div class="dr coord-proy-row"><span class="dl">${pcDet.lx}</span><span class="dv">${pcDet.vx} <span class="dv-copy" onclick="copiarTexto('${qx}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+            <div class="dr coord-proy-row"><span class="dl">${pcDet.ly}</span><span class="dv">${pcDet.vy} <span class="dv-copy" onclick="copiarTexto('${qy}')"><i class="fas fa-copy"></i> Copiar</span></span></div>`;
+    } else if (cfgFam === 'none' && p.x_inchauspe && p.y_inchauspe) {
+        const xi = String(p.x_inchauspe).replace('.', ',');
+        const yi = String(p.y_inchauspe).replace('.', ',');
+        filasProyectadas = `
+            <div class="dr"><span class="dl">Inchauspe X (histórico al crear)</span><span class="dv">${xi} <span class="dv-copy" onclick="copiarTexto('${xi.replace(/'/g, "\\'")}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+            <div class="dr"><span class="dl">Inchauspe Y (histórico al crear)</span><span class="dv">${yi} <span class="dv-copy" onclick="copiarTexto('${yi.replace(/'/g, "\\'")}')"><i class="fas fa-copy"></i> Copiar</span></span></div>`;
+    }
     
     document.getElementById('dmc').innerHTML = `
         <div class="ds">
@@ -3293,10 +3523,7 @@ function detalle(p) {
             <h4>📍 Ubicación</h4>
             <div class="dr"><span class="dl">WGS84 Lat:</span><span class="dv">${latFormateada} <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
             <div class="dr"><span class="dl">WGS84 Lng:</span><span class="dv">${lngFormateada} <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
-            ${p.x_inchauspe && p.y_inchauspe ? `
-            <div class="dr"><span class="dl">Inchauspe X:</span><span class="dv">${p.x_inchauspe.toString().replace('.', ',')} <span class="dv-copy" onclick="copiarTexto('${p.x_inchauspe.toString().replace('.', ',')}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
-            <div class="dr"><span class="dl">Inchauspe Y:</span><span class="dv">${p.y_inchauspe.toString().replace('.', ',')} <span class="dv-copy" onclick="copiarTexto('${p.y_inchauspe.toString().replace('.', ',')}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
-            ` : ''}
+            ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
             ${app.u?.rol === 'admin' ? `<button type="button" class="ba2" style="margin-top:.5rem;margin-left:.35rem;background:#059669;color:white;border-color:#059669" onclick="document.getElementById('dm').classList.remove('active');window.abrirModalNotificarPedidoPorId('${p.id}')"><i class="fas fa-bell"></i> Enviar a usuario</button>` : ''}
         </div>
@@ -3368,28 +3595,45 @@ function exportPedido(pedidos, nombre) {
     
     const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
     
-    const datosExport = pedidos.map(p => ({
-        'N° Pedido': p.np || '',
-        'Fecha Creación': p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '',
-        'Fecha Cierre': p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '',
-        'Fecha Último Avance': p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '',
-        'Distribuidor': p.dis || '',
-        'Cliente': p.cl || '',
-        'SETD': p.sd || '',
-        'Tipo de Trabajo': p.tt || '',
-        'Descripción': p.de || '',
-        'Prioridad': p.pr || '',
-        'Estado': p.es || '',
-        'Avance %': p.av || 0,
-        'Trabajo Realizado': p.tr || '',
-        'Técnico Cierre': p.tc || '',
-        'Latitud (WGS84)': p.la ? p.la.toString().replace('.', ',') : '',
-        'Longitud (WGS84)': p.ln ? p.ln.toString().replace('.', ',') : '',
-        'X Inchauspe': p.x_inchauspe ? p.x_inchauspe.toString().replace('.', ',') : '',
-        'Y Inchauspe': p.y_inchauspe ? p.y_inchauspe.toString().replace('.', ',') : '',
-        'Cantidad Fotos': p.fotos ? p.fotos.length : 0,
-        'Foto Cierre': p.foto_cierre ? 'Sí' : 'No'
-    }));
+    const datosExport = pedidos.map(p => {
+        const pc = proyectarCoordPedido(p.la, p.ln);
+        const cf = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
+        let crsAdm = '';
+        let xPlano = '';
+        let yPlano = '';
+        if (pc) {
+            crsAdm = pc.crsLinea + ' · ' + pc.modoTxt;
+            xPlano = pc.vx;
+            yPlano = pc.vy;
+        } else if (cf === 'none' && p.x_inchauspe != null && p.y_inchauspe != null) {
+            crsAdm = 'Inchauspe (valores al crear pedido)';
+            xPlano = String(p.x_inchauspe).replace('.', ',');
+            yPlano = String(p.y_inchauspe).replace('.', ',');
+        }
+        return {
+            'N° Pedido': p.np || '',
+            'Fecha Creación': p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Fecha Cierre': p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Fecha Último Avance': p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Distribuidor': p.dis || '',
+            'Cliente': p.cl || '',
+            'SETD': p.sd || '',
+            'Tipo de Trabajo': p.tt || '',
+            'Descripción': p.de || '',
+            'Prioridad': p.pr || '',
+            'Estado': p.es || '',
+            'Avance %': p.av || 0,
+            'Trabajo Realizado': p.tr || '',
+            'Técnico Cierre': p.tc || '',
+            'Latitud (WGS84)': p.la ? p.la.toString().replace('.', ',') : '',
+            'Longitud (WGS84)': p.ln ? p.ln.toString().replace('.', ',') : '',
+            'CRS planas (admin)': crsAdm,
+            'X / Este (m)': xPlano,
+            'Y / Norte (m)': yPlano,
+            'Cantidad Fotos': p.fotos ? p.fotos.length : 0,
+            'Foto Cierre': p.foto_cierre ? 'Sí' : 'No'
+        };
+    });
     
     if (typeof XLSX !== 'undefined') {
         try {
@@ -3401,7 +3645,8 @@ function exportPedido(pedidos, nombre) {
                 { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
                 { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
                 { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
-                { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }
+                { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
+                { wch: 10 }, { wch: 10 }
             ];
             ws['!cols'] = colWidths;
             
@@ -3731,8 +3976,9 @@ async function iniciarTracking() {
     const enviarUbicacion = async () => {
         if (!app.u || !navigator.geolocation || modoOffline || !NEON_OK) return;
         navigator.geolocation.getCurrentPosition(async pos => {
-            try {
+                try {
                 const { latitude, longitude, accuracy } = pos.coords;
+                registrarFajaInstalacionSiFalta(longitude);
                 await sqlSimple(`INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp)
                     VALUES(${esc(app.u.id)}, ${esc(latitude)}, ${esc(longitude)}, ${esc(Math.round(accuracy))}, NOW())`);
                 // Limpiar registros viejos de este usuario (más de 2 horas)
@@ -3889,15 +4135,32 @@ async function cargarFormEmpresa() {
         document.getElementById('cfg-subtitulo').value = cfg.subtitulo || '';
         document.getElementById('cfg-email').value     = cfg.email_contacto || '';
         document.getElementById('cfg-telefono').value  = cfg.telefono || '';
+        const fam = document.getElementById('cfg-coord-familia');
+        const modo = document.getElementById('cfg-coord-modo');
+        if (fam) {
+            const v = cfg.coord_proy_familia || 'none';
+            fam.value = ['none', 'inchauspe', 'posgar94', 'posgar98', 'posgar2007'].includes(v) ? v : 'none';
+        }
+        if (modo) {
+            const mv = cfg.coord_proy_modo || 'punto';
+            modo.value = ['punto', 'instal', '1', '2', '3', '4', '5', '6', '7'].includes(mv) ? mv : 'punto';
+        }
+        syncCoordModoVisibility();
     } catch(e) { console.warn(e); }
 }
 
 async function guardarConfigEmpresa() {
+    const famEl = document.getElementById('cfg-coord-familia');
+    const modoEl = document.getElementById('cfg-coord-modo');
+    const famVal = famEl ? famEl.value : 'none';
+    const modoVal = modoEl ? modoEl.value : 'punto';
     const campos = {
         nombre:         document.getElementById('cfg-nombre').value.trim(),
         subtitulo:      document.getElementById('cfg-subtitulo').value.trim(),
         email_contacto: document.getElementById('cfg-email').value.trim(),
-        telefono:       document.getElementById('cfg-telefono').value.trim()
+        telefono:       document.getElementById('cfg-telefono').value.trim(),
+        coord_proy_familia: famVal,
+        coord_proy_modo: famVal === 'none' ? 'punto' : modoVal
     };
     try {
         for (const [k, v] of Object.entries(campos)) {
@@ -4580,6 +4843,13 @@ if ('serviceWorker' in navigator) {
 
 // ── Inicializar todo al arrancar ──────────────────────────────
 (async function iniciarApp() {
+    (function showAndroidExportsBtn() {
+        const b = document.getElementById('btn-android-descargas');
+        if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
+            b.style.display = '';
+        }
+    })();
+
     // 1. Cargar config.json
     const configOk = await cargarAppConfig();
     if (!configOk) return; // No continuar sin config
