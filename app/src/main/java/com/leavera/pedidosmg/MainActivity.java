@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraImageUri;
     private static final int RC_FILE_CHOOSER = 1001;
+    private String pendingPedidoIdIntent;
 
     private final ActivityResultLauncher<String[]> permissionLauncher =
             registerForActivityResult(
@@ -85,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
         crearCanalNotificacionesPedidos();
 
         webView = findViewById(R.id.webview);
+        capturePedidoIdFromIntent(getIntent());
         configurarWebView();
         pedirPermisos();
         iniciarNetworkWatchdog();
@@ -115,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
         s.setGeolocationEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         s.setSupportZoom(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setUserAgentString(
@@ -172,6 +174,12 @@ public class MainActivity extends AppCompatActivity {
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 view.loadUrl(url);
                 return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                dispatchPendingPedidoIdToWeb();
             }
         });
 
@@ -257,7 +265,16 @@ public class MainActivity extends AppCompatActivity {
             webView.evaluateJavascript(
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);
+            dispatchPendingPedidoIdToWeb();
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        capturePedidoIdFromIntent(intent);
+        dispatchPendingPedidoIdToWeb();
     }
 
     @Override
@@ -352,5 +369,24 @@ public class MainActivity extends AppCompatActivity {
         } catch (SecurityException e) {
             Toast.makeText(this, "Activá notificaciones para Pedidos MG en Ajustes.", Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void capturePedidoIdFromIntent(Intent intent) {
+        if (intent == null) return;
+        String pid = intent.getStringExtra("pedidoId");
+        if (pid == null) return;
+        pid = pid.trim();
+        if (!pid.isEmpty()) pendingPedidoIdIntent = pid;
+    }
+
+    private void dispatchPendingPedidoIdToWeb() {
+        if (webView == null || pendingPedidoIdIntent == null || pendingPedidoIdIntent.isEmpty()) return;
+        String jsPid = pendingPedidoIdIntent.replace("\\", "\\\\").replace("'", "\\'");
+        String js =
+                "if(typeof window.handleAndroidIntentPedidoId==='function'){" +
+                        "window.handleAndroidIntentPedidoId('" + jsPid + "');" +
+                        "}";
+        webView.evaluateJavascript(js, null);
+        pendingPedidoIdIntent = null;
     }
 }

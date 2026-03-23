@@ -87,6 +87,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .fab-pedido-ubicacion:hover{transform:scale(1.1)}
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
+#modal-notif-pedido{z-index:6001}
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}
 @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -268,8 +269,8 @@ textarea{resize:vertical;min-height:80px}
     <p class="sub" id="app-subtitulo"></p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Conectando...</div>
     <form id="lf">
-      <div class="ig"><i class="fas fa-envelope"></i><input type="text" id="em" placeholder="Usuario" value="admin" required autocomplete="username"></div>
-      <div class="ig"><i class="fas fa-lock"></i><input type="password" id="pw" placeholder="Contraseña" value="admin" required autocomplete="current-password"></div>
+      <div class="ig"><i class="fas fa-envelope"></i><input type="text" id="em" placeholder="Usuario" required autocomplete="username"></div>
+      <div class="ig"><i class="fas fa-lock"></i><input type="password" id="pw" placeholder="Contraseña" required autocomplete="current-password"></div>
       <button type="submit" id="lb" class="bp" disabled><i class="fas fa-sign-in-alt"></i> Ingresar</button>
     </form>
     <div id="le" class="le"></div>
@@ -1314,7 +1315,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                                 tipo: 'CACHEAR_ZONA',
                                 lat: ultimaUbicacion.lat,
                                 lng: ultimaUbicacion.lon,
-                                radioKm: 200
+                                radioKm: 150
                             });
                         }
                     };
@@ -1342,6 +1343,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 render();
                 toast('📴 Modo offline — mostrando pedidos en caché', 'info');
             }
+            await consumirPedidoPendienteDesdeNotif();
         }, 200);
     }
     
@@ -1549,17 +1551,25 @@ function initMap() {
         zoomControl: true,
         attributionControl: true,
         maxZoom: 19,
-        zoom: 13 
+        zoom: 13,
+        preferCanvas: true,
+        zoomAnimation: false,
+        fadeAnimation: false,
+        markerZoomAnimation: false,
+        inertia: false
     }).setView([-31.505, -60.02], 13);
     
     
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        subdomains: ['a','b','c'],
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
         maxZoom: 19,
         maxNativeZoom: 19,
         tileSize: 256,
         detectRetina: false,
+        crossOrigin: true,
+        updateWhenIdle: true,
+        keepBuffer: 1,
     }).addTo(app.map);
     
     
@@ -1991,6 +2001,71 @@ window._zm = id => {
 // ── Notificaciones a usuarios (admin → técnico, cola en Neon + Android) ──
 let _pedidoNotifContext = null;
 let _pollNotifMovilInterval = null;
+const KEY_PENDING_NOTIF_PEDIDO_ID = 'pmg_pending_notif_pedido_id';
+
+function guardarPedidoPendienteDesdeNotif(pedidoId) {
+    if (!pedidoId) return;
+    try { localStorage.setItem(KEY_PENDING_NOTIF_PEDIDO_ID, String(pedidoId)); } catch(_) {}
+}
+
+function borrarPedidoPendienteDesdeNotif() {
+    try { localStorage.removeItem(KEY_PENDING_NOTIF_PEDIDO_ID); } catch(_) {}
+}
+
+function leerPedidoPendienteDesdeNotif() {
+    try { return localStorage.getItem(KEY_PENDING_NOTIF_PEDIDO_ID) || ''; } catch(_) { return ''; }
+}
+
+async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
+    const pid = String(pedidoId || '').trim();
+    if (!pid || !app.u) return false;
+
+    let pedido = app.p.find(x => String(x.id) === pid);
+    if (!pedido && !modoOffline && NEON_OK && _sql) {
+        try {
+            const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
+            const row = rr.rows?.[0];
+            if (row) {
+                pedido = norm(row);
+                const idx = app.p.findIndex(x => String(x.id) === String(pedido.id));
+                if (idx >= 0) app.p[idx] = pedido;
+                else app.p.unshift(pedido);
+            }
+        } catch (_) {}
+    }
+    if (!pedido) return false;
+    if (!document.getElementById('ms')?.classList.contains('active')) return false;
+    if (!app.map) return false;
+
+    try {
+        closeAll();
+        detalle(pedido);
+        _zm(String(pedido.id));
+        if (!opts.silent) toast('📍 Pedido #' + (pedido.np || pedido.id) + ' centrado en el mapa', 'info');
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function resolverFocoPedidoNotificacion(pedidoId, opts = {}) {
+    const pid = String(pedidoId || '').trim();
+    if (!pid) return;
+    guardarPedidoPendienteDesdeNotif(pid);
+    const ok = await enfocarPedidoDesdeNotif(pid, opts);
+    if (ok) borrarPedidoPendienteDesdeNotif();
+}
+
+window.handleAndroidIntentPedidoId = function (pedidoId) {
+    resolverFocoPedidoNotificacion(pedidoId, { silent: true });
+};
+
+async function consumirPedidoPendienteDesdeNotif() {
+    const pid = leerPedidoPendienteDesdeNotif();
+    if (!pid) return;
+    const ok = await enfocarPedidoDesdeNotif(pid, { silent: true });
+    if (ok) borrarPedidoPendienteDesdeNotif();
+}
 
 function llenarSelectUsuariosNotif() {
     const sel = document.getElementById('notif-usuario-select');
@@ -2098,6 +2173,7 @@ window.pollNotificacionesMovil = async function () {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
                     await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true });
                 } catch (_) {}
             }
         }
@@ -3514,6 +3590,7 @@ try {
             if (!modoOffline && offlineQueue().length > 0) {
                 setTimeout(sincronizarOffline, 2000);
             }
+            await consumirPedidoPendienteDesdeNotif();
         }, 200);
     }
 } catch(_) {}
@@ -4157,9 +4234,21 @@ function iniciarMapaUsuariosAdmin() {
     if (!el) return;
     setTimeout(() => {
         if (!_mapaUsuariosAdmin) {
-            _mapaUsuariosAdmin = L.map('mapa-usuarios-admin', { zoomControl: true }).setView([-31.5, -60.0], 10);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap', subdomains: ['a','b','c'], maxZoom: 18
+            _mapaUsuariosAdmin = L.map('mapa-usuarios-admin', {
+                zoomControl: true,
+                preferCanvas: true,
+                zoomAnimation: false,
+                fadeAnimation: false,
+                markerZoomAnimation: false,
+                inertia: false
+            }).setView([-31.5, -60.0], 10);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© OpenStreetMap © CARTO',
+                subdomains: 'abcd',
+                maxZoom: 19,
+                crossOrigin: true,
+                updateWhenIdle: true,
+                keepBuffer: 1
             }).addTo(_mapaUsuariosAdmin);
         } else {
             _mapaUsuariosAdmin.invalidateSize();
