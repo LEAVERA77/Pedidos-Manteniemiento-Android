@@ -658,7 +658,7 @@ textarea{resize:vertical;min-height:80px}
   <div class="mc" style="max-width:420px">
     <div class="mh"><h3><i class="fas fa-key"></i> Recuperar contraseña</h3><button class="cm"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Ingresá tu email. Si está registrado recibirás un código temporal de 6 dígitos.</p>
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Ingresá email o usuario. Si está registrado recibirás un código temporal de 6 dígitos.</p>
       <div class="fg" style="padding:0"><label>Email / Usuario</label><input id="reset-email" type="text" placeholder="tu@email.com"></div>
       <div id="reset-codigo-wrap" style="display:none;margin-top:.75rem">
         <div class="fg" style="padding:0"><label>Código recibido por email</label><input id="reset-codigo" type="text" placeholder="000000"></div>
@@ -4750,6 +4750,15 @@ async function cambiarContrasena() {
 // ── Reset de contraseña con EmailJS ──────────────────────────
 let _resetPaso = 1;
 let _resetTokenActual = null;
+let _resetUsuarioAdmin = false;
+
+function _errMsg(e) {
+    if (!e) return 'Error desconocido';
+    if (typeof e === 'string') return e;
+    if (e.message) return e.message;
+    if (e.error) return typeof e.error === 'string' ? e.error : JSON.stringify(e.error);
+    try { return JSON.stringify(e); } catch (_) { return String(e); }
+}
 
 async function pasoResetPw() {
     const cfg = window.APP_CONFIG?.emailjs;
@@ -4760,18 +4769,33 @@ async function pasoResetPw() {
 
     if (_resetPaso === 1) {
         const email = document.getElementById('reset-email').value.trim();
-        if (!email) { msg.textContent = 'Ingresá tu email'; return; }
+        if (!email) { msg.textContent = 'Ingresá email o usuario'; return; }
+        _resetUsuarioAdmin = false;
         try {
-            const r = await sqlSimple(`SELECT id, email, nombre FROM usuarios WHERE email = ${esc(email)} AND activo = TRUE`);
+            const emailLc = email.toLowerCase();
+            const r = await sqlSimple(`SELECT id, email, nombre, rol
+                FROM usuarios
+                WHERE activo = TRUE
+                  AND (
+                    lower(coalesce(email,'')) = ${esc(emailLc)}
+                    OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
+                  )
+                ORDER BY CASE WHEN lower(coalesce(email,'')) = ${esc(emailLc)} THEN 0 ELSE 1 END
+                LIMIT 1`);
             if (!r.rows[0]) { msg.textContent = 'Email no encontrado o usuario inactivo'; return; }
             const usuario = r.rows[0];
+            _resetUsuarioAdmin = String(usuario.rol || '').toLowerCase() === 'admin';
 
             // Generar token de 6 dígitos
             const token = String(Math.floor(100000 + Math.random() * 900000));
+            _resetTokenActual = token;
             const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
             await sqlSimple(`UPDATE usuarios SET reset_token = ${esc(token)}, reset_expiry = ${esc(expiry)} WHERE id = ${esc(usuario.id)}`);
 
             // Enviar email con EmailJS
+            if (!window.emailjs || typeof emailjs.send !== 'function') {
+                throw new Error('Servicio de correo no disponible en este momento');
+            }
             await emailjs.send(cfg.serviceId, cfg.templateId, {
                 to_email: usuario.email,
                 to_name:  usuario.nombre,
@@ -4785,8 +4809,21 @@ async function pasoResetPw() {
             btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
             _resetPaso = 2;
         } catch(e) {
-            msg.style.color = '';
-            msg.textContent = 'Error: ' + e.message;
+            const em = _errMsg(e);
+            const esAndroidLocal = window.location.protocol === 'file:' && !!window.AndroidDevice;
+            // Fallback explícito para recuperar admin en la app local si falla correo.
+            if (esAndroidLocal && _resetTokenActual && _resetUsuarioAdmin) {
+                msg.style.color = '#854d0e';
+                msg.innerHTML =
+                    `No se pudo enviar el email (${em}).<br>` +
+                    `Recuperación local admin (solo este dispositivo): <b>${_resetTokenActual}</b>`;
+                document.getElementById('reset-codigo-wrap').style.display = 'block';
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
+                _resetPaso = 2;
+            } else {
+                msg.style.color = '';
+                msg.textContent = 'Error: ' + em;
+            }
         }
     } else {
         const email  = document.getElementById('reset-email').value.trim();
@@ -4794,16 +4831,27 @@ async function pasoResetPw() {
         const nuevaPw = document.getElementById('reset-nueva-pw').value;
         if (!codigo || !nuevaPw) { msg.textContent = 'Completá el código y la nueva contraseña'; return; }
         try {
-            const r = await sqlSimple(`SELECT id FROM usuarios WHERE email = ${esc(email)} AND reset_token = ${esc(codigo)} AND reset_expiry > NOW()`);
+            const emailLc = email.toLowerCase();
+            const r = await sqlSimple(`SELECT id
+                FROM usuarios
+                WHERE (
+                        lower(coalesce(email,'')) = ${esc(emailLc)}
+                     OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
+                      )
+                  AND reset_token = ${esc(codigo)}
+                  AND reset_expiry > NOW()
+                LIMIT 1`);
             if (!r.rows[0]) { msg.textContent = 'Código incorrecto o expirado'; return; }
             await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(nuevaPw)}, reset_token = NULL, reset_expiry = NULL WHERE id = ${esc(r.rows[0].id)}`);
             msg.style.color = '#166534';
             msg.textContent = '✓ Contraseña actualizada. Ya podés iniciar sesión.';
             btn.style.display = 'none';
             _resetPaso = 1;
+            _resetTokenActual = null;
+            _resetUsuarioAdmin = false;
         } catch(e) {
             msg.style.color = '';
-            msg.textContent = 'Error: ' + e.message;
+            msg.textContent = 'Error: ' + _errMsg(e);
         }
     }
 }

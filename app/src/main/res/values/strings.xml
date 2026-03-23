@@ -26,4 +26,5 @@
     <string name="open_downloads_chooser">Abrir carpeta</string>
     <string name="open_downloads_fallback">No se pudo abrir el gestor de archivos. Carpeta: %1$s</string>
     <string name="open_downloads_fallback_clipboard">No se pudo abrir el gestor. Ruta copiada al portapapeles:\n%1$s</string>
+    <string name="open_downloads_hint_pedidosmg_folder">Se abrió Descargas del sistema. Entrá a la carpeta «PedidosMG».</string>
 </resources>

@@ -2,11 +2,13 @@ package com.leavera.pedidosmg;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -394,7 +396,7 @@ public class MainActivity extends AppCompatActivity {
                     dir.mkdirs();
                 }
                 String absPath = dir.getAbsolutePath();
-                if (openExportsFolderTryAll()) {
+                if (openExportsFolderTryAll(dir)) {
                     return;
                 }
                 copyFolderPathToClipboard(absPath);
@@ -405,25 +407,139 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Intentos sucesivos para abrir Descargas/PedidosMG en el gestor del sistema. */
-    private boolean openExportsFolderTryAll() {
+    private static final String STORAGE_AUTHORITY = "com.android.externalstorage.documents";
+    private static final String DOC_PEDIDOSMG = "primary:Download/PedidosMG";
+    private static final String DOC_DOWNLOAD = "primary:Download";
+
+    /**
+     * Abre Descargas/PedidosMG probando varias rutas: FileProvider (más fiable en Android 11+),
+     * UI de documentos del sistema, árbol SAF y pantalla de Descargas.
+     */
+    private boolean openExportsFolderTryAll(File dir) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false;
-        if (tryLaunchDirectoryView(DocumentsContract.buildDocumentUri(
-                "com.android.externalstorage.documents", "primary:Download/PedidosMG"))) return true;
-        if (tryLaunchDirectoryView(DocumentsContract.buildDocumentUri(
-                "com.android.externalstorage.documents", "primary:Download"))) return true;
+
+        if (tryLaunchDirectoryViaFileProvider(dir)) return true;
+
+        Uri uriPedidos = DocumentsContract.buildDocumentUri(STORAGE_AUTHORITY, DOC_PEDIDOSMG);
+        Uri uriDownload = DocumentsContract.buildDocumentUri(STORAGE_AUTHORITY, DOC_DOWNLOAD);
+
+        if (tryLaunchDirectoryDocumentsUiExplicit(uriPedidos)) return true;
+        if (tryLaunchDirectoryView(uriPedidos)) return true;
+        if (tryLaunchDirectoryWithPackage(uriPedidos, "com.google.android.apps.nbu.files")) return true;
+
+        if (tryLaunchTreeFolder(STORAGE_AUTHORITY, DOC_PEDIDOSMG)) return true;
+        if (tryLaunchTreeFolder(STORAGE_AUTHORITY, DOC_DOWNLOAD)) return true;
+
         if (tryLaunchDirectoryView(Uri.parse(
                 "content://com.android.externalstorage.documents/document/primary%3ADownload%2FPedidosMG"))) return true;
         if (tryLaunchDirectoryView(Uri.parse(
                 "content://com.android.externalstorage.documents/document/primary%3ADownload"))) return true;
-        if (tryLaunchDirectoryWithPackage(
-                DocumentsContract.buildDocumentUri(
-                        "com.android.externalstorage.documents", "primary:Download/PedidosMG"),
-                "com.google.android.apps.nbu.files")) return true;
-        if (tryLaunchDirectoryWithPackage(
-                DocumentsContract.buildDocumentUri(
-                        "com.android.externalstorage.documents", "primary:Download"),
-                "com.google.android.apps.nbu.files")) return true;
+
+        if (tryLaunchDirectoryDocumentsUiExplicit(uriDownload)) return true;
+        if (tryLaunchDirectoryView(uriDownload)) return true;
+        if (tryLaunchDirectoryWithPackage(uriDownload, "com.google.android.apps.nbu.files")) return true;
+
+        if (tryLaunchDirectoryWithOemPackages(uriPedidos)) return true;
+
+        if (tryLaunchSystemDownloadsUi()) {
+            Toast.makeText(this, R.string.open_downloads_hint_pedidosmg_folder, Toast.LENGTH_LONG).show();
+            return true;
+        }
+        return false;
+    }
+
+    /** URI content:// de esta app: muchos gestores abren la carpeta con permiso explícito. */
+    private boolean tryLaunchDirectoryViaFileProvider(File dir) {
+        try {
+            if (!dir.exists() && !dir.mkdirs()) return false;
+            if (!dir.isDirectory()) return false;
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", dir);
+            int flags = Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                flags |= Intent.FLAG_GRANT_PREFIX_URI_PERMISSION;
+            }
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR);
+                intent.addFlags(flags);
+                startActivity(intent);
+                return true;
+            } catch (Exception ignored) {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(uri);
+                intent.addFlags(flags);
+                startActivity(intent);
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Abre la actividad “Archivos” de AOSP con la URI concreta (varía el nombre de clase según versión). */
+    private boolean tryLaunchDirectoryDocumentsUiExplicit(Uri uri) {
+        if (uri == null) return false;
+        String[][] components = new String[][]{
+                {"com.google.android.documentsui", "com.android.documentsui.files.FilesActivity"},
+                {"com.android.documentsui", "com.android.documentsui.files.FilesActivity"},
+                {"com.google.android.documentsui", "com.android.documentsui.FilesActivity"},
+        };
+        int flags = Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            flags |= Intent.FLAG_GRANT_PREFIX_URI_PERMISSION;
+        }
+        for (String[] pair : components) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setComponent(new ComponentName(pair[0], pair[1]));
+                intent.setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR);
+                intent.addFlags(flags);
+                startActivity(intent);
+                return true;
+            } catch (Exception ignored) {
+            }
+        }
+        return false;
+    }
+
+    private boolean tryLaunchTreeFolder(String authority, String treeDocumentId) {
+        if (authority == null || treeDocumentId == null) return false;
+        try {
+            Uri treeUri = DocumentsContract.buildTreeDocumentUri(authority, treeDocumentId);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(treeUri, DocumentsContract.Document.MIME_TYPE_DIR);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            }
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Pantalla nativa “Descargas” (al menos entra a Descargas; el usuario abre PedidosMG). */
+    private boolean tryLaunchSystemDownloadsUi() {
+        try {
+            Intent intent = new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean tryLaunchDirectoryWithOemPackages(Uri uri) {
+        if (uri == null) return false;
+        String[] pkgs = {
+                "com.sec.android.app.myfiles",
+                "com.mi.android.globalFileexplorer",
+        };
+        for (String pkg : pkgs) {
+            if (tryLaunchDirectoryWithPackage(uri, pkg)) return true;
+        }
         return false;
     }
 
