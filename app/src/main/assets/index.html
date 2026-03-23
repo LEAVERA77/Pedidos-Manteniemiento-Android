@@ -831,6 +831,24 @@ function proyectarCoordPedido(lat, lng) {
 }
 window.proyectarCoordPedido = proyectarCoordPedido;
 
+/** Una sola línea corta para el formulario de pedido (mapa / GPS): faja + planas, sin WGS84 largo. */
+function htmlLineaUbicacionFormulario(lat, lng, acc) {
+    registrarFajaInstalacionSiFalta(lng);
+    const accStr = acc
+        ? ` <span style="opacity:.85;font-size:.9em">(±${acc < 1000 ? acc + 'm' : (acc / 1000).toFixed(1) + 'km'})</span>`
+        : '';
+    const pc = proyectarCoordPedido(lat, lng);
+    let compact;
+    if (pc) {
+        compact = `F${pc.z}: ${pc.vx} · ${pc.vy} m`;
+    } else {
+        const c = convertirAInchauspe(lat, lng);
+        const z = fajaArgentinaPorLongitud(lng);
+        compact = c.x !== 'Error' ? `F${z}: ${c.x} · ${c.y} m` : `${Number(lat).toFixed(4).replace('.', ',')}, ${Number(lng).toFixed(4).replace('.', ',')}`;
+    }
+    return `<i class="fas fa-check-circle" style="color:#059669"></i> ${compact}${accStr}`;
+}
+
 function syncCoordModoVisibility() {
     const sel = document.getElementById('cfg-coord-familia');
     const w = document.getElementById('cfg-coord-modo-wrap');
@@ -1796,7 +1814,7 @@ function initMap() {
         document.getElementById('li').value = e.latlng.lat;
         document.getElementById('gi').value = e.latlng.lng;
         const ui = document.getElementById('ui');
-        ui.innerHTML = `<i class="fas fa-check-circle" style="color:#059669"></i> ${e.latlng.lat.toFixed(5).replace('.', ',')}, ${e.latlng.lng.toFixed(5).replace('.', ',')}`;
+        ui.innerHTML = htmlLineaUbicacionFormulario(e.latlng.lat, e.latlng.lng, null);
         ui.className = 'ud sel';
         document.getElementById('pm').classList.add('active');
     });
@@ -2071,10 +2089,9 @@ document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => 
         app.sel = { lat, lng: lon };
         document.getElementById('li').value = lat;
         document.getElementById('gi').value = lon;
-        const accStr = acc ? ` (±${acc < 1000 ? acc + 'm' : (acc/1000).toFixed(1) + 'km'})` : '';
         const ui = document.getElementById('ui');
         if (ui) {
-            ui.innerHTML = `<i class="fas fa-check-circle" style="color:#059669"></i> ${lat.toFixed(5).replace('.', ',')}, ${lon.toFixed(5).replace('.', ',')}${accStr}`;
+            ui.innerHTML = htmlLineaUbicacionFormulario(lat, lon, acc);
             ui.className = 'ud sel';
         }
         if (app.map) mostrarMarcadorUbicacion(lat, lon, acc);
@@ -3471,16 +3488,18 @@ function detalle(p) {
     }
     
     
-    const latFormateada = p.la ? p.la.toFixed(5).replace('.', ',') : '';
-    const lngFormateada = p.ln ? p.ln.toFixed(5).replace('.', ',') : '';
+    const latFormateada = p.la ? p.la.toFixed(4).replace('.', ',') : '';
+    const lngFormateada = p.ln ? p.ln.toFixed(4).replace('.', ',') : '';
+    const wgs84UnaLinea = (p.la != null && p.ln != null) ? `${latFormateada}, ${lngFormateada}` : '--';
     const pcDet = proyectarCoordPedido(p.la, p.ln);
     const cfgFam = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
     let filasProyectadas = '';
     if (pcDet) {
         const qx = String(pcDet.vx).replace(/'/g, "\\'");
         const qy = String(pcDet.vy).replace(/'/g, "\\'");
+        const titTip = String(pcDet.titulo || '').replace(/"/g, '&quot;');
         filasProyectadas = `
-            <div class="coord-proy-meta"><span class="coord-faja">${pcDet.crsLinea}</span><span class="coord-sys">${pcDet.titulo}</span></div>
+            <div class="coord-proy-meta"><span class="coord-faja" title="${titTip}">F${pcDet.z}</span><span class="coord-sys">${pcDet.vx} · ${pcDet.vy} m</span></div>
             <div class="dr coord-proy-row"><span class="dl">${pcDet.lx}</span><span class="dv">${pcDet.vx} <span class="dv-copy" onclick="copiarTexto('${qx}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
             <div class="dr coord-proy-row"><span class="dl">${pcDet.ly}</span><span class="dv">${pcDet.vy} <span class="dv-copy" onclick="copiarTexto('${qy}')"><i class="fas fa-copy"></i> Copiar</span></span></div>`;
     } else if (cfgFam === 'none' && p.x_inchauspe && p.y_inchauspe) {
@@ -3525,8 +3544,7 @@ function detalle(p) {
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
-            <div class="dr"><span class="dl">WGS84 Lat:</span><span class="dv">${latFormateada} <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
-            <div class="dr"><span class="dl">WGS84 Lng:</span><span class="dv">${lngFormateada} <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+            <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${p.la != null && p.ln != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
             ${app.u?.rol === 'admin' ? `<button type="button" class="ba2" style="margin-top:.5rem;margin-left:.35rem;background:#059669;color:white;border-color:#059669" onclick="document.getElementById('dm').classList.remove('active');window.abrirModalNotificarPedidoPorId('${p.id}')"><i class="fas fa-bell"></i> Enviar a usuario</button>` : ''}
@@ -3882,6 +3900,38 @@ TIPOS.forEach(t => {
     st.appendChild(o);
 });
 
+// ── TRACKING DE UBICACIÓN (cada 15 min) — debe declararse antes del restore de sesión ──
+let _trackingInterval = null;
+
+async function iniciarTracking() {
+    if (_trackingInterval) return; // ya está corriendo
+    const enviarUbicacion = async () => {
+        if (!app.u || !navigator.geolocation || modoOffline || !NEON_OK) return;
+        navigator.geolocation.getCurrentPosition(async pos => {
+                try {
+                const { latitude, longitude, accuracy } = pos.coords;
+                registrarFajaInstalacionSiFalta(longitude);
+                await sqlSimple(`INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp)
+                    VALUES(${esc(app.u.id)}, ${esc(latitude)}, ${esc(longitude)}, ${esc(Math.round(accuracy))}, NOW())`);
+                // Limpiar registros viejos de este usuario (más de 2 horas)
+                await sqlSimple(`DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`);
+            } catch(e) { console.warn('[tracking]', e.message); }
+        }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    };
+    // Enviar inmediatamente y luego cada 15 min
+    enviarUbicacion();
+    _trackingInterval = setInterval(enviarUbicacion, 15 * 60 * 1000);
+    console.log('[tracking] iniciado');
+}
+
+function detenerTracking() {
+    if (_trackingInterval) { clearInterval(_trackingInterval); _trackingInterval = null; }
+    if (_watchId && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(_watchId); } catch(_) {}
+    }
+    _watchId = null;
+}
+window.detenerTracking = detenerTracking;
 
 try {
     const s = localStorage.getItem('pmg');
@@ -3971,39 +4021,6 @@ async function cargarConfigEmpresa() {
         window.EMPRESA_CFG = {};
     }
 }
-
-// ── TRACKING DE UBICACIÓN (cada 15 min) ─────────────────────
-let _trackingInterval = null;
-
-async function iniciarTracking() {
-    if (_trackingInterval) return; // ya está corriendo
-    const enviarUbicacion = async () => {
-        if (!app.u || !navigator.geolocation || modoOffline || !NEON_OK) return;
-        navigator.geolocation.getCurrentPosition(async pos => {
-                try {
-                const { latitude, longitude, accuracy } = pos.coords;
-                registrarFajaInstalacionSiFalta(longitude);
-                await sqlSimple(`INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp)
-                    VALUES(${esc(app.u.id)}, ${esc(latitude)}, ${esc(longitude)}, ${esc(Math.round(accuracy))}, NOW())`);
-                // Limpiar registros viejos de este usuario (más de 2 horas)
-                await sqlSimple(`DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`);
-            } catch(e) { console.warn('[tracking]', e.message); }
-        }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
-    };
-    // Enviar inmediatamente y luego cada 15 min
-    enviarUbicacion();
-    _trackingInterval = setInterval(enviarUbicacion, 15 * 60 * 1000);
-    console.log('[tracking] iniciado');
-}
-
-function detenerTracking() {
-    if (_trackingInterval) { clearInterval(_trackingInterval); _trackingInterval = null; }
-    if (_watchId && navigator.geolocation) {
-        try { navigator.geolocation.clearWatch(_watchId); } catch(_) {}
-    }
-    _watchId = null;
-}
-window.detenerTracking = detenerTracking;
 
 // ── ALARMA PEDIDOS URGENTES ──────────────────────────────────
 let _audioCtx = null;
@@ -4924,7 +4941,7 @@ if (typeof cargarFormEmpresa !== "undefined") window.cargarFormEmpresa = cargarF
     var esWebView=/wv |WebView/.test(navigator.userAgent)||window.location.protocol==='file:';
     if('serviceWorker' in navigator&&!esWebView){
         window.addEventListener('load',function(){
-            navigator.serviceWorker.register('./sw.js?pmg=3')
+            navigator.serviceWorker.register('./sw.js?pmg=4')
                 .then(r=>console.log('[SW]',r.scope))
                 .catch(e=>console.warn('[SW]',e.message));
         });

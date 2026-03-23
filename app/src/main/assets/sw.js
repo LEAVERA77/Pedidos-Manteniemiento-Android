@@ -10,8 +10,8 @@
 //  junto a index.html para que funcione correctamente.
 // =============================================================
 
-const CACHE_TILES = 'pmg-tiles-v3';
-const SW_VERSION  = '1.1.0';
+const CACHE_TILES = 'pmg-tiles-v4';
+const SW_VERSION  = '1.1.1';
 
 // ── Tiles de Entre Ríos zooms 5-11 ───────────────────────────
 // Generados automáticamente para bbox lat[-33.2,-29.8] lon[-60.8,-57.2]
