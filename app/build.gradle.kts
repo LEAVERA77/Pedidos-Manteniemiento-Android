@@ -6,12 +6,16 @@ android {
     namespace = "com.leavera.pedidosmg"
     compileSdk = 35  // Usar 35 en lugar de la sintaxis release(36) que no es válida
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.leavera.pedidosmg"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -30,6 +34,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/LICENSE*"
+            excludes += "META-INF/NOTICE*"
+        }
+    }
 }
 
 dependencies {
@@ -43,4 +55,7 @@ dependencies {
 
     // Agregar esto para FileProvider
     implementation("androidx.core:core:1.12.0")
+
+    implementation("androidx.work:work-runtime:2.9.1")
+    implementation("org.postgresql:postgresql:42.7.4")
 }

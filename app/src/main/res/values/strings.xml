@@ -11,4 +11,15 @@
     <string name="watchdog_notification_limited_text">Hay red pero no se alcanza Internet (captive portal o firewall)</string>
     <string name="watchdog_notification_offline_title">Pedidos MG · Sin conexión</string>
     <string name="watchdog_notification_offline_text">Sin red validada; revisá Wi‑Fi o datos</string>
+
+    <string name="work_pedidos_channel_name">Nuevos pedidos</string>
+    <string name="work_pedidos_channel_desc">Avisos cuando hay pedidos nuevos en la base</string>
+    <string name="work_pedidos_notif_title">Pedidos MG</string>
+    <string name="work_pedidos_notif_one">Nuevo pedido #%1$s</string>
+    <string name="work_pedidos_notif_many">Hay %1$d pedido(s) nuevo(s)</string>
+
+    <string name="update_dialog_title">Actualización disponible</string>
+    <string name="update_dialog_message">Hay una versión más nueva (%1$s). ¿Descargar la instalación?</string>
+    <string name="update_dialog_download">Descargar</string>
+    <string name="update_dialog_later">Más tarde</string>
 </resources>

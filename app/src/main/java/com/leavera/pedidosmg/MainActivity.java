@@ -41,6 +41,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import com.leavera.pedidosmg.work.PedidoPollingScheduler;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final String NOTIF_CHANNEL_ID = "pmg_pedidos_avisos";
@@ -83,6 +85,8 @@ public class MainActivity extends AppCompatActivity {
         configurarWebView();
         pedirPermisos();
         iniciarNetworkWatchdog();
+        PedidoPollingScheduler.schedule(this);
+        AppUpdateChecker.checkAsync(this);
     }
 
     private void crearCanalNotificacionesPedidos() {
@@ -110,7 +114,8 @@ public class MainActivity extends AppCompatActivity {
         s.setSupportZoom(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setUserAgentString(
-                s.getUserAgentString().replace("wv", "") + " PedidosMG/1.0"
+                s.getUserAgentString().replace("wv", "")
+                        + " PedidosMG/" + BuildConfig.VERSION_NAME
         );
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");

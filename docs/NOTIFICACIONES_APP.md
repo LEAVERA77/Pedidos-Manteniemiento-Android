@@ -7,3 +7,7 @@
 **Permisos**: en Android 13+, la app solicita el permiso de notificaciones la primera vez.
 
 **Nota**: si la app está totalmente cerrada y el sistema la suspende, el intervalo de 45 s no corre hasta que el usuario abra la app de nuevo. Para avisos con la app cerrada haría falta Firebase Cloud Messaging y un backend que envíe FCM (fuera del alcance de este flujo basado solo en Neon).
+
+## WorkManager (pedidos nuevos)
+
+WorkManager ejecuta cada ~15 minutos una consulta JDBC a la tabla `pedidos` (usa la misma `neon.connectionString` que la WebView en `assets/config.json`). Si el `MAX(id)` supera la marca guardada en `SharedPreferences`, se muestra una notificación local (canal `pmg_pedidos_workmanager`). La primera ejecución solo fija la marca sin notificar. Requiere red y el permiso de notificaciones en Android 13+.
