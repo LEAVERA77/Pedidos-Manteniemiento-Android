@@ -669,6 +669,13 @@ textarea{resize:vertical;min-height:80px}
         <button class="sec" onclick="document.getElementById('modal-reset-pw').classList.remove('active')">Cancelar</button>
         <button id="btn-reset-pw" class="bp" onclick="pasoResetPw()"><i class="fas fa-paper-plane"></i> Enviar código</button>
       </div>
+      <div style="margin-top:1rem;border-top:1px dashed #cbd5e1;padding-top:.85rem">
+        <div style="font-size:.8rem;color:#475569;font-weight:700;margin-bottom:.35rem">Sin email (solo admin)</div>
+        <div class="fg" style="padding:0"><label>Clave de recuperación admin</label><input id="reset-admin-key" type="password" placeholder="Clave de emergencia"></div>
+        <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña admin</label><input id="reset-admin-newpw" type="password" placeholder="Nueva contraseña"></div>
+        <div id="reset-admin-msg" style="font-size:.83rem;margin-top:.5rem"></div>
+        <button type="button" class="bp" style="margin-top:.65rem" onclick="resetAdminSinEmail()"><i class="fas fa-shield-alt"></i> Restablecer admin</button>
+      </div>
     </div>
   </div>
 </div>
@@ -4752,6 +4759,12 @@ let _resetPaso = 1;
 let _resetTokenActual = null;
 let _resetUsuarioAdmin = false;
 
+function _adminRecoveryKeyCfg() {
+    const k1 = window.APP_CONFIG?.admin?.recoveryKey;
+    const k2 = window.APP_CONFIG?.adminRecoveryKey;
+    return String(k1 || k2 || '').trim();
+}
+
 function _errMsg(e) {
     if (!e) return 'Error desconocido';
     if (typeof e === 'string') return e;
@@ -4762,7 +4775,6 @@ function _errMsg(e) {
 
 async function pasoResetPw() {
     const cfg = window.APP_CONFIG?.emailjs;
-    if (!cfg) { toast('EmailJS no configurado en config.json', 'error'); return; }
 
     const msg = document.getElementById('reset-msg');
     const btn = document.getElementById('btn-reset-pw');
@@ -4793,6 +4805,9 @@ async function pasoResetPw() {
             await sqlSimple(`UPDATE usuarios SET reset_token = ${esc(token)}, reset_expiry = ${esc(expiry)} WHERE id = ${esc(usuario.id)}`);
 
             // Enviar email con EmailJS
+            if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) {
+                throw new Error('Servicio de correo no configurado en este entorno');
+            }
             if (!window.emailjs || typeof emailjs.send !== 'function') {
                 throw new Error('Servicio de correo no disponible en este momento');
             }
@@ -4856,6 +4871,52 @@ async function pasoResetPw() {
     }
 }
 window.pasoResetPw = pasoResetPw;
+
+async function resetAdminSinEmail() {
+    const msg = document.getElementById('reset-admin-msg');
+    const clave = document.getElementById('reset-admin-key').value.trim();
+    const nueva = document.getElementById('reset-admin-newpw').value;
+    const claveCfg = _adminRecoveryKeyCfg();
+    if (!claveCfg) {
+        msg.style.color = '';
+        msg.textContent = 'Recuperación admin no configurada (falta clave en config).';
+        return;
+    }
+    if (!clave || !nueva) {
+        msg.style.color = '';
+        msg.textContent = 'Completá clave y nueva contraseña.';
+        return;
+    }
+    if (nueva.length < 4) {
+        msg.style.color = '';
+        msg.textContent = 'La nueva contraseña debe tener al menos 4 caracteres.';
+        return;
+    }
+    if (clave !== claveCfg) {
+        msg.style.color = '';
+        msg.textContent = 'Clave de recuperación inválida.';
+        return;
+    }
+    try {
+        const r = await sqlSimple(`SELECT id FROM usuarios WHERE activo = TRUE AND rol = 'admin' ORDER BY id LIMIT 1`);
+        if (!r.rows[0]) {
+            msg.style.color = '';
+            msg.textContent = 'No se encontró usuario admin activo.';
+            return;
+        }
+        await sqlSimple(`UPDATE usuarios
+            SET password_hash = ${esc(nueva)}, reset_token = NULL, reset_expiry = NULL
+            WHERE id = ${esc(r.rows[0].id)}`);
+        msg.style.color = '#166534';
+        msg.textContent = '✓ Contraseña de admin restablecida.';
+        document.getElementById('reset-admin-key').value = '';
+        document.getElementById('reset-admin-newpw').value = '';
+    } catch (e) {
+        msg.style.color = '';
+        msg.textContent = 'Error: ' + _errMsg(e);
+    }
+}
+window.resetAdminSinEmail = resetAdminSinEmail;
 
 // ── Banner offline ocultable ──────────────────────────────────
 function toggleOfflineBanner() {
