@@ -85,6 +85,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void crearCanalNotificacionesPedidos() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel ch = new NotificationChannel(
                 NOTIF_CHANNEL_ID,
                 "Avisos de pedidos",
