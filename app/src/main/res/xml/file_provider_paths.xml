@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rutas donde la app puede crear archivos temporales para compartir
+    con la camara del sistema via FileProvider.
+    Va en: app/src/main/res/xml/file_provider_paths.xml
+-->
+<paths>
+    <external-files-path name="external_files" path="." />
+    <external-files-path name="pictures" path="Pictures/" />
+    <files-path name="internal_files" path="." />
+</paths>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:background="@android:color/white">
+
+    <!--
+        fitsSystemWindows="true" hace que Android aplique
+        automáticamente el padding necesario para respetar
+        la barra de estado (top) y la de navegación (bottom),
+        sin código Java adicional.
+    -->
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</LinearLayout>

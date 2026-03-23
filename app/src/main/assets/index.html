@@ -1,0 +1,3108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Pedidos de Mantenimiento - Maria Grande</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+    <!-- Proj4 para conversión de coordenadas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.5/proj4.js"></script>
+    <!-- html2canvas para generar PDF temporal -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- jsPDF para generar PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* ESTILOS COMPLETOS */
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+        :root{--bd:#1e3a8a;--bm:#2563eb;--bl:#3b82f6;--gr:#10b981;--re:#ef4444;--or:#f97316;--ye:#eab308;--bg:#f1f5f9;--bo:#e2e8f0;--td:#1e293b;--tm:#475569;--tl:#94a3b8}
+        html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);box-sizing:border-box}
+        #app{height:100%;position:relative}
+        .screen{display:none;height:100%;width:100%;position:absolute;inset:0}
+        #ls{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#2563eb 100%)}
+        #ls.active{display:flex;align-items:center;justify-content:center}
+        #ms.active{display:flex;flex-direction:column;height:100%}
+        .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
+        .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
+        .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
+        .lc .sub{text-align:center;color:var(--tm);font-size:.9rem;margin-bottom:1rem}
+        .dbs{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.5rem 1rem;border-radius:2rem;font-size:.82rem;margin-bottom:1.25rem;transition:all .3s}
+        .dbs.c{background:#fef9c3;color:#854d0e}.dbs.ok{background:#dcfce7;color:#166534}.dbs.er{background:#fee2e2;color:#991b1b}
+        .ig{position:relative;margin-bottom:1rem}
+        .ig i{position:absolute;left:.9rem;top:50%;transform:translateY(-50%);color:var(--tl);pointer-events:none;font-size:.9rem}
+        .ig input{width:100%;padding:.75rem .9rem .75rem 2.4rem;border:1.5px solid var(--bo);border-radius:.6rem;font-size:.95rem}
+        .ig input:focus{outline:none;border-color:var(--bl);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+        .bp{width:100%;padding:.8rem;background:linear-gradient(135deg,var(--bd),var(--bm));color:white;border:none;border-radius:.6rem;font-size:1rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.25rem}
+        .bp:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 15px rgba(30,58,138,.3)}
+        .bp:disabled{opacity:.5;cursor:not-allowed}
+        .bs{background:linear-gradient(135deg,#059669,var(--gr))!important}
+        .sec{flex:1;padding:.75rem;background:white;border:1.5px solid var(--bo);border-radius:.6rem;cursor:pointer;font-size:.95rem;font-weight:500}
+        .le{color:var(--re);font-size:.88rem;text-align:center;margin-top:.5rem;min-height:1.2rem}
+        .ba{background:var(--bd);color:white;font-size:.7rem;padding:.1rem .4rem;border-radius:.3rem;font-weight:600}
+        .du{margin-top:1.25rem;padding:.9rem;background:var(--bg);border-radius:.6rem;font-size:.82rem;color:var(--tm);border:1px solid var(--bo)}
+        .du p{margin:.2rem 0}.du strong{color:var(--bd)}
+        .hd{background:white;padding:0 1rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.08);position:relative;z-index:1000;height:58px;border-bottom:2px solid var(--bd)}
+        .hd h2{font-size:1.05rem;color:var(--bd);font-weight:700;display:flex;align-items:center;gap:.4rem}
+        .hr{display:flex;align-items:center;gap:.4rem}
+        .di{font-size:.85rem;padding:.3rem .5rem;border-radius:.4rem;display:flex;align-items:center;gap:.3rem}
+        .di.ok{color:var(--gr)}.di.er{color:var(--re)}
+        .un{font-size:.82rem;color:var(--tm);font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .ib{background:none;border:none;font-size:1.3rem;color:var(--tm);cursor:pointer;padding:.4rem;border-radius:.4rem}
+        .ib:hover{background:var(--bg);color:var(--bd)}
+        #mc{height:calc(100% - 58px);width:100%;z-index:1;position:relative}
+        .bp2{position:absolute;bottom:0;left:0;right:0;background:white;border-radius:1.25rem 1.25rem 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.12);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column}
+        .bp2.col{transform:translateY(calc(100% - 4.5rem))}
+        .ph{padding:.6rem 1rem .4rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;flex-shrink:0}
+        .hb{width:44px;height:4px;background:#cbd5e1;border-radius:10px;margin-bottom:.2rem}
+        .hl{font-size:.75rem;color:var(--tl);font-weight:500;letter-spacing:.05em}
+        /* Indicador de altura de zoom */
+        .zoom-indicator{font-size:.7rem;color:var(--bd);background:var(--bg);padding:.15rem .5rem;border-radius:1rem;margin-left:.5rem}
+        .pc{display:flex;flex-direction:column;overflow:hidden;flex:1}
+        .pt{display:flex;padding:0 .75rem;border-bottom:1px solid var(--bo);align-items:center;flex-shrink:0;gap:.25rem}
+        .tb{flex:1;padding:.65rem .25rem;background:none;border:none;border-bottom:2.5px solid transparent;font-weight:600;color:var(--tm);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.35rem;font-size:.85rem}
+        .tb.active{color:var(--bd);border-bottom-color:var(--bd)}
+        .bge{background:var(--bd);color:white;font-size:.65rem;padding:.1rem .4rem;border-radius:1rem;font-weight:700}
+        .eb{background:none;border:none;color:#16a34a;font-size:1.2rem;cursor:pointer;padding:.4rem .5rem;border-radius:.4rem;flex-shrink:0}
+        .eb:hover{background:#dcfce7}
+        .pl{overflow-y:auto;padding:.75rem;flex:1}
+        .ll2{text-align:center;color:var(--tl);padding:2rem 1rem;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:.5rem}
+        .pi{background:white;border-radius:.75rem;padding:.85rem 1rem;margin-bottom:.6rem;border:1px solid var(--bo);border-left:4px solid var(--bd);cursor:pointer;transition:transform .1s,box-shadow .15s}
+        .pi:hover{transform:translateX(3px);box-shadow:0 3px 12px rgba(0,0,0,.1)}
+        .ph2{display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem}
+        .pn{font-weight:700;color:var(--bd);font-size:.9rem}
+        .pe{font-size:.7rem;padding:.2rem .55rem;border-radius:1rem;font-weight:600}
+        .ep{background:#fef9c3;color:#854d0e}.ee{background:#dbeafe;color:#1d4ed8}.ec{background:#dcfce7;color:#166534}
+        .pi2{font-size:.78rem;color:var(--tm);margin-bottom:.2rem}
+        .pd{font-size:.87rem;color:var(--td);line-height:1.3}
+        .pt2{display:inline-block;font-size:.68rem;padding:.15rem .4rem;border-radius:.3rem;font-weight:700;margin-top:.3rem}
+        .pc2{background:#fee2e2;color:var(--re)}.pa{background:#ffedd5;color:var(--or)}.pm{background:#fef9c3;color:#854d0e}.pb{background:#dbeafe;color:var(--bd)}
+        .pav{margin-top:.45rem;height:3px;background:#e2e8f0;border-radius:2px;overflow:hidden}
+        .ab{height:100%;background:linear-gradient(90deg,var(--bd),var(--bl));border-radius:2px;transition:width .4s}
+
+        /* Botón de ubicación actual y nuevo botón */
+        .fab-ubicacion{position:absolute;bottom:6rem;right:1rem;width:3.25rem;height:3.25rem;border-radius:50%;background:#10b981;color:white;border:none;box-shadow:0 4px 18px rgba(16,185,129,.45);font-size:1.4rem;cursor:pointer;z-index:1002;display:flex;align-items:center;justify-content:center;transition:transform .2s}
+        .fab-ubicacion:hover{transform:scale(1.1)}
+        .fab-pedido-ubicacion{position:absolute;bottom:10.5rem;right:1rem;width:3.25rem;height:3.25rem;border-radius:50%;background:#f59e0b;color:white;border:none;box-shadow:0 4px 18px rgba(245,158,11,.45);font-size:1.4rem;cursor:pointer;z-index:1002;display:flex;align-items:center;justify-content:center;transition:transform .2s}
+        .fab-pedido-ubicacion:hover{transform:scale(1.1)}
+        .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
+        .mo.active{display:flex}
+        .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
+        .mc.lg{max-width:680px}
+        @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+        .mh{padding:1rem 1.25rem;border-bottom:1px solid var(--bo);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:white;z-index:10;border-radius:1rem 1rem 0 0}
+        .mh h3{color:var(--bd);font-size:1rem;display:flex;align-items:center;gap:.4rem}
+        .cm{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--tl);padding:.3rem;border-radius:.4rem}
+        .mb{padding:1.25rem}
+        .fg{margin-bottom:1rem;padding:0 1.25rem}
+        .fg:first-child{padding-top:1.1rem}
+        .fr{display:flex;gap:.75rem;padding:0 1.25rem;margin-bottom:1rem}
+        .fr .hf{flex:1;padding:0;margin-bottom:0}
+        label{display:block;margin-bottom:.35rem;font-weight:600;font-size:.83rem;color:var(--tm);display:flex;align-items:center;gap:.3rem}
+        input,select,textarea{width:100%;padding:.65rem .8rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.93rem;background:white;color:var(--td)}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:var(--bl);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+        textarea{resize:vertical;min-height:80px}
+        .cc{font-size:.75rem;color:var(--tl);display:block;text-align:right;margin-top:.2rem}
+        .ud{padding:.65rem .8rem;border:1.5px dashed var(--bo);border-radius:.5rem;font-size:.87rem;color:var(--tm);background:var(--bg);display:flex;align-items:center;gap:.4rem;cursor:pointer}
+        .ud.sel{border-color:var(--gr);color:#166534;background:#f0fdf4}
+        .fa2{padding:1rem 1.25rem;display:flex;gap:.75rem;border-top:1px solid var(--bo);margin-top:.25rem}
+        .dc{padding:1rem 1.25rem 1.25rem}
+        .ds{margin-bottom:1rem;background:var(--bg);border-radius:.75rem;padding:.9rem 1rem;border:1px solid var(--bo)}
+        .ds h4{color:var(--bd);margin-bottom:.65rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:.4rem}
+        .dr{display:flex;margin-bottom:.4rem;font-size:.88rem;align-items:flex-start;gap:.5rem}
+        .dl{min-width:115px;color:var(--tm);flex-shrink:0;font-size:.82rem}
+        .dv{flex:1;color:var(--td);font-weight:500;word-break:break-word;display:flex;align-items:center;gap:.25rem;flex-wrap:wrap}
+        .dv-copy{cursor:pointer;padding:.2rem .5rem;background:var(--bg);border-radius:.5rem;font-size:.75rem;color:var(--bd);display:inline-flex;align-items:center;gap:.25rem}
+        .dv-copy:hover{background:var(--bo)}
+        .dv-copy.copied{background:var(--gr);color:white}
+        .trb{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:.5rem;padding:.75rem;font-size:.88rem;color:#166534;line-height:1.5;margin-top:.25rem}
+        .da{display:flex;gap:.5rem;margin-top:.75rem;flex-wrap:wrap}
+        .ba2{padding:.45rem 1rem;background:white;border:1.5px solid var(--bo);border-radius:2rem;cursor:pointer;font-size:.87rem;display:inline-flex;align-items:center;gap:.35rem;font-weight:500}
+        .ba2:hover{background:var(--bg)}.ba2.p2{background:var(--bd);color:white;border-color:var(--bd)}.ba2.s2{background:var(--gr);color:white;border-color:var(--gr)}
+        .ba2.imprimir{background:var(--or);color:white;border-color:var(--or)}
+        .ci{background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:.6rem;padding:.8rem 1rem;font-size:.88rem;color:var(--bd);line-height:1.5}
+        /* Estilos para galería de fotos */
+        .fotos-container{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem;max-height:200px;overflow-y:auto;padding:.25rem}
+        .foto-miniatura{width:70px;height:70px;object-fit:cover;border-radius:.5rem;border:2px solid var(--bo);cursor:pointer;transition:transform .2s}
+        .foto-miniatura:hover{transform:scale(1.1)}
+        .btn-foto{background:var(--bd);color:white;border:none;border-radius:2rem;padding:.5rem 1rem;font-size:.85rem;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;margin-right:.5rem;margin-bottom:.5rem}
+        .btn-foto i{font-size:1rem}
+        .modal-foto{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:3000;display:none;flex-direction:column;align-items:center;justify-content:center}
+        .modal-foto.active{display:flex}
+        /* Barra superior con controles */
+        .modal-foto .foto-toolbar{position:absolute;top:0;left:0;right:0;height:3.5rem;display:flex;align-items:center;justify-content:space-between;padding:0 1rem;background:rgba(0,0,0,.4);z-index:3002}
+        .modal-foto .foto-toolbar button{background:rgba(255,255,255,.15);border:none;color:white;border-radius:.5rem;padding:.4rem .8rem;cursor:pointer;font-size:.9rem;display:flex;align-items:center;gap:.4rem}
+        .modal-foto .foto-toolbar button:hover{background:rgba(255,255,255,.3)}
+        .modal-foto .foto-zoom-info{color:rgba(255,255,255,.7);font-size:.8rem}
+        /* Contenedor con overflow para arrastre cuando ampliado */
+        .modal-foto .img-container{
+            margin-top:3.5rem;
+            width:100%;height:calc(100vh - 3.5rem);
+            overflow:hidden;
+            cursor:grab;
+            display:flex;align-items:center;justify-content:center;
+            position:relative;
+        }
+        .modal-foto .img-container:active{cursor:grabbing}
+        .modal-foto img{
+            max-width:95vw;max-height:calc(95vh - 3.5rem);
+            object-fit:contain;
+            transform-origin:center center;
+            transition:transform 0.15s ease;
+            user-select:none;
+            pointer-events:none;
+        }
+        .cerrar-modal-foto{color:white;font-size:1.5rem;cursor:pointer;background:none;border:none;display:flex;align-items:center;gap:.4rem}
+        /* Estilos para impresión */
+        #print-container{display:none}
+        #print-container.printing{display:block;position:fixed;top:0;left:0;width:100%;height:100%;background:white;z-index:10000;overflow:auto;padding:2rem}
+        .print-content{font-family:system-ui;max-width:800px;margin:0 auto;font-size:12pt}
+        .print-content h1{color:#1e3a8a;border-bottom:2px solid #1e3a8a;padding-bottom:0.5rem;font-size:18pt}
+        .print-content h2{color:#1e3a8a;margin-top:1.5rem;font-size:14pt}
+        .print-content table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:11pt}
+        .print-content td{padding:0.5rem;border:1px solid #e2e8f0}
+        .print-content td:first-child{background:#f1f5f9;font-weight:bold;width:150px}
+        /* Modal para cargar avance */
+        .avance-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:4000;display:none;align-items:center;justify-content:center}
+        .avance-modal.active{display:flex}
+        .avance-content{background:white;border-radius:1rem;padding:2rem;max-width:400px;width:90%}
+        .avance-content h3{color:var(--bd);margin-bottom:1rem}
+        .avance-slider{width:100%;margin:1rem 0}
+        .avance-input{width:100%;padding:.5rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:1rem;text-align:center}
+        .avance-buttons{display:flex;gap:1rem;margin-top:1rem}
+        .avance-buttons button{flex:1;padding:.5rem;border:none;border-radius:.5rem;cursor:pointer}
+        .avance-buttons .guardar{background:var(--bd);color:white}
+        .avance-buttons .cancelar{background:var(--bg);color:var(--td)}
+        #toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3)}
+        #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+        #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
+        @media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-ubicacion{bottom:1.5rem;right:390px}.fab-pedido-ubicacion{bottom:6rem;right:390px}.hl{display:none}}
+        @keyframes pulse-gps{
+          0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}
+          70%{box-shadow:0 0 0 10px rgba(16,185,129,0)}
+          100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}
+        }
+        /* ── MODO OFFLINE ── */
+        #offline-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:9000;background:#dc2626;color:white;padding:.45rem 1rem;font-size:.82rem;font-weight:600;text-align:center;align-items:center;justify-content:center;gap:.5rem}
+        #offline-banner.visible{display:flex}
+        #offline-badge{display:none;position:absolute;top:-6px;right:-6px;background:#f97316;color:white;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;align-items:center;justify-content:center;border:2px solid white}
+        #offline-badge.visible{display:flex}
+        .offline-tag{display:inline-block;background:#f97316;color:white;font-size:.65rem;padding:.1rem .4rem;border-radius:.3rem;font-weight:700;margin-left:.3rem;vertical-align:middle}
+        .sync-btn{background:white;color:#dc2626;border:none;border-radius:1rem;padding:.2rem .7rem;font-size:.78rem;font-weight:700;cursor:pointer;margin-left:.5rem}
+        .sync-btn:hover{background:#fee2e2}
+    </style>
+</head>
+<body>
+<div id="app">
+
+    <!-- BANNER OFFLINE -->
+    <div id="offline-banner">
+        <i class="fas fa-wifi-slash"></i> Modo sin conexión — los pedidos se guardan localmente
+        <button class="sync-btn" onclick="sincronizarOffline()"><i class="fas fa-sync"></i> Sincronizar</button>
+    </div>
+
+    <!-- LOGIN SCREEN -->
+    <div id="ls" class="screen active">
+        <div class="lc">
+            <div class="ll"><i class="fas fa-bolt"></i></div>
+            <h1>Pedidos de Mantenimiento</h1>
+            <p class="sub">Distrito María Grande</p>
+            <p class="sub">Autor: Leandro Vera</p>
+            <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Conectando...</div>
+            <form id="lf">
+                <div class="ig"><i class="fas fa-envelope"></i><input type="text" id="em" placeholder="Usuario" value="admin" required autocomplete="username"></div>
+                <div class="ig"><i class="fas fa-lock"></i><input type="password" id="pw" placeholder="Contraseña" value="admin" required autocomplete="current-password"></div>
+                <button type="submit" id="lb" class="bp" disabled><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+            <div id="le" class="le"></div>
+        </div>
+    </div>
+
+    <!-- MAIN SCREEN -->
+    <div id="ms" class="screen">
+        <div class="hd">
+            <button id="mt" class="ib"><i class="fas fa-list"></i></button>
+            <h2><i class="fas fa-map-marked-alt"></i> Pedidos MG</h2>
+            <div class="hr">
+                <span id="di" class="di ok"><i class="fas fa-database"></i></span>
+                <span id="un" class="un"></span>
+                <button id="ub" class="ib"><i class="fas fa-user-circle"></i></button>
+            </div>
+        </div>
+        <div id="mc"></div>
+
+        <!-- Botones en el mapa -->
+        <button id="btn-ubicacion" class="fab-ubicacion" title="Zoom a mi ubicación">
+            <i class="fas fa-location-dot"></i>
+        </button>
+
+        <button id="btn-pedido-ubicacion" class="fab-pedido-ubicacion" title="Nuevo pedido desde mi ubicación actual">
+            <i class="fas fa-crosshairs"></i>
+        </button>
+
+        <div id="bp2" class="bp2 col">
+            <div class="ph" id="ph"><div class="hb"></div><span class="hl">Pedidos</span></div>
+            <div class="pc">
+                <div class="pt">
+                    <button class="tb active" data-tab="p"><i class="fas fa-clock"></i> Pendientes <span id="pc" class="bge">0</span></button>
+                    <button class="tb" data-tab="c"><i class="fas fa-check-circle"></i> Cerrados <span id="cc" class="bge">0</span></button>
+                    <button id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>
+                    <span id="zoom-altura" class="zoom-indicator">1000 m</span>
+                </div>
+                <div id="pl" class="pl"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div></div>
+            </div>
+        </div>
+        <span id="offline-badge" style="position:absolute;bottom:10rem;right:.5rem;z-index:1003;display:none;background:#f97316;color:white;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;align-items:center;justify-content:center;border:2px solid white;pointer-events:none"></span>
+    </div>
+
+    <!-- MODAL NUEVO PEDIDO (con botón para fotos) -->
+    <div id="pm" class="mo">
+        <div class="mc">
+            <div class="mh"><h3><i class="fas fa-plus-circle"></i> Nuevo Pedido</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+            <form id="pf">
+                <div class="fg"><label><i class="fas fa-map-marker-alt"></i> Ubicación en el mapa</label>
+                    <div id="ui" class="ud"><i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar</div>
+                    <input type="hidden" id="li"><input type="hidden" id="gi">
+                </div>
+                <div class="fg"><label for="di2">Distribuidor *</label>
+                    <select id="di2" required>
+                        <option value="">Seleccionar distribuidor...</option>
+                    </select>
+                </div>
+                <div class="fr">
+                    <div class="fg hf"><label for="sd">SETD</label><input type="text" id="sd" placeholder="Ej: 1234"></div>
+                    <div class="fg hf"><label for="cl">Cliente</label><input type="text" id="cl" placeholder="Nombre, NIS o medidor"></div>
+                </div>
+                <div class="fg"><label for="tt">Tipo de trabajo *</label>
+                    <select id="tt" required></select>
+                </div>
+                <div class="fg"><label for="de">Descripción *</label>
+                    <textarea id="de" rows="3" maxlength="500" placeholder="Describí el problema..." required></textarea>
+                    <span class="cc"><span id="dc">0</span>/500</span>
+                </div>
+                <div class="fg"><label for="pr">Prioridad *</label>
+                    <select id="pr" required>
+                        <option value="Baja">🟢 Baja</option>
+                        <option value="Media" selected>🟡 Media</option>
+                        <option value="Alta">🟠 Alta</option>
+                        <option value="Crítica">🔴 Crítica</option>
+                    </select>
+                </div>
+
+                <!-- SECCIÓN DE FOTOS -->
+                <div class="fg">
+                    <label><i class="fas fa-camera"></i> Fotos del trabajo</label>
+                    <div style="display:flex; gap:.5rem; margin-bottom:.5rem; flex-wrap:wrap;">
+                        <button type="button" id="btn-tomar-foto" class="btn-foto"><i class="fas fa-camera"></i> Tomar foto</button>
+                        <label for="input-foto-galeria" class="btn-foto" style="cursor:pointer;display:inline-flex;align-items:center;gap:.5rem"><i class="fas fa-upload"></i> Cargar desde dispositivo</label>
+                    </div>
+                    <!-- Dos inputs separados: uno para cámara, uno para galería/PC -->
+                    <input type="file" id="input-foto-camara"  accept="image/*" style="position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;">
+                    <input type="file" id="input-foto-galeria" accept="image/*" style="display:none">
+                    <div id="vista-previa-fotos" class="fotos-container"></div>
+                </div>
+
+                <div class="fa2">
+                    <button type="button" class="sec cm2">Cancelar</button>
+                    <button type="submit" class="bp"><i class="fas fa-save"></i> Guardar Pedido</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL DETALLE (con visualización de fotos) -->
+    <div id="dm" class="mo">
+        <div class="mc lg">
+            <div class="mh"><h3><i class="fas fa-clipboard-list"></i> Detalle del Pedido</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+            <div id="dmc" class="dc"></div>
+        </div>
+    </div>
+
+    <!-- MODAL CIERRE -->
+    <div id="cm2" class="mo">
+        <div class="mc">
+            <div class="mh"><h3><i class="fas fa-check-circle"></i> Cerrar Pedido</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+            <div class="mb">
+                <div id="ci" class="ci"></div>
+                <div class="fg" style="padding:0;margin-top:1rem">
+                    <label for="tr"><i class="fas fa-tools"></i> Trabajo realizado *</label>
+                    <textarea id="tr" rows="4" placeholder="Describí el trabajo realizado..." maxlength="1000" required></textarea>
+                    <span class="cc"><span id="tc">0</span>/1000</span>
+                </div>
+                <div class="fg" style="padding:0;margin-top:1rem">
+                    <label for="tc2"><i class="fas fa-user-hard-hat"></i> Técnico responsable</label>
+                    <input type="text" id="tc2" placeholder="Nombre del técnico">
+                </div>
+                <div class="fg" style="padding:0;margin-top:1rem">
+                    <label><i class="fas fa-camera"></i> Foto del cierre (opcional)</label>
+                    <div style="display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap;">
+                        <button type="button" id="btn-foto-cierre-camara" class="btn-foto"><i class="fas fa-camera"></i> Tomar foto</button>
+                        <label for="input-foto-cierre-galeria" class="btn-foto" style="cursor:pointer;display:inline-flex;align-items:center;gap:.5rem"><i class="fas fa-upload"></i> Cargar desde dispositivo</label>
+                    </div>
+                    <input type="file" id="input-foto-cierre-camara"  accept="image/*" style="position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;">
+                    <input type="file" id="input-foto-cierre-galeria" accept="image/*" style="display:none">
+                    <div id="vista-previa-foto-cierre" class="fotos-container"></div>
+                </div>
+                <div class="fa2" style="padding:1.25rem 0 0">
+                    <button type="button" class="sec cm2">Cancelar</button>
+                    <button type="button" id="cc2" class="bp bs"><i class="fas fa-check"></i> Confirmar cierre</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL AVANCE -->
+    <div id="avance-modal" class="avance-modal">
+        <div class="avance-content">
+            <h3>Cargar Avance</h3>
+            <p>Ingresá el porcentaje de avance del trabajo (0-100%)</p>
+            <input type="range" id="avance-slider" class="avance-slider" min="0" max="100" value="50">
+            <input type="number" id="avance-input" class="avance-input" min="0" max="100" value="50">
+            <div class="avance-buttons">
+                <button class="cancelar" id="cancelar-avance">Cancelar</button>
+                <button class="guardar" id="guardar-avance">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL FOTO AMPLIADA con zoom + arrastre -->
+    <div id="modal-foto-ampliada" class="modal-foto">
+        <div class="foto-toolbar">
+            <button id="cerrar-modal-foto" class="cerrar-modal-foto"><i class="fas fa-times"></i> Cerrar</button>
+            <span id="foto-zoom-nivel" class="foto-zoom-info">100%</span>
+            <div style="display:flex;gap:.5rem">
+                <button id="foto-zoom-out"><i class="fas fa-search-minus"></i></button>
+                <button id="foto-zoom-in"><i class="fas fa-search-plus"></i></button>
+                <button id="foto-zoom-reset"><i class="fas fa-expand"></i></button>
+                <button id="foto-rotate-90" title="Rotar 90°" type="button"><span style="font-size:1.1rem;line-height:1">↻</span></button>
+                <button id="foto-guardar-bd" title="Guardar rotación en pedido" type="button" style="display:none;background:rgba(16,185,129,.85);color:white;border:none;border-radius:.4rem;padding:.35rem .7rem;cursor:pointer;font-size:.85rem;font-weight:600;align-items:center;gap:.3rem"><i class="fas fa-save"></i> Guardar</button>
+                <button id="foto-guardar" title="Descargar foto" type="button" style="display:none"><i class="fas fa-download"></i></button>
+            </div>
+        </div>
+        <div class="img-container" id="img-container">
+            <img id="foto-ampliada" src="" alt="Foto ampliada" draggable="false">
+        </div>
+    </div>
+
+    <!-- CONTENEDOR PARA IMPRESIÓN -->
+    <div id="print-container"></div>
+
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    // Detectar si el navegador soporta módulos ES + dynamic import
+    // Edge antiguo, WebView2 de Outlook, y Samsung Internet < 16 pueden fallar
+    window._supportsModules = false;
+    try {
+        // Test básico de soporte
+        if (typeof Promise !== 'undefined' && typeof fetch !== 'undefined') {
+            window._supportsModules = true;
+        }
+    } catch(_) {}
+</script>
+<script type="module">
+    // =============================================================
+    //  PEDIDOS MG — VERSIÓN CON KEEP-ALIVE, REINTENTOS Y ZOOM CORREGIDO
+    // =============================================================
+
+    // Definir proyección para coordenadas Inchauspe (Campo Inchauspe 1969, faja 5)
+    proj4.defs('INCHAUSPE', '+proj=tmerc +lat_0=-90 +lon_0=-60 +k=1 +x_0=5500000 +y_0=0 +ellps=intl +towgs84=-148,136,90,0,0,0,0 +units=m +no_defs');
+
+    let NEON_OK = false;
+    let _sql = null;
+    let mapaInicializado = false;
+    let fotosTemporales = [];
+    let fotoCierreTemp = null;    // foto temporal para el cierre
+    let ultimaUbicacion = null;
+    let marcadorUbicacion = null;
+    let pedidoActualParaAvance = null;
+    let modoOffline = false;      // true cuando no hay conexión a Neon
+    // keepAliveInterval y keepAliveStartTime se declaran en el bloque keep-alive
+
+    // =============================================================
+    //  MOTOR OFFLINE — localStorage como cola de sincronización
+    //  Claves:
+    //    pmg_offline_queue : array de operaciones pendientes
+    //    pmg_offline_pedidos: cache de pedidos descargados
+    //    pmg_offline_user  : usuario autenticado offline
+    //    pmg_permisos      : permisos concedidos por el usuario
+    // =============================================================
+    const OQ_KEY = 'pmg_offline_queue';    // cola de operaciones
+    const OP_KEY = 'pmg_offline_pedidos';  // cache de pedidos
+    const OU_KEY = 'pmg_offline_user';     // usuarios permitidos
+
+    function offlineQueue() {
+        try { return JSON.parse(localStorage.getItem(OQ_KEY) || '[]'); }
+        catch(_) { return []; }
+    }
+    function offlineSave(queue) {
+        try { localStorage.setItem(OQ_KEY, JSON.stringify(queue)); } catch(_) {}
+    }
+    function offlinePedidos() {
+        try { return JSON.parse(localStorage.getItem(OP_KEY) || '[]'); }
+        catch(_) { return []; }
+    }
+    function offlinePedidosSave(pedidos) {
+        try { localStorage.setItem(OP_KEY, JSON.stringify(pedidos)); } catch(_) {}
+    }
+
+    // Encolar operación offline
+    function enqueueOffline(op) {
+        const q = offlineQueue();
+        q.push({ ...op, _offlineId: 'off_' + Date.now() + '_' + Math.random().toString(36).slice(2) });
+        offlineSave(q);
+        actualizarBadgeOffline();
+    }
+
+    // Actualizar badge con cantidad de pedidos offline pendientes
+    function actualizarBadgeOffline() {
+        const q = offlineQueue();
+        const badge = document.getElementById('offline-badge');
+        if (!badge) return;
+        if (q.length > 0) {
+            badge.textContent = q.length;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    // Mostrar/ocultar banner offline
+    function setModoOffline(offline) {
+        modoOffline = offline;
+        const banner = document.getElementById('offline-banner');
+        if (banner) {
+            if (offline) banner.classList.add('visible');
+            else banner.classList.remove('visible');
+        }
+        const di = document.getElementById('di');
+        if (di) {
+            di.className = offline ? 'di er' : 'di ok';
+            di.title = offline ? 'Sin conexión — modo offline' : 'Conectado a Neon';
+        }
+    }
+
+    // Sincronizar cola offline contra Neon cuando haya conexión
+    async function sincronizarOffline() {
+        const q = offlineQueue();
+        if (q.length === 0) { toast('No hay pedidos offline pendientes', 'info'); return; }
+        if (!NEON_OK || !_sql) {
+            // Intentar reconectar primero
+            toast('Intentando conectar...', 'info');
+            const ok = await initNeon();
+            if (!ok) { toast('Sin conexión. Reintentá cuando tengas señal.', 'error'); return; }
+            NEON_OK = true;
+            setModoOffline(false);
+        }
+
+        toast('Sincronizando ' + q.length + ' pedido(s)...', 'info');
+        let ok = 0, fail = 0;
+        const remaining = [];
+
+        for (const op of q) {
+            try {
+                if (op.tipo === 'INSERT') {
+                    await sqlSimple(op.query);
+                } else if (op.tipo === 'UPDATE') {
+                    await sqlSimple(op.query);
+                }
+                ok++;
+            } catch(e) {
+                console.error('Sync fallo op:', op._offlineId, e.message);
+                remaining.push(op);
+                fail++;
+            }
+        }
+
+        offlineSave(remaining);
+        actualizarBadgeOffline();
+
+        if (ok > 0) {
+            toast(`✓ ${ok} pedido(s) sincronizado(s)${fail ? ' · ' + fail + ' pendientes' : ''}`, 'success');
+            await cargarPedidos(); // recargar lista desde Neon
+        } else {
+            toast('No se pudo sincronizar. Reintentá más tarde.', 'error');
+        }
+    }
+
+    // Detectar online/offline del navegador
+    window.addEventListener('online', async () => {
+        console.log('Navegador: online (verificando conectividad real...)');
+        // Confirmar con hayInternet() porque 'online' puede ser falso positivo en Android
+        const hayRed = await hayInternet();
+        if (!hayRed) { console.log('Evento online ignorado — sin red real'); return; }
+        // Intentar reconectar a Neon en background
+        try {
+            const ok = await initNeon();
+            if (ok) {
+                NEON_OK = true;
+                setModoOffline(false);
+                if (app.u) {
+                    toast('Conexión restaurada ✓', 'success');
+                    const q = offlineQueue();
+                    if (q.length > 0) setTimeout(sincronizarOffline, 1500);
+                    else cargarPedidos();
+                } else {
+                    // Sin sesión activa: actualizar el indicador del login
+                    const dbs2 = document.getElementById('dbs');
+                    if (dbs2) {
+                        dbs2.className = 'dbs ok';
+                        dbs2.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
+                    }
+                }
+            }
+        } catch(_) {}
+    });
+    window.addEventListener('offline', () => {
+        console.log('Navegador: offline');
+        _netCache = { ok: false, ts: Date.now() }; // invalidar cache de red
+        NEON_OK = false;
+        _sql = null;
+        setModoOffline(true);
+    });
+
+    // Usuarios permitidos offline (se guardan en localStorage al hacer login exitoso)
+    function guardarUsuarioOffline(u, pw) {
+        try {
+            const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
+            const idx = lista.findIndex(x => x.email === u.email);
+            const entry = { ...u, _pw: pw, _ts: Date.now() };
+            if (idx >= 0) lista[idx] = entry; else lista.push(entry);
+            localStorage.setItem(OU_KEY, JSON.stringify(lista));
+        } catch(_) {}
+    }
+    function verificarUsuarioOffline(em, pw) {
+        try {
+            const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
+            return lista.find(u => u.email === em && u._pw === pw) || null;
+        } catch(_) { return null; }
+    }
+
+    // Solicitar permisos al navegador en el momento correcto
+    async function solicitarPermisos() {
+        const resultados = {};
+        // 1. Geolocalización
+        try {
+            await new Promise((res, rej) =>
+                navigator.geolocation.getCurrentPosition(
+                    p => { ultimaUbicacion = { lat: p.coords.latitude, lon: p.coords.longitude };
+                           try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                           res(); },
+                    e => rej(e),
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+                )
+            );
+            resultados.gps = true;
+        } catch(_) { resultados.gps = false; }
+        // 2. Cámara — solo si el browser lo soporta
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                stream.getTracks().forEach(t => t.stop()); // liberar cámara inmediatamente
+                resultados.camara = true;
+            } catch(_) { resultados.camara = false; }
+        }
+        return resultados;
+    }
+
+    // Exponer para el botón del banner
+    window.sincronizarOffline = sincronizarOffline;
+
+    // Intentar recuperar última ubicación guardada
+    try {
+        const ubicacionGuardada = localStorage.getItem('ultima_ubicacion');
+        if (ubicacionGuardada) {
+            ultimaUbicacion = JSON.parse(ubicacionGuardada);
+        }
+    } catch(_) {}
+
+    function esc(v) {
+        if (v === null || v === undefined) return 'NULL';
+        if (typeof v === 'number') return isFinite(v) ? String(v) : 'NULL';
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+        return "'" + String(v).replace(/'/g, "''") + "'";
+    }
+
+    // =============================================================
+    //  FUNCIÓN DE REINTENTOS CON NOTIFICACIONES
+    // =============================================================
+    async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
+        // Si estamos en modo offline, no desperdiciar tiempo en reintentos
+        if (modoOffline || !NEON_OK) {
+            throw new Error('Sin conexión — modo offline activo');
+        }
+
+        let ultimoError;
+        let reintentosMostrados = false;
+
+        for (let intento = 1; intento <= maxIntentos; intento++) {
+            try {
+                if (!_sql) throw new Error('Neon no inicializado');
+
+                // Si es el segundo intento, mostrar notificación
+                if (intento === 2 && !reintentosMostrados) {
+                    toast('Reactivando base de datos...', 'info');
+                    reintentosMostrados = true;
+                }
+
+                let q = query;
+                for (let i = 0; i < params.length; i++) {
+                    q = q.replace(new RegExp('\\{' + i + '\\}', 'g'), esc(params[i]));
+                }
+
+                return await _sql(q);
+
+            } catch (error) {
+                ultimoError = error;
+                console.warn(`Intento ${intento} de ${maxIntentos} falló:`, error.message);
+
+                if (intento < maxIntentos) {
+                    // Esperar exponencialmente: 1s, 2s
+                    const espera = Math.pow(2, intento - 1) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, espera));
+
+                    // Intentar una consulta simple para reactivar
+                    try {
+                        if (_sql) await _sql('SELECT 1');
+                    } catch (_) {}
+                }
+            }
+        }
+
+        // Si llegamos aquí, todos los intentos fallaron
+        toast('Error de conexión persistente. Intente nuevamente.', 'error');
+        throw ultimoError;
+    }
+
+    // Función auxiliar para llamadas simples sin reintentos (para keep-alive)
+    async function sqlSimple(query, params = []) {
+        if (!_sql) throw new Error('Neon no inicializado');
+        let q = query;
+        for (let i = 0; i < params.length; i++)
+            q = q.replace(new RegExp('\\{' + i + '\\}', 'g'), esc(params[i]));
+        return _sql(q);
+    }
+
+    // =============================================================
+    //  KEEP-ALIVE ROBUSTO
+    //  - Heartbeat cada 4 min (Neon duerme a los 5 min)
+    //  - Detecta tab en segundo plano y latido al volver
+    //  - Sesión máxima 1 hora, luego cierra automáticamente
+    //  - Reconexión automática si el SDK falló
+    // =============================================================
+    let keepAliveInterval  = null;
+    let keepAliveStartTime = null;
+    const KEEPALIVE_INTERVAL_MS = 4 * 60 * 1000;  // 4 minutos
+    const SESSION_MAX_MS        = 60 * 60 * 1000;  // 1 hora
+
+    async function heartbeat() {
+        if (!app.u) return; // Solo con sesión activa
+
+        // Verificar límite de 1 hora
+        if (keepAliveStartTime && Date.now() - keepAliveStartTime >= SESSION_MAX_MS) {
+            console.log('Keep-alive: sesión de 1 hora cumplida, cerrando sesión');
+            detenerKeepAlive();
+            toast('Sesión expirada (1 hora). Por seguridad, ingresá de nuevo.', 'info');
+            setTimeout(() => {
+                localStorage.removeItem('pmg');
+                app.u = null;
+                mapaInicializado = false;
+                if (app.map) { app.map.remove(); app.map = null; }
+                document.getElementById('ls').classList.add('active');
+                document.getElementById('ms').classList.remove('active');
+            }, 3500);
+            return;
+        }
+
+        try {
+            await sqlSimple('SELECT 1');
+            console.log('Keep-alive OK', new Date().toLocaleTimeString('es-AR', {hour12:false}));
+            if (modoOffline) {
+                // Se recuperó la conexión
+                NEON_OK = true;
+                setModoOffline(false);
+                toast('Conexión restaurada ✓', 'success');
+                const q = offlineQueue();
+                if (q.length > 0) {
+                    setTimeout(sincronizarOffline, 1500);
+                } else {
+                    cargarPedidos();
+                }
+            }
+        } catch (err) {
+            console.warn('Keep-alive: fallo de red:', err.message);
+            // Marcar offline inmediatamente — no reintentar aquí
+            // (el siguiente heartbeat en 4 min lo intentará de nuevo)
+            NEON_OK = false;
+            setModoOffline(true);
+            // Si hay sesión activa, intentar reconectar en background
+            // pero SIN bloquear nada
+            if (app.u) {
+                setTimeout(async () => {
+                    if (await hayInternet()) {
+                        try {
+                            _sql = null;
+                            const reconectado = await initNeon();
+                            if (reconectado) {
+                                NEON_OK = true;
+                                setModoOffline(false);
+                                toast('Conexión restaurada ✓', 'success');
+                                if (offlineQueue().length > 0) sincronizarOffline();
+                                else cargarPedidos();
+                            }
+                        } catch(_) {}
+                    }
+                }, 3000);
+            }
+        }
+    }
+
+    function iniciarKeepAlive() {
+        detenerKeepAlive(); // limpiar anterior
+        keepAliveStartTime = Date.now();
+        keepAliveInterval  = setInterval(heartbeat, KEEPALIVE_INTERVAL_MS);
+        console.log('Keep-alive iniciado, sesión máxima 1h');
+    }
+
+    function detenerKeepAlive() {
+        if (keepAliveInterval) {
+            clearInterval(keepAliveInterval);
+            keepAliveInterval = null;
+        }
+        keepAliveStartTime = null;
+    }
+
+    // Cuando el tab vuelve al primer plano, hacer heartbeat inmediato
+    // (el tab pudo haber estado suspendido y el SDK puede haber expirado)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && app.u) {
+            console.log('Tab visible: heartbeat preventivo');
+            heartbeat();
+        }
+    });
+
+    // =============================================================
+    //  UTILIDADES DE RED
+    // =============================================================
+
+    // Cancela una promesa si tarda más de ms milisegundos
+    function conTimeout(promesa, ms, msg) {
+        return Promise.race([
+            promesa,
+            new Promise((_, rej) => setTimeout(() => rej(new Error(msg || 'timeout')), ms))
+        ]);
+    }
+
+    // ------------------------------------------------------------------
+    //  hayInternet() — prueba REAL de conectividad
+    //
+    //  navigator.onLine es POCO CONFIABLE en:
+    //    - Android MIUI/HyperOS (Xiaomi, Poco, Redmi): siempre true
+    //    - Android con VPN activa
+    //    - iOS con red cautiva (portales de hotel/aeropuerto)
+    //    - Windows/Mac con adaptador de red activo pero sin gateway
+    //
+    //  Esta función hace un fetch real y devuelve true/false en <4s.
+    // ------------------------------------------------------------------
+    let _netCache = null;  // { ok: bool, ts: number }
+    const NET_TTL  = 6000; // reusar resultado por 6 segundos
+
+    async function hayInternet() {
+        // Reusar resultado reciente
+        if (_netCache && Date.now() - _netCache.ts < NET_TTL) {
+            return _netCache.ok;
+        }
+
+        // Lista de pruebas en orden — fetch con mode:'no-cors' no lanza
+        // error CORS pero SÍ lanza error de red (Failed to fetch) si no hay internet.
+        // Con mode:'no-cors' el status siempre es 0 (opaque) pero el hecho de
+        // que NO lanzó excepción confirma que hay red.
+        const pruebas = [
+            // 1. Cloudflare trace — ultra-rápido, sin cookies, CORS libre, global
+            'https://1.1.1.1/cdn-cgi/trace',
+            // 2. Google connectivity check — retorna 204, funciona en todo el mundo
+            'https://connectivitycheck.gstatic.com/generate_204',
+            // 3. Apple captive portal check — usado en iOS/macOS
+            'https://captive.apple.com/hotspot-detect.html',
+        ];
+
+        for (const url of pruebas) {
+            try {
+                await conTimeout(
+                    fetch(url, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }),
+                    3500,
+                    'sin respuesta'
+                );
+                // Llegamos aquí = hay red real
+                _netCache = { ok: true, ts: Date.now() };
+                console.log('[red] OK via', url.split('/')[2]);
+                return true;
+            } catch(_) {
+                // Probar el siguiente endpoint
+            }
+        }
+
+        _netCache = { ok: false, ts: Date.now() };
+        console.log('[red] SIN INTERNET — todos los endpoints fallaron');
+        return false;
+    }
+
+    // Invalidar cache cuando el navegador cambia de estado de red
+    window.addEventListener('online',  () => { _netCache = null; });
+    window.addEventListener('offline', () => { _netCache = { ok: false, ts: Date.now() }; });
+
+    // ------------------------------------------------------------------
+    //  initNeon — conectar al SDK de Neon
+    // ------------------------------------------------------------------
+    async function initNeon() {
+        // Verificar conectividad REAL antes de intentar cargar SDK remoto.
+        // Evita que en Android/MIUI el import() quede colgado 30+ segundos.
+        const tieneRed = await hayInternet();
+        if (!tieneRed) {
+            console.log('[neon] sin red real — modo offline');
+            NEON_OK = false;
+            return false;
+        }
+
+        const versions = ['0.10.4', '0.9.5', '0.8.0'];
+        for (const ver of versions) {
+            try {
+                const mod = await conTimeout(
+                    import(`https://esm.sh/@neondatabase/serverless@${ver}`),
+                    6000,
+                    `timeout SDK ${ver}`
+                );
+                const { neon, neonConfig } = mod;
+                if (neonConfig) {
+                    try { neonConfig.fetchEndpoint = host => `https://${host}/sql`; } catch(_){}
+                    try { delete neonConfig.fetchConnectionCache; } catch(_){}
+                }
+                const fn = neon('postgresql://neondb_owner:npg_uqKG4gLvcOj7@ep-gentle-silence-adns9whd-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require');
+                _sql = async (q) => {
+                    const rows = await fn([q]);
+                    if (Array.isArray(rows)) return { rows };
+                    if (rows && rows.rows) return rows;
+                    return { rows: [] };
+                };
+                const test = await conTimeout(_sql('SELECT 1 AS ok'), 5000, 'timeout SELECT 1');
+                if (!test || !Array.isArray(test.rows)) throw new Error('respuesta invalida');
+                NEON_OK = true;
+                console.log(`[neon] SDK ${ver} OK`);
+                return true;
+            } catch(e) {
+                console.warn(`[neon] SDK ${ver} fallo:`, e.message);
+                _sql = null;
+                // Si es un error de red (no de versión), no tiene sentido probar más versiones
+                if (e.message.includes('timeout') || e.message.includes('fetch') || e.message.includes('network')) {
+                    console.log('[neon] error de red — abortando intentos restantes');
+                    break;
+                }
+            }
+        }
+        NEON_OK = false;
+        return false;
+    }
+
+    const DIST = [
+        {v:'5D02',l:'5D02 - AVENIDA (SET M. GRANDE)',g:'13200 V'},
+        {v:'5D03',l:'5D03 - AVENIDA',g:'13200 V'},
+        {v:'5D04',l:'5D04 - INTERLAGOS',g:'13200 V'},
+        {v:'5D05',l:'5D05 - IRIGOYEN (MARIA GRANDE)',g:'13200 V'},
+        {v:'5D06',l:'5D06 - RUTA 32',g:'13200 V'},
+        {v:'5D07',l:'5D07 - PARQUE INDUSTRIAL (SET M. GRANDE)',g:'13200 V'},
+        {v:'5D08',l:'5D08 - ALCARAZ RURAL',g:'13200 V'},
+        {v:'5D09',l:'5D09 - ALCARAZ URBANO',g:'13200 V'},
+        {v:'5D11',l:'5D11 - SIR LEONARD',g:'13200 V'},
+        {v:'5D16',l:'5D16 - DURAZNO (BOVRIL)',g:'13200 V'},
+        {v:'5D23',l:'5D23 - LOS GRINGOS',g:'13200 V'},
+        {v:'5D27',l:'5D27 - EL CRUCE (SLUNA)',g:'13200 V'},
+        {v:'5D28',l:'5D28 - URBANO BOVRIL',g:'13200 V'},
+        {v:'5D31',l:'5D31 - SAUCE DE LUNA URBANO',g:'13200 V'},
+        {v:'5D32',l:'5D32 - ACHIRAS',g:'13200 V'},
+        {v:'5D36',l:'5D36 - SAN ROQUE (BOVRIL)',g:'13200 V'},
+        {v:'5D40',l:'5D40 - RUTA 7',g:'13200 V'},
+        {v:'5D41',l:'5D41 - PUERTO ALGARROBO',g:'13200 V'},
+        {v:'5D43',l:'5D43 - INDAVISA (PIEDRAS BLANCAS)',g:'13200 V'},
+        {v:'5D44',l:'5D44 - URBANO PIEDRAS BLANCAS',g:'13200 V'},
+        {v:'5D53',l:'5D53 - COOB',g:'13200 V'},
+        {v:'5D56',l:'5D56 - CENTRO (SANTA ELENA)',g:'13200 V'},
+        {v:'5D57',l:'5D57 - SUR (SANTA ELENA)',g:'13200 V'},
+        {v:'5D58',l:'5D58 - NORTE (SANTA ELENA)',g:'13200 V'},
+        {v:'5D60',l:'5D60 - RURAL SANTA ELENA',g:'13200 V'},
+        {v:'5D78',l:'5D78 - RURAL (SOSA)',g:'13200 V'},
+        {v:'5L03',l:'5L03 - CERRITO',g:'33000 V'},
+        {v:'5L09',l:'5L09 - FRIGORIFICO SANTA ELENA',g:'33000 V'},
+        {v:'5L10',l:'5L10 - BOVRIL',g:'33000 V'},
+        {v:'5L12',l:'5L12 - HASENKAMP',g:'33000 V'},
+        {v:'5L15',l:'5L15 - LINEA MARIA GRANDE',g:'33000 V'},
+        {v:'5L17',l:'5L17 - SANTA ELENA 33',g:'33000 V'},
+        {v:'5L18',l:'5L18 - QUEBRACHO',g:'33000 V'},
+        {v:'5L19',l:'5L19 - LA PAZ RURAL (COOP)',g:'33000 V'},
+        {v:'5L97',l:'5L97 - PILOTO AVILA',g:'33000 V'},
+        {v:'5L98',l:'5L98 - LA PAZ URBANO',g:'33000 V'},
+        {v:'5L99',l:'5L99 - LA PAZ CIUDAD (COOP)',g:'33000 V'},
+        {v:'BT01',l:'BT01 - RED DE BAJA TENSIÓN',g:'220/380 V'}
+    ];
+
+    const TIPOS = [
+        'Riesgo vía pública',
+        'Mantenimiento preventivo',
+        'Material averiado',
+        'Poda de árboles',
+        'Nidos',
+        'Falla de Línea',
+        'Inspección Termográfica',
+        'Avería en Transformador',
+        'Reclamo de Cliente',
+        'Conexión Nueva',
+        'Corte Programado',
+        'Emergencia',
+        'Otros'
+    ];
+
+    const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','setd',
+        'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
+        'usuario_id','trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
+        'fecha_avance','foto_cierre']);
+
+    const app = {
+        u: null,
+        p: [],
+        map: null,
+        mk: [],
+        sel: null,
+        tab: 'p',
+        cid: null,
+        ok: false
+    };
+
+    // ── CONEXIÓN INICIAL ──────────────────────────────────────────
+    // Compatibilidad: NO usar top-level await (falla en Edge/WebView/Outlook).
+    // El botón se habilita INMEDIATAMENTE; Neon conecta en background.
+    const dbs = document.getElementById('dbs');
+    const lb  = document.getElementById('lb');
+
+    // Habilitar login de inmediato — funciona en TODOS los navegadores
+    lb.disabled = false;
+    actualizarBadgeOffline();
+    dbs.className = 'dbs c';
+    dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
+
+    // Conectar a Neon en background (no bloquea nada)
+    (async function conectarNeon() {
+        try {
+            const ok = await initNeon();
+            if (ok) {
+                try {
+                    await sqlSimple(`CREATE TABLE IF NOT EXISTS pedidos(
+                        id SERIAL PRIMARY KEY,
+                        numero_pedido TEXT NOT NULL,
+                        fecha_creacion TIMESTAMPTZ DEFAULT NOW(),
+                        fecha_cierre TIMESTAMPTZ,
+                        distribuidor TEXT NOT NULL,
+                        setd TEXT, cliente TEXT, tipo_trabajo TEXT,
+                        descripcion TEXT NOT NULL,
+                        prioridad TEXT NOT NULL DEFAULT 'Media',
+                        estado TEXT NOT NULL DEFAULT 'Pendiente',
+                        avance INT DEFAULT 0,
+                        lat DOUBLE PRECISION, lng DOUBLE PRECISION,
+                        usuario_id INT, trabajo_realizado TEXT,
+                        tecnico_cierre TEXT, foto_base64 TEXT,
+                        x_inchauspe NUMERIC, y_inchauspe NUMERIC,
+                        fecha_avance TIMESTAMPTZ, foto_cierre TEXT
+                    )`);
+                    await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS foto_cierre TEXT`);
+                    // Tabla para el contador correlativo de pedidos
+                    await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_contador(
+                        anio INT PRIMARY KEY,
+                        ultimo_numero INT NOT NULL DEFAULT 0
+                    )`);
+                } catch(_) {}
+                app.ok = true;
+                NEON_OK = true;
+                dbs.className = 'dbs ok';
+                dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
+                setModoOffline(false);
+                // Si hay sesión activa y cola offline, sincronizar
+                if (app.u && offlineQueue().length > 0) setTimeout(sincronizarOffline, 1500);
+                else if (app.u) cargarPedidos();
+            } else {
+                throw new Error('Sin red');
+            }
+        } catch(e) {
+            console.warn('[Neon]', e.message);
+            app.ok = false;
+            NEON_OK = false;
+            const tieneCache = (() => {
+                try { return JSON.parse(localStorage.getItem('pmg_offline_user') || '[]').length > 0; } catch(_) { return false; }
+            })();
+            dbs.className = 'dbs er';
+            dbs.innerHTML = tieneCache
+                ? '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline'
+                : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
+            setModoOffline(true);
+        }
+    })();
+
+    // =============================================================
+    //  LOGIN
+    // =============================================================
+    document.getElementById('lf').addEventListener('submit', async e => {
+        e.preventDefault();
+
+        const em = document.getElementById('em').value.trim();
+        const pw = document.getElementById('pw').value;
+        const le = document.getElementById('le');
+        const lb = document.getElementById('lb');
+
+        lb.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando...';
+        lb.disabled = true;
+        le.textContent = '';
+
+        // Función interna para entrar a la app
+        function entrarConUsuario(u, offline = false) {
+            app.u = u;
+            localStorage.setItem('pmg', JSON.stringify(app.u));
+            document.getElementById('un').textContent = u.nombre.split(' ')[0];
+            document.getElementById('ls').classList.remove('active');
+            document.getElementById('ms').classList.add('active');
+            iniciarKeepAlive();
+            setTimeout(async () => {
+                // Solicitar permisos de GPS y cámara al entrar
+                solicitarPermisos().then(r => {
+                    if (!r.gps) toast('GPS no disponible — ubicación manual', 'info');
+                });
+                initMap();
+                if (!offline) {
+                    await cargarPedidos();
+                    // Guardar cache para uso offline
+                    offlinePedidosSave(app.p);
+                } else {
+                    // Cargar pedidos desde cache local
+                    app.p = offlinePedidos();
+                    render();
+                    toast('📴 Modo offline — mostrando pedidos en caché', 'info');
+                }
+            }, 200);
+        }
+
+        // Helper: entrar offline con cache
+        function intentarOffline() {
+            const u = verificarUsuarioOffline(em, pw);
+            if (u) {
+                entrarConUsuario({ id: u.id, email: u.email, nombre: u.nombre, rol: u.rol }, true);
+                toast('📴 Modo offline — ' + u.nombre, 'info');
+                return true;
+            }
+            return false;
+        }
+
+        try {
+            // Paso 1: si sabemos que no hay red → directo al cache, sin esperar
+            if (modoOffline || !NEON_OK || !_sql) {
+                if (!intentarOffline()) {
+                    le.textContent = 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.';
+                }
+                return;
+            }
+
+            // Paso 2: hay red → intentar Neon con timeout de 5s (UN solo intento)
+            let resultado = null;
+            try {
+                resultado = await conTimeout(
+                    sqlSimple(
+                        `SELECT id, email, nombre, rol FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`
+                    ),
+                    5000, 'timeout login'
+                );
+            } catch (netErr) {
+                // Red se cayó en el momento del login → offline inmediato
+                console.warn('Login: red caída, usando cache:', netErr.message);
+                setModoOffline(true);
+                if (!intentarOffline()) {
+                    le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
+                }
+                return;
+            }
+
+            const usuario = resultado.rows?.[0];
+            if (usuario) {
+                const u = { id: usuario.id, email: usuario.email, nombre: usuario.nombre || 'Administrador', rol: usuario.rol || 'admin' };
+                guardarUsuarioOffline(u, pw);
+                entrarConUsuario(u, false);
+                toast('Bienvenido ' + u.nombre, 'success');
+            } else {
+                // Credenciales incorrectas — no intentar offline con datos equivocados
+                le.textContent = 'Email o contraseña incorrectos.';
+            }
+        } catch (error) {
+            console.error('Error inesperado en login:', error);
+            if (!intentarOffline()) {
+                le.textContent = 'Error inesperado. Intentá de nuevo.';
+            }
+        } finally {
+            lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
+            lb.disabled = false;
+        }
+    });
+
+    function toast(msg, tipo = 'info') {
+        let el = document.getElementById('toast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'toast';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.className = 'show ' + tipo;
+        clearTimeout(window.toastTimer);
+        window.toastTimer = setTimeout(() => { el.className = tipo; }, 3200);
+    }
+
+    const norm = p => ({
+        id: p.id,
+        np: p.numero_pedido,
+        f: p.fecha_creacion || p.fecha || new Date().toISOString(),
+        fc: p.fecha_cierre || null,
+        fa: p.fecha_avance || null,
+        dis: p.distribuidor || '',
+        sd: p.setd || '',
+        cl: p.cliente || '',
+        tt: p.tipo_trabajo || '',
+        de: p.descripcion || '',
+        pr: p.prioridad || 'Media',
+        es: p.estado || 'Pendiente',
+        av: parseInt(p.avance) || 0,
+        la: parseFloat(p.lat) || -31.505,
+        ln: parseFloat(p.lng) || -60.02,
+        ui: p.usuario_id,
+        tr: p.trabajo_realizado || null,
+        tc: p.tecnico_cierre || null,
+        fotos: p.foto_base64 ? p.foto_base64.split('||') : [],
+        foto_cierre: p.foto_cierre || null,
+        x_inchauspe: p.x_inchauspe,
+        y_inchauspe: p.y_inchauspe
+    });
+
+    async function cargarPedidos() {
+        document.getElementById('pl').innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div>';
+        if (modoOffline) {
+            // Offline: usar cache
+            app.p = offlinePedidos();
+            render();
+            return;
+        }
+        try {
+            const r = await ejecutarSQLConReintentos('SELECT * FROM pedidos ORDER BY fecha_creacion DESC');
+            app.p = (r.rows || []).map(norm);
+            // Guardar en cache local para uso offline posterior
+            offlinePedidosSave(app.p);
+        } catch(e) {
+            console.warn('cargarPedidos: error, usando cache', e.message);
+            setModoOffline(true);
+            app.p = offlinePedidos();
+            toast('Sin conexión — mostrando pedidos en caché', 'info');
+        }
+        render();
+    }
+
+    // Función para convertir coordenadas WGS84 a Inchauspe
+    function convertirAInchauspe(lat, lng) {
+        try {
+            const inchauspe = proj4('WGS84', 'INCHAUSPE', [lng, lat]);
+            return {
+                x: inchauspe[0].toFixed(2).replace('.', ','),
+                y: inchauspe[1].toFixed(2).replace('.', ',')
+            };
+        } catch (e) {
+            console.error('Error al convertir coordenadas:', e);
+            return { x: 'Error', y: 'Error' };
+        }
+    }
+
+    // =============================================================
+    //  MAPA CON GEOLOCALIZACIÓN MEJORADA Y ZOOM CORREGIDO
+    // =============================================================
+
+    function calcularEscalaReal(zoom) {
+        // Escala correcta: considera la latitud actual del mapa (Argentina ~-31°)
+        // La resolución en metros/pixel varía con cos(latitud)
+        const lat = app.map ? app.map.getCenter().lat : -31.5;
+        const latRad = lat * Math.PI / 180;
+        // Resolución real en metros/pixel a esta latitud
+        const resolucion = (40075016.686 * Math.cos(latRad)) / (256 * Math.pow(2, zoom));
+        // Ancho visible: usamos el ancho real del contenedor del mapa
+        const el = document.getElementById('mc');
+        const anchoPantalla = el ? el.clientWidth : 800;
+        const metrosVisibles = resolucion * anchoPantalla;
+        // Redondear a valores legibles
+        if (metrosVisibles < 1) return (metrosVisibles * 100).toFixed(0) + ' cm';
+        if (metrosVisibles < 10) return metrosVisibles.toFixed(1) + ' m';
+        if (metrosVisibles < 1000) return Math.round(metrosVisibles) + ' m';
+        if (metrosVisibles < 10000) return (metrosVisibles / 1000).toFixed(1) + ' km';
+        return Math.round(metrosVisibles / 1000) + ' km';
+    }
+
+    function initMap() {
+        if (mapaInicializado && app.map) {
+            app.map.invalidateSize();
+            return;
+        }
+
+        const el = document.getElementById('mc');
+        if (!el || el.clientWidth === 0) {
+            setTimeout(initMap, 250);
+            return;
+        }
+
+        if (app.map) {
+            app.map.remove();
+            app.map = null;
+        }
+
+        app.map = L.map('mc', {
+            zoomControl: true,
+            attributionControl: true,
+            maxZoom: 19,
+            zoom: 13 // Zoom inicial 13 (aprox 2.4km)
+        }).setView([-31.505, -60.02], 13);
+
+        // Usar tile layer de CartoDB (más permisivo para apps)
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap contributors © CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20,
+    maxNativeZoom: 18,
+    tileSize: 256,
+    detectRetina: false
+}).addTo(app.map);
+
+        // Actualizar indicador de escala al cambiar zoom o mover el mapa
+        const actualizarEscala = () => {
+            if (app.map) document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+        };
+        app.map.on('zoomend', actualizarEscala);
+        app.map.on('moveend', actualizarEscala);
+        // Inicializar inmediatamente
+        setTimeout(actualizarEscala, 200);
+
+        app.map.on('click', e => {
+            // Ignorar si hay popup abierto — significa que el tap fue sobre un marcador
+            // (en Android los taps se propagan al mapa aunque estén sobre el popup)
+            if (app.map._popup && app.map._popup.isOpen && app.map._popup.isOpen()) return;
+
+            // Ignorar si el modal de detalle está visible — el usuario está viendo un pedido
+            const dmModal = document.getElementById('dm');
+            if (dmModal && dmModal.classList.contains('active')) return;
+
+            // Ignorar si ya hay algún modal abierto (evita abrir nuevo pedido sobre otro modal)
+            const hayModalAbierto = document.querySelector('.mo.active');
+            if (hayModalAbierto) return;
+
+            app.sel = e.latlng;
+            document.getElementById('li').value = e.latlng.lat;
+            document.getElementById('gi').value = e.latlng.lng;
+            const ui = document.getElementById('ui');
+            ui.innerHTML = `<i class="fas fa-check-circle" style="color:#059669"></i> ${e.latlng.lat.toFixed(5).replace('.', ',')}, ${e.latlng.lng.toFixed(5).replace('.', ',')}`;
+            ui.className = 'ud sel';
+            document.getElementById('pm').classList.add('active');
+        });
+
+        mapaInicializado = true;
+        renderMk();
+
+        // Mostrar última ubicación conocida mientras se obtiene la actual
+        if (ultimaUbicacion && app.map) {
+            const zInit = mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], zInit || 15);
+            setTimeout(() => {
+                document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+            }, 100);
+            // Actualizar posición en background (silenciosamente)
+            setTimeout(() => solicitarUbicacion(false, true), 500);
+        } else {
+            // Sin ubicación previa → pedir GPS ahora
+            solicitarUbicacion(true, false);
+        }
+    }
+
+    // =============================================================
+    //  GEOLOCALIZACIÓN MEJORADA
+    //  Maneja correctamente:
+    //  - Celulares con GPS real (Android/iOS): alta precisión
+    //  - PCs y laptops (WiFi/IP): precisión baja, múltiples intentos
+    //  - Dispositivos sin GPS: muestra el radio de incertidumbre
+    // =============================================================
+
+    let _watchId         = null;  // ID del watchPosition continuo
+    let _circuloAcc      = null;  // Círculo de precisión en el mapa
+    let _mejorPrecision  = Infinity; // Para elegir la mejor lectura en PC
+
+    // Actualiza el marcador verde Y el círculo de precisión en el mapa
+    function mostrarMarcadorUbicacion(lat, lon, acc) {
+        if (!app.map) return;
+
+        // Remover marcador anterior
+        if (marcadorUbicacion) {
+            try { app.map.removeLayer(marcadorUbicacion); } catch(_) {}
+            marcadorUbicacion = null;
+        }
+        // Remover círculo de precisión anterior
+        if (_circuloAcc) {
+            try { app.map.removeLayer(_circuloAcc); } catch(_) {}
+            _circuloAcc = null;
+        }
+
+        // Determinar zoom según precisión:
+        // < 50m  → zoom 17 (calle)
+        // < 500m → zoom 15 (barrio)
+        // < 5km  → zoom 13 (ciudad)
+        // >= 5km → zoom 11 (región) — típico de PC con geoloc por IP
+        const precisionZoom = !acc ? 15
+            : acc < 50   ? 17
+            : acc < 500  ? 15
+            : acc < 5000 ? 13
+            : 11;
+
+        // Marcador pulsante (punto verde con anillo animado)
+        const svgIcon = L.divIcon({
+            className: '',
+            html: `<div style="
+                width:16px;height:16px;
+                background:#10b981;
+                border:3px solid white;
+                border-radius:50%;
+                box-shadow:0 0 0 3px rgba(16,185,129,.4);
+                animation:pulse-gps 2s infinite;
+                position:relative;
+            "></div>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+            popupAnchor: [0, -10]
+        });
+
+        const accTexto = acc
+            ? (acc < 1000 ? `±${Math.round(acc)} m` : `±${(acc/1000).toFixed(1)} km`)
+            : 'precisión desconocida';
+
+        const tipoGps = !acc ? 'GPS'
+            : acc < 100  ? '🛰️ GPS'
+            : acc < 2000 ? '📶 WiFi/Red celular'
+            : '🌐 Geolocalización por IP';
+
+        marcadorUbicacion = L.marker([lat, lon], { icon: svgIcon, zIndexOffset: 1000 })
+            .addTo(app.map)
+            .bindPopup(`
+                <div style="font-family:system-ui;min-width:160px">
+                    <b style="color:#059669">📍 Tu ubicación</b><br>
+                    <span style="font-size:11px;color:#475569">${tipoGps} — ${accTexto}</span><br>
+                    <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
+                </div>
+            `);
+
+        // Dibujar círculo de precisión si acc > 50m (en PC siempre, en celular casi nunca)
+        if (acc && acc > 50) {
+            _circuloAcc = L.circle([lat, lon], {
+                radius: acc,
+                color: '#10b981',
+                fillColor: '#10b981',
+                fillOpacity: 0.08,
+                weight: 1.5,
+                dashArray: '5,5'
+            }).addTo(app.map);
+        }
+
+        return precisionZoom;
+    }
+
+    // Función principal de geolocalización
+    // Estrategia:
+    //   1. Primera lectura rápida (puede ser imprecisa en PC) → mostrar inmediato
+    //   2. Si acc > 100m → intentar mejorar con hasta 3 lecturas adicionales
+    //   3. watchPosition continuo para actualizar mientras el usuario se mueve
+    function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
+        if (!navigator.geolocation) {
+            if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
+            return;
+        }
+
+        // Mostrar estado de espera
+        const btnVerde = document.getElementById('btn-ubicacion');
+        if (btnVerde && !modoSilencioso) {
+            btnVerde.style.opacity = '0.6';
+            btnVerde.style.animation = 'none';
+        }
+
+        let intentos = 0;
+        const MAX_INTENTOS = 3;
+
+        function procesarPosicion(position, esWatchUpdate = false) {
+            const { latitude, longitude, accuracy } = position.coords;
+            const acc = Math.round(accuracy);
+
+            // Para PCs: solo actualizar si esta lectura es mejor que la anterior
+            if (esWatchUpdate && acc >= _mejorPrecision && acc > 200) return;
+            _mejorPrecision = Math.min(_mejorPrecision, acc);
+
+            ultimaUbicacion = { lat: latitude, lon: longitude, acc };
+            try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+
+            if (app.map) {
+                const zoomSugerido = mostrarMarcadorUbicacion(latitude, longitude, acc);
+                if (centrarMapa) {
+                    app.map.invalidateSize({ animate: false });
+                    // No recentrar si ya estamos cerca (el usuario movió el mapa manualmente)
+                    const actualCenter = app.map.getCenter();
+                    const distLat = Math.abs(actualCenter.lat - latitude);
+                    const distLon = Math.abs(actualCenter.lng - longitude);
+                    const estaLejos = distLat > 0.05 || distLon > 0.05;
+                    if (estaLejos || !esWatchUpdate) {
+                        app.map.setView([latitude, longitude], zoomSugerido, { animate: true });
+                    }
+                    setTimeout(() => {
+                        document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+                    }, 300);
+                }
+            }
+
+            // Restaurar botón
+            if (btnVerde) { btnVerde.style.opacity = ''; btnVerde.style.animation = ''; }
+
+            if (!modoSilencioso && !esWatchUpdate) {
+                const msg = acc < 100
+                    ? `📍 GPS: ±${acc}m`
+                    : acc < 2000
+                    ? `📶 WiFi/Red: ±${acc}m`
+                    : `🌐 IP: ±${(acc/1000).toFixed(0)}km — precisión baja`;
+                toast(msg, acc < 2000 ? 'success' : 'info');
+            }
+        }
+
+        function manejarError(error) {
+            if (btnVerde) { btnVerde.style.opacity = ''; btnVerde.style.animation = ''; }
+            const msgs = {
+                1: 'Permiso de ubicación denegado — activalo en Configuración',
+                2: 'GPS no disponible',
+                3: 'Tiempo de espera agotado'
+            };
+            if (!modoSilencioso) {
+                toast(msgs[error.code] || 'Error de GPS', 'error');
+            }
+            // Usar última ubicación guardada si existe
+            if (ultimaUbicacion && app.map && centrarMapa) {
+                app.map.invalidateSize({ animate: false });
+                mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+                app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], 14, { animate: true });
+                if (!modoSilencioso) toast('📍 Mostrando última ubicación conocida', 'info');
+            }
+        }
+
+        // Primera lectura: maximumAge=0 para forzar lectura fresca (importante en PC)
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                procesarPosicion(pos, false);
+                // Si la precisión es pobre (>100m, típico de PC/WiFi), pedir lecturas adicionales
+                if (pos.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
+                    const intentarMejorar = () => {
+                        if (intentos >= MAX_INTENTOS) return;
+                        intentos++;
+                        navigator.geolocation.getCurrentPosition(
+                            p2 => {
+                                procesarPosicion(p2, false);
+                                // Si aún impreciso, intentar una vez más
+                                if (p2.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
+                                    setTimeout(intentarMejorar, 2000);
+                                }
+                            },
+                            () => {}, // Silencioso en reintentos
+                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                        );
+                    };
+                    setTimeout(intentarMejorar, 1500);
+                }
+            },
+            manejarError,
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        );
+
+        // watchPosition: actualiza el marcador mientras el usuario se mueve.
+        // NUNCA recentra el mapa automáticamente — el usuario controla eso
+        // con el botón verde. Esto evita que el mapa "salte" al usuario
+        // cuando él está navegando o viendo otro lugar.
+        if (!_watchId) {
+            _watchId = navigator.geolocation.watchPosition(
+                pos => {
+                    // Actualizar posición interna y marcador, pero NO centrar mapa
+                    const { latitude, longitude, accuracy } = pos.coords;
+                    const acc = Math.round(accuracy);
+                    ultimaUbicacion = { lat: latitude, lon: longitude, acc };
+                    try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                    // Solo redibujar el marcador, sin mover el mapa
+                    if (app.map) mostrarMarcadorUbicacion(latitude, longitude, acc);
+                },
+                err => console.warn('[GPS watch]', err.message),
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+            );
+        }
+    }
+
+    // Botón verde — ir a mi ubicación actual y dibujar el marcador
+    document.getElementById('btn-ubicacion').addEventListener('click', () => {
+        if (!app.map) return;
+        if (ultimaUbicacion) {
+            // Mostrar inmediatamente con la última posición conocida
+            app.map.invalidateSize({ animate: false });
+            const z = mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], z || 15, { animate: true });
+            setTimeout(() => {
+                document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+            }, 300);
+            // Actualizar en background para refrescar la posición
+            solicitarUbicacion(true, true);
+        } else {
+            // Primera vez: solicitar GPS
+            solicitarUbicacion(true, false);
+        }
+    });
+
+    // Botón amarillo: nuevo pedido desde ubicación actual
+    document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => {
+        fotosTemporales = [];
+        actualizarVistaPreviaFotos();
+        closeAll();
+
+        function aplicarUbicacionAlFormulario(lat, lon, acc) {
+            app.sel = { lat, lng: lon };
+            document.getElementById('li').value = lat;
+            document.getElementById('gi').value = lon;
+            const accStr = acc ? ` (±${acc < 1000 ? acc + 'm' : (acc/1000).toFixed(1) + 'km'})` : '';
+            const ui = document.getElementById('ui');
+            if (ui) {
+                ui.innerHTML = `<i class="fas fa-check-circle" style="color:#059669"></i> ${lat.toFixed(5).replace('.', ',')}, ${lon.toFixed(5).replace('.', ',')}${accStr}`;
+                ui.className = 'ud sel';
+            }
+            if (app.map) mostrarMarcadorUbicacion(lat, lon, acc);
+        }
+
+        if (ultimaUbicacion) {
+            aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+            document.getElementById('pm').classList.add('active');
+            // Refrescar en background
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        const acc = Math.round(pos.coords.accuracy);
+                        ultimaUbicacion = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc };
+                        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                        aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, acc);
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                );
+            }
+        } else {
+            document.getElementById('pm').classList.add('active');
+            toast('Obteniendo ubicación GPS...', 'info');
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        const acc = Math.round(pos.coords.accuracy);
+                        ultimaUbicacion = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc };
+                        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                        aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, acc);
+                        const msg = acc < 2000 ? `📍 ±${acc}m` : `🌐 ±${(acc/1000).toFixed(0)}km (baja precisión)`;
+                        toast(msg, acc < 2000 ? 'success' : 'info');
+                    },
+                    () => toast('No se pudo obtener GPS — tocá el mapa para ubicarte', 'error'),
+                    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+                );
+            } else {
+                toast('GPS no disponible — tocá el mapa para seleccionar la ubicación', 'error');
+            }
+        }
+    });
+
+    function renderMk() {
+        if (!app.map) return;
+        app.mk.forEach(m => m.remove());
+        app.mk = [];
+
+        const fill = {
+            'Crítica': '#ef4444',
+            'Alta': '#f97316',
+            'Media': '#eab308',
+            'Baja': '#3b82f6'
+        };
+
+        app.p.filter(p => p.la && p.ln).forEach(p => {
+            const cer = p.es === 'Cerrado';
+            const m = L.circleMarker([p.la, p.ln], {
+                radius: cer ? 6 : 9,
+                fillColor: cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6'),
+                color: '#fff',
+                weight: 2,
+                fillOpacity: cer ? 0.5 : 0.9
+            }).addTo(app.map);
+
+            m.bindPopup(`
+                <div style="min-width:160px;font-family:system-ui">
+                    <b style="color:#1e3a8a">#${p.np} - ${p.pr}</b><br>
+                    <span style="font-size:11px;color:#475569">${p.tt} - ${p.es} (${p.av}%)</span><br>
+                    <div style="font-size:12px;margin-top:4px">${p.de.substring(0,70)}...</div>
+                    <div style="display:flex;gap:4px;margin-top:6px">
+                        <button style="flex:1;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
+                        <button style="flex:1;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
+                    </div>
+                </div>`, { maxWidth: 240 });
+
+            app.mk.push(m);
+        });
+    }
+
+    window._d = id => {
+        app.map?.closePopup();
+        const p = app.p.find(x => String(x.id) === String(id));
+        if (p) detalle(p);
+    };
+
+    window._z = id => {
+        const p = app.p.find(x => String(x.id) === String(id));
+        if (p && app.map) {
+            app.map.closePopup();
+            app.map.setView([p.la, p.ln], 17, { animate: true });
+            setTimeout(() => {
+                document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+            }, 300);
+        }
+    };
+
+    window._a = (a, id) => {
+        closeAll();
+        if (a === 'i') iniciar(id);
+        else if (a === 'av') abrirAvance(id);
+        else abrirCierre(id);
+    };
+
+    window._zm = id => {
+        const p = app.p.find(x => String(x.id) === String(id));
+        if (p && app.map) {
+            // Cerrar modales PRIMERO, luego esperar que el mapa
+            // recalcule su tamaño antes de hacer setView
+            closeAll();
+            setTimeout(() => {
+                if (!app.map) return;
+                app.map.invalidateSize({ animate: false });
+                // Zoom 17 es suficiente — OSM garantiza tiles hasta 18/19
+                // pero 17 funciona en todas las áreas sin tiles faltantes
+                app.map.setView([p.la, p.ln], 17, { animate: true });
+                setTimeout(() => {
+                    document.getElementById('zoom-altura').textContent = calcularEscalaReal(17);
+                }, 300);
+            }, 100);
+        }
+    };
+
+    // ── FUNCIÓN DE IMPRESIÓN ─────────────────────────────────────
+    window.imprimirPedido = function(p) {
+        const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
+        const f = p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
+        const fc = p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
+        const fa = p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
+
+        const contenido = `
+            <div class="print-content">
+                <h1>Pedido de Mantenimiento N° ${p.np}</h1>
+
+                <h2>📋 Información General</h2>
+                <table>
+                    <tr><td>Fecha de Creación:</td><td>${f}</td></tr>
+                    <tr><td>Estado:</td><td>${p.es}</td></tr>
+                    <tr><td>Prioridad:</td><td>${p.pr}</td></tr>
+                    <tr><td>Tipo:</td><td>${p.tt || '--'}</td></tr>
+                    ${p.es === 'Cerrado' ?
+                        `<tr><td>Fecha de Cierre:</td><td>${fc}</td></tr>` :
+                        p.es === 'En ejecución' ?
+                        `<tr><td>Último Avance:</td><td>${fa} (${p.av}%)</td></tr>` : ''}
+                    <tr><td>Avance:</td><td>${p.av}%</td></tr>
+                </table>
+
+                <h2>🏢 Datos del Trabajo</h2>
+                <table>
+                    <tr><td>Distribuidor:</td><td>${p.dis}</td></tr>
+                    ${p.sd ? `<tr><td>SETD:</td><td>${p.sd}</td></tr>` : ''}
+                    ${p.cl ? `<tr><td>Cliente:</td><td>${p.cl}</td></tr>` : ''}
+                    <tr><td>Descripción:</td><td>${p.de}</td></tr>
+                </table>
+
+                ${p.es === 'Cerrado' ? `
+                <h2>✅ Cierre del Pedido</h2>
+                <table>
+                    <tr><td>Fecha cierre:</td><td>${fc}</td></tr>
+                    ${p.tc ? `<tr><td>Técnico:</td><td>${p.tc}</td></tr>` : ''}
+                    ${p.tr ? `<tr><td>Trabajo realizado:</td><td>${p.tr}</td></tr>` : ''}
+                </table>
+                ` : ''}
+
+                <h2>📍 Ubicación</h2>
+                <table>
+                    <tr><td>WGS84 Lat:</td><td>${p.la?.toFixed(5).replace('.', ',')}</td></tr>
+                    <tr><td>WGS84 Lng:</td><td>${p.ln?.toFixed(5).replace('.', ',')}</td></tr>
+                    ${p.x_inchauspe && p.y_inchauspe ? `
+                    <tr><td>Inchauspe X:</td><td>${p.x_inchauspe.toString().replace('.', ',')}</td></tr>
+                    <tr><td>Inchauspe Y:</td><td>${p.y_inchauspe.toString().replace('.', ',')}</td></tr>
+                    ` : ''}
+                </table>
+
+                <div style="margin-top:3rem; text-align:center; color:#94a3b8; font-size:0.8rem;">
+                    Documento generado el ${new Date().toLocaleString('es-AR', {timeZone:'America/Argentina/Buenos_Aires', hour12:false})}
+                </div>
+            </div>
+        `;
+
+        const contenedor = document.getElementById('print-container');
+        contenedor.innerHTML = contenido;
+        contenedor.classList.add('printing');
+
+        window.print();
+
+        contenedor.classList.remove('printing');
+        contenedor.innerHTML = '';
+    };
+
+    // ── FUNCIONES PARA FOTOS ─────────────────────────────────────
+    // Leer orientación EXIF para rotar correctamente fotos de celular
+    function leerOrientacionEXIF(arrayBuffer) {
+        try {
+            const view = new DataView(arrayBuffer);
+            if (view.getUint16(0, false) !== 0xFFD8) return 1; // no es JPEG
+            const length = view.byteLength;
+            let offset = 2;
+            while (offset < length) {
+                if (view.getUint16(offset, false) !== 0xFFE1) { offset += 2 + view.getUint16(offset + 2, false); continue; }
+                if (view.getUint32(offset + 4, false) !== 0x45786966) return 1;
+                const little = view.getUint16(offset + 10, false) === 0x4949;
+                const ifdOffset = offset + 10 + view.getUint32(offset + 14, little);
+                const entries = view.getUint16(ifdOffset, little);
+                for (let i = 0; i < entries; i++) {
+                    if (view.getUint16(ifdOffset + 2 + i * 12, little) === 0x0112)
+                        return view.getUint16(ifdOffset + 2 + i * 12 + 8, little);
+                }
+            }
+        } catch(_) {}
+        return 1;
+    }
+
+    function comprimirImagen(file, opts = {}) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(file);
+            reader.onload = (evBuf) => {
+                const usarExifRotacion = opts.usarExifRotacion !== false;
+                const blob = new Blob([evBuf.target.result], { type: file.type });
+                const urlObj = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(urlObj);
+                    const canvas = document.createElement('canvas');
+                    let w = img.width, h = img.height;
+
+                    // Solo aplicamos rotación EXIF para fotos "portrait" (tomadas en vertical).
+                    // Esto evita rotaciones en fotos horizontales.
+                    const portrait = h > w;
+                    const orientacion = usarExifRotacion ? leerOrientacionEXIF(evBuf.target.result) : 1;
+                    const rotar = portrait && [5,6,7,8].includes(orientacion);
+                    const maxSize = 1600; // Suficiente para campo, sin pérdida apreciable
+                    const mayor = rotar ? Math.max(h, w) : Math.max(w, h);
+                    if (mayor > maxSize) {
+                        const r = maxSize / mayor;
+                        w = Math.round(w * r);
+                        h = Math.round(h * r);
+                    }
+
+                    if (rotar) { canvas.width = h; canvas.height = w; }
+                    else       { canvas.width = w; canvas.height = h; }
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.save();
+                    // Transformación robusta (evita rotaciones laterales en vertical)
+                    // Aplicamos rotación/espejado alrededor del centro del canvas.
+                    let ang = 0;
+                    let sx = 1;
+                    let sy = 1;
+                    if      (orientacion === 2) { sx = -1; }
+                    else if (orientacion === 3) { ang = Math.PI; }
+                    else if (orientacion === 4) { sy = -1; }
+                    else if (orientacion === 5) { ang = Math.PI / 2; sx = -1; }
+                    // Corregir sentido: en estos equipos queda "derecha" si usamos el signo incorrecto.
+                    else if (orientacion === 6) { ang = -Math.PI / 2; }
+                    else if (orientacion === 7) { ang = -Math.PI / 2; sx = -1; }
+                    else if (orientacion === 8) { ang = Math.PI / 2; }
+
+                    ctx.translate(canvas.width / 2, canvas.height / 2);
+                    if (rotar) {
+                        ctx.rotate(ang);
+                        ctx.scale(sx, sy);
+                        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+                    } else {
+                        // Sin rotación: dibujar normal.
+                        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+                    }
+                    ctx.restore();
+
+                    // Calidad 0.82: buena calidad, ~150-350 KB típico en campo
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+                    resolve(dataUrl);
+                };
+                img.onerror = reject;
+                img.src = urlObj;
+            };
+            reader.onerror = reject;
+        });
+    }
+
+    // ── VISOR DE FOTOS CON ZOOM Y ARRASTRE ──────────────────────
+    (function() {
+        const modal = document.getElementById('modal-foto-ampliada');
+        const img   = document.getElementById('foto-ampliada');
+        const cont  = document.getElementById('img-container');
+        const info  = document.getElementById('foto-zoom-nivel');
+
+        let scale = 1;       // zoom actual
+        let tx = 0, ty = 0; // traslación acumulada
+        let rot = 0;         // rotación en grados (múltiplos de 90)
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        // Para pinch en móvil
+        let lastDist = 0;
+
+        function applyTransform(animate) {
+            img.style.transition = animate ? 'transform .2s' : 'none';
+            img.style.transform  = `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rot}deg)`;
+            info.textContent = Math.round(scale * 100) + '%';
+            cont.style.cursor = scale > 1 ? 'grab' : 'zoom-in';
+        }
+
+        function clampTranslation() {
+            if (scale <= 1) { tx = 0; ty = 0; return; }
+            let imgW = img.naturalWidth  || img.offsetWidth;
+            let imgH = img.naturalHeight || img.offsetHeight;
+            // Si está rotada 90/270, el ancho/alto efectivos se intercambian.
+            const rotNorm = ((rot % 360) + 360) % 360;
+            if (rotNorm === 90 || rotNorm === 270) {
+                const t = imgW; imgW = imgH; imgH = t;
+            }
+            // El exceso máximo que podemos desplazar
+            const maxX = Math.max(0, (imgW  * scale - cont.clientWidth)  / 2);
+            const maxY = Math.max(0, (imgH  * scale - cont.clientHeight) / 2);
+            tx = Math.max(-maxX, Math.min(maxX, tx));
+            ty = Math.max(-maxY, Math.min(maxY, ty));
+        }
+
+        function resetZoom() {
+            scale = 1; tx = 0; ty = 0; rot = 0;
+            applyTransform(true);
+            if (btnGuardar) btnGuardar.style.display = 'none';
+        }
+        function zoomBy(delta, cx, cy) {
+            const prev = scale;
+            scale = Math.max(1, Math.min(8, scale * delta));
+            // Ajustar traslación para que el zoom sea relativo al punto cx,cy
+            if (cx !== undefined) {
+                const rect = cont.getBoundingClientRect();
+                const ox = cx - rect.left - cont.clientWidth  / 2;
+                const oy = cy - rect.top  - cont.clientHeight / 2;
+                tx -= ox * (scale / prev - 1);
+                ty -= oy * (scale / prev - 1);
+            }
+            clampTranslation();
+            applyTransform(false);
+        }
+
+        // Abrir foto
+        // ctx: objeto con contexto para saber dónde guardar la rotación:
+        //   { tipo: 'temporal', idx: N }          → fotosTemporales[N]
+        //   { tipo: 'cierre_temp' }               → fotoCierreTemp
+        //   { tipo: 'pedido_fotos', id, idx: N }  → pedido en BD, foto[N]
+        //   { tipo: 'pedido_cierre', id }         → pedido en BD, foto_cierre
+        //   null                                  → solo visualización, sin guardar
+        window._fotoCtx = null; // contexto actual del visor
+        window.verFotoAmpliada = function(src, ctx) {
+            img.src = src;
+            window._fotoCtx = ctx || null;
+            resetZoom();
+            modal.classList.add('active');
+            img.style.transition = 'none';
+            rot = 0; tx = 0; ty = 0; scale = 1;
+            applyTransform(false);
+            // Mostrar botón guardar BD solo si hay contexto de guardado
+            if (btnGuardarBD) btnGuardarBD.style.display = ctx ? 'flex' : 'none';
+        };
+
+        // Cerrar
+        document.getElementById('cerrar-modal-foto').addEventListener('click', () => {
+            modal.classList.remove('active');
+            resetZoom();
+        });
+        // Click fuera de la imagen cierra
+        modal.addEventListener('click', e => {
+            if (e.target === modal) { modal.classList.remove('active'); resetZoom(); }
+        });
+        // Tecla Escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && modal.classList.contains('active'))
+                { modal.classList.remove('active'); resetZoom(); }
+        });
+
+        // Botones barra
+        document.getElementById('foto-zoom-in').addEventListener('click', e => {
+            e.stopPropagation(); zoomBy(1.4);
+        });
+        document.getElementById('foto-zoom-out').addEventListener('click', e => {
+            e.stopPropagation(); zoomBy(1/1.4);
+        });
+        document.getElementById('foto-zoom-reset').addEventListener('click', e => {
+            e.stopPropagation(); resetZoom();
+        });
+
+        // ── Botones del visor ──────────────────────────────────────
+        const btnGuardar   = document.getElementById('foto-guardar');
+        const btnGuardarBD = document.getElementById('foto-guardar-bd');
+
+        // Función compartida: genera el dataUrl con la rotación aplicada al canvas
+        function aplicarRotacionAlCanvas() {
+            if (!img.src || img.src === window.location.href) return null;
+            const rotNorm = ((rot % 360) + 360) % 360;
+            if (rotNorm === 0) return null;
+            const canvas = document.createElement('canvas');
+            const swap = rotNorm === 90 || rotNorm === 270;
+            canvas.width  = swap ? img.naturalHeight : img.naturalWidth;
+            canvas.height = swap ? img.naturalWidth  : img.naturalHeight;
+            const ctx2 = canvas.getContext('2d');
+            ctx2.translate(canvas.width / 2, canvas.height / 2);
+            ctx2.rotate(rotNorm * Math.PI / 180);
+            ctx2.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+            return canvas.toDataURL('image/jpeg', 0.92);
+        }
+
+        // Rotar 90°
+        document.getElementById('foto-rotate-90').addEventListener('click', e => {
+            e.stopPropagation();
+            rot = ((rot + 90) % 360);
+            tx = 0; ty = 0;
+            clampTranslation();
+            applyTransform(true);
+            const hayRot = rot !== 0;
+            btnGuardar.style.display   = hayRot ? 'flex' : 'none';
+            // Botón guardar en BD: solo si hay rotación Y hay contexto de guardado
+            if (btnGuardarBD) btnGuardarBD.style.display = (hayRot && window._fotoCtx) ? 'flex' : 'none';
+        });
+
+        // ── GUARDAR ROTACIÓN EN EL PEDIDO (memoria + Neon) ──────────
+        if (btnGuardarBD) {
+            btnGuardarBD.addEventListener('click', async e => {
+                e.stopPropagation();
+                const dataUrl = aplicarRotacionAlCanvas();
+                if (!dataUrl) { toast('Sin rotación para guardar', 'info'); return; }
+                const ctx3 = window._fotoCtx;
+                if (!ctx3) { toast('Sin contexto de pedido', 'info'); return; }
+
+                btnGuardarBD.disabled = true;
+                btnGuardarBD.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+
+                try {
+                    if (ctx3.tipo === 'temporal') {
+                        // Foto en pedido nuevo (aún no guardado en BD)
+                        fotosTemporales[ctx3.idx] = dataUrl;
+                        actualizarVistaPreviaFotos();
+                        // Actualizar la img del visor para reflejar el cambio
+                        img.src = dataUrl;
+                        rot = 0; tx = 0; ty = 0; scale = 1; applyTransform(false);
+                        btnGuardar.style.display = 'none';
+                        btnGuardarBD.style.display = 'none';
+                        toast('✓ Rotación guardada en el pedido', 'success');
+
+                    } else if (ctx3.tipo === 'cierre_temp') {
+                        // Foto de cierre aún no confirmada
+                        fotoCierreTemp = dataUrl;
+                        actualizarVistaPreviaFotoCierre();
+                        img.src = dataUrl;
+                        rot = 0; tx = 0; ty = 0; scale = 1; applyTransform(false);
+                        btnGuardar.style.display = 'none';
+                        btnGuardarBD.style.display = 'none';
+                        toast('✓ Rotación guardada en la foto de cierre', 'success');
+
+                    } else if (ctx3.tipo === 'pedido_fotos') {
+                        // Foto en pedido existente — actualizar en Neon
+                        const pedido = app.p.find(x => String(x.id) === String(ctx3.id));
+                        if (!pedido) throw new Error('Pedido no encontrado');
+                        pedido.fotos[ctx3.idx] = dataUrl;
+                        const nuevasCadena = pedido.fotos.join('||');
+                        if (!modoOffline && NEON_OK) {
+                            await ejecutarSQLConReintentos(
+                                `UPDATE pedidos SET foto_base64 = ${esc(nuevasCadena)} WHERE id = ${esc(parseInt(ctx3.id))}`
+                            );
+                        } else {
+                            enqueueOffline({ tipo:'UPDATE', query:`UPDATE pedidos SET foto_base64 = ${esc(nuevasCadena)} WHERE id = ${esc(parseInt(ctx3.id))}` });
+                        }
+                        offlinePedidosSave(app.p);
+                        img.src = dataUrl;
+                        rot = 0; tx = 0; ty = 0; scale = 1; applyTransform(false);
+                        btnGuardar.style.display = 'none';
+                        btnGuardarBD.style.display = 'none';
+                        // Refrescar las miniaturas en el detalle
+                        const pedidoActual = app.p.find(x => String(x.id) === String(ctx3.id));
+                        if (pedidoActual) detalle(pedidoActual);
+                        toast('✓ Rotación guardada en el pedido', 'success');
+
+                    } else if (ctx3.tipo === 'pedido_cierre') {
+                        // Foto de cierre en pedido existente — actualizar en Neon
+                        const pedido = app.p.find(x => String(x.id) === String(ctx3.id));
+                        if (!pedido) throw new Error('Pedido no encontrado');
+                        pedido.foto_cierre = dataUrl;
+                        if (!modoOffline && NEON_OK) {
+                            await ejecutarSQLConReintentos(
+                                `UPDATE pedidos SET foto_cierre = ${esc(dataUrl)} WHERE id = ${esc(parseInt(ctx3.id))}`
+                            );
+                        } else {
+                            enqueueOffline({ tipo:'UPDATE', query:`UPDATE pedidos SET foto_cierre = ${esc(dataUrl)} WHERE id = ${esc(parseInt(ctx3.id))}` });
+                        }
+                        offlinePedidosSave(app.p);
+                        img.src = dataUrl;
+                        rot = 0; tx = 0; ty = 0; scale = 1; applyTransform(false);
+                        btnGuardar.style.display = 'none';
+                        btnGuardarBD.style.display = 'none';
+                        const pedidoActual2 = app.p.find(x => String(x.id) === String(ctx3.id));
+                        if (pedidoActual2) detalle(pedidoActual2);
+                        toast('✓ Rotación de foto de cierre guardada', 'success');
+                    }
+                } catch(err) {
+                    console.error('Error guardando rotación:', err);
+                    toast('Error al guardar: ' + err.message, 'error');
+                } finally {
+                    btnGuardarBD.disabled = false;
+                    btnGuardarBD.innerHTML = '<i class="fas fa-save"></i> Guardar';
+                }
+            });
+        }
+
+        // ── DESCARGAR FOTO (botón descarga, siempre disponible) ─────
+        btnGuardar.addEventListener('click', async e => {
+            e.stopPropagation();
+            if (!img.src || img.src === window.location.href) return;
+            const rotNorm = ((rot % 360) + 360) % 360;
+            // Si hay rotación, generar canvas rotado; si no, descargar la imagen original
+            let dataUrl;
+            if (rotNorm !== 0) {
+                dataUrl = aplicarRotacionAlCanvas();
+            } else {
+                dataUrl = img.src; // ya es dataUrl
+            }
+            if (!dataUrl) return;
+            // Web Share API en Android
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const res  = await fetch(dataUrl);
+                    const blob = await res.blob();
+                    const file = new File([blob], 'foto_pedido.jpg', { type: 'image/jpeg' });
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'Foto Pedido MG' });
+                        toast('Foto compartida/guardada', 'success');
+                        return;
+                    }
+                } catch(err) {
+                    if (err.name !== 'AbortError') console.warn('Share falló:', err.message);
+                }
+            }
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'foto_pedido' + (rotNorm !== 0 ? '_rotada' : '') + '.jpg';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { document.body.removeChild(a); }, 500);
+            toast('Foto descargada', 'success');
+        });
+
+        // Click en la imagen: zoom in / zoom out al 100%
+        // Solo actúa si NO hubo arrastre real (hasMoved)
+        cont.addEventListener('click', e => {
+            if (hasMoved) { hasMoved = false; return; } // fue un drag, no un click
+            if (scale < 1.5) zoomBy(2.5, e.clientX, e.clientY);
+            else resetZoom();
+        });
+
+        // Rueda del mouse: zoom
+        cont.addEventListener('wheel', e => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 1.2 : 1/1.2;
+            zoomBy(delta, e.clientX, e.clientY);
+        }, { passive: false });
+
+        // Arrastre mouse — el zoom NO se resetea al soltar
+        // hasMoved distingue drag real de click para no activar zoom al soltar
+        let hasMoved = false;
+        cont.addEventListener('mousedown', e => {
+            if (scale < 1.05) return; // solo arrastra cuando hay zoom
+            isDragging = true;
+            hasMoved = false;
+            lastX = e.clientX; lastY = e.clientY;
+            cont.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastX;
+            const dy = e.clientY - lastY;
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
+            tx += dx; ty += dy;
+            lastX = e.clientX; lastY = e.clientY;
+            clampTranslation();
+            applyTransform(false);
+        });
+        document.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            // El zoom NO cambia — sigue igual. Solo actualizamos el cursor.
+            cont.style.cursor = scale > 1.05 ? 'grab' : 'zoom-in';
+        });
+
+        // Táctil: pinch para zoom + arrastre
+        cont.addEventListener('touchstart', e => {
+            if (e.touches.length === 2) {
+                lastDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            } else if (e.touches.length === 1 && scale > 1) {
+                isDragging = true;
+                lastX = e.touches[0].clientX;
+                lastY = e.touches[0].clientY;
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        cont.addEventListener('touchmove', e => {
+            if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                if (lastDist > 0) zoomBy(dist / lastDist, cx, cy);
+                lastDist = dist;
+            } else if (e.touches.length === 1 && isDragging) {
+                tx += e.touches[0].clientX - lastX;
+                ty += e.touches[0].clientY - lastY;
+                lastX = e.touches[0].clientX;
+                lastY = e.touches[0].clientY;
+                clampTranslation();
+                applyTransform(false);
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        cont.addEventListener('touchend', e => {
+            if (e.touches.length < 2) lastDist = 0;
+            if (e.touches.length === 0) {
+                isDragging = false;
+                // El zoom NO se resetea al levantar el dedo
+            }
+        });
+
+    })(); // fin IIFE visor de fotos
+
+    // Función compartida para procesar una foto seleccionada
+    async function procesarFotoSeleccionada(file, opts = {}) {
+        if (!file) return;
+        try {
+            toast('Procesando imagen...', 'info');
+            const compressedImage = await comprimirImagen(file, opts);
+            fotosTemporales.push(compressedImage);
+            actualizarVistaPreviaFotos();
+            // Mostrar tamaño aproximado al usuario
+            const kb = Math.round(compressedImage.length * 0.75 / 1024);
+            toast(`✓ Foto lista (≈${kb} KB)`, 'success');
+        } catch (error) {
+            console.error('Error al procesar imagen:', error);
+            toast('Error al procesar la imagen', 'error');
+        }
+    }
+
+    // =============================================================
+    //  SISTEMA DE FOTOS — compatible con todos los dispositivos
+    //
+    //  Problema en Android (especialmente Xiaomi/MIUI con Chrome):
+    //  capture="environment" falla si el permiso de cámara no fue
+    //  otorgado explícitamente via getUserMedia().
+    //
+    //  Estrategia:
+    //  1. "Tomar foto": pedir permiso via getUserMedia PRIMERO,
+    //     luego abrir el input con capture. Fallback: sin capture.
+    //  2. "Cargar desde dispositivo": input sin capture (galería/archivos)
+    //  3. Compatible con: Chrome, Edge, Firefox, Safari, Samsung Internet
+    // =============================================================
+
+    // Detectar dispositivo móvil
+    const esMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    // Disparar el picker de archivos de forma robusta en Chrome Android.
+    // Algunos navegadores ignoran `input.click()` si el input quedó con valor previo
+    // o si no recibe foco.
+    function dispararSelectorArchivos(input) {
+        if (!input) return;
+        try { input.value = ''; } catch(_) {}
+        input.click();
+    }
+
+    // Abrir cámara con manejo robusto para todos los dispositivos
+    // Importante: mantenerlo SIN await para no perder "user activation"
+    // en Chrome Android (muy sensible con input[type=file]).
+    function abrirCamara(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+
+        if (esMobile) {
+            // Dejar que Chrome gestione el permiso al abrir el picker con `capture`.
+            // (En Android 14, pre-validar con getUserMedia puede romper el user-gesture).
+            input.setAttribute('capture', 'environment');
+        } else {
+            // En PC/desktop: no usar capture (abre el explorador de archivos)
+            input.removeAttribute('capture');
+        }
+        dispararSelectorArchivos(input);
+    }
+
+    // Procesar foto de cierre
+    async function procesarFotoCierre(file, opts = {}) {
+        if (!file) return;
+        try {
+            toast('Procesando foto de cierre...', 'info');
+            fotoCierreTemp = await comprimirImagen(file, opts);
+            actualizarVistaPreviaFotoCierre();
+            const kb = Math.round(fotoCierreTemp.length * 0.75 / 1024);
+            toast(`✓ Foto de cierre lista (≈${kb} KB)`, 'success');
+        } catch (err) {
+            console.error('Error procesando foto cierre:', err);
+            toast('Error al procesar la foto', 'error');
+        }
+    }
+
+    // Botón "Tomar foto" (nuevo pedido) → cámara con permiso explícito
+    document.getElementById('btn-tomar-foto').addEventListener('click', () => {
+        abrirCamara('input-foto-camara');
+    });
+
+    // "Cargar desde dispositivo" usa <label for="input-foto-galeria"> — sin JS necesario
+
+    // Eventos de cambio de inputs (nuevo pedido)
+    document.getElementById('input-foto-camara').addEventListener('change', async (e) => {
+        if (e.target.files[0]) await procesarFotoSeleccionada(e.target.files[0], { usarExifRotacion: true });
+        e.target.value = '';
+    });
+    document.getElementById('input-foto-galeria').addEventListener('change', async (e) => {
+        // Para fotos cargadas desde la galería/dispositivo NO rotamos (Chrome ya entrega la orientación correcta).
+        if (e.target.files[0]) await procesarFotoSeleccionada(e.target.files[0], { usarExifRotacion: false });
+        e.target.value = '';
+    });
+
+    // Botón "Tomar foto" (cierre de pedido) → cámara con permiso explícito
+    document.getElementById('btn-foto-cierre-camara').addEventListener('click', () => {
+        abrirCamara('input-foto-cierre-camara');
+    });
+
+    // "Cargar desde dispositivo" cierre usa <label for="input-foto-cierre-galeria"> — sin JS necesario
+
+    // Eventos de cambio de inputs (cierre)
+    document.getElementById('input-foto-cierre-camara').addEventListener('change', async (e) => {
+        if (e.target.files[0]) await procesarFotoCierre(e.target.files[0], { usarExifRotacion: true });
+        e.target.value = '';
+    });
+    document.getElementById('input-foto-cierre-galeria').addEventListener('change', async (e) => {
+        // Para fotos cargadas desde la galería/dispositivo NO rotamos.
+        if (e.target.files[0]) await procesarFotoCierre(e.target.files[0], { usarExifRotacion: false });
+        e.target.value = '';
+    });
+
+    function actualizarVistaPreviaFotos() {
+        const container = document.getElementById('vista-previa-fotos');
+        container.innerHTML = '';
+        fotosTemporales.forEach((foto, index) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'position:relative;display:inline-block';
+            const img = document.createElement('img');
+            img.src = foto;
+            img.className = 'foto-miniatura';
+            img.onclick = () => window.verFotoAmpliada(foto, { tipo: 'temporal', idx: index });
+            // Botón eliminar
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.innerHTML = '✕';
+            del.title = 'Eliminar foto';
+            del.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;z-index:10';
+            del.onclick = (e) => {
+                e.stopPropagation();
+                fotosTemporales.splice(index, 1);
+                actualizarVistaPreviaFotos();
+            };
+            wrap.appendChild(img);
+            wrap.appendChild(del);
+            container.appendChild(wrap);
+        });
+        // Contador
+        if (fotosTemporales.length > 0) {
+            const cnt = document.createElement('div');
+            cnt.style.cssText = 'width:100%;font-size:.75rem;color:#475569;margin-top:.25rem';
+            cnt.textContent = fotosTemporales.length + ' foto(s) adjunta(s)';
+            container.appendChild(cnt);
+        }
+    }
+
+    // ── FUNCIONES PARA AVANCE ────────────────────────────────────
+    function abrirAvance(id) {
+        const pedido = app.p.find(x => String(x.id) === String(id));
+        if (!pedido) return;
+
+        pedidoActualParaAvance = id;
+        const slider = document.getElementById('avance-slider');
+        const input = document.getElementById('avance-input');
+        slider.value = pedido.av;
+        input.value = pedido.av;
+
+        document.getElementById('avance-modal').classList.add('active');
+    }
+
+    document.getElementById('avance-slider').addEventListener('input', (e) => {
+        document.getElementById('avance-input').value = e.target.value;
+    });
+
+    document.getElementById('avance-input').addEventListener('input', (e) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val)) val = 0;
+        if (val < 0) val = 0;
+        if (val > 100) val = 100;
+        e.target.value = val;
+        document.getElementById('avance-slider').value = val;
+    });
+
+    document.getElementById('guardar-avance').addEventListener('click', async () => {
+        if (!pedidoActualParaAvance) return;
+
+        const avance = parseInt(document.getElementById('avance-input').value);
+        await actualizarAvance(pedidoActualParaAvance, avance);
+        document.getElementById('avance-modal').classList.remove('active');
+        pedidoActualParaAvance = null;
+    });
+
+    document.getElementById('cancelar-avance').addEventListener('click', () => {
+        document.getElementById('avance-modal').classList.remove('active');
+        pedidoActualParaAvance = null;
+    });
+
+    // ── GUARDAR PEDIDO ───────────────────────────────────────────
+    document.getElementById('pf').addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+
+        if (!app.sel) {
+            toast('Selecciona ubicación en el mapa', 'error');
+            btn.disabled = false;
+            return;
+        }
+
+        try {
+            // Obtener número correlativo con año — PM-2025-0001, PM-2025-0002, ...
+            const anioActual = new Date().getFullYear();
+            let numPedido;
+            if (modoOffline || !NEON_OK) {
+                // Offline: usar contador local en localStorage
+                const keyContador = 'pmg_contador_' + anioActual;
+                const contadorLocal = parseInt(localStorage.getItem(keyContador) || '0') + 1;
+                localStorage.setItem(keyContador, String(contadorLocal));
+                numPedido = 'PM-' + anioActual + '-' + String(contadorLocal).padStart(4, '0');
+            } else {
+                // Online: obtener y actualizar el contador en Neon atómicamente
+                try {
+                    await sqlSimple(`INSERT INTO pedido_contador(anio, ultimo_numero)
+                        VALUES(${esc(anioActual)}, 1)
+                        ON CONFLICT(anio) DO UPDATE SET ultimo_numero = pedido_contador.ultimo_numero + 1`);
+                    const r = await sqlSimple(`SELECT ultimo_numero FROM pedido_contador WHERE anio = ${esc(anioActual)}`);
+                    const num = r.rows[0]?.ultimo_numero || 1;
+                    numPedido = 'PM-' + anioActual + '-' + String(num).padStart(4, '0');
+                    // Sincronizar contador local
+                    localStorage.setItem('pmg_contador_' + anioActual, String(num));
+                } catch(_) {
+                    // Si falla el contador (p.ej. tabla no existe aún), usar timestamp como fallback
+                    const fallback = Date.now().toString().slice(-5);
+                    numPedido = 'PM-' + anioActual + '-' + fallback;
+                }
+            }
+            const fotosString = fotosTemporales.join('||');
+            let xInchauspe = null, yInchauspe = null;
+            try {
+                const inchauspe = proj4('WGS84', 'INCHAUSPE', [app.sel.lng, app.sel.lat]);
+                xInchauspe = inchauspe[0].toFixed(2);
+                yInchauspe = inchauspe[1].toFixed(2);
+            } catch(_) {}
+
+            const queryInsert = `INSERT INTO pedidos(
+                numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
+                descripcion, prioridad, lat, lng, usuario_id, estado, avance, foto_base64,
+                x_inchauspe, y_inchauspe, fecha_creacion
+            ) VALUES(
+                ${esc(numPedido)},
+                ${esc(document.getElementById('di2').value)},
+                ${esc(document.getElementById('sd').value || null)},
+                ${esc(document.getElementById('cl').value || null)},
+                ${esc(document.getElementById('tt').value || null)},
+                ${esc(document.getElementById('de').value)},
+                ${esc(document.getElementById('pr').value)},
+                ${esc(app.sel.lat)},
+                ${esc(app.sel.lng)},
+                ${esc(app.u?.id || 1)},
+                'Pendiente', 0,
+                ${esc(fotosString || null)},
+                ${esc(xInchauspe)},
+                ${esc(yInchauspe)},
+                ${esc(new Date().toISOString())}
+            )`;
+
+            if (modoOffline || !NEON_OK) {
+                // ── MODO OFFLINE: encolar en localStorage ──
+                enqueueOffline({ tipo: 'INSERT', query: queryInsert });
+                // Agregar a la lista local para que se vea en el mapa
+                const pedidoLocal = {
+                    id: 'off_' + Date.now(),
+                    np: numPedido,
+                    f: new Date().toISOString(),
+                    fc: null, fa: null,
+                    dis: document.getElementById('di2').value,
+                    sd: document.getElementById('sd').value || '',
+                    cl: document.getElementById('cl').value || '',
+                    tt: document.getElementById('tt').value || '',
+                    de: document.getElementById('de').value,
+                    pr: document.getElementById('pr').value,
+                    es: 'Pendiente', av: 0,
+                    la: app.sel.lat, ln: app.sel.lng,
+                    ui: app.u?.id || 1,
+                    tr: null, tc: null,
+                    fotos: fotosString ? fotosString.split('||') : [],
+                    foto_cierre: null,
+                    x_inchauspe: xInchauspe, y_inchauspe: yInchauspe,
+                    _offline: true
+                };
+                app.p.unshift(pedidoLocal);
+                offlinePedidosSave(app.p);
+                toast('📴 Pedido guardado localmente — se sincronizará al conectarse', 'success');
+            } else {
+                // ── MODO ONLINE: guardar directamente en Neon ──
+                await ejecutarSQLConReintentos(queryInsert);
+                toast('Pedido guardado', 'success');
+            }
+
+            fotosTemporales = [];
+            actualizarVistaPreviaFotos();
+            closeAll();
+            app.sel = null;
+            render();
+            if (!modoOffline) cargarPedidos();
+        } catch(e) {
+            console.error(e);
+            // Si falla por red, intentar guardar offline
+            if (e.message && (e.message.includes('fetch') || e.message.includes('network') || e.message.includes('Failed'))) {
+                setModoOffline(true);
+                toast('Sin conexión — reintentá guardar en modo offline', 'error');
+            } else {
+                toast('Error: ' + (e.message || 'Error al guardar'), 'error');
+            }
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    async function actualizarAvance(id, avance) {
+        try {
+            const now = new Date().toISOString();
+            await ejecutarSQLConReintentos(
+                `UPDATE pedidos SET avance = {0}, fecha_avance = {1} WHERE id = {2}`,
+                [avance, now, parseInt(id)]
+            );
+
+            const idx = app.p.findIndex(p => String(p.id) === String(id));
+            if (idx !== -1) {
+                app.p[idx].av = avance;
+                app.p[idx].fa = now;
+            }
+
+            render();
+            toast('Avance actualizado', 'success');
+        } catch(e) {
+            console.error('Error actualizando avance:', e);
+            toast('Error al actualizar avance', 'error');
+        }
+    }
+
+    async function updPedido(id, campos) {
+        const cv = {};
+        for (const [k, v] of Object.entries(campos)) {
+            if (CN.has(k)) cv[k] = v;
+        }
+        if (!Object.keys(cv).length) return;
+
+        const s = [];
+        for (const [k, val] of Object.entries(cv)) s.push(`${k}=${esc(val)}`);
+        const queryUpdate = `UPDATE pedidos SET ${s.join(',')} WHERE id=${esc(parseInt(id))}`;
+
+        if (modoOffline || !NEON_OK || String(id).startsWith('off_')) {
+            // Offline: encolar si el id es real, aplicar localmente si es offline
+            if (!String(id).startsWith('off_')) {
+                enqueueOffline({ tipo: 'UPDATE', query: queryUpdate });
+            }
+            // igual actualizar en memoria y cache local
+        } else {
+            await ejecutarSQLConReintentos(queryUpdate);
+        }
+
+        const idx = app.p.findIndex(p => String(p.id) === String(id));
+        if (idx !== -1) {
+            const pm = {
+                estado: 'es',
+                avance: 'av',
+                trabajo_realizado: 'tr',
+                tecnico_cierre: 'tc',
+                fecha_cierre: 'fc',
+                fecha_avance: 'fa',
+                foto_cierre: 'foto_cierre'
+            };
+            for (const [k, v2] of Object.entries(campos)) {
+                if (pm[k]) app.p[idx][pm[k]] = v2;
+            }
+            if (campos.foto_base64) {
+                app.p[idx].fotos = campos.foto_base64.split('||');
+            }
+            if (campos.x_inchauspe) app.p[idx].x_inchauspe = campos.x_inchauspe;
+            if (campos.y_inchauspe) app.p[idx].y_inchauspe = campos.y_inchauspe;
+        }
+        // Persistir cache actualizado
+        offlinePedidosSave(app.p);
+        render();
+    }
+
+    async function iniciar(id) {
+        try {
+            const now = new Date().toISOString();
+            await updPedido(id, {
+                estado: 'En ejecución',
+                avance: 0,
+                fecha_avance: now
+            });
+            toast('Pedido iniciado', 'info');
+            closeAll();
+        } catch(e) {
+            toast('Error: ' + e.message, 'error');
+        }
+    }
+
+    function actualizarVistaPreviaFotoCierre() {
+        const container = document.getElementById('vista-previa-foto-cierre');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!fotoCierreTemp) return;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position:relative;display:inline-block';
+        const img = document.createElement('img');
+        img.src = fotoCierreTemp;
+        img.className = 'foto-miniatura';
+        img.onclick = () => window.verFotoAmpliada(fotoCierreTemp, { tipo: 'cierre_temp' });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.innerHTML = '✕';
+        del.title = 'Eliminar foto';
+        del.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#ef4444;color:white;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;z-index:10';
+        del.onclick = (e) => { e.stopPropagation(); fotoCierreTemp = null; actualizarVistaPreviaFotoCierre(); };
+        wrap.appendChild(img);
+        wrap.appendChild(del);
+        container.appendChild(wrap);
+        const cnt = document.createElement('div');
+        cnt.style.cssText = 'width:100%;font-size:.75rem;color:#475569;margin-top:.25rem';
+        const kb = Math.round(fotoCierreTemp.length * 0.75 / 1024);
+        cnt.textContent = `1 foto de cierre (≈${kb} KB)`;
+        container.appendChild(cnt);
+    }
+
+    function abrirCierre(id) {
+        const p = app.p.find(x => String(x.id) === String(id));
+        if (!p) return;
+
+        app.cid = id;
+        document.getElementById('ci').innerHTML = `
+            <strong>#${p.np}</strong> - ${p.tt}<br>
+            <span style="font-size:.85em">${p.de.substring(0,100)}${p.de.length > 100 ? '…' : ''}</span>
+        `;
+        document.getElementById('tr').value = '';
+        document.getElementById('tc2').value = app.u?.nombre || '';
+        document.getElementById('tc').textContent = '0';
+        // Resetear foto de cierre
+        fotoCierreTemp = null;
+        actualizarVistaPreviaFotoCierre();
+        document.getElementById('cm2').classList.add('active');
+    }
+
+    document.getElementById('cc2').addEventListener('click', async () => {
+        const tr = document.getElementById('tr').value.trim();
+        if (!tr) {
+            toast('Describí el trabajo realizado', 'error');
+            return;
+        }
+        const btn = document.getElementById('cc2');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...';
+        try {
+            await updPedido(app.cid, {
+                estado: 'Cerrado',
+                avance: 100,
+                trabajo_realizado: tr,
+                tecnico_cierre: document.getElementById('tc2').value.trim() || app.u?.nombre || '',
+                fecha_cierre: new Date().toISOString(),
+                foto_cierre: fotoCierreTemp || null
+            });
+            fotoCierreTemp = null;
+            closeAll();
+            toast('Pedido cerrado', 'success');
+        } catch(e) {
+            toast('Error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirmar cierre';
+        }
+    });
+
+    // ── DETALLE ───────────────────────────────────────────────────
+    function detalle(p) {
+        const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
+        const f = p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
+        const fc = p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : null;
+        const fa = p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : null;
+
+        const bg = {
+            'Pendiente': '#fef9c3',
+            'En ejecución': '#dbeafe',
+            'Cerrado': '#dcfce7'
+        };
+
+        const co = {
+            'Pendiente': '#854d0e',
+            'En ejecución': '#1d4ed8',
+            'Cerrado': '#166534'
+        };
+
+        const ed = app.u?.rol === 'admin' || String(p.ui) === String(app.u?.id);
+
+        // Generar HTML para las fotos — con contexto para guardar rotación
+        let fotosHtml = '';
+        if (p.fotos && p.fotos.length > 0) {
+            fotosHtml = '<div class="fotos-container">';
+            p.fotos.forEach((foto, idx) => {
+                if (foto) {
+                    const ctxStr = JSON.stringify({ tipo: 'pedido_fotos', id: p.id, idx }).replace(/"/g, '&quot;');
+                    fotosHtml += `<img src="${foto}" class="foto-miniatura" onclick="verFotoAmpliada(this.src, JSON.parse(this.dataset.ctx))" data-ctx="${ctxStr}">`;
+                }
+            });
+            fotosHtml += '</div>';
+        }
+
+        // Coordenadas formateadas
+        const latFormateada = p.la ? p.la.toFixed(5).replace('.', ',') : '';
+        const lngFormateada = p.ln ? p.ln.toFixed(5).replace('.', ',') : '';
+
+        document.getElementById('dmc').innerHTML = `
+            <div class="ds">
+                <h4>📋 Información General</h4>
+                <div class="dr"><span class="dl">N° Pedido</span><span class="dv" style="font-weight:700;color:#1e3a8a">#${p.np}</span></div>
+                <div class="dr"><span class="dl">Fecha Creación</span><span class="dv">${f}</span></div>
+                ${p.es === 'Cerrado' ?
+                    `<div class="dr"><span class="dl">Fecha Cierre</span><span class="dv">${fc}</span></div>` :
+                    p.es === 'En ejecución' && fa ?
+                    `<div class="dr"><span class="dl">Último Avance</span><span class="dv">${fa}</span></div>` : ''}
+                <div class="dr"><span class="dl">Estado</span><span class="dv"><span style="background:${bg[p.es]||'#e5e7eb'};color:${co[p.es]||'#374151'};padding:2px 10px;border-radius:12px;font-size:.82rem;font-weight:600">${p.es}</span></span></div>
+                <div class="dr"><span class="dl">Prioridad</span><span class="dv">${p.pr}</span></div>
+                <div class="dr"><span class="dl">Tipo</span><span class="dv">${p.tt||'--'}</span></div>
+                <div class="dr"><span class="dl">Avance</span><span class="dv">${p.av}% <div style="height:4px;background:#e2e8f0;border-radius:2px;width:100px;display:inline-block;vertical-align:middle;margin-left:6px;overflow:hidden"><div style="height:100%;width:${p.av}%;background:linear-gradient(90deg,#1e3a8a,#3b82f6)"></div></div></span></div>
+            </div>
+
+            <div class="ds">
+                <h4>🏢 Datos del Trabajo</h4>
+                <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis}</span></div>
+                ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
+                ${p.cl ? `<div class="dr"><span class="dl">Cliente</span><span class="dv">${p.cl}</span></div>` : ''}
+                <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
+            </div>
+
+            ${p.es === 'Cerrado' ? `
+            <div class="ds">
+                <h4>✅ Cierre del Pedido</h4>
+                ${fc ? `<div class="dr"><span class="dl">Fecha cierre</span><span class="dv">${fc}</span></div>` : ''}
+                ${p.tc ? `<div class="dr"><span class="dl">Técnico</span><span class="dv">${p.tc}</span></div>` : ''}
+                ${p.tr ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Trabajo</span><div class="trb">${p.tr}</div></div>` : ''}
+                ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
+            </div>` : ''}
+
+            <div class="ds">
+                <h4>📍 Ubicación</h4>
+                <div class="dr"><span class="dl">WGS84 Lat:</span><span class="dv">${latFormateada} <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+                <div class="dr"><span class="dl">WGS84 Lng:</span><span class="dv">${lngFormateada} <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+                ${p.x_inchauspe && p.y_inchauspe ? `
+                <div class="dr"><span class="dl">Inchauspe X:</span><span class="dv">${p.x_inchauspe.toString().replace('.', ',')} <span class="dv-copy" onclick="copiarTexto('${p.x_inchauspe.toString().replace('.', ',')}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+                <div class="dr"><span class="dl">Inchauspe Y:</span><span class="dv">${p.y_inchauspe.toString().replace('.', ',')} <span class="dv-copy" onclick="copiarTexto('${p.y_inchauspe.toString().replace('.', ',')}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
+                ` : ''}
+                <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
+            </div>
+
+            ${fotosHtml ? `
+            <div class="ds">
+                <h4>📸 Fotos del trabajo</h4>
+                ${fotosHtml}
+            </div>` : ''}
+
+            <div class="da">
+                ${ed && p.es === 'Pendiente' ? `<button class="ba2 p2" onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Iniciar</button><button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
+                ${ed && p.es === 'En ejecución' ? `<button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
+                <button class="ba2 imprimir" onclick="imprimirPedido(${JSON.stringify(p).replace(/"/g, '&quot;')})"><i class="fas fa-print"></i> Imprimir</button>
+                <button class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>
+            </div>
+        `;
+
+        document.getElementById('dm').classList.add('active');
+    }
+
+    // ── FUNCIÓN PARA COPIAR TEXTO ────────────────────────────────
+    window.copiarTexto = function(texto) {
+        navigator.clipboard.writeText(texto).then(() => {
+            toast('Copiado al portapapeles', 'success');
+        }).catch(() => {
+            toast('Error al copiar', 'error');
+        });
+    };
+
+    // ── EXPORTACIÓN A EXCEL ──────────────────────────────────────
+    function exportPedido(pedidos, nombre) {
+        if (!pedidos || pedidos.length === 0) {
+            toast('No hay datos para exportar', 'error');
+            return;
+        }
+
+        const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
+
+        const datosExport = pedidos.map(p => ({
+            'N° Pedido': p.np || '',
+            'Fecha Creación': p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Fecha Cierre': p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Fecha Último Avance': p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '',
+            'Distribuidor': p.dis || '',
+            'Cliente': p.cl || '',
+            'SETD': p.sd || '',
+            'Tipo de Trabajo': p.tt || '',
+            'Descripción': p.de || '',
+            'Prioridad': p.pr || '',
+            'Estado': p.es || '',
+            'Avance %': p.av || 0,
+            'Trabajo Realizado': p.tr || '',
+            'Técnico Cierre': p.tc || '',
+            'Latitud (WGS84)': p.la ? p.la.toString().replace('.', ',') : '',
+            'Longitud (WGS84)': p.ln ? p.ln.toString().replace('.', ',') : '',
+            'X Inchauspe': p.x_inchauspe ? p.x_inchauspe.toString().replace('.', ',') : '',
+            'Y Inchauspe': p.y_inchauspe ? p.y_inchauspe.toString().replace('.', ',') : '',
+            'Cantidad Fotos': p.fotos ? p.fotos.length : 0,
+            'Foto Cierre': p.foto_cierre ? 'Sí' : 'No'
+        }));
+
+        if (typeof XLSX !== 'undefined') {
+            try {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(datosExport);
+
+                const colWidths = [
+                    { wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
+                    { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
+                    { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
+                    { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
+                    { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }
+                ];
+                ws['!cols'] = colWidths;
+
+                XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+                const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                dl(buf, nombre + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                toast('Excel descargado', 'success');
+            } catch (e) {
+                console.error('Error al generar Excel:', e);
+                toast('Error al generar Excel, usando CSV', 'error');
+                exportarCSV(datosExport, nombre);
+            }
+        } else {
+            exportarCSV(datosExport, nombre);
+        }
+    }
+
+    function exportarCSV(datos, nombre) {
+        const headers = Object.keys(datos[0]);
+        const rows = datos.map(row => headers.map(h => {
+            const val = row[h] || '';
+            return '"' + String(val).replace(/"/g, '""') + '"';
+        }).join(','));
+
+        const csv = [headers.map(h => '"' + h + '"').join(','), ...rows].join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = nombre + '.csv';
+        link.click();
+        URL.revokeObjectURL(link.href);
+        toast('CSV descargado', 'success');
+    }
+
+    function dl(data, nombre, mime) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([data], { type: mime }));
+        a.download = nombre;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            URL.revokeObjectURL(a.href);
+            a.remove();
+        }, 1000);
+    }
+
+    window._xl = id => {
+        const p = app.p.find(x => String(x.id) === String(id));
+        if (p) exportPedido([p], 'pedido_' + p.np);
+    };
+
+    // ── RENDER LISTA ─────────────────────────────────────────────
+    function render() {
+        const cer = app.p.filter(p => p.es === 'Cerrado').length;
+        document.getElementById('pc').textContent = app.p.length - cer;
+        document.getElementById('cc').textContent = cer;
+
+        const fl = app.p.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
+        const c = document.getElementById('pl');
+        c.innerHTML = '';
+
+        if (!fl.length) {
+            c.innerHTML = '<div class="ll2"><i class="fas fa-inbox"></i> Sin pedidos</div>';
+            renderMk();
+            return;
+        }
+
+        const bC = {
+            'Crítica': '#ef4444',
+            'Alta': '#f97316',
+            'Media': '#eab308',
+            'Baja': '#3b82f6'
+        };
+
+        const eC = {
+            'Pendiente': 'ep',
+            'En ejecución': 'ee',
+            'Cerrado': 'ec'
+        };
+
+        const pC = {
+            'Crítica': 'pc2',
+            'Alta': 'pa',
+            'Media': 'pm',
+            'Baja': 'pb'
+        };
+
+        const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
+
+        fl.forEach(p => {
+            const d = document.createElement('div');
+            d.className = 'pi';
+            d.style.borderLeftColor = bC[p.pr] || '#3b82f6';
+            d.addEventListener('click', () => detalle(p));
+
+            const f = p.f ? new Date(p.f).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, ...tz }) : '';
+
+            d.innerHTML = `
+                <div class="ph2">
+                    <span class="pn">#${p.np}${p._offline ? '<span class="offline-tag">LOCAL</span>' : ''}</span>
+                    <span class="pe ${eC[p.es] || ''}">${p.es}</span>
+                </div>
+                <div class="pi2">
+                    ${p.dis}${p.cl ? ' - ' + p.cl : ''}
+                    <span style="float:right;color:#94a3b8">${f}</span>
+                </div>
+                <div class="pd">${p.de.substring(0,70)}${p.de.length > 70 ? '…' : ''}</div>
+                <span class="pt2 ${pC[p.pr] || ''}">${p.pr}</span>
+                <div class="pav">
+                    <div class="ab" style="width:${p.av}%"></div>
+                </div>
+            `;
+            c.appendChild(d);
+        });
+
+        renderMk();
+    }
+
+    // ── HELPERS ───────────────────────────────────────────────────
+    function closeAll() {
+        document.querySelectorAll('.mo').forEach(m => m.classList.remove('active'));
+        document.getElementById('pf').reset();
+        document.getElementById('dc').textContent = '0';
+        // Resetear foto de cierre
+        fotoCierreTemp = null;
+        const vpc = document.getElementById('vista-previa-foto-cierre');
+        if (vpc) vpc.innerHTML = '';
+        const ui = document.getElementById('ui');
+        if (ui) {
+            ui.innerHTML = '<i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar';
+            ui.className = 'ud';
+        }
+    }
+
+    function togglePanel() {
+        document.getElementById('bp2').classList.toggle('col');
+    }
+
+    function switchTab(t) {
+        app.tab = t;
+        document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+        render();
+    }
+
+    // ── EVENTOS UI ────────────────────────────────────────────────
+    document.getElementById('mt').addEventListener('click', togglePanel);
+    document.getElementById('ph').addEventListener('click', togglePanel);
+
+    document.getElementById('ub').addEventListener('click', () => {
+        if (confirm('¿Cerrar sesión?')) {
+            detenerKeepAlive(); // Detener keep-alive al cerrar sesión
+            localStorage.removeItem('pmg');
+            app.u = null;
+            mapaInicializado = false;
+            if (app.map) {
+                app.map.remove();
+                app.map = null;
+            }
+            document.getElementById('ls').classList.add('active');
+            document.getElementById('ms').classList.remove('active');
+        }
+    });
+
+    document.querySelectorAll('.tb').forEach(b => {
+        b.addEventListener('click', () => {
+            if (b.dataset.tab) switchTab(b.dataset.tab);
+        });
+    });
+
+    document.getElementById('eb').addEventListener('click', () => {
+        exportPedido(
+            app.p.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado'),
+            'pedidos_' + app.tab + '_' + new Date().toISOString().slice(0,10)
+        );
+    });
+
+
+
+    document.querySelectorAll('.cm').forEach(b => b.addEventListener('click', closeAll));
+    document.querySelectorAll('.cm2').forEach(b => b.addEventListener('click', closeAll));
+
+    document.getElementById('de').addEventListener('input', function() {
+        document.getElementById('dc').textContent = this.value.length;
+    });
+
+    document.getElementById('tr').addEventListener('input', function() {
+        document.getElementById('tc').textContent = this.value.length;
+    });
+
+    // Hacer clic en el campo de ubicación abre el mapa para seleccionar
+    document.getElementById('ui').addEventListener('click', () => {
+        closeAll();
+        toast('Hacé clic en el mapa para seleccionar la ubicación', 'info');
+    });
+
+    // ── POBLAR SELECTORES ────────────────────────────────────────
+    const sd = document.getElementById('di2');
+    [...new Set(DIST.map(d => d.g))].forEach(g => {
+        const og = document.createElement('optgroup');
+        og.label = g;
+        DIST.filter(d => d.g === g).forEach(d => {
+            const o = document.createElement('option');
+            o.value = d.v;
+            o.textContent = d.l;
+            og.appendChild(o);
+        });
+        sd.appendChild(og);
+    });
+
+    const st = document.getElementById('tt');
+    TIPOS.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t;
+        o.textContent = t;
+        st.appendChild(o);
+    });
+
+    // ── RESTAURAR SESIÓN ─────────────────────────────────────────
+    try {
+        const s = localStorage.getItem('pmg');
+        if (s) {
+            app.u = JSON.parse(s);
+            document.getElementById('un').textContent = app.u.nombre.split(' ')[0];
+            document.getElementById('ls').classList.remove('active');
+            document.getElementById('ms').classList.add('active');
+            iniciarKeepAlive();
+            actualizarBadgeOffline();
+            setTimeout(async () => {
+                // Pedir GPS y cámara al restaurar sesión
+                solicitarPermisos();
+                initMap();
+                await cargarPedidos();
+                // Si hay pedidos offline en cola, sincronizar automáticamente
+                if (!modoOffline && offlineQueue().length > 0) {
+                    setTimeout(sincronizarOffline, 2000);
+                }
+            }, 200);
+        }
+    } catch(_) {}
+
+    // ── CARGAR XLSX ──────────────────────────────────────────────
+    const xscript = document.createElement('script');
+    xscript.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+    xscript.onerror = () => console.log('XLSX no disponible - se usará CSV');
+    document.head.appendChild(xscript);
+
+</script>
+
+<script>
+    // ── SERVICE WORKER — cache de tiles de Entre Ríos ────────────
+    // Registra el SW que precarga ~713 tiles (zooms 5-11) en la
+    // primera visita para poder usar el mapa sin internet.
+    // El archivo sw.js debe estar en la raíz del repositorio.
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => {
+                    console.log('[SW] Registrado, scope:', reg.scope);
+                    // Si hay una actualización disponible, activarla
+                    reg.addEventListener('updatefound', () => {
+                        const sw = reg.installing;
+                        sw.addEventListener('statechange', () => {
+                            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('[SW] Actualización disponible');
+                            }
+                        });
+                    });
+                })
+                .catch(err => console.warn('[SW] Error al registrar:', err.message));
+        });
+    }
+</script>
+</body>
+</html>
