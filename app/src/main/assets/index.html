@@ -4804,25 +4804,38 @@ async function pasoResetPw() {
             const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
             await sqlSimple(`UPDATE usuarios SET reset_token = ${esc(token)}, reset_expiry = ${esc(expiry)} WHERE id = ${esc(usuario.id)}`);
 
-            // Enviar email con EmailJS
-            if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) {
-                throw new Error('Servicio de correo no configurado en este entorno');
-            }
-            if (!window.emailjs || typeof emailjs.send !== 'function') {
-                throw new Error('Servicio de correo no disponible en este momento');
-            }
-            await emailjs.send(cfg.serviceId, cfg.templateId, {
-                to_email: usuario.email,
-                to_name:  usuario.nombre,
-                token:    token,
-                app_name: window.EMPRESA_CFG?.nombre || 'Pedidos MG'
-            }, cfg.publicKey);
+            const esAndroidLocal = window.location.protocol === 'file:' && !!window.AndroidDevice;
+            if (esAndroidLocal) {
+                // EmailJS no funciona en WebView Android (403 non-browser).
+                // En app local mostramos el código temporal para continuar el reset.
+                msg.style.color = '#854d0e';
+                msg.innerHTML =
+                    `Android no puede enviar correo desde esta pantalla.<br>` +
+                    `Usá este código temporal local: <b>${token}</b>`;
+                document.getElementById('reset-codigo-wrap').style.display = 'block';
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
+                _resetPaso = 2;
+            } else {
+                // Enviar email con EmailJS (solo web navegador)
+                if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) {
+                    throw new Error('Servicio de correo no configurado en este entorno');
+                }
+                if (!window.emailjs || typeof emailjs.send !== 'function') {
+                    throw new Error('Servicio de correo no disponible en este momento');
+                }
+                await emailjs.send(cfg.serviceId, cfg.templateId, {
+                    to_email: usuario.email,
+                    to_name:  usuario.nombre,
+                    token:    token,
+                    app_name: window.EMPRESA_CFG?.nombre || 'Pedidos MG'
+                }, cfg.publicKey);
 
-            msg.style.color = '#166534';
-            msg.textContent = '✓ Código enviado a ' + email;
-            document.getElementById('reset-codigo-wrap').style.display = 'block';
-            btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
-            _resetPaso = 2;
+                msg.style.color = '#166534';
+                msg.textContent = '✓ Código enviado a ' + email;
+                document.getElementById('reset-codigo-wrap').style.display = 'block';
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
+                _resetPaso = 2;
+            }
         } catch(e) {
             const em = _errMsg(e);
             const esAndroidLocal = window.location.protocol === 'file:' && !!window.AndroidDevice;
