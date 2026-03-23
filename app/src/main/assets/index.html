@@ -959,6 +959,24 @@ let keepAliveInterval  = null;
 let keepAliveStartTime = null;
 const KEEPALIVE_INTERVAL_MS = 4 * 60 * 1000;  
 const SESSION_MAX_MS        = 60 * 60 * 1000;  
+let _syncCatalogosInterval = null;
+
+function iniciarSyncCatalogos() {
+    detenerSyncCatalogos();
+    const run = async () => {
+        if (!app.u || modoOffline || !NEON_OK || !_sql) return;
+        try { await cargarDistribuidores(); } catch (_) {}
+    };
+    run();
+    _syncCatalogosInterval = setInterval(run, 120000);
+}
+
+function detenerSyncCatalogos() {
+    if (_syncCatalogosInterval) {
+        clearInterval(_syncCatalogosInterval);
+        _syncCatalogosInterval = null;
+    }
+}
 
 async function heartbeat() {
     if (!app.u) return; 
@@ -971,6 +989,7 @@ async function heartbeat() {
         setTimeout(() => {
             localStorage.removeItem('pmg');
             detenerTracking();
+            detenerSyncCatalogos();
             app.u = null;
             mapaInicializado = false;
             if (app.map) { app.map.remove(); app.map = null; }
@@ -1302,6 +1321,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
+        iniciarSyncCatalogos();
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = u.rol === 'admin' ? 'flex' : 'none';
         setTimeout(async () => {
@@ -2260,11 +2280,17 @@ window.imprimirPedido = function(p) {
     const contenedor = document.getElementById('print-container');
     contenedor.innerHTML = contenido;
     contenedor.classList.add('printing');
-    
-    window.print();
-    
-    contenedor.classList.remove('printing');
-    contenedor.innerHTML = '';
+
+    try {
+        if (window.AndroidPrint && typeof window.AndroidPrint.printWebContent === 'function') {
+            window.AndroidPrint.printWebContent();
+        } else {
+            window.print();
+        }
+    } finally {
+        contenedor.classList.remove('printing');
+        contenedor.innerHTML = '';
+    }
 };
 
 
@@ -3295,12 +3321,43 @@ function detalle(p) {
 
 
 window.copiarTexto = function(texto) {
-    navigator.clipboard.writeText(texto).then(() => {
+    const t = String(texto ?? '');
+    if (window.AndroidDevice && typeof window.AndroidDevice.copyText === 'function') {
+        try {
+            window.AndroidDevice.copyText(t);
+            toast('Copiado al portapapeles', 'success');
+            return;
+        } catch (_) {}
+    }
+    navigator.clipboard.writeText(t).then(() => {
         toast('Copiado al portapapeles', 'success');
     }).catch(() => {
         toast('Error al copiar', 'error');
     });
 };
+
+function _arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+function _textToBase64(text) {
+    return btoa(unescape(encodeURIComponent(text)));
+}
+
+function _guardarArchivoAndroid(nombre, mime, base64) {
+    if (!(window.AndroidDevice && typeof window.AndroidDevice.saveBase64File === 'function')) return false;
+    try {
+        return !!window.AndroidDevice.saveBase64File(nombre, mime, base64);
+    } catch (_) {
+        return false;
+    }
+}
 
 
 function exportPedido(pedidos, nombre) {
@@ -3350,8 +3407,11 @@ function exportPedido(pedidos, nombre) {
             
             XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
             const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            dl(buf, nombre + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            toast('Excel descargado', 'success');
+            const fileName = nombre + '.xlsx';
+            const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            const okAndroid = _guardarArchivoAndroid(fileName, mime, _arrayBufferToBase64(buf));
+            if (!okAndroid) dl(buf, fileName, mime);
+            toast(okAndroid ? 'Excel guardado en Descargas' : 'Excel descargado', 'success');
         } catch (e) {
             console.error('Error al generar Excel:', e);
             toast('Error al generar Excel, usando CSV', 'error');
@@ -3370,13 +3430,18 @@ function exportarCSV(datos, nombre) {
     }).join(','));
     
     const csv = [headers.map(h => '"' + h + '"').join(','), ...rows].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = nombre + '.csv';
-    link.click();
-    URL.revokeObjectURL(link.href);
-    toast('CSV descargado', 'success');
+    const fileName = nombre + '.csv';
+    const mime = 'text/csv;charset=utf-8;';
+    const okAndroid = _guardarArchivoAndroid(fileName, mime, _textToBase64('\uFEFF' + csv));
+    if (!okAndroid) {
+        const blob = new Blob(['\uFEFF' + csv], { type: mime });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+    toast(okAndroid ? 'CSV guardado en Descargas' : 'CSV descargado', 'success');
 }
 
 function dl(data, nombre, mime) {
@@ -3497,6 +3562,7 @@ document.getElementById('ub').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión?')) {
         detenerKeepAlive(); 
         detenerTracking();
+        detenerSyncCatalogos();
         localStorage.removeItem('pmg');
         app.u = null;
         mapaInicializado = false;
@@ -3580,6 +3646,7 @@ try {
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
+        iniciarSyncCatalogos();
         actualizarBadgeOffline();
         setTimeout(async () => {
             

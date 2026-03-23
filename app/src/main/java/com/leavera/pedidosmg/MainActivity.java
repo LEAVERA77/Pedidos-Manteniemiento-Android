@@ -5,8 +5,12 @@ import android.app.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -15,6 +19,7 @@ import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -37,7 +42,9 @@ import androidx.core.content.FileProvider;
 import java.io.File;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -128,6 +135,7 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
         webView.addJavascriptInterface(new AndroidConfigBridge(), "AndroidConfig");
+        webView.addJavascriptInterface(new AndroidDeviceBridge(), "AndroidDevice");
 
         webView.setWebChromeClient(new WebChromeClient() {
 
@@ -339,6 +347,43 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /** Utilidades nativas para WebView (copiar/exportar). */
+    private class AndroidDeviceBridge {
+        @JavascriptInterface
+        public void copyText(String text) {
+            try {
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm == null) return;
+                ClipData clip = ClipData.newPlainText("PedidosMG", text != null ? text : "");
+                cm.setPrimaryClip(clip);
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Copiado al portapapeles", Toast.LENGTH_SHORT).show());
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "No se pudo copiar", Toast.LENGTH_SHORT).show());
+            }
+        }
+
+        @JavascriptInterface
+        public boolean saveBase64File(String fileName, String mimeType, String base64Data) {
+            try {
+                String safeName = (fileName == null || fileName.trim().isEmpty()) ? "archivo" : fileName.trim();
+                String mime = (mimeType == null || mimeType.trim().isEmpty()) ? "application/octet-stream" : mimeType.trim();
+                String b64 = base64Data == null ? "" : base64Data.trim();
+                int comma = b64.indexOf(',');
+                if (comma >= 0) b64 = b64.substring(comma + 1);
+                if (b64.isEmpty()) return false;
+                byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+                Uri uri = saveToDownloads(safeName, mime, bytes);
+                if (uri == null) return false;
+                notifyExportSaved(uri, mime, safeName);
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Archivo guardado en Descargas", Toast.LENGTH_LONG).show());
+                return true;
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "No se pudo guardar el archivo", Toast.LENGTH_LONG).show());
+                return false;
+            }
+        }
+    }
+
     private void mostrarNotificacionPedido(String rowId, String title, String body, String pedidoId) {
         Intent open = new Intent(this, MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -388,5 +433,67 @@ public class MainActivity extends AppCompatActivity {
                         "}";
         webView.evaluateJavascript(js, null);
         pendingPedidoIdIntent = null;
+    }
+
+    private Uri saveToDownloads(String fileName, String mimeType, byte[] bytes) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PedidosMG");
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                Uri uri = getContentResolver().insert(collection, values);
+                if (uri == null) return null;
+                try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                    if (os == null) return null;
+                    os.write(bytes);
+                }
+                values.clear();
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+                return uri;
+            }
+
+            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "PedidosMG");
+            if (!dir.exists() && !dir.mkdirs()) return null;
+            File out = new File(dir, fileName);
+            try (FileOutputStream fos = new FileOutputStream(out)) {
+                fos.write(bytes);
+            }
+            MediaScannerConnection.scanFile(
+                    this,
+                    new String[]{out.getAbsolutePath()},
+                    new String[]{mimeType},
+                    null
+            );
+            return FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", out);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void notifyExportSaved(Uri uri, String mimeType, String fileName) {
+        Intent open = new Intent(Intent.ACTION_VIEW);
+        open.setDataAndType(uri, mimeType);
+        open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pi = PendingIntent.getActivity(
+                this,
+                (int) (System.currentTimeMillis() % Integer.MAX_VALUE),
+                Intent.createChooser(open, "Abrir archivo"),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle("Archivo exportado")
+                .setContentText(fileName)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText("Archivo guardado en Descargas: " + fileName))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+        try {
+            NotificationManagerCompat.from(this).notify((int) (System.currentTimeMillis() % Integer.MAX_VALUE), b.build());
+        } catch (SecurityException ignored) {}
     }
 }
