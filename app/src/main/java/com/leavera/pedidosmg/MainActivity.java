@@ -2,13 +2,20 @@ package com.leavera.pedidosmg;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.provider.MediaStore;
+import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -17,6 +24,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -32,6 +42,9 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String NOTIF_CHANNEL_ID = "pmg_pedidos_avisos";
+    private static final int NOTIF_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_HIGH;
 
     private WebView webView;
 
@@ -64,9 +77,21 @@ public class MainActivity extends AppCompatActivity {
         // El activity_main.xml con fitsSystemWindows="true" maneja todo.
         setContentView(R.layout.activity_main);
 
+        crearCanalNotificacionesPedidos();
+
         webView = findViewById(R.id.webview);
         configurarWebView();
         pedirPermisos();
+    }
+
+    private void crearCanalNotificacionesPedidos() {
+        NotificationChannel ch = new NotificationChannel(
+                NOTIF_CHANNEL_ID,
+                "Avisos de pedidos",
+                NOTIF_CHANNEL_IMPORTANCE);
+        ch.setDescription("Cuando un administrador te envía un pedido al mapa");
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) nm.createNotificationChannel(ch);
     }
 
     private void configurarWebView() {
@@ -85,6 +110,9 @@ public class MainActivity extends AppCompatActivity {
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "") + " PedidosMG/1.0"
         );
+
+        webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
+        webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
 
         webView.setWebChromeClient(new WebChromeClient() {
 
@@ -186,6 +214,7 @@ public class MainActivity extends AppCompatActivity {
         necesarios.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             necesarios.add(Manifest.permission.READ_MEDIA_IMAGES);
+            necesarios.add(Manifest.permission.POST_NOTIFICATIONS);
         } else {
             necesarios.add(Manifest.permission.READ_EXTERNAL_STORAGE);
         }
@@ -200,8 +229,82 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
+                    null);
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
+    }
+
+    /** Expone impresión del WebView a JavaScript (window.AndroidPrint.printWebContent). */
+    private class AndroidPrintBridge {
+        @JavascriptInterface
+        public void printWebContent() {
+            runOnUiThread(() -> {
+                if (webView == null) return;
+                PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
+                if (pm == null) {
+                    Toast.makeText(MainActivity.this,
+                            "Impresión no disponible en este dispositivo.",
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                String jobName = "Pedido MG";
+                PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter(jobName);
+                pm.print(jobName, adapter, new PrintAttributes.Builder().build());
+            });
+        }
+    }
+
+    /**
+     * Llamado desde JS cuando hay filas nuevas en notificaciones_movil (Neon).
+     */
+    private class LocalNotifyBridge {
+        @JavascriptInterface
+        public void show(String rowId, String title, String body, String pedidoId) {
+            if (title == null) title = "Pedidos MG";
+            if (body == null) body = "";
+            runOnUiThread(() -> mostrarNotificacionPedido(rowId, title, body, pedidoId));
+        }
+    }
+
+    private void mostrarNotificacionPedido(String rowId, String title, String body, String pedidoId) {
+        Intent open = new Intent(this, MainActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        open.putExtra("pedidoId", pedidoId != null ? pedidoId : "");
+        int req = 0;
+        try {
+            req = (int) (Long.parseLong(rowId) % Integer.MAX_VALUE);
+        } catch (NumberFormatException e) {
+            req = (rowId != null ? rowId.hashCode() : 0) & 0x7fffffff;
+        }
+        PendingIntent pi = PendingIntent.getActivity(
+                this,
+                req,
+                open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(title)
+                .setContentText(body.length() > 200 ? body.substring(0, 197) + "…" : body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pi);
+
+        try {
+            NotificationManagerCompat.from(this).notify(req, b.build());
+        } catch (SecurityException e) {
+            Toast.makeText(this, "Activá notificaciones para Pedidos MG en Ajustes.", Toast.LENGTH_LONG).show();
+        }
     }
 }
