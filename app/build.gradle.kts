@@ -57,5 +57,6 @@ dependencies {
     implementation("androidx.core:core:1.12.0")
 
     implementation("androidx.work:work-runtime:2.9.1")
-    implementation("org.postgresql:postgresql:42.7.4")
+    // 42.7+ provoca mergeExtDex: MethodHandle.invoke solo con minSdk 26+; 42.2.x dexifica en API 24.
+    implementation("org.postgresql:postgresql:42.2.29")
 }

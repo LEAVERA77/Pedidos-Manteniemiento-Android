@@ -727,10 +727,16 @@ function actualizarBadgeOffline() {
 function setModoOffline(offline) {
     modoOffline = offline;
     const toggle = document.getElementById('offline-toggle');
-    if (toggle) toggle.className = offline ? 'visible' : '';
+    if (toggle) {
+        if (esAndroidApp) toggle.className = '';
+        else toggle.className = offline ? 'visible' : '';
+    }
     const banner = document.getElementById('offline-banner');
     if (banner) {
-        if (offline) banner.classList.add('visible');
+        if (esAndroidApp) {
+            banner.classList.remove('visible');
+            banner.classList.add('hidden');
+        } else if (offline) banner.classList.add('visible');
         else banner.classList.remove('visible');
     }
     const di = document.getElementById('di');
@@ -2648,6 +2654,7 @@ async function procesarFotoSeleccionada(file, opts = {}) {
 
 
 const esMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const esAndroidApp = /PedidosMG\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
 
 
 
@@ -3637,23 +3644,46 @@ function mostrarAlertaPedidoUrgente(pedido) {
 // ── Carga de config.json desde GitHub ────────────────────────
 let APP_CONFIG = null;
 async function cargarAppConfig() {
-    try {
-        const resp = await fetch('./config.json?' + Date.now(), { cache: 'no-store' });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        APP_CONFIG = await resp.json();
-        window.APP_CONFIG = APP_CONFIG;
-        console.log('[config] cargado OK');
-        return true;
-    } catch(e) {
-        console.error('[config] ERROR al cargar config.json:', e.message);
-        // Mostrar error en la pantalla de login
-        const dbs2 = document.getElementById('dbs');
-        if (dbs2) {
-            dbs2.className = 'dbs er';
-            dbs2.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error: no se encontró config.json en el repositorio';
+    const esAndroidApp = window.location.protocol === 'file:' || /PedidosMG\//i.test(navigator.userAgent);
+    if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getConfigJson === 'function') {
+        try {
+            const raw = window.AndroidConfig.getConfigJson();
+            if (raw && raw.trim()) {
+                APP_CONFIG = JSON.parse(raw);
+                window.APP_CONFIG = APP_CONFIG;
+                console.log('[config] cargado OK desde AndroidConfig bridge');
+                return true;
+            }
+        } catch (e) {
+            console.warn('[config] fallo bridge AndroidConfig:', e && e.message ? e.message : e);
         }
-        return false;
     }
+    const rutas = esAndroidApp
+        ? ['./config.json', 'config.json', 'file:///android_asset/config.json']
+        : ['./config.json?' + Date.now()];
+    let ultimoError = '';
+    for (const ruta of rutas) {
+        try {
+            const resp = await fetch(ruta, { cache: 'no-store' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            APP_CONFIG = await resp.json();
+            window.APP_CONFIG = APP_CONFIG;
+            console.log('[config] cargado OK desde', ruta);
+            return true;
+        } catch (e) {
+            ultimoError = e && e.message ? e.message : String(e);
+            console.warn('[config] fallo en', ruta, ultimoError);
+        }
+    }
+    console.error('[config] ERROR al cargar config.json:', ultimoError);
+    const dbs2 = document.getElementById('dbs');
+    if (dbs2) {
+        dbs2.className = 'dbs er';
+        dbs2.innerHTML = esAndroidApp
+            ? '<i class="fas fa-exclamation-circle"></i> Error: no se pudo leer assets/config.json'
+            : '<i class="fas fa-exclamation-circle"></i> Error: no se encontró config.json en el repositorio';
+    }
+    return false;
 }
 
 // ── Admin tab switcher ────────────────────────────────────────

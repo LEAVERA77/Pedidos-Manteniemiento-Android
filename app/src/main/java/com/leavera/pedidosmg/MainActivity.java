@@ -35,6 +35,9 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -107,6 +110,8 @@ public class MainActivity extends AppCompatActivity {
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
         s.setGeolocationEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
@@ -120,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
+        webView.addJavascriptInterface(new AndroidConfigBridge(), "AndroidConfig");
 
         webView.setWebChromeClient(new WebChromeClient() {
 
@@ -294,9 +300,25 @@ public class MainActivity extends AppCompatActivity {
     private class LocalNotifyBridge {
         @JavascriptInterface
         public void show(String rowId, String title, String body, String pedidoId) {
-            if (title == null) title = "Pedidos MG";
-            if (body == null) body = "";
-            runOnUiThread(() -> mostrarNotificacionPedido(rowId, title, body, pedidoId));
+            final String safeTitle = title != null ? title : "Pedidos MG";
+            final String safeBody = body != null ? body : "";
+            runOnUiThread(() -> mostrarNotificacionPedido(rowId, safeTitle, safeBody, pedidoId));
+        }
+    }
+
+    /** Expone lectura de assets/config.json a JavaScript para WebView file:// */
+    private class AndroidConfigBridge {
+        @JavascriptInterface
+        public String getConfigJson() {
+            try (InputStream in = getAssets().open("config.json")) {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = in.read(buffer)) != -1) bos.write(buffer, 0, n);
+                return bos.toString(StandardCharsets.UTF_8.name());
+            } catch (Exception e) {
+                return "";
+            }
         }
     }
 
