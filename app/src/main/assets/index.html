@@ -969,9 +969,12 @@ async function heartbeat() {
         toast('Sesión expirada (1 hora). Por seguridad, ingresá de nuevo.', 'info');
         setTimeout(() => {
             localStorage.removeItem('pmg');
+            detenerTracking();
             app.u = null;
             mapaInicializado = false;
             if (app.map) { app.map.remove(); app.map = null; }
+            const btnAdm = document.getElementById('btn-admin');
+            if (btnAdm) btnAdm.style.display = 'none';
             document.getElementById('ls').classList.add('active');
             document.getElementById('ms').classList.remove('active');
         }, 3500);
@@ -1355,6 +1358,15 @@ document.getElementById('lf').addEventListener('submit', async e => {
 
     try {
         
+        if (modoOffline || !NEON_OK || !_sql) {
+            try {
+                const reconectado = await initNeon();
+                if (reconectado) {
+                    NEON_OK = true;
+                    setModoOffline(false);
+                }
+            } catch(_) {}
+        }
         if (modoOffline || !NEON_OK || !_sql) {
             if (!intentarOffline()) {
                 le.textContent = 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.';
@@ -3408,6 +3420,7 @@ document.getElementById('ph').addEventListener('click', togglePanel);
 document.getElementById('ub').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión?')) {
         detenerKeepAlive(); 
+        detenerTracking();
         localStorage.removeItem('pmg');
         app.u = null;
         mapaInicializado = false;
@@ -3415,6 +3428,10 @@ document.getElementById('ub').addEventListener('click', () => {
             app.map.remove();
             app.map = null;
         }
+        const btnAdm = document.getElementById('btn-admin');
+        if (btnAdm) btnAdm.style.display = 'none';
+        const adminPanel = document.getElementById('admin-panel');
+        if (adminPanel) adminPanel.classList.remove('active');
         document.getElementById('ls').classList.add('active');
         document.getElementById('ms').classList.remove('active');
     }
@@ -3480,9 +3497,13 @@ try {
     if (s) {
         app.u = JSON.parse(s);
         document.getElementById('un').textContent = app.u.nombre.split(' ')[0];
+        const btnAdm = document.getElementById('btn-admin');
+        if (btnAdm) btnAdm.style.display = app.u.rol === 'admin' ? 'flex' : 'none';
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
         iniciarKeepAlive();
+        iniciarTracking();
+        iniciarPollNotifMovil();
         actualizarBadgeOffline();
         setTimeout(async () => {
             
@@ -3583,6 +3604,10 @@ async function iniciarTracking() {
 
 function detenerTracking() {
     if (_trackingInterval) { clearInterval(_trackingInterval); _trackingInterval = null; }
+    if (_watchId && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(_watchId); } catch(_) {}
+    }
+    _watchId = null;
 }
 window.detenerTracking = detenerTracking;
 
