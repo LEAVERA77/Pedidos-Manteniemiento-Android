@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.appcompat.app.AlertDialog;
@@ -50,6 +51,7 @@ public final class AppUpdateChecker {
             if (remoteName.isEmpty()) remoteName = "v" + remoteCode;
             String apkUrl = remote.optString("apkUrl", "");
             String notes = remote.optString("releaseNotes", "");
+            boolean forceUpdate = remote.optBoolean("forceUpdate", false);
 
             if (remoteCode <= 0 || apkUrl.isEmpty()) {
                 Log.w(TAG, "Manifest remoto incompleto (versionCode/apkUrl)");
@@ -58,7 +60,9 @@ public final class AppUpdateChecker {
 
             PackageInfo pi = activity.getPackageManager()
                     .getPackageInfo(activity.getPackageName(), 0);
-            int current = pi.versionCode;
+            long current = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? pi.getLongVersionCode()
+                    : pi.versionCode;
 
             if (remoteCode <= current) return;
 
@@ -67,7 +71,7 @@ public final class AppUpdateChecker {
 
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing() || activity.isDestroyed()) return;
-                new AlertDialog.Builder(activity)
+                AlertDialog.Builder b = new AlertDialog.Builder(activity)
                         .setTitle(title)
                         .setMessage(msg)
                         .setPositiveButton(R.string.update_dialog_download, (d, w) -> {
@@ -76,9 +80,16 @@ public final class AppUpdateChecker {
                             } catch (Exception e) {
                                 Log.e(TAG, "No se pudo abrir apkUrl", e);
                             }
-                        })
-                        .setNegativeButton(R.string.update_dialog_later, null)
-                        .show();
+                        });
+                if (!forceUpdate) {
+                    b.setNegativeButton(R.string.update_dialog_later, null);
+                }
+                AlertDialog dialog = b.create();
+                if (forceUpdate) {
+                    dialog.setCancelable(false);
+                    dialog.setCanceledOnTouchOutside(false);
+                }
+                dialog.show();
             });
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Package?", e);

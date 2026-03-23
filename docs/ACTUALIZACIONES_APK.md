@@ -30,8 +30,9 @@ Copiá la **URL directa del adjunto** (clic derecho en el nombre del archivo →
 
 1. En tu repositorio (puede ser el mismo de la web o uno solo para distribución), creá un archivo JSON con la forma de `docs/app_update_latest.example.json`.
 2. Rellená `versionCode` y `versionName` **iguales** a los de `build.gradle.kts` de esa release.
-3. Poné en `apkUrl` el enlace directo al APK (GitHub Releases u otro).
-4. Hacé commit y push.
+3. Poné en `apkUrl` el enlace directo al APK (Google Drive público, GitHub Releases u otro).
+4. Para actualización obligatoria, agregá `"forceUpdate": true`.
+5. Hacé commit y push.
 
 Obtené la URL **raw** del archivo en GitHub, por ejemplo:
 
@@ -49,9 +50,17 @@ Editá `app/src/main/assets/app_update_config.json` y poné esa URL en `manifest
 
 Volvé a compilar e instalá la nueva APK en los dispositivos (o distribuí solo la actualización siguiente; las instalaciones antiguas sin este asset no comprobarán hasta que actualicen una vez con `manifestUrl` configurado).
 
+Si usás Google Drive:
+- Publicá el archivo JSON (manifest) y el APK como "Cualquier persona con el enlace".
+- Usá enlace directo de descarga:
+  - Manifest: `https://drive.google.com/uc?export=download&id=ID_DEL_JSON`
+  - APK: `https://drive.google.com/uc?export=download&id=ID_DEL_APK`
+
 ## 6. Flujo en el dispositivo
 
 Al iniciar `MainActivity`, la app descarga el JSON remoto. Si `versionCode` remoto es **mayor** que el de la APK instalada, muestra un diálogo para abrir el navegador/descargas con `apkUrl`. El usuario instala la APK manualmente (orígenes desconocidos / “instalar aplicaciones desconocidas” según el fabricante).
+
+Si `forceUpdate` es `true`, el diálogo no permite “Más tarde” y exige actualizar para continuar.
 
 ## Notas
 
