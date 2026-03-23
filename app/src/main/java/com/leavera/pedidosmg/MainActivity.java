@@ -82,6 +82,7 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webview);
         configurarWebView();
         pedirPermisos();
+        iniciarNetworkWatchdog();
     }
 
     private void crearCanalNotificacionesPedidos() {
@@ -166,6 +167,15 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl("file:///android_asset/index.html");
     }
 
+    private void iniciarNetworkWatchdog() {
+        Intent i = new Intent(this, NetworkWatchdogService.class);
+        ContextCompat.startForegroundService(this, i);
+    }
+
+    private void detenerNetworkWatchdog() {
+        stopService(new Intent(this, NetworkWatchdogService.class));
+    }
+
     private Intent crearIntentCamara() {
         try {
             String ts = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
@@ -237,6 +247,14 @@ public class MainActivity extends AppCompatActivity {
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (isFinishing() && !isChangingConfigurations()) {
+            detenerNetworkWatchdog();
+        }
+        super.onDestroy();
     }
 
     @Override

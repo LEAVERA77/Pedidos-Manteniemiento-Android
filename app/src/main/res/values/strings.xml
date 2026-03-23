@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">Pedidos MG</string>
+
+    <string name="watchdog_channel_name">Sincronización en segundo plano</string>
+    <string name="watchdog_channel_desc">Mantiene la app activa y revisa la conexión cada 15 minutos</string>
+    <string name="watchdog_notification_checking">Pedidos MG</string>
+    <string name="watchdog_notification_subtitle">Comprobando conexión…</string>
+    <string name="watchdog_notification_ok_title">Pedidos MG · Conectado</string>
+    <string name="watchdog_notification_ok_text">Última verificación de red correcta</string>
+    <string name="watchdog_notification_limited_title">Pedidos MG · Red limitada</string>
+    <string name="watchdog_notification_limited_text">Hay red pero no se alcanza Internet (captive portal o firewall)</string>
+    <string name="watchdog_notification_offline_title">Pedidos MG · Sin conexión</string>
+    <string name="watchdog_notification_offline_text">Sin red validada; revisá Wi‑Fi o datos</string>
 </resources>
