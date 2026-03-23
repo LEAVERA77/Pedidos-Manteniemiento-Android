@@ -2071,16 +2071,17 @@ window.pollNotificacionesMovil = async function () {
     try {
         const r = await sqlSimple(`SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil WHERE usuario_id = ${esc(app.u.id)} AND leida = FALSE ORDER BY id ASC LIMIT 15`);
         const rows = r.rows || [];
+        const tienePuente = window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function';
         for (const row of rows) {
             const t = row.titulo || 'Pedidos MG';
             const b = row.cuerpo || '';
             const pid = row.pedido_id != null ? String(row.pedido_id) : '';
-            if (window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function') {
+            if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
+                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
                 } catch (_) {}
             }
-            await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
         }
     } catch (e) {
         if (!String(e.message || e).includes('notificaciones_movil')) console.warn('[notif-movil]', e.message || e);
