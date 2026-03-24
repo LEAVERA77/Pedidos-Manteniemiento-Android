@@ -1,0 +1,37 @@
+-- ============================================================
+-- TABLA app_version - control de actualizaciones APK Android
+-- Ejecutar en Neon SQL Editor.
+-- La API Node.js lee de aquí para GET /api/app-version
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS app_version (
+    id              SERIAL PRIMARY KEY,
+    version_code    INTEGER NOT NULL UNIQUE,
+    version_name    VARCHAR(20) NOT NULL,
+    apk_url         TEXT NOT NULL,
+    release_notes   TEXT,
+    force_update    BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índice para consultar la última versión
+CREATE INDEX IF NOT EXISTS idx_app_version_code ON app_version (version_code DESC);
+
+-- Última versión publicada (Nexxo / Pedidos MG). Subir el APK a Drive y reemplazar el id.
+-- Carpeta compartida ejemplo: https://drive.google.com/drive/folders/1DJMfqTu1cJMH_y6SiuAh7qnw18hugrJe
+-- Enlace directo al archivo: https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK
+INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
+VALUES (
+    7,
+    '1.0.6',
+    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK',
+    'NIS/medidor obligatorio, asignación técnico + notificación, firma y checklist al cierre, materiales por pedido, catálogo socios Excel, historial NIS, KPIs tipo ENRE, informe mensual imprimible.',
+    true
+)
+ON CONFLICT (version_code) DO UPDATE SET
+    version_name = EXCLUDED.version_name,
+    apk_url = EXCLUDED.apk_url,
+    release_notes = EXCLUDED.release_notes,
+    force_update = EXCLUDED.force_update;
+
+-- Si ya tenés otra fila como "última", podés forzar solo la más reciente por version_code mayor.

@@ -89,6 +89,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .fab-pedido-ubicacion:hover{transform:scale(1.1)}
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
+#modal-asignar-tecnico{z-index:6001}
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}
 @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -349,9 +350,12 @@ textarea{resize:vertical;min-height:80px}
           <option value="">Seleccionar distribuidor...</option>
         </select>
       </div>
+      <div class="fg"><label for="nis">NIS / Medidor *</label>
+        <input type="text" id="nis" required maxlength="80" placeholder="Obligatorio — identidad del socio">
+      </div>
       <div class="fr">
         <div class="fg hf"><label for="sd">SETD</label><input type="text" id="sd" placeholder="Ej: 1234"></div>
-        <div class="fg hf"><label for="cl">Cliente</label><input type="text" id="cl" placeholder="Nombre, NIS o medidor"></div>
+        <div class="fg hf"><label for="cl">Cliente</label><input type="text" id="cl" placeholder="Nombre o razón social"></div>
       </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
         <select id="tt" required></select>
@@ -423,6 +427,17 @@ textarea{resize:vertical;min-height:80px}
         <input type="file" id="input-foto-cierre-galeria" accept="image/*" style="display:none">
         <div id="vista-previa-foto-cierre" class="fotos-container"></div>
       </div>
+      <div class="fg" style="padding:0;margin-top:1rem">
+        <label><i class="fas fa-hard-hat"></i> Checklist de seguridad (obligatorio)</label>
+        <label style="font-weight:500;margin-top:.35rem;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-epp"> EPPS / elementos de protección verificados</label>
+        <label style="font-weight:500;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-corte"> Corte o seccionamiento de energía verificado</label>
+        <label style="font-weight:500;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-senal"> Señalización del lugar de trabajo</label>
+      </div>
+      <div class="fg" style="padding:0;margin-top:1rem">
+        <label><i class="fas fa-signature"></i> Firma del cliente / socio (obligatorio)</label>
+        <canvas id="firma-canvas-cierre" width="320" height="140" style="border:1.5px solid var(--bo);border-radius:.5rem;touch-action:none;background:#fff;max-width:100%"></canvas>
+        <button type="button" class="btn-sm" id="btn-limpiar-firma-cierre" style="margin-top:.35rem">Limpiar firma</button>
+      </div>
       <div class="fa2" style="padding:1.25rem 0 0">
         <button type="button" class="sec cm2">Cancelar</button>
         <button type="button" id="cc2" class="bp bs"><i class="fas fa-check"></i> Confirmar cierre</button>
@@ -480,6 +495,7 @@ textarea{resize:vertical;min-height:80px}
       <button class="admin-tab active" onclick="adminTab('empresa')"><i class="fas fa-building"></i> Empresa</button>
       <button class="admin-tab" onclick="adminTab('usuarios')"><i class="fas fa-users"></i> Usuarios</button>
       <button class="admin-tab" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
+      <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('mapa-usuarios')"><i class="fas fa-map-marker-alt"></i> Ubicaciones</button>
       <button class="admin-tab" onclick="adminTab('contrasena')"><i class="fas fa-key"></i> Contraseña</button>
@@ -560,6 +576,25 @@ textarea{resize:vertical;min-height:80px}
         </div>
       </div>
     </div>
+    <div id="admin-socios" class="admin-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="importarExcelSocios(event)"></label>
+          <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
+        </div>
+      </div>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>domicilio</strong> | <strong>telefono</strong> | <strong>distribuidor_codigo</strong> (opcional). Fila 1 = encabezados.</p>
+      <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
+      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--bo)">
+        <h4 style="color:var(--bd);font-size:.9rem;margin-bottom:.5rem"><i class="fas fa-history"></i> Historial de reclamos por NIS / medidor</h4>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:180px"><label style="font-size:.78rem">NIS o medidor</label><input type="text" id="historial-nis-input" placeholder="Ej: 12345678"></div>
+          <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()"><i class="fas fa-search"></i> Buscar</button>
+        </div>
+        <div id="historial-nis-result" style="margin-top:.75rem;font-size:.82rem;max-height:220px;overflow-y:auto"></div>
+      </div>
+    </div>
     <div id="admin-estadisticas" class="admin-section">
       <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
         <select id="est-periodo" onchange="cargarEstadisticas()" style="padding:.4rem .7rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.85rem">
@@ -567,6 +602,10 @@ textarea{resize:vertical;min-height:80px}
           <option value="anio">Este año</option><option value="todo">Todo</option>
         </select>
         <button class="btn-sm primary" onclick="cargarEstadisticas()"><i class="fas fa-sync"></i> Actualizar</button>
+        <button type="button" class="btn-sm" style="background:#b91c1c;color:#fff;border:none" onclick="generarInformeMensualENRE()"><i class="fas fa-file-pdf"></i> Informe mensual (imprimir / PDF)</button>
+      </div>
+      <div id="enre-marco" style="font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45">
+        <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
       </div>
       <div id="stats-cards" class="stat-grid"></div>
       <!-- Grilla 2 columnas en desktop, 1 en mobile -->
@@ -676,6 +715,21 @@ textarea{resize:vertical;min-height:80px}
         <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña admin</label><input id="reset-admin-newpw" type="password" placeholder="Nueva contraseña"></div>
         <div id="reset-admin-msg" style="font-size:.83rem;margin-top:.5rem"></div>
         <button type="button" class="bp" style="margin-top:.65rem" onclick="resetAdminSinEmail()"><i class="fas fa-shield-alt"></i> Restablecer admin</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-asignar-tecnico" class="mo">
+  <div class="mc" style="max-width:440px">
+    <div class="mh"><h3><i class="fas fa-user-hard-hat"></i> Asignar técnico</h3><button type="button" class="cm" onclick="document.getElementById('modal-asignar-tecnico').classList.remove('active')"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <p style="font-size:.85rem;color:var(--tm);margin-bottom:.75rem">Se actualiza el pedido y se encola una notificación para la app del técnico (tabla <code style="font-size:.76rem">notificaciones_movil</code>).</p>
+      <div class="fg" style="padding:0"><label>Técnico / supervisor</label><select id="assign-tecnico-select"></select></div>
+      <div class="fg" style="padding:0"><label>Mensaje (opcional)</label><input type="text" id="assign-tecnico-msg" placeholder="Ej: Urgente — revisar transformador"></div>
+      <div style="display:flex;gap:.75rem;margin-top:1rem">
+        <button type="button" class="sec" onclick="document.getElementById('modal-asignar-tecnico').classList.remove('active')">Cancelar</button>
+        <button type="button" class="bp" id="btn-confirmar-asignar-tecnico" onclick="confirmarEnviarNotifPedido()"><i class="fas fa-paper-plane"></i> Asignar y notificar</button>
       </div>
     </div>
   </div>
@@ -1402,8 +1456,8 @@ const TIPOS = [
 
 const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','setd',
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
-    'usuario_id','trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
-    'fecha_avance','foto_cierre']);
+    'usuario_id','usuario_creador_id','trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
+    'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad']);
 
 const app = {
     u: null,
@@ -1452,6 +1506,30 @@ async function conectarNeon() {
                     fecha_avance TIMESTAMPTZ, foto_cierre TEXT
                 )`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS foto_cierre TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS nis_medidor TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS tecnico_asignado_id INTEGER`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_asignacion TIMESTAMPTZ`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS firma_cliente TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS checklist_seguridad TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS usuario_creador_id INTEGER`);
+                await sqlSimple(`CREATE TABLE IF NOT EXISTS socios_catalogo(
+                    id SERIAL PRIMARY KEY,
+                    nis_medidor TEXT NOT NULL UNIQUE,
+                    nombre TEXT,
+                    domicilio TEXT,
+                    telefono TEXT,
+                    distribuidor_codigo TEXT,
+                    activo BOOLEAN NOT NULL DEFAULT TRUE,
+                    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )`);
+                await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
+                    id SERIAL PRIMARY KEY,
+                    pedido_id INTEGER NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    cantidad NUMERIC,
+                    unidad TEXT,
+                    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )`);
                 
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_contador(
                     anio INT PRIMARY KEY,
@@ -1664,7 +1742,12 @@ const norm = p => ({
     uav: p.usuario_avance_id,
     uci: p.usuario_cierre_id,
     x_inchauspe: p.x_inchauspe,
-    y_inchauspe: p.y_inchauspe
+    y_inchauspe: p.y_inchauspe,
+    nis: (p.nis_medidor || '').trim(),
+    tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
+    fasi: p.fecha_asignacion || null,
+    firma: p.firma_cliente || null,
+    chkl: p.checklist_seguridad || null
 });
 
 async function cargarPedidos() {
@@ -1676,7 +1759,11 @@ async function cargarPedidos() {
         return;
     }
     try {
-        const r = await ejecutarSQLConReintentos('SELECT * FROM pedidos ORDER BY fecha_creacion DESC');
+        let qPed = 'SELECT * FROM pedidos ORDER BY fecha_creacion DESC';
+        if (app.u?.rol === 'tecnico') {
+            qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))} ORDER BY fecha_creacion DESC`;
+        }
+        const r = await ejecutarSQLConReintentos(qPed);
         const prevIds = new Set(app.p.map(p => p.id));
         app.p = (r.rows || []).map(norm);
         // Detectar pedidos urgentes/críticos RECIÉN creados (últimos 2 min)
@@ -2163,6 +2250,7 @@ function renderMk() {
                 <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
                     <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
+                    ${app.u?.rol === 'admin' && p.es !== 'Cerrado' ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
                 </div>
             </div>`, { maxWidth: 260 });
         
@@ -2185,6 +2273,11 @@ window._z = id => {
             document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
         }, 300);
     }
+};
+
+window._assignMapa = id => {
+    try { app.map?.closePopup(); } catch (_) {}
+    abrirModalAsignarTecnico(id);
 };
 
 window._a = (a, id) => {
@@ -2215,6 +2308,7 @@ window._zm = id => {
 
 // ── Notificaciones a usuarios (admin → técnico, cola en Neon + Android) ──
 let _pedidoNotifContext = null;
+let _assignPedidoId = null;
 let _pollNotifMovilInterval = null;
 const KEY_PENDING_NOTIF_PEDIDO_ID = 'pmg_pending_notif_pedido_id';
 
@@ -2321,19 +2415,79 @@ function cerrarModalNotifPedido() {
     _pedidoNotifContext = null;
 }
 
-async function abrirModalNotificarPedidoPorId(pedidoId) {
-    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
+function llenarSelectAssignTecnico() {
+    const sel = document.getElementById('assign-tecnico-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const list = app.usuariosCache || [];
+    list.forEach(u => {
+        if (String(u.id) === String(app.u?.id)) return;
+        if (u.rol === 'admin') return;
+        const o = document.createElement('option');
+        o.value = u.id;
+        o.textContent = (u.nombre || 'Usuario') + ' (' + (u.rol || '') + ')';
+        sel.appendChild(o);
+    });
+    if (!sel.options.length) {
+        const o = document.createElement('option');
+        o.value = '';
+        o.textContent = 'No hay técnicos/supervisores';
+        sel.appendChild(o);
+    }
 }
 
-window._notificarPedidoMapa = function () {
-    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
+window.abrirModalAsignarTecnico = function (pedidoId) {
+    if (app.u?.rol !== 'admin') {
+        toast('Solo administrador puede asignar', 'error');
+        return;
+    }
+    _assignPedidoId = pedidoId;
+    llenarSelectAssignTecnico();
+    const sel = document.getElementById('assign-tecnico-select');
+    if (!sel || !sel.value) {
+        toast('Cargá usuarios en el panel o creá técnicos', 'error');
+        return;
+    }
+    const msg = document.getElementById('assign-tecnico-msg');
+    if (msg) msg.value = '';
+    document.getElementById('modal-asignar-tecnico')?.classList.add('active');
 };
-window._notificarPedidoMapaAdmin = function () {
-    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
+
+async function abrirModalNotificarPedidoPorId(pedidoId) {
+    abrirModalAsignarTecnico(pedidoId);
+}
+
+window._notificarPedidoMapa = function (pid) {
+    if (pid) abrirModalAsignarTecnico(pid);
+};
+window._notificarPedidoMapaAdmin = function (pid) {
+    if (pid) abrirModalAsignarTecnico(pid);
 };
 
 async function confirmarEnviarNotifPedido() {
-    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
+    const sel = document.getElementById('assign-tecnico-select');
+    const uid = parseInt(sel?.value || '', 10);
+    if (!uid || !_assignPedidoId) {
+        toast('Elegí un técnico', 'error');
+        return;
+    }
+    const msgExtra = (document.getElementById('assign-tecnico-msg')?.value || '').trim();
+    const p = app.p.find(x => String(x.id) === String(_assignPedidoId));
+    const titulo = 'Pedido asignado';
+    const cuerpo = msgExtra || ('Pedido ' + (p?.np || '#' + _assignPedidoId) + ' — revisá el mapa');
+    const now = new Date().toISOString();
+    const pidNum = parseInt(_assignPedidoId, 10);
+    try {
+        await updPedido(_assignPedidoId, { tecnico_asignado_id: uid, fecha_asignacion: now }, app.u?.id);
+        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(uid)}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)})`);
+        document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
+        _assignPedidoId = null;
+        toast('Técnico asignado y notificación encolada', 'success');
+        await cargarPedidos();
+        render();
+    } catch (e) {
+        toast('Error: ' + (e.message || e), 'error');
+    }
 }
 
 window.pollNotificacionesMovil = async function () {
@@ -3168,10 +3322,17 @@ document.getElementById('pf').addEventListener('submit', async e => {
             yInchauspe = xyNuevo[1].toFixed(2);
         } catch (_) {}
 
+        const nisVal = (document.getElementById('nis').value || '').trim();
+        if (!nisVal) {
+            toast('Indicá NIS o número de medidor', 'error');
+            btn.disabled = false;
+            return;
+        }
+        const uidCre = app.u?.id || 1;
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
-            descripcion, prioridad, lat, lng, usuario_id, estado, avance, foto_base64,
-            x_inchauspe, y_inchauspe, fecha_creacion
+            descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
+            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor
         ) VALUES(
             ${esc(numPedido)},
             ${esc(document.getElementById('di2').value)},
@@ -3182,12 +3343,14 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(document.getElementById('pr').value)},
             ${esc(app.sel.lat)},
             ${esc(app.sel.lng)},
-            ${esc(app.u?.id || 1)},
+            ${esc(uidCre)},
+            ${esc(uidCre)},
             'Pendiente', 0,
             ${esc(fotosString || null)},
             ${esc(xInchauspe)},
             ${esc(yInchauspe)},
-            ${esc(new Date().toISOString())}
+            ${esc(new Date().toISOString())},
+            ${esc(nisVal)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -3212,6 +3375,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 fotos: fotosString ? fotosString.split('||') : [],
                 foto_cierre: null,
                 x_inchauspe: xInchauspe, y_inchauspe: yInchauspe,
+                nis: nisVal,
                 _offline: true
             };
             app.p.unshift(pedidoLocal);
@@ -3301,7 +3465,12 @@ async function updPedido(id, campos, usuarioId) {
             tecnico_cierre: 'tc',
             fecha_cierre: 'fc',
             fecha_avance: 'fa',
-            foto_cierre: 'foto_cierre'
+            foto_cierre: 'foto_cierre',
+            nis_medidor: 'nis',
+            tecnico_asignado_id: 'tai',
+            fecha_asignacion: 'fasi',
+            firma_cliente: 'firma',
+            checklist_seguridad: 'chkl'
         };
         for (const [k, v2] of Object.entries(campos)) {
             if (pm[k]) app.p[idx][pm[k]] = v2;
@@ -3359,6 +3528,121 @@ function actualizarVistaPreviaFotoCierre() {
     container.appendChild(cnt);
 }
 
+let _firmaCanvasBound = false;
+function initFirmaCierreCanvas() {
+    const c = document.getElementById('firma-canvas-cierre');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    if (_firmaCanvasBound) return;
+    _firmaCanvasBound = true;
+    let draw = false;
+    const pos = e => {
+        const r = c.getBoundingClientRect();
+        const scaleX = c.width / r.width;
+        const scaleY = c.height / r.height;
+        const cx = ('touches' in e ? e.touches[0].clientX : e.clientX) - r.left;
+        const cy = ('touches' in e ? e.touches[0].clientY : e.clientY) - r.top;
+        return { x: cx * scaleX, y: cy * scaleY };
+    };
+    const start = e => { draw = true; const p0 = pos(e); ctx.beginPath(); ctx.moveTo(p0.x, p0.y); };
+    const move = e => { if (!draw) return; const p0 = pos(e); ctx.lineTo(p0.x, p0.y); ctx.stroke(); };
+    const end = () => { draw = false; };
+    c.addEventListener('mousedown', start);
+    c.addEventListener('mousemove', move);
+    c.addEventListener('mouseup', end);
+    c.addEventListener('mouseleave', end);
+    c.addEventListener('touchstart', e => { e.preventDefault(); start(e); }, { passive: false });
+    c.addEventListener('touchmove', e => { e.preventDefault(); move(e); }, { passive: false });
+    c.addEventListener('touchend', end);
+}
+function limpiarFirmaCierreCanvas() {
+    const c = document.getElementById('firma-canvas-cierre');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, c.width, c.height);
+}
+function firmaCierreCanvasVacio() {
+    const c = document.getElementById('firma-canvas-cierre');
+    if (!c) return true;
+    const ctx = c.getContext('2d');
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    for (let i = 0; i < d.length; i += 32) {
+        if (d[i] < 248 || d[i + 1] < 248 || d[i + 2] < 248) return false;
+    }
+    return true;
+}
+
+async function refrescarMaterialesEnDetalle(p) {
+    const body = document.getElementById('materiales-detalle-body');
+    if (!body) return;
+    const pid = parseInt(p.id, 10);
+    if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
+        body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
+        return;
+    }
+    try {
+        const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
+        const rows = r.rows || [];
+        let html = '<table style="width:100%;font-size:.82rem;border-collapse:collapse"><thead><tr><th align="left">Ítem</th><th>Cant.</th><th>Un.</th><th></th></tr></thead><tbody>';
+        rows.forEach(row => {
+            const des = String(row.descripcion || '').replace(/</g, '&lt;');
+            const un = String(row.unidad || '').replace(/</g, '&lt;');
+            html += `<tr><td>${des}</td><td>${row.cantidad ?? ''}</td><td>${un}</td><td>`;
+            if (p.es !== 'Cerrado' && app.u?.rol === 'admin') {
+                html += `<button type="button" class="btn-sm" onclick="eliminarMaterialPedido(${row.id},${pid})" style="font-size:.7rem;padding:.15rem .4rem">Borrar</button>`;
+            }
+            html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        const puedeAgregar = p.es !== 'Cerrado' && (app.u?.rol === 'tecnico' || app.u?.rol === 'admin' || app.u?.rol === 'supervisor')
+            && (String(p.tai) === String(app.u?.id) || app.u?.rol === 'admin' || app.u?.rol === 'supervisor');
+        if (puedeAgregar) {
+            html += `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;align-items:flex-end">
+                <input type="text" id="mat-desc-${pid}" placeholder="Descripción" style="flex:2;min-width:120px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
+                <input type="number" id="mat-cant-${pid}" placeholder="Cant." step="any" style="width:72px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
+                <input type="text" id="mat-un-${pid}" placeholder="u." style="width:52px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
+                <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeDetalle(${pid})">+ Agregar</button>
+            </div>`;
+        }
+        if (!rows.length && !puedeAgregar) {
+            body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
+        } else {
+            body.innerHTML = html;
+        }
+    } catch (e) {
+        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + (e.message || e) + '</p>';
+    }
+}
+
+window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
+    const d = document.getElementById('mat-desc-' + pid)?.value.trim();
+    if (!d) { toast('Indicá descripción del material', 'error'); return; }
+    const cantRaw = document.getElementById('mat-cant-' + pid)?.value;
+    const un = document.getElementById('mat-un-' + pid)?.value.trim();
+    const cant = cantRaw === '' || cantRaw == null ? null : parseFloat(cantRaw);
+    try {
+        await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
+        toast('Material registrado', 'success');
+        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        if (p) refrescarMaterialesEnDetalle(p);
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+};
+
+window.eliminarMaterialPedido = async function (mid, pid) {
+    if (!confirm('¿Eliminar material?')) return;
+    try {
+        await sqlSimple(`DELETE FROM pedido_materiales WHERE id=${esc(parseInt(mid, 10))}`);
+        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        if (p) refrescarMaterialesEnDetalle(p);
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+};
+
 function abrirCierre(id) {
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) return;
@@ -3371,11 +3655,19 @@ function abrirCierre(id) {
     document.getElementById('tr').value = '';
     document.getElementById('tc2').value = app.u?.nombre || '';
     document.getElementById('tc').textContent = '0';
+    ['chk-epp','chk-corte','chk-senal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
     
     fotoCierreTemp = null;
     actualizarVistaPreviaFotoCierre();
+    initFirmaCierreCanvas();
+    limpiarFirmaCierreCanvas();
     document.getElementById('cm2').classList.add('active');
 }
+
+document.getElementById('btn-limpiar-firma-cierre')?.addEventListener('click', () => limpiarFirmaCierreCanvas());
 
 document.getElementById('cc2').addEventListener('click', async () => {
     const tr = document.getElementById('tr').value.trim();
@@ -3383,6 +3675,21 @@ document.getElementById('cc2').addEventListener('click', async () => {
         toast('Describí el trabajo realizado', 'error');
         return;
     }
+    if (!document.getElementById('chk-epp')?.checked || !document.getElementById('chk-corte')?.checked || !document.getElementById('chk-senal')?.checked) {
+        toast('Completá el checklist de seguridad (tres ítems)', 'error');
+        return;
+    }
+    if (firmaCierreCanvasVacio()) {
+        toast('Firmá en el recuadro (firma del socio)', 'error');
+        return;
+    }
+    const c = document.getElementById('firma-canvas-cierre');
+    const firmaData = c ? c.toDataURL('image/png') : null;
+    const checklistJson = JSON.stringify({
+        epp: !!document.getElementById('chk-epp')?.checked,
+        corte: !!document.getElementById('chk-corte')?.checked,
+        senal: !!document.getElementById('chk-senal')?.checked
+    });
     const btn = document.getElementById('cc2');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...';
@@ -3393,7 +3700,9 @@ document.getElementById('cc2').addEventListener('click', async () => {
             trabajo_realizado: tr,
             tecnico_cierre: document.getElementById('tc2').value.trim() || app.u?.nombre || '',
             fecha_cierre: new Date().toISOString(),
-            foto_cierre: fotoCierreTemp || null
+            foto_cierre: fotoCierreTemp || null,
+            firma_cliente: firmaData,
+            checklist_seguridad: checklistJson
         });
         fotoCierreTemp = null;
         closeAll();
@@ -3425,7 +3734,8 @@ function detalle(p) {
         'Cerrado': '#166534'
     };
     
-    const ed = app.u?.rol === 'admin' || String(p.ui) === String(app.u?.id);
+    const ed = app.u?.rol === 'admin' || String(p.ui) === String(app.u?.id)
+        || (app.u?.rol === 'tecnico' && p.tai != null && String(p.tai) === String(app.u?.id));
     const findUser = id => {
         if (!id) return null;
         const u = app.usuariosCache?.find(u => String(u.id) === String(id));
@@ -3437,6 +3747,16 @@ function detalle(p) {
         p.uav ? '<div class="dr"><span class="dl">Últ avance</span><span class="dv">'   + (findUser(p.uav) || 'id:'+p.uav) + '</span></div>' : '',
         p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + (findUser(p.uci) || 'id:'+p.uci) + '</span></div>' : '',
     ].filter(Boolean).join('');
+    const nisEsc = String(p.nis || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '—';
+    const nAsig = (p.tai != null) ? (findUser(p.tai) || ('id ' + p.tai)) : 'Sin asignar';
+    const fasiStr = p.fasi ? new Date(p.fasi).toLocaleString('es-AR', {...tz, hour12:false}) : '';
+    let chkResumen = '';
+    try {
+        const o = p.chkl ? JSON.parse(p.chkl) : null;
+        if (o && typeof o === 'object') {
+            chkResumen = `<div class="dr"><span class="dl">Checklist seguridad</span><span class="dv">EPPS: ${o.epp ? 'Sí' : '—'} · Corte energía: ${o.corte ? 'Sí' : '—'} · Señalización: ${o.senal ? 'Sí' : '—'}</span></div>`;
+        }
+    } catch (_) {}
     
     
     let fotosHtml = '';
@@ -3486,6 +3806,8 @@ function detalle(p) {
             <div class="dr"><span class="dl">Estado</span><span class="dv"><span style="background:${bg[p.es]||'#e5e7eb'};color:${co[p.es]||'#374151'};padding:2px 10px;border-radius:12px;font-size:.82rem;font-weight:600">${p.es}</span></span></div>
             <div class="dr"><span class="dl">Prioridad</span><span class="dv">${p.pr}</span></div>
             <div class="dr"><span class="dl">Tipo</span><span class="dv">${p.tt||'--'}</span></div>
+            <div class="dr"><span class="dl">NIS / Medidor</span><span class="dv" style="font-weight:700">${nisEsc}</span></div>
+            <div class="dr"><span class="dl">Técnico asignado</span><span class="dv">${nAsig}${fasiStr ? ' · ' + fasiStr : ''}</span></div>
             <div class="dr"><span class="dl">Avance</span><span class="dv">${p.av}% <div style="height:4px;background:#e2e8f0;border-radius:2px;width:100px;display:inline-block;vertical-align:middle;margin-left:6px;overflow:hidden"><div style="height:100%;width:${p.av}%;background:linear-gradient(90deg,#1e3a8a,#3b82f6)"></div></div></span></div>
         </div>
         
@@ -3504,7 +3826,14 @@ function detalle(p) {
             ${p.tc ? `<div class="dr"><span class="dl">Técnico</span><span class="dv">${p.tc}</span></div>` : ''}
             ${p.tr ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Trabajo</span><div class="trb">${p.tr}</div></div>` : ''}
             ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
+            ${chkResumen}
+            ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del socio</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
+
+        <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
+            <h4>🔧 Materiales</h4>
+            <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
+        </div>
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
@@ -3521,6 +3850,7 @@ function detalle(p) {
         </div>` : ''}
         
         <div class="da">
+            ${app.u?.rol === 'admin' && p.es !== 'Cerrado' ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
             ${ed && p.es === 'Pendiente' ? `<button class="ba2 p2" onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Iniciar</button><button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
             ${ed && p.es === 'En ejecución' ? `<button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
             <button class="ba2 imprimir" onclick="imprimirPedido(${JSON.stringify(p).replace(/"/g, '&quot;')})"><i class="fas fa-print"></i> Imprimir</button>
@@ -3529,6 +3859,7 @@ function detalle(p) {
     `;
     
     document.getElementById('dm').classList.add('active');
+    requestAnimationFrame(() => { refrescarMaterialesEnDetalle(p); });
 }
 
 
@@ -3743,7 +4074,7 @@ function render() {
                 <span class="pe ${eC[p.es] || ''}">${p.es}</span>
             </div>
             <div class="pi2">
-                ${p.dis}${p.cl ? ' - ' + p.cl : ''}
+                ${p.dis}${p.cl ? ' - ' + p.cl : ''}${p.nis ? ' · NIS ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}
                 <span style="float:right;color:#94a3b8">${f}</span>
             </div>
             <div class="pd">${p.de.substring(0,70)}${p.de.length > 70 ? '…' : ''}</div>
@@ -3762,7 +4093,14 @@ function render() {
 function closeAll() {
     document.querySelectorAll('.mo').forEach(m => m.classList.remove('active'));
     document.getElementById('pf').reset();
+    const nisEl = document.getElementById('nis');
+    if (nisEl) nisEl.value = '';
     document.getElementById('dc').textContent = '0';
+    ['chk-epp','chk-corte','chk-senal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
+    try { limpiarFirmaCierreCanvas(); } catch (_) {}
     
     fotoCierreTemp = null;
     const vpc = document.getElementById('vista-previa-foto-cierre');
@@ -4086,7 +4424,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','estadisticas','mapa-usuarios','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','mapa-usuarios','contrasena'];
 function adminTab(tab) {
     document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
@@ -4098,6 +4436,7 @@ function adminTab(tab) {
     if (tab === 'estadisticas') cargarEstadisticas();
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
+    if (tab === 'socios') cargarListaSociosAdmin();
     if (tab === 'empresa') cargarFormEmpresa();
     if (tab === 'mapa-usuarios') { cargarUbicacionesUsuarios(); iniciarMapaUsuariosAdmin(); }
 }
@@ -4363,6 +4702,100 @@ async function importarExcelDistribuidores(event) {
     event.target.value = '';
 }
 
+async function cargarListaSociosAdmin() {
+    const cont = document.getElementById('lista-socios-admin');
+    if (!cont) return;
+    cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
+    try {
+        const r = await sqlSimple('SELECT id, nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
+        const rows = r.rows || [];
+        if (!rows.length) {
+            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
+            return;
+        }
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Domicilio</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+            rows.map(s => `<tr><td>${String(s.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(s.nombre || '').replace(/</g, '&lt;')}</td><td>${String(s.domicilio || '').replace(/</g, '&lt;')}</td><td>${String(s.telefono || '').replace(/</g, '&lt;')}</td><td>${String(s.distribuidor_codigo || '').replace(/</g, '&lt;')}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`).join('') + '</tbody></table></div>';
+    } catch (e) {
+        cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + e.message + '</p>';
+    }
+}
+
+async function importarExcelSocios(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: ['nis_medidor','nombre','domicilio','telefono','distribuidor_codigo'], range: 1 });
+        if (!rows.length) { toast('Excel vacío o formato incorrecto', 'error'); return; }
+        let ok = 0, fail = 0;
+        for (const row of rows) {
+            const nis = String(row.nis_medidor || '').trim();
+            if (!nis) continue;
+            try {
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, domicilio, telefono, distribuidor_codigo)
+                    VALUES(${esc(nis)}, ${esc(row.nombre ? String(row.nombre).trim() : null)}, ${esc(row.domicilio ? String(row.domicilio).trim() : null)}, ${esc(row.telefono ? String(row.telefono).trim() : null)}, ${esc(row.distribuidor_codigo ? String(row.distribuidor_codigo).trim() : null)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, domicilio = EXCLUDED.domicilio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo`);
+                ok++;
+            } catch (_) { fail++; }
+        }
+        toast(`Socios: ${ok} OK` + (fail ? ', ' + fail + ' errores' : ''), ok > 0 ? 'success' : 'error');
+        cargarListaSociosAdmin();
+    } catch (e) { toast('Error al leer Excel: ' + e.message, 'error'); }
+    event.target.value = '';
+}
+
+function mostrarFormatoExcelSocios() {
+    alert('Excel socios — fila 1:\nnis_medidor | nombre | domicilio | telefono | distribuidor_codigo\n\nDesde fila 2 los datos. nis_medidor es obligatorio.');
+}
+
+async function buscarHistorialPorNIS() {
+    const raw = (document.getElementById('historial-nis-input')?.value || '').trim();
+    const out = document.getElementById('historial-nis-result');
+    if (!raw) { toast('Ingresá NIS o medidor', 'error'); return; }
+    if (!out) return;
+    out.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+    try {
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)})) ORDER BY fecha_creacion DESC LIMIT 100`);
+        const rows = r.rows || [];
+        if (!rows.length) { out.innerHTML = '<p style="color:var(--tm)">Sin reclamos para ese NIS.</p>'; return; }
+        out.innerHTML = '<ul style="margin:0;padding-left:1rem;line-height:1.35">' + rows.map(row =>
+            `<li><strong>#${String(row.numero_pedido || '').replace(/</g, '&lt;')}</strong> · ${row.estado} · ${row.prioridad}<br><span style="color:var(--tl)">${String(row.descripcion || '').substring(0, 100).replace(/</g, '&lt;')}</span> · ${row.fecha_creacion || ''}</li>`
+        ).join('') + '</ul>';
+    } catch (e) { out.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>'; }
+}
+
+async function generarInformeMensualENRE() {
+    if (!app.u || app.u.rol !== 'admin') { toast('Solo administrador', 'error'); return; }
+    if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
+    const periodo = document.getElementById('est-periodo')?.value || 'mes';
+    const ahora = new Date();
+    let fechaDesde;
+    if (periodo === 'mes') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    else if (periodo === '3meses') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth() - 3, 1);
+    else if (periodo === 'anio') fechaDesde = new Date(ahora.getFullYear(), 0, 1);
+    else fechaDesde = new Date('2000-01-01');
+    const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
+    try {
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const rows = r.rows || [];
+        const tit = 'Nexxo — Informe de pedidos';
+        let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
+        rows.forEach(row => {
+            tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${String(row.fecha_creacion || '')}</td><td>${String(row.fecha_cierre || '')}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td></tr>`;
+        });
+        tab += '</tbody></table>';
+        const w = window.open('', '_blank');
+        if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
+        w.document.write('<html><head><title>' + tit + '</title><style>body{font-family:system-ui;padding:1rem} table{border-collapse:collapse;width:100%;font-size:10pt} th,td{border:1px solid #ccc;padding:4px}</style></head><body><h1>' + tit + '</h1><p>Período desde ' + fechaDesde.toLocaleDateString('es-AR') + ' · Generado ' + new Date().toLocaleString('es-AR') + '</p>' + tab + '<p style="margin-top:1rem;font-size:9pt;color:#555">Documento para gestión interna y respaldo documental. Complementar con datos de red (SAIDI/SAIFI, etc.) según exige el marco regulatorio.</p></body></html>');
+        w.document.close();
+        w.focus();
+        setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
 // ── Estadísticas con Chart.js ─────────────────────────────────
 let _charts = {};
 async function cargarEstadisticas() {
@@ -4385,7 +4818,8 @@ async function cargarEstadisticas() {
     if (statsEl) statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando...</div>';
 
     try {
-        const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios] = await Promise.all([
+        const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
+            rTecCalle, rAsig, rCrit24] = await Promise.all([
             // Resumen general
             sqlSimple(`SELECT
                 COUNT(*) AS total,
@@ -4428,7 +4862,15 @@ async function cargarEstadisticas() {
             sqlSimple(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
                 FROM pedidos p LEFT JOIN usuarios u ON u.id = p.usuario_creador_id
                 WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}
-                GROUP BY usuario ORDER BY n DESC LIMIT 10`)
+                GROUP BY usuario ORDER BY n DESC LIMIT 10`),
+            sqlSimple(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
+                AND estado='En ejecución' AND tecnico_asignado_id IS NOT NULL`),
+            sqlSimple(`SELECT AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion))/3600) AS h
+                FROM pedidos ${filtro} AND fecha_asignacion IS NOT NULL AND fecha_asignacion > fecha_creacion`),
+            sqlSimple(`SELECT
+                COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre <= fecha_creacion + interval '24 hours') AS n24,
+                COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL) AS nct
+                FROM pedidos ${filtro}`)
         ]);
 
         const t = rTotal.rows[0] || {};
@@ -4436,8 +4878,14 @@ async function cargarEstadisticas() {
         const horasMin  = parseFloat(rTiempos.rows[0]?.horas_min  || 0);
         const horasMax  = parseFloat(rTiempos.rows[0]?.horas_max  || 0);
         const avanceProm = parseInt(rAvance.rows[0]?.avance_prom  || 0);
+        const nTecCalle = parseInt(rTecCalle.rows[0]?.n || 0, 10);
+        const hAsig = parseFloat(rAsig.rows[0]?.h || 0);
+        const nCrit24 = parseInt(rCrit24.rows[0]?.n24 || 0, 10);
+        const nCritTot = parseInt(rCrit24.rows[0]?.nct || 0, 10);
+        const pctCerr = t.total ? Math.round(1000 * (t.cerrados || 0) / t.total) / 10 : 0;
+        const pctCrit24 = nCritTot ? Math.round(1000 * nCrit24 / nCritTot) / 10 : null;
 
-        const fmtHoras = h => h === 0 ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
+        const fmtHoras = h => h === 0 || !isFinite(h) ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
 
         // ── Cards de resumen ───────────────────────────────────
         document.getElementById('stats-cards').innerHTML = [
@@ -4448,6 +4896,10 @@ async function cargarEstadisticas() {
             { val: t.criticos    || 0, lbl: '🔴 Críticos activos', cls: t.criticos > 0 ? 'red' : '' },
             { val: t.altos       || 0, lbl: '🟠 Altos activos',   cls: t.altos > 0 ? 'orange' : '' },
             { val: t.cerrados_hoy|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
+            { val: nTecCalle, lbl: 'Técnicos en calle (ejec.)', cls: nTecCalle ? 'orange' : '' },
+            { val: fmtHoras(hAsig), lbl: 'Prom. horas hasta asignar', cls: '' },
+            { val: pctCerr + '%', lbl: '% cerrados / total período', cls: 'green' },
+            { val: pctCrit24 != null ? pctCrit24 + '%' : '—', lbl: '% críticos cerrados &lt;24h', cls: '' },
             { val: fmtHoras(horasProm), lbl: 'Prom. tiempo cierre', cls: '' },
             { val: fmtHoras(horasMin),  lbl: 'Cierre más rápido',   cls: 'green' },
             { val: avanceProm + '%',    lbl: 'Avance prom. en ejec.', cls: '' },
@@ -5051,6 +5503,11 @@ if (typeof abrirAdmin !== "undefined") window.abrirAdmin = abrirAdmin;
 if (typeof cargarListaUsuarios !== "undefined") window.cargarListaUsuarios = cargarListaUsuarios;
 if (typeof cargarListaDistribuidoresAdmin !== "undefined") window.cargarListaDistribuidoresAdmin = cargarListaDistribuidoresAdmin;
 if (typeof cargarFormEmpresa !== "undefined") window.cargarFormEmpresa = cargarFormEmpresa;
+if (typeof cargarListaSociosAdmin !== "undefined") window.cargarListaSociosAdmin = cargarListaSociosAdmin;
+if (typeof importarExcelSocios !== "undefined") window.importarExcelSocios = importarExcelSocios;
+if (typeof mostrarFormatoExcelSocios !== "undefined") window.mostrarFormatoExcelSocios = mostrarFormatoExcelSocios;
+if (typeof buscarHistorialPorNIS !== "undefined") window.buscarHistorialPorNIS = buscarHistorialPorNIS;
+if (typeof generarInformeMensualENRE !== "undefined") window.generarInformeMensualENRE = generarInformeMensualENRE;
 
 </script>
 <script>
