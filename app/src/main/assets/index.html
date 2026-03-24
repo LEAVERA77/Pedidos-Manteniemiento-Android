@@ -2402,7 +2402,8 @@ async function confirmarEnviarNotifPedido() {
         if (msgEl) msgEl.textContent = 'El usuario no tiene teléfono WhatsApp válido. Usá formato +543434540250.';
         return;
     }
-    const deepLinkPedido = `pedidosmg://pedido/${_pedidoNotifContext.id}`;
+    const baseUrl = (typeof location !== 'undefined' && location.protocol === 'https:' ? (location.origin + location.pathname).replace(/\/(index\.html?)?.*$/, '').replace(/\/$/, '') : 'https://leavera77.github.io/Pedidos-MG');
+    const openLink = `${baseUrl}/open.html?p=${_pedidoNotifContext.id}`;
     const lineas = [
         `Hola ${usuarioDestino.nombre || ''}, tenés un pedido asignado.`,
         `Pedido #${_pedidoNotifContext.np}`,
@@ -2413,7 +2414,7 @@ async function confirmarEnviarNotifPedido() {
         _pedidoNotifContext.cliente_nombre ? `Cliente: ${_pedidoNotifContext.cliente_nombre}` : '',
         _pedidoNotifContext.telefono_contacto ? `Teléfono contacto: ${_pedidoNotifContext.telefono_contacto}` : '',
         extra ? `Mensaje admin: ${extra}` : '',
-        `Abrir pedido en app: ${deepLinkPedido}`,
+        `Abrir pedido en app: ${openLink}`,
         'Pedidos MG'
     ].filter(Boolean);
     const cuerpo = lineas.join('\n');
@@ -2421,7 +2422,8 @@ async function confirmarEnviarNotifPedido() {
     try {
         const telWa = telefonoNorm.replace(/[^\d]/g, '');
         const waUrl = `https://wa.me/${telWa}?text=${encodeURIComponent(cuerpo)}`;
-        const popup = window.open(waUrl, '_blank', 'noopener');
+        // Reutilizar pestaña/ventana wa_send si ya está abierta (WhatsApp Web en uso)
+        const popup = window.open(waUrl, 'wa_send', 'noopener');
         if (!popup) {
             window.location.href = waUrl;
         }

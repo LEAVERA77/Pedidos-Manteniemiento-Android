@@ -646,14 +646,12 @@ public class MainActivity extends AppCompatActivity {
 
     private String extractPedidoIdFromUri(Uri data) {
         if (data == null) return null;
-        try {
-            String qp = data.getQueryParameter("pedidoId");
-            if (qp != null && !qp.trim().isEmpty()) return qp.trim();
-        } catch (Exception ignored) {}
-        try {
-            String qp2 = data.getQueryParameter("id");
-            if (qp2 != null && !qp2.trim().isEmpty()) return qp2.trim();
-        } catch (Exception ignored) {}
+        for (String key : new String[]{"pedidoId", "id", "p"}) {
+            try {
+                String qp = data.getQueryParameter(key);
+                if (qp != null && !qp.trim().isEmpty()) return qp.trim();
+            } catch (Exception ignored) {}
+        }
         try {
             if ("pedido".equalsIgnoreCase(data.getHost())) {
                 String last = data.getLastPathSegment();

@@ -14,8 +14,8 @@ android {
         applicationId = "com.leavera.pedidosmg"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 6
+        versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -59,4 +59,13 @@ dependencies {
     implementation("androidx.work:work-runtime:2.9.1")
     // 42.7+ provoca mergeExtDex: MethodHandle.invoke solo con minSdk 26+; 42.2.x dexifica en API 24.
     implementation("org.postgresql:postgresql:42.2.29")
+}
+
+tasks.register<Copy>("renameReleaseApk") {
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    into(layout.buildDirectory.dir("outputs/apk/release"))
+    val vName = android.defaultConfig.versionName ?: "0.0.0"
+    val vCode = android.defaultConfig.versionCode ?: 0
+    rename { "PedidosMG-$vName($vCode)-release.apk" }
 }
