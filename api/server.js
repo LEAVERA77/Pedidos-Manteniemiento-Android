@@ -17,6 +17,24 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL?.includes('neon.tech') ? { rejectUnauthorized: false } : false,
 });
 
+async function getLatestAppVersion() {
+  const r = await pool.query(`
+    SELECT version_code, version_name, apk_url, release_notes, force_update
+    FROM app_version
+    ORDER BY version_code DESC
+    LIMIT 1
+  `);
+  if (!r.rows || r.rows.length === 0) return null;
+  const row = r.rows[0];
+  return {
+    versionCode: row.version_code,
+    versionName: row.version_name || `v${row.version_code}`,
+    apkUrl: row.apk_url || '',
+    releaseNotes: row.release_notes || '',
+    forceUpdate: !!row.force_update,
+  };
+}
+
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -27,26 +45,35 @@ app.use((req, res, next) => {
 
 app.get('/api/app-version', async (req, res) => {
   try {
-    const r = await pool.query(`
-      SELECT version_code, version_name, apk_url, release_notes, force_update
-      FROM app_version
-      ORDER BY version_code DESC
-      LIMIT 1
-    `);
-    if (!r.rows || r.rows.length === 0) {
+    const latest = await getLatestAppVersion();
+    if (!latest) {
       return res.status(404).json({ error: 'No hay versión configurada' });
     }
-    const row = r.rows[0];
-    res.json({
-      versionCode: row.version_code,
-      versionName: row.version_name || `v${row.version_code}`,
-      apkUrl: row.apk_url || '',
-      releaseNotes: row.release_notes || '',
-      forceUpdate: !!row.force_update,
-    });
+    res.json(latest);
   } catch (err) {
     console.error('Error app-version:', err);
     res.status(500).json({ error: 'Error al consultar versión' });
+  }
+});
+
+app.get('/api/ping-version', async (req, res) => {
+  try {
+    const latest = await getLatestAppVersion();
+    res.json({
+      ok: true,
+      service: 'pedidosmg-api',
+      timestamp: new Date().toISOString(),
+      branch: process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || 'unknown',
+      latestVersion: latest,
+    });
+  } catch (err) {
+    console.error('Error ping-version:', err);
+    res.status(500).json({
+      ok: false,
+      service: 'pedidosmg-api',
+      timestamp: new Date().toISOString(),
+      error: 'Error al consultar diagnóstico de versión',
+    });
   }
 });
 
