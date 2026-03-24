@@ -682,26 +682,6 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
-<!-- Admin: enviar aviso de pedido por WhatsApp a un usuario -->
-<div id="modal-notif-pedido" class="mo">
-  <div class="mc" style="max-width:440px">
-    <div class="mh"><h3><i class="fab fa-whatsapp"></i> Enviar pedido por WhatsApp</h3><button type="button" class="cm" onclick="cerrarModalNotifPedido()"><i class="fas fa-times"></i></button></div>
-    <div class="mb">
-      <p id="notif-pedido-resumen" style="font-size:.88rem;color:var(--tm);margin-bottom:.75rem"></p>
-      <div class="fg" style="padding:0"><label><i class="fas fa-user"></i> Usuario destino</label>
-        <select id="notif-usuario-select"></select></div>
-      <div class="fg" style="padding:0;margin-top:.75rem"><label>Mensaje adicional (opcional)</label>
-        <textarea id="notif-mensaje-extra" rows="2" maxlength="240" placeholder="Ej.: Pasá por este punto antes del mediodía"></textarea></div>
-      <div style="display:flex;gap:.75rem;margin-top:1rem;flex-wrap:wrap">
-        <button type="button" class="sec" onclick="cerrarModalNotifPedido()">Cancelar</button>
-        <button type="button" class="bp" onclick="confirmarEnviarNotifPedido()"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button>
-      </div>
-      <p id="notif-pedido-msg" style="margin-top:.75rem;font-size:.82rem;color:var(--re)"></p>
-      <p style="margin-top:.5rem;font-size:.75rem;color:var(--tl)">El usuario destino debe tener teléfono cargado con formato internacional, por ejemplo <code>+543434540250</code>.</p>
-    </div>
-  </div>
-</div>
-
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -1963,6 +1943,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
 
     let intentos = 0;
     const MAX_INTENTOS = 3;
+    let centroInicialAplicado = false;
 
     function procesarPosicion(position, esWatchUpdate = false) {
         const { latitude, longitude, accuracy } = position.coords;
@@ -1978,7 +1959,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
 
         if (app.map) {
             const zoomSugerido = mostrarMarcadorUbicacion(latitude, longitude, acc);
-            if (centrarMapa) {
+            if (centrarMapa && !centroInicialAplicado) {
                 app.map.invalidateSize({ animate: false });
                 
                 const actualCenter = app.map.getCenter();
@@ -1988,6 +1969,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
                 if (estaLejos || !esWatchUpdate) {
                     app.map.setView([latitude, longitude], zoomSugerido, { animate: true });
                 }
+                centroInicialAplicado = true;
                 setTimeout(() => {
                     document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
                 }, 300);
@@ -2182,7 +2164,6 @@ function renderMk() {
                 <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
                     <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-                    ${app.u?.rol === 'admin' ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="window._notificarPedidoMapa('${p.id}')"><i class="fab fa-whatsapp"></i> WhatsApp</button>` : ''}
                 </div>
             </div>`, { maxWidth: 260 });
         
@@ -2338,115 +2319,22 @@ function esTelefonoWhatsappValido(tel) {
 }
 
 function cerrarModalNotifPedido() {
-    const m = document.getElementById('modal-notif-pedido');
-    if (m) m.classList.remove('active');
     _pedidoNotifContext = null;
 }
 
 async function abrirModalNotificarPedidoPorId(pedidoId) {
-    if (app.u?.rol !== 'admin') { toast('Solo administradores', 'error'); return; }
-    let p = app.p.find(x => String(x.id) === String(pedidoId));
-    if (!p) {
-        try {
-            const r = await sqlSimple(`SELECT id, numero_pedido AS np, descripcion AS de, prioridad, estado, distribuidor, telefono_contacto, cliente_nombre FROM pedidos WHERE id = ${esc(parseInt(pedidoId, 10))}`);
-            const row = r.rows?.[0];
-            if (!row) { toast('Pedido no encontrado', 'error'); return; }
-            p = { id: row.id, np: row.np, de: row.de, prioridad: row.prioridad, estado: row.estado, distribuidor: row.distribuidor, telefono_contacto: row.telefono_contacto, cliente_nombre: row.cliente_nombre };
-        } catch (e) {
-            toast('Error: ' + e.message, 'error');
-            return;
-        }
-    }
-    if (!app.usuariosCache?.length) {
-        try {
-            const ru = await sqlSimple('SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre');
-            app.usuariosCache = ru.rows || [];
-        } catch (_) {}
-    }
-    _pedidoNotifContext = {
-        id: p.id, np: p.np, de: p.de || '',
-        prioridad: p.prioridad || '', estado: p.estado || '', distribuidor: p.distribuidor || '',
-        telefono_contacto: p.telefono_contacto || '', cliente_nombre: p.cliente_nombre || ''
-    };
-    const res = document.getElementById('notif-pedido-resumen');
-    if (res) res.textContent = 'Pedido #' + p.np + ' — ' + (p.de || '').substring(0, 120) + ((p.de && p.de.length > 120) ? '…' : '');
-    const msg = document.getElementById('notif-pedido-msg');
-    if (msg) msg.textContent = '';
-    llenarSelectUsuariosNotif();
-    const ex = document.getElementById('notif-mensaje-extra');
-    if (ex) ex.value = '';
-    document.getElementById('modal-notif-pedido')?.classList.add('active');
+    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
 }
 
-window._notificarPedidoMapa = function (id) {
-    try { app.map?.closePopup(); } catch (_) {}
-    abrirModalNotificarPedidoPorId(id);
+window._notificarPedidoMapa = function () {
+    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
 };
-window._notificarPedidoMapaAdmin = function (id) {
-    try { if (typeof _mapaUsuariosAdmin !== 'undefined' && _mapaUsuariosAdmin) _mapaUsuariosAdmin.closePopup(); } catch (_) {}
-    abrirModalNotificarPedidoPorId(id);
+window._notificarPedidoMapaAdmin = function () {
+    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
 };
 
 async function confirmarEnviarNotifPedido() {
-    const msgEl = document.getElementById('notif-pedido-msg');
-    const sel = document.getElementById('notif-usuario-select');
-    if (!_pedidoNotifContext || !sel?.value) {
-        if (msgEl) msgEl.textContent = 'Seleccioná un usuario destino.';
-        return;
-    }
-    const uid = parseInt(sel.value, 10);
-    const extra = (document.getElementById('notif-mensaje-extra')?.value || '').trim();
-    const usuarioDestino = (app.usuariosCache || []).find(u => String(u.id) === String(uid));
-    const telefonoNorm = normalizarTelefonoWhatsapp(usuarioDestino?.telefono || '');
-    if (!usuarioDestino) {
-        if (msgEl) msgEl.textContent = 'No se pudo resolver el usuario destino.';
-        return;
-    }
-    if (usuarioDestino.whatsapp_notificaciones === false) {
-        if (msgEl) msgEl.textContent = 'El usuario tiene WhatsApp desactivado para notificaciones.';
-        return;
-    }
-    if (!esTelefonoWhatsappValido(telefonoNorm)) {
-        if (msgEl) msgEl.textContent = 'El usuario no tiene teléfono WhatsApp válido. Usá formato +543434540250.';
-        return;
-    }
-    const baseUrl = (typeof location !== 'undefined' && location.protocol === 'https:' ? (location.origin + location.pathname).replace(/\/(index\.html?)?.*$/, '').replace(/\/$/, '') : 'https://leavera77.github.io/Pedidos-MG');
-    const openLink = `${baseUrl}/open.html?p=${_pedidoNotifContext.id}`;
-    const lineas = [
-        `Hola ${usuarioDestino.nombre || ''}, tenés un pedido asignado.`,
-        `Pedido #${_pedidoNotifContext.np}`,
-        _pedidoNotifContext.de ? `Detalle: ${_pedidoNotifContext.de}` : '',
-        _pedidoNotifContext.prioridad ? `Prioridad: ${_pedidoNotifContext.prioridad}` : '',
-        _pedidoNotifContext.estado ? `Estado: ${_pedidoNotifContext.estado}` : '',
-        _pedidoNotifContext.distribuidor ? `Distribuidor: ${_pedidoNotifContext.distribuidor}` : '',
-        _pedidoNotifContext.cliente_nombre ? `Cliente: ${_pedidoNotifContext.cliente_nombre}` : '',
-        _pedidoNotifContext.telefono_contacto ? `Teléfono contacto: ${_pedidoNotifContext.telefono_contacto}` : '',
-        extra ? `Mensaje admin: ${extra}` : '',
-        `Abrir pedido en app: ${openLink}`,
-        'Pedidos MG'
-    ].filter(Boolean);
-    const cuerpo = lineas.join('\n');
-    if (msgEl) msgEl.textContent = '';
-    try {
-        const telWa = telefonoNorm.replace(/[^\d]/g, '');
-        const waUrl = `https://wa.me/${telWa}?text=${encodeURIComponent(cuerpo)}`;
-        // Reutilizar pestaña/ventana wa_send si ya está abierta (WhatsApp Web en uso)
-        const popup = window.open(waUrl, 'wa_send', 'noopener');
-        if (!popup) {
-            window.location.href = waUrl;
-        }
-        try {
-            await sqlSimple(`INSERT INTO whatsapp_notificaciones
-                (destinatario_id, destinatario_tipo, telefono, mensaje, pedido_id, estado, fecha_envio)
-                VALUES (${esc(uid)}, 'usuario', ${esc(telefonoNorm)}, ${esc(cuerpo)}, ${esc(_pedidoNotifContext.id)}, 'enviado', NOW())`);
-        } catch (_) {}
-        toast('WhatsApp preparado para envío ✓', 'success');
-        cerrarModalNotifPedido();
-    } catch (e) {
-        const m = e.message || String(e);
-        if (msgEl) msgEl.textContent = m;
-        toast('No se pudo enviar: ' + m, 'error');
-    }
+    toast('El envío por WhatsApp fue deshabilitado en esta versión.', 'info');
 }
 
 window.pollNotificacionesMovil = async function () {
@@ -3624,7 +3512,6 @@ function detalle(p) {
             <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${p.la != null && p.ln != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
-            ${app.u?.rol === 'admin' ? `<button type="button" class="ba2" style="margin-top:.5rem;margin-left:.35rem;background:#059669;color:white;border-color:#059669" onclick="document.getElementById('dm').classList.remove('active');window.abrirModalNotificarPedidoPorId('${p.id}')"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button>` : ''}
         </div>
         
         ${_auditLineas ? `<div class="ds"><h4>👤 Auditoría</h4>${_auditLineas}</div>` : ''}
@@ -4775,8 +4662,7 @@ async function cargarUbicacionesUsuarios() {
                 .bindPopup(`<b style="color:${color}">#${p.numero_pedido}</b><br>
                     <span style="font-size:11px">${p.prioridad} — ${p.estado}</span><br>
                     <span style="font-size:11px;color:#475569">${p.distribuidor || ''}</span><br>
-                    <span style="font-size:11px">${(p.descripcion||'').substring(0,60)}...</span>
-                    <div style="margin-top:6px"><button type="button" style="width:100%;padding:6px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;font-weight:600" onclick="window._notificarPedidoMapaAdmin('${p.id}')"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button></div>`);
+                    <span style="font-size:11px">${(p.descripcion||'').substring(0,60)}...</span>`);
             _marcadoresPedidosAdmin.push(mk);
         });
 
