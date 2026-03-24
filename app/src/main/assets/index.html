@@ -926,6 +926,12 @@ function actualizarBadgeOffline() {
 }
 
 
+function notificarNeonConectadoParaUpdateCheck() {
+    if (window.AndroidConfig && typeof window.AndroidConfig.requestUpdateCheck === 'function') {
+        try { window.AndroidConfig.requestUpdateCheck(); } catch(_) {}
+    }
+}
+
 function setModoOffline(offline) {
     modoOffline = offline;
     const toggle = document.getElementById('offline-toggle');
@@ -1003,6 +1009,7 @@ window.addEventListener('online', async () => {
         if (ok) {
             NEON_OK = true;
             setModoOffline(false);
+            notificarNeonConectadoParaUpdateCheck();
             if (app.u) {
                 toast('Conexión restaurada ✓', 'success');
                 const q = offlineQueue();
@@ -1477,7 +1484,7 @@ async function conectarNeon() {
             dbs.className = 'dbs ok';
             dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
             setModoOffline(false);
-            
+            notificarNeonConectadoParaUpdateCheck();
             if (app.u && offlineQueue().length > 0) setTimeout(sincronizarOffline, 1500);
             else if (app.u) cargarPedidos();
         } else {
@@ -1588,6 +1595,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 if (reconectado) {
                     NEON_OK = true;
                     setModoOffline(false);
+                    notificarNeonConectadoParaUpdateCheck();
                 }
             } catch(_) {}
         }

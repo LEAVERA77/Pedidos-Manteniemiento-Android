@@ -66,8 +66,13 @@ public final class AppUpdateChecker {
 
             if (remoteCode <= current) return;
 
-            String title = activity.getString(R.string.update_dialog_title);
-            String msg = buildMessage(activity, remoteName, notes);
+            String title = forceUpdate
+                    ? activity.getString(R.string.update_dialog_title_forced)
+                    : activity.getString(R.string.update_dialog_title);
+            String msg = forceUpdate
+                    ? activity.getString(R.string.update_dialog_message_forced, remoteName)
+                            + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
+                    : buildMessage(activity, remoteName, notes);
 
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing() || activity.isDestroyed()) return;

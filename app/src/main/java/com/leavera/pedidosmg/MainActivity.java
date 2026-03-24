@@ -272,6 +272,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        AppUpdateChecker.checkAsync(this);
         if (webView != null) {
             webView.evaluateJavascript(
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
@@ -357,6 +358,12 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public int getVersionCode() {
             return com.leavera.pedidosmg.BuildConfig.VERSION_CODE;
+        }
+
+        /** Llamado desde JS cuando el WebView conecta a Neon — dispara verificación de actualización. */
+        @JavascriptInterface
+        public void requestUpdateCheck() {
+            runOnUiThread(() -> AppUpdateChecker.checkAsync(MainActivity.this));
         }
     }
 

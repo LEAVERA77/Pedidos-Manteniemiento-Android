@@ -10,9 +10,9 @@ INSERT INTO app_version (version_code, version_name, apk_url, release_notes, for
 VALUES (
     6,
     '1.0.5',
-    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK_DRIVE',
-    'WhatsApp: reutilizar pestaña wa_send si ya está abierta. Enlace clickeable open.html en mensajes.',
-    false
+    'https://drive.google.com/uc?export=download&id=1JWVowxjHIBLP3qNm3JwNfgNGPKrJCoqZ',
+    'WhatsApp: reutilizar pestaña wa_send si ya está abierta. Enlace clickeable open.html. Detección automática de actualización al conectar a Neon.',
+    true
 )
 ON CONFLICT (version_code) DO UPDATE SET
     version_name = EXCLUDED.version_name,
