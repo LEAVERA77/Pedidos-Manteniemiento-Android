@@ -14,6 +14,9 @@
 .cxx
 local.properties
 
+# Firma release (copiá keystore.properties.example → keystore.properties)
+/keystore.properties
+
 # Credenciales Neon / EmailJS — copiá app/src/main/assets/config.example.json → config.json
 /app/src/main/assets/config.json
 
