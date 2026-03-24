@@ -61,13 +61,13 @@ dependencies {
     implementation("org.postgresql:postgresql:42.2.29")
 }
 
-// APK renombrado en release-renamed/ (no en release/: evita validación Gradle 9 + AGP).
+// APK renombrado fuera del build/ (no toca salidas AGP → sin conflicto Gradle 9).
 tasks.register<Copy>("renameReleaseApk") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release")) {
         include("app-release.apk", "app-release-unsigned.apk")
     }
-    into(layout.buildDirectory.dir("outputs/apk/release-renamed"))
+    into(file("G:/Mi unidad/Programas/Actualizaciones Android/release/release"))
     val vName = android.defaultConfig.versionName ?: "0.0.0"
     val vCode = android.defaultConfig.versionCode ?: 0
     rename { "GestorNova-$vName($vCode)-release.apk" }
