@@ -21,12 +21,12 @@ CREATE INDEX IF NOT EXISTS idx_app_version_code ON app_version (version_code DES
 -- Si en Neon quedó una fila con version_code mayor (p. ej. 9 de prueba), borrala o la app pedirá actualizar en bucle.
 -- Subir el APK a Drive y reemplazar el id.
 -- Carpeta compartida ejemplo: https://drive.google.com/drive/folders/1DJMfqTu1cJMH_y6SiuAh7qnw18hugrJe
--- Enlace directo al archivo: https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK
+-- Archivo en Drive: https://drive.google.com/file/d/1zCxXk5KPBG9k8p0WPJTxeCl7SjqNvXeh/view?usp=sharing
 INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
 VALUES (
     8,
     '1.0.7',
-    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK',
+    'https://drive.google.com/uc?export=download&id=1zCxXk5KPBG9k8p0WPJTxeCl7SjqNvXeh',
     'GestorNova (com.gestornova.gestion): actualización desde Neon al conectar, import socios por encabezados en cualquier orden, auto ejecución a 30 m, Excel flexible, usuario recordado en el dispositivo.',
     true
 )
