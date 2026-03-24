@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg;
+package com.nexxo.gestion;
 
 import android.content.Intent;
 import android.content.pm.PackageInfo;

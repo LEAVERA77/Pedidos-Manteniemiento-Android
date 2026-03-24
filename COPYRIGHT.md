@@ -1,4 +1,4 @@
-# Derechos de autor — Pedidos MG (Android + assets)
+# Derechos de autor — Nexxo (Android + assets)
 
 **Copyright © 2026 LEAVERA77. Todos los derechos reservados.**
 

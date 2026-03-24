@@ -1,7 +1,7 @@
 {
-  "name": "pedidosmg-api",
+  "name": "Nexxo-api",
   "version": "1.0.0",
-  "description": "API Pedidos MG con JWT, Neon y Cloudinary",
+  "description": "API Nexxo con JWT, Neon y Cloudinary",
   "main": "server.js",
   "type": "module",
   "scripts": {

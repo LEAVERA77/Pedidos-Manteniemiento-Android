@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg;
+package com.nexxo.gestion;
 
 import android.Manifest;
 import android.app.Activity;
@@ -54,7 +54,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-import com.leavera.pedidosmg.work.PedidoPollingScheduler;
+import com.nexxo.gestion.work.PedidoPollingScheduler;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -132,7 +132,7 @@ public class MainActivity extends AppCompatActivity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "")
-                        + " PedidosMG/" + BuildConfig.VERSION_NAME
+                        + " Nexxo/" + BuildConfig.VERSION_NAME
         );
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
@@ -329,7 +329,7 @@ public class MainActivity extends AppCompatActivity {
     private class LocalNotifyBridge {
         @JavascriptInterface
         public void show(String rowId, String title, String body, String pedidoId) {
-            final String safeTitle = title != null ? title : "Pedidos MG";
+            final String safeTitle = title != null ? title : "Nexxo";
             final String safeBody = body != null ? body : "";
             runOnUiThread(() -> mostrarNotificacionPedido(rowId, safeTitle, safeBody, pedidoId));
         }
@@ -352,12 +352,12 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public String getAppVersion() {
-            return com.leavera.pedidosmg.BuildConfig.VERSION_NAME;
+            return com.nexxo.gestion.BuildConfig.VERSION_NAME;
         }
 
         @JavascriptInterface
         public int getVersionCode() {
-            return com.leavera.pedidosmg.BuildConfig.VERSION_CODE;
+            return com.nexxo.gestion.BuildConfig.VERSION_CODE;
         }
 
         /** Llamado desde JS cuando el WebView conecta a Neon — dispara verificación de actualización. */
@@ -374,7 +374,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm == null) return;
-                ClipData clip = ClipData.newPlainText("PedidosMG", text != null ? text : "");
+                ClipData clip = ClipData.newPlainText("Nexxo", text != null ? text : "");
                 cm.setPrimaryClip(clip);
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "Copiado al portapapeles", Toast.LENGTH_SHORT).show());
             } catch (Exception e) {
@@ -403,12 +403,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        /** Abre la carpeta Descargas/PedidosMG en el gestor de archivos del sistema (API 24+). */
+        /** Abre la carpeta Descargas/Nexxo en el gestor de archivos del sistema (API 24+). */
         @JavascriptInterface
         public void openExportsFolder() {
             runOnUiThread(() -> {
                 File dir = new File(Environment.getExternalStoragePublicDirectory(
-                        Environment.DIRECTORY_DOWNLOADS), "PedidosMG");
+                        Environment.DIRECTORY_DOWNLOADS), "Nexxo");
                 if (!dir.exists()) {
                     dir.mkdirs();
                 }
@@ -425,11 +425,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static final String STORAGE_AUTHORITY = "com.android.externalstorage.documents";
-    private static final String DOC_PEDIDOSMG = "primary:Download/PedidosMG";
+    private static final String DOC_Nexxo = "primary:Download/Nexxo";
     private static final String DOC_DOWNLOAD = "primary:Download";
 
     /**
-     * Abre Descargas/PedidosMG probando varias rutas: FileProvider (más fiable en Android 11+),
+     * Abre Descargas/Nexxo probando varias rutas: FileProvider (más fiable en Android 11+),
      * UI de documentos del sistema, árbol SAF y pantalla de Descargas.
      */
     private boolean openExportsFolderTryAll(File dir) {
@@ -437,18 +437,18 @@ public class MainActivity extends AppCompatActivity {
 
         if (tryLaunchDirectoryViaFileProvider(dir)) return true;
 
-        Uri uriPedidos = DocumentsContract.buildDocumentUri(STORAGE_AUTHORITY, DOC_PEDIDOSMG);
+        Uri uriPedidos = DocumentsContract.buildDocumentUri(STORAGE_AUTHORITY, DOC_Nexxo);
         Uri uriDownload = DocumentsContract.buildDocumentUri(STORAGE_AUTHORITY, DOC_DOWNLOAD);
 
         if (tryLaunchDirectoryDocumentsUiExplicit(uriPedidos)) return true;
         if (tryLaunchDirectoryView(uriPedidos)) return true;
         if (tryLaunchDirectoryWithPackage(uriPedidos, "com.google.android.apps.nbu.files")) return true;
 
-        if (tryLaunchTreeFolder(STORAGE_AUTHORITY, DOC_PEDIDOSMG)) return true;
+        if (tryLaunchTreeFolder(STORAGE_AUTHORITY, DOC_Nexxo)) return true;
         if (tryLaunchTreeFolder(STORAGE_AUTHORITY, DOC_DOWNLOAD)) return true;
 
         if (tryLaunchDirectoryView(Uri.parse(
-                "content://com.android.externalstorage.documents/document/primary%3ADownload%2FPedidosMG"))) return true;
+                "content://com.android.externalstorage.documents/document/primary%3ADownload%2FNexxo"))) return true;
         if (tryLaunchDirectoryView(Uri.parse(
                 "content://com.android.externalstorage.documents/document/primary%3ADownload"))) return true;
 
@@ -459,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
         if (tryLaunchDirectoryWithOemPackages(uriPedidos)) return true;
 
         if (tryLaunchSystemDownloadsUi()) {
-            Toast.makeText(this, R.string.open_downloads_hint_pedidosmg_folder, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.open_downloads_hint_Nexxo_folder, Toast.LENGTH_LONG).show();
             return true;
         }
         return false;
@@ -536,7 +536,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Pantalla nativa “Descargas” (al menos entra a Descargas; el usuario abre PedidosMG). */
+    /** Pantalla nativa “Descargas” (al menos entra a Descargas; el usuario abre Nexxo). */
     private boolean tryLaunchSystemDownloadsUi() {
         try {
             Intent intent = new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS);
@@ -604,7 +604,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             if (cm == null) return;
-            cm.setPrimaryClip(ClipData.newPlainText("PedidosMG", path));
+            cm.setPrimaryClip(ClipData.newPlainText("Nexxo", path));
         } catch (Exception ignored) {}
     }
 
@@ -636,7 +636,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             NotificationManagerCompat.from(this).notify(req, b.build());
         } catch (SecurityException e) {
-            Toast.makeText(this, "Activá notificaciones para Pedidos MG en Ajustes.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Activá notificaciones para Nexxo en Ajustes.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -685,7 +685,7 @@ public class MainActivity extends AppCompatActivity {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
                 values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PedidosMG");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Nexxo");
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
                 Uri collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
                 Uri uri = getContentResolver().insert(collection, values);
@@ -700,7 +700,7 @@ public class MainActivity extends AppCompatActivity {
                 return uri;
             }
 
-            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "PedidosMG");
+            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Nexxo");
             if (!dir.exists() && !dir.mkdirs()) return null;
             File out = new File(dir, fileName);
             try (FileOutputStream fos = new FileOutputStream(out)) {

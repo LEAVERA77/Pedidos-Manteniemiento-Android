@@ -1,69 +1,88 @@
 # Publicar APK y avisar de nuevas versiones en la app
 
-La app compara su `versionCode` (definido en `app/build.gradle.kts`) con un JSON publicado en Internet. Si el remoto es mayor, al abrir la app se ofrece descargar la APK.
+La app compara su `versionCode` (definido en `app/build.gradle.kts`) con un JSON publicado en Internet. Si el remoto es mayor, al iniciar sesión se ofrece descargar la APK.
 
-## 1. Versión en el proyecto
+**Versión actual:** `versionCode` 3, `versionName` 1.0.2
 
-En `app/build.gradle.kts`, en cada release:
+---
 
-- Subí **`versionCode`** (entero que solo aumenta: 1, 2, 3…).
-- Actualizá **`versionName`** (texto visible, p. ej. `1.0.1`, `1.1.0`).
+## Flujo recomendado: API + Neon + Google Drive
 
-Android usa **`versionCode`** para decidir si hay actualización; el nombre es informativo.
+La versión se consulta desde la base Neon a través de la API Node.js. El APK se aloja en Google Drive.
 
-## 2. Compilar la APK
+### 1. Configurar Neon
 
-En Android Studio: **Build → Generate Signed Bundle / APK** (o `assembleRelease` con tu keystore). Guardá el APK con un nombre claro, p. ej. `PedidosMG-release.apk`.
+Ejecutá el SQL en `docs/NEON_app_version.sql` en el editor SQL de Neon. Eso crea la tabla `app_version` e inserta la fila para la versión 1.0.2.
 
-## 3. Subir la APK al repositorio (recomendado: GitHub Releases)
+### 2. Obtener el ID del APK en Google Drive
 
-1. En GitHub: **Releases → Create a new release**.
-2. Etiqueta coherente con la versión, p. ej. `v1.0.1`.
-3. Adjuntá el archivo `.apk`.
-4. Publicá el release.
+1. Subí `Nexxo-X.X.X.apk` a la carpeta [Actualizaciones Android](https://drive.google.com/drive/folders/1ByPSsBQA_saBcIg1rCSwwyTKxO42EjTX).
+2. Clic derecho en el APK → Compartir → “Cualquier persona con el enlace” → Copiar enlace.
+3. El ID está en la URL: `https://drive.google.com/file/d/XXXXXXXXXX/view` → `XXXXXXXXXX` es el ID.
+4. En Neon SQL Editor:
+   ```sql
+   UPDATE app_version SET apk_url = 'https://drive.google.com/uc?export=download&id=TU_ID_AQUI' WHERE version_code = 3;
+   ```
 
-Copiá la **URL directa del adjunto** (clic derecho en el nombre del archivo → copiar enlace). Esa URL va en el campo `apkUrl` del JSON del paso 4.
+### 3. Desplegar la API Node.js
 
-> Alternativa: subir la APK a otra rama o almacenamiento propio; lo importante es una **URL HTTPS pública** estable.
+1. En la carpeta `api/`:
+   ```bash
+   cd api
+   npm install
+   ```
+2. Creá `api/.env` (copiá de `.env.example`) con:
+   ```
+   DATABASE_URL=postgresql://neondb_owner:...@ep-gentle-silence-adns9whd-pooler.../neondb?sslmode=require
+   ```
+3. Desplegá en Render, Railway, Fly.io u otro servicio Node. Ejecutá `npm start` como comando.
+4. Anotá la URL pública, p. ej. `https://Nexxo-api.onrender.com`.
 
-## 4. JSON de “última versión” en el repo
+### 4. Configurar la app Android
 
-1. En tu repositorio (puede ser el mismo de la web o uno solo para distribución), creá un archivo JSON con la forma de `docs/app_update_latest.example.json`.
-2. Rellená `versionCode` y `versionName` **iguales** a los de `build.gradle.kts` de esa release.
-3. Poné en `apkUrl` el enlace directo al APK (Google Drive público, GitHub Releases u otro).
-4. Para actualización obligatoria, agregá `"forceUpdate": true`.
-5. Hacé commit y push.
-
-Obtené la URL **raw** del archivo en GitHub, por ejemplo:
-
-`https://raw.githubusercontent.com/USUARIO/REPO/rama/docs/app_update_latest.json`
-
-## 5. Configurar la app Android
-
-Editá `app/src/main/assets/app_update_config.json` y poné esa URL en `manifestUrl`:
+Editá `app/src/main/assets/app_update_config.json`:
 
 ```json
 {
-  "manifestUrl": "https://raw.githubusercontent.com/USUARIO/REPO/main/docs/app_update_latest.json"
+  "manifestUrl": "https://TU_API_URL/api/app-version"
 }
 ```
 
-Volvé a compilar e instalá la nueva APK en los dispositivos (o distribuí solo la actualización siguiente; las instalaciones antiguas sin este asset no comprobarán hasta que actualicen una vez con `manifestUrl` configurado).
+Reemplazá `TU_API_URL` por la URL real de tu API desplegada.
 
-Si usás Google Drive:
-- Publicá el archivo JSON (manifest) y el APK como "Cualquier persona con el enlace".
-- Usá enlace directo de descarga:
-  - Manifest: `https://drive.google.com/uc?export=download&id=ID_DEL_JSON`
-  - APK: `https://drive.google.com/uc?export=download&id=ID_DEL_APK`
+### 5. Compilar y publicar cada nueva versión
 
-## 6. Flujo en el dispositivo
+1. **En `app/build.gradle.kts`:** subí `versionCode` (p. ej. 4) y `versionName` (p. ej. `"1.0.3"`).
+2. **En Android Studio:** Build → Generate Signed Bundle / APK. Generá la APK firmada.
+3. **Subí la APK** a la carpeta de Drive.
+4. **En Neon:** ejecutá:
+   ```sql
+   INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
+   VALUES (4, '1.0.3', 'https://drive.google.com/uc?export=download&id=ID_NUEVO_APK', 'Descripción de cambios', false);
+   ```
+5. Las apps instaladas, al iniciar sesión, consultan la API. Si detectan `versionCode` mayor, muestran el diálogo para actualizar.
 
-Al iniciar `MainActivity`, la app descarga el JSON remoto. Si `versionCode` remoto es **mayor** que el de la APK instalada, muestra un diálogo para abrir el navegador/descargas con `apkUrl`. El usuario instala la APK manualmente (orígenes desconocidos / “instalar aplicaciones desconocidas” según el fabricante).
+---
+
+## Flujo alternativo: JSON estático (GitHub o Drive)
+
+Si preferís no usar la API, podés usar un JSON estático:
+
+1. Subí el APK a Drive (o GitHub Releases).
+2. Creá un archivo JSON como `docs/app_update_latest.example.json` con `versionCode`, `versionName`, `apkUrl`, etc.
+3. Publicalo en GitHub (raw) o Drive.
+4. En `app_update_config.json`, poné la URL directa de ese JSON en `manifestUrl`.
+
+---
+
+## Versión en pantalla de login
+
+La pantalla de inicio muestra “Versión X.X.X” debajo del botón “¿Olvidaste tu contraseña?” cuando la app corre en Android (WebView).
+
+---
+
+## Comportamiento en el dispositivo
+
+Al iniciar `MainActivity`, la app descarga el JSON desde `manifestUrl`. Si `versionCode` remoto es **mayor** que el instalado, muestra un diálogo para abrir el navegador con `apkUrl`. El usuario instala la APK manualmente (orígenes desconocidos habilitados).
 
 Si `forceUpdate` es `true`, el diálogo no permite “Más tarde” y exige actualizar para continuar.
-
-## Notas
-
-- No sustituye a **Google Play** (actualizaciones automáticas); es adecuado para distribución interna o por enlace.
-- El JSON debe servirse por **HTTPS**.
-- Cada release nueva: subís APK, actualizá el JSON en el repo con el nuevo `versionCode` y la nueva `apkUrl`.

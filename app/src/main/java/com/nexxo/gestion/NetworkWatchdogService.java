@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg;
+package com.nexxo.gestion;
 
 import android.app.Notification;
 import android.app.NotificationChannel;

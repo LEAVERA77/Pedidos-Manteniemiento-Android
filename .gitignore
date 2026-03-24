@@ -16,3 +16,7 @@ local.properties
 
 # Credenciales Neon / EmailJS — copiá app/src/main/assets/config.example.json → config.json
 /app/src/main/assets/config.json
+
+# API Node.js
+/api/.env
+/api/node_modules

@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg;
+package com.nexxo.gestion;
 
 import android.content.Context;
 
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
     public void useAppContext() {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.leavera.pedidosmg", appContext.getPackageName());
+        assertEquals("com.nexxo.gestion", appContext.getPackageName());
     }
 }

@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Pedidos MG"
+rootProject.name = "Nexxo"
 include(":app")

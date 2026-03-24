@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg.work;
+package com.nexxo.gestion.work;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

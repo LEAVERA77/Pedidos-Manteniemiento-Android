@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.leavera.pedidosmg"
+    namespace = "com.nexxo.gestion"
     compileSdk = 35  // Usar 35 en lugar de la sintaxis release(36) que no es válida
 
     buildFeatures {
@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.leavera.pedidosmg"
+        applicationId = "com.nexxo.gestion"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
         versionCode = 6
@@ -67,5 +67,5 @@ tasks.register<Copy>("renameReleaseApk") {
     into(layout.buildDirectory.dir("outputs/apk/release"))
     val vName = android.defaultConfig.versionName ?: "0.0.0"
     val vCode = android.defaultConfig.versionCode ?: 0
-    rename { "PedidosMG-$vName($vCode)-release.apk" }
+    rename { "Nexxo-$vName($vCode)-release.apk" }
 }

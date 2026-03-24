@@ -1,4 +1,4 @@
-# Notificaciones a técnicos (Pedidos MG)
+# Notificaciones a técnicos (Nexxo)
 
 1. **Base de datos**: en Neon, ejecutá el script `docs/NEON_notificaciones_movil.sql`.
 2. **Web / GitHub Pages**: el `index.html` permite al administrador, desde el mapa principal, el mapa del panel «Ubicaciones» o el detalle del pedido, elegir un usuario y **encolar** un aviso.

@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg;
+package com.nexxo.gestion;
 
 import org.junit.Test;
 

@@ -1,4 +1,4 @@
-# Pedidos MG (Android)
+# Nexxo (Android)
 
 App Android + WebView con los mismos assets que la versión web en GitHub Pages.
 

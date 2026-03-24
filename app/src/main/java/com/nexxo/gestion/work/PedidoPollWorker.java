@@ -1,4 +1,4 @@
-package com.leavera.pedidosmg.work;
+package com.nexxo.gestion.work;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -16,8 +16,8 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
-import com.leavera.pedidosmg.MainActivity;
-import com.leavera.pedidosmg.R;
+import com.nexxo.gestion.MainActivity;
+import com.nexxo.gestion.R;
 
 import java.sql.Connection;
 
