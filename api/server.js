@@ -1,86 +1,75 @@
-/**
- * API Pedidos MG
- * - GET /api/app-version: JSON con versionCode, versionName, apkUrl para actualizaciones Android
- * - Conexión a Neon (PostgreSQL)
- */
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
 
-import 'dotenv/config';
-import express from 'express';
-import pg from 'pg';
+import { query } from "./db/neon.js";
+import authRoutes from "./routes/auth.js";
+import pedidosRoutes from "./routes/pedidos.js";
+import usuariosRoutes from "./routes/usuarios.js";
+import clientesRoutes from "./routes/clientes.js";
+import clientesFinalesRoutes from "./routes/clientesFinales.js";
+import distribuidoresRoutes from "./routes/distribuidores.js";
+import estadisticasRoutes from "./routes/estadisticas.js";
+import notificacionesRoutes from "./routes/notificaciones.js";
+import whatsappRoutes from "./routes/whatsapp.js";
 
-const { Pool } = pg;
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('neon.tech') ? { rejectUnauthorized: false } : false,
-});
+app.use(cors());
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-async function getLatestAppVersion() {
-  const r = await pool.query(`
-    SELECT version_code, version_name, apk_url, release_notes, force_update
-    FROM app_version
-    ORDER BY version_code DESC
-    LIMIT 1
-  `);
-  if (!r.rows || r.rows.length === 0) return null;
-  const row = r.rows[0];
-  return {
-    versionCode: row.version_code,
-    versionName: row.version_name || `v${row.version_code}`,
-    apkUrl: row.apk_url || '',
-    releaseNotes: row.release_notes || '',
-    forceUpdate: !!row.force_update,
-  };
-}
-
-app.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-
-app.get('/api/app-version', async (req, res) => {
+app.get("/health", async (_req, res) => {
   try {
-    const latest = await getLatestAppVersion();
-    if (!latest) {
-      return res.status(404).json({ error: 'No hay versión configurada' });
-    }
-    res.json(latest);
-  } catch (err) {
-    console.error('Error app-version:', err);
-    res.status(500).json({ error: 'Error al consultar versión' });
+    await query("SELECT 1");
+    res.json({ ok: true, service: "pedidosmg-api", db: "ok" });
+  } catch (error) {
+    res.status(500).json({ ok: false, service: "pedidosmg-api", db: "error", error: error.message });
   }
 });
 
-app.get('/api/ping-version', async (req, res) => {
+app.use("/api/auth", authRoutes);
+app.use("/api/pedidos", pedidosRoutes);
+app.use("/api/usuarios", usuariosRoutes);
+app.use("/api/clientes", clientesRoutes);
+app.use("/api/clientes-finales", clientesFinalesRoutes);
+app.use("/api/distribuidores", distribuidoresRoutes);
+app.use("/api/estadisticas", estadisticasRoutes);
+app.use("/api/notificaciones", notificacionesRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
+
+app.get("/api/app-version", async (_req, res) => {
   try {
-    const latest = await getLatestAppVersion();
-    res.json({
-      ok: true,
-      service: 'pedidosmg-api',
-      timestamp: new Date().toISOString(),
-      branch: process.env.RENDER_GIT_BRANCH || process.env.GIT_BRANCH || 'unknown',
-      latestVersion: latest,
+    const r = await query(
+      `SELECT version_code, version_name, apk_url, release_notes, force_update
+       FROM app_version
+       ORDER BY version_code DESC
+       LIMIT 1`
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "No hay versión configurada" });
+    const row = r.rows[0];
+    return res.json({
+      versionCode: row.version_code,
+      versionName: row.version_name || `v${row.version_code}`,
+      apkUrl: row.apk_url || "",
+      releaseNotes: row.release_notes || "",
+      forceUpdate: !!row.force_update,
     });
-  } catch (err) {
-    console.error('Error ping-version:', err);
-    res.status(500).json({
-      ok: false,
-      service: 'pedidosmg-api',
-      timestamp: new Date().toISOString(),
-      error: 'Error al consultar diagnóstico de versión',
-    });
+  } catch (error) {
+    return res.status(500).json({ error: "Error al consultar versión", detail: error.message });
   }
 });
 
-app.get('/health', (req, res) => {
-  res.json({ ok: true });
+app.use((err, _req, res, _next) => {
+  console.error("[api-error]", err);
+  res.status(err.status || 500).json({
+    error: err.publicMessage || "Error interno del servidor",
+    detail: process.env.NODE_ENV === "production" ? undefined : err.message,
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`API Pedidos MG en http://localhost:${PORT}`);
+  console.log(`API Pedidos MG escuchando en http://localhost:${PORT}`);
 });
+
