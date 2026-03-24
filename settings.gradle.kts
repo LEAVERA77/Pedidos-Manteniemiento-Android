@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Nexxo"
+rootProject.name = "GestorNova"
 include(":app")

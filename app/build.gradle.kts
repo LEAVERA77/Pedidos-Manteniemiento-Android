@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.nexxo.gestion"
+    namespace = "com.gestornova.gestion"
     compileSdk = 35  // Usar 35 en lugar de la sintaxis release(36) que no es válida
 
     buildFeatures {
@@ -11,11 +11,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nexxo.gestion"
+        applicationId = "com.gestornova.gestion"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -67,5 +67,5 @@ tasks.register<Copy>("renameReleaseApk") {
     into(layout.buildDirectory.dir("outputs/apk/release"))
     val vName = android.defaultConfig.versionName ?: "0.0.0"
     val vCode = android.defaultConfig.versionCode ?: 0
-    rename { "Nexxo-$vName($vCode)-release.apk" }
+    rename { "GestorNova-$vName($vCode)-release.apk" }
 }

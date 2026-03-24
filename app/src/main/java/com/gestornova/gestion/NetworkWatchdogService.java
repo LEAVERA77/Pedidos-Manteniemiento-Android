@@ -1,4 +1,4 @@
-package com.nexxo.gestion;
+package com.gestornova.gestion;
 
 import android.app.Notification;
 import android.app.NotificationChannel;

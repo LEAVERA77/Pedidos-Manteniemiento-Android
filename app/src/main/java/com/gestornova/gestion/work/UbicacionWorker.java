@@ -1,4 +1,4 @@
-package com.nexxo.gestion.work;
+package com.gestornova.gestion.work;
 
 import android.Manifest;
 import android.content.Context;
@@ -23,7 +23,7 @@ public class UbicacionWorker extends Worker {
 
     private static final String TAG = "UbicacionWorker";
 
-    public static final String PREFS_SESSION = "nexxo_session";
+    public static final String PREFS_SESSION = "gestornova_session";
     public static final String KEY_USER_ID = "user_id";
     public static final String KEY_ROL = "rol";
 

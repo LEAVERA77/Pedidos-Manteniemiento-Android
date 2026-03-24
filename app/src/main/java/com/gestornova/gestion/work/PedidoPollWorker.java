@@ -1,4 +1,4 @@
-package com.nexxo.gestion.work;
+package com.gestornova.gestion.work;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -16,8 +16,8 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
-import com.nexxo.gestion.MainActivity;
-import com.nexxo.gestion.R;
+import com.gestornova.gestion.MainActivity;
+import com.gestornova.gestion.R;
 
 import java.sql.Connection;
 

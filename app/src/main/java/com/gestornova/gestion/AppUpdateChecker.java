@@ -1,4 +1,4 @@
-package com.nexxo.gestion;
+package com.gestornova.gestion;
 
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -20,8 +20,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Lee {@code assets/app_update_config.json} (campo {@code manifestUrl}), descarga un JSON
- * con {@code versionCode} y {@code apkUrl} y, si hay versión más nueva, muestra diálogo.
+ * Comprueba actualizaciones vía JSON remoto (manifest HTTP o fila app_version desde Neon vía WebView).
  */
 public final class AppUpdateChecker {
 
@@ -31,30 +30,52 @@ public final class AppUpdateChecker {
     private AppUpdateChecker() {}
 
     public static void checkAsync(AppCompatActivity activity) {
-        new Thread(() -> doCheck(activity), "pmg-app-update").start();
+        new Thread(() -> doCheckFromManifest(activity), "gn-app-update").start();
     }
 
-    private static void doCheck(AppCompatActivity activity) {
+    /**
+     * Llamado desde JS cuando ya hay datos de {@code app_version} en Neon (prioridad sobre manifest HTTP).
+     */
+    public static void checkWithRemoteJson(AppCompatActivity activity, String jsonBody) {
+        if (activity == null || jsonBody == null || jsonBody.trim().isEmpty()) return;
+        new Thread(() -> {
+            try {
+                JSONObject remote = new JSONObject(jsonBody.trim());
+                applyIfNewer(activity, remote, "neon-db");
+            } catch (Exception e) {
+                Log.w(TAG, "JSON Neon inválido: " + e.getMessage());
+                doCheckFromManifest(activity);
+            }
+        }, "gn-app-update-neon").start();
+    }
+
+    private static void doCheckFromManifest(AppCompatActivity activity) {
         try {
             String manifestUrl = readManifestUrlFromAssets(activity);
             if (manifestUrl == null || manifestUrl.isEmpty()) {
-                Log.d(TAG, "Sin manifestUrl en assets/" + ASSET_CONFIG + " — omitiendo");
+                Log.d(TAG, "Sin manifestUrl en assets/" + ASSET_CONFIG);
                 return;
             }
-
             String body = httpGet(manifestUrl);
             if (body == null) return;
-
             JSONObject remote = new JSONObject(body);
-            int remoteCode = remote.optInt("versionCode", 0);
-            String remoteName = remote.optString("versionName", "");
+            applyIfNewer(activity, remote, "manifest");
+        } catch (Exception e) {
+            Log.w(TAG, "Comprobación manifest omitida: " + e.getMessage());
+        }
+    }
+
+    private static void applyIfNewer(AppCompatActivity activity, JSONObject remote, String source) {
+        try {
+            int remoteCode = remote.optInt("versionCode", remote.optInt("version_code", 0));
+            String remoteName = remote.optString("versionName", remote.optString("version_name", ""));
             if (remoteName.isEmpty()) remoteName = "v" + remoteCode;
-            String apkUrl = remote.optString("apkUrl", "");
-            String notes = remote.optString("releaseNotes", "");
-            boolean forceUpdate = remote.optBoolean("forceUpdate", false);
+            String apkUrl = remote.optString("apkUrl", remote.optString("apk_url", ""));
+            String notes = remote.optString("releaseNotes", remote.optString("release_notes", ""));
+            boolean forceUpdate = remote.optBoolean("forceUpdate", remote.optBoolean("force_update", false));
 
             if (remoteCode <= 0 || apkUrl.isEmpty()) {
-                Log.w(TAG, "Manifest remoto incompleto (versionCode/apkUrl)");
+                Log.w(TAG, "Manifest incompleto (" + source + "): versionCode/apkUrl");
                 return;
             }
 
@@ -64,7 +85,12 @@ public final class AppUpdateChecker {
                     ? pi.getLongVersionCode()
                     : pi.versionCode;
 
-            if (remoteCode <= current) return;
+            if (remoteCode <= current) {
+                Log.d(TAG, "Sin actualización (" + source + "): local=" + current + " remoto=" + remoteCode);
+                return;
+            }
+
+            Log.i(TAG, "Actualización disponible (" + source + "): " + current + " -> " + remoteCode);
 
             String title = forceUpdate
                     ? activity.getString(R.string.update_dialog_title_forced)
@@ -74,33 +100,35 @@ public final class AppUpdateChecker {
                             + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
                     : buildMessage(activity, remoteName, notes);
 
-            activity.runOnUiThread(() -> {
-                if (activity.isFinishing() || activity.isDestroyed()) return;
-                AlertDialog.Builder b = new AlertDialog.Builder(activity)
-                        .setTitle(title)
-                        .setMessage(msg)
-                        .setPositiveButton(R.string.update_dialog_download, (d, w) -> {
-                            try {
-                                activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)));
-                            } catch (Exception e) {
-                                Log.e(TAG, "No se pudo abrir apkUrl", e);
-                            }
-                        });
-                if (!forceUpdate) {
-                    b.setNegativeButton(R.string.update_dialog_later, null);
-                }
-                AlertDialog dialog = b.create();
-                if (forceUpdate) {
-                    dialog.setCancelable(false);
-                    dialog.setCanceledOnTouchOutside(false);
-                }
-                dialog.show();
-            });
+            activity.runOnUiThread(() -> showDialog(activity, title, msg, apkUrl, forceUpdate));
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Package?", e);
         } catch (Exception e) {
-            Log.w(TAG, "Comprobación de actualización omitida: " + e.getMessage());
+            Log.w(TAG, "applyIfNewer: " + e.getMessage());
         }
+    }
+
+    private static void showDialog(AppCompatActivity activity, String title, String msg, String apkUrl, boolean forceUpdate) {
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        AlertDialog.Builder b = new AlertDialog.Builder(activity)
+                .setTitle(title)
+                .setMessage(msg)
+                .setPositiveButton(R.string.update_dialog_download, (d, w) -> {
+                    try {
+                        activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)));
+                    } catch (Exception e) {
+                        Log.e(TAG, "No se pudo abrir apkUrl", e);
+                    }
+                });
+        if (!forceUpdate) {
+            b.setNegativeButton(R.string.update_dialog_later, null);
+        }
+        AlertDialog dialog = b.create();
+        if (forceUpdate) {
+            dialog.setCancelable(false);
+            dialog.setCanceledOnTouchOutside(false);
+        }
+        dialog.show();
     }
 
     private static String buildMessage(AppCompatActivity activity, String remoteName, String notes) {

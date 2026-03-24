@@ -22,10 +22,10 @@ CREATE INDEX IF NOT EXISTS idx_app_version_code ON app_version (version_code DES
 -- Enlace directo al archivo: https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK
 INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
 VALUES (
-    8,
-    '1.0.7',
+    9,
+    '1.0.8',
     'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK',
-    'Estado Asignado, auto en ejecución al llegar al lugar, dashboard gerencia con cierres y técnicos en mapa, socios con localidad/tarifa/urbano-rural, informe sin texto GMT, técnico ve todos los pedidos (opción), ubicación nativa cada 15 min.',
+    'GestorNova (com.gestornova.gestion): actualización desde Neon al conectar, import socios por encabezados en cualquier orden, auto ejecución a 30 m, Excel flexible, usuario recordado en el dispositivo.',
     true
 )
 ON CONFLICT (version_code) DO UPDATE SET

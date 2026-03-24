@@ -1,4 +1,4 @@
-package com.nexxo.gestion.work;
+package com.gestornova.gestion.work;
 
 import android.content.Context;
 import android.util.Log;
@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 public final class UbicacionPollingScheduler {
 
     private static final String TAG = "UbicacionSched";
-    private static final String UNIQUE_NAME = "nexxo_ubicacion_periodic";
+    private static final String UNIQUE_NAME = "gestornova_ubicacion_periodic";
 
     private UbicacionPollingScheduler() {}
 

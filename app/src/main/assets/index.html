@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>Pedidos de Mantenimiento</title>
+<title>GestorNova — Pedidos</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
@@ -305,7 +305,7 @@ textarea{resize:vertical;min-height:80px}
 <div id="ms" class="screen">
   <div class="hd">
     <button id="mt" class="ib"><i class="fas fa-list"></i></button>
-    <h2><i class="fas fa-network-wired"></i> Nexxo</h2>
+    <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
     <div class="hr">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
@@ -986,9 +986,31 @@ function actualizarBadgeOffline() {
 }
 
 
-function notificarNeonConectadoParaUpdateCheck() {
-    if (window.AndroidConfig && typeof window.AndroidConfig.requestUpdateCheck === 'function') {
-        try { window.AndroidConfig.requestUpdateCheck(); } catch(_) {}
+async function notificarNeonConectadoParaUpdateCheck() {
+    const esApp = window.location.protocol === 'file:' && window.AndroidConfig;
+    if (!esApp) return;
+    if (NEON_OK && _sql && typeof window.AndroidConfig.applyUpdateCheckFromNeon === 'function') {
+        try {
+            const r = await sqlSimple(`SELECT version_code, version_name, apk_url, COALESCE(release_notes,'') AS release_notes, COALESCE(force_update, false) AS force_update FROM app_version ORDER BY version_code DESC LIMIT 1`);
+            const row = r.rows && r.rows[0];
+            if (row && row.apk_url) {
+                const fu = row.force_update === true || row.force_update === 't' || row.force_update === 1 || String(row.force_update).toLowerCase() === 'true';
+                const payload = JSON.stringify({
+                    versionCode: parseInt(row.version_code, 10) || 0,
+                    versionName: String(row.version_name || ''),
+                    apkUrl: String(row.apk_url || ''),
+                    releaseNotes: String(row.release_notes || ''),
+                    forceUpdate: fu
+                });
+                try { window.AndroidConfig.applyUpdateCheckFromNeon(payload); } catch (_) {}
+                return;
+            }
+        } catch (e) {
+            console.warn('[update] app_version Neon:', e.message || e);
+        }
+    }
+    if (typeof window.AndroidConfig.requestUpdateCheck === 'function') {
+        try { window.AndroidConfig.requestUpdateCheck(); } catch (_) {}
     }
 }
 
@@ -1069,7 +1091,7 @@ window.addEventListener('online', async () => {
         if (ok) {
             NEON_OK = true;
             setModoOffline(false);
-            notificarNeonConectadoParaUpdateCheck();
+            await notificarNeonConectadoParaUpdateCheck();
             if (app.u) {
                 toast('Conexión restaurada ✓', 'success');
                 const q = offlineQueue();
@@ -1507,6 +1529,13 @@ const lb  = document.getElementById('lb');
 
 lb.disabled = false;
 actualizarBadgeOffline();
+(function prefillLoginUsuarioGuardado() {
+    try {
+        const v = localStorage.getItem('gestornova_saved_login');
+        const inp = document.getElementById('em');
+        if (v && inp && !inp.value) inp.value = v;
+    } catch (_) {}
+})();
 dbs.className = 'dbs c';
 dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
 
@@ -1572,7 +1601,7 @@ async function conectarNeon() {
             dbs.className = 'dbs ok';
             dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
             setModoOffline(false);
-            notificarNeonConectadoParaUpdateCheck();
+            await notificarNeonConectadoParaUpdateCheck();
             if (app.u && offlineQueue().length > 0) setTimeout(sincronizarOffline, 1500);
             else if (app.u) cargarPedidos();
         } else {
@@ -1683,6 +1712,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
     function intentarOffline() {
         const u = verificarUsuarioOffline(em, pw);
         if (u) {
+            try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
             entrarConUsuario({ id: u.id, email: u.email, nombre: u.nombre, rol: u.rol }, true);
             toast('📴 Modo offline — ' + u.nombre, 'info');
             return true;
@@ -1698,7 +1728,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 if (reconectado) {
                     NEON_OK = true;
                     setModoOffline(false);
-                    notificarNeonConectadoParaUpdateCheck();
+                    await notificarNeonConectadoParaUpdateCheck();
                 }
             } catch(_) {}
         }
@@ -1730,6 +1760,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
 
         const usuario = resultado.rows?.[0];
         if (usuario) {
+            try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
             const u = { id: usuario.id, email: usuario.email, nombre: usuario.nombre || 'Administrador', rol: usuario.rol || 'admin' };
             guardarUsuarioOffline(u, pw);
             entrarConUsuario(u, false);
@@ -1992,7 +2023,7 @@ window.cerrarModalDashYVerCierre = async function (pid) {
 async function intentarAutoInicioEjecucionTecnico(lat, lng) {
     if (!app.u || app.u.rol !== 'tecnico' || modoOffline || !NEON_OK) return;
     const uid = parseInt(app.u.id, 10);
-    const umbral = 0.22;
+    const umbral = 0.03;
     for (const p of app.p) {
         if (p.es !== 'Asignado' || p.tai !== uid) continue;
         if (p.la == null || p.ln == null) continue;
@@ -2763,7 +2794,7 @@ window.pollNotificacionesMovil = async function () {
         const rows = r.rows || [];
         const tienePuente = window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function';
         for (const row of rows) {
-            const t = row.titulo || 'Nexxo';
+            const t = row.titulo || 'GestorNova';
             const b = row.cuerpo || '';
             const pid = row.pedido_id != null ? String(row.pedido_id) : '';
             if (tienePuente) {
@@ -3379,7 +3410,7 @@ async function procesarFotoSeleccionada(file, opts = {}) {
 
 
 const esMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-const esAndroidApp = /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
+const esAndroidApp = /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
 
 (function mostrarVersionEnLogin() {
     var el = document.getElementById('app-version');
@@ -4684,7 +4715,7 @@ function mostrarAlertaPedidoUrgente(pedido) {
 // ── Carga de config.json desde GitHub ────────────────────────
 let APP_CONFIG = null;
 async function cargarAppConfig() {
-    const esAndroidApp = window.location.protocol === 'file:' || /Nexxo\//i.test(navigator.userAgent);
+    const esAndroidApp = window.location.protocol === 'file:' || /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent);
     if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getConfigJson === 'function') {
         try {
             const raw = window.AndroidConfig.getConfigJson();
@@ -5023,6 +5054,29 @@ async function cargarListaSociosAdmin() {
     }
 }
 
+function normalizarEncabezadoExcelSocios(k) {
+    let s = String(k || '').trim().toLowerCase();
+    try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
+    return s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+}
+
+function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
+    for (const canon of clavesCanon) {
+        const orig = mapNormAOriginal[canon];
+        if (orig != null && row[orig] != null && String(row[orig]).trim() !== '') {
+            return String(row[orig]).trim();
+        }
+    }
+    for (const orig of Object.keys(row)) {
+        const n = normalizarEncabezadoExcelSocios(orig);
+        if (clavesCanon.includes(n)) {
+            const v = row[orig];
+            if (v != null && String(v).trim() !== '') return String(v).trim();
+        }
+    }
+    return null;
+}
+
 async function importarExcelSocios(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -5031,15 +5085,29 @@ async function importarExcelSocios(event) {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: ['nis_medidor','nombre','domicilio','telefono','distribuidor_codigo','localidad','tipo_tarifa','urbano_rural'], range: 1 });
-        if (!rows.length) { toast('Excel vacío o formato incorrecto', 'error'); return; }
+        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        if (!rawRows.length) { toast('Excel vacío o sin filas de datos', 'error'); return; }
+        const primera = rawRows[0];
+        const mapNormAOriginal = {};
+        Object.keys(primera).forEach(orig => {
+            const n = normalizarEncabezadoExcelSocios(orig);
+            if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
+        });
         let ok = 0, fail = 0;
-        for (const row of rows) {
-            const nis = String(row.nis_medidor || '').trim();
+        for (const row of rawRows) {
+            const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
+                'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
             if (!nis) continue;
+            const nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
+            const domicilio = valorSociosPorEncabezados(row, mapNormAOriginal, 'domicilio', 'direccion', 'calle');
+            const telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
+            const dist = valorSociosPorEncabezados(row, mapNormAOriginal, 'distribuidor_codigo', 'distribuidor', 'codigo_distribuidor');
+            const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
+            const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
             try {
                 await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural)
-                    VALUES(${esc(nis)}, ${esc(row.nombre ? String(row.nombre).trim() : null)}, ${esc(row.domicilio ? String(row.domicilio).trim() : null)}, ${esc(row.telefono ? String(row.telefono).trim() : null)}, ${esc(row.distribuidor_codigo ? String(row.distribuidor_codigo).trim() : null)}, ${esc(row.localidad ? String(row.localidad).trim() : null)}, ${esc(row.tipo_tarifa ? String(row.tipo_tarifa).trim() : null)}, ${esc(row.urbano_rural ? String(row.urbano_rural).trim() : null)})
+                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(domicilio)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)})
                     ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, domicilio = EXCLUDED.domicilio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural`);
                 ok++;
             } catch (_) { fail++; }
@@ -5051,7 +5119,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 (encabezados):\nnis_medidor | nombre | domicilio | telefono | distribuidor_codigo | localidad | tipo_tarifa | urbano_rural\n\nurbano_rural: urbano o rural. Desde fila 2 los datos. nis_medidor obligatorio.');
+    alert('Excel socios — fila 1 = encabezados (el orden de columnas no importa).\n\nNombres reconocidos (ejemplos):\n• NIS: nis_medidor, nis, medidor…\n• nombre, domicilio/direccion, telefono, distribuidor_codigo\n• localidad, tipo_tarifa, urbano_rural (o zona)\n\nFila 2 en adelante: datos. Columna NIS obligatoria por fila.');
 }
 
 async function buscarHistorialPorNIS() {
@@ -5084,7 +5152,7 @@ async function generarInformeMensualENRE() {
     try {
         const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
-        const tit = 'Nexxo — Informe de pedidos';
+        const tit = 'GestorNova — Informe de pedidos';
         let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
         rows.forEach(row => {
             tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td></tr>`;
@@ -5579,7 +5647,7 @@ async function pasoResetPw() {
                     to_email: usuario.email,
                     to_name:  usuario.nombre,
                     token:    token,
-                    app_name: window.EMPRESA_CFG?.nombre || 'Nexxo'
+                    app_name: window.EMPRESA_CFG?.nombre || 'GestorNova'
                 }, cfg.publicKey);
 
                 msg.style.color = '#166534';

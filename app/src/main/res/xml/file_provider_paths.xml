@@ -8,7 +8,8 @@
     <external-files-path name="external_files" path="." />
     <external-files-path name="pictures" path="Pictures/" />
     <external-path name="public_downloads" path="Download/" />
-    <!-- Exports en Descargas/Nexxo: URI propia para abrir en el gestor del sistema -->
-    <external-path name="Nexxo_exports" path="Download/Nexxo" />
+    <!-- Exports en Descargas/GestorNova (+ legado Nexxo) -->
+    <external-path name="GestorNova_exports" path="Download/GestorNova" />
+    <external-path name="Nexxo_exports_legacy" path="Download/Nexxo" />
     <files-path name="internal_files" path="." />
 </paths>

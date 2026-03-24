@@ -1,4 +1,4 @@
-package com.nexxo.gestion;
+package com.gestornova.gestion;
 
 import org.junit.Test;
 

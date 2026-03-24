@@ -1,20 +1,20 @@
 <resources>
-    <string name="app_name">Nexxo</string>
+    <string name="app_name">GestorNova</string>
 
     <string name="watchdog_channel_name">Sincronización en segundo plano</string>
     <string name="watchdog_channel_desc">Mantiene la app activa y revisa la conexión cada 15 minutos</string>
-    <string name="watchdog_notification_checking">Nexxo</string>
+    <string name="watchdog_notification_checking">GestorNova</string>
     <string name="watchdog_notification_subtitle">Comprobando conexión…</string>
-    <string name="watchdog_notification_ok_title">Nexxo · Conectado</string>
+    <string name="watchdog_notification_ok_title">GestorNova · Conectado</string>
     <string name="watchdog_notification_ok_text">Última verificación de red correcta</string>
-    <string name="watchdog_notification_limited_title">Nexxo · Red limitada</string>
+    <string name="watchdog_notification_limited_title">GestorNova · Red limitada</string>
     <string name="watchdog_notification_limited_text">Hay red pero no se alcanza Internet (captive portal o firewall)</string>
-    <string name="watchdog_notification_offline_title">Nexxo · Sin conexión</string>
+    <string name="watchdog_notification_offline_title">GestorNova · Sin conexión</string>
     <string name="watchdog_notification_offline_text">Sin red validada; revisá Wi‑Fi o datos</string>
 
     <string name="work_pedidos_channel_name">Nuevos pedidos</string>
     <string name="work_pedidos_channel_desc">Avisos cuando hay pedidos nuevos en la base</string>
-    <string name="work_pedidos_notif_title">Nexxo</string>
+    <string name="work_pedidos_notif_title">GestorNova</string>
     <string name="work_pedidos_notif_one">Nuevo pedido #%1$s</string>
     <string name="work_pedidos_notif_many">Hay %1$d pedido(s) nuevo(s)</string>
 
@@ -28,5 +28,5 @@
     <string name="open_downloads_chooser">Abrir carpeta</string>
     <string name="open_downloads_fallback">No se pudo abrir el gestor de archivos. Carpeta: %1$s</string>
     <string name="open_downloads_fallback_clipboard">No se pudo abrir el gestor. Ruta copiada al portapapeles:\n%1$s</string>
-    <string name="open_downloads_hint_Nexxo_folder">Se abrió Descargas del sistema. Entrá a la carpeta «Nexxo».</string>
+    <string name="open_downloads_hint_exports_folder">Se abrió Descargas del sistema. Entrá a la carpeta «GestorNova».</string>
 </resources>

@@ -1,4 +1,4 @@
-package com.nexxo.gestion.work;
+package com.gestornova.gestion.work;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
