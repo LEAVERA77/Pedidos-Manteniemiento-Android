@@ -17,13 +17,15 @@ CREATE TABLE IF NOT EXISTS app_version (
 -- Índice para consultar la última versión
 CREATE INDEX IF NOT EXISTS idx_app_version_code ON app_version (version_code DESC);
 
--- Última versión publicada (Nexxo / Pedidos MG). Subir el APK a Drive y reemplazar el id.
+-- Debe coincidir con versionCode/versionName del APK (app/build.gradle.kts).
+-- Si en Neon quedó una fila con version_code mayor (p. ej. 9 de prueba), borrala o la app pedirá actualizar en bucle.
+-- Subir el APK a Drive y reemplazar el id.
 -- Carpeta compartida ejemplo: https://drive.google.com/drive/folders/1DJMfqTu1cJMH_y6SiuAh7qnw18hugrJe
 -- Enlace directo al archivo: https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK
 INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
 VALUES (
-    9,
-    '1.0.8',
+    8,
+    '1.0.7',
     'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_ARCHIVO_APK',
     'GestorNova (com.gestornova.gestion): actualización desde Neon al conectar, import socios por encabezados en cualquier orden, auto ejecución a 30 m, Excel flexible, usuario recordado en el dispositivo.',
     true
