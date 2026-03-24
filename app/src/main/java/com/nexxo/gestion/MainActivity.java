@@ -9,6 +9,7 @@ import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -55,6 +56,8 @@ import java.util.List;
 import java.util.Locale;
 
 import com.nexxo.gestion.work.PedidoPollingScheduler;
+import com.nexxo.gestion.work.UbicacionPollingScheduler;
+import com.nexxo.gestion.work.UbicacionWorker;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -101,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
         pedirPermisos();
         iniciarNetworkWatchdog();
         PedidoPollingScheduler.schedule(this);
+        UbicacionPollingScheduler.schedule(this);
         AppUpdateChecker.checkAsync(this);
     }
 
@@ -138,6 +142,7 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
         webView.addJavascriptInterface(new AndroidConfigBridge(), "AndroidConfig");
+        webView.addJavascriptInterface(new AndroidSessionBridge(), "AndroidSession");
         webView.addJavascriptInterface(new AndroidDeviceBridge(), "AndroidDevice");
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -332,6 +337,22 @@ public class MainActivity extends AppCompatActivity {
             final String safeTitle = title != null ? title : "Nexxo";
             final String safeBody = body != null ? body : "";
             runOnUiThread(() -> mostrarNotificacionPedido(rowId, safeTitle, safeBody, pedidoId));
+        }
+    }
+
+    /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
+    private class AndroidSessionBridge {
+        @JavascriptInterface
+        public void setUser(int userId, String rol) {
+            getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
+                    .putInt(UbicacionWorker.KEY_USER_ID, userId)
+                    .putString(UbicacionWorker.KEY_ROL, rol != null ? rol : "")
+                    .apply();
+        }
+
+        @JavascriptInterface
+        public void clearUser() {
+            getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit().clear().apply();
         }
     }
 

@@ -67,4 +67,26 @@ public final class NeonJdbc {
         }
         return null;
     }
+
+    /** Registro de posición para el mapa de gerencia (misma tabla que usa la web). */
+    public static void insertUbicacionUsuario(Connection c, int userId, double lat, double lng, int precisionM)
+            throws SQLException {
+        String ins = "INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp) VALUES (?,?,?,?, NOW())";
+        try (PreparedStatement ps = c.prepareStatement(ins)) {
+            ps.setInt(1, userId);
+            ps.setDouble(2, lat);
+            ps.setDouble(3, lng);
+            if (precisionM > 0 && precisionM < 500000) {
+                ps.setInt(4, precisionM);
+            } else {
+                ps.setNull(4, java.sql.Types.INTEGER);
+            }
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "DELETE FROM ubicaciones_usuarios WHERE usuario_id = ? AND timestamp < NOW() - INTERVAL '2 hours'")) {
+            ps.setInt(1, userId);
+            ps.executeUpdate();
+        }
+    }
 }
