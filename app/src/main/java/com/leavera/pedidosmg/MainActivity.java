@@ -334,7 +334,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Expone lectura de assets/config.json a JavaScript para WebView file:// */
+    /** Expone lectura de assets/config.json y versión de la app a JavaScript para WebView file:// */
     private class AndroidConfigBridge {
         @JavascriptInterface
         public String getConfigJson() {
@@ -347,6 +347,16 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 return "";
             }
+        }
+
+        @JavascriptInterface
+        public String getAppVersion() {
+            return com.leavera.pedidosmg.BuildConfig.VERSION_NAME;
+        }
+
+        @JavascriptInterface
+        public int getVersionCode() {
+            return com.leavera.pedidosmg.BuildConfig.VERSION_CODE;
         }
     }
 
@@ -626,9 +636,31 @@ public class MainActivity extends AppCompatActivity {
     private void capturePedidoIdFromIntent(Intent intent) {
         if (intent == null) return;
         String pid = intent.getStringExtra("pedidoId");
+        if (pid == null || pid.trim().isEmpty()) {
+            pid = extractPedidoIdFromUri(intent.getData());
+        }
         if (pid == null) return;
         pid = pid.trim();
         if (!pid.isEmpty()) pendingPedidoIdIntent = pid;
+    }
+
+    private String extractPedidoIdFromUri(Uri data) {
+        if (data == null) return null;
+        try {
+            String qp = data.getQueryParameter("pedidoId");
+            if (qp != null && !qp.trim().isEmpty()) return qp.trim();
+        } catch (Exception ignored) {}
+        try {
+            String qp2 = data.getQueryParameter("id");
+            if (qp2 != null && !qp2.trim().isEmpty()) return qp2.trim();
+        } catch (Exception ignored) {}
+        try {
+            if ("pedido".equalsIgnoreCase(data.getHost())) {
+                String last = data.getLastPathSegment();
+                if (last != null && !last.trim().isEmpty()) return last.trim();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private void dispatchPendingPedidoIdToWeb() {

@@ -293,6 +293,7 @@ textarea{resize:vertical;min-height:80px}
     </form>
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem"><button type="button" onclick="document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button></div>
+    <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
   </div>
 </div>
 
@@ -529,6 +530,7 @@ textarea{resize:vertical;min-height:80px}
           <div><label>Nombre completo</label><input id="nu-nombre" type="text"></div>
           <div><label>Contraseña</label><input id="nu-pw" type="text"></div>
           <div><label>Rol</label><select id="nu-rol"><option value="tecnico">Técnico</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select></div>
+          <div class="full"><label>Teléfono WhatsApp</label><input id="nu-telefono" type="text" placeholder="+543434540250"></div>
         </div>
         <div style="display:flex;gap:.5rem;margin-top:.75rem">
           <button class="btn-sm primary" onclick="crearUsuario()"><i class="fas fa-save"></i> Crear</button>
@@ -680,10 +682,10 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 
-<!-- Admin: enviar aviso de pedido a un usuario (notificación en app Android) -->
+<!-- Admin: enviar aviso de pedido por WhatsApp a un usuario -->
 <div id="modal-notif-pedido" class="mo">
   <div class="mc" style="max-width:440px">
-    <div class="mh"><h3><i class="fas fa-bell"></i> Enviar pedido a usuario</h3><button type="button" class="cm" onclick="cerrarModalNotifPedido()"><i class="fas fa-times"></i></button></div>
+    <div class="mh"><h3><i class="fab fa-whatsapp"></i> Enviar pedido por WhatsApp</h3><button type="button" class="cm" onclick="cerrarModalNotifPedido()"><i class="fas fa-times"></i></button></div>
     <div class="mb">
       <p id="notif-pedido-resumen" style="font-size:.88rem;color:var(--tm);margin-bottom:.75rem"></p>
       <div class="fg" style="padding:0"><label><i class="fas fa-user"></i> Usuario destino</label>
@@ -692,10 +694,10 @@ textarea{resize:vertical;min-height:80px}
         <textarea id="notif-mensaje-extra" rows="2" maxlength="240" placeholder="Ej.: Pasá por este punto antes del mediodía"></textarea></div>
       <div style="display:flex;gap:.75rem;margin-top:1rem;flex-wrap:wrap">
         <button type="button" class="sec" onclick="cerrarModalNotifPedido()">Cancelar</button>
-        <button type="button" class="bp" onclick="confirmarEnviarNotifPedido()"><i class="fas fa-paper-plane"></i> Enviar notificación</button>
+        <button type="button" class="bp" onclick="confirmarEnviarNotifPedido()"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button>
       </div>
       <p id="notif-pedido-msg" style="margin-top:.75rem;font-size:.82rem;color:var(--re)"></p>
-      <p style="margin-top:.5rem;font-size:.75rem;color:var(--tl)">Requiere tabla <code>notificaciones_movil</code> en la base (ver script SQL en el repo Android). En Android, el técnico recibe avisos mientras la app está abierta o en segundo plano.</p>
+      <p style="margin-top:.5rem;font-size:.75rem;color:var(--tl)">El usuario destino debe tener teléfono cargado con formato internacional, por ejemplo <code>+543434540250</code>.</p>
     </div>
   </div>
 </div>
@@ -1553,7 +1555,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 offlinePedidosSave(app.p);
         if (app.u?.rol === 'admin') {
             try {
-                const ru = await sqlSimple('SELECT id, nombre, email, rol FROM usuarios WHERE activo = TRUE ORDER BY nombre');
+                const ru = await sqlSimple('SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre');
                 app.usuariosCache = ru.rows || [];
             } catch(_) {}
         }
@@ -2172,7 +2174,7 @@ function renderMk() {
                 <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
                     <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-                    ${app.u?.rol === 'admin' ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="window._notificarPedidoMapa('${p.id}')">Avisar</button>` : ''}
+                    ${app.u?.rol === 'admin' ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="window._notificarPedidoMapa('${p.id}')"><i class="fab fa-whatsapp"></i> WhatsApp</button>` : ''}
                 </div>
             </div>`, { maxWidth: 260 });
         
@@ -2302,7 +2304,8 @@ function llenarSelectUsuariosNotif() {
         if (u.rol === 'admin') return;
         const o = document.createElement('option');
         o.value = u.id;
-        o.textContent = (u.nombre || 'Usuario') + (u.email ? ' — ' + u.email : '');
+        const tel = (u.telefono || '').trim();
+        o.textContent = (u.nombre || 'Usuario') + (u.email ? ' — ' + u.email : '') + (tel ? ' — ' + tel : ' — sin teléfono');
         sel.appendChild(o);
     });
     if (!sel.options.length) {
@@ -2311,6 +2314,19 @@ function llenarSelectUsuariosNotif() {
         o.textContent = 'No hay técnicos activos';
         sel.appendChild(o);
     }
+}
+
+function normalizarTelefonoWhatsapp(raw) {
+    let t = String(raw || '').trim();
+    if (!t) return '';
+    t = t.replace(/[^\d+]/g, '');
+    if (t.startsWith('00')) t = '+' + t.substring(2);
+    if (t.startsWith('+')) return t;
+    return '+' + t;
+}
+
+function esTelefonoWhatsappValido(tel) {
+    return /^\+\d{10,15}$/.test(String(tel || '').trim());
 }
 
 function cerrarModalNotifPedido() {
@@ -2324,10 +2340,10 @@ async function abrirModalNotificarPedidoPorId(pedidoId) {
     let p = app.p.find(x => String(x.id) === String(pedidoId));
     if (!p) {
         try {
-            const r = await sqlSimple(`SELECT id, numero_pedido AS np, descripcion AS de FROM pedidos WHERE id = ${esc(parseInt(pedidoId, 10))}`);
+            const r = await sqlSimple(`SELECT id, numero_pedido AS np, descripcion AS de, prioridad, estado, distribuidor, telefono_contacto, cliente_nombre FROM pedidos WHERE id = ${esc(parseInt(pedidoId, 10))}`);
             const row = r.rows?.[0];
             if (!row) { toast('Pedido no encontrado', 'error'); return; }
-            p = { id: row.id, np: row.np, de: row.de };
+            p = { id: row.id, np: row.np, de: row.de, prioridad: row.prioridad, estado: row.estado, distribuidor: row.distribuidor, telefono_contacto: row.telefono_contacto, cliente_nombre: row.cliente_nombre };
         } catch (e) {
             toast('Error: ' + e.message, 'error');
             return;
@@ -2335,11 +2351,15 @@ async function abrirModalNotificarPedidoPorId(pedidoId) {
     }
     if (!app.usuariosCache?.length) {
         try {
-            const ru = await sqlSimple('SELECT id, nombre, email, rol FROM usuarios WHERE activo = TRUE ORDER BY nombre');
+            const ru = await sqlSimple('SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre');
             app.usuariosCache = ru.rows || [];
         } catch (_) {}
     }
-    _pedidoNotifContext = { id: p.id, np: p.np, de: p.de || '' };
+    _pedidoNotifContext = {
+        id: p.id, np: p.np, de: p.de || '',
+        prioridad: p.prioridad || '', estado: p.estado || '', distribuidor: p.distribuidor || '',
+        telefono_contacto: p.telefono_contacto || '', cliente_nombre: p.cliente_nombre || ''
+    };
     const res = document.getElementById('notif-pedido-resumen');
     if (res) res.textContent = 'Pedido #' + p.np + ' — ' + (p.de || '').substring(0, 120) + ((p.de && p.de.length > 120) ? '…' : '');
     const msg = document.getElementById('notif-pedido-msg');
@@ -2368,18 +2388,53 @@ async function confirmarEnviarNotifPedido() {
     }
     const uid = parseInt(sel.value, 10);
     const extra = (document.getElementById('notif-mensaje-extra')?.value || '').trim();
-    const titulo = 'Pedido #' + _pedidoNotifContext.np;
-    const cuerpo = extra || ((_pedidoNotifContext.de || '').substring(0, 160) || 'Nuevo aviso de pedido');
+    const usuarioDestino = (app.usuariosCache || []).find(u => String(u.id) === String(uid));
+    const telefonoNorm = normalizarTelefonoWhatsapp(usuarioDestino?.telefono || '');
+    if (!usuarioDestino) {
+        if (msgEl) msgEl.textContent = 'No se pudo resolver el usuario destino.';
+        return;
+    }
+    if (usuarioDestino.whatsapp_notificaciones === false) {
+        if (msgEl) msgEl.textContent = 'El usuario tiene WhatsApp desactivado para notificaciones.';
+        return;
+    }
+    if (!esTelefonoWhatsappValido(telefonoNorm)) {
+        if (msgEl) msgEl.textContent = 'El usuario no tiene teléfono WhatsApp válido. Usá formato +543434540250.';
+        return;
+    }
+    const deepLinkPedido = `pedidosmg://pedido/${_pedidoNotifContext.id}`;
+    const lineas = [
+        `Hola ${usuarioDestino.nombre || ''}, tenés un pedido asignado.`,
+        `Pedido #${_pedidoNotifContext.np}`,
+        _pedidoNotifContext.de ? `Detalle: ${_pedidoNotifContext.de}` : '',
+        _pedidoNotifContext.prioridad ? `Prioridad: ${_pedidoNotifContext.prioridad}` : '',
+        _pedidoNotifContext.estado ? `Estado: ${_pedidoNotifContext.estado}` : '',
+        _pedidoNotifContext.distribuidor ? `Distribuidor: ${_pedidoNotifContext.distribuidor}` : '',
+        _pedidoNotifContext.cliente_nombre ? `Cliente: ${_pedidoNotifContext.cliente_nombre}` : '',
+        _pedidoNotifContext.telefono_contacto ? `Teléfono contacto: ${_pedidoNotifContext.telefono_contacto}` : '',
+        extra ? `Mensaje admin: ${extra}` : '',
+        `Abrir pedido en app: ${deepLinkPedido}`,
+        'Pedidos MG'
+    ].filter(Boolean);
+    const cuerpo = lineas.join('\n');
     if (msgEl) msgEl.textContent = '';
     try {
-        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(uid)}, ${esc(_pedidoNotifContext.id)}, ${esc(titulo)}, ${esc(cuerpo)})`);
-        toast('Notificación encolada ✓ El usuario la verá en el teléfono.', 'success');
+        const telWa = telefonoNorm.replace(/[^\d]/g, '');
+        const waUrl = `https://wa.me/${telWa}?text=${encodeURIComponent(cuerpo)}`;
+        const popup = window.open(waUrl, '_blank', 'noopener');
+        if (!popup) {
+            window.location.href = waUrl;
+        }
+        try {
+            await sqlSimple(`INSERT INTO whatsapp_notificaciones
+                (destinatario_id, destinatario_tipo, telefono, mensaje, pedido_id, estado, fecha_envio)
+                VALUES (${esc(uid)}, 'usuario', ${esc(telefonoNorm)}, ${esc(cuerpo)}, ${esc(_pedidoNotifContext.id)}, 'enviado', NOW())`);
+        } catch (_) {}
+        toast('WhatsApp preparado para envío ✓', 'success');
         cerrarModalNotifPedido();
     } catch (e) {
         const m = e.message || String(e);
-        if (msgEl) msgEl.textContent = m.includes('notificaciones_movil') || m.includes('does not exist') || m.includes('no existe')
-            ? 'Falta crear la tabla en Neon. Ejecutá el script SQL del proyecto (notificaciones_movil).'
-            : m;
+        if (msgEl) msgEl.textContent = m;
         toast('No se pudo enviar: ' + m, 'error');
     }
 }
@@ -3009,8 +3064,13 @@ async function procesarFotoSeleccionada(file, opts = {}) {
 const esMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 const esAndroidApp = /PedidosMG\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
 
-
-
+(function mostrarVersionEnLogin() {
+    var el = document.getElementById('app-version');
+    if (!el) return;
+    if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getAppVersion === 'function') {
+        try { el.textContent = 'Versión ' + window.AndroidConfig.getAppVersion(); } catch (_) {}
+    }
+})();
 
 function dispararSelectorArchivos(input) {
     if (!input) return;
@@ -3554,7 +3614,7 @@ function detalle(p) {
             <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${p.la != null && p.ln != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
-            ${app.u?.rol === 'admin' ? `<button type="button" class="ba2" style="margin-top:.5rem;margin-left:.35rem;background:#059669;color:white;border-color:#059669" onclick="document.getElementById('dm').classList.remove('active');window.abrirModalNotificarPedidoPorId('${p.id}')"><i class="fas fa-bell"></i> Enviar a usuario</button>` : ''}
+            ${app.u?.rol === 'admin' ? `<button type="button" class="ba2" style="margin-top:.5rem;margin-left:.35rem;background:#059669;color:white;border-color:#059669" onclick="document.getElementById('dm').classList.remove('active');window.abrirModalNotificarPedidoPorId('${p.id}')"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button>` : ''}
         </div>
         
         ${_auditLineas ? `<div class="ds"><h4>👤 Auditoría</h4>${_auditLineas}</div>` : ''}
@@ -4207,21 +4267,32 @@ async function cargarListaUsuarios() {
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE");
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_token TEXT");
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_expiry TIMESTAMPTZ");
+        await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(20)");
+        await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS whatsapp_notificaciones BOOLEAN DEFAULT TRUE");
     } catch(_) {}
     const cont = document.getElementById('lista-usuarios-admin');
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, email, nombre, rol, COALESCE(activo, true) AS activo FROM usuarios ORDER BY id');
+        const r = await sqlSimple(`SELECT id, email, nombre, rol,
+            COALESCE(activo, true) AS activo,
+            telefono,
+            COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
+            FROM usuarios ORDER BY id`);
         if (!r.rows.length) { cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin usuarios</p>'; return; }
         cont.innerHTML = `<table class="admin-table">
-            <thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>${r.rows.map(u => `<tr>
                 <td style="color:var(--tl)">${u.id}</td>
                 <td><b>${u.email}</b></td>
                 <td>${u.nombre}</td>
+                <td>
+                    <div style="font-size:.8rem">${u.telefono || '<span style="color:var(--tl)">Sin cargar</span>'}</div>
+                    <div style="font-size:.74rem;color:${u.whatsapp_notificaciones ? '#166534' : '#b45309'}">${u.whatsapp_notificaciones ? 'Notificaciones ON' : 'Notificaciones OFF'}</div>
+                </td>
                 <td><span style="background:var(--bg);padding:.15rem .5rem;border-radius:.3rem;font-size:.78rem;font-weight:600">${u.rol}</span></td>
                 <td><span style="color:${u.activo ? '#166534' : '#dc2626'};font-weight:600">${u.activo ? '✓ Activo' : '✗ Inactivo'}</span></td>
                 <td style="display:flex;gap:.3rem">
+                    <button class="btn-sm" onclick="editarTelefonoWhatsappUsuario(${u.id}, ${escJs(u.telefono || '')}, ${u.whatsapp_notificaciones ? 'true' : 'false'})" style="background:#ecfeff;border:1px solid #a5f3fc;color:#0f766e">WhatsApp</button>
                     <button class="btn-sm warning" onclick="toggleUsuario(${u.id}, ${!u.activo})">${u.activo ? 'Desactivar' : 'Activar'}</button>
                     ${u.email !== 'admin' ? `<button class="btn-sm danger" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ''}
                 </td>
@@ -4240,15 +4311,44 @@ async function crearUsuario() {
     const nombre = document.getElementById('nu-nombre').value.trim();
     const pw     = document.getElementById('nu-pw').value.trim();
     const rol    = document.getElementById('nu-rol').value;
+    const telefono = normalizarTelefonoWhatsapp(document.getElementById('nu-telefono')?.value || '');
     if (!email || !nombre || !pw) { toast('Completá todos los campos', 'error'); return; }
+    if (telefono && !esTelefonoWhatsappValido(telefono)) { toast('Teléfono inválido. Usá formato +543434540250', 'error'); return; }
     try {
-        await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol) VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)})`);
+        await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones)
+            VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE)`);
         toast('Usuario creado: ' + nombre, 'success');
         document.getElementById('form-usuario').style.display = 'none';
-        ['nu-email','nu-nombre','nu-pw'].forEach(id => document.getElementById(id).value = '');
+        ['nu-email','nu-nombre','nu-pw','nu-telefono'].forEach(id => document.getElementById(id).value = '');
         cargarListaUsuarios();
     } catch(e) {
         toast('Error: ' + (e.message.includes('unique') ? 'Email ya existe' : e.message), 'error');
+    }
+}
+
+function escJs(v) {
+    return `'${String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+async function editarTelefonoWhatsappUsuario(id, telefonoActual, habilitadoActual) {
+    const nuevo = prompt('Número WhatsApp del usuario (formato +543434540250):', (telefonoActual || '').trim());
+    if (nuevo === null) return;
+    const telNorm = normalizarTelefonoWhatsapp(nuevo);
+    if (telNorm && !esTelefonoWhatsappValido(telNorm)) {
+        toast('Formato inválido. Ejemplo: +543434540250', 'error');
+        return;
+    }
+    const habilitar = confirm('¿Habilitar notificaciones WhatsApp para este usuario?\nAceptar = Sí / Cancelar = No');
+    try {
+        await sqlSimple(`UPDATE usuarios SET telefono = ${esc(telNorm || null)}, whatsapp_notificaciones = ${esc(habilitar)} WHERE id = ${esc(id)}`);
+        toast('WhatsApp de usuario actualizado', 'success');
+        await cargarListaUsuarios();
+        try {
+            const ru = await sqlSimple('SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre');
+            app.usuariosCache = ru.rows || [];
+        } catch (_) {}
+    } catch (e) {
+        toast('Error al actualizar WhatsApp: ' + e.message, 'error');
     }
 }
 
@@ -4666,7 +4766,7 @@ async function cargarUbicacionesUsuarios() {
                     <span style="font-size:11px">${p.prioridad} — ${p.estado}</span><br>
                     <span style="font-size:11px;color:#475569">${p.distribuidor || ''}</span><br>
                     <span style="font-size:11px">${(p.descripcion||'').substring(0,60)}...</span>
-                    <div style="margin-top:6px"><button type="button" style="width:100%;padding:6px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;font-weight:600" onclick="window._notificarPedidoMapaAdmin('${p.id}')"><i class="fas fa-bell"></i> Enviar a usuario</button></div>`);
+                    <div style="margin-top:6px"><button type="button" style="width:100%;padding:6px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;font-weight:600" onclick="window._notificarPedidoMapaAdmin('${p.id}')"><i class="fab fa-whatsapp"></i> Enviar WhatsApp</button></div>`);
             _marcadoresPedidosAdmin.push(mk);
         });
 
