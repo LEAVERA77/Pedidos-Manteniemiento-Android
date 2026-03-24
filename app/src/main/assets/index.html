@@ -24,7 +24,32 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .screen{display:none;height:100%;width:100%;position:absolute;inset:0}
 #ls{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#2563eb 100%)}
 #ls.active{display:flex;align-items:center;justify-content:center}
-#ms.active{display:block}
+#ms.active{display:block;position:relative}
+#mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
+.moui-card{pointer-events:auto;position:absolute;background:#fff;border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
+#mapa-card-filtros{top:.45rem;left:.45rem}
+#mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw)}
+@media (max-width:700px){#mapa-card-dashboard{right:.45rem;left:.45rem;max-width:none;top:auto;bottom:5.5rem;max-height:38vh}}
+.moui-hd{font-weight:700;color:var(--bd);padding:.45rem .6rem;border-bottom:1px solid var(--bo);display:flex;align-items:center;gap:.35rem;cursor:pointer;user-select:none;font-size:.8rem}
+.moui-bd{padding:.5rem .55rem}
+.moui-row{margin-bottom:.45rem}
+.moui-estados{display:flex;flex-wrap:wrap;gap:.35rem .5rem}
+.moui-chk{display:inline-flex;align-items:center;gap:.2rem;cursor:pointer;font-size:.72rem;color:var(--tm)}
+.moui-lbl{display:block;font-size:.68rem;color:var(--tl);margin-bottom:.15rem}
+.moui-sel{width:100%;font-size:.78rem;padding:.35rem .4rem}
+.moui-btn-reset{width:100%;margin-top:.35rem;padding:.35rem;font-size:.72rem;border:1px solid var(--bo);border-radius:.4rem;background:var(--bg);cursor:pointer}
+.moui-dash .moui-bd{max-height:min(52vh,420px);overflow-y:auto}
+.moui-subh{font-size:.72rem;color:var(--bd);margin:.5rem 0 .25rem}
+.dash-kpi-mini{display:grid;grid-template-columns:repeat(2,1fr);gap:.35rem}
+.dash-kpi-mini .stat-card{background:var(--bg);border-radius:.4rem;padding:.35rem .4rem;border:1px solid var(--bo)}
+.dash-kpi-mini .stat-card .val{font-size:1.05rem;font-weight:800;color:var(--bd)}
+.dash-kpi-mini .stat-card .lbl{font-size:.62rem;color:var(--tm);line-height:1.2}
+.dash-kpi-mini .stat-card.orange .val{color:var(--or)}
+.dash-kpi-mini .stat-card.green .val{color:var(--gr)}
+.dash-list-mini{font-size:.72rem;color:var(--tm);max-height:120px;overflow-y:auto}
+.moui-full{width:100%;margin-top:.5rem}
+#mapa-dash-body.collapsed{display:none}
+#mapa-filtros-body.collapsed{display:none}
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
 .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
 .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
@@ -316,6 +341,39 @@ textarea{resize:vertical;min-height:80px}
     </div>
   </div>
   <div id="mc"></div>
+  <div id="mapa-overlay-ui">
+    <div id="mapa-card-filtros" class="moui-card">
+      <div class="moui-hd" onclick="toggleMapaFiltrosBody()"><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span></div>
+      <div id="mapa-filtros-body" class="moui-bd">
+        <div class="moui-row moui-estados">
+          <label class="moui-chk"><input type="checkbox" id="mapa-flt-pendiente" checked onchange="onMapaFiltroChange()"> Pendiente</label>
+          <label class="moui-chk"><input type="checkbox" id="mapa-flt-asignado" checked onchange="onMapaFiltroChange()"> Asignado</label>
+          <label class="moui-chk"><input type="checkbox" id="mapa-flt-ejecucion" checked onchange="onMapaFiltroChange()"> En ejecución</label>
+          <label class="moui-chk"><input type="checkbox" id="mapa-flt-cerrado" checked onchange="onMapaFiltroChange()"> Cerrado</label>
+        </div>
+        <div class="moui-row">
+          <span class="moui-lbl">Creador (usuario)</span>
+          <select id="mapa-filtro-usuario" class="moui-sel" onchange="onMapaFiltroChange()"><option value="">Todos</option></select>
+        </div>
+        <div class="moui-row">
+          <span class="moui-lbl">Asignado a</span>
+          <select id="mapa-filtro-asignado" class="moui-sel" onchange="onMapaFiltroChange()"><option value="">Todos</option><option value="__sin__">Sin asignar</option></select>
+        </div>
+        <button type="button" class="moui-btn-reset" onclick="resetMapaFiltros()">Restablecer filtros</button>
+      </div>
+    </div>
+    <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">
+      <div class="moui-hd" onclick="toggleMapaDashBody()"><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span></div>
+      <div id="mapa-dash-body" class="moui-bd moui-scroll">
+        <div id="mapa-main-dash-kpi" class="dash-kpi-mini"></div>
+        <h4 class="moui-subh"><i class="fas fa-users"></i> Técnicos (GPS &lt; 20 min)</h4>
+        <div id="mapa-main-dash-tecnicos" class="dash-list-mini"></div>
+        <h4 class="moui-subh"><i class="fas fa-check-double"></i> Últimos cierres</h4>
+        <div id="mapa-main-dash-cierres" class="dash-list-mini"></div>
+        <button type="button" class="btn-sm primary moui-full" onclick="refrescarDashboardGerencia(false)"><i class="fas fa-sync"></i> Actualizar</button>
+      </div>
+    </div>
+  </div>
   
   <!-- Botones en el mapa -->
   <button id="btn-ubicacion" class="fab-ubicacion" title="Zoom a mi ubicación">
@@ -1281,11 +1339,16 @@ async function heartbeat() {
             localStorage.removeItem('pmg');
             detenerTracking();
             detenerSyncCatalogos();
+            detenerDashboardGerenciaPoll();
+            detenerTecnicosMapaPrincipalPoll();
             app.u = null;
             mapaInicializado = false;
             if (app.map) { app.map.remove(); app.map = null; }
+            _marcadoresTecnicosPrincipal = [];
             const btnAdm = document.getElementById('btn-admin');
             if (btnAdm) btnAdm.style.display = 'none';
+            const mapDashCard = document.getElementById('mapa-card-dashboard');
+            if (mapDashCard) mapDashCard.style.display = 'none';
             document.getElementById('ls').classList.add('active');
             document.getElementById('ms').classList.remove('active');
         }, 3500);
@@ -1652,6 +1715,8 @@ document.getElementById('lf').addEventListener('submit', async e => {
         if (btnAdm) btnAdm.style.display = u.rol === 'admin' ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = u.rol === 'admin' ? 'flex' : 'none';
+        const mapDashCard = document.getElementById('mapa-card-dashboard');
+        if (mapDashCard) mapDashCard.style.display = u.rol === 'admin' ? 'block' : 'none';
         const wrapTog = document.getElementById('wrap-toggle-ver-todos');
         const chkTod = document.getElementById('toggle-ver-todos-pedidos');
         if (wrapTog && chkTod) {
@@ -1663,8 +1728,13 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
             }
         } catch (_) {}
-        if (u.rol === 'admin') iniciarDashboardGerenciaPoll();
-        else detenerDashboardGerenciaPoll();
+        if (u.rol === 'admin') {
+            iniciarDashboardGerenciaPoll();
+        } else {
+            detenerDashboardGerenciaPoll();
+            if (String(u.rol || '').toLowerCase() === 'supervisor') iniciarTecnicosMapaPrincipalPoll();
+            else detenerTecnicosMapaPrincipalPoll();
+        }
         setTimeout(async () => {
 
             solicitarPermisos().then(r => {
@@ -1854,6 +1924,163 @@ function fmtInformeFecha(v) {
 }
 
 let _modoFijarUbicacionAdmin = false;
+let _marcadoresTecnicosPrincipal = [];
+
+function _escOpt(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function pedidosParaMarcadoresMapa() {
+    const chk = (id) => {
+        const el = document.getElementById(id);
+        return !el || el.checked;
+    };
+    const anyChecked = ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado']
+        .some(id => document.getElementById(id)?.checked);
+    const allowEstado = (es) => {
+        if (!anyChecked) return true;
+        if (es === 'Pendiente') return chk('mapa-flt-pendiente');
+        if (es === 'Asignado') return chk('mapa-flt-asignado');
+        if (es === 'En ejecución') return chk('mapa-flt-ejecucion');
+        if (es === 'Cerrado') return chk('mapa-flt-cerrado');
+        return true;
+    };
+    const selU = document.getElementById('mapa-filtro-usuario');
+    const selA = document.getElementById('mapa-filtro-asignado');
+    const uidF = selU?.value || '';
+    const asigF = selA?.value || '';
+    return app.p.filter(p => {
+        if (!p.la || !p.ln) return false;
+        if (!allowEstado(p.es || '')) return false;
+        if (uidF) {
+            const cre = p.uc != null ? String(p.uc) : (p.ui != null ? String(p.ui) : '');
+            if (cre !== uidF) return false;
+        }
+        if (asigF === '__sin__') {
+            if (p.tai != null) return false;
+        } else if (asigF) {
+            if (String(p.tai ?? '') !== asigF) return false;
+        }
+        return true;
+    });
+}
+
+function llenarSelectsFiltroMapa() {
+    const selU = document.getElementById('mapa-filtro-usuario');
+    const selA = document.getElementById('mapa-filtro-asignado');
+    if (!selU || !selA) return;
+    const prevU = selU.value;
+    const prevA = selA.value;
+    selU.innerHTML = '<option value="">Todos los creadores</option>';
+    selA.innerHTML = '<option value="">Todos los asignados</option><option value="__sin__">Sin asignar</option>';
+    const nombrePorId = new Map();
+    (app.usuariosCache || []).forEach(u => nombrePorId.set(String(u.id), u.nombre || u.email || ('#' + u.id)));
+    const seenCre = new Set();
+    app.p.forEach(p => {
+        const id = p.uc != null ? p.uc : p.ui;
+        if (id == null || seenCre.has(String(id))) return;
+        seenCre.add(String(id));
+        const name = nombrePorId.get(String(id)) || ('Usuario #' + id);
+        selU.insertAdjacentHTML('beforeend', `<option value="${id}">${_escOpt(name)}</option>`);
+    });
+    if (app.u?.rol === 'admin') {
+        (app.usuariosCache || []).forEach(u => {
+            if (seenCre.has(String(u.id))) return;
+            selU.insertAdjacentHTML('beforeend', `<option value="${u.id}">${_escOpt(u.nombre || u.email)}</option>`);
+        });
+    }
+    const seenTec = new Set();
+    (app.usuariosCache || []).forEach(u => {
+        const r = String(u.rol || '').toLowerCase();
+        if (r !== 'tecnico' && r !== 'supervisor') return;
+        selA.insertAdjacentHTML('beforeend', `<option value="${u.id}">${_escOpt((u.nombre || '') + ' (' + u.rol + ')')}</option>`);
+        seenTec.add(String(u.id));
+    });
+    app.p.forEach(p => {
+        if (p.tai == null) return;
+        const sid = String(p.tai);
+        if (seenTec.has(sid)) return;
+        seenTec.add(sid);
+        const name = nombrePorId.get(sid) || ('#' + sid);
+        selA.insertAdjacentHTML('beforeend', `<option value="${p.tai}">${_escOpt(name)}</option>`);
+    });
+    if ([...selU.options].some(o => o.value === prevU)) selU.value = prevU;
+    if ([...selA.options].some(o => o.value === prevA)) selA.value = prevA;
+}
+
+function onMapaFiltroChange() {
+    try { renderMk(); } catch (_) {}
+}
+
+function resetMapaFiltros() {
+    ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = true;
+    });
+    const u = document.getElementById('mapa-filtro-usuario');
+    const a = document.getElementById('mapa-filtro-asignado');
+    if (u) u.value = '';
+    if (a) a.value = '';
+    onMapaFiltroChange();
+}
+
+function toggleMapaFiltrosBody() {
+    const b = document.getElementById('mapa-filtros-body');
+    const ch = document.getElementById('mapa-filtros-chevron');
+    if (!b) return;
+    b.classList.toggle('collapsed');
+    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
+}
+
+function toggleMapaDashBody() {
+    const b = document.getElementById('mapa-dash-body');
+    const ch = document.getElementById('mapa-dash-chevron');
+    if (!b) return;
+    b.classList.toggle('collapsed');
+    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
+}
+
+async function refrescarTecnicosMapaPrincipal() {
+    if (!app.map || modoOffline || !NEON_OK || !_sql) {
+        _marcadoresTecnicosPrincipal.forEach(m => { try { app.map && app.map.removeLayer(m); } catch (_) {} });
+        _marcadoresTecnicosPrincipal = [];
+        return;
+    }
+    const rol = String(app.u?.rol || '').toLowerCase();
+    if (rol !== 'admin' && rol !== 'supervisor') {
+        _marcadoresTecnicosPrincipal.forEach(m => { try { app.map.removeLayer(m); } catch (_) {} });
+        _marcadoresTecnicosPrincipal = [];
+        return;
+    }
+    try {
+        const r = await sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
+            FROM ubicaciones_usuarios uu
+            JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
+            WHERE uu.timestamp > NOW() - INTERVAL '2 hours'
+            AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
+            ORDER BY uu.usuario_id, uu.timestamp DESC`);
+        _marcadoresTecnicosPrincipal.forEach(m => { try { app.map.removeLayer(m); } catch (_) {} });
+        _marcadoresTecnicosPrincipal = [];
+        (r.rows || []).forEach(row => {
+            const lat = parseFloat(row.lat);
+            const lng = parseFloat(row.lng);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+            const nom = String(row.nombre || '').trim() || row.email || 'Técnico';
+            const short = nom.split(/\s+/)[0] || nom;
+            const icon = L.divIcon({
+                className: '',
+                html: `<div class="user-marker-admin" style="border-color:#0f766e;background:#ecfdf5;box-shadow:0 2px 8px rgba(0,0,0,.2)"><i class="fas fa-hard-hat" style="font-size:.65rem;color:#0f766e"></i> ${_escOpt(short)}</div>`,
+                iconAnchor: [0, 12]
+            });
+            const m = L.marker([lat, lng], { icon, zIndexOffset: 750 })
+                .addTo(app.map)
+                .bindPopup(`<b>${_escOpt(nom)}</b><br>${_escOpt(row.rol || '')}<br>hace ${Math.round((Date.now() - new Date(row.timestamp)) / 60000)} min`);
+            _marcadoresTecnicosPrincipal.push(m);
+        });
+    } catch (e) {
+        console.warn('[tecnicos mapa]', e);
+    }
+}
 
 function activarModoFijarUbicacionAdmin() {
     if (!app.u || app.u.rol !== 'admin') return;
@@ -1876,11 +2103,30 @@ async function registrarUbicacionManualAdmin(lat, lng) {
 }
 
 let _pollDashInterval = null;
+let _pollTecnicosMapaInterval = null;
 let _seenClosedIds = new Set();
 let _dashCierresInit = false;
 
+function detenerTecnicosMapaPrincipalPoll() {
+    if (_pollTecnicosMapaInterval) {
+        clearInterval(_pollTecnicosMapaInterval);
+        _pollTecnicosMapaInterval = null;
+    }
+}
+
+/** Supervisor (sin panel KPI): solo técnicos en mapa principal. */
+function iniciarTecnicosMapaPrincipalPoll() {
+    detenerTecnicosMapaPrincipalPoll();
+    const r = String(app.u?.rol || '').toLowerCase();
+    if (r !== 'supervisor' || modoOffline) return;
+    const tick = () => { try { refrescarTecnicosMapaPrincipal(); } catch (_) {} };
+    tick();
+    _pollTecnicosMapaInterval = setInterval(tick, 45000);
+}
+
 function iniciarDashboardGerenciaPoll() {
     detenerDashboardGerenciaPoll();
+    detenerTecnicosMapaPrincipalPoll();
     if (!app.u || app.u.rol !== 'admin') return;
     const tick = () => { pollCierresGerencia(); refrescarDashboardGerencia(true); };
     tick();
@@ -1956,7 +2202,11 @@ async function refrescarDashboardGerencia(silent) {
     const kpi = document.getElementById('dashboard-kpi-grid');
     const lt = document.getElementById('dashboard-lista-tecnicos');
     const lc = document.getElementById('dashboard-lista-cierres');
+    const kpiM = document.getElementById('mapa-main-dash-kpi');
+    const ltM = document.getElementById('mapa-main-dash-tecnicos');
+    const lcM = document.getElementById('mapa-main-dash-cierres');
     if (!silent && kpi) kpi.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
+    if (!silent && kpiM) kpiM.innerHTML = '<div class="ll2" style="padding:.5rem"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const [rAct, rTec, rCi] = await Promise.all([
             sqlSimple(`SELECT
@@ -1976,36 +2226,38 @@ async function refrescarDashboardGerencia(silent) {
                 WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL ORDER BY fecha_cierre DESC LIMIT 12`)
         ]);
         const a = rAct.rows[0] || {};
-        if (kpi) {
-            const cards = [
-                { val: a.activos || 0, lbl: 'Activos (no cerrados)', cls: 'orange' },
-                { val: a.pendientes || 0, lbl: 'Pendiente', cls: '' },
-                { val: a.asignados || 0, lbl: 'Asignados', cls: '' },
-                { val: a.en_ejec || 0, lbl: 'En ejecución', cls: '' },
-                { val: a.cerrados_hoy || 0, lbl: 'Cerrados hoy', cls: 'green' },
-                { val: (rTec.rows || []).length, lbl: 'Con posición &lt;20 min', cls: '' }
-            ];
-            kpi.innerHTML = cards.map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`).join('');
-        }
-        if (lt) {
-            const tr = rTec.rows || [];
-            lt.innerHTML = tr.length
-                ? tr.map(row => {
-                    const min = Math.round((Date.now() - new Date(row.timestamp)) / 60000);
-                    return `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo)"><b>${String(row.nombre || '').replace(/</g, '&lt;')}</b> <span style="color:var(--tl)">${row.rol || ''}</span> — hace ${min} min</div>`;
-                }).join('')
-                : '<span style="color:var(--tl)">Sin posiciones en los últimos 20 min (técnicos con app / GPS apagado).</span>';
-        }
-        if (lc) {
-            const cr = rCi.rows || [];
-            lc.innerHTML = cr.length
-                ? cr.map(row => `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYVerCierre(${row.id})">
+        const cards = [
+            { val: a.activos || 0, lbl: 'Activos (no cerrados)', cls: 'orange' },
+            { val: a.pendientes || 0, lbl: 'Pendiente', cls: '' },
+            { val: a.asignados || 0, lbl: 'Asignados', cls: '' },
+            { val: a.en_ejec || 0, lbl: 'En ejecución', cls: '' },
+            { val: a.cerrados_hoy || 0, lbl: 'Cerrados hoy', cls: 'green' },
+            { val: (rTec.rows || []).length, lbl: 'Con posición &lt;20 min', cls: '' }
+        ];
+        const htmlKpi = cards.map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`).join('');
+        const tr = rTec.rows || [];
+        const htmlLt = tr.length
+            ? tr.map(row => {
+                const min = Math.round((Date.now() - new Date(row.timestamp)) / 60000);
+                return `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo)"><b>${String(row.nombre || '').replace(/</g, '&lt;')}</b> <span style="color:var(--tl)">${row.rol || ''}</span> — hace ${min} min</div>`;
+            }).join('')
+            : '<span style="color:var(--tl)">Sin posiciones en los últimos 20 min (técnicos con app / GPS apagado).</span>';
+        const cr = rCi.rows || [];
+        const htmlLc = cr.length
+            ? cr.map(row => `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYVerCierre(${row.id})">
                     <strong>#${String(row.numero_pedido || '').replace(/</g, '&lt;')}</strong> · ${fmtInformeFecha(row.fecha_cierre)} · ${String(row.tecnico_cierre || '—').replace(/</g, '&lt;')} · NIS ${String(row.nis_medidor || '—').replace(/</g, '&lt;')}
                 </div>`).join('')
-                : '—';
-        }
+            : '—';
+        if (kpi) kpi.innerHTML = htmlKpi;
+        if (lt) lt.innerHTML = htmlLt;
+        if (lc) lc.innerHTML = htmlLc;
+        if (kpiM) kpiM.innerHTML = htmlKpi;
+        if (ltM) ltM.innerHTML = htmlLt;
+        if (lcM) lcM.innerHTML = htmlLc;
+        try { await refrescarTecnicosMapaPrincipal(); } catch (_) {}
     } catch (e) {
         if (kpi && !silent) kpi.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
+        if (kpiM && !silent) kpiM.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
     }
 }
 
@@ -2525,7 +2777,7 @@ function renderMk() {
         'Baja': '#3b82f6'
     };
     
-    app.p.filter(p => p.la && p.ln).forEach(p => {
+    pedidosParaMarcadoresMapa().forEach(p => {
         const cer = p.es === 'Cerrado';
         const m = L.circleMarker([p.la, p.ln], {
             radius: cer ? 6 : 9,
@@ -4336,6 +4588,7 @@ function render() {
     
     if (!fl.length) {
         c.innerHTML = '<div class="ll2"><i class="fas fa-inbox"></i> Sin pedidos</div>';
+        try { llenarSelectsFiltroMapa(); } catch (_) {}
         renderMk();
         return;
     }
@@ -4389,6 +4642,7 @@ function render() {
         c.appendChild(d);
     });
     
+    try { llenarSelectsFiltroMapa(); } catch (_) {}
     renderMk();
 }
 
@@ -4434,6 +4688,7 @@ document.getElementById('ub').addEventListener('click', () => {
         detenerKeepAlive(); 
         detenerTracking();
         detenerDashboardGerenciaPoll();
+        detenerTecnicosMapaPrincipalPoll();
         _dashCierresInit = false;
         _seenClosedIds.clear();
         try {
@@ -4447,10 +4702,13 @@ document.getElementById('ub').addEventListener('click', () => {
             app.map.remove();
             app.map = null;
         }
+        _marcadoresTecnicosPrincipal = [];
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = 'none';
         const btnDg = document.getElementById('btn-dashboard-gerencia');
         if (btnDg) btnDg.style.display = 'none';
+        const mapDashCard = document.getElementById('mapa-card-dashboard');
+        if (mapDashCard) mapDashCard.style.display = 'none';
         const wvt = document.getElementById('wrap-toggle-ver-todos');
         if (wvt) wvt.style.display = 'none';
         const adminPanel = document.getElementById('admin-panel');
@@ -4562,6 +4820,8 @@ try {
         if (btnAdm) btnAdm.style.display = app.u.rol === 'admin' ? 'flex' : 'none';
         const btnDash2 = document.getElementById('btn-dashboard-gerencia');
         if (btnDash2) btnDash2.style.display = app.u.rol === 'admin' ? 'flex' : 'none';
+        const mapDashCard2 = document.getElementById('mapa-card-dashboard');
+        if (mapDashCard2) mapDashCard2.style.display = app.u.rol === 'admin' ? 'block' : 'none';
         const wrapTog2 = document.getElementById('wrap-toggle-ver-todos');
         const chkTod2 = document.getElementById('toggle-ver-todos-pedidos');
         if (wrapTog2 && chkTod2) {
@@ -4573,8 +4833,13 @@ try {
                 AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''));
             }
         } catch (_) {}
-        if (app.u.rol === 'admin') iniciarDashboardGerenciaPoll();
-        else detenerDashboardGerenciaPoll();
+        if (app.u.rol === 'admin') {
+            iniciarDashboardGerenciaPoll();
+        } else {
+            detenerDashboardGerenciaPoll();
+            if (String(app.u.rol || '').toLowerCase() === 'supervisor') iniciarTecnicosMapaPrincipalPoll();
+            else detenerTecnicosMapaPrincipalPoll();
+        }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
         iniciarKeepAlive();
@@ -5407,6 +5672,7 @@ async function cargarEstadisticas() {
 let _mapaUsuariosAdmin = null;
 let _marcadoresUsuarios = [];
 let _marcadoresPedidosAdmin = [];
+window._marcadoresUsuarios = _marcadoresUsuarios;
 
 function iniciarMapaUsuariosAdmin() {
     const el = document.getElementById('mapa-usuarios-admin');
@@ -5429,8 +5695,10 @@ function iniciarMapaUsuariosAdmin() {
                 updateWhenIdle: true,
                 keepBuffer: 1
             }).addTo(_mapaUsuariosAdmin);
+            window._mapaUsuariosAdmin = _mapaUsuariosAdmin;
         } else {
             _mapaUsuariosAdmin.invalidateSize();
+            window._mapaUsuariosAdmin = _mapaUsuariosAdmin;
         }
         cargarUbicacionesUsuarios();
     }, 200);
@@ -5883,6 +6151,11 @@ if (typeof buscarHistorialPorNIS !== "undefined") window.buscarHistorialPorNIS =
 if (typeof generarInformeMensualENRE !== "undefined") window.generarInformeMensualENRE = generarInformeMensualENRE;
 if (typeof abrirModalDashboardGerencia !== "undefined") window.abrirModalDashboardGerencia = abrirModalDashboardGerencia;
 if (typeof refrescarDashboardGerencia !== "undefined") window.refrescarDashboardGerencia = refrescarDashboardGerencia;
+if (typeof activarModoFijarUbicacionAdmin !== "undefined") window.activarModoFijarUbicacionAdmin = activarModoFijarUbicacionAdmin;
+if (typeof onMapaFiltroChange !== "undefined") window.onMapaFiltroChange = onMapaFiltroChange;
+if (typeof resetMapaFiltros !== "undefined") window.resetMapaFiltros = resetMapaFiltros;
+if (typeof toggleMapaFiltrosBody !== "undefined") window.toggleMapaFiltrosBody = toggleMapaFiltrosBody;
+if (typeof toggleMapaDashBody !== "undefined") window.toggleMapaDashBody = toggleMapaDashBody;
 
 </script>
 <script>
