@@ -6150,7 +6150,7 @@ async function generarInformeMensualENRE() {
                     let ty = top - 5;
                     ctx.textBaseline = 'bottom';
                     if (ty < area.top + 14) {
-                        ty = top + Math.max(Math.min(h / 2, h - 6), 10);
+                        ty = top + h / 2;
                         ctx.textBaseline = 'middle';
                     }
                     const t = pct + '%';
