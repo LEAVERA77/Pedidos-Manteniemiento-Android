@@ -21,14 +21,28 @@ CREATE INDEX IF NOT EXISTS idx_app_version_code ON app_version (version_code DES
 -- Si en Neon quedó una fila con version_code mayor (p. ej. 9 de prueba), borrala o la app pedirá actualizar en bucle.
 -- Subir el APK a Drive y reemplazar el id.
 -- Carpeta compartida ejemplo: https://drive.google.com/drive/folders/1DJMfqTu1cJMH_y6SiuAh7qnw18hugrJe
--- Archivo en Drive: https://drive.google.com/file/d/1zCxXk5KPBG9k8p0WPJTxeCl7SjqNvXeh/view?usp=sharing
+-- APK en Drive: https://drive.google.com/file/d/1RQnCCxBBKgkbwfmICgyo9xTNMfATK1dn/view?usp=sharing
 INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
 VALUES (
-    8,
-    '1.0.7',
-    'https://drive.google.com/uc?export=download&id=1zCxXk5KPBG9k8p0WPJTxeCl7SjqNvXeh',
-    'GestorNova (com.gestornova.gestion): actualización desde Neon al conectar, import socios por encabezados en cualquier orden, auto ejecución a 30 m, Excel flexible, usuario recordado en el dispositivo.',
-    true
+    12,
+    '1.0.12',
+    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK_1_0_12_EN_DRIVE',
+    'GestorNova 1.0.12: pestañas Filtros/Dash clicables (pointer-events); impresión/PDF estadísticas captura completa; dashboard KPI con listas; firma canvas willReadFrequently; limpieza fotos nuevo pedido; mapa admin addLayer null fix.',
+    false
+)
+ON CONFLICT (version_code) DO UPDATE SET
+    version_name = EXCLUDED.version_name,
+    apk_url = EXCLUDED.apk_url,
+    release_notes = EXCLUDED.release_notes,
+    force_update = EXCLUDED.force_update;
+
+INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
+VALUES (
+    13,
+    '1.0.13',
+    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK_1_0_13_EN_DRIVE',
+    'GestorNova 1.0.13: estadísticas — números en barras (mes, tipos), porcentajes sin recorte; nuevo pedido — selector WGS84 / proyectadas y sincronía tras guardar config empresa; mapa — filtros por color de prioridad (checkboxes en leyenda).',
+    false
 )
 ON CONFLICT (version_code) DO UPDATE SET
     version_name = EXCLUDED.version_name,
