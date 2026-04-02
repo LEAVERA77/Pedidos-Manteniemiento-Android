@@ -2111,9 +2111,9 @@ document.getElementById('lf').addEventListener('submit', async e => {
             initMap();
             if (!offline) {
                 await cargarDistribuidores();
-                await cargarConfigEmpresa();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
+                await cargarConfigEmpresa();
                 await cargarPedidos();
                 
                 offlinePedidosSave(app.p);
@@ -5800,12 +5800,14 @@ async function cargarDistribuidores() {
 async function cargarConfigEmpresa() {
     try {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
-        const cfg = {};
-        (r.rows || []).forEach(row => { cfg[row.clave] = row.valor; });
-        window.EMPRESA_CFG = cfg;
+        const sqlCfg = {};
+        (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
+        // Valores de cliente/API (p. ej. tras mi-configuracion) tienen prioridad sobre empresa_config.
+        window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
         // Actualizar título y subtítulo
+        const cfg = window.EMPRESA_CFG || {};
         const nombre = cfg.nombre || 'Pedidos de Mantenimiento';
         const sub    = cfg.subtitulo || '';
         document.title = nombre;
@@ -5821,7 +5823,6 @@ async function cargarConfigEmpresa() {
         poblarSelectTiposReclamo();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
-        window.EMPRESA_CFG = {};
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
         poblarSelectTiposReclamo();
@@ -6021,44 +6022,54 @@ function ocultarModalConfigInicial() {
     _configInicialBloqueante = false;
 }
 async function verificarConfiguracionInicialObligatoria() {
-    let cfg = window.EMPRESA_CFG || {};
     const token = getApiToken();
-    if (token) {
-        try {
-            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                const cli = data?.cliente || {};
-                let extra = cli?.configuracion || {};
-                if (typeof extra === 'string') {
-                    try {
-                        extra = JSON.parse(extra);
-                    } catch (_) {
-                        extra = {};
-                    }
-                }
-                cfg = {
-                    ...cfg,
-                    ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                    ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
-                    ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
-                    ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
-                };
-                if (data.cliente && Object.prototype.hasOwnProperty.call(data.cliente, 'tipo')) {
-                    cfg.tipo = String(data.cliente.tipo ?? '').trim();
-                }
-                window.EMPRESA_CFG = cfg;
-                poblarSelectTiposReclamo();
-            }
-        } catch (_) {}
+    if (!token) {
+        ocultarModalConfigInicial();
+        return true;
     }
-    // Setup inicial: solo si falta nombre/tipo/ubicación en API (primera vez hasta completar "Finalizar").
+    let cfg = {};
+    let apiOk = false;
+    try {
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (resp.ok) {
+            apiOk = true;
+            const data = await resp.json();
+            const cli = data?.cliente || {};
+            let extra = cli?.configuracion || {};
+            if (typeof extra === 'string') {
+                try {
+                    extra = JSON.parse(extra);
+                } catch (_) {
+                    extra = {};
+                }
+            }
+            cfg = {
+                ...(cli.nombre ? { nombre: cli.nombre } : {}),
+                ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
+                ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
+                ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
+            };
+            if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
+                cfg.tipo = String(cli.tipo ?? '').trim();
+            }
+        }
+    } catch (_) {}
+    if (!apiOk) {
+        console.warn('[setup] /api/clientes/mi-configuracion no disponible; no se bloquea con el wizard');
+        ocultarModalConfigInicial();
+        return true;
+    }
+    // Setup según API del tenant (no empresa_config). Incompleto: solo datos API en el modal.
     if (configInicialIncompleta(cfg)) {
+        window.EMPRESA_CFG = { ...cfg };
+        poblarSelectTiposReclamo();
         mostrarModalConfigInicial();
         return false;
     }
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...cfg };
+    poblarSelectTiposReclamo();
     ocultarModalConfigInicial();
     aplicarBrandingDesdeConfig();
     aplicarEtiquetasPorTipo(cfg.tipo || '');
@@ -6972,10 +6983,15 @@ async function cargarEstadisticas() {
     if (statsEl) statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando...</div>';
 
     try {
+        const statSql = (query, tag) =>
+            sqlSimple(query).catch(err => {
+                console.warn('[estadisticas]', tag, err && err.message ? err.message : err);
+                return { rows: [] };
+            });
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24] = await Promise.all([
             // Resumen general
-            sqlSimple(`SELECT
+            statSql(`SELECT
                 COUNT(*) AS total,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados,
                 COUNT(*) FILTER(WHERE estado='Pendiente') AS pendientes,
@@ -6984,48 +7000,48 @@ async function cargarEstadisticas() {
                 COUNT(*) FILTER(WHERE prioridad='Crítica' AND estado!='Cerrado') AS criticos,
                 COUNT(*) FILTER(WHERE prioridad='Alta' AND estado!='Cerrado') AS altos,
                 COUNT(*) FILTER(WHERE estado='Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
-                FROM pedidos ${filtro}`),
+                FROM pedidos ${filtro}`, 'total'),
             // Por estado
-            sqlSimple(`SELECT estado, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY estado ORDER BY n DESC`),
+            statSql(`SELECT estado, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY estado ORDER BY n DESC`, 'estados'),
             // Por prioridad
-            sqlSimple(`SELECT prioridad, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY prioridad ORDER BY
-                CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END`),
+            statSql(`SELECT prioridad, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY prioridad ORDER BY
+                CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END`, 'prior'),
             // Por mes
-            sqlSimple(`SELECT TO_CHAR(fecha_creacion,'YYYY-MM') AS mes,
+            statSql(`SELECT TO_CHAR(fecha_creacion,'YYYY-MM') AS mes,
                 COUNT(*) AS total,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
-                FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`),
+                FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`, 'mensual'),
             // Por tipo de trabajo
-            sqlSimple(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
-                FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`),
+            statSql(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
+                FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`, 'tipos'),
             // Por distribuidor (top 10)
-            sqlSimple(`SELECT distribuidor, COUNT(*) AS n,
+            statSql(`SELECT distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
-                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`),
+                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`, 'dist'),
             // Tiempo promedio de cierre (horas) — solo pedidos cerrados con fecha
-            sqlSimple(`SELECT
+            statSql(`SELECT
                 AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_prom,
                 MIN(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_min,
                 MAX(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_max
-                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`),
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`, 'tiempos'),
             // Por técnico de cierre (top 8)
-            sqlSimple(`SELECT COALESCE(tecnico_cierre,'Sin asignar') AS tecnico, COUNT(*) AS n
-                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`),
+            statSql(`SELECT COALESCE(tecnico_cierre,'Sin asignar') AS tecnico, COUNT(*) AS n
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`, 'tecnicos'),
             // Avance promedio de pedidos en ejecución
-            sqlSimple(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha}${tsql} AND estado='En ejecución'`),
+            statSql(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha}${tsql} AND estado='En ejecución'`, 'avance'),
             // Pedidos por usuario creador
-            sqlSimple(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
+            statSql(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
                 FROM pedidos p LEFT JOIN usuarios u ON u.id = p.usuario_creador_id
                 WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}${tsqlP}
-                GROUP BY usuario ORDER BY n DESC LIMIT 10`),
-            sqlSimple(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
-                AND estado IN ('En ejecución','Asignado') AND tecnico_asignado_id IS NOT NULL`),
-            sqlSimple(`SELECT AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion))/3600) AS h
-                FROM pedidos ${filtro} AND fecha_asignacion IS NOT NULL AND fecha_asignacion > fecha_creacion`),
-            sqlSimple(`SELECT
+                GROUP BY usuario ORDER BY n DESC LIMIT 10`, 'usuarios'),
+            statSql(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
+                AND estado IN ('En ejecución','Asignado') AND tecnico_asignado_id IS NOT NULL`, 'tecCalle'),
+            statSql(`SELECT AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion))/3600) AS h
+                FROM pedidos ${filtro} AND fecha_asignacion IS NOT NULL AND fecha_asignacion > fecha_creacion`, 'asig'),
+            statSql(`SELECT
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre <= fecha_creacion + interval '24 hours') AS n24,
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL) AS nct
-                FROM pedidos ${filtro}`)
+                FROM pedidos ${filtro}`, 'crit24')
         ]);
 
         const t = rTotal.rows[0] || {};

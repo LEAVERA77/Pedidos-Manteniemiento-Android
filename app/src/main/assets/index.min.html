@@ -2055,6 +2055,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
     
     function entrarConUsuario(u, offline = false) {
         u.rol = normalizarRolStr(u.rol);
+        invalidatePedidosTenantSqlCache();
         app.u = u;
         localStorage.setItem('pmg', JSON.stringify(app.u));
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
@@ -2110,9 +2111,9 @@ document.getElementById('lf').addEventListener('submit', async e => {
             initMap();
             if (!offline) {
                 await cargarDistribuidores();
-                await cargarConfigEmpresa();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
+                await cargarConfigEmpresa();
                 await cargarPedidos();
                 
                 offlinePedidosSave(app.p);
@@ -2159,13 +2160,21 @@ document.getElementById('lf').addEventListener('submit', async e => {
 
         
         let resultado = null;
+        const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
         try {
-            resultado = await conTimeout(
-                sqlSimple(
-                    `SELECT id, email, nombre, rol FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`
-                ),
-                5000, 'timeout login'
-            );
+            try {
+                resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol, tenant_id ${loginWhere}`), 5000, 'timeout login');
+            } catch (_) {
+                try {
+                    resultado = await conTimeout(
+                        sqlSimple(`SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id ${loginWhere}`),
+                        5000,
+                        'timeout login'
+                    );
+                } catch (_) {
+                    resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol ${loginWhere}`), 5000, 'timeout login');
+                }
+            }
         } catch (netErr) {
             
             console.warn('Login: red caída, usando cache:', netErr.message);
@@ -2179,7 +2188,13 @@ document.getElementById('lf').addEventListener('submit', async e => {
         const usuario = resultado.rows?.[0];
         if (usuario) {
             try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
-            const u = { id: usuario.id, email: usuario.email, nombre: usuario.nombre || 'Administrador', rol: normalizarRolStr(usuario.rol || 'tecnico') };
+            const u = {
+                id: usuario.id,
+                email: usuario.email,
+                nombre: usuario.nombre || 'Administrador',
+                rol: normalizarRolStr(usuario.rol || 'tecnico'),
+                tenant_id: usuario.tenant_id != null ? Number(usuario.tenant_id) : tenantIdActual()
+            };
             guardarUsuarioOffline(u, pw);
             await loginApiJwt(em, pw);
             if (!getApiToken()) {
@@ -2323,6 +2338,7 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
+        if (!pedidoVisibleSegunRubro(p)) return false;
         return true;
     });
 }
@@ -2338,7 +2354,7 @@ function llenarSelectsFiltroMapa() {
     const nombrePorId = new Map();
     (app.usuariosCache || []).forEach(u => nombrePorId.set(String(u.id), u.nombre || u.email || ('#' + u.id)));
     const seenCre = new Set();
-    app.p.forEach(p => {
+    pedidosVisiblesEnUI().forEach(p => {
         const id = p.uc != null ? p.uc : p.ui;
         if (id == null || seenCre.has(String(id))) return;
         seenCre.add(String(id));
@@ -2358,7 +2374,7 @@ function llenarSelectsFiltroMapa() {
         selA.insertAdjacentHTML('beforeend', `<option value="${u.id}">${_escOpt((u.nombre || '') + ' (' + u.rol + ')')}</option>`);
         seenTec.add(String(u.id));
     });
-    app.p.forEach(p => {
+    pedidosVisiblesEnUI().forEach(p => {
         if (p.tai == null) return;
         const sid = String(p.tai);
         if (seenTec.has(sid)) return;
@@ -2641,8 +2657,9 @@ function detenerDashboardGerenciaPoll() {
 async function pollCierresGerencia() {
     if (!app.u || !esAdmin() || modoOffline || !NEON_OK) return;
     try {
+        const tsql = await pedidosFiltroTenantSql();
         const r = await sqlSimple(`SELECT id, numero_pedido, fecha_cierre, trabajo_realizado, tecnico_cierre, nis_medidor, descripcion
-            FROM pedidos WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > NOW() - INTERVAL '14 days'
+            FROM pedidos WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > NOW() - INTERVAL '14 days'${tsql}
             ORDER BY fecha_cierre DESC LIMIT 50`);
         const rows = r.rows || [];
         if (!_dashCierresInit) {
@@ -2718,17 +2735,18 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
     host.style.display = 'block';
     host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     const lim = hostId === 'mapa-main-dash-filtro-host' ? 25 : 100;
+    const tsql = await pedidosFiltroTenantSql();
     let q = '';
     if (filter === 'activos') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado <> 'Cerrado' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado <> 'Cerrado'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'pendientes') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Pendiente' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Pendiente'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'asignados') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Asignado' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Asignado'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'en_ejecucion') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'En ejecución' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'En ejecución'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'cerrados_hoy') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE ORDER BY fecha_cierre DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE${tsql} ORDER BY fecha_cierre DESC LIMIT ${lim}`;
     } else {
         host.style.display = 'none';
         host.innerHTML = '';
@@ -2769,6 +2787,7 @@ async function refrescarDashboardGerencia(silent) {
     if (!silent && kpi) kpi.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     if (!silent && kpiM) kpiM.innerHTML = '<div class="ll2" style="padding:.5rem"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const tsql = await pedidosFiltroTenantSql();
         const [rAct, rTec, rCi] = await Promise.all([
             sqlSimple(`SELECT
                 COUNT(*) FILTER (WHERE estado <> 'Cerrado') AS activos,
@@ -2776,7 +2795,7 @@ async function refrescarDashboardGerencia(silent) {
                 COUNT(*) FILTER (WHERE estado = 'En ejecución') AS en_ejec,
                 COUNT(*) FILTER (WHERE estado = 'Pendiente') AS pendientes,
                 COUNT(*) FILTER (WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
-                FROM pedidos`),
+                FROM pedidos WHERE 1=1${tsql}`),
             sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
@@ -2784,7 +2803,7 @@ async function refrescarDashboardGerencia(silent) {
                 AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
                 ORDER BY uu.usuario_id, uu.timestamp DESC`),
             sqlSimple(`SELECT id, numero_pedido, fecha_cierre, tecnico_cierre, nis_medidor FROM pedidos
-                WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL ORDER BY fecha_cierre DESC LIMIT 12`)
+                WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL${tsql} ORDER BY fecha_cierre DESC LIMIT 12`)
         ]);
         const a = rAct.rows[0] || {};
         const cards = [
@@ -2870,11 +2889,12 @@ async function cargarPedidos() {
     }
     try {
         await asegurarNombreUsuariosParaFiltros();
-        let qPed = 'SELECT * FROM pedidos ORDER BY fecha_creacion DESC';
+        const tsql = await pedidosFiltroTenantSql();
+        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
         if (esTecnicoOSupervisor()) {
             const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
             if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))} ORDER BY fecha_creacion DESC`;
+                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
         }
         const r = await ejecutarSQLConReintentos(qPed);
@@ -5401,11 +5421,12 @@ window._xl = id => {
 
 
 function render() {
-    const cer = app.p.filter(p => p.es === 'Cerrado').length;
-    document.getElementById('pc').textContent = app.p.length - cer;
+    const vis = pedidosVisiblesEnUI();
+    const cer = vis.filter(p => p.es === 'Cerrado').length;
+    document.getElementById('pc').textContent = vis.length - cer;
     document.getElementById('cc').textContent = cer;
     
-    const fl = app.p.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
+    const fl = vis.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
     const c = document.getElementById('pl');
     c.innerHTML = '';
     
@@ -5515,6 +5536,7 @@ document.getElementById('ph').addEventListener('click', togglePanel);
 
 document.getElementById('ub').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión?')) {
+        invalidatePedidosTenantSqlCache();
         detenerKeepAlive(); 
         detenerTracking();
         detenerDashboardGerenciaPoll();
@@ -5549,6 +5571,10 @@ document.getElementById('ub').addEventListener('click', () => {
         document.getElementById('ms').classList.remove('active');
     }
 });
+
+function logout() {
+    document.getElementById('ub')?.click();
+}
 
 document.querySelectorAll('.tb').forEach(b => {
     b.addEventListener('click', () => {
@@ -5774,12 +5800,14 @@ async function cargarDistribuidores() {
 async function cargarConfigEmpresa() {
     try {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
-        const cfg = {};
-        (r.rows || []).forEach(row => { cfg[row.clave] = row.valor; });
-        window.EMPRESA_CFG = cfg;
+        const sqlCfg = {};
+        (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
+        // Valores de cliente/API (p. ej. tras mi-configuracion) tienen prioridad sobre empresa_config.
+        window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
         // Actualizar título y subtítulo
+        const cfg = window.EMPRESA_CFG || {};
         const nombre = cfg.nombre || 'Pedidos de Mantenimiento';
         const sub    = cfg.subtitulo || '';
         document.title = nombre;
@@ -5795,7 +5823,6 @@ async function cargarConfigEmpresa() {
         poblarSelectTiposReclamo();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
-        window.EMPRESA_CFG = {};
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
         poblarSelectTiposReclamo();
@@ -5811,8 +5838,60 @@ let _setupLat = null;
 let _setupLng = null;
 let _setupGeoIntentado = false;
 function tenantIdActual() {
-    return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || 1;
+    const u = app?.u;
+    if (u && (u.tenant_id != null || u.tenantId != null)) {
+        const n = Number(u.tenant_id ?? u.tenantId);
+        if (Number.isFinite(n)) return n;
+    }
+    const cfg = window.APP_CONFIG || {};
+    const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
+    if (Number.isFinite(fromCfg)) return fromCfg;
+    return 1;
 }
+
+let _pedidosTenantSqlCache = null;
+function invalidatePedidosTenantSqlCache() {
+    _pedidosTenantSqlCache = null;
+}
+
+/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). */
+async function pedidosFiltroTenantSql() {
+    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        if (chk.rows?.length) {
+            const tid = tenantIdActual();
+            _pedidosTenantSqlCache = ` AND tenant_id = ${esc(tid)}`;
+        } else {
+            _pedidosTenantSqlCache = '';
+        }
+    } catch (_) {
+        _pedidosTenantSqlCache = '';
+    }
+    return _pedidosTenantSqlCache;
+}
+
+/** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
+function pedidoVisibleSegunRubro(p) {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    if (!rubro) return true;
+    const tt = String(p?.tt || '').trim();
+    if (!tt) return true;
+    if (TIPOS_RECLAMO_LEGACY.includes(tt)) return true;
+    const mis = TIPOS_RECLAMO_POR_RUBRO[rubro];
+    if (mis && mis.includes(tt)) return true;
+    for (const k of Object.keys(TIPOS_RECLAMO_POR_RUBRO)) {
+        if (k !== rubro && (TIPOS_RECLAMO_POR_RUBRO[k] || []).includes(tt)) return false;
+    }
+    return true;
+}
+
+function pedidosVisiblesEnUI() {
+    return (app.p || []).filter(pedidoVisibleSegunRubro);
+}
+
 function configInicialIncompleta(cfg) {
     const nombre = String(cfg?.nombre || '').trim();
     const tipo = String(cfg?.tipo || '').trim();
@@ -5943,43 +6022,54 @@ function ocultarModalConfigInicial() {
     _configInicialBloqueante = false;
 }
 async function verificarConfiguracionInicialObligatoria() {
-    let cfg = window.EMPRESA_CFG || {};
     const token = getApiToken();
-    if (token) {
-        try {
-            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (resp.ok) {
-                const data = await resp.json();
-                const cli = data?.cliente || {};
-                let extra = cli?.configuracion || {};
-                if (typeof extra === 'string') {
-                    try {
-                        extra = JSON.parse(extra);
-                    } catch (_) {
-                        extra = {};
-                    }
-                }
-                cfg = {
-                    ...cfg,
-                    ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                    ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
-                    ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
-                    ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
-                };
-                if (data.cliente && Object.prototype.hasOwnProperty.call(data.cliente, 'tipo')) {
-                    cfg.tipo = String(data.cliente.tipo ?? '').trim();
-                }
-                window.EMPRESA_CFG = cfg;
-                poblarSelectTiposReclamo();
-            }
-        } catch (_) {}
+    if (!token) {
+        ocultarModalConfigInicial();
+        return true;
     }
+    let cfg = {};
+    let apiOk = false;
+    try {
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (resp.ok) {
+            apiOk = true;
+            const data = await resp.json();
+            const cli = data?.cliente || {};
+            let extra = cli?.configuracion || {};
+            if (typeof extra === 'string') {
+                try {
+                    extra = JSON.parse(extra);
+                } catch (_) {
+                    extra = {};
+                }
+            }
+            cfg = {
+                ...(cli.nombre ? { nombre: cli.nombre } : {}),
+                ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
+                ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
+                ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
+            };
+            if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
+                cfg.tipo = String(cli.tipo ?? '').trim();
+            }
+        }
+    } catch (_) {}
+    if (!apiOk) {
+        console.warn('[setup] /api/clientes/mi-configuracion no disponible; no se bloquea con el wizard');
+        ocultarModalConfigInicial();
+        return true;
+    }
+    // Setup según API del tenant (no empresa_config). Incompleto: solo datos API en el modal.
     if (configInicialIncompleta(cfg)) {
+        window.EMPRESA_CFG = { ...cfg };
+        poblarSelectTiposReclamo();
         mostrarModalConfigInicial();
         return false;
     }
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...cfg };
+    poblarSelectTiposReclamo();
     ocultarModalConfigInicial();
     aplicarBrandingDesdeConfig();
     aplicarEtiquetasPorTipo(cfg.tipo || '');
@@ -6576,7 +6666,8 @@ async function buscarHistorialPorNIS() {
     if (!out) return;
     out.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
     try {
-        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)})) ORDER BY fecha_creacion DESC LIMIT 100`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
         const rows = r.rows || [];
         if (!rows.length) { out.innerHTML = '<p style="color:var(--tm)">Sin reclamos para ese NIS.</p>'; return; }
         out.innerHTML = '<ul style="margin:0;padding-left:1rem;line-height:1.35">' + rows.map(row =>
@@ -6603,7 +6694,8 @@ async function exportInformeMensualExcel() {
     if (!window.XLSX || !XLSX.utils) { toast('Excel aún no cargó — esperá unos segundos y reintentá', 'error'); return; }
     const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = (r.rows || []).map(row => ({
             Pedido: row.numero_pedido,
             NIS: row.nis_medidor,
@@ -6723,7 +6815,8 @@ async function generarInformeMensualENRE() {
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
     const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
         const tit = 'GestorNova — Informe de pedidos';
         let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
@@ -6879,10 +6972,10 @@ async function cargarEstadisticas() {
     else if (periodo === 'anio')   fechaDesde = new Date(ahora.getFullYear(), 0, 1);
     else                           fechaDesde = new Date('2000-01-01');
 
-    // filtro: solo la condición, sin WHERE
-    // Las queries que necesitan WHERE adicional usan AND
     const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
-    const filtro    = `WHERE ${condFecha}`;
+    const tsql = await pedidosFiltroTenantSql();
+    const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
+    const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
 
     // Mostrar loading
@@ -6890,10 +6983,15 @@ async function cargarEstadisticas() {
     if (statsEl) statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando...</div>';
 
     try {
+        const statSql = (query, tag) =>
+            sqlSimple(query).catch(err => {
+                console.warn('[estadisticas]', tag, err && err.message ? err.message : err);
+                return { rows: [] };
+            });
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24] = await Promise.all([
             // Resumen general
-            sqlSimple(`SELECT
+            statSql(`SELECT
                 COUNT(*) AS total,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados,
                 COUNT(*) FILTER(WHERE estado='Pendiente') AS pendientes,
@@ -6902,48 +7000,48 @@ async function cargarEstadisticas() {
                 COUNT(*) FILTER(WHERE prioridad='Crítica' AND estado!='Cerrado') AS criticos,
                 COUNT(*) FILTER(WHERE prioridad='Alta' AND estado!='Cerrado') AS altos,
                 COUNT(*) FILTER(WHERE estado='Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
-                FROM pedidos ${filtro}`),
+                FROM pedidos ${filtro}`, 'total'),
             // Por estado
-            sqlSimple(`SELECT estado, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY estado ORDER BY n DESC`),
+            statSql(`SELECT estado, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY estado ORDER BY n DESC`, 'estados'),
             // Por prioridad
-            sqlSimple(`SELECT prioridad, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY prioridad ORDER BY
-                CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END`),
+            statSql(`SELECT prioridad, COUNT(*) AS n FROM pedidos ${filtro} GROUP BY prioridad ORDER BY
+                CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END`, 'prior'),
             // Por mes
-            sqlSimple(`SELECT TO_CHAR(fecha_creacion,'YYYY-MM') AS mes,
+            statSql(`SELECT TO_CHAR(fecha_creacion,'YYYY-MM') AS mes,
                 COUNT(*) AS total,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
-                FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`),
+                FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`, 'mensual'),
             // Por tipo de trabajo
-            sqlSimple(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
-                FROM pedidos ${filtro} GROUP BY tipo ORDER BY n DESC LIMIT 10`),
+            statSql(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
+                FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`, 'tipos'),
             // Por distribuidor (top 10)
-            sqlSimple(`SELECT distribuidor, COUNT(*) AS n,
+            statSql(`SELECT distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
-                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`),
+                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`, 'dist'),
             // Tiempo promedio de cierre (horas) — solo pedidos cerrados con fecha
-            sqlSimple(`SELECT
+            statSql(`SELECT
                 AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_prom,
                 MIN(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_min,
                 MAX(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_max
-                FROM pedidos WHERE ${condFecha} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`),
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`, 'tiempos'),
             // Por técnico de cierre (top 8)
-            sqlSimple(`SELECT COALESCE(tecnico_cierre,'Sin asignar') AS tecnico, COUNT(*) AS n
-                FROM pedidos WHERE ${condFecha} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`),
+            statSql(`SELECT COALESCE(tecnico_cierre,'Sin asignar') AS tecnico, COUNT(*) AS n
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`, 'tecnicos'),
             // Avance promedio de pedidos en ejecución
-            sqlSimple(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha} AND estado='En ejecución'`),
+            statSql(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha}${tsql} AND estado='En ejecución'`, 'avance'),
             // Pedidos por usuario creador
-            sqlSimple(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
+            statSql(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
                 FROM pedidos p LEFT JOIN usuarios u ON u.id = p.usuario_creador_id
-                WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}
-                GROUP BY usuario ORDER BY n DESC LIMIT 10`),
-            sqlSimple(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
-                AND estado IN ('En ejecución','Asignado') AND tecnico_asignado_id IS NOT NULL`),
-            sqlSimple(`SELECT AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion))/3600) AS h
-                FROM pedidos ${filtro} AND fecha_asignacion IS NOT NULL AND fecha_asignacion > fecha_creacion`),
-            sqlSimple(`SELECT
+                WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}${tsqlP}
+                GROUP BY usuario ORDER BY n DESC LIMIT 10`, 'usuarios'),
+            statSql(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
+                AND estado IN ('En ejecución','Asignado') AND tecnico_asignado_id IS NOT NULL`, 'tecCalle'),
+            statSql(`SELECT AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion))/3600) AS h
+                FROM pedidos ${filtro} AND fecha_asignacion IS NOT NULL AND fecha_asignacion > fecha_creacion`, 'asig'),
+            statSql(`SELECT
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre <= fecha_creacion + interval '24 hours') AS n24,
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL) AS nct
-                FROM pedidos ${filtro}`)
+                FROM pedidos ${filtro}`, 'crit24')
         ]);
 
         const t = rTotal.rows[0] || {};
@@ -6955,21 +7053,23 @@ async function cargarEstadisticas() {
         const hAsig = parseFloat(rAsig.rows[0]?.h || 0);
         const nCrit24 = parseInt(rCrit24.rows[0]?.n24 || 0, 10);
         const nCritTot = parseInt(rCrit24.rows[0]?.nct || 0, 10);
-        const pctCerr = t.total ? Math.round(1000 * (t.cerrados || 0) / t.total) / 10 : 0;
+        const totalN = Number(t.total) || 0;
+        const cerrN = Number(t.cerrados) || 0;
+        const pctCerr = totalN > 0 ? Math.round(1000 * cerrN / totalN) / 10 : 0;
         const pctCrit24 = nCritTot ? Math.round(1000 * nCrit24 / nCritTot) / 10 : null;
 
         const fmtHoras = h => h === 0 || !isFinite(h) ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
 
         // ── Cards de resumen ───────────────────────────────────
         document.getElementById('stats-cards').innerHTML = [
-            { val: t.total       || 0, lbl: 'Total pedidos',     cls: '' },
-            { val: t.pendientes  || 0, lbl: 'Pendientes',         cls: t.pendientes > 0 ? 'orange' : '' },
-            { val: t.asignados   || 0, lbl: 'Asignados',          cls: t.asignados > 0 ? 'orange' : '' },
-            { val: t.en_ejec     || 0, lbl: 'En ejecución',       cls: '' },
-            { val: t.cerrados    || 0, lbl: 'Cerrados',           cls: 'green' },
-            { val: t.criticos    || 0, lbl: '🔴 Críticos activos', cls: t.criticos > 0 ? 'red' : '' },
-            { val: t.altos       || 0, lbl: '🟠 Altos activos',   cls: t.altos > 0 ? 'orange' : '' },
-            { val: t.cerrados_hoy|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
+            { val: totalN, lbl: 'Total pedidos',     cls: '' },
+            { val: Number(t.pendientes)  || 0, lbl: 'Pendientes',         cls: Number(t.pendientes) > 0 ? 'orange' : '' },
+            { val: Number(t.asignados)   || 0, lbl: 'Asignados',          cls: Number(t.asignados) > 0 ? 'orange' : '' },
+            { val: Number(t.en_ejec)     || 0, lbl: 'En ejecución',       cls: '' },
+            { val: cerrN, lbl: 'Cerrados',           cls: 'green' },
+            { val: Number(t.criticos)    || 0, lbl: '🔴 Críticos activos', cls: Number(t.criticos) > 0 ? 'red' : '' },
+            { val: Number(t.altos)       || 0, lbl: '🟠 Altos activos',   cls: Number(t.altos) > 0 ? 'orange' : '' },
+            { val: Number(t.cerrados_hoy)|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
             { val: nTecCalle, lbl: 'Técnicos con pedido (asig./ejec.)', cls: nTecCalle ? 'orange' : '' },
             { val: fmtHoras(hAsig), lbl: 'Prom. horas hasta asignar', cls: '' },
             { val: pctCerr + '%', lbl: '% cerrados / total período', cls: 'green' },
@@ -7237,13 +7337,16 @@ async function cargarUbicacionesUsuarios() {
                 ORDER BY uu.usuario_id, uu.timestamp DESC
             `),
             // Pedidos pendientes y en ejecución con coordenadas
-            sqlSimple(`
+            (async () => {
+                const tsql = await pedidosFiltroTenantSql();
+                return sqlSimple(`
                 SELECT id, numero_pedido, descripcion, prioridad, estado, lat, lng, distribuidor
                 FROM pedidos
-                WHERE estado != 'Cerrado' AND lat IS NOT NULL AND lng IS NOT NULL
+                WHERE estado != 'Cerrado' AND lat IS NOT NULL AND lng IS NOT NULL${tsql}
                 ORDER BY
                     CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END
-            `)
+            `);
+            })()
         ]);
 
         if (!_mapaUsuariosAdmin) {
