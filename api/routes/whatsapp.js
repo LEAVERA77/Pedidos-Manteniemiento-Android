@@ -36,5 +36,58 @@ router.get("/historial", async (req, res) => {
   }
 });
 
+router.post("/meta/enviar-texto", async (req, res) => {
+  try {
+    const { telefono, mensaje, destinatario_id, pedido_id } = req.body || {};
+    const tel = normalizePhone(telefono);
+    const body = String(mensaje || "").trim();
+    if (!tel || !body) return res.status(400).json({ error: "telefono y mensaje son requeridos" });
+
+    const token = process.env.META_ACCESS_TOKEN || "";
+    const phoneNumberId = process.env.META_PHONE_NUMBER_ID || "";
+    if (!token || !phoneNumberId) {
+      return res.status(500).json({ error: "Faltan META_ACCESS_TOKEN o META_PHONE_NUMBER_ID" });
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: "whatsapp",
+      to: tel.replace(/[^\d]/g, ""),
+      type: "text",
+      text: { body },
+    };
+
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const graph = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      await query(
+        `INSERT INTO whatsapp_notificaciones
+         (destinatario_id, destinatario_tipo, telefono, mensaje, pedido_id, estado, fecha_envio, fecha_creacion)
+         VALUES($1,'usuario',$2,$3,$4,'error',NOW(),NOW())`,
+        [destinatario_id || null, tel, body, pedido_id || null]
+      );
+      return res.status(resp.status).json({ ok: false, error: "graph_error", detail: graph });
+    }
+
+    const r = await query(
+      `INSERT INTO whatsapp_notificaciones
+       (destinatario_id, destinatario_tipo, telefono, mensaje, pedido_id, estado, fecha_envio, fecha_creacion)
+       VALUES($1,'usuario',$2,$3,$4,'enviado',NOW(),NOW()) RETURNING *`,
+      [destinatario_id || null, tel, body, pedido_id || null]
+    );
+    return res.json({ ok: true, graph, registro: r.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo enviar por Meta", detail: error.message });
+  }
+});
+
 export default router;
 

@@ -3515,6 +3515,31 @@ function normalizarTelefonoWhatsapp(raw) {
 function esTelefonoWhatsappValido(tel) {
     return /^\+\d{10,15}$/.test(String(tel || '').trim());
 }
+async function enviarWhatsappMetaTecnico(uid, pedidoId, mensaje) {
+    try {
+        const tk = getApiToken();
+        if (!tk) return;
+        const u = (app.usuariosCache || []).find(x => String(x.id) === String(uid));
+        if (!u) return;
+        const tel = normalizarTelefonoWhatsapp(u.telefono || '');
+        if (!tel || u.whatsapp_notificaciones === false) return;
+        await fetch(apiUrl('/api/whatsapp/meta/enviar-texto'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${tk}`
+            },
+            body: JSON.stringify({
+                telefono: tel,
+                mensaje: String(mensaje || ''),
+                destinatario_id: Number(uid),
+                pedido_id: Number(pedidoId || 0) || null
+            })
+        });
+    } catch (e) {
+        console.warn('[whatsapp-meta]', e?.message || e);
+    }
+}
 
 function cerrarModalNotifPedido() {
     _pedidoNotifContext = null;
@@ -3609,8 +3634,10 @@ async function confirmarEnviarNotifPedido() {
             const tOld = 'Pedido reasignado';
             const cOld = msgExtra || ('Ya no estás asignado a ' + (p?.np || '#' + _assignPedidoId));
             await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(oldTai)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)})`);
+            await enviarWhatsappMetaTecnico(oldTai, pidNum, `${tOld}: ${cOld}`);
         }
         await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(uid)}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)})`);
+        await enviarWhatsappMetaTecnico(uid, pidNum, `${titulo}: ${cuerpo}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
         toast(oldTai && oldTai !== uid ? 'Reasignado y notificaciones enviadas' : 'Técnico asignado y notificación encolada', 'success');
@@ -3641,6 +3668,7 @@ async function ejecutarDesasignarPedidoPorId(pedidoId, opts) {
         const tOld = 'Pedido desasignado';
         const cOld = 'Te quitaron la asignación de ' + (p?.np || '#' + id) + '. Revisá el mapa.';
         await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(oldUid)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)})`);
+        await enviarWhatsappMetaTecnico(oldUid, pidNum, `${tOld}: ${cOld}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
         toast('Técnico desasignado; notificación enviada', 'success');
@@ -5704,7 +5732,10 @@ function tenantIdActual() {
 function configInicialIncompleta(cfg) {
     const nombre = String(cfg?.nombre || '').trim();
     const tipo = String(cfg?.tipo || '').trim();
-    return !nombre || !tipo;
+    const logo = String(cfg?.logo_url || '').trim();
+    const lat = String(cfg?.lat_base || '').trim();
+    const lng = String(cfg?.lng_base || '').trim();
+    return !nombre || !tipo || !logo || !lat || !lng;
 }
 function actualizarStepWizard() {
     const lbl = document.getElementById('sw-step-label');
@@ -5776,18 +5807,16 @@ function usarUbicacionAutomaticaSetupWizard() {
 }
 function aplicarEtiquetasPorTipo(tipo) {
     const esMunicipio = String(tipo || '').toLowerCase() === 'municipio';
-    const a = esMunicipio ? ['Socio', 'socio', 'SOCIO'] : ['Vecino', 'vecino', 'VECINO'];
-    const b = esMunicipio ? ['Vecino', 'vecino', 'VECINO'] : ['Socio', 'socio', 'SOCIO'];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(node => {
-        let txt = node.nodeValue || '';
-        for (let i = 0; i < a.length; i++) {
-            txt = txt.replaceAll(a[i], b[i]);
+    const etiqueta = esMunicipio ? 'Vecinos / NIS' : 'Socios / NIS';
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+        if (tab?.getAttribute('onclick') === "adminTab('socios')") {
+            tab.innerHTML = `<i class="fas fa-address-book"></i> ${etiqueta}`;
         }
-        node.nodeValue = txt;
     });
+    const firma = document.getElementById('lbl-firma-cierre');
+    if (firma) {
+        firma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${esMunicipio ? 'vecino' : 'socio'}`;
+    }
 }
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');
