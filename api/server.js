@@ -18,7 +18,42 @@ import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
-app.use(cors());
+const allowedOrigins = new Set(
+  String(
+    process.env.CORS_ALLOWED_ORIGINS ||
+      "https://leavera77.github.io,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+const corsOptionsDelegate = (req, callback) => {
+  const origin = req.header("Origin");
+  const corsOptions = {
+    origin: false,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Hub-Signature-256"],
+    optionsSuccessStatus: 204,
+    maxAge: 86400,
+  };
+
+  // Requests sin Origin (curl, server-to-server, webhooks) deben seguir funcionando.
+  if (!origin) {
+    corsOptions.origin = true;
+    return callback(null, corsOptions);
+  }
+
+  if (allowedOrigins.has(origin)) {
+    corsOptions.origin = true;
+    return callback(null, corsOptions);
+  }
+
+  return callback(null, corsOptions);
+};
+
+app.use(cors(corsOptionsDelegate));
+app.options("*", cors(corsOptionsDelegate));
 // Meta requires raw body for X-Hub-Signature-256 verification.
 app.use("/api/webhooks/meta", webhooksMetaRoutes);
 app.use(express.json({ limit: "25mb" }));
