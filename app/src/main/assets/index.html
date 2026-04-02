@@ -1890,11 +1890,15 @@ function apiUrl(path) {
     return base + (p.startsWith('/') ? p : '/' + p);
 }
 async function loginApiJwt(email, password) {
+    const ms = 15000;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
     try {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email, password }),
+            signal: ctl.signal
         });
         if (!resp.ok) return null;
         const data = await resp.json();
@@ -1902,8 +1906,11 @@ async function loginApiJwt(email, password) {
         app.apiToken = String(data.token);
         try { localStorage.setItem('pmg_api_token', app.apiToken); } catch(_) {}
         return data;
-    } catch (_) {
+    } catch (e) {
+        if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
         return null;
+    } finally {
+        clearTimeout(t);
     }
 }
 function getApiToken() {
@@ -2161,20 +2168,24 @@ document.getElementById('lf').addEventListener('submit', async e => {
         
         let resultado = null;
         const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
+        // Primero la consulta mínima (evita 400 en Neon si no existen tenant_id / cliente_id).
+        const loginSqlAttempts = [
+            `SELECT id, email, nombre, rol ${loginWhere}`,
+            `SELECT id, email, nombre, rol, tenant_id ${loginWhere}`,
+            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id ${loginWhere}`
+        ];
         try {
-            try {
-                resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol, tenant_id ${loginWhere}`), 5000, 'timeout login');
-            } catch (_) {
+            let lastErr = null;
+            for (const sel of loginSqlAttempts) {
                 try {
-                    resultado = await conTimeout(
-                        sqlSimple(`SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id ${loginWhere}`),
-                        5000,
-                        'timeout login'
-                    );
-                } catch (_) {
-                    resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol ${loginWhere}`), 5000, 'timeout login');
+                    resultado = await conTimeout(sqlSimple(sel), 8000, 'timeout login');
+                    break;
+                } catch (err) {
+                    lastErr = err;
+                    console.warn('[login] variante SQL:', err && err.message ? err.message : err);
                 }
             }
+            if (!resultado) throw lastErr || new Error('Login SQL no disponible');
         } catch (netErr) {
             
             console.warn('Login: red caída, usando cache:', netErr.message);
