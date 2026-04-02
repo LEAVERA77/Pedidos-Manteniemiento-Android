@@ -1678,37 +1678,40 @@ async function initNeon() {
     }
 
     const versions = ['0.10.4', '0.9.5', '0.8.0'];
+    const cdnFactories = [
+        (ver) => `https://esm.sh/@neondatabase/serverless@${ver}`,
+        (ver) => `https://cdn.jsdelivr.net/npm/@neondatabase/serverless@${ver}/+esm`,
+        (ver) => `https://unpkg.com/@neondatabase/serverless@${ver}/index.mjs`
+    ];
     for (const ver of versions) {
-        try {
-            const mod = await conTimeout(
-                import(`https://esm.sh/@neondatabase/serverless@${ver}`),
-                6000,
-                `timeout SDK ${ver}`
-            );
-            const { neon, neonConfig } = mod;
-            if (neonConfig) {
-                try { neonConfig.fetchEndpoint = host => `https://${host}/sql`; } catch(_){}
-                try { delete neonConfig.fetchConnectionCache; } catch(_){}
-            }
-            const fn = neon(window.APP_CONFIG.neon.connectionString);
-            _sql = async (q) => {
-                const rows = await fn([q]);
-                if (Array.isArray(rows)) return { rows };
-                if (rows && rows.rows) return rows;
-                return { rows: [] };
-            };
-            const test = await conTimeout(_sql('SELECT 1 AS ok'), 5000, 'timeout SELECT 1');
-            if (!test || !Array.isArray(test.rows)) throw new Error('respuesta invalida');
-            NEON_OK = true;
-            console.log(`[neon] SDK ${ver} OK`);
-            return true;
-        } catch(e) {
-            console.warn(`[neon] SDK ${ver} fallo:`, e.message);
-            _sql = null;
-            
-            if (e.message.includes('timeout') || e.message.includes('fetch') || e.message.includes('network')) {
-                console.log('[neon] error de red — abortando intentos restantes');
-                break;
+        for (const mkUrl of cdnFactories) {
+            const sdkUrl = mkUrl(ver);
+            try {
+                const mod = await conTimeout(
+                    import(sdkUrl),
+                    12000,
+                    `timeout import SDK ${ver}`
+                );
+                const { neon, neonConfig } = mod;
+                if (neonConfig) {
+                    try { neonConfig.fetchEndpoint = host => `https://${host}/sql`; } catch(_){}
+                    try { delete neonConfig.fetchConnectionCache; } catch(_){}
+                }
+                const fn = neon(window.APP_CONFIG.neon.connectionString);
+                _sql = async (q) => {
+                    const rows = await fn([q]);
+                    if (Array.isArray(rows)) return { rows };
+                    if (rows && rows.rows) return rows;
+                    return { rows: [] };
+                };
+                const test = await conTimeout(_sql('SELECT 1 AS ok'), 12000, 'timeout SELECT 1');
+                if (!test || !Array.isArray(test.rows)) throw new Error('respuesta invalida');
+                NEON_OK = true;
+                console.log(`[neon] SDK ${ver} OK via ${sdkUrl}`);
+                return true;
+            } catch(e) {
+                console.warn(`[neon] SDK ${ver} fallo en ${sdkUrl}:`, e.message);
+                _sql = null;
             }
         }
     }
