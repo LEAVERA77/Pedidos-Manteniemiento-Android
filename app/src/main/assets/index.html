@@ -1791,6 +1791,7 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
 
 const app = {
     u: null,
+    apiToken: null,
     p: [],
     map: null,
     mk: [],
@@ -1804,6 +1805,45 @@ function normalizarRolStr(r) {
     const x = String(r == null ? '' : r).trim().toLowerCase();
     if (x === 'administrador') return 'admin';
     return x || 'tecnico';
+}
+function getApiBaseUrl() {
+    const fromCfg = String(window.APP_CONFIG?.api?.baseUrl || '').trim();
+    if (!fromCfg) return '';
+    return fromCfg.replace(/\/+$/, '');
+}
+function apiUrl(path) {
+    const p = String(path || '');
+    const base = getApiBaseUrl();
+    if (!base) return p;
+    return base + (p.startsWith('/') ? p : '/' + p);
+}
+async function loginApiJwt(email, password) {
+    try {
+        const resp = await fetch(apiUrl('/api/auth/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (!data?.token) return null;
+        app.apiToken = String(data.token);
+        try { localStorage.setItem('pmg_api_token', app.apiToken); } catch(_) {}
+        return data;
+    } catch (_) {
+        return null;
+    }
+}
+function getApiToken() {
+    if (app.apiToken) return app.apiToken;
+    try {
+        const t = localStorage.getItem('pmg_api_token');
+        if (t) {
+            app.apiToken = t;
+            return t;
+        }
+    } catch (_) {}
+    return null;
 }
 function rolApp() {
     return app.u ? normalizarRolStr(app.u.rol) : '';
@@ -2069,6 +2109,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
             try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
             const u = { id: usuario.id, email: usuario.email, nombre: usuario.nombre || 'Administrador', rol: normalizarRolStr(usuario.rol || 'tecnico') };
             guardarUsuarioOffline(u, pw);
+            await loginApiJwt(em, pw);
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
         } else {
@@ -5374,6 +5415,8 @@ document.getElementById('ub').addEventListener('click', () => {
         } catch (_) {}
         detenerSyncCatalogos();
         localStorage.removeItem('pmg');
+        localStorage.removeItem('pmg_api_token');
+        app.apiToken = null;
         app.u = null;
         mapaInicializado = false;
         if (app.map) {
@@ -5522,6 +5565,10 @@ window.detenerTracking = detenerTracking;
 
 try {
     const s = localStorage.getItem('pmg');
+    try {
+        const tk = localStorage.getItem('pmg_api_token');
+        if (tk) app.apiToken = tk;
+    } catch (_) {}
     if (s) {
         app.u = JSON.parse(s);
         app.u.rol = normalizarRolStr(app.u.rol);
@@ -5744,7 +5791,29 @@ function ocultarModalConfigInicial() {
     _configInicialBloqueante = false;
 }
 async function verificarConfiguracionInicialObligatoria() {
-    const cfg = window.EMPRESA_CFG || {};
+    let cfg = window.EMPRESA_CFG || {};
+    const token = getApiToken();
+    if (token) {
+        try {
+            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                const cli = data?.cliente || {};
+                const extra = cli?.configuracion || {};
+                cfg = {
+                    ...cfg,
+                    ...(cli.nombre ? { nombre: cli.nombre } : {}),
+                    ...(cli.tipo ? { tipo: cli.tipo } : {}),
+                    ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
+                    ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
+                    ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
+                };
+                window.EMPRESA_CFG = cfg;
+            }
+        } catch (_) {}
+    }
     if (configInicialIncompleta(cfg)) {
         mostrarModalConfigInicial();
         return false;
@@ -5814,28 +5883,38 @@ async function guardarConfiguracionInicialObligatoria() {
     if (!nombre || !tipo) return toast('Completá nombre y tipo', 'error');
     if (_setupLat == null || _setupLng == null) return toast('Marcá la ubicación base en el mapa', 'error');
     try {
-        const tid = Number(tenantIdActual() || 1);
-        // Persistencia principal por SQL (compatibilidad actual).
-        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('nombre', ${esc(nombre)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
-        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('tipo', ${esc(tipo)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
-        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('logo_url', ${esc(logoUrl)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
-        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('lat_base', ${esc(String(_setupLat))}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
-        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('lng_base', ${esc(String(_setupLng))}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
-        await sqlSimple(`INSERT INTO clientes(id, nombre, tipo, configuracion, activo, fecha_registro, fecha_actualizacion)
-                         VALUES(${esc(tid)}, ${esc(nombre)}, ${esc(tipo)}, ${esc(JSON.stringify({ logo_url: logoUrl, lat_base: _setupLat, lng_base: _setupLng }))}::jsonb, TRUE, NOW(), NOW())
-                         ON CONFLICT(id) DO UPDATE SET
-                           nombre = EXCLUDED.nombre,
-                           tipo = EXCLUDED.tipo,
-                           configuracion = COALESCE(clientes.configuracion, '{}'::jsonb) || EXCLUDED.configuracion,
-                           fecha_actualizacion = NOW()`);
-        // Intento adicional de persistir por API (si está disponible).
-        try {
-            await fetch('/api/clientes/mi-configuracion', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nombre, tipo, logo_url: logoUrl, latitud: _setupLat, longitud: _setupLng })
-            });
-        } catch (_) {}
+        const token = getApiToken();
+        if (!token) {
+            toast('Sesión API no disponible. Cerrá sesión e ingresá nuevamente con internet.', 'error');
+            return;
+        }
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                nombre,
+                tipo,
+                logo_url: logoUrl,
+                latitud: _setupLat,
+                longitud: _setupLng
+            })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+        // Reflejo local en caliente para no reiniciar.
+        window.EMPRESA_CFG = {
+            ...(window.EMPRESA_CFG || {}),
+            nombre,
+            tipo,
+            logo_url: logoUrl,
+            lat_base: String(_setupLat),
+            lng_base: String(_setupLng)
+        };
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) toast('Setup inicial completado', 'success');
