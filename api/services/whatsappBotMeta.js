@@ -75,6 +75,8 @@ async function reply(phoneDigits, text) {
       status: r.status,
       graph: r.graph ? (r.graph.error || r.graph) : undefined
     });
+  } else {
+    console.log("[webhook-meta-whatsapp] outbound_sent", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
   }
   return r;
 }

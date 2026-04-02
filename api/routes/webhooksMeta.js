@@ -84,6 +84,11 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
           type,
           text: textBody.slice(0, 500),
         });
+        console.log("[webhook-meta-whatsapp] inbound_message", {
+          from: waId.replace(/\D/g, "") || waId,
+          text: textBody.slice(0, 500),
+          type,
+        });
       }
     }
   }
