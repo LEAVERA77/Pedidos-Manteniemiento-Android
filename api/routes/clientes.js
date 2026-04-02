@@ -1,27 +1,13 @@
 import express from "express";
 import { authMiddleware, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
+import { getUserTenantId } from "../utils/tenantUser.js";
+import {
+  TIPOS_RECLAMO_LEGACY,
+  tiposReclamoParaClienteTipo,
+} from "../services/tiposReclamo.js";
 
 const router = express.Router();
-
-async function getUserTenantId(userId) {
-  try {
-    const cols = await query(
-      `SELECT column_name FROM information_schema.columns WHERE table_name = 'usuarios'`
-    );
-    const hasTenant = cols.rows.some((c) => c.column_name === "tenant_id");
-    const hasCliente = cols.rows.some((c) => c.column_name === "cliente_id");
-    if (!hasTenant && !hasCliente) return 1;
-
-    const sql = hasTenant
-      ? "SELECT COALESCE(tenant_id, 1) AS tenant_id FROM usuarios WHERE id = $1 LIMIT 1"
-      : "SELECT COALESCE(cliente_id, 1) AS tenant_id FROM usuarios WHERE id = $1 LIMIT 1";
-    const r = await query(sql, [userId]);
-    return Number(r.rows?.[0]?.tenant_id || 1);
-  } catch (_) {
-    return 1;
-  }
-}
 
 router.get("/mi-configuracion", authMiddleware, async (req, res) => {
   try {
@@ -67,6 +53,22 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
     return res.json({ ok: true, tenant_id: tenantId, cliente: r.rows[0] });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar configuración", detail: error.message });
+  }
+});
+
+router.get("/tipos-reclamo", authMiddleware, async (req, res) => {
+  try {
+    const tenantId = await getUserTenantId(req.user.id);
+    const r = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    const tipoCliente = r.rows?.[0]?.tipo ?? null;
+    return res.json({
+      tenant_id: tenantId,
+      tipo_cliente: tipoCliente,
+      tipos: tiposReclamoParaClienteTipo(tipoCliente),
+      legacy_tipos: TIPOS_RECLAMO_LEGACY,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudieron obtener tipos de reclamo", detail: error.message });
   }
 });
 

@@ -46,49 +46,4 @@ router.post("/evolution", express.json({ limit: "2mb" }), async (req, res) => {
   }
 });
 
-// Meta Cloud API webhook verify (GET)
-// GET /api/webhooks/whatsapp/meta?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...
-router.get("/meta", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || "";
-
-  if (mode === "subscribe" && token && verifyToken && token === verifyToken) {
-    return res.status(200).send(String(challenge || ""));
-  }
-  return res.sendStatus(403);
-});
-
-// Meta Cloud API inbound messages (POST)
-// POST /api/webhooks/whatsapp/meta
-router.post("/meta", express.json({ limit: "2mb" }), async (req, res) => {
-  try {
-    const body = req.body || {};
-    const entries = Array.isArray(body.entry) ? body.entry : [];
-
-    for (const entry of entries) {
-      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
-      for (const change of changes) {
-        const value = change?.value || {};
-        const messages = Array.isArray(value?.messages) ? value.messages : [];
-        for (const msg of messages) {
-          const from = String(msg?.from || "");
-          const text = String(msg?.text?.body || "");
-          console.log("[webhook-meta-whatsapp] inbound_message", {
-            from,
-            text,
-            type: msg?.type || "unknown",
-          });
-        }
-      }
-    }
-
-    return res.status(200).json({ ok: true, received: true });
-  } catch (e) {
-    console.error("[webhook-meta-whatsapp]", e);
-    return res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
 export default router;

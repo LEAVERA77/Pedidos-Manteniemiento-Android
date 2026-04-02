@@ -1770,7 +1770,41 @@ async function initNeon() {
 
 let DIST = []; // Se carga desde Neon: tabla distribuidores
 
-const TIPOS = [
+const TIPOS_RECLAMO_POR_RUBRO = {
+    municipio: [
+        'Alumbrado Público (Foco quemado/Poste)',
+        'Bacheo y Pavimento',
+        'Recolección de Residuos / Poda',
+        'Mantenimiento de Espacios Verdes',
+        'Señalización y Semáforos',
+        'Limpieza de Pluviales / Zanjas',
+        'Recolección (otros)',
+        'Cloacas',
+        'Otros'
+    ],
+    cooperativa_agua: [
+        'Pérdida en Vereda / Calzada',
+        'Falta de Presión / Sin Servicio',
+        'Calidad del Agua (Turbiedad)',
+        'Obstrucción',
+        'Cambio de Medidor',
+        'Conexión Nueva',
+        'Otros'
+    ],
+    cooperativa_electrica: [
+        'Corte de Energía (Falta de Fase/Total)',
+        'Cables Caídos / Peligro en Vía Pública',
+        'Problemas de Tensión (Alta/Baja)',
+        'Poste Inclinado / Dañado',
+        'Cambio de Medidor / Conexión',
+        'Riesgo en la vía pública',
+        'Corrimiento de poste/columna',
+        'Pedido de factibilidad (nuevo servicio)',
+        'Otros'
+    ]
+};
+
+const TIPOS_RECLAMO_LEGACY = [
     'Riesgo vía pública',
     'Mantenimiento preventivo',
     'Material averiado',
@@ -1785,6 +1819,39 @@ const TIPOS = [
     'Emergencia',
     'Otros'
 ];
+
+function normalizarRubroEmpresa(tipo) {
+    const t = String(tipo || '').trim().toLowerCase();
+    if (t === 'municipio') return 'municipio';
+    if (t === 'cooperativa_agua' || t === 'cooperativa de agua') return 'cooperativa_agua';
+    if (t === 'cooperativa_electrica' || t === 'cooperativa eléctrica' || t === 'cooperativa electrica') return 'cooperativa_electrica';
+    return null;
+}
+
+function tiposReclamoSeleccionables() {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    if (rubro && TIPOS_RECLAMO_POR_RUBRO[rubro]) return [...TIPOS_RECLAMO_POR_RUBRO[rubro]];
+    const u = new Set();
+    Object.values(TIPOS_RECLAMO_POR_RUBRO).forEach(arr => arr.forEach(x => u.add(x)));
+    return [...u];
+}
+
+function poblarSelectTiposReclamo() {
+    const st = document.getElementById('tt');
+    if (!st) return;
+    const prev = st.value;
+    const lista = tiposReclamoSeleccionables();
+    st.innerHTML = '';
+    lista.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t;
+        o.textContent = t;
+        st.appendChild(o);
+    });
+    if (prev && lista.includes(prev)) st.value = prev;
+    else if (lista.length) st.selectedIndex = 0;
+    syncNisClienteReclamoConexionUI();
+}
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
 
@@ -1988,6 +2055,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
     
     function entrarConUsuario(u, offline = false) {
         u.rol = normalizarRolStr(u.rol);
+        invalidatePedidosTenantSqlCache();
         app.u = u;
         localStorage.setItem('pmg', JSON.stringify(app.u));
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
@@ -2092,13 +2160,21 @@ document.getElementById('lf').addEventListener('submit', async e => {
 
         
         let resultado = null;
+        const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
         try {
-            resultado = await conTimeout(
-                sqlSimple(
-                    `SELECT id, email, nombre, rol FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`
-                ),
-                5000, 'timeout login'
-            );
+            try {
+                resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol, tenant_id ${loginWhere}`), 5000, 'timeout login');
+            } catch (_) {
+                try {
+                    resultado = await conTimeout(
+                        sqlSimple(`SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id ${loginWhere}`),
+                        5000,
+                        'timeout login'
+                    );
+                } catch (_) {
+                    resultado = await conTimeout(sqlSimple(`SELECT id, email, nombre, rol ${loginWhere}`), 5000, 'timeout login');
+                }
+            }
         } catch (netErr) {
             
             console.warn('Login: red caída, usando cache:', netErr.message);
@@ -2112,9 +2188,18 @@ document.getElementById('lf').addEventListener('submit', async e => {
         const usuario = resultado.rows?.[0];
         if (usuario) {
             try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
-            const u = { id: usuario.id, email: usuario.email, nombre: usuario.nombre || 'Administrador', rol: normalizarRolStr(usuario.rol || 'tecnico') };
+            const u = {
+                id: usuario.id,
+                email: usuario.email,
+                nombre: usuario.nombre || 'Administrador',
+                rol: normalizarRolStr(usuario.rol || 'tecnico'),
+                tenant_id: usuario.tenant_id != null ? Number(usuario.tenant_id) : tenantIdActual()
+            };
             guardarUsuarioOffline(u, pw);
             await loginApiJwt(em, pw);
+            if (!getApiToken()) {
+                toast('La API (JWT) no respondió: el setup SaaS y datos del tenant pueden no cargar hasta que revises API_BASE_URL o la red.', 'warning');
+            }
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
         } else {
@@ -2253,6 +2338,7 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
+        if (!pedidoVisibleSegunRubro(p)) return false;
         return true;
     });
 }
@@ -2268,7 +2354,7 @@ function llenarSelectsFiltroMapa() {
     const nombrePorId = new Map();
     (app.usuariosCache || []).forEach(u => nombrePorId.set(String(u.id), u.nombre || u.email || ('#' + u.id)));
     const seenCre = new Set();
-    app.p.forEach(p => {
+    pedidosVisiblesEnUI().forEach(p => {
         const id = p.uc != null ? p.uc : p.ui;
         if (id == null || seenCre.has(String(id))) return;
         seenCre.add(String(id));
@@ -2288,7 +2374,7 @@ function llenarSelectsFiltroMapa() {
         selA.insertAdjacentHTML('beforeend', `<option value="${u.id}">${_escOpt((u.nombre || '') + ' (' + u.rol + ')')}</option>`);
         seenTec.add(String(u.id));
     });
-    app.p.forEach(p => {
+    pedidosVisiblesEnUI().forEach(p => {
         if (p.tai == null) return;
         const sid = String(p.tai);
         if (seenTec.has(sid)) return;
@@ -2571,8 +2657,9 @@ function detenerDashboardGerenciaPoll() {
 async function pollCierresGerencia() {
     if (!app.u || !esAdmin() || modoOffline || !NEON_OK) return;
     try {
+        const tsql = await pedidosFiltroTenantSql();
         const r = await sqlSimple(`SELECT id, numero_pedido, fecha_cierre, trabajo_realizado, tecnico_cierre, nis_medidor, descripcion
-            FROM pedidos WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > NOW() - INTERVAL '14 days'
+            FROM pedidos WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > NOW() - INTERVAL '14 days'${tsql}
             ORDER BY fecha_cierre DESC LIMIT 50`);
         const rows = r.rows || [];
         if (!_dashCierresInit) {
@@ -2648,17 +2735,18 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
     host.style.display = 'block';
     host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     const lim = hostId === 'mapa-main-dash-filtro-host' ? 25 : 100;
+    const tsql = await pedidosFiltroTenantSql();
     let q = '';
     if (filter === 'activos') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado <> 'Cerrado' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado <> 'Cerrado'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'pendientes') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Pendiente' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Pendiente'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'asignados') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Asignado' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'Asignado'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'en_ejecucion') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'En ejecución' ORDER BY fecha_creacion DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'En ejecución'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'cerrados_hoy') {
-        q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE ORDER BY fecha_cierre DESC LIMIT ${lim}`;
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE${tsql} ORDER BY fecha_cierre DESC LIMIT ${lim}`;
     } else {
         host.style.display = 'none';
         host.innerHTML = '';
@@ -2699,6 +2787,7 @@ async function refrescarDashboardGerencia(silent) {
     if (!silent && kpi) kpi.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     if (!silent && kpiM) kpiM.innerHTML = '<div class="ll2" style="padding:.5rem"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const tsql = await pedidosFiltroTenantSql();
         const [rAct, rTec, rCi] = await Promise.all([
             sqlSimple(`SELECT
                 COUNT(*) FILTER (WHERE estado <> 'Cerrado') AS activos,
@@ -2706,7 +2795,7 @@ async function refrescarDashboardGerencia(silent) {
                 COUNT(*) FILTER (WHERE estado = 'En ejecución') AS en_ejec,
                 COUNT(*) FILTER (WHERE estado = 'Pendiente') AS pendientes,
                 COUNT(*) FILTER (WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
-                FROM pedidos`),
+                FROM pedidos WHERE 1=1${tsql}`),
             sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
@@ -2714,7 +2803,7 @@ async function refrescarDashboardGerencia(silent) {
                 AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
                 ORDER BY uu.usuario_id, uu.timestamp DESC`),
             sqlSimple(`SELECT id, numero_pedido, fecha_cierre, tecnico_cierre, nis_medidor FROM pedidos
-                WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL ORDER BY fecha_cierre DESC LIMIT 12`)
+                WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL${tsql} ORDER BY fecha_cierre DESC LIMIT 12`)
         ]);
         const a = rAct.rows[0] || {};
         const cards = [
@@ -2800,11 +2889,12 @@ async function cargarPedidos() {
     }
     try {
         await asegurarNombreUsuariosParaFiltros();
-        let qPed = 'SELECT * FROM pedidos ORDER BY fecha_creacion DESC';
+        const tsql = await pedidosFiltroTenantSql();
+        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
         if (esTecnicoOSupervisor()) {
             const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
             if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))} ORDER BY fecha_creacion DESC`;
+                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
         }
         const r = await ejecutarSQLConReintentos(qPed);
@@ -2978,7 +3068,7 @@ function initMap() {
         const ui = document.getElementById('ui');
         ui.innerHTML = htmlLineaUbicacionFormulario(e.latlng.lat, e.latlng.lng, null);
         ui.className = 'ud sel';
-        try { syncNisClienteReclamoConexionUI(); } catch (_) {}
+        try { poblarSelectTiposReclamo(); syncNisClienteReclamoConexionUI(); } catch (_) {}
         document.getElementById('pm').classList.add('active');
     });
     
@@ -3266,6 +3356,7 @@ document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => 
 
     if (ultimaUbicacion) {
         aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+        try { poblarSelectTiposReclamo(); } catch (_) {}
         document.getElementById('pm').classList.add('active');
         
         if (navigator.geolocation) {
@@ -3281,6 +3372,7 @@ document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => 
             );
         }
     } else {
+        try { poblarSelectTiposReclamo(); } catch (_) {}
         document.getElementById('pm').classList.add('active');
         toast('Obteniendo ubicación GPS...', 'info');
         if (navigator.geolocation) {
@@ -4556,16 +4648,22 @@ document.getElementById('pf').addEventListener('submit', async e => {
         } catch (_) {}
 
         const tipoTr = document.getElementById('tt')?.value || '';
-        const reqReclamoOConexion = tipoTr === 'Reclamo de Cliente' || tipoTr === 'Conexión Nueva';
+        const permitidos = tiposReclamoSeleccionables();
+        if (!permitidos.includes(tipoTr)) {
+            toast('Elegí un tipo de reclamo válido para el rubro de tu organización.', 'error');
+            btn.disabled = false;
+            return;
+        }
+        const reqReclamoOConexion = tipoReclamoRequiereNisYCliente(tipoTr);
         const nisVal = (document.getElementById('nis').value || '').trim();
         const clVal = (document.getElementById('cl').value || '').trim();
         if (reqReclamoOConexion && !nisVal) {
-            toast('En «Reclamo de Cliente» y «Conexión Nueva» el NIS / medidor es obligatorio', 'error');
+            toast('Para este tipo de reclamo el NIS / medidor es obligatorio', 'error');
             btn.disabled = false;
             return;
         }
         if (reqReclamoOConexion && !clVal) {
-            toast('En «Reclamo de Cliente» y «Conexión Nueva» el cliente es obligatorio', 'error');
+            toast('Para este tipo de reclamo el nombre de cliente es obligatorio', 'error');
             btn.disabled = false;
             return;
         }
@@ -5323,11 +5421,12 @@ window._xl = id => {
 
 
 function render() {
-    const cer = app.p.filter(p => p.es === 'Cerrado').length;
-    document.getElementById('pc').textContent = app.p.length - cer;
+    const vis = pedidosVisiblesEnUI();
+    const cer = vis.filter(p => p.es === 'Cerrado').length;
+    document.getElementById('pc').textContent = vis.length - cer;
     document.getElementById('cc').textContent = cer;
     
-    const fl = app.p.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
+    const fl = vis.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
     const c = document.getElementById('pl');
     c.innerHTML = '';
     
@@ -5437,6 +5536,7 @@ document.getElementById('ph').addEventListener('click', togglePanel);
 
 document.getElementById('ub').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión?')) {
+        invalidatePedidosTenantSqlCache();
         detenerKeepAlive(); 
         detenerTracking();
         detenerDashboardGerenciaPoll();
@@ -5471,6 +5571,10 @@ document.getElementById('ub').addEventListener('click', () => {
         document.getElementById('ms').classList.remove('active');
     }
 });
+
+function logout() {
+    document.getElementById('ub')?.click();
+}
 
 document.querySelectorAll('.tb').forEach(b => {
     b.addEventListener('click', () => {
@@ -5525,17 +5629,20 @@ const sd = document.getElementById('di2');
     sd.appendChild(og);
 });
 
-const st = document.getElementById('tt');
-TIPOS.forEach(t => {
-    const o = document.createElement('option');
-    o.value = t;
-    o.textContent = t;
-    st.appendChild(o);
-});
+poblarSelectTiposReclamo();
 
 function tipoTrabajoRequiereNisYCliente() {
-    const v = document.getElementById('tt')?.value || '';
-    return v === 'Reclamo de Cliente' || v === 'Conexión Nueva';
+    return tipoReclamoRequiereNisYCliente(document.getElementById('tt')?.value || '');
+}
+
+function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
+    const v = String(tipoTrabajo || '').trim();
+    if (!v) return false;
+    if (v === 'Reclamo de Cliente' || v === 'Conexión Nueva') return true;
+    if (v.includes('Conexión Nueva')) return true;
+    if (v.includes('Cambio de Medidor')) return true;
+    if (v.toLowerCase().includes('factibilidad')) return true;
+    return false;
 }
 function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
@@ -5548,7 +5655,7 @@ function syncNisClienteReclamoConexionUI() {
             inpN.placeholder = 'Obligatorio — NIS o número de medidor del socio';
         } else {
             inpN.removeAttribute('required');
-            inpN.placeholder = 'Opcional (obligatorio solo en Reclamo de Cliente / Conexión Nueva)';
+            inpN.placeholder = 'Opcional (obligatorio en conexión / medidor / factibilidad según tipo)';
         }
     }
     const lb = document.getElementById('lbl-cl');
@@ -5559,7 +5666,8 @@ function syncNisClienteReclamoConexionUI() {
         else inp.removeAttribute('required');
     }
 }
-st.addEventListener('change', syncNisClienteReclamoConexionUI);
+const st = document.getElementById('tt');
+if (st) st.addEventListener('change', syncNisClienteReclamoConexionUI);
 syncNisClienteReclamoConexionUI();
 
 // ── TRACKING DE UBICACIÓN (cada 15 min) — debe declararse antes del restore de sesión ──
@@ -5710,11 +5818,13 @@ async function cargarConfigEmpresa() {
         if (h2) h2.innerHTML = '<i class="fas fa-bolt"></i> ' + nombre;
         aplicarBrandingDesdeConfig();
         aplicarEtiquetasPorTipo(cfg.tipo || '');
+        poblarSelectTiposReclamo();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         window.EMPRESA_CFG = {};
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
+        poblarSelectTiposReclamo();
     }
 }
 
@@ -5727,15 +5837,69 @@ let _setupLat = null;
 let _setupLng = null;
 let _setupGeoIntentado = false;
 function tenantIdActual() {
-    return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || 1;
+    const u = app?.u;
+    if (u && (u.tenant_id != null || u.tenantId != null)) {
+        const n = Number(u.tenant_id ?? u.tenantId);
+        if (Number.isFinite(n)) return n;
+    }
+    const cfg = window.APP_CONFIG || {};
+    const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
+    if (Number.isFinite(fromCfg)) return fromCfg;
+    return 1;
 }
+
+let _pedidosTenantSqlCache = null;
+function invalidatePedidosTenantSqlCache() {
+    _pedidosTenantSqlCache = null;
+}
+
+/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). */
+async function pedidosFiltroTenantSql() {
+    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        if (chk.rows?.length) {
+            const tid = tenantIdActual();
+            _pedidosTenantSqlCache = ` AND tenant_id = ${esc(tid)}`;
+        } else {
+            _pedidosTenantSqlCache = '';
+        }
+    } catch (_) {
+        _pedidosTenantSqlCache = '';
+    }
+    return _pedidosTenantSqlCache;
+}
+
+/** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
+function pedidoVisibleSegunRubro(p) {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    if (!rubro) return true;
+    const tt = String(p?.tt || '').trim();
+    if (!tt) return true;
+    if (TIPOS_RECLAMO_LEGACY.includes(tt)) return true;
+    const mis = TIPOS_RECLAMO_POR_RUBRO[rubro];
+    if (mis && mis.includes(tt)) return true;
+    for (const k of Object.keys(TIPOS_RECLAMO_POR_RUBRO)) {
+        if (k !== rubro && (TIPOS_RECLAMO_POR_RUBRO[k] || []).includes(tt)) return false;
+    }
+    return true;
+}
+
+function pedidosVisiblesEnUI() {
+    return (app.p || []).filter(pedidoVisibleSegunRubro);
+}
+
 function configInicialIncompleta(cfg) {
     const nombre = String(cfg?.nombre || '').trim();
     const tipo = String(cfg?.tipo || '').trim();
-    const logo = String(cfg?.logo_url || '').trim();
-    const lat = String(cfg?.lat_base || '').trim();
-    const lng = String(cfg?.lng_base || '').trim();
-    return !nombre || !tipo || !logo || !lat || !lng;
+    const lat = cfg?.lat_base ?? cfg?.latitud;
+    const lng = cfg?.lng_base ?? cfg?.longitud;
+    const latOk = lat != null && String(lat).trim() !== '' && Number.isFinite(Number(lat));
+    const lngOk = lng != null && String(lng).trim() !== '' && Number.isFinite(Number(lng));
+    // Logo es opcional en el formulario; exigirlo dejaba el wizard en bucle al pulsar Finalizar.
+    return !nombre || !tipo || !latOk || !lngOk;
 }
 function actualizarStepWizard() {
     const lbl = document.getElementById('sw-step-label');
@@ -5753,10 +5917,16 @@ function actualizarStepWizard() {
 }
 function inicializarMapaSetupWizard() {
     const el = document.getElementById('setup-map');
-    if (!el || typeof L === 'undefined') return;
     const cfg = window.EMPRESA_CFG || {};
     if (_setupLat == null) _setupLat = parseFloat(cfg.lat_base || cfg.latitud || '-31.783');
     if (_setupLng == null) _setupLng = parseFloat(cfg.lng_base || cfg.longitud || '-60.483');
+    if (!el || typeof L === 'undefined') {
+        const la = document.getElementById('cfgi-lat');
+        const ln = document.getElementById('cfgi-lng');
+        if (la) la.textContent = Number(_setupLat).toFixed(6);
+        if (ln) ln.textContent = Number(_setupLng).toFixed(6);
+        return;
+    }
     if (!_setupMap) {
         _setupMap = L.map('setup-map', { zoomControl: true }).setView([_setupLat, _setupLng], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -5838,7 +6008,6 @@ function mostrarModalConfigInicial() {
     });
     document.getElementById('sw-prev').style.display = 'none';
     document.getElementById('sw-next').style.display = esAdm ? '' : 'none';
-    document.getElementById('cfgi-guardar').style.display = esAdm ? 'none' : 'none';
     document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
     _setupWizardStep = 1;
     _setupGeoIntentado = false;
@@ -5862,18 +6031,46 @@ async function verificarConfiguracionInicialObligatoria() {
             if (resp.ok) {
                 const data = await resp.json();
                 const cli = data?.cliente || {};
-                const extra = cli?.configuracion || {};
+                let extra = cli?.configuracion || {};
+                if (typeof extra === 'string') {
+                    try {
+                        extra = JSON.parse(extra);
+                    } catch (_) {
+                        extra = {};
+                    }
+                }
                 cfg = {
                     ...cfg,
                     ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                    ...(cli.tipo ? { tipo: cli.tipo } : {}),
                     ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
                     ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
                     ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
                 };
+                if (data.cliente && Object.prototype.hasOwnProperty.call(data.cliente, 'tipo')) {
+                    cfg.tipo = String(data.cliente.tipo ?? '').trim();
+                }
                 window.EMPRESA_CFG = cfg;
+                poblarSelectTiposReclamo();
             }
         } catch (_) {}
+    }
+    if (configInicialIncompleta(cfg)) {
+        // No bloquear el ingreso: completar defaults para cooperativa eléctrica.
+        // (El admin siempre puede ajustar luego desde Panel Administración → Empresa.)
+        const lat = cfg?.lat_base ?? cfg?.latitud;
+        const lng = cfg?.lng_base ?? cfg?.longitud;
+        const latOk = lat != null && String(lat).trim() !== '' && Number.isFinite(Number(lat));
+        const lngOk = lng != null && String(lng).trim() !== '' && Number.isFinite(Number(lng));
+
+        cfg = {
+            ...(window.EMPRESA_CFG || {}),
+            ...cfg,
+            nombre: String(cfg?.nombre || '').trim() || 'Cooperativa Eléctrica',
+            tipo: String(cfg?.tipo || '').trim() || 'cooperativa_electrica',
+            ...(latOk ? {} : { lat_base: '-31.783' }),
+            ...(lngOk ? {} : { lng_base: '-60.483' })
+        };
+        window.EMPRESA_CFG = cfg;
     }
     if (configInicialIncompleta(cfg)) {
         mostrarModalConfigInicial();
@@ -5882,6 +6079,7 @@ async function verificarConfiguracionInicialObligatoria() {
     ocultarModalConfigInicial();
     aplicarBrandingDesdeConfig();
     aplicarEtiquetasPorTipo(cfg.tipo || '');
+    poblarSelectTiposReclamo();
     return true;
 }
 function setupWizardNext() {
@@ -5936,7 +6134,10 @@ function initSetupWizardBindings() {
     }
 }
 async function guardarConfiguracionInicialObligatoria() {
-    if (!esAdmin()) return;
+    if (!esAdmin()) {
+        toast('Solo un administrador puede completar el setup.', 'error');
+        return;
+    }
     const nombre = (document.getElementById('cfgi-nombre')?.value || '').trim();
     const tipo = (document.getElementById('cfgi-tipo')?.value || '').trim();
     const logoUrlInput = (document.getElementById('cfgi-logo-url')?.value || '').trim();
@@ -5976,6 +6177,7 @@ async function guardarConfiguracionInicialObligatoria() {
             lat_base: String(_setupLat),
             lng_base: String(_setupLng)
         };
+        poblarSelectTiposReclamo();
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) toast('Setup inicial completado', 'success');
@@ -6470,7 +6672,8 @@ async function buscarHistorialPorNIS() {
     if (!out) return;
     out.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
     try {
-        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)})) ORDER BY fecha_creacion DESC LIMIT 100`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
         const rows = r.rows || [];
         if (!rows.length) { out.innerHTML = '<p style="color:var(--tm)">Sin reclamos para ese NIS.</p>'; return; }
         out.innerHTML = '<ul style="margin:0;padding-left:1rem;line-height:1.35">' + rows.map(row =>
@@ -6497,7 +6700,8 @@ async function exportInformeMensualExcel() {
     if (!window.XLSX || !XLSX.utils) { toast('Excel aún no cargó — esperá unos segundos y reintentá', 'error'); return; }
     const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = (r.rows || []).map(row => ({
             Pedido: row.numero_pedido,
             NIS: row.nis_medidor,
@@ -6617,7 +6821,8 @@ async function generarInformeMensualENRE() {
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
     const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
         const tit = 'GestorNova — Informe de pedidos';
         let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
@@ -6773,10 +6978,10 @@ async function cargarEstadisticas() {
     else if (periodo === 'anio')   fechaDesde = new Date(ahora.getFullYear(), 0, 1);
     else                           fechaDesde = new Date('2000-01-01');
 
-    // filtro: solo la condición, sin WHERE
-    // Las queries que necesitan WHERE adicional usan AND
     const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
-    const filtro    = `WHERE ${condFecha}`;
+    const tsql = await pedidosFiltroTenantSql();
+    const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
+    const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
 
     // Mostrar loading
@@ -6809,7 +7014,7 @@ async function cargarEstadisticas() {
                 FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`),
             // Por tipo de trabajo
             sqlSimple(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
-                FROM pedidos ${filtro} GROUP BY tipo ORDER BY n DESC LIMIT 10`),
+                FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`),
             // Por distribuidor (top 10)
             sqlSimple(`SELECT distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
@@ -6819,16 +7024,16 @@ async function cargarEstadisticas() {
                 AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_prom,
                 MIN(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_min,
                 MAX(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_max
-                FROM pedidos WHERE ${condFecha} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`),
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion`),
             // Por técnico de cierre (top 8)
             sqlSimple(`SELECT COALESCE(tecnico_cierre,'Sin asignar') AS tecnico, COUNT(*) AS n
-                FROM pedidos WHERE ${condFecha} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`),
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' GROUP BY tecnico ORDER BY n DESC LIMIT 8`),
             // Avance promedio de pedidos en ejecución
-            sqlSimple(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha} AND estado='En ejecución'`),
+            sqlSimple(`SELECT ROUND(AVG(avance)) AS avance_prom FROM pedidos WHERE ${condFecha}${tsql} AND estado='En ejecución'`),
             // Pedidos por usuario creador
             sqlSimple(`SELECT COALESCE(u.nombre, 'Sin asignar') AS usuario, COUNT(*) AS n
                 FROM pedidos p LEFT JOIN usuarios u ON u.id = p.usuario_creador_id
-                WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}
+                WHERE p.fecha_creacion >= ${esc(fechaDesde.toISOString())}${tsqlP}
                 GROUP BY usuario ORDER BY n DESC LIMIT 10`),
             sqlSimple(`SELECT COUNT(DISTINCT tecnico_asignado_id) AS n FROM pedidos ${filtro}
                 AND estado IN ('En ejecución','Asignado') AND tecnico_asignado_id IS NOT NULL`),
@@ -6849,21 +7054,23 @@ async function cargarEstadisticas() {
         const hAsig = parseFloat(rAsig.rows[0]?.h || 0);
         const nCrit24 = parseInt(rCrit24.rows[0]?.n24 || 0, 10);
         const nCritTot = parseInt(rCrit24.rows[0]?.nct || 0, 10);
-        const pctCerr = t.total ? Math.round(1000 * (t.cerrados || 0) / t.total) / 10 : 0;
+        const totalN = Number(t.total) || 0;
+        const cerrN = Number(t.cerrados) || 0;
+        const pctCerr = totalN > 0 ? Math.round(1000 * cerrN / totalN) / 10 : 0;
         const pctCrit24 = nCritTot ? Math.round(1000 * nCrit24 / nCritTot) / 10 : null;
 
         const fmtHoras = h => h === 0 || !isFinite(h) ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
 
         // ── Cards de resumen ───────────────────────────────────
         document.getElementById('stats-cards').innerHTML = [
-            { val: t.total       || 0, lbl: 'Total pedidos',     cls: '' },
-            { val: t.pendientes  || 0, lbl: 'Pendientes',         cls: t.pendientes > 0 ? 'orange' : '' },
-            { val: t.asignados   || 0, lbl: 'Asignados',          cls: t.asignados > 0 ? 'orange' : '' },
-            { val: t.en_ejec     || 0, lbl: 'En ejecución',       cls: '' },
-            { val: t.cerrados    || 0, lbl: 'Cerrados',           cls: 'green' },
-            { val: t.criticos    || 0, lbl: '🔴 Críticos activos', cls: t.criticos > 0 ? 'red' : '' },
-            { val: t.altos       || 0, lbl: '🟠 Altos activos',   cls: t.altos > 0 ? 'orange' : '' },
-            { val: t.cerrados_hoy|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
+            { val: totalN, lbl: 'Total pedidos',     cls: '' },
+            { val: Number(t.pendientes)  || 0, lbl: 'Pendientes',         cls: Number(t.pendientes) > 0 ? 'orange' : '' },
+            { val: Number(t.asignados)   || 0, lbl: 'Asignados',          cls: Number(t.asignados) > 0 ? 'orange' : '' },
+            { val: Number(t.en_ejec)     || 0, lbl: 'En ejecución',       cls: '' },
+            { val: cerrN, lbl: 'Cerrados',           cls: 'green' },
+            { val: Number(t.criticos)    || 0, lbl: '🔴 Críticos activos', cls: Number(t.criticos) > 0 ? 'red' : '' },
+            { val: Number(t.altos)       || 0, lbl: '🟠 Altos activos',   cls: Number(t.altos) > 0 ? 'orange' : '' },
+            { val: Number(t.cerrados_hoy)|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
             { val: nTecCalle, lbl: 'Técnicos con pedido (asig./ejec.)', cls: nTecCalle ? 'orange' : '' },
             { val: fmtHoras(hAsig), lbl: 'Prom. horas hasta asignar', cls: '' },
             { val: pctCerr + '%', lbl: '% cerrados / total período', cls: 'green' },
@@ -7131,13 +7338,16 @@ async function cargarUbicacionesUsuarios() {
                 ORDER BY uu.usuario_id, uu.timestamp DESC
             `),
             // Pedidos pendientes y en ejecución con coordenadas
-            sqlSimple(`
+            (async () => {
+                const tsql = await pedidosFiltroTenantSql();
+                return sqlSimple(`
                 SELECT id, numero_pedido, descripcion, prioridad, estado, lat, lng, distribuidor
                 FROM pedidos
-                WHERE estado != 'Cerrado' AND lat IS NOT NULL AND lng IS NOT NULL
+                WHERE estado != 'Cerrado' AND lat IS NOT NULL AND lng IS NOT NULL${tsql}
                 ORDER BY
                     CASE prioridad WHEN 'Crítica' THEN 1 WHEN 'Alta' THEN 2 WHEN 'Media' THEN 3 ELSE 4 END
-            `)
+            `);
+            })()
         ]);
 
         if (!_mapaUsuariosAdmin) {

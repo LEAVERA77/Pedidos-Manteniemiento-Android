@@ -3,6 +3,11 @@ import { authMiddleware, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
 import { uploadManyBase64 } from "../services/cloudinary.js";
+import { getUserTenantId } from "../utils/tenantUser.js";
+import {
+  tipoTrabajoPermitidoParaNuevoPedido,
+  tiposReclamoParaClienteTipo,
+} from "../services/tiposReclamo.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -28,6 +33,20 @@ router.post("/", async (req, res) => {
       nis,
       medidor,
     } = req.body;
+
+    const tenantId = await getUserTenantId(req.user.id);
+    const cr = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    const tipoCliente = cr.rows?.[0]?.tipo ?? null;
+    const tt = String(tipo_trabajo || "").trim();
+    if (!tt) {
+      return res.status(400).json({ error: "tipo_trabajo es requerido" });
+    }
+    if (!tipoTrabajoPermitidoParaNuevoPedido(tt, tipoCliente)) {
+      return res.status(400).json({
+        error: "tipo_trabajo no permitido para el rubro del cliente",
+        tipos_permitidos: tiposReclamoParaClienteTipo(tipoCliente),
+      });
+    }
 
     // Compatibilidad: por ahora no forzamos nis/medidor.
     const fotosB64 = parseFotosBase64(req.body);

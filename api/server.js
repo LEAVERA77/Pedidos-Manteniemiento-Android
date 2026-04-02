@@ -54,8 +54,8 @@ const corsOptionsDelegate = (req, callback) => {
 
 app.use(cors(corsOptionsDelegate));
 app.options("*", cors(corsOptionsDelegate));
-// Meta requires raw body for X-Hub-Signature-256 verification.
-app.use("/api/webhooks/meta", webhooksMetaRoutes);
+// WhatsApp Cloud API: body RAW para X-Hub-Signature-256 (debe ir antes de express.json).
+app.use("/api/webhooks/whatsapp/meta", webhooksMetaRoutes);
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 

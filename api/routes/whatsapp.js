@@ -2,6 +2,7 @@ import express from "express";
 import { authMiddleware } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { normalizePhone } from "../utils/helpers.js";
+import { metaSendWhatsAppText } from "../services/metaWhatsapp.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -43,38 +44,19 @@ router.post("/meta/enviar-texto", async (req, res) => {
     const body = String(mensaje || "").trim();
     if (!tel || !body) return res.status(400).json({ error: "telefono y mensaje son requeridos" });
 
-    const token = process.env.META_ACCESS_TOKEN || "";
-    const phoneNumberId = process.env.META_PHONE_NUMBER_ID || "";
-    if (!token || !phoneNumberId) {
-      return res.status(500).json({ error: "Faltan META_ACCESS_TOKEN o META_PHONE_NUMBER_ID" });
-    }
-
-    const endpoint = `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`;
-    const payload = {
-      messaging_product: "whatsapp",
-      to: tel.replace(/[^\d]/g, ""),
-      type: "text",
-      text: { body },
-    };
-
-    const resp = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const graph = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
+    const send = await metaSendWhatsAppText(tel, body);
+    const graph = send.graph || {};
+    if (!send.ok) {
+      if (send.error === "missing_meta_credentials") {
+        return res.status(500).json({ error: "Faltan META_ACCESS_TOKEN o META_PHONE_NUMBER_ID" });
+      }
       await query(
         `INSERT INTO whatsapp_notificaciones
          (destinatario_id, destinatario_tipo, telefono, mensaje, pedido_id, estado, fecha_envio, fecha_creacion)
          VALUES($1,'usuario',$2,$3,$4,'error',NOW(),NOW())`,
         [destinatario_id || null, tel, body, pedido_id || null]
       );
-      return res.status(resp.status).json({ ok: false, error: "graph_error", detail: graph });
+      return res.status(send.status || 502).json({ ok: false, error: "graph_error", detail: graph });
     }
 
     const r = await query(
