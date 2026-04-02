@@ -5964,33 +5964,17 @@ async function verificarConfiguracionInicialObligatoria() {
                 cfg = {
                     ...cfg,
                     ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                    ...(cli.tipo ? { tipo: cli.tipo } : {}),
                     ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
                     ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
                     ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
                 };
+                if (data.cliente && Object.prototype.hasOwnProperty.call(data.cliente, 'tipo')) {
+                    cfg.tipo = String(data.cliente.tipo ?? '').trim();
+                }
                 window.EMPRESA_CFG = cfg;
                 poblarSelectTiposReclamo();
             }
         } catch (_) {}
-    }
-    if (configInicialIncompleta(cfg)) {
-        // No bloquear el ingreso: completar defaults para cooperativa eléctrica.
-        // (El admin siempre puede ajustar luego desde Panel Administración → Empresa.)
-        const lat = cfg?.lat_base ?? cfg?.latitud;
-        const lng = cfg?.lng_base ?? cfg?.longitud;
-        const latOk = lat != null && String(lat).trim() !== '' && Number.isFinite(Number(lat));
-        const lngOk = lng != null && String(lng).trim() !== '' && Number.isFinite(Number(lng));
-
-        cfg = {
-            ...(window.EMPRESA_CFG || {}),
-            ...cfg,
-            nombre: String(cfg?.nombre || '').trim() || 'Cooperativa Eléctrica',
-            tipo: String(cfg?.tipo || '').trim() || 'cooperativa_electrica',
-            ...(latOk ? {} : { lat_base: '-31.783' }),
-            ...(lngOk ? {} : { lng_base: '-60.483' })
-        };
-        window.EMPRESA_CFG = cfg;
     }
     if (configInicialIncompleta(cfg)) {
         mostrarModalConfigInicial();

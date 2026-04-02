@@ -6054,24 +6054,7 @@ async function verificarConfiguracionInicialObligatoria() {
             }
         } catch (_) {}
     }
-    if (configInicialIncompleta(cfg)) {
-        // No bloquear el ingreso: completar defaults para cooperativa eléctrica.
-        // (El admin siempre puede ajustar luego desde Panel Administración → Empresa.)
-        const lat = cfg?.lat_base ?? cfg?.latitud;
-        const lng = cfg?.lng_base ?? cfg?.longitud;
-        const latOk = lat != null && String(lat).trim() !== '' && Number.isFinite(Number(lat));
-        const lngOk = lng != null && String(lng).trim() !== '' && Number.isFinite(Number(lng));
-
-        cfg = {
-            ...(window.EMPRESA_CFG || {}),
-            ...cfg,
-            nombre: String(cfg?.nombre || '').trim() || 'Cooperativa Eléctrica',
-            tipo: String(cfg?.tipo || '').trim() || 'cooperativa_electrica',
-            ...(latOk ? {} : { lat_base: '-31.783' }),
-            ...(lngOk ? {} : { lng_base: '-60.483' })
-        };
-        window.EMPRESA_CFG = cfg;
-    }
+    // Setup inicial: solo si falta nombre/tipo/ubicación en API (primera vez hasta completar "Finalizar").
     if (configInicialIncompleta(cfg)) {
         mostrarModalConfigInicial();
         return false;
