@@ -12,6 +12,7 @@ import distribuidoresRoutes from "./routes/distribuidores.js";
 import estadisticasRoutes from "./routes/estadisticas.js";
 import notificacionesRoutes from "./routes/notificaciones.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -20,7 +21,13 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-app.get("/health", async (_req, res) => {
+// Lightweight health endpoint: does not touch database.
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "pedidosmg-api", db: "not-checked" });
+});
+
+// Optional deep check to validate Neon connectivity only when needed.
+app.get("/health/db", async (_req, res) => {
   try {
     await query("SELECT 1");
     res.json({ ok: true, service: "pedidosmg-api", db: "ok" });
@@ -38,6 +45,7 @@ app.use("/api/distribuidores", distribuidoresRoutes);
 app.use("/api/estadisticas", estadisticasRoutes);
 app.use("/api/notificaciones", notificacionesRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/webhooks/whatsapp", webhooksWhatsappRoutes);
 
 app.get("/api/app-version", async (_req, res) => {
   try {

@@ -44,8 +44,8 @@ public class UbicacionWorker extends Worker {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS_SESSION, Context.MODE_PRIVATE);
         int uid = sp.getInt(KEY_USER_ID, -1);
         String rol = sp.getString(KEY_ROL, "").trim().toLowerCase();
-        if (uid <= 0 || !"tecnico".equals(rol)) {
-            Log.d(TAG, "No hay sesión de técnico activa");
+        if (uid <= 0 || (!"tecnico".equals(rol) && !"supervisor".equals(rol))) {
+            Log.d(TAG, "No hay sesión de técnico/supervisor activa");
             return Result.success();
         }
 

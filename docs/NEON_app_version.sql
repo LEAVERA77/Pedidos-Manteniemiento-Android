@@ -50,4 +50,32 @@ ON CONFLICT (version_code) DO UPDATE SET
     release_notes = EXCLUDED.release_notes,
     force_update = EXCLUDED.force_update;
 
+INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
+VALUES (
+    14,
+    '1.0.14',
+    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK_1_0_14_EN_DRIVE',
+    'GestorNova 1.0.14: cierre — checklist de seguridad opcional (el técnico marca lo aplicable); firma obligatoria solo si el pedido tiene cliente cargado; leyenda de colores en mapa más compacta.',
+    false
+)
+ON CONFLICT (version_code) DO UPDATE SET
+    version_name = EXCLUDED.version_name,
+    apk_url = EXCLUDED.apk_url,
+    release_notes = EXCLUDED.release_notes,
+    force_update = EXCLUDED.force_update;
+
+INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
+VALUES (
+    15,
+    '1.0.15',
+    'https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK_1_0_15_EN_DRIVE',
+    'GestorNova 1.0.15: conexión Neon en Android (intento aunque falle el chequeo HTTP); nuevo pedido muestra WGS84 por defecto; panel Colores del mapa ocultable como Filtros/Dash; desasignar y reasignar técnico con notificación Android; detalle y mapa con acciones Reasignar/Desasignar.',
+    false
+)
+ON CONFLICT (version_code) DO UPDATE SET
+    version_name = EXCLUDED.version_name,
+    apk_url = EXCLUDED.apk_url,
+    release_notes = EXCLUDED.release_notes,
+    force_update = EXCLUDED.force_update;
+
 -- Si ya tenés otra fila como "última", podés forzar solo la más reciente por version_code mayor.
