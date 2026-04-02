@@ -649,7 +649,8 @@ textarea{resize:vertical;min-height:80px}
     <div id="admin-empresa" class="admin-section active">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Datos de la Empresa</h3>
       <div class="form-grid">
-        <div class="full"><label>Nombre</label><input id="cfg-nombre" type="text"></div>
+        <div><label>Nombre</label><input id="cfg-nombre" type="text"></div>
+        <div><label>Tipo (cooperativa, municipio, empresa)</label><input id="cfg-tipo" type="text" placeholder="cooperativa"></div>
         <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
@@ -850,6 +851,24 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 <div id="cierre-toast-host" aria-live="polite"></div>
+<div id="modal-config-inicial" class="mo">
+  <div class="mc" style="max-width:480px">
+    <div class="mh"><h3><i class="fas fa-sliders-h"></i> Configuración Inicial obligatoria</h3></div>
+    <div class="mb">
+      <p style="font-size:.9rem;color:var(--tm);margin-bottom:.85rem">Este tenant todavía no tiene <strong>Nombre</strong> o <strong>Tipo</strong> configurado en la base.</p>
+      <div class="form-grid">
+        <div><label>Nombre *</label><input id="cfgi-nombre" type="text" placeholder="GestorNova"></div>
+        <div><label>Tipo *</label><input id="cfgi-tipo" type="text" placeholder="cooperativa"></div>
+      </div>
+      <p id="cfgi-tenant" style="margin-top:.7rem;font-size:.8rem;color:var(--tl)"></p>
+      <p id="cfgi-msg" style="margin-top:.45rem;font-size:.84rem;color:#b45309;display:none"></p>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button id="cfgi-logout" class="sec" type="button" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()"><i class="fas fa-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="modal-dashboard-gerencia" class="mo">
   <div class="mc" style="max-width:920px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
     <div class="mh"><h3><i class="fas fa-tachometer-alt"></i> Dashboard tiempo real</h3><button type="button" class="cm" onclick="document.getElementById('modal-dashboard-gerencia').classList.remove('active')"><i class="fas fa-times"></i></button></div>
@@ -1933,6 +1952,8 @@ document.getElementById('lf').addEventListener('submit', async e => {
             if (!offline) {
                 await cargarDistribuidores();
                 await cargarConfigEmpresa();
+                const cfgLista = await verificarConfiguracionInicialObligatoria();
+                if (!cfgLista) return;
                 await cargarPedidos();
                 
                 offlinePedidosSave(app.p);
@@ -5566,6 +5587,76 @@ async function cargarConfigEmpresa() {
     }
 }
 
+let _configInicialBloqueante = false;
+function tenantIdActual() {
+    return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || null;
+}
+function configInicialIncompleta(cfg) {
+    const nombre = String(cfg?.nombre || '').trim();
+    const tipo = String(cfg?.tipo || '').trim();
+    return !nombre || !tipo;
+}
+function mostrarModalConfigInicial() {
+    const modal = document.getElementById('modal-config-inicial');
+    if (!modal) return;
+    _configInicialBloqueante = true;
+    const cfg = window.EMPRESA_CFG || {};
+    const esAdm = esAdmin();
+    const nombre = document.getElementById('cfgi-nombre');
+    const tipo = document.getElementById('cfgi-tipo');
+    const tenant = document.getElementById('cfgi-tenant');
+    const msg = document.getElementById('cfgi-msg');
+    const btnGuardar = document.getElementById('cfgi-guardar');
+    const btnSalir = document.getElementById('cfgi-logout');
+    if (nombre) nombre.value = cfg.nombre || '';
+    if (tipo) tipo.value = cfg.tipo || '';
+    if (tenant) tenant.textContent = 'tenant_id: ' + (tenantIdActual() || '(no informado)');
+    if (msg) {
+        msg.style.display = 'block';
+        msg.textContent = esAdm
+            ? 'Completá los datos y guardá para continuar.'
+            : 'Este tenant no está configurado. Pedí a un administrador completar la Configuración Inicial.';
+    }
+    if (nombre) nombre.disabled = !esAdm;
+    if (tipo) tipo.disabled = !esAdm;
+    if (btnGuardar) btnGuardar.style.display = esAdm ? '' : 'none';
+    if (btnSalir) btnSalir.style.display = esAdm ? 'none' : '';
+    modal.classList.add('active');
+}
+function ocultarModalConfigInicial() {
+    const modal = document.getElementById('modal-config-inicial');
+    if (!modal) return;
+    modal.classList.remove('active');
+    _configInicialBloqueante = false;
+}
+async function verificarConfiguracionInicialObligatoria() {
+    const cfg = window.EMPRESA_CFG || {};
+    if (configInicialIncompleta(cfg)) {
+        mostrarModalConfigInicial();
+        return false;
+    }
+    ocultarModalConfigInicial();
+    return true;
+}
+async function guardarConfiguracionInicialObligatoria() {
+    if (!esAdmin()) return;
+    const nombre = (document.getElementById('cfgi-nombre')?.value || '').trim();
+    const tipo = (document.getElementById('cfgi-tipo')?.value || '').trim();
+    if (!nombre || !tipo) {
+        toast('Completá nombre y tipo', 'error');
+        return;
+    }
+    try {
+        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('nombre', ${esc(nombre)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('tipo', ${esc(tipo)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await cargarConfigEmpresa();
+        const ok = await verificarConfiguracionInicialObligatoria();
+        if (ok) toast('Configuración inicial completada', 'success');
+    } catch (e) {
+        toast('Error: ' + e.message, 'error');
+    }
+}
+
 // ── ALARMA PEDIDOS URGENTES ──────────────────────────────────
 let _audioCtx = null;
 
@@ -5698,6 +5789,7 @@ async function cargarFormEmpresa() {
         const cfg = {};
         (r.rows || []).forEach(row => { cfg[row.clave] = row.valor; });
         document.getElementById('cfg-nombre').value    = cfg.nombre || '';
+        document.getElementById('cfg-tipo').value      = cfg.tipo || '';
         document.getElementById('cfg-subtitulo').value = cfg.subtitulo || '';
         document.getElementById('cfg-email').value     = cfg.email_contacto || '';
         document.getElementById('cfg-telefono').value  = cfg.telefono || '';
@@ -5722,6 +5814,7 @@ async function guardarConfigEmpresa() {
     const modoVal = modoEl ? modoEl.value : 'punto';
     const campos = {
         nombre:         document.getElementById('cfg-nombre').value.trim(),
+        tipo:           document.getElementById('cfg-tipo').value.trim(),
         subtitulo:      document.getElementById('cfg-subtitulo').value.trim(),
         email_contacto: document.getElementById('cfg-email').value.trim(),
         telefono:       document.getElementById('cfg-telefono').value.trim(),
@@ -5735,6 +5828,7 @@ async function guardarConfigEmpresa() {
         }
         toast('Configuración guardada', 'success');
         await cargarConfigEmpresa();
+        await verificarConfiguracionInicialObligatoria();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
