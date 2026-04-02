@@ -751,8 +751,10 @@ textarea{resize:vertical;min-height:80px}
     <div id="admin-estadisticas" class="admin-section">
       <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
         <select id="est-periodo" onchange="cargarEstadisticas()" style="padding:.4rem .7rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.85rem">
-          <option value="mes">Mes (actual)</option><option value="3meses">Trimestre (3 meses)</option>
-          <option value="anio">Año (actual)</option><option value="todo">Todo el histórico</option>
+          <option value="3meses" selected>Trimestre (3 meses)</option>
+          <option value="mes">Mes (actual)</option>
+          <option value="anio">Año (actual)</option>
+          <option value="todo">Todo el histórico</option>
         </select>
         <button class="btn-sm primary" onclick="cargarEstadisticas()"><i class="fas fa-sync"></i> Actualizar</button>
         <button type="button" class="btn-sm" style="background:#15803d;color:#fff;border:none" onclick="exportInformeMensualExcel()"><i class="fas fa-file-excel"></i> Excel</button>
@@ -5913,6 +5915,15 @@ function configInicialIncompleta(cfg) {
     // Logo es opcional en el formulario; exigirlo dejaba el wizard en bucle al pulsar Finalizar.
     return !nombre || !tipo || !latOk || !lngOk;
 }
+/** Admin debe pasar el wizard al menos una vez (flag en clientes.configuracion vía API). */
+function setupWizardCompletadoEnApi(extra) {
+    return extra && extra.setup_wizard_completado === true;
+}
+function debeMostrarSetupInicial(cfg, extra) {
+    if (configInicialIncompleta(cfg)) return true;
+    if (esAdmin() && !setupWizardCompletadoEnApi(extra)) return true;
+    return false;
+}
 function actualizarStepWizard() {
     const lbl = document.getElementById('sw-step-label');
     if (lbl) lbl.textContent = `Paso ${_setupWizardStep} de 3`;
@@ -6013,7 +6024,7 @@ function mostrarModalConfigInicial() {
     const msg = document.getElementById('cfgi-msg');
     msg.style.display = 'block';
     msg.textContent = esAdm
-        ? 'Completá el setup para continuar.'
+        ? 'Setup inicial (una vez): elegí tipo de negocio, nombre y ubicación base; al final tocá Finalizar. Si ya estaban cargados, revisalos y confirmá.'
         : 'Este tenant no está configurado. Pedí a un administrador completar el setup.';
     ['cfgi-nombre','cfgi-tipo','cfgi-logo-url','cfgi-logo-file'].forEach(id => {
         const el = document.getElementById(id); if (el) el.disabled = !esAdm;
@@ -6039,6 +6050,7 @@ async function verificarConfiguracionInicialObligatoria() {
         return true;
     }
     let cfg = {};
+    let extraParsed = {};
     let apiOk = false;
     try {
         const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
@@ -6056,11 +6068,12 @@ async function verificarConfiguracionInicialObligatoria() {
                     extra = {};
                 }
             }
+            extraParsed = extra && typeof extra === 'object' ? extra : {};
             cfg = {
                 ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                ...(extra.logo_url ? { logo_url: extra.logo_url } : {}),
-                ...(extra.lat_base != null ? { lat_base: String(extra.lat_base) } : {}),
-                ...(extra.lng_base != null ? { lng_base: String(extra.lng_base) } : {})
+                ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
+                ...(extraParsed.lat_base != null ? { lat_base: String(extraParsed.lat_base) } : {}),
+                ...(extraParsed.lng_base != null ? { lng_base: String(extraParsed.lng_base) } : {})
             };
             if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
                 cfg.tipo = String(cli.tipo ?? '').trim();
@@ -6072,8 +6085,9 @@ async function verificarConfiguracionInicialObligatoria() {
         ocultarModalConfigInicial();
         return true;
     }
-    // Setup según API del tenant (no empresa_config). Incompleto: solo datos API en el modal.
-    if (configInicialIncompleta(cfg)) {
+    // Admin: obligatorio completar/confirmar el wizard una vez (setup_wizard_completado en API).
+    // Datos incompletos: cualquier rol con modal (no admin no puede guardar).
+    if (debeMostrarSetupInicial(cfg, extraParsed)) {
         window.EMPRESA_CFG = { ...cfg };
         poblarSelectTiposReclamo();
         mostrarModalConfigInicial();
@@ -6166,7 +6180,8 @@ async function guardarConfiguracionInicialObligatoria() {
                 tipo,
                 logo_url: logoUrl,
                 latitud: _setupLat,
-                longitud: _setupLng
+                longitud: _setupLng,
+                configuracion: { setup_wizard_completado: true }
             })
         });
         if (!resp.ok) {
@@ -6688,7 +6703,7 @@ async function buscarHistorialPorNIS() {
 }
 
 function periodoInformeDesdeSelectEstadisticas() {
-    const periodo = document.getElementById('est-periodo')?.value || 'mes';
+    const periodo = document.getElementById('est-periodo')?.value || '3meses';
     const ahora = new Date();
     let fechaDesde;
     if (periodo === 'mes') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -6975,7 +6990,7 @@ async function generarInformeMensualENRE() {
 })();
 let _charts = {};
 async function cargarEstadisticas() {
-    const periodo = document.getElementById('est-periodo')?.value || 'mes';
+    const periodo = document.getElementById('est-periodo')?.value || '3meses';
     const ahora   = new Date();
     let fechaDesde;
     if      (periodo === 'mes')    fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);

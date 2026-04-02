@@ -32,8 +32,9 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
 
     const tenantId = await getUserTenantId(req.user.id);
     const { nombre, tipo, logo_url, latitud, longitud, configuracion = {} } = req.body || {};
+    // Merge: top-level logo/lat/lng + body.configuracion (p. ej. setup_wizard_completado).
     const cfgJson = {
-      ...(configuracion || {}),
+      ...(typeof configuracion === "object" && configuracion ? configuracion : {}),
       ...(logo_url ? { logo_url } : {}),
       ...(latitud != null ? { lat_base: latitud } : {}),
       ...(longitud != null ? { lng_base: longitud } : {}),
