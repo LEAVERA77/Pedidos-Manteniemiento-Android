@@ -13,11 +13,14 @@ import estadisticasRoutes from "./routes/estadisticas.js";
 import notificacionesRoutes from "./routes/notificaciones.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
+import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.use(cors());
+// Meta requires raw body for X-Hub-Signature-256 verification.
+app.use("/api/webhooks/meta", webhooksMetaRoutes);
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
