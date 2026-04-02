@@ -891,6 +891,11 @@ textarea{resize:vertical;min-height:80px}
       <div id="sw-paso-3" class="sw-step">
         <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Ubicación Base</h4>
         <p style="font-size:.88rem;color:var(--tm)">Marcá la ubicación central de oficina para centrar mapas por defecto.</p>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+          <button type="button" class="btn-sm" style="background:#ecfeff;border:1px solid #67e8f9;color:#0f766e" onclick="usarUbicacionAutomaticaSetupWizard()">
+            <i class="fas fa-location-arrow"></i> Usar mi ubicación
+          </button>
+        </div>
         <div id="setup-map" style="height:300px;border:1px solid var(--bo);border-radius:.75rem"></div>
         <div style="margin-top:.6rem;font-size:.83rem;color:var(--tl)">Lat: <span id="cfgi-lat">-</span> | Lng: <span id="cfgi-lng">-</span></div>
       </div>
@@ -5692,6 +5697,7 @@ let _setupMarker = null;
 let _setupLogoDataUrl = '';
 let _setupLat = null;
 let _setupLng = null;
+let _setupGeoIntentado = false;
 function tenantIdActual() {
     return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || 1;
 }
@@ -5709,7 +5715,10 @@ function actualizarStepWizard() {
     document.getElementById('sw-prev').style.display = _setupWizardStep > 1 ? '' : 'none';
     document.getElementById('sw-next').style.display = _setupWizardStep < 3 ? '' : 'none';
     document.getElementById('cfgi-guardar').style.display = _setupWizardStep === 3 ? '' : 'none';
-    if (_setupWizardStep === 3) setTimeout(inicializarMapaSetupWizard, 20);
+    if (_setupWizardStep === 3) {
+        setTimeout(inicializarMapaSetupWizard, 20);
+        setTimeout(usarUbicacionAutomaticaSetupWizard, 80);
+    }
 }
 function inicializarMapaSetupWizard() {
     const el = document.getElementById('setup-map');
@@ -5742,6 +5751,28 @@ function inicializarMapaSetupWizard() {
     }
     document.getElementById('cfgi-lat').textContent = Number(_setupLat).toFixed(6);
     document.getElementById('cfgi-lng').textContent = Number(_setupLng).toFixed(6);
+}
+function usarUbicacionAutomaticaSetupWizard() {
+    if (!navigator.geolocation) return;
+    if (_setupGeoIntentado && _setupWizardStep !== 3) return;
+    _setupGeoIntentado = true;
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const lat = Number(pos.coords.latitude);
+            const lng = Number(pos.coords.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            _setupLat = lat;
+            _setupLng = lng;
+            inicializarMapaSetupWizard();
+            if (_setupMap) _setupMap.setView([lat, lng], 15);
+            if (_setupMarker) _setupMarker.setLatLng([lat, lng]);
+            document.getElementById('cfgi-lat').textContent = lat.toFixed(6);
+            document.getElementById('cfgi-lng').textContent = lng.toFixed(6);
+            toast('Ubicación automática detectada', 'success');
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 120000 }
+    );
 }
 function aplicarEtiquetasPorTipo(tipo) {
     const esMunicipio = String(tipo || '').toLowerCase() === 'municipio';
@@ -5781,6 +5812,7 @@ function mostrarModalConfigInicial() {
     document.getElementById('cfgi-guardar').style.display = esAdm ? 'none' : 'none';
     document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
     _setupWizardStep = 1;
+    _setupGeoIntentado = false;
     actualizarStepWizard();
     modal.classList.add('active');
 }
@@ -5919,12 +5951,18 @@ async function guardarConfiguracionInicialObligatoria() {
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) toast('Setup inicial completado', 'success');
     } catch (e) {
-        toast('Error: ' + e.message, 'error');
+        const m = String(e?.message || '');
+        if (m.includes('Failed to fetch') || m.includes('CORS') || m.includes('503')) {
+            toast('Error de conexión con API (CORS/Render). Revisá API_BASE_URL y CORS en backend.', 'error');
+        } else {
+            toast('Error: ' + m, 'error');
+        }
     }
 }
 window.guardarConfiguracionInicialObligatoria = guardarConfiguracionInicialObligatoria;
 window.setupWizardNext = setupWizardNext;
 window.setupWizardPrev = setupWizardPrev;
+window.usarUbicacionAutomaticaSetupWizard = usarUbicacionAutomaticaSetupWizard;
 
 // ── ALARMA PEDIDOS URGENTES ──────────────────────────────────
 let _audioCtx = null;
