@@ -287,6 +287,10 @@ textarea{resize:vertical;min-height:80px}
 @keyframes slideIn{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
 .admin-panel{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:5000;display:none;align-items:flex-start;justify-content:center;padding:1rem;overflow-y:auto}
 .admin-panel.active{display:flex}
+.setup-wizard{z-index:12000;background:rgba(2,6,23,.66)}
+.setup-wizard .mc{max-width:920px;max-height:95vh;width:100%}
+.sw-step{display:none}
+.sw-step.active{display:block}
 .admin-box{background:white;border-radius:1rem;width:100%;max-width:min(1120px,calc(100vw - 1.5rem));box-shadow:0 25px 60px rgba(0,0,0,.35);animation:slideIn .25s ease;margin:1rem auto;max-height:calc(100vh - 2rem);overflow:hidden;display:flex;flex-direction:column}
 .admin-box .admin-tabs{flex-shrink:0}
 .admin-box .admin-section{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
@@ -333,6 +337,7 @@ textarea{resize:vertical;min-height:80px}
 #offline-banner{position:fixed;top:0;left:0;right:0;z-index:9000;background:#dc2626;color:white;padding:.45rem 1rem;font-size:.82rem;font-weight:600;text-align:center;display:none;align-items:center;justify-content:center;gap:.5rem;transition:transform .3s}
 #offline-banner.visible{display:flex}
 #offline-banner.hidden{transform:translateY(-100%)}
+#offline-banner .sync-btn{display:inline-flex;align-items:center;gap:.35rem}
 #offline-toggle{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:8999;background:#dc2626;color:white;border:none;border-radius:0 0 .5rem .5rem;padding:.15rem .75rem;font-size:.7rem;cursor:pointer;display:none}
 #offline-toggle.visible{display:block}
 #cache-progress-bar{position:fixed;bottom:0;left:0;right:0;background:#1e3a8a;color:white;padding:.5rem 1rem;z-index:8000;display:none;align-items:center;gap:.75rem;font-size:.82rem}
@@ -349,6 +354,7 @@ textarea{resize:vertical;min-height:80px}
 <!-- BANNER OFFLINE -->
 <div id="offline-banner">
   <i class="fas fa-wifi-slash"></i> Modo sin conexión — los pedidos se guardan localmente
+  <button class="sync-btn" type="button" onclick="toggleOfflineBanner()" title="Ocultar/mostrar barra"><i class="fas fa-angle-up"></i></button>
   <button class="sync-btn" onclick="sincronizarOffline()"><i class="fas fa-sync"></i> Sincronizar</button>
 </div>
 
@@ -851,20 +857,52 @@ textarea{resize:vertical;min-height:80px}
   </div>
 </div>
 <div id="cierre-toast-host" aria-live="polite"></div>
-<div id="modal-config-inicial" class="mo">
-  <div class="mc" style="max-width:480px">
-    <div class="mh"><h3><i class="fas fa-sliders-h"></i> Configuración Inicial obligatoria</h3></div>
+<div id="modal-config-inicial" class="mo setup-wizard">
+  <div class="mc">
+    <div class="mh"><h3><i class="fas fa-magic"></i> Setup Inicial SaaS</h3><span id="sw-step-label" style="font-size:.82rem;color:var(--tl)">Paso 1 de 3</span></div>
     <div class="mb">
-      <p style="font-size:.9rem;color:var(--tm);margin-bottom:.85rem">Este tenant todavía no tiene <strong>Nombre</strong> o <strong>Tipo</strong> configurado en la base.</p>
-      <div class="form-grid">
-        <div><label>Nombre *</label><input id="cfgi-nombre" type="text" placeholder="GestorNova"></div>
-        <div><label>Tipo *</label><input id="cfgi-tipo" type="text" placeholder="cooperativa"></div>
+      <div id="sw-paso-1" class="sw-step active">
+        <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Identidad</h4>
+        <p style="font-size:.88rem;color:var(--tm)">Elegí el tipo de organización. Esto adapta textos en toda la app.</p>
+        <div class="form-grid">
+          <div class="full"><label>Nombre *</label><input id="cfgi-nombre" type="text" placeholder="Cooperativa Norte"></div>
+          <div class="full"><label>Tipo *</label>
+            <select id="cfgi-tipo">
+              <option value="">Seleccionar...</option>
+              <option value="municipio">Municipio</option>
+              <option value="cooperativa_agua">Cooperativa de Agua</option>
+              <option value="cooperativa_electrica">Cooperativa Eléctrica</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="sw-paso-2" class="sw-step">
+        <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Branding</h4>
+        <p style="font-size:.88rem;color:var(--tm)">Ingresá una URL de logo o subí una imagen.</p>
+        <div class="form-grid">
+          <div class="full"><label>Logo URL</label><input id="cfgi-logo-url" type="url" placeholder="https://.../logo.png"></div>
+          <div class="full"><label>Subir imagen</label><input id="cfgi-logo-file" type="file" accept="image/*"></div>
+        </div>
+        <div style="margin-top:.8rem">
+          <div style="font-size:.8rem;color:var(--tl);margin-bottom:.35rem">Vista previa</div>
+          <img id="cfgi-logo-preview" alt="Logo preview" style="max-height:84px;max-width:220px;border:1px solid var(--bo);border-radius:.5rem;padding:.4rem;background:white;display:none">
+        </div>
+      </div>
+      <div id="sw-paso-3" class="sw-step">
+        <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Ubicación Base</h4>
+        <p style="font-size:.88rem;color:var(--tm)">Marcá la ubicación central de oficina para centrar mapas por defecto.</p>
+        <div id="setup-map" style="height:300px;border:1px solid var(--bo);border-radius:.75rem"></div>
+        <div style="margin-top:.6rem;font-size:.83rem;color:var(--tl)">Lat: <span id="cfgi-lat">-</span> | Lng: <span id="cfgi-lng">-</span></div>
       </div>
       <p id="cfgi-tenant" style="margin-top:.7rem;font-size:.8rem;color:var(--tl)"></p>
       <p id="cfgi-msg" style="margin-top:.45rem;font-size:.84rem;color:#b45309;display:none"></p>
-      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+      <div style="display:flex;gap:.5rem;justify-content:space-between;margin-top:1rem">
         <button id="cfgi-logout" class="sec" type="button" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
-        <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()"><i class="fas fa-save"></i> Guardar</button>
+        <div style="display:flex;gap:.5rem">
+          <button id="sw-prev" class="sec" type="button" onclick="setupWizardPrev()" style="display:none">Anterior</button>
+          <button id="sw-next" class="bp" type="button" onclick="setupWizardNext()">Siguiente</button>
+          <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()" style="display:none"><i class="fas fa-save"></i> Finalizar</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1240,6 +1278,7 @@ async function notificarNeonConectadoParaUpdateCheck() {
 
 function setModoOffline(offline) {
     modoOffline = offline;
+    const hiddenPref = localStorage.getItem('pmg_offline_banner_hidden') === '1';
     const toggle = document.getElementById('offline-toggle');
     if (toggle) {
         if (esAndroidApp) toggle.className = '';
@@ -1250,8 +1289,13 @@ function setModoOffline(offline) {
         if (esAndroidApp) {
             banner.classList.remove('visible');
             banner.classList.add('hidden');
-        } else if (offline) banner.classList.add('visible');
-        else banner.classList.remove('visible');
+        } else if (offline) {
+            banner.classList.add('visible');
+            banner.classList.toggle('hidden', hiddenPref);
+        } else {
+            banner.classList.remove('visible');
+            banner.classList.remove('hidden');
+        }
     }
     const di = document.getElementById('di');
     if (di) {
@@ -2838,6 +2882,8 @@ function initMap() {
         app.map = null;
     }
     
+    const latBase = parseFloat(window.EMPRESA_CFG?.lat_base || '-31.505');
+    const lngBase = parseFloat(window.EMPRESA_CFG?.lng_base || '-60.02');
     app.map = L.map('mc', {
         zoomControl: true,
         attributionControl: true,
@@ -2848,7 +2894,7 @@ function initMap() {
         fadeAnimation: false,
         markerZoomAnimation: false,
         inertia: false
-    }).setView([-31.505, -60.02], 13);
+    }).setView([latBase, lngBase], 13);
     
     gnAttachBaseMapLayers(app.map);
     
@@ -5582,6 +5628,8 @@ async function cargarConfigEmpresa() {
         // Header
         const h2 = document.querySelector('.hd h2');
         if (h2) h2.innerHTML = '<i class="fas fa-bolt"></i> ' + nombre;
+        aplicarBrandingDesdeConfig();
+        aplicarEtiquetasPorTipo(cfg.tipo || '');
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         window.EMPRESA_CFG = {};
@@ -5591,13 +5639,77 @@ async function cargarConfigEmpresa() {
 }
 
 let _configInicialBloqueante = false;
+let _setupWizardStep = 1;
+let _setupMap = null;
+let _setupMarker = null;
+let _setupLogoDataUrl = '';
+let _setupLat = null;
+let _setupLng = null;
 function tenantIdActual() {
-    return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || null;
+    return app?.u?.tenant_id || app?.u?.tenantId || window.APP_CONFIG?.tenant_id || 1;
 }
 function configInicialIncompleta(cfg) {
     const nombre = String(cfg?.nombre || '').trim();
     const tipo = String(cfg?.tipo || '').trim();
     return !nombre || !tipo;
+}
+function actualizarStepWizard() {
+    const lbl = document.getElementById('sw-step-label');
+    if (lbl) lbl.textContent = `Paso ${_setupWizardStep} de 3`;
+    [1,2,3].forEach(n => {
+        document.getElementById(`sw-paso-${n}`)?.classList.toggle('active', n === _setupWizardStep);
+    });
+    document.getElementById('sw-prev').style.display = _setupWizardStep > 1 ? '' : 'none';
+    document.getElementById('sw-next').style.display = _setupWizardStep < 3 ? '' : 'none';
+    document.getElementById('cfgi-guardar').style.display = _setupWizardStep === 3 ? '' : 'none';
+    if (_setupWizardStep === 3) setTimeout(inicializarMapaSetupWizard, 20);
+}
+function inicializarMapaSetupWizard() {
+    const el = document.getElementById('setup-map');
+    if (!el || typeof L === 'undefined') return;
+    const cfg = window.EMPRESA_CFG || {};
+    if (_setupLat == null) _setupLat = parseFloat(cfg.lat_base || cfg.latitud || '-31.783');
+    if (_setupLng == null) _setupLng = parseFloat(cfg.lng_base || cfg.longitud || '-60.483');
+    if (!_setupMap) {
+        _setupMap = L.map('setup-map', { zoomControl: true }).setView([_setupLat, _setupLng], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(_setupMap);
+        _setupMarker = L.marker([_setupLat, _setupLng], { draggable: true }).addTo(_setupMap);
+        _setupMarker.on('dragend', () => {
+            const p = _setupMarker.getLatLng();
+            _setupLat = p.lat; _setupLng = p.lng;
+            document.getElementById('cfgi-lat').textContent = _setupLat.toFixed(6);
+            document.getElementById('cfgi-lng').textContent = _setupLng.toFixed(6);
+        });
+        _setupMap.on('click', (e) => {
+            _setupLat = e.latlng.lat; _setupLng = e.latlng.lng;
+            _setupMarker.setLatLng(e.latlng);
+            document.getElementById('cfgi-lat').textContent = _setupLat.toFixed(6);
+            document.getElementById('cfgi-lng').textContent = _setupLng.toFixed(6);
+        });
+    } else {
+        _setupMap.invalidateSize();
+        _setupMarker.setLatLng([_setupLat, _setupLng]);
+        _setupMap.setView([_setupLat, _setupLng], _setupMap.getZoom() || 13);
+    }
+    document.getElementById('cfgi-lat').textContent = Number(_setupLat).toFixed(6);
+    document.getElementById('cfgi-lng').textContent = Number(_setupLng).toFixed(6);
+}
+function aplicarEtiquetasPorTipo(tipo) {
+    const esMunicipio = String(tipo || '').toLowerCase() === 'municipio';
+    const a = esMunicipio ? ['Socio', 'socio', 'SOCIO'] : ['Vecino', 'vecino', 'VECINO'];
+    const b = esMunicipio ? ['Vecino', 'vecino', 'VECINO'] : ['Socio', 'socio', 'SOCIO'];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(node => {
+        let txt = node.nodeValue || '';
+        for (let i = 0; i < a.length; i++) {
+            txt = txt.replaceAll(a[i], b[i]);
+        }
+        node.nodeValue = txt;
+    });
 }
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');
@@ -5605,25 +5717,24 @@ function mostrarModalConfigInicial() {
     _configInicialBloqueante = true;
     const cfg = window.EMPRESA_CFG || {};
     const esAdm = esAdmin();
-    const nombre = document.getElementById('cfgi-nombre');
-    const tipo = document.getElementById('cfgi-tipo');
-    const tenant = document.getElementById('cfgi-tenant');
+    document.getElementById('cfgi-nombre').value = cfg.nombre || '';
+    document.getElementById('cfgi-tipo').value = cfg.tipo || '';
+    document.getElementById('cfgi-logo-url').value = cfg.logo_url || '';
+    document.getElementById('cfgi-tenant').textContent = 'tenant_id: ' + tenantIdActual();
     const msg = document.getElementById('cfgi-msg');
-    const btnGuardar = document.getElementById('cfgi-guardar');
-    const btnSalir = document.getElementById('cfgi-logout');
-    if (nombre) nombre.value = cfg.nombre || '';
-    if (tipo) tipo.value = cfg.tipo || '';
-    if (tenant) tenant.textContent = 'tenant_id: ' + (tenantIdActual() || '(no informado)');
-    if (msg) {
-        msg.style.display = 'block';
-        msg.textContent = esAdm
-            ? 'Completá los datos y guardá para continuar.'
-            : 'Este tenant no está configurado. Pedí a un administrador completar la Configuración Inicial.';
-    }
-    if (nombre) nombre.disabled = !esAdm;
-    if (tipo) tipo.disabled = !esAdm;
-    if (btnGuardar) btnGuardar.style.display = esAdm ? '' : 'none';
-    if (btnSalir) btnSalir.style.display = esAdm ? 'none' : '';
+    msg.style.display = 'block';
+    msg.textContent = esAdm
+        ? 'Completá el setup para continuar.'
+        : 'Este tenant no está configurado. Pedí a un administrador completar el setup.';
+    ['cfgi-nombre','cfgi-tipo','cfgi-logo-url','cfgi-logo-file'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.disabled = !esAdm;
+    });
+    document.getElementById('sw-prev').style.display = 'none';
+    document.getElementById('sw-next').style.display = esAdm ? '' : 'none';
+    document.getElementById('cfgi-guardar').style.display = esAdm ? 'none' : 'none';
+    document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
+    _setupWizardStep = 1;
+    actualizarStepWizard();
     modal.classList.add('active');
 }
 function ocultarModalConfigInicial() {
@@ -5639,26 +5750,102 @@ async function verificarConfiguracionInicialObligatoria() {
         return false;
     }
     ocultarModalConfigInicial();
+    aplicarBrandingDesdeConfig();
+    aplicarEtiquetasPorTipo(cfg.tipo || '');
     return true;
+}
+function setupWizardNext() {
+    if (_setupWizardStep === 1) {
+        if (!(document.getElementById('cfgi-nombre').value || '').trim()) return toast('Ingresá nombre', 'error');
+        if (!(document.getElementById('cfgi-tipo').value || '').trim()) return toast('Elegí tipo', 'error');
+    }
+    if (_setupWizardStep < 3) _setupWizardStep++;
+    actualizarStepWizard();
+}
+function setupWizardPrev() {
+    if (_setupWizardStep > 1) _setupWizardStep--;
+    actualizarStepWizard();
+}
+function aplicarBrandingDesdeConfig() {
+    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
+    const ll = document.querySelector('.ll');
+    if (!ll) return;
+    if (!logo) {
+        ll.innerHTML = '<i class="fas fa-bolt"></i>';
+        return;
+    }
+    ll.innerHTML = `<img src="${logo.replace(/"/g,'&quot;')}" alt="logo" style="width:42px;height:42px;object-fit:contain">`;
+}
+function initSetupWizardBindings() {
+    const inputUrl = document.getElementById('cfgi-logo-url');
+    const inputFile = document.getElementById('cfgi-logo-file');
+    const prev = document.getElementById('cfgi-logo-preview');
+    if (inputUrl) {
+        inputUrl.addEventListener('input', () => {
+            const v = inputUrl.value.trim();
+            if (!prev) return;
+            if (!v) { prev.style.display = 'none'; return; }
+            prev.src = v;
+            prev.style.display = '';
+        });
+    }
+    if (inputFile) {
+        inputFile.addEventListener('change', async () => {
+            const f = inputFile.files && inputFile.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                _setupLogoDataUrl = String(reader.result || '');
+                if (prev && _setupLogoDataUrl) {
+                    prev.src = _setupLogoDataUrl;
+                    prev.style.display = '';
+                }
+            };
+            reader.readAsDataURL(f);
+        });
+    }
 }
 async function guardarConfiguracionInicialObligatoria() {
     if (!esAdmin()) return;
     const nombre = (document.getElementById('cfgi-nombre')?.value || '').trim();
     const tipo = (document.getElementById('cfgi-tipo')?.value || '').trim();
-    if (!nombre || !tipo) {
-        toast('Completá nombre y tipo', 'error');
-        return;
-    }
+    const logoUrlInput = (document.getElementById('cfgi-logo-url')?.value || '').trim();
+    const logoUrl = _setupLogoDataUrl || logoUrlInput || '';
+    if (!nombre || !tipo) return toast('Completá nombre y tipo', 'error');
+    if (_setupLat == null || _setupLng == null) return toast('Marcá la ubicación base en el mapa', 'error');
     try {
+        const tid = Number(tenantIdActual() || 1);
+        // Persistencia principal por SQL (compatibilidad actual).
         await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('nombre', ${esc(nombre)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
         await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('tipo', ${esc(tipo)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('logo_url', ${esc(logoUrl)}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('lat_base', ${esc(String(_setupLat))}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES('lng_base', ${esc(String(_setupLng))}) ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado = NOW()`);
+        await sqlSimple(`INSERT INTO clientes(id, nombre, tipo, configuracion, activo, fecha_registro, fecha_actualizacion)
+                         VALUES(${esc(tid)}, ${esc(nombre)}, ${esc(tipo)}, ${esc(JSON.stringify({ logo_url: logoUrl, lat_base: _setupLat, lng_base: _setupLng }))}::jsonb, TRUE, NOW(), NOW())
+                         ON CONFLICT(id) DO UPDATE SET
+                           nombre = EXCLUDED.nombre,
+                           tipo = EXCLUDED.tipo,
+                           configuracion = COALESCE(clientes.configuracion, '{}'::jsonb) || EXCLUDED.configuracion,
+                           fecha_actualizacion = NOW()`);
+        // Intento adicional de persistir por API (si está disponible).
+        try {
+            await fetch('/api/clientes/mi-configuracion', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nombre, tipo, logo_url: logoUrl, latitud: _setupLat, longitud: _setupLng })
+            });
+        } catch (_) {}
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
-        if (ok) toast('Configuración inicial completada', 'success');
+        if (ok) toast('Setup inicial completado', 'success');
     } catch (e) {
         toast('Error: ' + e.message, 'error');
     }
 }
+window.guardarConfiguracionInicialObligatoria = guardarConfiguracionInicialObligatoria;
+window.setupWizardNext = setupWizardNext;
+window.setupWizardPrev = setupWizardPrev;
 
 // ── ALARMA PEDIDOS URGENTES ──────────────────────────────────
 let _audioCtx = null;
@@ -7110,10 +7297,12 @@ function toggleOfflineBanner() {
     if (!banner) return;
     if (banner.classList.contains('hidden')) {
         banner.classList.remove('hidden');
-        toggle.innerHTML = '<i class="fas fa-wifi-slash"></i>';
+        try { localStorage.setItem('pmg_offline_banner_hidden', '0'); } catch(_) {}
+        if (toggle) toggle.innerHTML = '<i class="fas fa-wifi-slash"></i>';
     } else {
         banner.classList.add('hidden');
-        toggle.innerHTML = '<i class="fas fa-wifi-slash"></i>';
+        try { localStorage.setItem('pmg_offline_banner_hidden', '1'); } catch(_) {}
+        if (toggle) toggle.innerHTML = '<i class="fas fa-wifi-slash"></i>';
     }
 }
 window.toggleOfflineBanner = toggleOfflineBanner;
@@ -7158,6 +7347,7 @@ if ('serviceWorker' in navigator) {
 
 // ── Inicializar todo al arrancar ──────────────────────────────
 (async function iniciarApp() {
+    initSetupWizardBindings();
     (function showAndroidExportsBtn() {
         const b = document.getElementById('btn-android-descargas');
         if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
