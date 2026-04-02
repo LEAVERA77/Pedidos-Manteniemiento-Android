@@ -42,6 +42,11 @@ export async function sendWhatsAppText(toDigits, bodyText) {
       ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"}, subcode ${graph.error.error_subcode ?? "?"})`
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] Graph API error", { status: resp.status, to: to.slice(0, 4) + "…", detail: errPart });
+    if (graph?.error?.code === 190) {
+      console.error(
+        "[meta-whatsapp] Token Meta expirado o inválido: en developers.facebook.com generá un token de acceso (System User o de larga duración) y actualizá META_ACCESS_TOKEN en Render (o el host donde corre la API)."
+      );
+    }
     return { ok: false, status: resp.status, graph };
   }
   if (graph?.error) {

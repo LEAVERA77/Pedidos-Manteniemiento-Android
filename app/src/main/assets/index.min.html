@@ -1677,13 +1677,11 @@ async function hayInternet() {
     
     
     
+    // Evitar 1.1.1.1/cdn-cgi/trace: en algunos entornos resuelve mal o devuelve 404 en HEAD y ensucia la consola.
     const pruebas = [
-        
-        'https://1.1.1.1/cdn-cgi/trace',
-        
         'https://connectivitycheck.gstatic.com/generate_204',
-        
         'https://captive.apple.com/hotspot-detect.html',
+        'https://www.cloudflare.com/cdn-cgi/trace',
     ];
 
     for (const url of pruebas) {
@@ -6200,7 +6198,14 @@ async function guardarConfiguracionInicialObligatoria() {
         poblarSelectTiposReclamo();
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
-        if (ok) toast('Setup inicial completado', 'success');
+        if (ok) {
+            toast('Setup inicial completado', 'success');
+            // El login ya había salido antes de completar el wizard (cfgLista === false),
+            // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
+            if (!modoOffline && NEON_OK && app.u && typeof cargarPedidos === 'function') {
+                try { await cargarPedidos(); } catch (_) {}
+            }
+        }
     } catch (e) {
         const m = String(e?.message || '');
         if (m.includes('Failed to fetch') || m.includes('CORS') || m.includes('503')) {
@@ -6742,16 +6747,34 @@ async function exportInformeMensualExcel() {
     } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
 }
 
-async function html2canvasCapturaEstadisticasCompleta(el) {
+function coleccionSeccionesPdfEstadisticas() {
+    const root = document.getElementById('admin-estadisticas');
+    if (!root) return [];
+    const out = [];
+    const marco = document.getElementById('enre-marco');
+    if (marco) out.push(marco);
+    const cards = document.getElementById('stats-cards');
+    if (cards) out.push(cards);
+    root.querySelectorAll('.chart-wrap').forEach(w => {
+        try {
+            if (window.getComputedStyle(w).display === 'none') return;
+            out.push(w);
+        } catch (_) {}
+    });
+    return out;
+}
+
+async function html2canvasCapturaElemento(el, opts = {}) {
     if (!el || typeof html2canvas !== 'function') return null;
+    const delayAfterResize = typeof opts.delayAfterResize === 'number' ? opts.delayAfterResize : 200;
     try {
         Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        await new Promise(r => setTimeout(r, 400));
-        const sw = Math.max(el.scrollWidth, el.offsetWidth, 800);
-        const sh = Math.max(el.scrollHeight, el.offsetHeight, 400);
+        await new Promise(r => setTimeout(r, delayAfterResize));
+        const sw = Math.max(el.scrollWidth, el.offsetWidth, 120);
+        const sh = Math.max(el.scrollHeight, el.offsetHeight, 40);
         return await html2canvas(el, {
-            scale: Math.min(1.35, 2600 / sw),
+            scale: Math.min(1.35, 2600 / Math.max(sw, 400)),
             useCORS: true,
             logging: false,
             backgroundColor: '#f8fafc',
@@ -6766,13 +6789,18 @@ async function html2canvasCapturaEstadisticasCompleta(el) {
                     node.style.overflow = 'visible';
                     node.style.height = 'auto';
                     node.style.maxHeight = 'none';
+                    node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
                 } catch (_) {}
             }
         });
     } catch (e) {
-        console.warn('html2canvas estadísticas', e);
+        console.warn('html2canvas elemento', e);
         return null;
     }
+}
+
+async function html2canvasCapturaEstadisticasCompleta(el) {
+    return html2canvasCapturaElemento(el, { delayAfterResize: 400 });
 }
 
 async function imprimirInformeConGraficos() {
@@ -6783,20 +6811,44 @@ async function imprimirInformeConGraficos() {
     adminTab('estadisticas');
     await cargarEstadisticas();
     await new Promise(r => setTimeout(r, 500));
-    const el = document.getElementById('admin-estadisticas');
-    if (!el) return;
+    const secciones = coleccionSeccionesPdfEstadisticas();
+    if (!secciones.length) { toast('No hay secciones para imprimir', 'error'); return; }
+    const urls = [];
+    const liberarUrls = () => { urls.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} }); };
     try {
         toast('Generando vista para imprimir…', 'info');
-        const canvas = await html2canvasCapturaEstadisticasCompleta(el);
-        if (!canvas) { toast('No se pudo capturar el panel', 'error'); return; }
-        const dataUrl = canvas.toDataURL('image/png');
+        for (const sec of secciones) {
+            const canvas = await html2canvasCapturaElemento(sec, { delayAfterResize: 100 });
+            if (!canvas) continue;
+            const blob = await new Promise((res, rej) => {
+                try {
+                    canvas.toBlob(b => (b ? res(b) : rej(new Error('toBlob'))), 'image/png');
+                } catch (e) { rej(e); }
+            });
+            urls.push(URL.createObjectURL(blob));
+        }
+        if (!urls.length) {
+            toast('No se pudo capturar el panel', 'error');
+            return;
+        }
         const w = window.open('', '_blank');
-        if (!w) { toast('Permití ventanas emergentes para imprimir', 'error'); return; }
-        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe — gráficos</title><style>body{margin:0;background:#fff}img{display:block;width:100%;height:auto;max-width:100%}@media print{img{page-break-inside:auto}}</style></head><body><img src="' + dataUrl + '" alt="Estadísticas GestorNova"/></body></html>');
+        if (!w) {
+            liberarUrls();
+            toast('Permití ventanas emergentes para imprimir', 'error');
+            return;
+        }
+        const bloques = urls.map(u =>
+            `<div class="bloque"><img src="${u}" alt="Estadísticas"/></div>`
+        ).join('');
+        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe — gráficos</title><style>body{margin:0;background:#fff}.bloque{page-break-after:always;break-after:page}.bloque:last-child{page-break-after:auto;break-after:auto}img{display:block;width:100%;height:auto;max-width:100%}</style></head><body>' + bloques + '</body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
-    } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+        setTimeout(liberarUrls, 120000);
+    } catch (e) {
+        liberarUrls();
+        toast('Error: ' + (e.message || e), 'error');
+    }
 }
 
 async function generarPdfEstadisticasMultipaginaENRE() {
@@ -6807,26 +6859,30 @@ async function generarPdfEstadisticasMultipaginaENRE() {
     adminTab('estadisticas');
     await cargarEstadisticas();
     await new Promise(r => setTimeout(r, 500));
-    const el = document.getElementById('admin-estadisticas');
-    if (!el) return;
+    const secciones = coleccionSeccionesPdfEstadisticas();
+    if (!secciones.length) { toast('No hay contenido para el PDF', 'error'); return; }
     try {
         toast('Generando PDF…', 'info');
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
-        const canvas = await html2canvasCapturaEstadisticasCompleta(el);
-        if (!canvas) { toast('No se pudo generar el PDF', 'error'); return; }
-        const imgData = canvas.toDataURL('image/jpeg', 0.9);
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 7;
         const usableH = pageH - 2 * margin;
         const imgW = pageW - 2 * margin;
-        const imgH = (canvas.height * imgW) / canvas.width;
-        let yOff = 0;
-        while (yOff < imgH) {
-            if (yOff > 0) pdf.addPage();
-            pdf.addImage(imgData, 'JPEG', margin, margin - yOff, imgW, imgH, undefined, 'FAST');
-            yOff += usableH;
+        let primeraPaginaDoc = true;
+        for (const sec of secciones) {
+            const canvas = await html2canvasCapturaElemento(sec, { delayAfterResize: 100 });
+            if (!canvas) continue;
+            const imgData = canvas.toDataURL('image/jpeg', 0.88);
+            const imgH = (canvas.height * imgW) / canvas.width;
+            let yOff = 0;
+            while (yOff < imgH) {
+                if (!primeraPaginaDoc) pdf.addPage();
+                primeraPaginaDoc = false;
+                pdf.addImage(imgData, 'JPEG', margin, margin - yOff, imgW, imgH, undefined, 'FAST');
+                yOff += usableH;
+            }
         }
         const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
         pdf.save(`gestornova_stats_ENRE_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);

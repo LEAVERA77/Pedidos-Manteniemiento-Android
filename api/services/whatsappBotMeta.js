@@ -106,15 +106,25 @@ export async function handleInboundMetaWhatsAppPayload(body) {
 
 async function processInboundText(fromRaw, text) {
   const phone = String(fromRaw || "").replace(/\D/g, "");
+  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
 
   if (/\bhola\b/i.test(String(text || "").trim())) {
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || '').slice(0, 120) });
     sessions.delete(phone);
-    await reply(phone, MSG_HOLA_GESTORNOVA);
+    if (botOff) {
+      await reply(phone, MSG_HOLA_GESTORNOVA);
+      return;
+    }
+    const tid = botTenantId();
+    const ctx = await loadTenantBotContext(tid);
+    if (!ctx) {
+      await reply(phone, MSG_HOLA_GESTORNOVA);
+      return;
+    }
+    await reply(phone, menuTexto(ctx));
     return;
   }
 
-  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
   if (botOff) return;
 
   const tid = botTenantId();
