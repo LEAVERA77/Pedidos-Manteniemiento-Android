@@ -29,6 +29,7 @@ import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -131,7 +132,8 @@ public class MainActivity extends AppCompatActivity {
         s.setGeolocationEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        s.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        // DEFAULT respeta Cache-Control de GitHub Pages; pull-to-refresh no está en WebView estándar.
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setSupportZoom(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setUserAgentString(
@@ -187,9 +189,14 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                view.loadUrl(url);
-                return true;
+                return handleWebViewUrl(Uri.parse(url));
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return handleWebViewUrl(request.getUrl());
             }
 
             @Override
@@ -199,7 +206,33 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl(BuildConfig.WEB_APP_URL);
+    }
+
+    /**
+     * Solo se carga el host de {@link BuildConfig#WEB_APP_URL}; otros enlaces abren en el navegador
+     * para no exponer los puentes JS a orígenes ajenos.
+     */
+    private boolean handleWebViewUrl(Uri uri) {
+        if (uri == null) return false;
+        String scheme = uri.getScheme();
+        if (scheme == null) return false;
+        if ("javascript".equalsIgnoreCase(scheme)) return false;
+        if ("about".equalsIgnoreCase(scheme)) return false;
+        if ("data".equalsIgnoreCase(scheme) || "blob".equalsIgnoreCase(scheme)) return false;
+
+        Uri base = Uri.parse(BuildConfig.WEB_APP_URL);
+        String allowedHost = base.getHost();
+        String host = uri.getHost();
+        if (allowedHost != null && host != null && host.equalsIgnoreCase(allowedHost)) {
+            return false;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, uri));
+        } catch (Exception e) {
+            Toast.makeText(this, "No se pudo abrir el enlace", Toast.LENGTH_SHORT).show();
+        }
+        return true;
     }
 
     private void iniciarNetworkWatchdog() {
@@ -359,7 +392,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Expone lectura de assets/config.json y versión de la app a JavaScript para WebView file:// */
+    /** Expone lectura de assets/config.json y versión de la app a JavaScript (HTML remoto o file://). */
     private class AndroidConfigBridge {
         @JavascriptInterface
         public String getConfigJson() {

@@ -1,6 +1,8 @@
 # Nexxo (Android)
 
-App Android + WebView con los mismos assets que la versión web en GitHub Pages.
+App Android + WebView: la interfaz se carga desde **GitHub Pages** ([Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)), así los cambios en el repo web llegan al técnico sin nuevo APK. Los secretos siguen en `assets/config.json` (solo en el dispositivo, no en Git).
+
+El archivo `app/src/main/assets/index.html` sigue siendo la fuente para copiar al repo web; la APK ya no lo usa como pantalla principal.
 
 ## Configuración
 

@@ -25,10 +25,17 @@ android {
         applicationId = "com.gestornova.gestion"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 13
-        versionName = "1.0.13"
+        versionCode = 15
+        versionName = "1.0.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // UI HTML/JS desde GitHub Pages: actualizar Pedidos-MG sin nuevo APK.
+        buildConfigField(
+            "String",
+            "WEB_APP_URL",
+            "\"https://leavera77.github.io/Pedidos-MG/\""
+        )
     }
 
     signingConfigs {
