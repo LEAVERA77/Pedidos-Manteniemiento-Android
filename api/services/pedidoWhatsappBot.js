@@ -5,9 +5,19 @@ import {
 
 async function columnasUsuarios() {
   const cols = await query(
-    `SELECT column_name FROM information_schema.columns WHERE table_name = 'usuarios'`
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios'`
   );
   return new Set((cols.rows || []).map((c) => c.column_name));
+}
+
+let _pedidosColsCache = null;
+async function columnasPedidos() {
+  if (_pedidosColsCache) return _pedidosColsCache;
+  const cols = await query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos'`
+  );
+  _pedidosColsCache = new Set((cols.rows || []).map((c) => c.column_name));
+  return _pedidosColsCache;
 }
 
 export async function getFirstAdminUserIdForTenant(tenantId) {
@@ -54,6 +64,7 @@ export async function crearPedidoDesdeWhatsappBot({
   telefonoContacto,
   lat,
   lng,
+  contactName,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -86,30 +97,64 @@ export async function crearPedidoDesdeWhatsappBot({
   if (!row) throw new Error("contador_pedido");
   const numeroPedido = `${row.anio}-${String(row.ultimo_numero).padStart(4, "0")}`;
 
+  const cn = String(contactName || "").trim();
+  const clienteNombre =
+    cn || `WhatsApp ${String(telefonoContacto || "").replace(/\D/g, "")}`.trim() || "WhatsApp";
+
+  const pCols = await columnasPedidos();
+  const hasTenant = pCols.has("tenant_id");
+  const hasOrigen = pCols.has("origen_reclamo");
+
+  const cols = [
+    "numero_pedido",
+    "distribuidor",
+    "setd",
+    "cliente",
+    "tipo_trabajo",
+    "descripcion",
+    "prioridad",
+    "estado",
+    "avance",
+    "lat",
+    "lng",
+    "usuario_id",
+    "usuario_creador_id",
+    "fecha_creacion",
+    "telefono_contacto",
+    "cliente_nombre",
+  ];
+  const vals = [
+    numeroPedido,
+    distribuidor,
+    null,
+    null,
+    tt,
+    de,
+    "Media",
+    "Pendiente",
+    0,
+    lat ?? null,
+    lng ?? null,
+    usuarioId,
+    usuarioId,
+    new Date(),
+    telefonoContacto || null,
+    clienteNombre,
+  ];
+
+  if (hasTenant) {
+    cols.push("tenant_id");
+    vals.push(Number(tenantId));
+  }
+  if (hasOrigen) {
+    cols.push("origen_reclamo");
+    vals.push("whatsapp");
+  }
+
+  const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
   const insert = await query(
-    `INSERT INTO pedidos (
-      numero_pedido, distribuidor, setd, cliente, tipo_trabajo, descripcion, prioridad,
-      estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
-      telefono_contacto, cliente_nombre
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,
-      'Pendiente',0,$8,$9,$10,$10,NOW(),
-      $11,$12
-    ) RETURNING *`,
-    [
-      numeroPedido,
-      distribuidor,
-      null,
-      null,
-      tt,
-      de,
-      "Media",
-      lat ?? null,
-      lng ?? null,
-      usuarioId,
-      telefonoContacto || null,
-      `WhatsApp ${telefonoContacto || ""}`.trim(),
-    ]
+    `INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`,
+    vals
   );
   return insert.rows[0];
 }

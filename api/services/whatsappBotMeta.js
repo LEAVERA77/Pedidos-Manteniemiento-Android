@@ -3,11 +3,16 @@ import { metaSendWhatsAppText } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
+import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 
 const sessions = new Map();
 
 function botTenantId() {
   return Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+}
+
+function sessionKey(phoneDigits, tenantId) {
+  return `${String(phoneDigits || "").replace(/\D/g, "")}:${Number(tenantId)}`;
 }
 
 function normCfg(cfg) {
@@ -88,34 +93,47 @@ export async function handleInboundMetaWhatsAppPayload(body) {
     for (const change of changes) {
       const value = change?.value || {};
       const messages = Array.isArray(value?.messages) ? value.messages : [];
+      const phoneNumberId = value?.metadata?.phone_number_id ?? null;
+      const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
       for (const msg of messages) {
         if (msg?.type !== "text") continue;
         const from = String(msg?.from || "");
         const text = String(msg?.text?.body || "").trim();
         if (!from || !text) continue;
+        const fromNorm = from.replace(/\D/g, "");
+        const cMatch = contacts.find((c) => String(c?.wa_id || "").replace(/\D/g, "") === fromNorm);
+        const contactName = cMatch?.profile?.name || contacts[0]?.profile?.name || null;
         try {
-          await processInboundText(from, text);
+          await processInboundText({
+            fromRaw: from,
+            text,
+            phoneNumberId,
+            contactName,
+          });
         } catch (e) {
           console.error("[whatsapp-bot-meta] process error", e);
-          await reply(from.replace(/\D/g, ""), "Ocurrió un error. Intentá más tarde o contactá a la oficina.");
+          await reply(fromNorm, "Ocurrió un error. Intentá más tarde o contactá a la oficina.");
         }
       }
     }
   }
 }
 
-async function processInboundText(fromRaw, text) {
+async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
   const phone = String(fromRaw || "").replace(/\D/g, "");
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
 
+  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
+  const tid = resolvedTid ?? botTenantId();
+  const sk = sessionKey(phone, tid);
+
   if (/\bhola\b/i.test(String(text || "").trim())) {
-    console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || '').slice(0, 120) });
-    sessions.delete(phone);
+    console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });
+    sessions.delete(sk);
     if (botOff) {
       await reply(phone, MSG_HOLA_GESTORNOVA);
       return;
     }
-    const tid = botTenantId();
     const ctx = await loadTenantBotContext(tid);
     if (!ctx) {
       await reply(phone, MSG_HOLA_GESTORNOVA);
@@ -127,7 +145,6 @@ async function processInboundText(fromRaw, text) {
 
   if (botOff) return;
 
-  const tid = botTenantId();
   const ctx = await loadTenantBotContext(tid);
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.");
@@ -136,12 +153,12 @@ async function processInboundText(fromRaw, text) {
 
   const lower = text.toLowerCase().trim();
   if (lower === "menú" || lower === "menu" || lower === "0") {
-    sessions.delete(phone);
+    sessions.delete(sk);
     await reply(phone, menuTexto(ctx));
     return;
   }
 
-  let sess = sessions.get(phone);
+  let sess = sessions.get(sk);
 
   if (!sess || sess.step === "idle") {
     const n = parseInt(text, 10);
@@ -153,7 +170,13 @@ async function processInboundText(fromRaw, text) {
       return;
     }
     const tipoSel = ctx.tipos[n - 1];
-    sessions.set(phone, { step: "awaiting_desc", tipo: tipoSel, tenantId: tid, tipoCliente: ctx.tipo });
+    sessions.set(sk, {
+      step: "awaiting_desc",
+      tipo: tipoSel,
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+    });
     await reply(
       phone,
       `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`
@@ -163,7 +186,7 @@ async function processInboundText(fromRaw, text) {
 
   if (sess.step === "awaiting_desc") {
     if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
-      sessions.delete(phone);
+      sessions.delete(sk);
       await reply(phone, "Reiniciamos. " + menuTexto(ctx));
       return;
     }
@@ -181,15 +204,16 @@ async function processInboundText(fromRaw, text) {
         telefonoContacto: phone,
         lat: Number.isFinite(ctx.lat) ? ctx.lat : null,
         lng: Number.isFinite(ctx.lng) ? ctx.lng : null,
+        contactName: sess.contactName || contactName || null,
       });
-      sessions.delete(phone);
+      sessions.delete(sk);
       await reply(
         phone,
         `✅ *Pedido registrado*\n\nNúmero: *${pedido.numero_pedido}*\nTipo: ${sess.tipo}\n\nGracias. Te contactaremos si hace falta más información.`
       );
     } catch (e) {
       const m = String(e?.message || "");
-      sessions.delete(phone);
+      sessions.delete(sk);
       if (m === "sin_usuario_admin_tenant") {
         await reply(phone, "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.");
       } else {
