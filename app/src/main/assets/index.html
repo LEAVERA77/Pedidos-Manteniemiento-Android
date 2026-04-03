@@ -1772,35 +1772,28 @@ let DIST = []; // Se carga desde Neon: tabla distribuidores
 
 const TIPOS_RECLAMO_POR_RUBRO = {
     municipio: [
-        'Alumbrado Público (Foco quemado/Poste)',
+        'Alumbrado Público',
         'Bacheo y Pavimento',
-        'Recolección de Residuos / Poda',
-        'Mantenimiento de Espacios Verdes',
-        'Señalización y Semáforos',
-        'Limpieza de Pluviales / Zanjas',
-        'Recolección (otros)',
-        'Cloacas',
-        'Otros'
+        'Recolección/Poda',
+        'Espacios Verdes',
+        'Señalización/Semáforos',
+        'Limpieza de Zanjas'
     ],
     cooperativa_agua: [
-        'Pérdida en Vereda / Calzada',
-        'Falta de Presión / Sin Servicio',
-        'Calidad del Agua (Turbiedad)',
-        'Obstrucción',
+        'Pérdida en Vereda/Calle',
+        'Falta de Presión',
+        'Calidad del Agua',
+        'Obstrucción de Cloaca',
         'Cambio de Medidor',
-        'Conexión Nueva',
-        'Otros'
+        'Conexión Nueva'
     ],
     cooperativa_electrica: [
-        'Corte de Energía (Falta de Fase/Total)',
-        'Cables Caídos / Peligro en Vía Pública',
-        'Problemas de Tensión (Alta/Baja)',
-        'Poste Inclinado / Dañado',
-        'Cambio de Medidor / Conexión',
-        'Riesgo en la vía pública',
-        'Corrimiento de poste/columna',
-        'Pedido de factibilidad (nuevo servicio)',
-        'Otros'
+        'Corte de Energía',
+        'Cables Caídos/Peligro',
+        'Problemas de Tensión',
+        'Poste Inclinado/Dañado',
+        'Cambio de Medidor',
+        'Alumbrado Público (Mantenimiento)'
     ]
 };
 
@@ -1834,6 +1827,14 @@ function tiposReclamoSeleccionables() {
     const u = new Set();
     Object.values(TIPOS_RECLAMO_POR_RUBRO).forEach(arr => arr.forEach(x => u.add(x)));
     return [...u];
+}
+
+/** Municipio → vecino; cooperativas → socio (etiquetas UI / impresión). */
+function etiquetaFirmaPersona() {
+    return String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio' ? 'vecino' : 'socio';
+}
+function etiquetaCampoClientePedido() {
+    return String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio' ? 'Vecino' : 'Cliente';
 }
 
 function poblarSelectTiposReclamo() {
@@ -3901,10 +3902,11 @@ async function imprimirPedidoAsync(p) {
         matSection = `<h2>🔧 Materiales</h2><p style="font-size:9pt">Sin datos (sin conexión).</p>`;
     }
 
+    const _labFirma = etiquetaFirmaPersona();
     const firmaSection = p.es === 'Cerrado'
         ? (p.firma
-            ? `<h2>✍️ Firma del socio</h2><div><img src="${String(p.firma).replace(/"/g, '&quot;')}" class="firma-print" alt="Firma"/></div>`
-            : `<h2>✍️ Firma del socio</h2><p style="font-size:9pt"><em>Sin firma registrada.</em></p>`)
+            ? `<h2>✍️ Firma del ${_labFirma}</h2><div><img src="${String(p.firma).replace(/"/g, '&quot;')}" class="firma-print" alt="Firma"/></div>`
+            : `<h2>✍️ Firma del ${_labFirma}</h2><p style="font-size:9pt"><em>Sin firma registrada.</em></p>`)
         : '';
 
     const contenidoCuerpo = `
@@ -5044,11 +5046,12 @@ function abrirCierre(id) {
     
     app.cid = id;
     const lblFirma = document.getElementById('lbl-firma-cierre');
+    const _fp = etiquetaFirmaPersona();
     if (lblFirma) {
         if (pedidoTieneClienteCargado(p)) {
-            lblFirma.innerHTML = '<i class="fas fa-signature"></i> Firma del cliente / socio <span style="font-weight:600;color:#b45309">(obligatoria)</span>';
+            lblFirma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${_fp} <span style="font-weight:600;color:#b45309">(obligatoria)</span>`;
         } else {
-            lblFirma.innerHTML = '<i class="fas fa-signature"></i> Firma del cliente / socio <span style="font-weight:400;opacity:.88;font-size:.88em">(opcional — no hay cliente en el pedido)</span>';
+            lblFirma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${_fp} <span style="font-weight:400;opacity:.88;font-size:.88em">(opcional — no hay ${etiquetaCampoClientePedido().toLowerCase()} en el pedido)</span>`;
         }
     }
     document.getElementById('ci').innerHTML = `
@@ -5157,6 +5160,8 @@ function detalle(p) {
         ? `${findUser(p.tai) || ('id ' + p.tai)}${rolAsig ? ' · ' + rolAsig : ''}`
         : 'Sin asignar';
     const fasiStr = p.fasi ? new Date(p.fasi).toLocaleString('es-AR', {...tz, hour12:false}) : '';
+    const labClienteDet = etiquetaCampoClientePedido();
+    const labFirmaDet = etiquetaFirmaPersona();
     let chkResumen = '';
     try {
         const o = p.chkl ? JSON.parse(p.chkl) : null;
@@ -5222,7 +5227,7 @@ function detalle(p) {
             <h4>🏢 Datos del Trabajo</h4>
             <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis}</span></div>
             ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
-            ${p.cl ? `<div class="dr"><span class="dl">Cliente</span><span class="dv">${p.cl}</span></div>` : ''}
+            ${p.cl ? `<div class="dr"><span class="dl">${labClienteDet}</span><span class="dv">${p.cl}</span></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         
@@ -5234,7 +5239,7 @@ function detalle(p) {
             ${p.tr ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Trabajo</span><div class="trb">${p.tr}</div></div>` : ''}
             ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
             ${chkResumen}
-            ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del socio</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
+            ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
 
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
@@ -5657,13 +5662,15 @@ function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
 }
 function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
+    const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';
+    const persona = esMunicipio ? 'vecino' : 'socio';
     const lbN = document.getElementById('lbl-nis');
     const inpN = document.getElementById('nis');
     if (lbN) lbN.textContent = req ? 'NIS / Medidor *' : 'NIS / Medidor';
     if (inpN) {
         if (req) {
             inpN.setAttribute('required', 'required');
-            inpN.placeholder = 'Obligatorio — NIS o número de medidor del socio';
+            inpN.placeholder = `Obligatorio — NIS o medidor del ${persona}`;
         } else {
             inpN.removeAttribute('required');
             inpN.placeholder = 'Opcional (obligatorio en conexión / medidor / factibilidad según tipo)';
@@ -5671,10 +5678,12 @@ function syncNisClienteReclamoConexionUI() {
     }
     const lb = document.getElementById('lbl-cl');
     const inp = document.getElementById('cl');
-    if (lb) lb.textContent = req ? 'Cliente *' : 'Cliente';
+    const etiquetaPersona = esMunicipio ? 'Vecino' : 'Cliente';
+    if (lb) lb.textContent = req ? `${etiquetaPersona} *` : etiquetaPersona;
     if (inp) {
         if (req) inp.setAttribute('required', 'required');
         else inp.removeAttribute('required');
+        inp.placeholder = esMunicipio ? 'Nombre del vecino (si aplica)' : 'Nombre o razón social del socio';
     }
 }
 const st = document.getElementById('tt');
@@ -6004,10 +6013,17 @@ function aplicarEtiquetasPorTipo(tipo) {
             tab.innerHTML = `<i class="fas fa-address-book"></i> ${etiqueta}`;
         }
     });
+    const h3cat = document.querySelector('#admin-socios > div:first-of-type h3');
+    if (h3cat) {
+        h3cat.textContent = esMunicipio
+            ? 'Catálogo de vecinos (NIS / medidor)'
+            : 'Catálogo de socios (NIS / medidor)';
+    }
     const firma = document.getElementById('lbl-firma-cierre');
     if (firma) {
         firma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${esMunicipio ? 'vecino' : 'socio'}`;
     }
+    try { syncNisClienteReclamoConexionUI(); } catch (_) {}
 }
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');

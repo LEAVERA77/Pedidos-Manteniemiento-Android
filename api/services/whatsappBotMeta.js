@@ -1,5 +1,9 @@
 import { query } from "../db/neon.js";
-import { metaSendWhatsAppText } from "./metaWhatsapp.js";
+import {
+  metaSendWhatsAppText,
+  sendWhatsAppInteractiveList,
+  decodeWhatsAppListRowId,
+} from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
@@ -46,7 +50,21 @@ async function loadTenantBotContext(tenantId) {
   };
 }
 
-function menuTexto(ctx) {
+function textoBienvenidaYAyuda(ctx) {
+  const n = ctx.nombre || "nuestro servicio";
+  const max = ctx.tipos?.length || 0;
+  return (
+    `Bienvenido al centro de atención de *${n}*.\n\n` +
+    `Para ver los tipos de reclamo, escribí *Cargar reclamo* (te enviaremos una lista en el chat).\n\n` +
+    (max
+      ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
+      : "") +
+    `Enviá *menú* o *0* para repetir este mensaje.`
+  );
+}
+
+/** Menú solo texto (respaldo si la lista interactiva falla o clientes antiguos). */
+function menuTextoNumerado(ctx) {
   const lineas = [
     `📋 *${ctx.nombre || "Pedidos"}*`,
     "",
@@ -57,14 +75,22 @@ function menuTexto(ctx) {
     lineas.push(`${i + 1}) ${t}`);
   });
   lineas.push("");
-  lineas.push("0) Ver este menú de nuevo");
-  lineas.push("");
-  lineas.push("Escribí *hola* para saludar o *menú* para ver esta lista otra vez.");
+  lineas.push("O escribí *Cargar reclamo* para abrir la lista.");
   return lineas.join("\n");
 }
 
-const MSG_HOLA_GESTORNOVA =
-  "¡Bienvenido a GestorNova! Pronto podrás cargar tu reclamo por aquí.";
+function esPedidoCargarReclamo(text) {
+  const n = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  if (/\bcargar\s+reclamo\b/.test(n)) return true;
+  if (/\bnuevo\s+reclamo\b/.test(n)) return true;
+  if (/\bquiero\s+(hacer\s+)?(un\s+)?reclamo\b/.test(n)) return true;
+  if (n === "reclamo" || n === "lista" || n === "tipos") return true;
+  return false;
+}
 
 async function reply(phoneDigits, text) {
   const r = await metaSendWhatsAppText(phoneDigits, text);
@@ -86,6 +112,29 @@ async function reply(phoneDigits, text) {
   return r;
 }
 
+async function replyListaTiposReclamo(phoneDigits, ctx) {
+  const bodyText = `Elegí el tipo que mejor describe tu reclamo:`;
+  const r = await sendWhatsAppInteractiveList(phoneDigits, {
+    bodyText,
+    buttonText: "Ver tipos",
+    sectionTitle: "Tipos de reclamo",
+    tipos: ctx.tipos,
+  });
+  const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
+  try {
+    await logWhatsappMensajeEnviado(phoneDigits, logTxt, r.ok);
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] log enviado", e.message);
+  }
+  if (!r.ok) {
+    console.error("[whatsapp-bot-meta] lista interactiva falló, menú texto", r.graph || r.error);
+    await reply(phoneDigits, menuTextoNumerado(ctx));
+  } else {
+    console.log("[webhook-meta-whatsapp] outbound_list", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
+  }
+  return r;
+}
+
 export async function handleInboundMetaWhatsAppPayload(body) {
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
@@ -96,13 +145,34 @@ export async function handleInboundMetaWhatsAppPayload(body) {
       const phoneNumberId = value?.metadata?.phone_number_id ?? null;
       const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
       for (const msg of messages) {
-        if (msg?.type !== "text") continue;
         const from = String(msg?.from || "");
-        const text = String(msg?.text?.body || "").trim();
-        if (!from || !text) continue;
+        if (!from) continue;
         const fromNorm = from.replace(/\D/g, "");
         const cMatch = contacts.find((c) => String(c?.wa_id || "").replace(/\D/g, "") === fromNorm);
         const contactName = cMatch?.profile?.name || contacts[0]?.profile?.name || null;
+
+        if (msg?.type === "interactive") {
+          const ir = msg.interactive;
+          if (ir?.type === "list_reply") {
+            const rowId = ir?.list_reply?.id;
+            try {
+              await processListReplySelection({
+                fromRaw: from,
+                listRowId: rowId,
+                phoneNumberId,
+                contactName,
+              });
+            } catch (e) {
+              console.error("[whatsapp-bot-meta] list_reply error", e);
+              await reply(fromNorm, "No pudimos leer tu elección. Escribí *menú* para empezar de nuevo.");
+            }
+          }
+          continue;
+        }
+
+        if (msg?.type !== "text") continue;
+        const text = String(msg?.text?.body || "").trim();
+        if (!text) continue;
         try {
           await processInboundText({
             fromRaw: from,
@@ -119,6 +189,37 @@ export async function handleInboundMetaWhatsAppPayload(body) {
   }
 }
 
+async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
+  const phone = String(fromRaw || "").replace(/\D/g, "");
+  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
+  if (botOff) return;
+
+  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
+  const tid = resolvedTid ?? botTenantId();
+  const sk = sessionKey(phone, tid);
+  const ctx = await loadTenantBotContext(tid);
+  if (!ctx) {
+    await reply(phone, "Servicio no configurado. Contactá al administrador.");
+    return;
+  }
+  const tipo = decodeWhatsAppListRowId(listRowId);
+  if (!tipo || !ctx.tipos.includes(tipo)) {
+    await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.");
+    return;
+  }
+  sessions.set(sk, {
+    step: "awaiting_desc",
+    tipo,
+    tenantId: tid,
+    tipoCliente: ctx.tipo,
+    contactName: contactName || null,
+  });
+  await reply(
+    phone,
+    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`
+  );
+}
+
 async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
   const phone = String(fromRaw || "").replace(/\D/g, "");
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
@@ -130,16 +231,20 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (/\bhola\b/i.test(String(text || "").trim())) {
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });
     sessions.delete(sk);
-    if (botOff) {
-      await reply(phone, MSG_HOLA_GESTORNOVA);
-      return;
-    }
     const ctx = await loadTenantBotContext(tid);
-    if (!ctx) {
-      await reply(phone, MSG_HOLA_GESTORNOVA);
+    const nombre = ctx?.nombre || "GestorNova";
+    if (botOff) {
+      await reply(
+        phone,
+        `Bienvenido al centro de atención de *${nombre}*. El asistente automático está desactivado.`
+      );
       return;
     }
-    await reply(phone, menuTexto(ctx));
+    if (!ctx) {
+      await reply(phone, `Bienvenido al centro de atención de *${nombre}*. Estamos completando la configuración del servicio.`);
+      return;
+    }
+    await reply(phone, textoBienvenidaYAyuda(ctx));
     return;
   }
 
@@ -154,18 +259,22 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const lower = text.toLowerCase().trim();
   if (lower === "menú" || lower === "menu" || lower === "0") {
     sessions.delete(sk);
-    await reply(phone, menuTexto(ctx));
+    await reply(phone, textoBienvenidaYAyuda(ctx));
     return;
   }
 
   let sess = sessions.get(sk);
 
   if (!sess || sess.step === "idle") {
+    if (esPedidoCargarReclamo(text)) {
+      await replyListaTiposReclamo(phone, ctx);
+      return;
+    }
     const n = parseInt(text, 10);
     if (!Number.isFinite(n) || n < 1 || n > ctx.tipos.length) {
       await reply(
         phone,
-        `Opción no válida. Escribí un número del *1* al *${ctx.tipos.length}*, o *menú* para ver la lista completa.`
+        `Opción no válida. Escribí *Cargar reclamo* para ver la lista, un número del *1* al *${ctx.tipos.length}*, o *menú* para ayuda.`
       );
       return;
     }
@@ -187,7 +296,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (sess.step === "awaiting_desc") {
     if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
       sessions.delete(sk);
-      await reply(phone, "Reiniciamos. " + menuTexto(ctx));
+      await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx));
       return;
     }
     const desc = text;

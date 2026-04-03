@@ -77,7 +77,12 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
       for (const msg of messages) {
         const waId = String(msg?.from || "");
         const type = String(msg?.type || "unknown");
-        const textBody = type === "text" ? String(msg?.text?.body || "") : "";
+        let textBody = "";
+        if (type === "text") textBody = String(msg?.text?.body || "");
+        else if (type === "interactive" && msg?.interactive?.type === "list_reply") {
+          const lr = msg.interactive.list_reply || {};
+          textBody = `[list_reply] ${lr.title || ""}`;
+        }
         console.log("[webhook-meta] inbound", {
           object: payload?.object,
           wa_id: waId,
@@ -115,6 +120,16 @@ async function processInboundPayloadAsync(payload) {
           if (waId && text) {
             try {
               await logWhatsappMensajeRecibido(waId, text);
+            } catch (e) {
+              console.error("[webhook-meta] log recibido DB", e.message);
+            }
+          }
+        } else if (type === "interactive" && msg?.interactive?.type === "list_reply") {
+          const lr = msg.interactive.list_reply || {};
+          const line = `[lista] ${lr.title || ""}`;
+          if (waId) {
+            try {
+              await logWhatsappMensajeRecibido(waId, line);
             } catch (e) {
               console.error("[webhook-meta] log recibido DB", e.message);
             }
