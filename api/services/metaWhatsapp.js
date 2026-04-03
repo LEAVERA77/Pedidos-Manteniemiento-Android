@@ -6,11 +6,10 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
-export async function sendWhatsAppText(toDigits, bodyText) {
-  const token = process.env.META_ACCESS_TOKEN || "";
-  const phoneNumberId = process.env.META_PHONE_NUMBER_ID || "";
-  if (!token || !phoneNumberId) {
-    console.error("[meta-whatsapp] missing META_ACCESS_TOKEN or META_PHONE_NUMBER_ID");
+export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { accessToken, phoneNumberId }) {
+  const token = String(accessToken || "").trim();
+  const pid = String(phoneNumberId || "").trim();
+  if (!token || !pid) {
     return { ok: false, error: "missing_meta_credentials" };
   }
   const to = String(toDigits || "").replace(/\D/g, "");
@@ -19,7 +18,7 @@ export async function sendWhatsAppText(toDigits, bodyText) {
     return { ok: false, error: "invalid_params" };
   }
 
-  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
+  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${pid}/messages`;
   const payload = {
     messaging_product: "whatsapp",
     to,
@@ -44,7 +43,7 @@ export async function sendWhatsAppText(toDigits, bodyText) {
     console.error("[meta-whatsapp] Graph API error", { status: resp.status, to: to.slice(0, 4) + "…", detail: errPart });
     if (graph?.error?.code === 190) {
       console.error(
-        "[meta-whatsapp] Token Meta expirado o inválido: en developers.facebook.com generá un token de acceso (System User o de larga duración) y actualizá META_ACCESS_TOKEN en Render (o el host donde corre la API)."
+        "[meta-whatsapp] Token Meta expirado o inválido: renová el token en Meta y actualizá META_ACCESS_TOKEN o clientes.configuracion.meta_access_token."
       );
     }
     return { ok: false, status: resp.status, graph };
@@ -55,6 +54,13 @@ export async function sendWhatsAppText(toDigits, bodyText) {
   }
   console.log("[meta-whatsapp] mensaje enviado OK", { to: to.slice(0, 4) + "…", messageId: graph?.messages?.[0]?.id || "—" });
   return { ok: true, graph };
+}
+
+export async function sendWhatsAppText(toDigits, bodyText) {
+  return sendWhatsAppTextWithCredentials(toDigits, bodyText, {
+    accessToken: process.env.META_ACCESS_TOKEN || "",
+    phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
+  });
 }
 
 /** Alias histórico en el código. */
@@ -87,8 +93,8 @@ export function decodeWhatsAppListRowId(id) {
  * El id de cada fila codifica el texto completo del tipo de reclamo (UTF-8 → base64url).
  */
 export async function sendWhatsAppInteractiveList(toDigits, { bodyText, buttonText, sectionTitle, tipos }) {
-  const token = process.env.META_ACCESS_TOKEN || "";
-  const phoneNumberId = process.env.META_PHONE_NUMBER_ID || "";
+  const token = String(process.env.META_ACCESS_TOKEN || "").trim();
+  const phoneNumberId = String(process.env.META_PHONE_NUMBER_ID || "").trim();
   if (!token || !phoneNumberId) {
     console.error("[meta-whatsapp] missing META_ACCESS_TOKEN or META_PHONE_NUMBER_ID");
     return { ok: false, error: "missing_meta_credentials" };

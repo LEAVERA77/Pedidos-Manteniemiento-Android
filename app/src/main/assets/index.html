@@ -509,6 +509,9 @@ textarea{resize:vertical;min-height:80px}
         <div class="fg hf"><label for="sd">SETD</label><input type="text" id="sd" placeholder="Ej: 1234"></div>
         <div class="fg hf"><label for="cl" id="lbl-cl">Cliente</label><input type="text" id="cl" placeholder="Nombre o razón social"></div>
       </div>
+      <div class="fg"><label for="ped-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp)</label>
+        <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — para avisar al cerrar el reclamo">
+      </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
         <select id="tt" required></select>
       </div>
@@ -568,6 +571,10 @@ textarea{resize:vertical;min-height:80px}
       <div class="fg" style="padding:0;margin-top:1rem">
         <label for="tc2"><i class="fas fa-user-hard-hat"></i> Técnico responsable</label>
         <input type="text" id="tc2" placeholder="Nombre del técnico">
+      </div>
+      <div class="fg" style="padding:0;margin-top:1rem">
+        <label for="cierre-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp) del cliente</label>
+        <input type="tel" id="cierre-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — si no estaba en el pedido, cargalo para el aviso al cerrar">
       </div>
       <div class="fg" style="padding:0;margin-top:1rem">
         <label><i class="fas fa-camera"></i> Foto del cierre (opcional)</label>
@@ -1777,7 +1784,10 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Recolección/Poda',
         'Espacios Verdes',
         'Señalización/Semáforos',
-        'Limpieza de Zanjas'
+        'Limpieza de Zanjas',
+        'Recolección (otros)',
+        'Cloacas',
+        'Otros'
     ],
     cooperativa_agua: [
         'Pérdida en Vereda/Calle',
@@ -1785,7 +1795,8 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Calidad del Agua',
         'Obstrucción de Cloaca',
         'Cambio de Medidor',
-        'Conexión Nueva'
+        'Conexión Nueva',
+        'Otros'
     ],
     cooperativa_electrica: [
         'Corte de Energía',
@@ -1793,7 +1804,11 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Problemas de Tensión',
         'Poste Inclinado/Dañado',
         'Cambio de Medidor',
-        'Alumbrado Público (Mantenimiento)'
+        'Alumbrado Público (Mantenimiento)',
+        'Riesgo en la vía pública',
+        'Corrimiento de poste/columna',
+        'Pedido de factibilidad (nuevo servicio)',
+        'Otros'
     ]
 };
 
@@ -1860,7 +1875,7 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
-    'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad']);
+    'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto']);
 
 const app = {
     u: null,
@@ -1889,6 +1904,28 @@ function apiUrl(path) {
     const base = getApiBaseUrl();
     if (!base) return p;
     return base + (p.startsWith('/') ? p : '/' + p);
+}
+/** Tras cerrar por SQL directo (Neon), dispara el aviso WA en la API sin bloquear la UI. */
+async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
+    const base = getApiBaseUrl();
+    const tok = app.apiToken;
+    if (!base || !tok || pedidoId == null) return;
+    const pid = Number(pedidoId);
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    try {
+        const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
+        const resp = await fetch(apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
+            const t = await resp.text();
+            console.warn('[wa-cierre] API', resp.status, t.slice(0, 200));
+        }
+    } catch (e) {
+        console.warn('[wa-cierre]', e && e.message);
+    }
 }
 async function loginApiJwt(email, password) {
     const ms = 15000;
@@ -1992,6 +2029,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS firma_cliente TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS checklist_seguridad TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS usuario_creador_id INTEGER`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS telefono_contacto TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS socios_catalogo(
                     id SERIAL PRIMARY KEY,
                     nis_medidor TEXT NOT NULL UNIQUE,
@@ -2273,7 +2311,8 @@ const norm = p => ({
     tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
-    chkl: p.checklist_seguridad || null
+    chkl: p.checklist_seguridad || null,
+    tel: (p.telefono_contacto || '').trim()
 });
 
 function distanciaKm(lat1, lon1, lat2, lon2) {
@@ -4681,10 +4720,11 @@ document.getElementById('pf').addEventListener('submit', async e => {
             return;
         }
         const uidCre = app.u?.id || 1;
+        const telVal = (document.getElementById('ped-tel-contacto')?.value || '').trim();
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
-            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor
+            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto
         ) VALUES(
             ${esc(numPedido)},
             ${esc(document.getElementById('di2').value)},
@@ -4702,7 +4742,8 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(xInchauspe)},
             ${esc(yInchauspe)},
             ${esc(new Date().toISOString())},
-            ${esc(nisVal || null)}
+            ${esc(nisVal || null)},
+            ${esc(telVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -4728,6 +4769,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 foto_cierre: null,
                 x_inchauspe: xInchauspe, y_inchauspe: yInchauspe,
                 nis: nisVal,
+                tel: telVal,
                 _offline: true
             };
             app.p.unshift(pedidoLocal);
@@ -4823,6 +4865,7 @@ async function updPedido(id, campos, usuarioId) {
             fecha_asignacion: 'fasi',
             firma_cliente: 'firma',
             checklist_seguridad: 'chkl',
+            telefono_contacto: 'tel',
             usuario_inicio_id: 'ui2',
             usuario_cierre_id: 'uci',
             usuario_avance_id: 'uav'
@@ -5060,6 +5103,8 @@ function abrirCierre(id) {
     `;
     document.getElementById('tr').value = '';
     document.getElementById('tc2').value = app.u?.nombre || '';
+    const telCierreIn = document.getElementById('cierre-tel-contacto');
+    if (telCierreIn) telCierreIn.value = (p.tel || '').trim();
     document.getElementById('tc').textContent = '0';
     ['chk-epp','chk-corte','chk-senal'].forEach(id => {
         const el = document.getElementById(id);
@@ -5098,7 +5143,8 @@ document.getElementById('cc2').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...';
     try {
-        await updPedido(app.cid, {
+        const telCierre = (document.getElementById('cierre-tel-contacto')?.value || '').trim();
+        const camposCierre = {
             estado: 'Cerrado',
             avance: 100,
             trabajo_realizado: tr,
@@ -5107,7 +5153,15 @@ document.getElementById('cc2').addEventListener('click', async () => {
             foto_cierre: fotoCierreTemp || null,
             firma_cliente: firmaData,
             checklist_seguridad: checklistJson
-        });
+        };
+        if (telCierre) camposCierre.telefono_contacto = telCierre;
+        await updPedido(app.cid, camposCierre, app.u?.id);
+        if (!modoOffline && NEON_OK && app.apiToken && !String(app.cid).startsWith('off_')) {
+            const pidNum = parseInt(app.cid, 10);
+            if (Number.isFinite(pidNum) && pidNum > 0) {
+                void notificarCierreWhatsappApi(pidNum, telCierre || undefined);
+            }
+        }
         fotoCierreTemp = null;
         closeAll();
         toast('Pedido cerrado', 'success');
@@ -5228,6 +5282,7 @@ function detalle(p) {
             <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis}</span></div>
             ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
             ${p.cl ? `<div class="dr"><span class="dl">${labClienteDet}</span><span class="dv">${p.cl}</span></div>` : ''}
+            ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         

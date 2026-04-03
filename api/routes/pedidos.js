@@ -8,9 +8,66 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
 } from "../services/tiposReclamo.js";
+import { notifyPedidoCierreWhatsAppSafe } from "../services/whatsappService.js";
 
 const router = express.Router();
 router.use(authMiddleware);
+
+let _pedidosHasTenantId;
+async function pedidosTableHasTenantId() {
+  if (_pedidosHasTenantId !== undefined) return _pedidosHasTenantId;
+  try {
+    const c = await query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+    );
+    _pedidosHasTenantId = c.rows.length > 0;
+  } catch {
+    _pedidosHasTenantId = false;
+  }
+  return _pedidosHasTenantId;
+}
+
+async function assertPedidoMismoTenant(pedido, userId) {
+  if (!(await pedidosTableHasTenantId())) return;
+  if (pedido.tenant_id == null) return;
+  const ut = await getUserTenantId(userId);
+  if (Number(pedido.tenant_id) !== Number(ut)) {
+    const e = new Error("Sin permiso para este pedido");
+    e.statusCode = 403;
+    throw e;
+  }
+}
+
+async function loadNombreCliente(tenantId) {
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid)) return "GestorNova";
+  const r = await query(`SELECT nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
+  return String(r.rows?.[0]?.nombre || "GestorNova").trim() || "GestorNova";
+}
+
+function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
+  setImmediate(() => {
+    (async () => {
+      try {
+        const tenantId =
+          row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
+            ? Number(row.tenant_id)
+            : await getUserTenantId(userId);
+        const nombreEntidad = await loadNombreCliente(tenantId);
+        const phone = bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
+        await notifyPedidoCierreWhatsAppSafe({
+          tenantId,
+          numeroPedido: row.numero_pedido,
+          nombreEntidad,
+          telefonoContactoRaw: phone,
+          pedidoId: row.id,
+        });
+      } catch (e) {
+        console.error("[pedidos] notify cierre WA (no bloqueante)", e.message);
+      }
+    })();
+  });
+}
 
 async function getPedidoById(id) {
   const r = await query("SELECT * FROM pedidos WHERE id = $1 LIMIT 1", [id]);
@@ -187,6 +244,12 @@ router.get("/:id", async (req, res) => {
   try {
     const p = await getPedidoById(req.params.id);
     if (!p) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(p, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
     if (req.user.rol !== "admin" && p.tecnico_asignado_id && p.tecnico_asignado_id !== req.user.id) {
       return res.status(403).json({ error: "Sin permiso para ver este pedido" });
     }
@@ -196,11 +259,50 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+/** Tras cerrar vía SQL en la app, dispara aviso WA al teléfono del pedido (mismas credenciales que el tenant). */
+router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pedido = await getPedidoById(id);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (String(pedido.estado || "") !== "Cerrado") {
+      return res.status(400).json({ error: "El pedido debe estar en estado Cerrado" });
+    }
+    const ut = await getUserTenantId(req.user.id);
+    const tenantId =
+      pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    const nombreEntidad = await loadNombreCliente(tenantId);
+    const phoneOverride = req.body?.telefono_contacto;
+    const r = await notifyPedidoCierreWhatsAppSafe({
+      tenantId,
+      numeroPedido: pedido.numero_pedido,
+      nombreEntidad,
+      telefonoContactoRaw: phoneOverride !== undefined ? phoneOverride : pedido.telefono_contacto,
+      pedidoId: pedido.id,
+    });
+    return res.json({ ok: true, ...r });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo procesar la notificación", detail: error.message });
+  }
+});
+
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
     const pedido = await getPedidoById(id);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
 
     const {
       estado,
@@ -215,6 +317,7 @@ router.put("/:id", async (req, res) => {
       cliente_direccion,
       cliente_numero_puerta,
       cliente_referencia,
+      telefono_contacto,
     } = req.body;
 
     const fotosB64 = parseFotosBase64(req.body);
@@ -224,6 +327,7 @@ router.put("/:id", async (req, res) => {
       mergedUrls = [...mergedUrls, ...newUrls];
     }
 
+    const estadoAntes = String(pedido.estado || "");
     const r = await query(
       `UPDATE pedidos SET
          estado = COALESCE($2, estado),
@@ -243,7 +347,8 @@ router.put("/:id", async (req, res) => {
          cliente_nombre = COALESCE($12, cliente_nombre),
          cliente_direccion = COALESCE($13, cliente_direccion),
          cliente_numero_puerta = COALESCE($14, cliente_numero_puerta),
-         cliente_referencia = COALESCE($15, cliente_referencia)
+         cliente_referencia = COALESCE($15, cliente_referencia),
+         telefono_contacto = COALESCE($16, telefono_contacto)
        WHERE id = $1
        RETURNING *`,
       [
@@ -262,9 +367,15 @@ router.put("/:id", async (req, res) => {
         cliente_direccion ?? null,
         cliente_numero_puerta ?? null,
         cliente_referencia ?? null,
+        telefono_contacto ?? null,
       ]
     );
-    return res.json(r.rows[0]);
+    const updated = r.rows[0];
+    const becameCerrado = String(estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
+    if (becameCerrado) {
+      scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
+    }
+    return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar pedido", detail: error.message });
   }

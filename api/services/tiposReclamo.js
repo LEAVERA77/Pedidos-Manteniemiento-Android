@@ -11,6 +11,9 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Espacios Verdes",
     "Señalización/Semáforos",
     "Limpieza de Zanjas",
+    "Recolección (otros)",
+    "Cloacas",
+    "Otros",
   ],
   cooperativa_agua: [
     "Pérdida en Vereda/Calle",
@@ -19,6 +22,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Obstrucción de Cloaca",
     "Cambio de Medidor",
     "Conexión Nueva",
+    "Otros",
   ],
   cooperativa_electrica: [
     "Corte de Energía",
@@ -27,6 +31,10 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Poste Inclinado/Dañado",
     "Cambio de Medidor",
     "Alumbrado Público (Mantenimiento)",
+    "Riesgo en la vía pública",
+    "Corrimiento de poste/columna",
+    "Pedido de factibilidad (nuevo servicio)",
+    "Otros",
   ],
 };
 
