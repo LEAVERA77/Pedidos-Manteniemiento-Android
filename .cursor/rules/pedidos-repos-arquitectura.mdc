@@ -1,0 +1,28 @@
+---
+description: Dos repos Pedidos-MG vs Pedidos-Mantenimiento-Android — dónde aplicar cada tipo de cambio
+alwaysApply: true
+---
+
+# Arquitectura de repositorios (referencia)
+
+| Repositorio | Propósito | GitHub |
+|-------------|------------|--------|
+| **Pedidos-MG** | Frontend web + backend API (admin en PC) | [github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) |
+| **Pedidos-Manteniemiento-Android** | App Android (cuadrillas / técnicos en calle) | [github.com/LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) |
+
+## Roles
+
+- **Admin (Pedidos-MG / web):** recibe reclamos, WhatsApp con vecinos, deriva a cuadrillas, gestión completa.
+- **Técnicos (app Android):** fotos, avances, materiales, cierre de reclamos; notificaciones cuando el admin asigna; **no** atienden el bot de WhatsApp en la app.
+
+## WhatsApp al vecino (misma API)
+
+Los avisos al cliente que cargó por WhatsApp salen del **servidor** al hacer `PUT /api/pedidos/:id` (lo usa admin web y la app técnica): si `origen_reclamo === 'whatsapp'`, se pueden enviar mensajes al `telefono_contacto` al pasar a **En ejecución**, al cambiar **avance** (estado Asignado o En ejecución) y al **cerrar** (flujo ya existente). La app no “habla” con el bot: llama a la API y la API usa Meta Cloud API.
+
+## Dónde aplicar cambios
+
+- **Web pública / PWA / GitHub Pages / admin en navegador + código API en remoto:** repo **Pedidos-MG** (`index.html`, `sw.js`, carpeta `api/`). Sincronizar assets desde Android cuando aplique (ver `pedidos-mg-web-repo`).
+- **APK, WebView, Kotlin, `AndroidManifest`:** repo [Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android). **Carpeta local del proyecto Android Studio (técnicos):** `C:\Users\leave\AndroidStudioProjects\Nexxo` (nombre del directorio en el PC; el remoto Git es el repo Android anterior).
+- **Paridad API:** tras editar `Nexxo/api`, copiar a `Pedidos-MG/api` y commitear en **Pedidos-MG** si Render despliega desde ahí.
+
+Al pedir un cambio, concretar si afecta **solo web**, **solo Android** o **ambos**.

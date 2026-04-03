@@ -1,5 +1,7 @@
 # Nexxo (Android)
 
+**Proyecto Android Studio (técnicos / cuadrillas), carpeta local:** `C:\Users\leave\AndroidStudioProjects\Nexxo`.
+
 App Android + WebView: la interfaz se carga desde **GitHub Pages** ([Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)), así los cambios en el repo web llegan al técnico sin nuevo APK. Los secretos siguen en `assets/config.json` (solo en el dispositivo, no en Git).
 
 El archivo `app/src/main/assets/index.html` sigue siendo la fuente para copiar al repo web; la APK ya no lo usa como pantalla principal.
@@ -18,6 +20,15 @@ Ver [COPYRIGHT.md](./COPYRIGHT.md).
 ## Repo web (Pages)
 
 [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) — despliegue con GitHub Actions y secretos (sin `config.json` en el árbol público).
+
+## Política de privacidad (Play Console / Meta WhatsApp)
+
+El documento legal público vive en el repo **Pedidos-MG** (`privacy/index.html`). Tras cada deploy de Pages:
+
+- **Recomendado:** `https://leavera77.github.io/Pedidos-MG/privacy/`
+- **Alternativa** (solo si creás el repo proyecto `privacy` en GitHub): `https://leavera77.github.io/privacy/` — ver README de Pedidos-MG.
+
+**Ícono 1024×1024** y **categoría “Empresas y páginas”** en Meta: son requisitos del panel de la app comercial; el ícono debés subirlo vos como imagen PNG en Meta / Play.
 
 ## API Node (Render) y WhatsApp Meta
 
