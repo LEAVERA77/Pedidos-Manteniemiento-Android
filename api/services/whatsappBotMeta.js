@@ -11,6 +11,11 @@ import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 
 const sessions = new Map();
 
+/** Tras la descripción: pedir pin GPS o texto de dirección (flujo bot). */
+const MSG_SOLICITAR_UBICACION =
+  "Por favor, enviá tu *ubicación actual* usando el botón *Adjuntar* (📎) → *Ubicación* en WhatsApp.\n\n" +
+  "Si no podés compartir GPS, escribí la *dirección o referencia* del lugar (calle, ciudad, barrio).";
+
 function botTenantId() {
   return Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
 }
@@ -112,6 +117,60 @@ async function reply(phoneDigits, text) {
   return r;
 }
 
+/**
+ * Extrae lat/lng del mensaje Cloud API tipo `location` (msg.location).
+ * @returns {{ lat: number, lng: number } | null}
+ */
+export function extractLocationFromMetaMessage(msg) {
+  if (!msg || String(msg.type || "") !== "location") return null;
+  const loc = msg.location || {};
+  const la = Number(loc.latitude);
+  const lo = Number(loc.longitude);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+  return { lat: la, lng: lo };
+}
+
+async function finalizePedidoFromSession(phone, sess, contactName) {
+  const sk = sessionKey(phone, sess.tenantId);
+  let descripcionFinal = String(sess.descripcion || "").trim();
+  if (!descripcionFinal) {
+    sessions.delete(sk);
+    await reply(phone, "Faltan datos del pedido. Escribí *menú* para empezar de nuevo.");
+    return;
+  }
+  if (sess.direccionTexto && String(sess.direccionTexto).trim()) {
+    descripcionFinal += `\n\nUbicación indicada por el usuario: ${String(sess.direccionTexto).trim()}`;
+  }
+  const latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
+  const lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
+  try {
+    const pedido = await crearPedidoDesdeWhatsappBot({
+      tenantId: sess.tenantId,
+      tipoCliente: sess.tipoCliente,
+      tipoTrabajo: sess.tipo,
+      descripcion: descripcionFinal,
+      telefonoContacto: phone,
+      lat: latN,
+      lng: lngN,
+      contactName: sess.contactName || contactName || null,
+    });
+    sessions.delete(sk);
+    await reply(
+      phone,
+      `✅ *Pedido registrado*\n\nNúmero: *${pedido.numero_pedido}*\nTipo: ${sess.tipo}\n\nGracias. Te contactaremos si hace falta más información.`
+    );
+  } catch (e) {
+    const m = String(e?.message || "");
+    sessions.delete(sk);
+    if (m === "sin_usuario_admin_tenant") {
+      await reply(phone, "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.");
+    } else {
+      await reply(phone, "No pudimos registrar el pedido. Intentá de nuevo o llamá a la oficina.");
+    }
+  }
+}
+
 async function replyListaTiposReclamo(phoneDigits, ctx) {
   const bodyText = `Elegí el tipo que mejor describe tu reclamo:`;
   const r = await sendWhatsAppInteractiveList(phoneDigits, {
@@ -170,6 +229,30 @@ export async function handleInboundMetaWhatsAppPayload(body) {
           continue;
         }
 
+        if (msg?.type === "location") {
+          const coords = extractLocationFromMetaMessage(msg);
+          try {
+            if (coords) {
+              await processInboundLocation({
+                fromRaw: from,
+                lat: coords.lat,
+                lng: coords.lng,
+                phoneNumberId,
+                contactName,
+              });
+            } else {
+              await reply(
+                fromNorm,
+                "No pudimos leer las coordenadas. Enviá de nuevo con *Adjuntar* → *Ubicación*, o escribí una dirección."
+              );
+            }
+          } catch (e) {
+            console.error("[whatsapp-bot-meta] location error", e);
+            await reply(fromNorm, "Error al procesar la ubicación. Intentá de nuevo o escribí *menú*.");
+          }
+          continue;
+        }
+
         if (msg?.type !== "text") continue;
         const text = String(msg?.text?.body || "").trim();
         if (!text) continue;
@@ -187,6 +270,35 @@ export async function handleInboundMetaWhatsAppPayload(body) {
       }
     }
   }
+}
+
+async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contactName }) {
+  const phone = String(fromRaw || "").replace(/\D/g, "");
+  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
+  if (botOff) return;
+
+  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
+  const tid = resolvedTid ?? botTenantId();
+  const sk = sessionKey(phone, tid);
+  const sess = sessions.get(sk);
+
+  if (!sess || sess.step !== "awaiting_location") {
+    await reply(phone, "Ahora no estamos esperando una ubicación. Escribí *menú* para ver las opciones.");
+    return;
+  }
+
+  const ctxOk = await loadTenantBotContext(tid);
+  if (!ctxOk) {
+    sessions.delete(sk);
+    await reply(phone, "Servicio no configurado. Contactá al administrador.");
+    return;
+  }
+
+  sess.lat = lat;
+  sess.lng = lng;
+  sess.direccionTexto = null;
+  sessions.set(sk, sess);
+  await finalizePedidoFromSession(phone, sess, contactName);
 }
 
 async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
@@ -265,6 +377,23 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   let sess = sessions.get(sk);
 
+  if (sess && sess.step === "awaiting_location") {
+    const t = String(text || "").trim();
+    if (t.length < 3) {
+      await reply(
+        phone,
+        "Escribí una dirección o referencia más completa, o enviá la *ubicación* con *Adjuntar* → *Ubicación* en WhatsApp."
+      );
+      return;
+    }
+    sess.direccionTexto = t;
+    sess.lat = Number.isFinite(ctx.lat) ? ctx.lat : null;
+    sess.lng = Number.isFinite(ctx.lng) ? ctx.lng : null;
+    sessions.set(sk, sess);
+    await finalizePedidoFromSession(phone, sess, contactName);
+    return;
+  }
+
   if (!sess || sess.step === "idle") {
     if (esPedidoCargarReclamo(text)) {
       await replyListaTiposReclamo(phone, ctx);
@@ -304,31 +433,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.");
       return;
     }
-    try {
-      const pedido = await crearPedidoDesdeWhatsappBot({
-        tenantId: sess.tenantId,
-        tipoCliente: sess.tipoCliente,
-        tipoTrabajo: sess.tipo,
-        descripcion: desc,
-        telefonoContacto: phone,
-        lat: Number.isFinite(ctx.lat) ? ctx.lat : null,
-        lng: Number.isFinite(ctx.lng) ? ctx.lng : null,
-        contactName: sess.contactName || contactName || null,
-      });
-      sessions.delete(sk);
-      await reply(
-        phone,
-        `✅ *Pedido registrado*\n\nNúmero: *${pedido.numero_pedido}*\nTipo: ${sess.tipo}\n\nGracias. Te contactaremos si hace falta más información.`
-      );
-    } catch (e) {
-      const m = String(e?.message || "");
-      sessions.delete(sk);
-      if (m === "sin_usuario_admin_tenant") {
-        await reply(phone, "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.");
-      } else {
-        await reply(phone, "No pudimos registrar el pedido. Intentá de nuevo o llamá a la oficina.");
-      }
-    }
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_location",
+      descripcion: desc,
+    });
+    await reply(phone, MSG_SOLICITAR_UBICACION);
     return;
   }
 }

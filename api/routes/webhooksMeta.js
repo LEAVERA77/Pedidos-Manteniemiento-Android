@@ -82,6 +82,13 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
         else if (type === "interactive" && msg?.interactive?.type === "list_reply") {
           const lr = msg.interactive.list_reply || {};
           textBody = `[list_reply] ${lr.title || ""}`;
+        } else if (type === "location") {
+          const loc = msg?.location || {};
+          const la = loc.latitude != null ? Number(loc.latitude) : NaN;
+          const lo = loc.longitude != null ? Number(loc.longitude) : NaN;
+          textBody = Number.isFinite(la) && Number.isFinite(lo)
+            ? `[location] lat=${la} lng=${lo}`
+            : "[location] (sin coords)";
         }
         console.log("[webhook-meta] inbound", {
           object: payload?.object,
@@ -127,6 +134,20 @@ async function processInboundPayloadAsync(payload) {
         } else if (type === "interactive" && msg?.interactive?.type === "list_reply") {
           const lr = msg.interactive.list_reply || {};
           const line = `[lista] ${lr.title || ""}`;
+          if (waId) {
+            try {
+              await logWhatsappMensajeRecibido(waId, line);
+            } catch (e) {
+              console.error("[webhook-meta] log recibido DB", e.message);
+            }
+          }
+        } else if (type === "location") {
+          const loc = msg?.location || {};
+          const la = loc.latitude != null ? Number(loc.latitude) : NaN;
+          const lo = loc.longitude != null ? Number(loc.longitude) : NaN;
+          const line = Number.isFinite(la) && Number.isFinite(lo)
+            ? `[ubicación] ${la},${lo}`
+            : "[ubicación]";
           if (waId) {
             try {
               await logWhatsappMensajeRecibido(waId, line);
