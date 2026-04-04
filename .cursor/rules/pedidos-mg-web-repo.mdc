@@ -3,9 +3,9 @@ description: Repo GitHub Pages del front web; sincronizar index.html tras cambio
 alwaysApply: true
 ---
 
-# Front web público (GitHub Pages)
+# Front web público + API del admin (GitHub Pages)
 
-- **Repositorio oficial de la página web de la app:** [https://github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
+- **Repositorio único del admin (PC):** [https://github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) — el administrador abre la app en el navegador desde **GitHub Pages**; el backend Node vive en **`/api`** del mismo repo y suele desplegarse en **Render** (root `api/`).
 - **Sitio publicado:** `https://leavera77.github.io/Pedidos-MG`
 
 ## Fuente de verdad en este proyecto (Android / GestorNova)

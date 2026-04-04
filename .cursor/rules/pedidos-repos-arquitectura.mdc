@@ -7,7 +7,7 @@ alwaysApply: true
 
 | Repositorio | Propósito | GitHub |
 |-------------|------------|--------|
-| **Pedidos-MG** | Frontend web + backend API (admin en PC) | [github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) |
+| **Pedidos-MG** | **Programa del admin desde la PC:** interfaz web (GitHub Pages) + carpeta **`api/`** (Node en Render). Mismo repo [LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG). |
 | **Pedidos-Manteniemiento-Android** | App Android (cuadrillas / técnicos en calle) | [github.com/LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) |
 
 ## Roles
@@ -23,6 +23,6 @@ Los avisos al cliente que cargó por WhatsApp salen del **servidor** al hacer `P
 
 - **Web pública / PWA / GitHub Pages / admin en navegador + código API en remoto:** repo **Pedidos-MG** (`index.html`, `sw.js`, carpeta `api/`). Sincronizar assets desde Android cuando aplique (ver `pedidos-mg-web-repo`).
 - **APK, WebView, Kotlin, `AndroidManifest`:** repo [Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android). **Carpeta local del proyecto Android Studio (técnicos):** `C:\Users\leave\AndroidStudioProjects\Nexxo` (nombre del directorio en el PC; el remoto Git es el repo Android anterior).
-- **Paridad API:** tras editar `Nexxo/api`, copiar a `Pedidos-MG/api` y commitear en **Pedidos-MG** si Render despliega desde ahí.
+- **Paridad API:** tras editar `Nexxo/api`, copiar a `Pedidos-MG/api` y commitear/pushear en **Pedidos-MG** cuando Render (o el host del admin) despliega el backend desde ese repo. El **bot de WhatsApp y el prefijo móvil 549 (Argentina)** viven solo en el servidor (`api/services/metaWhatsapp.js`, `whatsappBotMeta.js`); **no** hace falta tocar `index.html` del admin para eso.
 
-Al pedir un cambio, concretar si afecta **solo web**, **solo Android** o **ambos**.
+Al pedir un cambio, concretar si afecta **solo web**, **solo API**, **solo Android** o **varios**.
