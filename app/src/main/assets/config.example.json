@@ -1,6 +1,6 @@
 {
   "neon": {
-    "connectionString": "postgresql://USUARIO:CONTRASEÑA@HOST-pooler.neon.tech/neondb?sslmode=require&channel_binding=require"
+    "connectionString": "postgresql://USUARIO:CONTRASEÑA@HOST-pooler.neon.tech/neondb?sslmode=require"
   },
   "api": {
     "baseUrl": "https://nexxo-api-418k.onrender.com"

@@ -1,6 +1,7 @@
 package com.gestornova.gestion.work;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -23,19 +24,76 @@ public final class NeonJdbc {
     private NeonJdbc() {}
 
     public static Connection open(String connectionString) throws SQLException {
-        String url = normalizeJdbcUrl(connectionString);
+        String url = sanitizeNeonJdbcUrl(normalizeJdbcUrl(connectionString));
+        Properties p = buildConnectProps(url);
+        org.postgresql.Driver driver = new org.postgresql.Driver();
+
+        Connection c = driver.connect(url, p);
+        if (c != null) return c;
+
+        // Sin duplicar sslmode en Properties si la URL ya lo trae (evita que connect() devuelva null en algunos runtimes).
+        Properties minimal = new Properties();
+        minimal.setProperty("connectTimeout", "20");
+        minimal.setProperty("socketTimeout", "25");
+        c = driver.connect(url, minimal);
+        if (c != null) return c;
+
+        try {
+            DriverManager.registerDriver(driver);
+        } catch (SQLException ignored) {
+            // ya registrado
+        }
+        SQLException last = null;
+        try {
+            c = DriverManager.getConnection(url, p);
+            if (c != null) return c;
+        } catch (SQLException e) {
+            last = e;
+        }
+        try {
+            c = DriverManager.getConnection(url, minimal);
+            if (c != null) return c;
+        } catch (SQLException e) {
+            last = e;
+        }
+
+        throw new SQLException(
+                "PostgreSQL: no se pudo conectar (WorkManager / JDBC). "
+                        + "Revisá config.json: sslmode=require; sin channel_binding para la app Android.",
+                last);
+    }
+
+    /** Neon suele añadir channel_binding=require; pgjdbc 42.2 en Android suele hacer que {@code Driver#connect} devuelva null. */
+    private static String sanitizeNeonJdbcUrl(String url) {
+        if (url == null) return null;
+        if (!url.isEmpty() && url.charAt(0) == '\uFEFF') {
+            url = url.substring(1);
+        }
+        String u = url.trim();
+        u = u.replace("&channel_binding=require", "");
+        u = u.replace("?channel_binding=require&", "?");
+        u = u.replace("?channel_binding=require", "");
+        u = u.replace("&channel_binding=prefer", "");
+        u = u.replace("?channel_binding=prefer&", "?");
+        u = u.replace("?channel_binding=prefer", "");
+        u = u.replace("?&", "?");
+        while (u.contains("&&")) {
+            u = u.replace("&&", "&");
+        }
+        while (u.endsWith("?") || u.endsWith("&")) {
+            u = u.substring(0, u.length() - 1);
+        }
+        return u;
+    }
+
+    private static Properties buildConnectProps(String jdbcUrl) {
         Properties p = new Properties();
-        p.setProperty("sslmode", "require");
+        if (!jdbcUrl.contains("sslmode=")) {
+            p.setProperty("sslmode", "require");
+        }
         p.setProperty("connectTimeout", "20");
         p.setProperty("socketTimeout", "25");
-        // Android: DriverManager.getConnection suele fallar con "No suitable driver" aunque el .jar esté
-        // en el APK (class loaders / SPI). Conectar con la instancia del driver evita ese registro.
-        org.postgresql.Driver driver = new org.postgresql.Driver();
-        Connection c = driver.connect(url, p);
-        if (c == null) {
-            throw new SQLException("PostgreSQL: el driver no aceptó la URL (connect devolvió null).");
-        }
-        return c;
+        return p;
     }
 
     private static String normalizeJdbcUrl(String connectionString) {
