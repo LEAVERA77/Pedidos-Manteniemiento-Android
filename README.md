@@ -21,6 +21,16 @@ Ver [COPYRIGHT.md](./COPYRIGHT.md).
 
 [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) — despliegue con GitHub Actions y secretos (sin `config.json` en el árbol público).
 
+### Sincronizar el front hacia Pedidos-MG (paridad)
+
+Desde la raíz del proyecto, en PowerShell:
+
+```powershell
+.\scripts\sync-assets-to-pedidos-mg.ps1
+```
+
+Copia `index.html`, `styles.css`, `app.js`, `map.js`, `map-view.js`, `offline.js` y `sw.js` al clon local típico `...\AndroidStudioProjects\Pedidos-MG`. Después, en ese repo: `git add`, `commit`, `push`.
+
 ## Política de privacidad (Play Console / Meta WhatsApp)
 
 El documento legal público vive en el repo **Pedidos-MG** (`privacy/index.html`). Tras cada deploy de Pages:

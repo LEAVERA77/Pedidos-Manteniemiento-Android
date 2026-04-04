@@ -17,8 +17,9 @@ alwaysApply: true
 ## Qué hacer cuando el usuario pida “subir el front” o “sincronizar con GitHub Pages”
 
 1. Los cambios se hacen primero en `app/src/main/assets/` (`index.html`, `styles.css`, `app.js`, `map.js`, `map-view.js`, `offline.js`, y `sw.js` si aplica).
-2. Copiar esos archivos al clon local del repo web (ruta típica en esta máquina):  
-   `C:\Users\leave\AndroidStudioProjects\Pedidos-MG\`
-3. En esa carpeta: `git add`, `git commit`, `git push origin main` (el workflow de Pages despliega solo).
+2. **Copia automática (recomendado):** desde la raíz del repo Nexxo ejecutá en PowerShell:  
+   `.\scripts\sync-assets-to-pedidos-mg.ps1`  
+   (Opcional: `-PedidosMgRoot 'R:\al\Pedidos-MG'` si el clon no es hermano de Nexxo.)
+3. En la carpeta **Pedidos-MG**: `git add`, `git commit`, `git push origin main` (el workflow de Pages despliega solo).
 
 **No** commitear `config.json` en Pedidos-MG; en producción usa secretos de GitHub Actions según el README del repo.
