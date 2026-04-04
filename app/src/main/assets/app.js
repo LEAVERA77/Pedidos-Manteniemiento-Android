@@ -7073,9 +7073,16 @@ async function importarExcelSocios(event) {
                 'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
             if (!nis) continue;
             const nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
-            const domicilio = valorSociosPorEncabezados(row, mapNormAOriginal, 'domicilio', 'direccion', 'calle');
+            let domicilio = valorSociosPorEncabezados(row, mapNormAOriginal, 'domicilio', 'direccion');
+            if (!domicilio) {
+                const calle = valorSociosPorEncabezados(row, mapNormAOriginal, 'calle', 'calle_nombre');
+                const numero = valorSociosPorEncabezados(row, mapNormAOriginal, 'numero', 'nro', 'num', 'altura', 'numero_calle');
+                if (calle || numero) domicilio = [calle, numero].filter(Boolean).join(' ').trim();
+            }
             const telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
-            const dist = valorSociosPorEncabezados(row, mapNormAOriginal, 'distribuidor_codigo', 'distribuidor', 'codigo_distribuidor');
+            /* Excel cooperativa: columna "distribuidor_" (guión bajo al final) */
+            const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
+                'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
@@ -7094,7 +7101,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden de columnas no importa).\n\nNombres reconocidos (ejemplos):\n• NIS: nis_medidor, nis, medidor…\n• nombre, domicilio/direccion, telefono, distribuidor_codigo\n• localidad, tipo_tarifa, urbano_rural (o zona)\n• Cooperativas eléctricas: transformador (o trafo)\n\nFila 2 en adelante: datos. Columna NIS obligatoria por fila.');
+    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nFormato cooperativa eléctrica (ejemplo):\n• nis_medidor · nombre · Calle · Numero (se unen en domicilio)\n• telefono · distribuidor_ (con _ al final) o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n\nTambién acepta domicilio/direccion en una sola columna.\nTeléfono: conviene formato texto en Excel para conservar el 0 inicial.\nFila 2 en adelante: datos. NIS obligatorio por fila.');
 }
 
 async function buscarHistorialPorNIS() {
