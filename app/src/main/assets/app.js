@@ -1284,6 +1284,14 @@ actualizarBadgeOffline();
         if (v && inp && !inp.value) inp.value = v;
     } catch (_) {}
 })();
+(function pintarMarcaLoginAlCargarModulo() {
+    try {
+        if (document.getElementById('ls')?.classList.contains('active')) {
+            resetBrandingSesionNoAutenticada();
+            aplicarMarcaVisualCompleta();
+        }
+    } catch (_) {}
+})();
 dbs.className = 'dbs c';
 dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
 
