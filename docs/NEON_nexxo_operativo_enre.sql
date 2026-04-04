@@ -38,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_socios_activo ON socios_catalogo (activo);
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS localidad TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS tipo_tarifa TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS urbano_rural TEXT;
+ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT;
 
 -- Opcional: pedidos con técnico ya asignados pasan a estado coherente con la app
 -- UPDATE pedidos SET estado = 'Asignado'

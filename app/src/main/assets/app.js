@@ -1414,6 +1414,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS localidad TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS tipo_tarifa TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS urbano_rural TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -1935,6 +1936,29 @@ function syncMapSlideTabsFromStorage() {
 
 let _bp2DragState = null;
 
+/** Evita que paneles flotantes queden totalmente fuera del viewport al arrastrar. */
+function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
+    const minVis = (opts && opts.minVisiblePx) || 88;
+    const padX = (opts && opts.padX) != null ? opts.padX : 6;
+    const padTop = (opts && opts.padTop) != null ? opts.padTop : 52;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const br = el.getBoundingClientRect();
+    const w = br.width || el.offsetWidth || 160;
+    const h = br.height || el.offsetHeight || 80;
+    let l = Number(leftPx);
+    let t = Number(topPx);
+    if (l + w < minVis) l = minVis - w;
+    if (l > vw - minVis) l = vw - minVis;
+    if (t + h < padTop + minVis) t = padTop + minVis - h;
+    if (t > vh - minVis) t = vh - minVis;
+    const maxL = Math.max(padX, vw - w - padX);
+    const maxT = Math.max(padTop, vh - h - padX);
+    l = Math.max(padX, Math.min(l, maxL));
+    t = Math.max(padTop, Math.min(t, maxT));
+    return { left: l, top: t };
+}
+
 function aplicarPosicionBp2Guardada() {
     const bp2 = document.getElementById('bp2');
     if (!bp2 || !window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
@@ -1949,15 +1973,11 @@ function aplicarPosicionBp2Guardada() {
         }
         const p = JSON.parse(raw);
         if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
-        const pad = 8;
-        const w = bp2.offsetWidth || 360;
-        const h = bp2.offsetHeight || 200;
-        const left = Math.min(Math.max(pad, p.left), window.innerWidth - w - pad);
-        const top = Math.min(Math.max(pad + 52, p.top), window.innerHeight - h - pad);
         bp2.style.right = 'auto';
         bp2.style.bottom = 'auto';
-        bp2.style.left = left + 'px';
-        bp2.style.top = top + 'px';
+        const c = clampFloatingPanelToViewport(bp2, p.left, p.top, { padTop: 52, minVisiblePx: 88 });
+        bp2.style.left = c.left + 'px';
+        bp2.style.top = c.top + 'px';
     } catch (_) {}
 }
 
@@ -1989,8 +2009,9 @@ function initBp2PanelFlotanteDesktop() {
             if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
             bp2.style.right = 'auto';
             bp2.style.bottom = 'auto';
-            bp2.style.left = (_bp2DragState.sl + dx) + 'px';
-            bp2.style.top = (_bp2DragState.st + dy) + 'px';
+            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padTop: 52 });
+            bp2.style.left = c.left + 'px';
+            bp2.style.top = c.top + 'px';
         };
         const onUp = () => {
             document.removeEventListener('mousemove', onMove);
@@ -2003,7 +2024,10 @@ function initBp2PanelFlotanteDesktop() {
                 if (_bp2DragState.moved) {
                     try {
                         const br = bp2.getBoundingClientRect();
-                        localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: br.left, top: br.top }));
+                        const c = clampFloatingPanelToViewport(bp2, br.left, br.top, { padTop: 52 });
+                        bp2.style.left = c.left + 'px';
+                        bp2.style.top = c.top + 'px';
+                        localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: c.left, top: c.top }));
                     } catch (_) {}
                     window.__bp2DragJustEnded = true;
                     setTimeout(() => { window.__bp2DragJustEnded = false; }, 450);
@@ -2045,15 +2069,13 @@ function initMouiCardDraggable(cardId) {
             if (!raw) return;
             const p = JSON.parse(raw);
             if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
-            const pad = 6;
-            const w = card.offsetWidth || 200;
-            const h = card.offsetHeight || 120;
-            const left = Math.min(Math.max(pad, p.left), window.innerWidth - w - pad);
-            const top = Math.min(Math.max(pad + 50, p.top), window.innerHeight - h - pad);
-            card.style.left = left + 'px';
-            card.style.top = top + 'px';
             card.style.right = 'auto';
             card.style.bottom = 'auto';
+            card.style.left = p.left + 'px';
+            card.style.top = p.top + 'px';
+            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 50 });
+            card.style.left = c.left + 'px';
+            card.style.top = c.top + 'px';
         } catch (_) {}
     };
     applySaved();
@@ -2070,16 +2092,13 @@ function initMouiCardDraggable(cardId) {
         const dx = clientX - dragSt.sx;
         const dy = clientY - dragSt.sy;
         if (Math.abs(dx) + Math.abs(dy) > 4) dragSt.moved = true;
-        const rr = card.getBoundingClientRect();
         const nl = dragSt.sl + dx;
         const nt = dragSt.st + dy;
-        const pad = 6;
-        const w = rr.width;
-        const h = rr.height;
-        card.style.left = Math.min(Math.max(pad, nl), window.innerWidth - w - pad) + 'px';
-        card.style.top = Math.min(Math.max(pad + 48, nt), window.innerHeight - h - pad) + 'px';
         card.style.right = 'auto';
         card.style.bottom = 'auto';
+        const c = clampFloatingPanelToViewport(card, nl, nt, { padTop: 50 });
+        card.style.left = c.left + 'px';
+        card.style.top = c.top + 'px';
     };
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
@@ -2099,7 +2118,10 @@ function initMouiCardDraggable(cardId) {
                 suppressClick = true;
                 try {
                     const br = card.getBoundingClientRect();
-                    localStorage.setItem(key, JSON.stringify({ left: br.left, top: br.top }));
+                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 50 });
+                    card.style.left = c.left + 'px';
+                    card.style.top = c.top + 'px';
+                    localStorage.setItem(key, JSON.stringify({ left: c.left, top: c.top }));
                 } catch (_) {}
             }
         };
@@ -2261,9 +2283,56 @@ async function registrarUbicacionManualAdmin(lat, lng) {
 }
 
 let _pollDashInterval = null;
+let _pollPedidosActividadInterval = null;
+let _pedidosActividadFinger = '';
 let _pollTecnicosMapaInterval = null;
 let _seenClosedIds = new Set();
 let _dashCierresInit = false;
+
+function detenerPedidosActividadPollAdmin() {
+    if (_pollPedidosActividadInterval) {
+        clearInterval(_pollPedidosActividadInterval);
+        _pollPedidosActividadInterval = null;
+    }
+    _pedidosActividadFinger = '';
+}
+
+async function pollPedidosActividadAdmin() {
+    if (!app.u || !esAdmin() || modoOffline || !NEON_OK) return;
+    try {
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(
+            `SELECT COALESCE(MAX(id),0)::bigint AS mid,
+                COUNT(*) FILTER (WHERE estado='Pendiente')::bigint AS np,
+                COUNT(*) FILTER (WHERE estado='Asignado')::bigint AS na,
+                COUNT(*) FILTER (WHERE estado='En ejecución')::bigint AS ne,
+                COUNT(*) FILTER (WHERE estado='Cerrado')::bigint AS nc,
+                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav,
+                COALESCE(MAX(fecha_avance), to_timestamp(0)) AS mfa,
+                COALESCE(MAX(fecha_asignacion), to_timestamp(0)) AS mfas,
+                COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc
+             FROM pedidos WHERE 1=1${tsql}`
+        );
+        const row = r.rows?.[0] || {};
+        const f = [row.mid, row.np, row.na, row.ne, row.nc, row.sav, row.mfa, row.mfas, row.mfc].map(x => String(x)).join('|');
+        if (!_pedidosActividadFinger) {
+            _pedidosActividadFinger = f;
+            return;
+        }
+        if (f !== _pedidosActividadFinger) {
+            _pedidosActividadFinger = f;
+            await cargarPedidos({ silent: true });
+            try { await refrescarTecnicosMapaPrincipal(); } catch (_) {}
+        }
+    } catch (_) {}
+}
+
+function iniciarPedidosActividadPollAdmin() {
+    detenerPedidosActividadPollAdmin();
+    if (!esAdmin()) return;
+    pollPedidosActividadAdmin();
+    _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 12000);
+}
 
 function detenerTecnicosMapaPrincipalPoll() {
     if (_pollTecnicosMapaInterval) {
@@ -2280,6 +2349,7 @@ function iniciarDashboardGerenciaPoll() {
     const tick = () => { pollCierresGerencia(); refrescarDashboardGerencia(true); };
     tick();
     _pollDashInterval = setInterval(tick, 25000);
+    iniciarPedidosActividadPollAdmin();
 }
 
 function detenerDashboardGerenciaPoll() {
@@ -2287,6 +2357,7 @@ function detenerDashboardGerenciaPoll() {
         clearInterval(_pollDashInterval);
         _pollDashInterval = null;
     }
+    detenerPedidosActividadPollAdmin();
 }
 
 async function pollCierresGerencia() {
@@ -5069,8 +5140,8 @@ async function refrescarMaterialesEnDetalle(p) {
                 celCant = row.cantidad != null && row.cantidad !== '' ? escHtmlPrint(String(row.cantidad)) : '—';
             }
             html += `<tr><td class="mat-col-item">${des}</td><td class="mat-col-un">${celUn}</td><td class="mat-col-cant">${celCant}</td><td>`;
-            if (puedeEditarMat && esAdmin()) {
-                html += `<button type="button" class="btn-sm" onclick="eliminarMaterialPedido(${row.id},${pid})" style="font-size:.7rem;padding:.15rem .4rem">Borrar</button>`;
+            if (puedeEditarMat) {
+                html += `<button type="button" class="btn-sm" onclick="eliminarMaterialPedido(${row.id},${pid})" title="Quitar ítem" style="font-size:.7rem;padding:.15rem .4rem;border-color:#fecaca;color:#b91c1c;background:#fff"><i class="fas fa-trash-alt"></i></button>`;
             }
             html += '</td></tr>';
         });
@@ -6990,14 +7061,14 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
+        const r = await sqlSimple('SELECT id, nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Tarifa</th><th>U/R</th><th>Domicilio</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
-            rows.map(s => `<tr><td>${String(s.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(s.nombre || '').replace(/</g, '&lt;')}</td><td>${String(s.localidad || '').replace(/</g, '&lt;')}</td><td>${String(s.tipo_tarifa || '').replace(/</g, '&lt;')}</td><td>${String(s.urbano_rural || '').replace(/</g, '&lt;')}</td><td>${String(s.domicilio || '').replace(/</g, '&lt;')}</td><td>${String(s.telefono || '').replace(/</g, '&lt;')}</td><td>${String(s.distribuidor_codigo || '').replace(/</g, '&lt;')}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`).join('') + '</tbody></table></div>';
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Domicilio</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+            rows.map(s => `<tr><td>${String(s.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(s.nombre || '').replace(/</g, '&lt;')}</td><td>${String(s.localidad || '').replace(/</g, '&lt;')}</td><td>${String(s.transformador || '').replace(/</g, '&lt;')}</td><td>${String(s.tipo_tarifa || '').replace(/</g, '&lt;')}</td><td>${String(s.urbano_rural || '').replace(/</g, '&lt;')}</td><td>${String(s.domicilio || '').replace(/</g, '&lt;')}</td><td>${String(s.telefono || '').replace(/</g, '&lt;')}</td><td>${String(s.distribuidor_codigo || '').replace(/</g, '&lt;')}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`).join('') + '</tbody></table></div>';
     } catch (e) {
         cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + e.message + '</p>';
     }
@@ -7054,10 +7125,11 @@ async function importarExcelSocios(event) {
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
+            const transf = valorSociosPorEncabezados(row, mapNormAOriginal, 'transformador', 'trafo', 'transformador_codigo');
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural)
-                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(domicilio)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, domicilio = EXCLUDED.domicilio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural`);
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador)
+                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(domicilio)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, domicilio = EXCLUDED.domicilio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador`);
                 ok++;
             } catch (_) { fail++; }
         }
@@ -7068,7 +7140,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden de columnas no importa).\n\nNombres reconocidos (ejemplos):\n• NIS: nis_medidor, nis, medidor…\n• nombre, domicilio/direccion, telefono, distribuidor_codigo\n• localidad, tipo_tarifa, urbano_rural (o zona)\n\nFila 2 en adelante: datos. Columna NIS obligatoria por fila.');
+    alert('Excel socios — fila 1 = encabezados (el orden de columnas no importa).\n\nNombres reconocidos (ejemplos):\n• NIS: nis_medidor, nis, medidor…\n• nombre, domicilio/direccion, telefono, distribuidor_codigo\n• localidad, tipo_tarifa, urbano_rural (o zona)\n• Cooperativas eléctricas: transformador (o trafo)\n\nFila 2 en adelante: datos. Columna NIS obligatoria por fila.');
 }
 
 async function buscarHistorialPorNIS() {

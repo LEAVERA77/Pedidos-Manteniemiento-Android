@@ -41,11 +41,6 @@ const MSG_ADDR_NUMERO = "Por último el *número de puerta* (ej: *245*). Con est
 const MSG_NOMBRE_PERSONA =
   "¿Cuál es tu *nombre y apellido* (o nombre del titular del reclamo)?";
 
-const MSG_UBICACION_ADJUNTO =
-  "No pudimos ubicar bien la *calle y el número* en el mapa.\n\n" +
-  "Ya tenemos tu *nombre* y la *ciudad*. Para marcar el lugar, enviá tu *ubicación* con WhatsApp: *Adjuntar* (📎) → *Ubicación*.\n\n" +
-  "Si no podés mandar ubicación, escribí *seguir* y cargamos el reclamo con ubicación *aproximada* (solo ciudad). Para indicar otra dirección, escribí *reintentar*.";
-
 const BLOQUEO_RECLAMOS_MSG_DEFAULT =
   "Por el momento no podemos registrar reclamos por WhatsApp. Pedimos disculpas; comunicate por los canales habituales de la empresa.";
 
@@ -56,7 +51,6 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_addr_ciudad",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
-  "awaiting_ubicacion_adjunto",
 ]);
 
 function interpretaMenuIdentificacion(raw) {
@@ -817,58 +811,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  if (sess && sess.step === "awaiting_ubicacion_adjunto") {
-    const lowFb = lower.trim();
-    if (lowFb === "reintentar" || lowFb === "otra") {
-      sess.step = "awaiting_addr_ciudad";
-      sess.addrCiudad = null;
-      sess.addrCalle = null;
-      sess.addrNumero = null;
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
-      return;
-    }
-    if (
-      lowFb === "seguir" ||
-      lowFb === "si" ||
-      lowFb === "sí" ||
-      lowFb === "ok" ||
-      lowFb === "dale"
-    ) {
-      const ciudad = String(sess.addrCiudad || "").trim() || "tu localidad";
-      let geoCiudad = null;
-      try {
-        geoCiudad = await geocodeAddressArgentina(`${ciudad}, Argentina`);
-      } catch (_) {}
-      const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
-      const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
-      sess.lat = geoCiudad?.lat ?? baseLat;
-      sess.lng = geoCiudad?.lng ?? baseLng;
-      const nom = String(sess.contactName || "").trim();
-      const calle = String(sess.addrCalle || "").trim();
-      const num = String(sess.addrNumero || "").trim();
-      sess.direccionTexto = nom
-        ? `Ubicación aproximada (sin GPS del vecino): ${nom}, ${ciudad}. Calle indicada: ${calle} ${num}`
-            .replace(/\s+/g, " ")
-            .trim()
-        : `Ubicación aproximada (sin GPS): ${ciudad}. Calle indicada: ${calle} ${num}`
-            .replace(/\s+/g, " ")
-            .trim();
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
-      await finalizePedidoFromSession(phone, sess, contactName);
-      return;
-    }
-    await reply(
-      phone,
-      "Enviá *Adjuntar* → *Ubicación*, o escribí *seguir* para ubicación aproximada por ciudad, o *reintentar* para otra dirección.",
-      tid,
-      phoneNumberId
-    );
-    return;
-  }
-
   if (sess && sess.step === "awaiting_opcional_id") {
     const raw = String(text || "").trim();
     const low = raw.toLowerCase();
@@ -992,9 +934,28 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     } catch (e) {
       console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
     }
-    sess.step = "awaiting_ubicacion_adjunto";
+    const ciudad = String(sess.addrCiudad || "").trim() || "tu localidad";
+    let geoCiudad = null;
+    try {
+      geoCiudad = await geocodeAddressArgentina(`${ciudad}, Argentina`);
+    } catch (_) {}
+    const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
+    const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
+    sess.lat = geoCiudad?.lat ?? baseLat;
+    sess.lng = geoCiudad?.lng ?? baseLng;
+    const nom = String(sess.contactName || contactName || "").trim();
+    const calle = String(sess.addrCalle || "").trim();
+    const num = String(sess.addrNumero || "").trim();
+    sess.direccionTexto = nom
+      ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudad}. Calle indicada por el usuario: ${calle} ${num}`
+          .replace(/\s+/g, " ")
+          .trim()
+      : `Ubicación aproximada (centro de ciudad): ${ciudad}. Calle indicada: ${calle} ${num}`
+          .replace(/\s+/g, " ")
+          .trim();
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
-    await reply(phone, MSG_UBICACION_ADJUNTO, tid, phoneNumberId);
+    await finalizePedidoFromSession(phone, sess, contactName);
     return;
   }
 
