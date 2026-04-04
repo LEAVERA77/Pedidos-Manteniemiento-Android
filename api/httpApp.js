@@ -15,6 +15,8 @@ import whatsappRoutes from "./routes/whatsapp.js";
 import whatsappHumanChatRoutes from "./routes/whatsappHumanChat.js";
 import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
 import webhooksMetaRoutes from "./routes/webhooksMeta.js";
+import configUbicacionRoutes from "./routes/configUbicacion.js";
+import whatsappGeocodeRoutes from "./routes/whatsappGeocode.js";
 
 export function createHttpApp() {
   const app = express();
@@ -74,6 +76,8 @@ export function createHttpApp() {
   });
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/config", configUbicacionRoutes);
+  app.use("/api/whatsapp", whatsappGeocodeRoutes);
   app.use("/api/pedidos", pedidosRoutes);
   app.use("/api/usuarios", usuariosRoutes);
   app.use("/api/clientes", clientesRoutes);

@@ -7,6 +7,7 @@ import {
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
+import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 
 const router = express.Router();
 
@@ -74,7 +75,32 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
       [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
-    return res.json({ ok: true, tenant_id: tenantId, cliente: r.rows[0] });
+    const row = r.rows[0];
+    let cfgMerged = row.configuracion;
+    if (typeof cfgMerged === "string") {
+      try {
+        cfgMerged = JSON.parse(cfgMerged);
+      } catch (_) {
+        cfgMerged = {};
+      }
+    }
+    const cM = cfgMerged && typeof cfgMerged === "object" ? cfgMerged : {};
+    const la = cM.lat_base != null ? Number(cM.lat_base) : null;
+    const lo = cM.lng_base != null ? Number(cM.lng_base) : null;
+    if (Number.isFinite(la) && Number.isFinite(lo)) {
+      try {
+        const z = cM.zoom_mapa != null ? Number(cM.zoom_mapa) : 13;
+        await setUbicacionCentralInTable(tenantId, {
+          lat: la,
+          lng: lo,
+          zoom: Number.isFinite(z) && z > 0 ? z : 13,
+          nombre: row.nombre,
+        });
+      } catch (e) {
+        console.warn("[clientes] sync ubicacion configuracion tabla", e?.message || e);
+      }
+    }
+    return res.json({ ok: true, tenant_id: tenantId, cliente: row });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar configuración", detail: error.message });
   }

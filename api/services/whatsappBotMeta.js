@@ -16,6 +16,7 @@ import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.j
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";
+import { geocodeAddressArgentina, reverseGeocodeArgentina } from "./nominatimClient.js";
 import {
   humanChatOpenOrGetSession,
   humanChatQueueSnapshot,
@@ -531,6 +532,10 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   sess.lat = lat;
   sess.lng = lng;
   sess.direccionTexto = null;
+  try {
+    const rev = await reverseGeocodeArgentina(lat, lng);
+    if (rev?.displayName) sess.direccionTexto = rev.displayName;
+  } catch (_) {}
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
   await finalizePedidoFromSession(phone, sess, contactName);
@@ -677,12 +682,26 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       );
       return;
     }
-    sess.direccionTexto = t;
-    sess.lat = Number.isFinite(ctx.lat) ? ctx.lat : null;
-    sess.lng = Number.isFinite(ctx.lng) ? ctx.lng : null;
-    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-    sessions.set(sk, sess);
-    await finalizePedidoFromSession(phone, sess, contactName);
+    try {
+      const geo = await geocodeAddressArgentina(t);
+      if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+        sess.direccionTexto = geo.displayName || t;
+        sess.lat = geo.lat;
+        sess.lng = geo.lng;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await finalizePedidoFromSession(phone, sess, contactName);
+        return;
+      }
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] geocode direccion", e?.message || e);
+    }
+    await reply(
+      phone,
+      "No pudimos ubicar esa dirección en el mapa. Enviá tu *ubicación actual* con *Adjuntar* (📎) → *Ubicación* (GPS) en WhatsApp.",
+      tid,
+      phoneNumberId
+    );
     return;
   }
 

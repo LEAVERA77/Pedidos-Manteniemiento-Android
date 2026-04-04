@@ -59,6 +59,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import org.json.JSONObject;
+
 import com.gestornova.gestion.work.PedidoPollingScheduler;
 import com.gestornova.gestion.work.UbicacionPollingScheduler;
 import com.gestornova.gestion.work.UbicacionWorker;
@@ -68,6 +70,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
     private static final String NOTIF_CHANNEL_ID = "pmg_pedidos_avisos";
     private static final int NOTIF_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_HIGH;
+    /** Caché local de ubicación central (mapa principal + mapa dedicado HTML). */
+    private static final String PREFS_UBICACION_CENTRAL = "gestornova_ubicacion_central";
+    private static final String KEY_UBI_JSON = "cached_json";
 
     private WebView webView;
 
@@ -178,6 +183,7 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
         webView.addJavascriptInterface(new AndroidConfigBridge(), "AndroidConfig");
+        webView.addJavascriptInterface(new AndroidMapLocationBridge(), "AndroidInterface");
         webView.addJavascriptInterface(new AndroidSessionBridge(), "AndroidSession");
         webView.addJavascriptInterface(new AndroidDeviceBridge(), "AndroidDevice");
 
@@ -237,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 dispatchPendingPedidoIdToWeb();
+                maybeInjectUbicacionCentralJs(url);
             }
         });
 
@@ -281,6 +288,34 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "No se pudo abrir el enlace", Toast.LENGTH_SHORT).show();
         }
         return true;
+    }
+
+    /** Inyecta ubicación cacheada en la página del mapa dedicado (misma sesión WebView). */
+    private void maybeInjectUbicacionCentralJs(String url) {
+        if (url == null || !url.contains("mapa-ubicacion-central") || webView == null) {
+            return;
+        }
+        try {
+            String raw = getSharedPreferences(PREFS_UBICACION_CENTRAL, MODE_PRIVATE)
+                    .getString(KEY_UBI_JSON, "");
+            if (raw == null || raw.isEmpty()) {
+                return;
+            }
+            JSONObject o = new JSONObject(raw);
+            double la = o.optDouble("lat", Double.NaN);
+            double lo = o.optDouble("lng", Double.NaN);
+            if (!Double.isFinite(la) || !Double.isFinite(lo)) {
+                return;
+            }
+            int zoom = o.optInt("zoom", 13);
+            String nom = o.optString("nombre", "");
+            String js = String.format(Locale.US,
+                    "try{window.setUbicacionCentralFromAndroid&&window.setUbicacionCentralFromAndroid(%f,%f,%d,%s);}catch(e){}",
+                    la, lo, zoom, JSONObject.quote(nom));
+            webView.evaluateJavascript(js, null);
+        } catch (Exception e) {
+            Log.w(TAG, "maybeInjectUbicacionCentralJs", e);
+        }
     }
 
     private void iniciarNetworkWatchdog() {
@@ -507,6 +542,42 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void applyUpdateCheckFromNeon(String json) {
             AppUpdateChecker.checkWithRemoteJson(MainActivity.this, json);
+        }
+
+        /** JSON { lat, lng, zoom, nombre } guardado al confirmar en mapa-ubicacion-central o vía bridge. */
+        @JavascriptInterface
+        public String getUbicacionCentralCachedJson() {
+            try {
+                return getSharedPreferences(PREFS_UBICACION_CENTRAL, MODE_PRIVATE)
+                        .getString(KEY_UBI_JSON, "");
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
+    /**
+     * Mapa dedicado (mapa-ubicacion-central.html): confirma punto y persiste en SharedPreferences.
+     */
+    private class AndroidMapLocationBridge {
+        @JavascriptInterface
+        public void setLocation(double lat, double lng, String address) {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("lat", lat);
+                o.put("lng", lng);
+                o.put("zoom", 15);
+                o.put("nombre", address != null ? address : "");
+                getSharedPreferences(PREFS_UBICACION_CENTRAL, MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_UBI_JSON, o.toString())
+                        .apply();
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "Ubicación guardada en el dispositivo",
+                        Toast.LENGTH_SHORT).show());
+            } catch (Exception e) {
+                Log.w(TAG, "AndroidInterface.setLocation", e);
+            }
         }
     }
 

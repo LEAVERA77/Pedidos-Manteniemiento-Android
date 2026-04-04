@@ -3114,6 +3114,8 @@ function loadMapViewModule() {
 function buildMapViewCtx() {
     return {
         app,
+        getApiBaseUrl,
+        tenantIdActual,
         get L() { return window.L; },
         document,
         window,
@@ -5978,8 +5980,24 @@ function actualizarStepWizard() {
 function inicializarMapaSetupWizard() {
     const el = document.getElementById('setup-map');
     const cfg = window.EMPRESA_CFG || {};
-    if (_setupLat == null) _setupLat = parseFloat(cfg.lat_base || cfg.latitud || '-31.783');
-    if (_setupLng == null) _setupLng = parseFloat(cfg.lng_base || cfg.longitud || '-60.483');
+    const lb =
+        cfg.lat_base != null && String(cfg.lat_base).trim() !== ''
+            ? parseFloat(cfg.lat_base)
+            : cfg.latitud != null && String(cfg.latitud).trim() !== ''
+              ? parseFloat(cfg.latitud)
+              : Number.NaN;
+    const lbg =
+        cfg.lng_base != null && String(cfg.lng_base).trim() !== ''
+            ? parseFloat(cfg.lng_base)
+            : cfg.longitud != null && String(cfg.longitud).trim() !== ''
+              ? parseFloat(cfg.longitud)
+              : Number.NaN;
+    if (_setupLat == null && Number.isFinite(lb)) _setupLat = lb;
+    if (_setupLng == null && Number.isFinite(lbg)) _setupLng = lbg;
+    if (_setupLat == null || _setupLng == null || !Number.isFinite(_setupLat) || !Number.isFinite(_setupLng)) {
+        _setupLat = -34.0;
+        _setupLng = -64.0;
+    }
     if (!el || typeof L === 'undefined') {
         const la = document.getElementById('cfgi-lat');
         const ln = document.getElementById('cfgi-lng');
