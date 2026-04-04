@@ -10,12 +10,13 @@ alwaysApply: true
 
 ## Fuente de verdad en este proyecto (Android / GestorNova)
 
-- `app/src/main/assets/index.html` — mismo HTML que debe vivir en la raíz del repo **Pedidos-MG** como `index.html`.
-- Si se toca PWA/caché: también `app/src/main/assets/sw.js` → raíz de **Pedidos-MG** como `sw.js`.
+- `app/src/main/assets/index.html` — mismo shell HTML que en la raíz de **Pedidos-MG** (`index.html`).
+- `app/src/main/assets/styles.css`, `app.js`, `map.js`, `offline.js` — mismos nombres en la raíz de **Pedidos-MG** (el navegador los cachea aparte).
+- PWA / tiles: `app/src/main/assets/sw.js` → raíz de **Pedidos-MG** como `sw.js`.
 
 ## Qué hacer cuando el usuario pida “subir el front” o “sincronizar con GitHub Pages”
 
-1. Los cambios se hacen primero en `app/src/main/assets/index.html` (y `sw.js` si aplica).
+1. Los cambios se hacen primero en `app/src/main/assets/` (`index.html`, `styles.css`, `app.js`, `map.js`, `offline.js`, y `sw.js` si aplica).
 2. Copiar esos archivos al clon local del repo web (ruta típica en esta máquina):  
    `C:\Users\leave\AndroidStudioProjects\Pedidos-MG\`
 3. En esa carpeta: `git add`, `git commit`, `git push origin main` (el workflow de Pages despliega solo).
