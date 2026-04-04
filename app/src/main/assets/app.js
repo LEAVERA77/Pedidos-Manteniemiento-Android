@@ -5201,6 +5201,62 @@ function togglePanel() {
     document.getElementById('bp2').classList.toggle('col');
 }
 
+/**
+ * Menú esquina superior izquierda: administrador abre el wizard de marca/logo/ubicación;
+ * otros roles siguen usando el mismo botón para el panel de pedidos.
+ */
+async function abrirWizardMarcaEmpresaManual() {
+    if (!esAdmin()) {
+        togglePanel();
+        return;
+    }
+    try {
+        await cargarConfigEmpresa();
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (token) {
+            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                const cli = data?.cliente || {};
+                let extra = cli?.configuracion || {};
+                if (typeof extra === 'string') {
+                    try {
+                        extra = JSON.parse(extra);
+                    } catch (_) {
+                        extra = {};
+                    }
+                }
+                const ep = extra && typeof extra === 'object' ? extra : {};
+                const nom = String(cli.nombre || '').trim();
+                window.EMPRESA_CFG = {
+                    ...(window.EMPRESA_CFG || {}),
+                    ...(nom ? { nombre: nom } : {}),
+                    ...(Object.prototype.hasOwnProperty.call(cli || {}, 'tipo') && String(cli.tipo ?? '').trim()
+                        ? { tipo: String(cli.tipo).trim() }
+                        : {}),
+                    ...(String(ep.logo_url || '').trim() ? { logo_url: String(ep.logo_url).trim() } : {})
+                };
+                if (ep.lat_base != null && Number.isFinite(Number(ep.lat_base))) {
+                    _setupLat = Number(ep.lat_base);
+                    window.EMPRESA_CFG.lat_base = String(ep.lat_base);
+                }
+                if (ep.lng_base != null && Number.isFinite(Number(ep.lng_base))) {
+                    _setupLng = Number(ep.lng_base);
+                    window.EMPRESA_CFG.lng_base = String(ep.lng_base);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[wizard-marca-manual]', e?.message || e);
+    }
+    _setupLogoDataUrl = '';
+    mostrarModalConfigInicial();
+}
+window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
+
 function switchTab(t) {
     app.tab = t;
     document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
@@ -5208,7 +5264,14 @@ function switchTab(t) {
 }
 
 
-document.getElementById('mt').addEventListener('click', togglePanel);
+document.getElementById('mt').addEventListener('click', () => {
+    abrirWizardMarcaEmpresaManual().catch((e) => {
+        console.warn('[wizard-marca-manual]', e?.message || e);
+        try {
+            mostrarModalConfigInicial();
+        } catch (_) {}
+    });
+});
 document.getElementById('ph').addEventListener('click', togglePanel);
 
 document.getElementById('ub').addEventListener('click', () => {
