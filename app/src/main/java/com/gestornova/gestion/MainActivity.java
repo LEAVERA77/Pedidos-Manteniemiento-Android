@@ -170,6 +170,7 @@ public class MainActivity extends AppCompatActivity {
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "")
                         + " GestorNova/" + BuildConfig.VERSION_NAME
+                        + " Nexxo/" + BuildConfig.VERSION_NAME
         );
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");

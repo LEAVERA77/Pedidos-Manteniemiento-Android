@@ -73,7 +73,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .print-content.print-a4-tight table{font-size:8.5pt;margin-top:.35rem}
 .print-content.print-a4-tight td{padding:.25rem}
 .print-content.print-a4-tight .firma-print{max-height:70px;object-fit:contain}
-#mapa-android-strip{display:none;position:absolute;top:58px;left:0;right:0;z-index:852;pointer-events:none}
+#mapa-android-strip{display:none;position:absolute;top:58px;left:0;right:0;z-index:852;pointer-events:none;transition:transform .28s ease;transform:translateX(0)}
+#mapa-android-strip.mas-collapsed{transform:translateX(100%)}
+#mapa-android-strip.mas-collapsed .mas-inner{pointer-events:none}
 #mapa-android-strip .mas-inner{pointer-events:auto;margin:.3rem .45rem;padding:.4rem .55rem;background:#fff;border:1px solid var(--bo);border-radius:.5rem;display:flex;flex-direction:column;gap:.35rem;align-items:stretch;font-size:.72rem;box-shadow:0 2px 10px rgba(0,0,0,.1)}
 #mapa-android-strip .mas-line-top{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;justify-content:space-between;width:100%}
 #mapa-android-strip .mas-line-top .mas-actions{display:flex;gap:.25rem;align-items:center;flex-shrink:0}
@@ -1970,8 +1972,10 @@ function apiUrl(path) {
 async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
     if (modoOffline) return;
     const base = getApiBaseUrl();
+    if (!base || pedidoId == null) return;
+    await asegurarJwtApiRest();
     const tok = getApiToken() || app.apiToken;
-    if (!base || !tok || pedidoId == null) return;
+    if (!tok) return;
     const pid = Number(pedidoId);
     if (!Number.isFinite(pid) || pid <= 0) return;
     try {
@@ -1995,18 +1999,46 @@ function puedeEnviarApiRestPedidos() {
     return !modoOffline && !!getApiBaseUrl() && !!getApiToken();
 }
 
+/** Reobtiene JWT con la contraseña guardada en pmg_offline_user (mismo login que offline). */
+async function intentarRefrescarJwtDesdeCredencialesGuardadas() {
+    if (modoOffline || !getApiBaseUrl() || !app.u || !app.u.email) return false;
+    let pw = null;
+    try {
+        const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
+        const entry = lista.find(u => u.email === app.u.email && u._pw);
+        pw = entry && entry._pw;
+    } catch (_) {}
+    if (!pw) return false;
+    const data = await loginApiJwt(app.u.email, pw);
+    return !!(data && data.token);
+}
+
+async function asegurarJwtApiRest() {
+    if (modoOffline || !getApiBaseUrl()) return false;
+    if (getApiToken()) return true;
+    return await intentarRefrescarJwtDesdeCredencialesGuardadas();
+}
+
 async function pedidoPutApi(id, body) {
     const base = getApiBaseUrl();
-    const tok = getApiToken();
-    if (!base || !tok || modoOffline) return null;
+    if (!base || modoOffline) return null;
+    await asegurarJwtApiRest();
+    let tok = getApiToken();
+    if (!tok) return null;
     const pid = parseInt(id, 10);
     if (!Number.isFinite(pid) || pid <= 0 || String(id).startsWith('off_')) return null;
+    const url = apiUrl(`/api/pedidos/${pid}`);
+    const opts = () => ({
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getApiToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
     try {
-        const resp = await fetch(apiUrl(`/api/pedidos/${pid}`), {
-            method: 'PUT',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
+        let resp = await fetch(url, opts());
+        if (resp.status === 401) {
+            await intentarRefrescarJwtDesdeCredencialesGuardadas();
+            if (getApiToken()) resp = await fetch(url, opts());
+        }
         if (!resp.ok) {
             const t = await resp.text();
             console.warn('[pedido-put-api]', resp.status, t.slice(0, 400));
@@ -2022,8 +2054,10 @@ async function pedidoPutApi(id, body) {
 async function notificarWhatsappClienteEventoApi(pedidoId, event) {
     if (modoOffline) return;
     const base = getApiBaseUrl();
+    if (!base || pedidoId == null) return;
+    await asegurarJwtApiRest();
     const tok = getApiToken();
-    if (!base || !tok || pedidoId == null) return;
+    if (!tok) return;
     const pid = Number(pedidoId);
     if (!Number.isFinite(pid) || pid <= 0) return;
     try {
@@ -2124,10 +2158,11 @@ function toggleAndroidMapStripCollapsed(collapse) {
     const tab = document.getElementById('map-tab-android-bar');
     if (!strip) return;
     if (collapse === undefined) {
-        collapse = strip.style.display !== 'none';
+        collapse = !strip.classList.contains('mas-collapsed');
     }
     const hide = !!collapse;
-    strip.style.display = hide ? 'none' : 'block';
+    strip.classList.toggle('mas-collapsed', hide);
+    if (esAndroidWebViewMapa()) strip.style.display = 'block';
     if (tab) {
         if (hide && esAndroidWebViewMapa()) tab.classList.add('visible');
         else tab.classList.remove('visible');
@@ -2736,9 +2771,10 @@ function aplicarUIMapaPlataforma() {
         }
         const tabBar = document.getElementById('map-tab-android-bar');
         if (localStorage.getItem('pmg_android_strip_collapsed') === '1') {
-            strip.style.display = 'none';
+            strip.classList.add('mas-collapsed');
             tabBar?.classList.add('visible');
         } else {
+            strip.classList.remove('mas-collapsed');
             tabBar?.classList.remove('visible');
         }
     } else {
@@ -3081,6 +3117,11 @@ async function intentarAutoInicioEjecucionTecnico(lat, lng) {
         const now = new Date().toISOString();
         const av = Math.max(parseInt(p.av, 10) || 0, 5);
         await updPedido(p.id, { estado: 'En ejecución', fecha_avance: now, avance: av }, app.u.id);
+        const pidNum = parseInt(p.id, 10);
+        if (Number.isFinite(pidNum) && pidNum > 0) {
+            await asegurarJwtApiRest();
+            if (puedeEnviarApiRestPedidos()) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
+        }
         toast('Llegada al lugar: pedido #' + p.np + ' en ejecución', 'success');
     }
 }
@@ -5989,6 +6030,30 @@ function detenerTracking() {
 }
 window.detenerTracking = detenerTracking;
 
+(function limpiarSesionSiActualizoApkAndroid() {
+    try {
+        if (window.AndroidConfig && typeof AndroidConfig.getVersionCode === 'function') {
+            const vc = AndroidConfig.getVersionCode();
+            const key = 'pmg_stored_app_version_code';
+            const prevRaw = localStorage.getItem(key);
+            if (prevRaw != null && prevRaw !== '') {
+                const prev = parseInt(prevRaw, 10);
+                if (Number.isFinite(prev) && prev > 0 && vc !== prev) {
+                    localStorage.removeItem('pmg');
+                    localStorage.removeItem('pmg_api_token');
+                    app.apiToken = null;
+                    try {
+                        if (window.AndroidSession && typeof AndroidSession.clearUser === 'function') {
+                            AndroidSession.clearUser();
+                        }
+                    } catch (_) {}
+                }
+            }
+            localStorage.setItem(key, String(vc));
+        }
+    } catch (_) {}
+})();
+
 try {
     const s = localStorage.getItem('pmg');
     try {
@@ -6034,6 +6099,7 @@ try {
             
             solicitarPermisos();
             initMap();
+            await asegurarJwtApiRest();
             await cargarPedidos();
             
             if (!modoOffline && offlineQueue().length > 0) {
