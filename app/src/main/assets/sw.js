@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v4';
-const CACHE_SHELL = 'pmg-shell-v7';
-const SW_VERSION  = '1.1.1';
+const CACHE_SHELL = 'pmg-shell-v8';
+const SW_VERSION  = '1.1.2';
 
 function shellAssetUrls() {
   const { origin, pathname } = self.location;
@@ -27,9 +27,7 @@ function shellAssetUrls() {
     j('map.js'),
     j('map-view.js'),
     j('offline.js'),
-    j('sync-worker.js'),
-    j('branding/gestornova-web.png'),
-    j('branding/gestornova-android.png')
+    j('sync-worker.js')
   ];
 }
 

@@ -5,6 +5,7 @@ import { getUserTenantId } from "../utils/tenantUser.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
+  normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
 
 const router = express.Router();
@@ -28,12 +29,29 @@ router.get("/mi-configuracion", authMiddleware, async (req, res) => {
 
 router.put("/mi-configuracion", authMiddleware, async (req, res) => {
   try {
-    if (req.user.rol !== "admin") return res.status(403).json({ error: "Requiere rol administrador" });
+    const rol = String(req.user.rol || "").toLowerCase();
+    if (rol !== "admin" && rol !== "administrador") {
+      return res.status(403).json({ error: "Requiere rol administrador" });
+    }
 
     const tenantId = await getUserTenantId(req.user.id);
     const body = req.body || {};
     const { nombre, tipo, latitud, longitud, configuracion = {} } = body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;
+
+    let tipoDb = null;
+    if (tipo !== undefined && tipo !== null && String(tipo).trim() !== "") {
+      const norm = normalizarRubroCliente(tipo);
+      if (!norm) {
+        return res.status(400).json({
+          error: "Tipo de cliente no reconocido",
+          detail: String(tipo),
+          tipos_sugeridos: ["municipio", "cooperativa_electrica", "cooperativa_agua", "cooperativa", "empresa"],
+        });
+      }
+      tipoDb = norm;
+    }
+
     // Merge: top-level logo/lat/lng + body.configuracion (p. ej. setup_wizard_completado).
     const cfgJson = {
       ...(typeof configuracion === "object" && configuracion ? configuracion : {}),
@@ -53,7 +71,7 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
            fecha_actualizacion = NOW()
        WHERE id = $1
        RETURNING *`,
-      [tenantId, nombre ?? null, tipo ?? null, JSON.stringify(cfgJson)]
+      [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
     return res.json({ ok: true, tenant_id: tenantId, cliente: r.rows[0] });

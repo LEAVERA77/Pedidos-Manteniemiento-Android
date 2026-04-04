@@ -117,16 +117,19 @@ export function normalizarPrioridadPedido(prioridad, tipoTrabajoFallback) {
 export function normalizarRubroCliente(tipoCliente) {
   const t = String(tipoCliente || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   if (t === "municipio") return "municipio";
   if (t === "cooperativa_agua" || t === "cooperativa de agua") return "cooperativa_agua";
   if (
     t === "cooperativa_electrica" ||
-    t === "cooperativa eléctrica" ||
     t === "cooperativa electrica"
   ) {
     return "cooperativa_electrica";
   }
+  /** Texto libre del panel Empresa ("cooperativa", "empresa") → valor válido en CHECK de `clientes.tipo`. */
+  if (t === "cooperativa" || t === "empresa") return "cooperativa_electrica";
   return null;
 }
 

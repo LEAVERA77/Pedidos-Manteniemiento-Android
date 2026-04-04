@@ -1020,6 +1020,16 @@ function esAdminSesionWebPublica() {
 /** Marca por defecto hasta que el admin complete el setup inicial en servidor (setup_wizard_completado). */
 const BRAND_DEFAULT_NAME = 'GestorNova';
 
+/** Persiste nombre/logo/subtítulo entre sesiones (incl. tras cerrar sesión en la web pública). */
+const PMG_BRANDING_LS_KEY = 'pmg_tenant_branding_v1';
+
+/** Logo por defecto embebido (evita 404 de branding/*.png en GitHub Pages). */
+const BRANDING_DEFAULT_LOGO_DATA_URL =
+    'data:image/svg+xml,' +
+    encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="8" fill="#2563eb"/><text x="24" y="33" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="700">GN</text></svg>'
+    );
+
 function basePathAssets() {
     try {
         let p = window.location.pathname || '/';
@@ -1039,31 +1049,87 @@ function basePathAssets() {
 }
 
 function defaultGestorNovaLogoUrl() {
-    const file = esAndroidWebViewMapa() ? 'branding/gestornova-android.png' : 'branding/gestornova-web.png';
+    return BRANDING_DEFAULT_LOGO_DATA_URL;
+}
+
+function persistTenantBrandingCache(extra) {
     try {
-        if (window.location.protocol === 'file:') {
-            return new URL(file, window.location.href).href;
-        }
-        const base = basePathAssets();
-        const path = (base + file).replace(/([^:]\/)\/+/g, '$1');
-        return window.location.origin + path;
+        const b = window.__PMG_TENANT_BRANDING__ || {};
+        const o = {
+            setup_wizard_completado: !!b.setup_wizard_completado,
+            marca_publicada_admin: !!b.marca_publicada_admin,
+            nombre_cliente: String(b.nombre_cliente || '').trim(),
+            logo_url: String(b.logo_url || '').trim(),
+            tipo: String(b.tipo || '').trim(),
+            subtitulo: String((extra && extra.subtitulo) || window.EMPRESA_CFG?.subtitulo || '').trim(),
+            from_local_cache: !!b.from_local_cache
+        };
+        localStorage.setItem(PMG_BRANDING_LS_KEY, JSON.stringify(o));
+    } catch (_) {}
+}
+
+function loadTenantBrandingCache() {
+    try {
+        const raw = localStorage.getItem(PMG_BRANDING_LS_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        return o && typeof o === 'object' ? o : null;
     } catch (_) {
-        return file;
+        return null;
     }
 }
 
+/** Pantalla de login o post-logout: restaurar marca guardada (API o última sesión). */
+function hydrateBrandingForPublicScreen() {
+    const c = loadTenantBrandingCache();
+    if (c && (String(c.nombre_cliente || '').trim() || String(c.logo_url || '').trim())) {
+        window.__PMG_TENANT_BRANDING__ = {
+            setup_wizard_completado: !!c.setup_wizard_completado,
+            marca_publicada_admin: !!c.marca_publicada_admin,
+            nombre_cliente: String(c.nombre_cliente || ''),
+            logo_url: String(c.logo_url || ''),
+            tipo: String(c.tipo || ''),
+            from_local_cache: !!c.from_local_cache
+        };
+        const sub = String(c.subtitulo || '').trim();
+        window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...(sub ? { subtitulo: sub } : {}) };
+    } else {
+        resetBrandingSesionNoAutenticada();
+    }
+    syncEmpresaCfgNombreLogoDesdeMarca();
+}
+
+/** Si hay nombre en empresa_config local pero aún no hay marca en memoria, mostrar cabecera sin depender solo de la API. */
+function ensureBrandingFromLocalEmpresaCfg() {
+    const nSql = String(window.EMPRESA_CFG?.nombre || '').trim();
+    if (!nSql) return;
+    const b = window.__PMG_TENANT_BRANDING__ || {};
+    if (String(b.nombre_cliente || '').trim()) return;
+    window.__PMG_TENANT_BRANDING__ = {
+        ...b,
+        nombre_cliente: nSql,
+        logo_url: String(b.logo_url || window.EMPRESA_CFG?.logo_url || '').trim(),
+        marca_publicada_admin: true,
+        setup_wizard_completado: true,
+        from_local_cache: true
+    };
+    syncEmpresaCfgNombreLogoDesdeMarca();
+}
+
 /**
- * Datos de marca efectivos: nombre/logo de tenant solo si el admin publicó marca
- * (wizard final o Admin → Empresa → guardar), vía GET /api/clientes/mi-configuracion.
+ * Datos de marca efectivos: nombre/logo si el admin publicó en API, completó wizard,
+ * o hay caché local (última sesión / empresa_config).
  */
 function resolveMarcaTenantUI() {
     const b = window.__PMG_TENANT_BRANDING__ || {};
     const setup = !!b.setup_wizard_completado;
     const marcaPub = !!b.marca_publicada_admin;
+    const fromCache = !!b.from_local_cache;
     const nombreApi = String(b.nombre_cliente || '').trim();
     const logoApi = String(b.logo_url || '').trim();
     const tipoApi = String(b.tipo || '').trim();
-    if (setup && marcaPub && (nombreApi || logoApi)) {
+    const trusted = marcaPub || setup || fromCache;
+    if (trusted && (nombreApi || logoApi)) {
         return {
             nombre: nombreApi || BRAND_DEFAULT_NAME,
             logo_url: logoApi || defaultGestorNovaLogoUrl(),
@@ -1086,14 +1152,15 @@ function syncEmpresaCfgNombreLogoDesdeMarca() {
     if (m.tipo) window.EMPRESA_CFG.tipo = m.tipo;
 }
 
-/** Pantalla de login / sin JWT: no mostrar nombre/logo de otro tenant ni de empresa_config legacy. */
+/** Sin marca conocida: volver a valores por defecto (no borra localStorage; usar solo si no hay caché). */
 function resetBrandingSesionNoAutenticada() {
     window.__PMG_TENANT_BRANDING__ = {
         setup_wizard_completado: false,
         marca_publicada_admin: false,
         nombre_cliente: '',
         logo_url: '',
-        tipo: ''
+        tipo: '',
+        from_local_cache: false
     };
     syncEmpresaCfgNombreLogoDesdeMarca();
 }
@@ -1104,7 +1171,10 @@ function aplicarMarcaVisualCompleta() {
     const h1 = document.querySelector('.lc h1');
     if (h1) h1.textContent = m.nombre;
     const subEl = document.querySelector('.lc .sub');
-    if (subEl) subEl.textContent = 'Pedidos de mantenimiento';
+    if (subEl) {
+        const st = String(window.EMPRESA_CFG?.subtitulo || '').trim();
+        subEl.textContent = st || 'Pedidos de mantenimiento';
+    }
     const h2 = document.querySelector('.hd h2');
     if (h2) {
         h2.textContent = '';
@@ -1180,6 +1250,9 @@ async function confirmarAdminTipoNegocioWeb() {
     }
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
+    try {
+        persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
+    } catch (_) {}
     aplicarEtiquetasPorTipo(tipo);
     poblarSelectTiposReclamo();
     syncEmpresaCfgNombreLogoDesdeMarca();
@@ -1289,7 +1362,7 @@ actualizarBadgeOffline();
 (function pintarMarcaLoginAlCargarModulo() {
     try {
         if (document.getElementById('ls')?.classList.contains('active')) {
-            resetBrandingSesionNoAutenticada();
+            hydrateBrandingForPublicScreen();
             aplicarMarcaVisualCompleta();
         }
     } catch (_) {}
@@ -4929,7 +5002,7 @@ document.getElementById('ub').addEventListener('click', () => {
         localStorage.removeItem('pmg_api_token');
         app.apiToken = null;
         app.u = null;
-        resetBrandingSesionNoAutenticada();
+        hydrateBrandingForPublicScreen();
         try { aplicarMarcaVisualCompleta(); } catch (_) {}
         mapaInicializado = false;
         _mapLazyQueued = false;
@@ -5223,9 +5296,8 @@ async function cargarConfigEmpresa() {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const sqlCfg = {};
         (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
-        delete sqlCfg.nombre;
-        delete sqlCfg.logo_url;
         window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
+        ensureBrandingFromLocalEmpresaCfg();
         syncEmpresaCfgNombreLogoDesdeMarca();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
@@ -5233,6 +5305,9 @@ async function cargarConfigEmpresa() {
         const cfg = window.EMPRESA_CFG || {};
         aplicarEtiquetasPorTipo(cfg.tipo || '');
         poblarSelectTiposReclamo();
+        try {
+            persistTenantBrandingCache({ subtitulo: cfg.subtitulo });
+        } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();
@@ -5486,24 +5561,23 @@ async function verificarConfiguracionInicialObligatoria() {
             if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
                 cfg.tipo = String(cli.tipo ?? '').trim();
             }
+            const nombreTrim = String(cli.nombre || '').trim();
             window.__PMG_TENANT_BRANDING__ = {
                 setup_wizard_completado: !!extraParsed.setup_wizard_completado,
-                marca_publicada_admin: !!extraParsed.marca_publicada_admin,
-                nombre_cliente: String(cli.nombre || '').trim(),
+                marca_publicada_admin: !!extraParsed.marca_publicada_admin || nombreTrim.length > 0,
+                nombre_cliente: nombreTrim,
                 logo_url: String(extraParsed.logo_url || '').trim(),
-                tipo: String(cli.tipo ?? '').trim()
+                tipo: String(cli.tipo ?? '').trim(),
+                from_local_cache: false
             };
         }
     } catch (_) {}
     if (!apiOk) {
-        window.__PMG_TENANT_BRANDING__ = {
-            setup_wizard_completado: false,
-            marca_publicada_admin: false,
-            nombre_cliente: '',
-            logo_url: '',
-            tipo: ''
-        };
         console.warn('[setup] /api/clientes/mi-configuracion no disponible; no se bloquea con el wizard');
+        hydrateBrandingForPublicScreen();
+        try {
+            aplicarMarcaVisualCompleta();
+        } catch (_) {}
         ocultarModalConfigInicial();
         return true;
     }
@@ -5522,6 +5596,9 @@ async function verificarConfiguracionInicialObligatoria() {
     aplicarMarcaVisualCompleta();
     aplicarEtiquetasPorTipo(cfg.tipo || '');
     poblarSelectTiposReclamo();
+    try {
+        persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
+    } catch (_) {}
     return true;
 }
 function setupWizardNext() {
@@ -5610,7 +5687,8 @@ async function guardarConfiguracionInicialObligatoria() {
             marca_publicada_admin: true,
             nombre_cliente: nombre,
             logo_url: String(logoUrl || '').trim(),
-            tipo
+            tipo,
+            from_local_cache: false
         };
         // Reflejo local en caliente para no reiniciar.
         window.EMPRESA_CFG = {
@@ -5621,6 +5699,9 @@ async function guardarConfiguracionInicialObligatoria() {
             lat_base: String(_setupLat),
             lng_base: String(_setupLng)
         };
+        try {
+            persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
+        } catch (_) {}
         poblarSelectTiposReclamo();
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
@@ -5822,7 +5903,12 @@ async function guardarConfigEmpresa() {
                 await asegurarJwtApiRest();
                 const token = getApiToken();
                 if (token) {
-                    const body = { configuracion: { marca_publicada_admin: true } };
+                    const body = {
+                        configuracion: {
+                            marca_publicada_admin: true,
+                            setup_wizard_completado: true
+                        }
+                    };
                     if (campos.nombre) body.nombre = campos.nombre;
                     if (campos.tipo) body.tipo = campos.tipo;
                     const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
@@ -5835,7 +5921,7 @@ async function guardarConfigEmpresa() {
                     });
                     if (!resp.ok) {
                         const err = await resp.json().catch(() => ({}));
-                        throw new Error(err.error || `HTTP ${resp.status}`);
+                        throw new Error(err.detail ? `${err.error || 'Error'}: ${err.detail}` : err.error || `HTTP ${resp.status}`);
                     }
                 } else {
                     marcaApiOk = false;
@@ -5845,6 +5931,30 @@ async function guardarConfigEmpresa() {
                 console.warn('[empresa] PUT mi-configuracion:', e?.message || e);
             }
         }
+        window.EMPRESA_CFG = {
+            ...(window.EMPRESA_CFG || {}),
+            nombre: campos.nombre,
+            tipo: campos.tipo,
+            subtitulo: campos.subtitulo
+        };
+        window.__PMG_TENANT_BRANDING__ = {
+            ...(window.__PMG_TENANT_BRANDING__ || {}),
+            nombre_cliente: campos.nombre,
+            tipo: campos.tipo,
+            marca_publicada_admin: true,
+            setup_wizard_completado: true,
+            from_local_cache: !marcaApiOk
+        };
+        if (marcaApiOk) {
+            window.__PMG_TENANT_BRANDING__.from_local_cache = false;
+        }
+        syncEmpresaCfgNombreLogoDesdeMarca();
+        try {
+            persistTenantBrandingCache({ subtitulo: campos.subtitulo });
+        } catch (_) {}
+        try {
+            aplicarMarcaVisualCompleta();
+        } catch (_) {}
         await cargarConfigEmpresa();
         await verificarConfiguracionInicialObligatoria();
         syncWrapCoordsDisplayNuevoPedido();
@@ -7267,7 +7377,10 @@ if ('serviceWorker' in navigator) {
     // Llamar conectarNeon() DESPUÉS de cargar config (timing correcto)
     await conectarNeon();
     if (document.getElementById('ls')?.classList.contains('active')) {
-        resetBrandingSesionNoAutenticada();
+        hydrateBrandingForPublicScreen();
+        try {
+            if (NEON_OK) await cargarConfigEmpresa();
+        } catch (_) {}
         try { aplicarMarcaVisualCompleta(); } catch (_) {}
     }
 })();
