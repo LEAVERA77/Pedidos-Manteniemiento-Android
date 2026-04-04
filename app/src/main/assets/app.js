@@ -1504,8 +1504,10 @@ document.getElementById('lf').addEventListener('submit', async e => {
         } catch (_) {}
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
+            iniciarPollWhatsappHumanChat();
         } else {
             detenerDashboardGerenciaPoll();
+            detenerPollWhatsappHumanChat();
             detenerTecnicosMapaPrincipalPoll();
         }
         setTimeout(async () => {
@@ -2119,6 +2121,232 @@ async function pollCierresGerencia() {
         }
     } catch (_) {}
 }
+
+let _waHcPollInterval = null;
+let _waHcKnownSessionIds = new Set();
+let _waHcPollPrimed = false;
+let _waHcModalSessionId = null;
+let _waHcModalPollTimer = null;
+
+function detenerPollWhatsappHumanChat() {
+    if (_waHcPollInterval) {
+        clearInterval(_waHcPollInterval);
+        _waHcPollInterval = null;
+    }
+}
+
+function iniciarPollWhatsappHumanChat() {
+    detenerPollWhatsappHumanChat();
+    if (!esAdmin()) return;
+    _waHcPollPrimed = false;
+    _waHcKnownSessionIds.clear();
+    const tick = () => { pollWhatsappHumanChatCola(); };
+    tick();
+    _waHcPollInterval = setInterval(tick, 5000);
+}
+
+async function pollWhatsappHumanChatCola() {
+    if (!app.u || !esAdmin() || modoOffline || !puedeEnviarApiRestPedidos()) return;
+    try {
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) return;
+        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
+            headers: { Authorization: `Bearer ${tok}` }
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        const list = data.sessions || [];
+        const idsNow = new Set(list.map(s => String(s.id)));
+        for (const k of [..._waHcKnownSessionIds]) {
+            if (!idsNow.has(k)) _waHcKnownSessionIds.delete(k);
+        }
+        if (!_waHcPollPrimed) {
+            list.forEach(s => _waHcKnownSessionIds.add(String(s.id)));
+            _waHcPollPrimed = true;
+            return;
+        }
+        for (const s of list) {
+            const id = String(s.id);
+            if (_waHcKnownSessionIds.has(id)) continue;
+            _waHcKnownSessionIds.add(id);
+            mostrarToastWaHumanChatNuevo(s);
+        }
+    } catch (_) {}
+}
+
+function mostrarToastWaHumanChatNuevo(s) {
+    const host = document.getElementById('wa-human-chat-toast-host');
+    if (!host) return;
+    const el = document.createElement('div');
+    el.className = 'wa-human-chat-toast';
+    const name = String(s.contact_name || '').trim() || 'Cliente';
+    const ph = String(s.phone_canonical || '');
+    el.innerHTML = `<strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
+    el.onclick = () => {
+        try { el.remove(); } catch (_) {}
+        abrirModalWhatsappHumanChat(Number(s.id));
+    };
+    host.appendChild(el);
+    setTimeout(() => { try { if (el.parentElement) el.remove(); } catch (_) {} }, 45000);
+}
+
+function cerrarModalWaHumanChat() {
+    const m = document.getElementById('modal-wa-human-chat');
+    if (m) m.classList.remove('active');
+    if (_waHcModalPollTimer) {
+        clearInterval(_waHcModalPollTimer);
+        _waHcModalPollTimer = null;
+    }
+    _waHcModalSessionId = null;
+}
+
+async function abrirModalWhatsappHumanChat(prefSessionId) {
+    if (!puedeEnviarApiRestPedidos()) {
+        toast('Sin conexión a la API para el chat', 'warning');
+        return;
+    }
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
+            headers: { Authorization: `Bearer ${tok}` }
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        const list = data.sessions || [];
+        const sel = document.getElementById('wa-hc-session-picker');
+        if (sel) {
+            if (list.length) {
+                sel.innerHTML = list.map(s =>
+                    `<option value="${s.id}">${_escOpt((s.contact_name || '').trim() || 'Cliente')} — ${String(s.phone_canonical || '')} (${s.estado})</option>`
+                ).join('');
+            } else if (prefSessionId) {
+                sel.innerHTML = `<option value="${Number(prefSessionId)}">Conversación #${Number(prefSessionId)}</option>`;
+            } else {
+                sel.innerHTML = '<option value="">(sin conversaciones abiertas)</option>';
+            }
+        }
+        let useId = null;
+        if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
+            useId = Number(prefSessionId);
+        } else if (list[0]) {
+            useId = Number(list[0].id);
+        } else if (prefSessionId) {
+            useId = Number(prefSessionId);
+        }
+        if (sel && useId) sel.value = String(useId);
+        _waHcModalSessionId = useId;
+        if (useId) {
+            await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
+            });
+        }
+        document.getElementById('modal-wa-human-chat')?.classList.add('active');
+        await refrescarMetaYMensajesWaHc();
+        if (_waHcModalPollTimer) clearInterval(_waHcModalPollTimer);
+        _waHcModalPollTimer = setInterval(refrescarMetaYMensajesWaHc, 3500);
+    } catch (e) {
+        toast('No se pudo abrir el chat: ' + (e.message || e), 'error');
+    }
+}
+
+async function onWaHcPickerChange() {
+    const sel = document.getElementById('wa-hc-session-picker');
+    const id = sel && sel.value ? Number(sel.value) : null;
+    if (!id) return;
+    _waHcModalSessionId = id;
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${id}/activate`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
+        });
+    } catch (_) {}
+    await refrescarMetaYMensajesWaHc();
+}
+
+async function refrescarMetaYMensajesWaHc() {
+    const sid = _waHcModalSessionId;
+    if (!sid) return;
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/messages`), {
+            headers: { Authorization: `Bearer ${tok}` }
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        const meta = document.getElementById('wa-hc-meta');
+        if (meta && data.session) {
+            meta.textContent = `Tel: ${data.session.phone_canonical || ''} · Estado: ${data.session.estado || ''}`;
+        }
+        const box = document.getElementById('wa-hc-messages');
+        if (box && Array.isArray(data.messages)) {
+            box.innerHTML = data.messages.map(m =>
+                `<div class="${m.direction === 'in' ? 'wa-hc-bubble-in' : 'wa-hc-bubble-out'}">${_escOpt(m.body)}</div>`
+            ).join('');
+            box.scrollTop = box.scrollHeight;
+        }
+    } catch (_) {}
+}
+
+async function enviarMensajeWaHumanChatAdmin() {
+    const sid = _waHcModalSessionId;
+    const ta = document.getElementById('wa-hc-input');
+    const text = String(ta?.value || '').trim();
+    if (!sid || !text) return;
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/send`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.error || 'HTTP ' + r.status);
+        }
+        if (ta) ta.value = '';
+        await refrescarMetaYMensajesWaHc();
+        toast('Mensaje enviado', 'success');
+    } catch (e) {
+        toast(String(e.message || e), 'error');
+    }
+}
+
+async function finalizarChatWaHumanChatAdmin() {
+    const sid = _waHcModalSessionId;
+    if (!sid) return;
+    if (!confirm('¿Finalizar este chat con el cliente?')) return;
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/close`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
+        });
+        if (!r.ok) throw new Error('close');
+        _waHcKnownSessionIds.delete(String(sid));
+        cerrarModalWaHumanChat();
+        toast('Chat finalizado', 'success');
+    } catch (e) {
+        toast('No se pudo cerrar el chat', 'error');
+    }
+}
+
+window.cerrarModalWaHumanChat = cerrarModalWaHumanChat;
+window.abrirModalWhatsappHumanChat = abrirModalWhatsappHumanChat;
+window.onWaHcPickerChange = onWaHcPickerChange;
+window.enviarMensajeWaHumanChatAdmin = enviarMensajeWaHumanChatAdmin;
+window.finalizarChatWaHumanChatAdmin = finalizarChatWaHumanChatAdmin;
 
 function mostrarToastCierreGerencia(row) {
     const host = document.getElementById('cierre-toast-host');
@@ -4989,6 +5217,7 @@ document.getElementById('ub').addEventListener('click', () => {
         detenerKeepAlive(); 
         detenerTracking();
         detenerDashboardGerenciaPoll();
+        detenerPollWhatsappHumanChat();
         detenerTecnicosMapaPrincipalPoll();
         _dashCierresInit = false;
         _seenClosedIds.clear();
@@ -5221,8 +5450,10 @@ try {
         } catch (_) {}
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
+            iniciarPollWhatsappHumanChat();
         } else {
             detenerDashboardGerenciaPoll();
+            detenerPollWhatsappHumanChat();
             detenerTecnicosMapaPrincipalPoll();
         }
         document.getElementById('ls').classList.remove('active');
@@ -5903,10 +6134,10 @@ async function guardarConfigEmpresa() {
                 await asegurarJwtApiRest();
                 const token = getApiToken();
                 if (token) {
+                    /** Solo publicar marca aquí; setup_wizard_completado lo pone el wizard al Finalizar. */
                     const body = {
                         configuracion: {
-                            marca_publicada_admin: true,
-                            setup_wizard_completado: true
+                            marca_publicada_admin: true
                         }
                     };
                     if (campos.nombre) body.nombre = campos.nombre;
@@ -5942,7 +6173,6 @@ async function guardarConfigEmpresa() {
             nombre_cliente: campos.nombre,
             tipo: campos.tipo,
             marca_publicada_admin: true,
-            setup_wizard_completado: true,
             from_local_cache: !marcaApiOk
         };
         if (marcaApiOk) {
