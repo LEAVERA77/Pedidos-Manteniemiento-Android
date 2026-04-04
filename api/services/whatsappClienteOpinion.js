@@ -76,17 +76,33 @@ export async function clearPendingClienteOpinion(tenantId, phoneDigits) {
   }
 }
 
+/** Variantes de canon (54 vs 549) por si hubo divergencia al registrar vs webhook. */
+function canonicalPhoneVariantsForLookup(phoneDigits) {
+  const d = String(phoneDigits || "").replace(/\D/g, "");
+  const out = new Set();
+  if (d) out.add(canonicalPhone(d));
+  if (d.startsWith("549") && d.length >= 12) {
+    out.add(canonicalPhone("54" + d.slice(3)));
+  }
+  if (d.startsWith("54") && d.length >= 11 && d.charAt(2) !== "9") {
+    out.add(canonicalPhone("549" + d.slice(2)));
+  }
+  return [...out].filter(Boolean);
+}
+
 async function getPending(tenantId, phoneDigits) {
-  const phone = canonicalPhone(phoneDigits);
   const tid = Number(tenantId);
-  if (!phone || !Number.isFinite(tid) || tid < 1) return null;
+  if (!Number.isFinite(tid) || tid < 1) return null;
+  const variants = canonicalPhoneVariantsForLookup(phoneDigits);
+  if (!variants.length) return null;
   try {
     await ensureOpinionPendingTable();
     const r = await query(
       `SELECT pedido_id FROM cliente_opinion_pending
-       WHERE tenant_id = $1 AND phone_canonical = $2 AND expires_at > NOW()
+       WHERE tenant_id = $1 AND phone_canonical = ANY($2::varchar[]) AND expires_at > NOW()
+       ORDER BY created_at DESC
        LIMIT 1`,
-      [tid, phone]
+      [tid, variants]
     );
     const row = r.rows?.[0];
     if (!row) return null;
@@ -172,6 +188,11 @@ function ackOpinionInstitucion(nombreEntidad) {
   return `Gracias por sus comentarios. Lo tendremos en consideración. (*${ent}*)`;
 }
 
+/** Tras el cierre: agradecimientos breves sin reabrir el menú del bot. */
+function ackOpinionCierreCorto() {
+  return "Gracias.";
+}
+
 /** Solo comandos explícitos para volver al menú (con opinión pendiente aún activa). */
 function esEscapeMenuOpinionPendiente(raw, low) {
   const t = String(raw || "").trim();
@@ -213,9 +234,15 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
       `UPDATE pedidos SET opinion_cliente = $2, fecha_opinion_cliente = NOW() WHERE id = $1`,
       [pend.pedidoId, opinion]
     );
-    await clearPendingClienteOpinion(tenantId, phoneDigits);
+    await query(`DELETE FROM cliente_opinion_pending WHERE tenant_id = $1 AND pedido_id = $2`, [
+      Number(tenantId),
+      pend.pedidoId,
+    ]);
 
-    return { handled: true, ack: ackOpinionInstitucion(nombreEntidad) };
+    const ack = esMensajeCortoConformidad(low)
+      ? ackOpinionCierreCorto()
+      : ackOpinionInstitucion(nombreEntidad);
+    return { handled: true, ack };
   }
 
   if (esComandoExcluidoFlujoMenu(low, raw)) {
@@ -223,6 +250,5 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
   }
 
   if (raw.length < 2) return { handled: false };
-  if (esMensajeCortoConformidad(low)) return { handled: false };
   return { handled: false };
 }

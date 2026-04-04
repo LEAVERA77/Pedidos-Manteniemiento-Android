@@ -690,6 +690,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       nombreEntidad: ctx?.nombre,
     });
     if (opinionTry.handled && opinionTry.ack) {
+      sessions.delete(sk);
       await reply(phone, opinionTry.ack, tid, phoneNumberId);
       return;
     }

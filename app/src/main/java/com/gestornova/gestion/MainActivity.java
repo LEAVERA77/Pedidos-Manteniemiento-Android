@@ -172,7 +172,8 @@ public class MainActivity extends AppCompatActivity {
         s.setSupportZoom(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            s.setOffscreenPreRaster(true);
+            // En emulador suele consumir RAM/GPU extra; en dispositivo real ayuda al scroll.
+            s.setOffscreenPreRaster(!isProbablyEmulator());
         }
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "")
