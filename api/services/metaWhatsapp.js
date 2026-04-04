@@ -6,19 +6,52 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
+function argentinaStripEnabledFromEnv() {
+  const v = process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
+  if (v == null || String(v).trim() === "") return true;
+  const s = String(v).trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(s)) return false;
+  return true;
+}
+
 /**
- * Móviles Argentina en WhatsApp Cloud API: formato internacional sin + es 549 + código de área + abonado.
- * Si Meta envía 54 + área sin el 9 (ej. 5411… en lugar de 54911…), Graph puede fallar al responder.
- * Inserta el 9 solo cuando falta (tercer dígito ≠ 9).
- * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
+ * Graph API `to` (Argentina): el webhook manda 549 + área + abonado; la lista de prueba de Meta
+ * suele registrar 54 + área + abonado (sin el 9) → 131030 si no normalizamos.
+ *
+ * Por defecto: quitar un 9 tras 54 (549… → 54…). Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
+ * Si tu WABA exige 549 y el webhook manda 543…: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true (y strip=false).
  */
 export function normalizeWhatsAppRecipientForMeta(digits) {
   const d = String(digits || "").replace(/\D/g, "");
-  const flag = String(process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 ?? "true").toLowerCase();
-  if (flag === "0" || flag === "false") return d;
-  if (!d.startsWith("54") || d.length < 11) return d;
-  if (d.charAt(2) === "9") return d;
-  return `549${d.slice(2)}`;
+  const stripEnvRaw = process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
+  const stripOn = argentinaStripEnabledFromEnv();
+  const wouldStrip = d.startsWith("549") && d.length >= 12 && d.length <= 16;
+  let out = d;
+
+  if (stripOn && wouldStrip) {
+    out = `54${d.slice(3)}`;
+  } else {
+    const insertOn = ["1", "true"].includes(String(process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 || "").toLowerCase());
+    if (insertOn && d.startsWith("54") && d.length >= 11 && d.charAt(2) !== "9") {
+      out = `549${d.slice(2)}`;
+    }
+  }
+
+  // Depuración Render: ver por qué sigue yendo 549… al Graph (buscar esta línea en logs).
+  if (wouldStrip || d.startsWith("54")) {
+    console.log("[meta-whatsapp][ar-normalize]", {
+      inLen: d.length,
+      inPrefix3: d.slice(0, 3),
+      stripEnvRaw: stripEnvRaw === undefined ? "(undefined)" : String(stripEnvRaw),
+      stripOn,
+      wouldStripPattern: wouldStrip,
+      outLen: out.length,
+      outPrefix3: out.slice(0, 3),
+      changed: out !== d,
+    });
+  }
+
+  return out;
 }
 
 export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { accessToken, phoneNumberId }) {
@@ -29,9 +62,6 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
   }
   const rawTo = String(toDigits || "").replace(/\D/g, "");
   const to = normalizeWhatsAppRecipientForMeta(rawTo);
-  if (to !== rawTo) {
-    console.log("[meta-whatsapp] destinatario AR: formato móvil 549…", { len: to.length });
-  }
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params" };
@@ -59,7 +89,12 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
     const errPart = graph?.error
       ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"}, subcode ${graph.error.error_subcode ?? "?"})`
       : JSON.stringify(graph).slice(0, 400);
-    console.error("[meta-whatsapp] Graph API error", { status: resp.status, to: to.slice(0, 4) + "…", detail: errPart });
+    console.error("[meta-whatsapp] Graph API error", {
+      status: resp.status,
+      toLen: String(to).length,
+      toPrefix6: String(to).slice(0, 6),
+      detail: errPart,
+    });
     if (graph?.error?.code === 190) {
       console.error(
         "[meta-whatsapp] Token Meta expirado o inválido: renová el token en Meta y actualizá META_ACCESS_TOKEN o clientes.configuracion.meta_access_token."
@@ -124,9 +159,6 @@ export async function sendWhatsAppInteractiveListWithCredentials(
   }
   const rawTo = String(toDigits || "").replace(/\D/g, "");
   const to = normalizeWhatsAppRecipientForMeta(rawTo);
-  if (to !== rawTo) {
-    console.log("[meta-whatsapp] lista interactiva: destinatario AR 549…", { len: to.length });
-  }
   const list = Array.isArray(tipos) ? tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
   if (!to || !list.length) {
     return { ok: false, error: "invalid_params" };
@@ -182,7 +214,12 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     const errPart = graph?.error
       ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"}, subcode ${graph.error.error_subcode ?? "?"})`
       : JSON.stringify(graph).slice(0, 400);
-    console.error("[meta-whatsapp] interactive list error", { status: resp.status, to: to.slice(0, 4) + "…", detail: errPart });
+    console.error("[meta-whatsapp] interactive list error", {
+      status: resp.status,
+      toLen: String(to).length,
+      toPrefix6: String(to).slice(0, 6),
+      detail: errPart,
+    });
     if (graph?.error?.code === 190) {
       console.error(
         "[meta-whatsapp] Token Meta expirado o inválido: actualizá credenciales del tenant o META_ACCESS_TOKEN."
