@@ -2129,7 +2129,8 @@ let _waHcPollPrimed = false;
 /** @type {Map<string, { root: HTMLElement, visible: boolean, dockChip: HTMLElement|null, metaEl: HTMLElement, msgBox: HTMLElement, ta: HTMLTextAreaElement, titleEl: HTMLElement }>} */
 let _waHcWindows = new Map();
 let _waHcMessagePollInterval = null;
-let _waHcFloatZ = 6205;
+/** Por encima de pestañas fijas del mapa (≈9600); coincide con .wa-hc-float en styles.css */
+let _waHcFloatZ = 10060;
 
 function detenerRefrescoMensajesWaHcVentanas() {
     if (_waHcMessagePollInterval) {
@@ -2192,8 +2193,12 @@ async function pollWhatsappHumanChatCola() {
             if (!idsNow.has(k)) _waHcKnownSessionIds.delete(k);
         }
         if (!_waHcPollPrimed) {
-            list.forEach(s => _waHcKnownSessionIds.add(String(s.id)));
             _waHcPollPrimed = true;
+            for (const s of list) {
+                const id = String(s.id);
+                _waHcKnownSessionIds.add(id);
+                mostrarToastWaHumanChatNuevo(s);
+            }
             return;
         }
         for (const s of list) {
@@ -2329,12 +2334,11 @@ function restaurarVentanaWaHc(sidStr) {
 function crearVentanaFlotanteWaHc(sidNum) {
     const sidStr = String(sidNum);
     const idx = _waHcWindows.size;
-    const left = 12 + (idx % 4) * 28;
-    const top = 64 + (idx % 5) * 32;
     const root = document.createElement('div');
     root.className = 'wa-hc-float';
-    root.style.left = left + 'px';
-    root.style.top = top + 'px';
+    root.style.left = 'auto';
+    root.style.right = (10 + (idx % 3) * 14) + 'px';
+    root.style.top = (70 + (idx % 5) * 34) + 'px';
     root.dataset.waHcSession = sidStr;
 
     const header = document.createElement('div');
