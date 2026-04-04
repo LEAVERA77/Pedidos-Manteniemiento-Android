@@ -223,7 +223,19 @@ export async function humanChatActivateSession(sessionId, tenantId, userId) {
   const tid = Number(tenantId);
   const uid = userId != null ? Number(userId) : null;
   const row = await humanChatGetSessionForTenant(sid, tid);
-  if (!row || !["queued", "active"].includes(row.estado)) {
+  if (!row) {
+    throw new Error("session_not_open");
+  }
+  // Desde el admin: reabrir sesión cerrada (p. ej. el cliente escribió "Hola" y el bot la cerraba por error).
+  if (row.estado === "closed") {
+    await query(
+      `UPDATE whatsapp_human_chat_session SET estado = 'queued', assigned_user_id = NULL, updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2`,
+      [sid, tid]
+    );
+  }
+  const row2 = await humanChatGetSessionForTenant(sid, tid);
+  if (!row2 || !["queued", "active"].includes(row2.estado)) {
     throw new Error("session_not_open");
   }
   await query(

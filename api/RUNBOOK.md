@@ -67,3 +67,5 @@ Base: `/api/whatsapp/human-chat`
 
 - Si hay otro cliente **active**, los nuevos quedan en **lista de espera** (mensaje automático del bot con posición aproximada).
 - Con **`whatsapp_bloqueo_reclamos`** activo, el bot **sigue permitiendo** elegir **Otros** → chat humano (no cuenta como alta de pedido). El resto de tipos siguen bloqueados como antes.
+- En **chat humano**, la palabra *Hola* se trata como mensaje del cliente (se guarda en el hilo), **no** como reinicio del menú automático (eso solo aplica fuera de ese modo).
+- **POST …/activate** desde el admin: si la sesión estaba **cerrada**, pasa a **queued** y luego a **active** para poder seguir el hilo y enviar respuestas.

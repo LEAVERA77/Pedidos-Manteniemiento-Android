@@ -597,7 +597,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     console.error("[whatsapp-bot-meta] opinion reply", e.message);
   }
 
-  if (/\bhola\b/i.test(String(text || "").trim())) {
+  // En chat humano (Otros), "Hola" es mensaje del cliente, no reinicio del menú automático.
+  if (/\bhola\b/i.test(String(text || "").trim()) && sessions.get(sk)?.step !== "human_chat") {
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });
     const prevS = sessions.get(sk);
     if (prevS?.humanChatSessionId) {

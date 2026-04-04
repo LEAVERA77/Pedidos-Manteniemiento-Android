@@ -2201,6 +2201,14 @@ function cerrarModalWaHumanChat() {
     _waHcModalSessionId = null;
 }
 
+/** Etiqueta legible para teléfonos guardados como dígitos (WhatsApp / Meta). */
+function fmtTelWaMeta(digits) {
+    const d = String(digits || '').replace(/\D/g, '');
+    if (!d) return '—';
+    if (d.startsWith('54')) return '+' + d;
+    return '+' + d;
+}
+
 async function abrirModalWhatsappHumanChat(prefSessionId) {
     if (!puedeEnviarApiRestPedidos()) {
         toast('Sin conexión a la API para el chat', 'warning');
@@ -2214,20 +2222,9 @@ async function abrirModalWhatsappHumanChat(prefSessionId) {
             headers: { Authorization: `Bearer ${tok}` }
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        const data = await r.json();
-        const list = data.sessions || [];
+        let data = await r.json();
+        let list = data.sessions || [];
         const sel = document.getElementById('wa-hc-session-picker');
-        if (sel) {
-            if (list.length) {
-                sel.innerHTML = list.map(s =>
-                    `<option value="${s.id}">${_escOpt((s.contact_name || '').trim() || 'Cliente')} — ${String(s.phone_canonical || '')} (${s.estado})</option>`
-                ).join('');
-            } else if (prefSessionId) {
-                sel.innerHTML = `<option value="${Number(prefSessionId)}">Conversación #${Number(prefSessionId)}</option>`;
-            } else {
-                sel.innerHTML = '<option value="">(sin conversaciones abiertas)</option>';
-            }
-        }
         let useId = null;
         if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
             useId = Number(prefSessionId);
@@ -2236,14 +2233,36 @@ async function abrirModalWhatsappHumanChat(prefSessionId) {
         } else if (prefSessionId) {
             useId = Number(prefSessionId);
         }
-        if (sel && useId) sel.value = String(useId);
         _waHcModalSessionId = useId;
         if (useId) {
-            await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
+            const ar = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
             });
+            if (!ar.ok) {
+                const err = await ar.json().catch(() => ({}));
+                toast(err.error || ('No se pudo activar la sesión (' + ar.status + ')'), 'warning');
+            }
+            const r2 = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
+                headers: { Authorization: `Bearer ${tok}` }
+            });
+            if (r2.ok) {
+                data = await r2.json();
+                list = data.sessions || [];
+            }
         }
+        if (sel) {
+            if (list.length) {
+                sel.innerHTML = list.map(s =>
+                    `<option value="${s.id}">${_escOpt((s.contact_name || '').trim() || 'Cliente')} — ${fmtTelWaMeta(s.phone_canonical)} (${s.estado})</option>`
+                ).join('');
+            } else if (prefSessionId) {
+                sel.innerHTML = `<option value="${Number(prefSessionId)}">Conversación #${Number(prefSessionId)} (revisá si estaba cerrada)</option>`;
+            } else {
+                sel.innerHTML = '<option value="">(sin conversaciones abiertas)</option>';
+            }
+        }
+        if (sel && useId) sel.value = String(useId);
         document.getElementById('modal-wa-human-chat')?.classList.add('active');
         await refrescarMetaYMensajesWaHc();
         if (_waHcModalPollTimer) clearInterval(_waHcModalPollTimer);
@@ -2279,11 +2298,17 @@ async function refrescarMetaYMensajesWaHc() {
         const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/messages`), {
             headers: { Authorization: `Bearer ${tok}` }
         });
-        if (!r.ok) return;
+        if (!r.ok) {
+            if (r.status === 404) toast('Conversación no encontrada', 'error');
+            return;
+        }
         const data = await r.json();
         const meta = document.getElementById('wa-hc-meta');
         if (meta && data.session) {
-            meta.textContent = `Tel: ${data.session.phone_canonical || ''} · Estado: ${data.session.estado || ''}`;
+            const cn = String(data.session.contact_name || '').trim();
+            meta.textContent = (cn ? cn + ' · ' : '') +
+                'Tel: ' + fmtTelWaMeta(data.session.phone_canonical) +
+                ' · Estado: ' + (data.session.estado || '');
         }
         const box = document.getElementById('wa-hc-messages');
         if (box && Array.isArray(data.messages)) {
