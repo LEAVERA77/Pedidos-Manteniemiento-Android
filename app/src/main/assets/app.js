@@ -1076,6 +1076,17 @@ function syncEmpresaCfgNombreLogoDesdeMarca() {
     if (m.tipo) window.EMPRESA_CFG.tipo = m.tipo;
 }
 
+/** Pantalla de login / sin JWT: no mostrar nombre/logo de otro tenant ni de empresa_config legacy. */
+function resetBrandingSesionNoAutenticada() {
+    window.__PMG_TENANT_BRANDING__ = {
+        setup_wizard_completado: false,
+        nombre_cliente: '',
+        logo_url: '',
+        tipo: ''
+    };
+    syncEmpresaCfgNombreLogoDesdeMarca();
+}
+
 function aplicarMarcaVisualCompleta() {
     const m = resolveMarcaTenantUI();
     document.title = m.nombre + ' — Pedidos';
@@ -4893,6 +4904,8 @@ document.getElementById('ub').addEventListener('click', () => {
         localStorage.removeItem('pmg_api_token');
         app.apiToken = null;
         app.u = null;
+        resetBrandingSesionNoAutenticada();
+        try { aplicarMarcaVisualCompleta(); } catch (_) {}
         mapaInicializado = false;
         _mapLazyQueued = false;
         if (app.map) {
@@ -5185,6 +5198,8 @@ async function cargarConfigEmpresa() {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const sqlCfg = {};
         (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
+        delete sqlCfg.nombre;
+        delete sqlCfg.logo_url;
         window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
         syncEmpresaCfgNombreLogoDesdeMarca();
         syncWrapCoordsDisplayNuevoPedido();
@@ -7191,6 +7206,10 @@ if ('serviceWorker' in navigator) {
 
     // Llamar conectarNeon() DESPUÉS de cargar config (timing correcto)
     await conectarNeon();
+    if (document.getElementById('ls')?.classList.contains('active')) {
+        resetBrandingSesionNoAutenticada();
+        try { aplicarMarcaVisualCompleta(); } catch (_) {}
+    }
 })();
 
 

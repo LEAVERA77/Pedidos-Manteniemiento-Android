@@ -140,9 +140,9 @@
     <div class="ph" id="ph"><div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:.4rem"><span style="display:flex;align-items:center;gap:.35rem"><div class="hb"></div><span class="hl">Pedidos</span></span><button type="button" class="ib-mini" id="btn-bp2-hide" title="Ocultar panel" onclick="event.stopPropagation();setBp2PanelHidden(true)"><i class="fas fa-chevron-down"></i></button></div></div>
     <div class="pc">
       <div class="pt">
-        <button class="tb active" data-tab="p"><i class="fas fa-clock"></i> Pendientes <span id="pc" class="bge">0</span></button>
-        <button class="tb" data-tab="a"><i class="fas fa-user-check"></i> Asignados <span id="ac" class="bge">0</span></button>
-        <button class="tb" data-tab="c"><i class="fas fa-check-circle"></i> Cerrados <span id="cc" class="bge">0</span></button>
+        <button class="tb active" data-tab="p"><span class="tb-stack"><span class="tb-line"><i class="fas fa-clock"></i> Pendientes</span><span id="pc" class="bge">0</span></span></button>
+        <button class="tb" data-tab="a"><span class="tb-stack"><span class="tb-line"><i class="fas fa-user-check"></i> Asignados</span><span id="ac" class="bge">0</span></span></button>
+        <button class="tb" data-tab="c"><span class="tb-stack"><span class="tb-line"><i class="fas fa-check-circle"></i> Cerrados</span><span id="cc" class="bge">0</span></span></button>
         <label id="wrap-toggle-ver-todos" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
           <input type="checkbox" id="toggle-ver-todos-pedidos" title="Ver todos los reclamos del sistema"> Todos
         </label>
