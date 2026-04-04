@@ -7,18 +7,18 @@ const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
 /**
- * Móviles AR en WhatsApp suelen llegar como 549 + área + número; la lista de prueba de Meta
- * a veces registra 54 + área + número (sin el 9). Sin esto, Graph devuelve 131030 en desarrollo.
- * Desactivar con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false si en producción tu WABA exige el 9.
+ * Móviles Argentina en WhatsApp Cloud API: formato internacional sin + es 549 + código de área + abonado.
+ * Si Meta envía 54 + área sin el 9 (ej. 5411… en lugar de 54911…), Graph puede fallar al responder.
+ * Inserta el 9 solo cuando falta (tercer dígito ≠ 9).
+ * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
  */
 export function normalizeWhatsAppRecipientForMeta(digits) {
   const d = String(digits || "").replace(/\D/g, "");
-  const flag = String(process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9 ?? "true").toLowerCase();
+  const flag = String(process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 ?? "true").toLowerCase();
   if (flag === "0" || flag === "false") return d;
-  if (d.startsWith("549") && d.length >= 12 && d.length <= 16) {
-    return `54${d.slice(3)}`;
-  }
-  return d;
+  if (!d.startsWith("54") || d.length < 11) return d;
+  if (d.charAt(2) === "9") return d;
+  return `549${d.slice(2)}`;
 }
 
 export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { accessToken, phoneNumberId }) {
@@ -30,7 +30,7 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
   const rawTo = String(toDigits || "").replace(/\D/g, "");
   const to = normalizeWhatsAppRecipientForMeta(rawTo);
   if (to !== rawTo) {
-    console.log("[meta-whatsapp] destinatario AR normalizado (549→54)", { len: to.length });
+    console.log("[meta-whatsapp] destinatario AR: formato móvil 549…", { len: to.length });
   }
   const body = String(bodyText || "").trim();
   if (!to || !body) {
@@ -125,7 +125,7 @@ export async function sendWhatsAppInteractiveListWithCredentials(
   const rawTo = String(toDigits || "").replace(/\D/g, "");
   const to = normalizeWhatsAppRecipientForMeta(rawTo);
   if (to !== rawTo) {
-    console.log("[meta-whatsapp] lista interactiva: destinatario AR normalizado (549→54)", { len: to.length });
+    console.log("[meta-whatsapp] lista interactiva: destinatario AR 549…", { len: to.length });
   }
   const list = Array.isArray(tipos) ? tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
   if (!to || !list.length) {

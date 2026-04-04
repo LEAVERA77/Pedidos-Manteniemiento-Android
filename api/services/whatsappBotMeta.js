@@ -2,6 +2,7 @@ import { query } from "../db/neon.js";
 import {
   sendWhatsAppInteractiveListWithCredentials,
   decodeWhatsAppListRowId,
+  normalizeWhatsAppRecipientForMeta,
 } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import {
@@ -287,8 +288,11 @@ export async function handleInboundMetaWhatsAppPayload(body) {
       for (const msg of messages) {
         const from = String(msg?.from || "");
         if (!from) continue;
-        const fromNorm = from.replace(/\D/g, "");
-        const cMatch = contacts.find((c) => String(c?.wa_id || "").replace(/\D/g, "") === fromNorm);
+        const fromNorm = normalizeWhatsAppRecipientForMeta(from.replace(/\D/g, ""));
+        const cMatch = contacts.find(
+          (c) =>
+            normalizeWhatsAppRecipientForMeta(String(c?.wa_id || "").replace(/\D/g, "")) === fromNorm
+        );
         const contactName = cMatch?.profile?.name || contacts[0]?.profile?.name || null;
 
         if (msg?.type === "interactive") {
@@ -383,7 +387,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
 }
 
 async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contactName }) {
-  const phone = String(fromRaw || "").replace(/\D/g, "");
+  const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
   if (botOff) return;
 
@@ -413,7 +417,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
 }
 
 async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
-  const phone = String(fromRaw || "").replace(/\D/g, "");
+  const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
   if (botOff) return;
 
@@ -448,7 +452,7 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
 }
 
 async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
-  const phone = String(fromRaw || "").replace(/\D/g, "");
+  const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
@@ -490,8 +494,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  const lower = text.toLowerCase().trim();
-  if (lower === "menú" || lower === "menu" || lower === "0") {
+  const lower = text
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (
+    lower === "menú" ||
+    lower === "menu" ||
+    lower === "0" ||
+    lower === "inicio" ||
+    lower === "volver" ||
+    lower === "ayuda"
+  ) {
     sessions.delete(sk);
     await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
