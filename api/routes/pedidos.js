@@ -7,6 +7,7 @@ import { getUserTenantId } from "../utils/tenantUser.js";
 import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
+  normalizarPrioridadPedido,
 } from "../services/tiposReclamo.js";
 import {
   notifyPedidoCierreWhatsAppSafe,
@@ -72,7 +73,7 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
   });
 }
 
-/** Pedidos cargados por el bot WA: avisar al vecino cuando el técnico (app/web) ejecuta o informa avance. */
+/** Avisar al cliente (tel. del pedido) cuando el técnico o admin pasa a ejecución o actualiza avance. */
 function scheduleNotifyClientePedidoWhatsapp({
   pedidoAntes,
   pedidoDespues,
@@ -80,9 +81,6 @@ function scheduleNotifyClientePedidoWhatsapp({
   userId,
   estadoAntes,
 }) {
-  const origenWa = String(pedidoAntes.origen_reclamo || "").toLowerCase() === "whatsapp";
-  if (!origenWa) return;
-
   const phoneRaw =
     pedidoDespues.telefono_contacto != null && pedidoDespues.telefono_contacto !== ""
       ? pedidoDespues.telefono_contacto
@@ -157,7 +155,7 @@ router.post("/", async (req, res) => {
       cliente_nombre,
       tipo_trabajo,
       descripcion,
-      prioridad = "Media",
+      prioridad,
       lat,
       lng,
       telefono_contacto,
@@ -178,6 +176,8 @@ router.post("/", async (req, res) => {
         tipos_permitidos: tiposReclamoParaClienteTipo(tipoCliente),
       });
     }
+
+    const prioridadFinal = normalizarPrioridadPedido(prioridad, tt);
 
     // Compatibilidad: por ahora no forzamos nis/medidor.
     const fotosB64 = parseFotosBase64(req.body);
@@ -216,7 +216,7 @@ router.post("/", async (req, res) => {
         cliente || null,
         tipo_trabajo || null,
         descripcion || null,
-        prioridad || "Media",
+        prioridadFinal,
         lat ?? null,
         lng ?? null,
         req.user.id,
@@ -334,6 +334,66 @@ router.get("/:id", async (req, res) => {
 });
 
 /** Tras cerrar vía SQL en la app, dispara aviso WA al teléfono del pedido (mismas credenciales que el tenant). */
+/**
+ * Tras actualizar el pedido por SQL directo (Neon en la app), dispara el mismo aviso WA que haría PUT /pedidos/:id.
+ * event: inicio | avance
+ */
+router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const event = String(req.body?.event || "").toLowerCase();
+    if (!["inicio", "avance"].includes(event)) {
+      return res.status(400).json({ error: "event debe ser inicio o avance" });
+    }
+    const pedido = await getPedidoById(id);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (req.user.rol !== "admin" && pedido.tecnico_asignado_id && pedido.tecnico_asignado_id !== req.user.id) {
+      return res.status(403).json({ error: "Sin permiso para notificar este pedido" });
+    }
+
+    const ut = await getUserTenantId(req.user.id);
+    const tenantId =
+      pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    const nombreEntidad = await loadNombreCliente(tenantId);
+    const phoneRaw = pedido.telefono_contacto;
+
+    if (event === "inicio") {
+      if (String(pedido.estado || "") !== "En ejecución") {
+        return res.status(400).json({ error: "El pedido debe estar en estado En ejecución" });
+      }
+      const r = await notifyPedidoClienteActualizacionWhatsAppSafe({
+        tenantId,
+        numeroPedido: pedido.numero_pedido,
+        nombreEntidad,
+        telefonoContactoRaw: phoneRaw,
+        pedidoId: pedido.id,
+        tipo: "en_ejecucion",
+      });
+      return res.json({ ok: true, ...r });
+    }
+
+    const r = await notifyPedidoClienteActualizacionWhatsAppSafe({
+      tenantId,
+      numeroPedido: pedido.numero_pedido,
+      nombreEntidad,
+      telefonoContactoRaw: phoneRaw,
+      pedidoId: pedido.id,
+      tipo: "avance",
+      avancePct: pedido.avance,
+      trabajoRealizadoSnippet: pedido.trabajo_realizado || null,
+    });
+    return res.json({ ok: true, ...r });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo enviar el aviso", detail: error.message });
+  }
+});
+
 router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -377,6 +437,13 @@ router.put("/:id", async (req, res) => {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
     }
+    if (
+      req.user.rol !== "admin" &&
+      pedido.tecnico_asignado_id &&
+      pedido.tecnico_asignado_id !== req.user.id
+    ) {
+      return res.status(403).json({ error: "Sin permiso para actualizar este pedido" });
+    }
 
     const {
       estado,
@@ -416,6 +483,11 @@ router.put("/:id", async (req, res) => {
          fecha_cierre = CASE WHEN $2 = 'Cerrado' THEN NOW() ELSE fecha_cierre END,
          usuario_avance_id = CASE WHEN $3 IS NOT NULL THEN $9 ELSE usuario_avance_id END,
          usuario_cierre_id = CASE WHEN $2 = 'Cerrado' THEN $9 ELSE usuario_cierre_id END,
+         usuario_inicio_id = CASE
+           WHEN $2::text = 'En ejecución' AND ($17::text IS NULL OR $17::text IS DISTINCT FROM 'En ejecución')
+           THEN $9
+           ELSE usuario_inicio_id
+         END,
          nis = COALESCE($10, nis),
          medidor = COALESCE($11, medidor),
          cliente_nombre = COALESCE($12, cliente_nombre),
@@ -442,6 +514,7 @@ router.put("/:id", async (req, res) => {
         cliente_numero_puerta ?? null,
         cliente_referencia ?? null,
         telefono_contacto ?? null,
+        estadoAntes,
       ]
     );
     const updated = r.rows[0];

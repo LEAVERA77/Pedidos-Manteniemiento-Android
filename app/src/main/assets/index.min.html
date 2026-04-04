@@ -545,7 +545,7 @@ textarea{resize:vertical;min-height:80px}
         <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — para avisar al cerrar el reclamo">
       </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
-        <select id="tt" required></select>
+        <select id="tt" required onchange="syncPrioridadConTipoReclamo()"></select>
       </div>
       <div class="fg"><label for="de">Descripción *</label>
         <textarea id="de" rows="3" maxlength="500" placeholder="Describí el problema..." required></textarea>
@@ -1863,6 +1863,60 @@ const TIPOS_RECLAMO_LEGACY = [
     'Otros'
 ];
 
+const PRIORIDAD_RECLAMO_POR_TIPO = {
+    'Alumbrado Público': 'Media',
+    'Bacheo y Pavimento': 'Media',
+    'Recolección/Poda': 'Baja',
+    'Espacios Verdes': 'Baja',
+    'Señalización/Semáforos': 'Alta',
+    'Limpieza de Zanjas': 'Media',
+    'Recolección (otros)': 'Media',
+    'Cloacas': 'Alta',
+    'Otros': 'Media',
+    'Pérdida en Vereda/Calle': 'Alta',
+    'Falta de Presión': 'Media',
+    'Calidad del Agua': 'Alta',
+    'Obstrucción de Cloaca': 'Alta',
+    'Cambio de Medidor': 'Baja',
+    'Conexión Nueva': 'Baja',
+    'Corte de Energía': 'Alta',
+    'Cables Caídos/Peligro': 'Crítica',
+    'Problemas de Tensión': 'Alta',
+    'Poste Inclinado/Dañado': 'Crítica',
+    'Alumbrado Público (Mantenimiento)': 'Baja',
+    'Riesgo en la vía pública': 'Crítica',
+    'Corrimiento de poste/columna': 'Crítica',
+    'Pedido de factibilidad (nuevo servicio)': 'Baja',
+    'Riesgo vía pública': 'Crítica',
+    'Mantenimiento preventivo': 'Baja',
+    'Material averiado': 'Media',
+    'Poda de árboles': 'Baja',
+    'Nidos': 'Baja',
+    'Falla de Línea': 'Alta',
+    'Inspección Termográfica': 'Baja',
+    'Avería en Transformador': 'Alta',
+    'Reclamo de Cliente': 'Media',
+    'Corte Programado': 'Baja',
+    'Emergencia': 'Crítica'
+};
+const _PRIORIDADES_VALIDAS_UI = new Set(['Baja', 'Media', 'Alta', 'Crítica']);
+
+function prioridadPredeterminadaPorTipoTrabajoUI(tipoTrabajo) {
+    const t = String(tipoTrabajo || '').trim();
+    if (!t) return 'Media';
+    const p = PRIORIDAD_RECLAMO_POR_TIPO[t];
+    if (p && _PRIORIDADES_VALIDAS_UI.has(p)) return p;
+    return 'Media';
+}
+
+function syncPrioridadConTipoReclamo() {
+    const tt = document.getElementById('tt');
+    const pr = document.getElementById('pr');
+    if (!tt || !pr) return;
+    const v = prioridadPredeterminadaPorTipoTrabajoUI(tt.value);
+    if (Array.from(pr.options).some(o => o.value === v)) pr.value = v;
+}
+
 function normalizarRubroEmpresa(tipo) {
     const t = String(tipo || '').trim().toLowerCase();
     if (t === 'municipio') return 'municipio';
@@ -1902,6 +1956,7 @@ function poblarSelectTiposReclamo() {
     if (prev && lista.includes(prev)) st.value = prev;
     else if (lista.length) st.selectedIndex = 0;
     syncNisClienteReclamoConexionUI();
+    syncPrioridadConTipoReclamo();
 }
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
@@ -1960,6 +2015,51 @@ async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
         }
     } catch (e) {
         console.warn('[wa-cierre]', e && e.message);
+    }
+}
+
+async function pedidoPutApi(id, body) {
+    const base = getApiBaseUrl();
+    const tok = getApiToken();
+    if (!base || !tok || modoOffline || !NEON_OK) return null;
+    const pid = parseInt(id, 10);
+    if (!Number.isFinite(pid) || pid <= 0 || String(id).startsWith('off_')) return null;
+    try {
+        const resp = await fetch(apiUrl(`/api/pedidos/${pid}`), {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+            const t = await resp.text();
+            console.warn('[pedido-put-api]', resp.status, t.slice(0, 400));
+            return null;
+        }
+        return await resp.json();
+    } catch (e) {
+        console.warn('[pedido-put-api]', e && e.message);
+        return null;
+    }
+}
+
+async function notificarWhatsappClienteEventoApi(pedidoId, event) {
+    const base = getApiBaseUrl();
+    const tok = getApiToken();
+    if (!base || !tok || pedidoId == null) return;
+    const pid = Number(pedidoId);
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    try {
+        const resp = await fetch(apiUrl(`/api/pedidos/${pid}/whatsapp-aviso-cliente`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event }),
+        });
+        if (!resp.ok) {
+            const t = await resp.text();
+            console.warn('[wa-cliente-event]', resp.status, t.slice(0, 200));
+        }
+    } catch (e) {
+        console.warn('[wa-cliente-event]', e && e.message);
     }
 }
 async function loginApiJwt(email, password) {
@@ -2460,7 +2560,8 @@ const norm = p => ({
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
     chkl: p.checklist_seguridad || null,
-    tel: (p.telefono_contacto || '').trim()
+    tel: (p.telefono_contacto || '').trim(),
+    opin: p.opinion_cliente || null
 });
 
 function distanciaKm(lat1, lon1, lat2, lon2) {
@@ -3692,9 +3793,12 @@ window._desasignarMapa = id => {
 };
 
 window._a = (a, id) => {
+    if (a === 'i') {
+        void iniciar(id);
+        return;
+    }
     closeAll();
-    if (a === 'i') iniciar(id);
-    else if (a === 'av') abrirAvance(id);
+    if (a === 'av') abrirAvance(id);
     else abrirCierre(id);
 };
 
@@ -4967,17 +5071,35 @@ document.getElementById('pf').addEventListener('submit', async e => {
 async function actualizarAvance(id, avance) {
     try {
         const now = new Date().toISOString();
+        const idx0 = app.p.findIndex(p => String(p.id) === String(id));
+        const avPrev = idx0 !== -1 ? Number(app.p[idx0].av) : null;
+
+        const apiRow = await pedidoPutApi(id, { avance: avance });
+        if (apiRow) {
+            const idx = app.p.findIndex(p => String(p.id) === String(id));
+            if (idx !== -1) app.p[idx] = norm(apiRow);
+            offlinePedidosSave(app.p);
+            render();
+            toast('Avance actualizado', 'success');
+            return;
+        }
+
         await ejecutarSQLConReintentos(
             `UPDATE pedidos SET avance = {0}, fecha_avance = {1} WHERE id = {2}`,
             [avance, now, parseInt(id)]
         );
-        
+
         const idx = app.p.findIndex(p => String(p.id) === String(id));
         if (idx !== -1) {
             app.p[idx].av = avance;
             app.p[idx].fa = now;
         }
-        
+
+        if (!modoOffline && NEON_OK && getApiToken() && avPrev !== Number(avance)) {
+            const pidNum = parseInt(id, 10);
+            if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'avance');
+        }
+
         render();
         toast('Avance actualizado', 'success');
     } catch(e) {
@@ -5050,11 +5172,25 @@ async function updPedido(id, campos, usuarioId) {
 async function iniciar(id) {
     try {
         const now = new Date().toISOString();
-        await updPedido(id, { 
-            estado: 'En ejecución', 
+        const apiRow = await pedidoPutApi(id, { estado: 'En ejecución', avance: 0 });
+        if (apiRow) {
+            const idx = app.p.findIndex(p => String(p.id) === String(id));
+            if (idx !== -1) app.p[idx] = norm(apiRow);
+            offlinePedidosSave(app.p);
+            render();
+            toast('Pedido iniciado. Si hay teléfono de contacto y WhatsApp configurado, se avisó al cliente.', 'success');
+            closeAll();
+            return;
+        }
+        await updPedido(id, {
+            estado: 'En ejecución',
             avance: 0,
-            fecha_avance: now 
+            fecha_avance: now
         }, app.u?.id);
+        if (!modoOffline && NEON_OK && getApiToken()) {
+            const pidNum = parseInt(id, 10);
+            if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
+        }
         toast('Pedido iniciado', 'info');
         closeAll();
     } catch(e) {
@@ -5458,6 +5594,7 @@ function detalle(p) {
             ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
             ${chkResumen}
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
+            ${p.opin ? `<div class="dr" style="flex-direction:column;gap:.3rem;margin-top:.5rem"><span class="dl">Opinión del cliente (WhatsApp)</span><div class="trb">${String(p.opin).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
         </div>` : ''}
 
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
@@ -5738,6 +5875,7 @@ function closeAll() {
     if (nisEl) nisEl.value = '';
     document.getElementById('dc').textContent = '0';
     try { syncNisClienteReclamoConexionUI(); } catch (_) {}
+    try { syncPrioridadConTipoReclamo(); } catch (_) {}
     ['chk-epp','chk-corte','chk-senal'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = false;

@@ -15,6 +15,7 @@ import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.js";
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
+import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";
 
 const sessions = new Map();
 
@@ -467,6 +468,16 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
+
+  try {
+    const opinionTry = await tryConsumeClienteOpinionReply({ tenantId: tid, phoneDigits: phone, text });
+    if (opinionTry.handled && opinionTry.ack) {
+      await reply(phone, opinionTry.ack, tid, phoneNumberId);
+      return;
+    }
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] opinion reply", e.message);
+  }
 
   if (/\bhola\b/i.test(String(text || "").trim())) {
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });

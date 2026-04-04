@@ -8,6 +8,7 @@
 import { query } from "../db/neon.js";
 import { sendWhatsAppTextWithCredentials } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
+import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
 function normCfg(cfg) {
   if (!cfg || typeof cfg !== "object") return {};
@@ -234,7 +235,9 @@ export async function notifyPedidoCierreWhatsAppSafe({
   const np = String(numeroPedido || "").trim() || `#${pedidoId}`;
   const ent = String(nombreEntidad || "nuestro equipo").trim();
   const body =
-    `GestorNova informa: Su reclamo *#${np}* ha sido finalizado por el equipo técnico de *${ent}*. Gracias por su reporte.`;
+    `*${ent}* informa: su reclamo *#${np}* fue *finalizado* por el equipo técnico.\n\n` +
+    `Si querés *valorar la atención* o dejar una *observación*, respondé a *este mismo chat* con tu mensaje (texto libre).\n\n` +
+    `Gracias por tu reporte.`;
 
   try {
     const r = await sendTenantWhatsAppText({
@@ -244,7 +247,9 @@ export async function notifyPedidoCierreWhatsAppSafe({
       pedidoId,
       logContext: "cierre_pedido",
     });
-    if (!r.ok) {
+    if (r.ok) {
+      registerPendingClienteOpinion(tenantId, phone, pedidoId);
+    } else {
       console.error("[whatsapp-service] cierre: envío falló (pedido ya cerrado en BD)", {
         pedidoId,
         tenantId,
