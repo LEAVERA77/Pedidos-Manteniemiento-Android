@@ -1508,6 +1508,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         } else {
             detenerDashboardGerenciaPoll();
             detenerPollWhatsappHumanChat();
+            destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
         }
         setTimeout(async () => {
@@ -2125,8 +2126,37 @@ async function pollCierresGerencia() {
 let _waHcPollInterval = null;
 let _waHcKnownSessionIds = new Set();
 let _waHcPollPrimed = false;
-let _waHcModalSessionId = null;
-let _waHcModalPollTimer = null;
+/** @type {Map<string, { root: HTMLElement, visible: boolean, dockChip: HTMLElement|null, metaEl: HTMLElement, msgBox: HTMLElement, ta: HTMLTextAreaElement, titleEl: HTMLElement }>} */
+let _waHcWindows = new Map();
+let _waHcMessagePollInterval = null;
+let _waHcFloatZ = 6205;
+
+function detenerRefrescoMensajesWaHcVentanas() {
+    if (_waHcMessagePollInterval) {
+        clearInterval(_waHcMessagePollInterval);
+        _waHcMessagePollInterval = null;
+    }
+}
+
+function asegurarRefrescoMensajesWaHcVentanas() {
+    if (_waHcMessagePollInterval || _waHcWindows.size === 0) return;
+    _waHcMessagePollInterval = setInterval(() => {
+        for (const [sid, st] of _waHcWindows) {
+            if (st.visible) refrescarMensajesWaHcVentana(Number(sid));
+        }
+    }, 3500);
+}
+
+function destruirTodasVentanasWaHc() {
+    for (const st of _waHcWindows.values()) {
+        try { st.root.remove(); } catch (_) {}
+        try { if (st.dockChip && st.dockChip.parentElement) st.dockChip.remove(); } catch (_) {}
+    }
+    _waHcWindows.clear();
+    const dock = document.getElementById('wa-human-chat-dock');
+    if (dock) dock.innerHTML = '';
+    detenerRefrescoMensajesWaHcVentanas();
+}
 
 function detenerPollWhatsappHumanChat() {
     if (_waHcPollInterval) {
@@ -2191,14 +2221,204 @@ function mostrarToastWaHumanChatNuevo(s) {
     setTimeout(() => { try { if (el.parentElement) el.remove(); } catch (_) {} }, 45000);
 }
 
-function cerrarModalWaHumanChat() {
-    const m = document.getElementById('modal-wa-human-chat');
-    if (m) m.classList.remove('active');
-    if (_waHcModalPollTimer) {
-        clearInterval(_waHcModalPollTimer);
-        _waHcModalPollTimer = null;
+function traerAlFrenteVentanaWaHc(floatEl) {
+    _waHcFloatZ++;
+    floatEl.style.zIndex = String(_waHcFloatZ);
+}
+
+function attachWaHcDrag(headerEl, floatEl) {
+    headerEl.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        const r = floatEl.getBoundingClientRect();
+        const ox = r.left;
+        const oy = r.top;
+        const sx = e.clientX;
+        const sy = e.clientY;
+        traerAlFrenteVentanaWaHc(floatEl);
+        const onMove = (ev) => {
+            floatEl.style.left = (ox + ev.clientX - sx) + 'px';
+            floatEl.style.top = (oy + ev.clientY - sy) + 'px';
+            floatEl.style.right = 'auto';
+            floatEl.style.bottom = 'auto';
+        };
+        const onEnd = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onEnd);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+    });
+    headerEl.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button')) return;
+        const t0 = e.touches[0];
+        if (!t0) return;
+        const r = floatEl.getBoundingClientRect();
+        const ox = r.left;
+        const oy = r.top;
+        const sx = t0.clientX;
+        const sy = t0.clientY;
+        traerAlFrenteVentanaWaHc(floatEl);
+        const onMove = (ev) => {
+            const t = ev.touches[0];
+            if (!t) return;
+            floatEl.style.left = (ox + t.clientX - sx) + 'px';
+            floatEl.style.top = (oy + t.clientY - sy) + 'px';
+            floatEl.style.right = 'auto';
+            floatEl.style.bottom = 'auto';
+        };
+        const onEnd = () => {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            document.removeEventListener('touchcancel', onEnd);
+        };
+        document.addEventListener('touchmove', onMove, { passive: true });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onEnd);
+    }, { passive: true });
+}
+
+function actualizarTituloYChipDockWaHc(sidStr, titulo) {
+    const st = _waHcWindows.get(sidStr);
+    if (!st) return;
+    const t = String(titulo || '').trim() || ('Chat #' + sidStr);
+    st.titleEl.textContent = t;
+    if (st.dockChip && st.dockChip.isConnected) {
+        const short = t.length > 40 ? t.slice(0, 38) + '…' : t;
+        st.dockChip.textContent = short;
     }
-    _waHcModalSessionId = null;
+}
+
+function ensureDockChipWaHc(sidStr, st) {
+    if (st.dockChip && st.dockChip.isConnected) return;
+    const dock = document.getElementById('wa-human-chat-dock');
+    if (!dock) return;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'wa-hc-dock-chip';
+    chip.setAttribute('aria-label', 'Volver al chat de WhatsApp');
+    const t = String(st.titleEl.textContent || 'Chat').trim() || ('Chat #' + sidStr);
+    chip.textContent = t.length > 40 ? t.slice(0, 38) + '…' : t;
+    chip.onclick = () => restaurarVentanaWaHc(sidStr);
+    dock.appendChild(chip);
+    st.dockChip = chip;
+}
+
+function minimizarVentanaWaHc(sidStr) {
+    const st = _waHcWindows.get(sidStr);
+    if (!st) return;
+    st.root.style.display = 'none';
+    st.visible = false;
+    ensureDockChipWaHc(sidStr, st);
+}
+
+function restaurarVentanaWaHc(sidStr) {
+    const st = _waHcWindows.get(sidStr);
+    if (!st) return;
+    st.root.style.display = 'flex';
+    st.visible = true;
+    if (st.dockChip) {
+        try { st.dockChip.remove(); } catch (_) {}
+        st.dockChip = null;
+    }
+    traerAlFrenteVentanaWaHc(st.root);
+    refrescarMensajesWaHcVentana(Number(sidStr));
+    asegurarRefrescoMensajesWaHcVentanas();
+}
+
+function crearVentanaFlotanteWaHc(sidNum) {
+    const sidStr = String(sidNum);
+    const idx = _waHcWindows.size;
+    const left = 12 + (idx % 4) * 28;
+    const top = 64 + (idx % 5) * 32;
+    const root = document.createElement('div');
+    root.className = 'wa-hc-float';
+    root.style.left = left + 'px';
+    root.style.top = top + 'px';
+    root.dataset.waHcSession = sidStr;
+
+    const header = document.createElement('div');
+    header.className = 'wa-hc-float-h';
+    const titleEl = document.createElement('span');
+    titleEl.style.flex = '1';
+    titleEl.style.minWidth = '0';
+    titleEl.style.overflow = 'hidden';
+    titleEl.style.textOverflow = 'ellipsis';
+    titleEl.style.whiteSpace = 'nowrap';
+    titleEl.textContent = 'Chat #' + sidStr;
+
+    const actions = document.createElement('div');
+    actions.className = 'wa-hc-float-actions';
+
+    const btnMin = document.createElement('button');
+    btnMin.type = 'button';
+    btnMin.title = 'Minimizar: el chat sigue a la izquierda';
+    btnMin.setAttribute('aria-label', 'Minimizar chat');
+    btnMin.textContent = '–';
+    btnMin.onclick = (e) => { e.stopPropagation(); minimizarVentanaWaHc(sidStr); };
+
+    const btnClose = document.createElement('button');
+    btnClose.type = 'button';
+    btnClose.title = 'Cerrar ventana: el chat no se pierde; tocá el aviso a la izquierda';
+    btnClose.setAttribute('aria-label', 'Cerrar ventana del chat');
+    btnClose.innerHTML = '<i class="fas fa-times"></i>';
+    btnClose.onclick = (e) => { e.stopPropagation(); minimizarVentanaWaHc(sidStr); };
+
+    actions.appendChild(btnMin);
+    actions.appendChild(btnClose);
+    header.appendChild(titleEl);
+    header.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.className = 'wa-hc-float-body';
+    const metaEl = document.createElement('div');
+    metaEl.className = 'wa-hc-float-meta';
+    metaEl.textContent = 'Cargando…';
+    const msgBox = document.createElement('div');
+    msgBox.className = 'wa-hc-thread';
+    const ta = document.createElement('textarea');
+    ta.className = 'wa-hc-float-ta';
+    ta.rows = 3;
+    ta.placeholder = 'Respuesta… Enter envía · Shift+Enter nueva línea';
+    ta.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        e.preventDefault();
+        enviarMensajeWaHcDesdeVentana(sidNum);
+    });
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:.45rem;flex-wrap:wrap;align-items:center';
+    const btnSend = document.createElement('button');
+    btnSend.type = 'button';
+    btnSend.className = 'bp btn-sm';
+    btnSend.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+    btnSend.onclick = () => enviarMensajeWaHcDesdeVentana(sidNum);
+
+    const btnDeact = document.createElement('button');
+    btnDeact.type = 'button';
+    btnDeact.className = 'btn-sm warning';
+    btnDeact.textContent = 'Desactivar chat';
+    btnDeact.title = 'Cierra la sesión humana: el bot vuelve a atender solo';
+    btnDeact.onclick = () => desactivarChatWaHc(sidNum);
+
+    row.appendChild(btnSend);
+    row.appendChild(btnDeact);
+    body.appendChild(metaEl);
+    body.appendChild(msgBox);
+    body.appendChild(ta);
+    body.appendChild(row);
+
+    root.appendChild(header);
+    root.appendChild(body);
+    document.body.appendChild(root);
+
+    attachWaHcDrag(header, root);
+    traerAlFrenteVentanaWaHc(root);
+
+    const st = { root, visible: true, dockChip: null, metaEl, msgBox, ta, titleEl };
+    _waHcWindows.set(sidStr, st);
+    return st;
 }
 
 /** Etiqueta legible para teléfonos guardados como dígitos (WhatsApp / Meta). */
@@ -2209,93 +2429,14 @@ function fmtTelWaMeta(digits) {
     return '+' + d;
 }
 
-async function abrirModalWhatsappHumanChat(prefSessionId) {
-    if (!puedeEnviarApiRestPedidos()) {
-        toast('Sin conexión a la API para el chat', 'warning');
-        return;
-    }
-    await asegurarJwtApiRest();
+async function refrescarMensajesWaHcVentana(sidNum) {
+    const sidStr = String(sidNum);
+    const st = _waHcWindows.get(sidStr);
+    if (!st || !st.visible) return;
     const tok = getApiToken();
     if (!tok) return;
     try {
-        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
-            headers: { Authorization: `Bearer ${tok}` }
-        });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        let data = await r.json();
-        let list = data.sessions || [];
-        const sel = document.getElementById('wa-hc-session-picker');
-        let useId = null;
-        if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
-            useId = Number(prefSessionId);
-        } else if (list[0]) {
-            useId = Number(list[0].id);
-        } else if (prefSessionId) {
-            useId = Number(prefSessionId);
-        }
-        _waHcModalSessionId = useId;
-        if (useId) {
-            const ar = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
-            });
-            if (!ar.ok) {
-                const err = await ar.json().catch(() => ({}));
-                toast(err.error || ('No se pudo activar la sesión (' + ar.status + ')'), 'warning');
-            }
-            const r2 = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
-                headers: { Authorization: `Bearer ${tok}` }
-            });
-            if (r2.ok) {
-                data = await r2.json();
-                list = data.sessions || [];
-            }
-        }
-        if (sel) {
-            if (list.length) {
-                sel.innerHTML = list.map(s =>
-                    `<option value="${s.id}">${_escOpt((s.contact_name || '').trim() || 'Cliente')} — ${fmtTelWaMeta(s.phone_canonical)} (${s.estado})</option>`
-                ).join('');
-            } else if (prefSessionId) {
-                sel.innerHTML = `<option value="${Number(prefSessionId)}">Conversación #${Number(prefSessionId)} (revisá si estaba cerrada)</option>`;
-            } else {
-                sel.innerHTML = '<option value="">(sin conversaciones abiertas)</option>';
-            }
-        }
-        if (sel && useId) sel.value = String(useId);
-        document.getElementById('modal-wa-human-chat')?.classList.add('active');
-        await refrescarMetaYMensajesWaHc();
-        if (_waHcModalPollTimer) clearInterval(_waHcModalPollTimer);
-        _waHcModalPollTimer = setInterval(refrescarMetaYMensajesWaHc, 3500);
-    } catch (e) {
-        toast('No se pudo abrir el chat: ' + (e.message || e), 'error');
-    }
-}
-
-async function onWaHcPickerChange() {
-    const sel = document.getElementById('wa-hc-session-picker');
-    const id = sel && sel.value ? Number(sel.value) : null;
-    if (!id) return;
-    _waHcModalSessionId = id;
-    await asegurarJwtApiRest();
-    const tok = getApiToken();
-    if (!tok) return;
-    try {
-        await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${id}/activate`), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
-        });
-    } catch (_) {}
-    await refrescarMetaYMensajesWaHc();
-}
-
-async function refrescarMetaYMensajesWaHc() {
-    const sid = _waHcModalSessionId;
-    if (!sid) return;
-    const tok = getApiToken();
-    if (!tok) return;
-    try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/messages`), {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/messages`), {
             headers: { Authorization: `Bearer ${tok}` }
         });
         if (!r.ok) {
@@ -2303,33 +2444,34 @@ async function refrescarMetaYMensajesWaHc() {
             return;
         }
         const data = await r.json();
-        const meta = document.getElementById('wa-hc-meta');
-        if (meta && data.session) {
+        if (data.session) {
             const cn = String(data.session.contact_name || '').trim();
-            meta.textContent = (cn ? cn + ' · ' : '') +
+            const line = (cn ? cn + ' · ' : '') +
                 'Tel: ' + fmtTelWaMeta(data.session.phone_canonical) +
                 ' · Estado: ' + (data.session.estado || '');
+            st.metaEl.textContent = line;
+            actualizarTituloYChipDockWaHc(sidStr, cn || ('Chat · ' + fmtTelWaMeta(data.session.phone_canonical)));
         }
-        const box = document.getElementById('wa-hc-messages');
-        if (box && Array.isArray(data.messages)) {
-            box.innerHTML = data.messages.map(m =>
+        if (Array.isArray(data.messages)) {
+            st.msgBox.innerHTML = data.messages.map(m =>
                 `<div class="${m.direction === 'in' ? 'wa-hc-bubble-in' : 'wa-hc-bubble-out'}">${_escOpt(m.body)}</div>`
             ).join('');
-            box.scrollTop = box.scrollHeight;
+            st.msgBox.scrollTop = st.msgBox.scrollHeight;
         }
     } catch (_) {}
 }
 
-async function enviarMensajeWaHumanChatAdmin() {
-    const sid = _waHcModalSessionId;
-    const ta = document.getElementById('wa-hc-input');
-    const text = String(ta?.value || '').trim();
-    if (!sid || !text) return;
+async function enviarMensajeWaHcDesdeVentana(sidNum) {
+    const sidStr = String(sidNum);
+    const st = _waHcWindows.get(sidStr);
+    if (!st) return;
+    const text = String(st.ta?.value || '').trim();
+    if (!text) return;
     await asegurarJwtApiRest();
     const tok = getApiToken();
     if (!tok) return;
     try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/send`), {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/send`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
@@ -2338,33 +2480,114 @@ async function enviarMensajeWaHumanChatAdmin() {
             const err = await r.json().catch(() => ({}));
             throw new Error(err.error || 'HTTP ' + r.status);
         }
-        if (ta) ta.value = '';
-        await refrescarMetaYMensajesWaHc();
+        st.ta.value = '';
+        await refrescarMensajesWaHcVentana(sidNum);
         toast('Mensaje enviado', 'success');
     } catch (e) {
         toast(String(e.message || e), 'error');
     }
 }
 
-async function finalizarChatWaHumanChatAdmin() {
-    const sid = _waHcModalSessionId;
-    if (!sid) return;
-    if (!confirm('¿Finalizar este chat con el cliente?')) return;
+async function desactivarChatWaHc(sidNum) {
+    const sidStr = String(sidNum);
+    if (!confirm('¿Desactivar este chat? El bot volverá a atender al cliente solo.')) return;
     await asegurarJwtApiRest();
     const tok = getApiToken();
     if (!tok) return;
     try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sid}/close`), {
+        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/close`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
         });
         if (!r.ok) throw new Error('close');
-        _waHcKnownSessionIds.delete(String(sid));
-        cerrarModalWaHumanChat();
-        toast('Chat finalizado', 'success');
+        _waHcKnownSessionIds.delete(sidStr);
+        const st = _waHcWindows.get(sidStr);
+        if (st) {
+            try { st.dockChip?.remove(); } catch (_) {}
+            try { st.root.remove(); } catch (_) {}
+            _waHcWindows.delete(sidStr);
+        }
+        if (_waHcWindows.size === 0) detenerRefrescoMensajesWaHcVentanas();
+        toast('Chat desactivado', 'success');
     } catch (e) {
-        toast('No se pudo cerrar el chat', 'error');
+        toast('No se pudo desactivar el chat', 'error');
     }
+}
+
+function cerrarModalWaHumanChat() {
+    for (const sidStr of [..._waHcWindows.keys()]) {
+        minimizarVentanaWaHc(sidStr);
+    }
+}
+
+async function abrirModalWhatsappHumanChat(prefSessionId) {
+    if (!puedeEnviarApiRestPedidos()) {
+        toast('Sin conexión a la API para el chat', 'warning');
+        return;
+    }
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    const prefNum = prefSessionId != null ? Number(prefSessionId) : NaN;
+    if (Number.isFinite(prefNum)) {
+        const k = String(prefNum);
+        if (_waHcWindows.has(k)) {
+            try {
+                await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${prefNum}/activate`), {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
+                });
+            } catch (_) {}
+            restaurarVentanaWaHc(k);
+            await refrescarMensajesWaHcVentana(prefNum);
+            asegurarRefrescoMensajesWaHcVentanas();
+            return;
+        }
+    }
+    try {
+        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
+            headers: { Authorization: `Bearer ${tok}` }
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        let data = await r.json();
+        let list = data.sessions || [];
+        let useId = null;
+        if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
+            useId = Number(prefSessionId);
+        } else if (list[0]) {
+            useId = Number(list[0].id);
+        } else if (prefSessionId) {
+            useId = Number(prefSessionId);
+        }
+        if (!useId || !Number.isFinite(useId)) {
+            toast('No hay conversaciones en cola para abrir', 'info');
+            return;
+        }
+        const ar = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
+        });
+        if (!ar.ok) {
+            const err = await ar.json().catch(() => ({}));
+            toast(err.error || ('No se pudo activar la sesión (' + ar.status + ')'), 'warning');
+        }
+        if (!_waHcWindows.has(String(useId))) crearVentanaFlotanteWaHc(useId);
+        else restaurarVentanaWaHc(String(useId));
+        await refrescarMensajesWaHcVentana(useId);
+        asegurarRefrescoMensajesWaHcVentanas();
+    } catch (e) {
+        toast('No se pudo abrir el chat: ' + (e.message || e), 'error');
+    }
+}
+
+function onWaHcPickerChange() {}
+
+async function enviarMensajeWaHumanChatAdmin() {
+    toast('Abrí el chat desde el aviso o el panel flotante.', 'info');
+}
+
+async function finalizarChatWaHumanChatAdmin() {
+    toast('Usá «Desactivar chat» en la ventana de esa conversación.', 'info');
 }
 
 window.cerrarModalWaHumanChat = cerrarModalWaHumanChat;
@@ -5278,6 +5501,7 @@ async function abrirWizardMarcaEmpresaManual() {
         console.warn('[wizard-marca-manual]', e?.message || e);
     }
     _setupLogoDataUrl = '';
+    _setupWizardContextoManual = true;
     mostrarModalConfigInicial();
 }
 window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
@@ -5306,6 +5530,7 @@ document.getElementById('ub').addEventListener('click', () => {
         detenerTracking();
         detenerDashboardGerenciaPoll();
         detenerPollWhatsappHumanChat();
+        destruirTodasVentanasWaHc();
         detenerTecnicosMapaPrincipalPoll();
         _dashCierresInit = false;
         _seenClosedIds.clear();
@@ -5542,6 +5767,7 @@ try {
         } else {
             detenerDashboardGerenciaPoll();
             detenerPollWhatsappHumanChat();
+            destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
         }
         document.getElementById('ls').classList.remove('active');
@@ -5637,6 +5863,8 @@ async function cargarConfigEmpresa() {
 }
 
 let _configInicialBloqueante = false;
+/** true si el admin abrió el wizard desde el botón superior (listado); permite cerrar con X sin completar. */
+let _setupWizardContextoManual = false;
 let _setupWizardStep = 1;
 let _setupMap = null;
 let _setupMarker = null;
@@ -5730,6 +5958,21 @@ function actualizarStepWizard() {
     if (_setupWizardStep === 3) {
         setTimeout(inicializarMapaSetupWizard, 20);
         setTimeout(usarUbicacionAutomaticaSetupWizard, 80);
+    }
+    const hintBar = document.getElementById('cfgi-hint-bar');
+    if (hintBar && esAdmin()) {
+        hintBar.style.display = 'block';
+        const manual = _setupWizardContextoManual
+            ? 'Con la X cerrás solo esta ventana: no guarda lo que editaste ahora; lo ya guardado en el servidor no se borra. '
+            : '';
+        const perStep = {
+            1: 'Paso 1: nombre y tipo (municipio vs cooperativa) adaptan textos y el catálogo NIS en toda la app.',
+            2: 'Paso 2: logo opcional para encabezado e informes (URL o archivo).',
+            3: 'Paso 3: ubicación base: arrastrá el pin o tocá el mapa. «Finalizar» guarda y marca el setup completado en el servidor.'
+        };
+        hintBar.textContent = manual + (perStep[_setupWizardStep] || '');
+    } else if (hintBar) {
+        hintBar.style.display = 'none';
     }
 }
 function inicializarMapaSetupWizard() {
@@ -5834,6 +6077,8 @@ function mostrarModalConfigInicial() {
     document.getElementById('sw-prev').style.display = 'none';
     document.getElementById('sw-next').style.display = esAdm ? '' : 'none';
     document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
+    const btnCerrar = document.getElementById('cfgi-btn-cerrar');
+    if (btnCerrar) btnCerrar.style.display = (esAdm && _setupWizardContextoManual) ? '' : 'none';
     _setupWizardStep = 1;
     _setupGeoIntentado = false;
     actualizarStepWizard();
@@ -5844,7 +6089,18 @@ function ocultarModalConfigInicial() {
     if (!modal) return;
     modal.classList.remove('active');
     _configInicialBloqueante = false;
+    _setupWizardContextoManual = false;
 }
+
+function cerrarWizardSetupVoluntario() {
+    if (!_setupWizardContextoManual) {
+        toast('Este setup es obligatorio la primera vez: usá «Salir» para cerrar sesión o completá los pasos con «Finalizar».', 'info');
+        return;
+    }
+    ocultarModalConfigInicial();
+    toast('Asistente cerrado. Podés volver a abrirlo con el botón de listado (arriba a la izquierda).', 'success');
+}
+window.cerrarWizardSetupVoluntario = cerrarWizardSetupVoluntario;
 async function verificarConfiguracionInicialObligatoria() {
     const token = getApiToken();
     if (!token) {
@@ -5903,6 +6159,7 @@ async function verificarConfiguracionInicialObligatoria() {
     // Admin: obligatorio completar/confirmar el wizard una vez (setup_wizard_completado en API).
     // Datos incompletos: cualquier rol con modal (no admin no puede guardar).
     if (debeMostrarSetupInicial(cfg, extraParsed)) {
+        _setupWizardContextoManual = false;
         window.EMPRESA_CFG = { ...cfg };
         poblarSelectTiposReclamo();
         mostrarModalConfigInicial();

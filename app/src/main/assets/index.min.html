@@ -47,7 +47,7 @@
 <!-- MAIN SCREEN -->
 <div id="ms" class="screen">
   <div class="hd">
-    <button type="button" id="mt" class="ib" title="Empresa y logo (admin) · Panel pedidos (otros roles)"><i class="fas fa-list"></i></button>
+    <button type="button" id="mt" class="ib" title="Admin: abre el asistente de marca, logo y ubicación base del tenant. Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
     <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
     <div class="hr">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
@@ -541,28 +541,15 @@
 </div>
 <div id="cierre-toast-host" aria-live="polite"></div>
 <div id="wa-human-chat-toast-host" aria-live="polite"></div>
-<div id="modal-wa-human-chat" class="mo" style="z-index:6200">
-  <div class="mc lg" style="max-width:560px">
-    <div class="mh">
-      <h3><i class="fas fa-comments"></i> Chat WhatsApp</h3>
-      <button type="button" class="cm" onclick="cerrarModalWaHumanChat()"><i class="fas fa-times"></i></button>
-    </div>
-    <div class="mb">
-      <label style="font-size:.78rem;color:var(--tm)">Conversación en cola / activa</label>
-      <select id="wa-hc-session-picker" style="margin:.35rem 0 .65rem;width:100%" onchange="onWaHcPickerChange()"></select>
-      <div id="wa-hc-meta" style="font-size:.78rem;color:var(--tl);margin-bottom:.5rem"></div>
-      <div id="wa-hc-messages" class="wa-hc-thread"></div>
-      <textarea id="wa-hc-input" rows="3" placeholder="Respuesta al cliente…" style="resize:vertical;margin-bottom:.5rem;width:100%"></textarea>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button type="button" class="bp" onclick="enviarMensajeWaHumanChatAdmin()"><i class="fas fa-paper-plane"></i> Enviar</button>
-        <button type="button" class="btn-sm warning" onclick="finalizarChatWaHumanChatAdmin()">Finalizar chat</button>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="wa-human-chat-dock" aria-label="Chats WhatsApp minimizados"></div>
 <div id="modal-config-inicial" class="mo setup-wizard">
   <div class="mc">
-    <div class="mh"><h3><i class="fas fa-magic"></i> Setup Inicial SaaS</h3><span id="sw-step-label" style="font-size:.82rem;color:var(--tl)">Paso 1 de 3</span></div>
+    <div class="mh" style="flex-wrap:wrap;gap:.5rem;align-items:flex-start">
+      <h3 style="margin:0;flex:1;min-width:160px"><i class="fas fa-magic"></i> Setup Inicial SaaS</h3>
+      <span id="sw-step-label" style="font-size:.82rem;color:var(--tl);align-self:center">Paso 1 de 3</span>
+      <button type="button" class="cm" id="cfgi-btn-cerrar" onclick="cerrarWizardSetupVoluntario()" style="display:none" title="Cerrar sin guardar ahora si abriste por error o ya revisaste los datos. Si falta información obligatoria, el asistente volverá al iniciar sesión."><i class="fas fa-times"></i></button>
+    </div>
+    <p id="cfgi-hint-bar" style="display:none;font-size:.78rem;color:var(--tm);margin:0 0 .65rem;padding:.45rem .55rem;background:var(--bg);border-radius:.45rem;border:1px solid var(--bo);line-height:1.4"></p>
     <div class="mb">
       <div id="sw-paso-1" class="sw-step active">
         <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Identidad</h4>
@@ -604,12 +591,12 @@
       </div>
       <p id="cfgi-tenant" style="margin-top:.7rem;font-size:.8rem;color:var(--tl)"></p>
       <p id="cfgi-msg" style="margin-top:.45rem;font-size:.84rem;color:#b45309;display:none"></p>
-      <div style="display:flex;gap:.5rem;justify-content:space-between;margin-top:1rem">
-        <button id="cfgi-logout" class="sec" type="button" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Salir</button>
-        <div style="display:flex;gap:.5rem">
-          <button id="sw-prev" class="sec" type="button" onclick="setupWizardPrev()" style="display:none">Anterior</button>
-          <button id="sw-next" class="bp" type="button" onclick="setupWizardNext()">Siguiente</button>
-          <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()" style="display:none"><i class="fas fa-save"></i> Finalizar</button>
+      <div style="display:flex;gap:.5rem;justify-content:space-between;margin-top:1rem;flex-wrap:wrap">
+        <button id="cfgi-logout" class="sec" type="button" onclick="logout()" title="Cerrar sesión de la cuenta (no es lo mismo que cerrar solo este asistente)"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button id="sw-prev" class="sec" type="button" onclick="setupWizardPrev()" style="display:none" title="Volver al paso anterior del setup">Anterior</button>
+          <button id="sw-next" class="bp" type="button" onclick="setupWizardNext()" title="Avanzar: nombre y tipo → logo → ubicación base en mapa">Siguiente</button>
+          <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()" style="display:none" title="Guarda en el servidor y marca el setup como completado; publica marca del tenant"><i class="fas fa-save"></i> Finalizar</button>
         </div>
       </div>
     </div>
