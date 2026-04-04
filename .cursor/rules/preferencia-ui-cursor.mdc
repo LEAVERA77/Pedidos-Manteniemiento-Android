@@ -1,0 +1,11 @@
+---
+description: Layout e interfaz preferida del usuario en Cursor
+alwaysApply: true
+---
+
+# Interfaz Cursor (preferencia del usuario)
+
+- Trabaja con el panel **Agent** visible y un panel **Ask** para consultas rápidas.
+- Modelo preferido en **Ask**: **Gemini 3 Flash** (cuando aplique al flujo).
+- Proyecto principal de trabajo: **Nexxo** (`AndroidStudioProjects/Nexxo`).
+- Explorador de archivos suele estar a la **derecha**; no recomendar layouts que lo contradigan sin que el usuario lo pida.

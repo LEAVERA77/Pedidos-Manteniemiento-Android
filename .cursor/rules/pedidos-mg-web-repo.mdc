@@ -1,0 +1,23 @@
+---
+description: Repo GitHub Pages del front web; sincronizar index.html tras cambios en assets
+alwaysApply: true
+---
+
+# Front web público (GitHub Pages)
+
+- **Repositorio oficial de la página web de la app:** [https://github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
+- **Sitio publicado:** `https://leavera77.github.io/Pedidos-MG`
+
+## Fuente de verdad en este proyecto (Android / GestorNova)
+
+- `app/src/main/assets/index.html` — mismo HTML que debe vivir en la raíz del repo **Pedidos-MG** como `index.html`.
+- Si se toca PWA/caché: también `app/src/main/assets/sw.js` → raíz de **Pedidos-MG** como `sw.js`.
+
+## Qué hacer cuando el usuario pida “subir el front” o “sincronizar con GitHub Pages”
+
+1. Los cambios se hacen primero en `app/src/main/assets/index.html` (y `sw.js` si aplica).
+2. Copiar esos archivos al clon local del repo web (ruta típica en esta máquina):  
+   `C:\Users\leave\AndroidStudioProjects\Pedidos-MG\`
+3. En esa carpeta: `git add`, `git commit`, `git push origin main` (el workflow de Pages despliega solo).
+
+**No** commitear `config.json` en Pedidos-MG; en producción usa secretos de GitHub Actions según el README del repo.

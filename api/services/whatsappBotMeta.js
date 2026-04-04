@@ -1,10 +1,15 @@
 import { query } from "../db/neon.js";
 import {
-  metaSendWhatsAppText,
-  sendWhatsAppInteractiveList,
+  sendWhatsAppInteractiveListWithCredentials,
   decodeWhatsAppListRowId,
 } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
+import {
+  getWhatsAppCredentialsByMetaPhoneNumberId,
+  getWhatsAppCredentialsForTenant,
+  sendBotWhatsAppText,
+  sendTenantWhatsAppText,
+} from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
@@ -97,22 +102,44 @@ function esPedidoCargarReclamo(text) {
   return false;
 }
 
-async function reply(phoneDigits, text) {
-  const r = await metaSendWhatsAppText(phoneDigits, text);
-  try {
-    await logWhatsappMensajeEnviado(phoneDigits, text, r.ok);
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] log enviado", e.message);
-  }
+/** Resuelve tenant para enviar con el mismo número/token que recibió el webhook (multitenant). */
+async function tenantIdForWebhook(phoneNumberId) {
+  const resolved = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
+  return resolved != null && Number.isFinite(Number(resolved)) ? Number(resolved) : botTenantId();
+}
+
+async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
+  const tid =
+    tenantId != null && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1
+      ? Number(tenantId)
+      : botTenantId();
+  const wpid = webhookPhoneNumberId != null ? String(webhookPhoneNumberId).trim() : "";
+  const r = wpid
+    ? await sendBotWhatsAppText({
+        tenantId: tid,
+        webhookPhoneNumberId: wpid,
+        toDigits: phoneDigits,
+        bodyText: text,
+        logContext: "whatsapp_bot_meta",
+      })
+    : await sendTenantWhatsAppText({
+        tenantId: tid,
+        toDigits: phoneDigits,
+        bodyText: text,
+        logContext: "whatsapp_bot_meta",
+      });
   if (!r.ok) {
     console.error("[whatsapp-bot-meta] send failed", {
-      ok: r.ok,
+      tenantId: tid,
       error: r.error,
-      status: r.status,
-      graph: r.graph ? (r.graph.error || r.graph) : undefined
+      graph: r.graph?.error || r.graph,
     });
   } else {
-    console.log("[webhook-meta-whatsapp] outbound_sent", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
+    console.log("[webhook-meta-whatsapp] outbound_sent", {
+      to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…",
+      ok: true,
+      tenantId: tid,
+    });
   }
   return r;
 }
@@ -136,7 +163,12 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   let descripcionFinal = String(sess.descripcion || "").trim();
   if (!descripcionFinal) {
     sessions.delete(sk);
-    await reply(phone, "Faltan datos del pedido. Escribí *menú* para empezar de nuevo.");
+    await reply(
+      phone,
+      "Faltan datos del pedido. Escribí *menú* para empezar de nuevo.",
+      sess.tenantId,
+      sess.phoneNumberId
+    );
     return;
   }
   if (sess.direccionTexto && String(sess.direccionTexto).trim()) {
@@ -158,27 +190,76 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     sessions.delete(sk);
     await reply(
       phone,
-      `✅ *Pedido registrado*\n\nNúmero: *${pedido.numero_pedido}*\nTipo: ${sess.tipo}\n\nGracias. Te contactaremos si hace falta más información.`
+      `Su reclamo N° *${pedido.numero_pedido}* ha sido cargado con éxito.\n\nTipo: *${sess.tipo}*\n\nGracias por contactarnos.`,
+      sess.tenantId,
+      sess.phoneNumberId
     );
   } catch (e) {
     const m = String(e?.message || "");
     sessions.delete(sk);
     if (m === "sin_usuario_admin_tenant") {
-      await reply(phone, "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.");
+      await reply(
+        phone,
+        "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.",
+        sess.tenantId,
+        sess.phoneNumberId
+      );
     } else {
-      await reply(phone, "No pudimos registrar el pedido. Intentá de nuevo o llamá a la oficina.");
+      await reply(
+        phone,
+        "No pudimos registrar el pedido. Intentá de nuevo o llamá a la oficina.",
+        sess.tenantId,
+        sess.phoneNumberId
+      );
     }
   }
 }
 
-async function replyListaTiposReclamo(phoneDigits, ctx) {
+/** Cloud API: máximo 10 filas en una lista interactiva. */
+const MAX_WHATSAPP_LIST_ROWS = 10;
+
+async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   const bodyText = `Elegí el tipo que mejor describe tu reclamo:`;
-  const r = await sendWhatsAppInteractiveList(phoneDigits, {
-    bodyText,
-    buttonText: "Ver tipos",
-    sectionTitle: "Tipos de reclamo",
-    tipos: ctx.tipos,
-  });
+  const pid = String(phoneNumberIdWebhook || "").trim();
+  let accessToken = "";
+  let graphPid = pid;
+  if (pid) {
+    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    accessToken = String(byPid.accessToken || "").trim();
+  }
+  if (!accessToken || !graphPid) {
+    const creds = await getWhatsAppCredentialsForTenant(ctx.id);
+    accessToken = String(creds.accessToken || "").trim();
+    graphPid = pid || String(creds.phoneNumberId || "").trim();
+  }
+  if (!accessToken || !graphPid) {
+    console.error("[whatsapp-bot-meta] lista interactiva: sin credenciales Meta");
+    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
+    return { ok: false, error: "missing_meta_credentials" };
+  }
+  if (ctx.tipos.length > MAX_WHATSAPP_LIST_ROWS) {
+    console.warn("[whatsapp-bot-meta] demasiados tipos para lista WA, usando menú numerado", {
+      n: ctx.tipos.length,
+      tenantId: ctx.id,
+    });
+    await reply(
+      phoneDigits,
+      menuTextoNumerado(ctx) + "\n\n_(Hay muchas opciones: escribí el número del 1 al " + ctx.tipos.length + ".)_",
+      ctx.id,
+      pid || null
+    );
+    return { ok: true, skippedInteractive: true };
+  }
+  const r = await sendWhatsAppInteractiveListWithCredentials(
+    phoneDigits,
+    {
+      bodyText,
+      buttonText: "Ver tipos",
+      sectionTitle: "Tipos de reclamo",
+      tipos: ctx.tipos,
+    },
+    { accessToken, phoneNumberId: graphPid }
+  );
   const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
   try {
     await logWhatsappMensajeEnviado(phoneDigits, logTxt, r.ok);
@@ -187,7 +268,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx) {
   }
   if (!r.ok) {
     console.error("[whatsapp-bot-meta] lista interactiva falló, menú texto", r.graph || r.error);
-    await reply(phoneDigits, menuTextoNumerado(ctx));
+    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
   } else {
     console.log("[webhook-meta-whatsapp] outbound_list", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
   }
@@ -223,7 +304,24 @@ export async function handleInboundMetaWhatsAppPayload(body) {
               });
             } catch (e) {
               console.error("[whatsapp-bot-meta] list_reply error", e);
-              await reply(fromNorm, "No pudimos leer tu elección. Escribí *menú* para empezar de nuevo.");
+              await reply(
+                fromNorm,
+                "No pudimos leer tu elección. Escribí *menú* para empezar de nuevo.",
+                await tenantIdForWebhook(phoneNumberId),
+                phoneNumberId
+              );
+            }
+          } else if (ir?.type === "button_reply") {
+            const title = String(ir?.button_reply?.title || "").trim();
+            try {
+              await processInboundText({
+                fromRaw: from,
+                text: title || "menú",
+                phoneNumberId,
+                contactName,
+              });
+            } catch (e) {
+              console.error("[whatsapp-bot-meta] button_reply error", e);
             }
           }
           continue;
@@ -243,12 +341,19 @@ export async function handleInboundMetaWhatsAppPayload(body) {
             } else {
               await reply(
                 fromNorm,
-                "No pudimos leer las coordenadas. Enviá de nuevo con *Adjuntar* → *Ubicación*, o escribí una dirección."
+                "No pudimos leer las coordenadas. Enviá de nuevo con *Adjuntar* → *Ubicación*, o escribí una dirección.",
+                await tenantIdForWebhook(phoneNumberId),
+                phoneNumberId
               );
             }
           } catch (e) {
             console.error("[whatsapp-bot-meta] location error", e);
-            await reply(fromNorm, "Error al procesar la ubicación. Intentá de nuevo o escribí *menú*.");
+            await reply(
+              fromNorm,
+              "Error al procesar la ubicación. Intentá de nuevo o escribí *menú*.",
+              await tenantIdForWebhook(phoneNumberId),
+              phoneNumberId
+            );
           }
           continue;
         }
@@ -265,7 +370,12 @@ export async function handleInboundMetaWhatsAppPayload(body) {
           });
         } catch (e) {
           console.error("[whatsapp-bot-meta] process error", e);
-          await reply(fromNorm, "Ocurrió un error. Intentá más tarde o contactá a la oficina.");
+          await reply(
+            fromNorm,
+            "Ocurrió un error. Intentá más tarde o contactá a la oficina.",
+            await tenantIdForWebhook(phoneNumberId),
+            phoneNumberId
+          );
         }
       }
     }
@@ -283,20 +393,21 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const sess = sessions.get(sk);
 
   if (!sess || sess.step !== "awaiting_location") {
-    await reply(phone, "Ahora no estamos esperando una ubicación. Escribí *menú* para ver las opciones.");
+    await reply(phone, "Ahora no estamos esperando una ubicación. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
     return;
   }
 
   const ctxOk = await loadTenantBotContext(tid);
   if (!ctxOk) {
     sessions.delete(sk);
-    await reply(phone, "Servicio no configurado. Contactá al administrador.");
+    await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
   }
 
   sess.lat = lat;
   sess.lng = lng;
   sess.direccionTexto = null;
+  if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
   await finalizePedidoFromSession(phone, sess, contactName);
 }
@@ -311,24 +422,28 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   const sk = sessionKey(phone, tid);
   const ctx = await loadTenantBotContext(tid);
   if (!ctx) {
-    await reply(phone, "Servicio no configurado. Contactá al administrador.");
+    await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
   }
   const tipo = decodeWhatsAppListRowId(listRowId);
   if (!tipo || !ctx.tipos.includes(tipo)) {
-    await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.");
+    await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
     return;
   }
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
   sessions.set(sk, {
     step: "awaiting_desc",
     tipo,
     tenantId: tid,
     tipoCliente: ctx.tipo,
     contactName: contactName || null,
+    phoneNumberId: wpid,
   });
   await reply(
     phone,
-    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`
+    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`,
+    tid,
+    phoneNumberId
   );
 }
 
@@ -348,15 +463,22 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (botOff) {
       await reply(
         phone,
-        `Bienvenido al centro de atención de *${nombre}*. El asistente automático está desactivado.`
+        `Bienvenido al centro de atención de *${nombre}*. El asistente automático está desactivado.`,
+        tid,
+        phoneNumberId
       );
       return;
     }
     if (!ctx) {
-      await reply(phone, `Bienvenido al centro de atención de *${nombre}*. Estamos completando la configuración del servicio.`);
+      await reply(
+        phone,
+        `Bienvenido al centro de atención de *${nombre}*. Estamos completando la configuración del servicio.`,
+        tid,
+        phoneNumberId
+      );
       return;
     }
-    await reply(phone, textoBienvenidaYAyuda(ctx));
+    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
   }
 
@@ -364,14 +486,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   const ctx = await loadTenantBotContext(tid);
   if (!ctx) {
-    await reply(phone, "Servicio no configurado. Contactá al administrador.");
+    await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
   }
 
   const lower = text.toLowerCase().trim();
   if (lower === "menú" || lower === "menu" || lower === "0") {
     sessions.delete(sk);
-    await reply(phone, textoBienvenidaYAyuda(ctx));
+    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
   }
 
@@ -382,42 +504,52 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (t.length < 3) {
       await reply(
         phone,
-        "Escribí una dirección o referencia más completa, o enviá la *ubicación* con *Adjuntar* → *Ubicación* en WhatsApp."
+        "Escribí una dirección o referencia más completa, o enviá la *ubicación* con *Adjuntar* → *Ubicación* en WhatsApp.",
+        tid,
+        phoneNumberId
       );
       return;
     }
     sess.direccionTexto = t;
     sess.lat = Number.isFinite(ctx.lat) ? ctx.lat : null;
     sess.lng = Number.isFinite(ctx.lng) ? ctx.lng : null;
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await finalizePedidoFromSession(phone, sess, contactName);
     return;
   }
 
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+
   if (!sess || sess.step === "idle") {
     if (esPedidoCargarReclamo(text)) {
-      await replyListaTiposReclamo(phone, ctx);
+      await replyListaTiposReclamo(phone, ctx, phoneNumberId);
       return;
     }
     const n = parseInt(text, 10);
-    if (!Number.isFinite(n) || n < 1 || n > ctx.tipos.length) {
+    if (Number.isFinite(n) && n >= 1 && n <= ctx.tipos.length) {
+      const tipoSel = ctx.tipos[n - 1];
+      sessions.set(sk, {
+        step: "awaiting_desc",
+        tipo: tipoSel,
+        tenantId: tid,
+        tipoCliente: ctx.tipo,
+        contactName: contactName || null,
+        phoneNumberId: wpid,
+      });
       await reply(
         phone,
-        `Opción no válida. Escribí *Cargar reclamo* para ver la lista, un número del *1* al *${ctx.tipos.length}*, o *menú* para ayuda.`
+        `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`,
+        tid,
+        phoneNumberId
       );
       return;
     }
-    const tipoSel = ctx.tipos[n - 1];
-    sessions.set(sk, {
-      step: "awaiting_desc",
-      tipo: tipoSel,
-      tenantId: tid,
-      tipoCliente: ctx.tipo,
-      contactName: contactName || null,
-    });
     await reply(
       phone,
-      `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`
+      `No reconocí el mensaje.\n\n` + textoBienvenidaYAyuda(ctx),
+      tid,
+      phoneNumberId
     );
     return;
   }
@@ -425,20 +557,21 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (sess.step === "awaiting_desc") {
     if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
       sessions.delete(sk);
-      await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx));
+      await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
       return;
     }
     const desc = text;
     if (desc.length < 4) {
-      await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.");
+      await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.", tid, phoneNumberId);
       return;
     }
     sessions.set(sk, {
       ...sess,
       step: "awaiting_location",
       descripcion: desc,
+      phoneNumberId: sess.phoneNumberId || wpid,
     });
-    await reply(phone, MSG_SOLICITAR_UBICACION);
+    await reply(phone, MSG_SOLICITAR_UBICACION, tid, phoneNumberId);
     return;
   }
 }

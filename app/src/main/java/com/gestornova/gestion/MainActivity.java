@@ -18,12 +18,15 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -62,6 +65,7 @@ import com.gestornova.gestion.work.UbicacionWorker;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "MainActivity";
     private static final String NOTIF_CHANNEL_ID = "pmg_pedidos_avisos";
     private static final int NOTIF_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_HIGH;
 
@@ -100,13 +104,25 @@ public class MainActivity extends AppCompatActivity {
         crearCanalNotificacionesPedidos();
 
         webView = findViewById(R.id.webview);
+        if (isProbablyEmulator()) {
+            // Evita cierres del WebView en AVDs con drivers GLES inestables (render por CPU).
+            webView.setLayerType(WebView.LAYER_TYPE_SOFTWARE, null);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Menos carga del render cuando la app no está en primer plano.
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED, false);
+        }
         capturePedidoIdFromIntent(getIntent());
         configurarWebView();
         pedirPermisos();
-        iniciarNetworkWatchdog();
-        PedidoPollingScheduler.schedule(this);
-        UbicacionPollingScheduler.schedule(this);
-        AppUpdateChecker.checkAsync(this);
+        // Aplazar servicios pesados: en AVDs con poca RAM (p. ej. 1536 MB) el pico al abrir evita OOM.
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            iniciarNetworkWatchdog();
+            PedidoPollingScheduler.schedule(this);
+            UbicacionPollingScheduler.schedule(this);
+            AppUpdateChecker.checkAsync(this);
+        }, 800);
     }
 
     private void crearCanalNotificacionesPedidos() {
@@ -118,6 +134,21 @@ public class MainActivity extends AppCompatActivity {
         ch.setDescription("Cuando un administrador te envía un pedido al mapa");
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(ch);
+    }
+
+    private static boolean isProbablyEmulator() {
+        String fp = Build.FINGERPRINT != null ? Build.FINGERPRINT : "";
+        String model = Build.MODEL != null ? Build.MODEL : "";
+        String prod = Build.PRODUCT != null ? Build.PRODUCT : "";
+        String hw = Build.HARDWARE != null ? Build.HARDWARE : "";
+        return fp.startsWith("generic")
+                || fp.startsWith("unknown")
+                || model.toLowerCase(Locale.US).contains("emulator")
+                || model.contains("google_sdk")
+                || prod.contains("sdk_gphone")
+                || prod.contains("emulator")
+                || hw.contains("goldfish")
+                || hw.contains("ranchu");
     }
 
     private void configurarWebView() {
@@ -210,8 +241,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Solo se carga el host de {@link BuildConfig#WEB_APP_URL}; otros enlaces abren en el navegador
+     * Solo se carga el origen de {@link BuildConfig#WEB_APP_URL}; otros enlaces abren en el navegador
      * para no exponer los puentes JS a orígenes ajenos.
+     * Debug con {@code file:///android_asset/...}: toda navegación bajo {@code /android_asset/} queda en el WebView.
      */
     private boolean handleWebViewUrl(Uri uri) {
         if (uri == null) return false;
@@ -222,6 +254,19 @@ public class MainActivity extends AppCompatActivity {
         if ("data".equalsIgnoreCase(scheme) || "blob".equalsIgnoreCase(scheme)) return false;
 
         Uri base = Uri.parse(BuildConfig.WEB_APP_URL);
+        if ("file".equalsIgnoreCase(scheme)) {
+            String path = uri.getPath();
+            if (path != null && path.startsWith("/android_asset/")) {
+                return false;
+            }
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            } catch (Exception e) {
+                Toast.makeText(this, "No se pudo abrir el enlace", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+
         String allowedHost = base.getHost();
         String host = uri.getHost();
         if (allowedHost != null && host != null && host.equalsIgnoreCase(allowedHost)) {
@@ -308,10 +353,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onPause() {
+        if (webView != null) {
+            webView.onPause();
+        }
+        super.onPause();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         AppUpdateChecker.checkAsync(this);
         if (webView != null) {
+            webView.onResume();
             webView.evaluateJavascript(
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);
@@ -335,7 +389,27 @@ public class MainActivity extends AppCompatActivity {
         if (isFinishing() && !isChangingConfigurations()) {
             detenerNetworkWatchdog();
         }
+        destroyWebViewSafely();
         super.onDestroy();
+    }
+
+    /** Libera el WebView para evitar fugas y cierres al salir de la actividad. */
+    private void destroyWebViewSafely() {
+        if (webView == null) return;
+        try {
+            webView.stopLoading();
+            webView.setWebChromeClient(null);
+            webView.setWebViewClient(null);
+            android.view.ViewGroup parent = (android.view.ViewGroup) webView.getParent();
+            if (parent != null) {
+                parent.removeView(webView);
+            }
+            webView.destroy();
+        } catch (Exception e) {
+            Log.w(TAG, "destroyWebViewSafely", e);
+        } finally {
+            webView = null;
+        }
     }
 
     @Override

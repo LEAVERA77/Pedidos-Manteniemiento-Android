@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo build debug: reduce cierres del WebView en emuladores con GLES/hardware inestable. Release no usa este archivo. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:hardwareAccelerated="false"
+            tools:replace="android:hardwareAccelerated" />
+    </application>
+</manifest>

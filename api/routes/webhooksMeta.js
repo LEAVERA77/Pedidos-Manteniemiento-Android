@@ -74,6 +74,7 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
     for (const change of changes) {
       const value = change?.value || {};
       const messages = Array.isArray(value?.messages) ? value.messages : [];
+      const metaPhoneNumberId = value?.metadata?.phone_number_id ?? null;
       for (const msg of messages) {
         const waId = String(msg?.from || "");
         const type = String(msg?.type || "unknown");
@@ -94,12 +95,14 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
           object: payload?.object,
           wa_id: waId,
           type,
+          phone_number_id: metaPhoneNumberId,
           text: textBody.slice(0, 500),
         });
         console.log("[webhook-meta-whatsapp] inbound_message", {
           from: waId.replace(/\D/g, "") || waId,
           text: textBody.slice(0, 500),
           type,
+          phone_number_id: metaPhoneNumberId,
         });
       }
     }

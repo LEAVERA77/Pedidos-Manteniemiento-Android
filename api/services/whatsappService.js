@@ -22,6 +22,113 @@ function normCfg(cfg) {
 }
 
 /**
+ * Token (y tenant) asociados al número de Meta que recibió el webhook.
+ * El path de Graph debe usar el mismo phone_number_id que envía Meta en metadata.
+ */
+export async function getWhatsAppCredentialsByMetaPhoneNumberId(phoneNumberId) {
+  const pid = String(phoneNumberId || "").trim();
+  if (!pid) {
+    return { accessToken: "", tenantId: null, source: "empty_phone_id" };
+  }
+
+  try {
+    const r = await query(
+      `SELECT id, configuracion FROM clientes
+       WHERE activo = TRUE
+         AND (
+           (configuracion->>'meta_phone_id') = $1
+           OR (configuracion->>'meta_phone_number_id') = $1
+         )
+       LIMIT 1`,
+      [pid]
+    );
+    const row = r.rows?.[0];
+    if (row) {
+      const c = normCfg(row.configuracion);
+      const accessToken = String(c.meta_access_token || c.META_ACCESS_TOKEN || "").trim();
+      return {
+        accessToken,
+        tenantId: Number(row.id),
+        source: accessToken ? "cliente_config" : "cliente_config_no_token",
+      };
+    }
+  } catch (e) {
+    console.warn("[whatsapp-service] getWhatsAppCredentialsByMetaPhoneNumberId", e.message);
+  }
+
+  const envPid = String(process.env.META_PHONE_NUMBER_ID || "").trim();
+  if (envPid && pid === envPid) {
+    return {
+      accessToken: String(process.env.META_ACCESS_TOKEN || "").trim(),
+      tenantId: Number(process.env.WHATSAPP_BOT_TENANT_ID || 1),
+      source: "env_phone_match",
+    };
+  }
+
+  return { accessToken: "", tenantId: null, source: "no_row_for_phone_id" };
+}
+
+/**
+ * Envío del bot: prioriza token ligado al phone_number_id del webhook (Graph: /{phone_number_id}/messages).
+ */
+export async function sendBotWhatsAppText({
+  tenantId,
+  webhookPhoneNumberId,
+  toDigits,
+  bodyText,
+  logContext = "whatsapp_bot_meta",
+}) {
+  const to = String(toDigits || "").replace(/\D/g, "");
+  const body = String(bodyText || "").trim();
+  if (!to || !body) {
+    return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  const pid = String(webhookPhoneNumberId || "").trim();
+  let accessToken = "";
+  let graphPhoneId = pid;
+
+  if (pid) {
+    const byWebhook = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    accessToken = String(byWebhook.accessToken || "").trim();
+  }
+
+  if (!accessToken) {
+    const t = await getWhatsAppCredentialsForTenant(tenantId);
+    accessToken = String(t.accessToken || "").trim();
+    if (!graphPhoneId) graphPhoneId = String(t.phoneNumberId || "").trim();
+  }
+
+  if (!graphPhoneId) {
+    const t = await getWhatsAppCredentialsForTenant(tenantId);
+    graphPhoneId = String(t.phoneNumberId || "").trim();
+  }
+
+  if (!accessToken || !graphPhoneId) {
+    console.warn("[whatsapp-service] bot: sin credenciales para enviar", {
+      tenantId,
+      webhookPhoneIdPresent: Boolean(pid),
+      logContext,
+    });
+    try {
+      await logWhatsappMensajeEnviado(to, `[${logContext}] sin credenciales bot`, false, null);
+    } catch (_) {}
+    return { ok: false, error: "missing_meta_credentials", skipped: false };
+  }
+
+  const r = await sendWhatsAppTextWithCredentials(to, body, {
+    accessToken,
+    phoneNumberId: graphPhoneId,
+  });
+  try {
+    await logWhatsappMensajeEnviado(to, body, r.ok, null);
+  } catch (e) {
+    console.error("[whatsapp-service] log", e.message);
+  }
+  return { ok: r.ok, graph: r.graph, error: r.error, skipped: false };
+}
+
+/**
  * @returns {{ accessToken: string, phoneNumberId: string, source: string }}
  */
 export async function getWhatsAppCredentialsForTenant(tenantId) {
@@ -147,6 +254,65 @@ export async function notifyPedidoCierreWhatsAppSafe({
     return { sent: !!r.ok, skipped: false, ok: r.ok };
   } catch (e) {
     console.error("[whatsapp-service] cierre: excepción no bloqueante", e.message);
+    return { sent: false, skipped: false, error: e.message };
+  }
+}
+
+/**
+ * Aviso al vecino/cliente cuando un técnico (app o web) actualiza el pedido originado por WhatsApp.
+ * Solo debe llamarse si el pedido tiene origen WhatsApp y teléfono válido (lo decide el caller).
+ */
+export async function notifyPedidoClienteActualizacionWhatsAppSafe({
+  tenantId,
+  numeroPedido,
+  nombreEntidad,
+  telefonoContactoRaw,
+  pedidoId,
+  tipo,
+  avancePct = null,
+  trabajoRealizadoSnippet = null,
+}) {
+  const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) {
+    return { sent: false, skipped: true, reason: "no_phone" };
+  }
+
+  const np = String(numeroPedido || "").trim() || `#${pedidoId}`;
+  const ent = String(nombreEntidad || "nuestro equipo").trim();
+  let body;
+  if (tipo === "en_ejecucion") {
+    body =
+      `*${ent}* informa: su reclamo *#${np}* está ahora *en ejecución*. El equipo técnico está trabajando en su pedido.`;
+  } else if (tipo === "avance") {
+    const pct =
+      avancePct != null && Number.isFinite(Number(avancePct)) ? ` Avance: *${Math.round(Number(avancePct))}%*.` : "";
+    const extra = trabajoRealizadoSnippet
+      ? `\n\n${String(trabajoRealizadoSnippet).trim().slice(0, 280)}`
+      : "";
+    body = `*${ent}* — Actualización de su reclamo *#${np}*:${pct}${extra}`;
+  } else {
+    return { sent: false, skipped: true, reason: "unknown_tipo" };
+  }
+
+  try {
+    const r = await sendTenantWhatsAppText({
+      tenantId,
+      toDigits: phone,
+      bodyText: body,
+      pedidoId,
+      logContext: `cliente_pedido_${tipo}`,
+    });
+    if (!r.ok) {
+      console.error("[whatsapp-service] aviso cliente pedido: envío falló", {
+        pedidoId,
+        tenantId,
+        tipo,
+        detail: r.error || r.graph,
+      });
+    }
+    return { sent: !!r.ok, skipped: false, ok: r.ok };
+  } catch (e) {
+    console.error("[whatsapp-service] aviso cliente pedido: excepción", e.message);
     return { sent: false, skipped: false, error: e.message };
   }
 }

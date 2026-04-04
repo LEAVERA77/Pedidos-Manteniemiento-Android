@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>GestorNova — Referencia técnica</title>
+<style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.35;max-width:900px;margin:24px auto;padding:0 16px;color:#111}
+h1{font-size:18pt;border-bottom:1px solid #333;padding-bottom:6px}
+h2{font-size:14pt;margin-top:22px;color:#1e3a8a}
+h3{font-size:12pt;margin-top:16px}
+table{border-collapse:collapse;width:100%;margin:10px 0}
+th,td{border:1px solid #999;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:#e8eef5}
+ul{margin:8px 0;padding-left:22px}
+ol{margin:8px 0;padding-left:22px}
+p{margin:8px 0}
+.note{background:#f5f5f5;padding:10px;border-left:4px solid #2563eb;margin:12px 0}
+</style>
+</head>
+<body>
+
+<h1>GestorNova — Referencia técnica (para Word)</h1>
+<p><strong>Instrucción:</strong> Abrí este archivo con Microsoft Word (Archivo → Abrir) y guardalo como <strong>Documento de Word (.docx)</strong>.</p>
+
+<h2>0. API, Backend y Frontend — analogía del restaurante</h2>
+
+<h3>0.1. ¿Qué significa API?</h3>
+<p><strong>API</strong> son las siglas de <em>Application Programming Interface</em> (Interfaz de Programación de Aplicaciones).</p>
+<p>En lenguaje sencillo: es un <strong>traductor o mensajero</strong>.</p>
+<p><strong>Analogía del restaurante:</strong> Vos sos el <strong>cliente</strong> (la app de Android o la web). La <strong>cocina</strong> es donde se prepara la comida (la <strong>base de datos Neon</strong>). La <strong>API</strong> es el <strong>mesero</strong>. No entrás a la cocina a cocinar: la app no debería acceder directo a la base por seguridad y orden. Le pedís al mesero (API) lo que necesitás; el mesero lleva el pedido a la cocina, espera y te trae el plato (los datos en formato JSON u otro acordado).</p>
+
+<h3>0.2. ¿Qué es el Backend?</h3>
+<p>El <strong>Backend</strong> es todo lo que pasa &quot;detrás de escena&quot; en el <strong>servidor</strong>: el usuario no lo ve. Es el cerebro que valida reglas, permisos y se conecta a la base de datos.</p>
+<p>En GestorNova, el backend (código en la carpeta <strong>api/</strong> del proyecto, ejecutado en el servidor) se encarga de:</p>
+<ul>
+<li><strong>Seguridad:</strong> comprobar que quien pide datos tenga permiso (por ejemplo con JWT).</li>
+<li><strong>Lógica:</strong> reglas de negocio, subida de archivos, integraciones (por ejemplo Cloudinary según la API).</li>
+<li><strong>Conexión:</strong> hablar con <strong>Neon</strong> para guardar o leer información sin exponer la &quot;llave maestra&quot; de la base en el teléfono o en una web pública.</li>
+</ul>
+
+<h3>0.3. ¿Para qué sirve en GestorNova?</h3>
+<p>La aplicación Android (y la interfaz web) es el <strong>Frontend</strong> — la cara visible. Para muchas funciones necesita hablar con el <strong>Backend</strong> a través de la <strong>API</strong> (pedidos HTTP a URLs concretas).</p>
+<p><strong>Ejemplo — actualización de la app (OTA):</strong></p>
+<ol>
+<li>El <strong>Frontend</strong> (la app) pregunta: &quot;¿Hay una versión nueva?&quot;</li>
+<li>Llama a la <strong>API</strong> en una dirección como: <strong>https://nexxo-api-418k.onrender.com/api/app-version</strong> (definida en <strong>app/src/main/assets/app_update_config.json</strong> en el APK).</li>
+<li>El <strong>Backend</strong> en <strong>Render</strong> recibe el pedido, consulta la base <strong>Neon</strong>, lee la tabla <strong>app_version</strong> y obtiene, por ejemplo, la versión 10 y el enlace del APK en Drive.</li>
+<li>La <strong>API</strong> responde a la app con JSON: versión, URL de descarga, notas, etc.</li>
+<li>El <strong>Frontend</strong> muestra el aviso de actualización al usuario.</li>
+</ol>
+<p><strong>¿Por qué importa?</strong></p>
+<ul>
+<li><strong>Centralización:</strong> si cambiás el enlace del APK, actualizás la fila en Neon (o la lógica en el servidor); no hace falta republicar la app solo por eso.</li>
+<li><strong>Seguridad:</strong> la cadena completa de Neon puede vivir solo en el servidor; la app no necesita la &quot;llave&quot; de administrador de la base.</li>
+<li><strong>Multiplataforma:</strong> el mismo Backend puede atender Android, web u otros clientes en el futuro.</li>
+</ul>
+<p class="note"><strong>Resumen:</strong> el Backend es la oficina central; la API es la ventanilla por donde el Frontend pide y recibe información. La base Neon es el almacén donde persisten pedidos, usuarios, versiones, etc.</p>
+
+<h3>0.4. Qué página o servidor cumple cada rol en GestorNova</h3>
+<table>
+<tr><th>Rol (analogía)</th><th>Rol técnico</th><th>Qué es en tu proyecto</th><th>Dónde está / URL típica</th></tr>
+<tr><td>Cliente en el salón</td><td>Frontend</td><td>Lo que ve y toca el usuario: pantallas, mapa, formularios.</td><td><strong>App Android</strong> (WebView + archivos en <strong>app/src/main/assets/</strong>, principalmente <strong>index.html</strong>). <strong>Web pública:</strong> sitio en <strong>GitHub Pages</strong> (ej. proyecto Pedidos-MG en <strong>leavera77.github.io/Pedidos-MG</strong>) con el mismo <strong>index.html</strong>.</td></tr>
+<tr><td>Mesero</td><td>API (HTTP)</td><td>Punto de entrada por URLs: recibe pedidos GET/POST y devuelve respuestas.</td><td>Servidor desplegado en <strong>Render</strong>: host <strong>nexxo-api-418k.onrender.com</strong>, rutas bajo <strong>/api/...</strong> (ej. <strong>/api/app-version</strong>). Código fuente en el repo: carpeta <strong>api/</strong> (<strong>server.js</strong>, <strong>package.json</strong>).</td></tr>
+<tr><td>Cocina / despensa</td><td>Base de datos</td><td>Donde viven los datos de forma permanente: tablas SQL.</td><td><strong>Neon</strong> (PostgreSQL en la nube). Se administra desde la consola de Neon y el <strong>SQL Editor</strong>. La cadena <strong>postgresql://...</strong> va en variables de entorno del Backend (Render), no en el repo público.</td></tr>
+<tr><td>Recetas y procedimientos de cocina</td><td>Lógica del Backend</td><td>Validaciones, auth, consultas a Neon, respuestas armadas.</td><td>Mismo proceso que la API: aplicación <strong>Node.js</strong> en Render, archivos del proyecto <strong>api/</strong>. Opcionalmente otras piezas (por ejemplo <strong>Cloudinary</strong> para medios, según configuración).</td></tr>
+<tr><td>Menú impreso / cartel en la puerta</td><td>Configuración estática del cliente</td><td>Indica al Frontend a qué URL de API preguntar (OTA).</td><td>En el APK: <strong>app/src/main/assets/app_update_config.json</strong> (campo <strong>manifestUrl</strong> apuntando a la API). En la web: <strong>config.json</strong> (generado con secretos en deploy; plantilla <strong>config.example.json</strong>).</td></tr>
+<tr><td>Plato para llevar (APK)</td><td>Archivo de instalación</td><td>Distribución del programa Android.</td><td><strong>Google Drive</strong> (u otro hosting): URL de descarga directa guardada en Neon (<strong>app_version.apk_url</strong>) para que la API se la pase a la app.</td></tr>
+</table>
+<p class="note"><strong>Nota de arquitectura:</strong> En muchas pantallas, el <strong>index.html</strong> puede conectarse a Neon desde el navegador usando la cadena de conexión del <strong>config.json</strong> (modelo híbrido). El flujo <strong>solo App → API → Neon</strong> (sin exponer la base al cliente) es el patrón más seguro para datos sensibles; la ruta <strong>/api/app-version</strong> sigue ese patrón. Ir moviendo más operaciones al Backend refuerza la analogía del restaurante al completo.</p>
+
+<h2>1. Lenguajes y formatos</h2>
+<table>
+<tr><th>Lenguaje / formato</th><th>Uso en GestorNova</th></tr>
+<tr><td>HTML</td><td>Estructura de la app web (archivo index.html con pantallas, modales, panel admin).</td></tr>
+<tr><td>CSS</td><td>Estilos en el mismo archivo (layout, tema, mapa, administración, vista móvil).</td></tr>
+<tr><td>JavaScript</td><td>Lógica del cliente: login, consultas y actualización de datos, mapa, pedidos, estadísticas, exportaciones.</td></tr>
+<tr><td>Java</td><td>App Android: pantalla principal, WebView, servicios/workers, ubicación, sesión, actualizaciones.</td></tr>
+<tr><td>Kotlin DSL / Gradle</td><td>Build Android: dependencias, versionCode/versionName, firma (archivos build.gradle.kts, catálogo de versiones).</td></tr>
+<tr><td>SQL (PostgreSQL)</td><td>Esquema y datos en Neon: pedidos, usuarios, app_version, notificaciones, ubicaciones, etc.</td></tr>
+<tr><td>JSON</td><td>Configuración (config, app_update_config), intercambio con API.</td></tr>
+<tr><td>Markdown</td><td>Documentación en carpeta docs/.</td></tr>
+<tr><td>Properties (opcional)</td><td>keystore.properties para firmar el APK de release (solo en tu PC, no en el repo público).</td></tr>
+</table>
+
+<h2>2. Páginas, URLs y CDNs</h2>
+<h3>2.1. Recursos propios o del producto</h3>
+<table>
+<tr><th>Recurso</th><th>Para qué sirve</th></tr>
+<tr><td>Repositorio GitHub (ej. Pedidos-MG)</td><td>Código de la web, Actions, despliegue a Pages.</td></tr>
+<tr><td>GitHub Pages (ej. leavera77.github.io/Pedidos-MG)</td><td>Hosting estático de la misma interfaz que puede llevar el APK.</td></tr>
+<tr><td>API en Render (ej. nexxo-api-418k.onrender.com)</td><td>Backend Node: autenticación, conexión a base de datos, ruta /api/app-version para actualización del APK.</td></tr>
+<tr><td>Neon (consola SQL + cadena postgresql://)</td><td>Base PostgreSQL: datos operativos y control de versión de la app.</td></tr>
+<tr><td>Google Drive</td><td>Almacenar el archivo .apk y publicar enlace de descarga directa.</td></tr>
+</table>
+
+<h3>2.2. Librerías por CDN (terceros)</h3>
+<table>
+<tr><th>Origen</th><th>Uso</th></tr>
+<tr><td>unpkg</td><td>Leaflet (mapas).</td></tr>
+<tr><td>cdnjs</td><td>Font Awesome (iconos), proj4js (proyecciones), html2canvas, jsPDF.</td></tr>
+<tr><td>jsDelivr</td><td>Chart.js (gráficos en estadísticas).</td></tr>
+<tr><td>cdn.sheetjs.com</td><td>SheetJS / XLSX (exportación Excel en el navegador).</td></tr>
+<tr><td>OpenStreetMap / CARTO (tiles)</td><td>Mapa base en Leaflet.</td></tr>
+<tr><td>sitios oficiales (ej. ENRE)</td><td>Enlaces informativos en la aplicación.</td></tr>
+</table>
+<p class="note">La API del proyecto puede usar también Cloudinary (medios) y otras integraciones según server.js y variables de entorno.</p>
+
+<h2>3. Servidores e infraestructura</h2>
+<table>
+<tr><th>Servicio</th><th>Rol</th></tr>
+<tr><td>Neon (PostgreSQL)</td><td>Base de datos principal.</td></tr>
+<tr><td>Render</td><td>Ejecución del servidor Node/Express de la API.</td></tr>
+<tr><td>GitHub Pages + Actions</td><td>Web estática y, si aplica, generación de config.json con secretos.</td></tr>
+<tr><td>Google Drive</td><td>Origen del archivo APK para descarga (no es servidor de la app, pero es parte del flujo de actualización).</td></tr>
+</table>
+<p>El dispositivo Android ejecuta la app nativa y, dentro, un WebView que muestra el mismo front (desde assets o desde la URL de Pages).</p>
+
+<h2>4. Programas y herramientas</h2>
+<table>
+<tr><th>Programa</th><th>Uso</th></tr>
+<tr><td>Android Studio</td><td>Proyecto Android, Gradle, emulador o dispositivo, generación de APK.</td></tr>
+<tr><td>Cursor / Visual Studio Code</td><td>Edición de código (HTML, JS, API, SQL, documentación).</td></tr>
+<tr><td>Git</td><td>Control de versiones.</td></tr>
+<tr><td>GitHub</td><td>Repositorio remoto, Pages, Actions.</td></tr>
+<tr><td>Consola Neon</td><td>Ejecutar SQL, copiar cadena de conexión.</td></tr>
+<tr><td>Panel Render</td><td>Despliegue de la API, variables de entorno, logs.</td></tr>
+<tr><td>Navegador (Chrome, etc.)</td><td>Pruebas, herramientas de desarrollador.</td></tr>
+<tr><td>Node.js y npm</td><td>Ejecutar la carpeta api/ en desarrollo.</td></tr>
+</table>
+
+<h2>5. Pasos secuenciales (si armás algo parecido de nuevo)</h2>
+<ol>
+<li>Definir el modelo de datos (pedidos, usuarios, roles, estados) y escribir el SQL inicial para PostgreSQL.</li>
+<li>Crear el proyecto en Neon, ejecutar los scripts y guardar la cadena de conexión solo en secretos o .env (nunca en repo público).</li>
+<li>Implementar una API mínima (Node + Express + cliente pg): rutas necesarias, CORS acotado, JWT si hay usuarios.</li>
+<li>Desplegar la API (por ejemplo en Render) y configurar variables de entorno.</li>
+<li>Desarrollar el front web (mapa con Leaflet, formularios, listas) y conectarlo a la API o al flujo de datos que definas.</li>
+<li>Publicar la web en GitHub con Pages y, si corresponde, Actions para inyectar configuración sin secretos en el repo.</li>
+<li>Crear la app Android con WebView que cargue el index desde assets o la URL de Pages; puentes JavaScript para cámara, archivos, sesión y notificaciones.</li>
+<li>Configurar actualizaciones OTA: tabla app_version en Neon, endpoint en la API, archivo app_update_config.json en el APK y APK alojado con URL directa.</li>
+<li>Probar en cadena: web local → web en Pages → APK debug → APK release firmado → subir APK → actualizar fila en Neon → probar “buscar actualización”.</li>
+<li>Documentar en docs/ y revisar que no se suban credenciales ni keystores.</li>
+</ol>
+
+<h2>6. Checklist de una página (operativa)</h2>
+<p>Rutas típicas respecto del repositorio <strong>Nexxo</strong> (Android). En el repo de Pages, la paridad suele ser index.html y sw.js en la raíz.</p>
+
+<h3>6.1. Modelo y base de datos</h3>
+<ul>
+<li>Definir tablas y roles.</li>
+<li>Scripts SQL en docs/ (por ejemplo docs/NEON_app_version.sql y otros docs/NEON_*.sql).</li>
+<li>Ejecutar en Neon SQL Editor; connection string solo en secretos / .env.</li>
+</ul>
+
+<h3>6.2. API backend</h3>
+<ul>
+<li>Código en api/ (server.js, package.json).</li>
+<li>Variables de entorno en el host (Render u otro).</li>
+<li>Probar en local: npm install y node server.js (o npm run dev).</li>
+<li>Desplegar y verificar rutas (por ejemplo /api/app-version para OTA).</li>
+</ul>
+
+<h3>6.3. Front web</h3>
+<ul>
+<li>Fuente principal: app/src/main/assets/index.html.</li>
+<li>Service worker: app/src/main/assets/sw.js.</li>
+<li>Plantilla de config: app/src/main/assets/config.example.json (no subir config.json con secretos).</li>
+<li>Probar en navegador.</li>
+</ul>
+
+<h3>6.4. Repositorio web (GitHub Pages)</h3>
+<ul>
+<li>Sincronizar index.html y sw.js con Nexxo.</li>
+<li>config.example.json y workflow en .github/workflows/ si usás Actions.</li>
+<li>Publicar y probar la URL de Pages.</li>
+</ul>
+
+<h3>6.5. App Android</h3>
+<ul>
+<li>Versión en app/build.gradle.kts (versionCode / versionName).</li>
+<li>Assets: index.html, sw.js.</li>
+<li>OTA: app/src/main/assets/app_update_config.json apuntando a la API.</li>
+<li>Firma: keystore.properties local.</li>
+<li>Build assembleDebug / assembleRelease y prueba en dispositivo.</li>
+</ul>
+
+<h3>6.6. Distribución del APK</h3>
+<ul>
+<li>Subir .apk a Drive u otro servicio con enlace de descarga directa.</li>
+<li>Actualizar Neon (INSERT/UPDATE en app_version); referencia en docs/NEON_app_version.sql.</li>
+<li>Comprobar que la app detecta la nueva versión.</li>
+</ul>
+
+<h3>6.7. Documentación y seguridad</h3>
+<ul>
+<li>Revisar docs/.</li>
+<li>No commitear: config.json real, keystores, cadenas de conexión.</li>
+<li>README con enlace a Pages y pasos de despliegue.</li>
+</ul>
+
+<h3>6.8. Cierre</h3>
+<ul>
+<li>Prueba integral: web + Android + API + Neon.</li>
+<li>Commit y push en Nexxo y, si aplica, sync al repo de Pages.</li>
+</ul>
+
+<p style="margin-top:28px;font-size:10pt;color:#555">Documento generado para uso interno. Rutas y nombres de host pueden variar según tu despliegue actual.</p>
+
+</body>
+</html>

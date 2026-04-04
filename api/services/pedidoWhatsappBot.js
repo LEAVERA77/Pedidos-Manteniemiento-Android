@@ -156,5 +156,51 @@ export async function crearPedidoDesdeWhatsappBot({
     `INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`,
     vals
   );
-  return insert.rows[0];
+  const pedidoRow = insert.rows[0];
+  setImmediate(() => {
+    notificarAdminsNuevoPedidoWhatsappSafe(Number(tenantId), pedidoRow).catch(() => {});
+  });
+  return pedidoRow;
+}
+
+/**
+ * Inserta filas en notificaciones_movil para admins del tenant (app móvil / panel que las lea).
+ * El front web en GitHub Pages suele refrescar pedidos vía polling; este hook acelera avisos en clientes que consuman la tabla.
+ */
+async function notificarAdminsNuevoPedidoWhatsappSafe(tenantId, pedido) {
+  if (!pedido?.id) return;
+  try {
+    const t = await query(
+      `SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'notificaciones_movil' LIMIT 1`
+    );
+    if (!t.rows.length) return;
+
+    const colSet = await columnasUsuarios();
+    const hasTenant = colSet.has("tenant_id");
+    const hasCliente = colSet.has("cliente_id");
+    const col = hasTenant ? "tenant_id" : hasCliente ? "cliente_id" : null;
+    if (!col) return;
+
+    const admins = await query(
+      `SELECT id FROM usuarios
+       WHERE ${col} = $1 AND activo = TRUE
+         AND (
+           LOWER(COALESCE(rol::text, '')) = 'admin'
+           OR LOWER(COALESCE(rol::text, '')) = 'administrador'
+         )`,
+      [tenantId]
+    );
+    const titulo = "Nuevo reclamo (WhatsApp)";
+    const cuerpo = `Se registró el reclamo *${pedido.numero_pedido}* desde WhatsApp.`;
+    for (const a of admins.rows || []) {
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [a.id, pedido.id, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.error("[pedido-whatsapp-bot] notificar admins", e.message);
+  }
 }

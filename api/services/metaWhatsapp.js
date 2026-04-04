@@ -6,13 +6,32 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
+/**
+ * Móviles AR en WhatsApp suelen llegar como 549 + área + número; la lista de prueba de Meta
+ * a veces registra 54 + área + número (sin el 9). Sin esto, Graph devuelve 131030 en desarrollo.
+ * Desactivar con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false si en producción tu WABA exige el 9.
+ */
+export function normalizeWhatsAppRecipientForMeta(digits) {
+  const d = String(digits || "").replace(/\D/g, "");
+  const flag = String(process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9 ?? "true").toLowerCase();
+  if (flag === "0" || flag === "false") return d;
+  if (d.startsWith("549") && d.length >= 12 && d.length <= 16) {
+    return `54${d.slice(3)}`;
+  }
+  return d;
+}
+
 export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { accessToken, phoneNumberId }) {
   const token = String(accessToken || "").trim();
   const pid = String(phoneNumberId || "").trim();
   if (!token || !pid) {
     return { ok: false, error: "missing_meta_credentials" };
   }
-  const to = String(toDigits || "").replace(/\D/g, "");
+  const rawTo = String(toDigits || "").replace(/\D/g, "");
+  const to = normalizeWhatsAppRecipientForMeta(rawTo);
+  if (to !== rawTo) {
+    console.log("[meta-whatsapp] destinatario AR normalizado (549→54)", { len: to.length });
+  }
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params" };
@@ -92,14 +111,22 @@ export function decodeWhatsAppListRowId(id) {
  * Lista interactiva (Cloud API). Máx. 10 filas en total; título de fila ≤24 caracteres.
  * El id de cada fila codifica el texto completo del tipo de reclamo (UTF-8 → base64url).
  */
-export async function sendWhatsAppInteractiveList(toDigits, { bodyText, buttonText, sectionTitle, tipos }) {
-  const token = String(process.env.META_ACCESS_TOKEN || "").trim();
-  const phoneNumberId = String(process.env.META_PHONE_NUMBER_ID || "").trim();
-  if (!token || !phoneNumberId) {
-    console.error("[meta-whatsapp] missing META_ACCESS_TOKEN or META_PHONE_NUMBER_ID");
+export async function sendWhatsAppInteractiveListWithCredentials(
+  toDigits,
+  { bodyText, buttonText, sectionTitle, tipos },
+  { accessToken, phoneNumberId }
+) {
+  const token = String(accessToken || "").trim();
+  const pid = String(phoneNumberId || "").trim();
+  if (!token || !pid) {
+    console.error("[meta-whatsapp] interactive list: faltan token o phone_number_id");
     return { ok: false, error: "missing_meta_credentials" };
   }
-  const to = String(toDigits || "").replace(/\D/g, "");
+  const rawTo = String(toDigits || "").replace(/\D/g, "");
+  const to = normalizeWhatsAppRecipientForMeta(rawTo);
+  if (to !== rawTo) {
+    console.log("[meta-whatsapp] lista interactiva: destinatario AR normalizado (549→54)", { len: to.length });
+  }
   const list = Array.isArray(tipos) ? tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
   if (!to || !list.length) {
     return { ok: false, error: "invalid_params" };
@@ -140,7 +167,7 @@ export async function sendWhatsAppInteractiveList(toDigits, { bodyText, buttonTe
     },
   };
 
-  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
+  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${pid}/messages`;
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -158,7 +185,7 @@ export async function sendWhatsAppInteractiveList(toDigits, { bodyText, buttonTe
     console.error("[meta-whatsapp] interactive list error", { status: resp.status, to: to.slice(0, 4) + "…", detail: errPart });
     if (graph?.error?.code === 190) {
       console.error(
-        "[meta-whatsapp] Token Meta expirado o inválido: actualizá META_ACCESS_TOKEN en el servidor."
+        "[meta-whatsapp] Token Meta expirado o inválido: actualizá credenciales del tenant o META_ACCESS_TOKEN."
       );
     }
     return { ok: false, status: resp.status, graph };
@@ -169,4 +196,11 @@ export async function sendWhatsAppInteractiveList(toDigits, { bodyText, buttonTe
   }
   console.log("[meta-whatsapp] lista interactiva OK", { to: to.slice(0, 4) + "…", n: list.length });
   return { ok: true, graph };
+}
+
+export async function sendWhatsAppInteractiveList(toDigits, opts) {
+  return sendWhatsAppInteractiveListWithCredentials(toDigits, opts, {
+    accessToken: process.env.META_ACCESS_TOKEN || "",
+    phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
+  });
 }

@@ -25,12 +25,12 @@ android {
         applicationId = "com.gestornova.gestion"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 15
-        versionName = "1.0.15"
+        versionCode = 16
+        versionName = "1.0.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // UI HTML/JS desde GitHub Pages: actualizar Pedidos-MG sin nuevo APK.
+        // Release: GitHub Pages (actualizar sin nuevo APK vía Pedidos-MG).
         buildConfigField(
             "String",
             "WEB_APP_URL",
@@ -50,6 +50,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Android Studio / emulador: UI desde app/src/main/assets/index.html (Nexxo).
+            buildConfigField(
+                "String",
+                "WEB_APP_URL",
+                "\"file:///android_asset/index.html\""
+            )
+        }
         release {
             isMinifyEnabled = false
             if (releaseKeystoreConfigured) {

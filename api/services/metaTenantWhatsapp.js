@@ -16,7 +16,10 @@ export async function resolveTenantIdByMetaPhoneNumberId(phoneNumberId) {
   const r = await query(
     `SELECT id FROM clientes
      WHERE activo = TRUE
-       AND (configuracion->>'meta_phone_id') = $1
+       AND (
+         (configuracion->>'meta_phone_id') = $1
+         OR (configuracion->>'meta_phone_number_id') = $1
+       )
      LIMIT 1`,
     [pid]
   );

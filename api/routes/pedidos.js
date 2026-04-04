@@ -8,7 +8,10 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
 } from "../services/tiposReclamo.js";
-import { notifyPedidoCierreWhatsAppSafe } from "../services/whatsappService.js";
+import {
+  notifyPedidoCierreWhatsAppSafe,
+  notifyPedidoClienteActualizacionWhatsAppSafe,
+} from "../services/whatsappService.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -64,6 +67,77 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
         });
       } catch (e) {
         console.error("[pedidos] notify cierre WA (no bloqueante)", e.message);
+      }
+    })();
+  });
+}
+
+/** Pedidos cargados por el bot WA: avisar al vecino cuando el técnico (app/web) ejecuta o informa avance. */
+function scheduleNotifyClientePedidoWhatsapp({
+  pedidoAntes,
+  pedidoDespues,
+  body,
+  userId,
+  estadoAntes,
+}) {
+  const origenWa = String(pedidoAntes.origen_reclamo || "").toLowerCase() === "whatsapp";
+  if (!origenWa) return;
+
+  const phoneRaw =
+    pedidoDespues.telefono_contacto != null && pedidoDespues.telefono_contacto !== ""
+      ? pedidoDespues.telefono_contacto
+      : pedidoAntes.telefono_contacto;
+  const phone = String(phoneRaw || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) return;
+
+  const estadoNuevo = String(pedidoDespues.estado || "");
+  const becameEjecucion = estadoNuevo === "En ejecución" && estadoAntes !== "En ejecución";
+
+  const avanceExplicit = body?.avance !== undefined && body?.avance !== null;
+  const avAnt = Number(pedidoAntes.avance ?? 0);
+  const avNue = Number(pedidoDespues.avance ?? 0);
+  const avanceChanged = avanceExplicit && avAnt !== avNue;
+  const estadoPermiteAvance = estadoNuevo === "En ejecución" || estadoNuevo === "Asignado";
+
+  setImmediate(() => {
+    (async () => {
+      try {
+        const tenantId =
+          pedidoAntes.tenant_id != null && Number.isFinite(Number(pedidoAntes.tenant_id))
+            ? Number(pedidoAntes.tenant_id)
+            : await getUserTenantId(userId);
+        const nombreEntidad = await loadNombreCliente(tenantId);
+
+        if (becameEjecucion) {
+          await notifyPedidoClienteActualizacionWhatsAppSafe({
+            tenantId,
+            numeroPedido: pedidoDespues.numero_pedido,
+            nombreEntidad,
+            telefonoContactoRaw: phoneRaw,
+            pedidoId: pedidoDespues.id,
+            tipo: "en_ejecucion",
+          });
+        }
+        if (avanceChanged && estadoPermiteAvance) {
+          const snippet =
+            pedidoDespues.trabajo_realizado != null
+              ? String(pedidoDespues.trabajo_realizado)
+              : body?.trabajo_realizado != null
+                ? String(body.trabajo_realizado)
+                : null;
+          await notifyPedidoClienteActualizacionWhatsAppSafe({
+            tenantId,
+            numeroPedido: pedidoDespues.numero_pedido,
+            nombreEntidad,
+            telefonoContactoRaw: phoneRaw,
+            pedidoId: pedidoDespues.id,
+            tipo: "avance",
+            avancePct: pedidoDespues.avance,
+            trabajoRealizadoSnippet: snippet,
+          });
+        }
+      } catch (e) {
+        console.error("[pedidos] notify cliente WA pedido (no bloqueante)", e.message);
       }
     })();
   });
@@ -375,6 +449,13 @@ router.put("/:id", async (req, res) => {
     if (becameCerrado) {
       scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
     }
+    scheduleNotifyClientePedidoWhatsapp({
+      pedidoAntes: pedido,
+      pedidoDespues: updated,
+      body: req.body,
+      userId: req.user.id,
+      estadoAntes,
+    });
     return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar pedido", detail: error.message });
