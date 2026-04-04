@@ -33,7 +33,10 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #mapa-dash-body.collapsed{display:none}
 #mapa-filtros-body.collapsed{display:none}
 #mapa-colores-body.collapsed{display:none}
-.moui-card.moui-card-slideoff{transform:translateX(calc(-100% - 12px))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
+/* Paneles del mapa: ocultar deslizando hacia la derecha (fuera de pantalla) */
+#mapa-card-filtros.moui-card-slideoff,
+#mapa-card-colores.moui-card-slideoff,
+#mapa-card-dashboard.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
 .map-slide-tab{position:fixed;top:120px;left:0;z-index:9600;display:none;padding:.28rem .45rem;background:var(--bd);color:#fff;font-size:.65rem;font-weight:700;border-radius:0 .4rem .4rem 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);pointer-events:auto}
 .map-slide-tab.visible{display:block!important}
 .dash-kpi-click{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
@@ -56,7 +59,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .print-content.print-a4-tight td{padding:.25rem}
 .print-content.print-a4-tight .firma-print{max-height:70px;object-fit:contain}
 #mapa-android-strip{display:none;position:absolute;top:58px;left:0;right:0;z-index:852;pointer-events:none;transition:transform .28s ease;transform:translateX(0)}
-#mapa-android-strip.mas-collapsed{transform:translateX(100%)}
+#mapa-android-strip.mas-collapsed{transform:translateX(100vw)}
 #mapa-android-strip.mas-collapsed .mas-inner{pointer-events:none}
 #mapa-android-strip .mas-inner{pointer-events:auto;margin:.3rem .45rem;padding:.4rem .55rem;background:#fff;border:1px solid var(--bo);border-radius:.5rem;display:flex;flex-direction:column;gap:.35rem;align-items:stretch;font-size:.72rem;box-shadow:0 2px 10px rgba(0,0,0,.1)}
 #mapa-android-strip .mas-line-top{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;justify-content:space-between;width:100%}
@@ -135,6 +138,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .pav{margin-top:.45rem;height:3px;background:#e2e8f0;border-radius:2px;overflow:hidden}
 .ab{height:100%;background:linear-gradient(90deg,var(--bd),var(--bl));border-radius:2px;transition:width .4s}
 
+/* Centrar mapa en GPS (sin abrir nuevo pedido) */
+.btn-mapa-ir-gps{position:absolute;bottom:6.25rem;left:1rem;width:2.9rem;height:2.9rem;border-radius:50%;background:#fff;color:var(--bd);border:1px solid var(--bo);box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
+.btn-mapa-ir-gps:hover{transform:scale(1.06)}
 /* FAB mapa: nuevo pedido desde ubicación */
 .fab-pedido-ubicacion{position:absolute;bottom:6.25rem;right:1rem;width:3.25rem;height:3.25rem;border-radius:50%;background:#f59e0b;color:white;border:none;box-shadow:0 4px 18px rgba(245,158,11,.45);font-size:1.4rem;cursor:pointer;z-index:1002;display:flex;align-items:center;justify-content:center;transition:transform .2s}
 .fab-pedido-ubicacion:hover{transform:scale(1.1)}
@@ -251,7 +257,7 @@ textarea{resize:vertical;min-height:80px}
 #toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
-@media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-pedido-ubicacion{bottom:4.5rem;right:390px}.hl{display:none}}
+@media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-pedido-ubicacion{bottom:4.5rem;right:390px}.btn-mapa-ir-gps{bottom:4.5rem;left:1rem}.hl{display:none}}
 @keyframes pulse-gps{
   0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}
   70%{box-shadow:0 0 0 10px rgba(16,185,129,0)}

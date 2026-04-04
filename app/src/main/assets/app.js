@@ -2264,6 +2264,15 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
     }
 }
 
+function irAMiUbicacionEnMapa() {
+    if (!app.map) {
+        toast('Abre el mapa primero', 'info');
+        return;
+    }
+    solicitarUbicacion(true, false);
+}
+window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
+
 let mapViewImportPromise = null;
 function loadMapViewModule() {
     if (!mapViewImportPromise) mapViewImportPromise = import('./map-view.js');
@@ -2316,6 +2325,8 @@ async function initMap() {
     await mod.runInitMap();
 }
 
+const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
+if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 
 document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => {
     limpiarFotosYPreviewNuevoPedido();

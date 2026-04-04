@@ -104,13 +104,12 @@ public class MainActivity extends AppCompatActivity {
         crearCanalNotificacionesPedidos();
 
         webView = findViewById(R.id.webview);
-        if (isProbablyEmulator()) {
-            // Evita cierres del WebView en AVDs con drivers GLES inestables (render por CPU).
-            webView.setLayerType(WebView.LAYER_TYPE_SOFTWARE, null);
-        }
+        // Render por software en emulador ralentiza mucho el mapa; usar composición por defecto (GPU).
+        // Si un AVD concreto cierra el WebView por GLES, descomenta temporalmente:
+        // if (isProbablyEmulator()) webView.setLayerType(WebView.LAYER_TYPE_SOFTWARE, null);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Menos carga del render cuando la app no está en primer plano.
-            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED, false);
+            // Prioridad alta mientras la app está visible (mejor fluidez en AVD / dispositivos lentos).
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
         }
         capturePedidoIdFromIntent(getIntent());
         configurarWebView();
@@ -167,6 +166,9 @@ public class MainActivity extends AppCompatActivity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setSupportZoom(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            s.setOffscreenPreRaster(true);
+        }
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "")
                         + " GestorNova/" + BuildConfig.VERSION_NAME
