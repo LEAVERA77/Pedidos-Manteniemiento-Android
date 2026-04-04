@@ -25,9 +25,48 @@ const MSG_SOLICITAR_UBICACION =
   "Si no podés compartir GPS, escribí la *dirección o referencia* del lugar (calle, ciudad, barrio).";
 
 const MSG_OPCIONAL_IDENTIFICADOR =
-  "Si tenés *NIS*, *medidor*, *número de socio* o *ID de usuario* del sistema, escribilo en un mensaje.\n\n" +
-  "Así podemos registrar tu *nombre completo* si está en la base.\n\n" +
-  "Si no aplica, escribí *no* o *siguiente*.";
+  "Si tenés *NIS*, *medidor*, *número de socio* o *ID de usuario* del sistema, escribilo en un mensaje (así podemos completar tu *nombre* desde la base).\n\n" +
+  "Si no tenés esos datos, podés escribir tu *nombre completo* o una *dirección / referencia* (calle, barrio, ciudad).\n\n" +
+  "Si preferís seguir sin identificación, escribí *no* o *siguiente*.";
+
+const BLOQUEO_RECLAMOS_MSG_DEFAULT =
+  "Por el momento no podemos registrar reclamos por WhatsApp. Pedimos disculpas; comunicate por los canales habituales de la empresa.";
+
+function resolveWhatsappBloqueoReclamos(cfgObj) {
+  const c = cfgObj && typeof cfgObj === "object" ? cfgObj : {};
+  const envOn =
+    process.env.WHATSAPP_BLOQUEO_RECLAMOS === "1" ||
+    process.env.WHATSAPP_BLOQUEO_RECLAMOS === "true";
+  const tenantOn =
+    c.whatsapp_bloqueo_reclamos === true ||
+    c.whatsapp_bloqueo_reclamos === "true" ||
+    c.whatsapp_bloqueo_reclamos === 1 ||
+    c.whatsapp_bloqueo_reclamos === "1";
+  const mensaje = String(c.whatsapp_bloqueo_mensaje || process.env.WHATSAPP_BLOQUEO_MENSAJE || "").trim();
+  return {
+    active: envOn || tenantOn,
+    mensaje: mensaje || BLOQUEO_RECLAMOS_MSG_DEFAULT,
+  };
+}
+
+/** Texto libre aceptable como nombre o referencia (no lookup en base). */
+function esIdentificacionLibreRazonable(texto) {
+  const t = String(texto || "").trim();
+  if (t.length < 3 || t.length > 500) return false;
+  if (!/[\p{L}\p{N}]/u.test(t)) return false;
+  const sinEsp = t.replace(/\s/g, "");
+  if (sinEsp.length < 2) return false;
+  return true;
+}
+
+/** Si conviene usar el texto como contactName del pedido (evita pisar con direcciones muy numéricas). */
+function pareceNombreParaContactoWhatsapp(texto) {
+  const t = String(texto || "").trim();
+  if (t.length < 2 || t.length > 120) return false;
+  const digitCount = (t.match(/\d/g) || []).length;
+  if (digitCount > 5) return false;
+  return /[\p{L}]{2,}/u.test(t);
+}
 
 function botTenantId() {
   return Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
@@ -58,6 +97,7 @@ async function loadTenantBotContext(tenantId) {
     }
   }
   const c = normCfg(cfg);
+  const bloqueo = resolveWhatsappBloqueoReclamos(c);
   return {
     id: row.id,
     nombre: row.nombre,
@@ -65,6 +105,8 @@ async function loadTenantBotContext(tenantId) {
     lat: c.lat_base != null ? Number(c.lat_base) : null,
     lng: c.lng_base != null ? Number(c.lng_base) : null,
     tipos: tiposReclamoParaClienteTipo(row.tipo),
+    whatsappBloqueoReclamos: bloqueo.active,
+    whatsappBloqueoMensaje: bloqueo.mensaje,
   };
 }
 
@@ -182,6 +224,9 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   if (sess.direccionTexto && String(sess.direccionTexto).trim()) {
     descripcionFinal += `\n\nUbicación indicada por el usuario: ${String(sess.direccionTexto).trim()}`;
   }
+  if (sess.identificacionLibreTexto && String(sess.identificacionLibreTexto).trim()) {
+    descripcionFinal += `\n\nIdentificación / referencia proporcionada por el usuario: ${String(sess.identificacionLibreTexto).trim()}`;
+  }
   const latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
   const lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
   try {
@@ -230,6 +275,10 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 const MAX_WHATSAPP_LIST_ROWS = 10;
 
 async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
+  if (ctx.whatsappBloqueoReclamos) {
+    await reply(phoneDigits, ctx.whatsappBloqueoMensaje, ctx.id, phoneNumberIdWebhook);
+    return { ok: true, blocked: true };
+  }
   const bodyText = `Elegí el tipo que mejor describe tu reclamo:`;
   const pid = String(phoneNumberIdWebhook || "").trim();
   let accessToken = "";
@@ -439,6 +488,10 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
   }
+  if (ctx.whatsappBloqueoReclamos) {
+    await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+    return;
+  }
   const tipo = decodeWhatsAppListRowId(listRowId);
   if (!tipo || !ctx.tipos.includes(tipo)) {
     await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
@@ -578,6 +631,28 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     if (!res.ok) {
+      if (esIdentificacionLibreRazonable(raw)) {
+        const next = {
+          ...sess,
+          step: "awaiting_location",
+          identificacionLibreTexto: raw,
+          nisParaPedido: null,
+          medidorParaPedido: null,
+          nisMedidorParaPedido: null,
+          phoneNumberId: sess.phoneNumberId || wpid,
+        };
+        if (pareceNombreParaContactoWhatsapp(raw)) {
+          next.contactName = raw;
+        }
+        sessions.set(sk, next);
+        await reply(
+          phone,
+          "Listo. *Tomamos* tu *nombre o referencia* para este reclamo.\n\n" + MSG_SOLICITAR_UBICACION,
+          tid,
+          phoneNumberId
+        );
+        return;
+      }
       await reply(
         phone,
         "No encontramos ese dato para este servicio. Revisá el número o escribí *no* para continuar sin datos.",
@@ -607,11 +682,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (!sess || sess.step === "idle") {
     if (esPedidoCargarReclamo(text)) {
+      if (ctx.whatsappBloqueoReclamos) {
+        await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+        return;
+      }
       await replyListaTiposReclamo(phone, ctx, phoneNumberId);
       return;
     }
     const n = parseInt(text, 10);
     if (Number.isFinite(n) && n >= 1 && n <= ctx.tipos.length) {
+      if (ctx.whatsappBloqueoReclamos) {
+        await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+        return;
+      }
       const tipoSel = ctx.tipos[n - 1];
       sessions.set(sk, {
         step: "awaiting_desc",

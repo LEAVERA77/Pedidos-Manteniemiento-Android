@@ -106,31 +106,90 @@ async function ensureOpinionColumns() {
   }
 }
 
+function normalizeLow(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[!?.¡¿…]+$/g, "")
+    .trim();
+}
+
+/** Comandos del menú / inicio de reclamo: no consumir como opinión (dejan actuar al bot). */
+function esComandoExcluidoFlujoMenu(low, raw) {
+  const t = String(raw || "").trim();
+  if (/^(menu|inicio|ayuda|volver|0)$/i.test(low)) return true;
+  if (low === "hola") return true;
+  if (/\bcargar\s+reclamo\b/.test(low)) return true;
+  if (/\bnuevo\s+reclamo\b/.test(low)) return true;
+  if (/\bquiero\s+(hacer\s+)?(un\s+)?reclamo\b/.test(low)) return true;
+  if (low === "lista" || low === "tipos" || low === "reclamo") return true;
+  if (/^\d{1,2}$/.test(t)) return true;
+  return false;
+}
+
+/** Agradecimientos / conformidad breve (con opinión pendiente se guardan igual). */
+function esMensajeCortoConformidad(low) {
+  if (!low || low.length > 80) return false;
+  const compact = low.replace(/\s+/g, " ").trim();
+  const tokens = [
+    "gracias",
+    "muchas gracias",
+    "mil gracias",
+    "muy amable",
+    "ok",
+    "okey",
+    "okay",
+    "listo",
+    "perfecto",
+    "bueno",
+    "dale",
+    "genial",
+    "excelente",
+    "conforme",
+    "bien",
+    "todo bien",
+    "todo ok",
+    "todo perfecto",
+    "sisi",
+    "si",
+    "sip",
+    "joya",
+    "buenisimo",
+    "todo joya",
+    "👍",
+    "👌",
+  ];
+  for (const tok of tokens) {
+    if (compact === tok || compact.startsWith(tok + " ")) return true;
+  }
+  if (/^👍+$/.test(compact) || /^👌+$/.test(compact) || /^✅+$/.test(compact)) return true;
+  return false;
+}
+
+const ACK_OPINION_CORTA = "Gracias por tu respuesta. ¡Que tengas un buen día!";
+const ACK_OPINION_LARGA = "Gracias por sus observaciones, las tendremos en cuenta.";
+
 /**
  * Si hay opinión pendiente y el texto parece feedback (no comando del menú), guarda en pedidos.
  * @returns {Promise<{ handled: boolean, ack?: string }>}
  */
 export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text }) {
   const raw = String(text || "").trim();
-  if (raw.length < 2) return { handled: false };
+  if (!raw) return { handled: false };
 
-  const low = raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  const low = normalizeLow(raw);
+  const pend = await getPending(tenantId, phoneDigits);
 
-  if (
-    /^(hola|menu|gracias|ok|dale|si|no|listo|perfecto|bueno)$/i.test(low) ||
-    /^(0|inicio|ayuda|volver)$/i.test(low)
-  ) {
+  if (esComandoExcluidoFlujoMenu(low, raw)) {
     return { handled: false };
   }
 
-  if (/^\d{1,2}$/.test(raw)) return { handled: false };
-  if (/\bcargar\s+reclamo\b/.test(low) || /\bnuevo\s+reclamo\b/.test(low)) return { handled: false };
-
-  const pend = await getPending(tenantId, phoneDigits);
-  if (!pend) return { handled: false };
+  if (!pend) {
+    if (raw.length < 2) return { handled: false };
+    if (esMensajeCortoConformidad(low)) return { handled: false };
+    return { handled: false };
+  }
 
   await ensureOpinionColumns();
 
@@ -152,8 +211,6 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
   );
   await clearPendingClienteOpinion(tenantId, phoneDigits);
 
-  return {
-    handled: true,
-    ack: "Gracias por sus observaciones, las tendremos en cuenta.",
-  };
+  const ack = esMensajeCortoConformidad(low) ? ACK_OPINION_CORTA : ACK_OPINION_LARGA;
+  return { handled: true, ack };
 }
