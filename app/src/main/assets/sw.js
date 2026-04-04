@@ -11,7 +11,67 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v4';
+const CACHE_SHELL = 'pmg-shell-v6';
 const SW_VERSION  = '1.1.1';
+
+function shellAssetUrls() {
+  const { origin, pathname } = self.location;
+  const dir = pathname.replace(/[^/]*$/, '') || '/';
+  const base = origin + dir;
+  const j = (p) => base + p.replace(/^\//, '');
+  return [
+    j('index.html'),
+    j('index.min.html'),
+    j('styles.css'),
+    j('app.js'),
+    j('map.js'),
+    j('map-view.js'),
+    j('offline.js'),
+    j('sync-worker.js'),
+    j('branding/gestornova-web.png'),
+    j('branding/gestornova-android.png')
+  ];
+}
+
+async function precacheShellAssets() {
+  const cache = await caches.open(CACHE_SHELL);
+  await Promise.all(
+    shellAssetUrls().map(async (url) => {
+      try {
+        if (await cache.match(url)) return;
+        const resp = await fetch(url, { cache: 'reload', credentials: 'same-origin' });
+        if (resp.ok) await cache.put(url, resp.clone());
+      } catch (_) {}
+    })
+  );
+}
+
+async function cacheFirstShell(request) {
+  const cache = await caches.open(CACHE_SHELL);
+  const cached = await cache.match(request);
+  return (
+    cached ||
+    fetch(request)
+      .then((resp) => {
+        if (resp.ok) cache.put(request, resp.clone());
+        return resp;
+      })
+      .catch(() => cached)
+  );
+}
+
+async function networkFirstShell(request) {
+  const cache = await caches.open(CACHE_SHELL);
+  try {
+    const resp = await fetch(request);
+    if (resp.ok) cache.put(request, resp.clone());
+    return resp;
+  } catch (e) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw e;
+  }
+}
 
 // ── Tiles de Entre Ríos zooms 5-11 ───────────────────────────
 // Generados automáticamente para bbox lat[-33.2,-29.8] lon[-60.8,-57.2]
@@ -272,7 +332,9 @@ const TILES_ER = [
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
-    (async () => {
+    Promise.all([
+      precacheShellAssets(),
+      (async () => {
       const cache = await caches.open(CACHE_TILES);
       let ok = 0, skip = 0, fail = 0;
       // Lotes de 10 para respetar el rate limit de OSM (máx ~2 req/s por IP)
@@ -293,23 +355,27 @@ self.addEventListener('install', event => {
       }
       console.log(`[SW] Tiles Entre Ríos: ${ok} nuevos, ${skip} ya cacheados, ${fail} fallidos`);
     })()
+    ])
   );
 });
 
 // ── ACTIVATE: limpiar versiones anteriores ────────────────────
 self.addEventListener('activate', event => {
+  const keep = new Set([CACHE_TILES, CACHE_SHELL]);
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE_TILES).map(k => caches.delete(k))
+        keys.filter(k => !keep.has(k)).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );
 });
 
-// ── FETCH: servir tiles desde cache cuando no hay red ─────────
+// ── FETCH: app shell (JS/CSS/img/HTML) + tiles OSM ─────────────
 self.addEventListener('fetch', event => {
-  if (!event.request.url.includes('tile.openstreetmap.org')) return;
+  const req = event.request;
+  const url = new URL(req.url);
+  if (url.hostname.includes('tile.openstreetmap.org')) {
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
@@ -335,4 +401,23 @@ self.addEventListener('fetch', event => {
       });
     })
   );
+  return;
+  }
+
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  const path = url.pathname;
+  const isAppStatic =
+    /\.(js|mjs|css|png|webp|svg|woff2?|html)$/i.test(path) ||
+    path.endsWith('/') ||
+    /\/index\.min\.html$/i.test(path);
+
+  if (!isAppStatic) return;
+
+  const isHtml =
+    /\.html$/i.test(path) ||
+    path.endsWith('/') ||
+    /\/index(\.min)?\.html$/i.test(path);
+
+  event.respondWith(isHtml ? networkFirstShell(req) : cacheFirstShell(req));
 });

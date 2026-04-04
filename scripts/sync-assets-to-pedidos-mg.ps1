@@ -40,6 +40,7 @@ $files = @(
     'map.js',
     'map-view.js',
     'offline.js',
+    'sync-worker.js',
     'sw.js'
 )
 
@@ -51,6 +52,14 @@ foreach ($f in $files) {
     }
     Copy-Item -LiteralPath $src -Destination (Join-Path $PedidosMgRoot $f) -Force
     Write-Host "OK $f"
+}
+
+$brandSrc = Join-Path $assets 'branding'
+$brandDst = Join-Path $PedidosMgRoot 'branding'
+if (Test-Path $brandSrc) {
+    New-Item -ItemType Directory -Force -Path $brandDst | Out-Null
+    Copy-Item -Path (Join-Path $brandSrc '*') -Destination $brandDst -Force
+    Write-Host 'OK branding/*'
 }
 
 # Paridad con lo que suele haber en assets para WebView empaquetado

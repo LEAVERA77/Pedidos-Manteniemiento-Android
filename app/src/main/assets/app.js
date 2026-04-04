@@ -174,8 +174,53 @@ function setModoOffline(offline) {
 }
 
 
+function yieldAnimationFrame() {
+    return new Promise(r => requestAnimationFrame(() => r()));
+}
+
+let _syncWorkerPrepareSeq = 0;
+function prepareOfflineQueueInWorker(rawQueue) {
+    if (typeof Worker === 'undefined' || !Array.isArray(rawQueue)) return Promise.resolve(rawQueue);
+    return new Promise(resolve => {
+        const id = ++_syncWorkerPrepareSeq;
+        let w;
+        const done = (q) => {
+            try { w && w.terminate(); } catch (_) {}
+            resolve(Array.isArray(q) && q.length ? q : rawQueue);
+        };
+        const t = setTimeout(() => done(rawQueue), 12000);
+        try {
+            w = new Worker(new URL('./sync-worker.js', import.meta.url));
+        } catch (_) {
+            try {
+                w = new Worker('sync-worker.js');
+            } catch (e2) {
+                clearTimeout(t);
+                resolve(rawQueue);
+                return;
+            }
+        }
+        w.onmessage = (ev) => {
+            const d = ev.data || {};
+            if (d.id !== id) return;
+            clearTimeout(t);
+            done(d.ok && Array.isArray(d.queue) ? d.queue : rawQueue);
+        };
+        w.onerror = () => {
+            clearTimeout(t);
+            done(rawQueue);
+        };
+        try {
+            w.postMessage({ id, queue: rawQueue });
+        } catch (_) {
+            clearTimeout(t);
+            done(rawQueue);
+        }
+    });
+}
+
 async function sincronizarOffline() {
-    const q = offlineQueue();
+    let q = offlineQueue();
     if (q.length === 0) { toast('No hay pedidos offline pendientes', 'info'); return; }
     if (!NEON_OK || !_sql) {
         
@@ -186,11 +231,15 @@ async function sincronizarOffline() {
         setModoOffline(false);
     }
 
+    q = await prepareOfflineQueueInWorker(q);
+
     toast('Sincronizando ' + q.length + ' pedido(s)...', 'info');
     let ok = 0, fail = 0;
     const remaining = [];
 
-    for (const op of q) {
+    for (let i = 0; i < q.length; i++) {
+        const op = q[i];
+        await yieldAnimationFrame();
         try {
             if (op.tipo === 'INSERT') {
                 await sqlSimple(op.query);
@@ -968,6 +1017,87 @@ function esAdminSesionWebPublica() {
     }
 }
 
+/** Marca por defecto hasta que el admin complete el setup inicial en servidor (setup_wizard_completado). */
+const BRAND_DEFAULT_NAME = 'GestorNova';
+
+function basePathAssets() {
+    try {
+        const p = window.location.pathname || '/';
+        const i = p.lastIndexOf('/');
+        return i >= 0 ? p.slice(0, i + 1) : '/';
+    } catch (_) {
+        return '/';
+    }
+}
+
+function defaultGestorNovaLogoUrl() {
+    const file = esAndroidWebViewMapa() ? 'branding/gestornova-android.png' : 'branding/gestornova-web.png';
+    try {
+        if (window.location.protocol === 'file:') {
+            return new URL(file, window.location.href).href;
+        }
+        const base = basePathAssets();
+        return (base + file).replace(/([^:]\/)\/+/g, '$1');
+    } catch (_) {
+        return file;
+    }
+}
+
+/**
+ * Datos de marca efectivos: personalizado solo si el admin guardó setup (wizard) en servidor.
+ * La app Android hereda lo mismo vía GET /api/clientes/mi-configuracion.
+ */
+function resolveMarcaTenantUI() {
+    const b = window.__PMG_TENANT_BRANDING__ || {};
+    const setup = !!b.setup_wizard_completado;
+    const nombreApi = String(b.nombre_cliente || '').trim();
+    const logoApi = String(b.logo_url || '').trim();
+    const tipoApi = String(b.tipo || '').trim();
+    if (setup && (nombreApi || logoApi)) {
+        return {
+            nombre: nombreApi || BRAND_DEFAULT_NAME,
+            logo_url: logoApi || defaultGestorNovaLogoUrl(),
+            tipo: tipoApi,
+            esPersonalizado: true
+        };
+    }
+    return {
+        nombre: BRAND_DEFAULT_NAME,
+        logo_url: defaultGestorNovaLogoUrl(),
+        tipo: tipoApi,
+        esPersonalizado: false
+    };
+}
+
+function syncEmpresaCfgNombreLogoDesdeMarca() {
+    const m = resolveMarcaTenantUI();
+    const prev = window.EMPRESA_CFG || {};
+    window.EMPRESA_CFG = { ...prev, nombre: m.nombre, logo_url: m.logo_url };
+    if (m.tipo) window.EMPRESA_CFG.tipo = m.tipo;
+}
+
+function aplicarMarcaVisualCompleta() {
+    const m = resolveMarcaTenantUI();
+    document.title = m.nombre + ' — Pedidos';
+    const h1 = document.querySelector('.lc h1');
+    if (h1) h1.textContent = m.nombre;
+    const subEl = document.querySelector('.lc .sub');
+    if (subEl) subEl.textContent = 'Pedidos de mantenimiento';
+    const h2 = document.querySelector('.hd h2');
+    if (h2) {
+        h2.textContent = '';
+        const ic = document.createElement('i');
+        ic.className = 'fas fa-network-wired';
+        h2.appendChild(ic);
+        h2.appendChild(document.createTextNode(' ' + m.nombre));
+    }
+    const ll = document.querySelector('.ll');
+    if (ll) {
+        const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
+        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
+    }
+}
+
 const SESSION_WEB_ADMIN_TIPO_OK = 'pmg_web_admin_tipo_ok';
 let _resolveAdminTipoModal = null;
 
@@ -1022,8 +1152,11 @@ async function confirmarAdminTipoNegocioWeb() {
         }
     }
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
+    window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     aplicarEtiquetasPorTipo(tipo);
     poblarSelectTiposReclamo();
+    syncEmpresaCfgNombreLogoDesdeMarca();
+    aplicarMarcaVisualCompleta();
     try {
         sessionStorage.setItem(SESSION_WEB_ADMIN_TIPO_OK, '1');
     } catch (_) {}
@@ -1054,8 +1187,38 @@ function mapTapUbicacionInicialHechaSesion() {
 function marcarMapTapUbicacionInicialHecha() {
     try { sessionStorage.setItem(MAP_SEED_SESSION_KEY, '1'); } catch (_) {}
 }
+let _mapLazyIo = null;
+function teardownMapLazyObserver() {
+    if (_mapLazyIo) {
+        try { _mapLazyIo.disconnect(); } catch (_) {}
+        _mapLazyIo = null;
+    }
+}
+
+function setupMapLazyWhenVisibleOnce() {
+    teardownMapLazyObserver();
+    const mc = document.getElementById('mc');
+    const ms = document.getElementById('ms');
+    if (!mc || !ms || !ms.classList.contains('active')) return;
+    if (typeof IntersectionObserver === 'undefined') {
+        queueLazyInitMap();
+        return;
+    }
+    _mapLazyIo = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+            if (en.isIntersecting && en.intersectionRatio > 0.02) {
+                queueLazyInitMap();
+                teardownMapLazyObserver();
+                return;
+            }
+        }
+    }, { root: ms, rootMargin: '0px', threshold: [0, 0.02, 0.08] });
+    _mapLazyIo.observe(mc);
+}
+
 function limpiarEstadoMapaSesion() {
     _gpsRecibidoEstaSesion = false;
+    teardownMapLazyObserver();
     try { sessionStorage.removeItem(MAP_SEED_SESSION_KEY); } catch (_) {}
 }
 function marcarGpsRecibidoEstaSesion() {
@@ -1257,7 +1420,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                     else setTimeout(enviarAl_SW, 4000);
                 }
             });
-            initMap();
+            setupMapLazyWhenVisibleOnce();
             if (!offline) {
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
@@ -1626,6 +1789,7 @@ function setBp2PanelHidden(hidden) {
     if (bp2) bp2.classList.toggle('bp2-fullhide', !!hidden);
     if (fab) fab.classList.toggle('visible', !!hidden);
     try { localStorage.setItem('pmg_bp2_hidden', hidden ? '1' : '0'); } catch (_) {}
+    if (hidden) queueLazyInitMap();
 }
 
 function mapTabIdForCard(cardId) {
@@ -2346,9 +2510,10 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
     }
 }
 
-function irAMiUbicacionEnMapa() {
+async function irAMiUbicacionEnMapa() {
+    await ensureMapReady();
     if (!app.map) {
-        toast('Abre el mapa primero', 'info');
+        toast('No se pudo cargar el mapa', 'error');
         return;
     }
     solicitarUbicacion(true, false);
@@ -2407,12 +2572,37 @@ async function initMap() {
     await mod.runInitMap();
 }
 
+let _mapLazyQueued = false;
+function queueLazyInitMap() {
+    if (_mapLazyQueued) return;
+    _mapLazyQueued = true;
+    const run = () => {
+        void initMap().finally(() => {
+            try { renderMk(); } catch (_) {}
+        });
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, { timeout: 3500 });
+    } else {
+        setTimeout(run, 400);
+    }
+}
+
+async function ensureMapReady() {
+    if (mapaInicializado && app.map) return;
+    _mapLazyQueued = true;
+    await initMap();
+    try { renderMk(); } catch (_) {}
+}
+window.ensureMapReady = ensureMapReady;
+
 const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 
-document.getElementById('btn-pedido-ubicacion').addEventListener('click', () => {
+document.getElementById('btn-pedido-ubicacion').addEventListener('click', async () => {
     limpiarFotosYPreviewNuevoPedido();
     closeAll();
+    await ensureMapReady();
 
     function aplicarUbicacionAlFormulario(lat, lon, acc) {
         registrarFajaInstalacionSiFalta(lon);
@@ -2532,13 +2722,16 @@ window._d = id => {
 
 window._z = id => {
     const p = app.p.find(x => String(x.id) === String(id));
-    if (p && app.map) {
+    if (!p) return;
+    void (async () => {
+        await ensureMapReady();
+        if (!app.map) return;
         app.map.closePopup();
         app.map.setView([p.la, p.ln], 17, { animate: true });
         setTimeout(() => {
             document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
         }, 300);
-    }
+    })();
 };
 
 window._assignMapa = id => {
@@ -2563,21 +2756,20 @@ window._a = (a, id) => {
 
 window._zm = id => {
     const p = app.p.find(x => String(x.id) === String(id));
-    if (p && app.map) {
-        
-        
+    if (!p) return;
+    void (async () => {
+        await ensureMapReady();
+        if (!app.map) return;
         closeAll();
         setTimeout(() => {
             if (!app.map) return;
             app.map.invalidateSize({ animate: false });
-            
-            
             app.map.setView([p.la, p.ln], 17, { animate: true });
             setTimeout(() => {
                 document.getElementById('zoom-altura').textContent = calcularEscalaReal(17);
             }, 300);
         }, 100);
-    }
+    })();
 };
 
 // ── Notificaciones a usuarios (admin → técnico, cola en Neon + Android) ──
@@ -2618,6 +2810,7 @@ async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
     }
     if (!pedido) return false;
     if (!document.getElementById('ms')?.classList.contains('active')) return false;
+    await ensureMapReady();
     if (!app.map) return false;
 
     try {
@@ -4701,6 +4894,7 @@ document.getElementById('ub').addEventListener('click', () => {
         app.apiToken = null;
         app.u = null;
         mapaInicializado = false;
+        _mapLazyQueued = false;
         if (app.map) {
             app.map.remove();
             app.map = null;
@@ -4930,7 +5124,7 @@ try {
         setTimeout(async () => {
             
             solicitarPermisos();
-            initMap();
+            setupMapLazyWhenVisibleOnce();
             await asegurarJwtApiRest();
             if (!modoOffline) {
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
@@ -4991,29 +5185,19 @@ async function cargarConfigEmpresa() {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const sqlCfg = {};
         (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
-        // Valores de cliente/API (p. ej. tras mi-configuracion) tienen prioridad sobre empresa_config.
         window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
+        syncEmpresaCfgNombreLogoDesdeMarca();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
-        // Actualizar título y subtítulo
+        aplicarMarcaVisualCompleta();
         const cfg = window.EMPRESA_CFG || {};
-        const nombre = cfg.nombre || 'Pedidos de Mantenimiento';
-        const sub    = cfg.subtitulo || '';
-        document.title = nombre;
-        const h1 = document.querySelector('.lc h1');
-        const subEl = document.querySelector('.lc .sub');
-        if (h1) h1.textContent = nombre;
-        if (subEl && sub) subEl.textContent = sub;
-        // Header
-        const h2 = document.querySelector('.hd h2');
-        if (h2) h2.innerHTML = '<i class="fas fa-bolt"></i> ' + nombre;
-        aplicarBrandingDesdeConfig();
         aplicarEtiquetasPorTipo(cfg.tipo || '');
         poblarSelectTiposReclamo();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
+        try { aplicarMarcaVisualCompleta(); } catch (_) {}
         poblarSelectTiposReclamo();
     }
 }
@@ -5262,9 +5446,21 @@ async function verificarConfiguracionInicialObligatoria() {
             if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
                 cfg.tipo = String(cli.tipo ?? '').trim();
             }
+            window.__PMG_TENANT_BRANDING__ = {
+                setup_wizard_completado: !!extraParsed.setup_wizard_completado,
+                nombre_cliente: String(cli.nombre || '').trim(),
+                logo_url: String(extraParsed.logo_url || '').trim(),
+                tipo: String(cli.tipo ?? '').trim()
+            };
         }
     } catch (_) {}
     if (!apiOk) {
+        window.__PMG_TENANT_BRANDING__ = {
+            setup_wizard_completado: false,
+            nombre_cliente: '',
+            logo_url: '',
+            tipo: ''
+        };
         console.warn('[setup] /api/clientes/mi-configuracion no disponible; no se bloquea con el wizard');
         ocultarModalConfigInicial();
         return true;
@@ -5280,7 +5476,8 @@ async function verificarConfiguracionInicialObligatoria() {
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...cfg };
     poblarSelectTiposReclamo();
     ocultarModalConfigInicial();
-    aplicarBrandingDesdeConfig();
+    syncEmpresaCfgNombreLogoDesdeMarca();
+    aplicarMarcaVisualCompleta();
     aplicarEtiquetasPorTipo(cfg.tipo || '');
     poblarSelectTiposReclamo();
     return true;
@@ -5298,14 +5495,8 @@ function setupWizardPrev() {
     actualizarStepWizard();
 }
 function aplicarBrandingDesdeConfig() {
-    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
-    const ll = document.querySelector('.ll');
-    if (!ll) return;
-    if (!logo) {
-        ll.innerHTML = '<i class="fas fa-bolt"></i>';
-        return;
-    }
-    ll.innerHTML = `<img src="${logo.replace(/"/g,'&quot;')}" alt="logo" style="width:42px;height:42px;object-fit:contain">`;
+    syncEmpresaCfgNombreLogoDesdeMarca();
+    aplicarMarcaVisualCompleta();
 }
 function initSetupWizardBindings() {
     const inputUrl = document.getElementById('cfgi-logo-url');
@@ -5372,6 +5563,12 @@ async function guardarConfiguracionInicialObligatoria() {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.error || `HTTP ${resp.status}`);
         }
+        window.__PMG_TENANT_BRANDING__ = {
+            setup_wizard_completado: true,
+            nombre_cliente: nombre,
+            logo_url: String(logoUrl || '').trim(),
+            tipo
+        };
         // Reflejo local en caliente para no reiniciar.
         window.EMPRESA_CFG = {
             ...(window.EMPRESA_CFG || {}),
