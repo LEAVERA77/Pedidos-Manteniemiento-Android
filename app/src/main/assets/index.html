@@ -113,10 +113,10 @@
   </div>
   <div id="mapa-android-strip"><div class="mas-inner">
     <div class="mas-line-top">
-      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;white-space:nowrap;margin:0"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"> Filtros avanzados</label>
-      <div class="mas-actions">
-        <button type="button" class="ib-mini" title="Ocultar esta barra" onclick="toggleAndroidMapStripCollapsed(true)"><i class="fas fa-eye-slash"></i></button>
+      <div class="mas-actions mas-actions-lead">
+        <button type="button" class="ib-mini" title="Ocultar esta barra" onclick="toggleAndroidMapStripCollapsed(true)"><i class="fas fa-chevron-right"></i></button>
       </div>
+      <label class="mas-filtros-label"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"> Filtros avanzados</label>
     </div>
     <span id="wrap-android-scope" style="display:none;align-items:center;gap:.35rem;flex-wrap:wrap">
       <span style="color:var(--tl)">Pedidos:</span>
@@ -141,6 +141,7 @@
     <div class="pc">
       <div class="pt">
         <button class="tb active" data-tab="p"><i class="fas fa-clock"></i> Pendientes <span id="pc" class="bge">0</span></button>
+        <button class="tb" data-tab="a"><i class="fas fa-user-check"></i> Asignados <span id="ac" class="bge">0</span></button>
         <button class="tb" data-tab="c"><i class="fas fa-check-circle"></i> Cerrados <span id="cc" class="bge">0</span></button>
         <label id="wrap-toggle-ver-todos" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
           <input type="checkbox" id="toggle-ver-todos-pedidos" title="Ver todos los reclamos del sistema"> Todos
@@ -591,6 +592,25 @@
           <button id="cfgi-guardar" class="bp" type="button" onclick="guardarConfiguracionInicialObligatoria()" style="display:none"><i class="fas fa-save"></i> Finalizar</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+<div id="modal-admin-tipo-negocio" class="mo" style="z-index:6100">
+  <div class="mc" style="max-width:420px">
+    <div class="mh"><h3><i class="fas fa-briefcase"></i> Tipo de negocio (admin web)</h3></div>
+    <div class="mb">
+      <p style="font-size:.85rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">En la página web del administrador tenés que confirmar el rubro en cada inicio de sesión (útil para probar municipio vs cooperativas). En la app Android no aparece este paso.</p>
+      <label style="display:block;font-size:.78rem;color:var(--tl);margin-bottom:.25rem">Tipo *</label>
+      <select id="admin-sesion-tipo" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:.65rem">
+        <option value="">Seleccionar...</option>
+        <option value="municipio">Municipio</option>
+        <option value="cooperativa_agua">Cooperativa de Agua</option>
+        <option value="cooperativa_electrica">Cooperativa Eléctrica</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--tm);cursor:pointer;margin-bottom:1rem;user-select:none">
+        <input type="checkbox" id="admin-sesion-tipo-persistir"> Guardar también en el servidor (tenant actual)
+      </label>
+      <button type="button" class="bp" style="width:100%" onclick="confirmarAdminTipoNegocioWeb()"><i class="fas fa-check"></i> Continuar</button>
     </div>
   </div>
 </div>

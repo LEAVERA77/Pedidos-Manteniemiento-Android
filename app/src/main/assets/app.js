@@ -959,6 +959,83 @@ function esAndroidWebViewMapa() {
     }
 }
 
+/** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
+function esAdminSesionWebPublica() {
+    try {
+        return esAdmin() && !esAndroidWebViewMapa();
+    } catch (_) {
+        return false;
+    }
+}
+
+const SESSION_WEB_ADMIN_TIPO_OK = 'pmg_web_admin_tipo_ok';
+let _resolveAdminTipoModal = null;
+
+async function promptAdminTipoNegocioWebIfNeeded() {
+    if (!esAdminSesionWebPublica()) return;
+    try {
+        if (sessionStorage.getItem(SESSION_WEB_ADMIN_TIPO_OK) === '1') return;
+    } catch (_) {}
+    const modal = document.getElementById('modal-admin-tipo-negocio');
+    const sel = document.getElementById('admin-sesion-tipo');
+    if (!modal || !sel) return;
+    const actual = String(window.EMPRESA_CFG?.tipo || '').trim();
+    sel.value = actual || '';
+    return new Promise((resolve) => {
+        _resolveAdminTipoModal = resolve;
+        modal.classList.add('active');
+    });
+}
+
+async function confirmarAdminTipoNegocioWeb() {
+    const sel = document.getElementById('admin-sesion-tipo');
+    const chk = document.getElementById('admin-sesion-tipo-persistir');
+    const modal = document.getElementById('modal-admin-tipo-negocio');
+    const tipo = (sel?.value || '').trim();
+    if (!tipo) {
+        toast('Elegí un tipo de negocio', 'error');
+        return;
+    }
+    const persistir = !!(chk && chk.checked);
+    if (persistir) {
+        try {
+            const token = getApiToken();
+            if (!token) {
+                toast('Sin token API: no se puede guardar en el servidor', 'error');
+                return;
+            }
+            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ tipo })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+        } catch (e) {
+            toast('No se pudo guardar en servidor: ' + (e?.message || e), 'error');
+            return;
+        }
+    }
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
+    aplicarEtiquetasPorTipo(tipo);
+    poblarSelectTiposReclamo();
+    try {
+        sessionStorage.setItem(SESSION_WEB_ADMIN_TIPO_OK, '1');
+    } catch (_) {}
+    if (modal) modal.classList.remove('active');
+    if (_resolveAdminTipoModal) {
+        _resolveAdminTipoModal();
+        _resolveAdminTipoModal = null;
+    }
+    toast(persistir ? 'Tipo guardado en servidor y en pantalla' : 'Tipo aplicado en esta sesión', 'success');
+}
+window.confirmarAdminTipoNegocioWeb = confirmarAdminTipoNegocioWeb;
+
 /** Menos tiles y menos trabajo en WebView / emulador. */
 function gnMapaLigero() {
     try {
@@ -1126,6 +1203,9 @@ document.getElementById('lf').addEventListener('submit', async e => {
         u.rol = normalizarRolStr(u.rol);
         invalidatePedidosTenantSqlCache();
         app.u = u;
+        if (esAdmin() && !esAndroidWebViewMapa()) {
+            try { sessionStorage.removeItem(SESSION_WEB_ADMIN_TIPO_OK); } catch (_) {}
+        }
         localStorage.setItem('pmg', JSON.stringify(app.u));
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
@@ -1182,6 +1262,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
+                await promptAdminTipoNegocioWebIfNeeded();
                 await cargarConfigEmpresa();
                 await cargarPedidos();
                 
@@ -1773,13 +1854,13 @@ function mostrarToastCierreGerencia(row) {
     el.className = 'cierre-toast';
     const np = String(row.numero_pedido || '').replace(/</g, '&lt;');
     el.innerHTML = `<strong>Concluido #${np}</strong><br><span style="opacity:.9">${fmtInformeFecha(row.fecha_cierre)} · ${String(row.tecnico_cierre || '').replace(/</g, '&lt;')}</span><br><span style="font-size:.76rem;opacity:.85">Tocá para ver el cierre</span>`;
-    el.onclick = async () => {
+        el.onclick = async () => {
         try { el.remove(); } catch (_) {}
         await cargarPedidos();
         const p = app.p.find(x => String(x.id) === String(row.id));
         if (p) {
             app.tab = 'c';
-            document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === 'c'));
+            document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
             render();
             detalle(p);
         } else {
@@ -1849,7 +1930,7 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
             const es = String(row.estado || '').replace(/</g, '&lt;');
             const de = String(row.descripcion || '').replace(/</g, '&lt;').substring(0, 72);
             const fe = row.fecha_cierre ? fmtInformeFecha(row.fecha_cierre) : fmtInformeFecha(row.fecha_creacion);
-            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYVerCierre(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
+            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
         }).join('');
     } catch (e) {
         host.innerHTML = '<span style="color:var(--re)">' + (e.message || e) + '</span>';
@@ -1893,8 +1974,8 @@ async function refrescarDashboardGerencia(silent) {
         const cards = [
             { val: a.activos || 0, lbl: 'Activos (no cerrados)', cls: 'orange', filter: 'activos' },
             { val: a.pendientes || 0, lbl: 'Pendiente', cls: '', filter: 'pendientes' },
-            { val: a.asignados || 0, lbl: 'Asignados', cls: '', filter: 'asignados' },
-            { val: a.en_ejec || 0, lbl: 'En ejecución', cls: '', filter: 'en_ejecucion' },
+            { val: a.asignados || 0, lbl: 'Asignados', cls: 'dash-kpi-blue', filter: 'asignados' },
+            { val: a.en_ejec || 0, lbl: 'En ejecución', cls: 'dash-kpi-blue', filter: 'en_ejecucion' },
             { val: a.cerrados_hoy || 0, lbl: 'Cerrados hoy', cls: 'green', filter: 'cerrados_hoy' },
             { val: (rTec.rows || []).length, lbl: 'Con posición &lt;20 min', cls: '', filter: 'tecnicos_gps' }
         ];
@@ -1908,7 +1989,7 @@ async function refrescarDashboardGerencia(silent) {
             : '<span style="color:var(--tl)">Sin posiciones en los últimos 20 min (técnicos con app / GPS apagado).</span>';
         const cr = rCi.rows || [];
         const htmlLc = cr.length
-            ? cr.map(row => `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYVerCierre(${row.id})">
+            ? cr.map(row => `<div style="padding:.35rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})">
                     <strong>#${String(row.numero_pedido || '').replace(/</g, '&lt;')}</strong> · ${fmtInformeFecha(row.fecha_cierre)} · ${String(row.tecnico_cierre || '—').replace(/</g, '&lt;')} · NIS ${String(row.nis_medidor || '—').replace(/</g, '&lt;')}
                 </div>`).join('')
             : '—';
@@ -1927,16 +2008,17 @@ async function refrescarDashboardGerencia(silent) {
     }
 }
 
-window.cerrarModalDashYVerCierre = async function (pid) {
+window.cerrarModalDashYAbrirPedido = async function (pid) {
     document.getElementById('modal-dashboard-gerencia')?.classList.remove('active');
     await cargarPedidos();
     const p = app.p.find(x => String(x.id) === String(pid));
     if (!p) { toast('Pedido no encontrado', 'error'); return; }
-    app.tab = 'c';
-    document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === 'c'));
+    app.tab = tabPedidoListaPorEstado(p.es);
+    document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
     render();
     detalle(p);
 };
+window.cerrarModalDashYVerCierre = window.cerrarModalDashYAbrirPedido;
 
 async function intentarAutoInicioEjecucionTecnico(lat, lng) {
     if (!app.u || !esTecnicoOSupervisor() || modoOffline || !NEON_OK) return;
@@ -4468,13 +4550,29 @@ window._xl = id => {
 };
 
 
+function tabPedidoListaPorEstado(es) {
+    if (es === 'Cerrado') return 'c';
+    if (es === 'Asignado' || es === 'En ejecución') return 'a';
+    return 'p';
+}
+
 function render() {
     const vis = pedidosVisiblesEnUI();
     const cer = vis.filter(p => p.es === 'Cerrado').length;
-    document.getElementById('pc').textContent = vis.length - cer;
-    document.getElementById('cc').textContent = cer;
-    
-    const fl = vis.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado');
+    const asg = vis.filter(p => p.es === 'Asignado' || p.es === 'En ejecución').length;
+    const pen = vis.filter(p => p.es === 'Pendiente').length;
+    const pcEl = document.getElementById('pc');
+    const acEl = document.getElementById('ac');
+    const ccEl = document.getElementById('cc');
+    if (pcEl) pcEl.textContent = pen;
+    if (acEl) acEl.textContent = asg;
+    if (ccEl) ccEl.textContent = cer;
+
+    const fl = vis.filter(p => {
+        if (app.tab === 'p') return p.es === 'Pendiente';
+        if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
+        return p.es === 'Cerrado';
+    });
     const c = document.getElementById('pl');
     c.innerHTML = '';
     
@@ -4597,6 +4695,7 @@ document.getElementById('ub').addEventListener('click', () => {
         } catch (_) {}
         detenerSyncCatalogos();
         limpiarEstadoMapaSesion();
+        try { sessionStorage.removeItem(SESSION_WEB_ADMIN_TIPO_OK); } catch (_) {}
         localStorage.removeItem('pmg');
         localStorage.removeItem('pmg_api_token');
         app.apiToken = null;
@@ -4640,8 +4739,13 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
 });
 
 document.getElementById('eb').addEventListener('click', () => {
+    const flt = p => {
+        if (app.tab === 'p') return p.es === 'Pendiente';
+        if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
+        return p.es === 'Cerrado';
+    };
     exportPedido(
-        app.p.filter(p => app.tab === 'p' ? p.es !== 'Cerrado' : p.es === 'Cerrado'),
+        app.p.filter(flt),
         'pedidos_' + app.tab + '_' + new Date().toISOString().slice(0,10)
     );
 });
@@ -4828,6 +4932,12 @@ try {
             solicitarPermisos();
             initMap();
             await asegurarJwtApiRest();
+            if (!modoOffline) {
+                const cfgLista = await verificarConfiguracionInicialObligatoria();
+                if (!cfgLista) return;
+                await promptAdminTipoNegocioWebIfNeeded();
+                await cargarConfigEmpresa();
+            }
             await cargarPedidos();
             
             if (!modoOffline && offlineQueue().length > 0) {
@@ -5275,6 +5385,7 @@ async function guardarConfiguracionInicialObligatoria() {
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
+            await promptAdminTipoNegocioWebIfNeeded();
             toast('Setup inicial completado', 'success');
             // El login ya había salido antes de completar el wizard (cfgLista === false),
             // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
