@@ -245,7 +245,7 @@ export async function runInitMap() {
             actualizarEscala();
             ctx.marcarMapTapUbicacionInicialHecha();
             ctx.toast(
-                'Ubicación en el mapa. Seguimos con el GPS del teléfono — para un pedido nuevo tocá de nuevo o usá el botón naranja.',
+                'Ubicación en el mapa. Seguimos con el GPS del teléfono — para un pedido nuevo tocá de nuevo el mapa o usá «Ir a mi ubicación».',
                 'info'
             );
             ctx.solicitarUbicacion(false, true);

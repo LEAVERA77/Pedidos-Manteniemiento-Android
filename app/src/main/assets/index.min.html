@@ -130,10 +130,6 @@
   <button type="button" id="btn-mapa-ir-gps" class="btn-mapa-ir-gps" title="Ir a mi ubicación" aria-label="Ir a mi ubicación">
     <i class="fas fa-location-arrow"></i>
   </button>
-  <!-- Botón en el mapa -->
-  <button id="btn-pedido-ubicacion" class="fab-pedido-ubicacion" title="Nuevo pedido desde mi ubicación actual">
-    <i class="fas fa-crosshairs"></i>
-  </button>
   
   <button type="button" id="fab-show-pedidos" class="fab-show-pedidos" onclick="setBp2PanelHidden(false)" title="Mostrar lista de pedidos"><i class="fas fa-list"></i> Pedidos</button>
   <div id="bp2" class="bp2 col">
@@ -415,6 +411,7 @@
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="importarExcelSocios(event)"></label>
+          <a class="btn-sm primary" href="ejemplos/socios-demo-300.xlsx" download="socios-demo-300.xlsx" style="text-decoration:none;display:inline-flex;align-items:center;gap:.35rem"><i class="fas fa-download"></i> Ejemplo 300 (OSM)</a>
           <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
         </div>
       </div>

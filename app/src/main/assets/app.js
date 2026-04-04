@@ -3485,65 +3485,6 @@ window.ensureMapReady = ensureMapReady;
 const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 
-document.getElementById('btn-pedido-ubicacion').addEventListener('click', async () => {
-    limpiarFotosYPreviewNuevoPedido();
-    closeAll();
-    await ensureMapReady();
-
-    function aplicarUbicacionAlFormulario(lat, lon, acc) {
-        registrarFajaInstalacionSiFalta(lon);
-        app.sel = { lat, lng: lon };
-        document.getElementById('li').value = lat;
-        document.getElementById('gi').value = lon;
-        syncWrapCoordsDisplayNuevoPedido();
-        const ui = document.getElementById('ui');
-        if (ui) {
-            ui.innerHTML = htmlLineaUbicacionFormulario(lat, lon, acc);
-            ui.className = 'ud sel';
-        }
-        if (app.map) mostrarMarcadorUbicacion(lat, lon, acc);
-    }
-
-    if (ultimaUbicacion) {
-        aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
-        try { poblarSelectTiposReclamo(); } catch (_) {}
-        document.getElementById('pm').classList.add('active');
-        
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    const acc = Math.round(pos.coords.accuracy);
-                    ultimaUbicacion = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc };
-                    try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-                    aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, acc);
-                },
-                () => {},
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-            );
-        }
-    } else {
-        try { poblarSelectTiposReclamo(); } catch (_) {}
-        document.getElementById('pm').classList.add('active');
-        toast('Obteniendo ubicación GPS...', 'info');
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    const acc = Math.round(pos.coords.accuracy);
-                    ultimaUbicacion = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc };
-                    try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-                    aplicarUbicacionAlFormulario(ultimaUbicacion.lat, ultimaUbicacion.lon, acc);
-                    const msg = acc < 2000 ? `📍 ±${acc}m` : `🌐 ±${(acc/1000).toFixed(0)}km (baja precisión)`;
-                    toast(msg, acc < 2000 ? 'success' : 'info');
-                },
-                () => toast('No se pudo obtener GPS — tocá el mapa para ubicarte', 'error'),
-                { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-            );
-        } else {
-            toast('GPS no disponible — tocá el mapa para seleccionar la ubicación', 'error');
-        }
-    }
-});
-
 function renderMk() {
     if (!app.map) return;
     app.mk.forEach(m => m.remove());

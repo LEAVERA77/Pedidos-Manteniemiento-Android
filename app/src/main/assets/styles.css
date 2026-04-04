@@ -169,8 +169,6 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .btn-mapa-ir-gps{position:absolute;bottom:6.72rem;left:1rem;width:2.9rem;height:2.9rem;border-radius:50%;background:#fff;color:var(--bd);border:1px solid var(--bo);box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
 .btn-mapa-ir-gps:hover{transform:scale(1.06)}
 /* FAB mapa: nuevo pedido desde ubicación */
-.fab-pedido-ubicacion{position:absolute;bottom:6.25rem;right:1rem;width:3.25rem;height:3.25rem;border-radius:50%;background:#f59e0b;color:white;border:none;box-shadow:0 4px 18px rgba(245,158,11,.45);font-size:1.4rem;cursor:pointer;z-index:1002;display:flex;align-items:center;justify-content:center;transition:transform .2s}
-.fab-pedido-ubicacion:hover{transform:scale(1.1)}
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
 #modal-asignar-tecnico{z-index:6001}
@@ -304,7 +302,6 @@ textarea{resize:vertical;min-height:80px}
   #ms .bp2.bp2-fullhide .ph{pointer-events:auto}
   #ms .bp2 .ph{cursor:grab;user-select:none}
   #ms .bp2 .ph:active{cursor:grabbing}
-  .fab-pedido-ubicacion{bottom:4.5rem;right:min(calc(400px + 2rem),calc(100vw - 1rem))}
   .btn-mapa-ir-gps{bottom:2.55rem;left:1rem}
   .hl{display:none}
 }

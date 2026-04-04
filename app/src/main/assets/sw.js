@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v4';
-const CACHE_SHELL = 'pmg-shell-v8';
+const CACHE_SHELL = 'pmg-shell-v9';
 const SW_VERSION  = '1.1.2';
 
 function shellAssetUrls() {
