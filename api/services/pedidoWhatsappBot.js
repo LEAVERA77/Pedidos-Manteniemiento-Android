@@ -40,6 +40,52 @@ export async function getFirstAdminUserIdForTenant(tenantId) {
   return r.rows?.[0]?.id ?? null;
 }
 
+export async function getFirstAnyActiveUserIdForTenant(tenantId) {
+  const colSet = await columnasUsuarios();
+  const hasTenant = colSet.has("tenant_id");
+  const hasCliente = colSet.has("cliente_id");
+  const col = hasTenant ? "tenant_id" : hasCliente ? "cliente_id" : null;
+  if (!col) return null;
+  const r = await query(
+    `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE ORDER BY id ASC LIMIT 1`,
+    [tenantId]
+  );
+  return r.rows?.[0]?.id ?? null;
+}
+
+async function pedidoColumnNullable(columnName) {
+  const r = await query(
+    `SELECT is_nullable FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = $1 LIMIT 1`,
+    [columnName]
+  );
+  return String(r.rows?.[0]?.is_nullable || "").toUpperCase() === "YES";
+}
+
+/**
+ * Admin → cualquier usuario activo del tenant → WHATSAPP_BOT_FALLBACK_USUARIO_ID → NULL si el esquema lo permite.
+ */
+export async function resolveUsuarioCreadorParaPedidoWhatsapp(tenantId) {
+  let uid = await getFirstAdminUserIdForTenant(tenantId);
+  if (uid != null) return uid;
+  uid = await getFirstAnyActiveUserIdForTenant(tenantId);
+  if (uid != null) return uid;
+  const fb = Number(process.env.WHATSAPP_BOT_FALLBACK_USUARIO_ID || "");
+  if (Number.isFinite(fb) && fb >= 1) return fb;
+
+  const pCols = await columnasPedidos();
+  const needU = pCols.has("usuario_id");
+  const needC = pCols.has("usuario_creador_id");
+  if (!needU && !needC) return null;
+
+  const uNull = !needU || (await pedidoColumnNullable("usuario_id"));
+  const cNull = !needC || (await pedidoColumnNullable("usuario_creador_id"));
+  if (!uNull || !cNull) {
+    throw new Error("sin_usuario_para_pedido_whatsapp");
+  }
+  return null;
+}
+
 export async function getDefaultDistribuidorCodigo() {
   const fromEnv = String(process.env.WHATSAPP_BOT_DISTRIBUIDOR_CODIGO || "").trim();
   if (fromEnv) return fromEnv;
@@ -54,7 +100,7 @@ export async function getDefaultDistribuidorCodigo() {
 }
 
 /**
- * Crea un pedido desde el bot (usuario = primer admin del tenant).
+ * Crea un pedido desde el bot (creador: admin, cualquier usuario del tenant, env de respaldo o NULL si el esquema lo permite).
  */
 export async function crearPedidoDesdeWhatsappBot({
   tenantId,
@@ -65,6 +111,9 @@ export async function crearPedidoDesdeWhatsappBot({
   lat,
   lng,
   contactName,
+  nis,
+  medidor,
+  nisMedidor,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -75,10 +124,7 @@ export async function crearPedidoDesdeWhatsappBot({
     throw new Error("tipo_trabajo_invalido");
   }
 
-  const usuarioId = await getFirstAdminUserIdForTenant(tenantId);
-  if (!usuarioId) {
-    throw new Error("sin_usuario_admin_tenant");
-  }
+  const usuarioId = await resolveUsuarioCreadorParaPedidoWhatsapp(Number(tenantId));
 
   const distribuidor = await getDefaultDistribuidorCodigo();
 
@@ -117,8 +163,6 @@ export async function crearPedidoDesdeWhatsappBot({
     "avance",
     "lat",
     "lng",
-    "usuario_id",
-    "usuario_creador_id",
     "fecha_creacion",
     "telefono_contacto",
     "cliente_nombre",
@@ -135,12 +179,35 @@ export async function crearPedidoDesdeWhatsappBot({
     0,
     lat ?? null,
     lng ?? null,
-    usuarioId,
-    usuarioId,
     new Date(),
     telefonoContacto || null,
     clienteNombre,
   ];
+
+  if (pCols.has("usuario_id")) {
+    cols.push("usuario_id");
+    vals.push(usuarioId);
+  }
+  if (pCols.has("usuario_creador_id")) {
+    cols.push("usuario_creador_id");
+    vals.push(usuarioId);
+  }
+
+  const nisT = nis != null && String(nis).trim() ? String(nis).trim() : null;
+  const medT = medidor != null && String(medidor).trim() ? String(medidor).trim() : null;
+  const nmT = nisMedidor != null && String(nisMedidor).trim() ? String(nisMedidor).trim() : null;
+  if (pCols.has("nis") && nisT) {
+    cols.push("nis");
+    vals.push(nisT);
+  }
+  if (pCols.has("medidor") && medT) {
+    cols.push("medidor");
+    vals.push(medT);
+  }
+  if (pCols.has("nis_medidor") && nmT) {
+    cols.push("nis_medidor");
+    vals.push(nmT);
+  }
 
   if (hasTenant) {
     cols.push("tenant_id");
@@ -182,7 +249,7 @@ async function notificarAdminsNuevoPedidoWhatsappSafe(tenantId, pedido) {
     const col = hasTenant ? "tenant_id" : hasCliente ? "cliente_id" : null;
     if (!col) return;
 
-    const admins = await query(
+    let admins = await query(
       `SELECT id FROM usuarios
        WHERE ${col} = $1 AND activo = TRUE
          AND (
@@ -191,9 +258,17 @@ async function notificarAdminsNuevoPedidoWhatsappSafe(tenantId, pedido) {
          )`,
       [tenantId]
     );
+    let recipients = admins.rows || [];
+    if (!recipients.length) {
+      const anyU = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE ORDER BY id ASC`,
+        [tenantId]
+      );
+      recipients = anyU.rows || [];
+    }
     const titulo = "Nuevo reclamo (WhatsApp)";
     const cuerpo = `Se registró el reclamo *${pedido.numero_pedido}* desde WhatsApp.`;
-    for (const a of admins.rows || []) {
+    for (const a of recipients) {
       await query(
         `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
          VALUES ($1, $2, $3, $4, FALSE)`,

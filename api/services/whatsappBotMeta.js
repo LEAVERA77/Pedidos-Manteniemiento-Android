@@ -12,6 +12,7 @@ import {
   sendTenantWhatsAppText,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
+import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.js";
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 
@@ -21,6 +22,11 @@ const sessions = new Map();
 const MSG_SOLICITAR_UBICACION =
   "Por favor, enviá tu *ubicación actual* usando el botón *Adjuntar* (📎) → *Ubicación* en WhatsApp.\n\n" +
   "Si no podés compartir GPS, escribí la *dirección o referencia* del lugar (calle, ciudad, barrio).";
+
+const MSG_OPCIONAL_IDENTIFICADOR =
+  "Si tenés *NIS*, *medidor*, *número de socio* o *ID de usuario* del sistema, escribilo en un mensaje.\n\n" +
+  "Así podemos registrar tu *nombre completo* si está en la base.\n\n" +
+  "Si no aplica, escribí *no* o *siguiente*.";
 
 function botTenantId() {
   return Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
@@ -187,6 +193,9 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       lat: latN,
       lng: lngN,
       contactName: sess.contactName || contactName || null,
+      nis: sess.nisParaPedido ?? null,
+      medidor: sess.medidorParaPedido ?? null,
+      nisMedidor: sess.nisMedidorParaPedido ?? null,
     });
     sessions.delete(sk);
     await reply(
@@ -198,10 +207,10 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   } catch (e) {
     const m = String(e?.message || "");
     sessions.delete(sk);
-    if (m === "sin_usuario_admin_tenant") {
+    if (m === "sin_usuario_admin_tenant" || m === "sin_usuario_para_pedido_whatsapp") {
       await reply(
         phone,
-        "No hay un usuario administrador asignado al servicio. Avisá a la cooperativa/municipio.",
+        "No pudimos asociar el reclamo a un usuario del sistema (falta personal cargado o configuración). Avisá a la cooperativa/municipio.",
         sess.tenantId,
         sess.phoneNumberId
       );
@@ -513,6 +522,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   }
 
   let sess = sessions.get(sk);
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
 
   if (sess && sess.step === "awaiting_location") {
     const t = String(text || "").trim();
@@ -534,7 +544,55 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+  if (sess && sess.step === "awaiting_opcional_id") {
+    const raw = String(text || "").trim();
+    const low = raw.toLowerCase();
+    if (/^(no|n|salto|siguiente|omitir|sigue|skip|-|)$/i.test(low) || low === "0") {
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_location",
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(phone, MSG_SOLICITAR_UBICACION, tid, phoneNumberId);
+      return;
+    }
+    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw);
+    if (res.skip) {
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_location",
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(phone, MSG_SOLICITAR_UBICACION, tid, phoneNumberId);
+      return;
+    }
+    if (!res.ok) {
+      await reply(
+        phone,
+        "No encontramos ese dato para este servicio. Revisá el número o escribí *no* para continuar sin datos.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const nuevoNombre = res.clienteNombre;
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_location",
+      contactName: nuevoNombre || sess.contactName,
+      nisParaPedido: res.nis ?? null,
+      medidorParaPedido: res.medidor ?? null,
+      nisMedidorParaPedido: res.nisMedidor ?? null,
+      phoneNumberId: sess.phoneNumberId || wpid,
+    });
+    await reply(
+      phone,
+      `Listo, registramos a *${nuevoNombre}*.\n\n` + MSG_SOLICITAR_UBICACION,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
 
   if (!sess || sess.step === "idle") {
     if (esPedidoCargarReclamo(text)) {
@@ -582,11 +640,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     sessions.set(sk, {
       ...sess,
-      step: "awaiting_location",
+      step: "awaiting_opcional_id",
       descripcion: desc,
       phoneNumberId: sess.phoneNumberId || wpid,
     });
-    await reply(phone, MSG_SOLICITAR_UBICACION, tid, phoneNumberId);
+    await reply(phone, MSG_OPCIONAL_IDENTIFICADOR, tid, phoneNumberId);
     return;
   }
 }
