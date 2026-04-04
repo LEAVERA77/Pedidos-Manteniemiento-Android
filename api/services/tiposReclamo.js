@@ -55,6 +55,65 @@ export const TIPOS_RECLAMO_LEGACY = [
   "Otros",
 ];
 
+/** Gravedad sugerida por tipo (alineado con estadísticas / mapa: Crítica, Alta, Media, Baja). */
+export const PRIORIDAD_RECLAMO_POR_TIPO = {
+  // municipio
+  "Alumbrado Público": "Media",
+  "Bacheo y Pavimento": "Media",
+  "Recolección/Poda": "Baja",
+  "Espacios Verdes": "Baja",
+  "Señalización/Semáforos": "Alta",
+  "Limpieza de Zanjas": "Media",
+  "Recolección (otros)": "Media",
+  Cloacas: "Alta",
+  Otros: "Media",
+  // cooperativa_agua
+  "Pérdida en Vereda/Calle": "Alta",
+  "Falta de Presión": "Media",
+  "Calidad del Agua": "Alta",
+  "Obstrucción de Cloaca": "Alta",
+  "Cambio de Medidor": "Baja",
+  "Conexión Nueva": "Baja",
+  // cooperativa_electrica
+  "Corte de Energía": "Alta",
+  "Cables Caídos/Peligro": "Crítica",
+  "Problemas de Tensión": "Alta",
+  "Poste Inclinado/Dañado": "Crítica",
+  "Alumbrado Público (Mantenimiento)": "Baja",
+  "Riesgo en la vía pública": "Crítica",
+  "Corrimiento de poste/columna": "Crítica",
+  "Pedido de factibilidad (nuevo servicio)": "Baja",
+  // legacy / histórico
+  "Riesgo vía pública": "Crítica",
+  "Mantenimiento preventivo": "Baja",
+  "Material averiado": "Media",
+  "Poda de árboles": "Baja",
+  Nidos: "Baja",
+  "Falla de Línea": "Alta",
+  "Inspección Termográfica": "Baja",
+  "Avería en Transformador": "Alta",
+  "Reclamo de Cliente": "Media",
+  "Corte Programado": "Baja",
+  Emergencia: "Crítica",
+};
+
+const PRIORIDADES_VALIDAS = new Set(["Baja", "Media", "Alta", "Crítica"]);
+
+export function prioridadPredeterminadaPorTipoTrabajo(tipoTrabajo) {
+  const t = String(tipoTrabajo || "").trim();
+  if (!t) return "Media";
+  const p = PRIORIDAD_RECLAMO_POR_TIPO[t];
+  if (p && PRIORIDADES_VALIDAS.has(p)) return p;
+  return "Media";
+}
+
+/** Prioridad enviada por el cliente o, si falta o no es válida, la del tipo de reclamo. */
+export function normalizarPrioridadPedido(prioridad, tipoTrabajoFallback) {
+  const s = String(prioridad ?? "").trim();
+  if (s && PRIORIDADES_VALIDAS.has(s)) return s;
+  return prioridadPredeterminadaPorTipoTrabajo(tipoTrabajoFallback);
+}
+
 export function normalizarRubroCliente(tipoCliente) {
   const t = String(tipoCliente || "")
     .trim()

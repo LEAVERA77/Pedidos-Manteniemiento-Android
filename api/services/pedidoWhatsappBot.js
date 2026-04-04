@@ -1,6 +1,7 @@
 import { query } from "../db/neon.js";
 import {
   tipoTrabajoPermitidoParaNuevoPedido,
+  prioridadPredeterminadaPorTipoTrabajo,
 } from "./tiposReclamo.js";
 
 async function columnasUsuarios() {
@@ -174,7 +175,7 @@ export async function crearPedidoDesdeWhatsappBot({
     null,
     tt,
     de,
-    "Media",
+    prioridadPredeterminadaPorTipoTrabajo(tt),
     "Pendiente",
     0,
     lat ?? null,
