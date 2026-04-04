@@ -794,6 +794,16 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     try {
       await humanChatAppendInbound(sess.humanChatSessionId, text);
     } catch (e) {
+      if (e && (e.code === "HUMAN_CHAT_CLOSED" || String(e.message || "").includes("human_chat_session_closed"))) {
+        sessions.delete(sk);
+        await reply(
+          phone,
+          "El chat con el representante ya *finalizó*. Escribí *menú* para ver las opciones del asistente.",
+          tid,
+          phoneNumberId
+        );
+        return;
+      }
       console.error("[whatsapp-bot-meta] human_chat inbound", e);
       await reply(phone, "No pudimos registrar el mensaje. Intentá de nuevo.", tid, phoneNumberId);
       return;

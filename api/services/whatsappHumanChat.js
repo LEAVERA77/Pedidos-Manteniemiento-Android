@@ -120,6 +120,15 @@ export async function humanChatAppendInbound(sessionId, body) {
   const sid = Number(sessionId);
   const b = String(body || "").trim().slice(0, 4000);
   if (!Number.isFinite(sid) || sid < 1 || !b) return;
+  const open = await query(
+    `SELECT 1 FROM whatsapp_human_chat_session WHERE id = $1 AND estado IN ('queued','active') LIMIT 1`,
+    [sid]
+  );
+  if (!open.rows?.length) {
+    const err = new Error("human_chat_session_closed");
+    err.code = "HUMAN_CHAT_CLOSED";
+    throw err;
+  }
   await query(
     `INSERT INTO whatsapp_human_chat_message (session_id, direction, body) VALUES ($1, 'in', $2)`,
     [sid, b]
