@@ -248,7 +248,7 @@ export async function notifyPedidoCierreWhatsAppSafe({
       logContext: "cierre_pedido",
     });
     if (r.ok) {
-      registerPendingClienteOpinion(tenantId, phone, pedidoId);
+      await registerPendingClienteOpinion(tenantId, phone, pedidoId);
     } else {
       console.error("[whatsapp-service] cierre: envío falló (pedido ya cerrado en BD)", {
         pedidoId,
