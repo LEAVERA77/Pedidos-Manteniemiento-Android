@@ -6,7 +6,7 @@
  */
 
 import { query } from "../db/neon.js";
-import { sendWhatsAppTextWithCredentials } from "./metaWhatsapp.js";
+import { sendWhatsAppTextWithCredentials, normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
@@ -248,7 +248,8 @@ export async function notifyPedidoCierreWhatsAppSafe({
       logContext: "cierre_pedido",
     });
     if (r.ok) {
-      await registerPendingClienteOpinion(tenantId, phone, pedidoId);
+      const phoneCanon = normalizeWhatsAppRecipientForMeta(phone);
+      await registerPendingClienteOpinion(tenantId, phoneCanon, pedidoId);
     } else {
       console.error("[whatsapp-service] cierre: envío falló (pedido ya cerrado en BD)", {
         pedidoId,

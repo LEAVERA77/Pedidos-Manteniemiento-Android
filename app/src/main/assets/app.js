@@ -1933,6 +1933,75 @@ function syncMapSlideTabsFromStorage() {
     if (cd && cd.style.display !== 'none' && localStorage.getItem('pmg_slideoff_dash') === '1') toggleMapaCardSlideoff('mapa-card-dashboard', true);
 }
 
+let _bp2DragState = null;
+
+function aplicarPosicionBp2Guardada() {
+    const bp2 = document.getElementById('bp2');
+    if (!bp2 || !window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+    try {
+        const raw = localStorage.getItem('pmg_bp2_pos');
+        if (!raw) return;
+        const p = JSON.parse(raw);
+        if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
+        const pad = 8;
+        const w = bp2.offsetWidth || 360;
+        const h = bp2.offsetHeight || 200;
+        const left = Math.min(Math.max(pad, p.left), window.innerWidth - w - pad);
+        const top = Math.min(Math.max(pad + 52, p.top), window.innerHeight - h - pad);
+        bp2.style.right = 'auto';
+        bp2.style.bottom = 'auto';
+        bp2.style.left = left + 'px';
+        bp2.style.top = top + 'px';
+    } catch (_) {}
+}
+
+function initBp2PanelFlotanteDesktop() {
+    const bp2 = document.getElementById('bp2');
+    const ph = document.getElementById('ph');
+    if (!bp2 || !ph || ph.dataset.bp2DragInit === '1') return;
+    if (window.matchMedia('(min-width:1024px)').matches && !esAndroidWebViewMapa()) {
+        ph.dataset.bp2DragInit = '1';
+        aplicarPosicionBp2Guardada();
+        ph.addEventListener('mousedown', (e) => {
+            if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+            if (e.target.closest('button')) return;
+            const r = bp2.getBoundingClientRect();
+            _bp2DragState = {
+                sx: e.clientX,
+                sy: e.clientY,
+                sl: r.left,
+                st: r.top,
+                moved: false
+            };
+            const onMove = (ev) => {
+                if (!_bp2DragState) return;
+                const dx = ev.clientX - _bp2DragState.sx;
+                const dy = ev.clientY - _bp2DragState.sy;
+                if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
+                bp2.style.right = 'auto';
+                bp2.style.bottom = 'auto';
+                bp2.style.left = (_bp2DragState.sl + dx) + 'px';
+                bp2.style.top = (_bp2DragState.st + dy) + 'px';
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (_bp2DragState && _bp2DragState.moved) {
+                    try {
+                        const br = bp2.getBoundingClientRect();
+                        localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: br.left, top: br.top }));
+                    } catch (_) {}
+                    window.__bp2DragJustEnded = true;
+                    setTimeout(() => { window.__bp2DragJustEnded = false; }, 450);
+                }
+                _bp2DragState = null;
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+}
+
 function aplicarUIMapaPlataforma() {
     syncMapaLabelsNpCheckbox();
     syncMapaPrioFiltrosFromStorage();
@@ -1976,6 +2045,7 @@ function aplicarUIMapaPlataforma() {
         setBp2PanelHidden(localStorage.getItem('pmg_bp2_hidden') === '1');
     } catch (_) {}
     syncMapSlideTabsFromStorage();
+    try { initBp2PanelFlotanteDesktop(); } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
@@ -2755,6 +2825,13 @@ async function refrescarDashboardGerencia(silent) {
         bindDashboardKpiClicks(kpi, 'dashboard-filtro-lista-host');
         bindDashboardKpiClicks(kpiM, 'mapa-main-dash-filtro-host');
         try { await refrescarTecnicosMapaPrincipal(); } catch (_) {}
+        try {
+            const rMx = await sqlSimple(`SELECT COALESCE(MAX(id),0)::bigint AS m FROM pedidos WHERE 1=1${tsql}`);
+            const m = Number(rMx.rows?.[0]?.m) || 0;
+            if (m > (app._lastMaxPedidoIdSynced || 0)) {
+                await cargarPedidos({ silent: true });
+            }
+        } catch (_) {}
     } catch (e) {
         if (kpi && !silent) kpi.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
         if (kpiM && !silent) kpiM.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
@@ -2803,8 +2880,11 @@ async function asegurarNombreUsuariosParaFiltros() {
     } catch (_) {}
 }
 
-async function cargarPedidos() {
-    document.getElementById('pl').innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div>';
+async function cargarPedidos(opts) {
+    const silent = !!(opts && opts.silent);
+    if (!silent) {
+        document.getElementById('pl').innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div>';
+    }
     if (modoOffline) {
         
         app.p = offlinePedidos();
@@ -2822,19 +2902,26 @@ async function cargarPedidos() {
             }
         }
         const r = await ejecutarSQLConReintentos(qPed);
-        const prevIds = new Set(app.p.map(p => p.id));
+        const prevIds = new Set((app.p || []).map(p => p.id));
         app.p = (r.rows || []).map(norm);
-        // Detectar pedidos urgentes/críticos RECIÉN creados (últimos 2 min)
-        // Solo cuando hay IDs previos (no en la carga inicial) y el pedido
-        // fue creado hace menos de 2 minutos (lo acaba de cargar alguien)
+        if (esAdmin() && app.p.length) {
+            const mx = app.p.reduce((a, p) => Math.max(a, Number(p.id) || 0), 0);
+            if (Number.isFinite(mx) && mx > 0) app._lastMaxPedidoIdSynced = mx;
+        }
+        // Nuevos pedidos: aviso al admin (lista + dashboard a veces se desincronizaban)
         if (esAdmin() && prevIds.size > 0) {
             const dosMinutosAtras = Date.now() - 2 * 60 * 1000;
-            app.p.filter(p =>
-                !prevIds.has(p.id) &&
-                ['Crítica','Alta'].includes(p.pr) &&
-                p.es === 'Pendiente' &&
-                new Date(p.f).getTime() > dosMinutosAtras
-            ).forEach(p => mostrarAlertaPedidoUrgente(p));
+            const nuevos = app.p.filter(p => !prevIds.has(p.id));
+            nuevos.forEach(p => {
+                const urgente = ['Crítica', 'Alta'].includes(p.pr) && p.es === 'Pendiente' &&
+                    new Date(p.f).getTime() > dosMinutosAtras;
+                if (urgente) {
+                    mostrarAlertaPedidoUrgente(p);
+                } else {
+                    const tit = (p.tt || p.de || '').toString().trim().slice(0, 52);
+                    toast(`Nuevo reclamo #${p.np || p.id}${tit ? ' — ' + tit : ''}`, 'info');
+                }
+            });
         }
         
         offlinePedidosSave(app.p);
@@ -5527,7 +5614,11 @@ document.getElementById('mt').addEventListener('click', () => {
         } catch (_) {}
     });
 });
-document.getElementById('ph').addEventListener('click', togglePanel);
+document.getElementById('ph').addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    if (window.__bp2DragJustEnded) return;
+    togglePanel();
+});
 
 document.getElementById('ub').addEventListener('click', () => {
     if (confirm('¿Cerrar sesión?')) {

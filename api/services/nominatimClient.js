@@ -69,6 +69,50 @@ export async function geocodeAddressArgentina(query) {
   };
 }
 
+function normTxt(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+/** Requiere que el resultado de Nominatim mencione la localidad (evita homónimos, ej. Mitre en otra ciudad). */
+function nominatimDisplayMatchesLocalidad(displayName, localidad) {
+  const dn = normTxt(displayName);
+  const loc = normTxt(localidad);
+  if (!loc || loc.length < 2) return true;
+  const tokens = loc.split(/\s+/).filter((t) => t.length > 2);
+  if (!tokens.length) return dn.includes(loc);
+  return tokens.some((t) => dn.includes(t));
+}
+
+/**
+ * Geocodifica calle + número + ciudad en Argentina con varias variantes de consulta.
+ * @returns {Promise<{ lat: number, lng: number, displayName: string } | null>}
+ */
+export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero) {
+  const c = String(ciudad || "").trim();
+  const cal = String(calle || "").trim();
+  const n = String(numero || "").trim();
+  if (c.length < 2 || cal.length < 2 || n.length < 1) return null;
+  const attempts = [
+    `${n} ${cal}, ${c}, Argentina`,
+    `${cal} ${n}, ${c}, Argentina`,
+    `${cal}, ${n}, ${c}, Argentina`,
+    `${c}, ${cal} ${n}, Argentina`,
+    `${cal} ${n}, ${c}, Entre Ríos, Argentina`,
+    `${cal} ${n}, ${c}, Buenos Aires, Argentina`,
+  ];
+  for (const q of attempts) {
+    const g = await geocodeAddressArgentina(q);
+    if (g && nominatimDisplayMatchesLocalidad(g.displayName, c)) {
+      return g;
+    }
+  }
+  return null;
+}
+
 /**
  * @returns {Promise<{ displayName: string } | null>}
  */

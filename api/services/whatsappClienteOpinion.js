@@ -167,50 +167,62 @@ function esMensajeCortoConformidad(low) {
   return false;
 }
 
-const ACK_OPINION_CORTA = "Gracias por tu respuesta. ¡Que tengas un buen día!";
-const ACK_OPINION_LARGA = "Gracias por sus observaciones, las tendremos en cuenta.";
+function ackOpinionInstitucion(nombreEntidad) {
+  const ent = String(nombreEntidad || "").trim() || "nuestra institución";
+  return `Gracias por sus comentarios. Lo tendremos en consideración. (*${ent}*)`;
+}
+
+/** Solo comandos explícitos para volver al menú (con opinión pendiente aún activa). */
+function esEscapeMenuOpinionPendiente(raw, low) {
+  const t = String(raw || "").trim();
+  if (/^(menu|menú|inicio|ayuda|volver|0)$/i.test(t)) return true;
+  if (low === "hola" && t.length <= 6) return true;
+  return false;
+}
 
 /**
  * Si hay opinión pendiente y el texto parece feedback (no comando del menú), guarda en pedidos.
  * @returns {Promise<{ handled: boolean, ack?: string }>}
  */
-export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text }) {
+export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text, nombreEntidad }) {
   const raw = String(text || "").trim();
   if (!raw) return { handled: false };
 
   const low = normalizeLow(raw);
   const pend = await getPending(tenantId, phoneDigits);
 
+  if (pend) {
+    if (esEscapeMenuOpinionPendiente(raw, low)) {
+      return { handled: false };
+    }
+    await ensureOpinionColumns();
+
+    const chk = await query(`SELECT id, tenant_id FROM pedidos WHERE id = $1 LIMIT 1`, [pend.pedidoId]);
+    const row = chk.rows?.[0];
+    if (!row) {
+      await clearPendingClienteOpinion(tenantId, phoneDigits);
+      return { handled: false };
+    }
+    const rowTid = row.tenant_id != null ? Number(row.tenant_id) : null;
+    if (rowTid != null && Number.isFinite(rowTid) && rowTid !== Number(tenantId)) {
+      return { handled: false };
+    }
+
+    const opinion = raw.slice(0, 2000);
+    await query(
+      `UPDATE pedidos SET opinion_cliente = $2, fecha_opinion_cliente = NOW() WHERE id = $1`,
+      [pend.pedidoId, opinion]
+    );
+    await clearPendingClienteOpinion(tenantId, phoneDigits);
+
+    return { handled: true, ack: ackOpinionInstitucion(nombreEntidad) };
+  }
+
   if (esComandoExcluidoFlujoMenu(low, raw)) {
     return { handled: false };
   }
 
-  if (!pend) {
-    if (raw.length < 2) return { handled: false };
-    if (esMensajeCortoConformidad(low)) return { handled: false };
-    return { handled: false };
-  }
-
-  await ensureOpinionColumns();
-
-  const chk = await query(`SELECT id, tenant_id FROM pedidos WHERE id = $1 LIMIT 1`, [pend.pedidoId]);
-  const row = chk.rows?.[0];
-  if (!row) {
-    await clearPendingClienteOpinion(tenantId, phoneDigits);
-    return { handled: false };
-  }
-  const rowTid = row.tenant_id != null ? Number(row.tenant_id) : null;
-  if (rowTid != null && Number.isFinite(rowTid) && rowTid !== Number(tenantId)) {
-    return { handled: false };
-  }
-
-  const opinion = raw.slice(0, 2000);
-  await query(
-    `UPDATE pedidos SET opinion_cliente = $2, fecha_opinion_cliente = NOW() WHERE id = $1`,
-    [pend.pedidoId, opinion]
-  );
-  await clearPendingClienteOpinion(tenantId, phoneDigits);
-
-  const ack = esMensajeCortoConformidad(low) ? ACK_OPINION_CORTA : ACK_OPINION_LARGA;
-  return { handled: true, ack };
+  if (raw.length < 2) return { handled: false };
+  if (esMensajeCortoConformidad(low)) return { handled: false };
+  return { handled: false };
 }

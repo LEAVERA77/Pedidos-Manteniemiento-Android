@@ -280,7 +280,29 @@ textarea{resize:vertical;min-height:80px}
 #toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
-@media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-pedido-ubicacion{bottom:4.5rem;right:390px}.btn-mapa-ir-gps{bottom:2.55rem;left:1rem}.hl{display:none}}
+@media(min-width:1024px){
+  #ms .bp2{
+    position:fixed!important;
+    left:auto!important;
+    top:auto!important;
+    right:1rem!important;
+    bottom:5.5rem!important;
+    width:min(400px,calc(100vw - 2rem))!important;
+    max-height:min(72vh,calc(100dvh - 120px))!important;
+    z-index:10020!important;
+    border-radius:1rem!important;
+    box-shadow:0 14px 44px rgba(15,23,42,.18)!important;
+    transform:none!important;
+  }
+  #ms .bp2.col{transform:translateY(calc(100% - 3.25rem))!important}
+  #ms .bp2.bp2-fullhide{transform:translateY(110%)!important;pointer-events:none}
+  #ms .bp2.bp2-fullhide .ph{pointer-events:auto}
+  #ms .bp2 .ph{cursor:grab;user-select:none}
+  #ms .bp2 .ph:active{cursor:grabbing}
+  .fab-pedido-ubicacion{bottom:4.5rem;right:min(calc(400px + 2rem),calc(100vw - 1rem))}
+  .btn-mapa-ir-gps{bottom:2.55rem;left:1rem}
+  .hl{display:none}
+}
 @keyframes pulse-gps{
   0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}
   70%{box-shadow:0 0 0 10px rgba(16,185,129,0)}
