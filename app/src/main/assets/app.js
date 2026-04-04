@@ -2035,9 +2035,9 @@ function initBp2PanelFlotanteDesktop() {
 function initMouiCardDraggable(cardId) {
     const card = document.getElementById(cardId);
     if (!card || esAndroidWebViewMapa()) return;
-    const handle = card.querySelector('.moui-drag-handle');
-    if (!handle || handle.dataset.mouiDragInit === '1') return;
-    handle.dataset.mouiDragInit = '1';
+    const hd = card.querySelector('.moui-hd');
+    if (!hd || card.dataset.mouiCardDragInit === '1') return;
+    card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
         try {
@@ -2058,13 +2058,14 @@ function initMouiCardDraggable(cardId) {
     };
     applySaved();
     let suppressClick = false;
-    handle.addEventListener('click', (e) => {
+    hd.addEventListener('click', (e) => {
         if (suppressClick) {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             suppressClick = false;
         }
-    });
+    }, true);
     const clampMove = (dragSt, clientX, clientY) => {
         const dx = clientX - dragSt.sx;
         const dy = clientY - dragSt.sy;
@@ -2080,42 +2081,17 @@ function initMouiCardDraggable(cardId) {
         card.style.right = 'auto';
         card.style.bottom = 'auto';
     };
-    handle.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.stopPropagation();
+    const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
-        const dragSt = { sx: e.clientX, sy: e.clientY, sl: r.left, st: r.top, moved: false };
+        const dragSt = { sx: clientX, sy: clientY, sl: r.left, st: r.top, moved: false };
         const move = (ev) => {
-            clampMove(dragSt, ev.clientX, ev.clientY);
+            const cx = ev.clientX != null ? ev.clientX : (ev.touches && ev.touches[0] ? ev.touches[0].clientX : 0);
+            const cy = ev.clientY != null ? ev.clientY : (ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0);
+            clampMove(dragSt, cx, cy);
         };
         const up = () => {
             document.removeEventListener('mousemove', move);
             document.removeEventListener('mouseup', up);
-            if (dragSt.moved) {
-                suppressClick = true;
-                try {
-                    const br = card.getBoundingClientRect();
-                    localStorage.setItem(key, JSON.stringify({ left: br.left, top: br.top }));
-                } catch (_) {}
-            }
-        };
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-    });
-    handle.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        e.stopPropagation();
-        const t = e.touches[0];
-        const r = card.getBoundingClientRect();
-        const dragSt = { sx: t.clientX, sy: t.clientY, sl: r.left, st: r.top, moved: false };
-        const move = (ev) => {
-            if (ev.cancelable) ev.preventDefault();
-            const tt = ev.touches[0];
-            if (!tt) return;
-            clampMove(dragSt, tt.clientX, tt.clientY);
-        };
-        const up = () => {
             document.removeEventListener('touchmove', move);
             document.removeEventListener('touchend', up);
             document.removeEventListener('touchcancel', up);
@@ -2127,9 +2103,23 @@ function initMouiCardDraggable(cardId) {
                 } catch (_) {}
             }
         };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
         document.addEventListener('touchmove', move, { passive: false });
         document.addEventListener('touchend', up);
         document.addEventListener('touchcancel', up);
+    };
+    hd.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        startDrag(e.clientX, e.clientY);
+    });
+    hd.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1 || e.target.closest('button')) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        startDrag(t.clientX, t.clientY);
     }, { passive: false });
 }
 

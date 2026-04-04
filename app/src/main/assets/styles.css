@@ -8,6 +8,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #ls.active{display:flex;align-items:center;justify-content:center}
 #ms.active{display:block;position:relative}
 #mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
+#mapa-overlay-ui .moui-card .moui-hd{cursor:grab}
+#mapa-overlay-ui .moui-card .moui-hd:active{cursor:grabbing}
 .moui-card{pointer-events:auto;position:absolute;background:#fff;border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
 .moui-drag-handle{cursor:grab;opacity:.5;padding:0 .15rem;margin-right:.1rem;flex-shrink:0;touch-action:none;-webkit-user-select:none;user-select:none}
 .moui-drag-handle:active{cursor:grabbing;opacity:.85}

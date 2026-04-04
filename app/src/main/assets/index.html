@@ -63,7 +63,7 @@
     <button type="button" id="map-tab-android-bar" class="map-slide-tab map-tab-android-bar" onclick="toggleAndroidMapStripCollapsed(false)" title="Mostrar barra (filtros / alcance)">Barra</button>
     <button type="button" id="map-tab-filtros" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
     <div id="mapa-card-filtros" class="moui-card">
-      <div class="moui-hd" onclick="toggleMapaFiltrosBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar panel"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
+      <div class="moui-hd" onclick="toggleMapaFiltrosBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-filtros-body" class="moui-bd">
         <div class="moui-row moui-estados">
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-pendiente" checked onchange="onMapaFiltroChange()"> Pendiente</label>
@@ -85,7 +85,7 @@
     </div>
     <button type="button" id="map-tab-colores" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-colores',false)" title="Mostrar colores" style="top:160px">Colores</button>
     <div id="mapa-card-colores" class="moui-card">
-      <div class="moui-hd" onclick="toggleMapaColoresBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar panel"></i><i class="fas fa-palette"></i> Colores (prioridad) <span id="mapa-colores-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-colores',true)"><i class="fas fa-eye-slash"></i></button></div>
+      <div class="moui-hd" onclick="toggleMapaColoresBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-palette"></i> Colores (prioridad) <span id="mapa-colores-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-colores',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-colores-body" class="moui-bd">
         <div class="ll-grid">
           <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-critica" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#ef4444"></span><span class="ll-txt">Crítica</span></label>
@@ -99,7 +99,7 @@
     </div>
     <button type="button" id="map-tab-dash" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-dashboard',false)" title="Mostrar dashboard" style="top:200px">Dash</button>
     <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">
-      <div class="moui-hd" onclick="toggleMapaDashBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar panel"></i><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-dashboard',true)"><i class="fas fa-eye-slash"></i></button></div>
+      <div class="moui-hd" onclick="toggleMapaDashBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-dashboard',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-dash-body" class="moui-bd moui-scroll">
         <div id="mapa-main-dash-kpi" class="dash-kpi-mini"></div>
         <div id="mapa-main-dash-filtro-host" style="display:none;margin:.35rem 0 .5rem;font-size:.7rem;border:1px solid var(--bo);border-radius:.35rem;padding:.35rem;max-height:100px;overflow-y:auto;background:var(--bg)"></div>
