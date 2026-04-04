@@ -956,7 +956,7 @@ async function notificarWhatsappClienteEventoApi(pedidoId, event) {
     }
 }
 async function loginApiJwt(email, password) {
-    const ms = 15000;
+    const ms = 28000;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), ms);
     try {
@@ -1022,9 +1022,17 @@ const BRAND_DEFAULT_NAME = 'GestorNova';
 
 function basePathAssets() {
     try {
-        const p = window.location.pathname || '/';
-        const i = p.lastIndexOf('/');
-        return i >= 0 ? p.slice(0, i + 1) : '/';
+        let p = window.location.pathname || '/';
+        if (p === '/' || p === '') return '/';
+        if (!p.endsWith('/')) {
+            const lastSeg = p.split('/').pop() || '';
+            if (lastSeg.includes('.')) {
+                p = p.slice(0, p.lastIndexOf('/') + 1);
+            } else {
+                p = p + '/';
+            }
+        }
+        return p;
     } catch (_) {
         return '/';
     }
@@ -1037,7 +1045,8 @@ function defaultGestorNovaLogoUrl() {
             return new URL(file, window.location.href).href;
         }
         const base = basePathAssets();
-        return (base + file).replace(/([^:]\/)\/+/g, '$1');
+        const path = (base + file).replace(/([^:]\/)\/+/g, '$1');
+        return window.location.origin + path;
     } catch (_) {
         return file;
     }
@@ -1137,29 +1146,34 @@ async function confirmarAdminTipoNegocioWeb() {
         toast('Elegí un tipo de negocio', 'error');
         return;
     }
-    const persistir = !!(chk && chk.checked);
+    let persistir = !!(chk && chk.checked);
+    let guardadoServidor = false;
     if (persistir) {
-        try {
-            const token = getApiToken();
-            if (!token) {
-                toast('Sin token API: no se puede guardar en el servidor', 'error');
-                return;
+        await asegurarJwtApiRest();
+        if (!getApiToken()) await intentarRefrescarJwtDesdeCredencialesGuardadas();
+        let token = getApiToken();
+        if (!token) {
+            toast('La API aún no respondió: el tipo se aplica solo en esta sesión. Reintentá guardar en servidor desde Admin → Empresa cuando haya conexión.', 'warning');
+            persistir = false;
+        } else {
+            try {
+                const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ tipo })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                guardadoServidor = true;
+            } catch (e) {
+                toast('No se pudo guardar en servidor: ' + (e?.message || e) + ' — queda aplicado en esta sesión.', 'warning');
+                persistir = false;
             }
-            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({ tipo })
-            });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error || `HTTP ${resp.status}`);
-            }
-        } catch (e) {
-            toast('No se pudo guardar en servidor: ' + (e?.message || e), 'error');
-            return;
         }
     }
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
@@ -1176,7 +1190,7 @@ async function confirmarAdminTipoNegocioWeb() {
         _resolveAdminTipoModal();
         _resolveAdminTipoModal = null;
     }
-    toast(persistir ? 'Tipo guardado en servidor y en pantalla' : 'Tipo aplicado en esta sesión', 'success');
+    toast(guardadoServidor ? 'Tipo guardado en servidor y en pantalla' : 'Tipo aplicado en esta sesión', 'success');
 }
 window.confirmarAdminTipoNegocioWeb = confirmarAdminTipoNegocioWeb;
 
@@ -1433,6 +1447,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
             });
             setupMapLazyWhenVisibleOnce();
             if (!offline) {
+                await asegurarJwtApiRest();
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;

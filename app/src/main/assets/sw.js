@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v4';
-const CACHE_SHELL = 'pmg-shell-v6';
+const CACHE_SHELL = 'pmg-shell-v7';
 const SW_VERSION  = '1.1.1';
 
 function shellAssetUrls() {
@@ -67,7 +67,17 @@ async function networkFirstShell(request) {
     if (resp.ok) cache.put(request, resp.clone());
     return resp;
   } catch (e) {
-    const cached = await cache.match(request);
+    let cached = await cache.match(request);
+    if (!cached && request.url.endsWith('/')) {
+      cached = await cache.match(request.url + 'index.html');
+    }
+    if (!cached) {
+      const u = new URL(request.url);
+      if (u.pathname.endsWith('/') && u.pathname.length > 1) {
+        const noSlash = u.pathname.replace(/\/$/, '');
+        cached = await cache.match(u.origin + noSlash + '/index.html');
+      }
+    }
     if (cached) return cached;
     throw e;
   }
