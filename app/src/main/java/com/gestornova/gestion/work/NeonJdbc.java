@@ -1,7 +1,6 @@
 package com.gestornova.gestion.work;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -24,17 +23,29 @@ public final class NeonJdbc {
     private NeonJdbc() {}
 
     public static Connection open(String connectionString) throws SQLException {
+        String url = normalizeJdbcUrl(connectionString);
+        Properties p = new Properties();
+        p.setProperty("sslmode", "require");
+        p.setProperty("connectTimeout", "20");
+        p.setProperty("socketTimeout", "25");
+        // Android: DriverManager.getConnection suele fallar con "No suitable driver" aunque el .jar esté
+        // en el APK (class loaders / SPI). Conectar con la instancia del driver evita ese registro.
+        org.postgresql.Driver driver = new org.postgresql.Driver();
+        Connection c = driver.connect(url, p);
+        if (c == null) {
+            throw new SQLException("PostgreSQL: el driver no aceptó la URL (connect devolvió null).");
+        }
+        return c;
+    }
+
+    private static String normalizeJdbcUrl(String connectionString) {
         String url = connectionString.trim();
         if (url.startsWith("postgresql://")) {
             url = "jdbc:postgresql://" + url.substring("postgresql://".length());
         } else if (!url.startsWith("jdbc:postgresql://")) {
             url = "jdbc:postgresql://" + url;
         }
-        Properties p = new Properties();
-        p.setProperty("sslmode", "require");
-        p.setProperty("connectTimeout", "20");
-        p.setProperty("socketTimeout", "25");
-        return DriverManager.getConnection(url, p);
+        return url;
     }
 
     public static long queryMaxPedidoId(Connection c) throws SQLException {

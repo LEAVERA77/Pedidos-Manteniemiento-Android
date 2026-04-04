@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# JDBC PostgreSQL (WorkManager: NeonJdbc usa new Driver().connect en Android)
+-keep class org.postgresql.** { *; }
+-dontwarn org.postgresql.**
