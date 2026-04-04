@@ -1053,16 +1053,17 @@ function defaultGestorNovaLogoUrl() {
 }
 
 /**
- * Datos de marca efectivos: personalizado solo si el admin guardó setup (wizard) en servidor.
- * La app Android hereda lo mismo vía GET /api/clientes/mi-configuracion.
+ * Datos de marca efectivos: nombre/logo de tenant solo si el admin publicó marca
+ * (wizard final o Admin → Empresa → guardar), vía GET /api/clientes/mi-configuracion.
  */
 function resolveMarcaTenantUI() {
     const b = window.__PMG_TENANT_BRANDING__ || {};
     const setup = !!b.setup_wizard_completado;
+    const marcaPub = !!b.marca_publicada_admin;
     const nombreApi = String(b.nombre_cliente || '').trim();
     const logoApi = String(b.logo_url || '').trim();
     const tipoApi = String(b.tipo || '').trim();
-    if (setup && (nombreApi || logoApi)) {
+    if (setup && marcaPub && (nombreApi || logoApi)) {
         return {
             nombre: nombreApi || BRAND_DEFAULT_NAME,
             logo_url: logoApi || defaultGestorNovaLogoUrl(),
@@ -1089,6 +1090,7 @@ function syncEmpresaCfgNombreLogoDesdeMarca() {
 function resetBrandingSesionNoAutenticada() {
     window.__PMG_TENANT_BRANDING__ = {
         setup_wizard_completado: false,
+        marca_publicada_admin: false,
         nombre_cliente: '',
         logo_url: '',
         tipo: ''
@@ -5486,6 +5488,7 @@ async function verificarConfiguracionInicialObligatoria() {
             }
             window.__PMG_TENANT_BRANDING__ = {
                 setup_wizard_completado: !!extraParsed.setup_wizard_completado,
+                marca_publicada_admin: !!extraParsed.marca_publicada_admin,
                 nombre_cliente: String(cli.nombre || '').trim(),
                 logo_url: String(extraParsed.logo_url || '').trim(),
                 tipo: String(cli.tipo ?? '').trim()
@@ -5495,6 +5498,7 @@ async function verificarConfiguracionInicialObligatoria() {
     if (!apiOk) {
         window.__PMG_TENANT_BRANDING__ = {
             setup_wizard_completado: false,
+            marca_publicada_admin: false,
             nombre_cliente: '',
             logo_url: '',
             tipo: ''
@@ -5594,7 +5598,7 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
-                configuracion: { setup_wizard_completado: true }
+                configuracion: { setup_wizard_completado: true, marca_publicada_admin: true }
             })
         });
         if (!resp.ok) {
@@ -5603,6 +5607,7 @@ async function guardarConfiguracionInicialObligatoria() {
         }
         window.__PMG_TENANT_BRANDING__ = {
             setup_wizard_completado: true,
+            marca_publicada_admin: true,
             nombre_cliente: nombre,
             logo_url: String(logoUrl || '').trim(),
             tipo
@@ -5811,11 +5816,43 @@ async function guardarConfigEmpresa() {
             await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES(${esc(k)}, ${esc(v)})
                 ON CONFLICT(clave) DO UPDATE SET valor = ${esc(v)}, actualizado = NOW()`);
         }
-        toast('Configuración guardada', 'success');
+        let marcaApiOk = true;
+        if (esAdmin()) {
+            try {
+                await asegurarJwtApiRest();
+                const token = getApiToken();
+                if (token) {
+                    const body = { configuracion: { marca_publicada_admin: true } };
+                    if (campos.nombre) body.nombre = campos.nombre;
+                    if (campos.tipo) body.tipo = campos.tipo;
+                    const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        throw new Error(err.error || `HTTP ${resp.status}`);
+                    }
+                } else {
+                    marcaApiOk = false;
+                }
+            } catch (e) {
+                marcaApiOk = false;
+                console.warn('[empresa] PUT mi-configuracion:', e?.message || e);
+            }
+        }
         await cargarConfigEmpresa();
         await verificarConfiguracionInicialObligatoria();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
+        toast(
+            marcaApiOk ? 'Configuración guardada' : 'Configuración guardada en base local; no se pudo publicar marca en el servidor (revisá API o token)',
+            marcaApiOk ? 'success' : 'warning'
+        );
     } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 

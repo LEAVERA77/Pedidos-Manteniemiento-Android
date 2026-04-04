@@ -118,9 +118,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .zoom-indicator{font-size:.7rem;color:var(--bd);background:var(--bg);padding:.15rem .5rem;border-radius:1rem;margin-left:.5rem}
 .pc{display:flex;flex-direction:column;overflow:hidden;flex:1}
 .pt{display:flex;padding:0 .75rem;border-bottom:1px solid var(--bo);align-items:stretch;flex-shrink:0;gap:.25rem}
-.tb{flex:1;padding:.45rem .1rem;background:none;border:none;border-bottom:2.5px solid transparent;font-weight:600;color:var(--tm);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.72rem;min-width:0}
+.tb{flex:1;padding:.5rem .1rem .72rem;background:none;border:none;border-bottom:2.5px solid transparent;font-weight:600;color:var(--tm);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.72rem;min-width:0}
 .tb.active{color:var(--bd);border-bottom-color:var(--bd)}
-.tb-stack{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2rem;min-width:0;width:100%;max-width:100%}
+.tb-stack{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.38rem;min-width:0;width:100%;max-width:100%}
 .tb-line{display:inline-flex;align-items:center;justify-content:center;gap:.2rem;font-size:.65rem;line-height:1.2;text-align:center;flex-wrap:wrap;max-width:100%}
 .bge{background:var(--bd);color:white;font-size:.62rem;padding:.12rem .42rem;border-radius:1rem;font-weight:700;line-height:1.15;flex-shrink:0;min-width:1.15rem;text-align:center}
 .eb{background:none;border:none;color:#16a34a;font-size:1.2rem;cursor:pointer;padding:.4rem .5rem;border-radius:.4rem;flex-shrink:0}
@@ -145,7 +145,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .ab{height:100%;background:linear-gradient(90deg,var(--bd),var(--bl));border-radius:2px;transition:width .4s}
 
 /* GPS: más abajo para no tapar panel Colores / filtros del mapa */
-.btn-mapa-ir-gps{position:absolute;bottom:8.25rem;left:1rem;width:2.9rem;height:2.9rem;border-radius:50%;background:#fff;color:var(--bd);border:1px solid var(--bo);box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
+.btn-mapa-ir-gps{position:absolute;bottom:6.72rem;left:1rem;width:2.9rem;height:2.9rem;border-radius:50%;background:#fff;color:var(--bd);border:1px solid var(--bo);box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
 .btn-mapa-ir-gps:hover{transform:scale(1.06)}
 /* FAB mapa: nuevo pedido desde ubicación */
 .fab-pedido-ubicacion{position:absolute;bottom:6.25rem;right:1rem;width:3.25rem;height:3.25rem;border-radius:50%;background:#f59e0b;color:white;border:none;box-shadow:0 4px 18px rgba(245,158,11,.45);font-size:1.4rem;cursor:pointer;z-index:1002;display:flex;align-items:center;justify-content:center;transition:transform .2s}
@@ -263,7 +263,7 @@ textarea{resize:vertical;min-height:80px}
 #toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
-@media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-pedido-ubicacion{bottom:4.5rem;right:390px}.btn-mapa-ir-gps{bottom:3.35rem;left:1rem}.hl{display:none}}
+@media(min-width:1024px){.bp2{left:auto;right:1rem;bottom:1rem;width:370px;border-radius:1rem;transform:none!important;max-height:calc(100vh - 78px)}.fab-pedido-ubicacion{bottom:4.5rem;right:390px}.btn-mapa-ir-gps{bottom:2.55rem;left:1rem}.hl{display:none}}
 @keyframes pulse-gps{
   0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}
   70%{box-shadow:0 0 0 10px rgba(16,185,129,0)}
