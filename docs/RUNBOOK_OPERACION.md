@@ -31,6 +31,8 @@ Sitio típico: `https://leavera77.github.io/Pedidos-MG/`
 2. Variables como en `api/.env.example`: `DATABASE_URL` / `DB_CONNECTION`, `META_*`, JWT secret, CORS/orígenes si aplica.
 3. Tras push: **Manual Deploy** o auto-deploy según configuración.
 4. Webhook Meta: `https://<tu-api>/api/webhooks/whatsapp/meta` con el mismo verify token que `META_WEBHOOK_VERIFY_TOKEN`.
+5. **Tests locales:** en `api/`, `npm ci` y `npm test` (Vitest + Supertest; mock de Neon en smoke).
+6. **Logs:** cada respuesta HTTP escribe una línea JSON en stdout con `reqId`, `method`, `path`, `status`, `ms`. Podés correlacionar con el encabezado **`X-Request-Id`** (o enviar uno propio).
 
 ## Neon (PostgreSQL)
 
