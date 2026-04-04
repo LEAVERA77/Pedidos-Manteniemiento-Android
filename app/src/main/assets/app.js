@@ -1940,7 +1940,13 @@ function aplicarPosicionBp2Guardada() {
     if (!bp2 || !window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
     try {
         const raw = localStorage.getItem('pmg_bp2_pos');
-        if (!raw) return;
+        if (!raw) {
+            bp2.style.removeProperty('left');
+            bp2.style.removeProperty('top');
+            bp2.style.removeProperty('right');
+            bp2.style.removeProperty('bottom');
+            return;
+        }
         const p = JSON.parse(raw);
         if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
         const pad = 8;
@@ -1959,34 +1965,42 @@ function initBp2PanelFlotanteDesktop() {
     const bp2 = document.getElementById('bp2');
     const ph = document.getElementById('ph');
     if (!bp2 || !ph || ph.dataset.bp2DragInit === '1') return;
-    if (window.matchMedia('(min-width:1024px)').matches && !esAndroidWebViewMapa()) {
-        ph.dataset.bp2DragInit = '1';
-        aplicarPosicionBp2Guardada();
-        ph.addEventListener('mousedown', (e) => {
-            if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
-            if (e.target.closest('button')) return;
-            const r = bp2.getBoundingClientRect();
-            _bp2DragState = {
-                sx: e.clientX,
-                sy: e.clientY,
-                sl: r.left,
-                st: r.top,
-                moved: false
-            };
-            const onMove = (ev) => {
-                if (!_bp2DragState) return;
-                const dx = ev.clientX - _bp2DragState.sx;
-                const dy = ev.clientY - _bp2DragState.sy;
-                if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
-                bp2.style.right = 'auto';
-                bp2.style.bottom = 'auto';
-                bp2.style.left = (_bp2DragState.sl + dx) + 'px';
-                bp2.style.top = (_bp2DragState.st + dy) + 'px';
-            };
-            const onUp = () => {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                if (_bp2DragState && _bp2DragState.moved) {
+    if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+    ph.dataset.bp2DragInit = '1';
+    aplicarPosicionBp2Guardada();
+    const startDrag = (clientX, clientY) => {
+        const r = bp2.getBoundingClientRect();
+        const hadCol = bp2.classList.contains('col');
+        if (hadCol) bp2.classList.remove('col');
+        _bp2DragState = {
+            sx: clientX,
+            sy: clientY,
+            sl: r.left,
+            st: r.top,
+            moved: false,
+            hadCol
+        };
+        const onMove = (ev) => {
+            if (!_bp2DragState) return;
+            const cx = ev.clientX != null ? ev.clientX : (ev.touches && ev.touches[0] ? ev.touches[0].clientX : 0);
+            const cy = ev.clientY != null ? ev.clientY : (ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0);
+            const dx = cx - _bp2DragState.sx;
+            const dy = cy - _bp2DragState.sy;
+            if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
+            bp2.style.right = 'auto';
+            bp2.style.bottom = 'auto';
+            bp2.style.left = (_bp2DragState.sl + dx) + 'px';
+            bp2.style.top = (_bp2DragState.st + dy) + 'px';
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+            if (_bp2DragState) {
+                if (!_bp2DragState.moved && _bp2DragState.hadCol) bp2.classList.add('col');
+                if (_bp2DragState.moved) {
                     try {
                         const br = bp2.getBoundingClientRect();
                         localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: br.left, top: br.top }));
@@ -1994,12 +2008,129 @@ function initBp2PanelFlotanteDesktop() {
                     window.__bp2DragJustEnded = true;
                     setTimeout(() => { window.__bp2DragJustEnded = false; }, 450);
                 }
-                _bp2DragState = null;
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-    }
+            }
+            _bp2DragState = null;
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
+    };
+    ph.addEventListener('mousedown', (e) => {
+        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (e.button !== 0 || e.target.closest('button')) return;
+        e.preventDefault();
+        startDrag(e.clientX, e.clientY);
+    });
+    ph.addEventListener('touchstart', (e) => {
+        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (e.touches.length !== 1 || e.target.closest('button')) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        startDrag(t.clientX, t.clientY);
+    }, { passive: false });
+}
+
+function initMouiCardDraggable(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card || esAndroidWebViewMapa()) return;
+    const handle = card.querySelector('.moui-drag-handle');
+    if (!handle || handle.dataset.mouiDragInit === '1') return;
+    handle.dataset.mouiDragInit = '1';
+    const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
+    const applySaved = () => {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return;
+            const p = JSON.parse(raw);
+            if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
+            const pad = 6;
+            const w = card.offsetWidth || 200;
+            const h = card.offsetHeight || 120;
+            const left = Math.min(Math.max(pad, p.left), window.innerWidth - w - pad);
+            const top = Math.min(Math.max(pad + 50, p.top), window.innerHeight - h - pad);
+            card.style.left = left + 'px';
+            card.style.top = top + 'px';
+            card.style.right = 'auto';
+            card.style.bottom = 'auto';
+        } catch (_) {}
+    };
+    applySaved();
+    let suppressClick = false;
+    handle.addEventListener('click', (e) => {
+        if (suppressClick) {
+            e.preventDefault();
+            e.stopPropagation();
+            suppressClick = false;
+        }
+    });
+    const clampMove = (dragSt, clientX, clientY) => {
+        const dx = clientX - dragSt.sx;
+        const dy = clientY - dragSt.sy;
+        if (Math.abs(dx) + Math.abs(dy) > 4) dragSt.moved = true;
+        const rr = card.getBoundingClientRect();
+        const nl = dragSt.sl + dx;
+        const nt = dragSt.st + dy;
+        const pad = 6;
+        const w = rr.width;
+        const h = rr.height;
+        card.style.left = Math.min(Math.max(pad, nl), window.innerWidth - w - pad) + 'px';
+        card.style.top = Math.min(Math.max(pad + 48, nt), window.innerHeight - h - pad) + 'px';
+        card.style.right = 'auto';
+        card.style.bottom = 'auto';
+    };
+    handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const r = card.getBoundingClientRect();
+        const dragSt = { sx: e.clientX, sy: e.clientY, sl: r.left, st: r.top, moved: false };
+        const move = (ev) => {
+            clampMove(dragSt, ev.clientX, ev.clientY);
+        };
+        const up = () => {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            if (dragSt.moved) {
+                suppressClick = true;
+                try {
+                    const br = card.getBoundingClientRect();
+                    localStorage.setItem(key, JSON.stringify({ left: br.left, top: br.top }));
+                } catch (_) {}
+            }
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+    });
+    handle.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        e.stopPropagation();
+        const t = e.touches[0];
+        const r = card.getBoundingClientRect();
+        const dragSt = { sx: t.clientX, sy: t.clientY, sl: r.left, st: r.top, moved: false };
+        const move = (ev) => {
+            if (ev.cancelable) ev.preventDefault();
+            const tt = ev.touches[0];
+            if (!tt) return;
+            clampMove(dragSt, tt.clientX, tt.clientY);
+        };
+        const up = () => {
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', up);
+            document.removeEventListener('touchcancel', up);
+            if (dragSt.moved) {
+                suppressClick = true;
+                try {
+                    const br = card.getBoundingClientRect();
+                    localStorage.setItem(key, JSON.stringify({ left: br.left, top: br.top }));
+                } catch (_) {}
+            }
+        };
+        document.addEventListener('touchmove', move, { passive: false });
+        document.addEventListener('touchend', up);
+        document.addEventListener('touchcancel', up);
+    }, { passive: false });
 }
 
 function aplicarUIMapaPlataforma() {
@@ -2046,6 +2177,9 @@ function aplicarUIMapaPlataforma() {
     } catch (_) {}
     syncMapSlideTabsFromStorage();
     try { initBp2PanelFlotanteDesktop(); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-filtros'); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-colores'); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;

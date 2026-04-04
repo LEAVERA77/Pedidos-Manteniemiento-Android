@@ -9,6 +9,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #ms.active{display:block;position:relative}
 #mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
 .moui-card{pointer-events:auto;position:absolute;background:#fff;border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
+.moui-drag-handle{cursor:grab;opacity:.5;padding:0 .15rem;margin-right:.1rem;flex-shrink:0;touch-action:none;-webkit-user-select:none;user-select:none}
+.moui-drag-handle:active{cursor:grabbing;opacity:.85}
 #mapa-card-filtros{top:.45rem;left:.45rem}
 #mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw)}
 @media (max-width:700px){#mapa-card-dashboard{right:.45rem;left:.45rem;max-width:none;top:auto;bottom:5.5rem;max-height:38vh}}
@@ -281,12 +283,13 @@ textarea{resize:vertical;min-height:80px}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
 @media(min-width:1024px){
+  /* left/top/right/bottom sin !important: el arrastre usa estilos inline */
   #ms .bp2{
     position:fixed!important;
-    left:auto!important;
-    top:auto!important;
-    right:1rem!important;
-    bottom:5.5rem!important;
+    left:auto;
+    top:auto;
+    right:1rem;
+    bottom:5.5rem;
     width:min(400px,calc(100vw - 2rem))!important;
     max-height:min(72vh,calc(100dvh - 120px))!important;
     z-index:10020!important;
