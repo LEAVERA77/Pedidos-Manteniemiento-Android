@@ -1,23 +1,29 @@
 /**
  * Tras el mensaje de cierre por WA, el cliente puede responder con texto libre.
  * Estado en memoria (TTL); al reiniciar el servidor se pierde la ventana pendiente.
+ *
+ * La clave de teléfono debe coincidir con la que usa el webhook (normalizeWhatsAppRecipientForMeta),
+ * no con el raw guardado en pedidos.telefono_contacto (549 vs 54 en AR).
  */
 
 import { query } from "../db/neon.js";
+import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 
 /** @type {Map<string, { pedidoId: number, expires: number }>} */
 const pendingByTenantPhone = new Map();
 
-function normPhone(digits) {
-  return String(digits || "").replace(/\D/g, "");
+function canonicalPhone(digits) {
+  const d = String(digits || "").replace(/\D/g, "");
+  if (!d) return "";
+  return normalizeWhatsAppRecipientForMeta(d);
 }
 
 function pendingKey(tenantId, phoneDigits) {
-  return `${Number(tenantId)}:${normPhone(phoneDigits)}`;
+  return `${Number(tenantId)}:${canonicalPhone(phoneDigits)}`;
 }
 
 export function registerPendingClienteOpinion(tenantId, phoneDigits, pedidoId) {
-  const phone = normPhone(phoneDigits);
+  const phone = canonicalPhone(phoneDigits);
   if (!phone || phone.length < 8) return;
   const pid = Number(pedidoId);
   if (!Number.isFinite(pid) || pid < 1) return;
@@ -59,7 +65,7 @@ async function ensureOpinionColumns() {
  */
 export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text }) {
   const raw = String(text || "").trim();
-  if (raw.length < 5) return { handled: false };
+  if (raw.length < 2) return { handled: false };
 
   const low = raw
     .toLowerCase()
@@ -101,6 +107,6 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
 
   return {
     handled: true,
-    ack: "Gracias por tu opinión. Ya quedó registrada para seguimiento del servicio.",
+    ack: "Gracias por sus observaciones, las tendremos en cuenta.",
   };
 }

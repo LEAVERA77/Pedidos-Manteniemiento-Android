@@ -3545,13 +3545,15 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
                 marcarGpsRecibidoEstaSesion();
                 if (gnMapaLigero()) {
                     const now = Date.now();
-                    if (now - _gnLastWatchUbicacionMs < 20000) return;
+                    if (now - _gnLastWatchUbicacionMs < 45000) return;
                     _gnLastWatchUbicacionMs = now;
                 }
                 mostrarMarcadorUbicacion(latitude, longitude, acc);
             },
             err => console.warn('[GPS watch]', err.message),
-            { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+            gnMapaLigero()
+                ? { enableHighAccuracy: false, maximumAge: 20000, timeout: 20000 }
+                : { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
         );
     }
 }
