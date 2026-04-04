@@ -4,7 +4,7 @@
 
 App Android + WebView: la interfaz se carga desde **GitHub Pages** ([Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)), así los cambios en el repo web llegan al técnico sin nuevo APK. Los secretos siguen en `assets/config.json` (solo en el dispositivo, no en Git).
 
-El front modular vive en `app/src/main/assets/`: `index.html`, `styles.css`, `app.js`, `map.js`, `offline.js` (y `sw.js` para PWA). Es la fuente para copiar al repo [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG); la APK puede cargar la UI desde Pages o desde `file:///android_asset/` según la configuración del WebView.
+El front modular vive en `app/src/main/assets/`: `index.html`, `styles.css`, `app.js`, `map.js`, `map-view.js` (carga diferida del mapa), `offline.js` (y `sw.js` para PWA). Es la fuente para copiar al repo [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG); la APK puede cargar la UI desde Pages o desde `file:///android_asset/` según la configuración del WebView.
 
 ## Configuración
 
