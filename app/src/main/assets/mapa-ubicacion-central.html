@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Ubicación central — GestorNova</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css" crossorigin="" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; }
+    #ubi-toolbar {
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+    }
+    #ubi-status { font-size: 0.78rem; color: #94a3b8; flex: 1 1 100%; }
+    #ubi-address { font-size: 0.82rem; color: #e2e8f0; flex: 1 1 220px; min-height: 1.2em; }
+    .ubi-btn {
+      border: none;
+      border-radius: 0.45rem;
+      padding: 0.45rem 0.75rem;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .ubi-btn-primary { background: #2563eb; color: #fff; }
+    .ubi-btn-sec { background: #334155; color: #e2e8f0; }
+    #ubi-map { height: calc(100vh - 120px); width: 100%; }
+    @media (min-width: 600px) { #ubi-map { height: calc(100vh - 100px); } }
+  </style>
+</head>
+<body>
+  <div id="ubi-toolbar">
+    <span id="ubi-status">Cargando…</span>
+    <div id="ubi-address"></div>
+    <input id="ubi-q" type="search" placeholder="Buscar en Argentina (Nominatim)…" style="flex:1 1 200px;min-width:160px;padding:.4rem .5rem;border-radius:.4rem;border:1px solid #475569;background:#0f172a;color:#f8fafc" />
+    <button type="button" class="ubi-btn ubi-btn-sec" id="ubi-search-btn">Buscar</button>
+    <button type="button" class="ubi-btn ubi-btn-sec" id="ubi-retry-api">Reintentar API</button>
+    <button type="button" class="ubi-btn ubi-btn-primary" id="ubi-confirmar">Confirmar ubicación</button>
+  </div>
+  <div id="ubi-map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js" crossorigin=""></script>
+  <script src="mapa-ubicacion-central.js"></script>
+</body>
+</html>
