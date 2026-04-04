@@ -190,7 +190,7 @@ export async function runInitMap() {
     }
 
     ctx.app.map = L.map('mc', {
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: true,
         maxZoom: 19,
         zoom: zoomInit,

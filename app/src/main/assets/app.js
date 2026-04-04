@@ -1936,11 +1936,11 @@ function syncMapSlideTabsFromStorage() {
 
 let _bp2DragState = null;
 
-/** Evita que paneles flotantes queden totalmente fuera del viewport al arrastrar. */
+/** Mantiene el panel completo dentro del viewport; permite llevarlo hasta los bordes (margen mínimo). */
 function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
-    const minVis = (opts && opts.minVisiblePx) || 88;
-    const padX = (opts && opts.padX) != null ? opts.padX : 6;
+    const padX = (opts && opts.padX) != null ? opts.padX : 0;
     const padTop = (opts && opts.padTop) != null ? opts.padTop : 52;
+    const padBottom = (opts && opts.padBottom) != null ? opts.padBottom : 0;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const br = el.getBoundingClientRect();
@@ -1948,14 +1948,12 @@ function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
     const h = br.height || el.offsetHeight || 80;
     let l = Number(leftPx);
     let t = Number(topPx);
-    if (l + w < minVis) l = minVis - w;
-    if (l > vw - minVis) l = vw - minVis;
-    if (t + h < padTop + minVis) t = padTop + minVis - h;
-    if (t > vh - minVis) t = vh - minVis;
-    const maxL = Math.max(padX, vw - w - padX);
-    const maxT = Math.max(padTop, vh - h - padX);
-    l = Math.max(padX, Math.min(l, maxL));
-    t = Math.max(padTop, Math.min(t, maxT));
+    const minL = padX;
+    const maxL = Math.max(minL, vw - w - padX);
+    const minT = padTop;
+    const maxT = Math.max(minT, vh - h - padBottom);
+    l = Math.min(Math.max(l, minL), maxL);
+    t = Math.min(Math.max(t, minT), maxT);
     return { left: l, top: t };
 }
 
@@ -1975,7 +1973,7 @@ function aplicarPosicionBp2Guardada() {
         if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
         bp2.style.right = 'auto';
         bp2.style.bottom = 'auto';
-        const c = clampFloatingPanelToViewport(bp2, p.left, p.top, { padTop: 52, minVisiblePx: 88 });
+        const c = clampFloatingPanelToViewport(bp2, p.left, p.top, { padTop: 52, padX: 0, padBottom: 0 });
         bp2.style.left = c.left + 'px';
         bp2.style.top = c.top + 'px';
     } catch (_) {}
@@ -2009,7 +2007,7 @@ function initBp2PanelFlotanteDesktop() {
             if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
             bp2.style.right = 'auto';
             bp2.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padTop: 52 });
+            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padTop: 52, padX: 0, padBottom: 0 });
             bp2.style.left = c.left + 'px';
             bp2.style.top = c.top + 'px';
         };
@@ -2024,7 +2022,7 @@ function initBp2PanelFlotanteDesktop() {
                 if (_bp2DragState.moved) {
                     try {
                         const br = bp2.getBoundingClientRect();
-                        const c = clampFloatingPanelToViewport(bp2, br.left, br.top, { padTop: 52 });
+                        const c = clampFloatingPanelToViewport(bp2, br.left, br.top, { padTop: 52, padX: 0, padBottom: 0 });
                         bp2.style.left = c.left + 'px';
                         bp2.style.top = c.top + 'px';
                         localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: c.left, top: c.top }));
@@ -2073,7 +2071,7 @@ function initMouiCardDraggable(cardId) {
             card.style.bottom = 'auto';
             card.style.left = p.left + 'px';
             card.style.top = p.top + 'px';
-            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 50 });
+            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 50, padX: 0, padBottom: 0 });
             card.style.left = c.left + 'px';
             card.style.top = c.top + 'px';
         } catch (_) {}
@@ -2096,7 +2094,7 @@ function initMouiCardDraggable(cardId) {
         const nt = dragSt.st + dy;
         card.style.right = 'auto';
         card.style.bottom = 'auto';
-        const c = clampFloatingPanelToViewport(card, nl, nt, { padTop: 50 });
+        const c = clampFloatingPanelToViewport(card, nl, nt, { padTop: 50, padX: 0, padBottom: 0 });
         card.style.left = c.left + 'px';
         card.style.top = c.top + 'px';
     };
@@ -2118,7 +2116,7 @@ function initMouiCardDraggable(cardId) {
                 suppressClick = true;
                 try {
                     const br = card.getBoundingClientRect();
-                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 50 });
+                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 50, padX: 0, padBottom: 0 });
                     card.style.left = c.left + 'px';
                     card.style.top = c.top + 'px';
                     localStorage.setItem(key, JSON.stringify({ left: c.left, top: c.top }));
@@ -3250,13 +3248,13 @@ function mostrarMarcadorUbicacion(lat, lon, acc) {
 
 
 
-function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
+function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     if (!navigator.geolocation) {
         if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
         return;
     }
 
-    
+    const fastUserAction = !!(opts && opts.fastUserAction);
     let intentos = 0;
     const MAX_INTENTOS = gnMapaLigero() ? 2 : 3;
     let centroInicialAplicado = false;
@@ -3284,7 +3282,8 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
                 const distLon = Math.abs(actualCenter.lng - longitude);
                 const estaLejos = distLat > 0.05 || distLon > 0.05;
                 if (estaLejos || !esWatchUpdate) {
-                    app.map.setView([latitude, longitude], zoomSugerido, { animate: !gnMapaLigero() });
+                    const doAnimate = !fastUserAction && !gnMapaLigero();
+                    app.map.setView([latitude, longitude], zoomSugerido, { animate: doAnimate });
                 }
                 centroInicialAplicado = true;
                 setTimeout(() => {
@@ -3317,29 +3316,32 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
         if (ultimaUbicacion && app.map && centrarMapa) {
             app.map.invalidateSize({ animate: false });
             mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
-            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], 14, { animate: !gnMapaLigero() });
+            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], 14, { animate: !fastUserAction && !gnMapaLigero() });
             if (!modoSilencioso) toast('📍 Mostrando última ubicación conocida', 'info');
         }
     }
 
-    
+    const geoOptsPrincipal = fastUserAction
+        ? { enableHighAccuracy: false, timeout: 6000, maximumAge: 120000 }
+        : { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 };
+
     navigator.geolocation.getCurrentPosition(
         pos => {
             procesarPosicion(pos, false);
-            
-            if (pos.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
+
+            if (!fastUserAction && pos.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
                 const intentarMejorar = () => {
                     if (intentos >= MAX_INTENTOS) return;
                     intentos++;
                     navigator.geolocation.getCurrentPosition(
                         p2 => {
                             procesarPosicion(p2, false);
-                            
+
                             if (p2.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
                                 setTimeout(intentarMejorar, 2000);
                             }
                         },
-                        () => {}, 
+                        () => {},
                         { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
                     );
                 };
@@ -3347,7 +3349,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false) {
             }
         },
         manejarError,
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        geoOptsPrincipal
     );
 
     
@@ -3387,7 +3389,18 @@ async function irAMiUbicacionEnMapa() {
         toast('No se pudo cargar el mapa', 'error');
         return;
     }
-    solicitarUbicacion(true, false);
+    if (ultimaUbicacion && Number.isFinite(ultimaUbicacion.lat) && Number.isFinite(ultimaUbicacion.lon)) {
+        const z = mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc || 0);
+        app.map.invalidateSize({ animate: false });
+        app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], z, { animate: false });
+        try {
+            const zEl = document.getElementById('zoom-altura');
+            if (zEl) zEl.textContent = calcularEscalaReal(app.map.getZoom());
+        } catch (_) {}
+        solicitarUbicacion(true, true, { fastUserAction: true });
+        return;
+    }
+    solicitarUbicacion(true, false, { fastUserAction: true });
 }
 window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
@@ -7842,7 +7855,7 @@ function iniciarMapaUsuariosAdmin() {
         mod.setMapViewContext(buildMapViewCtx());
         if (!_mapaUsuariosAdmin) {
             _mapaUsuariosAdmin = L.map('mapa-usuarios-admin', {
-                zoomControl: true,
+                zoomControl: false,
                 preferCanvas: true,
                 zoomAnimation: false,
                 fadeAnimation: false,
