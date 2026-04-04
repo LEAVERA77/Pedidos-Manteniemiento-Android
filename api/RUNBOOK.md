@@ -39,3 +39,31 @@ Ejemplo (merge sobre el JSON existente):
 
 - Quitar o poner `whatsapp_bloqueo_reclamos: false` en el JSON del tenant.
 - Quitar o desactivar `WHATSAPP_BLOQUEO_RECLAMOS` en el entorno (global).
+
+---
+
+## WhatsApp: chat humano (tipo «Otros»)
+
+Cuando el vecino elige el tipo de reclamo **Otros** en el bot (lista o número), **no** se abre el flujo de pedido (descripción / NIS / ubicación). Pasa a **chat con representante**: los mensajes se guardan en Neon y el **administrador** los ve en la web (avisos + modal *Chat WhatsApp*) y responde por la API hacia Meta.
+
+### Tablas (creadas automáticamente al primer uso)
+
+- `whatsapp_human_chat_session` — una fila abierta por `(tenant_id, phone_canonical)` en estados `queued` o `active`.
+- `whatsapp_human_chat_message` — mensajes `in` (cliente) / `out` (admin).
+
+### API (JWT, solo admin)
+
+Base: `/api/whatsapp/human-chat`
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| GET | `/sessions` | Listar sesiones abiertas del tenant. |
+| GET | `/sessions/:id/messages` | Historial + datos de sesión. |
+| POST | `/sessions/:id/activate` | Marcar sesión como *active* (solo una *active* por tenant; el resto vuelve a *queued*). |
+| POST | `/sessions/:id/send` | Cuerpo `{ "text": "..." }` — envía WhatsApp al cliente y guarda mensaje *out*. |
+| POST | `/sessions/:id/close` | Cierra la sesión. |
+
+### Cola y bloqueo de reclamos
+
+- Si hay otro cliente **active**, los nuevos quedan en **lista de espera** (mensaje automático del bot con posición aproximada).
+- Con **`whatsapp_bloqueo_reclamos`** activo, el bot **sigue permitiendo** elegir **Otros** → chat humano (no cuenta como alta de pedido). El resto de tipos siguen bloqueados como antes.

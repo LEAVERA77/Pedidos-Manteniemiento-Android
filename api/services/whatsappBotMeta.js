@@ -16,6 +16,12 @@ import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.j
 import { tiposReclamoParaClienteTipo } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";
+import {
+  humanChatOpenOrGetSession,
+  humanChatQueueSnapshot,
+  humanChatAppendInbound,
+  humanChatCloseBySessionId,
+} from "./whatsappHumanChat.js";
 
 const sessions = new Map();
 
@@ -192,6 +198,51 @@ async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
     });
   }
   return r;
+}
+
+const TIPO_RECLAMO_OTROS = "Otros";
+
+async function iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx) {
+  const sk = sessionKey(phone, tid);
+  try {
+    const { id: sessionDbId, isNew } = await humanChatOpenOrGetSession(tid, phone, contactName);
+    const snap = await humanChatQueueSnapshot(tid, sessionDbId);
+    sessions.set(sk, {
+      step: "human_chat",
+      humanChatSessionId: sessionDbId,
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: wpid,
+      humanChatFirstAcked: !isNew,
+    });
+    let body;
+    if (snap.otherActive) {
+      body =
+        `En este momento otro cliente está en *atención* con un representante.\n\n` +
+        `Estás en *lista de espera* (lugar aproximado en la cola: *${snap.position}* de *${snap.totalOpen}*).\n\n` +
+        `Podés escribir tu *consulta* igualmente; quedará registrada y te atenderemos en orden.`;
+    } else if (snap.position > 1) {
+      body =
+        `Elegiste *Otros*: te derivamos a un *representante humano*.\n\n` +
+        `Hay *${snap.position - 1}* persona(s) antes que vos en la cola. Un representante te atenderá a la brevedad.\n\n` +
+        `Escribí tu *mensaje* por acá. Para volver al *menú automático*, escribí *menú*, *salir* o *fin*.`;
+    } else {
+      body =
+        `Elegiste *Otros*: te derivamos a un *representante humano*.\n\n` +
+        `Escribí tu *consulta* o pregunta por este chat; te responderemos a la brevedad.\n\n` +
+        `Para volver al *menú automático*, escribí *menú*, *salir* o *fin*.`;
+    }
+    await reply(phone, body, tid, wpid);
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] iniciarFlujoOtrosHumano", e);
+    await reply(
+      phone,
+      "No pudimos iniciar el chat con un representante. Intentá más tarde o escribí *menú*.",
+      tid,
+      wpid
+    );
+  }
 }
 
 /**
@@ -455,6 +506,16 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
 
+  if (sess && sess.step === "human_chat") {
+    await reply(
+      phone,
+      "Para el chat con un representante alcanza con escribir tu *consulta* en texto. Si querés enviar ubicación, hacelo en un mensaje de texto (calle, ciudad).",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (!sess || sess.step !== "awaiting_location") {
     await reply(phone, "Ahora no estamos esperando una ubicación. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
     return;
@@ -488,16 +549,20 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
   }
-  if (ctx.whatsappBloqueoReclamos) {
-    await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
-    return;
-  }
   const tipo = decodeWhatsAppListRowId(listRowId);
   if (!tipo || !ctx.tipos.includes(tipo)) {
     await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
     return;
   }
+  if (tipo !== TIPO_RECLAMO_OTROS && ctx.whatsappBloqueoReclamos) {
+    await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+    return;
+  }
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+  if (tipo === TIPO_RECLAMO_OTROS) {
+    await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+    return;
+  }
   sessions.set(sk, {
     step: "awaiting_desc",
     tipo,
@@ -534,6 +599,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (/\bhola\b/i.test(String(text || "").trim())) {
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });
+    const prevS = sessions.get(sk);
+    if (prevS?.humanChatSessionId) {
+      try {
+        await humanChatCloseBySessionId(prevS.humanChatSessionId);
+      } catch (_) {}
+    }
     sessions.delete(sk);
     const ctx = await loadTenantBotContext(tid);
     const nombre = ctx?.nombre || "GestorNova";
@@ -580,6 +651,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     lower === "volver" ||
     lower === "ayuda"
   ) {
+    const prevM = sessions.get(sk);
+    if (prevM?.humanChatSessionId) {
+      try {
+        await humanChatCloseBySessionId(prevM.humanChatSessionId);
+      } catch (_) {}
+    }
     sessions.delete(sk);
     await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
@@ -680,6 +757,35 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
+  if (sess && sess.step === "human_chat") {
+    if (lower === "salir" || lower === "fin" || lower === "chau") {
+      try {
+        await humanChatCloseBySessionId(sess.humanChatSessionId);
+      } catch (_) {}
+      sessions.delete(sk);
+      await reply(
+        phone,
+        "Cerramos el chat con el representante. Cuando quieras, escribí *menú* para ver las opciones.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    try {
+      await humanChatAppendInbound(sess.humanChatSessionId, text);
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] human_chat inbound", e);
+      await reply(phone, "No pudimos registrar el mensaje. Intentá de nuevo.", tid, phoneNumberId);
+      return;
+    }
+    if (!sess.humanChatFirstAcked) {
+      sess.humanChatFirstAcked = true;
+      sessions.set(sk, sess);
+      await reply(phone, "Recibimos tu mensaje. Un *representante* te responderá a la brevedad.", tid, phoneNumberId);
+    }
+    return;
+  }
+
   if (!sess || sess.step === "idle") {
     if (esPedidoCargarReclamo(text)) {
       if (ctx.whatsappBloqueoReclamos) {
@@ -691,11 +797,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     const n = parseInt(text, 10);
     if (Number.isFinite(n) && n >= 1 && n <= ctx.tipos.length) {
+      const tipoSel = ctx.tipos[n - 1];
+      if (tipoSel === TIPO_RECLAMO_OTROS) {
+        await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+        return;
+      }
       if (ctx.whatsappBloqueoReclamos) {
         await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
         return;
       }
-      const tipoSel = ctx.tipos[n - 1];
       sessions.set(sk, {
         step: "awaiting_desc",
         tipo: tipoSel,

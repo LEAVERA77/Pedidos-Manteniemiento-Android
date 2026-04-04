@@ -12,6 +12,7 @@ import distribuidoresRoutes from "./routes/distribuidores.js";
 import estadisticasRoutes from "./routes/estadisticas.js";
 import notificacionesRoutes from "./routes/notificaciones.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import whatsappHumanChatRoutes from "./routes/whatsappHumanChat.js";
 import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
 import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 
@@ -81,6 +82,7 @@ export function createHttpApp() {
   app.use("/api/estadisticas", estadisticasRoutes);
   app.use("/api/notificaciones", notificacionesRoutes);
   app.use("/api/whatsapp", whatsappRoutes);
+  app.use("/api/whatsapp/human-chat", whatsappHumanChatRoutes);
   app.use("/api/webhooks/whatsapp", webhooksWhatsappRoutes);
 
   app.get("/api/app-version", async (_req, res) => {

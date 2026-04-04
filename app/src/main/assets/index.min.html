@@ -540,6 +540,26 @@
   </div>
 </div>
 <div id="cierre-toast-host" aria-live="polite"></div>
+<div id="wa-human-chat-toast-host" aria-live="polite"></div>
+<div id="modal-wa-human-chat" class="mo" style="z-index:6200">
+  <div class="mc lg" style="max-width:560px">
+    <div class="mh">
+      <h3><i class="fas fa-comments"></i> Chat WhatsApp</h3>
+      <button type="button" class="cm" onclick="cerrarModalWaHumanChat()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="mb">
+      <label style="font-size:.78rem;color:var(--tm)">Conversación en cola / activa</label>
+      <select id="wa-hc-session-picker" style="margin:.35rem 0 .65rem;width:100%" onchange="onWaHcPickerChange()"></select>
+      <div id="wa-hc-meta" style="font-size:.78rem;color:var(--tl);margin-bottom:.5rem"></div>
+      <div id="wa-hc-messages" class="wa-hc-thread"></div>
+      <textarea id="wa-hc-input" rows="3" placeholder="Respuesta al cliente…" style="resize:vertical;margin-bottom:.5rem;width:100%"></textarea>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="bp" onclick="enviarMensajeWaHumanChatAdmin()"><i class="fas fa-paper-plane"></i> Enviar</button>
+        <button type="button" class="btn-sm warning" onclick="finalizarChatWaHumanChatAdmin()">Finalizar chat</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="modal-config-inicial" class="mo setup-wizard">
   <div class="mc">
     <div class="mh"><h3><i class="fas fa-magic"></i> Setup Inicial SaaS</h3><span id="sw-step-label" style="font-size:.82rem;color:var(--tl)">Paso 1 de 3</span></div>
