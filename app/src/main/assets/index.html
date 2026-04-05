@@ -26,10 +26,24 @@
   <button class="sync-btn" onclick="sincronizarOffline()"><i class="fas fa-sync"></i> Sincronizar</button>
 </div>
 
+<!-- ASISTENTE PRIMERA VEZ / REAPERTURA (admin) -->
+<div id="gw" class="screen gn-wizard-screen">
+  <button type="button" class="gn-btn-asistente-tl" onclick="abrirModalReabrirAsistenteAdmin()" title="Reabrir asistente (solo administrador)"><i class="fas fa-magic"></i></button>
+  <div class="lc gn-wizard-card">
+    <div class="gw-brand"><img src="gestornova-logo.png" alt="" width="72" height="72" style="width:72px;height:72px;object-fit:contain;border-radius:10px"/></div>
+    <h1>GestorNova</h1>
+    <p class="sub">Pedidos de mantenimiento</p>
+    <p class="gn-wizard-txt">Te damos la bienvenida. Este resumen se muestra la primera vez en este dispositivo. Volvé a abrirlo cuando quieras desde el botón superior izquierdo en el inicio de sesión, con usuario y contraseña de administrador.</p>
+    <button type="button" id="wizard-btn-primary" class="bp"><i class="fas fa-arrow-right"></i> Ir al inicio de sesión</button>
+    <button type="button" id="wizard-btn-secondary" class="gn-wizard-secondary" style="display:none">Volver al inicio de sesión</button>
+  </div>
+</div>
+
 <!-- LOGIN SCREEN -->
 <div id="ls" class="screen active">
+  <button type="button" class="gn-btn-asistente-tl" onclick="abrirModalReabrirAsistenteAdmin()" title="Reabrir asistente (solo administrador)"><i class="fas fa-magic"></i></button>
   <div class="lc">
-    <div class="ll"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='8' fill='%232563eb'/%3E%3Ctext x='24' y='33' text-anchor='middle' fill='%23fff' font-family='system-ui,sans-serif' font-size='13' font-weight='700'%3EGN%3C/text%3E%3C/svg%3E" alt="" width="42" height="42" style="width:42px;height:42px;object-fit:contain;border-radius:6px"/></div>
+    <div class="ll"><img src="gestornova-logo.png" alt="" width="42" height="42" style="width:42px;height:42px;object-fit:contain;border-radius:6px"/></div>
     <h1 id="app-titulo">GestorNova</h1>
     <p class="sub" id="app-subtitulo">Pedidos de mantenimiento</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
@@ -764,6 +778,21 @@
       <div id="forzar-cambio-pw-msg" style="font-size:.85rem;margin-top:.5rem;color:var(--re)"></div>
       <button type="button" class="bp" style="margin-top:1rem;width:100%" onclick="confirmarCambioPasswordObligatorioAndroid()"><i class="fas fa-check"></i> Guardar y continuar</button>
     </div>
+  </div>
+</div>
+<div id="modal-reabrir-asistente" class="mo">
+  <div class="mc" style="max-width:420px">
+    <div class="mh"><h3><i class="fas fa-magic"></i> Reabrir asistente</h3><button type="button" class="cm" onclick="cerrarModalReabrirAsistente()"><i class="fas fa-times"></i></button></div>
+    <form id="form-reabrir-asistente" class="mb">
+      <p style="font-size:.85rem;color:var(--tm);margin-bottom:.85rem">Ingresá las credenciales de un usuario <strong>administrador</strong> para volver a ver el asistente de bienvenida. No se guarda la sesión en este paso.</p>
+      <div class="fg" style="padding:0"><label>Email</label><input id="reabrir-asistente-em" type="text" required autocomplete="username" placeholder="admin@…"></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña</label><input id="reabrir-asistente-pw" type="password" required autocomplete="current-password"></div>
+      <div id="reabrir-asistente-err" class="le" style="margin-top:.5rem;min-height:1.1rem"></div>
+      <div style="display:flex;gap:.75rem;margin-top:1rem">
+        <button type="button" class="sec" onclick="cerrarModalReabrirAsistente()">Cancelar</button>
+        <button type="submit" id="reabrir-asistente-submit" class="bp" style="flex:1"><i class="fas fa-magic"></i> Abrir asistente</button>
+      </div>
+    </form>
   </div>
 </div>
 <div id="modal-reset-pw" class="mo">

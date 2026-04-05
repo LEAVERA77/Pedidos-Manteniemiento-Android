@@ -510,6 +510,7 @@ async function heartbeat() {
             if (btnAdm) btnAdm.style.display = 'none';
             const mapDashCard = document.getElementById('mapa-card-dashboard');
             if (mapDashCard) mapDashCard.style.display = 'none';
+            document.getElementById('gw')?.classList.remove('active');
             document.getElementById('ls').classList.add('active');
             document.getElementById('ms').classList.remove('active');
         }, 3500);
@@ -1053,6 +1054,190 @@ async function loginApiJwt(email, password) {
         clearTimeout(t);
     }
 }
+
+/** Login vía API sin guardar token ni tocar `app.u` (p. ej. reabrir asistente con credenciales de admin). */
+async function verificarLoginSoloAdminSinPersistir(email, password) {
+    const ms = 28000;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+        const resp = await fetch(apiUrl('/api/auth/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: String(email || '').trim(), password: String(password || '') }),
+            signal: ctl.signal
+        });
+        if (!resp.ok) return { ok: false, error: 'Email o contraseña incorrectos' };
+        const data = await resp.json();
+        const rol = normalizarRolStr(data.user?.rol || '');
+        if (rol !== 'admin') return { ok: false, error: 'Solo un administrador puede reabrir el asistente.' };
+        return { ok: true };
+    } catch (e) {
+        if (e && e.name === 'AbortError') return { ok: false, error: 'Tiempo de espera agotado' };
+        return { ok: false, error: 'No se pudo verificar con el servidor' };
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+const GESTORNOVA_LS_PULSE = 'gestornova_ls_pulse';
+const GESTORNOVA_ONBOARDING_DONE = 'gestornova_onboarding_done';
+let _gnWizardEsReapertura = false;
+
+function limpiarPersistenciaClienteGestorNovaMigracionV2() {
+    try {
+        if (typeof localStorage === 'undefined') return;
+        if (localStorage.getItem(GESTORNOVA_LS_PULSE) === '2') return;
+        const quitar = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k || k === GESTORNOVA_LS_PULSE) continue;
+            if (
+                k.startsWith('pmg') ||
+                k === 'gestornova_saved_login' ||
+                k === 'ultima_ubicacion' ||
+                k === GESTORNOVA_ONBOARDING_DONE
+            ) {
+                quitar.push(k);
+            }
+        }
+        quitar.forEach((k) => {
+            try {
+                localStorage.removeItem(k);
+            } catch (_) {}
+        });
+        try {
+            sessionStorage.clear();
+        } catch (_) {}
+        try {
+            app.apiToken = null;
+        } catch (_) {}
+        localStorage.setItem(GESTORNOVA_LS_PULSE, '2');
+    } catch (_) {}
+}
+
+function aplicarCapaOnboardingVsLoginInicial() {
+    try {
+        const gw = document.getElementById('gw');
+        const ls = document.getElementById('ls');
+        if (!gw || !ls) return;
+        if (localStorage.getItem(GESTORNOVA_ONBOARDING_DONE) === '1') {
+            gw.classList.remove('active');
+            ls.classList.add('active');
+        } else {
+            ls.classList.remove('active');
+            gw.classList.add('active');
+            _gnWizardEsReapertura = false;
+            sincronizarTextosBotonesWizardOnboarding();
+        }
+    } catch (_) {}
+}
+
+function sincronizarTextosBotonesWizardOnboarding() {
+    try {
+        const p = document.getElementById('wizard-btn-primary');
+        const sec = document.getElementById('wizard-btn-secondary');
+        if (!p || !sec) return;
+        if (_gnWizardEsReapertura) {
+            p.innerHTML = '<i class="fas fa-check"></i> Listo';
+            sec.style.display = 'block';
+        } else {
+            p.innerHTML = '<i class="fas fa-arrow-right"></i> Ir al inicio de sesión';
+            sec.style.display = 'none';
+        }
+    } catch (_) {}
+}
+
+function cerrarVistaWizardMostrarLogin() {
+    try {
+        _gnWizardEsReapertura = false;
+        const gw = document.getElementById('gw');
+        const ls = document.getElementById('ls');
+        gw?.classList.remove('active');
+        ls?.classList.add('active');
+        sincronizarTextosBotonesWizardOnboarding();
+        try {
+            hydrateBrandingForPublicScreen();
+        } catch (_) {}
+        try {
+            aplicarMarcaVisualCompleta();
+        } catch (_) {}
+    } catch (_) {}
+}
+
+function finalizarOnboardingPrimeraVezGestorNova() {
+    try {
+        localStorage.setItem(GESTORNOVA_ONBOARDING_DONE, '1');
+    } catch (_) {}
+    cerrarVistaWizardMostrarLogin();
+}
+
+function onWizardPrimaryClick() {
+    if (_gnWizardEsReapertura) cerrarVistaWizardMostrarLogin();
+    else finalizarOnboardingPrimeraVezGestorNova();
+}
+
+function abrirModalReabrirAsistenteAdmin() {
+    try {
+        const m = document.getElementById('modal-reabrir-asistente');
+        const pw = document.getElementById('reabrir-asistente-pw');
+        const em = document.getElementById('reabrir-asistente-em');
+        if (pw) pw.value = '';
+        if (em) {
+            try {
+                const g = localStorage.getItem('gestornova_saved_login');
+                if (g && !em.value) em.value = g;
+            } catch (_) {}
+        }
+        m?.classList.add('active');
+    } catch (_) {}
+}
+window.abrirModalReabrirAsistenteAdmin = abrirModalReabrirAsistenteAdmin;
+
+function cerrarModalReabrirAsistente() {
+    document.getElementById('modal-reabrir-asistente')?.classList.remove('active');
+}
+window.cerrarModalReabrirAsistente = cerrarModalReabrirAsistente;
+
+async function confirmarReabrirAsistenteConCredenciales(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    const em = (document.getElementById('reabrir-asistente-em')?.value || '').trim();
+    const pw = document.getElementById('reabrir-asistente-pw')?.value || '';
+    const err = document.getElementById('reabrir-asistente-err');
+    if (err) err.textContent = '';
+    if (!em || !pw) {
+        if (err) err.textContent = 'Completá email y contraseña de administrador.';
+        return;
+    }
+    const btn = document.getElementById('reabrir-asistente-submit');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando...';
+    }
+    try {
+        const r = await verificarLoginSoloAdminSinPersistir(em, pw);
+        if (!r.ok) {
+            if (err) err.textContent = r.error || 'No autorizado';
+            return;
+        }
+        cerrarModalReabrirAsistente();
+        _gnWizardEsReapertura = true;
+        const gw = document.getElementById('gw');
+        const ls = document.getElementById('ls');
+        gw?.classList.add('active');
+        ls?.classList.remove('active');
+        sincronizarTextosBotonesWizardOnboarding();
+    } catch (e) {
+        if (err) err.textContent = String(e?.message || e) || 'Error';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic"></i> Abrir asistente';
+        }
+    }
+}
+window.confirmarReabrirAsistenteConCredenciales = confirmarReabrirAsistenteConCredenciales;
+
 function getApiToken() {
     if (app.apiToken) return app.apiToken;
     try {
@@ -1123,7 +1308,13 @@ function basePathAssets() {
 }
 
 function defaultGestorNovaLogoUrl() {
-    return BRANDING_DEFAULT_LOGO_DATA_URL;
+    try {
+        const base = basePathAssets();
+        const rel = (base && base !== '/' ? base : '') + 'gestornova-logo.png';
+        return rel || 'gestornova-logo.png';
+    } catch (_) {
+        return BRANDING_DEFAULT_LOGO_DATA_URL;
+    }
 }
 
 function persistTenantBrandingCache(extra) {
@@ -1257,7 +1448,7 @@ function aplicarMarcaVisualCompleta() {
         h2.appendChild(ic);
         h2.appendChild(document.createTextNode(' ' + m.nombre));
     }
-    const ll = document.querySelector('.ll');
+    const ll = document.querySelector('#ls .ll');
     if (ll) {
         const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
         ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
@@ -1483,8 +1674,8 @@ function toggleAndroidMapStripCollapsed(collapse) {
 }
 window.toggleAndroidMapStripCollapsed = toggleAndroidMapStripCollapsed;
 
-
-
+limpiarPersistenciaClienteGestorNovaMigracionV2();
+aplicarCapaOnboardingVsLoginInicial();
 
 const dbs = document.getElementById('dbs');
 const lb  = document.getElementById('lb');
@@ -1506,6 +1697,17 @@ actualizarBadgeOffline();
             aplicarMarcaVisualCompleta();
         }
     } catch (_) {}
+})();
+(function bindWizardOnboardingUi() {
+    document.getElementById('wizard-btn-primary')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        onWizardPrimaryClick();
+    });
+    document.getElementById('wizard-btn-secondary')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        cerrarVistaWizardMostrarLogin();
+    });
+    document.getElementById('form-reabrir-asistente')?.addEventListener('submit', confirmarReabrirAsistenteConCredenciales);
 })();
 dbs.className = 'dbs c';
 dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
@@ -6446,6 +6648,7 @@ document.getElementById('ub').addEventListener('click', () => {
         if (wvt) wvt.style.display = 'none';
         const adminPanel = document.getElementById('admin-panel');
         if (adminPanel) adminPanel.classList.remove('active');
+        document.getElementById('gw')?.classList.remove('active');
         document.getElementById('ls').classList.add('active');
         document.getElementById('ms').classList.remove('active');
     }
@@ -9661,7 +9864,7 @@ async function pasoResetPw() {
                         to_email: toEmail,
                         to_name: usuario.nombre || usuario.email || 'Administrador',
                         token,
-                        app_name: window.EMPRESA_CFG?.nombre || 'GestorNova'
+                        app_name: 'GestorNova'
                     },
                     cfg.publicKey
                 );

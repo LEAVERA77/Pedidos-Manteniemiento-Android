@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v5';
-const CACHE_SHELL = 'pmg-shell-v10';
-const SW_VERSION  = '1.1.3';
+const CACHE_SHELL = 'pmg-shell-v11';
+const SW_VERSION  = '1.1.4';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -37,7 +37,8 @@ function shellAssetUrls() {
     j('map.js'),
     j('map-view.js'),
     j('offline.js'),
-    j('sync-worker.js')
+    j('sync-worker.js'),
+    j('gestornova-logo.png')
   ];
 }
 
