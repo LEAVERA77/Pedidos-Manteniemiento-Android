@@ -67,7 +67,12 @@ router.post("/geocode", async (req, res) => {
     if (!hit) return res.json({ ok: true, forward: null });
     return res.json({
       ok: true,
-      forward: { lat: hit.lat, lng: hit.lng, display_name: hit.displayName },
+      forward: {
+        lat: hit.lat,
+        lng: hit.lng,
+        display_name: hit.displayName,
+        ...(hit.barrio ? { barrio: hit.barrio } : {}),
+      },
     });
   } catch (error) {
     return res.status(500).json({ error: "geocode_error", detail: error.message });

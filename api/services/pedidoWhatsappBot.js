@@ -2,6 +2,7 @@ import { query } from "../db/neon.js";
 import {
   tipoTrabajoPermitidoParaNuevoPedido,
   prioridadPredeterminadaPorTipoTrabajo,
+  normalizarRubroCliente,
 } from "./tiposReclamo.js";
 import {
   lookupDistribuidorTrafoPorNisMedidor,
@@ -113,6 +114,7 @@ export async function crearPedidoDesdeWhatsappBot({
   clienteLocalidad,
   suministroTipoConexion,
   suministroFases,
+  barrio,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -122,6 +124,8 @@ export async function crearPedidoDesdeWhatsappBot({
   if (!tipoTrabajoPermitidoParaNuevoPedido(tt, tipoCliente)) {
     throw new Error("tipo_trabajo_invalido");
   }
+
+  const rubroCliente = normalizarRubroCliente(tipoCliente);
 
   const usuarioId = await resolveUsuarioCreadorParaPedidoWhatsapp(Number(tenantId));
 
@@ -133,13 +137,13 @@ export async function crearPedidoDesdeWhatsappBot({
 
   let distribuidorVal = null;
   let trafoVal = null;
-  if (tieneIdentificadorSum && lookupKey) {
+  if (tieneIdentificadorSum && lookupKey && rubroCliente !== "municipio") {
     const lk = await lookupDistribuidorTrafoPorNisMedidor(lookupKey);
     distribuidorVal = lk.distribuidor;
     trafoVal = lk.trafo;
   }
 
-  if (tieneIdentificadorSum && (distribuidorVal || trafoVal)) {
+  if (rubroCliente === "cooperativa_electrica" && tieneIdentificadorSum && (distribuidorVal || trafoVal)) {
     const cnt = await contarPedidosAbiertosMismaZona({
       tenantId: Number(tenantId),
       distribuidor: distribuidorVal,
@@ -275,6 +279,15 @@ export async function crearPedidoDesdeWhatsappBot({
   if (pCols.has("suministro_fases") && sfa) {
     cols.push("suministro_fases");
     vals.push(sfa);
+  }
+
+  const barrioT =
+    rubroCliente === "municipio" && barrio != null && String(barrio).trim()
+      ? String(barrio).trim().slice(0, 200)
+      : null;
+  if (pCols.has("barrio") && barrioT) {
+    cols.push("barrio");
+    vals.push(barrioT);
   }
 
   if (hasTenant) {

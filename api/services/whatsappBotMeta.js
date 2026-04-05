@@ -447,8 +447,22 @@ export function extractLocationFromMetaMessage(msg) {
   return { lat: la, lng: lo };
 }
 
+/** Municipio: completa `sess.barrio` con Nominatim reverse si aún no está (p. ej. flujo calle/número). */
+async function enrichBarrioDesdeReverseSiMunicipio(sess) {
+  if (normalizarRubroCliente(sess?.tipoCliente) !== "municipio") return;
+  if (sess.barrio != null && String(sess.barrio).trim()) return;
+  const la = sess.lat != null ? Number(sess.lat) : NaN;
+  const lo = sess.lng != null ? Number(sess.lng) : NaN;
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+  try {
+    const rev = await reverseGeocodeArgentina(la, lo);
+    if (rev?.barrio) sess.barrio = rev.barrio;
+  } catch (_) {}
+}
+
 async function finalizePedidoFromSession(phone, sess, contactName) {
   const sk = sessionKey(phone, sess.tenantId);
+  await enrichBarrioDesdeReverseSiMunicipio(sess);
   let descripcionFinal = String(sess.descripcion || "").trim();
   if (!descripcionFinal) {
     sessions.delete(sk);
@@ -494,6 +508,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       clienteLocalidad: locT || null,
       suministroTipoConexion: trimOrNullWhatsapp(sess.suministroTipoConexion),
       suministroFases: trimOrNullWhatsapp(sess.suministroFases),
+      barrio: sess.barrio ?? null,
     });
     sessions.delete(sk);
     await reply(
@@ -641,6 +656,9 @@ async function geocodeStructuredAddressAndFinalizePedido(
         sess.lat = geo.lat;
         sess.lng = geo.lng;
         sess.direccionTexto = geo.displayName;
+      }
+      if (geo.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
+        sess.barrio = geo.barrio;
       }
       sessions.set(sk, sess);
       await finalizePedidoFromSession(phone, sess, contactName);
@@ -945,9 +963,13 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   sess.lat = lat;
   sess.lng = lng;
   sess.direccionTexto = null;
+  sess.barrio = null;
   try {
     const rev = await reverseGeocodeArgentina(lat, lng);
     if (rev?.displayName) sess.direccionTexto = rev.displayName;
+    if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
+      sess.barrio = rev.barrio;
+    }
   } catch (_) {}
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);

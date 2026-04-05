@@ -44,8 +44,24 @@ function nominatimBaseParams() {
 }
 
 /**
+ * Barrio / zona urbana desde addressdetails de Nominatim (útil para municipios).
+ * Orden: más específico primero.
+ */
+export function barrioDesdeNominatimAddress(addr) {
+  if (!addr || typeof addr !== "object") return null;
+  const keys = ["neighbourhood", "suburb", "quarter", "city_district", "hamlet", "village"];
+  for (const k of keys) {
+    const v = addr[k];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s.length >= 2 && s.length <= 200) return s;
+  }
+  return null;
+}
+
+/**
  * @param {string} query
- * @returns {Promise<{ lat: number, lng: number, displayName: string } | null>}
+ * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string } | null>}
  */
 export async function geocodeAddressArgentina(query) {
   const q = String(query || "").trim();
@@ -62,10 +78,12 @@ export async function geocodeAddressArgentina(query) {
   const lat = Number(hit.lat);
   const lng = Number(hit.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const barrio = barrioDesdeNominatimAddress(hit.address);
   return {
     lat,
     lng,
     displayName: String(hit.display_name || q).trim(),
+    ...(barrio ? { barrio } : {}),
   };
 }
 
@@ -393,5 +411,7 @@ export async function reverseGeocodeArgentina(lat, lng) {
   const hit = await res.json();
   if (!hit || hit.error) return null;
   const dn = String(hit.display_name || "").trim();
-  return dn ? { displayName: dn } : null;
+  if (!dn) return null;
+  const barrio = barrioDesdeNominatimAddress(hit.address);
+  return { displayName: dn, ...(barrio ? { barrio } : {}) };
 }
