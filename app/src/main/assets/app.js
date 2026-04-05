@@ -1575,6 +1575,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS fases TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -6293,9 +6294,9 @@ function closeAll() {
     });
     document.getElementById('pf').reset();
     limpiarFotosYPreviewNuevoPedido();
-    _nisSocioCatalogoUltimoValor = '';
-    clearTimeout(_nisSocioCatalogoDebounceTimer);
-    clearTimeout(_nisSocioCommitRellenoTimer);
+    _nisPedidoCatalogoUltimoValor = '';
+    clearTimeout(_nisPedidoCatalogoDebounceTimer);
+    clearTimeout(_nisPedidoCatalogoCommitTimer);
     const nisEl = document.getElementById('nis');
     if (nisEl) nisEl.value = '';
     document.getElementById('dc').textContent = '0';
@@ -6567,16 +6568,25 @@ function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
     const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';
     const persona = esMunicipio ? 'vecino' : 'socio';
+    const rubroN = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    const nisLabel =
+        rubroN === 'municipio' || rubroN === 'cooperativa_agua' ? 'NIS / Medidor / Socio' : 'NIS / Medidor';
     const lbN = document.getElementById('lbl-nis');
     const inpN = document.getElementById('nis');
-    if (lbN) lbN.textContent = req ? 'NIS / Medidor *' : 'NIS / Medidor';
+    if (lbN) lbN.textContent = req ? `${nisLabel} *` : nisLabel;
     if (inpN) {
         if (req) {
             inpN.setAttribute('required', 'required');
-            inpN.placeholder = `Obligatorio — NIS o medidor del ${persona}`;
+            inpN.placeholder =
+                rubroN === 'municipio' || rubroN === 'cooperativa_agua'
+                    ? `Obligatorio — NIS, medidor o nº socio del ${persona}`
+                    : `Obligatorio — NIS o medidor del ${persona}`;
         } else {
             inpN.removeAttribute('required');
-            inpN.placeholder = 'Opcional (obligatorio en conexión / medidor / factibilidad según tipo)';
+            inpN.placeholder =
+                rubroN === 'municipio' || rubroN === 'cooperativa_agua'
+                    ? 'Opcional — al salir del campo se completa domicilio desde padrón si existe'
+                    : 'Opcional (obligatorio en conexión / medidor / factibilidad según tipo)';
         }
     }
     const lb = document.getElementById('lbl-cl');
@@ -6604,52 +6614,117 @@ function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
 }
 
-let _nisSocioCatalogoDebounceTimer = null;
-let _nisSocioCommitRellenoTimer = null;
-let _nisSocioCatalogoUltimoValor = '';
+let _nisPedidoCatalogoDebounceTimer = null;
+let _nisPedidoCatalogoCommitTimer = null;
+let _nisPedidoCatalogoUltimoValor = '';
 
-/** Cooperativa eléctrica: busca NIS en socios_catalogo y rellena Trafo, cliente y teléfono. */
+function rubroEmpresaParaAutofillIdentificadorPedido() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+}
+
+/** Municipio / cooperativa de agua: padrón en clientes_finales (NIS, medidor o número de socio). */
+async function rellenarPedidoDesdeClientesFinalesPorIdentificador(raw) {
+    const tid = tenantIdActual();
+    if (!Number.isFinite(tid)) return;
+    const r = await sqlSimple(
+        `SELECT nombre, apellido, calle, numero_puerta, barrio, localidad
+         FROM clientes_finales
+         WHERE activo = TRUE AND cliente_id = ${esc(tid)}
+           AND (
+             UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${esc(raw)}))
+             OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${esc(raw)}))
+             OR UPPER(TRIM(COALESCE(numero_cliente,''))) = UPPER(TRIM(${esc(raw)}))
+           )
+         LIMIT 1`
+    );
+    const row = r.rows?.[0];
+    if (!row) return;
+    _nisPedidoCatalogoUltimoValor = raw;
+    const cl = document.getElementById('cl');
+    const tel = document.getElementById('ped-tel-contacto');
+    const calleEl = document.getElementById('ped-cli-calle');
+    const numEl = document.getElementById('ped-cli-num');
+    const locEl = document.getElementById('ped-cli-loc');
+    const refEl = document.getElementById('ped-cli-ref');
+    const nom = [row.nombre, row.apellido]
+        .map(x => (x != null ? String(x).trim() : ''))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+    if (cl && nom) cl.value = nom;
+    if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
+    if (numEl) numEl.value = row.numero_puerta != null ? String(row.numero_puerta).trim() : '';
+    if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+    if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
+    if (tel) tel.value = '';
+}
+
+/**
+ * Al salir del campo NIS / medidor / socio: completa domicilio desde padrón y deja el teléfono vacío para cargar uno nuevo.
+ * Cooperativa eléctrica: socios_catalogo. Municipio y agua: clientes_finales.
+ */
 async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     const forzar = !!(opts && opts.forzar);
-    if (!esCooperativaElectricaRubro()) return;
+    const rubro = rubroEmpresaParaAutofillIdentificadorPedido();
+    if (!rubro) return;
     if (modoOffline || !NEON_OK) return;
     const inpN = document.getElementById('nis');
     if (!inpN) return;
     const raw = (inpN.value || '').trim();
     if (!raw) {
-        _nisSocioCatalogoUltimoValor = '';
-        const di2c = document.getElementById('di2');
-        const tfC = document.getElementById('trafo-pedido');
-        if (di2c) di2c.value = '';
-        if (tfC) tfC.value = '';
-        const scC = document.getElementById('ped-sum-conexion');
-        const sfC = document.getElementById('ped-sum-fases');
-        if (scC) scC.value = '';
-        if (sfC) sfC.value = '';
+        _nisPedidoCatalogoUltimoValor = '';
+        if (rubro === 'cooperativa_electrica') {
+            const di2c = document.getElementById('di2');
+            const tfC = document.getElementById('trafo-pedido');
+            if (di2c) di2c.value = '';
+            if (tfC) tfC.value = '';
+            const scC = document.getElementById('ped-sum-conexion');
+            const sfC = document.getElementById('ped-sum-fases');
+            if (scC) scC.value = '';
+            if (sfC) sfC.value = '';
+        }
         return;
     }
-    if (!forzar && raw === _nisSocioCatalogoUltimoValor) return;
+    if (!forzar && raw === _nisPedidoCatalogoUltimoValor) return;
+
+    if (rubro === 'municipio' || rubro === 'cooperativa_agua') {
+        try {
+            await rellenarPedidoDesdeClientesFinalesPorIdentificador(raw);
+        } catch (e) {
+            console.warn('[nis→clientes_finales]', e.message);
+        }
+        return;
+    }
+
+    if (rubro !== 'cooperativa_electrica') return;
+
     try {
         const r = await sqlSimple(
-            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases FROM socios_catalogo
+            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio FROM socios_catalogo
              WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
              LIMIT 1`
         );
         const row = r.rows?.[0];
         if (!row) return;
-        _nisSocioCatalogoUltimoValor = raw;
+        _nisPedidoCatalogoUltimoValor = raw;
         const cl = document.getElementById('cl');
         const tel = document.getElementById('ped-tel-contacto');
         const tf = document.getElementById('trafo-pedido');
+        const calleEl = document.getElementById('ped-cli-calle');
+        const numEl = document.getElementById('ped-cli-num');
+        const locEl = document.getElementById('ped-cli-loc');
+        const refEl = document.getElementById('ped-cli-ref');
         if (tf && row.transformador != null && String(row.transformador).trim()) {
             tf.value = String(row.transformador).trim();
         }
         if (cl && row.nombre != null && String(row.nombre).trim()) {
             cl.value = String(row.nombre).trim();
         }
-        if (tel && row.telefono != null && String(row.telefono).trim()) {
-            tel.value = String(row.telefono).trim();
-        }
+        if (tel) tel.value = '';
+        if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
+        if (numEl) numEl.value = row.numero != null ? String(row.numero).trim() : '';
+        if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+        if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
         const di2 = document.getElementById('di2');
         if (di2 && row.distribuidor_codigo != null && String(row.distribuidor_codigo).trim()) {
             const cod = String(row.distribuidor_codigo).trim().toUpperCase();
@@ -6674,18 +6749,18 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
 }
 
 function programarRellenoSocioPorNisDebounced() {
-    if (!esCooperativaElectricaRubro()) return;
+    if (!rubroEmpresaParaAutofillIdentificadorPedido()) return;
     if (!(esAndroidWebViewMapa() || esMobile)) return;
-    clearTimeout(_nisSocioCatalogoDebounceTimer);
-    _nisSocioCatalogoDebounceTimer = setTimeout(() => {
+    clearTimeout(_nisPedidoCatalogoDebounceTimer);
+    _nisPedidoCatalogoDebounceTimer = setTimeout(() => {
         void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: false });
     }, 480);
 }
 
 function onNisCommitRellenarDesdeSociosCatalogo() {
-    clearTimeout(_nisSocioCatalogoDebounceTimer);
-    clearTimeout(_nisSocioCommitRellenoTimer);
-    _nisSocioCommitRellenoTimer = setTimeout(() => {
+    clearTimeout(_nisPedidoCatalogoDebounceTimer);
+    clearTimeout(_nisPedidoCatalogoCommitTimer);
+    _nisPedidoCatalogoCommitTimer = setTimeout(() => {
         void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: true });
     }, 90);
 }
@@ -8386,7 +8461,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -8394,12 +8469,12 @@ async function cargarListaSociosAdmin() {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
             rows.map(s => {
                 const e = (x) => String(x ?? '').replace(/</g, '&lt;');
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             }).join('') + '</tbody></table></div>';
     } catch (e) {
         cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + e.message + '</p>';
@@ -8488,6 +8563,7 @@ async function importarExcelSocios(event) {
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            const barrioSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'barrio', 'vecindario', 'zona');
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
             const transf = valorSociosPorEncabezados(row, mapNormAOriginal, 'transformador', 'trafo', 'transformador_codigo');
@@ -8495,9 +8571,9 @@ async function importarExcelSocios(event) {
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
-                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
                 ok++;
             } catch (e) {
                 fail++;
