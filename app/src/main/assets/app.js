@@ -5669,6 +5669,9 @@ function closeAll() {
     document.querySelectorAll('.mo').forEach(m => m.classList.remove('active'));
     document.getElementById('pf').reset();
     limpiarFotosYPreviewNuevoPedido();
+    _nisSocioCatalogoUltimoValor = '';
+    clearTimeout(_nisSocioCatalogoDebounceTimer);
+    clearTimeout(_nisSocioCommitRellenoTimer);
     const nisEl = document.getElementById('nis');
     if (nisEl) nisEl.value = '';
     document.getElementById('dc').textContent = '0';
@@ -5928,14 +5931,23 @@ function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
 }
 
-/** Cooperativa eléctrica: al salir del NIS/medidor, si existe en socios_catalogo rellena SETD (trafo), cliente y teléfono. */
-async function onNisBlurRellenarDesdeSociosCatalogo() {
+let _nisSocioCatalogoDebounceTimer = null;
+let _nisSocioCommitRellenoTimer = null;
+let _nisSocioCatalogoUltimoValor = '';
+
+/** Cooperativa eléctrica: busca NIS en socios_catalogo y rellena SETD (trafo), cliente y teléfono. */
+async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
+    const forzar = !!(opts && opts.forzar);
     if (!esCooperativaElectricaRubro()) return;
     if (modoOffline || !NEON_OK) return;
     const inpN = document.getElementById('nis');
     if (!inpN) return;
     const raw = (inpN.value || '').trim();
-    if (!raw) return;
+    if (!raw) {
+        _nisSocioCatalogoUltimoValor = '';
+        return;
+    }
+    if (!forzar && raw === _nisSocioCatalogoUltimoValor) return;
     try {
         const r = await sqlSimple(
             `SELECT nombre, telefono, transformador, distribuidor_codigo FROM socios_catalogo
@@ -5944,6 +5956,7 @@ async function onNisBlurRellenarDesdeSociosCatalogo() {
         );
         const row = r.rows?.[0];
         if (!row) return;
+        _nisSocioCatalogoUltimoValor = raw;
         const sd = document.getElementById('sd');
         const cl = document.getElementById('cl');
         const tel = document.getElementById('ped-tel-contacto');
@@ -5966,8 +5979,36 @@ async function onNisBlurRellenarDesdeSociosCatalogo() {
         console.warn('[nis→socio]', e.message);
     }
 }
+
+function programarRellenoSocioPorNisDebounced() {
+    if (!esCooperativaElectricaRubro()) return;
+    if (!(esAndroidWebViewMapa() || esMobile)) return;
+    clearTimeout(_nisSocioCatalogoDebounceTimer);
+    _nisSocioCatalogoDebounceTimer = setTimeout(() => {
+        void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: false });
+    }, 480);
+}
+
+function onNisCommitRellenarDesdeSociosCatalogo() {
+    clearTimeout(_nisSocioCatalogoDebounceTimer);
+    clearTimeout(_nisSocioCommitRellenoTimer);
+    _nisSocioCommitRellenoTimer = setTimeout(() => {
+        void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: true });
+    }, 90);
+}
+
 const nisPedidoInp = document.getElementById('nis');
-if (nisPedidoInp) nisPedidoInp.addEventListener('blur', () => { void onNisBlurRellenarDesdeSociosCatalogo(); });
+if (nisPedidoInp) {
+    nisPedidoInp.addEventListener('blur', onNisCommitRellenarDesdeSociosCatalogo);
+    nisPedidoInp.addEventListener('focusout', onNisCommitRellenarDesdeSociosCatalogo);
+    nisPedidoInp.addEventListener('input', programarRellenoSocioPorNisDebounced);
+    nisPedidoInp.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            onNisCommitRellenarDesdeSociosCatalogo();
+        }
+    });
+}
 
 // ── TRACKING DE UBICACIÓN (cada 15 min) — debe declararse antes del restore de sesión ──
 let _trackingInterval = null;
@@ -6136,6 +6177,19 @@ async function cargarConfigEmpresa() {
         const sqlCfg = {};
         (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
         window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
+        if (!String(window.EMPRESA_CFG.tipo || '').trim() && NEON_OK) {
+            try {
+                const tid = tenantIdActual();
+                const cr = await sqlSimple(`SELECT tipo FROM clientes WHERE id = ${esc(tid)} LIMIT 1`);
+                const trow = cr.rows?.[0];
+                if (trow && String(trow.tipo || '').trim()) {
+                    const t = String(trow.tipo).trim();
+                    window.EMPRESA_CFG.tipo = t;
+                    window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo: t };
+                    syncEmpresaCfgNombreLogoDesdeMarca();
+                }
+            } catch (_) {}
+        }
         ensureBrandingFromLocalEmpresaCfg();
         syncEmpresaCfgNombreLogoDesdeMarca();
         syncWrapCoordsDisplayNuevoPedido();
