@@ -48,6 +48,7 @@
     <p class="sub" id="app-subtitulo">Pedidos de mantenimiento</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
     <form id="lf" autocomplete="off">
+      <!-- Señuelo: muchos navegadores autocompletan estos en lugar de los campos visibles -->
       <div class="gn-login-decoy" aria-hidden="true">
         <input type="text" tabindex="-1" autocomplete="username">
         <input type="password" tabindex="-1" autocomplete="current-password">
@@ -206,7 +207,7 @@
         </select>
       </div>
       <div class="fg"><label for="nis" id="lbl-nis">NIS / Medidor</label>
-        <input type="text" id="nis" maxlength="80" placeholder="NIS, medidor o socio — al salir del campo se puede autocompletar domicilio desde padrón">
+        <input type="text" id="nis" maxlength="80" enterkeyhint="next" autocomplete="off" inputmode="text" placeholder="NIS, medidor o socio — al salir del campo se puede autocompletar domicilio desde padrón">
       </div>
       <div class="fg"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" readonly placeholder="Se completa con NIS en catálogo" style="background:var(--bg2,#f1f5f9);cursor:default"></div>
       <div class="fr">
