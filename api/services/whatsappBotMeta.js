@@ -17,6 +17,7 @@ import {
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
   tipoReclamoWhatsappFlujoSoloNis,
+  tipoReclamoElectricoPideSuministroWhatsapp,
 } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";

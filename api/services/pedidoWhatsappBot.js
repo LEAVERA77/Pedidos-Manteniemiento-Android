@@ -111,6 +111,8 @@ export async function crearPedidoDesdeWhatsappBot({
   clienteCalle,
   clienteNumeroPuerta,
   clienteLocalidad,
+  suministroTipoConexion,
+  suministroFases,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -260,6 +262,23 @@ export async function crearPedidoDesdeWhatsappBot({
   if (pCols.has("cliente_localidad") && locT) {
     cols.push("cliente_localidad");
     vals.push(locT);
+  }
+
+  const stc =
+    suministroTipoConexion != null && String(suministroTipoConexion).trim()
+      ? String(suministroTipoConexion).trim()
+      : null;
+  const sfa =
+    suministroFases != null && String(suministroFases).trim()
+      ? String(suministroFases).trim()
+      : null;
+  if (pCols.has("suministro_tipo_conexion") && stc) {
+    cols.push("suministro_tipo_conexion");
+    vals.push(stc);
+  }
+  if (pCols.has("suministro_fases") && sfa) {
+    cols.push("suministro_fases");
+    vals.push(sfa);
   }
 
   if (hasTenant) {
