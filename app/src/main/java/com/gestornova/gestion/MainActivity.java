@@ -41,6 +41,12 @@ import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
+import androidx.work.Constraints;
+import androidx.work.ExistingWorkPolicy;
+import androidx.work.NetworkType;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
@@ -61,6 +67,8 @@ import java.util.Locale;
 
 import org.json.JSONObject;
 
+import com.gestornova.gestion.work.NotificacionesMovilPollWorker;
+import com.gestornova.gestion.work.NotificacionesMovilPollingScheduler;
 import com.gestornova.gestion.work.PedidoPollingScheduler;
 import com.gestornova.gestion.work.UbicacionPollingScheduler;
 import com.gestornova.gestion.work.UbicacionWorker;
@@ -124,6 +132,7 @@ public class MainActivity extends AppCompatActivity {
             if (isFinishing() || isDestroyed()) return;
             iniciarNetworkWatchdog();
             PedidoPollingScheduler.schedule(this);
+            NotificacionesMovilPollingScheduler.schedule(this);
             UbicacionPollingScheduler.schedule(this);
             AppUpdateChecker.checkAsync(this);
         }, 800);
@@ -403,6 +412,16 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         AppUpdateChecker.checkAsync(this);
+        Constraints netConstraints = new Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build();
+        OneTimeWorkRequest drainNotif = new OneTimeWorkRequest.Builder(NotificacionesMovilPollWorker.class)
+                .setConstraints(netConstraints)
+                .build();
+        WorkManager.getInstance(this).enqueueUniqueWork(
+                "notificaciones_movil_drain_on_resume",
+                ExistingWorkPolicy.REPLACE,
+                drainNotif);
         if (webView != null) {
             webView.onResume();
             webView.evaluateJavascript(

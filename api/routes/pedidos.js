@@ -13,6 +13,7 @@ import {
   notifyPedidoCierreWhatsAppSafe,
   notifyPedidoClienteActualizacionWhatsAppSafe,
 } from "../services/whatsappService.js";
+import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -521,6 +522,14 @@ router.put("/:id", async (req, res) => {
     const becameCerrado = String(estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
     if (becameCerrado) {
       scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
+      setImmediate(() => {
+        enqueueNotificacionPedidoCerradoParaTecnico({
+          tecnicoUsuarioId: pedido.tecnico_asignado_id,
+          pedidoId: updated.id,
+          numeroPedido: updated.numero_pedido,
+          cerradoPorUsuarioId: req.user.id,
+        }).catch(() => {});
+      });
     }
     scheduleNotifyClientePedidoWhatsapp({
       pedidoAntes: pedido,

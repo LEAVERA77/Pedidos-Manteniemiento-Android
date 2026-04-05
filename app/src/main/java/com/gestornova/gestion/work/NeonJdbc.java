@@ -6,6 +6,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -138,6 +140,65 @@ public final class NeonJdbc {
     }
 
     /** Registro de posición para el mapa de gerencia (misma tabla que usa la web). */
+    /** Fila no leída de {@code notificaciones_movil} (cola admin → app). */
+    public static final class NotificacionMovilRow {
+        public final long id;
+        public final String titulo;
+        public final String cuerpo;
+        /** {@code null} si {@code pedido_id} es NULL en la base. */
+        public final String pedidoId;
+
+        public NotificacionMovilRow(long id, String titulo, String cuerpo, String pedidoId) {
+            this.id = id;
+            this.titulo = titulo != null ? titulo : "";
+            this.cuerpo = cuerpo != null ? cuerpo : "";
+            this.pedidoId = pedidoId;
+        }
+    }
+
+    public static boolean hasNotificacionesMovilTable(Connection c) throws SQLException {
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery(
+                     "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' "
+                             + "AND table_name = 'notificaciones_movil' LIMIT 1")) {
+            return rs.next();
+        }
+    }
+
+    public static List<NotificacionMovilRow> fetchUnreadNotificacionesMovil(Connection c, int userId, int limit)
+            throws SQLException {
+        int lim = limit;
+        if (lim < 1) lim = 15;
+        if (lim > 50) lim = 50;
+        List<NotificacionMovilRow> out = new ArrayList<>();
+        String sql = "SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil "
+                + "WHERE usuario_id = ? AND leida = FALSE ORDER BY id ASC LIMIT ?";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            ps.setInt(2, lim);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long id = rs.getLong(1);
+                    String titulo = rs.getString(2);
+                    String cuerpo = rs.getString(3);
+                    int pid = rs.getInt(4);
+                    boolean pidNull = rs.wasNull();
+                    String pedidoId = pidNull ? null : String.valueOf(pid);
+                    out.add(new NotificacionMovilRow(id, titulo, cuerpo, pedidoId));
+                }
+            }
+        }
+        return out;
+    }
+
+    public static void markNotificacionMovilLeida(Connection c, long rowId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE notificaciones_movil SET leida = TRUE WHERE id = ?")) {
+            ps.setLong(1, rowId);
+            ps.executeUpdate();
+        }
+    }
+
     public static void insertUbicacionUsuario(Connection c, int userId, double lat, double lng, int precisionM)
             throws SQLException {
         String ins = "INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp) VALUES (?,?,?,?, NOW())";

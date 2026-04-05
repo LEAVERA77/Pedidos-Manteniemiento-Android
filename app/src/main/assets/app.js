@@ -5027,6 +5027,11 @@ async function actualizarAvance(id, avance) {
 }
 
 async function updPedido(id, campos, usuarioId) {
+    const idxPre = app.p.findIndex(p => String(p.id) === String(id));
+    const prevRow = idxPre !== -1 ? app.p[idxPre] : null;
+    const estadoAntesUpd = prevRow ? String(prevRow.es || '') : '';
+    const taiAsignado = prevRow != null && prevRow.tai != null ? prevRow.tai : null;
+
     // Agregar auditoría si corresponde
     if (usuarioId && app.u) {
         if (campos.estado === 'En ejecución') campos.usuario_inicio_id = app.u.id;
@@ -5051,6 +5056,28 @@ async function updPedido(id, campos, usuarioId) {
         
     } else {
         await ejecutarSQLConReintentos(queryUpdate);
+        const cierreCentral =
+            cv.estado === 'Cerrado' &&
+            estadoAntesUpd !== 'Cerrado' &&
+            taiAsignado != null &&
+            String(taiAsignado) !== String(app.u?.id || '');
+        if (cierreCentral && _sql) {
+            try {
+                const pidNum = parseInt(id, 10);
+                const np = prevRow && prevRow.np ? String(prevRow.np) : '';
+                const titulo = 'Pedido cerrado';
+                const cuerpo = `El reclamo ${np || '#' + id} fue cerrado desde la central.`;
+                await sqlSimple(
+                    `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(
+                        parseInt(taiAsignado, 10)
+                    )}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)})`
+                );
+            } catch (e) {
+                if (!String(e.message || e).includes('notificaciones_movil')) {
+                    console.warn('[notif-cierre-tecnico]', e.message || e);
+                }
+            }
+        }
     }
     
     const idx = app.p.findIndex(p => String(p.id) === String(id));
