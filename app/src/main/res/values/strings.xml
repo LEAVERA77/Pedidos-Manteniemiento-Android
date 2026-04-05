@@ -29,4 +29,32 @@
     <string name="open_downloads_fallback">No se pudo abrir el gestor de archivos. Carpeta: %1$s</string>
     <string name="open_downloads_fallback_clipboard">No se pudo abrir el gestor. Ruta copiada al portapapeles:\n%1$s</string>
     <string name="open_downloads_hint_exports_folder">Se abrió Descargas del sistema. Entrá a la carpeta «GestorNova».</string>
+
+    <!-- MVP técnico (Compose + Retrofit) -->
+    <string name="tecnico_mvp_config_falta_api">Falta api.baseUrl en assets/config.json</string>
+    <string name="tecnico_mvp_error_generico">No se pudo completar la operación</string>
+    <string name="tecnico_mvp_login_titulo">Ingreso técnico</string>
+    <string name="tecnico_mvp_email">Correo</string>
+    <string name="tecnico_mvp_password">Contraseña</string>
+    <string name="tecnico_mvp_ingresar">Ingresar</string>
+    <string name="tecnico_mvp_lista_titulo">Mis pedidos</string>
+    <string name="tecnico_mvp_detalle_titulo">Pedido</string>
+    <string name="tecnico_mvp_logout">Cerrar sesión</string>
+    <string name="tecnico_mvp_app_completa">App completa</string>
+    <string name="tecnico_mvp_refrescar">Actualizar</string>
+    <string name="tecnico_mvp_sin_pedidos">No tenés pedidos asignados</string>
+    <string name="tecnico_mvp_volver">Volver</string>
+    <string name="tecnico_mvp_cargando">Cargando…</string>
+    <string name="tecnico_mvp_numero">Número</string>
+    <string name="tecnico_mvp_estado">Estado</string>
+    <string name="tecnico_mvp_cliente">Cliente</string>
+    <string name="tecnico_mvp_distribuidor">Distribuidor</string>
+    <string name="tecnico_mvp_descripcion">Descripción</string>
+    <string name="tecnico_mvp_prioridad">Prioridad</string>
+    <string name="tecnico_mvp_avance">Avance</string>
+    <string name="tecnico_mvp_tipo_trabajo">Tipo de trabajo</string>
+    <string name="tecnico_mvp_trabajo_realizado">Trabajo realizado</string>
+    <string name="tecnico_mvp_fecha_creacion">Alta</string>
+    <string name="tecnico_mvp_telefono">Teléfono</string>
+    <string name="tecnico_mvp_nis">NIS medidor</string>
 </resources>

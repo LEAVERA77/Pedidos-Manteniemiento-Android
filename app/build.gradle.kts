@@ -2,6 +2,8 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
+    // Kotlin viene integrado en AGP 9+; no aplicar org.jetbrains.kotlin.android.
+    alias(libs.plugins.kotlin.compose)
 }
 
 val keystoreProperties = Properties()
@@ -19,6 +21,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     defaultConfig {
@@ -94,11 +97,32 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
 
     // Agregar esto para FileProvider
-    implementation("androidx.core:core:1.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
 
     implementation("androidx.work:work-runtime:2.9.1")
     // 42.7+ provoca mergeExtDex: MethodHandle.invoke solo con minSdk 26+; 42.2.x dexifica en API 24.
     implementation("org.postgresql:postgresql:42.2.29")
+
+    // MVP técnico nativo (Compose + Retrofit)
+    val composeBom = platform(libs.compose.bom)
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.activity.compose)
+    implementation(libs.navigation.compose)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.android)
 }
 
 // APK renombrado fuera del build/ (no toca salidas AGP → sin conflicto Gradle 9).

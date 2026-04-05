@@ -1,0 +1,44 @@
+package com.gestornova.gestion.tecnico.network
+
+import com.google.gson.annotations.SerializedName
+
+data class LoginRequest(
+    val email: String,
+    val password: String,
+)
+
+data class LoginResponse(
+    val token: String,
+    val user: UserDto,
+)
+
+data class UserDto(
+    val id: Long,
+    val email: String?,
+    val nombre: String?,
+    val rol: String?,
+)
+
+/** Columnas alineadas con la API Node (filas PostgreSQL). */
+data class PedidoDto(
+    @SerializedName("id") val id: Long = 0,
+    @SerializedName("numero_pedido") val numeroPedido: String? = null,
+    @SerializedName("estado") val estado: String? = null,
+    @SerializedName("descripcion") val descripcion: String? = null,
+    @SerializedName("prioridad") val prioridad: String? = null,
+    @SerializedName("avance") val avance: Int? = null,
+    @SerializedName("fecha_creacion") val fechaCreacion: String? = null,
+    @SerializedName("fecha_cierre") val fechaCierre: String? = null,
+    @SerializedName("fecha_avance") val fechaAvance: String? = null,
+    @SerializedName("distribuidor") val distribuidor: String? = null,
+    @SerializedName("cliente") val cliente: String? = null,
+    @SerializedName("tipo_trabajo") val tipoTrabajo: String? = null,
+    @SerializedName("trabajo_realizado") val trabajoRealizado: String? = null,
+    @SerializedName("tecnico_cierre") val tecnicoCierre: String? = null,
+    @SerializedName("nis_medidor") val nisMedidor: String? = null,
+    @SerializedName("tecnico_asignado_id") val tecnicoAsignadoId: Long? = null,
+    @SerializedName("telefono_contacto") val telefonoContacto: String? = null,
+    @SerializedName("lat") val lat: Double? = null,
+    @SerializedName("lng") val lng: Double? = null,
+    @SerializedName("fotos") val fotos: List<String>? = null,
+)
