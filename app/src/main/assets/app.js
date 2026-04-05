@@ -2306,6 +2306,16 @@ function toggleMapaColoresBody() {
 }
 window.toggleMapaColoresBody = toggleMapaColoresBody;
 
+function iniciarTecnicosMapaPrincipalPoll() {
+    detenerTecnicosMapaPrincipalPoll();
+    if (!esAdmin()) return;
+    void refrescarTecnicosMapaPrincipal();
+    _pollTecnicosMapaInterval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        void refrescarTecnicosMapaPrincipal();
+    }, 8000);
+}
+
 async function refrescarTecnicosMapaPrincipal() {
     if (!app.map || modoOffline || !NEON_OK || !_sql) {
         _marcadoresTecnicosPrincipal.forEach(m => { try { app.map && app.map.removeLayer(m); } catch (_) {} });
@@ -2373,7 +2383,7 @@ let _pedidosActividadFinger = '';
 let _pollTecnicosMapaInterval = null;
 /** Sincroniza lista Neon → técnico/supervisor cuando el admin cambia estados desde la web. */
 let _pollTecnicoPedidosInterval = null;
-const TECNICO_PEDIDOS_SYNC_MS = 22000;
+const TECNICO_PEDIDOS_SYNC_MS = 12000;
 let _seenClosedIds = new Set();
 let _dashCierresInit = false;
 
@@ -2476,7 +2486,7 @@ function iniciarPedidosActividadPollAdmin() {
     detenerPedidosActividadPollAdmin();
     if (!esAdmin()) return;
     pollPedidosActividadAdmin();
-    _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 12000);
+    _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 8000);
 }
 
 function detenerTecnicosMapaPrincipalPoll() {
@@ -2489,12 +2499,12 @@ function detenerTecnicosMapaPrincipalPoll() {
 /** Supervisor (sin panel KPI): solo técnicos en mapa principal. */
 function iniciarDashboardGerenciaPoll() {
     detenerDashboardGerenciaPoll();
-    detenerTecnicosMapaPrincipalPoll();
     if (!esAdmin()) return;
     const tick = () => { pollCierresGerencia(); refrescarDashboardGerencia(true); };
     tick();
     _pollDashInterval = setInterval(tick, 25000);
     iniciarPedidosActividadPollAdmin();
+    iniciarTecnicosMapaPrincipalPoll();
 }
 
 function detenerDashboardGerenciaPoll() {
@@ -2503,6 +2513,7 @@ function detenerDashboardGerenciaPoll() {
         _pollDashInterval = null;
     }
     detenerPedidosActividadPollAdmin();
+    detenerTecnicosMapaPrincipalPoll();
 }
 
 async function pollCierresGerencia() {
@@ -3570,6 +3581,84 @@ async function irAMiUbicacionEnMapa() {
 }
 window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
+async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
+    await ensureMapReady();
+    if (!app.map) {
+        toast('No se pudo cargar el mapa', 'error');
+        return;
+    }
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
+        toast('Coordenadas no válidas', 'error');
+        return;
+    }
+    const Lref = window.L;
+    if (!Lref || typeof Lref.latLng !== 'function') {
+        toast('Mapa no listo', 'error');
+        return;
+    }
+    app.sel = Lref.latLng(latN, lngN);
+    limpiarFotosYPreviewNuevoPedido();
+    const li = document.getElementById('li');
+    const gi = document.getElementById('gi');
+    const pm = document.getElementById('pm');
+    if (!li || !gi || !pm) return;
+    li.value = String(latN);
+    gi.value = String(lngN);
+    syncWrapCoordsDisplayNuevoPedido();
+    const ui = document.getElementById('ui');
+    if (ui) {
+        ui.innerHTML = htmlLineaUbicacionFormulario(latN, lngN, acc != null && acc !== '' ? acc : null);
+        ui.className = 'ud sel';
+    }
+    try {
+        poblarSelectTiposReclamo();
+        syncNisClienteReclamoConexionUI();
+    } catch (_) {}
+    pm.classList.add('active');
+    const z = mostrarMarcadorUbicacion(latN, lngN, acc != null ? acc : null);
+    app.map.invalidateSize({ animate: false });
+    app.map.setView([latN, lngN], z || 16, { animate: !gnMapaLigero() });
+    try {
+        const zEl = document.getElementById('zoom-altura');
+        if (zEl) zEl.textContent = calcularEscalaReal(app.map.getZoom());
+    } catch (_) {}
+}
+window.abrirNuevoPedidoEnCoordenadas = abrirNuevoPedidoEnCoordenadas;
+
+async function nuevoPedidoDesdeUbicacionActual() {
+    await ensureMapReady();
+    if (ultimaUbicacion && Number.isFinite(ultimaUbicacion.lat) && Number.isFinite(ultimaUbicacion.lon)) {
+        await abrirNuevoPedidoEnCoordenadas(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
+        return;
+    }
+    if (!navigator.geolocation) {
+        toast('GPS no disponible en este dispositivo', 'error');
+        return;
+    }
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 14000,
+                maximumAge: 0
+            });
+        });
+        const { latitude, longitude, accuracy } = pos.coords;
+        registrarFajaInstalacionSiFalta(longitude);
+        const accR = Math.round(accuracy || 0);
+        ultimaUbicacion = { lat: latitude, lon: longitude, acc: accR };
+        try {
+            localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion));
+        } catch (_) {}
+        await abrirNuevoPedidoEnCoordenadas(latitude, longitude, accR);
+    } catch (_) {
+        toast('No se pudo obtener la ubicación. Probá «Ir a mi ubicación» primero.', 'error');
+    }
+}
+window.nuevoPedidoDesdeUbicacionActual = nuevoPedidoDesdeUbicacionActual;
+
 let mapViewImportPromise = null;
 function loadMapViewModule() {
     if (!mapViewImportPromise) mapViewImportPromise = import('./map-view.js');
@@ -3650,6 +3739,8 @@ window.ensureMapReady = ensureMapReady;
 
 const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
+const btnMapaNuevoGps = document.getElementById('btn-mapa-nuevo-gps');
+if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoPedidoDesdeUbicacionActual());
 
 function renderMk() {
     if (!app.map) return;
@@ -4073,7 +4164,7 @@ function iniciarPollNotifMovil() {
     detenerPollNotifMovil();
     if (esAdmin()) return;
     window.pollNotificacionesMovil();
-    _pollNotifMovilInterval = setInterval(() => { window.pollNotificacionesMovil(); }, 45000);
+    _pollNotifMovilInterval = setInterval(() => { window.pollNotificacionesMovil(); }, 18000);
 }
 
 function detenerPollNotifMovil() {
@@ -6391,7 +6482,7 @@ if (nisPedidoInp) {
     });
 }
 
-// ── TRACKING DE UBICACIÓN (cada 15 min) — debe declararse antes del restore de sesión ──
+// ── TRACKING DE UBICACIÓN (WebView ~2 min · navegador 15 min) — antes del restore de sesión ──
 let _trackingInterval = null;
 
 async function iniciarTracking() {
@@ -6410,9 +6501,9 @@ async function iniciarTracking() {
             } catch(e) { console.warn('[tracking]', e.message); }
         }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
     };
-    // Enviar inmediatamente y luego cada 15 min
+    const intervaloMs = esAndroidWebViewMapa() ? 120000 : 15 * 60 * 1000;
     enviarUbicacion();
-    _trackingInterval = setInterval(enviarUbicacion, 15 * 60 * 1000);
+    _trackingInterval = setInterval(enviarUbicacion, intervaloMs);
     console.log('[tracking] iniciado');
 }
 

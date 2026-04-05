@@ -10,9 +10,19 @@
 //  junto a index.html para que funcione correctamente.
 // =============================================================
 
-const CACHE_TILES = 'pmg-tiles-v4';
+const CACHE_TILES = 'pmg-tiles-v5';
 const CACHE_SHELL = 'pmg-shell-v10';
-const SW_VERSION  = '1.1.2';
+const SW_VERSION  = '1.1.3';
+
+/** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
+function isMapTileRequest(url) {
+  const h = url.hostname;
+  return (
+    h.includes('tile.openstreetmap.org') ||
+    h.endsWith('.basemaps.cartocdn.com') ||
+    h === 'server.arcgisonline.com'
+  );
+}
 
 function shellAssetUrls() {
   const { origin, pathname } = self.location;
@@ -383,33 +393,32 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const req = event.request;
   const url = new URL(req.url);
-  if (url.hostname.includes('tile.openstreetmap.org')) {
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      // No está en cache → intentar red y cachear para después
-      return fetch(event.request).then(resp => {
-        if (resp.ok) {
-          caches.open(CACHE_TILES).then(c => c.put(event.request, resp.clone()));
-        }
-        return resp;
-      }).catch(() => {
-        // Sin red y sin cache → tile gris neutro (PNG 1x1 válido escalado por el browser)
-        return new Response(
-          Uint8Array.from([
-            0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x00,0x00,0x0D,
-            0x49,0x48,0x44,0x52,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
-            0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,0xDE,0x00,0x00,0x00,
-            0x0C,0x49,0x44,0x41,0x54,0x08,0xD7,0x63,0xD8,0xD8,0xD8,0x00,
-            0x00,0x00,0x04,0x00,0x01,0xA9,0xF1,0x9E,0x7D,0x00,0x00,0x00,
-            0x00,0x49,0x45,0x4E,0x44,0xAE,0x42,0x60,0x82
-          ]).buffer,
-          { headers: { 'Content-Type': 'image/png' } }
-        );
-      });
-    })
-  );
-  return;
+  if (isMapTileRequest(url)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then((resp) => {
+            if (resp.ok) {
+              caches.open(CACHE_TILES).then((c) => c.put(event.request, resp.clone()));
+            }
+            return resp;
+          })
+          .catch(() => {
+            return new Response(
+              Uint8Array.from([
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde,
+                0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xd8, 0xd8, 0xd8, 0x00, 0x00, 0x00,
+                0x04, 0x00, 0x01, 0xa9, 0xf1, 0x9e, 0x7d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
+                0x60, 0x82
+              ]).buffer,
+              { headers: { 'Content-Type': 'image/png' } }
+            );
+          });
+      })
+    );
+    return;
   }
 
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;

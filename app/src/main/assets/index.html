@@ -122,17 +122,20 @@
       <div class="mas-actions mas-actions-lead">
         <button type="button" class="ib-mini" title="Ocultar esta barra" onclick="toggleAndroidMapStripCollapsed(true)"><i class="fas fa-chevron-right"></i></button>
       </div>
-      <label class="mas-filtros-label"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"> Filtros avanzados</label>
+      <span id="wrap-android-scope" class="mas-scope-wrap" style="display:none">
+        <span class="mas-scope-lbl">Pedidos</span>
+        <select id="sel-android-pedidos-scope" class="mas-scope-select" onchange="onAndroidPedidosScopeChange()">
+          <option value="asignados">Solo asignados</option>
+          <option value="todos">Todos</option>
+        </select>
+      </span>
+      <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
     </div>
-    <span id="wrap-android-scope" style="display:none;align-items:center;gap:.35rem;flex-wrap:wrap">
-      <span style="color:var(--tl)">Pedidos:</span>
-      <select id="sel-android-pedidos-scope" style="font-size:.72rem;padding:.2rem .35rem;border-radius:.35rem;border:1px solid var(--bo)" onchange="onAndroidPedidosScopeChange()">
-        <option value="asignados">Solo asignados a mí</option>
-        <option value="todos">Todos (mapa / lista)</option>
-      </select>
-    </span>
   </div></div>
   
+  <button type="button" id="btn-mapa-nuevo-gps" class="btn-mapa-nuevo-gps" title="Nuevo pedido en mi ubicación" aria-label="Nuevo pedido en mi ubicación">
+    <i class="fas fa-plus"></i>
+  </button>
   <button type="button" id="btn-mapa-ir-gps" class="btn-mapa-ir-gps" title="Ir a mi ubicación" aria-label="Ir a mi ubicación">
     <i class="fas fa-location-arrow"></i>
   </button>

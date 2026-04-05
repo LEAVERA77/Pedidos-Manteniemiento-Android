@@ -103,28 +103,31 @@ export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
     const L = ctx.L;
+    const maxZ = ligero ? 17 : 19;
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
             attribution:
                 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, GIS User Community',
-            maxZoom: 19,
-            maxNativeZoom: 19,
+            maxZoom: maxZ,
+            maxNativeZoom: maxZ,
             tileSize: 256,
             crossOrigin: true,
             updateWhenIdle: true,
+            updateWhenZooming: !ligero,
             keepBuffer: ligero ? 0 : 1
         }
     );
     const capaCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO',
         subdomains: 'abcd',
-        maxZoom: 19,
-        maxNativeZoom: 19,
+        maxZoom: maxZ,
+        maxNativeZoom: maxZ,
         tileSize: 256,
         detectRetina: false,
         crossOrigin: true,
         updateWhenIdle: true,
+        updateWhenZooming: !ligero,
         keepBuffer: ligero ? 0 : 1
     });
     let nErr = 0;
@@ -165,6 +168,8 @@ export async function runInitMap() {
     }
 
     const L = ctx.L;
+    const ligeroInit = ctx.gnMapaLigero();
+    const maxZoomMap = ligeroInit ? 17 : 19;
     const center = await resolveMapCenterLatLngZoom();
     let latBase;
     let lngBase;
@@ -173,7 +178,7 @@ export async function runInitMap() {
     if (center) {
         latBase = center.lat;
         lngBase = center.lng;
-        zoomInit = center.zoom;
+        zoomInit = Math.min(center.zoom, maxZoomMap);
     } else if (ctx.esAndroidWebViewMapa()) {
         showMapCenterMissingMessage(() => {
             void ctx.scheduleMapRetry();
@@ -192,9 +197,9 @@ export async function runInitMap() {
     ctx.app.map = L.map('mc', {
         zoomControl: false,
         attributionControl: true,
-        maxZoom: 19,
+        maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: true,
+        preferCanvas: !ligeroInit,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,

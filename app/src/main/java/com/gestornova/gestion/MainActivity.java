@@ -422,6 +422,13 @@ public class MainActivity extends AppCompatActivity {
                 "notificaciones_movil_drain_on_resume",
                 ExistingWorkPolicy.REPLACE,
                 drainNotif);
+        OneTimeWorkRequest drainUbic = new OneTimeWorkRequest.Builder(UbicacionWorker.class)
+                .setConstraints(netConstraints)
+                .build();
+        WorkManager.getInstance(this).enqueueUniqueWork(
+                "ubicacion_tecnico_push_on_resume",
+                ExistingWorkPolicy.REPLACE,
+                drainUbic);
         if (webView != null) {
             webView.onResume();
             webView.evaluateJavascript(
