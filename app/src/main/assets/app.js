@@ -6933,7 +6933,6 @@ async function cargarListaDistribuidoresAdmin() {
                 <td>${d.tension || '-'}</td>
                 <td><span style="color:${d.activo ? '#166534' : '#dc2626'};font-weight:600">${d.activo ? '✓' : '✗'}</span></td>
                 <td style="display:flex;gap:.3rem">
-                    <button class="btn-sm warning" onclick="toggleDistribuidor(${d.id}, ${!d.activo})">${d.activo ? 'Desactivar' : 'Activar'}</button>
                     <button class="btn-sm danger" onclick="eliminarDistribuidor(${d.id})">Eliminar</button>
                 </td>
             </tr>`).join('')}</tbody>
@@ -6963,15 +6962,6 @@ async function crearDistribuidor() {
     }
 }
 
-async function toggleDistribuidor(id, activar) {
-    try {
-        await sqlSimple(`UPDATE distribuidores SET activo = ${activar} WHERE id = ${esc(id)}`);
-        toast(activar ? 'Activado' : 'Desactivado', 'success');
-        cargarListaDistribuidoresAdmin();
-        cargarDistribuidores();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-}
-
 async function eliminarDistribuidor(id) {
     if (!confirm('¿Eliminar este distribuidor?')) return;
     try {
@@ -6983,7 +6973,7 @@ async function eliminarDistribuidor(id) {
 }
 
 function mostrarFormatoExcel() {
-    alert('Formato requerido para el Excel:\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — OPCIONAL\n\nLa fila 1 debe tener los encabezados: codigo | nombre | tension\nA partir de la fila 2, los datos.');
+    alert('Formato requerido para el Excel:\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — OPCIONAL\n\nLa fila 1 debe tener los encabezados: codigo | nombre | tension\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los distribuidores y volver a cargar desde cero (afecta toda la base).');
 }
 
 async function importarExcelDistribuidores(event) {
@@ -6991,6 +6981,11 @@ async function importarExcelDistribuidores(event) {
     if (!file) return;
     if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
     try {
+        const reemplazar = document.getElementById('distribuidores-import-reemplazar')?.checked;
+        if (reemplazar) {
+            await sqlSimple('DELETE FROM distribuidores');
+            toast('Tabla de distribuidores vaciada — importando…', 'info');
+        }
         const buf = await file.arrayBuffer();
         const wb  = XLSX.read(buf, { type: 'array' });
         const ws  = wb.Sheets[wb.SheetNames[0]];
@@ -7006,9 +7001,13 @@ async function importarExcelDistribuidores(event) {
                 ok++;
             } catch(_) { fail++; }
         }
-        toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}`, ok > 0 ? 'success' : 'error');
+        toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}${reemplazar ? ' (tabla reemplazada)' : ''}`, ok > 0 ? 'success' : 'error');
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
+        try {
+            const chk = document.getElementById('distribuidores-import-reemplazar');
+            if (chk) chk.checked = false;
+        } catch (_) {}
     } catch(e) { toast('Error al leer Excel: ' + e.message, 'error'); }
     event.target.value = '';
 }
@@ -7018,7 +7017,7 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
+        const r = await sqlSimple('SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor');
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
@@ -8291,7 +8290,6 @@ if (typeof toggleUsuario !== "undefined") window.toggleUsuario = toggleUsuario;
 if (typeof eliminarUsuario !== "undefined") window.eliminarUsuario = eliminarUsuario;
 if (typeof abrirFormDistribuidor !== "undefined") window.abrirFormDistribuidor = abrirFormDistribuidor;
 if (typeof crearDistribuidor !== "undefined") window.crearDistribuidor = crearDistribuidor;
-if (typeof toggleDistribuidor !== "undefined") window.toggleDistribuidor = toggleDistribuidor;
 if (typeof eliminarDistribuidor !== "undefined") window.eliminarDistribuidor = eliminarDistribuidor;
 if (typeof importarExcelDistribuidores !== "undefined") window.importarExcelDistribuidores = importarExcelDistribuidores;
 if (typeof mostrarFormatoExcel !== "undefined") window.mostrarFormatoExcel = mostrarFormatoExcel;

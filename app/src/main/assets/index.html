@@ -386,12 +386,16 @@
     <div id="admin-distribuidores" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Distribuidores</h3>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn-sm primary" onclick="abrirFormDistribuidor()"><i class="fas fa-plus"></i> Nuevo</button>
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-dist" accept=".xlsx,.xls" style="display:none" onchange="importarExcelDistribuidores(event)"></label>
           <button class="btn-sm warning" onclick="mostrarFormatoExcel()"><i class="fas fa-question-circle"></i> Formato</button>
+          <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
+            <input type="checkbox" id="distribuidores-import-reemplazar"> Vaciar tabla antes de importar
+          </label>
         </div>
       </div>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. El Excel puede traer todas las filas que necesites (fila 1 = encabezados codigo, nombre, tension).</p>
       <div id="lista-distribuidores-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="form-distribuidor" style="display:none;background:var(--bg);border-radius:.75rem;padding:1rem;margin-top:1rem;border:1px solid var(--bo)">
         <h4 style="margin-bottom:.75rem;color:var(--bd)">Nuevo distribuidor</h4>
@@ -418,7 +422,7 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>Calle</strong> | <strong>Numero</strong> | <strong>telefono</strong> | <strong>distribuidor_</strong> o <strong>distribuidor_codigo</strong> | <strong>localidad</strong> | <strong>tipo_tarifa</strong> | <strong>urbano_rural</strong> | <strong>transformador</strong>. Opcional: columna <strong>direccion</strong> (una sola celda). Sin “vaciar”, se fusiona por NIS. Fila 1 = encabezados.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>Calle</strong> | <strong>Numero</strong> | <strong>telefono</strong> | <strong>distribuidor_</strong> o <strong>distribuidor_codigo</strong> | <strong>localidad</strong> | <strong>tipo_tarifa</strong> | <strong>urbano_rural</strong> | <strong>transformador</strong>. Opcional: columna <strong>direccion</strong> (una sola celda). El listado muestra todos los socios (sin tope de 500). Sin “vaciar”, se fusiona por NIS. Fila 1 = encabezados.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--bo)">
         <h4 style="color:var(--bd);font-size:.9rem;margin-bottom:.5rem"><i class="fas fa-history"></i> Historial de reclamos por NIS / medidor</h4>
