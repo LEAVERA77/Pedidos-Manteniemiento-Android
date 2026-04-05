@@ -410,6 +410,53 @@ async function sqlSimple(query, params = []) {
     return _sql(q);
 }
 
+/** Neon / proxy pueden truncar respuestas grandes: paginar SELECT hasta traer todas las filas. */
+const _SQL_PAGE_SIZE = 3500;
+async function sqlSimpleSelectAllPages(selectSqlNoTrailingOrder, orderBySql) {
+    const order = String(orderBySql || '').trim();
+    const all = [];
+    let offset = 0;
+    const base = String(selectSqlNoTrailingOrder || '').trim();
+    for (;;) {
+        const q = `${base} ${order} OFFSET ${offset} LIMIT ${_SQL_PAGE_SIZE}`;
+        const r = await sqlSimple(q);
+        const rows = r.rows || [];
+        all.push(...rows);
+        if (rows.length < _SQL_PAGE_SIZE) break;
+        offset += _SQL_PAGE_SIZE;
+    }
+    return { rows: all };
+}
+
+function mostrarOverlayImportacion(texto) {
+    let el = document.getElementById('gn-import-overlay');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'gn-import-overlay';
+        el.className = 'gn-import-overlay';
+        document.body.appendChild(el);
+    }
+    el.innerHTML =
+        '<div class="gn-import-overlay-card" role="status" aria-live="polite">' +
+        '<div class="gn-import-overlay-spin"><i class="fas fa-circle-notch fa-spin"></i></div>' +
+        '<div class="gn-import-overlay-msg"></div></div>';
+    const m = el.querySelector('.gn-import-overlay-msg');
+    if (m) m.textContent = texto;
+    el.style.display = 'flex';
+}
+
+function actualizarOverlayImportacion(texto) {
+    const el = document.getElementById('gn-import-overlay');
+    if (!el || el.style.display === 'none') return;
+    const m = el.querySelector('.gn-import-overlay-msg');
+    if (m) m.textContent = texto;
+}
+
+function ocultarOverlayImportacion() {
+    const el = document.getElementById('gn-import-overlay');
+    if (el) el.style.display = 'none';
+}
+
 
 
 
@@ -454,6 +501,7 @@ async function heartbeat() {
             detenerSyncCatalogos();
             detenerDashboardGerenciaPoll();
             detenerTecnicosMapaPrincipalPoll();
+            detenerPollSincroPedidosTecnico();
             app.u = null;
             mapaInicializado = false;
             if (app.map) { app.map.remove(); app.map = null; }
@@ -534,6 +582,9 @@ document.addEventListener('visibilitychange', () => {
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
         if (!esAdmin()) window.pollNotificacionesMovil();
+        if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
+            void cargarPedidos({ silent: true });
+        }
     }
 });
 
@@ -2287,8 +2338,68 @@ let _pollDashInterval = null;
 let _pollPedidosActividadInterval = null;
 let _pedidosActividadFinger = '';
 let _pollTecnicosMapaInterval = null;
+/** Sincroniza lista Neon → técnico/supervisor cuando el admin cambia estados desde la web. */
+let _pollTecnicoPedidosInterval = null;
+const TECNICO_PEDIDOS_SYNC_MS = 22000;
 let _seenClosedIds = new Set();
 let _dashCierresInit = false;
+
+function detenerPollSincroPedidosTecnico() {
+    if (_pollTecnicoPedidosInterval) {
+        clearInterval(_pollTecnicoPedidosInterval);
+        _pollTecnicoPedidosInterval = null;
+    }
+}
+
+async function tickSincroPedidosTecnico() {
+    if (!app.u || esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    if (!esTecnicoOSupervisor()) return;
+    try {
+        await cargarPedidos({ silent: true });
+    } catch (_) {}
+}
+
+function iniciarPollSincroPedidosTecnico() {
+    detenerPollSincroPedidosTecnico();
+    if (!app.u || esAdmin()) return;
+    if (!esTecnicoOSupervisor()) return;
+    void tickSincroPedidosTecnico();
+    _pollTecnicoPedidosInterval = setInterval(() => void tickSincroPedidosTecnico(), TECNICO_PEDIDOS_SYNC_MS);
+}
+
+/** Si el detalle está abierto, repinta con la fila actual de app.p (p. ej. cierre remoto). */
+function refrescarDetalleSiAbiertoTrasSync() {
+    const dm = document.getElementById('dm');
+    if (!dm || !dm.classList.contains('active') || app.cid == null || app.cid === '') return;
+    const fresh = app.p.find(x => String(x.id) === String(app.cid));
+    if (fresh) {
+        try {
+            detalle(fresh);
+        } catch (_) {}
+    } else {
+        try {
+            closeAll();
+        } catch (_) {}
+        toast('El pedido ya no está en tu listado (actualizado desde la central).', 'info');
+    }
+}
+
+function notificarCambiosPedidoTecnico(prevSnap) {
+    if (!prevSnap || !app.u || esAdmin() || modoOffline) return;
+    if (!esTecnicoOSupervisor()) return;
+    const uid = String(app.u.id);
+    for (const p of app.p) {
+        const prev = prevSnap.get(String(p.id));
+        if (!prev) continue;
+        if (prev.es === p.es) continue;
+        const eraAbierto = ['Pendiente', 'Asignado', 'En ejecución'].includes(prev.es);
+        const ahoraCerrado = p.es === 'Cerrado';
+        if (eraAbierto && ahoraCerrado && p.tai != null && String(p.tai) === uid) {
+            const quien = (p.tc || '').trim() || 'Administración';
+            toast(`Pedido #${p.np || p.id}: cerrado desde la central (${quien}). Revisá «Cerrados».`, 'success');
+        }
+    }
+}
 
 function detenerPedidosActividadPollAdmin() {
     if (_pollPedidosActividadInterval) {
@@ -3097,9 +3208,14 @@ async function cargarPedidos(opts) {
                 qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
         }
+        const prevSnapTecnico =
+            !esAdmin() && esTecnicoOSupervisor() && (app.p || []).length
+                ? new Map((app.p || []).map(p => [String(p.id), { es: p.es, np: p.np, tai: p.tai }]))
+                : null;
         const r = await ejecutarSQLConReintentos(qPed);
         const prevIds = new Set((app.p || []).map(p => p.id));
         app.p = (r.rows || []).map(norm);
+        if (prevSnapTecnico) notificarCambiosPedidoTecnico(prevSnapTecnico);
         if (esAdmin() && app.p.length) {
             const mx = app.p.reduce((a, p) => Math.max(a, Number(p.id) || 0), 0);
             if (Number.isFinite(mx) && mx > 0) app._lastMaxPedidoIdSynced = mx;
@@ -3128,6 +3244,9 @@ async function cargarPedidos(opts) {
         toast('Sin conexión — mostrando pedidos en caché', 'info');
     }
     render();
+    try {
+        refrescarDetalleSiAbiertoTrasSync();
+    } catch (_) {}
 }
 
 
@@ -3220,7 +3339,10 @@ function mostrarMarcadorUbicacion(lat, lon, acc) {
         : acc < 2000 ? '📶 WiFi/Red celular'
         : '🌐 Geolocalización por IP';
 
-    marcadorUbicacion = L.marker([lat, lon], { icon: svgIcon, zIndexOffset: 1000 })
+    const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
+    const mkGps = { icon: svgIcon, zIndexOffset: 200 };
+    if (paneGps) mkGps.pane = paneGps;
+    marcadorUbicacion = L.marker([lat, lon], mkGps)
         .addTo(app.map)
         .bindPopup(`
             <div style="font-family:system-ui;min-width:160px">
@@ -3232,15 +3354,19 @@ function mostrarMarcadorUbicacion(lat, lon, acc) {
 
     
     if (acc && acc > 50 && !gnMapaLigero()) {
-        const radioVisual = Math.min(acc, 380);
-        _circuloAcc = L.circle([lat, lon], {
+        const radioVisual = Math.min(Math.max(acc * 0.12, 10), 38);
+        const cOpt = {
             radius: radioVisual,
             color: '#10b981',
             fillColor: '#10b981',
-            fillOpacity: 0.08,
-            weight: 1.5,
-            dashArray: '5,5'
-        }).addTo(app.map);
+            fillOpacity: 0.07,
+            weight: 1,
+            dashArray: '4,6',
+            interactive: false,
+            bubblingMouseEvents: true
+        };
+        if (paneGps) cOpt.pane = paneGps;
+        _circuloAcc = L.circle([lat, lon], cOpt).addTo(app.map);
     }
 
     return precisionZoom;
@@ -3499,7 +3625,8 @@ function renderMk() {
         'Media': '#eab308',
         'Baja': '#3b82f6'
     };
-    
+    const panePed = app.map.getPane && app.map.getPane('gnPanePedidos') ? 'gnPanePedidos' : undefined;
+
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
     pedidosParaMarcadoresMapa().forEach(p => {
@@ -3517,15 +3644,19 @@ function renderMk() {
                 iconSize: [100, 36],
                 iconAnchor: [50, 36]
             });
-            m = L.marker([p.la, p.ln], { icon, zIndexOffset: cer ? 80 : 220 }).addTo(app.map);
+            const mkOpt = { icon, zIndexOffset: cer ? 200 : 500 };
+            if (panePed) mkOpt.pane = panePed;
+            m = L.marker([p.la, p.ln], mkOpt).addTo(app.map);
         } else {
-            m = L.circleMarker([p.la, p.ln], {
+            const cmOpt = {
                 radius: cer ? 6 : 9,
                 fillColor: col,
                 color: '#fff',
                 weight: 2,
                 fillOpacity: cer ? 0.5 : 0.9
-            }).addTo(app.map);
+            };
+            if (panePed) cmOpt.pane = panePed;
+            m = L.circleMarker([p.la, p.ln], cmOpt).addTo(app.map);
         }
         m.bindPopup(`
             <div style="min-width:160px;font-family:system-ui">
@@ -5784,6 +5915,7 @@ document.getElementById('ub').addEventListener('click', () => {
         detenerPollWhatsappHumanChat();
         destruirTodasVentanasWaHc();
         detenerTecnicosMapaPrincipalPoll();
+        detenerPollSincroPedidosTecnico();
         _dashCierresInit = false;
         _seenClosedIds.clear();
         try {
@@ -6142,7 +6274,10 @@ document.head.appendChild(xscript);
 
 async function cargarDistribuidores() {
     try {
-        const r = await sqlSimple('SELECT codigo, nombre, tension FROM distribuidores WHERE activo = TRUE ORDER BY codigo');
+        const r = await sqlSimpleSelectAllPages(
+            'SELECT codigo, nombre, tension FROM distribuidores WHERE activo = TRUE',
+            'ORDER BY codigo'
+        );
         DIST = (r.rows || []).map(d => ({ v: d.codigo, l: d.codigo + ' - ' + d.nombre, g: d.tension || '' }));
         // Repoblar el select de distribuidores
         const sd = document.getElementById('di2');
@@ -6695,26 +6830,60 @@ function mostrarAlertaPedidoUrgente(pedido) {
 
     tocarAlarma();
 
-    // Crear notificación flotante
+    const pid = String(pedido.id);
+    const deEsc = String(pedido.de || '').replace(/</g, '&lt;');
+    const snip = deEsc.length > 72 ? deEsc.substring(0, 72) + '…' : deEsc;
+
     const alerta = document.createElement('div');
     alerta.style.cssText = `
         position:fixed;top:1rem;left:50%;transform:translateX(-50%);
         background:${pedido.pr === 'Crítica' ? '#dc2626' : '#f97316'};
         color:white;padding:1rem 1.5rem;border-radius:.75rem;
-        z-index:9999;max-width:90vw;box-shadow:0 8px 25px rgba(0,0,0,.3);
-        animation:alertaIn .3s ease;font-weight:600;display:flex;gap:.75rem;align-items:center
+        z-index:9999;max-width:min(92vw,520px);box-shadow:0 8px 25px rgba(0,0,0,.3);
+        animation:alertaIn .3s ease;font-weight:600;display:flex;gap:.75rem;align-items:flex-start;
+        cursor:pointer
     `;
+    alerta.setAttribute('role', 'button');
+    alerta.setAttribute('tabindex', '0');
+    alerta.title = 'Tocá para abrir el detalle del reclamo';
     alerta.innerHTML = `
-        <i class="fas fa-exclamation-triangle" style="font-size:1.4rem"></i>
-        <div>
+        <i class="fas fa-exclamation-triangle" style="font-size:1.4rem;flex-shrink:0;margin-top:.1rem"></i>
+        <div style="flex:1;min-width:0">
             <div style="font-size:1rem">⚠️ Pedido ${pedido.pr.toUpperCase()}</div>
-            <div style="font-size:.85rem;opacity:.9">#${pedido.np} — ${pedido.tt || 'Sin tipo'}</div>
-            <div style="font-size:.8rem;opacity:.8">${pedido.de?.substring(0,60)}...</div>
+            <div style="font-size:.85rem;opacity:.95">#${pedido.np} — ${String(pedido.tt || 'Sin tipo').replace(/</g, '&lt;')}</div>
+            <div style="font-size:.78rem;opacity:.88;line-height:1.35;margin-top:.25rem">${snip || '—'}</div>
+            <div style="font-size:.72rem;opacity:.75;margin-top:.35rem">Tocá para ver el detalle</div>
         </div>
-        <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:1rem">✕</button>
+        <button type="button" class="gn-alerta-urgente-cerrar" aria-label="Cerrar" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:1rem;flex-shrink:0">✕</button>
     `;
+    const cerrar = (ev) => {
+        ev.stopPropagation();
+        try { alerta.remove(); } catch (_) {}
+    };
+    alerta.querySelector('.gn-alerta-urgente-cerrar')?.addEventListener('click', cerrar);
+
+    const abrir = async () => {
+        try { alerta.remove(); } catch (_) {}
+        await cargarPedidos({ silent: true });
+        const p = app.p.find(x => String(x.id) === pid);
+        if (p) {
+            app.tab = 'c';
+            document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
+            render();
+            detalle(p);
+        } else {
+            toast('Actualizá la lista — pedido no encontrado en caché', 'info');
+        }
+    };
+    alerta.addEventListener('click', abrir);
+    alerta.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            abrir();
+        }
+    });
     document.body.appendChild(alerta);
-    setTimeout(() => { if (alerta.parentElement) alerta.remove(); }, 8000);
+    setTimeout(() => { if (alerta.parentElement) alerta.remove(); }, 45000);
 }
 
 
@@ -7019,7 +7188,10 @@ async function cargarListaDistribuidoresAdmin() {
     const cont = document.getElementById('lista-distribuidores-admin');
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, codigo, nombre, tension, activo FROM distribuidores ORDER BY codigo');
+        const r = await sqlSimpleSelectAllPages(
+            'SELECT id, codigo, nombre, tension, activo FROM distribuidores',
+            'ORDER BY codigo'
+        );
         if (!r.rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin distribuidores. Cargalos manualmente o importá un Excel.</p>';
             return;
@@ -7079,35 +7251,62 @@ async function importarExcelDistribuidores(event) {
     const file = event.target.files[0];
     if (!file) return;
     if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    const errMsgs = [];
     try {
+        mostrarOverlayImportacion('Leyendo Excel de distribuidores…');
         const reemplazar = document.getElementById('distribuidores-import-reemplazar')?.checked;
         if (reemplazar) {
+            actualizarOverlayImportacion('Vaciando tabla de distribuidores…');
             await sqlSimple('DELETE FROM distribuidores');
-            toast('Tabla de distribuidores vaciada — importando…', 'info');
         }
         const buf = await file.arrayBuffer();
-        const wb  = XLSX.read(buf, { type: 'array' });
-        const ws  = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: ['codigo','nombre','tension'], range: 1 });
-        if (!rows.length) { toast('Excel vacío o formato incorrecto', 'error'); return; }
-        let ok = 0, fail = 0;
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: ['codigo', 'nombre', 'tension'], range: 1, defval: '', raw: false });
+        if (!rows.length) {
+            ocultarOverlayImportacion();
+            toast('Excel vacío o formato incorrecto', 'error');
+            event.target.value = '';
+            return;
+        }
+        let ok = 0;
+        let fail = 0;
+        let idx = 0;
         for (const row of rows) {
+            idx++;
             if (!row.codigo || !row.nombre) continue;
+            actualizarOverlayImportacion(`Importando distribuidores… ${ok + fail + 1} / ${rows.length}`);
+            if (idx % 80 === 0) await new Promise(r => setTimeout(r, 0));
             try {
                 await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
                     VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(row.tension ? String(row.tension).trim() : null)})
                     ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension`);
                 ok++;
-            } catch(_) { fail++; }
+            } catch (e) {
+                fail++;
+                if (errMsgs.length < 8) errMsgs.push(`Fila ~${idx + 1}: ${e && e.message ? e.message : String(e)}`);
+            }
         }
-        toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}${reemplazar ? ' (tabla reemplazada)' : ''}`, ok > 0 ? 'success' : 'error');
+        ocultarOverlayImportacion();
+        const suf = reemplazar ? ' (tabla reemplazada)' : '';
+        if (fail && !ok) {
+            toast(`Importación con errores: 0 OK, ${fail} fallidos${suf}`, 'error');
+            alert('No se pudo completar la importación de distribuidores.\n\n' + errMsgs.join('\n'));
+        } else {
+            toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}${suf}`, ok > 0 ? 'success' : 'error');
+            if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
+        }
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
         try {
             const chk = document.getElementById('distribuidores-import-reemplazar');
             if (chk) chk.checked = false;
         } catch (_) {}
-    } catch(e) { toast('Error al leer Excel: ' + e.message, 'error'); }
+    } catch (e) {
+        ocultarOverlayImportacion();
+        toast('Error al leer Excel: ' + e.message, 'error');
+        alert('Error al importar distribuidores: ' + e.message);
+    }
     event.target.value = '';
 }
 
@@ -7116,7 +7315,10 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor');
+        const r = await sqlSimpleSelectAllPages(
+            'SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo',
+            'ORDER BY nis_medidor'
+        );
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
@@ -7161,17 +7363,24 @@ async function importarExcelSocios(event) {
     const file = event.target.files[0];
     if (!file) return;
     if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    const errMsgs = [];
     try {
+        mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
+            actualizarOverlayImportacion('Vaciando catálogo de socios…');
             await sqlSimple('DELETE FROM socios_catalogo');
-            toast('Catálogo vaciado — importando…', 'info');
         }
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-        if (!rawRows.length) { toast('Excel vacío o sin filas de datos', 'error'); return; }
+        if (!rawRows.length) {
+            ocultarOverlayImportacion();
+            toast('Excel vacío o sin filas de datos', 'error');
+            event.target.value = '';
+            return;
+        }
         const primera = rawRows[0];
         const mapNormAOriginal = {};
         Object.keys(primera).forEach(orig => {
@@ -7179,10 +7388,14 @@ async function importarExcelSocios(event) {
             if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
         });
         let ok = 0, fail = 0;
+        let filaN = 0;
         for (const row of rawRows) {
+            filaN++;
             const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
             if (!nis) continue;
+            actualizarOverlayImportacion(`Importando socios… ${filaN} / ${rawRows.length}`);
+            if (filaN % 80 === 0) await new Promise(r => setTimeout(r, 0));
             const nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
             let calle = valorSociosPorEncabezados(row, mapNormAOriginal, 'calle', 'calle_nombre', 'via');
             let numero = valorSociosPorEncabezados(row, mapNormAOriginal, 'numero', 'nro', 'num', 'altura', 'numero_calle', 'n');
@@ -7213,15 +7426,30 @@ async function importarExcelSocios(event) {
                     VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)})
                     ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador`);
                 ok++;
-            } catch (_) { fail++; }
+            } catch (e) {
+                fail++;
+                if (errMsgs.length < 8) errMsgs.push(`NIS ${nis}: ${e && e.message ? e.message : String(e)}`);
+            }
         }
-        toast(`Socios: ${ok} OK` + (fail ? ', ' + fail + ' errores' : '') + (reemplazar ? ' (catálogo reemplazado)' : ''), ok > 0 ? 'success' : 'error');
+        ocultarOverlayImportacion();
+        const sufS = reemplazar ? ' (catálogo reemplazado)' : '';
+        if (fail && !ok) {
+            toast(`Socios: 0 OK, ${fail} errores${sufS}`, 'error');
+            alert('No se pudo completar la importación de socios.\n\n' + errMsgs.join('\n'));
+        } else {
+            toast(`Socios: ${ok} OK` + (fail ? ', ' + fail + ' errores' : '') + sufS, ok > 0 ? 'success' : 'error');
+            if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
+        }
         cargarListaSociosAdmin();
         try {
             const chk = document.getElementById('socios-import-reemplazar');
             if (chk) chk.checked = false;
         } catch (_) {}
-    } catch (e) { toast('Error al leer Excel: ' + e.message, 'error'); }
+    } catch (e) {
+        ocultarOverlayImportacion();
+        toast('Error al leer Excel: ' + e.message, 'error');
+        alert('Error al importar socios: ' + e.message);
+    }
     event.target.value = '';
 }
 

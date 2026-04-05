@@ -749,9 +749,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       text,
       nombreEntidad: ctx?.nombre,
     });
-    if (opinionTry.handled && opinionTry.ack) {
+    if (opinionTry.handled) {
       sessions.delete(sk);
-      await reply(phone, opinionTry.ack, tid, phoneNumberId);
+      if (opinionTry.ack) {
+        await reply(phone, opinionTry.ack, tid, phoneNumberId);
+      }
       return;
     }
   } catch (e) {

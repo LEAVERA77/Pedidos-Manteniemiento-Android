@@ -203,6 +203,16 @@ export async function runInitMap() {
 
     gnAttachBaseMapLayers(ctx.app.map);
 
+    const map = ctx.app.map;
+    if (!map.getPane('gnPanePedidos')) {
+        map.createPane('gnPanePedidos');
+        map.getPane('gnPanePedidos').style.zIndex = 650;
+    }
+    if (!map.getPane('gnPaneGpsUser')) {
+        map.createPane('gnPaneGpsUser');
+        map.getPane('gnPaneGpsUser').style.zIndex = 420;
+    }
+
     const actualizarEscala = () => {
         if (ctx.app.map)
             ctx.document.getElementById('zoom-altura').textContent = ctx.calcularEscalaReal(ctx.app.map.getZoom());

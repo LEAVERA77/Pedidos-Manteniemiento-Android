@@ -144,53 +144,9 @@ function esComandoExcluidoFlujoMenu(low, raw) {
   return false;
 }
 
-/** Agradecimientos / conformidad breve (con opinión pendiente se guardan igual). */
-function esMensajeCortoConformidad(low) {
-  if (!low || low.length > 80) return false;
-  const compact = low.replace(/\s+/g, " ").trim();
-  const tokens = [
-    "gracias",
-    "muchas gracias",
-    "mil gracias",
-    "muy amable",
-    "ok",
-    "okey",
-    "okay",
-    "listo",
-    "perfecto",
-    "bueno",
-    "dale",
-    "genial",
-    "excelente",
-    "conforme",
-    "bien",
-    "todo bien",
-    "todo ok",
-    "todo perfecto",
-    "sisi",
-    "si",
-    "sip",
-    "joya",
-    "buenisimo",
-    "todo joya",
-    "👍",
-    "👌",
-  ];
-  for (const tok of tokens) {
-    if (compact === tok || compact.startsWith(tok + " ")) return true;
-  }
-  if (/^👍+$/.test(compact) || /^👌+$/.test(compact) || /^✅+$/.test(compact)) return true;
-  return false;
-}
-
-function ackOpinionInstitucion(nombreEntidad) {
-  const ent = String(nombreEntidad || "").trim() || "nuestra institución";
-  return `Gracias por sus comentarios. Lo tendremos en consideración. (*${ent}*)`;
-}
-
-/** Tras el cierre: agradecimientos breves sin reabrir el menú del bot. */
-function ackOpinionCierreCorto() {
-  return "Gracias.";
+/** Tras guardar la opinión del cliente: un solo mensaje, sin menú ni lista de opciones. */
+function ackOpinionClienteGuardada() {
+  return "Gracias por su respuesta, la tendremos en cuenta.";
 }
 
 /** Solo comandos explícitos para volver al menú (con opinión pendiente aún activa). */
@@ -239,9 +195,7 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
       pend.pedidoId,
     ]);
 
-    const ack = esMensajeCortoConformidad(low)
-      ? ackOpinionCierreCorto()
-      : ackOpinionInstitucion(nombreEntidad);
+    const ack = ackOpinionClienteGuardada();
     return { handled: true, ack };
   }
 

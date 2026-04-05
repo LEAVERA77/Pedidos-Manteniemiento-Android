@@ -383,3 +383,17 @@ textarea{resize:vertical;min-height:80px}
 #cache-progress-bar .bar{flex:1;height:6px;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden}
 #cache-progress-bar .fill{height:100%;background:#10b981;border-radius:3px;transition:width .3s}
 .leaflet-div-icon{background:none!important;border:none!important}
+
+/* Importación Excel (admin): cartel fijo hasta terminar todas las filas */
+.gn-import-overlay{
+  position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.45);
+  display:none;align-items:center;justify-content:center;padding:1rem;
+  pointer-events:all;
+}
+.gn-import-overlay-card{
+  background:#fff;color:var(--td,#0f172a);max-width:min(420px,92vw);
+  padding:1.15rem 1.35rem;border-radius:.85rem;box-shadow:0 20px 50px rgba(0,0,0,.35);
+  border:1px solid var(--bo,#e2e8f0);display:flex;gap:.85rem;align-items:flex-start;
+}
+.gn-import-overlay-spin{color:var(--bd,#2563eb);font-size:1.35rem;padding-top:.1rem}
+.gn-import-overlay-msg{font-size:.9rem;line-height:1.45;font-weight:600;flex:1;min-width:0}
