@@ -323,13 +323,14 @@ textarea{resize:vertical;min-height:80px}
 /* ── v2.0 ── */
 @keyframes alertaIn{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 @keyframes slideIn{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-.admin-panel{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:5000;display:none;align-items:flex-start;justify-content:center;padding:1rem;overflow-y:auto}
+.admin-panel{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:5000;display:none;align-items:center;justify-content:center;padding:max(.35rem,env(safe-area-inset-top)) max(.35rem,env(safe-area-inset-right)) max(.35rem,env(safe-area-inset-bottom)) max(.35rem,env(safe-area-inset-left));overflow:hidden;box-sizing:border-box}
 .admin-panel.active{display:flex}
 .setup-wizard{z-index:12000;background:rgba(2,6,23,.66)}
 .setup-wizard .mc{max-width:920px;max-height:95vh;width:100%}
 .sw-step{display:none}
 .sw-step.active{display:block}
-.admin-box{background:white;border-radius:1rem;width:100%;max-width:min(1120px,calc(100vw - 1.5rem));box-shadow:0 25px 60px rgba(0,0,0,.35);animation:slideIn .25s ease;margin:1rem auto;max-height:calc(100vh - 2rem);min-height:0;overflow:hidden;display:flex;flex-direction:column}
+/* Casi pantalla completa: ~96% ancho × ~92% alto, mínimo ~70% alto (ya no el recuadro angosto de 1120px). */
+.admin-box{background:white;border-radius:.75rem;width:min(96vw,calc(100vw - .75rem));max-width:none;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:slideIn .25s ease;margin:0 auto;flex:0 1 auto;height:min(92dvh,92vh);min-height:max(70vh,20rem);max-height:min(92dvh,92vh);min-width:0;overflow:hidden;display:flex;flex-direction:column}
 .admin-box > div:first-child{flex-shrink:0}
 .admin-box .admin-tabs{flex-shrink:0}
 /* min-height:0: sin esto flex:1 no encoge y el contenido largo queda cortado por overflow:hidden del .admin-box (tablas distrib/socios). */
