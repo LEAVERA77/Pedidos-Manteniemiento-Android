@@ -1,0 +1,45 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { normalizeWhatsAppRecipientForMeta, decodeWhatsAppListRowId } from "../services/metaWhatsapp.js";
+
+describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it("549 + móvil AR → 54… cuando strip está activo (default)", () => {
+    delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
+    const out = normalizeWhatsAppRecipientForMeta("5493512345678");
+    expect(out.startsWith("54")).toBe(true);
+    expect(out).not.toMatch(/^549/);
+  });
+
+  it("no altera 549 si strip desactivado explícitamente", () => {
+    process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9 = "false";
+    const inDigits = "5493512345678";
+    const out = normalizeWhatsAppRecipientForMeta(inDigits);
+    expect(out).toBe(inDigits.replace(/\D/g, ""));
+  });
+});
+
+describe("metaWhatsapp — decodeWhatsAppListRowId", () => {
+  it("decodifica base64url UTF-8", () => {
+    const encoded = Buffer.from("Corte de Energía", "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/u, "");
+    expect(decodeWhatsAppListRowId(encoded)).toBe("Corte de Energía");
+  });
+
+  it("id no base64 útil no reproduce un tipo conocido (Node devuelve cadena vacía u otro)", () => {
+    const r = decodeWhatsAppListRowId("!!!");
+    expect(["", null].includes(r) || !String(r).includes("Corte")).toBe(true);
+  });
+});
