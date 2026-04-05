@@ -5971,7 +5971,7 @@ function escHtmlPrint(s) {
 async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
-    if (pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p)) return;
+    if (esTipoPedidoFactibilidad(p.tt)) return;
     const pid = parseInt(p.id, 10);
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
@@ -6353,7 +6353,7 @@ function detalle(p) {
             ${p.opin ? `<div class="dr" style="flex-direction:column;gap:.3rem;margin-top:.5rem"><span class="dl">Opinión del cliente (WhatsApp)</span><div class="trb">${String(p.opin).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
         </div>` : ''}
 
-        ${pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p) ? '' : `
+        ${esTipoPedidoFactibilidad(p.tt) ? '' : `
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
             <h4>🔧 Materiales</h4>
             <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
@@ -6386,7 +6386,7 @@ function detalle(p) {
     
     document.getElementById('dm').classList.add('active');
     requestAnimationFrame(() => {
-        if (!pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p)) refrescarMaterialesEnDetalle(p);
+        if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
     });
 }
 
@@ -6913,20 +6913,18 @@ function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
     return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }
 
+/** Tipos de trabajo de factibilidad: sin carga ni edición de materiales (cualquier origen). */
+function esTipoPedidoFactibilidad(tipoTrabajo) {
+    return String(tipoTrabajo || '').trim().toLowerCase().includes('factibilidad');
+}
+
 /** Pedidos donde no se gestionan materiales (detalle, impresión, APIs UI). */
 function tipoPedidoExcluyeMateriales(tipoTrabajo) {
     const v = String(tipoTrabajo || '').trim();
     if (!v) return false;
     if (v === 'Otros') return true;
-    if (v.toLowerCase().includes('factibilidad')) return true;
+    if (esTipoPedidoFactibilidad(v)) return true;
     return false;
-}
-
-/** Factibilidad vía bot WhatsApp: sin sección de materiales en el modal de detalle. */
-function pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p) {
-    if (!p) return false;
-    if (String(p.orc || '').trim() !== 'whatsapp') return false;
-    return String(p.tt || '').trim().toLowerCase().includes('factibilidad');
 }
 
 /** Alineado con api/services/tiposReclamo.js (cooperativa eléctrica). */
