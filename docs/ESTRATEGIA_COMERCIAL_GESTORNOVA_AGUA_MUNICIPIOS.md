@@ -82,9 +82,11 @@ Documento operativo para contactar cooperativas de agua potable y operadores mun
 
 ## Neon / SQL
 
-**No se requieren tablas nuevas** para ejecutar esta estrategia comercial: el producto ya usa `pedidos`, `socios_catalogo`, usuarios, notificaciones, ubicaciones, etc.
+**No son obligatorias tablas nuevas** para operar el producto: ya existen `pedidos`, `socios_catalogo`, usuarios, notificaciones, ubicaciones, etc.
 
-Si en el futuro quisieran **KPIs persistidos en base** (metas por cooperativa, snapshots mensuales), se podría diseñar algo como `kpi_snapshots (tenant_id, periodo, metrica, valor)` — opcional, no incluido en este documento.
+Para **persistir KPIs de piloto o reportes históricos por cooperativa/municipio**, ejecutar en Neon:
+
+- `docs/NEON_kpi_snapshots.sql` — tabla `kpi_snapshots` con `tenant_id INTEGER` alineado a `pedidos.tenant_id` / `usuarios.tenant_id`, ventana `periodo_inicio` / `periodo_fin`, `valor_numero`, `valor_json`, `unidad`, `fuente`.
 
 ---
 
