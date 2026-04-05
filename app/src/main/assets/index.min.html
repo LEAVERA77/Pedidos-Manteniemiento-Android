@@ -61,6 +61,7 @@
       <button id="ub" class="ib"><i class="fas fa-user-circle"></i></button>
       <button id="btn-android-descargas" type="button" class="ib" title="Abrir carpeta Descargas (exports)" style="display:none" onclick="if(window.AndroidDevice&amp;&amp;typeof AndroidDevice.openExportsFolder==='function')AndroidDevice.openExportsFolder();"><i class="fas fa-folder-open"></i></button>
       <button id="btn-dashboard-gerencia" class="ib" onclick="abrirModalDashboardGerencia()" title="Dashboard tiempo real" style="display:none"><i class="fas fa-tachometer-alt"></i></button>
+      <button id="btn-admin-cambiar-rubro" type="button" class="ib" onclick="abrirModalCambioRubroAdminConPassword()" title="Cambiar tipo de negocio (rubro)" style="display:none"><i class="fas fa-briefcase"></i></button>
       <button id="btn-admin" class="ib" onclick="abrirAdmin()" title="Panel Admin" style="display:none"><i class="fas fa-cog"></i></button>
     </div>
   </div>
@@ -68,6 +69,13 @@
   <div id="mapa-overlay-ui">
     <button type="button" id="map-tab-android-bar" class="map-slide-tab map-tab-android-bar" onclick="toggleAndroidMapStripCollapsed(false)" title="Mostrar barra (filtros / alcance)">Barra</button>
     <button type="button" id="map-tab-filtros" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
+    <button type="button" id="map-tab-filtro-tipo" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtro-tipo',false)" title="Mostrar filtro por tipo de reclamo" style="top:140px">Tipo</button>
+    <div id="mapa-card-filtro-tipo" class="moui-card">
+      <div class="moui-hd" onclick="toggleMapaFiltroTipoBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tags"></i> Tipo de reclamo <span id="mapa-filtro-tipo-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtro-tipo',true)"><i class="fas fa-eye-slash"></i></button></div>
+      <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll" style="max-height:min(52vh,320px)">
+        <p style="font-size:.68rem;color:var(--tm);margin:0 0 .35rem;line-height:1.35">Mostrar en el mapa solo los tipos marcados (según el rubro actual).</p>
+      </div>
+    </div>
     <div id="mapa-card-filtros" class="moui-card">
       <div class="moui-hd" onclick="toggleMapaFiltrosBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-filtros-body" class="moui-bd">
@@ -89,7 +97,7 @@
         <button type="button" class="moui-btn-reset" onclick="resetMapaFiltros()">Restablecer filtros</button>
       </div>
     </div>
-    <button type="button" id="map-tab-colores" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-colores',false)" title="Mostrar colores" style="top:160px">Colores</button>
+    <button type="button" id="map-tab-colores" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-colores',false)" title="Mostrar colores" style="top:180px">Colores</button>
     <div id="mapa-card-colores" class="moui-card">
       <div class="moui-hd" onclick="toggleMapaColoresBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-palette"></i> Colores (prioridad) <span id="mapa-colores-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-colores',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-colores-body" class="moui-bd">
@@ -103,7 +111,7 @@
         <div class="ll-foot">Casco verde: técnico con GPS reciente (solo admin).</div>
       </div>
     </div>
-    <button type="button" id="map-tab-dash" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-dashboard',false)" title="Mostrar dashboard" style="top:200px">Dash</button>
+    <button type="button" id="map-tab-dash" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-dashboard',false)" title="Mostrar dashboard" style="top:220px">Dash</button>
     <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">
       <div class="moui-hd" onclick="toggleMapaDashBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-dashboard',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-dash-body" class="moui-bd moui-scroll">
@@ -176,7 +184,7 @@
           <option value="proyectadas">Proyectadas (según configuración de empresa)</option>
         </select>
       </div>
-      <div class="fg"><label for="di2">Distribuidor</label>
+      <div class="fg"><label for="di2" id="lbl-di2-zona">Distribuidor</label>
         <select id="di2">
           <option value="">— Solo se completa con NIS/medidor en catálogo —</option>
         </select>
@@ -417,7 +425,7 @@
     </div>
     <div id="admin-distribuidores" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Distribuidores</h3>
+        <h3 id="admin-zona-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Distribuidores</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn-sm primary" onclick="abrirFormDistribuidor()"><i class="fas fa-plus"></i> Nuevo</button>
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-dist" accept=".xlsx,.xls" style="display:none" onchange="importarExcelDistribuidores(event)"></label>
@@ -522,11 +530,19 @@
         </div>
         <div class="chart-wrap" style="margin:0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-            <h4 style="margin:0">Por distribuidor</h4>
+            <h4 id="estadisticas-titulo-zona" style="margin:0">Por distribuidor</h4>
             <button class="btn-sm" onclick="descargarGrafico('chart-distribuidores','por_distribuidor')" title="Descargar" style="background:var(--bg);border:1px solid var(--bo);padding:.2rem .5rem"><i class="fas fa-download"></i></button>
           </div>
           <div class="chart-container chart-container--tall"><canvas id="chart-distribuidores"></canvas></div>
           <div class="chart-legend-caption" id="chart-cap-distribuidores"></div>
+        </div>
+        <div class="chart-wrap" id="chart-wrap-barrios-tiempo" style="display:none;margin:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+            <h4 style="margin:0">Tiempo promedio de cierre por barrio</h4>
+            <button class="btn-sm" onclick="descargarGrafico('chart-barrios-tiempo','tiempo_cierre_barrio')" title="Descargar" style="background:var(--bg);border:1px solid var(--bo);padding:.2rem .5rem"><i class="fas fa-download"></i></button>
+          </div>
+          <div class="chart-container chart-container--tall"><canvas id="chart-barrios-tiempo"></canvas></div>
+          <div class="chart-legend-caption" id="chart-cap-barrios-tiempo"></div>
         </div>
         <div class="chart-wrap" style="margin:0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
@@ -685,11 +701,25 @@
     </div>
   </div>
 </div>
+<div id="modal-admin-verify-pw-rubro" class="mo" style="z-index:6095">
+  <div class="mc" style="max-width:400px">
+    <div class="mh"><h3><i class="fas fa-lock"></i> Confirmar contraseña</h3></div>
+    <div class="mb">
+      <p style="font-size:.82rem;color:var(--tm);margin:0 0 .75rem;line-height:1.4">Ingresá tu contraseña de administrador para cambiar el tipo de negocio.</p>
+      <label style="display:block;font-size:.78rem;color:var(--tl);margin-bottom:.25rem">Contraseña</label>
+      <input id="admin-verify-pw-rubro-input" type="password" autocomplete="current-password" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:1rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="sec" onclick="document.getElementById('modal-admin-verify-pw-rubro').classList.remove('active')">Cancelar</button>
+        <button type="button" class="bp" onclick="confirmarPasswordYAbrirRubroAdmin()"><i class="fas fa-check"></i> Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="modal-admin-tipo-negocio" class="mo" style="z-index:6100">
   <div class="mc" style="max-width:420px">
     <div class="mh"><h3><i class="fas fa-briefcase"></i> Tipo de negocio (admin web)</h3></div>
     <div class="mb">
-      <p style="font-size:.85rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">En la página web del administrador tenés que confirmar el rubro en cada inicio de sesión (útil para probar municipio vs cooperativas). En la app Android no aparece este paso.</p>
+      <p style="font-size:.85rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">La primera vez en este navegador se pide el rubro para adaptar textos, catálogos y estadísticas. Después podés cambiarlo con el botón <strong>maletín</strong> arriba a la derecha (pide contraseña). En la app Android no aparece este paso.</p>
       <label style="display:block;font-size:.78rem;color:var(--tl);margin-bottom:.25rem">Tipo *</label>
       <select id="admin-sesion-tipo" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:.65rem">
         <option value="">Seleccionar...</option>

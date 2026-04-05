@@ -2458,6 +2458,15 @@ function toggleMapaFiltrosBody() {
     if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
 }
 
+function toggleMapaFiltroTipoBody() {
+    const b = document.getElementById('mapa-filtro-tipo-body');
+    const ch = document.getElementById('mapa-filtro-tipo-chevron');
+    if (!b) return;
+    b.classList.toggle('collapsed');
+    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
+}
+window.toggleMapaFiltroTipoBody = toggleMapaFiltroTipoBody;
+
 function toggleMapaDashBody() {
     const b = document.getElementById('mapa-dash-body');
     const ch = document.getElementById('mapa-dash-chevron');
@@ -4443,7 +4452,7 @@ async function imprimirPedidoAsync(p) {
             
             <h2>🏢 Datos del Trabajo</h2>
             <table>
-                <tr><td>Distribuidor:</td><td>${escHtmlPrint(p.dis)}</td></tr>
+                <tr><td>${etiquetaZonaPedido()}:</td><td>${escHtmlPrint(valorZonaPedidoUI(p))}</td></tr>
                 ${String(p.trf || '').trim() ? `<tr><td>Trafo:</td><td>${escHtmlPrint(p.trf)}</td></tr>` : ''}
                 ${String(p.nis || '').trim() ? `<tr><td>NIS</td><td>${escHtmlPrint(p.nis)}</td></tr>` : ''}
                 ${String(p.cnom || p.cl || '').trim() ? `<tr><td>Nombre y apellido</td><td>${escHtmlPrint(p.cnom || p.cl)}</td></tr>` : ''}
@@ -5942,7 +5951,7 @@ function detalle(p) {
         
         <div class="ds">
             <h4>🏢 Datos del Trabajo</h4>
-            <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis || '—'}</span></div>
+            <div class="dr"><span class="dl">${etiquetaZonaPedido()}</span><span class="dv">${valorZonaPedidoUI(p) || '—'}</span></div>
             ${String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
@@ -6063,8 +6072,8 @@ function exportPedido(pedidos, nombre) {
             'Fecha Creación': p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '',
             'Fecha Cierre': p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '',
             'Fecha Último Avance': p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '',
-            'Distribuidor': p.dis || '',
-            'Trafo': p.trf || '',
+            [etiquetaZonaPedido()]: valorZonaPedidoUI(p) || '',
+            ...(esCooperativaElectricaRubro() ? { Trafo: p.trf || '' } : {}),
             'Cliente': p.cl || '',
             'Tipo de Trabajo': p.tt || '',
             'NIS': p.nis || '',
@@ -6565,6 +6574,7 @@ if (st) {
 }
 syncNisClienteReclamoConexionUI();
 syncSuministroElectricoUI();
+try { syncZonaPedidoFormLabels(); } catch (_) {}
 
 function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
@@ -7218,6 +7228,10 @@ function aplicarEtiquetasPorTipo(tipo) {
             ? 'Catálogo de vecinos (NIS / medidor)'
             : 'Catálogo de socios (NIS / medidor)';
     }
+    const hZona = document.getElementById('admin-zona-catalogo-titulo');
+    if (hZona) {
+        hZona.textContent = esMunicipio ? 'Barrios' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
+    }
     const firma = document.getElementById('lbl-firma-cierre');
     if (firma) {
         firma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${esMunicipio ? 'vecino' : 'socio'}`;
@@ -7229,8 +7243,7 @@ function aplicarEtiquetasPorTipo(tipo) {
 
 function syncZonaPedidoFormLabels() {
     const di2 = document.getElementById('di2');
-    const wrap = di2?.closest('.fg');
-    const lb = wrap?.querySelector('label[for="di2"]');
+    const lb = document.getElementById('lbl-di2-zona') || di2?.closest('.fg')?.querySelector('label[for="di2"]');
     if (lb) lb.textContent = etiquetaZonaPedido();
     if (di2 && di2.options && di2.options[0]) {
         di2.options[0].textContent =
@@ -8092,6 +8105,9 @@ async function eliminarUsuario(id) {
 // ── Distribuidores admin ──────────────────────────────────────
 async function cargarListaDistribuidoresAdmin() {
     const cont = document.getElementById('lista-distribuidores-admin');
+    const zonaP = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
+    const zona1 = esMunicipioRubro() ? 'barrio' : esCooperativaAguaRubro() ? 'ramal' : 'distribuidor';
+    const zonaN = (n) => (n === 1 ? zona1 : zonaP);
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
@@ -8099,7 +8115,7 @@ async function cargarListaDistribuidoresAdmin() {
             'ORDER BY codigo'
         );
         if (!r.rows.length) {
-            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin distribuidores. Cargalos manualmente o importá un Excel.</p>';
+            cont.innerHTML = `<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin ${zonaP}. Cargalos manualmente o importá un Excel.</p>`;
             return;
         }
         const n = r.rows.length;
@@ -8115,7 +8131,7 @@ async function cargarListaDistribuidoresAdmin() {
                 </td>
             </tr>`).join('')}</tbody>
         </table>
-        <p style="font-size:.78rem;color:var(--tm);margin:.55rem 0 0">Total en base de datos: <strong>${n}</strong> distribuidor${n === 1 ? '' : 'es'}. Desplazá esta sección si la lista es larga.</p>`;
+        <p style="font-size:.78rem;color:var(--tm);margin:.55rem 0 0">Total en base de datos: <strong>${n}</strong> ${zonaN(n)}. Desplazá esta sección si la lista es larga.</p>`;
     } catch(e) { cont.innerHTML = '<p style="color:var(--re)">' + e.message + '</p>'; }
 }
 
@@ -8131,7 +8147,7 @@ async function crearDistribuidor() {
     if (!codigo || !nombre) { toast('Código y nombre son obligatorios', 'error'); return; }
     try {
         await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension) VALUES(${esc(codigo)}, ${esc(nombre)}, ${esc(tension || null)})`);
-        toast('Distribuidor creado', 'success');
+        toast(`${etiquetaZonaPedido()} creado`, 'success');
         document.getElementById('form-distribuidor').style.display = 'none';
         ['nd-codigo','nd-nombre','nd-tension'].forEach(id => document.getElementById(id).value = '');
         cargarListaDistribuidoresAdmin();
@@ -8142,7 +8158,7 @@ async function crearDistribuidor() {
 }
 
 async function eliminarDistribuidor(id) {
-    if (!confirm('¿Eliminar este distribuidor?')) return;
+    if (!confirm(`¿Eliminar este ${etiquetaZonaPedido().toLowerCase()}?`)) return;
     try {
         await sqlSimple(`DELETE FROM distribuidores WHERE id = ${esc(id)}`);
         toast('Eliminado', 'success');
@@ -8152,19 +8168,23 @@ async function eliminarDistribuidor(id) {
 }
 
 function mostrarFormatoExcel() {
-    alert('Formato requerido para el Excel:\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — OPCIONAL\n\nLa fila 1 debe tener los encabezados: codigo | nombre | tension\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los distribuidores y volver a cargar desde cero (afecta toda la base).');
+    const ent = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
+    alert(
+        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — OPCIONAL (cooperativa eléctrica)\n\nLa fila 1 debe tener los encabezados: codigo | nombre | tension\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los registros y volver a cargar desde cero (afecta toda la base).`
+    );
 }
 
 async function importarExcelDistribuidores(event) {
     const file = event.target.files[0];
     if (!file) return;
     if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    const zpl = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
     const errMsgs = [];
     try {
-        mostrarOverlayImportacion('Leyendo Excel de distribuidores…');
+        mostrarOverlayImportacion(`Leyendo Excel de ${zpl}…`);
         const reemplazar = document.getElementById('distribuidores-import-reemplazar')?.checked;
         if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando tabla de distribuidores…');
+            actualizarOverlayImportacion('Vaciando tabla…');
             await sqlSimple('DELETE FROM distribuidores');
         }
         const buf = await file.arrayBuffer();
@@ -8183,7 +8203,7 @@ async function importarExcelDistribuidores(event) {
         for (const row of rows) {
             idx++;
             if (!row.codigo || !row.nombre) continue;
-            actualizarOverlayImportacion(`Importando distribuidores… ${ok + fail + 1} / ${rows.length}`);
+            actualizarOverlayImportacion(`Importando ${zpl}… ${ok + fail + 1} / ${rows.length}`);
             if (idx % 80 === 0) await new Promise(r => setTimeout(r, 0));
             try {
                 await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
@@ -8199,7 +8219,7 @@ async function importarExcelDistribuidores(event) {
         const suf = reemplazar ? ' (tabla reemplazada)' : '';
         if (fail && !ok) {
             toast(`Importación con errores: 0 OK, ${fail} fallidos${suf}`, 'error');
-            alert('No se pudo completar la importación de distribuidores.\n\n' + errMsgs.join('\n'));
+            alert(`No se pudo completar la importación de ${zpl}.\n\n` + errMsgs.join('\n'));
         } else {
             toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}${suf}`, ok > 0 ? 'success' : 'error');
             if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
@@ -8213,7 +8233,7 @@ async function importarExcelDistribuidores(event) {
     } catch (e) {
         ocultarOverlayImportacion();
         toast('Error al leer Excel: ' + e.message, 'error');
-        alert('Error al importar distribuidores: ' + e.message);
+        alert(`Error al importar ${zpl}: ` + e.message);
     }
     event.target.value = '';
 }
@@ -8968,7 +8988,7 @@ async function cargarEstadisticas() {
               scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
         );
 
-        // ── Gráfico distribuidores: barras con % cierre ────────
+        // ── Gráfico distribuidor / ramal / barrio: barras con % cierre ─
         crearChart('chart-distribuidores', 'bar',
             rDist.rows.map(r => r.distribuidor),
             [
@@ -8979,6 +8999,43 @@ async function cargarEstadisticas() {
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}},
               scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
         );
+
+        if (esMun && (rBarT?.rows || []).length) {
+            crearChart(
+                'chart-barrios-tiempo',
+                'bar',
+                rBarT.rows.map((r) => (String(r.barrio || '').length > 22 ? String(r.barrio).slice(0, 22) + '…' : String(r.barrio || ''))),
+                [
+                    {
+                        label: 'Horas prom. cierre',
+                        data: rBarT.rows.map((r) => parseFloat(r.horas_prom || 0)),
+                        backgroundColor: '#0d948888',
+                        borderColor: '#0d9488',
+                        borderWidth: 1,
+                    },
+                ],
+                {
+                    indexAxis: 'y',
+                    layout: { padding: { top: 4, bottom: 4, left: 4, right: 48 } },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (c) =>
+                                    ' ' +
+                                    (c.parsed?.x != null ? c.parsed.x.toFixed(1) : c.raw) +
+                                    ' h · n=' +
+                                    (rBarT.rows[c.dataIndex]?.n ?? ''),
+                            },
+                        },
+                    },
+                    scales: { x: { beginAtZero: true, title: { display: true, text: 'Horas' } } },
+                }
+            );
+        } else if (_charts['chart-barrios-tiempo']) {
+            _charts['chart-barrios-tiempo'].destroy();
+            delete _charts['chart-barrios-tiempo'];
+        }
 
         // ── Gráfico técnicos de cierre ────────────────────────
         // ── Gráfico por usuario creador ──────────────────────
@@ -9047,15 +9104,24 @@ async function cargarEstadisticas() {
         }
         const capD = document.getElementById('chart-cap-distribuidores');
         if (capD) {
+            const lblZ = esMun ? 'barrio' : esCooperativaAguaRubro() ? 'ramal' : 'distribuidor';
             if ((rDist.rows || []).length) {
                 const lines = rDist.rows.map(r => {
                     const n = parseInt(r.n || 0, 10);
                     const c = parseInt(r.cerrados || 0, 10);
                     const pc = n ? pctOf(c, n) : 0;
-                    return `${scap(r.distribuidor)}: total ${n}, cerrados ${c} (<strong>${pc}%</strong> del propio distribuidor)`;
+                    return `${scap(r.distribuidor)}: total ${n}, cerrados ${c} (<strong>${pc}%</strong> del propio ${lblZ})`;
                 }).join('<br>');
-                capD.innerHTML = `<strong>Por distribuidor</strong><br>${lines}<br><strong>Colores:</strong> azul = total de pedidos; verde = cerrados en el período.`;
+                capD.innerHTML = `<strong>Por ${lblZ}</strong><br>${lines}<br><strong>Colores:</strong> azul = total de pedidos; verde = cerrados en el período.`;
             } else capD.textContent = 'Sin datos en el período.';
+        }
+        const capBT = document.getElementById('chart-cap-barrios-tiempo');
+        if (capBT) {
+            if (esMun && (rBarT?.rows || []).length) {
+                capBT.innerHTML =
+                    '<strong>Tiempo promedio de resolución por barrio</strong> (pedidos cerrados en el período). ' +
+                    'Barras más cortas = cierre más rápido. Requiere columna <code>barrio</code> en pedidos.';
+            } else capBT.textContent = '';
         }
         const totTip = (rTipos.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
         const capT = document.getElementById('chart-cap-tipos');
