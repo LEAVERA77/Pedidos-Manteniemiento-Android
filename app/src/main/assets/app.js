@@ -1691,7 +1691,16 @@ actualizarBadgeOffline();
     const em = document.getElementById('em');
     const pw = document.getElementById('pw');
     const lf = document.getElementById('lf');
+    const lb = document.getElementById('lb');
     if (!em || !pw) return;
+    let usuarioEditoLogin = false;
+    let detenerBarridoLogin = false;
+    const marcarEdicionLogin = () => { usuarioEditoLogin = true; };
+    [em, pw].forEach((el) => {
+        ['input', 'keydown', 'paste', 'cut'].forEach((ev) => el.addEventListener(ev, marcarEdicionLogin, { passive: true }));
+    });
+    lb?.addEventListener('mousedown', () => { detenerBarridoLogin = true; }, { capture: true });
+    lb?.addEventListener('touchstart', () => { detenerBarridoLogin = true; }, { capture: true, passive: true });
     const strip = () => {
         try {
             em.value = '';
@@ -1718,10 +1727,37 @@ actualizarBadgeOffline();
         unlock(em);
         unlock(pw);
     }, { capture: true });
-    strip();
-    requestAnimationFrame(strip);
-    requestAnimationFrame(() => requestAnimationFrame(strip));
-    [0, 50, 200, 500, 1000].forEach((ms) => setTimeout(strip, ms));
+    const barridoSiAutofill = () => {
+        if (detenerBarridoLogin || usuarioEditoLogin) return;
+        if (document.activeElement === em || document.activeElement === pw) return;
+        if (!document.getElementById('ls')?.classList.contains('active')) return;
+        strip();
+    };
+    let antiAutofillIntervalId = null;
+    const programarBarridos = () => {
+        strip();
+        requestAnimationFrame(strip);
+        requestAnimationFrame(() => requestAnimationFrame(strip));
+        [0, 50, 150, 400, 800, 1500, 2500, 4000, 6000].forEach((ms) => setTimeout(barridoSiAutofill, ms));
+        if (antiAutofillIntervalId != null) clearInterval(antiAutofillIntervalId);
+        let n = 0;
+        antiAutofillIntervalId = setInterval(() => {
+            barridoSiAutofill();
+            if (++n >= 35) {
+                clearInterval(antiAutofillIntervalId);
+                antiAutofillIntervalId = null;
+            }
+        }, 200);
+    };
+    programarBarridos();
+    window.addEventListener('load', () => {
+        strip();
+        [80, 300, 900, 2000].forEach((ms) => setTimeout(barridoSiAutofill, ms));
+    });
+    window.addEventListener('pageshow', () => {
+        strip();
+        [100, 400, 1200].forEach((ms) => setTimeout(barridoSiAutofill, ms));
+    });
 })();
 (function pintarMarcaLoginAlCargarModulo() {
     try {
