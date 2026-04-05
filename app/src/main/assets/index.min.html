@@ -86,9 +86,7 @@
     <button type="button" id="map-tab-filtro-tipo" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtro-tipo',false)" title="Mostrar filtro por tipo de reclamo" style="top:140px">Tipo</button>
     <div id="mapa-card-filtro-tipo" class="moui-card">
       <div class="moui-hd" onclick="toggleMapaFiltroTipoBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tags"></i> Tipo de reclamo <span id="mapa-filtro-tipo-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtro-tipo',true)"><i class="fas fa-eye-slash"></i></button></div>
-      <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll" style="max-height:min(52vh,320px)">
-        <p style="font-size:.68rem;color:var(--tm);margin:0 0 .35rem;line-height:1.35">Mostrar en el mapa solo los tipos marcados (según el rubro actual).</p>
-      </div>
+      <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll mapa-filtro-tipo-list" style="max-height:min(52vh,320px)"></div>
     </div>
     <div id="mapa-card-filtros" class="moui-card">
       <div class="moui-hd" onclick="toggleMapaFiltrosBody()"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
@@ -810,13 +808,6 @@
       <div style="display:flex;gap:.75rem;margin-top:1rem">
         <button class="sec" onclick="document.getElementById('modal-reset-pw').classList.remove('active')">Cancelar</button>
         <button id="btn-reset-pw" class="bp" onclick="pasoResetPw()"><i class="fas fa-paper-plane"></i> Enviar código</button>
-      </div>
-      <div style="margin-top:1rem;border-top:1px dashed #cbd5e1;padding-top:.85rem">
-        <div style="font-size:.8rem;color:#475569;font-weight:700;margin-bottom:.35rem">Sin email (solo admin)</div>
-        <div class="fg" style="padding:0"><label>Clave de recuperación admin</label><input id="reset-admin-key" type="password" placeholder="Clave de emergencia"></div>
-        <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña admin</label><input id="reset-admin-newpw" type="password" placeholder="Nueva contraseña"></div>
-        <div id="reset-admin-msg" style="font-size:.83rem;margin-top:.5rem"></div>
-        <button type="button" class="bp" style="margin-top:.65rem" onclick="resetAdminSinEmail()"><i class="fas fa-shield-alt"></i> Restablecer admin</button>
       </div>
     </div>
   </div>

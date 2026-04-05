@@ -2155,10 +2155,11 @@ function syncMapaFiltroTiposRebuild() {
     const lines = tipos.map((t) => {
         const id = 'mapa-flt-tt-' + t.replace(/[^a-z0-9]/gi, '_').slice(0, 40);
         const checked = !prev || prev.has(t);
-        return `<label class="moui-chk" style="width:100%"><input type="checkbox" id="${id}" data-tt="${_escOpt(t)}" ${checked ? 'checked' : ''} onchange="onMapaFiltroTipoTrabajoChange()"> ${_escOpt(t)}</label>`;
+        return `<label class="mapa-flt-tipo-row" for="${id}"><input type="checkbox" id="${id}" data-tt="${_escOpt(t)}" ${checked ? 'checked' : ''} onchange="onMapaFiltroTipoTrabajoChange()"><span class="mapa-flt-tipo-lbl">${_escOpt(t)}</span></label>`;
     });
     host.innerHTML =
-        `<label class="moui-chk" style="width:100%;margin-bottom:.35rem"><input type="checkbox" id="mapa-flt-tt-all" checked onchange="onMapaFiltroTipoTrabajoChange(true)"> Todos los tipos</label>` +
+        `<p class="mapa-filtro-tipo-hint">Mostrar en el mapa solo los tipos marcados (según el rubro actual).</p>` +
+        `<label class="mapa-flt-tipo-row mapa-flt-tipo-row-all" for="mapa-flt-tt-all"><input type="checkbox" id="mapa-flt-tt-all" checked onchange="onMapaFiltroTipoTrabajoChange(true)"><span class="mapa-flt-tipo-lbl">Todos los tipos</span></label>` +
         lines.join('');
     onMapaFiltroTipoTrabajoChange();
 }
@@ -9772,12 +9773,6 @@ let _resetPaso = 1;
 let _resetTokenActual = null;
 let _resetUsuarioAdmin = false;
 
-function _adminRecoveryKeyCfg() {
-    const k1 = window.APP_CONFIG?.admin?.recoveryKey;
-    const k2 = window.APP_CONFIG?.adminRecoveryKey;
-    return String(k1 || k2 || '').trim();
-}
-
 function _errMsg(e) {
     if (!e) return 'Error desconocido';
     if (typeof e === 'string') return e;
@@ -9924,52 +9919,6 @@ async function pasoResetPw() {
     }
 }
 window.pasoResetPw = pasoResetPw;
-
-async function resetAdminSinEmail() {
-    const msg = document.getElementById('reset-admin-msg');
-    const clave = document.getElementById('reset-admin-key').value.trim();
-    const nueva = document.getElementById('reset-admin-newpw').value;
-    const claveCfg = _adminRecoveryKeyCfg();
-    if (!claveCfg) {
-        msg.style.color = '';
-        msg.textContent = 'Recuperación admin no configurada (falta clave en config).';
-        return;
-    }
-    if (!clave || !nueva) {
-        msg.style.color = '';
-        msg.textContent = 'Completá clave y nueva contraseña.';
-        return;
-    }
-    if (nueva.length < 4) {
-        msg.style.color = '';
-        msg.textContent = 'La nueva contraseña debe tener al menos 4 caracteres.';
-        return;
-    }
-    if (clave !== claveCfg) {
-        msg.style.color = '';
-        msg.textContent = 'Clave de recuperación inválida.';
-        return;
-    }
-    try {
-        const r = await sqlSimple(`SELECT id FROM usuarios WHERE activo = TRUE AND rol = 'admin' ORDER BY id LIMIT 1`);
-        if (!r.rows[0]) {
-            msg.style.color = '';
-            msg.textContent = 'No se encontró usuario admin activo.';
-            return;
-        }
-        await sqlSimple(`UPDATE usuarios
-            SET password_hash = ${esc(nueva)}, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE
-            WHERE id = ${esc(r.rows[0].id)}`);
-        msg.style.color = '#166534';
-        msg.textContent = '✓ Contraseña de admin restablecida.';
-        document.getElementById('reset-admin-key').value = '';
-        document.getElementById('reset-admin-newpw').value = '';
-    } catch (e) {
-        msg.style.color = '';
-        msg.textContent = 'Error: ' + _errMsg(e);
-    }
-}
-window.resetAdminSinEmail = resetAdminSinEmail;
 
 // ── Banner offline ocultable ──────────────────────────────────
 function toggleOfflineBanner() {

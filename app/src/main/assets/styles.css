@@ -218,6 +218,16 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .fr .hf{flex:1;padding:0;margin-bottom:0}
 label{display:block;margin-bottom:.35rem;font-weight:600;font-size:.83rem;color:var(--tm);display:flex;align-items:center;gap:.3rem}
 input,select,textarea{width:100%;padding:.65rem .8rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.93rem;background:white;color:var(--td)}
+input[type=checkbox],input[type=radio]{width:auto;max-width:none;flex-shrink:0;margin:0;accent-color:var(--bm)}
+.moui-scroll{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.mapa-filtro-tipo-list{display:flex;flex-direction:column;gap:.2rem;padding:.45rem .5rem .55rem;align-items:stretch}
+.mapa-filtro-tipo-hint{font-size:.68rem;color:var(--tm);margin:0 0 .4rem;line-height:1.35;flex-shrink:0}
+.mapa-filtro-tipo-list label.mapa-flt-tipo-row{display:flex!important;flex-direction:row!important;align-items:flex-start!important;gap:.5rem!important;width:100%!important;margin:0!important;padding:.32rem .35rem!important;border-radius:.4rem!important;font-weight:500!important;font-size:.74rem!important;color:var(--tm)!important;line-height:1.35!important;cursor:pointer!important;box-sizing:border-box!important;text-align:left!important}
+.mapa-filtro-tipo-list label.mapa-flt-tipo-row:hover{background:rgba(241,245,249,.9)}
+.mapa-filtro-tipo-list label.mapa-flt-tipo-row input[type=checkbox]{width:auto!important;min-width:1.05rem!important;height:1.05rem!important;margin:.1rem 0 0!important;flex-shrink:0!important;cursor:pointer!important;align-self:flex-start!important}
+.mapa-filtro-tipo-list .mapa-flt-tipo-lbl{flex:1;min-width:0;text-align:left!important;word-break:break-word;font-weight:500}
+.mapa-filtro-tipo-list .mapa-flt-tipo-row-all{margin-bottom:.15rem;padding-bottom:.4rem!important;border-bottom:1px solid var(--bo);border-radius:0!important;font-weight:700!important;color:var(--bd)!important}
+.mapa-filtro-tipo-list .mapa-flt-tipo-row-all:hover{background:transparent}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--bl);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
 textarea{resize:vertical;min-height:80px}
 .cc{font-size:.75rem;color:var(--tl);display:block;text-align:right;margin-top:.2rem}
