@@ -5924,6 +5924,51 @@ const st = document.getElementById('tt');
 if (st) st.addEventListener('change', syncNisClienteReclamoConexionUI);
 syncNisClienteReclamoConexionUI();
 
+function esCooperativaElectricaRubro() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
+}
+
+/** Cooperativa eléctrica: al salir del NIS/medidor, si existe en socios_catalogo rellena SETD (trafo), cliente y teléfono. */
+async function onNisBlurRellenarDesdeSociosCatalogo() {
+    if (!esCooperativaElectricaRubro()) return;
+    if (modoOffline || !NEON_OK) return;
+    const inpN = document.getElementById('nis');
+    if (!inpN) return;
+    const raw = (inpN.value || '').trim();
+    if (!raw) return;
+    try {
+        const r = await sqlSimple(
+            `SELECT nombre, telefono, transformador, distribuidor_codigo FROM socios_catalogo
+             WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
+             LIMIT 1`
+        );
+        const row = r.rows?.[0];
+        if (!row) return;
+        const sd = document.getElementById('sd');
+        const cl = document.getElementById('cl');
+        const tel = document.getElementById('ped-tel-contacto');
+        if (sd && row.transformador != null && String(row.transformador).trim()) {
+            sd.value = String(row.transformador).trim();
+        }
+        if (cl && row.nombre != null && String(row.nombre).trim()) {
+            cl.value = String(row.nombre).trim();
+        }
+        if (tel && row.telefono != null && String(row.telefono).trim()) {
+            tel.value = String(row.telefono).trim();
+        }
+        const di2 = document.getElementById('di2');
+        if (di2 && row.distribuidor_codigo != null && String(row.distribuidor_codigo).trim()) {
+            const cod = String(row.distribuidor_codigo).trim().toUpperCase();
+            const opt = Array.from(di2.options).find(o => (o.value || '').trim().toUpperCase() === cod);
+            if (opt) di2.value = opt.value;
+        }
+    } catch (e) {
+        console.warn('[nis→socio]', e.message);
+    }
+}
+const nisPedidoInp = document.getElementById('nis');
+if (nisPedidoInp) nisPedidoInp.addEventListener('blur', () => { void onNisBlurRellenarDesdeSociosCatalogo(); });
+
 // ── TRACKING DE UBICACIÓN (cada 15 min) — debe declararse antes del restore de sesión ──
 let _trackingInterval = null;
 
