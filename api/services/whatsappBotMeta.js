@@ -412,6 +412,66 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   }
 }
 
+/**
+ * Geocodifica calle/número/localidad, guarda en sesión y finaliza el pedido (mismo fallback que el paso por chat).
+ * @param {{ origenCatalogo?: boolean }} opts
+ */
+async function geocodeStructuredAddressAndFinalizePedido(
+  phone,
+  sess,
+  sk,
+  contactName,
+  ctx,
+  phoneNumberId,
+  addrCiudad,
+  addrCalle,
+  addrNumero,
+  opts = {}
+) {
+  const ciudad = String(addrCiudad || "").trim();
+  const calle = String(addrCalle || "").trim();
+  const numRaw = String(addrNumero ?? "").trim();
+  const numero = numRaw.length ? numRaw : "0";
+  sess.addrCiudad = ciudad;
+  sess.addrCalle = calle;
+  sess.addrNumero = numero;
+  if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+  sessions.set(sk, sess);
+  try {
+    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero);
+    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+      sess.direccionTexto = geo.displayName;
+      sess.lat = geo.lat;
+      sess.lng = geo.lng;
+      sessions.set(sk, sess);
+      await finalizePedidoFromSession(phone, sess, contactName);
+      return;
+    }
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
+  }
+  const ciudadLabel = ciudad || "tu localidad";
+  let geoCiudad = null;
+  try {
+    geoCiudad = await geocodeAddressArgentina(`${ciudadLabel}, Argentina`);
+  } catch (_) {}
+  const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
+  const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
+  sess.lat = geoCiudad?.lat ?? baseLat;
+  sess.lng = geoCiudad?.lng ?? baseLng;
+  const nom = String(sess.contactName || contactName || "").trim();
+  const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
+  sess.direccionTexto = nom
+    ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+        .replace(/\s+/g, " ")
+        .trim()
+    : `Ubicación aproximada (centro de ciudad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+        .replace(/\s+/g, " ")
+        .trim();
+  sessions.set(sk, sess);
+  await finalizePedidoFromSession(phone, sess, contactName);
+}
+
 /** Cloud API: máximo 10 filas en una lista interactiva. */
 const MAX_WHATSAPP_LIST_ROWS = 10;
 
@@ -866,6 +926,43 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     const nuevoNombre = res.clienteNombre;
+    const locCat = String(res.catalogoLocalidad || "").trim();
+    const calleCat = String(res.catalogoCalle || "").trim();
+    const numCat = String(res.catalogoNumero || "").trim();
+    const puedeMapaDesdePadron =
+      locCat.length >= 2 && calleCat.length >= 2 && sess.descripcion && String(sess.descripcion).trim();
+
+    if (puedeMapaDesdePadron) {
+      const nextSess = {
+        ...sess,
+        contactName: nuevoNombre || sess.contactName,
+        nisParaPedido: res.nis ?? null,
+        medidorParaPedido: res.medidor ?? null,
+        nisMedidorParaPedido: res.nisMedidor ?? null,
+        phoneNumberId: sess.phoneNumberId || wpid,
+      };
+      sessions.set(sk, nextSess);
+      await reply(
+        phone,
+        `Listo, registramos a *${nuevoNombre}*.\n\nUbicamos tu domicilio en el padrón (${calleCat} ${numCat || "s/n"}, ${locCat}). Registramos el reclamo…`,
+        tid,
+        phoneNumberId
+      );
+      await geocodeStructuredAddressAndFinalizePedido(
+        phone,
+        nextSess,
+        sk,
+        contactName,
+        ctx,
+        phoneNumberId || wpid,
+        locCat,
+        calleCat,
+        numCat || "0",
+        { origenCatalogo: true }
+      );
+      return;
+    }
+
     sessions.set(sk, {
       ...sess,
       step: "awaiting_addr_ciudad",
@@ -922,41 +1019,18 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.addrNumero = t;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
-    try {
-      const geo = await geocodeCalleNumeroLocalidadArgentina(sess.addrCiudad, sess.addrCalle, sess.addrNumero);
-      if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
-        sess.direccionTexto = geo.displayName;
-        sess.lat = geo.lat;
-        sess.lng = geo.lng;
-        sessions.set(sk, sess);
-        await finalizePedidoFromSession(phone, sess, contactName);
-        return;
-      }
-    } catch (e) {
-      console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
-    }
-    const ciudad = String(sess.addrCiudad || "").trim() || "tu localidad";
-    let geoCiudad = null;
-    try {
-      geoCiudad = await geocodeAddressArgentina(`${ciudad}, Argentina`);
-    } catch (_) {}
-    const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
-    const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
-    sess.lat = geoCiudad?.lat ?? baseLat;
-    sess.lng = geoCiudad?.lng ?? baseLng;
-    const nom = String(sess.contactName || contactName || "").trim();
-    const calle = String(sess.addrCalle || "").trim();
-    const num = String(sess.addrNumero || "").trim();
-    sess.direccionTexto = nom
-      ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudad}. Calle indicada por el usuario: ${calle} ${num}`
-          .replace(/\s+/g, " ")
-          .trim()
-      : `Ubicación aproximada (centro de ciudad): ${ciudad}. Calle indicada: ${calle} ${num}`
-          .replace(/\s+/g, " ")
-          .trim();
-    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-    sessions.set(sk, sess);
-    await finalizePedidoFromSession(phone, sess, contactName);
+    await geocodeStructuredAddressAndFinalizePedido(
+      phone,
+      sess,
+      sk,
+      contactName,
+      ctx,
+      phoneNumberId,
+      sess.addrCiudad,
+      sess.addrCalle,
+      sess.addrNumero,
+      { origenCatalogo: false }
+    );
     return;
   }
 
