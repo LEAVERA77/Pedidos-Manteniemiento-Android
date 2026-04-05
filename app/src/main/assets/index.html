@@ -177,8 +177,14 @@
       </div>
       <div class="fr">
         <div class="fg hf"><label for="sd">SETD</label><input type="text" id="sd" placeholder="Ej: 1234"></div>
-        <div class="fg hf"><label for="cl" id="lbl-cl">Cliente</label><input type="text" id="cl" placeholder="Nombre o razón social"></div>
+        <div class="fg hf"><label for="cl" id="lbl-cl">Nombre y apellido</label><input type="text" id="cl" placeholder="Titular del reclamo"></div>
       </div>
+      <div class="fr">
+        <div class="fg hf"><label for="ped-cli-calle">Calle</label><input type="text" id="ped-cli-calle" maxlength="200" placeholder="Opcional"></div>
+        <div class="fg hf"><label for="ped-cli-num">Número</label><input type="text" id="ped-cli-num" maxlength="20" placeholder="Opcional"></div>
+      </div>
+      <div class="fg"><label for="ped-cli-loc">Localidad</label><input type="text" id="ped-cli-loc" maxlength="120" placeholder="Ciudad o localidad"></div>
+      <div class="fg"><label for="ped-cli-ref">Referencia ubicación (opcional)</label><input type="text" id="ped-cli-ref" maxlength="400" placeholder="Notas adicionales o texto de geocodificación"></div>
       <div class="fg"><label for="ped-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp)</label>
         <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — para avisar al cerrar el reclamo">
       </div>
@@ -188,9 +194,6 @@
       <div class="fg"><label for="de">Descripción *</label>
         <textarea id="de" rows="3" maxlength="500" placeholder="Describí el problema..." required></textarea>
         <span class="cc"><span id="dc">0</span>/500</span>
-      </div>
-      <div class="fg"><label for="ped-cli-dir">Dirección declarada (opcional)</label>
-        <textarea id="ped-cli-dir" rows="2" maxlength="400" placeholder="Calle, número, ciudad… (ej. reclamos por WhatsApp o domicilio indicado por el cliente)"></textarea>
       </div>
       <div class="fg"><label for="pr">Prioridad *</label>
         <select id="pr" required>

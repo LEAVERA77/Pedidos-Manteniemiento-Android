@@ -116,6 +116,9 @@ export async function crearPedidoDesdeWhatsappBot({
   medidor,
   nisMedidor,
   clienteDireccion,
+  clienteCalle,
+  clienteNumeroPuerta,
+  clienteLocalidad,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -218,6 +221,26 @@ export async function crearPedidoDesdeWhatsappBot({
   if (pCols.has("cliente_direccion") && dirT) {
     cols.push("cliente_direccion");
     vals.push(dirT);
+  }
+
+  const calleT = clienteCalle != null && String(clienteCalle).trim() ? String(clienteCalle).trim() : null;
+  const numT =
+    clienteNumeroPuerta != null && String(clienteNumeroPuerta).trim()
+      ? String(clienteNumeroPuerta).trim()
+      : null;
+  const locT =
+    clienteLocalidad != null && String(clienteLocalidad).trim() ? String(clienteLocalidad).trim() : null;
+  if (pCols.has("cliente_calle") && calleT) {
+    cols.push("cliente_calle");
+    vals.push(calleT);
+  }
+  if (pCols.has("cliente_numero_puerta") && numT) {
+    cols.push("cliente_numero_puerta");
+    vals.push(numT);
+  }
+  if (pCols.has("cliente_localidad") && locT) {
+    cols.push("cliente_localidad");
+    vals.push(locT);
   }
 
   if (hasTenant) {

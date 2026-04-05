@@ -76,10 +76,16 @@ fun PedidoDetailScreen(
 
 @Composable
 private fun DetalleBody(p: PedidoDto) {
-    DetailLine(stringResource(R.string.tecnico_mvp_direccion_declarada), p.clienteDireccion)
+    val nisTxt = listOfNotNull(p.nisMedidor, p.nis).firstOrNull { !it.isNullOrBlank() }
     DetailLine(stringResource(R.string.tecnico_mvp_numero), p.numeroPedido ?: "#${p.id}")
     DetailLine(stringResource(R.string.tecnico_mvp_estado), p.estado)
-    DetailLine(stringResource(R.string.tecnico_mvp_cliente), p.cliente)
+    DetailLine(stringResource(R.string.tecnico_mvp_nis), nisTxt)
+    val nombre = listOfNotNull(p.clienteNombre, p.cliente).firstOrNull { !it.isNullOrBlank() }
+    DetailLine(stringResource(R.string.tecnico_mvp_nombre_apellido), nombre)
+    DetailLine(stringResource(R.string.tecnico_mvp_calle), p.clienteCalle)
+    DetailLine(stringResource(R.string.tecnico_mvp_numero_puerta), p.clienteNumeroPuerta)
+    DetailLine(stringResource(R.string.tecnico_mvp_localidad), p.clienteLocalidad)
+    DetailLine(stringResource(R.string.tecnico_mvp_ref_ubicacion), p.clienteDireccion)
     DetailLine(stringResource(R.string.tecnico_mvp_distribuidor), p.distribuidor)
     DetailLine(stringResource(R.string.tecnico_mvp_descripcion), p.descripcion)
     DetailLine(stringResource(R.string.tecnico_mvp_prioridad), p.prioridad)
@@ -88,7 +94,6 @@ private fun DetalleBody(p: PedidoDto) {
     DetailLine(stringResource(R.string.tecnico_mvp_trabajo_realizado), p.trabajoRealizado)
     DetailLine(stringResource(R.string.tecnico_mvp_fecha_creacion), p.fechaCreacion)
     DetailLine(stringResource(R.string.tecnico_mvp_telefono), p.telefonoContacto)
-    DetailLine(stringResource(R.string.tecnico_mvp_nis), p.nisMedidor)
 }
 
 @Composable

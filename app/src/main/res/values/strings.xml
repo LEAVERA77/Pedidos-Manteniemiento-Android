@@ -61,6 +61,11 @@
     <string name="tecnico_mvp_trabajo_realizado">Trabajo realizado</string>
     <string name="tecnico_mvp_fecha_creacion">Alta</string>
     <string name="tecnico_mvp_telefono">Teléfono</string>
-    <string name="tecnico_mvp_nis">NIS medidor</string>
+    <string name="tecnico_mvp_nis">NIS</string>
     <string name="tecnico_mvp_direccion_declarada">Dirección declarada</string>
+    <string name="tecnico_mvp_nombre_apellido">Nombre y apellido</string>
+    <string name="tecnico_mvp_calle">Calle</string>
+    <string name="tecnico_mvp_numero_puerta">Número</string>
+    <string name="tecnico_mvp_localidad">Localidad</string>
+    <string name="tecnico_mvp_ref_ubicacion">Referencia (mapa / notas)</string>
 </resources>

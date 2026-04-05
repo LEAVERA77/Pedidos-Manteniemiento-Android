@@ -129,7 +129,7 @@ private fun PedidoRow(
         },
         supportingContent = {
             Text(
-                listOfNotNull(pedido.estado, pedido.cliente, pedido.distribuidor)
+                listOfNotNull(pedido.estado, pedido.clienteNombre ?: pedido.cliente, pedido.distribuidor)
                     .joinToString(" · ")
                     .ifBlank { "—" },
             )

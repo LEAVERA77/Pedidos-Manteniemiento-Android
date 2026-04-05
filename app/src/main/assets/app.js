@@ -871,7 +871,8 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
-    'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto']);
+    'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto',
+    'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad']);
 
 const app = {
     u: null,
@@ -1454,6 +1455,10 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS usuario_creador_id INTEGER`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS telefono_contacto TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_direccion TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_nombre VARCHAR(200)`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_calle TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_numero_puerta VARCHAR(20)`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_localidad TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS socios_catalogo(
                     id SERIAL PRIMARY KEY,
                     nis_medidor TEXT NOT NULL UNIQUE,
@@ -1538,6 +1543,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try { aplicarUIMapaPlataforma(); } catch (_) {}
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
@@ -1747,6 +1753,10 @@ const norm = p => ({
     y_inchauspe: p.y_inchauspe,
     nis: (p.nis_medidor || '').trim(),
     cdir: (p.cliente_direccion || '').trim(),
+    cnom: (p.cliente_nombre || p.cliente || '').trim(),
+    ccal: (p.cliente_calle || '').trim(),
+    cnum: (p.cliente_numero_puerta || '').trim(),
+    cloc: (p.cliente_localidad || '').trim(),
     tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
@@ -2242,7 +2252,11 @@ function aplicarUIMapaPlataforma() {
         if (cardCol) cardCol.style.display = 'block';
     }
     try {
-        setBp2PanelHidden(localStorage.getItem('pmg_bp2_hidden') === '1');
+        if (esAndroidWebViewMapa()) {
+            setBp2PanelHidden(true);
+        } else {
+            setBp2PanelHidden(localStorage.getItem('pmg_bp2_hidden') === '1');
+        }
     } catch (_) {}
     syncMapSlideTabsFromStorage();
     try { initBp2PanelFlotanteDesktop(); } catch (_) {}
@@ -4156,8 +4170,12 @@ async function imprimirPedidoAsync(p) {
             <table>
                 <tr><td>Distribuidor:</td><td>${escHtmlPrint(p.dis)}</td></tr>
                 ${p.sd ? `<tr><td>SETD:</td><td>${escHtmlPrint(p.sd)}</td></tr>` : ''}
-                ${p.cl ? `<tr><td>Cliente:</td><td>${escHtmlPrint(p.cl)}</td></tr>` : ''}
-                ${p.cdir ? `<tr><td>Dirección declarada:</td><td>${escHtmlPrint(p.cdir)}</td></tr>` : ''}
+                ${String(p.nis || '').trim() ? `<tr><td>NIS</td><td>${escHtmlPrint(p.nis)}</td></tr>` : ''}
+                ${String(p.cnom || p.cl || '').trim() ? `<tr><td>Nombre y apellido</td><td>${escHtmlPrint(p.cnom || p.cl)}</td></tr>` : ''}
+                ${String(p.ccal || '').trim() ? `<tr><td>Calle</td><td>${escHtmlPrint(p.ccal)}</td></tr>` : ''}
+                ${String(p.cnum || '').trim() ? `<tr><td>Número</td><td>${escHtmlPrint(p.cnum)}</td></tr>` : ''}
+                ${String(p.cloc || '').trim() ? `<tr><td>Localidad</td><td>${escHtmlPrint(p.cloc)}</td></tr>` : ''}
+                ${String(p.cdir || '').trim() ? `<tr><td>Referencia / notas ubicación</td><td>${escHtmlPrint(p.cdir)}</td></tr>` : ''}
                 <tr><td>Descripción:</td><td>${escHtmlPrint(p.de)}</td></tr>
             </table>
             
@@ -4899,7 +4917,6 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const reqNombreCli = tipoReclamoRequiereNombreClienteEnFormulario(tipoTr);
         const nisVal = (document.getElementById('nis').value || '').trim();
         const clVal = (document.getElementById('cl').value || '').trim();
-        const cliDirVal = (document.getElementById('ped-cli-dir')?.value || '').trim();
         if (reqNis && !nisVal) {
             toast('Para este tipo de reclamo el NIS / medidor es obligatorio', 'error');
             btn.disabled = false;
@@ -4912,15 +4929,21 @@ document.getElementById('pf').addEventListener('submit', async e => {
         }
         const uidCre = app.u?.id || 1;
         const telVal = (document.getElementById('ped-tel-contacto')?.value || '').trim();
+        const cliNomVal = (document.getElementById('cl').value || '').trim();
+        const calleVal = (document.getElementById('ped-cli-calle')?.value || '').trim();
+        const numVal = (document.getElementById('ped-cli-num')?.value || '').trim();
+        const locVal = (document.getElementById('ped-cli-loc')?.value || '').trim();
+        const refUbicVal = (document.getElementById('ped-cli-ref')?.value || '').trim();
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
-            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto, cliente_direccion
+            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
+            cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion
         ) VALUES(
             ${esc(numPedido)},
             ${esc(document.getElementById('di2').value)},
             ${esc(document.getElementById('sd').value || null)},
-            ${esc(document.getElementById('cl').value || null)},
+            ${esc(cliNomVal || null)},
             ${esc(document.getElementById('tt').value || null)},
             ${esc(document.getElementById('de').value)},
             ${esc(document.getElementById('pr').value)},
@@ -4935,7 +4958,11 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(new Date().toISOString())},
             ${esc(nisVal || null)},
             ${esc(telVal || null)},
-            ${esc(cliDirVal || null)}
+            ${esc(cliNomVal || null)},
+            ${esc(calleVal || null)},
+            ${esc(numVal || null)},
+            ${esc(locVal || null)},
+            ${esc(refUbicVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -4949,7 +4976,11 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 fc: null, fa: null,
                 dis: document.getElementById('di2').value,
                 sd: document.getElementById('sd').value || '',
-                cl: document.getElementById('cl').value || '',
+                cl: cliNomVal,
+                cnom: cliNomVal,
+                ccal: calleVal,
+                cnum: numVal,
+                cloc: locVal,
                 tt: document.getElementById('tt').value || '',
                 de: document.getElementById('de').value,
                 pr: document.getElementById('pr').value,
@@ -4962,7 +4993,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 x_inchauspe: xInchauspe, y_inchauspe: yInchauspe,
                 nis: nisVal,
                 tel: telVal,
-                cdir: cliDirVal,
+                cdir: refUbicVal,
                 _offline: true
             };
             app.p.unshift(pedidoLocal);
@@ -5104,6 +5135,11 @@ async function updPedido(id, campos, usuarioId) {
             firma_cliente: 'firma',
             checklist_seguridad: 'chkl',
             telefono_contacto: 'tel',
+            cliente_nombre: 'cnom',
+            cliente_direccion: 'cdir',
+            cliente_calle: 'ccal',
+            cliente_numero_puerta: 'cnum',
+            cliente_localidad: 'cloc',
             usuario_inicio_id: 'ui2',
             usuario_cierre_id: 'uci',
             usuario_avance_id: 'uav'
@@ -5459,14 +5495,39 @@ function detalle(p) {
         p.uav ? '<div class="dr"><span class="dl">Últ avance</span><span class="dv">'   + (findUser(p.uav) || 'id:'+p.uav) + '</span></div>' : '',
         p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + (findUser(p.uci) || 'id:'+p.uci) + '</span></div>' : '',
     ].filter(Boolean).join('');
-    const nisEsc = String(p.nis || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') || '—';
+    const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const nombreClienteDet = String((p.cnom || p.cl || '')).trim();
+    const filasDatosCliente = [];
+    if (String(p.nis || '').trim()) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">NIS</span><span class="dv" style="font-weight:700">${escDet(p.nis)}</span></div>`);
+    }
+    if (nombreClienteDet) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Nombre y apellido</span><span class="dv">${escDet(nombreClienteDet)}</span></div>`);
+    }
+    if (String(p.ccal || '').trim()) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Calle</span><span class="dv">${escDet(p.ccal)}</span></div>`);
+    }
+    if (String(p.cnum || '').trim()) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Número</span><span class="dv">${escDet(p.cnum)}</span></div>`);
+    }
+    if (String(p.cloc || '').trim()) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Localidad</span><span class="dv">${escDet(p.cloc)}</span></div>`);
+    }
+    const refDir = String(p.cdir || '').trim();
+    const hayEstructurados = filasDatosCliente.length > 0;
+    if (refDir) {
+        const labRef = hayEstructurados ? 'Referencia (mapa / notas)' : 'Dirección / datos declarados';
+        filasDatosCliente.push(`<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">${labRef}</span><div class="trb">${escDet(refDir)}</div></div>`);
+    }
+    const htmlDatosCliente = filasDatosCliente.length
+        ? `<div class="dr" style="grid-column:1/-1;margin:.15rem 0 .35rem"><span class="dl" style="font-weight:700;color:var(--bd)">Datos cargados por el cliente</span></div>${filasDatosCliente.join('')}`
+        : '';
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
     const nAsig = (p.tai != null)
         ? `${findUser(p.tai) || ('id ' + p.tai)}${rolAsig ? ' · ' + rolAsig : ''}`
         : 'Sin asignar';
     const fasiStr = p.fasi ? new Date(p.fasi).toLocaleString('es-AR', {...tz, hour12:false}) : '';
-    const labClienteDet = etiquetaCampoClientePedido();
     const labFirmaDet = etiquetaFirmaPersona();
     let chkResumen = '';
     try {
@@ -5524,7 +5585,6 @@ function detalle(p) {
             <div class="dr"><span class="dl">Estado</span><span class="dv"><span style="background:${bg[p.es]||'#e5e7eb'};color:${co[p.es]||'#374151'};padding:2px 10px;border-radius:12px;font-size:.82rem;font-weight:600">${p.es}</span></span></div>
             <div class="dr"><span class="dl">Prioridad</span><span class="dv">${p.pr}</span></div>
             <div class="dr"><span class="dl">Tipo</span><span class="dv">${p.tt||'--'}</span></div>
-            <div class="dr"><span class="dl">NIS / Medidor</span><span class="dv" style="font-weight:700">${nisEsc}</span></div>
             <div class="dr"><span class="dl">Técnico asignado</span><span class="dv">${nAsig}${fasiStr ? ' · ' + fasiStr : ''}</span></div>
             <div class="dr"><span class="dl">Avance</span><span class="dv">${p.av}% <div style="height:4px;background:#e2e8f0;border-radius:2px;width:100px;display:inline-block;vertical-align:middle;margin-left:6px;overflow:hidden"><div style="height:100%;width:${p.av}%;background:linear-gradient(90deg,#1e3a8a,#3b82f6)"></div></div></span></div>
         </div>
@@ -5533,9 +5593,8 @@ function detalle(p) {
             <h4>🏢 Datos del Trabajo</h4>
             <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis}</span></div>
             ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
-            ${p.cl ? `<div class="dr"><span class="dl">${labClienteDet}</span><span class="dv">${p.cl}</span></div>` : ''}
+            ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
-            ${p.cdir ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Dirección declarada</span><div class="trb">${String(p.cdir).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         
@@ -5657,7 +5716,12 @@ function exportPedido(pedidos, nombre) {
             'Cliente': p.cl || '',
             'SETD': p.sd || '',
             'Tipo de Trabajo': p.tt || '',
-            'Dirección declarada': p.cdir || '',
+            'NIS': p.nis || '',
+            'Nombre y apellido': (p.cnom || p.cl || ''),
+            'Calle': p.ccal || '',
+            'Número': p.cnum || '',
+            'Localidad': p.cloc || '',
+            'Referencia ubicación': p.cdir || '',
             'Descripción': p.de || '',
             'Prioridad': p.pr || '',
             'Estado': p.es || '',
@@ -5682,7 +5746,8 @@ function exportPedido(pedidos, nombre) {
             const colWidths = [
                 { wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
                 { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
-                { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
+                { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 8 }, { wch: 16 },
+                { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
                 { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
                 { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
                 { wch: 10 }, { wch: 10 }
@@ -5816,7 +5881,7 @@ function render() {
                 <span class="pe ${eC[p.es] || ''}">${p.es}</span>
             </div>
             <div class="pi2">
-                ${p.dis}${p.cl ? ' - ' + p.cl : ''}${p.nis ? ' · NIS ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}
+                ${p.dis}${(p.cnom || p.cl) ? ' - ' + String(p.cnom || p.cl) : ''}${p.nis ? ' · NIS ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}
                 <span style="float:right;color:#94a3b8">${f}</span>
             </div>
             <div class="pd">${p.de.substring(0,70)}${p.de.length > 70 ? '…' : ''}</div>
@@ -5850,6 +5915,10 @@ function closeAll() {
     document.getElementById('dc').textContent = '0';
     try { syncNisClienteReclamoConexionUI(); } catch (_) {}
     try { syncPrioridadConTipoReclamo(); } catch (_) {}
+    ['ped-cli-calle','ped-cli-num','ped-cli-loc','ped-cli-ref'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
     ['chk-epp','chk-corte','chk-senal'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = false;

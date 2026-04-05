@@ -154,6 +154,10 @@ router.post("/", async (req, res) => {
       setd,
       cliente,
       cliente_nombre,
+      cliente_calle,
+      cliente_localidad,
+      cliente_numero_puerta,
+      cliente_direccion,
       tipo_trabajo,
       descripcion,
       prioridad,
@@ -204,11 +208,13 @@ router.post("/", async (req, res) => {
       `INSERT INTO pedidos (
         numero_pedido, distribuidor, setd, cliente, tipo_trabajo, descripcion, prioridad,
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
-        telefono_contacto, cliente_nombre, foto_urls, nis, medidor
+        telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
+        cliente_calle, cliente_localidad, cliente_numero_puerta, cliente_direccion
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         'Pendiente',0,$8,$9,$10,$10,NOW(),
-        $11,$12,$13,$14,$15
+        $11,$12,$13,$14,$15,
+        $16,$17,$18,$19
       ) RETURNING *`,
       [
         numeroPedido,
@@ -226,6 +232,10 @@ router.post("/", async (req, res) => {
         toJoinedUrls(fotoUrls) || null,
         nis || null,
         medidor || null,
+        cliente_calle ?? null,
+        cliente_localidad ?? null,
+        cliente_numero_puerta ?? null,
+        cliente_direccion ?? null,
       ]
     );
     return res.status(201).json(insert.rows[0]);
@@ -459,6 +469,8 @@ router.put("/:id", async (req, res) => {
       cliente_direccion,
       cliente_numero_puerta,
       cliente_referencia,
+      cliente_calle,
+      cliente_localidad,
       telefono_contacto,
     } = req.body;
 
@@ -495,7 +507,9 @@ router.put("/:id", async (req, res) => {
          cliente_direccion = COALESCE($13, cliente_direccion),
          cliente_numero_puerta = COALESCE($14, cliente_numero_puerta),
          cliente_referencia = COALESCE($15, cliente_referencia),
-         telefono_contacto = COALESCE($16, telefono_contacto)
+         telefono_contacto = COALESCE($16, telefono_contacto),
+         cliente_calle = COALESCE($18, cliente_calle),
+         cliente_localidad = COALESCE($19, cliente_localidad)
        WHERE id = $1
        RETURNING *`,
       [
@@ -516,6 +530,8 @@ router.put("/:id", async (req, res) => {
         cliente_referencia ?? null,
         telefono_contacto ?? null,
         estadoAntes,
+        cliente_calle ?? null,
+        cliente_localidad ?? null,
       ]
     );
     const updated = r.rows[0];

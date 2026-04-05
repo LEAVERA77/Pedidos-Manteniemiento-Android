@@ -408,14 +408,13 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   }
   const dirDecl = String(sess.direccionDeclaradaUsuario || "").trim();
   const dirMapa = String(sess.direccionTexto || "").trim();
-  let clienteDireccion = null;
-  if (dirDecl) {
-    clienteDireccion = `Dirección declarada por el usuario: ${dirDecl}`;
-  }
-  if (dirMapa) {
-    clienteDireccion = clienteDireccion
-      ? `${clienteDireccion} · Ubicación en mapa: ${dirMapa}`
-      : `Ubicación en mapa: ${dirMapa}`;
+  const calleT = String(sess.addrCalle || "").trim();
+  const locT = String(sess.addrCiudad || "").trim();
+  const numRaw = String(sess.addrNumero ?? "").trim();
+  const numT = numRaw && numRaw !== "0" ? numRaw : null;
+  let clienteDireccion = dirMapa ? dirMapa : null;
+  if (!calleT && !locT && !numT && dirDecl) {
+    clienteDireccion = dirDecl;
   }
   const latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
   const lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
@@ -433,6 +432,9 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       medidor: sess.medidorParaPedido ?? null,
       nisMedidor: sess.nisMedidorParaPedido ?? null,
       clienteDireccion,
+      clienteCalle: calleT || null,
+      clienteNumeroPuerta: numT,
+      clienteLocalidad: locT || null,
     });
     sessions.delete(sk);
     await reply(
