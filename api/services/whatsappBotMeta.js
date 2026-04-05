@@ -77,6 +77,47 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_suministro_fases",
 ]);
 
+/** En estos pasos *volver* / *atrás* debe manejar el flujo, no reiniciar al menú principal. */
+const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
+  "awaiting_identificacion_modo",
+  "awaiting_nombre_persona",
+  "awaiting_addr_ciudad",
+  "awaiting_addr_calle",
+  "awaiting_addr_numero",
+  "awaiting_suministro_conexion",
+  "awaiting_suministro_fases",
+  "awaiting_opcional_id",
+  "awaiting_nis_whatsapp",
+]);
+
+/** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
+const WHATSAPP_PASOS_CERO_ES_DATO = new Set(["awaiting_addr_numero", "awaiting_opcional_id"]);
+
+/**
+ * Comandos que borran la sesión y muestran el menú principal.
+ * No deben ejecutarse antes que los pasos del flujo cuando el texto es parte del reclamo.
+ */
+function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
+  if (lower === "menú" || lower === "menu" || lower === "inicio" || lower === "ayuda") return true;
+  if (lower === "volver") {
+    if (sess && WHATSAPP_PASOS_VOLVER_ES_ATRAS.has(sess.step)) return false;
+    return true;
+  }
+  if (lower === "0") {
+    if (sess && WHATSAPP_PASOS_CERO_ES_DATO.has(sess.step)) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Número de opción del menú principal solo si el mensaje es únicamente dígitos (evita parseInt("1 texto") === 1). */
+function enteroMenuPrincipalDesdeTextoLibre(raw) {
+  const t = String(raw || "").trim();
+  if (!/^\d{1,3}$/.test(t)) return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 function interpretaMenuIdentificacion(raw) {
   const t = String(raw || "")
     .trim()
@@ -1106,15 +1147,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (
-    lower === "menú" ||
-    lower === "menu" ||
-    lower === "0" ||
-    lower === "inicio" ||
-    lower === "volver" ||
-    lower === "ayuda"
-  ) {
-    const prevM = sessions.get(sk);
+  const sessMenu = sessions.get(sk);
+  if (debeSalirAlMenuPrincipalWhatsApp(lower, sessMenu)) {
+    const prevM = sessMenu;
     if (prevM?.humanChatSessionId) {
       try {
         await humanChatCloseBySessionId(prevM.humanChatSessionId);
@@ -1608,8 +1643,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await replyListaTiposReclamo(phone, ctx, phoneNumberId);
       return;
     }
-    const n = parseInt(text, 10);
-    if (Number.isFinite(n) && n >= 1 && n <= ctx.tipos.length) {
+    const n = enteroMenuPrincipalDesdeTextoLibre(text);
+    if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const tipoSel = ctx.tipos[n - 1];
       if (tipoSel === TIPO_RECLAMO_OTROS) {
         await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
