@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS socios_catalogo (
     nis_medidor         TEXT NOT NULL,
     nombre              TEXT,
     domicilio           TEXT,
+    calle               TEXT,
+    numero              TEXT,
     telefono            TEXT,
     distribuidor_codigo TEXT,
     activo              BOOLEAN NOT NULL DEFAULT TRUE,
@@ -39,6 +41,13 @@ ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS localidad TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS tipo_tarifa TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS urbano_rural TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT;
+ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT;
+ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT;
+
+-- Migración: texto único de domicilio → calle (reimportar Excel para separar número)
+UPDATE socios_catalogo SET calle = TRIM(domicilio)
+WHERE (calle IS NULL OR TRIM(COALESCE(calle,'')) = '')
+  AND domicilio IS NOT NULL AND TRIM(COALESCE(domicilio,'')) <> '';
 
 -- Opcional: pedidos con técnico ya asignados pasan a estado coherente con la app
 -- UPDATE pedidos SET estado = 'Asignado'
