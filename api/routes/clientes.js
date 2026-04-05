@@ -15,7 +15,7 @@ router.get("/mi-configuracion", authMiddleware, async (req, res) => {
   try {
     const tenantId = await getUserTenantId(req.user.id);
     const r = await query(
-      `SELECT id, nombre, tipo, plan, configuracion, activo, fecha_registro, fecha_actualizacion
+      `SELECT id, nombre, tipo, plan, configuracion, activo, fecha_registro, fecha_actualizacion, barrio
        FROM clientes
        WHERE id = $1
        LIMIT 1`,
@@ -39,6 +39,7 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
     const body = req.body || {};
     const { nombre, tipo, latitud, longitud, configuracion = {} } = body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;
+    const barrioIn = Object.prototype.hasOwnProperty.call(body, "barrio") ? body.barrio : undefined;
 
     let tipoDb = null;
     if (tipo !== undefined && tipo !== null && String(tipo).trim() !== "") {
@@ -64,15 +65,24 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
       cfgJson.logo_url = v === "" || v == null ? null : String(v);
     }
 
+    const params = [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)];
+    let sqlBarrio = "";
+    if (barrioIn !== undefined) {
+      const bv = barrioIn === null || barrioIn === "" ? null : String(barrioIn).trim();
+      params.push(bv);
+      sqlBarrio = `, barrio = $${params.length}`;
+    }
+
     const r = await query(
       `UPDATE clientes
        SET nombre = COALESCE($2, nombre),
            tipo = COALESCE($3, tipo),
-           configuracion = COALESCE(configuracion, '{}'::jsonb) || $4::jsonb,
+           configuracion = COALESCE(configuracion, '{}'::jsonb) || $4::jsonb
+           ${sqlBarrio},
            fecha_actualizacion = NOW()
        WHERE id = $1
        RETURNING *`,
-      [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)]
+      params
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
     const row = r.rows[0];

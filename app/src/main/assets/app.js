@@ -1944,18 +1944,23 @@ function onMapaFiltroTipoTrabajoChange(allMode) {
     const host = document.getElementById('mapa-filtro-tipo-body');
     if (!host) return;
     const all = document.getElementById('mapa-flt-tt-all');
-    if (allMode && all && all.checked) {
-        host.querySelectorAll('input[type=checkbox][data-tt]').forEach((c) => {
+    const boxes = [...host.querySelectorAll('input[type=checkbox][data-tt]')];
+    if (allMode && all?.checked) {
+        boxes.forEach((c) => {
             c.checked = true;
         });
-    } else if (all) {
-        all.checked = false;
     }
     const tipos = tiposReclamoSeleccionables();
-    const picked = [];
-    host.querySelectorAll('input[type=checkbox][data-tt]').forEach((c) => {
-        if (c.checked) picked.push(c.getAttribute('data-tt') || '');
-    });
+    let picked = boxes.filter((c) => c.checked).map((c) => c.getAttribute('data-tt') || '');
+    if (picked.length === 0 && tipos.length) {
+        boxes.forEach((c) => {
+            c.checked = true;
+        });
+        picked = [...tipos];
+    }
+    if (all) {
+        all.checked = picked.length === tipos.length && tipos.length > 0;
+    }
     try {
         if (picked.length === tipos.length) localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
         else localStorage.setItem(WEB_MAP_FILTRO_TIPOS_KEY, JSON.stringify(picked));
@@ -5209,12 +5214,27 @@ document.getElementById('pf').addEventListener('submit', async e => {
         let disVal = (document.getElementById('di2').value || '').trim();
         const trafoInp = document.getElementById('trafo-pedido');
         let trafoVal = (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
+        let barrioVal = null;
         const tieneNisMed = !!nisVal;
-        if (!tieneNisMed) {
+        if (esCooperativaElectricaRubro()) {
+            if (!tieneNisMed) {
+                disVal = '';
+                trafoVal = '';
+            }
+        } else if (esMunicipioRubro()) {
+            barrioVal = disVal || null;
             disVal = '';
             trafoVal = '';
+        } else if (esCooperativaAguaRubro()) {
+            trafoVal = '';
         }
-        if (tieneNisMed && (disVal || trafoVal) && !modoOffline && NEON_OK) {
+        if (
+            esCooperativaElectricaRubro() &&
+            tieneNisMed &&
+            (disVal || trafoVal) &&
+            !modoOffline &&
+            NEON_OK
+        ) {
             const cZona = await contarPedidosCorteZonaNeon(disVal, trafoVal);
             if (cZona >= 4) {
                 const wa = urlWhatsappAtencionDesdeCfg();
@@ -5249,7 +5269,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
-            suministro_tipo_conexion, suministro_fases
+            suministro_tipo_conexion, suministro_fases, barrio
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
@@ -5275,7 +5295,8 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(locVal || null)},
             ${esc(refUbicVal || null)},
             ${esc(sumConVal || null)},
-            ${esc(sumFasVal || null)}
+            ${esc(sumFasVal || null)},
+            ${esc(barrioVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -5288,6 +5309,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 f: new Date().toISOString(),
                 fc: null, fa: null,
                 dis: disVal,
+                br: barrioVal || '',
                 trf: trafoVal,
                 cl: cliNomVal,
                 cnom: cliNomVal,
@@ -8753,8 +8775,16 @@ async function cargarEstadisticas() {
                 console.warn('[estadisticas]', tag, err && err.message ? err.message : err);
                 return { rows: [] };
             });
+        const esMun = esMunicipioRubro();
+        const sqlDistZona = esMun
+            ? `SELECT COALESCE(NULLIF(TRIM(barrio),''), 'Sin barrio') AS distribuidor, COUNT(*) AS n,
+                COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
+                FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`
+            : `SELECT distribuidor, COUNT(*) AS n,
+                COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
+                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
-            rTecCalle, rAsig, rCrit24] = await Promise.all([
+            rTecCalle, rAsig, rCrit24, rBarT] = await Promise.all([
             // Resumen general
             statSql(`SELECT
                 COUNT(*) AS total,
@@ -8779,10 +8809,8 @@ async function cargarEstadisticas() {
             // Por tipo de trabajo
             statSql(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
                 FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`, 'tipos'),
-            // Por distribuidor (top 10)
-            statSql(`SELECT distribuidor, COUNT(*) AS n,
-                COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
-                FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`, 'dist'),
+            // Por distribuidor / ramal / barrio (top 10)
+            statSql(sqlDistZona, 'dist'),
             // Tiempo promedio de cierre (horas) — solo pedidos cerrados con fecha
             statSql(`SELECT
                 AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600) AS horas_prom,
@@ -8806,7 +8834,17 @@ async function cargarEstadisticas() {
             statSql(`SELECT
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre <= fecha_creacion + interval '24 hours') AS n24,
                 COUNT(*) FILTER (WHERE prioridad='Crítica' AND estado='Cerrado' AND fecha_cierre IS NOT NULL) AS nct
-                FROM pedidos ${filtro}`, 'crit24')
+                FROM pedidos ${filtro}`, 'crit24'),
+            esMun
+                ? statSql(
+                      `SELECT COALESCE(NULLIF(TRIM(barrio),''), 'Sin barrio') AS barrio,
+                ROUND(AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600)::numeric, 2) AS horas_prom,
+                COUNT(*)::int AS n
+                FROM pedidos WHERE ${condFecha}${tsql} AND estado='Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion
+                GROUP BY 1 ORDER BY horas_prom ASC NULLS LAST LIMIT 8`,
+                      'barT'
+                  )
+                : Promise.resolve({ rows: [] })
         ]);
 
         const t = rTotal.rows[0] || {};
@@ -8824,6 +8862,13 @@ async function cargarEstadisticas() {
         const pctCrit24 = nCritTot ? Math.round(1000 * nCrit24 / nCritTot) / 10 : null;
 
         const fmtHoras = h => h === 0 || !isFinite(h) ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
+
+        const titZona = document.getElementById('estadisticas-titulo-zona');
+        if (titZona) {
+            titZona.textContent = esMun ? 'Por barrio' : esCooperativaAguaRubro() ? 'Por ramal' : 'Por distribuidor';
+        }
+        const wrapBarT = document.getElementById('chart-wrap-barrios-tiempo');
+        if (wrapBarT) wrapBarT.style.display = esMun ? '' : 'none';
 
         // ── Cards de resumen ───────────────────────────────────
         document.getElementById('stats-cards').innerHTML = [

@@ -8,6 +8,7 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
+  normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
 import {
   notifyPedidoCierreWhatsAppSafe,
@@ -171,11 +172,16 @@ router.post("/", async (req, res) => {
       medidor,
       suministro_tipo_conexion,
       suministro_fases,
+      distribuidor: distribuidorBodyRaw,
+      barrio: barrioBodyRaw,
     } = req.body;
 
     const tenantId = await getUserTenantId(req.user.id);
     const cr = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
     const tipoCliente = cr.rows?.[0]?.tipo ?? null;
+    const rubro = normalizarRubroCliente(tipoCliente);
+    const barrioBody = String(barrioBodyRaw || "").trim() || null;
+    const distribuidorBody = String(distribuidorBodyRaw || "").trim() || null;
     const tt = String(tipo_trabajo || "").trim();
     if (!tt) {
       return res.status(400).json({ error: "tipo_trabajo es requerido" });
@@ -194,13 +200,28 @@ router.post("/", async (req, res) => {
     const tieneNisOMedidor = !!(nisK || medK);
     let distribuidorFinal = null;
     let trafoFinal = null;
+    let barrioFinal = null;
+
     if (tieneNisOMedidor) {
       const lk = await lookupDistribuidorTrafoPorNisMedidor(nisK || medK);
-      distribuidorFinal = lk.distribuidor;
-      trafoFinal = lk.trafo;
+      if (rubro === "municipio") {
+        barrioFinal = barrioBody || distribuidorBody || lk.distribuidor || null;
+        distribuidorFinal = null;
+        trafoFinal = null;
+      } else if (rubro === "cooperativa_agua") {
+        distribuidorFinal = distribuidorBody || lk.distribuidor || null;
+        trafoFinal = null;
+      } else {
+        distribuidorFinal = lk.distribuidor;
+        trafoFinal = lk.trafo;
+      }
+    } else if (rubro === "municipio") {
+      barrioFinal = barrioBody || distribuidorBody || null;
+    } else {
+      distribuidorFinal = distribuidorBody || null;
     }
 
-    if (tieneNisOMedidor && (distribuidorFinal || trafoFinal)) {
+    if (rubro === "cooperativa_electrica" && tieneNisOMedidor && (distribuidorFinal || trafoFinal)) {
       const cnt = await contarPedidosAbiertosMismaZona({
         tenantId,
         distribuidor: distribuidorFinal,
@@ -244,13 +265,13 @@ router.post("/", async (req, res) => {
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
         telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
         cliente_calle, cliente_localidad, cliente_numero_puerta, cliente_direccion,
-        suministro_tipo_conexion, suministro_fases
+        suministro_tipo_conexion, suministro_fases, barrio
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         'Pendiente',0,$8,$9,$10,$10,NOW(),
         $11,$12,$13,$14,$15,
         $16,$17,$18,$19,
-        $20,$21
+        $20,$21,$22
       ) RETURNING *`,
       [
         numeroPedido,
@@ -274,6 +295,7 @@ router.post("/", async (req, res) => {
         cliente_direccion ?? null,
         stc,
         sfa,
+        barrioFinal,
       ]
     );
     return res.status(201).json(insert.rows[0]);
