@@ -1687,6 +1687,42 @@ actualizarBadgeOffline();
         if (pw) pw.value = '';
     } catch (_) {}
 })();
+(function antiAutofillCredencialesLogin() {
+    const em = document.getElementById('em');
+    const pw = document.getElementById('pw');
+    const lf = document.getElementById('lf');
+    if (!em || !pw) return;
+    const strip = () => {
+        try {
+            em.value = '';
+            pw.value = '';
+        } catch (_) {}
+    };
+    const unlock = (el) => {
+        try { el.removeAttribute('readonly'); } catch (_) {}
+    };
+    em.setAttribute('readonly', 'readonly');
+    pw.setAttribute('readonly', 'readonly');
+    try {
+        pw.setAttribute('autocomplete', 'new-password');
+    } catch (_) {}
+    const armUnlock = (el) => {
+        const go = () => unlock(el);
+        el.addEventListener('focus', go, { once: true });
+        el.addEventListener('mousedown', go, { once: true });
+        el.addEventListener('touchstart', go, { once: true, passive: true });
+    };
+    armUnlock(em);
+    armUnlock(pw);
+    lf?.addEventListener('submit', () => {
+        unlock(em);
+        unlock(pw);
+    }, { capture: true });
+    strip();
+    requestAnimationFrame(strip);
+    requestAnimationFrame(() => requestAnimationFrame(strip));
+    [0, 50, 200, 500, 1000].forEach((ms) => setTimeout(strip, ms));
+})();
 (function pintarMarcaLoginAlCargarModulo() {
     try {
         if (document.getElementById('ls')?.classList.contains('active')) {
@@ -4677,7 +4713,9 @@ async function imprimirPedidoAsync(p) {
     })();
 
     let matSection = '';
-    if (p.es === 'Cerrado' && !String(p.id).startsWith('off_') && NEON_OK && !modoOffline) {
+    if (tipoPedidoExcluyeMateriales(p.tt)) {
+        matSection = '';
+    } else if (p.es === 'Cerrado' && !String(p.id).startsWith('off_') && NEON_OK && !modoOffline) {
         try {
             const r = await sqlSimple(`SELECT descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(parseInt(p.id, 10))} ORDER BY id`);
             const rows = r.rows || [];
@@ -4691,7 +4729,7 @@ async function imprimirPedidoAsync(p) {
         } catch (_) {
             matSection = `<h2>🔧 Materiales</h2><p style="font-size:9pt">No se pudieron cargar los materiales.</p>`;
         }
-    } else if (p.es === 'Cerrado') {
+    } else if (p.es === 'Cerrado' && !tipoPedidoExcluyeMateriales(p.tt)) {
         matSection = `<h2>🔧 Materiales</h2><p style="font-size:9pt">Sin datos (sin conexión).</p>`;
     }
 
@@ -5901,6 +5939,30 @@ async function refrescarMaterialesEnDetalle(p) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
         return;
     }
+    const excluyeMat = tipoPedidoExcluyeMateriales(p.tt);
+    if (excluyeMat) {
+        try {
+            const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
+            const rows = r.rows || [];
+            const aviso = '<p style="font-size:.8rem;color:var(--tl);margin-bottom:.5rem">Este tipo de pedido no admite registrar ni editar materiales.</p>';
+            if (!rows.length) {
+                body.innerHTML = aviso;
+                return;
+            }
+            let html = aviso + '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th></tr></thead><tbody>';
+            rows.forEach((row) => {
+                const des = String(row.descripcion || '').replace(/</g, '&lt;');
+                const celUn = escHtmlPrint(row.unidad || '—');
+                const celCant = row.cantidad != null && row.cantidad !== '' ? escHtmlPrint(String(row.cantidad)) : '—';
+                html += `<tr><td class="mat-col-item">${des}</td><td class="mat-col-un">${celUn}</td><td class="mat-col-cant">${celCant}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        } catch (e) {
+            body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + (e.message || e) + '</p>';
+        }
+        return;
+    }
     const puedeEditarMat = p.es !== 'Cerrado' && (esTecnicoOSupervisor() || esAdmin())
         && (String(p.tai) === String(app.u?.id) || esAdmin());
     try {
@@ -5948,6 +6010,11 @@ async function refrescarMaterialesEnDetalle(p) {
 
 window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
     if (modoOffline || !NEON_OK) return;
+    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
+        toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
     try {
         if (campo === 'unidad') {
             await sqlSimple(`UPDATE pedido_materiales SET unidad = ${esc(valor || null)} WHERE id = ${esc(parseInt(mid, 10))}`);
@@ -5962,6 +6029,11 @@ window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
 };
 
 window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
+    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
+        toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
     const d = document.getElementById('mat-desc-' + pid)?.value.trim();
     if (!d) { toast('Indicá descripción del material', 'error'); return; }
     const cantRaw = document.getElementById('mat-cant-' + pid)?.value;
@@ -5976,6 +6048,11 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
 };
 
 window.eliminarMaterialPedido = async function (mid, pid) {
+    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
+        toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
     if (!confirm('¿Eliminar material?')) return;
     try {
         await sqlSimple(`DELETE FROM pedido_materiales WHERE id=${esc(parseInt(mid, 10))}`);
@@ -6792,6 +6869,15 @@ function tipoReclamoSoloNisSinNombreCliente(tipoTrabajo) {
 
 function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
     return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
+}
+
+/** Pedidos donde no se gestionan materiales (detalle, impresión, APIs UI). */
+function tipoPedidoExcluyeMateriales(tipoTrabajo) {
+    const v = String(tipoTrabajo || '').trim();
+    if (!v) return false;
+    if (v === 'Otros') return true;
+    if (v.toLowerCase().includes('factibilidad')) return true;
+    return false;
 }
 
 /** Alineado con api/services/tiposReclamo.js (cooperativa eléctrica). */
