@@ -2407,10 +2407,22 @@ function syncMapSlideTabsFromStorage() {
 
 let _bp2DragState = null;
 
+/** Borde superior seguro para paneles `position:fixed` (mapa escritorio): debajo de la barra .hd. */
+function mapFloatingPanelPadTopPx() {
+    try {
+        const hd = document.querySelector('#ms .hd');
+        if (hd) {
+            const r = hd.getBoundingClientRect();
+            if (r.height > 0 && r.bottom > 0) return Math.ceil(r.bottom) + 6;
+        }
+    } catch (_) {}
+    return 64;
+}
+
 /** Mantiene el panel completo dentro del viewport; permite llevarlo hasta los bordes (margen mínimo). */
 function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
     const padX = (opts && opts.padX) != null ? opts.padX : 0;
-    const padTop = (opts && opts.padTop) != null ? opts.padTop : 52;
+    const padTop = (opts && opts.padTop) != null ? opts.padTop : mapFloatingPanelPadTopPx();
     const padBottom = (opts && opts.padBottom) != null ? opts.padBottom : 0;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -2444,7 +2456,7 @@ function aplicarPosicionBp2Guardada() {
         if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
         bp2.style.right = 'auto';
         bp2.style.bottom = 'auto';
-        const c = clampFloatingPanelToViewport(bp2, p.left, p.top, { padTop: 52, padX: 0, padBottom: 0 });
+        const c = clampFloatingPanelToViewport(bp2, p.left, p.top, { padX: 0, padBottom: 0 });
         bp2.style.left = c.left + 'px';
         bp2.style.top = c.top + 'px';
     } catch (_) {}
@@ -2478,7 +2490,7 @@ function initBp2PanelFlotanteDesktop() {
             if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
             bp2.style.right = 'auto';
             bp2.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padTop: 52, padX: 0, padBottom: 0 });
+            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padX: 0, padBottom: 0 });
             bp2.style.left = c.left + 'px';
             bp2.style.top = c.top + 'px';
         };
@@ -2493,7 +2505,7 @@ function initBp2PanelFlotanteDesktop() {
                 if (_bp2DragState.moved) {
                     try {
                         const br = bp2.getBoundingClientRect();
-                        const c = clampFloatingPanelToViewport(bp2, br.left, br.top, { padTop: 52, padX: 0, padBottom: 0 });
+                        const c = clampFloatingPanelToViewport(bp2, br.left, br.top, { padX: 0, padBottom: 0 });
                         bp2.style.left = c.left + 'px';
                         bp2.style.top = c.top + 'px';
                         localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: c.left, top: c.top }));
@@ -2544,7 +2556,7 @@ function initMouiCardDraggable(cardId) {
             if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
             card.style.right = 'auto';
             card.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 52, padX: 0, padBottom: 0 });
+            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padX: 0, padBottom: 0 });
             card.style.left = c.left + 'px';
             card.style.top = c.top + 'px';
         } catch (_) {}
@@ -2570,7 +2582,6 @@ function initMouiCardDraggable(cardId) {
             card.style.right = 'auto';
             card.style.bottom = 'auto';
             const c = clampFloatingPanelToViewport(card, _mouiCardDragState.sl + dx, _mouiCardDragState.st + dy, {
-                padTop: 52,
                 padX: 0,
                 padBottom: 0
             });
@@ -2586,7 +2597,7 @@ function initMouiCardDraggable(cardId) {
             if (_mouiCardDragState && _mouiCardDragState.moved) {
                 try {
                     const br = card.getBoundingClientRect();
-                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 52, padX: 0, padBottom: 0 });
+                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padX: 0, padBottom: 0 });
                     card.style.left = c.left + 'px';
                     card.style.top = c.top + 'px';
                     localStorage.setItem(key, JSON.stringify({ left: c.left, top: c.top }));

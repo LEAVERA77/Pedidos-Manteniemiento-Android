@@ -1,6 +1,6 @@
 /* ESTILOS COMPLETOS */
 *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
-:root{--bd:#1e3a8a;--bm:#2563eb;--bl:#3b82f6;--gr:#10b981;--re:#ef4444;--or:#f97316;--ye:#eab308;--bg:#f1f5f9;--bo:#e2e8f0;--td:#1e293b;--tm:#475569;--tl:#94a3b8}
+:root{--bd:#1e3a8a;--bm:#2563eb;--bl:#3b82f6;--gr:#10b981;--re:#ef4444;--or:#f97316;--ye:#eab308;--bg:#f1f5f9;--bo:#e2e8f0;--td:#1e293b;--tm:#475569;--tl:#94a3b8;--app-header-h:58px}
 html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #app{height:100vh;height:100dvh;position:relative}
 .screen{display:none;height:100%;width:100%;position:absolute;inset:0}
@@ -333,7 +333,25 @@ textarea{resize:vertical;min-height:80px}
   #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff){
     position:fixed!important;
     z-index:10012!important;
-    max-height:min(72vh,calc(100dvh - 120px));
+    max-height:min(72vh,calc(100dvh - var(--app-header-h, 58px) - 4.5rem));
+  }
+  /*
+   * Sin position:fixed, top:.45rem es relativo al overlay (debajo del .hd).
+   * Con fixed, top sería relativo al viewport y quedaría tapado por la barra.
+   * Sin !important: los top/left/right en línea del arrastre siguen ganando.
+   */
+  #ms #mapa-overlay-ui #mapa-card-filtros:not(.moui-card-slideoff){
+    top:calc(var(--app-header-h, 58px) + 0.45rem);
+    left:0.45rem;
+  }
+  #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card-slideoff){
+    top:calc(var(--app-header-h, 58px) + 0.45rem);
+    right:0.45rem;
+    left:auto;
+  }
+  #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-card-slideoff){
+    top:max(6.75rem, calc(var(--app-header-h, 58px) + 0.45rem));
+    left:0.45rem;
   }
   /* left/top/right/bottom sin !important: el arrastre usa estilos inline */
   #ms .bp2{
