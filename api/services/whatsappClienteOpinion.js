@@ -170,7 +170,8 @@ function esComandoExcluidoFlujoMenu(low, raw) {
   if (/\bnuevo\s+reclamo\b/.test(low)) return true;
   if (/\bquiero\s+(hacer\s+)?(un\s+)?reclamo\b/.test(low)) return true;
   if (low === "lista" || low === "tipos" || low === "reclamo") return true;
-  if (/^\d{1,2}$/.test(t)) return true;
+  /* No excluir dígitos sueltos: si hay opinión pendiente post-cierre, se consumen antes en tryConsume;
+     y evita falsos positivos si el cliente califica con un número. */
   return false;
 }
 

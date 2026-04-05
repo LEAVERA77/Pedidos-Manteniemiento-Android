@@ -1088,6 +1088,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     console.error("[whatsapp-bot-meta] opinion reply", e.message);
   }
 
+  /** Tras cierre por WA: ventana de opinión abierta (evita confundir "5" o "10" con menú / reinicio). */
+  let pendOpinionActiva = false;
+  try {
+    pendOpinionActiva = await hasPendingClienteOpinion(tid, phone);
+  } catch (_) {}
+
   // En chat humano (Otros), "Hola" es mensaje del cliente, no reinicio del menú automático.
   if (/\bhola\b/i.test(String(text || "").trim()) && sessions.get(sk)?.step !== "human_chat") {
     let pendOpinionHola = false;
@@ -1635,6 +1641,21 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   }
 
   if (!sess || sess.step === "idle") {
+    if (pendOpinionActiva) {
+      try {
+        const opIdle = await tryConsumeClienteOpinionReply({
+          tenantId: tid,
+          phoneDigits: phone,
+          text,
+          nombreEntidad: ctx?.nombre,
+        });
+        if (opIdle.handled) {
+          sessions.delete(sk);
+          if (opIdle.ack) await reply(phone, opIdle.ack, tid, phoneNumberId);
+          return;
+        }
+      } catch (_) {}
+    }
     if (esPedidoCargarReclamo(text)) {
       if (ctx.whatsappBloqueoReclamos) {
         await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
@@ -1687,6 +1708,21 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
+      if (pendOpinionActiva) {
+        try {
+          const opDig = await tryConsumeClienteOpinionReply({
+            tenantId: tid,
+            phoneDigits: phone,
+            text,
+            nombreEntidad: ctx?.nombre,
+          });
+          if (opDig.handled) {
+            sessions.delete(sk);
+            if (opDig.ack) await reply(phone, opDig.ack, tid, phoneNumberId);
+            return;
+          }
+        } catch (_) {}
+      }
       sessions.delete(sk);
       await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
       return;

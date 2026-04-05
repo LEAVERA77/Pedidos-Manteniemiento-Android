@@ -7555,6 +7555,8 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
 let _pollBannerAdminInterval = null;
+/** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
+let _adminBannerOpinionWatermarkIso = null;
 
 async function iniciarWatermarkBannerReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
@@ -7563,6 +7565,27 @@ async function iniciarWatermarkBannerReclamoCliente() {
         const r = await sqlSimple(`SELECT COALESCE(MAX(id),0)::bigint AS m FROM pedidos WHERE 1=1${tsql}`);
         _adminBannerWatermarkId = Number(r.rows?.[0]?.m) || 0;
     } catch (_) {}
+}
+
+async function iniciarWatermarkBannerOpinionCliente() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    try {
+        const col = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
+        );
+        if (!col.rows?.length) {
+            _adminBannerOpinionWatermarkIso = new Date().toISOString();
+            return;
+        }
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(
+            `SELECT MAX(fecha_opinion_cliente) AS m FROM pedidos WHERE fecha_opinion_cliente IS NOT NULL${tsql}`
+        );
+        const m = r.rows?.[0]?.m;
+        _adminBannerOpinionWatermarkIso = m ? new Date(m).toISOString() : new Date(0).toISOString();
+    } catch (_) {
+        _adminBannerOpinionWatermarkIso = new Date().toISOString();
+    }
 }
 
 function ocultarBannerReclamoCliente() {
@@ -7574,6 +7597,26 @@ function ocultarBannerReclamoCliente() {
     }
     clearTimeout(_adminBannerTimer);
     _adminBannerTimer = null;
+}
+
+function _commitAdminBannerOpinionWatermarkDesdeDataset() {
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    const iso = box?.dataset?.fechaOpinionIso;
+    if (!iso) return;
+    const t = new Date(iso).getTime();
+    const cur = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
+    if (t > cur) _adminBannerOpinionWatermarkIso = new Date(t).toISOString();
+}
+
+function ocultarBannerOpinionCliente() {
+    _commitAdminBannerOpinionWatermarkDesdeDataset();
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    if (box) {
+        box.style.display = 'none';
+        delete box.dataset.visible;
+        delete box.dataset.pedidoId;
+        delete box.dataset.fechaOpinionIso;
+    }
 }
 
 async function pollBannerNuevoReclamoCliente() {
@@ -7606,12 +7649,49 @@ async function pollBannerNuevoReclamoCliente() {
     } catch (_) {}
 }
 
+async function pollBannerOpinionCliente() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    if (!box || box.dataset.visible === '1') return;
+    try {
+        const col = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
+        );
+        if (!col.rows?.length) return;
+        const tsql = await pedidosFiltroTenantSql();
+        const wm = _adminBannerOpinionWatermarkIso || new Date(0).toISOString();
+        const r = await sqlSimple(
+            `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente FROM pedidos
+             WHERE fecha_opinion_cliente IS NOT NULL
+             AND fecha_opinion_cliente > (${esc(wm)})::timestamptz${tsql}
+             ORDER BY fecha_opinion_cliente ASC LIMIT 1`
+        );
+        const row = r.rows?.[0];
+        if (!row) return;
+        const nid = Number(row.id);
+        const fop = row.fecha_opinion_cliente;
+        const opin = String(row.opinion_cliente || '').trim();
+        const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
+        const txt = document.getElementById('admin-banner-opinion-cliente-txt');
+        if (txt) {
+            const np = row.numero_pedido || nid;
+            const tit = (row.tipo_trabajo || '').trim();
+            txt.textContent = `Observación del cliente · #${np}${tit ? ` · ${tit}` : ''}${snip ? ` — «${snip}»` : ''}`;
+        }
+        box.style.display = 'flex';
+        box.dataset.visible = '1';
+        box.dataset.pedidoId = String(nid);
+        if (fop) box.dataset.fechaOpinionIso = new Date(fop).toISOString();
+    } catch (_) {}
+}
+
 function detenerPollBannerReclamoCliente() {
     if (_pollBannerAdminInterval) {
         clearInterval(_pollBannerAdminInterval);
         _pollBannerAdminInterval = null;
     }
     ocultarBannerReclamoCliente();
+    ocultarBannerOpinionCliente();
 }
 
 function iniciarPollBannerReclamoCliente() {
@@ -7619,8 +7699,13 @@ function iniciarPollBannerReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK) return;
     void (async () => {
         await iniciarWatermarkBannerReclamoCliente();
-        _pollBannerAdminInterval = setInterval(() => { void pollBannerNuevoReclamoCliente(); }, 5000);
+        await iniciarWatermarkBannerOpinionCliente();
+        _pollBannerAdminInterval = setInterval(() => {
+            void pollBannerNuevoReclamoCliente();
+            void pollBannerOpinionCliente();
+        }, 5000);
         void pollBannerNuevoReclamoCliente();
+        void pollBannerOpinionCliente();
     })();
 }
 
@@ -7646,8 +7731,32 @@ async function adminBannerClickVerDetalle() {
     else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
 }
 
+async function adminBannerOpinionClickVerDetalle() {
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    const pid = box?.dataset?.pedidoId;
+    ocultarBannerOpinionCliente();
+    if (!pid) return;
+    let p = app.p.find((x) => String(x.id) === String(pid));
+    if (!p && _sql && NEON_OK) {
+        try {
+            const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
+            const row = rr.rows?.[0];
+            if (row) {
+                p = norm(row);
+                const ix = app.p.findIndex((x) => String(x.id) === String(p.id));
+                if (ix >= 0) app.p[ix] = p;
+                else app.p.unshift(p);
+            }
+        } catch (_) {}
+    }
+    if (p) detalle(p);
+    else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
+}
+
 window.adminBannerClickVerDetalle = adminBannerClickVerDetalle;
 window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
+window.adminBannerOpinionClickVerDetalle = adminBannerOpinionClickVerDetalle;
+window.adminBannerOpinionCerrar = ocultarBannerOpinionCliente;
 
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {

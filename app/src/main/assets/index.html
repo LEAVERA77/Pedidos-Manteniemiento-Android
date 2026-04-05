@@ -67,9 +67,15 @@
 <div id="ms" class="screen">
   <div id="admin-banner-nuevo-cliente" class="admin-banner-nuevo-cliente" style="display:none" role="status" aria-live="polite">
     <span class="admin-banner-nuevo-cliente-ic" aria-hidden="true"><i class="fas fa-bell"></i></span>
-    <span id="admin-banner-nuevo-cliente-txt" class="admin-banner-nuevo-cliente-txt"></span>
+    <span id="admin-banner-nuevo-cliente-txt" class="admin-banner-nuevo-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerClickVerDetalle();}"></span>
     <button type="button" class="admin-banner-btn" onclick="adminBannerClickVerDetalle()">Ver detalle</button>
     <button type="button" class="admin-banner-x" onclick="adminBannerCerrarSinDetalle()" title="Cerrar">&times;</button>
+  </div>
+  <div id="admin-banner-opinion-cliente" class="admin-banner-opinion-cliente" style="display:none" role="status" aria-live="polite">
+    <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
+    <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
+    <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminBannerOpinionClickVerDetalle()">Ver pedido</button>
+    <button type="button" class="admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Cerrar">&times;</button>
   </div>
   <div class="hd">
     <button type="button" id="mt" class="ib" title="Admin: abre el asistente de marca, logo y ubicación base del tenant. Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
