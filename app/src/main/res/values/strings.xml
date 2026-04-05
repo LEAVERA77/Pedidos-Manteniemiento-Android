@@ -55,7 +55,6 @@
     <string name="tecnico_mvp_cliente">Cliente</string>
     <string name="tecnico_mvp_distribuidor">Distribuidor</string>
     <string name="tecnico_mvp_trafo">Trafo</string>
-    <string name="tecnico_mvp_setd">SETD</string>
     <string name="tecnico_mvp_descripcion">Descripción</string>
     <string name="tecnico_mvp_prioridad">Prioridad</string>
     <string name="tecnico_mvp_avance">Avance</string>

@@ -6,3 +6,6 @@ COMMENT ON COLUMN pedidos.trafo IS 'Transformador / trafo desde socios_catalogo 
 
 -- Permite pedidos sin distribuidor asignado (solo nombre/dirección).
 ALTER TABLE pedidos ALTER COLUMN distribuidor DROP NOT NULL;
+
+-- La aplicación ya no usa la columna setd (solo trafo). Opcional en bases antiguas:
+-- ALTER TABLE pedidos DROP COLUMN IF EXISTS setd;

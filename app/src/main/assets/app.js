@@ -4952,13 +4952,11 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const locVal = (document.getElementById('ped-cli-loc')?.value || '').trim();
         const refUbicVal = (document.getElementById('ped-cli-ref')?.value || '').trim();
         let disVal = (document.getElementById('di2').value || '').trim();
-        let sdVal = (document.getElementById('sd').value || '').trim();
         const trafoInp = document.getElementById('trafo-pedido');
         let trafoVal = (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
         const tieneNisMed = !!nisVal;
         if (!tieneNisMed) {
             disVal = '';
-            sdVal = '';
             trafoVal = '';
         }
         if (tieneNisMed && (disVal || trafoVal) && !modoOffline && NEON_OK) {
@@ -4992,7 +4990,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
         }
 
         const queryInsert = `INSERT INTO pedidos(
-            numero_pedido, distribuidor, setd, trafo, cliente, tipo_trabajo,
+            numero_pedido, distribuidor, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
@@ -5000,7 +4998,6 @@ document.getElementById('pf').addEventListener('submit', async e => {
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
-            ${esc(sdVal || null)},
             ${esc(trafoVal || null)},
             ${esc(cliNomVal || null)},
             ${esc(document.getElementById('tt').value || null)},
@@ -5036,7 +5033,6 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 f: new Date().toISOString(),
                 fc: null, fa: null,
                 dis: disVal,
-                sd: sdVal,
                 trf: trafoVal,
                 cl: cliNomVal,
                 cnom: cliNomVal,
@@ -6300,7 +6296,7 @@ let _nisSocioCatalogoDebounceTimer = null;
 let _nisSocioCommitRellenoTimer = null;
 let _nisSocioCatalogoUltimoValor = '';
 
-/** Cooperativa eléctrica: busca NIS en socios_catalogo y rellena SETD (trafo), cliente y teléfono. */
+/** Cooperativa eléctrica: busca NIS en socios_catalogo y rellena Trafo, cliente y teléfono. */
 async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     const forzar = !!(opts && opts.forzar);
     if (!esCooperativaElectricaRubro()) return;
@@ -6311,10 +6307,8 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     if (!raw) {
         _nisSocioCatalogoUltimoValor = '';
         const di2c = document.getElementById('di2');
-        const sdC = document.getElementById('sd');
         const tfC = document.getElementById('trafo-pedido');
         if (di2c) di2c.value = '';
-        if (sdC) sdC.value = '';
         if (tfC) tfC.value = '';
         const scC = document.getElementById('ped-sum-conexion');
         const sfC = document.getElementById('ped-sum-fases');
@@ -6332,12 +6326,8 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
         const row = r.rows?.[0];
         if (!row) return;
         _nisSocioCatalogoUltimoValor = raw;
-        const sd = document.getElementById('sd');
         const cl = document.getElementById('cl');
         const tel = document.getElementById('ped-tel-contacto');
-        if (sd && row.transformador != null && String(row.transformador).trim()) {
-            sd.value = String(row.transformador).trim();
-        }
         const tf = document.getElementById('trafo-pedido');
         if (tf && row.transformador != null && String(row.transformador).trim()) {
             tf.value = String(row.transformador).trim();

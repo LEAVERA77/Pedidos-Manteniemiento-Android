@@ -89,8 +89,8 @@ private fun DetalleBody(p: PedidoDto) {
     DetailLine(stringResource(R.string.tecnico_mvp_fases), p.suministroFases)
     DetailLine(stringResource(R.string.tecnico_mvp_ref_ubicacion), p.clienteDireccion)
     DetailLine(stringResource(R.string.tecnico_mvp_distribuidor), p.distribuidor)
-    DetailLine(stringResource(R.string.tecnico_mvp_trafo), p.trafo)
-    DetailLine(stringResource(R.string.tecnico_mvp_setd), p.setd)
+    val trafoMostrar = listOfNotNull(p.trafo, p.setd).firstOrNull { !it.isNullOrBlank() }
+    DetailLine(stringResource(R.string.tecnico_mvp_trafo), trafoMostrar)
     DetailLine(stringResource(R.string.tecnico_mvp_descripcion), p.descripcion)
     DetailLine(stringResource(R.string.tecnico_mvp_prioridad), p.prioridad)
     p.avance?.let { DetailLine(stringResource(R.string.tecnico_mvp_avance), "$it%") }
