@@ -7,8 +7,8 @@
   },
   "emailjs": {
     "publicKey": "TU_PUBLIC_KEY",
-    "serviceId": "TU_SERVICE_ID",
-    "templateId": "TU_TEMPLATE_ID"
+    "serviceId": "service_xxxxxxx",
+    "templateId": "template_xxxxxxx"
   },
   "app": {
     "version": "2.0.0",

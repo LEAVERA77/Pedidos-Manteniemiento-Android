@@ -754,12 +754,25 @@
 </div>
 <div id="cache-progress-bar"><i class="fas fa-map"></i><span id="cache-msg">Descargando mapa offline...</span><div class="bar"><div class="fill" id="cache-fill" style="width:0%"></div></div><span id="cache-pct">0%</span><button onclick="document.getElementById('cache-progress-bar').classList.remove('visible')" style="background:none;border:none;color:white;cursor:pointer">✕</button></div>
 <div id="offline-toggle" onclick="toggleOfflineBanner()"><i class="fas fa-wifi-slash"></i></div>
+<div id="modal-forzar-cambio-pw" class="mo">
+  <div class="mc" style="max-width:420px">
+    <div class="mh"><h3><i class="fas fa-shield-alt"></i> Nueva contraseña obligatoria</h3></div>
+    <div class="mb">
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Tu administrador generó una clave provisoria. Definí una contraseña nueva para continuar en la app.</p>
+      <div class="fg" style="padding:0"><label>Nueva contraseña</label><input id="forzar-cambio-pw-nueva" type="password" autocomplete="new-password"></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label>Repetir contraseña</label><input id="forzar-cambio-pw-nueva2" type="password" autocomplete="new-password"></div>
+      <div id="forzar-cambio-pw-msg" style="font-size:.85rem;margin-top:.5rem;color:var(--re)"></div>
+      <button type="button" class="bp" style="margin-top:1rem;width:100%" onclick="confirmarCambioPasswordObligatorioAndroid()"><i class="fas fa-check"></i> Guardar y continuar</button>
+    </div>
+  </div>
+</div>
 <div id="modal-reset-pw" class="mo">
   <div class="mc" style="max-width:420px">
-    <div class="mh"><h3><i class="fas fa-key"></i> Recuperar contraseña</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+    <div class="mh"><h3><i class="fas fa-key"></i> Recuperar contraseña (admin)</h3><button class="cm"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Ingresá email o usuario. Si está registrado recibirás un código temporal de 6 dígitos.</p>
-      <div class="fg" style="padding:0"><label>Email / Usuario</label><input id="reset-email" type="text" placeholder="tu@email.com"></div>
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo para cuentas <strong>administrador</strong>. Recibirás un código de 6 dígitos (válido ~30 min) en el correo que indiques abajo o en el email de contacto de la empresa.</p>
+      <div class="fg" style="padding:0"><label>Email de tu cuenta admin</label><input id="reset-email" type="text" placeholder="admin@cooperativa.org" autocomplete="username"></div>
+      <div class="fg" style="padding:0;margin-top:.55rem"><label>Enviar código a (opcional)</label><input id="reset-email-destino" type="email" placeholder="Si está vacío: email empresa o tu email"></div>
       <div id="reset-codigo-wrap" style="display:none;margin-top:.75rem">
         <div class="fg" style="padding:0"><label>Código recibido por email</label><input id="reset-codigo" type="text" placeholder="000000"></div>
         <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña</label><input id="reset-nueva-pw" type="password"></div>

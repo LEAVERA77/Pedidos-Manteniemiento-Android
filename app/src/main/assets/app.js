@@ -6286,7 +6286,11 @@ function limpiarFotosYPreviewNuevoPedido() {
 }
 
 function closeAll() {
-    document.querySelectorAll('.mo').forEach(m => m.classList.remove('active'));
+    const forzarPw = document.getElementById('modal-forzar-cambio-pw');
+    document.querySelectorAll('.mo').forEach(m => {
+        if (m === forzarPw && window._pendingAndroidPasswordChange) return;
+        m.classList.remove('active');
+    });
     document.getElementById('pf').reset();
     limpiarFotosYPreviewNuevoPedido();
     _nisSocioCatalogoUltimoValor = '';
@@ -9675,7 +9679,7 @@ async function resetAdminSinEmail() {
             return;
         }
         await sqlSimple(`UPDATE usuarios
-            SET password_hash = ${esc(nueva)}, reset_token = NULL, reset_expiry = NULL
+            SET password_hash = ${esc(nueva)}, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE
             WHERE id = ${esc(r.rows[0].id)}`);
         msg.style.color = '#166534';
         msg.textContent = '✓ Contraseña de admin restablecida.';
