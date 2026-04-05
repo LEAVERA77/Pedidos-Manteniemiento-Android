@@ -6216,6 +6216,14 @@ function detalle(p) {
         const dmRoot = document.getElementById('dm');
         if (dmRoot) dmRoot.dataset.detallePedidoId = pidKey;
     } catch (_) {}
+    try {
+        if (esAdmin() && p?.id != null) {
+            const ob = document.getElementById('admin-banner-opinion-cliente');
+            if (ob?.dataset?.visible === '1' && String(ob.dataset.pedidoId) === pidKey) {
+                ocultarBannerOpinionCliente();
+            }
+        }
+    } catch (_) {}
 
     if (!pidKey.startsWith('off_') && !modoOffline && NEON_OK && _sql) {
         void (async () => {
@@ -7599,17 +7607,28 @@ function ocultarBannerReclamoCliente() {
     _adminBannerTimer = null;
 }
 
-function _commitAdminBannerOpinionWatermarkDesdeDataset() {
+function _commitAdminBannerOpinionWatermark() {
     const box = document.getElementById('admin-banner-opinion-cliente');
-    const iso = box?.dataset?.fechaOpinionIso;
-    if (!iso) return;
-    const t = new Date(iso).getTime();
-    const cur = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
-    if (t > cur) _adminBannerOpinionWatermarkIso = new Date(t).toISOString();
+    const pid = box?.dataset?.pedidoId;
+    let iso = box?.dataset?.fechaOpinionIso;
+    if (!iso && pid) {
+        const p0 = app.p?.find(x => String(x.id) === String(pid));
+        if (p0?.fopin) {
+            const d = new Date(p0.fopin);
+            if (!Number.isNaN(d.getTime())) iso = d.toISOString();
+        }
+    }
+    if (iso) {
+        const t = new Date(iso).getTime();
+        const cur = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
+        if (t > cur) _adminBannerOpinionWatermarkIso = new Date(t).toISOString();
+    } else if (pid) {
+        _adminBannerOpinionWatermarkIso = new Date().toISOString();
+    }
 }
 
 function ocultarBannerOpinionCliente() {
-    _commitAdminBannerOpinionWatermarkDesdeDataset();
+    _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
         box.style.display = 'none';
@@ -7652,18 +7671,34 @@ async function pollBannerNuevoReclamoCliente() {
 async function pollBannerOpinionCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
     const box = document.getElementById('admin-banner-opinion-cliente');
-    if (!box || box.dataset.visible === '1') return;
+    if (!box) return;
     try {
         const col = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
         );
         if (!col.rows?.length) return;
         const tsql = await pedidosFiltroTenantSql();
+        if (box.dataset.visible === '1' && box.dataset.pedidoId) {
+            const pid = parseInt(box.dataset.pedidoId, 10);
+            if (Number.isFinite(pid) && pid > 0) {
+                const rchk = await sqlSimple(
+                    `SELECT estado FROM pedidos WHERE id = ${esc(pid)}${tsql} LIMIT 1`
+                );
+                const row0 = rchk.rows?.[0];
+                const est = String(row0?.estado || '');
+                if (!row0 || est === 'Cerrado') {
+                    ocultarBannerOpinionCliente();
+                    return;
+                }
+            }
+            return;
+        }
         const wm = _adminBannerOpinionWatermarkIso || new Date(0).toISOString();
         const r = await sqlSimple(
             `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente FROM pedidos
              WHERE fecha_opinion_cliente IS NOT NULL
-             AND fecha_opinion_cliente > (${esc(wm)})::timestamptz${tsql}
+             AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
+             AND COALESCE(estado,'') <> 'Cerrado'${tsql}
              ORDER BY fecha_opinion_cliente ASC LIMIT 1`
         );
         const row = r.rows?.[0];
