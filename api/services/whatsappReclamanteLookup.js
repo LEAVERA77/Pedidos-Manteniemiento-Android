@@ -22,7 +22,7 @@ function nombreCompletoClienteFinal(row) {
 
 /**
  * Busca nombre / NIS para el reclamo: ID usuario del tenant, NIS/medidor/número en clientes_finales, o socios_catalogo.
- * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null } | { ok: false } | { skip: true }}
+ * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null } | { ok: false } | { skip: true }}
  */
 export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
   const raw = String(texto || "").trim();
@@ -92,7 +92,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       `SELECT nis_medidor, nombre,
               NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
               NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
-              NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat
+              NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
+              NULLIF(TRIM(COALESCE(tipo_conexion, '')), '') AS tipo_conexion_cat,
+              NULLIF(TRIM(COALESCE(fases, '')), '') AS fases_cat
        FROM socios_catalogo
        WHERE activo = TRUE
          AND UPPER(TRIM(nis_medidor)) = UPPER(TRIM($1))
@@ -112,6 +114,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         catalogoCalle: row.calle_cat != null ? String(row.calle_cat).trim() || null : null,
         catalogoNumero: row.numero_cat != null ? String(row.numero_cat).trim() || null : null,
         catalogoLocalidad: row.localidad_cat != null ? String(row.localidad_cat).trim() || null : null,
+        catalogoTipoConexion:
+          row.tipo_conexion_cat != null ? String(row.tipo_conexion_cat).trim() || null : null,
+        catalogoFases: row.fases_cat != null ? String(row.fases_cat).trim() || null : null,
       };
     }
   }

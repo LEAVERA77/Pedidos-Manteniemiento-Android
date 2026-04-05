@@ -190,3 +190,15 @@ export function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
 export function tipoReclamoWhatsappFlujoSoloNis(tipoTrabajo) {
   return tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }
+
+/** Cooperativa eléctrica (WhatsApp / formulario): estos tipos exigen tipo de conexión y fases si no vienen del padrón. */
+const TIPOS_ELECTRICO_PIDE_SUMINISTRO = new Set([
+  "Problemas de Tensión",
+  "Consumo elevado",
+  "Corte de Energía",
+  "Pedido de factibilidad (nuevo servicio)",
+]);
+
+export function tipoReclamoElectricoPideSuministroWhatsapp(tipoTrabajo) {
+  return TIPOS_ELECTRICO_PIDE_SUMINISTRO.has(String(tipoTrabajo || "").trim());
+}
