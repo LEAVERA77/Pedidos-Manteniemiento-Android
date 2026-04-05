@@ -2155,7 +2155,8 @@ const norm = p => ({
     firma: p.firma_cliente || null,
     chkl: p.checklist_seguridad || null,
     tel: (p.telefono_contacto || '').trim(),
-    opin: p.opinion_cliente || null
+    opin: p.opinion_cliente || null,
+    orc: String(p.origen_reclamo || '').trim().toLowerCase()
 });
 
 function distanciaKm(lat1, lon1, lat2, lon2) {
@@ -5970,6 +5971,7 @@ function escHtmlPrint(s) {
 async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
+    if (pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p)) return;
     const pid = parseInt(p.id, 10);
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
@@ -6914,6 +6916,13 @@ function tipoPedidoExcluyeMateriales(tipoTrabajo) {
     if (v === 'Otros') return true;
     if (v.toLowerCase().includes('factibilidad')) return true;
     return false;
+}
+
+/** Factibilidad vía bot WhatsApp: sin sección de materiales en el modal de detalle. */
+function pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p) {
+    if (!p) return false;
+    if (String(p.orc || '').trim() !== 'whatsapp') return false;
+    return String(p.tt || '').trim().toLowerCase().includes('factibilidad');
 }
 
 /** Alineado con api/services/tiposReclamo.js (cooperativa eléctrica). */
