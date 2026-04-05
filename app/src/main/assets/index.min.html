@@ -357,6 +357,7 @@
       <button class="admin-tab" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
+      <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
       <button class="admin-tab" onclick="adminTab('mapa-usuarios')"><i class="fas fa-map-marker-alt"></i> Ubicaciones</button>
       <button class="admin-tab" onclick="adminTab('contrasena')"><i class="fas fa-key"></i> Contraseña</button>
     </div>
@@ -552,6 +553,42 @@
           <div class="chart-legend-caption" id="chart-cap-tecnicos"></div>
         </div>
       </div>
+    </div>
+    <div id="admin-kpi" class="admin-section">
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Indicadores guardados para <strong>piloto comercial</strong> o reportes. Solo se listan y graban filas del <code style="font-size:.78rem">tenant_id</code> de esta sesión. Si la tabla no existe, ejecutá en Neon <code style="font-size:.78rem">docs/NEON_kpi_snapshots.sql</code>.</p>
+      <div id="kpi-snapshots-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
+      <div id="kpi-snapshots-form-wrap" style="display:none">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .75rem">Nuevo o actualizar (misma métrica + fechas = reemplazo)</h3>
+        <div class="form-grid">
+          <div class="full"><label for="kpi-metrica">Métrica (clave estable)</label>
+            <input id="kpi-metrica" type="text" placeholder="ej: pct_cierres_con_foto" maxlength="100" autocomplete="off">
+          </div>
+          <div><label for="kpi-desde">Periodo desde</label><input id="kpi-desde" type="date"></div>
+          <div><label for="kpi-hasta">Periodo hasta</label><input id="kpi-hasta" type="date"></div>
+          <div><label for="kpi-valor">Valor numérico</label><input id="kpi-valor" type="text" inputmode="decimal" placeholder="72.5 o vacío"></div>
+          <div><label for="kpi-unidad">Unidad</label><input id="kpi-unidad" type="text" placeholder="percent, hours, count…" maxlength="32"></div>
+          <div><label for="kpi-fuente">Fuente</label>
+            <select id="kpi-fuente">
+              <option value="manual">manual</option>
+              <option value="computed_batch">computed_batch</option>
+              <option value="sql_report">sql_report</option>
+              <option value="import">import</option>
+              <option value="api">api</option>
+            </select>
+          </div>
+          <div class="full"><label for="kpi-json">JSON detalle (opcional)</label><textarea id="kpi-json" rows="3" placeholder='{"cerrados_con_foto":29,"cerrados_total":40}' style="font-family:ui-monospace,monospace;font-size:.78rem"></textarea></div>
+          <div class="full"><label for="kpi-notas">Notas</label><input id="kpi-notas" type="text" placeholder="Piloto abril — cooperativa X"></div>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.85rem;flex-wrap:wrap">
+          <button type="button" class="btn-sm primary" onclick="guardarKpiSnapshotAdmin()"><i class="fas fa-save"></i> Guardar</button>
+          <button type="button" class="btn-sm" onclick="limpiarFormKpiSnapshotAdmin()" style="background:var(--bg);border:1px solid var(--bo)">Limpiar formulario</button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:1rem 0 .6rem;flex-wrap:wrap;gap:.5rem">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Registros</h3>
+        <button type="button" class="btn-sm primary" onclick="cargarKpiSnapshotsAdmin()" id="kpi-btn-refrescar" style="display:none"><i class="fas fa-sync"></i> Actualizar lista</button>
+      </div>
+      <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
     </div>
     <div id="admin-mapa-usuarios" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">

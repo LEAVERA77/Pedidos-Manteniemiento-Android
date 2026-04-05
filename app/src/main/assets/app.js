@@ -839,6 +839,25 @@ function tiposReclamoSeleccionables() {
     return [...u];
 }
 
+function esMunicipioRubro() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
+}
+function esCooperativaAguaRubro() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua';
+}
+/** Distribuidor (eléctrica) | Ramal (agua) | Barrio (municipio). */
+function etiquetaZonaPedido() {
+    if (esMunicipioRubro()) return 'Barrio';
+    if (esCooperativaAguaRubro()) return 'Ramal';
+    return 'Distribuidor';
+}
+function valorZonaPedidoUI(p) {
+    const br = String(p?.br || '').trim();
+    const dis = String(p?.dis || '').trim();
+    if (esMunicipioRubro()) return br || dis || '';
+    return dis || br || '';
+}
+
 /** Municipio → vecino; cooperativas → socio (etiquetas UI / impresión). */
 function etiquetaFirmaPersona() {
     return String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio' ? 'vecino' : 'socio';
@@ -868,7 +887,7 @@ function poblarSelectTiposReclamo() {
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
 
-const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','trafo',
+const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','trafo','barrio',
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
@@ -1245,14 +1264,38 @@ function aplicarMarcaVisualCompleta() {
     }
 }
 
-const SESSION_WEB_ADMIN_TIPO_OK = 'pmg_web_admin_tipo_ok';
+/** Primera vez en este navegador: modal de rubro. Luego: botón «Cambiar rubro» con contraseña. */
+const LS_ADMIN_WEB_TIPO_ACK = 'pmg_admin_web_tipo_ack_v1';
 let _resolveAdminTipoModal = null;
 
-async function promptAdminTipoNegocioWebIfNeeded() {
-    if (!esAdminSesionWebPublica()) return;
+function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
+    const a = normalizarRubroEmpresa(tipoAnterior);
+    const b = normalizarRubroEmpresa(tipoNuevo);
+    if (a === b) return;
     try {
-        if (sessionStorage.getItem(SESSION_WEB_ADMIN_TIPO_OK) === '1') return;
+        DIST = [];
     } catch (_) {}
+    try {
+        if (typeof syncMapaFiltroTiposRebuild === 'function') syncMapaFiltroTiposRebuild();
+    } catch (_) {}
+    try {
+        void cargarDistribuidores();
+    } catch (_) {}
+    try {
+        render();
+    } catch (_) {}
+    try {
+        renderMk();
+    } catch (_) {}
+}
+
+async function promptAdminTipoNegocioWebIfNeeded(force = false) {
+    if (!esAdminSesionWebPublica()) return;
+    if (!force) {
+        try {
+            if (localStorage.getItem(LS_ADMIN_WEB_TIPO_ACK) === '1') return;
+        } catch (_) {}
+    }
     const modal = document.getElementById('modal-admin-tipo-negocio');
     const sel = document.getElementById('admin-sesion-tipo');
     if (!modal || !sel) return;
@@ -1264,6 +1307,45 @@ async function promptAdminTipoNegocioWebIfNeeded() {
     });
 }
 
+function abrirModalCambioRubroAdminConPassword() {
+    if (!esAdminSesionWebPublica()) return;
+    const inp = document.getElementById('admin-verify-pw-rubro-input');
+    if (inp) inp.value = '';
+    document.getElementById('modal-admin-verify-pw-rubro')?.classList.add('active');
+}
+window.abrirModalCambioRubroAdminConPassword = abrirModalCambioRubroAdminConPassword;
+
+async function confirmarPasswordYAbrirRubroAdmin() {
+    const pw = (document.getElementById('admin-verify-pw-rubro-input')?.value || '').trim();
+    if (!pw) {
+        toast('Ingresá tu contraseña de administrador', 'error');
+        return;
+    }
+    await asegurarJwtApiRest();
+    const token = getApiToken();
+    if (!token) {
+        toast('No hay token de API. Volvé a iniciar sesión.', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(apiUrl('/api/auth/verify-password'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ password: pw })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+    } catch (e) {
+        toast(String(e?.message || e) || 'Contraseña incorrecta', 'error');
+        return;
+    }
+    document.getElementById('modal-admin-verify-pw-rubro')?.classList.remove('active');
+    await promptAdminTipoNegocioWebIfNeeded(true);
+}
+window.confirmarPasswordYAbrirRubroAdmin = confirmarPasswordYAbrirRubroAdmin;
+
 async function confirmarAdminTipoNegocioWeb() {
     const sel = document.getElementById('admin-sesion-tipo');
     const chk = document.getElementById('admin-sesion-tipo-persistir');
@@ -1273,6 +1355,7 @@ async function confirmarAdminTipoNegocioWeb() {
         toast('Elegí un tipo de negocio', 'error');
         return;
     }
+    const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
     if (persistir) {
@@ -1308,12 +1391,14 @@ async function confirmarAdminTipoNegocioWeb() {
     try {
         persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
     } catch (_) {}
+    invalidateCachesTrasCambioRubro(tipoAntes, tipo);
     aplicarEtiquetasPorTipo(tipo);
     poblarSelectTiposReclamo();
+    syncZonaPedidoFormLabels();
     syncEmpresaCfgNombreLogoDesdeMarca();
     aplicarMarcaVisualCompleta();
     try {
-        sessionStorage.setItem(SESSION_WEB_ADMIN_TIPO_OK, '1');
+        localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
     } catch (_) {}
     if (modal) modal.classList.remove('active');
     if (_resolveAdminTipoModal) {
@@ -1464,6 +1549,10 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_tipo_conexion TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_fases TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS trafo TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS barrio TEXT`);
+                try {
+                    await sqlSimple(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS barrio TEXT`);
+                } catch (_) {}
                 try {
                     await sqlSimple(`ALTER TABLE pedidos ALTER COLUMN distribuidor DROP NOT NULL`);
                 } catch (_) {}
@@ -1546,9 +1635,6 @@ document.getElementById('lf').addEventListener('submit', async e => {
         u.rol = normalizarRolStr(u.rol);
         invalidatePedidosTenantSqlCache();
         app.u = u;
-        if (esAdmin() && !esAndroidWebViewMapa()) {
-            try { sessionStorage.removeItem(SESSION_WEB_ADMIN_TIPO_OK); } catch (_) {}
-        }
         localStorage.setItem('pmg', JSON.stringify(app.u));
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
@@ -1560,6 +1646,8 @@ document.getElementById('lf').addEventListener('submit', async e => {
         iniciarSyncCatalogos();
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
+        const btnRubro = document.getElementById('btn-admin-cambiar-rubro');
+        if (btnRubro) btnRubro.style.display = esAdminSesionWebPublica() ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
         const mapDashCard = document.getElementById('mapa-card-dashboard');
@@ -1743,6 +1831,7 @@ const norm = p => ({
     fc: p.fecha_cierre || null,
     fa: p.fecha_avance || null,
     dis: p.distribuidor || '',
+    br: String(p.barrio || '').trim(),
     trf: String(p.trafo || p.setd || '').trim(),
     cl: p.cliente || '',
     tt: p.tipo_trabajo || '',
@@ -1812,6 +1901,71 @@ function _escOpt(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+const WEB_MAP_FILTRO_TIPOS_KEY = 'pmg_map_filtro_tipos_json';
+
+function leerMapFiltroTiposSet() {
+    const tipos = tiposReclamoSeleccionables();
+    let sel = null;
+    try {
+        const raw = localStorage.getItem(WEB_MAP_FILTRO_TIPOS_KEY);
+        if (raw) sel = JSON.parse(raw);
+    } catch (_) {}
+    if (!Array.isArray(sel) || sel.length === 0) return null;
+    const ok = new Set(tipos);
+    const filtered = sel.filter((t) => ok.has(t));
+    return filtered.length ? new Set(filtered) : null;
+}
+
+function pedidoPasaFiltroTipoReclamoMapa(p) {
+    const allowed = leerMapFiltroTiposSet();
+    if (!allowed) return true;
+    const tt = String(p?.tt || '').trim();
+    if (!tt) return allowed.has('__sin_tipo__');
+    return allowed.has(tt);
+}
+
+function syncMapaFiltroTiposRebuild() {
+    const host = document.getElementById('mapa-filtro-tipo-body');
+    if (!host) return;
+    const tipos = tiposReclamoSeleccionables();
+    const prev = leerMapFiltroTiposSet();
+    const lines = tipos.map((t) => {
+        const id = 'mapa-flt-tt-' + t.replace(/[^a-z0-9]/gi, '_').slice(0, 40);
+        const checked = !prev || prev.has(t);
+        return `<label class="moui-chk" style="width:100%"><input type="checkbox" id="${id}" data-tt="${_escOpt(t)}" ${checked ? 'checked' : ''} onchange="onMapaFiltroTipoTrabajoChange()"> ${_escOpt(t)}</label>`;
+    });
+    host.innerHTML =
+        `<label class="moui-chk" style="width:100%;margin-bottom:.35rem"><input type="checkbox" id="mapa-flt-tt-all" checked onchange="onMapaFiltroTipoTrabajoChange(true)"> Todos los tipos</label>` +
+        lines.join('');
+    onMapaFiltroTipoTrabajoChange();
+}
+
+function onMapaFiltroTipoTrabajoChange(allMode) {
+    const host = document.getElementById('mapa-filtro-tipo-body');
+    if (!host) return;
+    const all = document.getElementById('mapa-flt-tt-all');
+    if (allMode && all && all.checked) {
+        host.querySelectorAll('input[type=checkbox][data-tt]').forEach((c) => {
+            c.checked = true;
+        });
+    } else if (all) {
+        all.checked = false;
+    }
+    const tipos = tiposReclamoSeleccionables();
+    const picked = [];
+    host.querySelectorAll('input[type=checkbox][data-tt]').forEach((c) => {
+        if (c.checked) picked.push(c.getAttribute('data-tt') || '');
+    });
+    try {
+        if (picked.length === tipos.length) localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+        else localStorage.setItem(WEB_MAP_FILTRO_TIPOS_KEY, JSON.stringify(picked));
+    } catch (_) {}
+    try {
+        onMapaFiltroChange();
+    } catch (_) {}
+}
+window.onMapaFiltroTipoTrabajoChange = onMapaFiltroTipoTrabajoChange;
+
 function pedidosParaMarcadoresMapa() {
     const chk = (id) => {
         const el = document.getElementById(id);
@@ -1854,6 +2008,7 @@ function pedidosParaMarcadoresMapa() {
         })();
         if (!prioOk) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
+        if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
         return true;
     });
 }
@@ -1990,6 +2145,7 @@ function setBp2PanelHidden(hidden) {
 
 function mapTabIdForCard(cardId) {
     if (cardId === 'mapa-card-filtros') return 'map-tab-filtros';
+    if (cardId === 'mapa-card-filtro-tipo') return 'map-tab-filtro-tipo';
     if (cardId === 'mapa-card-colores') return 'map-tab-colores';
     return 'map-tab-dash';
 }
@@ -2011,6 +2167,8 @@ function toggleMapaCardSlideoff(cardId, hide) {
 function syncMapSlideTabsFromStorage() {
     const cf = document.getElementById('mapa-card-filtros');
     if (cf && localStorage.getItem('pmg_slideoff_filtros') === '1') toggleMapaCardSlideoff('mapa-card-filtros', true);
+    const cft = document.getElementById('mapa-card-filtro-tipo');
+    if (cft && localStorage.getItem('pmg_slideoff_filtro_tipo') === '1') toggleMapaCardSlideoff('mapa-card-filtro-tipo', true);
     const cc = document.getElementById('mapa-card-colores');
     if (cc && cc.style.display !== 'none' && localStorage.getItem('pmg_slideoff_colores') === '1') toggleMapaCardSlideoff('mapa-card-colores', true);
     const cd = document.getElementById('mapa-card-dashboard');
@@ -2231,6 +2389,7 @@ function aplicarUIMapaPlataforma() {
     syncMapaPrioFiltrosFromStorage();
     const strip = document.getElementById('mapa-android-strip');
     const card = document.getElementById('mapa-card-filtros');
+    const cardTipo = document.getElementById('mapa-card-filtro-tipo');
     const cardCol = document.getElementById('mapa-card-colores');
     if (!strip || !card) return;
     if (esAndroidWebViewMapa()) {
@@ -2239,9 +2398,11 @@ function aplicarUIMapaPlataforma() {
         const chk = document.getElementById('chk-android-filtros-av');
         if (chk) chk.checked = adv;
         card.style.display = adv ? 'block' : 'none';
+        if (cardTipo) cardTipo.style.display = adv ? 'block' : 'none';
         if (cardCol) cardCol.style.display = adv ? 'block' : 'none';
         if (!adv) {
             document.getElementById('map-tab-filtros')?.classList.remove('visible');
+            document.getElementById('map-tab-filtro-tipo')?.classList.remove('visible');
             document.getElementById('map-tab-colores')?.classList.remove('visible');
             document.getElementById('map-tab-dash')?.classList.remove('visible');
         }
@@ -2263,6 +2424,7 @@ function aplicarUIMapaPlataforma() {
         strip.style.display = 'none';
         document.getElementById('map-tab-android-bar')?.classList.remove('visible');
         card.style.display = 'block';
+        if (cardTipo) cardTipo.style.display = 'block';
         if (cardCol) cardCol.style.display = 'block';
     }
     try {
@@ -2275,8 +2437,10 @@ function aplicarUIMapaPlataforma() {
     syncMapSlideTabsFromStorage();
     try { initBp2PanelFlotanteDesktop(); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-filtros'); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-filtro-tipo'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-colores'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
+    try { syncMapaFiltroTiposRebuild(); } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
@@ -6201,7 +6365,8 @@ document.getElementById('ub').addEventListener('click', () => {
         } catch (_) {}
         detenerSyncCatalogos();
         limpiarEstadoMapaSesion();
-        try { sessionStorage.removeItem(SESSION_WEB_ADMIN_TIPO_OK); } catch (_) {}
+        const btnRubro2 = document.getElementById('btn-admin-cambiar-rubro');
+        if (btnRubro2) btnRubro2.style.display = 'none';
         localStorage.removeItem('pmg');
         localStorage.removeItem('pmg_api_token');
         app.apiToken = null;
@@ -7020,6 +7185,10 @@ function aplicarEtiquetasPorTipo(tipo) {
         if (tab?.getAttribute('onclick') === "adminTab('socios')") {
             tab.innerHTML = `<i class="fas fa-address-book"></i> ${etiqueta}`;
         }
+        if (tab?.getAttribute('onclick') === "adminTab('distribuidores')") {
+            const lbl = esMunicipio ? 'Barrios' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
+            tab.innerHTML = `<i class="fas fa-network-wired"></i> ${lbl}`;
+        }
     });
     const h3cat = document.getElementById('admin-socios-catalogo-titulo');
     if (h3cat) {
@@ -7032,7 +7201,26 @@ function aplicarEtiquetasPorTipo(tipo) {
         firma.innerHTML = `<i class="fas fa-signature"></i> Firma del cliente / ${esMunicipio ? 'vecino' : 'socio'}`;
     }
     try { syncNisClienteReclamoConexionUI(); } catch (_) {}
+    try { syncZonaPedidoFormLabels(); } catch (_) {}
+    try { syncMapaFiltroTiposRebuild(); } catch (_) {}
 }
+
+function syncZonaPedidoFormLabels() {
+    const di2 = document.getElementById('di2');
+    const wrap = di2?.closest('.fg');
+    const lb = wrap?.querySelector('label[for="di2"]');
+    if (lb) lb.textContent = etiquetaZonaPedido();
+    if (di2 && di2.options && di2.options[0]) {
+        di2.options[0].textContent =
+            esMunicipioRubro() || esCooperativaAguaRubro()
+                ? '— Opcional —'
+                : '— Solo se completa con NIS/medidor en catálogo —';
+    }
+    const trafoW = document.getElementById('trafo-pedido')?.closest('.fg');
+    if (trafoW) trafoW.style.display = esCooperativaElectricaRubro() ? '' : 'none';
+}
+window.syncZonaPedidoFormLabels = syncZonaPedidoFormLabels;
+
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');
     if (!modal) return;
@@ -7416,7 +7604,205 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','mapa-usuarios','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','contrasena'];
+let _kpiSnapshotsTablaCache = null;
+async function adminKpiSnapshotsTablaExiste(refrescar) {
+    if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
+    if (!_sql || modoOffline || !NEON_OK) {
+        _kpiSnapshotsTablaCache = false;
+        return false;
+    }
+    try {
+        const r = await sqlSimple(
+            `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'kpi_snapshots' LIMIT 1`
+        );
+        _kpiSnapshotsTablaCache = (r.rows || []).length > 0;
+    } catch (_) {
+        _kpiSnapshotsTablaCache = false;
+    }
+    return _kpiSnapshotsTablaCache;
+}
+
+function limpiarFormKpiSnapshotAdmin() {
+    const ids = ['kpi-metrica', 'kpi-desde', 'kpi-hasta', 'kpi-valor', 'kpi-unidad', 'kpi-notas', 'kpi-json'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const fu = document.getElementById('kpi-fuente');
+    if (fu) fu.value = 'manual';
+}
+window.limpiarFormKpiSnapshotAdmin = limpiarFormKpiSnapshotAdmin;
+
+async function cargarKpiSnapshotsAdmin() {
+    const host = document.getElementById('kpi-snapshots-lista');
+    const sinTabla = document.getElementById('kpi-snapshots-sin-tabla');
+    const formWrap = document.getElementById('kpi-snapshots-form-wrap');
+    const btnRef = document.getElementById('kpi-btn-refrescar');
+    if (!host) return;
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        host.innerHTML = '<span style="color:var(--re)">Sin conexión o sin permisos.</span>';
+        return;
+    }
+    const okTabla = await adminKpiSnapshotsTablaExiste(true);
+    if (!okTabla) {
+        if (sinTabla) {
+            sinTabla.style.display = 'block';
+            sinTabla.innerHTML =
+                '<strong>Tabla <code>kpi_snapshots</code> no encontrada.</strong> En el SQL Editor de Neon ejecutá el script del repo: <code>docs/NEON_kpi_snapshots.sql</code>. Luego tocá «Actualizar lista».';
+        }
+        if (formWrap) formWrap.style.display = 'none';
+        if (btnRef) btnRef.style.display = 'none';
+        host.innerHTML = '';
+        return;
+    }
+    if (sinTabla) sinTabla.style.display = 'none';
+    if (formWrap) formWrap.style.display = 'block';
+    if (btnRef) btnRef.style.display = 'inline-flex';
+    host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
+    const tid = tenantIdActual();
+    try {
+        const r = await sqlSimple(
+            `SELECT id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_at::text AS created_at
+             FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}
+             ORDER BY periodo_inicio DESC NULLS LAST, metrica ASC LIMIT 200`
+        );
+        const rows = r.rows || [];
+        if (rows.length === 0) {
+            host.innerHTML = '<p style="font-size:.85rem;color:var(--tl)">No hay KPIs guardados para este tenant.</p>';
+            return;
+        }
+        const head =
+            '<div style="overflow-x:auto;border:1px solid var(--bo);border-radius:.5rem"><table style="width:100%;border-collapse:collapse;font-size:.78rem"><thead><tr style="background:var(--bg);text-align:left">' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Métrica</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Desde</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Hasta</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Valor</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Unidad</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Fuente</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)"></th></tr></thead><tbody>';
+        const body = rows
+            .map(row => {
+                const vj = row.valor_json != null ? JSON.stringify(row.valor_json) : '{}';
+                const vjShort = vj.length > 48 ? vj.slice(0, 45) + '…' : vj;
+                const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+                return (
+                    `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);vertical-align:top"><code>${_escOpt(row.metrica)}</code></td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_inicio || ''))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_fin || ''))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(vn)}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(row.unidad || '—')}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(row.fuente || '')}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);white-space:nowrap">${_escOpt(String(row.created_at || '').replace('T', ' ').slice(0, 16))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">` +
+                    `<button type="button" class="btn-sm" style="padding:.2rem .45rem;font-size:.72rem;background:var(--bg);border:1px solid var(--bo)" onclick="eliminarKpiSnapshotAdmin(${Number(row.id)})" title="${_escOpt(vjShort)}">Eliminar</button></td></tr>`
+                );
+            })
+            .join('');
+        host.innerHTML = head + body + '</tbody></table></div>';
+    } catch (e) {
+        host.innerHTML = '<span style="color:var(--re)">' + _escOpt(e.message || e) + '</span>';
+    }
+}
+window.cargarKpiSnapshotsAdmin = cargarKpiSnapshotsAdmin;
+
+async function guardarKpiSnapshotAdmin() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        toast('Sin conexión o sin permisos.', 'error');
+        return;
+    }
+    if (!(await adminKpiSnapshotsTablaExiste(true))) {
+        toast('Creá la tabla kpi_snapshots en Neon (docs/NEON_kpi_snapshots.sql).', 'error');
+        return;
+    }
+    const metrica = (document.getElementById('kpi-metrica')?.value || '').trim();
+    const desde = (document.getElementById('kpi-desde')?.value || '').trim();
+    const hasta = (document.getElementById('kpi-hasta')?.value || '').trim();
+    const valStr = (document.getElementById('kpi-valor')?.value || '').trim();
+    const unidad = (document.getElementById('kpi-unidad')?.value || '').trim();
+    const fuente = (document.getElementById('kpi-fuente')?.value || 'manual').trim();
+    const notas = (document.getElementById('kpi-notas')?.value || '').trim();
+    const jsonRaw = (document.getElementById('kpi-json')?.value || '').trim();
+    if (!metrica || !desde || !hasta) {
+        toast('Completá métrica y fechas.', 'warning');
+        return;
+    }
+    if (!/^[a-zA-Z0-9._-]{1,100}$/.test(metrica)) {
+        toast('Métrica: solo letras, números, punto, guión y _ (máx. 100).', 'warning');
+        return;
+    }
+    if (desde > hasta) {
+        toast('«Desde» no puede ser posterior a «Hasta».', 'warning');
+        return;
+    }
+    const fuentesOk = ['manual', 'computed_batch', 'sql_report', 'import', 'api'];
+    if (!fuentesOk.includes(fuente)) {
+        toast('Fuente no válida.', 'warning');
+        return;
+    }
+    let valorJson = {};
+    if (jsonRaw) {
+        try {
+            valorJson = JSON.parse(jsonRaw);
+            if (valorJson === null || typeof valorJson !== 'object' || Array.isArray(valorJson)) {
+                toast('El JSON debe ser un objeto { ... }.', 'warning');
+                return;
+            }
+        } catch (_) {
+            toast('JSON inválido.', 'error');
+            return;
+        }
+    }
+    let valorNumSql = 'NULL';
+    if (valStr !== '') {
+        const n = Number(valStr.replace(',', '.'));
+        if (!Number.isFinite(n)) {
+            toast('Valor numérico no válido.', 'warning');
+            return;
+        }
+        valorNumSql = esc(n);
+    }
+    const unidadSql = unidad === '' ? 'NULL' : esc(unidad.slice(0, 32));
+    const notasSql = notas === '' ? 'NULL' : esc(notas);
+    const tid = tenantIdActual();
+    const uid = app.u && app.u.id != null ? Number(app.u.id) : null;
+    const uidSql = uid != null && Number.isFinite(uid) ? esc(uid) : 'NULL';
+    const jsonStr = JSON.stringify(valorJson);
+    try {
+        await sqlSimple(
+            `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
+             VALUES (${esc(tid)}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
+             ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
+             DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
+        );
+        toast('KPI guardado.', 'success');
+        await cargarKpiSnapshotsAdmin();
+    } catch (e) {
+        toast('No se pudo guardar: ' + (e.message || e), 'error');
+    }
+}
+window.guardarKpiSnapshotAdmin = guardarKpiSnapshotAdmin;
+
+async function eliminarKpiSnapshotAdmin(id) {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    const nid = Number(id);
+    if (!Number.isFinite(nid) || nid <= 0) return;
+    if (!confirm('¿Eliminar este registro de KPI?')) return;
+    if (!(await adminKpiSnapshotsTablaExiste(true))) return;
+    const tid = tenantIdActual();
+    try {
+        await sqlSimple(
+            `DELETE FROM kpi_snapshots WHERE id = ${esc(nid)} AND tenant_id = ${esc(tid)}`
+        );
+        toast('Eliminado.', 'success');
+        await cargarKpiSnapshotsAdmin();
+    } catch (e) {
+        toast('No se pudo eliminar: ' + (e.message || e), 'error');
+    }
+}
+window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
+
 function adminTab(tab) {
     document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
@@ -7426,6 +7812,7 @@ function adminTab(tab) {
     const sec = document.getElementById('admin-' + tab);
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') cargarEstadisticas();
+    if (tab === 'kpi') void cargarKpiSnapshotsAdmin();
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
     if (tab === 'socios') {
