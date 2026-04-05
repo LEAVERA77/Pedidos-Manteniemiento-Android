@@ -1183,12 +1183,7 @@ function abrirModalReabrirAsistenteAdmin() {
         const pw = document.getElementById('reabrir-asistente-pw');
         const em = document.getElementById('reabrir-asistente-em');
         if (pw) pw.value = '';
-        if (em) {
-            try {
-                const g = localStorage.getItem('gestornova_saved_login');
-                if (g && !em.value) em.value = g;
-            } catch (_) {}
-        }
+        if (em) em.value = '';
         m?.classList.add('active');
     } catch (_) {}
 }
@@ -1683,11 +1678,13 @@ const lb  = document.getElementById('lb');
 
 lb.disabled = false;
 actualizarBadgeOffline();
-(function prefillLoginUsuarioGuardado() {
+(function limpiarLoginSinPersistenciaUsuario() {
     try {
-        const v = localStorage.getItem('gestornova_saved_login');
-        const inp = document.getElementById('em');
-        if (v && inp && !inp.value) inp.value = v;
+        localStorage.removeItem('gestornova_saved_login');
+        const em = document.getElementById('em');
+        const pw = document.getElementById('pw');
+        if (em) em.value = '';
+        if (pw) pw.value = '';
     } catch (_) {}
 })();
 (function pintarMarcaLoginAlCargarModulo() {
@@ -1929,7 +1926,6 @@ document.getElementById('lf').addEventListener('submit', async e => {
     function intentarOffline() {
         const u = verificarUsuarioOffline(em, pw);
         if (u) {
-            try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
             entrarConUsuario({ id: u.id, email: u.email, nombre: u.nombre, rol: u.rol }, true);
             toast('📴 Modo offline — ' + u.nombre, 'info');
             return true;
@@ -1990,7 +1986,6 @@ document.getElementById('lf').addEventListener('submit', async e => {
 
         const usuario = resultado.rows?.[0];
         if (usuario) {
-            try { localStorage.setItem('gestornova_saved_login', em); } catch (_) {}
             const u = {
                 id: usuario.id,
                 email: usuario.email,
@@ -2131,17 +2126,20 @@ function leerMapFiltroTiposSet() {
     let sel = null;
     try {
         const raw = localStorage.getItem(WEB_MAP_FILTRO_TIPOS_KEY);
-        if (raw) sel = JSON.parse(raw);
+        if (raw == null) return null;
+        sel = JSON.parse(raw);
     } catch (_) {}
-    if (!Array.isArray(sel) || sel.length === 0) return null;
+    if (!Array.isArray(sel)) return null;
+    if (sel.length === 0) return new Set();
     const ok = new Set(tipos);
     const filtered = sel.filter((t) => ok.has(t));
-    return filtered.length ? new Set(filtered) : null;
+    return filtered.length ? new Set(filtered) : new Set();
 }
 
 function pedidoPasaFiltroTipoReclamoMapa(p) {
     const allowed = leerMapFiltroTiposSet();
-    if (!allowed) return true;
+    if (allowed == null) return true;
+    if (allowed.size === 0) return false;
     const tt = String(p?.tt || '').trim();
     if (!tt) return allowed.has('__sin_tipo__');
     return allowed.has(tt);
@@ -2152,14 +2150,16 @@ function syncMapaFiltroTiposRebuild() {
     if (!host) return;
     const tipos = tiposReclamoSeleccionables();
     const prev = leerMapFiltroTiposSet();
+    const allMasterChecked =
+        tipos.length === 0 ? true : prev == null || (prev.size > 0 && prev.size === tipos.length);
     const lines = tipos.map((t) => {
         const id = 'mapa-flt-tt-' + t.replace(/[^a-z0-9]/gi, '_').slice(0, 40);
-        const checked = !prev || prev.has(t);
+        const checked = prev == null || prev.has(t);
         return `<label class="mapa-flt-tipo-row" for="${id}"><input type="checkbox" id="${id}" data-tt="${_escOpt(t)}" ${checked ? 'checked' : ''} onchange="onMapaFiltroTipoTrabajoChange()"><span class="mapa-flt-tipo-lbl">${_escOpt(t)}</span></label>`;
     });
     host.innerHTML =
-        `<p class="mapa-filtro-tipo-hint">Mostrar en el mapa solo los tipos marcados (según el rubro actual).</p>` +
-        `<label class="mapa-flt-tipo-row mapa-flt-tipo-row-all" for="mapa-flt-tt-all"><input type="checkbox" id="mapa-flt-tt-all" checked onchange="onMapaFiltroTipoTrabajoChange(true)"><span class="mapa-flt-tipo-lbl">Todos los tipos</span></label>` +
+        `<p class="mapa-filtro-tipo-hint">Mostrar en el mapa solo los tipos marcados (según el rubro actual). <b>Todos los tipos</b> marca o desmarca la lista completa.</p>` +
+        `<label class="mapa-flt-tipo-row mapa-flt-tipo-row-all" for="mapa-flt-tt-all"><input type="checkbox" id="mapa-flt-tt-all" ${allMasterChecked ? 'checked' : ''} onchange="onMapaFiltroTipoTrabajoChange(true)"><span class="mapa-flt-tipo-lbl">Todos los tipos</span></label>` +
         lines.join('');
     onMapaFiltroTipoTrabajoChange();
 }
@@ -2169,24 +2169,24 @@ function onMapaFiltroTipoTrabajoChange(allMode) {
     if (!host) return;
     const all = document.getElementById('mapa-flt-tt-all');
     const boxes = [...host.querySelectorAll('input[type=checkbox][data-tt]')];
-    if (allMode && all?.checked) {
-        boxes.forEach((c) => {
-            c.checked = true;
-        });
+    if (allMode && all) {
+        if (all.checked) {
+            boxes.forEach((c) => {
+                c.checked = true;
+            });
+        } else {
+            boxes.forEach((c) => {
+                c.checked = false;
+            });
+        }
     }
     const tipos = tiposReclamoSeleccionables();
     let picked = boxes.filter((c) => c.checked).map((c) => c.getAttribute('data-tt') || '');
-    if (picked.length === 0 && tipos.length) {
-        boxes.forEach((c) => {
-            c.checked = true;
-        });
-        picked = [...tipos];
-    }
     if (all) {
         all.checked = picked.length === tipos.length && tipos.length > 0;
     }
     try {
-        if (picked.length === tipos.length) localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+        if (picked.length === tipos.length && tipos.length > 0) localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
         else localStorage.setItem(WEB_MAP_FILTRO_TIPOS_KEY, JSON.stringify(picked));
     } catch (_) {}
     try {
@@ -6696,6 +6696,13 @@ document.getElementById('ub').addEventListener('click', () => {
         document.getElementById('gw')?.classList.remove('active');
         document.getElementById('ls').classList.add('active');
         document.getElementById('ms').classList.remove('active');
+        try {
+            localStorage.removeItem('gestornova_saved_login');
+            const emEl = document.getElementById('em');
+            const pwEl = document.getElementById('pw');
+            if (emEl) emEl.value = '';
+            if (pwEl) pwEl.value = '';
+        } catch (_) {}
     }
 });
 
