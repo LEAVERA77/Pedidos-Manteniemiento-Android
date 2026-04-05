@@ -594,29 +594,79 @@
       </div>
     </div>
     <div id="admin-kpi" class="admin-section">
-      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Indicadores guardados para <strong>piloto comercial</strong> o reportes. Solo se listan y graban filas del <code style="font-size:.78rem">tenant_id</code> de esta sesión. Si la tabla no existe, ejecutá en Neon <code style="font-size:.78rem">docs/NEON_kpi_snapshots.sql</code>.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Indicadores para <strong>piloto comercial</strong> o reportes. Elegí un tipo abajo y completá fechas y números; no hace falta saber claves técnicas. Los datos quedan asociados al <code style="font-size:.78rem">tenant_id</code> de esta sesión. Si falta la tabla en Neon, ejecutá <code style="font-size:.78rem">docs/NEON_kpi_snapshots.sql</code>.</p>
       <div id="kpi-snapshots-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
       <div id="kpi-snapshots-form-wrap" style="display:none">
-        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .75rem">Nuevo o actualizar (misma métrica + fechas = reemplazo)</h3>
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .75rem">Nuevo registro o actualizar</h3>
+        <p style="font-size:.78rem;color:var(--tl);margin:-.35rem 0 .85rem;line-height:1.4">Si ya existe la misma métrica y el mismo rango de fechas, el guardado <strong>reemplaza</strong> el valor anterior.</p>
         <div class="form-grid">
-          <div class="full"><label for="kpi-metrica">Métrica (clave estable)</label>
-            <input id="kpi-metrica" type="text" placeholder="ej: pct_cierres_con_foto" maxlength="100" autocomplete="off">
+          <div class="full">
+            <label for="kpi-preset">¿Qué indicador querés cargar?</label>
+            <select id="kpi-preset" onchange="aplicarKpiPresetAdmin()">
+              <option value="">— Elegí una opción —</option>
+              <option value="pct_cierres_con_foto">Porcentaje de cierres con foto</option>
+              <option value="reclamos_cerrados">Cantidad de reclamos cerrados en el periodo</option>
+              <option value="reclamos_recibidos">Cantidad de reclamos recibidos (nuevos) en el periodo</option>
+              <option value="tiempo_respuesta_horas">Tiempo medio de respuesta (horas)</option>
+              <option value="satisfaccion_pct">Satisfacción / opiniones positivas (%)</option>
+              <option value="avance_medio">Avance medio de trabajos (%)</option>
+              <option value="avanzado">Otro — modo avanzado (clave técnica)</option>
+            </select>
+            <p id="kpi-preset-ayuda" class="kpi-preset-hint" style="display:none"></p>
+          </div>
+          <input type="hidden" id="kpi-metrica" value="" maxlength="100" autocomplete="off">
+          <div class="full" id="kpi-wrap-metrica-avanzada" style="display:none">
+            <label for="kpi-metrica-visible">Clave interna de la métrica</label>
+            <input id="kpi-metrica-visible" type="text" placeholder="solo letras, números, punto, guión y _" maxlength="100" autocomplete="off" oninput="syncKpiMetricaAvanzadaAdmin()">
           </div>
           <div><label for="kpi-desde">Periodo desde</label><input id="kpi-desde" type="date"></div>
           <div><label for="kpi-hasta">Periodo hasta</label><input id="kpi-hasta" type="date"></div>
-          <div><label for="kpi-valor">Valor numérico</label><input id="kpi-valor" type="text" inputmode="decimal" placeholder="72.5 o vacío"></div>
-          <div><label for="kpi-unidad">Unidad</label><input id="kpi-unidad" type="text" placeholder="percent, hours, count…" maxlength="32"></div>
-          <div><label for="kpi-fuente">Fuente</label>
+          <div class="full" id="kpi-detail-cierres-foto" style="display:none">
+            <div class="kpi-detail-panel">
+              <p>Completá estos dos números y calculamos el porcentaje solo. También podés escribir el % a mano en «Valor principal» si preferís.</p>
+              <div class="form-grid" style="margin:0">
+                <div><label for="kpi-det-con-foto">Cierres con foto</label><input id="kpi-det-con-foto" type="number" min="0" step="1" inputmode="numeric" oninput="kpiAdminRellenarValorDesdeCierresFoto()"></div>
+                <div><label for="kpi-det-total-cierres">Cierres en total</label><input id="kpi-det-total-cierres" type="number" min="0" step="1" inputmode="numeric" oninput="kpiAdminRellenarValorDesdeCierresFoto()"></div>
+              </div>
+            </div>
+          </div>
+          <div class="full" id="kpi-detail-conteo-wrap" style="display:none">
+            <div class="kpi-detail-panel">
+              <label for="kpi-det-conteo" id="kpi-det-conteo-label">Cantidad</label>
+              <input id="kpi-det-conteo" type="number" min="0" step="1" inputmode="numeric">
+            </div>
+          </div>
+          <div><label for="kpi-valor">Valor principal</label><input id="kpi-valor" type="text" inputmode="decimal" placeholder="Ej. 72,5 o dejá vacío si aplica"></div>
+          <p id="kpi-valor-ayuda" class="kpi-preset-hint full" style="display:none;margin:0"></p>
+          <div><label for="kpi-unidad">Unidad</label>
+            <select id="kpi-unidad" onchange="aplicarKpiUnidadCustomToggleAdmin()">
+              <option value="">— Elegir —</option>
+              <option value="percent">Porcentaje (%)</option>
+              <option value="hours">Horas</option>
+              <option value="count">Cantidad (unidades)</option>
+              <option value="ratio">Ratio / proporción</option>
+              <option value="days">Días</option>
+              <option value="__custom">Otra (escribir)…</option>
+            </select>
+            <input id="kpi-unidad-custom" type="text" placeholder="Ej. minutos" maxlength="32" style="display:none;width:100%;margin-top:.4rem" autocomplete="off">
+          </div>
+          <div><label for="kpi-fuente">Origen del dato</label>
             <select id="kpi-fuente">
-              <option value="manual">manual</option>
-              <option value="computed_batch">computed_batch</option>
-              <option value="sql_report">sql_report</option>
-              <option value="import">import</option>
-              <option value="api">api</option>
+              <option value="manual">Lo cargo yo en este formulario</option>
+              <option value="computed_batch">Cálculo automático / lote</option>
+              <option value="sql_report">Informe o consulta SQL</option>
+              <option value="import">Importación (Excel, etc.)</option>
+              <option value="api">Sistema externo (API)</option>
             </select>
           </div>
-          <div class="full"><label for="kpi-json">JSON detalle (opcional)</label><textarea id="kpi-json" rows="3" placeholder='{"cerrados_con_foto":29,"cerrados_total":40}' style="font-family:ui-monospace,monospace;font-size:.78rem"></textarea></div>
-          <div class="full"><label for="kpi-notas">Notas</label><input id="kpi-notas" type="text" placeholder="Piloto abril — cooperativa X"></div>
+          <div class="full admin-kpi-advanced" id="kpi-json-advanced-wrap" style="display:none">
+            <details>
+              <summary>Detalle técnico en JSON (opcional)</summary>
+              <label for="kpi-json" style="margin-top:.5rem;display:block;font-size:.78rem;color:var(--tl)">Solo si necesitás guardar datos extra legibles por sistemas.</label>
+              <textarea id="kpi-json" class="kpi-json-ta" rows="4" placeholder='{"ejemplo":1}'></textarea>
+            </details>
+          </div>
+          <div class="full"><label for="kpi-notas">Notas (opcional)</label><input id="kpi-notas" type="text" placeholder="Ej. Piloto abril — reunión con cooperativa"></div>
         </div>
         <div style="display:flex;gap:.5rem;margin-top:.85rem;flex-wrap:wrap">
           <button type="button" class="btn-sm primary" onclick="guardarKpiSnapshotAdmin()"><i class="fas fa-save"></i> Guardar</button>

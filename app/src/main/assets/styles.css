@@ -437,6 +437,11 @@ textarea{resize:vertical;min-height:80px}
 .btn-sm.warning{background:#fef9c3;color:#854d0e}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
 .form-grid .full{grid-column:1/-1}
+.kpi-preset-hint{font-size:.78rem;color:var(--tl);margin:.35rem 0 0;line-height:1.45}
+.kpi-detail-panel{margin-top:.65rem;padding:.75rem .85rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem}
+.kpi-detail-panel > p:first-child{margin:0 0 .55rem;font-size:.8rem;color:var(--tm)}
+.admin-kpi-advanced summary{cursor:pointer;font-size:.8rem;color:var(--tm);user-select:none;margin:.5rem 0 .35rem}
+.admin-kpi-advanced .kpi-json-ta{font-family:ui-monospace,monospace;font-size:.76rem;min-height:4.5rem}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.5rem;margin-bottom:.75rem}
 .stat-card{background:var(--bg);border-radius:.75rem;padding:.65rem .5rem;border:1px solid var(--bo);text-align:center}
 .stat-card .val{font-size:1.5rem;font-weight:700;color:var(--bd)}

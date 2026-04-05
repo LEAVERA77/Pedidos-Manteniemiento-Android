@@ -8350,12 +8350,176 @@ async function adminKpiSnapshotsTablaExiste(refrescar) {
     return _kpiSnapshotsTablaCache;
 }
 
+/** Presets del formulario admin KPI (texto amigable → clave estable en BD). */
+const KPI_ADMIN_PRESET_META = {
+    '': { metrica: '', detail: 'none', unidad: '', hint: '', valorAyuda: '' },
+    pct_cierres_con_foto: {
+        metrica: 'pct_cierres_con_foto',
+        detail: 'cierres_foto',
+        unidad: 'percent',
+        hint: 'Qué parte de los cierres del periodo tuvieron al menos una foto de cierre.',
+        valorAyuda: 'Si completás «con foto» y «total» abajo, el % se calcula solo. Si no, escribí el porcentaje acá.',
+    },
+    reclamos_cerrados: {
+        metrica: 'reclamos_cerrados_count',
+        detail: 'conteo',
+        conteoLabel: '¿Cuántos reclamos se cerraron en estas fechas?',
+        jsonKey: 'cerrados',
+        unidad: 'count',
+        hint: 'Número entero de pedidos que pasaron a cerrado entre las fechas.',
+        valorAyuda: 'Podés poner el número acá o solo en el recuadro de abajo.',
+    },
+    reclamos_recibidos: {
+        metrica: 'reclamos_recibidos_count',
+        detail: 'conteo',
+        conteoLabel: '¿Cuántos reclamos nuevos entraron en el periodo?',
+        jsonKey: 'recibidos',
+        unidad: 'count',
+        hint: 'Pedidos creados entre «desde» y «hasta».',
+        valorAyuda: 'Podés poner el número acá o solo abajo.',
+    },
+    tiempo_respuesta_horas: {
+        metrica: 'tiempo_respuesta_medio_horas',
+        detail: 'none',
+        unidad: 'hours',
+        hint: 'Promedio de horas hasta la primera respuesta (o la definición interna que usen).',
+        valorAyuda: 'Usá coma o punto para decimales (ej. 2,5).',
+    },
+    satisfaccion_pct: {
+        metrica: 'satisfaccion_pct',
+        detail: 'none',
+        unidad: 'percent',
+        hint: 'Porcentaje según encuesta o criterio del piloto.',
+        valorAyuda: '',
+    },
+    avance_medio: {
+        metrica: 'avance_medio_pct',
+        detail: 'none',
+        unidad: 'percent',
+        hint: 'Promedio del % de avance de trabajos al cierre del periodo, si aplica.',
+        valorAyuda: '',
+    },
+    avanzado: {
+        metrica: '',
+        detail: 'advanced',
+        unidad: '',
+        hint: 'Para una clave nueva o datos extra en JSON. El resto del equipo puede usar las opciones de arriba.',
+        valorAyuda: '',
+    },
+};
+
+const KPI_METRICA_ETIQUETAS = {
+    pct_cierres_con_foto: '% cierres con foto',
+    reclamos_cerrados_count: 'Reclamos cerrados',
+    reclamos_recibidos_count: 'Reclamos recibidos',
+    tiempo_respuesta_medio_horas: 'Tiempo medio respuesta (h)',
+    satisfaccion_pct: 'Satisfacción / positivos',
+    avance_medio_pct: 'Avance medio trabajos',
+};
+
+function aplicarKpiUnidadCustomToggleAdmin() {
+    const sel = document.getElementById('kpi-unidad');
+    const c = document.getElementById('kpi-unidad-custom');
+    if (!c || !sel) return;
+    c.style.display = sel.value === '__custom' ? 'block' : 'none';
+}
+window.aplicarKpiUnidadCustomToggleAdmin = aplicarKpiUnidadCustomToggleAdmin;
+
+function syncKpiMetricaAvanzadaAdmin() {
+    const v = document.getElementById('kpi-metrica-visible');
+    const h = document.getElementById('kpi-metrica');
+    if (v && h) h.value = v.value;
+}
+window.syncKpiMetricaAvanzadaAdmin = syncKpiMetricaAvanzadaAdmin;
+
+function kpiAdminRellenarValorDesdeCierresFoto() {
+    const cf = parseInt(document.getElementById('kpi-det-con-foto')?.value, 10);
+    const tot = parseInt(document.getElementById('kpi-det-total-cierres')?.value, 10);
+    const valEl = document.getElementById('kpi-valor');
+    if (!valEl || !Number.isFinite(cf) || !Number.isFinite(tot) || tot <= 0) return;
+    if (cf > tot) return;
+    const pct = Math.round((cf / tot) * 10000) / 100;
+    valEl.value = String(pct);
+}
+window.kpiAdminRellenarValorDesdeCierresFoto = kpiAdminRellenarValorDesdeCierresFoto;
+
+function aplicarKpiPresetAdmin() {
+    const sel = document.getElementById('kpi-preset');
+    const preset = sel?.value || '';
+    const meta = KPI_ADMIN_PRESET_META[preset] || KPI_ADMIN_PRESET_META[''];
+    const ayuda = document.getElementById('kpi-preset-ayuda');
+    const ayudaValor = document.getElementById('kpi-valor-ayuda');
+    const wrapAdvMet = document.getElementById('kpi-wrap-metrica-avanzada');
+    const wrapCierres = document.getElementById('kpi-detail-cierres-foto');
+    const wrapConteo = document.getElementById('kpi-detail-conteo-wrap');
+    const wrapJsonAdv = document.getElementById('kpi-json-advanced-wrap');
+    const hiddenM = document.getElementById('kpi-metrica');
+    const unidadSel = document.getElementById('kpi-unidad');
+    if (ayuda) {
+        ayuda.textContent = meta.hint || '';
+        ayuda.style.display = meta.hint ? 'block' : 'none';
+    }
+    if (ayudaValor) {
+        ayudaValor.textContent = meta.valorAyuda || '';
+        ayudaValor.style.display = meta.valorAyuda ? 'block' : 'none';
+    }
+    if (wrapCierres) wrapCierres.style.display = meta.detail === 'cierres_foto' ? 'block' : 'none';
+    if (wrapConteo) {
+        wrapConteo.style.display = meta.detail === 'conteo' ? 'block' : 'none';
+        const lbl = document.getElementById('kpi-det-conteo-label');
+        if (lbl && meta.conteoLabel) lbl.textContent = meta.conteoLabel;
+    }
+    if (wrapAdvMet) wrapAdvMet.style.display = preset === 'avanzado' ? 'block' : 'none';
+    if (wrapJsonAdv) wrapJsonAdv.style.display = preset === 'avanzado' ? 'block' : 'none';
+    const visMet = document.getElementById('kpi-metrica-visible');
+    if (preset === 'avanzado') {
+        if (hiddenM) hiddenM.value = (visMet?.value || '').trim();
+    } else {
+        if (hiddenM) hiddenM.value = meta.metrica || '';
+        if (visMet) visMet.value = '';
+    }
+    if (preset !== 'avanzado') {
+        const ta = document.getElementById('kpi-json');
+        if (ta) ta.value = '';
+    }
+    if (unidadSel) {
+        if (meta.unidad) unidadSel.value = meta.unidad;
+        else if (!preset) unidadSel.value = '';
+        aplicarKpiUnidadCustomToggleAdmin();
+    }
+}
+window.aplicarKpiPresetAdmin = aplicarKpiPresetAdmin;
+
+function leerUnidadKpiAdmin() {
+    const sel = document.getElementById('kpi-unidad');
+    const v = (sel?.value || '').trim();
+    if (v === '__custom') return (document.getElementById('kpi-unidad-custom')?.value || '').trim().slice(0, 32);
+    return v;
+}
+
 function limpiarFormKpiSnapshotAdmin() {
-    const ids = ['kpi-metrica', 'kpi-desde', 'kpi-hasta', 'kpi-valor', 'kpi-unidad', 'kpi-notas', 'kpi-json'];
+    const ids = [
+        'kpi-metrica',
+        'kpi-metrica-visible',
+        'kpi-desde',
+        'kpi-hasta',
+        'kpi-valor',
+        'kpi-notas',
+        'kpi-json',
+        'kpi-det-con-foto',
+        'kpi-det-total-cierres',
+        'kpi-det-conteo',
+        'kpi-unidad-custom',
+    ];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
+    const preset = document.getElementById('kpi-preset');
+    if (preset) preset.value = '';
+    const unidad = document.getElementById('kpi-unidad');
+    if (unidad) unidad.value = '';
+    aplicarKpiPresetAdmin();
     const fu = document.getElementById('kpi-fuente');
     if (fu) fu.value = 'manual';
 }
@@ -8386,6 +8550,9 @@ async function cargarKpiSnapshotsAdmin() {
     if (sinTabla) sinTabla.style.display = 'none';
     if (formWrap) formWrap.style.display = 'block';
     if (btnRef) btnRef.style.display = 'inline-flex';
+    try {
+        aplicarKpiPresetAdmin();
+    } catch (_) {}
     host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     const tid = tenantIdActual();
     try {
@@ -8414,8 +8581,12 @@ async function cargarKpiSnapshotsAdmin() {
                 const vj = row.valor_json != null ? JSON.stringify(row.valor_json) : '{}';
                 const vjShort = vj.length > 48 ? vj.slice(0, 45) + '…' : vj;
                 const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+                const labM = KPI_METRICA_ETIQUETAS[row.metrica];
+                const celMetrica = labM
+                    ? `<span style="font-weight:600">${_escOpt(labM)}</span><br><code style="font-size:.68rem;color:var(--tl)">${_escOpt(row.metrica)}</code>`
+                    : `<code>${_escOpt(row.metrica)}</code>`;
                 return (
-                    `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);vertical-align:top"><code>${_escOpt(row.metrica)}</code></td>` +
+                    `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);vertical-align:top">${celMetrica}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_inicio || ''))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_fin || ''))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(vn)}</td>` +
@@ -8443,20 +8614,26 @@ async function guardarKpiSnapshotAdmin() {
         toast('Creá la tabla kpi_snapshots en Neon (docs/NEON_kpi_snapshots.sql).', 'error');
         return;
     }
-    const metrica = (document.getElementById('kpi-metrica')?.value || '').trim();
+    const preset = (document.getElementById('kpi-preset')?.value || '').trim();
+    if (!preset) {
+        toast('Elegí qué tipo de indicador vas a cargar.', 'warning');
+        return;
+    }
+    if (preset === 'avanzado') syncKpiMetricaAvanzadaAdmin();
     const desde = (document.getElementById('kpi-desde')?.value || '').trim();
     const hasta = (document.getElementById('kpi-hasta')?.value || '').trim();
-    const valStr = (document.getElementById('kpi-valor')?.value || '').trim();
-    const unidad = (document.getElementById('kpi-unidad')?.value || '').trim();
+    let valStr = (document.getElementById('kpi-valor')?.value || '').trim();
+    const unidad = leerUnidadKpiAdmin();
     const fuente = (document.getElementById('kpi-fuente')?.value || 'manual').trim();
     const notas = (document.getElementById('kpi-notas')?.value || '').trim();
     const jsonRaw = (document.getElementById('kpi-json')?.value || '').trim();
+    const metrica = (document.getElementById('kpi-metrica')?.value || '').trim();
     if (!metrica || !desde || !hasta) {
-        toast('Completá métrica y fechas.', 'warning');
+        toast('Falta la clave de la métrica o las fechas. Si usás «Otro — avanzado», completá la clave interna.', 'warning');
         return;
     }
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(metrica)) {
-        toast('Métrica: solo letras, números, punto, guión y _ (máx. 100).', 'warning');
+        toast('Clave de métrica: solo letras, números, punto, guión y _ (máx. 100).', 'warning');
         return;
     }
     if (desde > hasta) {
@@ -8468,16 +8645,57 @@ async function guardarKpiSnapshotAdmin() {
         toast('Fuente no válida.', 'warning');
         return;
     }
+    if (document.getElementById('kpi-unidad')?.value === '__custom' && !unidad) {
+        toast('Escribí la unidad personalizada o elegí otra opción.', 'warning');
+        return;
+    }
+    const meta = KPI_ADMIN_PRESET_META[preset];
     let valorJson = {};
-    if (jsonRaw) {
-        try {
-            valorJson = JSON.parse(jsonRaw);
-            if (valorJson === null || typeof valorJson !== 'object' || Array.isArray(valorJson)) {
-                toast('El JSON debe ser un objeto { ... }.', 'warning');
+    if (preset === 'pct_cierres_con_foto') {
+        const cf = parseInt(document.getElementById('kpi-det-con-foto')?.value, 10);
+        const tot = parseInt(document.getElementById('kpi-det-total-cierres')?.value, 10);
+        if (Number.isFinite(cf) && Number.isFinite(tot)) {
+            if (tot <= 0) {
+                toast('«Cierres en total» debe ser mayor que cero.', 'warning');
                 return;
             }
-        } catch (_) {
-            toast('JSON inválido.', 'error');
+            if (cf > tot) {
+                toast('«Con foto» no puede ser mayor que el total de cierres.', 'warning');
+                return;
+            }
+            valorJson = { cerrados_con_foto: cf, cerrados_total: tot };
+            if (valStr === '') valStr = String(Math.round((cf / tot) * 10000) / 100);
+        }
+        if (Object.keys(valorJson).length === 0 && valStr === '') {
+            toast('Completá «con foto» y «total» o escribí el porcentaje en valor principal.', 'warning');
+            return;
+        }
+    } else if (meta && meta.detail === 'conteo' && meta.jsonKey) {
+        const cnt = parseInt(document.getElementById('kpi-det-conteo')?.value, 10);
+        if (Number.isFinite(cnt)) {
+            valorJson = { [meta.jsonKey]: cnt };
+            if (valStr === '') valStr = String(cnt);
+        }
+        if (Object.keys(valorJson).length === 0 && valStr === '') {
+            toast('Completá la cantidad o el valor principal.', 'warning');
+            return;
+        }
+    } else if (preset === 'avanzado') {
+        if (jsonRaw) {
+            try {
+                valorJson = JSON.parse(jsonRaw);
+                if (valorJson === null || typeof valorJson !== 'object' || Array.isArray(valorJson)) {
+                    toast('El JSON debe ser un objeto { ... }.', 'warning');
+                    return;
+                }
+            } catch (_) {
+                toast('JSON inválido.', 'error');
+                return;
+            }
+        }
+    } else if (['tiempo_respuesta_horas', 'satisfaccion_pct', 'avance_medio'].includes(preset)) {
+        if (valStr === '') {
+            toast('Completá el valor principal.', 'warning');
             return;
         }
     }
