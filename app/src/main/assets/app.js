@@ -7203,18 +7203,20 @@ async function cargarListaDistribuidoresAdmin() {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin distribuidores. Cargalos manualmente o importá un Excel.</p>';
             return;
         }
+        const n = r.rows.length;
         cont.innerHTML = `<table class="admin-table">
             <thead><tr><th>Código</th><th>Nombre</th><th>Tensión</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>${r.rows.map(d => `<tr>
-                <td><b>${d.codigo}</b></td>
-                <td>${d.nombre}</td>
-                <td>${d.tension || '-'}</td>
+                <td><b>${_escOpt(d.codigo)}</b></td>
+                <td>${_escOpt(d.nombre)}</td>
+                <td>${_escOpt(d.tension) || '-'}</td>
                 <td><span style="color:${d.activo ? '#166534' : '#dc2626'};font-weight:600">${d.activo ? '✓' : '✗'}</span></td>
                 <td style="display:flex;gap:.3rem">
-                    <button class="btn-sm danger" onclick="eliminarDistribuidor(${d.id})">Eliminar</button>
+                    <button class="btn-sm danger" onclick="eliminarDistribuidor(${Number(d.id)})">Eliminar</button>
                 </td>
             </tr>`).join('')}</tbody>
-        </table>`;
+        </table>
+        <p style="font-size:.78rem;color:var(--tm);margin:.55rem 0 0">Total en base de datos: <strong>${n}</strong> distribuidor${n === 1 ? '' : 'es'}. Desplazá esta sección si la lista es larga.</p>`;
     } catch(e) { cont.innerHTML = '<p style="color:var(--re)">' + e.message + '</p>'; }
 }
 

@@ -329,9 +329,11 @@ textarea{resize:vertical;min-height:80px}
 .setup-wizard .mc{max-width:920px;max-height:95vh;width:100%}
 .sw-step{display:none}
 .sw-step.active{display:block}
-.admin-box{background:white;border-radius:1rem;width:100%;max-width:min(1120px,calc(100vw - 1.5rem));box-shadow:0 25px 60px rgba(0,0,0,.35);animation:slideIn .25s ease;margin:1rem auto;max-height:calc(100vh - 2rem);overflow:hidden;display:flex;flex-direction:column}
+.admin-box{background:white;border-radius:1rem;width:100%;max-width:min(1120px,calc(100vw - 1.5rem));box-shadow:0 25px 60px rgba(0,0,0,.35);animation:slideIn .25s ease;margin:1rem auto;max-height:calc(100vh - 2rem);min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.admin-box > div:first-child{flex-shrink:0}
 .admin-box .admin-tabs{flex-shrink:0}
-.admin-box .admin-section{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
+/* min-height:0: sin esto flex:1 no encoge y el contenido largo queda cortado por overflow:hidden del .admin-box (tablas distrib/socios). */
+.admin-box .admin-section{overflow-y:auto;flex:1 1 0;min-height:0;-webkit-overflow-scrolling:touch}
 .admin-tabs{display:flex;border-bottom:2px solid var(--bo);flex-wrap:wrap;gap:.25rem;padding:.75rem .75rem 0}
 .admin-tab{padding:.5rem .9rem;border:none;background:none;font-weight:600;font-size:.83rem;color:var(--tm);cursor:pointer;border-bottom:2.5px solid transparent;border-radius:.4rem .4rem 0 0;white-space:nowrap}
 .admin-tab.active{color:var(--bd);border-bottom-color:var(--bd);background:var(--bg)}
