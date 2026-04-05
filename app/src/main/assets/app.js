@@ -734,7 +734,7 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Falta de Presión',
         'Calidad del Agua',
         'Obstrucción de Cloaca',
-        'Cambio de Medidor',
+        'Consumo elevado',
         'Conexión Nueva',
         'Otros'
     ],
@@ -743,7 +743,7 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Cables Caídos/Peligro',
         'Problemas de Tensión',
         'Poste Inclinado/Dañado',
-        'Cambio de Medidor',
+        'Consumo elevado',
         'Alumbrado Público (Mantenimiento)',
         'Riesgo en la vía pública',
         'Corrimiento de poste/columna',
@@ -782,7 +782,7 @@ const PRIORIDAD_RECLAMO_POR_TIPO = {
     'Falta de Presión': 'Media',
     'Calidad del Agua': 'Alta',
     'Obstrucción de Cloaca': 'Alta',
-    'Cambio de Medidor': 'Baja',
+    'Consumo elevado': 'Baja',
     'Conexión Nueva': 'Baja',
     'Corte de Energía': 'Alta',
     'Cables Caídos/Peligro': 'Crítica',
@@ -1452,6 +1452,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS checklist_seguridad TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS usuario_creador_id INTEGER`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS telefono_contacto TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_direccion TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS socios_catalogo(
                     id SERIAL PRIMARY KEY,
                     nis_medidor TEXT NOT NULL UNIQUE,
@@ -1744,6 +1745,7 @@ const norm = p => ({
     x_inchauspe: p.x_inchauspe,
     y_inchauspe: p.y_inchauspe,
     nis: (p.nis_medidor || '').trim(),
+    cdir: (p.cliente_direccion || '').trim(),
     tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
@@ -4154,6 +4156,7 @@ async function imprimirPedidoAsync(p) {
                 <tr><td>Distribuidor:</td><td>${escHtmlPrint(p.dis)}</td></tr>
                 ${p.sd ? `<tr><td>SETD:</td><td>${escHtmlPrint(p.sd)}</td></tr>` : ''}
                 ${p.cl ? `<tr><td>Cliente:</td><td>${escHtmlPrint(p.cl)}</td></tr>` : ''}
+                ${p.cdir ? `<tr><td>Dirección declarada:</td><td>${escHtmlPrint(p.cdir)}</td></tr>` : ''}
                 <tr><td>Descripción:</td><td>${escHtmlPrint(p.de)}</td></tr>
             </table>
             
@@ -4891,15 +4894,17 @@ document.getElementById('pf').addEventListener('submit', async e => {
             btn.disabled = false;
             return;
         }
-        const reqReclamoOConexion = tipoReclamoRequiereNisYCliente(tipoTr);
+        const reqNis = tipoReclamoRequiereNisYCliente(tipoTr);
+        const reqNombreCli = tipoReclamoRequiereNombreClienteEnFormulario(tipoTr);
         const nisVal = (document.getElementById('nis').value || '').trim();
         const clVal = (document.getElementById('cl').value || '').trim();
-        if (reqReclamoOConexion && !nisVal) {
+        const cliDirVal = (document.getElementById('ped-cli-dir')?.value || '').trim();
+        if (reqNis && !nisVal) {
             toast('Para este tipo de reclamo el NIS / medidor es obligatorio', 'error');
             btn.disabled = false;
             return;
         }
-        if (reqReclamoOConexion && !clVal) {
+        if (reqNombreCli && !clVal) {
             toast('Para este tipo de reclamo el nombre de cliente es obligatorio', 'error');
             btn.disabled = false;
             return;
@@ -4909,7 +4914,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
-            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto
+            x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto, cliente_direccion
         ) VALUES(
             ${esc(numPedido)},
             ${esc(document.getElementById('di2').value)},
@@ -4928,7 +4933,8 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(yInchauspe)},
             ${esc(new Date().toISOString())},
             ${esc(nisVal || null)},
-            ${esc(telVal || null)}
+            ${esc(telVal || null)},
+            ${esc(cliDirVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -4955,6 +4961,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 x_inchauspe: xInchauspe, y_inchauspe: yInchauspe,
                 nis: nisVal,
                 tel: telVal,
+                cdir: cliDirVal,
                 _offline: true
             };
             app.p.unshift(pedidoLocal);
@@ -5527,6 +5534,7 @@ function detalle(p) {
             ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
             ${p.cl ? `<div class="dr"><span class="dl">${labClienteDet}</span><span class="dv">${p.cl}</span></div>` : ''}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
+            ${p.cdir ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Dirección declarada</span><div class="trb">${String(p.cdir).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         
@@ -5648,6 +5656,7 @@ function exportPedido(pedidos, nombre) {
             'Cliente': p.cl || '',
             'SETD': p.sd || '',
             'Tipo de Trabajo': p.tt || '',
+            'Dirección declarada': p.cdir || '',
             'Descripción': p.de || '',
             'Prioridad': p.pr || '',
             'Estado': p.es || '',
@@ -6057,10 +6066,21 @@ function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
     if (!v) return false;
     if (v === 'Reclamo de Cliente' || v === 'Conexión Nueva') return true;
     if (v.includes('Conexión Nueva')) return true;
-    if (v.includes('Cambio de Medidor')) return true;
+    if (v.includes('Consumo elevado')) return true;
+    if (v === 'Problemas de Tensión') return true;
     if (v.toLowerCase().includes('factibilidad')) return true;
     return false;
 }
+
+function tipoReclamoSoloNisSinNombreCliente(tipoTrabajo) {
+    const v = String(tipoTrabajo || '').trim();
+    return v === 'Problemas de Tensión' || v === 'Consumo elevado';
+}
+
+function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
+    return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
+}
+
 function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
     const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';

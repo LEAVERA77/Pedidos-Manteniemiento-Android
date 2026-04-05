@@ -76,6 +76,7 @@ fun PedidoDetailScreen(
 
 @Composable
 private fun DetalleBody(p: PedidoDto) {
+    DetailLine(stringResource(R.string.tecnico_mvp_direccion_declarada), p.clienteDireccion)
     DetailLine(stringResource(R.string.tecnico_mvp_numero), p.numeroPedido ?: "#${p.id}")
     DetailLine(stringResource(R.string.tecnico_mvp_estado), p.estado)
     DetailLine(stringResource(R.string.tecnico_mvp_cliente), p.cliente)

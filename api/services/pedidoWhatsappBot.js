@@ -115,6 +115,7 @@ export async function crearPedidoDesdeWhatsappBot({
   nis,
   medidor,
   nisMedidor,
+  clienteDireccion,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   const de = String(descripcion || "").trim();
@@ -208,6 +209,15 @@ export async function crearPedidoDesdeWhatsappBot({
   if (pCols.has("nis_medidor") && nmT) {
     cols.push("nis_medidor");
     vals.push(nmT);
+  }
+
+  const dirT =
+    clienteDireccion != null && String(clienteDireccion).trim()
+      ? String(clienteDireccion).trim()
+      : null;
+  if (pCols.has("cliente_direccion") && dirT) {
+    cols.push("cliente_direccion");
+    vals.push(dirT);
   }
 
   if (hasTenant) {

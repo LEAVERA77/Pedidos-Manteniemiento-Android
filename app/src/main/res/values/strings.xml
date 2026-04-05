@@ -62,4 +62,5 @@
     <string name="tecnico_mvp_fecha_creacion">Alta</string>
     <string name="tecnico_mvp_telefono">Teléfono</string>
     <string name="tecnico_mvp_nis">NIS medidor</string>
+    <string name="tecnico_mvp_direccion_declarada">Dirección declarada</string>
 </resources>

@@ -20,7 +20,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Falta de Presión",
     "Calidad del Agua",
     "Obstrucción de Cloaca",
-    "Cambio de Medidor",
+    "Consumo elevado",
     "Conexión Nueva",
     "Otros",
   ],
@@ -29,7 +29,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Cables Caídos/Peligro",
     "Problemas de Tensión",
     "Poste Inclinado/Dañado",
-    "Cambio de Medidor",
+    "Consumo elevado",
     "Alumbrado Público (Mantenimiento)",
     "Riesgo en la vía pública",
     "Corrimiento de poste/columna",
@@ -72,13 +72,13 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Falta de Presión": "Media",
   "Calidad del Agua": "Alta",
   "Obstrucción de Cloaca": "Alta",
-  "Cambio de Medidor": "Baja",
   "Conexión Nueva": "Baja",
   // cooperativa_electrica
   "Corte de Energía": "Alta",
   "Cables Caídos/Peligro": "Crítica",
   "Problemas de Tensión": "Alta",
   "Poste Inclinado/Dañado": "Crítica",
+  "Consumo elevado": "Baja",
   "Alumbrado Público (Mantenimiento)": "Baja",
   "Riesgo en la vía pública": "Crítica",
   "Corrimiento de poste/columna": "Crítica",
@@ -162,13 +162,29 @@ export function tipoTrabajoPermitidoParaNuevoPedido(tipoTrabajo, tipoCliente) {
   return permitidos.includes(tt);
 }
 
-/** Tipos que en la app requieren NIS y cliente (alineado con frontend). */
+/** NIS/medidor obligatorio (formulario web y validaciones). */
 export function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
   const v = String(tipoTrabajo || "").trim();
   if (!v) return false;
   if (v === "Reclamo de Cliente" || v === "Conexión Nueva") return true;
   if (v.includes("Conexión Nueva")) return true;
-  if (v.includes("Cambio de Medidor")) return true;
+  if (v.includes("Consumo elevado")) return true;
+  if (v === "Problemas de Tensión") return true;
   if (v.toLowerCase().includes("factibilidad")) return true;
   return false;
+}
+
+/** Solo NIS: no exigimos nombre de cliente en el formulario (puede venir del catálogo). */
+export function tipoReclamoSoloNisSinNombreCliente(tipoTrabajo) {
+  const v = String(tipoTrabajo || "").trim();
+  return v === "Problemas de Tensión" || v === "Consumo elevado";
+}
+
+export function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
+  return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
+}
+
+/** Flujo WhatsApp: tras la descripción, pedir NIS y saltar menú nombre/dirección. */
+export function tipoReclamoWhatsappFlujoSoloNis(tipoTrabajo) {
+  return tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }

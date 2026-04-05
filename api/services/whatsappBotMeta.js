@@ -13,13 +13,21 @@ import {
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.js";
-import { tiposReclamoParaClienteTipo, normalizarRubroCliente } from "./tiposReclamo.js";
+import {
+  tiposReclamoParaClienteTipo,
+  normalizarRubroCliente,
+  tipoReclamoWhatsappFlujoSoloNis,
+} from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";
 import {
   geocodeAddressArgentina,
   reverseGeocodeArgentina,
   geocodeCalleNumeroLocalidadArgentina,
+  haversineMeters,
+  parseHouseNumberInt,
+  searchHouseNumberHitsArgentina,
+  pickCoordsWithParityAndGps,
 } from "./nominatimClient.js";
 import {
   humanChatOpenOrGetSession,
@@ -30,16 +38,21 @@ import {
 
 const sessions = new Map();
 
+const MSG_SALIR_ATRAS =
+  "\n\n_Escribí *menú* o *0* para salir · *atrás* para el paso anterior._";
+
 const MSG_ADDR_CIUDAD =
   "¿En qué *ciudad o localidad* está el reclamo? (ej: *Cerrito*, *Rosario*).\n\n" +
-  "Si preferís, podés enviar tu *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* en cualquier momento.";
+  "Si preferís, podés enviar tu *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* (la usamos solo si coincide con el domicilio que indiques)." +
+  MSG_SALIR_ATRAS;
 
-const MSG_ADDR_CALLE = "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre*.";
+const MSG_ADDR_CALLE = "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre*." + MSG_SALIR_ATRAS;
 
-const MSG_ADDR_NUMERO = "Por último el *número de puerta* (ej: *245*). Con esto buscamos el punto en el mapa.";
+const MSG_ADDR_NUMERO =
+  "Por último el *número de puerta* (ej: *245*). Con esto buscamos el punto en el mapa." + MSG_SALIR_ATRAS;
 
 const MSG_NOMBRE_PERSONA =
-  "¿Cuál es tu *nombre y apellido* (o nombre del titular del reclamo)?";
+  "¿Cuál es tu *nombre y apellido* (o nombre del titular del reclamo)?" + MSG_SALIR_ATRAS;
 
 const BLOQUEO_RECLAMOS_MSG_DEFAULT =
   "Por el momento no podemos registrar reclamos por WhatsApp. Pedimos disculpas; comunicate por los canales habituales de la empresa.";
@@ -75,7 +88,8 @@ function mensajeMenuIdentificacion(ctx) {
       base +
       `*1)* Tengo *NIS* o *número de medidor* (dato de la cooperativa eléctrica).\n` +
       `*2)* Prefiero con *nombre y dirección* (sin datos de cuenta).\n\n` +
-      `En cualquier momento podés enviar *GPS* con *Adjuntar* (📎) → *Ubicación*.`
+      `En cualquier momento podés enviar *GPS* con *Adjuntar* (📎) → *Ubicación*.\n` +
+      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
     );
   }
   if (r === "cooperativa_agua") {
@@ -83,7 +97,8 @@ function mensajeMenuIdentificacion(ctx) {
       base +
       `*1)* Tengo *ID de usuario* o *número de medidor* del servicio de agua.\n` +
       `*2)* Prefiero con *nombre y dirección*.\n\n` +
-      `También podés mandar *ubicación GPS* con *Adjuntar* → *Ubicación*.`
+      `También podés mandar *ubicación GPS* con *Adjuntar* → *Ubicación*.\n` +
+      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
     );
   }
   if (r === "municipio") {
@@ -91,14 +106,16 @@ function mensajeMenuIdentificacion(ctx) {
       base +
       `*1)* Tengo mi *número de vecino* (credencial / cuenta municipal).\n` +
       `*2)* Prefiero con *nombre y dirección*.\n\n` +
-      `Podés adjuntar *ubicación* en cualquier momento (📎 → *Ubicación*).`
+      `Podés adjuntar *ubicación* en cualquier momento (📎 → *Ubicación*).\n` +
+      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
     );
   }
   return (
     base +
     `*1)* Datos del servicio (*NIS*, medidor, ID o número de vecino).\n` +
     `*2)* *Nombre y dirección* sin datos de cuenta.\n\n` +
-    `Podés enviar *GPS* con *Adjuntar* → *Ubicación*.`
+    `Podés enviar *GPS* con *Adjuntar* → *Ubicación*.\n` +
+    `*atrás* = corregir la descripción · *menú* / *0* = salir.`
   );
 }
 
@@ -107,24 +124,47 @@ function msgOpcionalIdentificadorPorRubro(ctx) {
   if (r === "cooperativa_electrica") {
     return (
       `Si tenés *NIS* o *número de medidor*, enviálo en un solo mensaje (completamos tu nombre desde el sistema).\n\n` +
-      `Si no tenés esos datos, escribí *no* y te pedimos *nombre* y *dirección* paso a paso.`
+      `Si no tenés esos datos, escribí *no* y te pedimos *nombre* y *dirección* paso a paso.` +
+      MSG_SALIR_ATRAS
     );
   }
   if (r === "cooperativa_agua") {
     return (
       `Si tenés *ID de usuario* o *número de medidor*, enviálo en un mensaje.\n\n` +
-      `Si no, escribí *no* y continuamos con *nombre* y *dirección*.`
+      `Si no, escribí *no* y continuamos con *nombre* y *dirección*.` +
+      MSG_SALIR_ATRAS
     );
   }
   if (r === "municipio") {
     return (
       `Si tenés tu *número de vecino* (credencial municipal), enviálo.\n\n` +
-      `Si no, escribí *no* y te pedimos *nombre* y *dirección* paso a paso.`
+      `Si no, escribí *no* y te pedimos *nombre* y *dirección* paso a paso.` +
+      MSG_SALIR_ATRAS
     );
   }
   return (
     `Si tenés *NIS*, *medidor*, *ID* o *número de cliente*, escribilo.\n\n` +
-    `Si preferís seguir sin eso, escribí *no*.`
+    `Si preferís seguir sin eso, escribí *no*.` +
+    MSG_SALIR_ATRAS
+  );
+}
+
+const MSG_PEDIR_NIS_SOLO =
+  "Para este tipo de reclamo necesitamos el *NIS* o *número de medidor* en un solo mensaje (sin letras extra si podés)." +
+  MSG_SALIR_ATRAS;
+
+function esComandoAtras(texto) {
+  const t = String(texto || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return (
+    t === "atras" ||
+    t === "volver" ||
+    t === "volve" ||
+    t.startsWith("volver ") ||
+    t === "anterior"
   );
 }
 
@@ -232,6 +272,7 @@ function menuTextoNumerado(ctx) {
   });
   lineas.push("");
   lineas.push("O escribí *Cargar reclamo* para abrir la lista.");
+  lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
 }
 
@@ -362,11 +403,19 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     );
     return;
   }
-  if (sess.direccionTexto && String(sess.direccionTexto).trim()) {
-    descripcionFinal += `\n\nUbicación indicada por el usuario: ${String(sess.direccionTexto).trim()}`;
-  }
   if (sess.identificacionLibreTexto && String(sess.identificacionLibreTexto).trim()) {
-    descripcionFinal += `\n\nIdentificación / referencia proporcionada por el usuario: ${String(sess.identificacionLibreTexto).trim()}`;
+    descripcionFinal += `\n\nIdentificación / referencia: ${String(sess.identificacionLibreTexto).trim()}`;
+  }
+  const dirDecl = String(sess.direccionDeclaradaUsuario || "").trim();
+  const dirMapa = String(sess.direccionTexto || "").trim();
+  let clienteDireccion = null;
+  if (dirDecl) {
+    clienteDireccion = `Dirección declarada por el usuario: ${dirDecl}`;
+  }
+  if (dirMapa) {
+    clienteDireccion = clienteDireccion
+      ? `${clienteDireccion} · Ubicación en mapa: ${dirMapa}`
+      : `Ubicación en mapa: ${dirMapa}`;
   }
   const latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
   const lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
@@ -383,6 +432,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       nis: sess.nisParaPedido ?? null,
       medidor: sess.medidorParaPedido ?? null,
       nisMedidor: sess.nisMedidorParaPedido ?? null,
+      clienteDireccion,
     });
     sessions.delete(sk);
     await reply(
@@ -428,6 +478,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   addrNumero,
   opts = {}
 ) {
+  const nearM = Number(process.env.WHATSAPP_GPS_NEAR_METERS || 120);
   const ciudad = String(addrCiudad || "").trim();
   const calle = String(addrCalle || "").trim();
   const numRaw = String(addrNumero ?? "").trim();
@@ -435,21 +486,10 @@ async function geocodeStructuredAddressAndFinalizePedido(
   sess.addrCiudad = ciudad;
   sess.addrCalle = calle;
   sess.addrNumero = numero;
+  sess.direccionDeclaradaUsuario = [ciudad, calle, numRaw || numero].filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
-  try {
-    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero);
-    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
-      sess.direccionTexto = geo.displayName;
-      sess.lat = geo.lat;
-      sess.lng = geo.lng;
-      sessions.set(sk, sess);
-      await finalizePedidoFromSession(phone, sess, contactName);
-      return;
-    }
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
-  }
+
   const ciudadLabel = ciudad || "tu localidad";
   let geoCiudad = null;
   try {
@@ -457,6 +497,74 @@ async function geocodeStructuredAddressAndFinalizePedido(
   } catch (_) {}
   const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
   const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
+  const fallbackCity =
+    geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
+      ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
+      : baseLat != null && baseLng != null
+        ? { lat: baseLat, lng: baseLng }
+        : null;
+
+  const targetNum = parseHouseNumberInt(numero);
+  const userGps =
+    sess.userSharedGps &&
+    Number.isFinite(Number(sess.userSharedGps.lat)) &&
+    Number.isFinite(Number(sess.userSharedGps.lng))
+      ? { lat: Number(sess.userSharedGps.lat), lng: Number(sess.userSharedGps.lng) }
+      : null;
+
+  let hits = [];
+  try {
+    hits = await searchHouseNumberHitsArgentina(ciudad, calle);
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] search house hits", e?.message || e);
+  }
+
+  try {
+    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero);
+    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+      if (userGps) {
+        const dG = haversineMeters(userGps.lat, userGps.lng, geo.lat, geo.lng);
+        if (dG <= nearM) {
+          sess.lat = userGps.lat;
+          sess.lng = userGps.lng;
+          sess.direccionTexto = geo.displayName;
+        } else {
+          sess.lat = geo.lat;
+          sess.lng = geo.lng;
+          sess.direccionTexto = geo.displayName;
+        }
+      } else {
+        sess.lat = geo.lat;
+        sess.lng = geo.lng;
+        sess.direccionTexto = geo.displayName;
+      }
+      sessions.set(sk, sess);
+      await finalizePedidoFromSession(phone, sess, contactName);
+      return;
+    }
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
+  }
+
+  const picked = pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, nearM);
+  if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
+    sess.lat = picked.lat;
+    sess.lng = picked.lng;
+    const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
+    const anchor = picked.anchorHouse != null ? ` (frente ref. ${calle} ${picked.anchorHouse})` : "";
+    sess.direccionTexto =
+      picked.source === "user_gps_near"
+        ? `GPS del usuario (cercano a domicilio estimado${anchor}), ${origen}: ${calle} ${numero}, ${ciudadLabel}`
+            .replace(/\s+/g, " ")
+            .trim()
+        : `Ubicación estimada en mapa${anchor}: ${origen}: ${calle} ${numero}, ${ciudadLabel}`
+            .replace(/\s+/g, " ")
+            .trim();
+    sessions.set(sk, sess);
+    await finalizePedidoFromSession(phone, sess, contactName);
+    return;
+  }
+
   sess.lat = geoCiudad?.lat ?? baseLat;
   sess.lng = geoCiudad?.lng ?? baseLng;
   const nom = String(sess.contactName || contactName || "").trim();
@@ -480,7 +588,9 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     await reply(phoneDigits, ctx.whatsappBloqueoMensaje, ctx.id, phoneNumberIdWebhook);
     return { ok: true, blocked: true };
   }
-  const bodyText = `Elegí el tipo que mejor describe tu reclamo:`;
+  const bodyText =
+    `Elegí el tipo que mejor describe tu reclamo:\n\n` +
+    `_Para *salir* escribí *menú* o *0* en un mensaje de texto._`;
   const pid = String(phoneNumberIdWebhook || "").trim();
   let accessToken = "";
   let graphPid = pid;
@@ -678,6 +788,38 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
+  /** Durante dirección estructurada: guardamos GPS y seguimos el flujo por texto (evita pin incorrecto). */
+  const stepAddr = String(sess.step || "");
+  if (
+    stepAddr === "awaiting_addr_ciudad" ||
+    stepAddr === "awaiting_addr_calle" ||
+    stepAddr === "awaiting_addr_numero" ||
+    stepAddr === "awaiting_nombre_persona" ||
+    stepAddr === "awaiting_opcional_id" ||
+    stepAddr === "awaiting_identificacion_modo"
+  ) {
+    sess.userSharedGps = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    let hint = "Recibimos tu *ubicación GPS*. ";
+    if (stepAddr === "awaiting_addr_numero") {
+      hint += "Indicá el *número de puerta* en un mensaje de texto.";
+    } else if (stepAddr === "awaiting_addr_calle") {
+      hint += "Seguí con el *nombre de la calle*.";
+    } else if (stepAddr === "awaiting_addr_ciudad") {
+      hint += "Indicá la *ciudad o localidad*.";
+    } else if (stepAddr === "awaiting_nombre_persona") {
+      hint += "Indicá tu *nombre y apellido*.";
+    } else if (stepAddr === "awaiting_opcional_id") {
+      hint += "Enviá *NIS* / *medidor* o escribí *no*.";
+    } else {
+      hint += "Elegí *1* o *2* para continuar.";
+    }
+    hint += " _(*menú* = salir · *atrás* = paso anterior)_";
+    await reply(phone, hint, tid, phoneNumberId);
+    return;
+  }
+
   sess.lat = lat;
   sess.lng = lng;
   sess.direccionTexto = null;
@@ -727,7 +869,8 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   });
   await reply(
     phone,
-    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`,
+    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n` +
+      `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
     tid,
     phoneNumberId
   );
@@ -828,6 +971,18 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
 
   if (sess && sess.step === "awaiting_identificacion_modo") {
+    if (esComandoAtras(text)) {
+      sess.step = "awaiting_desc";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Volvimos atrás. Escribí de nuevo una *breve descripción* del problema (una o varias líneas).",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     const choice = interpretaMenuIdentificacion(text);
     if (choice === 2) {
       sessions.set(sk, {
@@ -858,6 +1013,13 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (sess && sess.step === "awaiting_nombre_persona") {
     const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_identificacion_modo";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
     if (t.length < 2) {
       await reply(phone, "Escribí al menos *2 caracteres* para el nombre.", tid, phoneNumberId);
       return;
@@ -868,6 +1030,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     sess.contactName = t;
     sess.step = "awaiting_addr_ciudad";
+    sess.addrOrigenPaso = "nombre";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
@@ -876,6 +1039,13 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (sess && sess.step === "awaiting_opcional_id") {
     const raw = String(text || "").trim();
+    if (esComandoAtras(raw)) {
+      sess.step = "awaiting_identificacion_modo";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
     const low = raw.toLowerCase();
     if (/^(no|n|salto|siguiente|omitir|sigue|skip|-|)$/i.test(low) || low === "0") {
       sessions.set(sk, {
@@ -901,6 +1071,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         const next = {
           ...sess,
           step: "awaiting_addr_ciudad",
+          addrOrigenPaso: "opcional",
           identificacionLibreTexto: raw,
           nisParaPedido: null,
           medidorParaPedido: null,
@@ -968,6 +1139,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sessions.set(sk, {
       ...sess,
       step: "awaiting_addr_ciudad",
+      addrOrigenPaso: "opcional",
       contactName: nuevoNombre || sess.contactName,
       nisParaPedido: res.nis ?? null,
       medidorParaPedido: res.medidor ?? null,
@@ -983,8 +1155,114 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
+  if (sess && sess.step === "awaiting_nis_whatsapp") {
+    if (esComandoAtras(text)) {
+      sess.step = "awaiting_desc";
+      delete sess.addrOrigenPaso;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        `Volvimos al paso anterior.\n\nAhora escribí de nuevo una *breve descripción* del problema (una o varias líneas).`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const raw = String(text || "").trim();
+    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw);
+    if (!res.ok || res.skip) {
+      await reply(
+        phone,
+        "No encontramos ese *NIS* o *medidor* en el sistema. Revisá el dato o escribí *atrás* / *menú*.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const nuevoNombre = res.clienteNombre;
+    const locCat = String(res.catalogoLocalidad || "").trim();
+    const calleCat = String(res.catalogoCalle || "").trim();
+    const numCat = String(res.catalogoNumero || "").trim();
+    const puedeMapaDesdePadron =
+      locCat.length >= 2 && calleCat.length >= 2 && sess.descripcion && String(sess.descripcion).trim();
+
+    sess.nisParaPedido = res.nis ?? null;
+    sess.medidorParaPedido = res.medidor ?? null;
+    sess.nisMedidorParaPedido = res.nisMedidor ?? null;
+    sess.contactName = nuevoNombre || sess.contactName;
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+
+    if (puedeMapaDesdePadron) {
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        `Listo, registramos el *NIS* y a *${nuevoNombre}*.\n\nUbicamos el domicilio en el padrón (${calleCat} ${numCat || "s/n"}, ${locCat}). Registramos el reclamo…`,
+        tid,
+        phoneNumberId
+      );
+      await geocodeStructuredAddressAndFinalizePedido(
+        phone,
+        sess,
+        sk,
+        contactName,
+        ctx,
+        phoneNumberId || wpid,
+        locCat,
+        calleCat,
+        numCat || "0",
+        { origenCatalogo: true }
+      );
+      return;
+    }
+
+    sess.step = "awaiting_addr_ciudad";
+    sess.addrOrigenPaso = "nis_solo";
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      `Registramos el *NIS*. Para ubicar el reclamo en el mapa, indicá la *ciudad o localidad*${nuevoNombre ? ` (titular: *${nuevoNombre}*)` : ""}.\n\n` + MSG_ADDR_CIUDAD,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "awaiting_addr_ciudad") {
     const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      const orig = sess.addrOrigenPaso;
+      if (orig === "nombre") {
+        sess.step = "awaiting_nombre_persona";
+        delete sess.addrOrigenPaso;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+        return;
+      }
+      if (orig === "opcional") {
+        sess.step = "awaiting_opcional_id";
+        delete sess.addrOrigenPaso;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
+        return;
+      }
+      if (orig === "nis_solo") {
+        sess.step = "awaiting_nis_whatsapp";
+        delete sess.addrOrigenPaso;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
+        return;
+      }
+      sess.step = "awaiting_identificacion_modo";
+      delete sess.addrOrigenPaso;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
     if (t.length < 2) {
       await reply(phone, "Indicá la *ciudad* o *localidad* con al menos 2 caracteres.", tid, phoneNumberId);
       return;
@@ -1001,6 +1279,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (sess && sess.step === "awaiting_addr_calle") {
     const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_addr_ciudad";
+      sess.addrCalle = null;
+      sess.addrNumero = null;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
+      return;
+    }
     if (t.length < 2) {
       await reply(phone, "Indicá el *nombre de la calle*.", tid, phoneNumberId);
       return;
@@ -1014,6 +1301,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   if (sess && sess.step === "awaiting_addr_numero") {
     const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_addr_calle";
+      sess.addrNumero = null;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_CALLE, tid, phoneNumberId);
+      return;
+    }
     if (t.length < 1) {
       await reply(phone, "Indicá el *número de puerta* (o *0* si no aplica).", tid, phoneNumberId);
       return;
@@ -1105,7 +1400,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       });
       await reply(
         phone,
-        `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).`,
+        `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n` +
+          `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
         tid,
         phoneNumberId
       );
@@ -1121,6 +1417,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   }
 
   if (sess.step === "awaiting_desc") {
+    if (esComandoAtras(text)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
     if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
       sessions.delete(sk);
       await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
@@ -1129,6 +1430,16 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     const desc = text;
     if (desc.length < 4) {
       await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.", tid, phoneNumberId);
+      return;
+    }
+    if (tipoReclamoWhatsappFlujoSoloNis(sess.tipo)) {
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_nis_whatsapp",
+        descripcion: desc,
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
       return;
     }
     sessions.set(sk, {
