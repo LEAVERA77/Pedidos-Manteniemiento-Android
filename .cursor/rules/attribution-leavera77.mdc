@@ -1,11 +1,11 @@
 ---
-description: Atribución made by leavera77 en commits y cambios (Nexxo, Pedidos-MG, API).
+description: Atribución made by: LEAVERA77 en commits y cambios (Nexxo, Pedidos-MG, API).
 alwaysApply: true
 ---
 
 # Atribución de cambios (LEAVERA77)
 
-- En **cada commit** que hagas en este proyecto (y al sincronizar en **Pedidos-MG** u otros repos relacionados), incluí la frase exacta **`made by leavera77`** en el mensaje de commit (por ejemplo al final del cuerpo o en la última línea).
-- Si el commit es de una sola línea, podés usar: `… tu resumen — made by leavera77`.
+- En **cada commit** que hagas en este proyecto (y al sincronizar en **Pedidos-MG** u otros repos relacionados), incluí la frase exacta **`made by: LEAVERA77`** en el mensaje de commit (por ejemplo al final del cuerpo o en la última línea).
+- Si el commit es de una sola línea, podés usar: `… tu resumen — made by: LEAVERA77`.
 - No hace falta repetir la frase en cada línea del diff; el **mensaje de git** es el lugar principal.
-- Si creás un archivo nuevo grande o un módulo nuevo, podés añadir **una** línea al final del archivo: `made by leavera77` (o comentario equivalente según el lenguaje), solo cuando no ensucie el estándar del proyecto.
+- Si creás un archivo nuevo grande o un módulo nuevo, podés añadir **una** línea al final del archivo: `made by: LEAVERA77` (o comentario equivalente según el lenguaje), solo cuando no ensucie el estándar del proyecto.
