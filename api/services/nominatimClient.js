@@ -87,6 +87,21 @@ function nominatimDisplayMatchesLocalidad(displayName, localidad) {
   return tokens.some((t) => dn.includes(t));
 }
 
+function calleTokensNorm(calle) {
+  let s = normTxt(calle);
+  s = s.replace(/^(calle|avenida|av|av\.|diag|diag\.|diagonal|ruta|pasaje|pje|boulevard|bv)\s+/u, "");
+  const tokens = s.split(/[\s,.]+/).filter((t) => t.length > 2);
+  return tokens.length ? tokens : (s.length >= 2 ? [s] : []);
+}
+
+/** La vía debe aparecer en el display (evita tomar otro domicilio en la misma ciudad). */
+export function nominatimDisplayMatchesCalle(displayName, calle) {
+  const dn = normTxt(displayName);
+  const tokens = calleTokensNorm(calle);
+  if (!tokens.length) return true;
+  return tokens.every((t) => dn.includes(t));
+}
+
 /**
  * Geocodifica calle + número + ciudad en Argentina con varias variantes de consulta.
  * @returns {Promise<{ lat: number, lng: number, displayName: string } | null>}
@@ -106,7 +121,11 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   ];
   for (const q of attempts) {
     const g = await geocodeAddressArgentina(q);
-    if (g && nominatimDisplayMatchesLocalidad(g.displayName, c)) {
+    if (
+      g &&
+      nominatimDisplayMatchesLocalidad(g.displayName, c) &&
+      nominatimDisplayMatchesCalle(g.displayName, cal)
+    ) {
       return g;
     }
   }
@@ -144,34 +163,168 @@ export function parseHouseNumberInt(numStr) {
  * Busca en Nominatim resultados con número de puerta en la zona calle+localidad.
  * @returns {Promise<Array<{ lat: number, lng: number, houseNum: number, displayName: string }>>}
  */
-export async function searchHouseNumberHitsArgentina(ciudad, calle, limit = 35) {
+function bboxCenter(hit) {
+  const bb = hit.boundingbox;
+  if (!Array.isArray(bb) || bb.length < 4) return null;
+  const s = parseFloat(bb[0]);
+  const n = parseFloat(bb[1]);
+  const w = parseFloat(bb[2]);
+  const e = parseFloat(bb[3]);
+  if (![s, n, w, e].every((x) => Number.isFinite(x))) return null;
+  return { lat: (s + n) / 2, lng: (w + e) / 2 };
+}
+
+/**
+ * Resultados en calle + localidad: frentes con número y, si aplica, centro de la vía (sin números en OSM).
+ * @returns {{ houseHits: Array<{ lat: number, lng: number, houseNum: number, displayName: string }>, streetCenter: { lat: number, lng: number, displayName: string } | null }}
+ */
+export async function searchCalleLocalidadArgentina(ciudad, calle, limit = 40) {
   const c = String(ciudad || "").trim();
   const cal = String(calle || "").trim();
-  if (c.length < 2 || cal.length < 2) return [];
-  const lim = Math.min(50, Math.max(5, Number(limit) || 35));
+  if (c.length < 2 || cal.length < 2) return { houseHits: [], streetCenter: null };
+  const lim = Math.min(50, Math.max(8, Number(limit) || 40));
   await throttle();
   const p = nominatimBaseParams();
   p.set("q", `${cal}, ${c}, Argentina`);
   p.set("limit", String(lim));
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
   const res = await fetch(url, { headers: nominatimHeaders() });
-  if (!res.ok) return [];
+  if (!res.ok) return { houseHits: [], streetCenter: null };
   const arr = await res.json();
-  if (!Array.isArray(arr)) return [];
-  const out = [];
+  if (!Array.isArray(arr)) return { houseHits: [], streetCenter: null };
+  const houseHits = [];
+  const streetCandidates = [];
   for (const hit of arr) {
-    const hn = hit.address?.house_number;
-    if (hn == null) continue;
-    const houseNum = parseHouseNumberInt(String(hn));
-    if (houseNum == null) continue;
+    const displayName = String(hit.display_name || "").trim();
+    if (!nominatimDisplayMatchesLocalidad(displayName, c)) continue;
+    if (!nominatimDisplayMatchesCalle(displayName, cal)) continue;
     const lat = Number(hit.lat);
     const lng = Number(hit.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    const displayName = String(hit.display_name || "").trim();
-    if (!nominatimDisplayMatchesLocalidad(displayName, c)) continue;
-    out.push({ lat, lng, houseNum, displayName });
+    const hn = hit.address?.house_number;
+    const houseNumParsed = hn != null ? parseHouseNumberInt(String(hn)) : null;
+    if (houseNumParsed != null) {
+      houseHits.push({ lat, lng, houseNum: houseNumParsed, displayName });
+      continue;
+    }
+    const cls = String(hit.class || "");
+    const typ = String(hit.type || "");
+    const roadish =
+      cls === "highway" ||
+      typ === "residential" ||
+      typ === "living_street" ||
+      typ === "unclassified" ||
+      typ === "road" ||
+      typ === "service" ||
+      (cls === "place" && typ === "neighbourhood");
+    const bc = bboxCenter(hit);
+    const useLat = bc?.lat ?? lat;
+    const useLng = bc?.lng ?? lng;
+    if (!Number.isFinite(useLat) || !Number.isFinite(useLng)) continue;
+    let rank = 6;
+    if (roadish) {
+      if (cls === "highway" && typ === "residential") rank = 0;
+      else if (cls === "highway") rank = 1;
+      else rank = 2;
+    }
+    streetCandidates.push({ lat: useLat, lng: useLng, displayName, rank });
   }
-  return out;
+  streetCandidates.sort((a, b) => a.rank - b.rank);
+  const streetCenter =
+    streetCandidates.length > 0
+      ? {
+          lat: streetCandidates[0].lat,
+          lng: streetCandidates[0].lng,
+          displayName: streetCandidates[0].displayName,
+        }
+      : null;
+  return { houseHits, streetCenter };
+}
+
+/** @deprecated Usar searchCalleLocalidadArgentina */
+export async function searchHouseNumberHitsArgentina(ciudad, calle, limit = 35) {
+  const { houseHits } = await searchCalleLocalidadArgentina(ciudad, calle, limit);
+  return houseHits;
+}
+
+/**
+ * Sin GPS del cliente: si el número no está en OSM, anclar cerca de un frente con número impar (si existe).
+ * Con GPS: mantiene lógica de paridad + proximidad existente.
+ */
+export function resolveStructuredAddressCoords({
+  houseHits,
+  streetCenter,
+  targetNum,
+  userGps,
+  fallbackCity,
+  nearMeters = 120,
+}) {
+  const near = Number.isFinite(Number(nearMeters)) && Number(nearMeters) > 0 ? Number(nearMeters) : 120;
+  const hits = Array.isArray(houseHits) ? houseHits : [];
+  const exact =
+    targetNum != null && Number.isFinite(targetNum)
+      ? hits.find((h) => h.houseNum === targetNum)
+      : null;
+
+  if (exact) {
+    if (
+      userGps &&
+      Number.isFinite(userGps.lat) &&
+      Number.isFinite(userGps.lng) &&
+      haversineMeters(userGps.lat, userGps.lng, exact.lat, exact.lng) <= near
+    ) {
+      return {
+        lat: userGps.lat,
+        lng: userGps.lng,
+        source: "user_gps_near",
+        anchorHouse: exact.houseNum,
+      };
+    }
+    return { lat: exact.lat, lng: exact.lng, source: "exact_house", anchorHouse: exact.houseNum };
+  }
+
+  if (!hits.length) {
+    if (streetCenter && Number.isFinite(streetCenter.lat) && Number.isFinite(streetCenter.lng)) {
+      return { lat: streetCenter.lat, lng: streetCenter.lng, source: "street_center" };
+    }
+    if (fallbackCity && Number.isFinite(fallbackCity.lat) && Number.isFinite(fallbackCity.lng)) {
+      return { lat: fallbackCity.lat, lng: fallbackCity.lng, source: "fallback" };
+    }
+    return null;
+  }
+
+  if (
+    userGps &&
+    Number.isFinite(userGps.lat) &&
+    Number.isFinite(userGps.lng)
+  ) {
+    return pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, near);
+  }
+
+  let pool = hits;
+  if (targetNum != null && Number.isFinite(targetNum)) {
+    const oddOnly = hits.filter((h) => h.houseNum % 2 === 1);
+    if (oddOnly.length) pool = oddOnly;
+  }
+  pool = [...pool].sort((a, b) => {
+    if (targetNum != null && Number.isFinite(targetNum)) {
+      const da = Math.abs(a.houseNum - targetNum);
+      const db = Math.abs(b.houseNum - targetNum);
+      if (da !== db) return da - db;
+    }
+    return 0;
+  });
+  const best = pool[0];
+  if (!best) {
+    if (streetCenter && Number.isFinite(streetCenter.lat) && Number.isFinite(streetCenter.lng)) {
+      return { lat: streetCenter.lat, lng: streetCenter.lng, source: "street_center" };
+    }
+    if (fallbackCity && Number.isFinite(fallbackCity.lat) && Number.isFinite(fallbackCity.lng)) {
+      return { lat: fallbackCity.lat, lng: fallbackCity.lng, source: "fallback" };
+    }
+    return null;
+  }
+  return { lat: best.lat, lng: best.lng, source: "house_search_odd_pref", anchorHouse: best.houseNum };
 }
 
 /**

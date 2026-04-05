@@ -10,6 +10,7 @@ import { query } from "../db/neon.js";
 import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 
 let _tableEnsured = false;
+let _obsTableEnsured = false;
 
 function canonicalPhone(digits) {
   const d = String(digits || "").replace(/\D/g, "");
@@ -36,6 +37,29 @@ async function ensureOpinionPendingTable() {
   _tableEnsured = true;
 }
 
+async function ensureObservacionesCierreTable() {
+  if (_obsTableEnsured) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS cliente_observaciones_cierre (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      pedido_id INTEGER NOT NULL,
+      phone_canonical VARCHAR(40),
+      texto TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_cli_obs_cierre_pedido
+    ON cliente_observaciones_cierre (pedido_id)
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_cli_obs_cierre_tenant_created
+    ON cliente_observaciones_cierre (tenant_id, created_at DESC)
+  `);
+  _obsTableEnsured = true;
+}
+
 /**
  * Registra ventana de opinión (30 días) tras enviar el mensaje de cierre por WA.
  */
@@ -59,6 +83,12 @@ export async function registerPendingClienteOpinion(tenantId, phoneDigits, pedid
   } catch (e) {
     console.error("[whatsappClienteOpinion] registerPending", e.message);
   }
+}
+
+/** True si este teléfono tiene una opinión pendiente (p. ej. tras cierre por WA). */
+export async function hasPendingClienteOpinion(tenantId, phoneDigits) {
+  const row = await getPending(tenantId, phoneDigits);
+  return row != null;
 }
 
 export async function clearPendingClienteOpinion(tenantId, phoneDigits) {
@@ -146,15 +176,16 @@ function esComandoExcluidoFlujoMenu(low, raw) {
 
 /** Tras guardar la opinión del cliente: un solo mensaje, sin menú ni lista de opciones. */
 function ackOpinionClienteGuardada() {
-  return "Gracias por su respuesta, la tendremos en cuenta.";
+  return (
+    "Muchas gracias por tu mensaje. *Registramos tu observación* y la tendremos en cuenta para mejorar el servicio.\n\n" +
+    "Si más adelante necesitás algo más, escribí *menú* o *Cargar reclamo* cuando quieras."
+  );
 }
 
 /** Solo comandos explícitos para volver al menú (con opinión pendiente aún activa). */
-function esEscapeMenuOpinionPendiente(raw, low) {
+function esEscapeMenuOpinionPendiente(raw) {
   const t = String(raw || "").trim();
-  if (/^(menu|menú|inicio|ayuda|volver|0)$/i.test(t)) return true;
-  if (low === "hola" && t.length <= 6) return true;
-  return false;
+  return /^(menu|menú|inicio|ayuda|volver|0)$/i.test(t);
 }
 
 /**
@@ -169,31 +200,48 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
   const pend = await getPending(tenantId, phoneDigits);
 
   if (pend) {
-    if (esEscapeMenuOpinionPendiente(raw, low)) {
+    if (esEscapeMenuOpinionPendiente(raw)) {
       return { handled: false };
     }
     await ensureOpinionColumns();
+    await ensureObservacionesCierreTable();
 
-    const chk = await query(`SELECT id, tenant_id FROM pedidos WHERE id = $1 LIMIT 1`, [pend.pedidoId]);
+    const chk = await query(`SELECT id FROM pedidos WHERE id = $1 LIMIT 1`, [pend.pedidoId]);
     const row = chk.rows?.[0];
     if (!row) {
       await clearPendingClienteOpinion(tenantId, phoneDigits);
       return { handled: false };
     }
-    const rowTid = row.tenant_id != null ? Number(row.tenant_id) : null;
-    if (rowTid != null && Number.isFinite(rowTid) && rowTid !== Number(tenantId)) {
-      return { handled: false };
+    try {
+      const tchk = await query(`SELECT tenant_id FROM pedidos WHERE id = $1 LIMIT 1`, [pend.pedidoId]);
+      const rowTid = tchk.rows?.[0]?.tenant_id;
+      if (
+        rowTid != null &&
+        Number.isFinite(Number(rowTid)) &&
+        Number(rowTid) !== Number(tenantId)
+      ) {
+        return { handled: false };
+      }
+    } catch (_) {
+      /* columna tenant_id ausente */
     }
 
     const opinion = raw.slice(0, 2000);
+    const phoneCanon = canonicalPhone(phoneDigits);
     await query(
       `UPDATE pedidos SET opinion_cliente = $2, fecha_opinion_cliente = NOW() WHERE id = $1`,
       [pend.pedidoId, opinion]
     );
-    await query(`DELETE FROM cliente_opinion_pending WHERE tenant_id = $1 AND pedido_id = $2`, [
-      Number(tenantId),
-      pend.pedidoId,
-    ]);
+    try {
+      await query(
+        `INSERT INTO cliente_observaciones_cierre (tenant_id, pedido_id, phone_canonical, texto)
+         VALUES ($1, $2, $3, $4)`,
+        [Number(tenantId), pend.pedidoId, phoneCanon || null, opinion]
+      );
+    } catch (e) {
+      console.error("[whatsappClienteOpinion] insert cliente_observaciones_cierre", e.message);
+    }
+    await clearPendingClienteOpinion(tenantId, phoneDigits);
 
     const ack = ackOpinionClienteGuardada();
     return { handled: true, ack };

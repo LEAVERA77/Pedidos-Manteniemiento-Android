@@ -20,15 +20,15 @@ import {
   tipoReclamoElectricoPideSuministroWhatsapp,
 } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
-import { tryConsumeClienteOpinionReply } from "./whatsappClienteOpinion.js";
+import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 import {
   geocodeAddressArgentina,
   reverseGeocodeArgentina,
   geocodeCalleNumeroLocalidadArgentina,
   haversineMeters,
   parseHouseNumberInt,
-  searchHouseNumberHitsArgentina,
-  pickCoordsWithParityAndGps,
+  searchCalleLocalidadArgentina,
+  resolveStructuredAddressCoords,
 } from "./nominatimClient.js";
 import {
   humanChatOpenOrGetSession,
@@ -613,11 +613,14 @@ async function geocodeStructuredAddressAndFinalizePedido(
       ? { lat: Number(sess.userSharedGps.lat), lng: Number(sess.userSharedGps.lng) }
       : null;
 
-  let hits = [];
+  let houseHits = [];
+  let streetCenter = null;
   try {
-    hits = await searchHouseNumberHitsArgentina(ciudad, calle);
+    const pack = await searchCalleLocalidadArgentina(ciudad, calle);
+    houseHits = pack.houseHits || [];
+    streetCenter = pack.streetCenter || null;
   } catch (e) {
-    console.error("[whatsapp-bot-meta] search house hits", e?.message || e);
+    console.error("[whatsapp-bot-meta] search calle/localidad", e?.message || e);
   }
 
   try {
@@ -647,20 +650,32 @@ async function geocodeStructuredAddressAndFinalizePedido(
     console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
   }
 
-  const picked = pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, nearM);
+  const picked = resolveStructuredAddressCoords({
+    houseHits,
+    streetCenter,
+    targetNum,
+    userGps,
+    fallbackCity: fallbackCity,
+    nearMeters: nearM,
+  });
   if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
     sess.lat = picked.lat;
     sess.lng = picked.lng;
     const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
     const anchor = picked.anchorHouse != null ? ` (frente ref. ${calle} ${picked.anchorHouse})` : "";
-    sess.direccionTexto =
+    const modoMapa =
       picked.source === "user_gps_near"
-        ? `GPS del usuario (cercano a domicilio estimado${anchor}), ${origen}: ${calle} ${numero}, ${ciudadLabel}`
-            .replace(/\s+/g, " ")
-            .trim()
-        : `Ubicación estimada en mapa${anchor}: ${origen}: ${calle} ${numero}, ${ciudadLabel}`
-            .replace(/\s+/g, " ")
-            .trim();
+        ? `GPS del usuario (cercano a domicilio estimado${anchor})`
+        : picked.source === "exact_house"
+          ? `Domicilio geocodificado${anchor}`
+          : picked.source === "street_center"
+            ? `Eje de calle (centro estimado de la vía en ${ciudadLabel})`
+            : picked.source === "fallback"
+              ? `Centro de localidad (referencia)`
+              : `Ubicación estimada en mapa${anchor}`;
+    sess.direccionTexto = `${modoMapa}, ${origen}: ${calle} ${numero}, ${ciudadLabel}`
+      .replace(/\s+/g, " ")
+      .trim();
     sessions.set(sk, sess);
     await finalizePedidoFromSession(phone, sess, contactName);
     return;
@@ -1012,6 +1027,20 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   // En chat humano (Otros), "Hola" es mensaje del cliente, no reinicio del menú automático.
   if (/\bhola\b/i.test(String(text || "").trim()) && sessions.get(sk)?.step !== "human_chat") {
+    let pendOpinionHola = false;
+    try {
+      pendOpinionHola = await hasPendingClienteOpinion(tid, phone);
+    } catch (_) {}
+    if (pendOpinionHola) {
+      await reply(
+        phone,
+        "Hola. Si querés contarnos *cómo quedó el arreglo* del reclamo que cerramos, escribí tu observación ahora (texto libre). " +
+          "Para el *menú* de nuevos reclamos, escribí *menú* o *0*.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     console.log("[whatsapp-bot-meta] hola detectado", { phone, text: String(text || "").slice(0, 120), tenant: tid });
     const prevS = sessions.get(sk);
     if (prevS?.humanChatSessionId) {

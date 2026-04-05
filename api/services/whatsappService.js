@@ -236,8 +236,9 @@ export async function notifyPedidoCierreWhatsAppSafe({
   const ent = String(nombreEntidad || "nuestro equipo").trim();
   const body =
     `*${ent}* informa: su reclamo *#${np}* fue *finalizado* por el equipo técnico.\n\n` +
-    `Si querés *valorar la atención* o dejar una *observación*, respondé a *este mismo chat* con tu mensaje (texto libre).\n\n` +
-    `Gracias por tu reporte.`;
+    `¿Podés contarnos *cómo quedó el arreglo*? Respondé a *este mismo chat* con tu observación (texto libre). ` +
+    `Tus comentarios nos ayudan a mejorar el servicio.\n\n` +
+    `_Gracias por tu tiempo._`;
 
   try {
     const r = await sendTenantWhatsAppText({
