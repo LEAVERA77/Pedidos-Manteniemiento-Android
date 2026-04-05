@@ -104,6 +104,24 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .ba{background:var(--bd);color:white;font-size:.7rem;padding:.1rem .4rem;border-radius:.3rem;font-weight:600}
 .du{margin-top:1.25rem;padding:.9rem;background:var(--bg);border-radius:.6rem;font-size:.82rem;color:var(--tm);border:1px solid var(--bo)}
 .du p{margin:.2rem 0}.du strong{color:var(--bd)}
+.admin-banner-nuevo-cliente{
+  display:none;align-items:center;gap:.5rem;flex-wrap:wrap;
+  padding:.45rem .75rem;background:linear-gradient(90deg,#0f766e,#0d9488);
+  color:#fff;font-size:.8rem;font-weight:600;position:relative;z-index:1002;
+  box-shadow:0 2px 10px rgba(15,118,110,.35);
+}
+.admin-banner-nuevo-cliente-ic{opacity:.95;font-size:1rem}
+.admin-banner-nuevo-cliente-txt{flex:1;min-width:140px;line-height:1.35}
+.admin-banner-btn{
+  background:#fff;color:#0f766e;border:none;border-radius:.4rem;padding:.35rem .65rem;
+  font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap;
+}
+.admin-banner-btn:hover{filter:brightness(.97)}
+.admin-banner-x{
+  background:transparent;border:none;color:#fff;opacity:.85;font-size:1.25rem;line-height:1;
+  cursor:pointer;padding:.15rem .35rem;border-radius:.35rem;
+}
+.admin-banner-x:hover{opacity:1;background:rgba(255,255,255,.12)}
 .hd{background:white;padding:0 1rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.08);position:relative;z-index:1000;height:58px;border-bottom:2px solid var(--bd)}
 .hd h2{font-size:1.05rem;color:var(--bd);font-weight:700;display:flex;align-items:center;gap:.4rem}
 .hr{display:flex;align-items:center;gap:.4rem}

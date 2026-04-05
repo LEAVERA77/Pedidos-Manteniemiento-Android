@@ -3,6 +3,11 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   prioridadPredeterminadaPorTipoTrabajo,
 } from "./tiposReclamo.js";
+import {
+  lookupDistribuidorTrafoPorNisMedidor,
+  contarPedidosAbiertosMismaZona,
+  OUTAGE_SECTOR_MULTI_RECLAMO,
+} from "./pedidoZonaOutage.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -87,19 +92,6 @@ export async function resolveUsuarioCreadorParaPedidoWhatsapp(tenantId) {
   return null;
 }
 
-export async function getDefaultDistribuidorCodigo() {
-  const fromEnv = String(process.env.WHATSAPP_BOT_DISTRIBUIDOR_CODIGO || "").trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const r = await query(
-      `SELECT codigo FROM distribuidores WHERE activo = TRUE ORDER BY codigo ASC LIMIT 1`
-    );
-    return r.rows?.[0]?.codigo || "WHATSAPP";
-  } catch (_) {
-    return "WHATSAPP";
-  }
-}
-
 /**
  * Crea un pedido desde el bot (creador: admin, cualquier usuario del tenant, env de respaldo o NULL si el esquema lo permite).
  */
@@ -131,7 +123,32 @@ export async function crearPedidoDesdeWhatsappBot({
 
   const usuarioId = await resolveUsuarioCreadorParaPedidoWhatsapp(Number(tenantId));
 
-  const distribuidor = await getDefaultDistribuidorCodigo();
+  const nisT = nis != null && String(nis).trim() ? String(nis).trim() : null;
+  const medT = medidor != null && String(medidor).trim() ? String(medidor).trim() : null;
+  const nmT = nisMedidor != null && String(nisMedidor).trim() ? String(nisMedidor).trim() : null;
+  const lookupKey = nmT || nisT || medT;
+  const tieneIdentificadorSum = !!(nmT || nisT || medT);
+
+  let distribuidorVal = null;
+  let trafoVal = null;
+  let setdVal = null;
+  if (tieneIdentificadorSum && lookupKey) {
+    const lk = await lookupDistribuidorTrafoPorNisMedidor(lookupKey);
+    distribuidorVal = lk.distribuidor;
+    trafoVal = lk.trafo;
+    setdVal = lk.trafo;
+  }
+
+  if (tieneIdentificadorSum && (distribuidorVal || trafoVal)) {
+    const cnt = await contarPedidosAbiertosMismaZona({
+      tenantId: Number(tenantId),
+      distribuidor: distribuidorVal,
+      trafo: trafoVal,
+    });
+    if (cnt >= 4) {
+      throw new Error(OUTAGE_SECTOR_MULTI_RECLAMO);
+    }
+  }
 
   await query(
     `INSERT INTO pedido_contador(anio, ultimo_numero)
@@ -174,8 +191,8 @@ export async function crearPedidoDesdeWhatsappBot({
   ];
   const vals = [
     numeroPedido,
-    distribuidor,
-    null,
+    distribuidorVal,
+    setdVal,
     null,
     tt,
     de,
@@ -198,9 +215,11 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(usuarioId);
   }
 
-  const nisT = nis != null && String(nis).trim() ? String(nis).trim() : null;
-  const medT = medidor != null && String(medidor).trim() ? String(medidor).trim() : null;
-  const nmT = nisMedidor != null && String(nisMedidor).trim() ? String(nisMedidor).trim() : null;
+  if (pCols.has("trafo")) {
+    cols.push("trafo");
+    vals.push(trafoVal);
+  }
+
   if (pCols.has("nis") && nisT) {
     cols.push("nis");
     vals.push(nisT);

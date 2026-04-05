@@ -445,6 +445,33 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     );
   } catch (e) {
     const m = String(e?.message || "");
+    if (m === "OUTAGE_SECTOR_MULTI_RECLAMO") {
+      sessions.delete(sk);
+      const ctxOut = await loadTenantBotContext(sess.tenantId);
+      const msgOut =
+        `Estamos recibiendo *muchos reclamos* en tu zona en las últimas horas. ` +
+        `Posiblemente se trata de un *corte* que afecta a tu *sector* o es de *carácter general*.\n\n` +
+        `Te ofrecemos hablar con un *representante* de la cooperativa por este mismo chat. ` +
+        `En un momento te derivamos; podés escribir tu consulta cuando te lo indiquemos.`;
+      await reply(phone, msgOut, sess.tenantId, sess.phoneNumberId);
+      if (ctxOut) {
+        await iniciarFlujoOtrosHumano(
+          phone,
+          sess.tenantId,
+          sess.phoneNumberId || null,
+          sess.contactName || contactName || "",
+          ctxOut
+        );
+      } else {
+        await reply(
+          phone,
+          "Si preferís, llamá a la oficina o escribí *menú* para volver al inicio.",
+          sess.tenantId,
+          sess.phoneNumberId
+        );
+      }
+      return;
+    }
     sessions.delete(sk);
     if (m === "sin_usuario_admin_tenant" || m === "sin_usuario_para_pedido_whatsapp") {
       await reply(

@@ -31,6 +31,8 @@ data class PedidoDto(
     @SerializedName("fecha_cierre") val fechaCierre: String? = null,
     @SerializedName("fecha_avance") val fechaAvance: String? = null,
     @SerializedName("distribuidor") val distribuidor: String? = null,
+    @SerializedName("setd") val setd: String? = null,
+    @SerializedName("trafo") val trafo: String? = null,
     @SerializedName("cliente") val cliente: String? = null,
     @SerializedName("cliente_nombre") val clienteNombre: String? = null,
     @SerializedName("cliente_calle") val clienteCalle: String? = null,

@@ -867,7 +867,7 @@ function poblarSelectTiposReclamo() {
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
 
-const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','setd',
+const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','setd','trafo',
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
@@ -1459,6 +1459,10 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_calle TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_numero_puerta VARCHAR(20)`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_localidad TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS trafo TEXT`);
+                try {
+                    await sqlSimple(`ALTER TABLE pedidos ALTER COLUMN distribuidor DROP NOT NULL`);
+                } catch (_) {}
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS socios_catalogo(
                     id SERIAL PRIMARY KEY,
                     nis_medidor TEXT NOT NULL UNIQUE,
@@ -1575,6 +1579,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
             destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
             iniciarPollSincroPedidosTecnico();
+            detenerPollBannerReclamoCliente();
         }
         setTimeout(async () => {
 
@@ -1605,6 +1610,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 await promptAdminTipoNegocioWebIfNeeded();
                 await cargarConfigEmpresa();
                 await cargarPedidos();
+                if (esAdmin()) iniciarPollBannerReclamoCliente();
                 
                 offlinePedidosSave(app.p);
             } else {
@@ -1732,6 +1738,7 @@ const norm = p => ({
     fa: p.fecha_avance || null,
     dis: p.distribuidor || '',
     sd: p.setd || '',
+    trf: (p.trafo || '').trim(),
     cl: p.cliente || '',
     tt: p.tipo_trabajo || '',
     de: p.descripcion || '',
@@ -4170,6 +4177,7 @@ async function imprimirPedidoAsync(p) {
             <h2>🏢 Datos del Trabajo</h2>
             <table>
                 <tr><td>Distribuidor:</td><td>${escHtmlPrint(p.dis)}</td></tr>
+                ${String(p.trf || '').trim() ? `<tr><td>Trafo:</td><td>${escHtmlPrint(p.trf)}</td></tr>` : ''}
                 ${p.sd ? `<tr><td>SETD:</td><td>${escHtmlPrint(p.sd)}</td></tr>` : ''}
                 ${String(p.nis || '').trim() ? `<tr><td>NIS</td><td>${escHtmlPrint(p.nis)}</td></tr>` : ''}
                 ${String(p.cnom || p.cl || '').trim() ? `<tr><td>Nombre y apellido</td><td>${escHtmlPrint(p.cnom || p.cl)}</td></tr>` : ''}
@@ -4935,15 +4943,44 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const numVal = (document.getElementById('ped-cli-num')?.value || '').trim();
         const locVal = (document.getElementById('ped-cli-loc')?.value || '').trim();
         const refUbicVal = (document.getElementById('ped-cli-ref')?.value || '').trim();
+        let disVal = (document.getElementById('di2').value || '').trim();
+        let sdVal = (document.getElementById('sd').value || '').trim();
+        const trafoInp = document.getElementById('trafo-pedido');
+        let trafoVal = (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
+        const tieneNisMed = !!nisVal;
+        if (!tieneNisMed) {
+            disVal = '';
+            sdVal = '';
+            trafoVal = '';
+        }
+        if (tieneNisMed && (disVal || trafoVal) && !modoOffline && NEON_OK) {
+            const cZona = await contarPedidosCorteZonaNeon(disVal, trafoVal);
+            if (cZona >= 4) {
+                const wa = urlWhatsappAtencionDesdeCfg();
+                const msg =
+                    'En las últimas horas hay varios reclamos abiertos en la misma zona (mismo distribuidor o trafo). Podría tratarse de un corte de sector o general.\n\n' +
+                    (wa ? '¿Abrimos WhatsApp para hablar con un representante de la cooperativa antes de cargar el reclamo?' : 'Contactá a la cooperativa antes de cargar otro reclamo.');
+                if (wa && confirm(msg)) {
+                    window.open(wa, '_blank', 'noopener');
+                    btn.disabled = false;
+                    return;
+                }
+                if (!confirm('¿Registrar el reclamo de todas formas?')) {
+                    btn.disabled = false;
+                    return;
+                }
+            }
+        }
         const queryInsert = `INSERT INTO pedidos(
-            numero_pedido, distribuidor, setd, cliente, tipo_trabajo,
+            numero_pedido, distribuidor, setd, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion
         ) VALUES(
             ${esc(numPedido)},
-            ${esc(document.getElementById('di2').value)},
-            ${esc(document.getElementById('sd').value || null)},
+            ${esc(disVal || null)},
+            ${esc(sdVal || null)},
+            ${esc(trafoVal || null)},
             ${esc(cliNomVal || null)},
             ${esc(document.getElementById('tt').value || null)},
             ${esc(document.getElementById('de').value)},
@@ -4975,8 +5012,9 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 np: numPedido,
                 f: new Date().toISOString(),
                 fc: null, fa: null,
-                dis: document.getElementById('di2').value,
-                sd: document.getElementById('sd').value || '',
+                dis: disVal,
+                sd: sdVal,
+                trf: trafoVal,
                 cl: cliNomVal,
                 cnom: cliNomVal,
                 ccal: calleVal,
@@ -5141,6 +5179,7 @@ async function updPedido(id, campos, usuarioId) {
             cliente_calle: 'ccal',
             cliente_numero_puerta: 'cnum',
             cliente_localidad: 'cloc',
+            trafo: 'trf',
             usuario_inicio_id: 'ui2',
             usuario_cierre_id: 'uci',
             usuario_avance_id: 'uav'
@@ -5592,7 +5631,8 @@ function detalle(p) {
         
         <div class="ds">
             <h4>🏢 Datos del Trabajo</h4>
-            <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis}</span></div>
+            <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis || '—'}</span></div>
+            ${String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
             ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
@@ -5714,6 +5754,7 @@ function exportPedido(pedidos, nombre) {
             'Fecha Cierre': p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : '',
             'Fecha Último Avance': p.fa ? new Date(p.fa).toLocaleString('es-AR', {...tz, hour12:false}) : '',
             'Distribuidor': p.dis || '',
+            'Trafo': p.trf || '',
             'Cliente': p.cl || '',
             'SETD': p.sd || '',
             'Tipo de Trabajo': p.tt || '',
@@ -6200,6 +6241,12 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     const raw = (inpN.value || '').trim();
     if (!raw) {
         _nisSocioCatalogoUltimoValor = '';
+        const di2c = document.getElementById('di2');
+        const sdC = document.getElementById('sd');
+        const tfC = document.getElementById('trafo-pedido');
+        if (di2c) di2c.value = '';
+        if (sdC) sdC.value = '';
+        if (tfC) tfC.value = '';
         return;
     }
     if (!forzar && raw === _nisSocioCatalogoUltimoValor) return;
@@ -6217,6 +6264,10 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
         const tel = document.getElementById('ped-tel-contacto');
         if (sd && row.transformador != null && String(row.transformador).trim()) {
             sd.value = String(row.transformador).trim();
+        }
+        const tf = document.getElementById('trafo-pedido');
+        if (tf && row.transformador != null && String(row.transformador).trim()) {
+            tf.value = String(row.transformador).trim();
         }
         if (cl && row.nombre != null && String(row.nombre).trim()) {
             cl.value = String(row.nombre).trim();
@@ -6361,6 +6412,7 @@ try {
             destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
             iniciarPollSincroPedidosTecnico();
+            detenerPollBannerReclamoCliente();
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
@@ -6381,6 +6433,7 @@ try {
                 await cargarConfigEmpresa();
             }
             await cargarPedidos();
+            if (esAdmin()) iniciarPollBannerReclamoCliente();
             
             if (!modoOffline && offlineQueue().length > 0) {
                 setTimeout(sincronizarOffline, 2000);
@@ -6407,7 +6460,7 @@ async function cargarDistribuidores() {
         // Repoblar el select de distribuidores
         const sd = document.getElementById('di2');
         if (sd) {
-            sd.innerHTML = '<option value="">Seleccionar distribuidor...</option>';
+            sd.innerHTML = '<option value="">— Sin NIS / sin catálogo —</option>';
             const grupos = {};
             DIST.forEach(d => {
                 const g = d.g || 'Sin clasificar';
@@ -6515,6 +6568,140 @@ async function pedidosFiltroTenantSql() {
     }
     return _pedidosTenantSqlCache;
 }
+
+function urlWhatsappAtencionDesdeCfg() {
+    const raw = String((window.EMPRESA_CFG || {}).telefono || '').replace(/\D/g, '');
+    if (raw.length < 8) return '';
+    const n = raw.startsWith('54') ? raw : '54' + raw.replace(/^0+/, '');
+    return 'https://wa.me/' + n;
+}
+
+async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
+    const d = disVal != null ? String(disVal).trim() : '';
+    const t = trafoVal != null ? String(trafoVal).trim() : '';
+    if (!d && !t) return 0;
+    const tsql = await pedidosFiltroTenantSql();
+    const ors = [];
+    if (d) ors.push(`TRIM(COALESCE(distribuidor,'')) = TRIM(${esc(d)})`);
+    if (t) ors.push(`TRIM(COALESCE(trafo,'')) = TRIM(${esc(t)})`);
+    if (!ors.length) return 0;
+    const w = [
+        `estado IN ('Pendiente','Asignado','En ejecución')`,
+        `fecha_creacion > NOW() - INTERVAL '90 minutes'`,
+        `(${ors.join(' OR ')})`,
+    ];
+    try {
+        const r = await sqlSimple(`SELECT COUNT(*)::int AS c FROM pedidos WHERE ${w.join(' AND ')}${tsql}`);
+        return Number(r.rows?.[0]?.c) || 0;
+    } catch (_) {
+        if (!d) return 0;
+        try {
+            const r2 = await sqlSimple(
+                `SELECT COUNT(*)::int AS c FROM pedidos WHERE estado IN ('Pendiente','Asignado','En ejecución') AND fecha_creacion > NOW() - INTERVAL '90 minutes' AND TRIM(COALESCE(distribuidor,'')) = TRIM(${esc(d)})${tsql}`
+            );
+            return Number(r2.rows?.[0]?.c) || 0;
+        } catch (_e2) {
+            return 0;
+        }
+    }
+}
+
+let _adminBannerWatermarkId = 0;
+let _adminBannerTimer = null;
+let _pollBannerAdminInterval = null;
+
+async function iniciarWatermarkBannerReclamoCliente() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    try {
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(`SELECT COALESCE(MAX(id),0)::bigint AS m FROM pedidos WHERE 1=1${tsql}`);
+        _adminBannerWatermarkId = Number(r.rows?.[0]?.m) || 0;
+    } catch (_) {}
+}
+
+function ocultarBannerReclamoCliente() {
+    const box = document.getElementById('admin-banner-nuevo-cliente');
+    if (box) {
+        box.style.display = 'none';
+        delete box.dataset.visible;
+        delete box.dataset.pedidoId;
+    }
+    clearTimeout(_adminBannerTimer);
+    _adminBannerTimer = null;
+}
+
+async function pollBannerNuevoReclamoCliente() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    const box = document.getElementById('admin-banner-nuevo-cliente');
+    if (!box || box.dataset.visible === '1') return;
+    try {
+        const colO = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'origen_reclamo' LIMIT 1`
+        );
+        if (!colO.rows?.length) return;
+        const tsql = await pedidosFiltroTenantSql();
+        const r = await sqlSimple(
+            `SELECT id, numero_pedido, tipo_trabajo FROM pedidos WHERE id > ${esc(_adminBannerWatermarkId)} AND COALESCE(origen_reclamo,'') = 'whatsapp'${tsql} ORDER BY id ASC LIMIT 1`
+        );
+        const row = r.rows?.[0];
+        if (!row) return;
+        const nid = Number(row.id);
+        _adminBannerWatermarkId = Math.max(_adminBannerWatermarkId, nid);
+        const txt = document.getElementById('admin-banner-nuevo-cliente-txt');
+        if (txt) {
+            const tit = (row.tipo_trabajo || '').trim();
+            txt.textContent = `Nuevo reclamo de cliente · #${row.numero_pedido || nid}${tit ? ' · ' + tit : ''}`;
+        }
+        box.style.display = 'flex';
+        box.dataset.visible = '1';
+        box.dataset.pedidoId = String(nid);
+        clearTimeout(_adminBannerTimer);
+        _adminBannerTimer = setTimeout(() => ocultarBannerReclamoCliente(), 30000);
+    } catch (_) {}
+}
+
+function detenerPollBannerReclamoCliente() {
+    if (_pollBannerAdminInterval) {
+        clearInterval(_pollBannerAdminInterval);
+        _pollBannerAdminInterval = null;
+    }
+    ocultarBannerReclamoCliente();
+}
+
+function iniciarPollBannerReclamoCliente() {
+    detenerPollBannerReclamoCliente();
+    if (!esAdmin() || modoOffline || !NEON_OK) return;
+    void (async () => {
+        await iniciarWatermarkBannerReclamoCliente();
+        _pollBannerAdminInterval = setInterval(() => { void pollBannerNuevoReclamoCliente(); }, 5000);
+        void pollBannerNuevoReclamoCliente();
+    })();
+}
+
+async function adminBannerClickVerDetalle() {
+    const box = document.getElementById('admin-banner-nuevo-cliente');
+    const pid = box?.dataset?.pedidoId;
+    ocultarBannerReclamoCliente();
+    if (!pid) return;
+    let p = app.p.find(x => String(x.id) === String(pid));
+    if (!p && _sql && NEON_OK) {
+        try {
+            const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
+            const row = rr.rows?.[0];
+            if (row) {
+                p = norm(row);
+                const ix = app.p.findIndex(x => String(x.id) === String(p.id));
+                if (ix >= 0) app.p[ix] = p;
+                else app.p.unshift(p);
+            }
+        } catch (_) {}
+    }
+    if (p) detalle(p);
+    else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
+}
+
+window.adminBannerClickVerDetalle = adminBannerClickVerDetalle;
+window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
 
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {

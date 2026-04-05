@@ -14,6 +14,11 @@ import {
   notifyPedidoClienteActualizacionWhatsAppSafe,
 } from "../services/whatsappService.js";
 import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
+import {
+  lookupDistribuidorTrafoPorNisMedidor,
+  contarPedidosAbiertosMismaZona,
+  OUTAGE_SECTOR_MULTI_RECLAMO,
+} from "../services/pedidoZonaOutage.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -150,8 +155,6 @@ async function getPedidoById(id) {
 router.post("/", async (req, res) => {
   try {
     const {
-      distribuidor,
-      setd,
       cliente,
       cliente_nombre,
       cliente_calle,
@@ -184,7 +187,35 @@ router.post("/", async (req, res) => {
 
     const prioridadFinal = normalizarPrioridadPedido(prioridad, tt);
 
-    // Compatibilidad: por ahora no forzamos nis/medidor.
+    const nisK = String(nis || "").trim();
+    const medK = String(medidor || "").trim();
+    const tieneNisOMedidor = !!(nisK || medK);
+    let distribuidorFinal = null;
+    let setdFinal = null;
+    let trafoFinal = null;
+    if (tieneNisOMedidor) {
+      const lk = await lookupDistribuidorTrafoPorNisMedidor(nisK || medK);
+      distribuidorFinal = lk.distribuidor;
+      setdFinal = lk.trafo;
+      trafoFinal = lk.trafo;
+    }
+
+    if (tieneNisOMedidor && (distribuidorFinal || trafoFinal)) {
+      const cnt = await contarPedidosAbiertosMismaZona({
+        tenantId,
+        distribuidor: distribuidorFinal,
+        trafo: trafoFinal,
+      });
+      if (cnt >= 4) {
+        return res.status(409).json({
+          error: "corte_zona_probable",
+          code: OUTAGE_SECTOR_MULTI_RECLAMO,
+          mensaje:
+            "Hay varios reclamos abiertos en la misma zona en las últimas horas; podría tratarse de un corte de sector o general. Contactá a la cooperativa antes de registrar otro reclamo.",
+        });
+      }
+    }
+
     const fotosB64 = parseFotosBase64(req.body);
     let fotoUrls = [];
     if (fotosB64.length) fotoUrls = await uploadManyBase64(fotosB64);
@@ -206,20 +237,21 @@ router.post("/", async (req, res) => {
 
     const insert = await query(
       `INSERT INTO pedidos (
-        numero_pedido, distribuidor, setd, cliente, tipo_trabajo, descripcion, prioridad,
+        numero_pedido, distribuidor, setd, trafo, cliente, tipo_trabajo, descripcion, prioridad,
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
         telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
         cliente_calle, cliente_localidad, cliente_numero_puerta, cliente_direccion
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,
-        'Pendiente',0,$8,$9,$10,$10,NOW(),
-        $11,$12,$13,$14,$15,
-        $16,$17,$18,$19
+        $1,$2,$3,$4,$5,$6,$7,$8,
+        'Pendiente',0,$9,$10,$11,$11,NOW(),
+        $12,$13,$14,$15,$16,
+        $17,$18,$19,$20
       ) RETURNING *`,
       [
         numeroPedido,
-        distribuidor || null,
-        setd || null,
+        distribuidorFinal,
+        setdFinal,
+        trafoFinal,
         cliente || null,
         tipo_trabajo || null,
         descripcion || null,

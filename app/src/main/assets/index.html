@@ -46,6 +46,12 @@
 
 <!-- MAIN SCREEN -->
 <div id="ms" class="screen">
+  <div id="admin-banner-nuevo-cliente" class="admin-banner-nuevo-cliente" style="display:none" role="status" aria-live="polite">
+    <span class="admin-banner-nuevo-cliente-ic" aria-hidden="true"><i class="fas fa-bell"></i></span>
+    <span id="admin-banner-nuevo-cliente-txt" class="admin-banner-nuevo-cliente-txt"></span>
+    <button type="button" class="admin-banner-btn" onclick="adminBannerClickVerDetalle()">Ver detalle</button>
+    <button type="button" class="admin-banner-x" onclick="adminBannerCerrarSinDetalle()" title="Cerrar">&times;</button>
+  </div>
   <div class="hd">
     <button type="button" id="mt" class="ib" title="Admin: abre el asistente de marca, logo y ubicación base del tenant. Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
     <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
@@ -167,9 +173,9 @@
           <option value="proyectadas">Proyectadas (según configuración de empresa)</option>
         </select>
       </div>
-      <div class="fg"><label for="di2">Distribuidor *</label>
-        <select id="di2" required>
-          <option value="">Seleccionar distribuidor...</option>
+      <div class="fg"><label for="di2">Distribuidor</label>
+        <select id="di2">
+          <option value="">— Solo se completa con NIS/medidor en catálogo —</option>
         </select>
       </div>
       <div class="fg"><label for="nis" id="lbl-nis">NIS / Medidor</label>
@@ -177,6 +183,9 @@
       </div>
       <div class="fr">
         <div class="fg hf"><label for="sd">SETD</label><input type="text" id="sd" placeholder="Ej: 1234"></div>
+        <div class="fg hf"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" readonly placeholder="Se completa con NIS en catálogo" style="background:var(--bg2,#f1f5f9);cursor:default"></div>
+      </div>
+      <div class="fr">
         <div class="fg hf"><label for="cl" id="lbl-cl">Nombre y apellido</label><input type="text" id="cl" placeholder="Titular del reclamo"></div>
       </div>
       <div class="fr">
