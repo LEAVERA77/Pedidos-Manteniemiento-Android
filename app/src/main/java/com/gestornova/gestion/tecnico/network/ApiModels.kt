@@ -49,6 +49,9 @@ data class PedidoDto(
     @SerializedName("suministro_fases") val suministroFases: String? = null,
     @SerializedName("tecnico_asignado_id") val tecnicoAsignadoId: Long? = null,
     @SerializedName("telefono_contacto") val telefonoContacto: String? = null,
+    /** Texto libre que envía el cliente por WhatsApp tras el aviso de cierre. */
+    @SerializedName("opinion_cliente") val opinionCliente: String? = null,
+    @SerializedName("fecha_opinion_cliente") val fechaOpinionCliente: String? = null,
     @SerializedName("lat") val lat: Double? = null,
     @SerializedName("lng") val lng: Double? = null,
     @SerializedName("fotos") val fotos: List<String>? = null,

@@ -96,6 +96,8 @@ private fun DetalleBody(p: PedidoDto) {
     p.avance?.let { DetailLine(stringResource(R.string.tecnico_mvp_avance), "$it%") }
     DetailLine(stringResource(R.string.tecnico_mvp_tipo_trabajo), p.tipoTrabajo)
     DetailLine(stringResource(R.string.tecnico_mvp_trabajo_realizado), p.trabajoRealizado)
+    DetailLine(stringResource(R.string.tecnico_mvp_observacion_cliente_wa), p.opinionCliente)
+    DetailLine(stringResource(R.string.tecnico_mvp_fecha_observacion_cliente), p.fechaOpinionCliente)
     DetailLine(stringResource(R.string.tecnico_mvp_fecha_creacion), p.fechaCreacion)
     DetailLine(stringResource(R.string.tecnico_mvp_telefono), p.telefonoContacto)
 }

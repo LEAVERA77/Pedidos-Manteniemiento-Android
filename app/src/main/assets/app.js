@@ -1821,6 +1821,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_fases TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS trafo TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS barrio TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_opinion_cliente TIMESTAMPTZ`);
                 try {
                     await sqlSimple(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 } catch (_) {}
@@ -2155,7 +2157,13 @@ const norm = p => ({
     firma: p.firma_cliente || null,
     chkl: p.checklist_seguridad || null,
     tel: (p.telefono_contacto || '').trim(),
-    opin: p.opinion_cliente || null,
+    opin: (() => {
+        const v = p.opinion_cliente;
+        if (v == null || v === '') return null;
+        const s = String(v).trim();
+        return s || null;
+    })(),
+    fopin: p.fecha_opinion_cliente || null,
     orc: String(p.origen_reclamo || '').trim().toLowerCase()
 });
 
@@ -4777,6 +4785,13 @@ async function imprimirPedidoAsync(p) {
             : `<h2>✍️ Firma del ${_labFirma}</h2><p style="font-size:9pt"><em>Sin firma registrada.</em></p>`)
         : '';
 
+    const opinPrint =
+        p.opin && String(p.opin).trim()
+            ? `<h2>💬 Observación del cliente (WhatsApp)</h2>
+            <p style="font-size:9pt;white-space:pre-wrap">${escHtmlPrint(String(p.opin).trim())}</p>
+            ${p.fopin ? `<p style="font-size:8pt;color:#64748b">Registrada: ${escHtmlPrint(fmtInformeFecha(p.fopin))}</p>` : ''}`
+            : '';
+
     const contenidoCuerpo = `
             <h1>Pedido de Mantenimiento N° ${escHtmlPrint(p.np)}</h1>
             
@@ -4816,6 +4831,7 @@ async function imprimirPedidoAsync(p) {
                 ${p.tr ? `<tr><td>Trabajo realizado:</td><td>${escHtmlPrint(p.tr)}</td></tr>` : ''}
             </table>
             ` : ''}
+            ${opinPrint}
             ${matSection}
             ${firmaSection}
             
@@ -6195,6 +6211,43 @@ document.getElementById('cc2').addEventListener('click', async () => {
 
 
 function detalle(p) {
+    const pidKey = String(p.id);
+    try {
+        const dmRoot = document.getElementById('dm');
+        if (dmRoot) dmRoot.dataset.detallePedidoId = pidKey;
+    } catch (_) {}
+
+    if (!pidKey.startsWith('off_') && !modoOffline && NEON_OK && _sql) {
+        void (async () => {
+            try {
+                const pidNum = parseInt(p.id, 10);
+                if (!Number.isFinite(pidNum)) return;
+                const r = await sqlSimple(
+                    `SELECT opinion_cliente, fecha_opinion_cliente FROM pedidos WHERE id=${esc(pidNum)} LIMIT 1`
+                );
+                const row = r.rows?.[0];
+                if (!row) return;
+                const dmOpen = document.getElementById('dm');
+                if (!dmOpen?.classList.contains('active') || dmOpen.dataset.detallePedidoId !== pidKey) return;
+                const cur = app.p.find((x) => String(x.id) === pidKey);
+                if (!cur) return;
+                const o = row.opinion_cliente;
+                const os = o != null && String(o).trim() ? String(o).trim() : '';
+                let changed = false;
+                if (os && os !== String(cur.opin || '')) {
+                    cur.opin = os;
+                    changed = true;
+                }
+                const fp = row.fecha_opinion_cliente;
+                if (fp && String(fp) !== String(cur.fopin || '')) {
+                    cur.fopin = fp;
+                    changed = true;
+                }
+                if (changed) detalle(cur);
+            } catch (_) {}
+        })();
+    }
+
     const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
     const f = p.f ? new Date(p.f).toLocaleString('es-AR', {...tz, hour12:false}) : '--';
     const fc = p.fc ? new Date(p.fc).toLocaleString('es-AR', {...tz, hour12:false}) : null;
@@ -6264,6 +6317,14 @@ function detalle(p) {
     }
     const htmlDatosCliente = filasDatosCliente.length
         ? `<div class="dr" style="grid-column:1/-1;margin:.15rem 0 .35rem"><span class="dl" style="font-weight:700;color:var(--bd)">Datos cargados por el cliente</span></div>${filasDatosCliente.join('')}`
+        : '';
+    const opinTxtDet = (p.opin != null && String(p.opin).trim()) ? String(p.opin).trim() : '';
+    const htmlOpinionCliente = opinTxtDet
+        ? `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
+            <h4>💬 Observación del cliente (WhatsApp)</h4>
+            <div class="trb">${escDet(opinTxtDet)}</div>
+            ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
+           </div>`
         : '';
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
@@ -6341,6 +6402,8 @@ function detalle(p) {
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         
+        ${htmlOpinionCliente}
+        
         ${p.es === 'Cerrado' ? `
         <div class="ds">
             <h4>✅ Cierre del Pedido</h4>
@@ -6350,7 +6413,6 @@ function detalle(p) {
             ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
             ${chkResumen}
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
-            ${p.opin ? `<div class="dr" style="flex-direction:column;gap:.3rem;margin-top:.5rem"><span class="dl">Opinión del cliente (WhatsApp)</span><div class="trb">${String(p.opin).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
         </div>` : ''}
 
         ${esTipoPedidoFactibilidad(p.tt) ? '' : `
