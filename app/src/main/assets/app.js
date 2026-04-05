@@ -1589,6 +1589,11 @@ async function conectarNeon() {
                     ultimo_numero INT NOT NULL DEFAULT 0
                 )`);
             } catch(_) {}
+            try {
+                await sqlSimple(
+                    'ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE'
+                );
+            } catch (_) {}
             app.ok = true;
             NEON_OK = true;
             dbs.className = 'dbs ok';
@@ -1751,11 +1756,12 @@ document.getElementById('lf').addEventListener('submit', async e => {
         
         let resultado = null;
         const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
+        const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         // Primero la consulta mínima (evita 400 en Neon si no existen tenant_id / cliente_id).
         const loginSqlAttempts = [
-            `SELECT id, email, nombre, rol ${loginWhere}`,
-            `SELECT id, email, nombre, rol, tenant_id ${loginWhere}`,
-            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id ${loginWhere}`
+            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`
         ];
         try {
             let lastErr = null;
@@ -1787,12 +1793,26 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 email: usuario.email,
                 nombre: usuario.nombre || 'Administrador',
                 rol: normalizarRolStr(usuario.rol || 'tecnico'),
-                tenant_id: usuario.tenant_id != null ? Number(usuario.tenant_id) : tenantIdActual()
+                tenant_id: usuario.tenant_id != null ? Number(usuario.tenant_id) : tenantIdActual(),
+                must_change_password: !!usuario.must_change_password
             };
             guardarUsuarioOffline(u, pw);
             await loginApiJwt(em, pw);
             if (!getApiToken()) {
                 toast('La API (JWT) no respondió: el setup SaaS y datos del tenant pueden no cargar hasta que revises API_BASE_URL o la red.', 'warning');
+            }
+            const rolL = normalizarRolStr(u.rol);
+            const forzarCambioAndroid =
+                u.must_change_password &&
+                esAndroidWebViewMapa() &&
+                (rolL === 'tecnico' || rolL === 'supervisor');
+            if (forzarCambioAndroid) {
+                window._pendingAndroidPasswordChange = { u, passwordActual: pw };
+                document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
+                lb.disabled = false;
+                toast('Debés definir una nueva contraseña para continuar.', 'info');
+                return;
             }
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
@@ -8002,6 +8022,9 @@ async function cargarListaUsuarios() {
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_expiry TIMESTAMPTZ");
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(20)");
         await sqlSimple("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS whatsapp_notificaciones BOOLEAN DEFAULT TRUE");
+        await sqlSimple(
+            "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"
+        );
     } catch(_) {}
     const cont = document.getElementById('lista-usuarios-admin');
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
@@ -8024,8 +8047,9 @@ async function cargarListaUsuarios() {
                 </td>
                 <td><span style="background:var(--bg);padding:.15rem .5rem;border-radius:.3rem;font-size:.78rem;font-weight:600">${u.rol}</span></td>
                 <td><span style="color:${u.activo ? '#166534' : '#dc2626'};font-weight:600">${u.activo ? '✓ Activo' : '✗ Inactivo'}</span></td>
-                <td style="display:flex;gap:.3rem">
+                <td style="display:flex;gap:.3rem;flex-wrap:wrap">
                     <button class="btn-sm" onclick="editarTelefonoWhatsappUsuario(${u.id}, ${escJs(u.telefono || '')}, ${u.whatsapp_notificaciones ? 'true' : 'false'})" style="background:#ecfeff;border:1px solid #a5f3fc;color:#0f766e">WhatsApp</button>
+                    ${['tecnico','supervisor'].includes(String(u.rol||'').toLowerCase()) ? `<button type="button" class="btn-sm" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e" onclick="adminGenerarClaveProvisionalUsuario(${u.id})" title="Solo el admin puede recuperar la clave del técnico; en Android le pedirá cambiarla al ingresar">Clave provisoria</button>` : ''}
                     <button class="btn-sm warning" onclick="toggleUsuario(${u.id}, ${!u.activo})">${u.activo ? 'Desactivar' : 'Activar'}</button>
                     ${u.email !== 'admin' ? `<button class="btn-sm danger" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ''}
                 </td>
@@ -8048,8 +8072,8 @@ async function crearUsuario() {
     if (!email || !nombre || !pw) { toast('Completá todos los campos', 'error'); return; }
     if (telefono && !esTelefonoWhatsappValido(telefono)) { toast('Teléfono inválido. Usá formato +543434540250', 'error'); return; }
     try {
-        await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones)
-            VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE)`);
+        await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password)
+            VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE)`);
         toast('Usuario creado: ' + nombre, 'success');
         document.getElementById('form-usuario').style.display = 'none';
         ['nu-email','nu-nombre','nu-pw','nu-telefono'].forEach(id => document.getElementById(id).value = '');
@@ -8101,6 +8125,120 @@ async function eliminarUsuario(id) {
         cargarListaUsuarios();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
+
+function _esEmailValidoSimple(s) {
+    const t = String(s || '').trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
+async function leerEmailContactoEmpresaNeon() {
+    try {
+        const r = await sqlSimple(
+            `SELECT valor FROM empresa_config WHERE lower(trim(clave)) = 'email_contacto' LIMIT 1`
+        );
+        const v = (r.rows?.[0]?.valor || '').trim();
+        return _esEmailValidoSimple(v) ? v : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+/** Solo admin: genera clave aleatoria, marca must_change_password (Android pedirá cambio al ingresar). */
+async function adminGenerarClaveProvisionalUsuario(userId) {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        toast('Sin permisos o sin conexión.', 'error');
+        return;
+    }
+    const id = Number(userId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    try {
+        const r = await sqlSimple(
+            `SELECT id, email, nombre, rol FROM usuarios WHERE id = ${esc(id)} LIMIT 1`
+        );
+        const u = r.rows?.[0];
+        if (!u) {
+            toast('Usuario no encontrado.', 'error');
+            return;
+        }
+        const rol = normalizarRolStr(u.rol || '');
+        if (rol !== 'tecnico' && rol !== 'supervisor') {
+            toast('Solo aplica a técnicos o supervisores.', 'warning');
+            return;
+        }
+        const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let pwd = '';
+        for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+        await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(pwd)}, must_change_password = TRUE, reset_token = NULL, reset_expiry = NULL WHERE id = ${esc(id)}`);
+        window.prompt(
+            `Clave provisoria para ${u.nombre || u.email} — copiá y entregála al técnico (en Android deberá cambiarla al ingresar):`,
+            pwd
+        );
+        toast('Clave provisional generada.', 'success');
+        await cargarListaUsuarios();
+        try {
+            const ru = await sqlSimple(
+                'SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre'
+            );
+            app.usuariosCache = ru.rows || [];
+        } catch (_) {}
+    } catch (e) {
+        toast('Error: ' + (e.message || e), 'error');
+    }
+}
+window.adminGenerarClaveProvisionalUsuario = adminGenerarClaveProvisionalUsuario;
+
+async function confirmarCambioPasswordObligatorioAndroid() {
+    const pend = window._pendingAndroidPasswordChange;
+    const msg = document.getElementById('forzar-cambio-pw-msg');
+    if (!pend || !pend.u || !pend.passwordActual) {
+        if (msg) msg.textContent = 'Sesión inválida. Volvé a iniciar sesión.';
+        return;
+    }
+    const n1 = document.getElementById('forzar-cambio-pw-nueva')?.value || '';
+    const n2 = document.getElementById('forzar-cambio-pw-nueva2')?.value || '';
+    if (!n1 || !n2) {
+        if (msg) msg.textContent = 'Completá ambos campos.';
+        return;
+    }
+    if (n1 !== n2) {
+        if (msg) msg.textContent = 'Las contraseñas nuevas no coinciden.';
+        return;
+    }
+    if (n1.length < 4) {
+        if (msg) msg.textContent = 'La contraseña debe tener al menos 4 caracteres.';
+        return;
+    }
+    if (n1 === pend.passwordActual) {
+        if (msg) msg.textContent = 'La nueva contraseña debe ser distinta de la provisional.';
+        return;
+    }
+    try {
+        const r = await sqlSimple(
+            `UPDATE usuarios SET password_hash = ${esc(n1)}, must_change_password = FALSE, reset_token = NULL, reset_expiry = NULL
+             WHERE id = ${esc(pend.u.id)} AND password_hash = ${esc(pend.passwordActual)}
+             RETURNING id`
+        );
+        if (!(r.rows || []).length) {
+            if (msg) msg.textContent = 'No se pudo actualizar (revisá la clave actual).';
+            return;
+        }
+        document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
+        ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        if (msg) msg.textContent = '';
+        const u = { ...pend.u, must_change_password: false };
+        delete window._pendingAndroidPasswordChange;
+        guardarUsuarioOffline(u, n1);
+        await loginApiJwt(u.email, n1);
+        entrarConUsuario(u, false);
+        toast('Contraseña actualizada. Bienvenido ' + u.nombre, 'success');
+    } catch (e) {
+        if (msg) msg.textContent = 'Error: ' + (e.message || e);
+    }
+}
+window.confirmarCambioPasswordObligatorioAndroid = confirmarCambioPasswordObligatorioAndroid;
 
 // ── Distribuidores admin ──────────────────────────────────────
 async function cargarListaDistribuidoresAdmin() {
@@ -9373,7 +9511,7 @@ async function pasoResetPw() {
 
     if (_resetPaso === 1) {
         const email = document.getElementById('reset-email').value.trim();
-        if (!email) { msg.textContent = 'Ingresá email o usuario'; return; }
+        if (!email) { msg.textContent = 'Ingresá el email de tu cuenta administrador'; return; }
         _resetUsuarioAdmin = false;
         try {
             const emailLc = email.toLowerCase();
@@ -9386,44 +9524,70 @@ async function pasoResetPw() {
                   )
                 ORDER BY CASE WHEN lower(coalesce(email,'')) = ${esc(emailLc)} THEN 0 ELSE 1 END
                 LIMIT 1`);
-            if (!r.rows[0]) { msg.textContent = 'Email no encontrado o usuario inactivo'; return; }
+            if (!r.rows[0]) { msg.textContent = 'Cuenta no encontrada o inactiva'; return; }
             const usuario = r.rows[0];
-            _resetUsuarioAdmin = String(usuario.rol || '').toLowerCase() === 'admin';
+            const rolRaw = String(usuario.rol || '').toLowerCase();
+            if (rolRaw !== 'admin' && rolRaw !== 'administrador') {
+                msg.textContent =
+                    'La recuperación por correo es solo para administradores. Los técnicos deben pedir una clave provisoria al admin (panel Usuarios).';
+                return;
+            }
+            _resetUsuarioAdmin = true;
 
-            // Generar token de 6 dígitos
+            const destManual = (document.getElementById('reset-email-destino')?.value || '').trim();
+            let toEmail = '';
+            if (destManual) {
+                if (!_esEmailValidoSimple(destManual)) {
+                    msg.textContent = 'El correo de destino no es válido.';
+                    return;
+                }
+                toEmail = destManual;
+            } else {
+                toEmail = await leerEmailContactoEmpresaNeon();
+                if (!toEmail) toEmail = String(usuario.email || '').trim();
+            }
+            if (!_esEmailValidoSimple(toEmail)) {
+                msg.textContent =
+                    'No hay correo de destino. Completá «Enviar código a» o cargá el email de la empresa en el panel Admin → Empresa (email de contacto).';
+                return;
+            }
+
             const token = String(Math.floor(100000 + Math.random() * 900000));
             _resetTokenActual = token;
-            const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+            const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
             await sqlSimple(`UPDATE usuarios SET reset_token = ${esc(token)}, reset_expiry = ${esc(expiry)} WHERE id = ${esc(usuario.id)}`);
 
             const esAndroidLocal = !!window.AndroidDevice && (/GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:');
             if (esAndroidLocal) {
-                // EmailJS no funciona en WebView Android (403 non-browser).
-                // En la app mostramos el código temporal para continuar el reset.
                 msg.style.color = '#854d0e';
                 msg.innerHTML =
-                    `Android no puede enviar correo desde esta pantalla.<br>` +
-                    `Usá este código temporal local: <b>${token}</b>`;
+                    `En Android no se puede enviar el correo desde la app.<br>` +
+                    `Código temporal (válido ~30 min): <b>${token}</b><br>` +
+                    `<span style="font-size:.8rem">Si necesitás recibirlo por mail, usá la versión web en PC.</span>`;
                 document.getElementById('reset-codigo-wrap').style.display = 'block';
                 btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
                 _resetPaso = 2;
             } else {
-                // Enviar email con EmailJS (solo web navegador)
                 if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) {
-                    throw new Error('Servicio de correo no configurado en este entorno');
+                    throw new Error('Servicio de correo no configurado (config.json → emailjs)');
                 }
                 if (!window.emailjs || typeof emailjs.send !== 'function') {
-                    throw new Error('Servicio de correo no disponible en este momento');
+                    throw new Error('Servicio de correo no cargado; recargá la página');
                 }
-                await emailjs.send(cfg.serviceId, cfg.templateId, {
-                    to_email: usuario.email,
-                    to_name:  usuario.nombre,
-                    token:    token,
-                    app_name: window.EMPRESA_CFG?.nombre || 'GestorNova'
-                }, cfg.publicKey);
+                await emailjs.send(
+                    cfg.serviceId,
+                    cfg.templateId,
+                    {
+                        to_email: toEmail,
+                        to_name: usuario.nombre || usuario.email || 'Administrador',
+                        token,
+                        app_name: window.EMPRESA_CFG?.nombre || 'GestorNova'
+                    },
+                    cfg.publicKey
+                );
 
                 msg.style.color = '#166534';
-                msg.textContent = '✓ Código enviado a ' + email;
+                msg.textContent = `✓ Código enviado a ${toEmail}`;
                 document.getElementById('reset-codigo-wrap').style.display = 'block';
                 btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
                 _resetPaso = 2;
@@ -9431,12 +9595,11 @@ async function pasoResetPw() {
         } catch(e) {
             const em = _errMsg(e);
             const esAndroidLocal = !!window.AndroidDevice && (/GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:');
-            // Fallback explícito para recuperar admin en la app si falla correo.
             if (esAndroidLocal && _resetTokenActual && _resetUsuarioAdmin) {
                 msg.style.color = '#854d0e';
                 msg.innerHTML =
                     `No se pudo enviar el email (${em}).<br>` +
-                    `Recuperación local admin (solo este dispositivo): <b>${_resetTokenActual}</b>`;
+                    `Código temporal: <b>${_resetTokenActual}</b>`;
                 document.getElementById('reset-codigo-wrap').style.display = 'block';
                 btn.innerHTML = '<i class="fas fa-check"></i> Confirmar código';
                 _resetPaso = 2;
@@ -9462,7 +9625,9 @@ async function pasoResetPw() {
                   AND reset_expiry > NOW()
                 LIMIT 1`);
             if (!r.rows[0]) { msg.textContent = 'Código incorrecto o expirado'; return; }
-            await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(nuevaPw)}, reset_token = NULL, reset_expiry = NULL WHERE id = ${esc(r.rows[0].id)}`);
+            await sqlSimple(
+                `UPDATE usuarios SET password_hash = ${esc(nuevaPw)}, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE WHERE id = ${esc(r.rows[0].id)}`
+            );
             msg.style.color = '#166534';
             msg.textContent = '✓ Contraseña actualizada. Ya podés iniciar sesión.';
             btn.style.display = 'none';
@@ -9596,6 +9761,13 @@ if ('serviceWorker' in navigator) {
     if (window.APP_CONFIG?.emailjs?.publicKey) {
         const ejsScript = document.createElement('script');
         ejsScript.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+        ejsScript.onload = () => {
+            try {
+                if (window.emailjs && window.APP_CONFIG?.emailjs?.publicKey) {
+                    emailjs.init(window.APP_CONFIG.emailjs.publicKey);
+                }
+            } catch (_) {}
+        };
         document.head.appendChild(ejsScript);
     }
 
