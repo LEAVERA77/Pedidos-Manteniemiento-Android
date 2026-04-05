@@ -52,6 +52,14 @@ const MSG_ADDR_CALLE = "Ahora escribí el *nombre de la calle* (sin número), po
 const MSG_ADDR_NUMERO =
   "Por último el *número de puerta* (ej: *245*). Con esto buscamos el punto en el mapa." + MSG_SALIR_ATRAS;
 
+const MSG_SUMINISTRO_CONEXION =
+  "Para este tipo de reclamo necesitamos datos del *suministro eléctrico*.\n\n" +
+  "¿La conexión es *1)* *Aérea* o *2)* *Subterránea*?" +
+  MSG_SALIR_ATRAS;
+
+const MSG_SUMINISTRO_FASES =
+  "¿La instalación es *1)* *Monofásica* o *2)* *Trifásica*?" + MSG_SALIR_ATRAS;
+
 const MSG_NOMBRE_PERSONA =
   "¿Cuál es tu *nombre y apellido* (o nombre del titular del reclamo)?" + MSG_SALIR_ATRAS;
 
@@ -65,6 +73,8 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_addr_ciudad",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
+  "awaiting_suministro_conexion",
+  "awaiting_suministro_fases",
 ]);
 
 function interpretaMenuIdentificacion(raw) {
