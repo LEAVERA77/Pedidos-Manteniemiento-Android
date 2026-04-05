@@ -2388,6 +2388,7 @@ function toggleMapaCardSlideoff(cardId, hide) {
     if (tab) tab.classList.toggle('visible', !!hide);
     try {
         if (cardId === 'mapa-card-filtros') localStorage.setItem('pmg_slideoff_filtros', hide ? '1' : '0');
+        if (cardId === 'mapa-card-filtro-tipo') localStorage.setItem('pmg_slideoff_filtro_tipo', hide ? '1' : '0');
         if (cardId === 'mapa-card-colores') localStorage.setItem('pmg_slideoff_colores', hide ? '1' : '0');
         if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
     } catch (_) {}
@@ -2524,6 +2525,9 @@ function initBp2PanelFlotanteDesktop() {
     }, { passive: false });
 }
 
+let _mouiCardDragState = null;
+
+/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Solo escritorio ≥1024px. */
 function initMouiCardDraggable(cardId) {
     const card = document.getElementById(cardId);
     if (!card || esAndroidWebViewMapa()) return;
@@ -2532,6 +2536,7 @@ function initMouiCardDraggable(cardId) {
     card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
+        if (!window.matchMedia('(min-width:1024px)').matches) return;
         try {
             const raw = localStorage.getItem(key);
             if (!raw) return;
@@ -2539,78 +2544,105 @@ function initMouiCardDraggable(cardId) {
             if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
             card.style.right = 'auto';
             card.style.bottom = 'auto';
-            card.style.left = p.left + 'px';
-            card.style.top = p.top + 'px';
-            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 50, padX: 0, padBottom: 0 });
+            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padTop: 52, padX: 0, padBottom: 0 });
             card.style.left = c.left + 'px';
             card.style.top = c.top + 'px';
         } catch (_) {}
     };
     applySaved();
-    let suppressClick = false;
-    hd.addEventListener('click', (e) => {
-        if (suppressClick) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            suppressClick = false;
-        }
-    }, true);
-    const clampMove = (dragSt, clientX, clientY) => {
-        const dx = clientX - dragSt.sx;
-        const dy = clientY - dragSt.sy;
-        if (Math.abs(dx) + Math.abs(dy) > 4) dragSt.moved = true;
-        const nl = dragSt.sl + dx;
-        const nt = dragSt.st + dy;
-        card.style.right = 'auto';
-        card.style.bottom = 'auto';
-        const c = clampFloatingPanelToViewport(card, nl, nt, { padTop: 50, padX: 0, padBottom: 0 });
-        card.style.left = c.left + 'px';
-        card.style.top = c.top + 'px';
-    };
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
-        const dragSt = { sx: clientX, sy: clientY, sl: r.left, st: r.top, moved: false };
-        const move = (ev) => {
+        _mouiCardDragState = {
+            sx: clientX,
+            sy: clientY,
+            sl: r.left,
+            st: r.top,
+            moved: false
+        };
+        const onMove = (ev) => {
+            if (!_mouiCardDragState) return;
             const cx = ev.clientX != null ? ev.clientX : (ev.touches && ev.touches[0] ? ev.touches[0].clientX : 0);
             const cy = ev.clientY != null ? ev.clientY : (ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0);
-            clampMove(dragSt, cx, cy);
+            const dx = cx - _mouiCardDragState.sx;
+            const dy = cy - _mouiCardDragState.sy;
+            if (Math.abs(dx) + Math.abs(dy) > 5) _mouiCardDragState.moved = true;
+            if (_mouiCardDragState.moved && ev.cancelable) ev.preventDefault();
+            card.style.right = 'auto';
+            card.style.bottom = 'auto';
+            const c = clampFloatingPanelToViewport(card, _mouiCardDragState.sl + dx, _mouiCardDragState.st + dy, {
+                padTop: 52,
+                padX: 0,
+                padBottom: 0
+            });
+            card.style.left = c.left + 'px';
+            card.style.top = c.top + 'px';
         };
-        const up = () => {
-            document.removeEventListener('mousemove', move);
-            document.removeEventListener('mouseup', up);
-            document.removeEventListener('touchmove', move);
-            document.removeEventListener('touchend', up);
-            document.removeEventListener('touchcancel', up);
-            if (dragSt.moved) {
-                suppressClick = true;
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+            if (_mouiCardDragState && _mouiCardDragState.moved) {
                 try {
                     const br = card.getBoundingClientRect();
-                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 50, padX: 0, padBottom: 0 });
+                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padTop: 52, padX: 0, padBottom: 0 });
                     card.style.left = c.left + 'px';
                     card.style.top = c.top + 'px';
                     localStorage.setItem(key, JSON.stringify({ left: c.left, top: c.top }));
                 } catch (_) {}
+                window.__mouiCardDragJustEnded = true;
+                setTimeout(() => {
+                    window.__mouiCardDragJustEnded = false;
+                }, 450);
             }
+            _mouiCardDragState = null;
         };
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-        document.addEventListener('touchmove', move, { passive: false });
-        document.addEventListener('touchend', up);
-        document.addEventListener('touchcancel', up);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
     };
     hd.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('button')) return;
+        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
     });
-    hd.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1 || e.target.closest('button')) return;
-        e.preventDefault();
-        const t = e.touches[0];
-        startDrag(t.clientX, t.clientY);
-    }, { passive: false });
+    hd.addEventListener(
+        'touchstart',
+        (e) => {
+            if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+            if (e.touches.length !== 1 || e.target.closest('button')) return;
+            e.preventDefault();
+            const t = e.touches[0];
+            startDrag(t.clientX, t.clientY);
+        },
+        { passive: false }
+    );
+}
+
+/** Clic en la barra del panel = plegar/desplegar cuerpo (sin onclick inline, para no chocar con el arrastre). */
+function bindMouiCardHeaderToggles() {
+    const pairs = [
+        ['mapa-card-filtros', toggleMapaFiltrosBody],
+        ['mapa-card-filtro-tipo', toggleMapaFiltroTipoBody],
+        ['mapa-card-colores', toggleMapaColoresBody],
+        ['mapa-card-dashboard', toggleMapaDashBody]
+    ];
+    for (const [id, fn] of pairs) {
+        const hd = document.getElementById(id)?.querySelector('.moui-hd');
+        if (!hd || hd.dataset.mouiToggleBound === '1') continue;
+        hd.dataset.mouiToggleBound = '1';
+        hd.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            if (window.__mouiCardDragJustEnded) return;
+            try {
+                fn();
+            } catch (_) {}
+        });
+    }
 }
 
 function aplicarUIMapaPlataforma() {
@@ -2669,6 +2701,7 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-filtro-tipo'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-colores'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
+    try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaFiltroTiposRebuild(); } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
@@ -6954,7 +6987,6 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
 
 function programarRellenoSocioPorNisDebounced() {
     if (!rubroEmpresaParaAutofillIdentificadorPedido()) return;
-    if (!(esAndroidWebViewMapa() || esMobile)) return;
     clearTimeout(_nisPedidoCatalogoDebounceTimer);
     _nisPedidoCatalogoDebounceTimer = setTimeout(() => {
         void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: false });
@@ -6980,7 +7012,42 @@ if (nisPedidoInp) {
             onNisCommitRellenarDesdeSociosCatalogo();
         }
     });
+    /* WebView Android: el IME a veces solo dispara keyup con keyCode 13 */
+    nisPedidoInp.addEventListener('keyup', (ev) => {
+        if (ev.key === 'Enter' || ev.keyCode === 13) {
+            ev.preventDefault();
+            onNisCommitRellenarDesdeSociosCatalogo();
+        }
+    });
 }
+/** Al pasar a otro campo o tocar fuera del NIS (p. ej. Trafo readonly, mapa), WebView no siempre hace blur. */
+(function engancharNisAutofillAlSalirCampoModal() {
+    const pf = document.getElementById('pf');
+    const pm = document.getElementById('pm');
+    const nisEl = document.getElementById('nis');
+    if (!pf || !pm || !nisEl) return;
+    pf.addEventListener(
+        'focusin',
+        (ev) => {
+            const id = ev.target && ev.target.id;
+            if (!id || id === 'nis') return;
+            onNisCommitRellenarDesdeSociosCatalogo();
+        },
+        true
+    );
+    pm.addEventListener(
+        'pointerdown',
+        (ev) => {
+            try {
+                if (document.activeElement !== nisEl) return;
+                const t = ev.target;
+                if (t && (t === nisEl || nisEl.contains(t))) return;
+                onNisCommitRellenarDesdeSociosCatalogo();
+            } catch (_) {}
+        },
+        true
+    );
+})();
 
 // ── TRACKING DE UBICACIÓN (WebView ~2 min · navegador 15 min) — antes del restore de sesión ──
 let _trackingInterval = null;

@@ -22,8 +22,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .moui-card{pointer-events:auto;position:absolute;background:#fff;border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
 .moui-drag-handle{cursor:grab;opacity:.5;padding:0 .15rem;margin-right:.1rem;flex-shrink:0;touch-action:none;-webkit-user-select:none;user-select:none}
 .moui-drag-handle:active{cursor:grabbing;opacity:.85}
-#mapa-card-filtros{top:.45rem;left:.45rem}
-#mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw)}
+#mapa-card-filtro-tipo{top:6.75rem;left:.45rem;z-index:851}
+#mapa-card-filtros{top:.45rem;left:.45rem;z-index:852}
+#mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw);z-index:853}
 @media (max-width:700px){#mapa-card-dashboard{right:.45rem;left:.45rem;max-width:none;top:auto;bottom:5.5rem;max-height:38vh}}
 .moui-hd{font-weight:700;color:var(--bd);padding:.45rem .6rem;border-bottom:1px solid var(--bo);display:flex;align-items:center;gap:.35rem;cursor:pointer;user-select:none;font-size:.8rem}
 .moui-bd{padding:.5rem .55rem}
@@ -45,9 +46,11 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .moui-full{width:100%;margin-top:.5rem}
 #mapa-dash-body.collapsed{display:none}
 #mapa-filtros-body.collapsed{display:none}
+#mapa-filtro-tipo-body.collapsed{display:none}
 #mapa-colores-body.collapsed{display:none}
 /* Paneles del mapa: ocultar deslizando hacia la derecha (fuera de pantalla) */
 #mapa-card-filtros.moui-card-slideoff,
+#mapa-card-filtro-tipo.moui-card-slideoff,
 #mapa-card-colores.moui-card-slideoff,
 #mapa-card-dashboard.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
 .map-slide-tab{position:fixed;top:120px;left:0;z-index:9600;display:none;padding:.28rem .45rem;background:var(--bd);color:#fff;font-size:.65rem;font-weight:700;border-radius:0 .4rem .4rem 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);pointer-events:auto}
@@ -86,7 +89,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #mapa-android-strip .mas-scope-lbl{color:var(--tl);flex-shrink:0}
 #mapa-android-strip .mas-scope-select{font-size:.62rem!important;padding:.12rem .3rem!important;border-radius:.3rem!important;border:1px solid var(--bo)!important;max-width:min(11rem,52vw)}
 .map-slide-tab.map-tab-android-bar{top:64px;left:0!important;right:auto!important;z-index:9650}
-#mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:851;max-width:min(12rem,calc(100vw - 1rem));max-height:min(26vh,220px);overflow-y:auto;font-size:.58rem}
+#mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:854;max-width:min(12rem,calc(100vw - 1rem));max-height:min(26vh,220px);overflow-y:auto;font-size:.58rem}
 #mapa-card-colores .moui-bd{padding:.25rem .35rem .3rem}
 #mapa-card-colores .ll-hd{font-weight:700;color:var(--bd);font-size:.6rem;margin:0 0 .12rem;line-height:1.15}
 #mapa-card-colores .ll-grid{display:grid;grid-template-columns:1fr 1fr;gap:.06rem .3rem;align-items:center}
@@ -326,6 +329,12 @@ textarea{resize:vertical;min-height:80px}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
 @media(min-width:1024px){
+  /* Misma familia que bp2: viewport fijo para arrastre estable (coordenadas = clamp al viewport) */
+  #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff){
+    position:fixed!important;
+    z-index:10012!important;
+    max-height:min(72vh,calc(100dvh - 120px));
+  }
   /* left/top/right/bottom sin !important: el arrastre usa estilos inline */
   #ms .bp2{
     position:fixed!important;
