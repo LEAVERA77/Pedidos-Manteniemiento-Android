@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS socios_catalogo (
     id                  SERIAL PRIMARY KEY,
     nis_medidor         TEXT NOT NULL,
     nombre              TEXT,
-    domicilio           TEXT,
     calle               TEXT,
     numero              TEXT,
     telefono            TEXT,
@@ -44,10 +43,9 @@ ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT;
 ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT;
 
--- Migración: texto único de domicilio → calle (reimportar Excel para separar número)
-UPDATE socios_catalogo SET calle = TRIM(domicilio)
-WHERE (calle IS NULL OR TRIM(COALESCE(calle,'')) = '')
-  AND domicilio IS NOT NULL AND TRIM(COALESCE(domicilio,'')) <> '';
+-- Si existía la columna antigua domicilio, copiar a calle y eliminar (ejecutar una vez si aplica)
+-- UPDATE socios_catalogo SET calle = TRIM(domicilio) WHERE calle IS NULL AND domicilio IS NOT NULL;
+-- ALTER TABLE socios_catalogo DROP COLUMN IF EXISTS domicilio;
 
 -- Opcional: pedidos con técnico ya asignados pasan a estado coherente con la app
 -- UPDATE pedidos SET estado = 'Asignado'
