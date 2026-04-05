@@ -868,7 +868,7 @@ function poblarSelectTiposReclamo() {
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
 
-const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','setd','trafo',
+const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuidor','trafo',
     'cliente','tipo_trabajo','descripcion','prioridad','estado','avance','lat','lng',
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
@@ -1437,7 +1437,7 @@ async function conectarNeon() {
                     fecha_creacion TIMESTAMPTZ DEFAULT NOW(),
                     fecha_cierre TIMESTAMPTZ,
                     distribuidor TEXT NOT NULL,
-                    setd TEXT, cliente TEXT, tipo_trabajo TEXT,
+                    cliente TEXT, tipo_trabajo TEXT,
                     descripcion TEXT NOT NULL,
                     prioridad TEXT NOT NULL DEFAULT 'Media',
                     estado TEXT NOT NULL DEFAULT 'Pendiente',
@@ -1743,8 +1743,7 @@ const norm = p => ({
     fc: p.fecha_cierre || null,
     fa: p.fecha_avance || null,
     dis: p.distribuidor || '',
-    sd: p.setd || '',
-    trf: (p.trafo || '').trim(),
+    trf: String(p.trafo || p.setd || '').trim(),
     cl: p.cliente || '',
     tt: p.tipo_trabajo || '',
     de: p.descripcion || '',
@@ -4186,7 +4185,6 @@ async function imprimirPedidoAsync(p) {
             <table>
                 <tr><td>Distribuidor:</td><td>${escHtmlPrint(p.dis)}</td></tr>
                 ${String(p.trf || '').trim() ? `<tr><td>Trafo:</td><td>${escHtmlPrint(p.trf)}</td></tr>` : ''}
-                ${p.sd ? `<tr><td>SETD:</td><td>${escHtmlPrint(p.sd)}</td></tr>` : ''}
                 ${String(p.nis || '').trim() ? `<tr><td>NIS</td><td>${escHtmlPrint(p.nis)}</td></tr>` : ''}
                 ${String(p.cnom || p.cl || '').trim() ? `<tr><td>Nombre y apellido</td><td>${escHtmlPrint(p.cnom || p.cl)}</td></tr>` : ''}
                 ${String(p.ccal || '').trim() ? `<tr><td>Calle</td><td>${escHtmlPrint(p.ccal)}</td></tr>` : ''}
@@ -5673,7 +5671,6 @@ function detalle(p) {
             <h4>🏢 Datos del Trabajo</h4>
             <div class="dr"><span class="dl">Distribuidor</span><span class="dv">${p.dis || '—'}</span></div>
             ${String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
-            ${p.sd ? `<div class="dr"><span class="dl">SETD</span><span class="dv">${p.sd}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
@@ -5796,7 +5793,6 @@ function exportPedido(pedidos, nombre) {
             'Distribuidor': p.dis || '',
             'Trafo': p.trf || '',
             'Cliente': p.cl || '',
-            'SETD': p.sd || '',
             'Tipo de Trabajo': p.tt || '',
             'NIS': p.nis || '',
             'Nombre y apellido': (p.cnom || p.cl || ''),

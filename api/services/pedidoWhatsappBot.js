@@ -133,12 +133,10 @@ export async function crearPedidoDesdeWhatsappBot({
 
   let distribuidorVal = null;
   let trafoVal = null;
-  let setdVal = null;
   if (tieneIdentificadorSum && lookupKey) {
     const lk = await lookupDistribuidorTrafoPorNisMedidor(lookupKey);
     distribuidorVal = lk.distribuidor;
     trafoVal = lk.trafo;
-    setdVal = lk.trafo;
   }
 
   if (tieneIdentificadorSum && (distribuidorVal || trafoVal)) {
@@ -178,7 +176,6 @@ export async function crearPedidoDesdeWhatsappBot({
   const cols = [
     "numero_pedido",
     "distribuidor",
-    "setd",
     "cliente",
     "tipo_trabajo",
     "descripcion",
@@ -194,7 +191,6 @@ export async function crearPedidoDesdeWhatsappBot({
   const vals = [
     numeroPedido,
     distribuidorVal,
-    setdVal,
     null,
     tt,
     de,
