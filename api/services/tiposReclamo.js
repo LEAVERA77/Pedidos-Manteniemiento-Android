@@ -79,6 +79,8 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Problemas de Tensión": "Alta",
   "Poste Inclinado/Dañado": "Crítica",
   "Consumo elevado": "Baja",
+  /** Histórico (antes del rename a Consumo elevado). */
+  "Cambio de Medidor": "Baja",
   "Alumbrado Público (Mantenimiento)": "Baja",
   "Riesgo en la vía pública": "Crítica",
   "Corrimiento de poste/columna": "Crítica",

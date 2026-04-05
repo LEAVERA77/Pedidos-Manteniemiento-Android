@@ -788,6 +788,7 @@ const PRIORIDAD_RECLAMO_POR_TIPO = {
     'Cables Caídos/Peligro': 'Crítica',
     'Problemas de Tensión': 'Alta',
     'Poste Inclinado/Dañado': 'Crítica',
+    'Cambio de Medidor': 'Baja',
     'Alumbrado Público (Mantenimiento)': 'Baja',
     'Riesgo en la vía pública': 'Crítica',
     'Corrimiento de poste/columna': 'Crítica',
