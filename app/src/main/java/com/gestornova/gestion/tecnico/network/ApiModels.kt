@@ -44,6 +44,8 @@ data class PedidoDto(
     @SerializedName("nis_medidor") val nisMedidor: String? = null,
     @SerializedName("nis") val nis: String? = null,
     @SerializedName("cliente_direccion") val clienteDireccion: String? = null,
+    @SerializedName("suministro_tipo_conexion") val suministroTipoConexion: String? = null,
+    @SerializedName("suministro_fases") val suministroFases: String? = null,
     @SerializedName("tecnico_asignado_id") val tecnicoAsignadoId: Long? = null,
     @SerializedName("telefono_contacto") val telefonoContacto: String? = null,
     @SerializedName("lat") val lat: Double? = null,

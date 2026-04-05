@@ -194,11 +194,27 @@
       </div>
       <div class="fg"><label for="ped-cli-loc">Localidad</label><input type="text" id="ped-cli-loc" maxlength="120" placeholder="Ciudad o localidad"></div>
       <div class="fg"><label for="ped-cli-ref">Referencia ubicación (opcional)</label><input type="text" id="ped-cli-ref" maxlength="400" placeholder="Notas adicionales o texto de geocodificación"></div>
+      <div id="ped-suministro-wrap" class="fr" style="display:none">
+        <div class="fg hf"><label for="ped-sum-conexion">Tipo de conexión *</label>
+          <select id="ped-sum-conexion">
+            <option value="">— Elegir —</option>
+            <option value="Aéreo">Aéreo</option>
+            <option value="Subterráneo">Subterráneo</option>
+          </select>
+        </div>
+        <div class="fg hf"><label for="ped-sum-fases">Fases *</label>
+          <select id="ped-sum-fases">
+            <option value="">— Elegir —</option>
+            <option value="Monofásico">Monofásico</option>
+            <option value="Trifásico">Trifásico</option>
+          </select>
+        </div>
+      </div>
       <div class="fg"><label for="ped-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp)</label>
         <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — para avisar al cerrar el reclamo">
       </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
-        <select id="tt" required onchange="syncPrioridadConTipoReclamo()"></select>
+        <select id="tt" required onchange="syncPrioridadConTipoReclamo();syncSuministroElectricoUI();"></select>
       </div>
       <div class="fg"><label for="de">Descripción *</label>
         <textarea id="de" rows="3" maxlength="500" placeholder="Describí el problema..." required></textarea>
@@ -456,7 +472,7 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>Calle</strong> | <strong>Numero</strong> | <strong>telefono</strong> | <strong>distribuidor_</strong> o <strong>distribuidor_codigo</strong> | <strong>localidad</strong> | <strong>tipo_tarifa</strong> | <strong>urbano_rural</strong> | <strong>transformador</strong>. Opcional: columna <strong>direccion</strong> (una sola celda). El listado muestra todos los socios (sin tope de 500). Sin “vaciar”, se fusiona por NIS. Fila 1 = encabezados.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>Calle</strong> | <strong>Numero</strong> | <strong>telefono</strong> | <strong>distribuidor_</strong> o <strong>distribuidor_codigo</strong> | <strong>localidad</strong> | <strong>tipo_tarifa</strong> | <strong>urbano_rural</strong> | <strong>transformador</strong> | <strong>tipo_conexion</strong> (aéreo/subterráneo) | <strong>fases</strong> (monofásico/trifásico). Opcional: columna <strong>direccion</strong> (una sola celda). El listado muestra todos los socios (sin tope de 500). Sin “vaciar”, se fusiona por NIS. Fila 1 = encabezados.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">

@@ -85,6 +85,8 @@ private fun DetalleBody(p: PedidoDto) {
     DetailLine(stringResource(R.string.tecnico_mvp_calle), p.clienteCalle)
     DetailLine(stringResource(R.string.tecnico_mvp_numero_puerta), p.clienteNumeroPuerta)
     DetailLine(stringResource(R.string.tecnico_mvp_localidad), p.clienteLocalidad)
+    DetailLine(stringResource(R.string.tecnico_mvp_tipo_conexion), p.suministroTipoConexion)
+    DetailLine(stringResource(R.string.tecnico_mvp_fases), p.suministroFases)
     DetailLine(stringResource(R.string.tecnico_mvp_ref_ubicacion), p.clienteDireccion)
     DetailLine(stringResource(R.string.tecnico_mvp_distribuidor), p.distribuidor)
     DetailLine(stringResource(R.string.tecnico_mvp_trafo), p.trafo)

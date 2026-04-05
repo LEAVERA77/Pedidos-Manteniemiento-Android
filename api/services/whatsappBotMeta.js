@@ -223,6 +223,52 @@ function sessionKey(phoneDigits, tenantId) {
   return `${String(phoneDigits || "").replace(/\D/g, "")}:${Number(tenantId)}`;
 }
 
+function trimOrNullWhatsapp(v) {
+  const s = v != null ? String(v).trim() : "";
+  return s ? s : null;
+}
+
+function necesitaCapturarSuministroElectrico(sess) {
+  if (normalizarRubroCliente(sess?.tipoCliente) !== "cooperativa_electrica") return false;
+  if (!tipoReclamoElectricoPideSuministroWhatsapp(sess?.tipo)) return false;
+  return !trimOrNullWhatsapp(sess?.suministroTipoConexion) || !trimOrNullWhatsapp(sess?.suministroFases);
+}
+
+/** Rellena sesión solo con valores no vacíos del catálogo (no borra datos ya capturados). */
+function aplicarSuministroCatalogoWhatsappRes(sess, res) {
+  if (!sess || !res) return;
+  const t = trimOrNullWhatsapp(res.catalogoTipoConexion);
+  const f = trimOrNullWhatsapp(res.catalogoFases);
+  if (t) sess.suministroTipoConexion = t;
+  if (f) sess.suministroFases = f;
+}
+
+function interpretaSuministroConexionWhatsapp(text) {
+  const t = String(text || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (t === "1" || t === "1." || t.startsWith("1)") || t === "uno" || /^1\s+/.test(t)) return "Aéreo";
+  if (t === "2" || t === "2." || t.startsWith("2)") || t === "dos" || /^2\s+/.test(t)) return "Subterráneo";
+  if (t.includes("subter") || t.includes("subterr")) return "Subterráneo";
+  if (t.includes("aereo") || t.includes("aérea") || t.includes("aire")) return "Aéreo";
+  return null;
+}
+
+function interpretaSuministroFasesWhatsapp(text) {
+  const t = String(text || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (t === "1" || t === "1." || t.startsWith("1)") || t === "uno" || /^1\s+/.test(t)) return "Monofásico";
+  if (t === "2" || t === "2." || t.startsWith("2)") || t === "dos" || /^2\s+/.test(t)) return "Trifásico";
+  if (t.includes("tri")) return "Trifásico";
+  if (t.includes("mono")) return "Monofásico";
+  return null;
+}
+
 function normCfg(cfg) {
   if (!cfg || typeof cfg !== "object") return {};
   return cfg;
@@ -446,6 +492,8 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       clienteCalle: calleT || null,
       clienteNumeroPuerta: numT,
       clienteLocalidad: locT || null,
+      suministroTipoConexion: trimOrNullWhatsapp(sess.suministroTipoConexion),
+      suministroFases: trimOrNullWhatsapp(sess.suministroFases),
     });
     sessions.delete(sk);
     await reply(
@@ -527,8 +575,21 @@ async function geocodeStructuredAddressAndFinalizePedido(
   sess.addrCalle = calle;
   sess.addrNumero = numero;
   sess.direccionDeclaradaUsuario = [ciudad, calle, numRaw || numero].filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
+  sess._geocodeOrigenCatalogo = !!opts.origenCatalogo;
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
+
+  if (necesitaCapturarSuministroElectrico(sess)) {
+    sess.step = "awaiting_suministro_conexion";
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      MSG_SUMINISTRO_CONEXION,
+      sess.tenantId,
+      phoneNumberId || sess.phoneNumberId || null
+    );
+    return;
+  }
 
   const ciudadLabel = ciudad || "tu localidad";
   let geoCiudad = null;
@@ -834,6 +895,8 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     stepAddr === "awaiting_addr_ciudad" ||
     stepAddr === "awaiting_addr_calle" ||
     stepAddr === "awaiting_addr_numero" ||
+    stepAddr === "awaiting_suministro_conexion" ||
+    stepAddr === "awaiting_suministro_fases" ||
     stepAddr === "awaiting_nombre_persona" ||
     stepAddr === "awaiting_opcional_id" ||
     stepAddr === "awaiting_identificacion_modo"
@@ -844,6 +907,10 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     let hint = "Recibimos tu *ubicación GPS*. ";
     if (stepAddr === "awaiting_addr_numero") {
       hint += "Indicá el *número de puerta* en un mensaje de texto.";
+    } else if (stepAddr === "awaiting_suministro_conexion") {
+      hint += "Respondé *1* (aéreo) o *2* (subterráneo) en texto.";
+    } else if (stepAddr === "awaiting_suministro_fases") {
+      hint += "Respondé *1* (monofásico) o *2* (trifásico) en texto.";
     } else if (stepAddr === "awaiting_addr_calle") {
       hint += "Seguí con el *nombre de la calle*.";
     } else if (stepAddr === "awaiting_addr_ciudad") {
@@ -1154,6 +1221,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         nisMedidorParaPedido: res.nisMedidor ?? null,
         phoneNumberId: sess.phoneNumberId || wpid,
       };
+      aplicarSuministroCatalogoWhatsappRes(nextSess, res);
       sessions.set(sk, nextSess);
       await reply(
         phone,
@@ -1176,7 +1244,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
 
-    sessions.set(sk, {
+    const sessOpc = {
       ...sess,
       step: "awaiting_addr_ciudad",
       addrOrigenPaso: "opcional",
@@ -1185,7 +1253,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       medidorParaPedido: res.medidor ?? null,
       nisMedidorParaPedido: res.nisMedidor ?? null,
       phoneNumberId: sess.phoneNumberId || wpid,
-    });
+    };
+    aplicarSuministroCatalogoWhatsappRes(sessOpc, res);
+    sessions.set(sk, sessOpc);
     await reply(
       phone,
       `Listo, registramos a *${nuevoNombre}*.\n\n` + MSG_ADDR_CIUDAD,
@@ -1231,6 +1301,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.medidorParaPedido = res.medidor ?? null;
     sess.nisMedidorParaPedido = res.nisMedidor ?? null;
     sess.contactName = nuevoNombre || sess.contactName;
+    aplicarSuministroCatalogoWhatsappRes(sess, res);
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
 
     if (puedeMapaDesdePadron) {
@@ -1336,6 +1407,73 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.step = "awaiting_addr_numero";
     sessions.set(sk, sess);
     await reply(phone, MSG_ADDR_NUMERO, tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_suministro_conexion") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      delete sess.suministroTipoConexion;
+      delete sess.suministroFases;
+      sess.step = "awaiting_addr_numero";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_NUMERO, tid, phoneNumberId);
+      return;
+    }
+    const c = interpretaSuministroConexionWhatsapp(t);
+    if (!c) {
+      await reply(
+        phone,
+        "No entendimos. Respondé *1* (aéreo) o *2* (subterráneo).",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    sess.suministroTipoConexion = c;
+    sess.step = "awaiting_suministro_fases";
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(phone, MSG_SUMINISTRO_FASES, tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_suministro_fases") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      delete sess.suministroFases;
+      sess.step = "awaiting_suministro_conexion";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_SUMINISTRO_CONEXION, tid, phoneNumberId);
+      return;
+    }
+    const f = interpretaSuministroFasesWhatsapp(t);
+    if (!f) {
+      await reply(
+        phone,
+        "No entendimos. Respondé *1* (monofásico) o *2* (trifásico).",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    sess.suministroFases = f;
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await geocodeStructuredAddressAndFinalizePedido(
+      phone,
+      sess,
+      sk,
+      contactName,
+      ctx,
+      phoneNumberId || wpid,
+      sess.addrCiudad,
+      sess.addrCalle,
+      sess.addrNumero,
+      { origenCatalogo: !!sess._geocodeOrigenCatalogo }
+    );
     return;
   }
 

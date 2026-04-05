@@ -70,4 +70,6 @@
     <string name="tecnico_mvp_numero_puerta">Número</string>
     <string name="tecnico_mvp_localidad">Localidad</string>
     <string name="tecnico_mvp_ref_ubicacion">Referencia (mapa / notas)</string>
+    <string name="tecnico_mvp_tipo_conexion">Tipo de conexión</string>
+    <string name="tecnico_mvp_fases">Fases</string>
 </resources>

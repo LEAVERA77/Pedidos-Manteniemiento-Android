@@ -862,6 +862,7 @@ function poblarSelectTiposReclamo() {
     if (prev && lista.includes(prev)) st.value = prev;
     else if (lista.length) st.selectedIndex = 0;
     syncNisClienteReclamoConexionUI();
+    syncSuministroElectricoUI();
     syncPrioridadConTipoReclamo();
 }
 
@@ -872,7 +873,8 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
     'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto',
-    'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad']);
+    'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad',
+    'suministro_tipo_conexion','suministro_fases']);
 
 const app = {
     u: null,
@@ -1459,6 +1461,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_calle TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_numero_puerta VARCHAR(20)`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_localidad TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_tipo_conexion TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_fases TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS trafo TEXT`);
                 try {
                     await sqlSimple(`ALTER TABLE pedidos ALTER COLUMN distribuidor DROP NOT NULL`);
@@ -1478,6 +1482,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS tipo_tarifa TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS urbano_rural TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS tipo_conexion TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS fases TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
@@ -1764,6 +1770,8 @@ const norm = p => ({
     ccal: (p.cliente_calle || '').trim(),
     cnum: (p.cliente_numero_puerta || '').trim(),
     cloc: (p.cliente_localidad || '').trim(),
+    stc: (p.suministro_tipo_conexion || '').trim(),
+    sfs: (p.suministro_fases || '').trim(),
     tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
@@ -4184,6 +4192,8 @@ async function imprimirPedidoAsync(p) {
                 ${String(p.ccal || '').trim() ? `<tr><td>Calle</td><td>${escHtmlPrint(p.ccal)}</td></tr>` : ''}
                 ${String(p.cnum || '').trim() ? `<tr><td>Número</td><td>${escHtmlPrint(p.cnum)}</td></tr>` : ''}
                 ${String(p.cloc || '').trim() ? `<tr><td>Localidad</td><td>${escHtmlPrint(p.cloc)}</td></tr>` : ''}
+                ${String(p.stc || '').trim() ? `<tr><td>Tipo de conexión</td><td>${escHtmlPrint(p.stc)}</td></tr>` : ''}
+                ${String(p.sfs || '').trim() ? `<tr><td>Fases</td><td>${escHtmlPrint(p.sfs)}</td></tr>` : ''}
                 ${String(p.cdir || '').trim() ? `<tr><td>Referencia / notas ubicación</td><td>${escHtmlPrint(p.cdir)}</td></tr>` : ''}
                 <tr><td>Descripción:</td><td>${escHtmlPrint(p.de)}</td></tr>
             </table>
@@ -4971,11 +4981,24 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 }
             }
         }
+        const sumConVal = (document.getElementById('ped-sum-conexion')?.value || '').trim();
+        const sumFasVal = (document.getElementById('ped-sum-fases')?.value || '').trim();
+        if (
+            esCooperativaElectricaRubro() &&
+            tipoReclamoElectricoPideSuministroWhatsapp(tipoTr) &&
+            (!sumConVal || !sumFasVal)
+        ) {
+            toast('Para este tipo de reclamo indicá tipo de conexión (aéreo/subterráneo) y fases (monofásico/trifásico).', 'error');
+            btn.disabled = false;
+            return;
+        }
+
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, setd, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
-            cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion
+            cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
+            suministro_tipo_conexion, suministro_fases
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
@@ -5000,7 +5023,9 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(calleVal || null)},
             ${esc(numVal || null)},
             ${esc(locVal || null)},
-            ${esc(refUbicVal || null)}
+            ${esc(refUbicVal || null)},
+            ${esc(sumConVal || null)},
+            ${esc(sumFasVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -5033,6 +5058,8 @@ document.getElementById('pf').addEventListener('submit', async e => {
                 nis: nisVal,
                 tel: telVal,
                 cdir: refUbicVal,
+                stc: sumConVal || '',
+                sfs: sumFasVal || '',
                 _offline: true
             };
             app.p.unshift(pedidoLocal);
@@ -5179,6 +5206,8 @@ async function updPedido(id, campos, usuarioId) {
             cliente_calle: 'ccal',
             cliente_numero_puerta: 'cnum',
             cliente_localidad: 'cloc',
+            suministro_tipo_conexion: 'stc',
+            suministro_fases: 'sfs',
             trafo: 'trf',
             usuario_inicio_id: 'ui2',
             usuario_cierre_id: 'uci',
@@ -5553,6 +5582,17 @@ function detalle(p) {
     if (String(p.cloc || '').trim()) {
         filasDatosCliente.push(`<div class="dr"><span class="dl">Localidad</span><span class="dv">${escDet(p.cloc)}</span></div>`);
     }
+    const stcD = String(p.stc || '').trim();
+    const sfsD = String(p.sfs || '').trim();
+    if (stcD || sfsD) {
+        filasDatosCliente.push(`<div class="dr" style="grid-column:1/-1;margin:.35rem 0 0"><span class="dl" style="font-weight:700;color:#b45309">Suministro eléctrico</span></div>`);
+        if (stcD) {
+            filasDatosCliente.push(`<div class="dr"><span class="dl">Tipo de conexión</span><span class="dv" style="font-weight:700">${escDet(stcD)}</span></div>`);
+        }
+        if (sfsD) {
+            filasDatosCliente.push(`<div class="dr"><span class="dl">Fases</span><span class="dv" style="font-weight:700">${escDet(sfsD)}</span></div>`);
+        }
+    }
     const refDir = String(p.cdir || '').trim();
     const hayEstructurados = filasDatosCliente.length > 0;
     if (refDir) {
@@ -5763,6 +5803,8 @@ function exportPedido(pedidos, nombre) {
             'Calle': p.ccal || '',
             'Número': p.cnum || '',
             'Localidad': p.cloc || '',
+            'Tipo de conexión': p.stc || '',
+            'Fases': p.sfs || '',
             'Referencia ubicación': p.cdir || '',
             'Descripción': p.de || '',
             'Prioridad': p.pr || '',
@@ -6193,6 +6235,31 @@ function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
     return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }
 
+/** Alineado con api/services/tiposReclamo.js (cooperativa eléctrica). */
+function tipoReclamoElectricoPideSuministroWhatsapp(tipoTrabajo) {
+    const v = String(tipoTrabajo || '').trim();
+    return (
+        v === 'Problemas de Tensión' ||
+        v === 'Consumo elevado' ||
+        v === 'Corte de Energía' ||
+        v === 'Pedido de factibilidad (nuevo servicio)'
+    );
+}
+
+function syncSuministroElectricoUI() {
+    const w = document.getElementById('ped-suministro-wrap');
+    if (!w) return;
+    const tt = document.getElementById('tt')?.value || '';
+    const show = esCooperativaElectricaRubro() && tipoReclamoElectricoPideSuministroWhatsapp(tt);
+    w.style.display = show ? '' : 'none';
+    if (!show) {
+        const a = document.getElementById('ped-sum-conexion');
+        const b = document.getElementById('ped-sum-fases');
+        if (a) a.value = '';
+        if (b) b.value = '';
+    }
+}
+
 function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
     const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';
@@ -6220,8 +6287,14 @@ function syncNisClienteReclamoConexionUI() {
     }
 }
 const st = document.getElementById('tt');
-if (st) st.addEventListener('change', syncNisClienteReclamoConexionUI);
+if (st) {
+    st.addEventListener('change', () => {
+        syncNisClienteReclamoConexionUI();
+        syncSuministroElectricoUI();
+    });
+}
 syncNisClienteReclamoConexionUI();
+syncSuministroElectricoUI();
 
 function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
@@ -6247,12 +6320,16 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
         if (di2c) di2c.value = '';
         if (sdC) sdC.value = '';
         if (tfC) tfC.value = '';
+        const scC = document.getElementById('ped-sum-conexion');
+        const sfC = document.getElementById('ped-sum-fases');
+        if (scC) scC.value = '';
+        if (sfC) sfC.value = '';
         return;
     }
     if (!forzar && raw === _nisSocioCatalogoUltimoValor) return;
     try {
         const r = await sqlSimple(
-            `SELECT nombre, telefono, transformador, distribuidor_codigo FROM socios_catalogo
+            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases FROM socios_catalogo
              WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
              LIMIT 1`
         );
@@ -6280,6 +6357,18 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
             const cod = String(row.distribuidor_codigo).trim().toUpperCase();
             const opt = Array.from(di2.options).find(o => (o.value || '').trim().toUpperCase() === cod);
             if (opt) di2.value = opt.value;
+        }
+        const scEl = document.getElementById('ped-sum-conexion');
+        const sfEl = document.getElementById('ped-sum-fases');
+        if (scEl && row.tipo_conexion != null && String(row.tipo_conexion).trim()) {
+            const tx = String(row.tipo_conexion).trim().toLowerCase();
+            if (tx.includes('subter')) scEl.value = 'Subterráneo';
+            else if (tx.includes('aer') || tx.includes('éreo') || tx.includes('ereo')) scEl.value = 'Aéreo';
+        }
+        if (sfEl && row.fases != null && String(row.fases).trim()) {
+            const fx = String(row.fases).trim().toLowerCase();
+            if (fx.includes('tri')) sfEl.value = 'Trifásico';
+            else if (fx.includes('mono')) sfEl.value = 'Monofásico';
         }
     } catch (e) {
         console.warn('[nis→socio]', e.message);
@@ -7649,7 +7738,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -7657,12 +7746,12 @@ async function cargarListaSociosAdmin() {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
             rows.map(s => {
                 const e = (x) => String(x ?? '').replace(/</g, '&lt;');
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             }).join('') + '</tbody></table></div>';
     } catch (e) {
         cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + e.message + '</p>';
@@ -7754,10 +7843,13 @@ async function importarExcelSocios(event) {
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
             const transf = valorSociosPorEncabezados(row, mapNormAOriginal, 'transformador', 'trafo', 'transformador_codigo');
+            const tcon = valorSociosPorEncabezados(row, mapNormAOriginal,
+                'tipo_conexion', 'conexion', 'tipo_de_conexion');
+            const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador)
-                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador`);
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
                 ok++;
             } catch (e) {
                 fail++;
@@ -7787,7 +7879,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• nis_medidor · nombre · Calle · Numero\n• telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS; con “vaciar”, se borra todo el catálogo antes.\nTeléfono: formato texto en Excel para el 0 inicial.');
+    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• nis_medidor · nombre · Calle · Numero\n• telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS; con “vaciar”, se borra todo el catálogo antes.\nTeléfono: formato texto en Excel para el 0 inicial.');
 }
 
 async function buscarHistorialPorNIS() {
