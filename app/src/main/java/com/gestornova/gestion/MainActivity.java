@@ -409,6 +409,9 @@ public class MainActivity extends AppCompatActivity {
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);
             webView.evaluateJavascript(
+                    "if(typeof window.gnSincronizarPedidosDesdeAndroid==='function')window.gnSincronizarPedidosDesdeAndroid()",
+                    null);
+            webView.evaluateJavascript(
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);
             dispatchPendingPedidoIdToWeb();

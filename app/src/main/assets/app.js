@@ -1560,11 +1560,13 @@ document.getElementById('lf').addEventListener('submit', async e => {
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
             iniciarPollWhatsappHumanChat();
+            detenerPollSincroPedidosTecnico();
         } else {
             detenerDashboardGerenciaPoll();
             detenerPollWhatsappHumanChat();
             destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
+            iniciarPollSincroPedidosTecnico();
         }
         setTimeout(async () => {
 
@@ -3249,8 +3251,11 @@ async function cargarPedidos(opts) {
     } catch (_) {}
 }
 
-
-
+/** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
+window.gnSincronizarPedidosDesdeAndroid = function gnSincronizarPedidosDesdeAndroid() {
+    if (!app.u || modoOffline || !NEON_OK || !_sql) return;
+    void cargarPedidos({ silent: true });
+};
 
 
 
@@ -6231,11 +6236,13 @@ try {
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
             iniciarPollWhatsappHumanChat();
+            detenerPollSincroPedidosTecnico();
         } else {
             detenerDashboardGerenciaPoll();
             detenerPollWhatsappHumanChat();
             destruirTodasVentanasWaHc();
             detenerTecnicosMapaPrincipalPoll();
+            iniciarPollSincroPedidosTecnico();
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
