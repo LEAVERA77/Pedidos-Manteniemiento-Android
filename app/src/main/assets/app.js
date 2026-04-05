@@ -3166,6 +3166,7 @@ async function refrescarDashboardGerencia(silent) {
 
 window.cerrarModalDashYAbrirPedido = async function (pid) {
     document.getElementById('modal-dashboard-gerencia')?.classList.remove('active');
+    document.getElementById('admin-panel')?.classList.remove('active');
     await cargarPedidos();
     const p = app.p.find(x => String(x.id) === String(pid));
     if (!p) { toast('Pedido no encontrado', 'error'); return; }
@@ -6667,7 +6668,7 @@ function aplicarEtiquetasPorTipo(tipo) {
             tab.innerHTML = `<i class="fas fa-address-book"></i> ${etiqueta}`;
         }
     });
-    const h3cat = document.querySelector('#admin-socios > div:first-of-type h3');
+    const h3cat = document.getElementById('admin-socios-catalogo-titulo');
     if (h3cat) {
         h3cat.textContent = esMunicipio
             ? 'Catálogo de vecinos (NIS / medidor)'
@@ -7074,7 +7075,26 @@ function adminTab(tab) {
     if (tab === 'estadisticas') cargarEstadisticas();
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
-    if (tab === 'socios') cargarListaSociosAdmin();
+    if (tab === 'socios') {
+        cargarListaSociosAdmin();
+        if (!document.getElementById('nis-historial-item-style')) {
+            const st = document.createElement('style');
+            st.id = 'nis-historial-item-style';
+            st.textContent =
+                '.nis-historial-item:hover,.nis-historial-item:focus-visible{border-color:#2563eb!important;box-shadow:0 0 0 2px rgba(37,99,235,.22);outline:none;background:#f8fafc!important}';
+            document.head.appendChild(st);
+        }
+        const inpNisHist = document.getElementById('historial-nis-input');
+        if (inpNisHist && !inpNisHist.dataset.enterBuscarNis) {
+            inpNisHist.dataset.enterBuscarNis = '1';
+            inpNisHist.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    buscarHistorialPorNIS();
+                }
+            });
+        }
+    }
     if (tab === 'empresa') cargarFormEmpresa();
     if (tab === 'mapa-usuarios') { cargarUbicacionesUsuarios(); iniciarMapaUsuariosAdmin(); }
 }
@@ -7588,16 +7608,43 @@ async function buscarHistorialPorNIS() {
     const out = document.getElementById('historial-nis-result');
     if (!raw) { toast('Ingresá NIS o medidor', 'error'); return; }
     if (!out) return;
-    out.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+    out.innerHTML = '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</div>';
     try {
         const tsql = await pedidosFiltroTenantSql();
-        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
         const rows = r.rows || [];
-        if (!rows.length) { out.innerHTML = '<p style="color:var(--tm)">Sin reclamos para ese NIS.</p>'; return; }
-        out.innerHTML = '<ul style="margin:0;padding-left:1rem;line-height:1.35">' + rows.map(row =>
-            `<li><strong>#${String(row.numero_pedido || '').replace(/</g, '&lt;')}</strong> · ${row.estado} · ${row.prioridad}<br><span style="color:var(--tl)">${String(row.descripcion || '').substring(0, 100).replace(/</g, '&lt;')}</span> · ${fmtInformeFecha(row.fecha_creacion)}</li>`
-        ).join('') + '</ul>';
-    } catch (e) { out.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>'; }
+        if (!rows.length) {
+            out.innerHTML = '<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin reclamos para ese NIS o medidor.</p>';
+            return;
+        }
+        const escH = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        out.innerHTML =
+            `<div style="font-size:.72rem;color:var(--tm);margin-bottom:.45rem">${rows.length} pedido(s) — <strong>toca una fila</strong> para abrir</div>` +
+            '<div style="display:flex;flex-direction:column;gap:.4rem">' +
+            rows.map((row) => {
+                const np = escH(row.numero_pedido || '');
+                const tipo = escH(row.tipo_trabajo || '—');
+                const desc = escH(String(row.descripcion || '').substring(0, 140));
+                const fecha = escH(fmtInformeFecha(row.fecha_creacion));
+                const pid = Number(row.id);
+                const safeClick = Number.isFinite(pid) && pid > 0 ? `onclick="cerrarModalDashYAbrirPedido(${pid})"` : '';
+                return `<button type="button" class="nis-historial-item" ${safeClick} style="width:100%;text-align:left;cursor:pointer;padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);font:inherit;color:inherit;line-height:1.35;transition:background .15s,border-color .15s,box-shadow .15s">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .6rem;margin-bottom:.2rem">
+    <strong style="color:var(--bd);font-size:.88rem">#${np}</strong>
+    <span style="font-size:.74rem;padding:.12rem .4rem;border-radius:999px;background:#e0e7ff;color:#3730a3">${escH(row.estado || '')}</span>
+    <span style="font-size:.74rem;color:var(--tm)">${escH(row.prioridad || '')}</span>
+    <span style="font-size:.72rem;color:var(--tl);margin-left:auto"><i class="fas fa-external-link-alt" style="opacity:.65;font-size:.68rem"></i> Abrir</span>
+  </div>
+  <div style="font-size:.78rem;color:var(--tm)"><strong>Tipo:</strong> ${tipo}</div>
+  <div style="font-size:.78rem;color:var(--tl);margin-top:.15rem">${desc}${(row.descripcion && String(row.descripcion).length > 140) ? '…' : ''}</div>
+  <div style="font-size:.72rem;color:var(--tl);margin-top:.2rem">${fecha}</div>
+</button>`;
+            }).join('') +
+            '</div>';
+    } catch (e) {
+        const msg = String(e && e.message != null ? e.message : e).replace(/</g, '&lt;').replace(/&/g, '&amp;');
+        out.innerHTML = '<span style="color:var(--re)">' + msg + '</span>';
+    }
 }
 
 function periodoInformeDesdeSelectEstadisticas() {

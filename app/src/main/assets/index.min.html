@@ -417,8 +417,27 @@
       </div>
     </div>
     <div id="admin-socios" class="admin-section">
+      <div id="socios-nis-busqueda-wrap" style="margin-bottom:1.15rem;padding:1rem 1.1rem;background:linear-gradient(135deg,#eff6ff 0%,#f0fdf4 100%);border:2px solid #3b82f6;border-radius:.75rem;box-shadow:0 4px 14px rgba(37,99,235,.12)">
+        <div style="display:flex;align-items:flex-start;gap:.65rem;flex-wrap:wrap;justify-content:space-between">
+          <div style="min-width:min(100%,220px)">
+            <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.35rem">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;background:#2563eb;color:#fff;border-radius:.5rem;font-size:1rem"><i class="fas fa-search-location"></i></span>
+              <strong style="color:var(--bd);font-size:.95rem">Reclamos por NIS o medidor</strong>
+            </div>
+            <p style="font-size:.78rem;color:var(--tm);margin:0;line-height:1.45">Buscá y tocá un pedido para abrirlo en el mapa y operar (asignar técnico, avance, cierre, etc.). <kbd style="font-size:.7rem;padding:.1rem .25rem;border:1px solid var(--bo);border-radius:.2rem;background:var(--bg)">Enter</kbd> también ejecuta la búsqueda.</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.75rem">
+          <div style="flex:1;min-width:220px">
+            <label for="historial-nis-input" style="font-size:.78rem;font-weight:600;color:var(--tm)">NIS o medidor</label>
+            <input type="text" id="historial-nis-input" placeholder="Ej: 700000010" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem">
+          </div>
+          <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()" style="padding:.55rem 1.1rem;font-weight:600"><i class="fas fa-search"></i> Buscar reclamos</button>
+        </div>
+        <div id="historial-nis-result" role="region" aria-label="Resultados de reclamos" style="margin-top:.85rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
+        <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="importarExcelSocios(event)"></label>
           <a class="btn-sm primary" href="ejemplos/socios-demo-300.xlsx" download="socios-demo-300.xlsx" style="text-decoration:none;display:inline-flex;align-items:center;gap:.35rem"><i class="fas fa-download"></i> Ejemplo 300 (OSM)</a>
@@ -430,14 +449,6 @@
       </div>
       <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Columnas Excel: <strong>nis_medidor</strong> | <strong>nombre</strong> | <strong>Calle</strong> | <strong>Numero</strong> | <strong>telefono</strong> | <strong>distribuidor_</strong> o <strong>distribuidor_codigo</strong> | <strong>localidad</strong> | <strong>tipo_tarifa</strong> | <strong>urbano_rural</strong> | <strong>transformador</strong>. Opcional: columna <strong>direccion</strong> (una sola celda). El listado muestra todos los socios (sin tope de 500). Sin “vaciar”, se fusiona por NIS. Fila 1 = encabezados.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
-      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px dashed var(--bo)">
-        <h4 style="color:var(--bd);font-size:.9rem;margin-bottom:.5rem"><i class="fas fa-history"></i> Historial de reclamos por NIS / medidor</h4>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
-          <div style="flex:1;min-width:180px"><label style="font-size:.78rem">NIS o medidor</label><input type="text" id="historial-nis-input" placeholder="Ej: 12345678"></div>
-          <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()"><i class="fas fa-search"></i> Buscar</button>
-        </div>
-        <div id="historial-nis-result" style="margin-top:.75rem;font-size:.82rem;max-height:220px;overflow-y:auto"></div>
-      </div>
     </div>
     <div id="admin-estadisticas" class="admin-section">
       <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
