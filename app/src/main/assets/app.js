@@ -1405,7 +1405,6 @@ async function conectarNeon() {
                     id SERIAL PRIMARY KEY,
                     nis_medidor TEXT NOT NULL UNIQUE,
                     nombre TEXT,
-                    domicilio TEXT,
                     calle TEXT,
                     numero TEXT,
                     telefono TEXT,
@@ -1419,9 +1418,6 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS transformador TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
-                await sqlSimple(`UPDATE socios_catalogo SET calle = TRIM(domicilio)
-                    WHERE (calle IS NULL OR TRIM(COALESCE(calle,'')) = '')
-                      AND domicilio IS NOT NULL AND TRIM(COALESCE(domicilio,'')) <> ''`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -7022,7 +7018,7 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const r = await sqlSimple('SELECT id, nis_medidor, nombre, calle, numero, domicilio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
+        const r = await sqlSimple('SELECT id, nis_medidor, nombre, calle, numero, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, activo FROM socios_catalogo ORDER BY nis_medidor LIMIT 500');
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
