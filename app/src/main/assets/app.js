@@ -6353,10 +6353,12 @@ function detalle(p) {
             ${p.opin ? `<div class="dr" style="flex-direction:column;gap:.3rem;margin-top:.5rem"><span class="dl">Opinión del cliente (WhatsApp)</span><div class="trb">${String(p.opin).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>` : ''}
         </div>` : ''}
 
+        ${pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p) ? '' : `
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
             <h4>🔧 Materiales</h4>
             <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
         </div>
+        `}
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
@@ -6383,7 +6385,9 @@ function detalle(p) {
     `;
     
     document.getElementById('dm').classList.add('active');
-    requestAnimationFrame(() => { refrescarMaterialesEnDetalle(p); });
+    requestAnimationFrame(() => {
+        if (!pedidoOcultarSeccionMaterialesFactibilidadWhatsapp(p)) refrescarMaterialesEnDetalle(p);
+    });
 }
 
 
