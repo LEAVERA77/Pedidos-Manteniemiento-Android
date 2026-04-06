@@ -760,6 +760,29 @@
       </div>
       <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
     </div>
+    <div id="admin-confiabilidad" class="admin-section">
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo para que el técnico <strong>elija</strong> transformador o zona al cerrar (cooperativa eléctrica). Ejecutá en Neon <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code> si falta la tabla.</p>
+      <div id="admin-infra-afect-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
+      <div id="admin-infra-afect-wrap" style="display:none">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Transformadores</h3>
+        <div class="form-grid" style="margin-bottom:.75rem">
+          <div><label for="ia-t-codigo">Código *</label><input id="ia-t-codigo" type="text" placeholder="TR-ALBERDI-01" autocomplete="off"></div>
+          <div><label for="ia-t-nombre">Nombre</label><input id="ia-t-nombre" type="text" autocomplete="off"></div>
+          <div><label for="ia-t-kva">kVA</label><input id="ia-t-kva" type="number" min="0" step="1" inputmode="numeric"></div>
+          <div><label for="ia-t-clientes">Socios conectados *</label><input id="ia-t-clientes" type="number" min="0" step="1" inputmode="numeric" placeholder="220"></div>
+          <div class="full"><label for="ia-t-barrio">Barrio (texto, opcional)</label><input id="ia-t-barrio" type="text" autocomplete="off"></div>
+        </div>
+        <button type="button" class="btn-sm primary" onclick="guardarInfraTransformadorAdmin()"><i class="fas fa-save"></i> Guardar transformador</button>
+        <div id="lista-infra-transformadores-admin" style="margin:1rem 0 1.25rem;font-size:.85rem"></div>
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Zonas (clientes estimados)</h3>
+        <div class="form-grid" style="margin-bottom:.75rem">
+          <div class="full"><label for="ia-z-nombre">Nombre *</label><input id="ia-z-nombre" type="text" placeholder="Barrio Centro" autocomplete="off"></div>
+          <div><label for="ia-z-clientes">Clientes estimados *</label><input id="ia-z-clientes" type="number" min="0" step="1" inputmode="numeric"></div>
+        </div>
+        <button type="button" class="btn-sm primary" onclick="guardarInfraZonaAdmin()"><i class="fas fa-save"></i> Guardar zona</button>
+        <div id="lista-infra-zonas-admin" style="margin:1rem 0 0;font-size:.85rem"></div>
+      </div>
+    </div>
     <div id="admin-mapa-usuarios" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
         <p style="font-size:.85rem;color:var(--tm);margin:0">
