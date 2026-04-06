@@ -24,6 +24,7 @@
     <string name="update_dialog_message_forced">Debés actualizar la app para continuar. Versión disponible: %1$s</string>
     <string name="update_dialog_download">Descargar</string>
     <string name="update_dialog_later">Más tarde</string>
+    <string name="update_dialog_open_failed">No se pudo abrir el enlace de descarga</string>
 
     <string name="open_downloads_chooser">Abrir carpeta</string>
     <string name="open_downloads_fallback">No se pudo abrir el gestor de archivos. Carpeta: %1$s</string>
@@ -32,7 +33,13 @@
 
     <!-- MVP técnico (Compose + Retrofit) -->
     <string name="tecnico_mvp_config_falta_api">Falta api.baseUrl en assets/config.json</string>
+    <string name="tecnico_mvp_error_api_client">No se pudo preparar la conexión con el servidor. Revisá la URL en config.json.</string>
     <string name="tecnico_mvp_error_generico">No se pudo completar la operación</string>
+    <string name="error_red_sin_dns">Sin conexión: no se pudo resolver el servidor. Revisá Wi‑Fi o datos.</string>
+    <string name="error_red_timeout">La solicitud tardó demasiado. Probá de nuevo con mejor señal.</string>
+    <string name="error_red_ssl">Error de certificado o conexión segura. Revisá fecha del dispositivo y red.</string>
+    <string name="error_red_io">Error de red. Comprobá la conexión e intentá de nuevo.</string>
+    <string name="error_red_datos_invalidos">La respuesta del servidor no es válida.</string>
     <string name="tecnico_mvp_login_titulo">GestorNova</string>
     <string name="tecnico_mvp_login_subtitle">Pedidos de mantenimiento</string>
     <string name="tecnico_mvp_login_status_ok">Conectado — Neon PostgreSQL</string>

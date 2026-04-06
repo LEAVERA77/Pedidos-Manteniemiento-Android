@@ -9,11 +9,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.gestornova.gestion.tecnico.config.ApiConfigLoader
 import com.gestornova.gestion.tecnico.data.SessionRepository
+import com.gestornova.gestion.tecnico.data.TecnicoErrorMapper
 import com.gestornova.gestion.tecnico.data.TecnicoRepository
 import com.gestornova.gestion.tecnico.network.ApiClientFactory
 import com.gestornova.gestion.tecnico.network.AuthTokenHolder
 import com.gestornova.gestion.tecnico.network.GestorNovaApi
 import com.gestornova.gestion.tecnico.network.PedidoDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -22,6 +24,7 @@ class TecnicoViewModel(
 ) : ViewModel() {
 
     private val ctx = appContext.applicationContext
+    private val logTag = "TecnicoViewModel"
     private val sessionRepository = SessionRepository(ctx)
     private var api: GestorNovaApi? = null
 
@@ -53,14 +56,26 @@ class TecnicoViewModel(
 
     init {
         viewModelScope.launch {
-            sessionRepository.loadTokenIntoMemory()
-            hasToken = !AuthTokenHolder.get().isNullOrBlank()
+            try {
+                sessionRepository.loadTokenIntoMemory()
+                hasToken = !AuthTokenHolder.get().isNullOrBlank()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                TecnicoErrorMapper.log(logTag, "init/session", e)
+                hasToken = false
+            }
             val base = ApiConfigLoader.loadBaseUrl(ctx)
             loadingConfig = false
             if (base == null) {
                 configError = ctx.getString(com.gestornova.gestion.R.string.tecnico_mvp_config_falta_api)
             } else {
-                api = ApiClientFactory.create(base)
+                try {
+                    api = ApiClientFactory.create(base)
+                } catch (e: Exception) {
+                    TecnicoErrorMapper.log(logTag, "init/api", e)
+                    configError = ctx.getString(com.gestornova.gestion.R.string.tecnico_mvp_error_api_client)
+                }
             }
         }
     }
@@ -80,14 +95,19 @@ class TecnicoViewModel(
                 hasToken = true
                 refreshPedidos()
             }.onFailure {
-                bannerError = it.message ?: ctx.getString(com.gestornova.gestion.R.string.tecnico_mvp_error_generico)
+                TecnicoErrorMapper.log(logTag, "login", it)
+                bannerError = TecnicoErrorMapper.userMessage(ctx, it)
             }
         }
     }
 
     fun logout() {
         viewModelScope.launch {
-            repo()?.logout()
+            try {
+                repo()?.logout()
+            } catch (e: Exception) {
+                TecnicoErrorMapper.log(logTag, "logout", e)
+            }
             hasToken = false
             pedidos = emptyList()
             pedidoDetalle = null
@@ -103,7 +123,8 @@ class TecnicoViewModel(
             loadingPedidos = false
             res.onSuccess { pedidos = it }
                 .onFailure {
-                    bannerError = it.message ?: ctx.getString(com.gestornova.gestion.R.string.tecnico_mvp_error_generico)
+                    TecnicoErrorMapper.log(logTag, "misPedidos", it)
+                    bannerError = TecnicoErrorMapper.userMessage(ctx, it)
                     val code = (it as? HttpException)?.code()
                     if (code == 401 || code == 403) {
                         logout()
@@ -122,7 +143,12 @@ class TecnicoViewModel(
             loadingDetalle = false
             res.onSuccess { pedidoDetalle = it }
                 .onFailure {
-                    bannerError = it.message ?: ctx.getString(com.gestornova.gestion.R.string.tecnico_mvp_error_generico)
+                    TecnicoErrorMapper.log(logTag, "pedido/$id", it)
+                    bannerError = TecnicoErrorMapper.userMessage(ctx, it)
+                    val code = (it as? HttpException)?.code()
+                    if (code == 401 || code == 403) {
+                        logout()
+                    }
                 }
         }
     }

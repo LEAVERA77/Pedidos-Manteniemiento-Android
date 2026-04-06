@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -118,6 +119,7 @@ public final class AppUpdateChecker {
                         activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)));
                     } catch (Exception e) {
                         Log.e(TAG, "No se pudo abrir apkUrl", e);
+                        Toast.makeText(activity, R.string.update_dialog_open_failed, Toast.LENGTH_LONG).show();
                     }
                 });
         if (!forceUpdate) {

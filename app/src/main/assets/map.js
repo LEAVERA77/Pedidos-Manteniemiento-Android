@@ -123,7 +123,7 @@ export function proyectarCoordPedido(lat, lng) {
     const vy = n.toFixed(3).replace('.', ',');
     return { titulo, z, modoTxt, crsLinea, lx, ly, vx, vy, e, n };
 }
-window.proyectarCoordPedido = proyectarCoordPedido;
+if (typeof window !== 'undefined') window.proyectarCoordPedido = proyectarCoordPedido;
 
 export function tieneProyeccionEmpresaConfigurada() {
     const fam = String((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();

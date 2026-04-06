@@ -32,7 +32,9 @@ import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -250,6 +252,32 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                if (request != null && request.isForMainFrame() && errorResponse != null) {
+                    Log.w(TAG, "WebView HTTP " + errorResponse.getStatusCode() + " " + request.getUrl());
+                }
+                super.onReceivedHttpError(view, request, errorResponse);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        && request != null && request.isForMainFrame() && error != null) {
+                    Log.w(TAG, "WebView error: " + error.getErrorCode() + " " + error.getDescription());
+                }
+                super.onReceivedError(view, request, error);
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                    Log.w(TAG, "WebView error: " + errorCode + " " + description + " url=" + failingUrl);
+                }
+                super.onReceivedError(view, errorCode, description, failingUrl);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 dispatchPendingPedidoIdToWeb();
@@ -350,6 +378,7 @@ public class MainActivity extends AppCompatActivity {
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
             return intent;
         } catch (Exception e) {
+            Log.w(TAG, "crearIntentCamara", e);
             cameraImageUri = null;
             return null;
         }
@@ -545,6 +574,7 @@ public class MainActivity extends AppCompatActivity {
                 while ((n = in.read(buffer)) != -1) bos.write(buffer, 0, n);
                 return bos.toString(StandardCharsets.UTF_8.name());
             } catch (Exception e) {
+                Log.w(TAG, "getConfigJson: no se pudo leer assets/config.json", e);
                 return "";
             }
         }
@@ -642,6 +672,7 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "Archivo guardado en Descargas", Toast.LENGTH_LONG).show());
                 return true;
             } catch (Exception e) {
+                Log.e(TAG, "saveBase64File", e);
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "No se pudo guardar el archivo", Toast.LENGTH_LONG).show());
                 return false;
             }
@@ -958,6 +989,7 @@ public class MainActivity extends AppCompatActivity {
             );
             return FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", out);
         } catch (Exception e) {
+            Log.e(TAG, "saveToDownloads", e);
             return null;
         }
     }
@@ -982,6 +1014,8 @@ public class MainActivity extends AppCompatActivity {
                 .setContentIntent(pi);
         try {
             NotificationManagerCompat.from(this).notify((int) (System.currentTimeMillis() % Integer.MAX_VALUE), b.build());
-        } catch (SecurityException ignored) {}
+        } catch (SecurityException e) {
+            Log.w(TAG, "notifyExportSaved: notificación no mostrada", e);
+        }
     }
 }
