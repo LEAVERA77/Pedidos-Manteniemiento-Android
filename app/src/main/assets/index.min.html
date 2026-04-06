@@ -506,14 +506,15 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. El Excel puede traer todas las filas que necesites (fila 1 = encabezados codigo, nombre, tension).</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. Excel: fila 1 = encabezados <code style="font-size:.75rem">codigo | nombre | tension | localidad</code> (localidad opcional). En Neon, columna <code style="font-size:.75rem">localidad</code>: <code style="font-size:.75rem">docs/NEON_distribuidores_localidad.sql</code>.</p>
       <div id="lista-distribuidores-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="form-distribuidor" style="display:none;background:var(--bg);border-radius:.75rem;padding:1rem;margin-top:1rem;border:1px solid var(--bo)">
         <h4 style="margin-bottom:.75rem;color:var(--bd)">Nuevo distribuidor</h4>
         <div class="form-grid">
           <div><label>Código *</label><input id="nd-codigo" type="text"></div>
           <div><label>Nombre *</label><input id="nd-nombre" type="text"></div>
-          <div class="full"><label>Tensión</label><input id="nd-tension" type="text" placeholder="13200 V"></div>
+          <div><label>Tensión</label><input id="nd-tension" type="text" placeholder="13200 V"></div>
+          <div class="full"><label>Localidad</label><input id="nd-localidad" type="text" placeholder="Ej. María Grande" autocomplete="off"></div>
         </div>
         <div style="display:flex;gap:.5rem;margin-top:.75rem">
           <button class="btn-sm primary" onclick="crearDistribuidor()"><i class="fas fa-save"></i> Crear</button>
@@ -768,11 +769,11 @@
       <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
     </div>
     <div id="admin-confiabilidad" class="admin-section">
-      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo de transformadores con <strong>distribuidor</strong> y <strong>alimentador</strong>; al cerrar se pueden sumar socios y kVA por distribuidor o por alimentador. SQL: <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code> y <code style="font-size:.78rem">docs/NEON_clientes_afectados_distribuidor_alimentador.sql</code>.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo de transformadores con <strong>distribuidor</strong> y <strong>alimentador</strong>; al cerrar se pueden sumar socios y kVA por distribuidor o por alimentador. SQL: <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code>, <code style="font-size:.78rem">docs/NEON_clientes_afectados_distribuidor_alimentador.sql</code>, <code style="font-size:.78rem">docs/NEON_distribuidores_localidad.sql</code> (localidad en catálogo).</p>
       <div id="admin-infra-afect-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
       <div id="admin-infra-afect-wrap" style="display:none">
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Resumen por distribuidor</h3>
-        <p style="font-size:.76rem;color:var(--tm);margin:-.35rem 0 .55rem">Suma de kVA y socios de los transformadores activos con <code style="font-size:.72rem">distribuidor_id</code> cargado.</p>
+        <p style="font-size:.76rem;color:var(--tm);margin:-.35rem 0 .55rem">Por cada distribuidor asignado a trafos activos: código, nombre, localidad (si cargaste la columna en Neon), cantidad de transformadores, suma de kVA y de socios.</p>
         <div id="lista-infra-resumen-dist-admin" style="margin:0 0 1.15rem;font-size:.85rem"></div>
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Transformadores</h3>
         <div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.65rem;align-items:center">

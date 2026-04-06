@@ -75,14 +75,14 @@ router.get("/resumen-por-distribuidor", async (req, res) => {
   try {
     const tid = await getUserTenantId(req.user.id);
     const r = await query(
-      `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
+      `SELECT d.id AS distribuidor_id, d.codigo, d.nombre, d.localidad,
               COALESCE(SUM(t.capacidad_kva), 0)::bigint AS total_kva,
               COALESCE(SUM(t.clientes_conectados), 0)::bigint AS total_clientes,
               COUNT(t.id)::int AS cant_transformadores
        FROM infra_transformadores t
        INNER JOIN distribuidores d ON d.id = t.distribuidor_id
        WHERE t.tenant_id = $1 AND t.activo = TRUE AND t.distribuidor_id IS NOT NULL
-       GROUP BY d.id, d.codigo, d.nombre
+       GROUP BY d.id, d.codigo, d.nombre, d.localidad
        ORDER BY d.codigo ASC`,
       [tid]
     );

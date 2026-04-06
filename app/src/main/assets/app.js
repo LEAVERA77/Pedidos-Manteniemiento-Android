@@ -6318,9 +6318,25 @@ function pedidoTieneClienteCargado(p) {
 
 let _cacheInfraAfectadosTablas = null;
 let _cacheInfraTrafoColDistribuidor = null;
+let _cacheDistribuidorColLocalidad = null;
 function invalidateInfraAfectadosTablasCache() {
     _cacheInfraAfectadosTablas = null;
     _cacheInfraTrafoColDistribuidor = null;
+    _cacheDistribuidorColLocalidad = null;
+}
+
+async function sqlDistribuidoresTieneLocalidad() {
+    if (!NEON_OK || !_sql) return false;
+    if (_cacheDistribuidorColLocalidad !== null) return _cacheDistribuidorColLocalidad;
+    try {
+        const r = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'distribuidores' AND column_name = 'localidad' LIMIT 1`
+        );
+        _cacheDistribuidorColLocalidad = !!(r.rows && r.rows.length);
+    } catch (_) {
+        _cacheDistribuidorColLocalidad = false;
+    }
+    return _cacheDistribuidorColLocalidad;
 }
 
 async function sqlInfraTrafoTieneDistribuidorId() {
@@ -6404,10 +6420,11 @@ function llenarCierreSelectsDistribuidorResumen(rows) {
         if (!Number.isFinite(did)) continue;
         const cod = String(row.codigo || '');
         const nom = row.nombre ? String(row.nombre) : '';
+        const loc = row.localidad ? String(row.localidad) : '';
         const kva = Number(row.total_kva) || 0;
         const soc = Number(row.total_clientes) || 0;
         const ntr = Number(row.cant_transformadores) || 0;
-        const lab = `${cod}${nom ? ' — ' + nom : ''} · ${soc} socios · ${kva} kVA · ${ntr} trafos`;
+        const lab = `${cod}${nom ? ' — ' + nom : ''}${loc ? ' · ' + loc : ''} · ${soc} socios · ${kva} kVA · ${ntr} trafos`;
         llenarSelectOptionText(sd, did, lab);
         llenarSelectOptionText(sad, did, lab);
     }
@@ -6493,8 +6510,19 @@ async function llenarCatalogosCierreAfectados() {
                 llenarSelectOptionText(selT, row.id, lab);
             }
             if (await sqlInfraTrafoTieneDistribuidorId()) {
+                const hasLoc = await sqlDistribuidoresTieneLocalidad();
                 const rD = await sqlSimple(
-                    `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
+                    hasLoc
+                        ? `SELECT d.id AS distribuidor_id, d.codigo, d.nombre, d.localidad,
+                      COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
+                      COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
+                      COUNT(t.id)::int AS cant_transformadores
+                     FROM infra_transformadores t
+                     INNER JOIN distribuidores d ON d.id = t.distribuidor_id
+                     WHERE t.tenant_id = ${esc(tid)} AND t.activo = TRUE AND t.distribuidor_id IS NOT NULL
+                     GROUP BY d.id, d.codigo, d.nombre, d.localidad
+                     ORDER BY d.codigo`
+                        : `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
                       COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
                       COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
                       COUNT(t.id)::int AS cant_transformadores
@@ -10110,8 +10138,19 @@ async function cargarAdminInfraAfectados() {
     await repoblarSelectDistribuidoresInfraAdmin();
     try {
         if (await sqlInfraTrafoTieneDistribuidorId()) {
+            const hasLoc = await sqlDistribuidoresTieneLocalidad();
             const rD = await sqlSimple(
-                `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
+                hasLoc
+                    ? `SELECT d.id AS distribuidor_id, d.codigo, d.nombre, d.localidad,
+                  COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
+                  COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
+                  COUNT(t.id)::int AS cant_transformadores
+                 FROM infra_transformadores t
+                 INNER JOIN distribuidores d ON d.id = t.distribuidor_id
+                 WHERE t.tenant_id = ${esc(tid)} AND t.activo = TRUE AND t.distribuidor_id IS NOT NULL
+                 GROUP BY d.id, d.codigo, d.nombre, d.localidad
+                 ORDER BY d.codigo`
+                    : `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
                   COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
                   COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
                   COUNT(t.id)::int AS cant_transformadores
@@ -10126,12 +10165,16 @@ async function cargarAdminInfraAfectados() {
                 listR.innerHTML =
                     '<p style="color:var(--tl);font-size:.82rem">Sin datos: asigná <strong>distribuidor</strong> a los transformadores (formulario o Excel asignación).</p>';
             } else {
-                listR.innerHTML = `<table class="admin-table"><thead><tr><th>Distribuidor</th><th>kVA Σ</th><th>Socios Σ</th><th>Trafos</th></tr></thead><tbody>${rdRows
+                const locCell = (x) =>
+                    hasLoc ? _escOpt(x.localidad || '') || '—' : '—';
+                listR.innerHTML = `<table class="admin-table"><thead><tr><th>Código</th><th>Nombre</th><th>Localidad</th><th>Trafos</th><th>kVA (Σ)</th><th>Clientes</th></tr></thead><tbody>${rdRows
                     .map(
                         (x) =>
-                            `<tr><td><b>${_escOpt(x.codigo)}</b>${x.nombre ? ' — ' + _escOpt(x.nombre) : ''}</td><td>${_escOpt(
-                                x.total_kva
-                            )}</td><td>${_escOpt(x.total_clientes)}</td><td>${_escOpt(x.cant_transformadores)}</td></tr>`
+                            `<tr><td><b>${_escOpt(x.codigo)}</b></td><td>${_escOpt(x.nombre) || '—'}</td><td>${locCell(
+                                x
+                            )}</td><td>${_escOpt(x.cant_transformadores)}</td><td>${_escOpt(x.total_kva)}</td><td>${_escOpt(
+                                x.total_clientes
+                            )}</td></tr>`
                     )
                     .join('')}</tbody></table>`;
             }
@@ -10655,8 +10698,11 @@ async function cargarListaDistribuidoresAdmin() {
     const zonaN = (n) => (n === 1 ? zona1 : zonaP);
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const hasLoc = await sqlDistribuidoresTieneLocalidad();
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, codigo, nombre, tension, activo FROM distribuidores',
+            hasLoc
+                ? 'SELECT id, codigo, nombre, tension, localidad, activo FROM distribuidores'
+                : 'SELECT id, codigo, nombre, tension, activo FROM distribuidores',
             'ORDER BY codigo'
         );
         if (!r.rows.length) {
@@ -10664,12 +10710,16 @@ async function cargarListaDistribuidoresAdmin() {
             return;
         }
         const n = r.rows.length;
+        const head = hasLoc
+            ? '<th>Código</th><th>Nombre</th><th>Tensión</th><th>Localidad</th><th>Estado</th><th>Acciones</th>'
+            : '<th>Código</th><th>Nombre</th><th>Tensión</th><th>Estado</th><th>Acciones</th>';
         cont.innerHTML = `<table class="admin-table">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Tensión</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr>${head}</tr></thead>
             <tbody>${r.rows.map(d => `<tr>
                 <td><b>${_escOpt(d.codigo)}</b></td>
                 <td>${_escOpt(d.nombre)}</td>
                 <td>${_escOpt(d.tension) || '-'}</td>
+                ${hasLoc ? `<td>${_escOpt(d.localidad) || '—'}</td>` : ''}
                 <td><span style="color:${d.activo ? '#166534' : '#dc2626'};font-weight:600">${d.activo ? '✓' : '✗'}</span></td>
                 <td style="display:flex;gap:.3rem">
                     <button class="btn-sm danger" onclick="eliminarDistribuidor(${Number(d.id)})">Eliminar</button>
@@ -10692,12 +10742,26 @@ async function crearDistribuidor() {
     const codigo  = document.getElementById('nd-codigo').value.trim().toUpperCase();
     const nombre  = document.getElementById('nd-nombre').value.trim();
     const tension = document.getElementById('nd-tension').value.trim();
+    const locRaw = document.getElementById('nd-localidad')?.value?.trim() || '';
     if (!codigo || !nombre) { toast('Código y nombre son obligatorios', 'error'); return; }
     try {
-        await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension) VALUES(${esc(codigo)}, ${esc(nombre)}, ${esc(tension || null)})`);
+        if (await sqlDistribuidoresTieneLocalidad()) {
+            await sqlSimple(
+                `INSERT INTO distribuidores(codigo, nombre, tension, localidad) VALUES(${esc(codigo)}, ${esc(nombre)}, ${esc(
+                    tension || null
+                )}, ${esc(locRaw || null)}) ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension, localidad = EXCLUDED.localidad`
+            );
+        } else {
+            await sqlSimple(
+                `INSERT INTO distribuidores(codigo, nombre, tension) VALUES(${esc(codigo)}, ${esc(nombre)}, ${esc(tension || null)})`
+            );
+        }
         toast(`${etiquetaZonaPedido()} creado`, 'success');
         document.getElementById('form-distribuidor').style.display = 'none';
-        ['nd-codigo','nd-nombre','nd-tension'].forEach(id => document.getElementById(id).value = '');
+        ['nd-codigo', 'nd-nombre', 'nd-tension', 'nd-localidad'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
     } catch(e) {
@@ -10720,7 +10784,7 @@ async function eliminarDistribuidor(id) {
 function mostrarFormatoExcel() {
     const ent = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
     alert(
-        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — OPCIONAL (cooperativa eléctrica)\n\nLa fila 1 debe tener los encabezados: codigo | nombre | tension\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los registros y volver a cargar desde cero (afecta toda la base).`
+        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — opcional\nColumna D: localidad — opcional (requiere columna en Neon: docs/NEON_distribuidores_localidad.sql)\n\nEncabezados fila 1: codigo | nombre | tension | localidad\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los registros y volver a cargar desde cero (afecta toda la base).`
     );
 }
 
@@ -10740,7 +10804,13 @@ async function importarExcelDistribuidores(event) {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: ['codigo', 'nombre', 'tension'], range: 1, defval: '', raw: false });
+        const hasLoc = await sqlDistribuidoresTieneLocalidad();
+        const rows = XLSX.utils.sheet_to_json(ws, {
+            header: ['codigo', 'nombre', 'tension', 'localidad'],
+            range: 1,
+            defval: '',
+            raw: false
+        });
         if (!rows.length) {
             ocultarOverlayImportacion();
             toast('Excel vacío o formato incorrecto', 'error');
@@ -10756,9 +10826,23 @@ async function importarExcelDistribuidores(event) {
             actualizarOverlayImportacion(`Importando ${zpl}… ${ok + fail + 1} / ${rows.length}`);
             if (idx % 80 === 0) await new Promise(r => setTimeout(r, 0));
             try {
-                await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
-                    VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(row.tension ? String(row.tension).trim() : null)})
+                const locIns =
+                    hasLoc && row.localidad != null && String(row.localidad).trim() !== ''
+                        ? String(row.localidad).trim()
+                        : null;
+                if (hasLoc) {
+                    await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension, localidad)
+                    VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(
+                        row.tension ? String(row.tension).trim() : null
+                    )}, ${esc(locIns)})
+                    ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension, localidad = EXCLUDED.localidad`);
+                } else {
+                    await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
+                    VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(
+                        row.tension ? String(row.tension).trim() : null
+                    )})
                     ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension`);
+                }
                 ok++;
             } catch (e) {
                 fail++;
