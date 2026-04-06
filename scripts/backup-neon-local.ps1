@@ -120,7 +120,7 @@ Luego cerrá y abrí la terminal, o pasá explícitamente:
 "@
 }
 
-$stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
+$stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
 $outFile = Join-Path $OutDir "neon-backup_$stamp.dump"
 
 Write-Host "pg_dump: $pgDump"
