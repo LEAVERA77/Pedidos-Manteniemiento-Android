@@ -55,6 +55,32 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #mapa-card-dashboard.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
 .map-slide-tab{position:fixed;top:120px;left:0;z-index:9600;display:none;padding:.28rem .45rem;background:var(--bd);color:#fff;font-size:.65rem;font-weight:700;border-radius:0 .4rem .4rem 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);pointer-events:auto}
 .map-slide-tab.visible{display:block!important}
+/* Pestañas Filtros / Tipo / Colores / Dash: columna fija con separación uniforme */
+.map-slide-tabs-cluster{
+  position:fixed;
+  left:0;
+  top:calc(var(--app-header-h, 58px) + 0.5rem);
+  z-index:9600;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:0.72rem;
+  pointer-events:none;
+}
+.map-slide-tabs-cluster .map-slide-tab{
+  position:relative!important;
+  top:auto!important;
+  left:0!important;
+  display:none;
+  pointer-events:auto;
+}
+.map-slide-tabs-cluster .map-slide-tab.visible{
+  display:block!important;
+}
+/* Android: si la pestaña "Barra" está visible, el grupo baja para no superponerse */
+.map-slide-tab.map-tab-android-bar.visible + .map-slide-tabs-cluster{
+  top:calc(var(--app-header-h, 58px) + 1.9rem);
+}
 .dash-kpi-click{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .dash-kpi-click:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(30,58,138,.12)}
 .dash-kpi-click.active-ring{outline:2px solid var(--bm);outline-offset:2px}
