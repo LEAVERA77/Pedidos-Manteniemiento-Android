@@ -350,8 +350,66 @@ function esc(v) {
     return "'" + String(v).replace(/'/g, "''") + "'";
 }
 
+/** Registro en consola con contexto (diagnóstico sin mostrar stack al usuario). */
+function logErrorWeb(tag, err, extra) {
+    const msg = err != null && err !== '' ? err.message || String(err) : String(err);
+    const det = extra != null ? extra : '';
+    if (err && err.stack) console.error(`[GestorNova:${tag}]`, msg, det, err.stack);
+    else console.error(`[GestorNova:${tag}]`, msg, det);
+}
 
+/**
+ * Convierte errores de red, Neon, HTTP o SQL en texto entendible para el operador.
+ * No incluye stacks ni detalles técnicos largos.
+ */
+function mensajeErrorUsuario(err) {
+    if (err == null) return 'Ocurrió un error. Probá de nuevo.';
+    const raw = String(err.message != null ? err.message : err).trim() || 'Error desconocido';
+    const m = raw.toLowerCase();
+    if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed') || m.includes('network request failed')) {
+        return 'No hay conexión o el servidor no respondió. Comprobá internet y probá de nuevo.';
+    }
+    if (m.includes('aborted') || m.includes('abort') || m.includes('timeout')) {
+        return 'La operación tardó demasiado. Intentá de nuevo.';
+    }
+    if (m.includes('neon no inicializado') || (m.includes('sin conexión') && m.includes('offline'))) {
+        return 'Sin conexión a la base de datos. Revisá la red o la configuración.';
+    }
+    if (m.includes('401') || m.includes('unauthorized')) return 'Sesión vencida o sin permiso. Volvé a iniciar sesión.';
+    if (m.includes('403') || m.includes('forbidden')) return 'No tenés permiso para esta acción.';
+    if (m.includes('502') || m.includes('503') || m.includes('504') || m.includes('bad gateway')) {
+        return 'El servidor está sobrecargado o en mantenimiento. Probá en unos minutos.';
+    }
+    if (m.includes('500') && m.includes('internal')) return 'Error en el servidor. Si persiste, avisá al administrador.';
+    if (m.includes('permission denied') || m.includes('must be owner')) {
+        return 'No se pudo acceder a ese dato con tu usuario.';
+    }
+    if (m.includes('unique') || m.includes('duplicate key')) {
+        return 'Ese dato ya existe (no se puede duplicar).';
+    }
+    if (m.includes('violates foreign key') || m.includes('foreign key')) {
+        return 'No se puede borrar o modificar: está vinculado a otros registros.';
+    }
+    if (raw.length <= 100 && !/^at\s/i.test(raw) && !m.startsWith('error:') && /[áéíóúñüa-z]/i.test(raw)) {
+        return raw;
+    }
+    return 'Algo salió mal. Si se repite, anotá la hora y contactá al administrador.';
+}
 
+/**
+ * Muestra toast de error amigable y deja traza en consola con etiqueta de contexto.
+ * @param {string} tag - identificador corto (ej. "guardar-pedido")
+ * @param {*} err - Error o valor lanzado
+ * @param {string} [prefijo] - texto opcional antes del mensaje amigable (ej. "No se pudo guardar.")
+ */
+function toastError(tag, err, prefijo) {
+    logErrorWeb(tag, err);
+    const cuerpo = mensajeErrorUsuario(err);
+    let msg = prefijo ? `${String(prefijo).trim()} ${cuerpo}` : cuerpo;
+    msg = msg.replace(/\s+/g, ' ').trim();
+    if (msg.length > 300) msg = msg.slice(0, 297) + '…';
+    toast(msg, 'error');
+}
 
 async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
     
@@ -381,7 +439,7 @@ async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
             
         } catch (error) {
             ultimoError = error;
-            console.warn(`Intento ${intento} de ${maxIntentos} falló:`, error.message);
+            logErrorWeb(`sql-reintento-${intento}/${maxIntentos}`, error);
             
             if (intento < maxIntentos) {
                 
@@ -397,7 +455,8 @@ async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
     }
     
     
-    toast('Error de conexión persistente. Intente nuevamente.', 'error');
+    logErrorWeb('sql-reintentos-agotados', ultimoError);
+    toast(mensajeErrorUsuario(ultimoError), 'error');
     throw ultimoError;
 }
 
@@ -2110,10 +2169,17 @@ function toast(msg, tipo = 'info') {
         el.id = 'toast';
         document.body.appendChild(el);
     }
-    el.textContent = msg;
+    let s = String(msg ?? '');
+    if (s.length > 360) s = s.slice(0, 357) + '…';
+    el.textContent = s;
     el.className = 'show ' + tipo;
+    if (tipo === 'error') el.setAttribute('role', 'alert');
+    else el.removeAttribute('role');
     clearTimeout(window.toastTimer);
-    window.toastTimer = setTimeout(() => { el.className = tipo; }, 3200);
+    window.toastTimer = setTimeout(() => {
+        el.className = tipo;
+        if (tipo === 'error') el.removeAttribute('role');
+    }, 4200);
 }
 
 const norm = p => ({
@@ -2900,7 +2966,7 @@ async function registrarUbicacionManualAdmin(lat, lng) {
         await sqlSimple(`DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`);
         toast('Ubicación de oficina registrada', 'success');
     } catch (e) {
-        toast('No se pudo guardar: ' + e.message, 'error');
+        toastError('ubicacion-oficina-admin', e, 'No se pudo guardar la ubicación.');
     }
 }
 
@@ -3436,7 +3502,7 @@ async function enviarMensajeWaHcDesdeVentana(sidNum) {
         await refrescarMensajesWaHcVentana(sidNum);
         toast('Mensaje enviado', 'success');
     } catch (e) {
-        toast(String(e.message || e), 'error');
+        toastError('wa-hc-enviar', e, 'No se pudo enviar el mensaje.');
     }
 }
 
@@ -3528,7 +3594,7 @@ async function abrirModalWhatsappHumanChat(prefSessionId) {
         await refrescarMensajesWaHcVentana(useId);
         asegurarRefrescoMensajesWaHcVentanas();
     } catch (e) {
-        toast('No se pudo abrir el chat: ' + (e.message || e), 'error');
+        toastError('wa-hc-abrir', e, 'No se pudo abrir el chat.');
     }
 }
 
@@ -3634,7 +3700,8 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
             return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
         }).join('');
     } catch (e) {
-        host.innerHTML = '<span style="color:var(--re)">' + (e.message || e) + '</span>';
+        logErrorWeb('dashboard-filtro-lista', e);
+        host.innerHTML = '<span style="color:var(--re)">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</span>';
     }
 }
 
@@ -3711,8 +3778,10 @@ async function refrescarDashboardGerencia(silent) {
             }
         } catch (_) {}
     } catch (e) {
-        if (kpi && !silent) kpi.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
-        if (kpiM && !silent) kpiM.innerHTML = '<span style="color:var(--re)">' + e.message + '</span>';
+        logErrorWeb('dashboard-kpi', e);
+        const em = escHtmlPrint(mensajeErrorUsuario(e));
+        if (kpi && !silent) kpi.innerHTML = '<span style="color:var(--re)">' + em + '</span>';
+        if (kpiM && !silent) kpiM.innerHTML = '<span style="color:var(--re)">' + em + '</span>';
     }
 }
 
@@ -4622,7 +4691,7 @@ async function confirmarEnviarNotifPedido() {
         await cargarPedidos();
         render();
     } catch (e) {
-        toast('Error: ' + (e.message || e), 'error');
+        toastError('asignar-tecnico', e);
     }
 }
 
@@ -4653,7 +4722,7 @@ async function ejecutarDesasignarPedidoPorId(pedidoId, opts) {
         await cargarPedidos();
         render();
     } catch (e) {
-        toast('Error: ' + (e.message || e), 'error');
+        toastError('desasignar-tecnico', e);
     }
 }
 
@@ -4859,12 +4928,12 @@ async function imprimirPedidoAsync(p) {
 }
 
 window.imprimirPedido = function(p) {
-    imprimirPedidoAsync(p).catch(e => toast('Error al preparar impresión: ' + (e.message || e), 'error'));
+    imprimirPedidoAsync(p).catch(e => toastError('imprimir-pedido', e, 'Error al preparar impresión.'));
 };
 window.imprimirPedidoPorId = function(id) {
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) { toast('Pedido no encontrado', 'error'); return; }
-    imprimirPedidoAsync(p).catch(e => toast('Error al preparar impresión: ' + (e.message || e), 'error'));
+    imprimirPedidoAsync(p).catch(e => toastError('imprimir-pedido', e, 'Error al preparar impresión.'));
 };
 
 
@@ -5717,13 +5786,13 @@ document.getElementById('pf').addEventListener('submit', async e => {
         render();
         if (!modoOffline) cargarPedidos();
     } catch(e) {
-        console.error(e);
-        
-        if (e.message && (e.message.includes('fetch') || e.message.includes('network') || e.message.includes('Failed'))) {
+        logErrorWeb('guardar-pedido', e);
+        const low = String(e && e.message ? e.message : e || '').toLowerCase();
+        if (low.includes('fetch') || low.includes('network') || low.includes('failed')) {
             setModoOffline(true);
             toast('Sin conexión — reintentá guardar en modo offline', 'error');
         } else {
-            toast('Error: ' + (e.message || 'Error al guardar'), 'error');
+            toast(mensajeErrorUsuario(e), 'error');
         }
     } finally {
         btn.disabled = false;
@@ -5891,7 +5960,7 @@ async function iniciar(id) {
         toast('Pedido iniciado', 'info');
         closeAll();
     } catch(e) {
-        toast('Error: ' + e.message, 'error');
+        toastError('iniciar-pedido', e);
     }
 }
 
@@ -6013,7 +6082,8 @@ async function refrescarMaterialesEnDetalle(p) {
             html += '</tbody></table>';
             body.innerHTML = html;
         } catch (e) {
-            body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + (e.message || e) + '</p>';
+            logErrorWeb('materiales-detalle-readonly', e);
+            body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
         }
         return;
     }
@@ -6058,7 +6128,8 @@ async function refrescarMaterialesEnDetalle(p) {
             body.innerHTML = html;
         }
     } catch (e) {
-        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + (e.message || e) + '</p>';
+        logErrorWeb('materiales-detalle', e);
+        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
     }
 }
 
@@ -6079,7 +6150,7 @@ window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
         }
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
         if (p) await refrescarMaterialesEnDetalle(p);
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    } catch (e) { toastError('material-editar', e); }
 };
 
 window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
@@ -6098,7 +6169,7 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
         toast('Material registrado', 'success');
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
         if (p) refrescarMaterialesEnDetalle(p);
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    } catch (e) { toastError('material-agregar', e); }
 };
 
 window.eliminarMaterialPedido = async function (mid, pid) {
@@ -6112,7 +6183,7 @@ window.eliminarMaterialPedido = async function (mid, pid) {
         await sqlSimple(`DELETE FROM pedido_materiales WHERE id=${esc(parseInt(mid, 10))}`);
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
         if (p) refrescarMaterialesEnDetalle(p);
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    } catch (e) { toastError('material-eliminar', e); }
 };
 
 function pedidoTieneClienteCargado(p) {
@@ -6202,7 +6273,7 @@ document.getElementById('cc2').addEventListener('click', async () => {
         closeAll();
         toast('Pedido cerrado', 'success');
     } catch(e) {
-        toast('Error: ' + e.message, 'error');
+        toastError('cerrar-pedido', e);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-check"></i> Confirmar cierre';
@@ -8219,10 +8290,11 @@ async function guardarConfiguracionInicialObligatoria() {
         }
     } catch (e) {
         const m = String(e?.message || '');
+        logErrorWeb('setup-wizard-guardar', e);
         if (m.includes('Failed to fetch') || m.includes('CORS') || m.includes('503')) {
             toast('Error de conexión con API (CORS/Render). Revisá API_BASE_URL y CORS en backend.', 'error');
         } else {
-            toast('Error: ' + m, 'error');
+            toast(mensajeErrorUsuario(e), 'error');
         }
     }
 }
@@ -8635,7 +8707,8 @@ async function cargarKpiSnapshotsAdmin() {
             .join('');
         host.innerHTML = head + body + '</tbody></table></div>';
     } catch (e) {
-        host.innerHTML = '<span style="color:var(--re)">' + _escOpt(e.message || e) + '</span>';
+        logErrorWeb('kpi-snapshots-lista', e);
+        host.innerHTML = '<span style="color:var(--re)">' + _escOpt(mensajeErrorUsuario(e)) + '</span>';
     }
 }
 window.cargarKpiSnapshotsAdmin = cargarKpiSnapshotsAdmin;
@@ -8759,7 +8832,7 @@ async function guardarKpiSnapshotAdmin() {
         toast('KPI guardado.', 'success');
         await cargarKpiSnapshotsAdmin();
     } catch (e) {
-        toast('No se pudo guardar: ' + (e.message || e), 'error');
+        toastError('kpi-snapshot-guardar', e, 'No se pudo guardar.');
     }
 }
 window.guardarKpiSnapshotAdmin = guardarKpiSnapshotAdmin;
@@ -8778,7 +8851,7 @@ async function eliminarKpiSnapshotAdmin(id) {
         toast('Eliminado.', 'success');
         await cargarKpiSnapshotsAdmin();
     } catch (e) {
-        toast('No se pudo eliminar: ' + (e.message || e), 'error');
+        toastError('kpi-snapshot-eliminar', e, 'No se pudo eliminar.');
     }
 }
 window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
@@ -8935,7 +9008,7 @@ async function guardarConfigEmpresa() {
             marcaApiOk ? 'Configuración guardada' : 'Configuración guardada en base local; no se pudo publicar marca en el servidor (revisá API o token)',
             marcaApiOk ? 'success' : 'warning'
         );
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) { toastError('guardar-config-empresa', e); }
 }
 
 // ── Usuarios admin ────────────────────────────────────────────
@@ -8980,7 +9053,10 @@ async function cargarListaUsuarios() {
                 </td>
             </tr>`).join('')}</tbody>
         </table>`;
-    } catch(e) { cont.innerHTML = '<p style="color:var(--re)">' + e.message + '</p>'; }
+    } catch(e) {
+        logErrorWeb('lista-usuarios-admin', e);
+        cont.innerHTML = '<p style="color:var(--re)">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+    }
 }
 
 function abrirFormUsuario() {
@@ -9004,7 +9080,9 @@ async function crearUsuario() {
         ['nu-email','nu-nombre','nu-pw','nu-telefono'].forEach(id => document.getElementById(id).value = '');
         cargarListaUsuarios();
     } catch(e) {
-        toast('Error: ' + (e.message.includes('unique') ? 'Email ya existe' : e.message), 'error');
+        const low = String(e && e.message ? e.message : e).toLowerCase();
+        if (low.includes('unique')) toast('Ese email ya está registrado.', 'error');
+        else toastError('crear-usuario', e);
     }
 }
 
@@ -9030,7 +9108,7 @@ async function editarTelefonoWhatsappUsuario(id, telefonoActual, habilitadoActua
             app.usuariosCache = ru.rows || [];
         } catch (_) {}
     } catch (e) {
-        toast('Error al actualizar WhatsApp: ' + e.message, 'error');
+        toastError('usuario-whatsapp', e, 'No se pudo actualizar WhatsApp.');
     }
 }
 
@@ -9039,7 +9117,7 @@ async function toggleUsuario(id, activar) {
         await sqlSimple(`UPDATE usuarios SET activo = ${activar} WHERE id = ${esc(id)}`);
         toast(activar ? 'Usuario activado' : 'Usuario desactivado', 'success');
         cargarListaUsuarios();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) { toastError('toggle-usuario', e); }
 }
 
 async function eliminarUsuario(id) {
@@ -9048,7 +9126,7 @@ async function eliminarUsuario(id) {
         await sqlSimple(`DELETE FROM usuarios WHERE id = ${esc(id)}`);
         toast('Usuario eliminado', 'success');
         cargarListaUsuarios();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) { toastError('eliminar-usuario', e); }
 }
 
 function _esEmailValidoSimple(s) {
@@ -9107,7 +9185,7 @@ async function adminGenerarClaveProvisionalUsuario(userId) {
             app.usuariosCache = ru.rows || [];
         } catch (_) {}
     } catch (e) {
-        toast('Error: ' + (e.message || e), 'error');
+        toastError('clave-provisoria', e);
     }
 }
 window.adminGenerarClaveProvisionalUsuario = adminGenerarClaveProvisionalUsuario;
@@ -9160,7 +9238,8 @@ async function confirmarCambioPasswordObligatorioAndroid() {
         entrarConUsuario(u, false);
         toast('Contraseña actualizada. Bienvenido ' + u.nombre, 'success');
     } catch (e) {
-        if (msg) msg.textContent = 'Error: ' + (e.message || e);
+        logErrorWeb('cambio-pw-android', e);
+        if (msg) msg.textContent = mensajeErrorUsuario(e);
     }
 }
 window.confirmarCambioPasswordObligatorioAndroid = confirmarCambioPasswordObligatorioAndroid;
@@ -9195,7 +9274,10 @@ async function cargarListaDistribuidoresAdmin() {
             </tr>`).join('')}</tbody>
         </table>
         <p style="font-size:.78rem;color:var(--tm);margin:.55rem 0 0">Total en base de datos: <strong>${n}</strong> ${zonaN(n)}. Desplazá esta sección si la lista es larga.</p>`;
-    } catch(e) { cont.innerHTML = '<p style="color:var(--re)">' + e.message + '</p>'; }
+    } catch(e) {
+        logErrorWeb('lista-distribuidores-admin', e);
+        cont.innerHTML = '<p style="color:var(--re)">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+    }
 }
 
 function abrirFormDistribuidor() {
@@ -9216,7 +9298,9 @@ async function crearDistribuidor() {
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
     } catch(e) {
-        toast('Error: ' + (e.message.includes('unique') ? 'Código ya existe' : e.message), 'error');
+        const low = String(e && e.message ? e.message : e).toLowerCase();
+        if (low.includes('unique')) toast('Ese código ya existe.', 'error');
+        else toastError('crear-distribuidor', e);
     }
 }
 
@@ -9227,7 +9311,7 @@ async function eliminarDistribuidor(id) {
         toast('Eliminado', 'success');
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) { toastError('eliminar-distribuidor', e); }
 }
 
 function mostrarFormatoExcel() {
@@ -9295,8 +9379,8 @@ async function importarExcelDistribuidores(event) {
         } catch (_) {}
     } catch (e) {
         ocultarOverlayImportacion();
-        toast('Error al leer Excel: ' + e.message, 'error');
-        alert(`Error al importar ${zpl}: ` + e.message);
+        toastError('import-excel-distribuidores', e, 'Error al leer el Excel.');
+        alert(`Error al importar ${zpl}.\n\n` + mensajeErrorUsuario(e));
     }
     event.target.value = '';
 }
@@ -9323,7 +9407,8 @@ async function cargarListaSociosAdmin() {
                 return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             }).join('') + '</tbody></table></div>';
     } catch (e) {
-        cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + e.message + '</p>';
+        logErrorWeb('lista-socios-admin', e);
+        cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
     }
 }
 
@@ -9442,8 +9527,8 @@ async function importarExcelSocios(event) {
         } catch (_) {}
     } catch (e) {
         ocultarOverlayImportacion();
-        toast('Error al leer Excel: ' + e.message, 'error');
-        alert('Error al importar socios: ' + e.message);
+        toastError('import-excel-socios', e, 'Error al leer el Excel.');
+        alert('Error al importar socios.\n\n' + mensajeErrorUsuario(e));
     }
     event.target.value = '';
 }
@@ -9533,7 +9618,7 @@ async function exportInformeMensualExcel() {
         const suf = fechaDesde.toISOString().slice(0, 10);
         XLSX.writeFile(wb, `gestornova_pedidos_${suf}.xlsx`);
         toast('Excel descargado', 'success');
-    } catch (e) { toast('Error: ' + (e.message || e), 'error'); }
+    } catch (e) { toastError('export-excel-pedidos', e); }
 }
 
 function coleccionSeccionesPdfEstadisticas() {
@@ -9636,7 +9721,7 @@ async function imprimirInformeConGraficos() {
         setTimeout(liberarUrls, 120000);
     } catch (e) {
         liberarUrls();
-        toast('Error: ' + (e.message || e), 'error');
+        toastError('imprimir-stats-graficos', e);
     }
 }
 
@@ -9677,7 +9762,7 @@ async function generarPdfEstadisticasMultipaginaENRE() {
         pdf.save(`gestornova_stats_ENRE_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
         toast('PDF listo', 'success');
     } catch (e) {
-        toast('Error PDF: ' + (e.message || e), 'error');
+        toastError('pdf-estadisticas-enre', e, 'Error al generar el PDF.');
     }
 }
 
@@ -9701,7 +9786,7 @@ async function generarInformeMensualENRE() {
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    } catch (e) { toastError('informe-mensual-enre', e); }
 }
 
 // ── Estadísticas con Chart.js ─────────────────────────────────
@@ -10226,10 +10311,12 @@ async function cargarEstadisticas() {
         });
 
     } catch(e) {
-        console.error('Error estadísticas:', e);
+        logErrorWeb('cargar-estadisticas', e);
+        const em = escHtmlPrint(mensajeErrorUsuario(e));
         if (document.getElementById('stats-cards'))
-            document.getElementById('stats-cards').innerHTML = `<div style="color:var(--re);padding:1rem;font-size:.85rem">Error al cargar estadísticas: ${e.message}</div>`;
-        toast('Error al cargar estadísticas: ' + e.message, 'error');
+            document.getElementById('stats-cards').innerHTML =
+                `<div style="color:var(--re);padding:1rem;font-size:.85rem">No se pudieron cargar las estadísticas. ${em}</div>`;
+        toast(mensajeErrorUsuario(e), 'error');
     }
 }
 
@@ -10407,7 +10494,10 @@ async function cambiarContrasena() {
         msg.style.color = '#166534';
         msg.textContent = '✓ Contraseña actualizada correctamente';
         ['pw-actual','pw-nueva','pw-confirmar'].forEach(id => document.getElementById(id).value = '');
-    } catch(e) { msg.textContent = 'Error: ' + e.message; }
+    } catch(e) {
+        logErrorWeb('cambiar-contrasena', e);
+        msg.textContent = mensajeErrorUsuario(e);
+    }
 }
 
 // ── Reset de contraseña con EmailJS ──────────────────────────
@@ -10676,7 +10766,7 @@ function descargarGrafico(canvasId, nombre) {
         link.click();
         toast('Gráfico descargado', 'success');
     } catch(e) {
-        toast('Error al descargar: ' + e.message, 'error');
+        toastError('descargar-grafico', e, 'No se pudo descargar.');
     }
 }
 window.descargarGrafico = descargarGrafico;
