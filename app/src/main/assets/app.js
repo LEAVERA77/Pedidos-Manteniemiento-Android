@@ -9683,6 +9683,7 @@ async function cargarKpiSnapshotsAdmin() {
     const sinTabla = document.getElementById('kpi-snapshots-sin-tabla');
     const formWrap = document.getElementById('kpi-snapshots-form-wrap');
     const btnRef = document.getElementById('kpi-btn-refrescar');
+    const btnImp = document.getElementById('kpi-btn-imprimir');
     if (!host) return;
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
         host.innerHTML = '<span style="color:var(--re)">Sin conexión o sin permisos.</span>';
@@ -9697,12 +9698,14 @@ async function cargarKpiSnapshotsAdmin() {
         }
         if (formWrap) formWrap.style.display = 'none';
         if (btnRef) btnRef.style.display = 'none';
+        if (btnImp) btnImp.style.display = 'none';
         host.innerHTML = '';
         return;
     }
     if (sinTabla) sinTabla.style.display = 'none';
     if (formWrap) formWrap.style.display = 'block';
     if (btnRef) btnRef.style.display = 'inline-flex';
+    if (btnImp) btnImp.style.display = 'none';
     try {
         aplicarKpiPresetAdmin();
     } catch (_) {}
@@ -9719,11 +9722,13 @@ async function cargarKpiSnapshotsAdmin() {
         populateKpiChartMetricaSelect(rows);
         if (rows.length === 0) {
             host.innerHTML = '<p style="font-size:.85rem;color:var(--tl)">No hay KPIs guardados para este tenant.</p>';
+            if (btnImp) btnImp.style.display = 'none';
             try {
                 renderKpiAdminHistoricoChart();
             } catch (_) {}
             return;
         }
+        if (btnImp) btnImp.style.display = 'inline-flex';
         const head =
             '<div style="overflow-x:auto;border:1px solid var(--bo);border-radius:.5rem"><table style="width:100%;border-collapse:collapse;font-size:.78rem"><thead><tr style="background:var(--bg);text-align:left">' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Métrica</th>' +
@@ -9767,6 +9772,7 @@ async function cargarKpiSnapshotsAdmin() {
         host.innerHTML = '<span style="color:var(--re)">' + _escOpt(mensajeErrorUsuario(e)) + '</span>';
         window.__kpiAdminLastRows = [];
         populateKpiChartMetricaSelect([]);
+        if (btnImp) btnImp.style.display = 'none';
     }
 }
 window.cargarKpiSnapshotsAdmin = cargarKpiSnapshotsAdmin;
@@ -9926,6 +9932,233 @@ async function eliminarKpiSnapshotAdmin(id) {
     }
 }
 window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
+
+/** Puntos ordenados para la métrica elegida en el selector del gráfico (misma lógica que el chart). */
+function kpiAdminPuntosTendencia(rows, metrica) {
+    if (!metrica || !Array.isArray(rows) || !rows.length) return [];
+    return rows
+        .filter(
+            r =>
+                r.metrica === metrica &&
+                r.valor_numero != null &&
+                r.valor_numero !== '' &&
+                !Number.isNaN(Number(r.valor_numero))
+        )
+        .map(r => ({
+            label: String(r.periodo_fin || r.periodo_inicio || ''),
+            y: Number(r.valor_numero),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function textoBreveInterpretacionKpi(rows, metricaSel, points) {
+    const parts = [];
+    parts.push(
+        'Este informe resume los KPI guardados para el tenant actual: cada fila es un valor agregado para un periodo (fechas desde/hasta), con unidad y origen del dato.'
+    );
+    if (points.length >= 2) {
+        const lab = KPI_METRICA_ETIQUETAS[metricaSel] || metricaSel;
+        const v0 = points[0].y;
+        const v1 = points[points.length - 1].y;
+        const d = v1 - v0;
+        const base = Math.max(Math.abs(v0), Math.abs(v1), 1e-6) * 0.02 + 1e-6;
+        let tend = 'se mantiene estable entre el primer y el último periodo con datos';
+        if (d > base) tend = 'tiene tendencia al alza entre el primer y el último periodo';
+        else if (d < -base) tend = 'tiene tendencia a la baja entre el primer y el último periodo';
+        parts.push(
+            `La métrica «${lab}» ${tend} (aprox. ${v0} → ${v1}). Interpretá el cambio con contexto (muestra, estacionalidad o campañas) antes de tomar decisiones.`
+        );
+    } else if (metricaSel) {
+        parts.push(
+            'Para ver una curva de tendencia hacen falta al menos dos valores numéricos de la misma métrica en periodos distintos; igualmente se listan todos los registros abajo.'
+        );
+    }
+    parts.push('Documento para uso interno y seguimiento de piloto comercial.');
+    return parts.join(' ');
+}
+
+function kpiPdfTruncCell(s, max) {
+    const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+    if (t.length <= max) return t;
+    return t.slice(0, Math.max(1, max - 1)) + '…';
+}
+
+function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7);
+    pdf.setTextColor(30, 41, 59);
+    const cols = [
+        { w: 52, t: 'Métrica' },
+        { w: 20, t: 'Desde' },
+        { w: 20, t: 'Hasta' },
+        { w: 14, t: 'Valor' },
+        { w: 18, t: 'Unidad' },
+        { w: 22, t: 'Fuente' },
+        { w: 36, t: 'Alta' },
+    ];
+    let x = margin;
+    cols.forEach(c => {
+        pdf.text(c.t, x, y);
+        x += c.w;
+    });
+    pdf.setDrawColor(203, 213, 225);
+    pdf.setLineWidth(0.25);
+    pdf.line(margin, y + 1.2, margin + 182, y + 1.2);
+    return y + 5;
+}
+
+function kpiPdfPiePaginas(pdf) {
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const n = pdf.internal.getNumberOfPages();
+    const ent = kpiPdfTruncCell(String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova', 48);
+    for (let i = 1; i <= n; i++) {
+        pdf.setPage(i);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.3);
+        pdf.line(12, pageH - 10, pageW - 12, pageH - 10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7.6);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(`Página ${i} de ${n} · ${ent}`, pageW / 2, pageH - 6, { align: 'center' });
+    }
+}
+
+/** PDF A4 listo para imprimir: encabezado empresa, texto breve, gráfico compacto (si aplica) y tabla de snapshots. */
+window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
+    if (!esAdmin()) {
+        toast('Solo administrador', 'error');
+        return;
+    }
+    if (modoOffline || !NEON_OK) {
+        toast('Requiere conexión', 'error');
+        return;
+    }
+    const rows = window.__kpiAdminLastRows;
+    if (!rows || !rows.length) {
+        toast('Primero tocá «Actualizar lista» en KPI piloto para cargar los datos.', 'warning');
+        return;
+    }
+    if (!window.jspdf?.jsPDF) {
+        toast('Falta la librería jsPDF. Recargá la página.', 'error');
+        return;
+    }
+    try {
+        toast('Generando informe…', 'info');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        const margin = 14;
+        const maxW = pageW - 2 * margin;
+        const metricaSel = (document.getElementById('kpi-chart-metrica')?.value || '').trim();
+        const points = kpiAdminPuntosTendencia(rows, metricaSel);
+        const lineaGen = `KPI piloto · Tenant ${tenantIdActual()} · Generado ${new Date().toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' })}`;
+        let y = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaGen);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12.5);
+        pdf.setTextColor(30, 58, 138);
+        pdf.text('Informe KPI piloto', margin, y);
+        y += 7;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8.1);
+        pdf.setTextColor(51, 65, 85);
+        const intro = textoBreveInterpretacionKpi(rows, metricaSel, points);
+        const introRaw = pdf.splitTextToSize(intro, maxW);
+        const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
+        const lineH = 3.55;
+        for (let li = 0; li < introLines.length; li++) {
+            if (y + lineH > pageH - 14) {
+                pdf.addPage();
+                y = margin;
+            }
+            pdf.text(introLines[li], margin, y);
+            y += lineH;
+        }
+        y += 2;
+        const ch = window._chartKpiAdmin;
+        if (ch?.canvas && points.length >= 2) {
+            const needH = 46;
+            if (y + needH > pageH - 14) {
+                pdf.addPage();
+                y = margin;
+            }
+            const dataUrl = ch.canvas.toDataURL('image/png');
+            const cw = ch.canvas.width;
+            const cwh = ch.canvas.height;
+            const wMm = maxW;
+            let hMm = wMm * (cwh / Math.max(cw, 1));
+            if (hMm > 42) hMm = 42;
+            pdf.addImage(dataUrl, 'PNG', margin, y, wMm, hMm);
+            y += hMm + 3;
+        }
+        if (y + 14 > pageH - 14) {
+            pdf.addPage();
+            y = margin;
+        }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(30, 58, 138);
+        pdf.text('Registros (snapshots)', margin, y);
+        y += 5;
+        y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(6.8);
+        pdf.setTextColor(15, 23, 42);
+        const rowH = 4;
+        for (let ri = 0; ri < rows.length; ri++) {
+            const row = rows[ri];
+            if (y + rowH > pageH - 14) {
+                pdf.addPage();
+                y = margin + 2;
+                y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(6.8);
+                pdf.setTextColor(15, 23, 42);
+            }
+            let x = margin;
+            const labM = KPI_METRICA_ETIQUETAS[row.metrica] || row.metrica;
+            const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+            const cells = [
+                { w: 52, t: kpiPdfTruncCell(labM, 34) },
+                { w: 20, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_inicio), 14) },
+                { w: 20, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_fin), 14) },
+                { w: 14, t: kpiPdfTruncCell(vn, 10) },
+                { w: 18, t: kpiPdfTruncCell(formatearUnidadKpiVista(row.unidad), 12) },
+                { w: 22, t: kpiPdfTruncCell(row.fuente || '', 14) },
+                { w: 36, t: kpiPdfTruncCell(String(row.created_at || '').replace('T', ' ').slice(0, 16), 22) },
+            ];
+            cells.forEach(c => {
+                pdf.text(c.t, x, y);
+                x += c.w;
+            });
+            y += rowH;
+        }
+        kpiPdfPiePaginas(pdf);
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (!w) {
+            URL.revokeObjectURL(url);
+            toast('Permití ventanas emergentes para abrir el informe.', 'error');
+            return;
+        }
+        setTimeout(() => {
+            try {
+                w.focus();
+                w.print();
+            } catch (_) {}
+            setTimeout(() => {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (_) {}
+            }, 120000);
+        }, 450);
+        toast('Informe listo — se abrió la vista de impresión.', 'success');
+    } catch (e) {
+        toastError('kpi-informe-pdf', e);
+    }
+};
 
 async function repoblarSelectDistribuidoresInfraAdmin() {
     const sel = document.getElementById('ia-t-distribuidor');
@@ -12156,7 +12389,7 @@ async function cargarEstadisticas() {
                 { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: '#1e3a8a88', borderColor: '#1e3a8a', borderWidth: 2 },
                 { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: '#10b98188', borderColor: '#10b981', borderWidth: 2 }
             ],
-            { layout: { padding: { top: 10, bottom: 6, left: 4, right: 8 } },
+            { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
                 plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}}}
         );
@@ -12201,7 +12434,8 @@ async function cargarEstadisticas() {
                 { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: '#1e3a8a88', borderColor: '#1e3a8a', borderWidth: 1 },
                 { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: '#10b98188', borderColor: '#10b981', borderWidth: 1 }
             ],
-            { plugins: { legend: { display: true, position: 'top' },
+            { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
+              plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}},
               scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
         );
@@ -12250,7 +12484,7 @@ async function cargarEstadisticas() {
                 rUsuarios.rows.map(r => r.usuario.length > 14 ? r.usuario.substring(0,14)+'…' : r.usuario),
                 [{ label: 'Pedidos', data: rUsuarios.rows.map(r => parseInt(r.n)),
                    backgroundColor: COLORES.slice(0,10) }],
-                { layout: { padding: { top: 32, bottom: 4, left: 4, right: 8 } },
+                { layout: { padding: { top: 32, bottom: 28, left: 4, right: 8 } },
                     plugins: { legend: { display: false },
                     tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}},
                   scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }

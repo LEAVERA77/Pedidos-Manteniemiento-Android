@@ -764,7 +764,10 @@
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin:1rem 0 .6rem;flex-wrap:wrap;gap:.5rem">
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Registros</h3>
-        <button type="button" class="btn-sm primary" onclick="cargarKpiSnapshotsAdmin()" id="kpi-btn-refrescar" style="display:none"><i class="fas fa-sync"></i> Actualizar lista</button>
+        <div style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
+          <button type="button" class="btn-sm" onclick="imprimirInformeKpiPiloto()" id="kpi-btn-imprimir" style="display:none;background:var(--bg);border:1px solid var(--bo)" title="PDF A4 con encabezado, gráfico compacto y tabla"><i class="fas fa-print"></i> Imprimir informe</button>
+          <button type="button" class="btn-sm primary" onclick="cargarKpiSnapshotsAdmin()" id="kpi-btn-refrescar" style="display:none"><i class="fas fa-sync"></i> Actualizar lista</button>
+        </div>
       </div>
       <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
     </div>
