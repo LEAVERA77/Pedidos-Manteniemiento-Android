@@ -13,6 +13,7 @@ import {
 import {
   notifyPedidoCierreWhatsAppSafe,
   notifyPedidoClienteActualizacionWhatsAppSafe,
+  notifyPedidoAltaClienteWhatsAppSafe,
 } from "../services/whatsappService.js";
 import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
 import {
@@ -54,6 +55,33 @@ async function loadNombreCliente(tenantId) {
   if (!Number.isFinite(tid)) return "GestorNova";
   const r = await query(`SELECT nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
   return String(r.rows?.[0]?.nombre || "GestorNova").trim() || "GestorNova";
+}
+
+function scheduleNotifyAltaReclamoWhatsApp(row, userId) {
+  const phone = String(row.telefono_contacto || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) return;
+  setImmediate(() => {
+    (async () => {
+      try {
+        const tenantId =
+          row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
+            ? Number(row.tenant_id)
+            : await getUserTenantId(userId);
+        const nombreEntidad = await loadNombreCliente(tenantId);
+        await notifyPedidoAltaClienteWhatsAppSafe({
+          tenantId,
+          numeroPedido: row.numero_pedido,
+          nombreEntidad,
+          telefonoContactoRaw: row.telefono_contacto,
+          pedidoId: row.id,
+          descripcion: row.descripcion,
+          tipoTrabajo: row.tipo_trabajo,
+        });
+      } catch (e) {
+        console.error("[pedidos] notify alta reclamo WA (no bloqueante)", e.message);
+      }
+    })();
+  });
 }
 
 function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
@@ -298,7 +326,9 @@ router.post("/", async (req, res) => {
         barrioFinal,
       ]
     );
-    return res.status(201).json(insert.rows[0]);
+    const created = insert.rows[0];
+    scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
+    return res.status(201).json(created);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo crear el pedido", detail: error.message });
   }
@@ -462,6 +492,47 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     return res.json({ ok: true, ...r });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo enviar el aviso", detail: error.message });
+  }
+});
+
+/** Tras INSERT directo en Neon (app WebView), avisa al cliente del alta si hay teléfono y el reclamo sigue pendiente. */
+router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pedido = await getPedidoById(id);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (String(pedido.estado || "") !== "Pendiente") {
+      return res.status(400).json({ error: "Solo se notifica en reclamos pendientes (recién cargados)" });
+    }
+    const uid = Number(req.user.id);
+    const esAdmin = req.user.rol === "admin";
+    const creador = Number(pedido.usuario_creador_id) === uid;
+    const owner = Number(pedido.usuario_id) === uid;
+    if (!esAdmin && !creador && !owner) {
+      return res.status(403).json({ error: "Sin permiso para notificar este pedido" });
+    }
+    const ut = await getUserTenantId(req.user.id);
+    const tenantId =
+      pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    const nombreEntidad = await loadNombreCliente(tenantId);
+    const r = await notifyPedidoAltaClienteWhatsAppSafe({
+      tenantId,
+      numeroPedido: pedido.numero_pedido,
+      nombreEntidad,
+      telefonoContactoRaw: pedido.telefono_contacto,
+      pedidoId: pedido.id,
+      descripcion: pedido.descripcion,
+      tipoTrabajo: pedido.tipo_trabajo,
+    });
+    return res.json({ ok: true, ...r });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo enviar el aviso de alta", detail: error.message });
   }
 });
 

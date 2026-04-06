@@ -1089,6 +1089,31 @@ async function notificarWhatsappClienteEventoApi(pedidoId, event) {
         console.warn('[wa-cliente-event]', e && e.message);
     }
 }
+
+/** Aviso WA al cliente: reclamo recién cargado (INSERT vía Neon + JWT). */
+async function notificarAltaReclamoWhatsappApi(pedidoId) {
+    if (modoOffline) return;
+    const base = getApiBaseUrl();
+    if (!base || pedidoId == null) return;
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    const pid = Number(pedidoId);
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    try {
+        const resp = await fetch(apiUrl(`/api/pedidos/${pid}/notify-alta-cliente-whatsapp`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        if (!resp.ok) {
+            const t = await resp.text();
+            console.warn('[wa-alta-reclamo]', resp.status, t.slice(0, 200));
+        }
+    } catch (e) {
+        console.warn('[wa-alta-reclamo]', e && e.message);
+    }
+}
 async function loginApiJwt(email, password) {
     const ms = 28000;
     const ctl = new AbortController();
@@ -5782,6 +5807,17 @@ document.getElementById('pf').addEventListener('submit', async e => {
             
             await ejecutarSQLConReintentos(queryInsert);
             toast('Pedido guardado', 'success');
+            if (telVal && puedeEnviarApiRestPedidos()) {
+                try {
+                    const rNew = await sqlSimple(
+                        `SELECT id FROM pedidos WHERE numero_pedido = ${esc(numPedido)} ORDER BY id DESC LIMIT 1`
+                    );
+                    const newId = rNew.rows?.[0]?.id;
+                    if (newId != null) void notificarAltaReclamoWhatsappApi(Number(newId));
+                } catch (e) {
+                    console.warn('[wa-alta-reclamo] lookup id', e && e.message);
+                }
+            }
         }
 
         fotosTemporales = [];
@@ -6138,6 +6174,73 @@ async function refrescarMaterialesEnDetalle(p) {
     }
 }
 
+/** Materiales en el modal «Cerrar pedido» (mismas reglas que en detalle). */
+async function refrescarMaterialesEnModalCierre(p) {
+    const body = document.getElementById('cierre-materiales-body');
+    if (!body) return;
+    if (tipoPedidoExcluyeMateriales(p.tt)) {
+        body.innerHTML = '';
+        return;
+    }
+    const pid = parseInt(p.id, 10);
+    if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
+        body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
+        return;
+    }
+    const puedeEditarMat = (esTecnicoOSupervisor() || esAdmin())
+        && (String(p.tai) === String(app.u?.id) || esAdmin());
+    try {
+        const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
+        const rows = r.rows || [];
+        let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
+        rows.forEach(row => {
+            const des = String(row.descripcion || '').replace(/</g, '&lt;');
+            const mid = parseInt(row.id, 10);
+            let celUn = '';
+            let celCant = '';
+            if (puedeEditarMat) {
+                celUn = `<select class="mat-sel-un" onchange="actualizarCampoMaterial(${mid},${pid},'unidad',this.value)">${htmlOptsUnidadMaterial(row.unidad)}</select>`;
+                const qc = row.cantidad != null && row.cantidad !== '' ? String(row.cantidad) : '';
+                celCant = `<input type="number" class="mat-inp-cant" step="any" value="${qc.replace(/"/g, '&quot;')}" onblur="actualizarCampoMaterial(${mid},${pid},'cantidad',this.value)">`;
+            } else {
+                celUn = escHtmlPrint(row.unidad || '—');
+                celCant = row.cantidad != null && row.cantidad !== '' ? escHtmlPrint(String(row.cantidad)) : '—';
+            }
+            html += `<tr><td class="mat-col-item">${des}</td><td class="mat-col-un">${celUn}</td><td class="mat-col-cant">${celCant}</td><td>`;
+            if (puedeEditarMat) {
+                html += `<button type="button" class="btn-sm" onclick="eliminarMaterialPedido(${row.id},${pid})" title="Quitar ítem" style="font-size:.7rem;padding:.15rem .4rem;border-color:#fecaca;color:#b91c1c;background:#fff"><i class="fas fa-trash-alt"></i></button>`;
+            }
+            html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        if (puedeEditarMat) {
+            html += `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;align-items:flex-end">
+                <input type="text" id="cierre-mat-desc-${pid}" placeholder="Descripción" style="flex:2;min-width:120px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
+                <select id="cierre-mat-un-${pid}" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem">${htmlOptsUnidadMaterial('PZA')}</select>
+                <input type="number" id="cierre-mat-cant-${pid}" placeholder="Cant." step="any" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
+                <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeCierreModal(${pid})">+ Agregar</button>
+            </div>`;
+        }
+        if (!rows.length && !puedeEditarMat) {
+            body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
+        } else {
+            body.innerHTML = html;
+        }
+    } catch (e) {
+        logErrorWeb('materiales-cierre-modal', e);
+        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+    }
+}
+
+function sincronizarVistaMaterialesPedido(p) {
+    if (!p) return;
+    void refrescarMaterialesEnDetalle(p);
+    const cm2 = document.getElementById('cm2');
+    if (cm2?.classList.contains('active') && String(app.cid) === String(p.id)) {
+        void refrescarMaterialesEnModalCierre(p);
+    }
+}
+
 window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
     if (modoOffline || !NEON_OK) return;
     const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
@@ -6154,7 +6257,7 @@ window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
             await sqlSimple(`UPDATE pedido_materiales SET cantidad = ${esc(c)} WHERE id = ${esc(parseInt(mid, 10))}`);
         }
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
-        if (p) await refrescarMaterialesEnDetalle(p);
+        if (p) await sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-editar', e); }
 };
 
@@ -6173,8 +6276,27 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
         await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
         toast('Material registrado', 'success');
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
-        if (p) refrescarMaterialesEnDetalle(p);
+        if (p) sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-agregar', e); }
+};
+
+window.agregarMaterialPedidoDesdeCierreModal = async function (pid) {
+    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
+        toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
+    const d = document.getElementById('cierre-mat-desc-' + pid)?.value.trim();
+    if (!d) { toast('Indicá descripción del material', 'error'); return; }
+    const cantRaw = document.getElementById('cierre-mat-cant-' + pid)?.value;
+    const un = document.getElementById('cierre-mat-un-' + pid)?.value?.trim() || '';
+    const cant = cantRaw === '' || cantRaw == null ? null : parseFloat(cantRaw);
+    try {
+        await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
+        toast('Material registrado', 'success');
+        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        if (p) sincronizarVistaMaterialesPedido(p);
+    } catch (e) { toastError('material-agregar-cierre', e); }
 };
 
 window.eliminarMaterialPedido = async function (mid, pid) {
@@ -6187,7 +6309,7 @@ window.eliminarMaterialPedido = async function (mid, pid) {
     try {
         await sqlSimple(`DELETE FROM pedido_materiales WHERE id=${esc(parseInt(mid, 10))}`);
         const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
-        if (p) refrescarMaterialesEnDetalle(p);
+        if (p) sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-eliminar', e); }
 };
 
@@ -6222,6 +6344,19 @@ function abrirCierre(id) {
         const el = document.getElementById(id);
         if (el) el.checked = false;
     });
+
+    const blkMat = document.getElementById('cierre-materiales-block');
+    const bodyMat = document.getElementById('cierre-materiales-body');
+    if (blkMat && bodyMat) {
+        const admiteMat = !tipoPedidoExcluyeMateriales(p.tt) && !String(p.id).startsWith('off_') && !modoOffline && NEON_OK;
+        if (admiteMat) {
+            blkMat.style.display = '';
+            void refrescarMaterialesEnModalCierre(p);
+        } else {
+            blkMat.style.display = 'none';
+            bodyMat.innerHTML = '';
+        }
+    }
     
     fotoCierreTemp = null;
     actualizarVistaPreviaFotoCierre();

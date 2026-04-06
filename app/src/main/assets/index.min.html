@@ -244,7 +244,7 @@
         </div>
       </div>
       <div class="fg"><label for="ped-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp)</label>
-        <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — para avisar al cerrar el reclamo">
+        <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — WhatsApp: aviso al cargar el reclamo y al cerrar (si Meta está configurado)">
       </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
         <select id="tt" required onchange="syncPrioridadConTipoReclamo();syncSuministroElectricoUI();"></select>
@@ -325,6 +325,11 @@
         <label style="font-weight:500;margin-top:.35rem;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-epp"> EPPS / elementos de protección verificados</label>
         <label style="font-weight:500;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-corte"> Corte o seccionamiento de energía verificado</label>
         <label style="font-weight:500;display:flex;align-items:center;gap:.5rem"><input type="checkbox" id="chk-senal"> Señalización del lugar de trabajo</label>
+      </div>
+      <div id="cierre-materiales-block" class="fg" style="padding:0;margin-top:1rem;display:none">
+        <label><i class="fas fa-boxes"></i> Materiales utilizados</label>
+        <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .5rem">Si el tipo de reclamo admite materiales, podés cargarlos o editarlos antes de confirmar el cierre.</p>
+        <div id="cierre-materiales-body"></div>
       </div>
       <div class="fg" style="padding:0;margin-top:1rem">
         <label id="lbl-firma-cierre"><i class="fas fa-signature"></i> Firma del cliente / socio</label>

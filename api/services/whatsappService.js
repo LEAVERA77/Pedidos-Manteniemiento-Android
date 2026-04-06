@@ -267,6 +267,56 @@ export async function notifyPedidoCierreWhatsAppSafe({
 }
 
 /**
+ * Aviso al cliente cuando se registra un reclamo con teléfono de contacto (alta desde app o API).
+ */
+export async function notifyPedidoAltaClienteWhatsAppSafe({
+  tenantId,
+  numeroPedido,
+  nombreEntidad,
+  telefonoContactoRaw,
+  pedidoId,
+  descripcion,
+  tipoTrabajo,
+}) {
+  const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) {
+    return { sent: false, skipped: true, reason: "no_phone" };
+  }
+
+  const np = String(numeroPedido || "").trim() || String(pedidoId || "");
+  const desc = String(descripcion || "").trim();
+  const tt = String(tipoTrabajo || "").trim();
+  const causa = desc || tt || "sin detalle";
+  const snippet = causa.slice(0, 280);
+  const ent = String(nombreEntidad || "").trim();
+  const body =
+    (ent ? `*${ent}*\n\n` : "") +
+    `Se cargó un reclamo *#${np}*, causa: ${snippet}\n\n` +
+    `Tu pedido será tratado.`;
+
+  try {
+    const r = await sendTenantWhatsAppText({
+      tenantId,
+      toDigits: phone,
+      bodyText: body,
+      pedidoId,
+      logContext: "alta_reclamo_cliente",
+    });
+    if (!r.ok) {
+      console.error("[whatsapp-service] alta reclamo: envío falló", {
+        pedidoId,
+        tenantId,
+        detail: r.error || r.graph,
+      });
+    }
+    return { sent: !!r.ok, skipped: false, ok: r.ok };
+  } catch (e) {
+    console.error("[whatsapp-service] alta reclamo: excepción no bloqueante", e.message);
+    return { sent: false, skipped: false, error: e.message };
+  }
+}
+
+/**
  * Aviso al vecino/cliente cuando un técnico (app o web) actualiza el pedido originado por WhatsApp.
  * Solo debe llamarse si el pedido tiene origen WhatsApp y teléfono válido (lo decide el caller).
  */
