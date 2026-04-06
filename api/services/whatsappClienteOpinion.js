@@ -7,8 +7,6 @@ import { query } from "../db/neon.js";
 import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 import { parseStarRating01a5 } from "../utils/parseStarRating01a5.js";
 
-export { parseStarRating01a5 } from "../utils/parseStarRating01a5.js";
-
 let _tableEnsured = false;
 let _obsTableEnsured = false;
 
