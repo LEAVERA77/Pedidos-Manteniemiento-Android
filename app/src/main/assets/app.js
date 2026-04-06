@@ -10782,6 +10782,83 @@ function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
     return { iw, ih };
 }
 
+let _chartDataSnapshotForPdf = null;
+
+function adminEstadisticasSetCaptureCompact(on) {
+    const root = document.getElementById('admin-estadisticas');
+    if (root) root.classList.toggle('gn-stats-capture-compact', !!on);
+    if (typeof window !== 'undefined') window.__gnStatsInkSave = !!on;
+}
+
+function aplicarEstadisticasInkSaveCharts(activar) {
+    if (activar) {
+        if (_chartDataSnapshotForPdf) return;
+        _chartDataSnapshotForPdf = {};
+        const inkA = 'rgba(100,116,139,0.22)';
+        const inkB = 'rgba(148,163,184,0.18)';
+        const inkStroke = '#334155';
+        Object.entries(_charts).forEach(([id, chart]) => {
+            try {
+                _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
+                    backgroundColor: ds.backgroundColor,
+                    borderColor: ds.borderColor,
+                    borderWidth: ds.borderWidth,
+                }));
+                const type = chart.config.type;
+                chart.data.datasets.forEach(ds => {
+                    const n = Array.isArray(ds.data) ? ds.data.length : 1;
+                    if (type === 'doughnut' || type === 'pie') {
+                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
+                        const fills = [];
+                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
+                        ds.backgroundColor = fills;
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
+                    } else {
+                        if (Array.isArray(ds.backgroundColor)) {
+                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
+                        } else {
+                            ds.backgroundColor = inkA;
+                        }
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
+                    }
+                });
+                chart.update('none');
+            } catch (_) {}
+        });
+    } else {
+        if (!_chartDataSnapshotForPdf) return;
+        Object.entries(_charts).forEach(([id, chart]) => {
+            try {
+                const snap = _chartDataSnapshotForPdf[id];
+                if (!snap) return;
+                chart.data.datasets.forEach((ds, i) => {
+                    const s = snap[i];
+                    if (!s) return;
+                    ds.backgroundColor = s.backgroundColor;
+                    ds.borderColor = s.borderColor;
+                    ds.borderWidth = s.borderWidth;
+                });
+                chart.update('none');
+            } catch (_) {}
+        });
+        _chartDataSnapshotForPdf = null;
+    }
+}
+
+async function prepararVistaCapturaEstadisticasPdf(activar) {
+    adminEstadisticasSetCaptureCompact(!!activar);
+    aplicarEstadisticasInkSaveCharts(!!activar);
+    Object.values(_charts).forEach(ch => {
+        try {
+            ch.resize();
+        } catch (_) {}
+    });
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, activar ? 220 : 90));
+}
+
 function coleccionSeccionesPdfEstadisticas() {
     const root = document.getElementById('admin-estadisticas');
     if (!root) return [];
@@ -10839,6 +10916,7 @@ async function capturaPdfBloqueResumenEstadisticas() {
 async function html2canvasCapturaElemento(el, opts = {}) {
     if (!el || typeof html2canvas !== 'function') return null;
     const delayAfterResize = typeof opts.delayAfterResize === 'number' ? opts.delayAfterResize : 200;
+    const statsExport = !!opts.statsExport;
     try {
         Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -10847,8 +10925,10 @@ async function html2canvasCapturaElemento(el, opts = {}) {
         const rawSh = opts.useFullScrollHeight
             ? Math.max(el.scrollHeight, el.offsetHeight, 40)
             : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
-        const sh = Math.min(rawSh, opts.maxHeightPx || 3400);
-        const scale = Math.min(1.2, 1850 / Math.max(sw, 380));
+        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 1200 : opts.maxHeightPx || 3400);
+        const scale = statsExport
+            ? Math.min(2.65, 2700 / Math.max(sw, 260))
+            : Math.min(1.2, 1850 / Math.max(sw, 380));
         return await html2canvas(el, {
             scale,
             useCORS: true,
@@ -11057,11 +11137,12 @@ async function generarInformeMensualENRE() {
                 if (!v) return;
                 const pct = Math.round(1000 * v / total) / 10;
                 const { x, y } = arc.tooltipPosition();
-                ctx.lineWidth = 4;
+                const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
+                ctx.lineWidth = ink ? 0 : 4;
                 ctx.strokeStyle = 'rgba(255,255,255,.95)';
                 ctx.fillStyle = '#0f172a';
                 const t = pct + '%';
-                ctx.strokeText(t, x, y);
+                if (!ink) ctx.strokeText(t, x, y);
                 ctx.fillText(t, x, y);
             });
             ctx.restore();
@@ -11100,10 +11181,11 @@ async function generarInformeMensualENRE() {
                         ctx.textBaseline = 'middle';
                     }
                     const t = pct + '%';
-                    ctx.lineWidth = 3;
+                    const inkP = typeof window !== 'undefined' && window.__gnStatsInkSave;
+                    ctx.lineWidth = inkP ? 0 : 3;
                     ctx.strokeStyle = 'rgba(255,255,255,.95)';
                     ctx.fillStyle = '#0f172a';
-                    ctx.strokeText(t, x, ty);
+                    if (!inkP) ctx.strokeText(t, x, ty);
                     ctx.fillText(t, x, ty);
                 });
             };
@@ -11118,14 +11200,15 @@ async function generarInformeMensualENRE() {
                         const x = cp?.x ?? bar.x;
                         const y = cp?.y ?? bar.y;
                         if (x == null || y == null) return;
+                        const inkM = typeof window !== 'undefined' && window.__gnStatsInkSave;
                         ctx.font = '600 11px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        ctx.lineWidth = 3;
+                        ctx.lineWidth = inkM ? 0 : 3;
                         ctx.strokeStyle = 'rgba(255,255,255,.92)';
                         ctx.fillStyle = '#0f172a';
                         const t = String(v);
-                        ctx.strokeText(t, x, y);
+                        if (!inkM) ctx.strokeText(t, x, y);
                         ctx.fillText(t, x, y);
                     });
                 });

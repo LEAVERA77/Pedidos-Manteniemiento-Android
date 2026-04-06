@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS infra_transformadores (
     capacidad_kva           INTEGER,
     clientes_conectados     INTEGER NOT NULL DEFAULT 0,
     barrio_texto            VARCHAR(200),
+    distribuidor_id         INTEGER REFERENCES distribuidores (id) ON DELETE SET NULL,
+    alimentador             VARCHAR(100),
     latitud                 DOUBLE PRECISION,
     longitud                DOUBLE PRECISION,
     activo                  BOOLEAN NOT NULL DEFAULT TRUE,
@@ -38,13 +40,15 @@ CREATE TABLE IF NOT EXISTS clientes_afectados_log (
     metodo                  VARCHAR(20) NOT NULL,
     transformador_id        INTEGER REFERENCES infra_transformadores (id),
     zona_id                 INTEGER REFERENCES infra_zonas_clientes (id),
+    distribuidor_id         INTEGER REFERENCES distribuidores (id) ON DELETE SET NULL,
+    alimentador             VARCHAR(100),
     medidor_desde           VARCHAR(50),
     medidor_hasta           VARCHAR(50),
     cantidad_clientes       INTEGER NOT NULL,
     es_estimado             BOOLEAN NOT NULL DEFAULT FALSE,
     usuario_id              INTEGER REFERENCES usuarios (id),
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_metodo_afect CHECK (metodo IN ('transformador', 'zona', 'rango', 'manual')),
+    CONSTRAINT chk_metodo_afect CHECK (metodo IN ('transformador', 'zona', 'distribuidor', 'alimentador', 'rango', 'manual')),
     CONSTRAINT chk_cantidad_pos CHECK (cantidad_clientes >= 0)
 );
 

@@ -510,6 +510,36 @@ textarea{resize:vertical;min-height:80px}
   width:100%!important;
   height:100%!important;
 }
+/* PDF / impresión: 4 gráficos por hoja A4 (altura reducida, sin deformar el layout) */
+#admin-estadisticas.gn-stats-capture-compact .chart-container,
+#admin-estadisticas.gn-stats-capture-compact .chart-container--tall{
+  height:150px;
+  min-height:150px;
+  max-height:150px;
+}
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap{
+  padding:.45rem .55rem;
+  margin-bottom:.35rem;
+}
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap h4{
+  font-size:.68rem;
+  margin-bottom:.3rem;
+  letter-spacing:.04em;
+}
+#admin-estadisticas.gn-stats-capture-compact #chart-wrap-confiabilidad > p{
+  font-size:.65rem!important;
+  line-height:1.25!important;
+  margin-bottom:.35rem!important;
+  max-height:2.8em;
+  overflow:hidden;
+}
+#admin-estadisticas.gn-stats-capture-compact .chart-legend-caption{
+  font-size:.62rem!important;
+  line-height:1.25!important;
+  margin-top:.25rem!important;
+  max-height:3.2em;
+  overflow:hidden;
+}
 .kpi-neon-calc-panel{
   background:linear-gradient(135deg,#ecfeff,#f0fdf4);
   border:1px solid #a7f3d0;border-radius:.6rem;padding:.75rem 1rem;
