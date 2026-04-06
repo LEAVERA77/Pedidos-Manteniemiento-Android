@@ -266,7 +266,7 @@ export async function searchHouseNumberHitsArgentina(ciudad, calle, limit = 35) 
 }
 
 /**
- * Sin GPS del cliente: si el número no está en OSM, anclar cerca de un frente con número impar (si existe).
+ * Sin GPS del cliente: si el número no está en OSM, elegir frentes de la misma paridad (impar/par) más cercanos en número.
  * Con GPS: mantiene lógica de paridad + proximidad existente.
  */
 export function resolveStructuredAddressCoords({
@@ -319,10 +319,12 @@ export function resolveStructuredAddressCoords({
     return pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, near);
   }
 
+  // Sin GPS del cliente: misma lógica de paridad que con GPS (impar → frentes impares más cercanos en número, etc.).
   let pool = hits;
   if (targetNum != null && Number.isFinite(targetNum)) {
-    const oddOnly = hits.filter((h) => h.houseNum % 2 === 1);
-    if (oddOnly.length) pool = oddOnly;
+    const wantParity = Math.abs(targetNum) % 2;
+    const sameParity = hits.filter((h) => Math.abs(h.houseNum) % 2 === wantParity);
+    if (sameParity.length) pool = sameParity;
   }
   pool = [...pool].sort((a, b) => {
     if (targetNum != null && Number.isFinite(targetNum)) {
@@ -342,7 +344,7 @@ export function resolveStructuredAddressCoords({
     }
     return null;
   }
-  return { lat: best.lat, lng: best.lng, source: "house_search_odd_pref", anchorHouse: best.houseNum };
+  return { lat: best.lat, lng: best.lng, source: "house_search_parity", anchorHouse: best.houseNum };
 }
 
 /**

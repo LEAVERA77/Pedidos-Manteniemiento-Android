@@ -79,6 +79,7 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
 
 /** En estos pasos *volver* / *atrás* debe manejar el flujo, no reiniciar al menú principal. */
 const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
+  "awaiting_desc",
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
   "awaiting_addr_ciudad",
@@ -679,31 +680,48 @@ async function geocodeStructuredAddressAndFinalizePedido(
     console.error("[whatsapp-bot-meta] search calle/localidad", e?.message || e);
   }
 
+  const exactInHouseHits =
+    targetNum != null &&
+    Number.isFinite(targetNum) &&
+    houseHits.some((h) => h.houseNum === targetNum);
+
   try {
     const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero);
     if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
+      // Sin GPS: si OSM tiene frentes numerados en la calle pero no el número del padrón, Nominatim suele devolver
+      // un punto genérico (mal ubicado). Preferimos paridad + frente más cercano vía resolveStructuredAddressCoords.
+      let acceptDirectGeocode = false;
       if (userGps) {
-        const dG = haversineMeters(userGps.lat, userGps.lng, geo.lat, geo.lng);
-        if (dG <= nearM) {
-          sess.lat = userGps.lat;
-          sess.lng = userGps.lng;
-          sess.direccionTexto = geo.displayName;
+        acceptDirectGeocode = true;
+      } else if (!houseHits.length) {
+        acceptDirectGeocode = true;
+      } else if (exactInHouseHits) {
+        acceptDirectGeocode = true;
+      }
+      if (acceptDirectGeocode) {
+        if (userGps) {
+          const dG = haversineMeters(userGps.lat, userGps.lng, geo.lat, geo.lng);
+          if (dG <= nearM) {
+            sess.lat = userGps.lat;
+            sess.lng = userGps.lng;
+            sess.direccionTexto = geo.displayName;
+          } else {
+            sess.lat = geo.lat;
+            sess.lng = geo.lng;
+            sess.direccionTexto = geo.displayName;
+          }
         } else {
           sess.lat = geo.lat;
           sess.lng = geo.lng;
           sess.direccionTexto = geo.displayName;
         }
-      } else {
-        sess.lat = geo.lat;
-        sess.lng = geo.lng;
-        sess.direccionTexto = geo.displayName;
+        if (geo.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
+          sess.barrio = geo.barrio;
+        }
+        sessions.set(sk, sess);
+        await finalizePedidoFromSession(phone, sess, contactName);
+        return;
       }
-      if (geo.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
-        sess.barrio = geo.barrio;
-      }
-      sessions.set(sk, sess);
-      await finalizePedidoFromSession(phone, sess, contactName);
-      return;
     }
   } catch (e) {
     console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
@@ -731,7 +749,9 @@ async function geocodeStructuredAddressAndFinalizePedido(
             ? `Eje de calle (centro estimado de la vía en ${ciudadLabel})`
             : picked.source === "fallback"
               ? `Centro de localidad (referencia)`
-              : `Ubicación estimada en mapa${anchor}`;
+              : picked.source === "house_search_parity"
+                ? `Ubicación estimada por *misma paridad* (calle impar/par)${anchor}`
+                : `Ubicación estimada en mapa${anchor}`;
     sess.direccionTexto = `${modoMapa}, ${origen}: ${calle} ${numero}, ${ciudadLabel}`
       .replace(/\s+/g, " ")
       .trim();
@@ -1705,26 +1725,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (esComandoAtras(text)) {
       sessions.delete(sk);
       await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
-      return;
-    }
-    if (/^\d+$/.test(text) && parseInt(text, 10) >= 0 && parseInt(text, 10) <= ctx.tipos.length) {
-      if (pendOpinionActiva) {
-        try {
-          const opDig = await tryConsumeClienteOpinionReply({
-            tenantId: tid,
-            phoneDigits: phone,
-            text,
-            nombreEntidad: ctx?.nombre,
-          });
-          if (opDig.handled) {
-            sessions.delete(sk);
-            if (opDig.ack) await reply(phone, opDig.ack, tid, phoneNumberId);
-            return;
-          }
-        } catch (_) {}
-      }
-      sessions.delete(sk);
-      await reply(phone, "Reiniciamos.\n\n" + textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
       return;
     }
     const desc = text;

@@ -347,6 +347,10 @@ async function notificarAdminsNuevoPedidoWhatsappSafe(tenantId, pedido) {
       );
       recipients = anyU.rows || [];
     }
+    if (!recipients.length) {
+      console.warn("[pedido-whatsapp-bot] notificaciones_movil: sin usuarios activos para tenant", tenantId);
+      return;
+    }
     const titulo = "Nuevo reclamo (WhatsApp)";
     const cuerpo = `Se registró el reclamo *${pedido.numero_pedido}* desde WhatsApp.`;
     for (const a of recipients) {
@@ -356,7 +360,13 @@ async function notificarAdminsNuevoPedidoWhatsappSafe(tenantId, pedido) {
         [a.id, pedido.id, titulo, cuerpo]
       );
     }
+    console.log("[pedido-whatsapp-bot] notificaciones_movil", {
+      tenantId,
+      pedidoId: pedido.id,
+      numero: pedido.numero_pedido,
+      destinatarios: recipients.length,
+    });
   } catch (e) {
-    console.error("[pedido-whatsapp-bot] notificar admins", e.message);
+    console.error("[pedido-whatsapp-bot] notificar admins", e?.message || e);
   }
 }
