@@ -10059,9 +10059,9 @@ async function importarExcelInfraAsignacion(event) {
                 const ru = await sqlSimple(
                     `UPDATE infra_transformadores SET distribuidor_id = ${esc(distId)}, alimentador = ${esc(
                         alim
-                    )} WHERE tenant_id = ${esc(tid)} AND UPPER(TRIM(codigo)) = ${esc(codigo)} AND activo = TRUE`
+                    )} WHERE tenant_id = ${esc(tid)} AND UPPER(TRIM(codigo)) = ${esc(codigo)} AND activo = TRUE RETURNING id`
                 );
-                if (ru.rowsAffected > 0 || (ru.rowCount != null && ru.rowCount > 0)) ok += 1;
+                if (ru.rows && ru.rows.length) ok += 1;
                 else err += 1;
             } catch (_) {
                 err += 1;
@@ -10199,6 +10199,11 @@ async function guardarInfraTransformadorAdmin() {
     const kva = kvaRaw === '' || kvaRaw == null ? null : Number(kvaRaw);
     const clientes = Math.max(0, Number(document.getElementById('ia-t-clientes')?.value) || 0);
     const barrio = (document.getElementById('ia-t-barrio')?.value || '').trim() || null;
+    const distSel = document.getElementById('ia-t-distribuidor')?.value;
+    const distId =
+        distSel && String(distSel).trim() !== '' ? Number(distSel) : null;
+    const distSql = Number.isFinite(distId) && distId > 0 ? esc(distId) : 'NULL';
+    const alim = (document.getElementById('ia-t-alimentador')?.value || '').trim() || null;
     if (!codigo) {
         toast('El código del transformador es obligatorio.', 'error');
         return;
@@ -10206,58 +10211,35 @@ async function guardarInfraTransformadorAdmin() {
     const tid = tenantIdActual();
     const kvaSql = Number.isFinite(kva) ? esc(kva) : 'NULL';
     try {
-        await sqlSimple(
-            `INSERT INTO infra_transformadores (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo) VALUES (${esc(
-                tid
-            )}, ${esc(codigo)}, ${esc(nombre)}, ${kvaSql}, ${esc(clientes)}, ${esc(barrio)}, TRUE) ON CONFLICT (tenant_id, codigo) DO UPDATE SET nombre = EXCLUDED.nombre, capacidad_kva = EXCLUDED.capacidad_kva, clientes_conectados = EXCLUDED.clientes_conectados, barrio_texto = EXCLUDED.barrio_texto, activo = TRUE`
-        );
+        if (await sqlInfraTrafoTieneDistribuidorId()) {
+            await sqlSimple(
+                `INSERT INTO infra_transformadores (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, distribuidor_id, alimentador, activo) VALUES (${esc(
+                    tid
+                )}, ${esc(codigo)}, ${esc(nombre)}, ${kvaSql}, ${esc(clientes)}, ${esc(barrio)}, ${distSql}, ${esc(
+                    alim
+                )}, TRUE) ON CONFLICT (tenant_id, codigo) DO UPDATE SET nombre = EXCLUDED.nombre, capacidad_kva = EXCLUDED.capacidad_kva, clientes_conectados = EXCLUDED.clientes_conectados, barrio_texto = EXCLUDED.barrio_texto, distribuidor_id = EXCLUDED.distribuidor_id, alimentador = EXCLUDED.alimentador, activo = TRUE`
+            );
+        } else {
+            await sqlSimple(
+                `INSERT INTO infra_transformadores (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo) VALUES (${esc(
+                    tid
+                )}, ${esc(codigo)}, ${esc(nombre)}, ${kvaSql}, ${esc(clientes)}, ${esc(barrio)}, TRUE) ON CONFLICT (tenant_id, codigo) DO UPDATE SET nombre = EXCLUDED.nombre, capacidad_kva = EXCLUDED.capacidad_kva, clientes_conectados = EXCLUDED.clientes_conectados, barrio_texto = EXCLUDED.barrio_texto, activo = TRUE`
+            );
+        }
         _cacheInfraAfectadosTablas = true;
         toast('Transformador guardado.', 'success');
-        ['ia-t-codigo', 'ia-t-nombre', 'ia-t-kva', 'ia-t-clientes', 'ia-t-barrio'].forEach((id) => {
+        ['ia-t-codigo', 'ia-t-nombre', 'ia-t-kva', 'ia-t-clientes', 'ia-t-barrio', 'ia-t-alimentador'].forEach((id) => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
+        const ds = document.getElementById('ia-t-distribuidor');
+        if (ds) ds.value = '';
         await cargarAdminInfraAfectados();
     } catch (e) {
         toastError('guardar-infra-trafo', e);
     }
 }
 window.guardarInfraTransformadorAdmin = guardarInfraTransformadorAdmin;
-
-async function guardarInfraZonaAdmin() {
-    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
-        toast('Sin permisos o sin Neon.', 'error');
-        return;
-    }
-    if (!(await sqlInfraAfectadosTablasExisten())) {
-        toast('Creá las tablas en Neon (docs/NEON_clientes_afectados_infra.sql).', 'error');
-        return;
-    }
-    const nombre = (document.getElementById('ia-z-nombre')?.value || '').trim();
-    const ce = Math.max(0, Number(document.getElementById('ia-z-clientes')?.value) || 0);
-    if (!nombre) {
-        toast('El nombre de la zona es obligatorio.', 'error');
-        return;
-    }
-    const tid = tenantIdActual();
-    try {
-        await sqlSimple(
-            `INSERT INTO infra_zonas_clientes (tenant_id, nombre, clientes_estimados, activo) VALUES (${esc(
-                tid
-            )}, ${esc(nombre)}, ${esc(ce)}, TRUE) ON CONFLICT (tenant_id, nombre) DO UPDATE SET clientes_estimados = EXCLUDED.clientes_estimados, activo = TRUE`
-        );
-        _cacheInfraAfectadosTablas = true;
-        toast('Zona guardada.', 'success');
-        const n = document.getElementById('ia-z-nombre');
-        const c = document.getElementById('ia-z-clientes');
-        if (n) n.value = '';
-        if (c) c.value = '';
-        await cargarAdminInfraAfectados();
-    } catch (e) {
-        toastError('guardar-infra-zona', e);
-    }
-}
-window.guardarInfraZonaAdmin = guardarInfraZonaAdmin;
 
 async function desactivarInfraTransformadorAdmin(id) {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
@@ -10275,23 +10257,6 @@ async function desactivarInfraTransformadorAdmin(id) {
     }
 }
 window.desactivarInfraTransformadorAdmin = desactivarInfraTransformadorAdmin;
-
-async function desactivarInfraZonaAdmin(id) {
-    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
-    if (!(await sqlInfraAfectadosTablasExisten())) return;
-    if (!confirm('¿Dar de baja esta zona?')) return;
-    const tid = tenantIdActual();
-    try {
-        await sqlSimple(
-            `UPDATE infra_zonas_clientes SET activo = FALSE WHERE id = ${esc(Number(id))} AND tenant_id = ${esc(tid)}`
-        );
-        toast('Zona dada de baja.', 'success');
-        await cargarAdminInfraAfectados();
-    } catch (e) {
-        toastError('baja-infra-zona', e);
-    }
-}
-window.desactivarInfraZonaAdmin = desactivarInfraZonaAdmin;
 
 function adminTab(tab) {
     document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));

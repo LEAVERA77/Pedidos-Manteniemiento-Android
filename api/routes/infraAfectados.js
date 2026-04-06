@@ -217,8 +217,12 @@ router.put("/transformadores/:id", adminOnly, async (req, res) => {
       req.body?.barrio_texto !== undefined ? String(req.body.barrio_texto || "").trim() || null : undefined;
     let distribuidor_id = undefined;
     if (req.body?.distribuidor_id !== undefined) {
-      const d = Number(req.body.distribuidor_id);
-      distribuidor_id = Number.isFinite(d) && d > 0 ? d : null;
+      const raw = req.body.distribuidor_id;
+      if (raw === null || raw === "") distribuidor_id = null;
+      else {
+        const d = Number(raw);
+        distribuidor_id = Number.isFinite(d) && d > 0 ? d : null;
+      }
     }
     if (distribuidor_id === undefined && req.body?.distribuidor_codigo !== undefined) {
       distribuidor_id = await lookupDistribuidorIdByCodigo(req.body.distribuidor_codigo);
