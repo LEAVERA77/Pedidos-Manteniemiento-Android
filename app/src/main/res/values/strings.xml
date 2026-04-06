@@ -41,7 +41,7 @@
     <string name="error_red_io">Error de red. Comprobá la conexión e intentá de nuevo.</string>
     <string name="error_red_datos_invalidos">La respuesta del servidor no es válida.</string>
     <string name="tecnico_mvp_login_titulo">GestorNova</string>
-    <string name="tecnico_mvp_login_subtitle">Pedidos de mantenimiento</string>
+    <string name="tecnico_mvp_login_subtitle">Sistema de gestión de pedidos y reclamos</string>
     <string name="tecnico_mvp_login_status_ok">Conectado — Neon PostgreSQL</string>
     <string name="tecnico_mvp_login_signing_in">Iniciando sesión…</string>
     <string name="tecnico_mvp_forgot_password">¿Olvidaste tu contraseña?</string>

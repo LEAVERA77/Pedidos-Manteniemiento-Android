@@ -1492,7 +1492,7 @@ function aplicarMarcaVisualCompleta() {
     const subEl = document.querySelector('.lc .sub');
     if (subEl) {
         const st = String(window.EMPRESA_CFG?.subtitulo || '').trim();
-        subEl.textContent = st || 'Pedidos de mantenimiento';
+        subEl.textContent = st || 'Sistema de gestión de pedidos y reclamos';
     }
     const h2 = document.querySelector('.hd h2');
     if (h2) {
