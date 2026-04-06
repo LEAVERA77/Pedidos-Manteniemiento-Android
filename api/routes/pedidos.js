@@ -21,6 +21,7 @@ import {
   contarPedidosAbiertosMismaZona,
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "../services/pedidoZonaOutage.js";
+import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -565,6 +566,49 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
     return res.json({ ok: true, ...r });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo procesar la notificación", detail: error.message });
+  }
+});
+
+/** Registro de clientes afectados al cerrar (SAIDI/SAIFI). El pedido debe estar Cerrado. */
+router.post("/:id/clientes-afectados", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pedido = await getPedidoById(id);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req.user.id);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (
+      req.user.rol !== "admin" &&
+      pedido.tecnico_asignado_id &&
+      pedido.tecnico_asignado_id !== req.user.id
+    ) {
+      return res.status(403).json({ error: "Sin permiso para este pedido" });
+    }
+    if (String(pedido.estado || "") !== "Cerrado") {
+      return res.status(400).json({ error: "El pedido debe estar cerrado antes de registrar clientes afectados" });
+    }
+
+    const built = await buildClientesAfectadosPayload(pedido, req.user.id, req.body);
+    if (!built.ok) return res.status(built.status).json({ error: built.error });
+    try {
+      const saved = await insertClientesAfectadosLog(built.row);
+      return res.status(201).json(saved);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/does not exist|relation .*clientes_afectados/i.test(msg)) {
+        return res.status(503).json({
+          error:
+            "Falta la tabla clientes_afectados_log (u otras). Ejecutá docs/NEON_clientes_afectados_infra.sql en Neon.",
+        });
+      }
+      throw err;
+    }
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo registrar clientes afectados", detail: error.message });
   }
 });
 

@@ -6580,6 +6580,12 @@ async function enviarRegistroClientesAfectados(pedidoId, body) {
             if (!resp.ok) {
                 const t = await resp.text();
                 console.warn('[clientes-afectados]', resp.status, t.slice(0, 300));
+                if (NEON_OK && _sql && (await sqlInfraAfectadosTablasExisten())) {
+                    try {
+                        await neonInsertClientesAfectadosLog(pid, body);
+                        return { ok: true };
+                    } catch (_) {}
+                }
                 return {
                     ok: false,
                     warning: 'El cierre se guardó; no se pudo registrar clientes afectados en el servidor.',
@@ -6587,6 +6593,12 @@ async function enviarRegistroClientesAfectados(pedidoId, body) {
             }
             return { ok: true };
         } catch (e) {
+            if (NEON_OK && _sql && (await sqlInfraAfectadosTablasExisten())) {
+                try {
+                    await neonInsertClientesAfectadosLog(pid, body);
+                    return { ok: true };
+                } catch (_) {}
+            }
             return { ok: false, warning: 'El cierre se guardó; falló el registro de clientes afectados.' };
         }
     }
@@ -9682,6 +9694,193 @@ async function eliminarKpiSnapshotAdmin(id) {
     }
 }
 window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
+
+async function cargarAdminInfraAfectados() {
+    const sin = document.getElementById('admin-infra-afect-sin-tabla');
+    const wrap = document.getElementById('admin-infra-afect-wrap');
+    const listT = document.getElementById('lista-infra-transformadores-admin');
+    const listZ = document.getElementById('lista-infra-zonas-admin');
+    if (!listT || !listZ) return;
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        if (sin) sin.style.display = 'none';
+        if (wrap) wrap.style.display = 'none';
+        listT.innerHTML = '<span style="color:var(--re)">Sin conexión Neon o sin permisos de administrador.</span>';
+        listZ.innerHTML = '';
+        return;
+    }
+    const ok = await sqlInfraAfectadosTablasExisten();
+    if (!ok) {
+        if (sin) {
+            sin.style.display = 'block';
+            sin.innerHTML =
+                '<strong>Faltan tablas.</strong> En el SQL Editor de Neon ejecutá <code>docs/NEON_clientes_afectados_infra.sql</code> del repositorio.';
+        }
+        if (wrap) wrap.style.display = 'none';
+        listT.innerHTML = '';
+        listZ.innerHTML = '';
+        return;
+    }
+    if (sin) sin.style.display = 'none';
+    if (wrap) wrap.style.display = 'block';
+    const tid = tenantIdActual();
+    try {
+        const rT = await sqlSimple(
+            `SELECT id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo FROM infra_transformadores WHERE tenant_id = ${esc(
+                tid
+            )} ORDER BY codigo`
+        );
+        const rZ = await sqlSimple(
+            `SELECT id, nombre, clientes_estimados, activo FROM infra_zonas_clientes WHERE tenant_id = ${esc(
+                tid
+            )} ORDER BY nombre`
+        );
+        const rowsT = rT.rows || [];
+        const rowsZ = rZ.rows || [];
+        if (!rowsT.length) {
+            listT.innerHTML =
+                '<p style="color:var(--tl);font-size:.85rem">Sin transformadores. Agregá uno con el formulario.</p>';
+        } else {
+            listT.innerHTML = `<table class="admin-table"><thead><tr><th>Código</th><th>Nombre</th><th>kVA</th><th>Socios</th><th>Activo</th><th></th></tr></thead><tbody>${rowsT
+                .map(
+                    (d) =>
+                        `<tr><td><b>${_escOpt(d.codigo)}</b></td><td>${_escOpt(d.nombre) || '-'}</td><td>${
+                            d.capacidad_kva != null ? _escOpt(d.capacidad_kva) : '-'
+                        }</td><td>${_escOpt(d.clientes_conectados)}</td><td>${d.activo ? 'Sí' : 'No'}</td><td><button type="button" class="btn-sm danger" onclick="desactivarInfraTransformadorAdmin(${Number(
+                            d.id
+                        )})">Dar de baja</button></td></tr>`
+                )
+                .join('')}</tbody></table>`;
+        }
+        if (!rowsZ.length) {
+            listZ.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin zonas.</p>';
+        } else {
+            listZ.innerHTML = `<table class="admin-table"><thead><tr><th>Nombre</th><th>Estimado</th><th>Activo</th><th></th></tr></thead><tbody>${rowsZ
+                .map(
+                    (z) =>
+                        `<tr><td>${_escOpt(z.nombre)}</td><td>${_escOpt(z.clientes_estimados)}</td><td>${
+                            z.activo ? 'Sí' : 'No'
+                        }</td><td><button type="button" class="btn-sm danger" onclick="desactivarInfraZonaAdmin(${Number(
+                            z.id
+                        )})">Dar de baja</button></td></tr>`
+                )
+                .join('')}</tbody></table>`;
+        }
+    } catch (e) {
+        logErrorWeb('admin-infra-afect', e);
+        listT.innerHTML = '<span style="color:var(--re)">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</span>';
+        listZ.innerHTML = '';
+    }
+}
+window.cargarAdminInfraAfectados = cargarAdminInfraAfectados;
+
+async function guardarInfraTransformadorAdmin() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        toast('Sin permisos o sin Neon.', 'error');
+        return;
+    }
+    if (!(await sqlInfraAfectadosTablasExisten())) {
+        toast('Creá las tablas en Neon (docs/NEON_clientes_afectados_infra.sql).', 'error');
+        return;
+    }
+    const codigo = (document.getElementById('ia-t-codigo')?.value || '').trim().toUpperCase();
+    const nombre = (document.getElementById('ia-t-nombre')?.value || '').trim() || null;
+    const kvaRaw = document.getElementById('ia-t-kva')?.value;
+    const kva = kvaRaw === '' || kvaRaw == null ? null : Number(kvaRaw);
+    const clientes = Math.max(0, Number(document.getElementById('ia-t-clientes')?.value) || 0);
+    const barrio = (document.getElementById('ia-t-barrio')?.value || '').trim() || null;
+    if (!codigo) {
+        toast('El código del transformador es obligatorio.', 'error');
+        return;
+    }
+    const tid = tenantIdActual();
+    const kvaSql = Number.isFinite(kva) ? esc(kva) : 'NULL';
+    try {
+        await sqlSimple(
+            `INSERT INTO infra_transformadores (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo) VALUES (${esc(
+                tid
+            )}, ${esc(codigo)}, ${esc(nombre)}, ${kvaSql}, ${esc(clientes)}, ${esc(barrio)}, TRUE) ON CONFLICT (tenant_id, codigo) DO UPDATE SET nombre = EXCLUDED.nombre, capacidad_kva = EXCLUDED.capacidad_kva, clientes_conectados = EXCLUDED.clientes_conectados, barrio_texto = EXCLUDED.barrio_texto, activo = TRUE`
+        );
+        _cacheInfraAfectadosTablas = true;
+        toast('Transformador guardado.', 'success');
+        ['ia-t-codigo', 'ia-t-nombre', 'ia-t-kva', 'ia-t-clientes', 'ia-t-barrio'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        toastError('guardar-infra-trafo', e);
+    }
+}
+window.guardarInfraTransformadorAdmin = guardarInfraTransformadorAdmin;
+
+async function guardarInfraZonaAdmin() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        toast('Sin permisos o sin Neon.', 'error');
+        return;
+    }
+    if (!(await sqlInfraAfectadosTablasExisten())) {
+        toast('Creá las tablas en Neon (docs/NEON_clientes_afectados_infra.sql).', 'error');
+        return;
+    }
+    const nombre = (document.getElementById('ia-z-nombre')?.value || '').trim();
+    const ce = Math.max(0, Number(document.getElementById('ia-z-clientes')?.value) || 0);
+    if (!nombre) {
+        toast('El nombre de la zona es obligatorio.', 'error');
+        return;
+    }
+    const tid = tenantIdActual();
+    try {
+        await sqlSimple(
+            `INSERT INTO infra_zonas_clientes (tenant_id, nombre, clientes_estimados, activo) VALUES (${esc(
+                tid
+            )}, ${esc(nombre)}, ${esc(ce)}, TRUE) ON CONFLICT (tenant_id, nombre) DO UPDATE SET clientes_estimados = EXCLUDED.clientes_estimados, activo = TRUE`
+        );
+        _cacheInfraAfectadosTablas = true;
+        toast('Zona guardada.', 'success');
+        const n = document.getElementById('ia-z-nombre');
+        const c = document.getElementById('ia-z-clientes');
+        if (n) n.value = '';
+        if (c) c.value = '';
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        toastError('guardar-infra-zona', e);
+    }
+}
+window.guardarInfraZonaAdmin = guardarInfraZonaAdmin;
+
+async function desactivarInfraTransformadorAdmin(id) {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    if (!(await sqlInfraAfectadosTablasExisten())) return;
+    if (!confirm('¿Dar de baja este transformador?')) return;
+    const tid = tenantIdActual();
+    try {
+        await sqlSimple(
+            `UPDATE infra_transformadores SET activo = FALSE WHERE id = ${esc(Number(id))} AND tenant_id = ${esc(tid)}`
+        );
+        toast('Transformador dado de baja.', 'success');
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        toastError('baja-infra-trafo', e);
+    }
+}
+window.desactivarInfraTransformadorAdmin = desactivarInfraTransformadorAdmin;
+
+async function desactivarInfraZonaAdmin(id) {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    if (!(await sqlInfraAfectadosTablasExisten())) return;
+    if (!confirm('¿Dar de baja esta zona?')) return;
+    const tid = tenantIdActual();
+    try {
+        await sqlSimple(
+            `UPDATE infra_zonas_clientes SET activo = FALSE WHERE id = ${esc(Number(id))} AND tenant_id = ${esc(tid)}`
+        );
+        toast('Zona dada de baja.', 'success');
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        toastError('baja-infra-zona', e);
+    }
+}
+window.desactivarInfraZonaAdmin = desactivarInfraZonaAdmin;
 
 function adminTab(tab) {
     document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
