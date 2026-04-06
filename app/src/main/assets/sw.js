@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v5';
-const CACHE_SHELL = 'pmg-shell-v19';
-const SW_VERSION  = '1.2.0';
+const CACHE_SHELL = 'pmg-shell-v20';
+const SW_VERSION  = '1.2.1';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -49,7 +49,9 @@ async function precacheShellAssets() {
       try {
         if (await cache.match(url)) return;
         const resp = await fetch(url, { cache: 'reload', credentials: 'same-origin' });
-        if (resp.ok) await cache.put(url, resp.clone());
+        if (!resp.ok) return;
+        const copy = resp.clone();
+        await cache.put(url, copy);
       } catch (_) {}
     })
   );
@@ -58,22 +60,27 @@ async function precacheShellAssets() {
 async function cacheFirstShell(request) {
   const cache = await caches.open(CACHE_SHELL);
   const cached = await cache.match(request);
-  return (
-    cached ||
-    fetch(request)
-      .then((resp) => {
-        if (resp.ok) cache.put(request, resp.clone());
-        return resp;
-      })
-      .catch(() => cached)
-  );
+  if (cached) return cached;
+  try {
+    const resp = await fetch(request);
+    if (resp.ok) {
+      const copy = resp.clone();
+      await cache.put(request, copy);
+    }
+    return resp;
+  } catch (_) {
+    return cached;
+  }
 }
 
 async function networkFirstShell(request) {
   const cache = await caches.open(CACHE_SHELL);
   try {
     const resp = await fetch(request);
-    if (resp.ok) cache.put(request, resp.clone());
+    if (resp.ok) {
+      const copy = resp.clone();
+      await cache.put(request, copy);
+    }
     return resp;
   } catch (e) {
     let cached = await cache.match(request);
@@ -364,7 +371,11 @@ self.addEventListener('install', event => {
           try {
             if (await cache.match(url)) { skip++; return; } // ya cacheado
             const resp = await fetch(url, { mode: 'cors' });
-            if (resp.ok) { await cache.put(url, resp); ok++; }
+            if (resp.ok) {
+              const copy = resp.clone();
+              await cache.put(url, copy);
+              ok++;
+            }
           } catch(_) { fail++; }
         }));
         // Pequeña pausa entre lotes para no sobrecargar OSM
@@ -399,9 +410,13 @@ self.addEventListener('fetch', event => {
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
         return fetch(event.request)
-          .then((resp) => {
+          .then(async (resp) => {
             if (resp.ok) {
-              caches.open(CACHE_TILES).then((c) => c.put(event.request, resp.clone()));
+              try {
+                const c = await caches.open(CACHE_TILES);
+                const copy = resp.clone();
+                await c.put(event.request, copy);
+              } catch (_) {}
             }
             return resp;
           })

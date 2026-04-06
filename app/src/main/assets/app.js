@@ -6317,6 +6317,297 @@ function pedidoTieneClienteCargado(p) {
     return !!(p && String(p.cl || '').trim());
 }
 
+let _cacheInfraAfectadosTablas = null;
+function invalidateInfraAfectadosTablasCache() {
+    _cacheInfraAfectadosTablas = null;
+}
+
+async function sqlInfraAfectadosTablasExisten() {
+    if (!NEON_OK || !_sql) return false;
+    if (_cacheInfraAfectadosTablas !== null) return _cacheInfraAfectadosTablas;
+    try {
+        const r = await sqlSimple(
+            `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'infra_transformadores' LIMIT 1`
+        );
+        _cacheInfraAfectadosTablas = !!(r.rows && r.rows.length);
+    } catch (_) {
+        _cacheInfraAfectadosTablas = false;
+    }
+    return _cacheInfraAfectadosTablas;
+}
+
+async function infraAfectadosDisponibleCierre() {
+    if (await sqlInfraAfectadosTablasExisten()) return true;
+    if (puedeEnviarApiRestPedidos()) {
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return false;
+            const resp = await fetch(apiUrl('/api/infra-afectados/transformadores'), {
+                headers: { Authorization: `Bearer ${tok}` },
+            });
+            if (resp.status === 503) return false;
+            return resp.ok;
+        } catch (_) {
+            return false;
+        }
+    }
+    return false;
+}
+
+function syncCierreAfectadosPanels() {
+    const m = document.querySelector('input[name="cierre-afect-metodo"]:checked')?.value || 'omitir';
+    const show = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = on ? '' : 'none';
+    };
+    show('cierre-afect-panel-trafo', m === 'transformador');
+    show('cierre-afect-panel-zona', m === 'zona');
+    show('cierre-afect-panel-rango', m === 'rango');
+    show('cierre-afect-panel-manual', m === 'manual');
+}
+window.syncCierreAfectadosPanels = syncCierreAfectadosPanels;
+
+function llenarSelectOptionText(sel, value, text) {
+    const o = document.createElement('option');
+    o.value = String(value);
+    o.textContent = text;
+    sel.appendChild(o);
+}
+
+async function llenarCatalogosCierreAfectados() {
+    const selT = document.getElementById('cierre-afect-sel-trafo');
+    const selZ = document.getElementById('cierre-afect-sel-zona');
+    if (!selT || !selZ) return;
+    selT.innerHTML = '';
+    llenarSelectOptionText(selT, '', '— Elegir transformador —');
+    selZ.innerHTML = '';
+    llenarSelectOptionText(selZ, '', '— Elegir zona —');
+    const tid = tenantIdActual();
+    try {
+        if (NEON_OK && _sql && (await sqlInfraAfectadosTablasExisten())) {
+            const rT = await sqlSimple(
+                `SELECT id, codigo, nombre, clientes_conectados FROM infra_transformadores WHERE tenant_id = ${esc(
+                    tid
+                )} AND activo = TRUE ORDER BY codigo`
+            );
+            const rZ = await sqlSimple(
+                `SELECT id, nombre, clientes_estimados FROM infra_zonas_clientes WHERE tenant_id = ${esc(
+                    tid
+                )} AND activo = TRUE ORDER BY nombre`
+            );
+            for (const row of rT.rows || []) {
+                const cc = Number(row.clientes_conectados) || 0;
+                const cod = String(row.codigo || '');
+                const nom = row.nombre ? String(row.nombre) : '';
+                const lab = nom ? `${cod} — ${nom} (${cc} socios)` : `${cod} (${cc} socios)`;
+                llenarSelectOptionText(selT, row.id, lab);
+            }
+            for (const row of rZ.rows || []) {
+                const ce = Number(row.clientes_estimados) || 0;
+                llenarSelectOptionText(selZ, row.id, `${String(row.nombre || '')} (~${ce} estimados)`);
+            }
+        } else if (puedeEnviarApiRestPedidos()) {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return;
+            const h = { Authorization: `Bearer ${tok}` };
+            const [respT, respZ] = await Promise.all([
+                fetch(apiUrl('/api/infra-afectados/transformadores'), { headers: h }),
+                fetch(apiUrl('/api/infra-afectados/zonas-clientes'), { headers: h }),
+            ]);
+            const rowsT = respT.ok ? await respT.json() : [];
+            const rowsZ = respZ.ok ? await respZ.json() : [];
+            for (const row of rowsT) {
+                const cc = Number(row.clientes_conectados) || 0;
+                const cod = String(row.codigo || '');
+                const nom = row.nombre ? String(row.nombre) : '';
+                const lab = nom ? `${cod} — ${nom} (${cc} socios)` : `${cod} (${cc} socios)`;
+                llenarSelectOptionText(selT, row.id, lab);
+            }
+            for (const row of rowsZ) {
+                const ce = Number(row.clientes_estimados) || 0;
+                llenarSelectOptionText(selZ, row.id, `${String(row.nombre || '')} (~${ce} estimados)`);
+            }
+        }
+    } catch (e) {
+        console.warn('[cierre-afectados] catálogo', e);
+    }
+}
+
+async function prepararBloqueClientesAfectadosCierre(p) {
+    const blk = document.getElementById('cierre-afectados-block');
+    if (!blk) return;
+    document.querySelectorAll('input[name="cierre-afect-metodo"]').forEach((el) => {
+        el.onchange = syncCierreAfectadosPanels;
+    });
+    const omitir = blk.querySelector('input[value="omitir"]');
+    if (omitir) omitir.checked = true;
+    syncCierreAfectadosPanels();
+    ['cierre-afect-sel-trafo', 'cierre-afect-sel-zona', 'cierre-afect-med-desde', 'cierre-afect-med-hasta', 'cierre-afect-rango-cant', 'cierre-afect-manual-cant'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    if (!esCooperativaElectricaRubro() || !p || String(p.id).startsWith('off_') || modoOffline) {
+        blk.style.display = 'none';
+        return;
+    }
+    if (!(await infraAfectadosDisponibleCierre())) {
+        blk.style.display = 'none';
+        return;
+    }
+    blk.style.display = '';
+    void llenarCatalogosCierreAfectados();
+}
+
+function leerCuerpoValidadoCierreAfectados() {
+    const blk = document.getElementById('cierre-afectados-block');
+    if (!blk || blk.style.display === 'none') return { ok: true, body: null };
+    const metodo = document.querySelector('input[name="cierre-afect-metodo"]:checked')?.value || 'omitir';
+    if (metodo === 'omitir') return { ok: true, body: null };
+    if (metodo === 'transformador') {
+        const id = Number(document.getElementById('cierre-afect-sel-trafo')?.value);
+        if (!Number.isFinite(id) || id <= 0) {
+            return { ok: false, error: 'Elegí un transformador o marcá «No registrar ahora».' };
+        }
+        return { ok: true, body: { metodo: 'transformador', transformador_id: id } };
+    }
+    if (metodo === 'zona') {
+        const id = Number(document.getElementById('cierre-afect-sel-zona')?.value);
+        if (!Number.isFinite(id) || id <= 0) {
+            return { ok: false, error: 'Elegí una zona o marcá «No registrar ahora».' };
+        }
+        return { ok: true, body: { metodo: 'zona', zona_id: id } };
+    }
+    if (metodo === 'rango') {
+        const desde = (document.getElementById('cierre-afect-med-desde')?.value || '').trim();
+        const hasta = (document.getElementById('cierre-afect-med-hasta')?.value || '').trim();
+        if (!desde || !hasta) return { ok: false, error: 'Completá medidor desde y hasta, o elegí otro método.' };
+        const a = Number.parseInt(desde, 10);
+        const b = Number.parseInt(hasta, 10);
+        const body = { metodo: 'rango', medidor_desde: desde, medidor_hasta: hasta };
+        if (!(Number.isFinite(a) && Number.isFinite(b) && b >= a)) {
+            const n = Math.max(0, Number(document.getElementById('cierre-afect-rango-cant')?.value));
+            if (!n) {
+                return {
+                    ok: false,
+                    error: 'Si los medidores no son numéricos correlativos, indicá la cantidad estimada.',
+                };
+            }
+            body.cantidad = n;
+        }
+        return { ok: true, body };
+    }
+    if (metodo === 'manual') {
+        const n = Math.max(0, Number(document.getElementById('cierre-afect-manual-cant')?.value));
+        if (!n) return { ok: false, error: 'Ingresá la cantidad estimada de clientes afectados.' };
+        return { ok: true, body: { metodo: 'manual', cantidad: n, es_estimado: true } };
+    }
+    return { ok: true, body: null };
+}
+
+async function neonInsertClientesAfectadosLog(pedidoId, body) {
+    const tid = tenantIdActual();
+    const uid = app.u?.id != null ? Number(app.u.id) : null;
+    const metodo = String(body.metodo || '').toLowerCase();
+    let transformador_id = null;
+    let zona_id = null;
+    let medidor_desde = null;
+    let medidor_hasta = null;
+    let cantidad_clientes = 0;
+    let es_estimado = false;
+    if (metodo === 'transformador') {
+        const trId = Number(body.transformador_id);
+        const r = await sqlSimple(
+            `SELECT id, clientes_conectados FROM infra_transformadores WHERE id = ${esc(trId)} AND tenant_id = ${esc(
+                tid
+            )} AND activo = TRUE LIMIT 1`
+        );
+        if (!r.rows?.length) throw new Error('Transformador inválido');
+        transformador_id = r.rows[0].id;
+        cantidad_clientes = Math.max(0, Number(r.rows[0].clientes_conectados) || 0);
+    } else if (metodo === 'zona') {
+        const zId = Number(body.zona_id);
+        const r = await sqlSimple(
+            `SELECT id, clientes_estimados FROM infra_zonas_clientes WHERE id = ${esc(zId)} AND tenant_id = ${esc(
+                tid
+            )} AND activo = TRUE LIMIT 1`
+        );
+        if (!r.rows?.length) throw new Error('Zona inválida');
+        zona_id = r.rows[0].id;
+        cantidad_clientes = Math.max(0, Number(r.rows[0].clientes_estimados) || 0);
+        es_estimado = true;
+    } else if (metodo === 'rango') {
+        medidor_desde = String(body.medidor_desde || '').trim();
+        medidor_hasta = String(body.medidor_hasta || '').trim();
+        const a = Number.parseInt(medidor_desde, 10);
+        const b = Number.parseInt(medidor_hasta, 10);
+        if (Number.isFinite(a) && Number.isFinite(b) && b >= a) {
+            cantidad_clientes = b - a + 1;
+        } else {
+            cantidad_clientes = Math.max(0, Number(body.cantidad) || 0);
+            es_estimado = true;
+        }
+    } else if (metodo === 'manual') {
+        cantidad_clientes = Math.max(0, Number(body.cantidad) || 0);
+        es_estimado = body.es_estimado !== undefined ? !!body.es_estimado : true;
+    } else {
+        throw new Error('Método no válido');
+    }
+    if (cantidad_clientes <= 0) throw new Error('Cantidad inválida');
+    await sqlSimple(
+        `INSERT INTO clientes_afectados_log (pedido_id, tenant_id, metodo, transformador_id, zona_id, medidor_desde, medidor_hasta, cantidad_clientes, es_estimado, usuario_id) VALUES (${esc(
+            pedidoId
+        )}, ${esc(tid)}, ${esc(metodo)}, ${esc(transformador_id)}, ${esc(zona_id)}, ${esc(medidor_desde)}, ${esc(
+            medidor_hasta
+        )}, ${esc(cantidad_clientes)}, ${es_estimado}, ${esc(uid)})`
+    );
+}
+
+async function enviarRegistroClientesAfectados(pedidoId, body) {
+    const pid = Number(pedidoId);
+    if (!Number.isFinite(pid) || pid <= 0) return { ok: false };
+    if (puedeEnviarApiRestPedidos()) {
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return { ok: false, warning: 'No se pudo registrar clientes afectados (sin token API).' };
+            const resp = await fetch(apiUrl(`/api/pedidos/${pid}/clientes-afectados`), {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!resp.ok) {
+                const t = await resp.text();
+                console.warn('[clientes-afectados]', resp.status, t.slice(0, 300));
+                return {
+                    ok: false,
+                    warning: 'El cierre se guardó; no se pudo registrar clientes afectados en el servidor.',
+                };
+            }
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, warning: 'El cierre se guardó; falló el registro de clientes afectados.' };
+        }
+    }
+    if (NEON_OK && _sql && (await sqlInfraAfectadosTablasExisten())) {
+        try {
+            await neonInsertClientesAfectadosLog(pid, body);
+            return { ok: true };
+        } catch (e) {
+            console.warn('[clientes-afectados-neon]', e);
+            return {
+                ok: false,
+                warning: 'El cierre se guardó; no se pudo registrar clientes afectados en la base.',
+            };
+        }
+    }
+    return {
+        ok: false,
+        warning: 'El cierre se guardó; sin API ni tablas locales para clientes afectados.',
+    };
+}
+
 function abrirCierre(id) {
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) return;
@@ -6357,6 +6648,8 @@ function abrirCierre(id) {
             bodyMat.innerHTML = '';
         }
     }
+
+    void prepararBloqueClientesAfectadosCierre(p);
     
     fotoCierreTemp = null;
     actualizarVistaPreviaFotoCierre();
@@ -6371,6 +6664,11 @@ document.getElementById('cc2').addEventListener('click', async () => {
     const tr = document.getElementById('tr').value.trim();
     if (!tr) {
         toast('Describí el trabajo realizado', 'error');
+        return;
+    }
+    const af = leerCuerpoValidadoCierreAfectados();
+    if (!af.ok) {
+        toast(af.error, 'error');
         return;
     }
     const pCierre = app.p.find(x => String(x.id) === String(app.cid));
@@ -6403,6 +6701,10 @@ document.getElementById('cc2').addEventListener('click', async () => {
         };
         if (telCierre) camposCierre.telefono_contacto = telCierre;
         await updPedido(app.cid, camposCierre, app.u?.id);
+        if (af.body && !String(app.cid).startsWith('off_')) {
+            const rAf = await enviarRegistroClientesAfectados(app.cid, af.body);
+            if (rAf.warning) toast(rAf.warning, 'warning');
+        }
         if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) {
@@ -8628,7 +8930,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','confiabilidad','mapa-usuarios','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -8653,7 +8955,7 @@ const KPI_ADMIN_PRESET_META = {
     pct_cierres_con_foto: {
         metrica: 'pct_cierres_con_foto',
         detail: 'cierres_foto',
-        unidad: 'percent',
+        unidad: 'porcentaje',
         hint: 'Qué parte de los cierres del periodo tuvieron al menos una foto de cierre.',
         valorAyuda:
             'Completá fechas y tocá «Calcular desde datos del sistema», o cargá «con foto» / «total» y el % se calcula solo.',
@@ -8663,7 +8965,7 @@ const KPI_ADMIN_PRESET_META = {
         detail: 'conteo',
         conteoLabel: '¿Cuántos reclamos se cerraron en estas fechas?',
         jsonKey: 'cerrados',
-        unidad: 'count',
+        unidad: 'cantidad',
         hint: 'Pedidos con estado Cerrado cuya fecha de cierre cae en el periodo (este tenant).',
         valorAyuda: 'Podés usar «Calcular desde datos del sistema» con las fechas, o escribir el número a mano.',
     },
@@ -8672,21 +8974,21 @@ const KPI_ADMIN_PRESET_META = {
         detail: 'conteo',
         conteoLabel: '¿Cuántos reclamos nuevos entraron en el periodo?',
         jsonKey: 'recibidos',
-        unidad: 'count',
+        unidad: 'cantidad',
         hint: 'Pedidos nuevos según fecha de creación en el rango (este tenant).',
         valorAyuda: '«Calcular desde datos del sistema» cuenta por fecha_creacion, o cargá el número a mano.',
     },
     tiempo_respuesta_horas: {
         metrica: 'tiempo_respuesta_medio_horas',
         detail: 'none',
-        unidad: 'hours',
+        unidad: 'horas',
         hint: 'Promedio de horas desde la creación del pedido hasta la primera asignación (fecha_asignacion), solo cierres del periodo.',
         valorAyuda: '«Calcular desde datos del sistema» usa pedidos cerrados con asignación registrada.',
     },
     satisfaccion_pct: {
         metrica: 'satisfaccion_pct',
         detail: 'satisfaccion_wa',
-        unidad: 'percent',
+        unidad: 'porcentaje',
         hint: 'Tras el cierre por WhatsApp el cliente califica 1–5 y puede dejar comentario. El % equivale al promedio de estrellas sobre 5 (ej. 4 estrellas → 80%).',
         valorAyuda:
             'Con «Calcular desde datos del sistema» se usan opinion_cliente_estrellas en el rango de fecha_opinion_cliente.',
@@ -8694,7 +8996,7 @@ const KPI_ADMIN_PRESET_META = {
     avance_medio: {
         metrica: 'avance_medio_pct',
         detail: 'none',
-        unidad: 'percent',
+        unidad: 'porcentaje',
         hint: 'Promedio del campo avance (%) en pedidos cerrados en el periodo.',
         valorAyuda: 'Se puede calcular automáticamente desde Neon con el botón de abajo.',
     },
@@ -8715,6 +9017,27 @@ const KPI_METRICA_ETIQUETAS = {
     satisfaccion_pct: 'Satisfacción (WA 1–5★ → %)',
     avance_medio_pct: 'Avance medio trabajos',
 };
+
+function normalizarUnidadKpiParaGuardar(raw) {
+    const s = String(raw || '').trim();
+    const leg = { percent: 'porcentaje', hours: 'horas', count: 'cantidad', ratio: 'proporción', days: 'días' };
+    return leg[s] || s;
+}
+
+function formatearUnidadKpiVista(u) {
+    const s = String(u || '').trim();
+    if (!s) return '—';
+    const leg = { percent: 'porcentaje', hours: 'horas', count: 'cantidad', ratio: 'proporción', days: 'días' };
+    return leg[s] || s;
+}
+
+function fmtFechaKpiSnapshotCorta(val) {
+    const s = String(val || '').trim();
+    if (!s) return '—';
+    const d = new Date(s.length <= 10 ? s + 'T12:00:00' : s);
+    if (Number.isNaN(d.getTime())) return s;
+    return d.toLocaleDateString('es-AR');
+}
 
 function aplicarKpiUnidadCustomToggleAdmin() {
     const sel = document.getElementById('kpi-unidad');
@@ -9178,10 +9501,10 @@ async function cargarKpiSnapshotsAdmin() {
                     : `<code>${_escOpt(row.metrica)}</code>`;
                 return (
                     `<tr><td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);vertical-align:top">${celMetrica}</td>` +
-                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_inicio || ''))}</td>` +
-                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(String(row.periodo_fin || ''))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(fmtFechaKpiSnapshotCorta(row.periodo_inicio))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(fmtFechaKpiSnapshotCorta(row.periodo_fin))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(vn)}</td>` +
-                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(row.unidad || '—')}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(formatearUnidadKpiVista(row.unidad))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(row.fuente || '')}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);white-space:nowrap">${_escOpt(String(row.created_at || '').replace('T', ' ').slice(0, 16))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">` +
@@ -9222,7 +9545,7 @@ async function guardarKpiSnapshotAdmin() {
     const desde = (document.getElementById('kpi-desde')?.value || '').trim();
     const hasta = (document.getElementById('kpi-hasta')?.value || '').trim();
     let valStr = (document.getElementById('kpi-valor')?.value || '').trim();
-    const unidad = leerUnidadKpiAdmin();
+    const unidad = normalizarUnidadKpiParaGuardar(leerUnidadKpiAdmin());
     const fuente = (document.getElementById('kpi-fuente')?.value || 'manual').trim();
     const notas = (document.getElementById('kpi-notas')?.value || '').trim();
     const jsonRaw = (document.getElementById('kpi-json')?.value || '').trim();
@@ -9370,6 +9693,7 @@ function adminTab(tab) {
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') cargarEstadisticas();
     if (tab === 'kpi') void cargarKpiSnapshotsAdmin();
+    if (tab === 'confiabilidad') void cargarAdminInfraAfectados();
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
     if (tab === 'socios') {
@@ -9393,7 +9717,7 @@ function adminTab(tab) {
         }
     }
     if (tab === 'empresa') cargarFormEmpresa();
-    if (tab === 'mapa-usuarios') { cargarUbicacionesUsuarios(); iniciarMapaUsuariosAdmin(); }
+    if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
 }
 
 function abrirAdmin() {
@@ -10097,6 +10421,104 @@ function periodoInformeDesdeSelectEstadisticas() {
     return { periodo, fechaDesde, condFecha };
 }
 
+function periodoInformeEtiquetaHumana(periodo) {
+    const m = {
+        mes: 'Mes en curso',
+        '3meses': 'Últimos 3 meses (ventana móvil)',
+        anio: 'Año calendario en curso',
+        todo: 'Histórico completo',
+    };
+    return m[periodo] || String(periodo || '');
+}
+
+function lineaPeriodoInformeEstadisticas() {
+    const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
+    const ph = periodoInformeEtiquetaHumana(periodo);
+    const fd = fechaDesde.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const gen = new Date().toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'medium' });
+    return `Período analizado: ${ph} · desde ${fd} · Generado ${gen}`;
+}
+
+function escInformePdfTexto(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function construirHtmlEncabezadoInformeEmpresa(lineaPeriodo) {
+    const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
+    const sub = String(window.EMPRESA_CFG?.subtitulo || '').trim();
+    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
+    const logoSrc = escInformePdfTexto(logo || 'gestornova-logo.png');
+    const lp = lineaPeriodo
+        ? `<div style="margin-top:6px;font-size:9px;color:#64748b;line-height:1.35">${escInformePdfTexto(lineaPeriodo)}</div>`
+        : '';
+    return (
+        `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 12px;background:linear-gradient(180deg,#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.06)">` +
+        `<img src="${logoSrc}" alt="" width="48" height="48" style="width:48px;height:48px;object-fit:contain;border-radius:8px;flex-shrink:0" crossorigin="anonymous"/>` +
+        `<div style="min-width:0;flex:1"><div style="font-size:16px;font-weight:800;color:#1e3a8a;letter-spacing:-.02em">${escInformePdfTexto(nombre)}</div>` +
+        (sub ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(sub)}</div>` : '') +
+        `${lp}</div></div>`
+    );
+}
+
+async function logoEmpresaBase64ParaPdf() {
+    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
+    const path = logo || 'gestornova-logo.png';
+    try {
+        const abs = new URL(path, window.location.href).href;
+        const r = await fetch(abs, { credentials: 'same-origin' });
+        if (!r.ok) return null;
+        const buf = await r.arrayBuffer();
+        const b64 = _arrayBufferToBase64(buf);
+        const ct = (r.headers.get('content-type') || '').toLowerCase();
+        if (ct.includes('jpeg') || /\.jpe?g(\?|$)/i.test(path)) return { b64, fmt: 'JPEG' };
+        return { b64, fmt: 'PNG' };
+    } catch (_) {
+        return null;
+    }
+}
+
+/** Encabezado A4 en jsPDF: logo + nombre + subtítulo + líneas de período. Devuelve Y inferior del bloque. */
+async function pdfEncabezadoEmpresaBloque(pdf, margin, pageW, yStart, lineasPeriodo) {
+    const maxW = pageW - 2 * margin;
+    let xTexto = margin;
+    let y = yStart;
+    const lg = await logoEmpresaBase64ParaPdf();
+    if (lg) {
+        try {
+            pdf.addImage('data:image/' + lg.fmt.toLowerCase() + ';base64,' + lg.b64, lg.fmt, margin, y, 9, 9);
+            xTexto = margin + 11;
+        } catch (_) {}
+    }
+    const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
+    const sub = String(window.EMPRESA_CFG?.subtitulo || '').trim();
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(30, 58, 138);
+    pdf.text(nombre, xTexto, y + 6);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.6);
+    pdf.setTextColor(71, 85, 105);
+    let y2 = y + 9;
+    if (sub) {
+        const subL = pdf.splitTextToSize(sub, maxW - (xTexto - margin));
+        pdf.text(subL, xTexto, y2);
+        y2 += subL.length * 3.3;
+    }
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(100, 116, 139);
+    const perL = pdf.splitTextToSize(String(lineasPeriodo || ''), maxW);
+    pdf.text(perL, margin, y2 + 2);
+    y2 += perL.length * 3.1;
+    pdf.setDrawColor(226, 232, 240);
+    pdf.setLineWidth(0.35);
+    pdf.line(margin, y2 + 3, pageW - margin, y2 + 3);
+    return y2 + 5;
+}
+
 async function exportInformeMensualExcel() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
@@ -10179,6 +10601,9 @@ async function capturaPdfBloqueResumenEstadisticas() {
     const cards = document.getElementById('stats-cards');
     const wrap = document.createElement('div');
     wrap.setAttribute('style', 'position:fixed;left:-12000px;top:0;width:720px;padding:12px 14px;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif');
+    const headDiv = document.createElement('div');
+    headDiv.innerHTML = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
+    wrap.appendChild(headDiv);
     if (marco) {
         const m = marco.cloneNode(true);
         m.querySelectorAll('a').forEach(a => {
@@ -10307,13 +10732,14 @@ async function imprimirInformeConGraficos() {
             toast('Permití ventanas emergentes para imprimir', 'error');
             return;
         }
-        const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
-        const subt = `Período: ${periodo} · Desde ${fechaDesde.toLocaleDateString('es-AR')} · Generado ${new Date().toLocaleString('es-AR')}`;
+        const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
+        const subt = lineaPeriodoInformeEstadisticas();
         const bloques = pages.map(p =>
             `<section class="gn-print-page"><h1 class="gn-print-h1">${escAttrPrint(p.title)}</h1><p class="gn-print-sub">${escAttrPrint(subt)}</p><div class="gn-print-imgwrap"><img src="${p.url}" alt=""/></div></section>`
         ).join('');
-        const css = '@page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,Segoe UI,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}.gn-print-page{page-break-after:always;break-after:page;padding:0 0 6mm}.gn-print-page:last-child{page-break-after:auto;break-after:auto}.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 4mm;line-height:1.35}.gn-print-imgwrap{display:flex;justify-content:center;align-items:flex-start}.gn-print-imgwrap img{display:block;max-width:100%;width:auto;height:auto;max-height:238mm;object-fit:contain}';
-        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>GestorNova — Estadísticas</title><style>' + css + '</style></head><body><header style="font-size:9pt;font-weight:700;color:#1e3a8a;margin-bottom:6mm">GestorNova · Informe de estadísticas</header>' + bloques + '</body></html>');
+        const hdrHtml = construirHtmlEncabezadoInformeEmpresa(subt);
+        const css = '@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,Segoe UI,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}.gn-print-page{page-break-after:always;break-after:page;padding:0 0 6mm}.gn-print-page:last-child{page-break-after:auto;break-after:auto}.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 4mm;line-height:1.35}.gn-print-imgwrap{display:flex;justify-content:center;align-items:flex-start}.gn-print-imgwrap img{display:block;max-width:100%;width:auto;height:auto;max-height:220mm;object-fit:contain}';
+        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escAttrPrint(ent) + ' — Estadísticas</title><style>' + css + '</style></head><body><div class="gn-print-doc-header" style="margin-bottom:8mm">' + hdrHtml + '</div>' + bloques + '<p style="font-size:7pt;color:#94a3b8;margin-top:4mm">Documento para gestión interna. Desactivá «Encabezado y pie de página» del navegador al imprimir para evitar URLs en el borde.</p></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
@@ -10342,32 +10768,16 @@ async function generarPdfEstadisticasMultipaginaENRE() {
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 11;
         const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
-        const subt = `Período: ${periodo} · Desde ${fechaDesde.toLocaleDateString('es-AR')} · ${new Date().toLocaleString('es-AR')}`;
+        const lineaPer = lineaPeriodoInformeEstadisticas();
         let nPag = 0;
-        const addCanvasPage = (canvas, chartTitle) => {
+        const addCanvasPage = async (canvas, chartTitle) => {
             if (!canvas || !canvas.width) return;
             const maxW = pageW - 2 * margin;
-            const headerH = chartTitle ? 20 : 16;
-            const maxH = pageH - 2 * margin - headerH;
-            const imgData = canvas.toDataURL('image/jpeg', 0.92);
-            const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, maxH);
             if (nPag > 0) pdf.addPage();
             nPag++;
             pdf.setFillColor(252, 252, 253);
             pdf.rect(0, 0, pageW, pageH, 'F');
-            pdf.setDrawColor(226, 232, 240);
-            pdf.setLineWidth(0.25);
-            pdf.line(margin, margin + 8.5, pageW - margin, margin + 8.5);
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(11);
-            pdf.setTextColor(30, 58, 138);
-            pdf.text('GestorNova · Estadísticas (referencia ENRE)', margin, margin + 5);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(7.6);
-            pdf.setTextColor(71, 85, 105);
-            const subLines = pdf.splitTextToSize(subt, maxW);
-            pdf.text(subLines, margin, margin + 9.5);
-            let y0 = margin + 11 + subLines.length * 3.2;
+            let y0 = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaPer);
             if (chartTitle) {
                 pdf.setFont('helvetica', 'bold');
                 pdf.setFontSize(8.4);
@@ -10375,21 +10785,25 @@ async function generarPdfEstadisticasMultipaginaENRE() {
                 pdf.text(String(chartTitle).slice(0, 72), margin, y0 + 2.5);
                 y0 += 5;
             }
+            const imgData = canvas.toDataURL('image/jpeg', 0.92);
+            const maxH = Math.max(40, pageH - y0 - margin - 2);
+            const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, maxH);
             const x0 = margin + (maxW - iw) / 2;
             pdf.addImage(imgData, 'JPEG', x0, y0 + 1, iw, ih, undefined, 'FAST');
         };
         for (const sec of secciones) {
             if (sec.type === 'resumen') {
-                addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
+                await addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
             } else if (sec.type === 'chart') {
-                addCanvasPage(await html2canvasCapturaElemento(sec.el, { delayAfterResize: 150 }), sec.title);
+                await addCanvasPage(await html2canvasCapturaElemento(sec.el, { delayAfterResize: 150 }), sec.title);
             }
         }
         if (nPag === 0) {
             toast('No se pudo generar ninguna página', 'error');
             return;
         }
-        pdf.save(`gestornova_stats_ENRE_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
+        const slug = String(window.EMPRESA_CFG?.nombre || 'GestorNova').replace(/[^\w\-]+/g, '_').slice(0, 48);
+        pdf.save(`${slug}_estadisticas_A4_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
         toast('PDF listo', 'success');
     } catch (e) {
         toastError('pdf-estadisticas-enre', e, 'Error al generar el PDF.');
@@ -10404,7 +10818,9 @@ async function generarInformeMensualENRE() {
         const tsql = await pedidosFiltroTenantSql();
         const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
-        const tit = 'GestorNova — Informe de pedidos';
+        const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
+        const tit = ent + ' — Informe de pedidos';
+        const hdr = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
         let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
         rows.forEach(row => {
             tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td></tr>`;
@@ -10412,7 +10828,7 @@ async function generarInformeMensualENRE() {
         tab += '</tbody></table>';
         const w = window.open('', '_blank');
         if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
-        w.document.write('<html><head><title>' + tit + '</title><style>body{font-family:system-ui;padding:1rem} table{border-collapse:collapse;width:100%;font-size:10pt} th,td{border:1px solid #ccc;padding:4px}</style></head><body><h1>' + tit + '</h1><p>Período desde ' + fechaDesde.toLocaleDateString('es-AR') + ' · Generado ' + fmtInformeFecha(new Date()) + '</p>' + tab + '<p style="margin-top:1rem;font-size:9pt;color:#555">Documento para gestión interna y respaldo documental. Complementar con datos de red (SAIDI/SAIFI, etc.) según exige el marco regulatorio.</p></body></html>');
+        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4;margin:12mm}body{font-family:system-ui;padding:0.5rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:9pt} th,td{border:1px solid #cbd5e1;padding:4px} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:13pt;color:#1e3a8a;margin:.5rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:1rem;font-size:8pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
@@ -10582,8 +10998,9 @@ async function cargarEstadisticas() {
             : `SELECT distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
                 FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
+        const showConf = esCooperativaElectricaRubro();
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
-            rTecCalle, rAsig, rCrit24, rBarT] = await Promise.all([
+            rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
             // Resumen general
             statSql(`SELECT
                 COUNT(*) AS total,
@@ -10643,7 +11060,26 @@ async function cargarEstadisticas() {
                 GROUP BY 1 ORDER BY horas_prom ASC NULLS LAST LIMIT 8`,
                       'barT'
                   )
-                : Promise.resolve({ rows: [] })
+                : Promise.resolve({ rows: [] }),
+            statSql(`SELECT COUNT(*)::int AS n FROM socios_catalogo WHERE COALESCE(activo, TRUE)`, 'nsocios'),
+            showConf
+                ? statSql(
+                      `SELECT TO_CHAR(fecha_cierre,'YYYY-MM') AS mes,
+                COUNT(*)::int AS ev,
+                COALESCE(SUM(GREATEST(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/60.0, 0)), 0)::double precision AS min_tot
+                FROM pedidos
+                WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL AND fecha_cierre > fecha_creacion
+                AND fecha_cierre >= ${esc(fechaDesde.toISOString())}
+                AND tipo_trabajo IN (
+                  'Corte de Energía','Cables Caídos/Peligro','Problemas de Tensión','Poste Inclinado/Dañado',
+                  'Consumo elevado','Riesgo en la vía pública','Corrimiento de poste/columna',
+                  'Falla de Línea','Avería en Transformador','Corte Programado','Emergencia'
+                )
+                ${tsql}
+                GROUP BY 1 ORDER BY 1`,
+                      'confMes'
+                  )
+                : Promise.resolve({ rows: [] }),
         ]);
 
         const t = rTotal.rows[0] || {};
@@ -10660,7 +11096,14 @@ async function cargarEstadisticas() {
         const pctCerr = totalN > 0 ? Math.round(1000 * cerrN / totalN) / 10 : 0;
         const pctCrit24 = nCritTot ? Math.round(1000 * nCrit24 / nCritTot) / 10 : null;
 
-        const fmtHoras = h => h === 0 || !isFinite(h) ? '—' : h < 1 ? Math.round(h*60)+'min' : h < 24 ? h.toFixed(1)+'h' : (h/24).toFixed(1)+'d';
+        const fmtHoras = h =>
+            h === 0 || !isFinite(h)
+                ? '—'
+                : h < 1
+                  ? Math.round(h * 60) + ' minutos'
+                  : h < 24
+                    ? h.toFixed(1) + ' horas'
+                    : (h / 24).toFixed(1) + ' días';
 
         const titZona = document.getElementById('estadisticas-titulo-zona');
         if (titZona) {
@@ -10669,8 +11112,15 @@ async function cargarEstadisticas() {
         const wrapBarT = document.getElementById('chart-wrap-barrios-tiempo');
         if (wrapBarT) wrapBarT.style.display = esMun ? '' : 'none';
 
+        const nSociosCat = Math.max(1, parseInt(rSocios.rows?.[0]?.n || 0, 10) || 1);
+        const confRows = rConfMes.rows || [];
+        const evConfTot = confRows.reduce((s, r) => s + parseInt(r.ev || 0, 10), 0);
+        const minConfTot = confRows.reduce((s, r) => s + parseFloat(r.min_tot || 0), 0);
+        const saifiPeriodo = showConf && nSociosCat ? evConfTot / nSociosCat : null;
+        const saidiPeriodo = showConf && nSociosCat ? minConfTot / nSociosCat : null;
+
         // ── Cards de resumen ───────────────────────────────────
-        document.getElementById('stats-cards').innerHTML = [
+        const cardList = [
             { val: totalN, lbl: 'Total pedidos',     cls: '' },
             { val: Number(t.pendientes)  || 0, lbl: 'Pendientes',         cls: Number(t.pendientes) > 0 ? 'orange' : '' },
             { val: Number(t.asignados)   || 0, lbl: 'Asignados',          cls: Number(t.asignados) > 0 ? 'orange' : '' },
@@ -10680,13 +11130,30 @@ async function cargarEstadisticas() {
             { val: Number(t.altos)       || 0, lbl: '🟠 Altos activos',   cls: Number(t.altos) > 0 ? 'orange' : '' },
             { val: Number(t.cerrados_hoy)|| 0, lbl: 'Cerrados hoy',       cls: 'green' },
             { val: nTecCalle, lbl: 'Técnicos con pedido (asig./ejec.)', cls: nTecCalle ? 'orange' : '' },
-            { val: fmtHoras(hAsig), lbl: 'Prom. horas hasta asignar', cls: '' },
+            { val: fmtHoras(hAsig), lbl: 'Prom. tiempo hasta asignar', cls: '' },
             { val: pctCerr + '%', lbl: '% cerrados / total período', cls: 'green' },
             { val: pctCrit24 != null ? pctCrit24 + '%' : '—', lbl: '% críticos cerrados &lt;24h', cls: '' },
             { val: fmtHoras(horasProm), lbl: 'Prom. tiempo cierre', cls: '' },
             { val: fmtHoras(horasMin),  lbl: 'Cierre más rápido',   cls: 'green' },
             { val: avanceProm + '%',    lbl: 'Avance prom. en ejec.', cls: '' },
-        ].map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`).join('');
+        ];
+        if (showConf) {
+            cardList.push(
+                {
+                    val: saifiPeriodo != null ? saifiPeriodo.toFixed(4) : '—',
+                    lbl: 'SAIFI aprox. (int./usuario en período)',
+                    cls: '',
+                },
+                {
+                    val: saidiPeriodo != null ? Math.round(saidiPeriodo * 10) / 10 + ' min/usuario' : '—',
+                    lbl: 'SAIDI aprox. (min acum./usuario)',
+                    cls: '',
+                }
+            );
+        }
+        document.getElementById('stats-cards').innerHTML = cardList
+            .map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
+            .join('');
 
         // ── Helper para crear/recrear charts (Chart.js v4) ────
         const crearChart = (id, type, labels, datasets, extraOpts = {}) => {

@@ -331,6 +331,39 @@
         <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .5rem">Si el tipo de reclamo admite materiales, podés cargarlos o editarlos antes de confirmar el cierre.</p>
         <div id="cierre-materiales-body"></div>
       </div>
+      <div id="cierre-afectados-block" class="fg" style="padding:0;margin-top:1rem;display:none">
+        <label><i class="fas fa-bolt"></i> Clientes sin servicio (SAIDI / SAIFI)</label>
+        <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .55rem;line-height:1.4">Si el administrador cargó transformadores o zonas, elegí una opción. Si no sabés el dato, podés omitir y registrar después.</p>
+        <div style="display:flex;flex-direction:column;gap:.35rem;font-size:.86rem">
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="omitir" checked onchange="syncCierreAfectadosPanels()"> No registrar ahora</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="transformador" onchange="syncCierreAfectadosPanels()"> Por transformador</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="zona" onchange="syncCierreAfectadosPanels()"> Por zona / barrio (estimado)</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="rango" onchange="syncCierreAfectadosPanels()"> Rango de medidores</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="manual" onchange="syncCierreAfectadosPanels()"> Cantidad manual (emergencia)</label>
+        </div>
+        <div id="cierre-afect-panel-trafo" style="display:none;margin-top:.65rem">
+          <label for="cierre-afect-sel-trafo" style="font-size:.8rem">Transformador</label>
+          <select id="cierre-afect-sel-trafo" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
+        </div>
+        <div id="cierre-afect-panel-zona" style="display:none;margin-top:.65rem">
+          <label for="cierre-afect-sel-zona" style="font-size:.8rem">Zona</label>
+          <select id="cierre-afect-sel-zona" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
+        </div>
+        <div id="cierre-afect-panel-rango" style="display:none;margin-top:.65rem">
+          <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:.5rem">
+            <div><label for="cierre-afect-med-desde" style="font-size:.78rem">Medidor desde</label><input id="cierre-afect-med-desde" type="text" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem"></div>
+            <div><label for="cierre-afect-med-hasta" style="font-size:.78rem">Medidor hasta</label><input id="cierre-afect-med-hasta" type="text" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem"></div>
+          </div>
+          <div style="margin-top:.45rem">
+            <label for="cierre-afect-rango-cant" style="font-size:.72rem;color:var(--tm)">Si no son números correlativos, cantidad estimada</label>
+            <input id="cierre-afect-rango-cant" type="number" min="1" step="1" inputmode="numeric" placeholder="Opcional si el rango es numérico" style="width:100%;max-width:220px;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem">
+          </div>
+        </div>
+        <div id="cierre-afect-panel-manual" style="display:none;margin-top:.65rem">
+          <label for="cierre-afect-manual-cant" style="font-size:.8rem">Cantidad estimada de clientes afectados</label>
+          <input id="cierre-afect-manual-cant" type="number" min="1" step="1" inputmode="numeric" style="width:100%;max-width:220px;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem">
+        </div>
+      </div>
       <div class="fg" style="padding:0;margin-top:1rem">
         <label id="lbl-firma-cierre"><i class="fas fa-signature"></i> Firma del cliente / socio</label>
         <canvas id="firma-canvas-cierre" width="320" height="120" style="border:1.5px solid var(--bo);border-radius:.5rem;touch-action:none;background:#fff;max-width:100%"></canvas>
@@ -396,6 +429,7 @@
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
+      <button class="admin-tab" onclick="adminTab('confiabilidad')"><i class="fas fa-plug"></i> Clientes afectados</button>
       <button class="admin-tab" onclick="adminTab('mapa-usuarios')"><i class="fas fa-map-marker-alt"></i> Ubicaciones</button>
       <button class="admin-tab" onclick="adminTab('contrasena')"><i class="fas fa-key"></i> Contraseña</button>
     </div>
@@ -404,7 +438,7 @@
       <div class="form-grid">
         <div><label>Nombre</label><input id="cfg-nombre" type="text"></div>
         <div><label>Tipo (cooperativa, municipio, empresa)</label><input id="cfg-tipo" type="text" placeholder="cooperativa"></div>
-        <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text"></div>
+        <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text" placeholder="Sistema de gestión de pedidos y reclamos"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
         <div class="full"><label>Coordenadas en detalle de pedido (además de WGS84)</label>
@@ -532,6 +566,25 @@
         <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
       </div>
       <div id="stats-cards" class="stat-grid"></div>
+      <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
+          <h4 style="margin:0">Confiabilidad eléctrica (estimación interna)</h4>
+          <button class="btn-sm" onclick="descargarGrafico('chart-saifi','SAIFI_aprox')" title="Descargar" style="background:var(--bg);border:1px solid var(--bo);padding:.2rem .5rem"><i class="fas fa-download"></i> SAIFI</button>
+          <button class="btn-sm" onclick="descargarGrafico('chart-saidi','SAIDI_aprox')" title="Descargar" style="background:var(--bg);border:1px solid var(--bo);padding:.2rem .5rem"><i class="fas fa-download"></i> SAIDI</button>
+        </div>
+        <p style="font-size:.74rem;color:var(--tm);margin:0 0 .5rem;line-height:1.4">Basado en <strong>cierres</strong> de reclamos de red (cortes, tensión, cables, etc.), excluye administrativos. <strong>SAIFI</strong> ≈ interrupciones / usuarios del catálogo; <strong>SAIDI</strong> ≈ minutos acumulados sin servicio / usuario. Denominador: socios activos en <code style="font-size:.7rem">socios_catalogo</code> (mín. 1). Complementar con mediciones oficiales de red.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.75rem">
+          <div>
+            <div style="font-size:.72rem;font-weight:600;color:var(--bd);margin-bottom:.25rem">SAIFI (frecuencia)</div>
+            <div class="chart-container"><canvas id="chart-saifi"></canvas></div>
+          </div>
+          <div>
+            <div style="font-size:.72rem;font-weight:600;color:var(--bd);margin-bottom:.25rem">SAIDI (duración, min/usuario)</div>
+            <div class="chart-container"><canvas id="chart-saidi"></canvas></div>
+          </div>
+        </div>
+        <div class="chart-legend-caption" id="chart-cap-confiabilidad"></div>
+      </div>
       <!-- Grilla 2 columnas en desktop, 1 en mobile -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem;margin-top:.5rem">
         <div class="chart-wrap" style="margin:0">
@@ -660,11 +713,11 @@
           <div><label for="kpi-unidad">Unidad</label>
             <select id="kpi-unidad" onchange="aplicarKpiUnidadCustomToggleAdmin()">
               <option value="">— Elegir —</option>
-              <option value="percent">Porcentaje (%)</option>
-              <option value="hours">Horas</option>
-              <option value="count">Cantidad (unidades)</option>
-              <option value="ratio">Ratio / proporción</option>
-              <option value="days">Días</option>
+              <option value="porcentaje">Porcentaje (%)</option>
+              <option value="horas">Horas</option>
+              <option value="cantidad">Cantidad (unidades)</option>
+              <option value="proporción">Proporción / ratio</option>
+              <option value="días">Días</option>
               <option value="__custom">Otra (escribir)…</option>
             </select>
             <input id="kpi-unidad-custom" type="text" placeholder="Ej. minutos" maxlength="32" style="display:none;width:100%;margin-top:.4rem" autocomplete="off">
@@ -706,6 +759,29 @@
         <button type="button" class="btn-sm primary" onclick="cargarKpiSnapshotsAdmin()" id="kpi-btn-refrescar" style="display:none"><i class="fas fa-sync"></i> Actualizar lista</button>
       </div>
       <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
+    </div>
+    <div id="admin-confiabilidad" class="admin-section">
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo para que el técnico <strong>elija</strong> transformador o zona al cerrar (cooperativa eléctrica). Ejecutá en Neon <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code> si falta la tabla.</p>
+      <div id="admin-infra-afect-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
+      <div id="admin-infra-afect-wrap" style="display:none">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Transformadores</h3>
+        <div class="form-grid" style="margin-bottom:.75rem">
+          <div><label for="ia-t-codigo">Código *</label><input id="ia-t-codigo" type="text" placeholder="TR-ALBERDI-01" autocomplete="off"></div>
+          <div><label for="ia-t-nombre">Nombre</label><input id="ia-t-nombre" type="text" autocomplete="off"></div>
+          <div><label for="ia-t-kva">kVA</label><input id="ia-t-kva" type="number" min="0" step="1" inputmode="numeric"></div>
+          <div><label for="ia-t-clientes">Socios conectados *</label><input id="ia-t-clientes" type="number" min="0" step="1" inputmode="numeric" placeholder="220"></div>
+          <div class="full"><label for="ia-t-barrio">Barrio (texto, opcional)</label><input id="ia-t-barrio" type="text" autocomplete="off"></div>
+        </div>
+        <button type="button" class="btn-sm primary" onclick="guardarInfraTransformadorAdmin()"><i class="fas fa-save"></i> Guardar transformador</button>
+        <div id="lista-infra-transformadores-admin" style="margin:1rem 0 1.25rem;font-size:.85rem"></div>
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Zonas (clientes estimados)</h3>
+        <div class="form-grid" style="margin-bottom:.75rem">
+          <div class="full"><label for="ia-z-nombre">Nombre *</label><input id="ia-z-nombre" type="text" placeholder="Barrio Centro" autocomplete="off"></div>
+          <div><label for="ia-z-clientes">Clientes estimados *</label><input id="ia-z-clientes" type="number" min="0" step="1" inputmode="numeric"></div>
+        </div>
+        <button type="button" class="btn-sm primary" onclick="guardarInfraZonaAdmin()"><i class="fas fa-save"></i> Guardar zona</button>
+        <div id="lista-infra-zonas-admin" style="margin:1rem 0 0;font-size:.85rem"></div>
+      </div>
     </div>
     <div id="admin-mapa-usuarios" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
