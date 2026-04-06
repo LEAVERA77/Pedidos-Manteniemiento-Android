@@ -6093,6 +6093,33 @@ function escHtmlPrint(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
+function puedeEditarMaterialesEnPedido(p) {
+    if (!p || p.es === 'Cerrado') return false;
+    if (tipoPedidoExcluyeMateriales(p.tt)) return false;
+    const uid = String(app.u?.id ?? '');
+    return (
+        esAdmin() ||
+        String(p.ui) === uid ||
+        (esTecnicoOSupervisor() && p.tai != null && String(p.tai) === uid)
+    );
+}
+
+async function sqlMaterialesPedidoRows(pid) {
+    const q = `SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`;
+    let ult = null;
+    for (let i = 0; i < 3; i++) {
+        try {
+            const r = await sqlSimple(q);
+            return r.rows || [];
+        } catch (e) {
+            ult = e;
+            if (i < 2) await new Promise(res => setTimeout(res, 500 * (i + 1)));
+        }
+    }
+    throw ult;
+}
+
 async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
@@ -6105,8 +6132,7 @@ async function refrescarMaterialesEnDetalle(p) {
     const excluyeMat = tipoPedidoExcluyeMateriales(p.tt);
     if (excluyeMat) {
         try {
-            const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
-            const rows = r.rows || [];
+            const rows = await sqlMaterialesPedidoRows(pid);
             const aviso = '<p style="font-size:.8rem;color:var(--tl);margin-bottom:.5rem">Este tipo de pedido no admite registrar ni editar materiales.</p>';
             if (!rows.length) {
                 body.innerHTML = aviso;
@@ -6123,15 +6149,18 @@ async function refrescarMaterialesEnDetalle(p) {
             body.innerHTML = html;
         } catch (e) {
             logErrorWeb('materiales-detalle-readonly', e);
-            body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+            body.innerHTML =
+                '<p style="color:var(--re);font-size:.8rem">' +
+                escHtmlPrint(mensajeErrorUsuario(e)) +
+                '</p><p style="margin-top:.45rem"><button type="button" class="btn-sm primary" onclick="refrescarMaterialesDetallePorPid(' +
+                pid +
+                ')">Reintentar</button></p>';
         }
         return;
     }
-    const puedeEditarMat = p.es !== 'Cerrado' && (esTecnicoOSupervisor() || esAdmin())
-        && (String(p.tai) === String(app.u?.id) || esAdmin());
+    const puedeEditarMat = puedeEditarMaterialesEnPedido(p);
     try {
-        const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
-        const rows = r.rows || [];
+        const rows = await sqlMaterialesPedidoRows(pid);
         let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
         rows.forEach(row => {
             const des = String(row.descripcion || '').replace(/</g, '&lt;');
@@ -6169,9 +6198,19 @@ async function refrescarMaterialesEnDetalle(p) {
         }
     } catch (e) {
         logErrorWeb('materiales-detalle', e);
-        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+        body.innerHTML =
+            '<p style="color:var(--re);font-size:.8rem">' +
+            escHtmlPrint(mensajeErrorUsuario(e)) +
+            '</p><p style="margin-top:.45rem"><button type="button" class="btn-sm primary" onclick="refrescarMaterialesDetallePorPid(' +
+            pid +
+            ')">Reintentar</button></p>';
     }
 }
+
+window.refrescarMaterialesDetallePorPid = function (pid) {
+    const p = app.p.find(x => String(x.id) === String(pid));
+    if (p) void refrescarMaterialesEnDetalle(p);
+};
 
 /** Materiales en el modal «Cerrar pedido» (mismas reglas que en detalle). */
 async function refrescarMaterialesEnModalCierre(p) {
@@ -6186,11 +6225,9 @@ async function refrescarMaterialesEnModalCierre(p) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
         return;
     }
-    const puedeEditarMat = (esTecnicoOSupervisor() || esAdmin())
-        && (String(p.tai) === String(app.u?.id) || esAdmin());
+    const puedeEditarMat = puedeEditarMaterialesEnPedido(p);
     try {
-        const r = await sqlSimple(`SELECT id, descripcion, cantidad, unidad FROM pedido_materiales WHERE pedido_id=${esc(pid)} ORDER BY id`);
-        const rows = r.rows || [];
+        const rows = await sqlMaterialesPedidoRows(pid);
         let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
         rows.forEach(row => {
             const des = String(row.descripcion || '').replace(/</g, '&lt;');
@@ -6227,9 +6264,19 @@ async function refrescarMaterialesEnModalCierre(p) {
         }
     } catch (e) {
         logErrorWeb('materiales-cierre-modal', e);
-        body.innerHTML = '<p style="color:var(--re);font-size:.8rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+        body.innerHTML =
+            '<p style="color:var(--re);font-size:.8rem">' +
+            escHtmlPrint(mensajeErrorUsuario(e)) +
+            '</p><p style="margin-top:.45rem"><button type="button" class="btn-sm primary" onclick="refrescarMaterialesCierrePorPid(' +
+            pid +
+            ')">Reintentar carga</button></p>';
     }
 }
+
+window.refrescarMaterialesCierrePorPid = function (pid) {
+    const p = app.p.find(x => String(x.id) === String(pid));
+    if (p) void refrescarMaterialesEnModalCierre(p);
+};
 
 function sincronizarVistaMaterialesPedido(p) {
     if (!p) return;
@@ -6245,6 +6292,10 @@ window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
     const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
+    if (!p0 || !puedeEditarMaterialesEnPedido(p0)) {
+        toast('No tenés permiso para editar materiales de este pedido', 'error');
         return;
     }
     try {
@@ -6266,6 +6317,10 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
     }
+    if (!p0 || !puedeEditarMaterialesEnPedido(p0)) {
+        toast('No tenés permiso para cargar materiales en este pedido', 'error');
+        return;
+    }
     const d = document.getElementById('mat-desc-' + pid)?.value.trim();
     if (!d) { toast('Indicá descripción del material', 'error'); return; }
     const cantRaw = document.getElementById('mat-cant-' + pid)?.value;
@@ -6285,6 +6340,10 @@ window.agregarMaterialPedidoDesdeCierreModal = async function (pid) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
     }
+    if (!p0 || !puedeEditarMaterialesEnPedido(p0)) {
+        toast('No tenés permiso para cargar materiales en este pedido', 'error');
+        return;
+    }
     const d = document.getElementById('cierre-mat-desc-' + pid)?.value.trim();
     if (!d) { toast('Indicá descripción del material', 'error'); return; }
     const cantRaw = document.getElementById('cierre-mat-cant-' + pid)?.value;
@@ -6302,6 +6361,10 @@ window.eliminarMaterialPedido = async function (mid, pid) {
     const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
+        return;
+    }
+    if (!p0 || !puedeEditarMaterialesEnPedido(p0)) {
+        toast('No tenés permiso para editar materiales de este pedido', 'error');
         return;
     }
     if (!confirm('¿Eliminar material?')) return;
