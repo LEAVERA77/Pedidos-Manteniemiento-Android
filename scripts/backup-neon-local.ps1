@@ -29,9 +29,15 @@
 .EXAMPLE
   .\scripts\backup-neon-local.ps1 -EnvFile "C:\secrets\pedidos-api.env" -Keep 12
 
+.EXAMPLE
+  .\scripts\backup-neon-local.ps1 -EnvFile ".\api\.env" -Keep 12 -PgDumpPath "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe"
+
 .NOTAS
-  - Instalá las herramientas de cliente: winget install PostgreSQL.PostgreSQL.16
-    (o solo "Command line tools" si tu distro lo ofrece). Necesitás pg_dump en PATH.
+  - Neon suele usar PostgreSQL 17 u otro mayor. pg_dump debe ser de versión >= servidor;
+    si solo tenés el 16 instalado verás "no coincide la versión del servidor". Instalá 17 u 18
+    (conviven en C:\Program Files\PostgreSQL\17 y \18) y usá ese binario o dejá que el script
+    lo detecte (prueba 18, 17, 16…).
+  - winget: winget install PostgreSQL.PostgreSQL.18 (o .17). Solo "Command line tools" si lo ofrece el instalador.
   - Si el dump falla por timeout, en Neon probá la URI **sin** -pooler (host directo).
   - No commitees la connection string ni la carpeta de backups con datos reales.
 #>
@@ -93,7 +99,10 @@ if (-not $pgDump) {
     if ($cmd) { $pgDump = $cmd.Source }
 }
 if (-not $pgDump -or -not (Test-Path -LiteralPath $pgDump)) {
+    # Orden: mayor primero (Neon a menudo es PG 17+; pg_dump viejo no puede dumpear servidor nuevo).
     $candidates = @(
+        "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe",
+        "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe",
         "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe",
         "C:\Program Files\PostgreSQL\15\bin\pg_dump.exe",
         "C:\Program Files\PostgreSQL\14\bin\pg_dump.exe"
@@ -104,9 +113,10 @@ if (-not $pgDump -or -not (Test-Path -LiteralPath $pgDump)) {
 }
 if (-not $pgDump -or -not (Test-Path -LiteralPath $pgDump)) {
     throw @"
-No se encontró pg_dump. Instalá PostgreSQL (incluye herramientas de línea de comando), por ejemplo:
-  winget install PostgreSQL.PostgreSQL.16
-Luego cerrá y abrí la terminal, o pasá -PgDumpPath 'C:\Program Files\PostgreSQL\16\bin\pg_dump.exe'
+No se encontró pg_dump. Instalá cliente >= versión del servidor Neon (p. ej. 17 u 18):
+  winget install PostgreSQL.PostgreSQL.18
+Luego cerrá y abrí la terminal, o pasá explícitamente:
+  -PgDumpPath 'C:\Program Files\PostgreSQL\18\bin\pg_dump.exe'
 "@
 }
 
