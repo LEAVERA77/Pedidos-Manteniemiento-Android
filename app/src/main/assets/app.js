@@ -5685,7 +5685,6 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const tieneNisMed = !!nisVal;
         if (esCooperativaElectricaRubro()) {
             if (!tieneNisMed) {
-                disVal = '';
                 trafoVal = '';
             }
         } else if (esMunicipioRubro()) {
@@ -6318,8 +6317,24 @@ function pedidoTieneClienteCargado(p) {
 }
 
 let _cacheInfraAfectadosTablas = null;
+let _cacheInfraTrafoColDistribuidor = null;
 function invalidateInfraAfectadosTablasCache() {
     _cacheInfraAfectadosTablas = null;
+    _cacheInfraTrafoColDistribuidor = null;
+}
+
+async function sqlInfraTrafoTieneDistribuidorId() {
+    if (!NEON_OK || !_sql) return false;
+    if (_cacheInfraTrafoColDistribuidor !== null) return _cacheInfraTrafoColDistribuidor;
+    try {
+        const r = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'infra_transformadores' AND column_name = 'distribuidor_id' LIMIT 1`
+        );
+        _cacheInfraTrafoColDistribuidor = !!(r.rows && r.rows.length);
+    } catch (_) {
+        _cacheInfraTrafoColDistribuidor = false;
+    }
+    return _cacheInfraTrafoColDistribuidor;
 }
 
 async function sqlInfraAfectadosTablasExisten() {
@@ -6362,7 +6377,8 @@ function syncCierreAfectadosPanels() {
         if (el) el.style.display = on ? '' : 'none';
     };
     show('cierre-afect-panel-trafo', m === 'transformador');
-    show('cierre-afect-panel-zona', m === 'zona');
+    show('cierre-afect-panel-distribuidor', m === 'distribuidor');
+    show('cierre-afect-panel-alimentador', m === 'alimentador');
     show('cierre-afect-panel-rango', m === 'rango');
     show('cierre-afect-panel-manual', m === 'manual');
 }
@@ -6375,14 +6391,92 @@ function llenarSelectOptionText(sel, value, text) {
     sel.appendChild(o);
 }
 
+function llenarCierreSelectsDistribuidorResumen(rows) {
+    const sd = document.getElementById('cierre-afect-sel-distribuidor');
+    const sad = document.getElementById('cierre-afect-alim-dist');
+    if (!sd || !sad) return;
+    sd.innerHTML = '';
+    llenarSelectOptionText(sd, '', '— Elegir distribuidor —');
+    sad.innerHTML = '';
+    llenarSelectOptionText(sad, '', '— Elegir distribuidor —');
+    for (const row of rows || []) {
+        const did = Number(row.distribuidor_id);
+        if (!Number.isFinite(did)) continue;
+        const cod = String(row.codigo || '');
+        const nom = row.nombre ? String(row.nombre) : '';
+        const kva = Number(row.total_kva) || 0;
+        const soc = Number(row.total_clientes) || 0;
+        const ntr = Number(row.cant_transformadores) || 0;
+        const lab = `${cod}${nom ? ' — ' + nom : ''} · ${soc} socios · ${kva} kVA · ${ntr} trafos`;
+        llenarSelectOptionText(sd, did, lab);
+        llenarSelectOptionText(sad, did, lab);
+    }
+}
+
+async function refrescarCierreSelectAlimentadores() {
+    const sad = document.getElementById('cierre-afect-alim-dist');
+    const sal = document.getElementById('cierre-afect-sel-alimentador');
+    if (!sad || !sal) return;
+    const did = Number(sad.value);
+    sal.innerHTML = '';
+    llenarSelectOptionText(sal, '', '— Elegir alimentador —');
+    if (!Number.isFinite(did) || did <= 0) return;
+    try {
+        if (NEON_OK && _sql && (await sqlInfraTrafoTieneDistribuidorId())) {
+            const tid = tenantIdActual();
+            const r = await sqlSimple(
+                `SELECT TRIM(alimentador) AS alimentador,
+                  COALESCE(SUM(capacidad_kva),0) AS total_kva,
+                  COALESCE(SUM(clientes_conectados),0) AS total_clientes,
+                  COUNT(*)::int AS cant_tr
+                 FROM infra_transformadores
+                 WHERE tenant_id = ${esc(tid)} AND distribuidor_id = ${esc(did)} AND activo = TRUE
+                   AND alimentador IS NOT NULL AND TRIM(alimentador) <> ''
+                 GROUP BY TRIM(alimentador)
+                 ORDER BY TRIM(alimentador)`
+            );
+            for (const row of r.rows || []) {
+                const a = String(row.alimentador || '');
+                if (!a) continue;
+                const kva = Number(row.total_kva) || 0;
+                const soc = Number(row.total_clientes) || 0;
+                llenarSelectOptionText(sal, a, `${a} · ${soc} socios · ${kva} kVA (${row.cant_tr} trafos)`);
+            }
+        } else if (puedeEnviarApiRestPedidos()) {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return;
+            const resp = await fetch(
+                apiUrl(`/api/infra-afectados/resumen-por-alimentador?distribuidor_id=${encodeURIComponent(String(did))}`),
+                { headers: { Authorization: `Bearer ${tok}` } }
+            );
+            if (!resp.ok) return;
+            const list = await resp.json();
+            for (const row of list) {
+                const a = String(row.alimentador || '');
+                if (!a) continue;
+                const kva = Number(row.total_kva) || 0;
+                const soc = Number(row.total_clientes) || 0;
+                const ntr = Number(row.cant_transformadores) || 0;
+                llenarSelectOptionText(sal, a, `${a} · ${soc} socios · ${kva} kVA (${ntr} trafos)`);
+            }
+        }
+    } catch (e) {
+        console.warn('[cierre-afectados] alimentadores', e);
+    }
+}
+
 async function llenarCatalogosCierreAfectados() {
     const selT = document.getElementById('cierre-afect-sel-trafo');
-    const selZ = document.getElementById('cierre-afect-sel-zona');
-    if (!selT || !selZ) return;
+    if (!selT) return;
     selT.innerHTML = '';
     llenarSelectOptionText(selT, '', '— Elegir transformador —');
-    selZ.innerHTML = '';
-    llenarSelectOptionText(selZ, '', '— Elegir zona —');
+    llenarCierreSelectsDistribuidorResumen([]);
+    const sal = document.getElementById('cierre-afect-sel-alimentador');
+    if (sal) {
+        sal.innerHTML = '';
+        llenarSelectOptionText(sal, '', '— Elegir alimentador —');
+    }
     const tid = tenantIdActual();
     try {
         if (NEON_OK && _sql && (await sqlInfraAfectadosTablasExisten())) {
@@ -6391,11 +6485,6 @@ async function llenarCatalogosCierreAfectados() {
                     tid
                 )} AND activo = TRUE ORDER BY codigo`
             );
-            const rZ = await sqlSimple(
-                `SELECT id, nombre, clientes_estimados FROM infra_zonas_clientes WHERE tenant_id = ${esc(
-                    tid
-                )} AND activo = TRUE ORDER BY nombre`
-            );
             for (const row of rT.rows || []) {
                 const cc = Number(row.clientes_conectados) || 0;
                 const cod = String(row.codigo || '');
@@ -6403,21 +6492,27 @@ async function llenarCatalogosCierreAfectados() {
                 const lab = nom ? `${cod} — ${nom} (${cc} socios)` : `${cod} (${cc} socios)`;
                 llenarSelectOptionText(selT, row.id, lab);
             }
-            for (const row of rZ.rows || []) {
-                const ce = Number(row.clientes_estimados) || 0;
-                llenarSelectOptionText(selZ, row.id, `${String(row.nombre || '')} (~${ce} estimados)`);
+            if (await sqlInfraTrafoTieneDistribuidorId()) {
+                const rD = await sqlSimple(
+                    `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
+                      COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
+                      COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
+                      COUNT(t.id)::int AS cant_transformadores
+                     FROM infra_transformadores t
+                     INNER JOIN distribuidores d ON d.id = t.distribuidor_id
+                     WHERE t.tenant_id = ${esc(tid)} AND t.activo = TRUE AND t.distribuidor_id IS NOT NULL
+                     GROUP BY d.id, d.codigo, d.nombre
+                     ORDER BY d.codigo`
+                );
+                llenarCierreSelectsDistribuidorResumen(rD.rows || []);
             }
         } else if (puedeEnviarApiRestPedidos()) {
             await asegurarJwtApiRest();
             const tok = getApiToken();
             if (!tok) return;
             const h = { Authorization: `Bearer ${tok}` };
-            const [respT, respZ] = await Promise.all([
-                fetch(apiUrl('/api/infra-afectados/transformadores'), { headers: h }),
-                fetch(apiUrl('/api/infra-afectados/zonas-clientes'), { headers: h }),
-            ]);
+            const respT = await fetch(apiUrl('/api/infra-afectados/transformadores'), { headers: h });
             const rowsT = respT.ok ? await respT.json() : [];
-            const rowsZ = respZ.ok ? await respZ.json() : [];
             for (const row of rowsT) {
                 const cc = Number(row.clientes_conectados) || 0;
                 const cod = String(row.codigo || '');
@@ -6425,13 +6520,18 @@ async function llenarCatalogosCierreAfectados() {
                 const lab = nom ? `${cod} — ${nom} (${cc} socios)` : `${cod} (${cc} socios)`;
                 llenarSelectOptionText(selT, row.id, lab);
             }
-            for (const row of rowsZ) {
-                const ce = Number(row.clientes_estimados) || 0;
-                llenarSelectOptionText(selZ, row.id, `${String(row.nombre || '')} (~${ce} estimados)`);
+            const respD = await fetch(apiUrl('/api/infra-afectados/resumen-por-distribuidor'), { headers: h });
+            if (respD.ok) {
+                llenarCierreSelectsDistribuidorResumen(await respD.json());
             }
         }
     } catch (e) {
         console.warn('[cierre-afectados] catálogo', e);
+    }
+    const sad = document.getElementById('cierre-afect-alim-dist');
+    if (sad && !sad.dataset.boundAlim) {
+        sad.dataset.boundAlim = '1';
+        sad.addEventListener('change', () => void refrescarCierreSelectAlimentadores());
     }
 }
 
@@ -6444,7 +6544,16 @@ async function prepararBloqueClientesAfectadosCierre(p) {
     const omitir = blk.querySelector('input[value="omitir"]');
     if (omitir) omitir.checked = true;
     syncCierreAfectadosPanels();
-    ['cierre-afect-sel-trafo', 'cierre-afect-sel-zona', 'cierre-afect-med-desde', 'cierre-afect-med-hasta', 'cierre-afect-rango-cant', 'cierre-afect-manual-cant'].forEach((id) => {
+    [
+        'cierre-afect-sel-trafo',
+        'cierre-afect-sel-distribuidor',
+        'cierre-afect-alim-dist',
+        'cierre-afect-sel-alimentador',
+        'cierre-afect-med-desde',
+        'cierre-afect-med-hasta',
+        'cierre-afect-rango-cant',
+        'cierre-afect-manual-cant'
+    ].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
@@ -6472,12 +6581,23 @@ function leerCuerpoValidadoCierreAfectados() {
         }
         return { ok: true, body: { metodo: 'transformador', transformador_id: id } };
     }
-    if (metodo === 'zona') {
-        const id = Number(document.getElementById('cierre-afect-sel-zona')?.value);
+    if (metodo === 'distribuidor') {
+        const id = Number(document.getElementById('cierre-afect-sel-distribuidor')?.value);
         if (!Number.isFinite(id) || id <= 0) {
-            return { ok: false, error: 'Elegí una zona o marcá «No registrar ahora».' };
+            return { ok: false, error: 'Elegí un distribuidor o marcá «No registrar ahora».' };
         }
-        return { ok: true, body: { metodo: 'zona', zona_id: id } };
+        return { ok: true, body: { metodo: 'distribuidor', distribuidor_id: id } };
+    }
+    if (metodo === 'alimentador') {
+        const did = Number(document.getElementById('cierre-afect-alim-dist')?.value);
+        const alim = (document.getElementById('cierre-afect-sel-alimentador')?.value || '').trim();
+        if (!Number.isFinite(did) || did <= 0) {
+            return { ok: false, error: 'Elegí el distribuidor del alimentador.' };
+        }
+        if (!alim) {
+            return { ok: false, error: 'Elegí un alimentador de la lista (cargá trafos con alimentador en el admin).' };
+        }
+        return { ok: true, body: { metodo: 'alimentador', distribuidor_id: did, alimentador: alim } };
     }
     if (metodo === 'rango') {
         const desde = (document.getElementById('cierre-afect-med-desde')?.value || '').trim();
@@ -6512,6 +6632,8 @@ async function neonInsertClientesAfectadosLog(pedidoId, body) {
     const metodo = String(body.metodo || '').toLowerCase();
     let transformador_id = null;
     let zona_id = null;
+    let distribuidor_id = null;
+    let alimentador = null;
     let medidor_desde = null;
     let medidor_hasta = null;
     let cantidad_clientes = 0;
@@ -6526,6 +6648,29 @@ async function neonInsertClientesAfectadosLog(pedidoId, body) {
         if (!r.rows?.length) throw new Error('Transformador inválido');
         transformador_id = r.rows[0].id;
         cantidad_clientes = Math.max(0, Number(r.rows[0].clientes_conectados) || 0);
+    } else if (metodo === 'distribuidor') {
+        const did = Number(body.distribuidor_id);
+        if (!(await sqlInfraTrafoTieneDistribuidorId())) throw new Error('Ejecutá la migración SQL distribuidor/alimentador');
+        const r = await sqlSimple(
+            `SELECT COALESCE(SUM(clientes_conectados), 0) AS t FROM infra_transformadores WHERE tenant_id = ${esc(
+                tid
+            )} AND distribuidor_id = ${esc(did)} AND activo = TRUE`
+        );
+        distribuidor_id = did;
+        cantidad_clientes = Math.max(0, Number(r.rows?.[0]?.t) || 0);
+        es_estimado = false;
+    } else if (metodo === 'alimentador') {
+        const did = Number(body.distribuidor_id);
+        alimentador = String(body.alimentador || '').trim();
+        if (!(await sqlInfraTrafoTieneDistribuidorId())) throw new Error('Ejecutá la migración SQL distribuidor/alimentador');
+        const r = await sqlSimple(
+            `SELECT COALESCE(SUM(clientes_conectados), 0) AS t FROM infra_transformadores WHERE tenant_id = ${esc(
+                tid
+            )} AND distribuidor_id = ${esc(did)} AND activo = TRUE AND TRIM(alimentador) = ${esc(alimentador)}`
+        );
+        distribuidor_id = did;
+        cantidad_clientes = Math.max(0, Number(r.rows?.[0]?.t) || 0);
+        es_estimado = false;
     } else if (metodo === 'zona') {
         const zId = Number(body.zona_id);
         const r = await sqlSimple(
@@ -6556,11 +6701,11 @@ async function neonInsertClientesAfectadosLog(pedidoId, body) {
     }
     if (cantidad_clientes <= 0) throw new Error('Cantidad inválida');
     await sqlSimple(
-        `INSERT INTO clientes_afectados_log (pedido_id, tenant_id, metodo, transformador_id, zona_id, medidor_desde, medidor_hasta, cantidad_clientes, es_estimado, usuario_id) VALUES (${esc(
+        `INSERT INTO clientes_afectados_log (pedido_id, tenant_id, metodo, transformador_id, zona_id, distribuidor_id, alimentador, medidor_desde, medidor_hasta, cantidad_clientes, es_estimado, usuario_id) VALUES (${esc(
             pedidoId
-        )}, ${esc(tid)}, ${esc(metodo)}, ${esc(transformador_id)}, ${esc(zona_id)}, ${esc(medidor_desde)}, ${esc(
-            medidor_hasta
-        )}, ${esc(cantidad_clientes)}, ${es_estimado}, ${esc(uid)})`
+        )}, ${esc(tid)}, ${esc(metodo)}, ${esc(transformador_id)}, ${esc(zona_id)}, ${esc(distribuidor_id)}, ${esc(
+            alimentador
+        )}, ${esc(medidor_desde)}, ${esc(medidor_hasta)}, ${esc(cantidad_clientes)}, ${es_estimado}, ${esc(uid)})`
     );
 }
 
@@ -7707,14 +7852,10 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     if (!raw) {
         _nisPedidoCatalogoUltimoValor = '';
         if (rubro === 'cooperativa_electrica') {
-            const di2c = document.getElementById('di2');
             const tfC = document.getElementById('trafo-pedido');
-            if (di2c) di2c.value = '';
             if (tfC) tfC.value = '';
-            const scC = document.getElementById('ped-sum-conexion');
-            const sfC = document.getElementById('ped-sum-fases');
-            if (scC) scC.value = '';
-            if (sfC) sfC.value = '';
+            /* Sin NIS: no limpiar distribuidor ni conexión/fases (el usuario puede elegirlos a mano;
+               el focusin al pasar entre selects disparaba este código y borraba el otro campo). */
         }
         return;
     }
@@ -7989,7 +8130,7 @@ async function cargarDistribuidores() {
         // Repoblar el select de distribuidores
         const sd = document.getElementById('di2');
         if (sd) {
-            sd.innerHTML = '<option value="">— Sin NIS / sin catálogo —</option>';
+            sd.innerHTML = '<option value="">— Elegir distribuidor —</option>';
             const grupos = {};
             DIST.forEach(d => {
                 const g = d.g || 'Sin clasificar';
@@ -8551,7 +8692,7 @@ function syncZonaPedidoFormLabels() {
         di2.options[0].textContent =
             esMunicipioRubro() || esCooperativaAguaRubro()
                 ? '— Opcional —'
-                : '— Solo se completa con NIS/medidor en catálogo —';
+                : '— Elegir distribuidor (opcional si no hay NIS) —';
     }
     const trafoW = document.getElementById('trafo-pedido')?.closest('.fg');
     if (trafoW) trafoW.style.display = esCooperativaElectricaRubro() ? '' : 'none';
@@ -9695,17 +9836,260 @@ async function eliminarKpiSnapshotAdmin(id) {
 }
 window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
 
+async function repoblarSelectDistribuidoresInfraAdmin() {
+    const sel = document.getElementById('ia-t-distribuidor');
+    if (!sel || !NEON_OK || !_sql) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Sin asignar —</option>';
+    try {
+        const r = await sqlSimple(`SELECT id, codigo, nombre FROM distribuidores ORDER BY codigo`);
+        for (const d of r.rows || []) {
+            const o = document.createElement('option');
+            o.value = String(d.id);
+            o.textContent = `${String(d.codigo || '')}${d.nombre ? ' — ' + String(d.nombre) : ''}`;
+            sel.appendChild(o);
+        }
+        if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+    } catch (_) {}
+}
+
+function mostrarFormatoExcelInfraTrafo() {
+    alert(
+        'Formato Excel — transformadores (hoja 1, fila 1 = encabezados):\n\n' +
+            'codigo | nombre | capacidad_kva (o kva) | clientes_conectados (o socios) | barrio (opc.) | distribuidor_codigo (opc., debe existir en Distribuidores) | alimentador (opc.)\n\n' +
+            '• codigo: obligatorio (se normaliza a mayúsculas).\n' +
+            '• Si el código ya existe para tu tenant, la fila actualiza datos y reactiva el trafo.\n' +
+            '• distribuidor_codigo: mismo código que en el panel Distribuidores (ej. D001).'
+    );
+}
+
+function mostrarFormatoExcelInfraAsignacion() {
+    alert(
+        'Formato Excel — solo asignar distribuidor / alimentador a trafos ya cargados:\n\n' +
+            'codigo | distribuidor_codigo | alimentador (opcional)\n\n' +
+            'Actualiza solo transformadores activos del tenant cuyo código coincida. Si no hay fila, suma en «sin coincidencia».'
+    );
+}
+
+function _normKeyInfraRow(raw) {
+    const row = {};
+    for (const [k, v] of Object.entries(raw)) {
+        row[String(k).trim().toLowerCase().replace(/\s+/g, '_')] = v;
+    }
+    return row;
+}
+
+function _cellStrInfra(row, ...keys) {
+    for (const k of keys) {
+        const v = row[k];
+        if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+    return '';
+}
+
+function _cellNumInfra(row, ...keys) {
+    for (const k of keys) {
+        const v = row[k];
+        if (v === undefined || v === null || v === '') continue;
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+    }
+    return null;
+}
+
+async function importarExcelInfraTransformadores(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (typeof XLSX === 'undefined') {
+        toast('Librería Excel no cargada', 'error');
+        return;
+    }
+    if (!esAdmin() || modoOffline) return;
+    if (puedeEnviarApiRestPedidos()) {
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return;
+            const fd = new FormData();
+            fd.append('file', file);
+            const resp = await fetch(apiUrl('/api/infra-afectados/transformadores/import-excel'), {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${tok}` },
+                body: fd,
+            });
+            const t = await resp.text();
+            if (!resp.ok) {
+                toastError('import-infra-trafo-api', new Error(t.slice(0, 200)));
+                return;
+            }
+            let j;
+            try {
+                j = JSON.parse(t);
+            } catch (_) {
+                toast('Importación terminada', 'success');
+                await cargarAdminInfraAfectados();
+                return;
+            }
+            toast(`Importados: ${j.importados || 0}. Errores fila: ${j.errores || 0}`, 'success');
+            await cargarAdminInfraAfectados();
+        } catch (e) {
+            toastError('import-infra-trafo-api', e);
+        }
+        return;
+    }
+    if (!NEON_OK || !_sql || !(await sqlInfraAfectadosTablasExisten())) {
+        toast('Necesitás API o Neon para importar.', 'error');
+        return;
+    }
+    if (!(await sqlInfraTrafoTieneDistribuidorId())) {
+        toast('Ejecutá en Neon docs/NEON_clientes_afectados_distribuidor_alimentador.sql', 'error');
+        return;
+    }
+    const tid = tenantIdActual();
+    try {
+        mostrarOverlayImportacion('Importando transformadores…');
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        let ok = 0;
+        let err = 0;
+        for (const raw of rows) {
+            const row = _normKeyInfraRow(raw);
+            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code').toUpperCase();
+            if (!codigo) continue;
+            const nombre = _cellStrInfra(row, 'nombre', 'name') || null;
+            const kva = _cellNumInfra(row, 'capacidad_kva', 'kva', 'potencia_kva');
+            const soc = _cellNumInfra(row, 'clientes_conectados', 'socios', 'clientes');
+            const clientes = soc != null ? Math.max(0, Math.floor(soc)) : 0;
+            const barrio = _cellStrInfra(row, 'barrio', 'barrio_texto') || null;
+            const distCod = _cellStrInfra(row, 'distribuidor_codigo', 'distribuidor', 'dist_codigo');
+            let distId = null;
+            if (distCod) {
+                const rd = await sqlSimple(
+                    `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = ${esc(distCod.toUpperCase())} LIMIT 1`
+                );
+                distId = rd.rows?.[0]?.id ?? null;
+            }
+            const alim = _cellStrInfra(row, 'alimentador', 'alim', 'feeder') || null;
+            const kvaSql = kva != null && Number.isFinite(kva) ? esc(Math.floor(kva)) : 'NULL';
+            try {
+                await sqlSimple(
+                    `INSERT INTO infra_transformadores (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, distribuidor_id, alimentador, activo) VALUES (${esc(
+                        tid
+                    )}, ${esc(codigo)}, ${esc(nombre)}, ${kvaSql}, ${esc(clientes)}, ${esc(barrio)}, ${esc(
+                        distId
+                    )}, ${esc(alim)}, TRUE) ON CONFLICT (tenant_id, codigo) DO UPDATE SET nombre = EXCLUDED.nombre, capacidad_kva = EXCLUDED.capacidad_kva, clientes_conectados = EXCLUDED.clientes_conectados, barrio_texto = EXCLUDED.barrio_texto, distribuidor_id = EXCLUDED.distribuidor_id, alimentador = EXCLUDED.alimentador, activo = TRUE`
+                );
+                ok += 1;
+            } catch (_) {
+                err += 1;
+            }
+        }
+        cerrarOverlayImportacion();
+        toast(`Importados: ${ok}. Errores: ${err}`, 'success');
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        cerrarOverlayImportacion();
+        toastError('import-infra-trafo-neon', e);
+    }
+}
+window.importarExcelInfraTransformadores = importarExcelInfraTransformadores;
+
+async function importarExcelInfraAsignacion(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (typeof XLSX === 'undefined') {
+        toast('Librería Excel no cargada', 'error');
+        return;
+    }
+    if (!esAdmin() || modoOffline) return;
+    if (puedeEnviarApiRestPedidos()) {
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return;
+            const fd = new FormData();
+            fd.append('file', file);
+            const resp = await fetch(apiUrl('/api/infra-afectados/transformadores/import-excel-asignacion'), {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${tok}` },
+                body: fd,
+            });
+            const t = await resp.text();
+            if (!resp.ok) {
+                toastError('import-infra-asig-api', new Error(t.slice(0, 200)));
+                return;
+            }
+            const j = JSON.parse(t);
+            toast(`Actualizados: ${j.actualizados || 0}. Sin coincidencia: ${j.sin_coincidencia || 0}`, 'success');
+            await cargarAdminInfraAfectados();
+        } catch (e) {
+            toastError('import-infra-asig-api', e);
+        }
+        return;
+    }
+    if (!NEON_OK || !_sql || !(await sqlInfraTrafoTieneDistribuidorId())) {
+        toast('Necesitás API o la migración distribuidor/alimentador en Neon.', 'error');
+        return;
+    }
+    const tid = tenantIdActual();
+    try {
+        mostrarOverlayImportacion('Aplicando asignaciones…');
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        let ok = 0;
+        let err = 0;
+        for (const raw of rows) {
+            const row = _normKeyInfraRow(raw);
+            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code').toUpperCase();
+            if (!codigo) continue;
+            const distCod = _cellStrInfra(row, 'distribuidor_codigo', 'distribuidor', 'dist_codigo');
+            let distId = null;
+            if (distCod) {
+                const rd = await sqlSimple(
+                    `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = ${esc(distCod.toUpperCase())} LIMIT 1`
+                );
+                distId = rd.rows?.[0]?.id ?? null;
+            }
+            const alim = _cellStrInfra(row, 'alimentador', 'alim', 'feeder') || null;
+            try {
+                const ru = await sqlSimple(
+                    `UPDATE infra_transformadores SET distribuidor_id = ${esc(distId)}, alimentador = ${esc(
+                        alim
+                    )} WHERE tenant_id = ${esc(tid)} AND UPPER(TRIM(codigo)) = ${esc(codigo)} AND activo = TRUE`
+                );
+                if (ru.rowsAffected > 0 || (ru.rowCount != null && ru.rowCount > 0)) ok += 1;
+                else err += 1;
+            } catch (_) {
+                err += 1;
+            }
+        }
+        cerrarOverlayImportacion();
+        toast(`Actualizados: ${ok}. Sin coincidencia: ${err}`, 'success');
+        await cargarAdminInfraAfectados();
+    } catch (e) {
+        cerrarOverlayImportacion();
+        toastError('import-infra-asig-neon', e);
+    }
+}
+window.importarExcelInfraAsignacion = importarExcelInfraAsignacion;
+window.mostrarFormatoExcelInfraTrafo = mostrarFormatoExcelInfraTrafo;
+window.mostrarFormatoExcelInfraAsignacion = mostrarFormatoExcelInfraAsignacion;
+
 async function cargarAdminInfraAfectados() {
     const sin = document.getElementById('admin-infra-afect-sin-tabla');
     const wrap = document.getElementById('admin-infra-afect-wrap');
     const listT = document.getElementById('lista-infra-transformadores-admin');
-    const listZ = document.getElementById('lista-infra-zonas-admin');
-    if (!listT || !listZ) return;
+    const listR = document.getElementById('lista-infra-resumen-dist-admin');
+    if (!listT || !listR) return;
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
         if (sin) sin.style.display = 'none';
         if (wrap) wrap.style.display = 'none';
         listT.innerHTML = '<span style="color:var(--re)">Sin conexión Neon o sin permisos de administrador.</span>';
-        listZ.innerHTML = '';
+        listR.innerHTML = '';
         return;
     }
     const ok = await sqlInfraAfectadosTablasExisten();
@@ -9713,62 +10097,89 @@ async function cargarAdminInfraAfectados() {
         if (sin) {
             sin.style.display = 'block';
             sin.innerHTML =
-                '<strong>Faltan tablas.</strong> En el SQL Editor de Neon ejecutá <code>docs/NEON_clientes_afectados_infra.sql</code> del repositorio.';
+                '<strong>Faltan tablas.</strong> En Neon ejecutá <code>docs/NEON_clientes_afectados_infra.sql</code>.';
         }
         if (wrap) wrap.style.display = 'none';
         listT.innerHTML = '';
-        listZ.innerHTML = '';
+        listR.innerHTML = '';
         return;
     }
     if (sin) sin.style.display = 'none';
     if (wrap) wrap.style.display = 'block';
     const tid = tenantIdActual();
+    await repoblarSelectDistribuidoresInfraAdmin();
     try {
-        const rT = await sqlSimple(
-            `SELECT id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo FROM infra_transformadores WHERE tenant_id = ${esc(
-                tid
-            )} ORDER BY codigo`
-        );
-        const rZ = await sqlSimple(
-            `SELECT id, nombre, clientes_estimados, activo FROM infra_zonas_clientes WHERE tenant_id = ${esc(
-                tid
-            )} ORDER BY nombre`
-        );
+        if (await sqlInfraTrafoTieneDistribuidorId()) {
+            const rD = await sqlSimple(
+                `SELECT d.id AS distribuidor_id, d.codigo, d.nombre,
+                  COALESCE(SUM(t.capacidad_kva),0)::bigint AS total_kva,
+                  COALESCE(SUM(t.clientes_conectados),0)::bigint AS total_clientes,
+                  COUNT(t.id)::int AS cant_transformadores
+                 FROM infra_transformadores t
+                 INNER JOIN distribuidores d ON d.id = t.distribuidor_id
+                 WHERE t.tenant_id = ${esc(tid)} AND t.activo = TRUE AND t.distribuidor_id IS NOT NULL
+                 GROUP BY d.id, d.codigo, d.nombre
+                 ORDER BY d.codigo`
+            );
+            const rdRows = rD.rows || [];
+            if (!rdRows.length) {
+                listR.innerHTML =
+                    '<p style="color:var(--tl);font-size:.82rem">Sin datos: asigná <strong>distribuidor</strong> a los transformadores (formulario o Excel asignación).</p>';
+            } else {
+                listR.innerHTML = `<table class="admin-table"><thead><tr><th>Distribuidor</th><th>kVA Σ</th><th>Socios Σ</th><th>Trafos</th></tr></thead><tbody>${rdRows
+                    .map(
+                        (x) =>
+                            `<tr><td><b>${_escOpt(x.codigo)}</b>${x.nombre ? ' — ' + _escOpt(x.nombre) : ''}</td><td>${_escOpt(
+                                x.total_kva
+                            )}</td><td>${_escOpt(x.total_clientes)}</td><td>${_escOpt(x.cant_transformadores)}</td></tr>`
+                    )
+                    .join('')}</tbody></table>`;
+            }
+        } else {
+            listR.innerHTML =
+                '<p style="color:#9a3412;font-size:.82rem">Ejecutá <code>docs/NEON_clientes_afectados_distribuidor_alimentador.sql</code> para ver resúmenes y asignar distribuidor/alimentador.</p>';
+        }
+
+        const hasD = await sqlInfraTrafoTieneDistribuidorId();
+        const rT = hasD
+            ? await sqlSimple(
+                  `SELECT t.id, t.codigo, t.nombre, t.capacidad_kva, t.clientes_conectados, t.barrio_texto, t.distribuidor_id, t.alimentador, t.activo,
+                    d.codigo AS dist_codigo
+                   FROM infra_transformadores t
+                   LEFT JOIN distribuidores d ON d.id = t.distribuidor_id
+                   WHERE t.tenant_id = ${esc(tid)} ORDER BY t.codigo`
+              )
+            : await sqlSimple(
+                  `SELECT id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, activo FROM infra_transformadores WHERE tenant_id = ${esc(
+                      tid
+                  )} ORDER BY codigo`
+              );
         const rowsT = rT.rows || [];
-        const rowsZ = rZ.rows || [];
         if (!rowsT.length) {
             listT.innerHTML =
-                '<p style="color:var(--tl);font-size:.85rem">Sin transformadores. Agregá uno con el formulario.</p>';
+                '<p style="color:var(--tl);font-size:.85rem">Sin transformadores. Agregá uno o importá Excel.</p>';
         } else {
-            listT.innerHTML = `<table class="admin-table"><thead><tr><th>Código</th><th>Nombre</th><th>kVA</th><th>Socios</th><th>Activo</th><th></th></tr></thead><tbody>${rowsT
-                .map(
-                    (d) =>
-                        `<tr><td><b>${_escOpt(d.codigo)}</b></td><td>${_escOpt(d.nombre) || '-'}</td><td>${
-                            d.capacidad_kva != null ? _escOpt(d.capacidad_kva) : '-'
-                        }</td><td>${_escOpt(d.clientes_conectados)}</td><td>${d.activo ? 'Sí' : 'No'}</td><td><button type="button" class="btn-sm danger" onclick="desactivarInfraTransformadorAdmin(${Number(
-                            d.id
-                        )})">Dar de baja</button></td></tr>`
-                )
-                .join('')}</tbody></table>`;
-        }
-        if (!rowsZ.length) {
-            listZ.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin zonas.</p>';
-        } else {
-            listZ.innerHTML = `<table class="admin-table"><thead><tr><th>Nombre</th><th>Estimado</th><th>Activo</th><th></th></tr></thead><tbody>${rowsZ
-                .map(
-                    (z) =>
-                        `<tr><td>${_escOpt(z.nombre)}</td><td>${_escOpt(z.clientes_estimados)}</td><td>${
-                            z.activo ? 'Sí' : 'No'
-                        }</td><td><button type="button" class="btn-sm danger" onclick="desactivarInfraZonaAdmin(${Number(
-                            z.id
-                        )})">Dar de baja</button></td></tr>`
-                )
+            const head = hasD
+                ? '<th>Código</th><th>Nombre</th><th>kVA</th><th>Socios</th><th>Dist.</th><th>Alim.</th><th>Activo</th><th></th>'
+                : '<th>Código</th><th>Nombre</th><th>kVA</th><th>Socios</th><th>Activo</th><th></th>';
+            listT.innerHTML = `<table class="admin-table"><thead><tr>${head}</tr></thead><tbody>${rowsT
+                .map((d) => {
+                    const dc = hasD ? _escOpt(d.dist_codigo || '—') : '';
+                    const al = hasD ? _escOpt(d.alimentador || '—') : '';
+                    const base = `<td><b>${_escOpt(d.codigo)}</b></td><td>${_escOpt(d.nombre) || '-'}</td><td>${
+                        d.capacidad_kva != null ? _escOpt(d.capacidad_kva) : '-'
+                    }</td><td>${_escOpt(d.clientes_conectados)}</td>`;
+                    const mid = hasD ? `<td>${dc}</td><td>${al}</td>` : '';
+                    return `<tr>${base}${mid}<td>${d.activo ? 'Sí' : 'No'}</td><td><button type="button" class="btn-sm danger" onclick="desactivarInfraTransformadorAdmin(${Number(
+                        d.id
+                    )})">Dar de baja</button></td></tr>`;
+                })
                 .join('')}</tbody></table>`;
         }
     } catch (e) {
         logErrorWeb('admin-infra-afect', e);
         listT.innerHTML = '<span style="color:var(--re)">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</span>';
-        listZ.innerHTML = '';
+        listR.innerHTML = '';
     }
 }
 window.cargarAdminInfraAfectados = cargarAdminInfraAfectados;

@@ -211,7 +211,7 @@
       </div>
       <div class="fg"><label for="di2" id="lbl-di2-zona">Distribuidor</label>
         <select id="di2">
-          <option value="">— Solo se completa con NIS/medidor en catálogo —</option>
+          <option value="">— Elegir distribuidor (opcional si no hay NIS) —</option>
         </select>
       </div>
       <div class="fg"><label for="nis" id="lbl-nis">NIS / Medidor</label>
@@ -244,7 +244,7 @@
         </div>
       </div>
       <div class="fg"><label for="ped-tel-contacto"><i class="fas fa-phone"></i> Teléfono (WhatsApp)</label>
-        <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Opcional — WhatsApp: aviso al cargar el reclamo y al cerrar (si Meta está configurado)">
+        <input type="tel" id="ped-tel-contacto" inputmode="tel" autocomplete="tel" placeholder="Ej. 5493415123456 o +5493415123456 (código país + número, sin espacios)">
       </div>
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
         <select id="tt" required onchange="syncPrioridadConTipoReclamo();syncSuministroElectricoUI();"></select>
@@ -333,11 +333,12 @@
       </div>
       <div id="cierre-afectados-block" class="fg" style="padding:0;margin-top:1rem;display:none">
         <label><i class="fas fa-bolt"></i> Clientes sin servicio (SAIDI / SAIFI)</label>
-        <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .55rem;line-height:1.4">Si el administrador cargó transformadores o zonas, elegí una opción. Si no sabés el dato, podés omitir y registrar después.</p>
+        <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .55rem;line-height:1.4">Los totales por <strong>distribuidor</strong> o <strong>alimentador</strong> suman los transformadores cargados (kVA y socios). Si no sabés el dato, omití.</p>
         <div style="display:flex;flex-direction:column;gap:.35rem;font-size:.86rem">
           <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="omitir" checked onchange="syncCierreAfectadosPanels()"> No registrar ahora</label>
           <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="transformador" onchange="syncCierreAfectadosPanels()"> Por transformador</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="zona" onchange="syncCierreAfectadosPanels()"> Por zona / barrio (estimado)</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="distribuidor" onchange="syncCierreAfectadosPanels()"> Por distribuidor (suma de trafos)</label>
+          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="alimentador" onchange="syncCierreAfectadosPanels()"> Por alimentador (suma por distribuidor)</label>
           <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="rango" onchange="syncCierreAfectadosPanels()"> Rango de medidores</label>
           <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="manual" onchange="syncCierreAfectadosPanels()"> Cantidad manual (emergencia)</label>
         </div>
@@ -345,9 +346,15 @@
           <label for="cierre-afect-sel-trafo" style="font-size:.8rem">Transformador</label>
           <select id="cierre-afect-sel-trafo" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
         </div>
-        <div id="cierre-afect-panel-zona" style="display:none;margin-top:.65rem">
-          <label for="cierre-afect-sel-zona" style="font-size:.8rem">Zona</label>
-          <select id="cierre-afect-sel-zona" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
+        <div id="cierre-afect-panel-distribuidor" style="display:none;margin-top:.65rem">
+          <label for="cierre-afect-sel-distribuidor" style="font-size:.8rem">Distribuidor</label>
+          <select id="cierre-afect-sel-distribuidor" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
+        </div>
+        <div id="cierre-afect-panel-alimentador" style="display:none;margin-top:.65rem">
+          <label for="cierre-afect-alim-dist" style="font-size:.78rem">Distribuidor</label>
+          <select id="cierre-afect-alim-dist" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
+          <label for="cierre-afect-sel-alimentador" style="font-size:.78rem;margin-top:.5rem;display:block">Alimentador</label>
+          <select id="cierre-afect-sel-alimentador" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
         </div>
         <div id="cierre-afect-panel-rango" style="display:none;margin-top:.65rem">
           <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:.5rem">
@@ -761,26 +768,30 @@
       <div id="kpi-snapshots-lista"><div class="ll2" style="color:var(--tl)">Abrí esta pestaña para cargar.</div></div>
     </div>
     <div id="admin-confiabilidad" class="admin-section">
-      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo para que el técnico <strong>elija</strong> transformador o zona al cerrar (cooperativa eléctrica). Ejecutá en Neon <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code> si falta la tabla.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Catálogo de transformadores con <strong>distribuidor</strong> y <strong>alimentador</strong>; al cerrar se pueden sumar socios y kVA por distribuidor o por alimentador. SQL: <code style="font-size:.78rem">docs/NEON_clientes_afectados_infra.sql</code> y <code style="font-size:.78rem">docs/NEON_clientes_afectados_distribuidor_alimentador.sql</code>.</p>
       <div id="admin-infra-afect-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
       <div id="admin-infra-afect-wrap" style="display:none">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Resumen por distribuidor</h3>
+        <p style="font-size:.76rem;color:var(--tm);margin:-.35rem 0 .55rem">Suma de kVA y socios de los transformadores activos con <code style="font-size:.72rem">distribuidor_id</code> cargado.</p>
+        <div id="lista-infra-resumen-dist-admin" style="margin:0 0 1.15rem;font-size:.85rem"></div>
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Transformadores</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.65rem;align-items:center">
+          <label class="btn-sm success" style="cursor:pointer;margin:0"><i class="fas fa-file-excel"></i> Importar Excel (completo)<input type="file" id="input-excel-infra-trafo" accept=".xlsx,.xls" style="display:none" onchange="importarExcelInfraTransformadores(event)"></label>
+          <button type="button" class="btn-sm warning" onclick="mostrarFormatoExcelInfraTrafo()"><i class="fas fa-table"></i> Formato Excel trafos</button>
+          <label class="btn-sm success" style="cursor:pointer;margin:0"><i class="fas fa-link"></i> Excel asignación dist./alim.<input type="file" id="input-excel-infra-asign" accept=".xlsx,.xls" style="display:none" onchange="importarExcelInfraAsignacion(event)"></label>
+          <button type="button" class="btn-sm warning" onclick="mostrarFormatoExcelInfraAsignacion()"><i class="fas fa-question-circle"></i> Formato asignación</button>
+        </div>
         <div class="form-grid" style="margin-bottom:.75rem">
           <div><label for="ia-t-codigo">Código *</label><input id="ia-t-codigo" type="text" placeholder="TR-ALBERDI-01" autocomplete="off"></div>
           <div><label for="ia-t-nombre">Nombre</label><input id="ia-t-nombre" type="text" autocomplete="off"></div>
           <div><label for="ia-t-kva">kVA</label><input id="ia-t-kva" type="number" min="0" step="1" inputmode="numeric"></div>
           <div><label for="ia-t-clientes">Socios conectados *</label><input id="ia-t-clientes" type="number" min="0" step="1" inputmode="numeric" placeholder="220"></div>
+          <div class="full"><label for="ia-t-distribuidor">Distribuidor (catálogo)</label><select id="ia-t-distribuidor"><option value="">— Sin asignar —</option></select></div>
+          <div class="full"><label for="ia-t-alimentador">Alimentador (código, opcional)</label><input id="ia-t-alimentador" type="text" placeholder="Ej. AL-03" autocomplete="off"></div>
           <div class="full"><label for="ia-t-barrio">Barrio (texto, opcional)</label><input id="ia-t-barrio" type="text" autocomplete="off"></div>
         </div>
         <button type="button" class="btn-sm primary" onclick="guardarInfraTransformadorAdmin()"><i class="fas fa-save"></i> Guardar transformador</button>
-        <div id="lista-infra-transformadores-admin" style="margin:1rem 0 1.25rem;font-size:.85rem"></div>
-        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .65rem">Zonas (clientes estimados)</h3>
-        <div class="form-grid" style="margin-bottom:.75rem">
-          <div class="full"><label for="ia-z-nombre">Nombre *</label><input id="ia-z-nombre" type="text" placeholder="Barrio Centro" autocomplete="off"></div>
-          <div><label for="ia-z-clientes">Clientes estimados *</label><input id="ia-z-clientes" type="number" min="0" step="1" inputmode="numeric"></div>
-        </div>
-        <button type="button" class="btn-sm primary" onclick="guardarInfraZonaAdmin()"><i class="fas fa-save"></i> Guardar zona</button>
-        <div id="lista-infra-zonas-admin" style="margin:1rem 0 0;font-size:.85rem"></div>
+        <div id="lista-infra-transformadores-admin" style="margin:1rem 0 0;font-size:.85rem"></div>
       </div>
     </div>
     <div id="admin-mapa-usuarios" class="admin-section">
