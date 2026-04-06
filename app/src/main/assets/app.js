@@ -1882,6 +1882,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_opinion_cliente TIMESTAMPTZ`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente_estrellas SMALLINT`);
                 try {
                     await sqlSimple(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 } catch (_) {}
@@ -2230,6 +2231,10 @@ const norm = p => ({
         return s || null;
     })(),
     fopin: p.fecha_opinion_cliente || null,
+    oes: (() => {
+        const n = parseInt(p.opinion_cliente_estrellas, 10);
+        return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
+    })(),
     orc: String(p.origen_reclamo || '').trim().toLowerCase()
 });
 
@@ -6302,7 +6307,7 @@ function detalle(p) {
                 const pidNum = parseInt(p.id, 10);
                 if (!Number.isFinite(pidNum)) return;
                 const r = await sqlSimple(
-                    `SELECT opinion_cliente, fecha_opinion_cliente FROM pedidos WHERE id=${esc(pidNum)} LIMIT 1`
+                    `SELECT opinion_cliente, opinion_cliente_estrellas, fecha_opinion_cliente FROM pedidos WHERE id=${esc(pidNum)} LIMIT 1`
                 );
                 const row = r.rows?.[0];
                 if (!row) return;
@@ -6315,6 +6320,12 @@ function detalle(p) {
                 let changed = false;
                 if (os && os !== String(cur.opin || '')) {
                     cur.opin = os;
+                    changed = true;
+                }
+                const nEs = parseInt(row.opinion_cliente_estrellas, 10);
+                const oesNew = Number.isFinite(nEs) && nEs >= 1 && nEs <= 5 ? nEs : null;
+                if (oesNew !== cur.oes) {
+                    cur.oes = oesNew;
                     changed = true;
                 }
                 const fp = row.fecha_opinion_cliente;
@@ -6398,13 +6409,20 @@ function detalle(p) {
         ? `<div class="dr" style="grid-column:1/-1;margin:.15rem 0 .35rem"><span class="dl" style="font-weight:700;color:var(--bd)">Datos cargados por el cliente</span></div>${filasDatosCliente.join('')}`
         : '';
     const opinTxtDet = (p.opin != null && String(p.opin).trim()) ? String(p.opin).trim() : '';
-    const htmlOpinionCliente = opinTxtDet
-        ? `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
-            <h4>💬 Observación del cliente (WhatsApp)</h4>
-            <div class="trb">${escDet(opinTxtDet)}</div>
+    const estrellasDet = p.oes != null && p.oes >= 1 && p.oes <= 5 ? p.oes : null;
+    const lineaEstrellas =
+        estrellasDet != null
+            ? `<p style="font-size:.9rem;margin:0 0 .35rem;font-weight:600;color:var(--bm)">Valoración: ${'⭐'.repeat(estrellasDet)} <span style="color:var(--tm);font-weight:500">(${estrellasDet}/5)</span></p>`
+            : '';
+    const htmlOpinionCliente =
+        estrellasDet != null || opinTxtDet
+            ? `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
+            <h4>💬 Valoración del cliente (WhatsApp)</h4>
+            ${lineaEstrellas}
+            ${opinTxtDet ? `<div class="trb">${escDet(opinTxtDet)}</div>` : '<p style="font-size:.78rem;color:var(--tm);margin:0">Sin comentario de texto.</p>'}
             ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
            </div>`
-        : '';
+            : '';
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
     const nAsig = (p.tai != null)
@@ -8465,7 +8483,8 @@ const KPI_ADMIN_PRESET_META = {
         detail: 'cierres_foto',
         unidad: 'percent',
         hint: 'Qué parte de los cierres del periodo tuvieron al menos una foto de cierre.',
-        valorAyuda: 'Si completás «con foto» y «total» abajo, el % se calcula solo. Si no, escribí el porcentaje acá.',
+        valorAyuda:
+            'Completá fechas y tocá «Calcular desde datos del sistema», o cargá «con foto» / «total» y el % se calcula solo.',
     },
     reclamos_cerrados: {
         metrica: 'reclamos_cerrados_count',
@@ -8473,8 +8492,8 @@ const KPI_ADMIN_PRESET_META = {
         conteoLabel: '¿Cuántos reclamos se cerraron en estas fechas?',
         jsonKey: 'cerrados',
         unidad: 'count',
-        hint: 'Número entero de pedidos que pasaron a cerrado entre las fechas.',
-        valorAyuda: 'Podés poner el número acá o solo en el recuadro de abajo.',
+        hint: 'Pedidos con estado Cerrado cuya fecha de cierre cae en el periodo (este tenant).',
+        valorAyuda: 'Podés usar «Calcular desde datos del sistema» con las fechas, o escribir el número a mano.',
     },
     reclamos_recibidos: {
         metrica: 'reclamos_recibidos_count',
@@ -8482,29 +8501,30 @@ const KPI_ADMIN_PRESET_META = {
         conteoLabel: '¿Cuántos reclamos nuevos entraron en el periodo?',
         jsonKey: 'recibidos',
         unidad: 'count',
-        hint: 'Pedidos creados entre «desde» y «hasta».',
-        valorAyuda: 'Podés poner el número acá o solo abajo.',
+        hint: 'Pedidos nuevos según fecha de creación en el rango (este tenant).',
+        valorAyuda: '«Calcular desde datos del sistema» cuenta por fecha_creacion, o cargá el número a mano.',
     },
     tiempo_respuesta_horas: {
         metrica: 'tiempo_respuesta_medio_horas',
         detail: 'none',
         unidad: 'hours',
-        hint: 'Promedio de horas hasta la primera respuesta (o la definición interna que usen).',
-        valorAyuda: 'Usá coma o punto para decimales (ej. 2,5).',
+        hint: 'Promedio de horas desde la creación del pedido hasta la primera asignación (fecha_asignacion), solo cierres del periodo.',
+        valorAyuda: '«Calcular desde datos del sistema» usa pedidos cerrados con asignación registrada.',
     },
     satisfaccion_pct: {
         metrica: 'satisfaccion_pct',
-        detail: 'none',
+        detail: 'satisfaccion_wa',
         unidad: 'percent',
-        hint: 'Porcentaje según encuesta o criterio del piloto.',
-        valorAyuda: '',
+        hint: 'Tras el cierre por WhatsApp el cliente califica 1–5 y puede dejar comentario. El % equivale al promedio de estrellas sobre 5 (ej. 4 estrellas → 80%).',
+        valorAyuda:
+            'Con «Calcular desde datos del sistema» se usan opinion_cliente_estrellas en el rango de fecha_opinion_cliente.',
     },
     avance_medio: {
         metrica: 'avance_medio_pct',
         detail: 'none',
         unidad: 'percent',
-        hint: 'Promedio del % de avance de trabajos al cierre del periodo, si aplica.',
-        valorAyuda: '',
+        hint: 'Promedio del campo avance (%) en pedidos cerrados en el periodo.',
+        valorAyuda: 'Se puede calcular automáticamente desde Neon con el botón de abajo.',
     },
     avanzado: {
         metrica: '',
@@ -8520,7 +8540,7 @@ const KPI_METRICA_ETIQUETAS = {
     reclamos_cerrados_count: 'Reclamos cerrados',
     reclamos_recibidos_count: 'Reclamos recibidos',
     tiempo_respuesta_medio_horas: 'Tiempo medio respuesta (h)',
-    satisfaccion_pct: 'Satisfacción / positivos',
+    satisfaccion_pct: 'Satisfacción (WA 1–5★ → %)',
     avance_medio_pct: 'Avance medio trabajos',
 };
 
@@ -8578,6 +8598,20 @@ function aplicarKpiPresetAdmin() {
     }
     if (wrapAdvMet) wrapAdvMet.style.display = preset === 'avanzado' ? 'block' : 'none';
     if (wrapJsonAdv) wrapJsonAdv.style.display = preset === 'avanzado' ? 'block' : 'none';
+    const wrapSatWa = document.getElementById('kpi-detail-satisfaccion-wa');
+    if (wrapSatWa) wrapSatWa.style.display = meta.detail === 'satisfaccion_wa' ? 'block' : 'none';
+    const wrapNeonCalc = document.getElementById('kpi-neon-calc-wrap');
+    if (wrapNeonCalc) {
+        const calcPresets = new Set([
+            'pct_cierres_con_foto',
+            'reclamos_cerrados',
+            'reclamos_recibidos',
+            'tiempo_respuesta_horas',
+            'satisfaccion_pct',
+            'avance_medio',
+        ]);
+        wrapNeonCalc.style.display = calcPresets.has(preset) ? 'block' : 'none';
+    }
     const visMet = document.getElementById('kpi-metrica-visible');
     if (preset === 'avanzado') {
         if (hiddenM) hiddenM.value = (visMet?.value || '').trim();
@@ -8596,6 +8630,173 @@ function aplicarKpiPresetAdmin() {
     }
 }
 window.aplicarKpiPresetAdmin = aplicarKpiPresetAdmin;
+
+/** Rellena valor (y detalles) desde agregados en Neon para el preset y fechas actuales. */
+window.kpiAdminRellenarDesdeNeon = async function kpiAdminRellenarDesdeNeon() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        toast('Sin conexión o sin permisos.', 'error');
+        return;
+    }
+    const preset = (document.getElementById('kpi-preset')?.value || '').trim();
+    if (!preset || preset === 'avanzado') {
+        toast('Elegí un tipo de indicador (no «avanzado»).', 'warning');
+        return;
+    }
+    const desde = (document.getElementById('kpi-desde')?.value || '').trim();
+    const hasta = (document.getElementById('kpi-hasta')?.value || '').trim();
+    if (!desde || !hasta) {
+        toast('Completá periodo desde y hasta.', 'warning');
+        return;
+    }
+    if (desde > hasta) {
+        toast('«Desde» no puede ser posterior a «Hasta».', 'warning');
+        return;
+    }
+    const tsql = await pedidosFiltroTenantSql();
+    const fu = document.getElementById('kpi-fuente');
+    if (fu) fu.value = 'computed_batch';
+    const round2 = (x) => Math.round(Number(x) * 100) / 100;
+    try {
+        if (preset === 'pct_cierres_con_foto') {
+            const r = await sqlSimple(
+                `SELECT
+                  COUNT(*) FILTER (WHERE foto_cierre IS NOT NULL AND length(trim(COALESCE(foto_cierre,''))) > 0)::int AS cf,
+                  COUNT(*)::int AS tot
+                 FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL
+                 AND fecha_cierre::date >= ${esc(desde)}::date AND fecha_cierre::date <= ${esc(hasta)}::date
+                 ${tsql}`
+            );
+            const row = r.rows?.[0];
+            const tot = parseInt(row?.tot, 10);
+            const cf = parseInt(row?.cf, 10);
+            if (!Number.isFinite(tot) || tot <= 0) {
+                toast('No hay cierres en ese periodo para calcular.', 'warning');
+                return;
+            }
+            const elCf = document.getElementById('kpi-det-con-foto');
+            const elTot = document.getElementById('kpi-det-total-cierres');
+            if (elCf) elCf.value = String(cf);
+            if (elTot) elTot.value = String(tot);
+            kpiAdminRellenarValorDesdeCierresFoto();
+            toast('Porcentaje calculado desde cierres con foto.', 'success');
+            return;
+        }
+        if (preset === 'reclamos_cerrados') {
+            const r = await sqlSimple(
+                `SELECT COUNT(*)::int AS n FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL
+                 AND fecha_cierre::date >= ${esc(desde)}::date AND fecha_cierre::date <= ${esc(hasta)}::date
+                 ${tsql}`
+            );
+            const n = parseInt(r.rows?.[0]?.n, 10);
+            if (!Number.isFinite(n)) {
+                toast('No se pudo calcular.', 'error');
+                return;
+            }
+            const el = document.getElementById('kpi-det-conteo');
+            if (el) el.value = String(n);
+            const v = document.getElementById('kpi-valor');
+            if (v) v.value = String(n);
+            toast(`Cerrados en periodo: ${n}`, 'success');
+            return;
+        }
+        if (preset === 'reclamos_recibidos') {
+            const r = await sqlSimple(
+                `SELECT COUNT(*)::int AS n FROM pedidos WHERE fecha_creacion::date >= ${esc(desde)}::date
+                 AND fecha_creacion::date <= ${esc(hasta)}::date
+                 ${tsql}`
+            );
+            const n = parseInt(r.rows?.[0]?.n, 10);
+            if (!Number.isFinite(n)) {
+                toast('No se pudo calcular.', 'error');
+                return;
+            }
+            const el = document.getElementById('kpi-det-conteo');
+            if (el) el.value = String(n);
+            const v = document.getElementById('kpi-valor');
+            if (v) v.value = String(n);
+            toast(`Recibidos (nuevos) en periodo: ${n}`, 'success');
+            return;
+        }
+        if (preset === 'tiempo_respuesta_horas') {
+            const r = await sqlSimple(
+                `SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (fecha_asignacion - fecha_creacion)) / 3600.0), 0) AS h
+                 FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL
+                 AND fecha_cierre::date >= ${esc(desde)}::date AND fecha_cierre::date <= ${esc(hasta)}::date
+                 AND fecha_asignacion IS NOT NULL AND fecha_creacion IS NOT NULL
+                 ${tsql}`
+            );
+            let h = Number(r.rows?.[0]?.h);
+            if (!Number.isFinite(h) || h <= 0) {
+                toast('No hay pedidos con asignación en ese periodo para promediar.', 'warning');
+                return;
+            }
+            h = round2(h);
+            const v = document.getElementById('kpi-valor');
+            if (v) v.value = String(h).replace('.', ',');
+            toast(`Tiempo medio hasta asignación: ${h} h`, 'success');
+            return;
+        }
+        if (preset === 'satisfaccion_pct') {
+            const chk = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos'
+                 AND column_name = 'opinion_cliente_estrellas' LIMIT 1`
+            );
+            if (!chk.rows?.length) {
+                toast('Falta la columna opinion_cliente_estrellas (actualizá la app o ejecutá migración en Neon).', 'warning');
+                return;
+            }
+            const r = await sqlSimple(
+                `SELECT COUNT(*)::int AS n, AVG(opinion_cliente_estrellas::double precision) AS prom
+                 FROM pedidos WHERE opinion_cliente_estrellas IS NOT NULL
+                 AND fecha_opinion_cliente IS NOT NULL
+                 AND fecha_opinion_cliente::date >= ${esc(desde)}::date AND fecha_opinion_cliente::date <= ${esc(hasta)}::date
+                 ${tsql}`
+            );
+            const n = parseInt(r.rows?.[0]?.n, 10);
+            const prom = Number(r.rows?.[0]?.prom);
+            if (!Number.isFinite(n) || n < 1 || !Number.isFinite(prom)) {
+                toast('No hay valoraciones WhatsApp en ese periodo.', 'warning');
+                return;
+            }
+            const pct = round2((prom / 5) * 100);
+            const v = document.getElementById('kpi-valor');
+            if (v) v.value = String(pct).replace('.', ',');
+            const j = document.getElementById('kpi-json');
+            if (j)
+                j.value = JSON.stringify(
+                    {
+                        n_respuestas: n,
+                        promedio_estrellas: round2(prom),
+                        fuente_calculo: 'whatsapp_estrellas_1_a_5',
+                    },
+                    null,
+                    0
+                );
+            toast(`Satisfacción ≈ ${pct}% (${n} resp., promedio ${round2(prom)}★)`, 'success');
+            return;
+        }
+        if (preset === 'avance_medio') {
+            const r = await sqlSimple(
+                `SELECT COALESCE(AVG(avance::double precision), 0) AS m
+                 FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL
+                 AND fecha_cierre::date >= ${esc(desde)}::date AND fecha_cierre::date <= ${esc(hasta)}::date
+                 ${tsql}`
+            );
+            let m = Number(r.rows?.[0]?.m);
+            if (!Number.isFinite(m) || m <= 0) {
+                toast('No hay cierres con avance en ese periodo.', 'warning');
+                return;
+            }
+            m = round2(m);
+            const v = document.getElementById('kpi-valor');
+            if (v) v.value = String(m).replace('.', ',');
+            toast(`Avance medio en cierres: ${m}%`, 'success');
+            return;
+        }
+    } catch (e) {
+        toastError('kpi-calc-neon', e);
+    }
+};
 
 function leerUnidadKpiAdmin() {
     const sel = document.getElementById('kpi-unidad');
@@ -8631,6 +8832,112 @@ function limpiarFormKpiSnapshotAdmin() {
     if (fu) fu.value = 'manual';
 }
 window.limpiarFormKpiSnapshotAdmin = limpiarFormKpiSnapshotAdmin;
+
+function populateKpiChartMetricaSelect(rows) {
+    const sel = document.getElementById('kpi-chart-metrica');
+    const wrap = document.getElementById('kpi-chart-wrap');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = '— Elegí métrica para el gráfico —';
+    sel.appendChild(opt0);
+    const keys = [...new Set((rows || []).map(r => r.metrica).filter(Boolean))].sort();
+    keys.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m;
+        o.textContent = KPI_METRICA_ETIQUETAS[m] || m;
+        sel.appendChild(o);
+    });
+    if (wrap && (!keys.length || (rows || []).length < 2)) wrap.style.display = 'none';
+    for (let i = 1; i < sel.options.length; i++) {
+        const m = sel.options[i].value;
+        const n = (rows || []).filter(
+            r => r.metrica === m && r.valor_numero != null && r.valor_numero !== '' && !Number.isNaN(Number(r.valor_numero))
+        ).length;
+        if (n >= 2) {
+            sel.value = m;
+            break;
+        }
+    }
+}
+
+/** Evolución por periodo (misma métrica, varios registros). Requiere Chart.js. */
+window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
+    const wrap = document.getElementById('kpi-chart-wrap');
+    const sel = document.getElementById('kpi-chart-metrica');
+    const canvas = document.getElementById('chart-kpi-admin');
+    if (!wrap || !sel || !canvas || typeof Chart === 'undefined') {
+        if (wrap) wrap.style.display = 'none';
+        return;
+    }
+    const rows = window.__kpiAdminLastRows || [];
+    const metrica = sel.value;
+    if (!metrica || rows.length === 0) {
+        wrap.style.display = 'none';
+        if (window._chartKpiAdmin) {
+            try {
+                window._chartKpiAdmin.destroy();
+            } catch (_) {}
+            window._chartKpiAdmin = null;
+        }
+        return;
+    }
+    const points = rows
+        .filter(
+            r =>
+                r.metrica === metrica &&
+                r.valor_numero != null &&
+                r.valor_numero !== '' &&
+                !Number.isNaN(Number(r.valor_numero))
+        )
+        .map(r => ({
+            label: String(r.periodo_fin || r.periodo_inicio || ''),
+            y: Number(r.valor_numero),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    if (points.length < 2) {
+        wrap.style.display = 'none';
+        if (window._chartKpiAdmin) {
+            try {
+                window._chartKpiAdmin.destroy();
+            } catch (_) {}
+            window._chartKpiAdmin = null;
+        }
+        return;
+    }
+    wrap.style.display = 'block';
+    const ctx = canvas.getContext('2d');
+    if (window._chartKpiAdmin) {
+        try {
+            window._chartKpiAdmin.destroy();
+        } catch (_) {}
+        window._chartKpiAdmin = null;
+    }
+    const lab = KPI_METRICA_ETIQUETAS[metrica] || metrica;
+    window._chartKpiAdmin = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: points.map(p => p.label),
+            datasets: [
+                {
+                    label: lab,
+                    data: points.map(p => p.y),
+                    borderColor: '#0d9488',
+                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                    tension: 0.25,
+                    fill: true,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: false } },
+        },
+    });
+};
 
 async function cargarKpiSnapshotsAdmin() {
     const host = document.getElementById('kpi-snapshots-lista');
@@ -8669,8 +8976,13 @@ async function cargarKpiSnapshotsAdmin() {
              ORDER BY periodo_inicio DESC NULLS LAST, metrica ASC LIMIT 200`
         );
         const rows = r.rows || [];
+        window.__kpiAdminLastRows = rows;
+        populateKpiChartMetricaSelect(rows);
         if (rows.length === 0) {
             host.innerHTML = '<p style="font-size:.85rem;color:var(--tl)">No hay KPIs guardados para este tenant.</p>';
+            try {
+                renderKpiAdminHistoricoChart();
+            } catch (_) {}
             return;
         }
         const head =
@@ -8706,9 +9018,16 @@ async function cargarKpiSnapshotsAdmin() {
             })
             .join('');
         host.innerHTML = head + body + '</tbody></table></div>';
+        try {
+            renderKpiAdminHistoricoChart();
+        } catch (e) {
+            console.warn('[kpi-chart]', e);
+        }
     } catch (e) {
         logErrorWeb('kpi-snapshots-lista', e);
         host.innerHTML = '<span style="color:var(--re)">' + _escOpt(mensajeErrorUsuario(e)) + '</span>';
+        window.__kpiAdminLastRows = [];
+        populateKpiChartMetricaSelect([]);
     }
 }
 window.cargarKpiSnapshotsAdmin = cargarKpiSnapshotsAdmin;
@@ -8805,6 +9124,19 @@ async function guardarKpiSnapshotAdmin() {
         if (valStr === '') {
             toast('Completá el valor principal.', 'warning');
             return;
+        }
+    }
+    if (preset === 'satisfaccion_pct') {
+        const jx = (document.getElementById('kpi-json')?.value || '').trim();
+        if (jx) {
+            try {
+                const o = JSON.parse(jx);
+                if (o && typeof o === 'object' && !Array.isArray(o)) {
+                    valorJson = { ...valorJson, ...o };
+                }
+            } catch (_) {
+                /* ignorar JSON auxiliar inválido */
+            }
         }
     }
     let valorNumSql = 'NULL';

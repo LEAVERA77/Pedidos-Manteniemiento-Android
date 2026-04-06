@@ -64,7 +64,7 @@ COMMENT ON COLUMN kpi_snapshots.metrica IS 'Clave estable, ej: tiempo_resolucion
 COMMENT ON COLUMN kpi_snapshots.periodo_inicio IS 'Inicio inclusive del intervalo agregado.';
 COMMENT ON COLUMN kpi_snapshots.periodo_fin IS 'Fin inclusive del intervalo agregado.';
 COMMENT ON COLUMN kpi_snapshots.valor_numero IS 'Valor principal cuando aplica un escalar (horas, porcentaje 0-100, conteo).';
-COMMENT ON COLUMN kpi_snapshots.valor_json IS 'Detalle opcional: { "muestra_n": 42, "por_estado": {...} }.';
+COMMENT ON COLUMN kpi_snapshots.valor_json IS 'Detalle opcional: { "muestra_n": 42, "por_estado": {...} }. Para satisfaccion_pct: p. ej. n_respuestas, promedio_estrellas (WhatsApp 1–5).';
 
 COMMIT;
 

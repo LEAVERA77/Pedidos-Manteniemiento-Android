@@ -1,13 +1,13 @@
 /**
- * Tras el mensaje de cierre por WA, el cliente puede responder con texto libre.
- * Estado persistido en Neon (tabla cliente_opinion_pending); sobrevive a reinicios de Render.
- *
- * La clave de teléfono debe coincidir con la que usa el webhook (normalizeWhatsAppRecipientForMeta),
- * no con el raw guardado en pedidos.telefono_contacto (549 vs 54 en AR).
+ * Tras el mensaje de cierre por WA: primero calificación 1–5, luego comentario opcional.
+ * Estado en Neon (cliente_opinion_pending.rating_stars NULL = aún falta la nota).
  */
 
 import { query } from "../db/neon.js";
 import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
+import { parseStarRating01a5 } from "../utils/parseStarRating01a5.js";
+
+export { parseStarRating01a5 } from "../utils/parseStarRating01a5.js";
 
 let _tableEnsured = false;
 let _obsTableEnsured = false;
@@ -16,6 +16,14 @@ function canonicalPhone(digits) {
   const d = String(digits || "").replace(/\D/g, "");
   if (!d) return "";
   return normalizeWhatsAppRecipientForMeta(d);
+}
+
+async function ensureOpinionPendingExtraColumns() {
+  try {
+    await query(`ALTER TABLE cliente_opinion_pending ADD COLUMN IF NOT EXISTS rating_stars SMALLINT`);
+  } catch (_) {
+    /* sin permiso */
+  }
 }
 
 async function ensureOpinionPendingTable() {
@@ -30,6 +38,7 @@ async function ensureOpinionPendingTable() {
       PRIMARY KEY (tenant_id, phone_canonical)
     )
   `);
+  await ensureOpinionPendingExtraColumns();
   await query(`
     CREATE INDEX IF NOT EXISTS idx_cliente_opinion_pending_expires
     ON cliente_opinion_pending (expires_at)
@@ -45,10 +54,14 @@ async function ensureObservacionesCierreTable() {
       tenant_id INTEGER NOT NULL,
       pedido_id INTEGER NOT NULL,
       phone_canonical VARCHAR(40),
+      estrellas SMALLINT,
       texto TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  try {
+    await query(`ALTER TABLE cliente_observaciones_cierre ADD COLUMN IF NOT EXISTS estrellas SMALLINT`);
+  } catch (_) {}
   await query(`
     CREATE INDEX IF NOT EXISTS idx_cli_obs_cierre_pedido
     ON cliente_observaciones_cierre (pedido_id)
@@ -74,10 +87,10 @@ export async function registerPendingClienteOpinion(tenantId, phoneDigits, pedid
     await ensureOpinionPendingTable();
     const expiresAt = new Date(Date.now() + 30 * 86400000);
     await query(
-      `INSERT INTO cliente_opinion_pending (tenant_id, phone_canonical, pedido_id, expires_at)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO cliente_opinion_pending (tenant_id, phone_canonical, pedido_id, expires_at, rating_stars)
+       VALUES ($1, $2, $3, $4, NULL)
        ON CONFLICT (tenant_id, phone_canonical)
-       DO UPDATE SET pedido_id = EXCLUDED.pedido_id, expires_at = EXCLUDED.expires_at, created_at = NOW()`,
+       DO UPDATE SET pedido_id = EXCLUDED.pedido_id, expires_at = EXCLUDED.expires_at, rating_stars = NULL, created_at = NOW()`,
       [tid, phone, pid, expiresAt]
     );
   } catch (e) {
@@ -106,7 +119,6 @@ export async function clearPendingClienteOpinion(tenantId, phoneDigits) {
   }
 }
 
-/** Variantes de canon (54 vs 549) por si hubo divergencia al registrar vs webhook. */
 function canonicalPhoneVariantsForLookup(phoneDigits) {
   const d = String(phoneDigits || "").replace(/\D/g, "");
   const out = new Set();
@@ -128,7 +140,7 @@ async function getPending(tenantId, phoneDigits) {
   try {
     await ensureOpinionPendingTable();
     const r = await query(
-      `SELECT pedido_id FROM cliente_opinion_pending
+      `SELECT pedido_id, rating_stars FROM cliente_opinion_pending
        WHERE tenant_id = $1 AND phone_canonical = ANY($2::varchar[]) AND expires_at > NOW()
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -136,7 +148,11 @@ async function getPending(tenantId, phoneDigits) {
     );
     const row = r.rows?.[0];
     if (!row) return null;
-    return { pedidoId: Number(row.pedido_id) };
+    const rs = row.rating_stars;
+    return {
+      pedidoId: Number(row.pedido_id),
+      ratingStars: rs != null && rs !== "" ? Number(rs) : null,
+    };
   } catch (e) {
     console.error("[whatsappClienteOpinion] getPending", e.message);
     return null;
@@ -147,6 +163,7 @@ async function ensureOpinionColumns() {
   try {
     await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente TEXT`);
     await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_opinion_cliente TIMESTAMPTZ`);
+    await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente_estrellas SMALLINT`);
   } catch (_) {
     /* ya existe o sin permiso */
   }
@@ -161,6 +178,19 @@ function normalizeLow(text) {
     .trim();
 }
 
+/** Primera línea si el usuario manda varias (solo fase de nota). */
+function primeraLinea(text) {
+  const s = String(text || "");
+  const i = s.indexOf("\n");
+  return (i === -1 ? s : s.slice(0, i)).trim();
+}
+
+function esOmitirComentarioOpinion(raw) {
+  const low = normalizeLow(primeraLinea(raw));
+  if (!low) return true;
+  return /^(omitir|saltar|no|nada|solo eso|listo|ok|gracias|\-|\.|no gracias|sin comentario)$/i.test(low);
+}
+
 /** Comandos del menú / inicio de reclamo: no consumir como opinión (dejan actuar al bot). */
 function esComandoExcluidoFlujoMenu(low, raw) {
   const t = String(raw || "").trim();
@@ -170,27 +200,36 @@ function esComandoExcluidoFlujoMenu(low, raw) {
   if (/\bnuevo\s+reclamo\b/.test(low)) return true;
   if (/\bquiero\s+(hacer\s+)?(un\s+)?reclamo\b/.test(low)) return true;
   if (low === "lista" || low === "tipos" || low === "reclamo") return true;
-  /* No excluir dígitos sueltos: si hay opinión pendiente post-cierre, se consumen antes en tryConsume;
-     y evita falsos positivos si el cliente califica con un número. */
   return false;
 }
 
-/** Tras guardar la opinión del cliente: un solo mensaje, sin menú ni lista de opciones. */
 function ackOpinionClienteGuardada() {
   return (
-    "Muchas gracias por tu mensaje. *Registramos tu observación* y la tendremos en cuenta para mejorar el servicio.\n\n" +
+    "Muchas gracias. *Registramos tu valoración* y la tendremos en cuenta para mejorar el servicio.\n\n" +
     "Si más adelante necesitás algo más, escribí *menú* o *Cargar reclamo* cuando quieras."
   );
 }
 
-/** Solo comandos explícitos para volver al menú (con opinión pendiente aún activa). */
+function ackPedirCalificacion() {
+  return (
+    "Primero *calificá la atención del 1 al 5* (1 = muy malo, 5 = excelente).\n\n" +
+    "Respondé *solo con el número* o con estrellas (⭐). Ejemplo: *5* o *⭐⭐⭐⭐⭐*"
+  );
+}
+
+function ackTrasCalificacion() {
+  return (
+    "¡Gracias! Si querés, escribí ahora un *comentario breve* (opcional).\n\n" +
+    "Escribí *omitir* si no querés agregar texto."
+  );
+}
+
 function esEscapeMenuOpinionPendiente(raw) {
   const t = String(raw || "").trim();
   return /^(menu|menú|inicio|ayuda|volver|0)$/i.test(t);
 }
 
 /**
- * Si hay opinión pendiente y el texto parece feedback (no comando del menú), guarda en pedidos.
  * @returns {Promise<{ handled: boolean, ack?: string }>}
  */
 export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text, nombreEntidad }) {
@@ -227,25 +266,43 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
       /* columna tenant_id ausente */
     }
 
-    const opinion = raw.slice(0, 2000);
     const phoneCanon = canonicalPhone(phoneDigits);
+
+    const needRating = pend.ratingStars == null || !Number.isFinite(pend.ratingStars);
+    if (needRating) {
+      const stars = parseStarRating01a5(raw);
+      if (stars == null) {
+        return { handled: true, ack: ackPedirCalificacion() };
+      }
+      await query(
+        `UPDATE cliente_opinion_pending SET rating_stars = $3 WHERE tenant_id = $1 AND phone_canonical = $2`,
+        [Number(tenantId), phoneCanon, stars]
+      );
+      return { handled: true, ack: ackTrasCalificacion() };
+    }
+
+    const stars = pend.ratingStars;
+    let textoOpinion = "";
+    if (!esOmitirComentarioOpinion(raw)) {
+      textoOpinion = String(raw).trim().slice(0, 2000);
+    }
+
     await query(
-      `UPDATE pedidos SET opinion_cliente = $2, fecha_opinion_cliente = NOW() WHERE id = $1`,
-      [pend.pedidoId, opinion]
+      `UPDATE pedidos SET opinion_cliente_estrellas = $2, opinion_cliente = $3, fecha_opinion_cliente = NOW() WHERE id = $1`,
+      [pend.pedidoId, stars, textoOpinion || null]
     );
     try {
       await query(
-        `INSERT INTO cliente_observaciones_cierre (tenant_id, pedido_id, phone_canonical, texto)
-         VALUES ($1, $2, $3, $4)`,
-        [Number(tenantId), pend.pedidoId, phoneCanon || null, opinion]
+        `INSERT INTO cliente_observaciones_cierre (tenant_id, pedido_id, phone_canonical, estrellas, texto)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [Number(tenantId), pend.pedidoId, phoneCanon || null, stars, textoOpinion || "(sin comentario)"]
       );
     } catch (e) {
       console.error("[whatsappClienteOpinion] insert cliente_observaciones_cierre", e.message);
     }
     await clearPendingClienteOpinion(tenantId, phoneDigits);
 
-    const ack = ackOpinionClienteGuardada();
-    return { handled: true, ack };
+    return { handled: true, ack: ackOpinionClienteGuardada() };
   }
 
   if (esComandoExcluidoFlujoMenu(low, raw)) {

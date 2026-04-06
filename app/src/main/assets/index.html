@@ -621,6 +621,18 @@
           </div>
           <div><label for="kpi-desde">Periodo desde</label><input id="kpi-desde" type="date"></div>
           <div><label for="kpi-hasta">Periodo hasta</label><input id="kpi-hasta" type="date"></div>
+          <div class="full kpi-neon-calc-wrap" id="kpi-neon-calc-wrap" style="display:none">
+            <div class="kpi-neon-calc-panel">
+              <p class="kpi-neon-calc-txt"><i class="fas fa-database" style="opacity:.85"></i> Con el periodo elegido podés <strong>rellenar automáticamente</strong> desde los pedidos de este tenant en Neon.</p>
+              <button type="button" class="btn-sm primary" onclick="kpiAdminRellenarDesdeNeon()"><i class="fas fa-magic"></i> Calcular desde datos del sistema</button>
+            </div>
+          </div>
+          <div class="full" id="kpi-detail-satisfaccion-wa" style="display:none">
+            <div class="kpi-wa-hint">
+              <p style="margin:0 0 .35rem;font-weight:600;color:var(--bm)">Valoración por WhatsApp (1 a 5 ★)</p>
+              <p style="margin:0;font-size:.78rem;color:var(--tl);line-height:1.45">Tras el cierre por WhatsApp el cliente califica primero (número o ⭐) y puede dejar un comentario o <em>omitir</em>. El % guardado es el <strong>promedio de estrellas sobre 5</strong> (ej. 4★ → 80&nbsp;%). Calculá por rango de <code style="font-size:.72rem">fecha_opinion_cliente</code> con el botón de arriba.</p>
+            </div>
+          </div>
           <div class="full" id="kpi-detail-cierres-foto" style="display:none">
             <div class="kpi-detail-panel">
               <p>Completá estos dos números y calculamos el porcentaje solo. También podés escribir el % a mano en «Valor principal» si preferís.</p>
@@ -672,6 +684,15 @@
           <button type="button" class="btn-sm primary" onclick="guardarKpiSnapshotAdmin()"><i class="fas fa-save"></i> Guardar</button>
           <button type="button" class="btn-sm" onclick="limpiarFormKpiSnapshotAdmin()" style="background:var(--bg);border:1px solid var(--bo)">Limpiar formulario</button>
         </div>
+      </div>
+      <div id="kpi-chart-wrap" class="kpi-chart-wrap" style="display:none;margin:1rem 0 1.25rem">
+        <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .35rem">Tendencia</h3>
+        <p style="font-size:.78rem;color:var(--tl);margin:0 0 .55rem;line-height:1.4">Necesitás la misma métrica guardada en <strong>al menos dos periodos</strong> distintos.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:.5rem">
+          <label for="kpi-chart-metrica" style="font-size:.8rem;color:var(--tm)">Métrica</label>
+          <select id="kpi-chart-metrica" class="kpi-chart-select" onchange="renderKpiAdminHistoricoChart()"></select>
+        </div>
+        <div class="chart-container kpi-chart-canvas-wrap"><canvas id="chart-kpi-admin"></canvas></div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin:1rem 0 .6rem;flex-wrap:wrap;gap:.5rem">
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Registros</h3>

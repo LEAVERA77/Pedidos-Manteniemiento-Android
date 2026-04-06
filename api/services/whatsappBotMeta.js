@@ -1123,7 +1123,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (pendOpinionHola) {
       await reply(
         phone,
-        "Hola. Si querés contarnos *cómo quedó el arreglo* del reclamo que cerramos, escribí tu observación ahora (texto libre). " +
+        "Hola. Tenemos pendiente tu valoración del reclamo que cerramos.\n\n" +
+          "*Primero* enviá un número del *1 al 5* (o ⭐). *Después* podés agregar un comentario o *omitir*.\n\n" +
           "Para el *menú* de nuevos reclamos, escribí *menú* o *0*.",
         tid,
         phoneNumberId

@@ -464,6 +464,20 @@ textarea{resize:vertical;min-height:80px}
   width:100%!important;
   height:100%!important;
 }
+.kpi-neon-calc-panel{
+  background:linear-gradient(135deg,#ecfeff,#f0fdf4);
+  border:1px solid #a7f3d0;border-radius:.6rem;padding:.75rem 1rem;
+  display:flex;flex-wrap:wrap;align-items:center;gap:.65rem;justify-content:space-between;
+}
+.kpi-neon-calc-txt{margin:0;font-size:.8rem;color:#0f766e;line-height:1.4;flex:1;min-width:12rem}
+.kpi-wa-hint{background:#fffbeb;border:1px solid #fde68a;border-radius:.5rem;padding:.65rem .85rem}
+.kpi-chart-wrap{background:var(--card-bg,#fff);border:1px solid var(--bo);border-radius:.65rem;padding:.85rem 1rem}
+.kpi-chart-select{
+  padding:.35rem .6rem;border-radius:.4rem;border:1px solid var(--bo);font-size:.82rem;
+  background:var(--bg,#fff);min-width:12rem;max-width:100%;
+}
+.kpi-chart-canvas-wrap{height:220px;min-height:220px;max-height:220px}
+#admin-kpi .kpi-chart-canvas-wrap>canvas{display:block!important;max-width:100%!important;max-height:100%!important;width:100%!important;height:100%!important}
 .user-marker-admin{display:flex;align-items:center;gap:.25rem;background:white;border:2px solid var(--bd);border-radius:1rem;padding:.2rem .5rem;font-size:.75rem;font-weight:600;color:var(--bd);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 #offline-banner{position:fixed;top:0;left:0;right:0;z-index:9000;background:#dc2626;color:white;padding:.45rem 1rem;font-size:.82rem;font-weight:600;text-align:center;display:none;align-items:center;justify-content:center;gap:.5rem;transition:transform .3s}
 #offline-banner.visible{display:flex}
