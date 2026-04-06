@@ -6855,11 +6855,52 @@ function togglePanel() {
  * Menú esquina superior izquierda: administrador abre el wizard de marca/logo/ubicación;
  * otros roles siguen usando el mismo botón para el panel de pedidos.
  */
+/**
+ * Listado (esquina): admin debe confirmar contraseña antes del setup SaaS.
+ */
 async function abrirWizardMarcaEmpresaManual() {
     if (!esAdmin()) {
         togglePanel();
         return;
     }
+    const inp = document.getElementById('admin-verify-pw-setup-saas-input');
+    if (inp) inp.value = '';
+    document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.add('active');
+}
+window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
+
+async function confirmarPasswordYAbrirSetupSaaSWizard() {
+    const pw = (document.getElementById('admin-verify-pw-setup-saas-input')?.value || '').trim();
+    if (!pw) {
+        toast('Ingresá tu contraseña de administrador', 'error');
+        return;
+    }
+    await asegurarJwtApiRest();
+    const token = getApiToken();
+    if (!token) {
+        toast('No hay token de API. Volvé a iniciar sesión.', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(apiUrl('/api/auth/verify-password'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ password: pw })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+    } catch (e) {
+        toast(String(e?.message || e) || 'Contraseña incorrecta', 'error');
+        return;
+    }
+    document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.remove('active');
+    await abrirWizardMarcaEmpresaManualTrasPassword();
+}
+window.confirmarPasswordYAbrirSetupSaaSWizard = confirmarPasswordYAbrirSetupSaaSWizard;
+
+async function abrirWizardMarcaEmpresaManualTrasPassword() {
     try {
         await cargarConfigEmpresa();
         await asegurarJwtApiRest();
@@ -6906,7 +6947,6 @@ async function abrirWizardMarcaEmpresaManual() {
     _setupWizardContextoManual = true;
     mostrarModalConfigInicial();
 }
-window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
 
 function switchTab(t) {
     app.tab = t;
@@ -6918,9 +6958,6 @@ function switchTab(t) {
 document.getElementById('mt').addEventListener('click', () => {
     abrirWizardMarcaEmpresaManual().catch((e) => {
         console.warn('[wizard-marca-manual]', e?.message || e);
-        try {
-            mostrarModalConfigInicial();
-        } catch (_) {}
     });
 });
 document.getElementById('ph').addEventListener('click', (e) => {
@@ -9953,21 +9990,91 @@ async function exportInformeMensualExcel() {
     } catch (e) { toastError('export-excel-pedidos', e); }
 }
 
+function tituloChartEstadisticas(el) {
+    const h4 = el?.querySelector?.('h4');
+    const t = (h4?.textContent || '').replace(/\s+/g, ' ').trim();
+    return t || 'Gráfico';
+}
+
+/** Altura visible real (evita scrollHeight inflado por flex/grid del panel admin). */
+function alturaContenidoCaptura(el) {
+    if (!el) return 40;
+    const r0 = el.getBoundingClientRect();
+    let maxB = r0.top;
+    const walk = (n) => {
+        if (!n || n.nodeType !== 1) return;
+        const st = window.getComputedStyle(n);
+        if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) return;
+        const br = n.getBoundingClientRect();
+        if (br.width >= 1 && br.height >= 1) maxB = Math.max(maxB, br.bottom);
+        for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
+    };
+    walk(el);
+    const h = Math.ceil(maxB - r0.top + 12);
+    const mx = Math.min(Math.max(el.scrollHeight, el.offsetHeight, 40), 3200);
+    return Math.max(40, Math.min(h, mx));
+}
+
+function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
+    const ar = cw / ch;
+    let iw = maxWmm;
+    let ih = iw / ar;
+    if (ih > maxHmm) {
+        ih = maxHmm;
+        iw = ih * ar;
+    }
+    return { iw, ih };
+}
+
 function coleccionSeccionesPdfEstadisticas() {
     const root = document.getElementById('admin-estadisticas');
     if (!root) return [];
-    const out = [];
-    const marco = document.getElementById('enre-marco');
-    if (marco) out.push(marco);
-    const cards = document.getElementById('stats-cards');
-    if (cards) out.push(cards);
+    const out = [{ type: 'resumen' }];
     root.querySelectorAll('.chart-wrap').forEach(w => {
         try {
             if (window.getComputedStyle(w).display === 'none') return;
-            out.push(w);
+            out.push({ type: 'chart', el: w, title: tituloChartEstadisticas(w) });
         } catch (_) {}
     });
     return out;
+}
+
+async function capturaPdfBloqueResumenEstadisticas() {
+    const marco = document.getElementById('enre-marco');
+    const cards = document.getElementById('stats-cards');
+    const wrap = document.createElement('div');
+    wrap.setAttribute('style', 'position:fixed;left:-12000px;top:0;width:720px;padding:12px 14px;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif');
+    if (marco) {
+        const m = marco.cloneNode(true);
+        m.querySelectorAll('a').forEach(a => {
+            a.setAttribute('href', '#');
+            a.style.textDecoration = 'none';
+            a.style.color = '#1e40af';
+        });
+        wrap.appendChild(m);
+    }
+    if (cards) wrap.appendChild(cards.cloneNode(true));
+    document.body.appendChild(wrap);
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, 70));
+    let canvas = null;
+    try {
+        const sh = Math.max(alturaContenidoCaptura(wrap), wrap.offsetHeight, 48);
+        canvas = await html2canvas(wrap, {
+            scale: 1.12,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#f8fafc',
+            width: 720,
+            height: sh,
+            windowWidth: 720,
+            windowHeight: sh,
+        });
+    } catch (e) {
+        console.warn('[pdf-resumen]', e);
+    }
+    document.body.removeChild(wrap);
+    return canvas;
 }
 
 async function html2canvasCapturaElemento(el, opts = {}) {
@@ -9977,13 +10084,17 @@ async function html2canvasCapturaElemento(el, opts = {}) {
         Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         await new Promise(r => setTimeout(r, delayAfterResize));
-        const sw = Math.max(el.scrollWidth, el.offsetWidth, 120);
-        const sh = Math.max(el.scrollHeight, el.offsetHeight, 40);
+        const sw = Math.max(el.offsetWidth, el.clientWidth, 120);
+        const rawSh = opts.useFullScrollHeight
+            ? Math.max(el.scrollHeight, el.offsetHeight, 40)
+            : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
+        const sh = Math.min(rawSh, opts.maxHeightPx || 3400);
+        const scale = Math.min(1.2, 1850 / Math.max(sw, 380));
         return await html2canvas(el, {
-            scale: Math.min(1.35, 2600 / Math.max(sw, 400)),
+            scale,
             useCORS: true,
             logging: false,
-            backgroundColor: '#f8fafc',
+            backgroundColor: '#ffffff',
             width: sw,
             height: sh,
             windowWidth: sw,
@@ -9992,9 +10103,12 @@ async function html2canvasCapturaElemento(el, opts = {}) {
             scrollY: 0,
             onclone: (_doc, node) => {
                 try {
+                    node.classList.add('gn-capture-pdf');
                     node.style.overflow = 'visible';
                     node.style.height = 'auto';
+                    node.style.minHeight = '0';
                     node.style.maxHeight = 'none';
+                    node.style.alignSelf = 'flex-start';
                     node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
                 } catch (_) {}
             }
@@ -10009,6 +10123,13 @@ async function html2canvasCapturaEstadisticasCompleta(el) {
     return html2canvasCapturaElemento(el, { delayAfterResize: 400 });
 }
 
+function escAttrPrint(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
 async function imprimirInformeConGraficos() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
@@ -10019,21 +10140,29 @@ async function imprimirInformeConGraficos() {
     await new Promise(r => setTimeout(r, 500));
     const secciones = coleccionSeccionesPdfEstadisticas();
     if (!secciones.length) { toast('No hay secciones para imprimir', 'error'); return; }
-    const urls = [];
-    const liberarUrls = () => { urls.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} }); };
+    const pages = [];
+    const liberarUrls = () => { pages.forEach(p => { try { URL.revokeObjectURL(p.url); } catch (_) {} }); };
     try {
         toast('Generando vista para imprimir…', 'info');
         for (const sec of secciones) {
-            const canvas = await html2canvasCapturaElemento(sec, { delayAfterResize: 100 });
+            let canvas = null;
+            let title = '';
+            if (sec.type === 'resumen') {
+                canvas = await capturaPdfBloqueResumenEstadisticas();
+                title = 'Resumen y referencia ENRE';
+            } else if (sec.type === 'chart') {
+                canvas = await html2canvasCapturaElemento(sec.el, { delayAfterResize: 150 });
+                title = sec.title;
+            }
             if (!canvas) continue;
             const blob = await new Promise((res, rej) => {
                 try {
                     canvas.toBlob(b => (b ? res(b) : rej(new Error('toBlob'))), 'image/png');
                 } catch (e) { rej(e); }
             });
-            urls.push(URL.createObjectURL(blob));
+            pages.push({ url: URL.createObjectURL(blob), title });
         }
-        if (!urls.length) {
+        if (!pages.length) {
             toast('No se pudo capturar el panel', 'error');
             return;
         }
@@ -10043,10 +10172,13 @@ async function imprimirInformeConGraficos() {
             toast('Permití ventanas emergentes para imprimir', 'error');
             return;
         }
-        const bloques = urls.map(u =>
-            `<div class="bloque"><img src="${u}" alt="Estadísticas"/></div>`
+        const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
+        const subt = `Período: ${periodo} · Desde ${fechaDesde.toLocaleDateString('es-AR')} · Generado ${new Date().toLocaleString('es-AR')}`;
+        const bloques = pages.map(p =>
+            `<section class="gn-print-page"><h1 class="gn-print-h1">${escAttrPrint(p.title)}</h1><p class="gn-print-sub">${escAttrPrint(subt)}</p><div class="gn-print-imgwrap"><img src="${p.url}" alt=""/></div></section>`
         ).join('');
-        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe — gráficos</title><style>body{margin:0;background:#fff}.bloque{page-break-after:always;break-after:page}.bloque:last-child{page-break-after:auto;break-after:auto}img{display:block;width:100%;height:auto;max-width:100%}</style></head><body>' + bloques + '</body></html>');
+        const css = '@page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#fff;font-family:system-ui,Segoe UI,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}.gn-print-page{page-break-after:always;break-after:page;padding:0 0 6mm}.gn-print-page:last-child{page-break-after:auto;break-after:auto}.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 4mm;line-height:1.35}.gn-print-imgwrap{display:flex;justify-content:center;align-items:flex-start}.gn-print-imgwrap img{display:block;max-width:100%;width:auto;height:auto;max-height:238mm;object-fit:contain}';
+        w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>GestorNova — Estadísticas</title><style>' + css + '</style></head><body><header style="font-size:9pt;font-weight:700;color:#1e3a8a;margin-bottom:6mm">GestorNova · Informe de estadísticas</header>' + bloques + '</body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
@@ -10073,24 +10205,55 @@ async function generarPdfEstadisticasMultipaginaENRE() {
         const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
-        const margin = 7;
-        const usableH = pageH - 2 * margin;
-        const imgW = pageW - 2 * margin;
-        let primeraPaginaDoc = true;
+        const margin = 11;
+        const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
+        const subt = `Período: ${periodo} · Desde ${fechaDesde.toLocaleDateString('es-AR')} · ${new Date().toLocaleString('es-AR')}`;
+        let nPag = 0;
+        const addCanvasPage = (canvas, chartTitle) => {
+            if (!canvas || !canvas.width) return;
+            const maxW = pageW - 2 * margin;
+            const headerH = chartTitle ? 20 : 16;
+            const maxH = pageH - 2 * margin - headerH;
+            const imgData = canvas.toDataURL('image/jpeg', 0.92);
+            const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, maxH);
+            if (nPag > 0) pdf.addPage();
+            nPag++;
+            pdf.setFillColor(252, 252, 253);
+            pdf.rect(0, 0, pageW, pageH, 'F');
+            pdf.setDrawColor(226, 232, 240);
+            pdf.setLineWidth(0.25);
+            pdf.line(margin, margin + 8.5, pageW - margin, margin + 8.5);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(30, 58, 138);
+            pdf.text('GestorNova · Estadísticas (referencia ENRE)', margin, margin + 5);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(7.6);
+            pdf.setTextColor(71, 85, 105);
+            const subLines = pdf.splitTextToSize(subt, maxW);
+            pdf.text(subLines, margin, margin + 9.5);
+            let y0 = margin + 11 + subLines.length * 3.2;
+            if (chartTitle) {
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(8.4);
+                pdf.setTextColor(51, 65, 85);
+                pdf.text(String(chartTitle).slice(0, 72), margin, y0 + 2.5);
+                y0 += 5;
+            }
+            const x0 = margin + (maxW - iw) / 2;
+            pdf.addImage(imgData, 'JPEG', x0, y0 + 1, iw, ih, undefined, 'FAST');
+        };
         for (const sec of secciones) {
-            const canvas = await html2canvasCapturaElemento(sec, { delayAfterResize: 100 });
-            if (!canvas) continue;
-            const imgData = canvas.toDataURL('image/jpeg', 0.88);
-            const imgH = (canvas.height * imgW) / canvas.width;
-            let yOff = 0;
-            while (yOff < imgH) {
-                if (!primeraPaginaDoc) pdf.addPage();
-                primeraPaginaDoc = false;
-                pdf.addImage(imgData, 'JPEG', margin, margin - yOff, imgW, imgH, undefined, 'FAST');
-                yOff += usableH;
+            if (sec.type === 'resumen') {
+                addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
+            } else if (sec.type === 'chart') {
+                addCanvasPage(await html2canvasCapturaElemento(sec.el, { delayAfterResize: 150 }), sec.title);
             }
         }
-        const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
+        if (nPag === 0) {
+            toast('No se pudo generar ninguna página', 'error');
+            return;
+        }
         pdf.save(`gestornova_stats_ENRE_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
         toast('PDF listo', 'success');
     } catch (e) {

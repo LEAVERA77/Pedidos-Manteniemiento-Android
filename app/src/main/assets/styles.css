@@ -270,6 +270,19 @@ textarea{resize:vertical;min-height:80px}
   .print-content.print-a4-tight h2{font-size:10pt!important;margin:.4rem 0 .2rem!important}
   .print-content.print-a4-tight table{font-size:8.5pt!important}
   .print-content.print-a4-tight .firma-print{max-height:65px!important}
+  /* Admin → Estadísticas: impresión desde el navegador (sin ventana auxiliar) */
+  #admin-panel.active #admin-estadisticas.admin-section.active{
+    break-inside:auto;
+  }
+  #admin-panel.active #admin-estadisticas .chart-wrap{
+    break-inside:avoid;
+    page-break-inside:avoid;
+    margin-bottom:.75rem!important;
+  }
+  #admin-panel.active #admin-estadisticas .stat-grid{
+    break-inside:avoid;
+    page-break-inside:avoid;
+  }
 }
 .print-preview-wrap{min-height:100%;padding-bottom:5.5rem;box-sizing:border-box}
 .print-preview-toolbar{position:fixed;bottom:0;left:0;right:0;z-index:10001;display:flex;gap:.65rem;justify-content:center;align-items:center;flex-wrap:wrap;padding:.75rem 1rem;background:linear-gradient(180deg,rgba(255,255,255,.97),#fff);border-top:1px solid #e2e8f0;box-shadow:0 -6px 24px rgba(15,23,42,.12)}
@@ -457,6 +470,13 @@ textarea{resize:vertical;min-height:80px}
   flex-shrink:0;
 }
 .chart-container--tall{height:300px;min-height:300px;max-height:300px}
+/* Captura PDF / html2canvas: evita que la grilla estire alturas fantasma */
+.gn-capture-pdf.chart-wrap,
+.chart-wrap.gn-capture-pdf{
+  height:auto!important;
+  min-height:0!important;
+  align-self:flex-start!important;
+}
 #admin-estadisticas .chart-container>canvas{
   display:block!important;
   max-width:100%!important;

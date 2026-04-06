@@ -735,10 +735,24 @@
 <div id="cierre-toast-host" aria-live="polite"></div>
 <div id="wa-human-chat-toast-host" aria-live="polite"></div>
 <div id="wa-human-chat-dock" aria-label="Chats WhatsApp minimizados"></div>
+<div id="modal-admin-verify-pw-setup-saas" class="mo" style="z-index:12050">
+  <div class="mc" style="max-width:400px">
+    <div class="mh"><h3><i class="fas fa-lock"></i> Acceso al setup</h3></div>
+    <div class="mb">
+      <p style="font-size:.82rem;color:var(--tm);margin:0 0 .75rem;line-height:1.4">Ingresá tu contraseña de administrador para abrir el <strong>setup inicial de SaaS</strong>.</p>
+      <label style="display:block;font-size:.78rem;color:var(--tl);margin-bottom:.25rem">Contraseña</label>
+      <input id="admin-verify-pw-setup-saas-input" type="password" autocomplete="current-password" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:1rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="sec" onclick="document.getElementById('modal-admin-verify-pw-setup-saas').classList.remove('active')">Cancelar</button>
+        <button type="button" class="bp" onclick="confirmarPasswordYAbrirSetupSaaSWizard()"><i class="fas fa-check"></i> Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="modal-config-inicial" class="mo setup-wizard">
   <div class="mc">
     <div class="mh" style="flex-wrap:wrap;gap:.5rem;align-items:flex-start">
-      <h3 style="margin:0;flex:1;min-width:160px"><i class="fas fa-magic"></i> Setup Inicial SaaS</h3>
+      <h3 style="margin:0;flex:1;min-width:160px"><i class="fas fa-magic"></i> Setup inicial de SaaS - GestorNova</h3>
       <span id="sw-step-label" style="font-size:.82rem;color:var(--tl);align-self:center">Paso 1 de 3</span>
       <button type="button" class="cm" id="cfgi-btn-cerrar" onclick="cerrarWizardSetupVoluntario()" style="display:none" title="Cerrar sin guardar ahora si abriste por error o ya revisaste los datos. Si falta información obligatoria, el asistente volverá al iniciar sesión."><i class="fas fa-times"></i></button>
     </div>
