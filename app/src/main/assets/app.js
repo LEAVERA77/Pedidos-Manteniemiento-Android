@@ -2331,8 +2331,14 @@ const norm = p => ({
     pr: p.prioridad || 'Media',
     es: p.estado || 'Pendiente',
     av: parseInt(p.avance) || 0,
-    la: parseFloat(p.lat) || -31.505,
-    ln: parseFloat(p.lng) || -60.02,
+    la: (() => {
+        const v = parseFloat(p.lat);
+        return Number.isFinite(v) ? v : null;
+    })(),
+    ln: (() => {
+        const v = parseFloat(p.lng);
+        return Number.isFinite(v) ? v : null;
+    })(),
     ui: p.usuario_id,
     tr: p.trabajo_realizado || null,
     tc: p.tecnico_cierre || null,
@@ -2370,6 +2376,137 @@ const norm = p => ({
     })(),
     orc: String(p.origen_reclamo || '').trim().toLowerCase()
 });
+
+if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
+
+/** Coordenadas para mapa: GPS del pedido o geocodificación aproximada por domicilio. */
+function coordsEfectivasPedidoMapa(p) {
+    if (!p) return { la: null, ln: null };
+    if (Number.isFinite(p.la) && Number.isFinite(p.ln)) return { la: p.la, ln: p.ln };
+    const inf = window._pedidoCoordsInferidas && window._pedidoCoordsInferidas[String(p.id)];
+    if (inf && Number.isFinite(inf.la) && Number.isFinite(inf.ln)) return { la: inf.la, ln: inf.ln };
+    return { la: null, ln: null };
+}
+
+const _NOMINATIM_UA_PEDIDO = 'GestorNova-PedidoMap/1.0 (contact: gestornova-app@users.noreply.github.com)';
+const _NOMINATIM_EMAIL_PEDIDO = 'gestornova-app@users.noreply.github.com';
+
+function _parseHouseNumberNominatim(addr) {
+    const raw = addr && addr.house_number != null ? String(addr.house_number).trim() : '';
+    if (!raw) return null;
+    const n = parseInt(raw.replace(/\D/g, ''), 10);
+    return Number.isFinite(n) ? n : null;
+}
+
+function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
+    const arr = Array.isArray(results) ? results : [];
+    if (!arr.length) return null;
+    const target = parseInt(String(numeroPuertaStr || '').replace(/\D/g, ''), 10);
+    const scored = [];
+    for (const r of arr) {
+        const la = Number(r.lat);
+        const lo = Number(r.lon);
+        if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+        const hn = _parseHouseNumberNominatim(r.address || {});
+        scored.push({ la, lo, hn, r });
+    }
+    if (!scored.length) {
+        const r0 = arr[0];
+        const la = Number(r0.lat);
+        const lo = Number(r0.lon);
+        return Number.isFinite(la) && Number.isFinite(lo) ? { lat: la, lng: lo, src: 'aprox' } : null;
+    }
+    if (!Number.isFinite(target)) {
+        const x = scored[0];
+        return { lat: x.la, lng: x.lo, src: 'calle' };
+    }
+    const exact = scored.find((x) => x.hn === target);
+    if (exact) return { lat: exact.la, lng: exact.lo, src: 'exacta' };
+    const parity = target % 2;
+    const pool = scored.filter((x) => x.hn != null && x.hn % 2 === parity);
+    const use = pool.length ? pool : scored.filter((x) => x.hn != null);
+    const finalPool = use.length ? use : scored;
+    let best = finalPool[0];
+    let bd = Math.abs((best.hn ?? target) - target);
+    for (const x of finalPool) {
+        const d = Math.abs((x.hn ?? target) - target);
+        if (d < bd) {
+            bd = d;
+            best = x;
+        }
+    }
+    return { lat: best.la, lng: best.lo, src: best.hn != null ? 'vecino' : 'aprox' };
+}
+
+async function nominatimGeocodeDomicilioPedido(p) {
+    const calle = (p.ccal || '').trim();
+    const loc = (p.cloc || '').trim();
+    if (!calle || !loc) return null;
+    const num = (p.cnum || '').trim();
+    const q = num ? `${calle} ${num}, ${loc}, Argentina` : `${calle}, ${loc}, Argentina`;
+    const params = new URLSearchParams({
+        format: 'json',
+        q,
+        countrycodes: 'ar',
+        limit: '18',
+        addressdetails: '1',
+        'accept-language': 'es',
+        email: _NOMINATIM_EMAIL_PEDIDO,
+    });
+    const url = 'https://nominatim.openstreetmap.org/search?' + params.toString();
+    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO } });
+    if (!r.ok) return null;
+    const json = await r.json();
+    let hit = _elegirMejorResultadoNominatimPorPuerta(json, num);
+    if (!hit && num) {
+        await new Promise((res) => setTimeout(res, 1100));
+        const params2 = new URLSearchParams({
+            format: 'json',
+            q: `${calle}, ${loc}, Argentina`,
+            countrycodes: 'ar',
+            limit: '18',
+            addressdetails: '1',
+            'accept-language': 'es',
+            email: _NOMINATIM_EMAIL_PEDIDO,
+        });
+        const r2 = await fetch('https://nominatim.openstreetmap.org/search?' + params2.toString(), {
+            headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO },
+        });
+        if (r2.ok) {
+            const j2 = await r2.json();
+            hit = _elegirMejorResultadoNominatimPorPuerta(j2, num);
+        }
+    }
+    return hit;
+}
+
+async function enriquecerCoordsGeocodificadasPedidos() {
+    if (modoOffline || !NEON_OK || !_sql || typeof fetch !== 'function') return;
+    const candidatos = (app.p || []).filter((p) => {
+        if (Number.isFinite(p.la) && Number.isFinite(p.ln)) return false;
+        const id = String(p.id);
+        const prev = window._pedidoCoordsInferidas[id];
+        if (prev && (prev.skip || (Number.isFinite(prev.la) && Number.isFinite(prev.ln)))) return false;
+        return (p.ccal || '').trim() && (p.cloc || '').trim();
+    });
+    for (const p of candidatos) {
+        try {
+            await new Promise((res) => setTimeout(res, 1100));
+            const hit = await nominatimGeocodeDomicilioPedido(p);
+            const id = String(p.id);
+            if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+                window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
+            } else {
+                window._pedidoCoordsInferidas[id] = { skip: true };
+            }
+            try {
+                renderMk();
+            } catch (_) {}
+        } catch (e) {
+            console.warn('[geocode-pedido]', p.id, e && e.message ? e.message : e);
+        }
+    }
+}
 
 function distanciaKm(lat1, lon1, lat2, lon2) {
     const R = 6371;
@@ -2500,7 +2637,8 @@ function pedidosParaMarcadoresMapa() {
     const uidF = selU?.value || '';
     const asigF = selA?.value || '';
     return app.p.filter(p => {
-        if (!p.la || !p.ln) return false;
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) return false;
         if (!allowEstado(p.es || '')) return false;
         if (uidF) {
             const cre = p.uc != null ? String(p.uc) : (p.ui != null ? String(p.ui) : '');
@@ -3078,9 +3216,26 @@ async function refrescarTecnicosMapaPrincipal() {
                 html: `<div class="user-marker-admin" style="border-color:#0f766e;background:#ecfdf5;box-shadow:0 2px 8px rgba(0,0,0,.2)"><i class="fas fa-hard-hat" style="font-size:.65rem;color:#0f766e"></i> ${_escOpt(short)}</div>`,
                 iconAnchor: [0, 12]
             });
+            const ts = row.timestamp ? new Date(row.timestamp) : null;
+            const haceMin = ts ? Math.round((Date.now() - ts.getTime()) / 60000) : null;
+            const horaStr =
+                ts && !isNaN(ts.getTime())
+                    ? ts.toLocaleString('es-AR', {
+                          timeZone: 'America/Argentina/Buenos_Aires',
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                      })
+                    : '—';
             const m = L.marker([lat, lng], { icon, zIndexOffset: 750 })
                 .addTo(app.map)
-                .bindPopup(`<b>${_escOpt(nom)}</b><br>${_escOpt(row.rol || '')}<br>hace ${Math.round((Date.now() - new Date(row.timestamp)) / 60000)} min`);
+                .bindPopup(
+                    `<b>${_escOpt(nom)}</b><br>${_escOpt(row.rol || '')}<br>` +
+                        `<strong>Última posición GPS:</strong> hace ${haceMin != null ? haceMin : '—'} min<br>` +
+                        `<span style="font-size:11px;color:#64748b">Registrada: ${horaStr}</span>`
+                );
             _marcadoresTecnicosPrincipal.push(m);
         });
     } catch (e) {
@@ -3942,8 +4097,9 @@ async function intentarAutoInicioEjecucionTecnico(lat, lng) {
     const umbral = 0.015;
     for (const p of app.p) {
         if (p.es !== 'Asignado' || p.tai !== uid) continue;
-        if (p.la == null || p.ln == null) continue;
-        if (distanciaKm(lat, lng, p.la, p.ln) > umbral) continue;
+        const { la: pla, ln: pln } = coordsEfectivasPedidoMapa(p);
+        if (pla == null || pln == null) continue;
+        if (distanciaKm(lat, lng, pla, pln) > umbral) continue;
         const now = new Date().toISOString();
         const av = Math.max(parseInt(p.av, 10) || 0, 5);
         await updPedido(p.id, { estado: 'En ejecución', fecha_avance: now, avance: av }, app.u.id);
@@ -4026,6 +4182,7 @@ async function cargarPedidos(opts) {
     try {
         refrescarDetalleSiAbiertoTrasSync();
     } catch (_) {}
+    void enriquecerCoordsGeocodificadasPedidos();
 }
 
 /** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
@@ -4492,6 +4649,8 @@ function renderMk() {
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
     pedidosParaMarcadoresMapa().forEach(p => {
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
         const cer = p.es === 'Cerrado';
         const col = cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6');
         const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -4508,7 +4667,7 @@ function renderMk() {
             });
             const mkOpt = { icon, zIndexOffset: cer ? 200 : 500 };
             if (panePed) mkOpt.pane = panePed;
-            m = L.marker([p.la, p.ln], mkOpt).addTo(app.map);
+            m = L.marker([la, ln], mkOpt).addTo(app.map);
         } else {
             const cmOpt = {
                 radius: cer ? 6 : 9,
@@ -4518,7 +4677,7 @@ function renderMk() {
                 fillOpacity: cer ? 0.5 : 0.9
             };
             if (panePed) cmOpt.pane = panePed;
-            m = L.circleMarker([p.la, p.ln], cmOpt).addTo(app.map);
+            m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
         }
         m.bindPopup(`
             <div style="min-width:160px;font-family:system-ui">
@@ -4549,8 +4708,13 @@ window._z = id => {
     void (async () => {
         await ensureMapReady();
         if (!app.map) return;
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+            toast('Este pedido no tiene ubicación GPS ni domicilio geocodificable aún.', 'warning');
+            return;
+        }
         app.map.closePopup();
-        app.map.setView([p.la, p.ln], 17, { animate: true });
+        app.map.setView([la, ln], 17, { animate: true });
         setTimeout(() => {
             document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
         }, 300);
@@ -4574,7 +4738,7 @@ window._a = (a, id) => {
     }
     closeAll();
     if (a === 'av') abrirAvance(id);
-    else abrirCierre(id);
+    else void abrirCierre(id);
 };
 
 window._zm = id => {
@@ -4583,11 +4747,16 @@ window._zm = id => {
     void (async () => {
         await ensureMapReady();
         if (!app.map) return;
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+            toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
+            return;
+        }
         closeAll();
         setTimeout(() => {
             if (!app.map) return;
             app.map.invalidateSize({ animate: false });
-            app.map.setView([p.la, p.ln], 17, { animate: true });
+            app.map.setView([la, ln], 17, { animate: true });
             setTimeout(() => {
                 document.getElementById('zoom-altura').textContent = calcularEscalaReal(17);
             }, 300);
@@ -6727,10 +6896,149 @@ async function llenarCatalogosCierreAfectados() {
     } catch (e) {
         console.warn('[cierre-afectados] catálogo', e);
     }
+    try {
+        const sdChk = document.getElementById('cierre-afect-sel-distribuidor');
+        if (sdChk && sdChk.options.length <= 1 && NEON_OK && _sql) {
+            try {
+                const chkT = await sqlSimple(
+                    `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'distribuidores' AND column_name = 'tenant_id' LIMIT 1`
+                );
+                const hasT = !!(chkT.rows && chkT.rows.length);
+                const rFb = await sqlSimple(
+                    hasT
+                        ? `SELECT id AS distribuidor_id, codigo, nombre, localidad FROM distribuidores WHERE tenant_id = ${esc(
+                              tid
+                          )} AND COALESCE(activo, TRUE) ORDER BY codigo`
+                        : `SELECT id AS distribuidor_id, codigo, nombre, NULL::text AS localidad FROM distribuidores WHERE COALESCE(activo, TRUE) ORDER BY codigo`
+                );
+                const rowsFb = (rFb.rows || []).map((row) => ({
+                    ...row,
+                    total_kva: 0,
+                    total_clientes: 0,
+                    cant_transformadores: 0,
+                }));
+                if (rowsFb.length) llenarCierreSelectsDistribuidorResumen(rowsFb);
+            } catch (_) {}
+        }
+    } catch (_) {}
     const sad = document.getElementById('cierre-afect-alim-dist');
     if (sad && !sad.dataset.boundAlim) {
         sad.dataset.boundAlim = '1';
         sad.addEventListener('change', () => void refrescarCierreSelectAlimentadores());
+    }
+}
+
+function _normTrafoCodigoPedido(s) {
+    return String(s || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/^TR-?/, '');
+}
+
+function _normDistCodigoPedido(s) {
+    return String(s || '').trim().toUpperCase();
+}
+
+async function aplicarPresetInfraCierreDesdePedido(p) {
+    const blk = document.getElementById('cierre-afectados-block');
+    if (!blk || blk.style.display === 'none' || !p) return;
+    const selT = document.getElementById('cierre-afect-sel-trafo');
+    const trafoCod = _normTrafoCodigoPedido(p.trf);
+    const disCod = _normDistCodigoPedido(p.dis);
+    let trafoIdSql = null;
+    let distIdSql = null;
+    let alimSql = '';
+    if (NEON_OK && _sql && trafoCod && (await sqlInfraAfectadosTablasExisten())) {
+        try {
+            const tid = tenantIdActual();
+            const r1 = await sqlSimple(
+                `SELECT id, codigo, distribuidor_id, TRIM(alimentador) AS alimentador FROM infra_transformadores
+                 WHERE tenant_id = ${esc(tid)} AND activo = TRUE
+                 AND REPLACE(UPPER(TRIM(REPLACE(REPLACE(codigo, '-', ''), ' ', ''))), 'TR', '') = ${esc(trafoCod)}
+                 LIMIT 5`
+            );
+            const row = (r1.rows || []).find((x) => _normTrafoCodigoPedido(x.codigo) === trafoCod) || r1.rows?.[0];
+            if (row) {
+                trafoIdSql = row.id;
+                distIdSql = row.distribuidor_id != null ? Number(row.distribuidor_id) : null;
+                alimSql = row.alimentador ? String(row.alimentador).trim() : '';
+            }
+        } catch (_) {}
+    }
+    const pickTrafoSelect = () => {
+        if (!selT || !selT.options.length) return null;
+        for (let i = 0; i < selT.options.length; i++) {
+            const o = selT.options[i];
+            const lab = String(o.textContent || '');
+            const val = String(o.value || '');
+            if (trafoIdSql != null && val === String(trafoIdSql)) return val;
+            const firstTok = lab.split(/[\s—-]/)[0] || '';
+            if (trafoCod && _normTrafoCodigoPedido(firstTok) === trafoCod) return val;
+            if (trafoCod && lab.toUpperCase().replace(/\s+/g, '').includes(trafoCod)) return val;
+        }
+        return null;
+    };
+    const trafoVal = pickTrafoSelect();
+    const trafoRadio = blk.querySelector('input[value="transformador"]');
+    if (trafoVal && trafoRadio) {
+        trafoRadio.checked = true;
+        selT.value = trafoVal;
+        syncCierreAfectadosPanels();
+        return;
+    }
+    const sd = document.getElementById('cierre-afect-sel-distribuidor');
+    const sad = document.getElementById('cierre-afect-alim-dist');
+    const pickDistVal = () => {
+        const lists = [sd, sad].filter(Boolean);
+        for (const el of lists) {
+            if (!el.options.length) continue;
+            for (let i = 0; i < el.options.length; i++) {
+                const o = el.options[i];
+                if (!o.value) continue;
+                const lab = String(o.textContent || '');
+                const head = lab.split(/[·—]/)[0].trim().toUpperCase();
+                if (disCod && (head.startsWith(disCod) || head.includes(disCod))) return o.value;
+            }
+        }
+        if (distIdSql != null && sd) {
+            for (let i = 0; i < sd.options.length; i++) {
+                if (sd.options[i].value === String(distIdSql)) return sd.options[i].value;
+            }
+        }
+        return null;
+    };
+    const did = pickDistVal();
+    const sal = document.getElementById('cierre-afect-sel-alimentador');
+    if (did && alimSql && distIdSql != null && sal) {
+        const alRadio = blk.querySelector('input[value="alimentador"]');
+        if (alRadio) {
+            alRadio.checked = true;
+            syncCierreAfectadosPanels();
+            sad.value = String(did);
+            await refrescarCierreSelectAlimentadores();
+            for (let i = 0; i < sal.options.length; i++) {
+                const o = sal.options[i];
+                if (!o.value) continue;
+                if (o.value.toUpperCase() === alimSql.toUpperCase()) {
+                    sal.value = o.value;
+                    return;
+                }
+                if (String(o.textContent || '').toUpperCase().startsWith(alimSql.toUpperCase())) {
+                    sal.value = o.value;
+                    return;
+                }
+            }
+            return;
+        }
+    }
+    if (did) {
+        const dRadio = blk.querySelector('input[value="distribuidor"]');
+        if (dRadio && sd) {
+            dRadio.checked = true;
+            sd.value = String(did);
+            syncCierreAfectadosPanels();
+        }
     }
 }
 
@@ -6765,7 +7073,8 @@ async function prepararBloqueClientesAfectadosCierre(p) {
         return;
     }
     blk.style.display = '';
-    void llenarCatalogosCierreAfectados();
+    await llenarCatalogosCierreAfectados();
+    await aplicarPresetInfraCierreDesdePedido(p);
 }
 
 function leerCuerpoValidadoCierreAfectados() {
@@ -6964,7 +7273,7 @@ async function enviarRegistroClientesAfectados(pedidoId, body) {
     };
 }
 
-function abrirCierre(id) {
+async function abrirCierre(id) {
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) return;
     
@@ -7005,8 +7314,8 @@ function abrirCierre(id) {
         }
     }
 
-    void prepararBloqueClientesAfectadosCierre(p);
-    
+    await prepararBloqueClientesAfectadosCierre(p);
+
     fotoCierreTemp = null;
     actualizarVistaPreviaFotoCierre();
     initFirmaCierreCanvas();
@@ -7245,10 +7554,12 @@ function detalle(p) {
     }
     
     
-    const latFormateada = p.la ? p.la.toFixed(6).replace('.', ',') : '';
-    const lngFormateada = p.ln ? p.ln.toFixed(6).replace('.', ',') : '';
-    const wgs84UnaLinea = (p.la != null && p.ln != null) ? `${latFormateada}, ${lngFormateada}` : '--';
-    const pcDet = proyectarCoordPedido(p.la, p.ln);
+    const { la: laM, ln: lnM } = coordsEfectivasPedidoMapa(p);
+    const usadaInferida = (p.la == null || p.ln == null) && laM != null && lnM != null;
+    const latFormateada = laM != null ? laM.toFixed(6).replace('.', ',') : '';
+    const lngFormateada = lnM != null ? lnM.toFixed(6).replace('.', ',') : '';
+    const wgs84UnaLinea = laM != null && lnM != null ? `${latFormateada}, ${lngFormateada}` : '--';
+    const pcDet = proyectarCoordPedido(laM, lnM);
     const cfgFam = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
     let filasProyectadas = '';
     if (pcDet) {
@@ -7314,7 +7625,8 @@ function detalle(p) {
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
-            <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${p.la != null && p.ln != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
+            ${usadaInferida ? '<p style="font-size:.76rem;color:#b45309;margin:0 0 .35rem;line-height:1.35">Ubicación aproximada por calle y número (el cliente no compartió GPS).</p>' : ''}
+            <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${laM != null && lnM != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
         </div>
@@ -9117,6 +9429,23 @@ async function guardarConfiguracionInicialObligatoria() {
             lat_base: String(_setupLat),
             lng_base: String(_setupLng)
         };
+        if (NEON_OK && _sql) {
+            try {
+                const pairs = [
+                    ['nombre', nombre],
+                    ['tipo', tipo],
+                    ['empresa_identidad_bloqueada', '1'],
+                ];
+                const subW = String((window.EMPRESA_CFG || {}).subtitulo || '').trim();
+                if (subW) pairs.push(['subtitulo', subW]);
+                for (const [k, v] of pairs) {
+                    await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES(${esc(k)}, ${esc(v)})
+                        ON CONFLICT(clave) DO UPDATE SET valor = ${esc(v)}, actualizado = NOW()`);
+                }
+            } catch (e) {
+                console.warn('[wizard] empresa_config identidad', e);
+            }
+        }
         try {
             persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
         } catch (_) {}
@@ -10750,6 +11079,27 @@ function abrirAdmin() {
 window.abrirAdmin = abrirAdmin;
 
 // ── Empresa config ────────────────────────────────────────────
+function empresaIdentidadEdicionBloqueada() {
+    const cfg = window.EMPRESA_CFG || {};
+    const b = String(cfg.empresa_identidad_bloqueada || '').toLowerCase();
+    if (b === '1' || b === 'true' || b === 'sí' || b === 'si') return true;
+    return !!(window.__PMG_TENANT_BRANDING__ && window.__PMG_TENANT_BRANDING__.setup_wizard_completado);
+}
+
+function aplicarBloqueoIdentidadEmpresaFormulario() {
+    const lock = empresaIdentidadEdicionBloqueada();
+    const nombre = document.getElementById('cfg-nombre');
+    const tipo = document.getElementById('cfg-tipo');
+    const sub = document.getElementById('cfg-subtitulo');
+    [nombre, tipo, sub].forEach((el) => {
+        if (!el) return;
+        el.readOnly = !!lock;
+        el.title = lock ? 'Definido en el setup inicial — no editable' : '';
+    });
+    const hint = document.getElementById('cfg-identidad-bloqueada-hint');
+    if (hint) hint.style.display = lock ? '' : 'none';
+}
+
 async function cargarFormEmpresa() {
     try {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
@@ -10771,6 +11121,7 @@ async function cargarFormEmpresa() {
             modo.value = ['punto', 'instal', '1', '2', '3', '4', '5', '6', '7'].includes(mv) ? mv : 'punto';
         }
         syncCoordModoVisibility();
+        aplicarBloqueoIdentidadEmpresaFormulario();
     } catch(e) { console.warn(e); }
 }
 
@@ -10779,10 +11130,18 @@ async function guardarConfigEmpresa() {
     const modoEl = document.getElementById('cfg-coord-modo');
     const famVal = famEl ? famEl.value : 'none';
     const modoVal = modoEl ? modoEl.value : 'punto';
+    const lockIdent = empresaIdentidadEdicionBloqueada();
+    const prev = window.EMPRESA_CFG || {};
     const campos = {
-        nombre:         document.getElementById('cfg-nombre').value.trim(),
-        tipo:           document.getElementById('cfg-tipo').value.trim(),
-        subtitulo:      document.getElementById('cfg-subtitulo').value.trim(),
+        nombre: lockIdent
+            ? String(prev.nombre || '').trim()
+            : document.getElementById('cfg-nombre').value.trim(),
+        tipo: lockIdent
+            ? String(prev.tipo || '').trim()
+            : document.getElementById('cfg-tipo').value.trim(),
+        subtitulo: lockIdent
+            ? String(prev.subtitulo || '').trim()
+            : document.getElementById('cfg-subtitulo').value.trim(),
         email_contacto: document.getElementById('cfg-email').value.trim(),
         telefono:       document.getElementById('cfg-telefono').value.trim(),
         coord_proy_familia: famVal,
@@ -11472,16 +11831,98 @@ async function buscarHistorialPorNIS() {
     }
 }
 
-function periodoInformeDesdeSelectEstadisticas() {
-    const periodo = document.getElementById('est-periodo')?.value || '3meses';
+async function resolveCondicionFechaPedidosStats(tsql) {
+    const tsqlSafe = tsql || '';
+    if (window.__gnFechaInicioOperativa == null) {
+        if (NEON_OK && _sql) {
+            try {
+                const rmin = await sqlSimple(`SELECT MIN(fecha_creacion) AS m FROM pedidos WHERE 1=1${tsqlSafe}`);
+                const m = rmin.rows?.[0]?.m;
+                window.__gnFechaInicioOperativa = m ? new Date(m) : new Date();
+            } catch (_) {
+                window.__gnFechaInicioOperativa = new Date(2000, 0, 1);
+            }
+        } else {
+            window.__gnFechaInicioOperativa = new Date(2000, 0, 1);
+        }
+    }
+    const dia = (document.getElementById('est-fecha-dia')?.value || '').trim();
+    const mesPick = (document.getElementById('est-mes-filtro')?.value || '').trim();
+    if (dia && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+        return {
+            condFecha: `fecha_creacion::date = ${esc(dia)}::date`,
+            fechaDesde: new Date(dia + 'T12:00:00'),
+            periodo: 'dia',
+        };
+    }
+    if (mesPick && /^\d{4}-\d{2}$/.test(mesPick)) {
+        const d0 = `${mesPick}-01`;
+        return {
+            condFecha: `fecha_creacion >= ${esc(d0)}::timestamptz AND fecha_creacion < (${esc(d0)}::date + interval '1 month')::timestamptz`,
+            fechaDesde: new Date(d0 + 'T12:00:00'),
+            periodo: 'mes_pick',
+        };
+    }
+    const periodo = document.getElementById('est-periodo')?.value || 'ejecucion';
     const ahora = new Date();
     let fechaDesde;
     if (periodo === 'mes') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     else if (periodo === '3meses') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth() - 3, 1);
     else if (periodo === 'anio') fechaDesde = new Date(ahora.getFullYear(), 0, 1);
-    else fechaDesde = new Date('2000-01-01');
+    else if (periodo === 'todo') fechaDesde = new Date('2000-01-01');
+    else fechaDesde = window.__gnFechaInicioOperativa || new Date(2000, 0, 1);
+    const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
+    return { condFecha, fechaDesde, periodo };
+}
+
+function limpiarFiltrosAuxiliaresEstadisticas() {
+    const hid = document.getElementById('est-mes-filtro');
+    if (hid) hid.value = '';
+    const fd = document.getElementById('est-fecha-dia');
+    if (fd) fd.value = '';
+}
+window.limpiarFiltrosAuxiliaresEstadisticas = limpiarFiltrosAuxiliaresEstadisticas;
+
+function aplicarFiltroDiaEstadisticas() {
+    const hid = document.getElementById('est-mes-filtro');
+    if (hid) hid.value = '';
+    void cargarEstadisticas();
+}
+window.aplicarFiltroDiaEstadisticas = aplicarFiltroDiaEstadisticas;
+
+function periodoInformeDesdeSelectEstadisticasSync() {
+    const dia = (document.getElementById('est-fecha-dia')?.value || '').trim();
+    const mesPick = (document.getElementById('est-mes-filtro')?.value || '').trim();
+    if (dia && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+        return {
+            condFecha: `fecha_creacion::date = ${esc(dia)}::date`,
+            fechaDesde: new Date(dia + 'T12:00:00'),
+            periodo: 'dia',
+        };
+    }
+    if (mesPick && /^\d{4}-\d{2}$/.test(mesPick)) {
+        const d0 = `${mesPick}-01`;
+        return {
+            condFecha: `fecha_creacion >= ${esc(d0)}::timestamptz AND fecha_creacion < (${esc(d0)}::date + interval '1 month')::timestamptz`,
+            fechaDesde: new Date(d0 + 'T12:00:00'),
+            periodo: 'mes_pick',
+        };
+    }
+    const periodo = document.getElementById('est-periodo')?.value || 'ejecucion';
+    const ahora = new Date();
+    let fechaDesde;
+    if (periodo === 'mes') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    else if (periodo === '3meses') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth() - 3, 1);
+    else if (periodo === 'anio') fechaDesde = new Date(ahora.getFullYear(), 0, 1);
+    else if (periodo === 'todo') fechaDesde = new Date('2000-01-01');
+    else fechaDesde = window.__gnFechaInicioOperativa || new Date(2000, 0, 1);
     const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
     return { periodo, fechaDesde, condFecha };
+}
+
+/** @deprecated Usar periodoInformeDesdeSelectEstadisticasSync; nombre conservado para compat. */
+function periodoInformeDesdeSelectEstadisticas() {
+    return periodoInformeDesdeSelectEstadisticasSync();
 }
 
 function periodoInformeEtiquetaHumana(periodo) {
@@ -11490,6 +11931,9 @@ function periodoInformeEtiquetaHumana(periodo) {
         '3meses': 'Últimos 3 meses (ventana móvil)',
         anio: 'Año calendario en curso',
         todo: 'Histórico completo',
+        ejecucion: 'Desde el inicio operativo hasta hoy',
+        dia: 'Un día seleccionado',
+        mes_pick: 'Mes seleccionado (desde el gráfico o filtro)',
     };
     return m[periodo] || String(periodo || '');
 }
@@ -11586,9 +12030,9 @@ async function exportInformeMensualExcel() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
     if (!window.XLSX || !XLSX.utils) { toast('Excel aún no cargó — esperá unos segundos y reintentá', 'error'); return; }
-    const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
         const tsql = await pedidosFiltroTenantSql();
+        const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
         const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = (r.rows || []).map(row => ({
             Pedido: row.numero_pedido,
@@ -11925,14 +12369,17 @@ async function imprimirInformeConGraficos() {
         }
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
         const subt = lineaPeriodoInformeEstadisticas();
+        const totalPag = pageBlocks.length;
         const bloques = pageBlocks
-            .map(bl => {
+            .map((bl, pi) => {
+                const pnum = pi + 1;
+                const pie = `<footer class="gn-print-footer">Página ${pnum} / ${totalPag} · ${escAttrPrint(ent)}</footer>`;
                 if (bl.kind === 'resumen') {
                     return (
                         `<section class="gn-print-page">` +
                         `<h1 class="gn-print-h1">${escAttrPrint(bl.title)}</h1>` +
                         `<p class="gn-print-sub">${escAttrPrint(subt)}</p>` +
-                        `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div></section>`
+                        `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div>${pie}</section>`
                     );
                 }
                 const cells = bl.items
@@ -11946,7 +12393,7 @@ async function imprimirInformeConGraficos() {
                 return (
                     `<section class="gn-print-page gn-print-page--grid">` +
                     `<p class="gn-print-sub gn-print-sub--tight">${escAttrPrint(subt)}</p>` +
-                    `<div class="gn-print-grid4">${cells}</div></section>`
+                    `<div class="gn-print-grid4">${cells}</div>${pie}</section>`
                 );
             })
             .join('');
@@ -11966,7 +12413,8 @@ async function imprimirInformeConGraficos() {
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
             '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}';
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}';
         w.document.write(
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
                 escAttrPrint(ent) +
@@ -12012,7 +12460,8 @@ async function generarPdfEstadisticasMultipaginaENRE() {
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 11;
-        const { periodo, fechaDesde } = periodoInformeDesdeSelectEstadisticas();
+        const tsqlPdf = await pedidosFiltroTenantSql();
+        const { periodo, fechaDesde } = await resolveCondicionFechaPedidosStats(tsqlPdf);
         const lineaPer = lineaPeriodoInformeEstadisticas();
         let nPag = 0;
         const addCanvasPage = async (canvas, chartTitle) => {
@@ -12111,9 +12560,9 @@ async function generarPdfEstadisticasMultipaginaENRE() {
 async function generarInformeMensualENRE() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
-    const { fechaDesde, condFecha } = periodoInformeDesdeSelectEstadisticas();
     try {
         const tsql = await pedidosFiltroTenantSql();
+        const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
         const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
@@ -12271,17 +12720,9 @@ async function generarInformeMensualENRE() {
 })();
 let _charts = {};
 async function cargarEstadisticas() {
-    const periodo = document.getElementById('est-periodo')?.value || '3meses';
-    const ahora   = new Date();
-    let fechaDesde;
-    if      (periodo === 'mes')    fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    else if (periodo === '3meses') fechaDesde = new Date(ahora.getFullYear(), ahora.getMonth() - 3, 1);
-    else if (periodo === 'anio')   fechaDesde = new Date(ahora.getFullYear(), 0, 1);
-    else                           fechaDesde = new Date('2000-01-01');
-
-    const condFecha = `fecha_creacion >= ${esc(fechaDesde.toISOString())}`;
     const tsql = await pedidosFiltroTenantSql();
     const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
+    const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
     const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
 
@@ -12482,7 +12923,17 @@ async function cargarEstadisticas() {
                             return ' ' + v + ' pedidos';
                         }
                     }}},
-                    ...(isVerticalBar ? { scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } } : {}),
+                    ...(isVerticalBar
+                        ? {
+                              scales: {
+                                  x: {
+                                      grid: { display: false },
+                                      ticks: { font: { size: 11 }, maxRotation: 50, minRotation: 0 },
+                                  },
+                                  y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } } },
+                              },
+                          }
+                        : {}),
                     ...extraOpts
                 }
             });
@@ -12505,6 +12956,23 @@ async function cargarEstadisticas() {
                 plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}}}
         );
+        const chMes = _charts['chart-mensual'];
+        if (chMes) {
+            chMes.options.onClick = (_evt, elements) => {
+                if (!elements?.length) return;
+                const idx = elements[0].index;
+                const lab = chMes.data.labels[idx];
+                if (lab && /^\d{4}-\d{2}$/.test(String(lab))) {
+                    const hid = document.getElementById('est-mes-filtro');
+                    if (hid) hid.value = String(lab);
+                    const fd = document.getElementById('est-fecha-dia');
+                    if (fd) fd.value = '';
+                    void cargarEstadisticas();
+                    toast(`Filtrado: mes ${lab}. Elegí un día abajo para ver solo ese día, o «Limpiar filtro».`, 'info');
+                }
+            };
+            chMes.update();
+        }
 
         // ── Gráfico estados: doughnut ─────────────────────────
         const estadoColors = { 'Pendiente':'#eab308','Asignado':'#a855f7','En ejecución':'#3b82f6','Cerrado':'#10b981' };

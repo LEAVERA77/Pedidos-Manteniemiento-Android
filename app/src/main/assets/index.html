@@ -442,6 +442,7 @@
     </div>
     <div id="admin-empresa" class="admin-section active">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Datos de la Empresa</h3>
+      <p id="cfg-identidad-bloqueada-hint" style="display:none;font-size:.78rem;color:#b45309;margin:-.5rem 0 .85rem;line-height:1.4;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem">El <strong>nombre</strong>, <strong>tipo</strong> y <strong>subtítulo</strong> quedaron fijados al completar el <strong>setup inicial</strong> (asistente de primera ejecución) y no se pueden modificar desde aquí.</p>
       <div class="form-grid">
         <div><label>Nombre</label><input id="cfg-nombre" type="text"></div>
         <div><label>Tipo (cooperativa, municipio, empresa)</label><input id="cfg-tipo" type="text" placeholder="cooperativa"></div>
@@ -557,13 +558,20 @@
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">
+      <input type="hidden" id="est-mes-filtro" value="" aria-hidden="true">
       <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-        <select id="est-periodo" onchange="cargarEstadisticas()" style="padding:.4rem .7rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.85rem">
-          <option value="3meses" selected>Trimestre (3 meses)</option>
+        <select id="est-periodo" onchange="if(typeof limpiarFiltrosAuxiliaresEstadisticas==='function')limpiarFiltrosAuxiliaresEstadisticas();cargarEstadisticas()" style="padding:.4rem .7rem;border:1.5px solid var(--bo);border-radius:.5rem;font-size:.85rem">
+          <option value="ejecucion" selected>Desde inicio operativo → hoy</option>
+          <option value="3meses">Trimestre (3 meses)</option>
           <option value="mes">Mes (actual)</option>
           <option value="anio">Año (actual)</option>
           <option value="todo">Todo el histórico</option>
         </select>
+        <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap">
+          Día
+          <input type="date" id="est-fecha-dia" style="padding:.25rem .4rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem" onchange="if(typeof aplicarFiltroDiaEstadisticas==='function')aplicarFiltroDiaEstadisticas()">
+        </label>
+        <button type="button" class="btn-sm" style="background:var(--bg);border:1px solid var(--bo)" onclick="if(typeof limpiarFiltrosAuxiliaresEstadisticas==='function')limpiarFiltrosAuxiliaresEstadisticas();cargarEstadisticas()" title="Quitar filtro por mes (gráfico) o día">Limpiar filtro mes/día</button>
         <button class="btn-sm primary" onclick="cargarEstadisticas()"><i class="fas fa-sync"></i> Actualizar</button>
         <button type="button" class="btn-sm" style="background:#15803d;color:#fff;border:none" onclick="exportInformeMensualExcel()"><i class="fas fa-file-excel"></i> Excel</button>
         <button type="button" class="btn-sm" style="background:#b91c1c;color:#fff;border:none" onclick="generarInformeMensualENRE()"><i class="fas fa-file-pdf"></i> Tabla (imprimir / PDF)</button>
