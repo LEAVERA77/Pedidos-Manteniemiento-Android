@@ -25,6 +25,7 @@ import {
   geocodeAddressArgentina,
   reverseGeocodeArgentina,
   geocodeCalleNumeroLocalidadArgentina,
+  geocodeLocalityViewboxArgentina,
   haversineMeters,
   parseHouseNumberInt,
   searchCalleLocalidadArgentina,
@@ -651,10 +652,14 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const ciudadLabel = ciudad || "tu localidad";
   let geoCiudad = null;
   try {
-    geoCiudad = await geocodeAddressArgentina(`${ciudadLabel}, Argentina`);
+    geoCiudad = await geocodeAddressArgentina(`${ciudadLabel}, Argentina`, {
+      filterLocalidad: ciudad.length >= 2 ? ciudad : undefined,
+    });
   } catch (_) {}
   const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
   const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
+  const tenantCentroid =
+    baseLat != null && baseLng != null ? { lat: baseLat, lng: baseLng } : null;
   const fallbackCity =
     geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
       ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
@@ -670,10 +675,24 @@ async function geocodeStructuredAddressAndFinalizePedido(
       ? { lat: Number(sess.userSharedGps.lat), lng: Number(sess.userSharedGps.lng) }
       : null;
 
+  let localityViewboxMeta = null;
+  if (ciudad.length >= 2) {
+    try {
+      localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid);
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
+    }
+  }
+
   let houseHits = [];
   let streetCenter = null;
   try {
-    const pack = await searchCalleLocalidadArgentina(ciudad, calle);
+    const pack = await searchCalleLocalidadArgentina(
+      ciudad,
+      calle,
+      40,
+      localityViewboxMeta?.viewboxStr || null
+    );
     houseHits = pack.houseHits || [];
     streetCenter = pack.streetCenter || null;
   } catch (e) {
@@ -685,8 +704,23 @@ async function geocodeStructuredAddressAndFinalizePedido(
     Number.isFinite(targetNum) &&
     houseHits.some((h) => h.houseNum === targetNum);
 
+  const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
+
   try {
-    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero);
+    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, {
+      tenantCentroid,
+      catalogStrict,
+      precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
+    });
+    if (geo?.audit) {
+      console.log("[whatsapp-bot-meta] geocode audit", {
+        tenantId: sess.tenantId,
+        catalogStrict,
+        ...geo.audit,
+        ciudad,
+        calle,
+      });
+    }
     if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
       // Sin GPS: si OSM tiene frentes numerados en la calle pero no el número del padrón, Nominatim suele devolver
       // un punto genérico (mal ubicado). Preferimos paridad + frente más cercano vía resolveStructuredAddressCoords.

@@ -22,7 +22,7 @@ function nombreCompletoClienteFinal(row) {
 
 /**
  * Busca nombre / NIS para el reclamo: ID usuario del tenant, NIS/medidor/número en clientes_finales, o socios_catalogo.
- * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null } | { ok: false } | { skip: true }}
+ * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null } | { ok: false } | { skip: true }}
  */
 export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
   const raw = String(texto || "").trim();
@@ -58,7 +58,11 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
   // 2) clientes_finales (cliente_id = tenant)
   if (await tableExists("clientes_finales")) {
     const r = await query(
-      `SELECT id, nombre, apellido, nis, medidor, numero_cliente
+      `SELECT id, nombre, apellido, nis, medidor, numero_cliente,
+              NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
+              NULLIF(TRIM(COALESCE(numero_puerta, '')), '') AS numero_cat,
+              NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
+              NULLIF(TRIM(COALESCE(barrio, '')), '') AS barrio_cat
        FROM clientes_finales
        WHERE cliente_id = $1 AND activo = TRUE
          AND (
@@ -82,6 +86,10 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         nis: nisVal,
         medidor: med,
         nisMedidor: med || nisVal || raw,
+        catalogoCalle: row.calle_cat != null ? String(row.calle_cat).trim() || null : null,
+        catalogoNumero: row.numero_cat != null ? String(row.numero_cat).trim() || null : null,
+        catalogoLocalidad: row.localidad_cat != null ? String(row.localidad_cat).trim() || null : null,
+        catalogoBarrio: row.barrio_cat != null ? String(row.barrio_cat).trim() || null : null,
       };
     }
   }
