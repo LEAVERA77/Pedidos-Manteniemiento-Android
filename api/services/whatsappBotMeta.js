@@ -38,6 +38,7 @@ import {
   humanChatAppendInbound,
   humanChatCloseBySessionId,
 } from "./whatsappHumanChat.js";
+import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
 
 const sessions = new Map();
 
@@ -350,14 +351,63 @@ async function loadTenantBotContext(tenantId) {
     tipos: tiposReclamoParaClienteTipo(row.tipo),
     whatsappBloqueoReclamos: bloqueo.active,
     whatsappBloqueoMensaje: bloqueo.mensaje,
+    derivacionReclamos: derivacionReclamosDesdeConfig(c),
   };
+}
+
+/** Límite conservador (Meta Cloud API ~4096). */
+const META_DERIVACION_MAX_CHARS = 3800;
+
+function waMeUrlFromInternational(wa) {
+  const d = String(wa || "")
+    .trim()
+    .replace(/^\+/, "");
+  if (!/^\d{8,22}$/.test(d)) return null;
+  return `https://wa.me/${d}`;
+}
+
+/**
+ * Opción B (spec): menú / comando *Otros servicios* para orientar vecinos (coop. eléctrica).
+ */
+function formatDerivacionBotMessage(ctx) {
+  const dr = ctx.derivacionReclamos;
+  if (!dr) return "";
+  const parts = [];
+  parts.push("*Otros servicios (agua / energía)*");
+  parts.push("");
+  parts.push("Este canal gestiona reclamos de *energía eléctrica*.");
+  parts.push("");
+  if (dr.cooperativa_agua) {
+    const n = dr.cooperativa_agua.nombre || "Cooperativa de agua";
+    const u = dr.cooperativa_agua.whatsapp ? waMeUrlFromInternational(dr.cooperativa_agua.whatsapp) : null;
+    parts.push(`*Agua potable:* ${n}`);
+    parts.push(u || "_(WhatsApp no configurado)_");
+    parts.push("");
+  }
+  if (dr.empresa_energia) {
+    const n = dr.empresa_energia.nombre || "Empresa de energía";
+    const u = dr.empresa_energia.whatsapp ? waMeUrlFromInternational(dr.empresa_energia.whatsapp) : null;
+    parts.push(`*Otra distribuidora / energía:* ${n}`);
+    parts.push(u || "_(WhatsApp no configurado)_");
+    parts.push("");
+  }
+  let s = parts.join("\n").trim();
+  if (s.length > META_DERIVACION_MAX_CHARS) {
+    s = `${s.slice(0, META_DERIVACION_MAX_CHARS - 1)}…`;
+  }
+  return s;
 }
 
 function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
+  const drvHint =
+    normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica" && ctx.derivacionReclamos
+      ? `Si tu consulta es de *agua potable* u *otra empresa eléctrica*, escribí *Otros servicios*.\n\n`
+      : "";
   return (
     `Bienvenido al centro de atención de *${n}*.\n\n` +
+    drvHint +
     `Para ver los tipos de reclamo, escribí *Cargar reclamo* (te enviaremos una lista en el chat).\n\n` +
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
@@ -379,6 +429,10 @@ function menuTextoNumerado(ctx) {
   });
   lineas.push("");
   lineas.push("O escribí *Cargar reclamo* para abrir la lista.");
+  if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica" && ctx.derivacionReclamos) {
+    lineas.push("");
+    lineas.push("¿Agua u otra energía? Escribí *Otros servicios*.");
+  }
   lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
 }
@@ -1284,6 +1338,30 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+
+  if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica") {
+    const esOtrosServicios =
+      lower === "otros servicios" ||
+      lower === "derivar" ||
+      lower === "agua potable" ||
+      lower === "otra energia" ||
+      lower === "otra empresa";
+    if (esOtrosServicios) {
+      const msg = formatDerivacionBotMessage(ctx);
+      if (msg) {
+        await reply(phone, msg, tid, phoneNumberId);
+        return;
+      }
+      await reply(
+        phone,
+        "Para consultas de *agua* u *otra empresa eléctrica*, todavía no hay contactos configurados en el sistema. Escribí *menú* para reclamos de energía de esta cooperativa.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+  }
+
   const sessMenu = sessions.get(sk);
   if (debeSalirAlMenuPrincipalWhatsApp(lower, sessMenu)) {
     const prevM = sessMenu;

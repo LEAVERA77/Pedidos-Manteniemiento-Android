@@ -972,9 +972,12 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
     } catch (_) {}
 }
 
-function digitosWhatsappDerivacionForm(slot) {
-    const w = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
-    return w.replace(/\D/g, '');
+function normalizarWhatsappInternacionalDesdeInput(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const digits = s.replace(/\D/g, '');
+    if (!digits) return '';
+    return `+${digits}`;
 }
 
 function actualizarBotonesWhatsappDerivacionesUi() {
@@ -982,8 +985,9 @@ function actualizarBotonesWhatsappDerivacionesUi() {
         const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
         if (!btn) return;
         const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-        const d = digitosWhatsappDerivacionForm(slot);
-        const ok = d.length >= 10 && d.length <= 15;
+        const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
+        const w = normalizarWhatsappInternacionalDesdeInput(raw);
+        const ok = /^\+\d{8,22}$/.test(w);
         btn.disabled = !(act && ok);
     });
 }
@@ -995,21 +999,56 @@ function bindDerivacionesFormInputsOnce() {
     ['energia', 'agua'].forEach((slot) => {
         const el = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
         if (el) el.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
+        const nm = document.getElementById(`cfg-deriv-${slot}-nombre`);
+        if (nm) nm.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
         const ac = document.getElementById(`cfg-deriv-${slot}-activo`);
         if (ac) ac.addEventListener('change', () => actualizarBotonesWhatsappDerivacionesUi());
     });
 }
 
 function poblarFormDerivacionesDesdeEmpresaCfg() {
-    const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
-    ['energia', 'agua'].forEach((slot) => {
-        const s = der[slot] || {};
-        const ca = document.getElementById(`cfg-deriv-${slot}-activo`);
-        const cn = document.getElementById(`cfg-deriv-${slot}-nombre`);
-        const cw = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
+    const dr = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivacion_reclamos) || null;
+    let energia = { activo: false, nombre: '', whatsapp: '' };
+    let agua = { activo: false, nombre: '', whatsapp: '' };
+    if (dr && typeof dr === 'object' && (dr.empresa_energia || dr.cooperativa_agua)) {
+        const ee = dr.empresa_energia || {};
+        const ca = dr.cooperativa_agua || {};
+        energia = {
+            activo: !!(ee.whatsapp || ee.nombre),
+            nombre: String(ee.nombre != null ? ee.nombre : ''),
+            whatsapp: String(ee.whatsapp != null ? ee.whatsapp : ''),
+        };
+        agua = {
+            activo: !!(ca.whatsapp || ca.nombre),
+            nombre: String(ca.nombre != null ? ca.nombre : ''),
+            whatsapp: String(ca.whatsapp != null ? ca.whatsapp : ''),
+        };
+    } else {
+        const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
+        const e = der.energia || {};
+        const a = der.agua || {};
+        energia = {
+            activo: !!e.activo,
+            nombre: String(e.nombre != null ? e.nombre : ''),
+            whatsapp: String(e.whatsapp != null ? e.whatsapp : ''),
+        };
+        agua = {
+            activo: !!a.activo,
+            nombre: String(a.nombre != null ? a.nombre : ''),
+            whatsapp: String(a.whatsapp != null ? a.whatsapp : ''),
+        };
+    }
+    const slots = [
+        { key: 'energia', s: energia },
+        { key: 'agua', s: agua },
+    ];
+    slots.forEach(({ key, s }) => {
+        const ca = document.getElementById(`cfg-deriv-${key}-activo`);
+        const cn = document.getElementById(`cfg-deriv-${key}-nombre`);
+        const cw = document.getElementById(`cfg-deriv-${key}-whatsapp`);
         if (ca) ca.checked = !!s.activo;
-        if (cn) cn.value = String(s.nombre != null ? s.nombre : '');
-        if (cw) cw.value = s.whatsapp != null && String(s.whatsapp) !== '' ? String(s.whatsapp) : '';
+        if (cn) cn.value = s.nombre;
+        if (cw) cw.value = s.whatsapp;
     });
     const om = document.getElementById('cfg-ocultar-modulos-redes');
     if (om) om.checked = !!(window.EMPRESA_CFG && window.EMPRESA_CFG.ocultar_modulos_redes);
@@ -1018,16 +1057,17 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
 
 function abrirWhatsappDerivacionForm(slot) {
     const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-    const d = digitosWhatsappDerivacionForm(slot);
+    const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
+    const w = normalizarWhatsappInternacionalDesdeInput(raw);
     if (!act) {
         toast('Activá la derivación para usar WhatsApp.', 'info');
         return;
     }
-    if (d.length < 10 || d.length > 15) {
-        toast('Teléfono WhatsApp no válido (10 a 15 dígitos, con código país).', 'error');
+    if (!w || !/^\+\d{8,22}$/.test(w)) {
+        toast('WhatsApp no válido: usá formato internacional con + (8 a 22 dígitos).', 'error');
         return;
     }
-    window.open('https://wa.me/' + d, '_blank', 'noopener,noreferrer');
+    window.open(`https://wa.me/${w.slice(1)}`, '_blank', 'noopener,noreferrer');
 }
 window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
 
@@ -8607,64 +8647,43 @@ function normalizarWhatsappInternacionalWaMeUrl(raw) {
     return 'https://wa.me/' + s.slice(1);
 }
 
-function syncAdminDerivacionElectricaWrap() {
-    const w = document.getElementById('admin-derivacion-electrica-wrap');
+function syncDerivacionesTercerosWrap() {
+    const w = document.getElementById('admin-derivacion-terceros-wrap');
     if (!w) return;
     w.style.display = esCooperativaElectricaRubro() ? '' : 'none';
 }
 
-function validarDerivacionReclamosFormularioCliente() {
-    const out = [];
-    const checkWa = (id, label) => {
-        const el = document.getElementById(id);
-        const v = el ? String(el.value || '').trim() : '';
-        if (!v) return;
-        if (!/^\+\d{8,22}$/.test(v)) {
-            out.push(`${label}: usá formato internacional con + (solo dígitos después del +, 8–22).`);
+/**
+ * Arma `configuracion.derivacion_reclamos` desde el formulario admin (cfg-deriv-*).
+ * @throws {Error} mensaje para toast / inline
+ */
+function construirDerivacionReclamosDesdeFormularioDerivaciones() {
+    const out = {};
+    const pushSlot = (slot, apiKey) => {
+        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
+        const n = (document.getElementById(`cfg-deriv-${slot}-nombre`)?.value || '').trim().slice(0, 120);
+        const wRaw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
+        const w = normalizarWhatsappInternacionalDesdeInput(wRaw);
+        const label = slot === 'energia' ? 'Empresa de energía' : 'Cooperativa de agua';
+        if (act) {
+            if (!w || !/^\+\d{8,22}$/.test(w)) {
+                throw new Error(
+                    `${label}: con «activo» marcado, cargá WhatsApp internacional válido (+ y 8–22 dígitos).`
+                );
+            }
+            out[apiKey] = { whatsapp: w, ...(n ? { nombre: n } : {}) };
+        } else if (n || wRaw) {
+            if (wRaw && (!w || !/^\+\d{8,22}$/.test(w))) {
+                throw new Error(`${label}: WhatsApp inválido (usá + y solo dígitos).`);
+            }
+            if (n || w) {
+                out[apiKey] = { ...(n ? { nombre: n } : {}), ...(w ? { whatsapp: w } : {}) };
+            }
         }
     };
-    checkWa('cfg-drv-energia-wa', 'WhatsApp empresa de energía');
-    checkWa('cfg-drv-agua-wa', 'WhatsApp cooperativa de agua');
-    const n1 = document.getElementById('cfg-drv-energia-nombre');
-    const n2 = document.getElementById('cfg-drv-agua-nombre');
-    if (n1 && String(n1.value || '').trim().length > 120) {
-        out.push('Nombre empresa de energía: máximo 120 caracteres.');
-    }
-    if (n2 && String(n2.value || '').trim().length > 120) {
-        out.push('Nombre cooperativa de agua: máximo 120 caracteres.');
-    }
+    pushSlot('energia', 'empresa_energia');
+    pushSlot('agua', 'cooperativa_agua');
     return out;
-}
-
-function construirDerivacionReclamosParaApi() {
-    const eN = document.getElementById('cfg-drv-energia-nombre');
-    const eW = document.getElementById('cfg-drv-energia-wa');
-    const aN = document.getElementById('cfg-drv-agua-nombre');
-    const aW = document.getElementById('cfg-drv-agua-wa');
-    const empresa_energia = {
-        nombre: eN ? String(eN.value || '').trim() : '',
-        whatsapp: eW ? String(eW.value || '').trim() : '',
-    };
-    const cooperativa_agua = {
-        nombre: aN ? String(aN.value || '').trim() : '',
-        whatsapp: aW ? String(aW.value || '').trim() : '',
-    };
-    const o = {};
-    if (empresa_energia.nombre || empresa_energia.whatsapp) o.empresa_energia = empresa_energia;
-    if (cooperativa_agua.nombre || cooperativa_agua.whatsapp) o.cooperativa_agua = cooperativa_agua;
-    return o;
-}
-
-function setDerivacionInlineError(msg) {
-    const el = document.getElementById('cfg-drv-inline-error');
-    if (!el) return;
-    if (!msg) {
-        el.textContent = '';
-        el.style.display = 'none';
-        return;
-    }
-    el.textContent = msg;
-    el.style.display = '';
 }
 
 function setDerivacionesInlineError(msg) {
@@ -8679,21 +8698,6 @@ function setDerivacionesInlineError(msg) {
     el.style.display = '';
 }
 window.setDerivacionesInlineError = setDerivacionesInlineError;
-
-function validarDerivacionesTercerosFormulario() {
-    for (const slot of ['energia', 'agua']) {
-        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-        const d = digitosWhatsappDerivacionForm(slot);
-        const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
-        if (act && (d.length < 10 || d.length > 15)) {
-            return `En ${slot === 'energia' ? 'empresa de energía' : 'cooperativa de agua'}: cargá un WhatsApp válido o desactivá el bloque.`;
-        }
-        if (raw && (d.length < 10 || d.length > 15)) {
-            return `WhatsApp inválido en ${slot === 'energia' ? 'empresa de energía' : 'cooperativa de agua'}.`;
-        }
-    }
-    return '';
-}
 
 let _nisPedidoCatalogoDebounceTimer = null;
 let _nisPedidoCatalogoCommitTimer = null;
