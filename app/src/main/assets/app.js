@@ -2391,6 +2391,93 @@ function coordsEfectivasPedidoMapa(p) {
 const _NOMINATIM_UA_PEDIDO = 'GestorNova-PedidoMap/1.0 (contact: gestornova-app@users.noreply.github.com)';
 const _NOMINATIM_EMAIL_PEDIDO = 'gestornova-app@users.noreply.github.com';
 
+function _normGeoTxt(s) {
+    try {
+        return String(s || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    } catch (_) {
+        return String(s || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+    }
+}
+
+/** Campos de Nominatim donde suele aparecer la localidad declarada por el cliente. */
+function _nominatimCamposLocalidad(addr) {
+    if (!addr || typeof addr !== 'object') return [];
+    const keys = [
+        'city',
+        'town',
+        'village',
+        'hamlet',
+        'municipality',
+        'city_district',
+        'suburb',
+        'neighbourhood',
+        'county',
+    ];
+    const out = [];
+    for (const k of keys) {
+        const v = addr[k];
+        if (v != null && String(v).trim()) out.push(String(v).trim());
+    }
+    return out;
+}
+
+function _nominatimResultadoCoincideLocalidad(r, locPedido) {
+    const want = _normGeoTxt(locPedido);
+    if (!want) return true;
+    const addr = r && r.address ? r.address : {};
+    const fields = _nominatimCamposLocalidad(addr);
+    for (const f of fields) {
+        const nf = _normGeoTxt(f);
+        if (!nf) continue;
+        if (nf === want || nf.includes(want) || want.includes(nf)) return true;
+    }
+    const dn = _normGeoTxt(r.display_name || '');
+    if (dn.includes(want)) return true;
+    return false;
+}
+
+function _filtrarNominatimPorLocalidad(results, locPedido) {
+    const arr = Array.isArray(results) ? results : [];
+    return arr.filter((r) => _nominatimResultadoCoincideLocalidad(r, locPedido));
+}
+
+async function _nominatimFetchSearch(params) {
+    const p = new URLSearchParams({
+        format: 'json',
+        addressdetails: '1',
+        'accept-language': 'es',
+        email: _NOMINATIM_EMAIL_PEDIDO,
+        ...params,
+    });
+    const url = 'https://nominatim.openstreetmap.org/search?' + p.toString();
+    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO } });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j) ? j : [];
+}
+
+/** viewbox = min_lon, max_lat, max_lon, min_lat (Nominatim). */
+async function _nominatimViewboxLocalidad(loc) {
+    const arr = await _nominatimFetchSearch({
+        q: `${loc}, Argentina`,
+        countrycodes: 'ar',
+        limit: '2',
+    });
+    const hit = arr[0];
+    if (!hit || !hit.boundingbox || hit.boundingbox.length < 4) return null;
+    const [south, north, west, east] = hit.boundingbox.map((x) => Number(x));
+    if (![south, north, west, east].every((n) => Number.isFinite(n))) return null;
+    return `${west},${north},${east},${south}`;
+}
+
 function _parseHouseNumberNominatim(addr) {
     const raw = addr && addr.house_number != null ? String(addr.house_number).trim() : '';
     if (!raw) return null;
@@ -2444,41 +2531,66 @@ async function nominatimGeocodeDomicilioPedido(p) {
     if (!calle || !loc) return null;
     await new Promise((res) => setTimeout(res, 1100));
     const num = (p.cnum || '').trim();
-    const q = num ? `${calle} ${num}, ${loc}, Argentina` : `${calle}, ${loc}, Argentina`;
-    const params = new URLSearchParams({
-        format: 'json',
-        q,
+    const streetLine = num ? `${num} ${calle}` : calle;
+
+    const intentar = async (lista) => {
+        const fil = _filtrarNominatimPorLocalidad(lista, loc);
+        return _elegirMejorResultadoNominatimPorPuerta(fil.length ? fil : [], num);
+    };
+
+    // 1) Búsqueda estructurada: calle+número y ciudad = localidad del cliente (evita homónimos en otras ciudades).
+    let raw = await _nominatimFetchSearch({
+        street: streetLine,
+        city: loc,
+        country: 'Argentina',
         countrycodes: 'ar',
-        limit: '18',
-        addressdetails: '1',
-        'accept-language': 'es',
-        email: _NOMINATIM_EMAIL_PEDIDO,
+        limit: '12',
     });
-    const url = 'https://nominatim.openstreetmap.org/search?' + params.toString();
-    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO } });
-    if (!r.ok) return null;
-    const json = await r.json();
-    let hit = _elegirMejorResultadoNominatimPorPuerta(json, num);
-    if (!hit && num) {
+    let hit = await intentar(raw);
+    if (hit) return hit;
+
+    await new Promise((res) => setTimeout(res, 1100));
+    raw = await _nominatimFetchSearch({
+        street: calle,
+        city: loc,
+        country: 'Argentina',
+        countrycodes: 'ar',
+        limit: '12',
+    });
+    hit = await intentar(raw);
+    if (hit) return hit;
+
+    // 2) Texto libre filtrado por localidad (solo resultados cuyo address/display contengan la localidad).
+    await new Promise((res) => setTimeout(res, 1100));
+    const q = num ? `${calle} ${num}, ${loc}, Argentina` : `${calle}, ${loc}, Argentina`;
+    raw = await _nominatimFetchSearch({ q, countrycodes: 'ar', limit: '20' });
+    hit = await intentar(raw);
+    if (hit) return hit;
+
+    // 3) Acotar con viewbox de la localidad y repetir (Hasenkamp vs Cerrito, etc.).
+    const vb = await _nominatimViewboxLocalidad(loc);
+    if (vb) {
         await new Promise((res) => setTimeout(res, 1100));
-        const params2 = new URLSearchParams({
-            format: 'json',
-            q: `${calle}, ${loc}, Argentina`,
+        raw = await _nominatimFetchSearch({
+            q,
             countrycodes: 'ar',
-            limit: '18',
-            addressdetails: '1',
-            'accept-language': 'es',
-            email: _NOMINATIM_EMAIL_PEDIDO,
+            limit: '25',
+            viewbox: vb,
+            bounded: '1',
         });
-        const r2 = await fetch('https://nominatim.openstreetmap.org/search?' + params2.toString(), {
-            headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO },
-        });
-        if (r2.ok) {
-            const j2 = await r2.json();
-            hit = _elegirMejorResultadoNominatimPorPuerta(j2, num);
-        }
+        hit = await intentar(raw);
+        if (hit) return hit;
     }
-    return hit;
+
+    if (num) {
+        await new Promise((res) => setTimeout(res, 1100));
+        const q2 = `${calle}, ${loc}, Argentina`;
+        raw = await _nominatimFetchSearch({ q: q2, countrycodes: 'ar', limit: '20' });
+        hit = await intentar(raw);
+        if (hit) return hit;
+    }
+
+    return null;
 }
 
 async function enriquecerCoordsGeocodificadasPedidos() {
@@ -10388,6 +10500,42 @@ function kpiAdminPuntosTendencia(rows, metrica) {
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Snapshots con valor_numero agrupados por código de métrica (para PDF multi-gráfico). */
+function kpiAgruparSnapshotsNumericosPorMetrica(rows) {
+    const map = new Map();
+    for (const row of rows || []) {
+        if (row.valor_numero == null || row.valor_numero === '' || Number.isNaN(Number(row.valor_numero))) continue;
+        const m = String(row.metrica || 'sin_metrica');
+        if (!map.has(m)) map.set(m, []);
+        map.get(m).push(row);
+    }
+    return map;
+}
+
+function kpiPuntosDesdeFilasSnapshot(filas) {
+    return (filas || [])
+        .map((r) => {
+            const pf = fmtFechaKpiSnapshotCorta(r.periodo_fin);
+            const pi = fmtFechaKpiSnapshotCorta(r.periodo_inicio);
+            const lab = pf && pi && pf !== pi ? `${pi}→${pf}` : pf || pi || String(r.created_at || '').slice(0, 10);
+            return { label: lab || '—', y: Number(r.valor_numero) };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function textoBreveInterpretacionKpiPdf(rows) {
+    const map = kpiAgruparSnapshotsNumericosPorMetrica(rows);
+    const nTipos = map.size;
+    const nReg = (rows || []).filter(
+        (r) => r.valor_numero != null && r.valor_numero !== '' && !Number.isNaN(Number(r.valor_numero))
+    ).length;
+    return (
+        `Informe KPI piloto: ${nReg} registro(s) con valor numérico en ${nTipos} tipo(s) de métrica. ` +
+        'Cada tipo incluye un gráfico compacto (línea si hay varios periodos, barra si hay uno). ' +
+        'Debajo se listan todos los snapshots. Documento para uso interno.'
+    );
+}
+
 function textoBreveInterpretacionKpi(rows, metricaSel, points) {
     const parts = [];
     parts.push(
@@ -10461,7 +10609,61 @@ function kpiPdfPiePaginas(pdf) {
     }
 }
 
-/** PDF A4 listo para imprimir: encabezado empresa, texto breve, gráfico compacto (si aplica) y tabla de snapshots. */
+async function kpiPdfMiniChartDataUrl(metricaKey, points) {
+    if (!points.length || typeof Chart === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 520;
+    canvas.height = 132;
+    const ctx = canvas.getContext('2d');
+    const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
+    const labels = points.map((p) => kpiPdfTruncCell(p.label, 14));
+    const data = points.map((p) => p.y);
+    const type = points.length === 1 ? 'bar' : 'line';
+    const chart = new Chart(ctx, {
+        type,
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: lab,
+                    data,
+                    borderColor: '#0d9488',
+                    backgroundColor: type === 'bar' ? 'rgba(13, 148, 136, 0.5)' : 'rgba(13, 148, 136, 0.14)',
+                    borderWidth: type === 'line' ? 2 : 1,
+                    tension: 0.25,
+                    fill: type === 'line',
+                },
+            ],
+        },
+        options: {
+            animation: false,
+            responsive: false,
+            devicePixelRatio: 1.25,
+            layout: { padding: { top: 6, bottom: 2, left: 2, right: 4 } },
+            plugins: {
+                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 11, weight: '600' } },
+                legend: { display: false },
+            },
+            scales: {
+                x: { ticks: { font: { size: 8 }, maxRotation: 55 } },
+                y: { beginAtZero: false, ticks: { font: { size: 8 } } },
+            },
+        },
+    });
+    await new Promise((r) => setTimeout(r, 120));
+    let url = null;
+    try {
+        url = canvas.toDataURL('image/png');
+    } catch (_) {
+        url = null;
+    }
+    try {
+        chart.destroy();
+    } catch (_) {}
+    return url;
+}
+
+/** PDF A4 listo para imprimir: encabezado empresa, texto breve, un gráfico compacto por tipo de métrica y tabla de snapshots. */
 window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
     if (!esAdmin()) {
         toast('Solo administrador', 'error');
@@ -10480,6 +10682,10 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         toast('Falta la librería jsPDF. Recargá la página.', 'error');
         return;
     }
+    if (typeof Chart === 'undefined') {
+        toast('Chart.js no está cargado; recargá la página e intentá de nuevo.', 'error');
+        return;
+    }
     try {
         toast('Generando informe…', 'info');
         const { jsPDF } = window.jspdf;
@@ -10488,8 +10694,6 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 14;
         const maxW = pageW - 2 * margin;
-        const metricaSel = (document.getElementById('kpi-chart-metrica')?.value || '').trim();
-        const points = kpiAdminPuntosTendencia(rows, metricaSel);
         const lineaGen = `KPI piloto · Tenant ${tenantIdActual()} · Generado ${new Date().toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' })}`;
         let y = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaGen);
         pdf.setFont('helvetica', 'bold');
@@ -10500,7 +10704,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8.1);
         pdf.setTextColor(51, 65, 85);
-        const intro = textoBreveInterpretacionKpi(rows, metricaSel, points);
+        const intro = textoBreveInterpretacionKpiPdf(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
         const lineH = 3.55;
@@ -10512,22 +10716,40 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             pdf.text(introLines[li], margin, y);
             y += lineH;
         }
-        y += 2;
-        const ch = window._chartKpiAdmin;
-        if (ch?.canvas && points.length >= 2) {
-            const needH = 46;
-            if (y + needH > pageH - 14) {
+        y += 3;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(30, 58, 138);
+        if (y + 8 > pageH - 14) {
+            pdf.addPage();
+            y = margin;
+        }
+        pdf.text('Gráficos por tipo de métrica (compactos)', margin, y);
+        y += 5;
+        pdf.setFont('helvetica', 'normal');
+        const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
+        const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
+        const hMmMax = 22;
+        for (const mk of keysOrden) {
+            const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
+            if (!pts.length) continue;
+            const dataUrl = await kpiPdfMiniChartDataUrl(mk, pts);
+            if (!dataUrl) continue;
+            let hMm = hMmMax;
+            let wMm = maxW;
+            if (y + hMm + 4 > pageH - 14) {
                 pdf.addPage();
                 y = margin;
             }
-            const dataUrl = ch.canvas.toDataURL('image/png');
-            const cw = ch.canvas.width;
-            const cwh = ch.canvas.height;
-            const wMm = maxW;
-            let hMm = wMm * (cwh / Math.max(cw, 1));
-            if (hMm > 42) hMm = 42;
-            pdf.addImage(dataUrl, 'PNG', margin, y, wMm, hMm);
-            y += hMm + 3;
+            try {
+                pdf.addImage(dataUrl, 'PNG', margin, y, wMm, hMm);
+            } catch (_) {
+                pdf.setFontSize(7.5);
+                pdf.setTextColor(100, 116, 139);
+                pdf.text(`(No se pudo embeber el gráfico «${kpiPdfTruncCell(KPI_METRICA_ETIQUETAS[mk] || mk, 40)}»)`, margin, y + 4);
+                hMm = 6;
+            }
+            y += hMm + 4;
         }
         if (y + 14 > pageH - 14) {
             pdf.addPage();
