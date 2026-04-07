@@ -9100,7 +9100,7 @@ async function cargarConfigEmpresa() {
             aplicarVisibilidadTabsAdminRedElectrica();
         } catch (_) {}
         try {
-            syncAdminDerivacionElectricaWrap();
+            syncDerivacionesTercerosWrap();
         } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
@@ -9112,7 +9112,7 @@ async function cargarConfigEmpresa() {
             aplicarVisibilidadTabsAdminRedElectrica();
         } catch (_) {}
         try {
-            syncAdminDerivacionElectricaWrap();
+            syncDerivacionesTercerosWrap();
         } catch (_) {}
     }
 }
@@ -11658,7 +11658,7 @@ async function cargarFormEmpresa() {
         }
         syncCoordModoVisibility();
         aplicarBloqueoIdentidadEmpresaFormulario();
-        syncAdminDerivacionElectricaWrap();
+        syncDerivacionesTercerosWrap();
         if (esAdmin()) {
             try {
                 await asegurarJwtApiRest();
@@ -11669,11 +11669,11 @@ async function cargarFormEmpresa() {
                     });
                     if (rcfg.status === 401) {
                         if (esCooperativaElectricaRubro()) {
-                            setDerivacionInlineError('Iniciá sesión de nuevo para cargar la derivación.');
+                            setDerivacionesInlineError('Iniciá sesión de nuevo para cargar la derivación.');
                         }
                     } else if (rcfg.status === 403) {
                         if (esCooperativaElectricaRubro()) {
-                            setDerivacionInlineError('Sin permiso para leer la configuración del tenant.');
+                            setDerivacionesInlineError('Sin permiso para leer la configuración del tenant.');
                         }
                     } else if (rcfg.ok) {
                         const j = await rcfg.json().catch(() => ({}));
@@ -11688,17 +11688,7 @@ async function cargarFormEmpresa() {
                         apiCfg = apiCfg && typeof apiCfg === 'object' ? apiCfg : {};
                         aplicarConfiguracionJsonClienteEnEmpresaCfg(apiCfg);
                         if (esCooperativaElectricaRubro()) {
-                            const dr = apiCfg.derivacion_reclamos;
-                            const en = document.getElementById('cfg-drv-energia-nombre');
-                            const ew = document.getElementById('cfg-drv-energia-wa');
-                            const an = document.getElementById('cfg-drv-agua-nombre');
-                            const aw = document.getElementById('cfg-drv-agua-wa');
-                            if (en) en.value = dr?.empresa_energia?.nombre || '';
-                            if (ew) ew.value = dr?.empresa_energia?.whatsapp || '';
-                            if (an) an.value = dr?.cooperativa_agua?.nombre || '';
-                            if (aw) aw.value = dr?.cooperativa_agua?.whatsapp || '';
-                            window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), derivacion_reclamos: dr || {} };
-                            setDerivacionInlineError('');
+                            setDerivacionesInlineError('');
                         }
                     }
                 }
@@ -11732,20 +11722,16 @@ async function guardarConfigEmpresa() {
         coord_proy_familia: famVal,
         coord_proy_modo: famVal === 'none' ? 'punto' : modoVal
     };
+    let derivacionReclamosPayload = null;
     if (esCooperativaElectricaRubro()) {
-        const ev = validarDerivacionReclamosFormularioCliente();
-        if (ev.length) {
-            setDerivacionInlineError(ev.join(' '));
-            toast(ev[0], 'error');
+        try {
+            derivacionReclamosPayload = construirDerivacionReclamosDesdeFormularioDerivaciones();
+        } catch (e) {
+            const m = e?.message || String(e);
+            setDerivacionesInlineError(m);
+            toast(m, 'error');
             return;
         }
-        setDerivacionInlineError('');
-    }
-    const vDer = validarDerivacionesTercerosFormulario();
-    if (vDer) {
-        setDerivacionesInlineError(vDer);
-        toast(vDer, 'error');
-        return;
     }
     setDerivacionesInlineError('');
     let apiSaveFailed = false;
@@ -11765,23 +11751,11 @@ async function guardarConfigEmpresa() {
                     const body = {
                         configuracion: {
                             marca_publicada_admin: true,
-                            derivaciones: {
-                                energia: {
-                                    activo: !!document.getElementById('cfg-deriv-energia-activo')?.checked,
-                                    nombre: (document.getElementById('cfg-deriv-energia-nombre')?.value || '').trim(),
-                                    whatsapp: (document.getElementById('cfg-deriv-energia-whatsapp')?.value || '').trim(),
-                                },
-                                agua: {
-                                    activo: !!document.getElementById('cfg-deriv-agua-activo')?.checked,
-                                    nombre: (document.getElementById('cfg-deriv-agua-nombre')?.value || '').trim(),
-                                    whatsapp: (document.getElementById('cfg-deriv-agua-whatsapp')?.value || '').trim(),
-                                },
-                            },
                             ocultar_modulos_redes: !!document.getElementById('cfg-ocultar-modulos-redes')?.checked,
                         },
                     };
-                    if (esCooperativaElectricaRubro()) {
-                        body.configuracion.derivacion_reclamos = construirDerivacionReclamosParaApi();
+                    if (esCooperativaElectricaRubro() && derivacionReclamosPayload !== null) {
+                        body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
                     }
                     if (campos.nombre) body.nombre = campos.nombre;
                     if (campos.tipo) body.tipo = campos.tipo;
@@ -11820,11 +11794,11 @@ async function guardarConfigEmpresa() {
                             if (cfg.derivaciones && typeof cfg.derivaciones === 'object') {
                                 next.derivaciones = cfg.derivaciones;
                             }
+                            if (cfg.derivacion_reclamos && typeof cfg.derivacion_reclamos === 'object') {
+                                next.derivacion_reclamos = cfg.derivacion_reclamos;
+                            }
                             if (Object.prototype.hasOwnProperty.call(cfg, 'ocultar_modulos_redes')) {
                                 next.ocultar_modulos_redes = !!cfg.ocultar_modulos_redes;
-                            }
-                            if (esCooperativaElectricaRubro()) {
-                                next.derivacion_reclamos = cfg.derivacion_reclamos || {};
                             }
                             window.EMPRESA_CFG = next;
                         }
