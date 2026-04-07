@@ -1,0 +1,36 @@
+---
+description: Tras cambios en el proyecto, commit y push en Nexxo (Android) y en Pedidos-MG
+alwaysApply: true
+---
+
+# Commit y push dual: Nexxo + Pedidos-MG
+
+A partir de ahora, cuando el usuario pida un cambio y el agente **implemente modificaciones reales** en el workspace **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe:
+
+## 1. Repositorio Nexxo (Android / GestorNova)
+
+- `git add` de los archivos tocados (no incluir secretos: `.env`, `config.json` local, etc.).
+- `git commit` con mensaje claro en español o inglés.
+- `git push origin main` (remoto habitual: [Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android)).
+
+## 2. Repositorio [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
+
+Mantener **paridad** según qué se haya cambiado:
+
+| Área cambiada en Nexxo | Acción en Pedidos-MG |
+|------------------------|----------------------|
+| `api/**` | Copiar carpeta `api/` al clon local de Pedidos-MG (p. ej. `robocopy` desde la raíz de Nexxo, excluyendo `node_modules` y `.env`), luego commit + push en Pedidos-MG. |
+| Front embebido `app/src/main/assets/*` (HTML/CSS/JS del panel, `sw.js`, etc.) | Ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` desde la raíz de Nexxo (o copia equivalente), luego commit + push en Pedidos-MG. |
+| Solo Kotlin/Android sin tocar `api/` ni assets web compartidos | No hace falta commit en Pedidos-MG salvo que el usuario pida explícitamente subir algo allí. |
+
+- En Pedidos-MG: **no** commitear `config.json` con secretos; respeta `.gitignore` del repo.
+
+## 3. Excepciones
+
+- Si el usuario indica **solo un repo** o **no subir aún**, respetar esa instrucción.
+- Si `git push` falla (red, permisos), informar el error y dejar el commit local listo; no inventar que se subió.
+
+## Relación con otras reglas
+
+- Detalle de front Pages y script de sync: regla **pedidos-mg-web-repo**.
+- Arquitectura de repos: **pedidos-repos-arquitectura**.
