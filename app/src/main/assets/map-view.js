@@ -168,6 +168,20 @@ export async function runInitMap() {
     }
 
     const L = ctx.L;
+    /* Evita "Map container is already initialized" si quedó _leaflet_id sin instancia en app.map. */
+    try {
+        if (el._leaflet_id != null) {
+            delete el._leaflet_id;
+        }
+    } catch (_) {}
+    try {
+        el.innerHTML = '';
+        el.className = String(el.className || '')
+            .replace(/\bleaflet-container\b/g, '')
+            .replace(/\bleaflet-touch\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    } catch (_) {}
     const ligeroInit = ctx.gnMapaLigero();
     const maxZoomMap = ligeroInit ? 17 : 19;
     const center = await resolveMapCenterLatLngZoom();

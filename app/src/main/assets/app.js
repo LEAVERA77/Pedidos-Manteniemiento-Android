@@ -2603,6 +2603,53 @@ function coordsEfectivasPedidoMapa(p) {
 const _NOMINATIM_UA_PEDIDO = 'GestorNova-PedidoMap/1.0 (contact: gestornova-app@users.noreply.github.com)';
 const _NOMINATIM_EMAIL_PEDIDO = 'gestornova-app@users.noreply.github.com';
 
+/** Igual que api/utils/parseDomicilioArg.js — texto libre tipo "Doctor Haedo 365, Hasenkamp". */
+function parseDomicilioLibreArgentinaFront(cdir, localidadFallback) {
+    const raw = String(cdir || '')
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s,.;-]+|[\s,.;-]+$/g, '')
+        .trim();
+    if (!raw) return null;
+    const fb =
+        localidadFallback != null && String(localidadFallback).trim() ? String(localidadFallback).trim() : null;
+    const mComa = raw.match(/^(.+?)\s+(\d{1,6})\s*[,;]\s*(.+)$/i);
+    if (mComa) {
+        return { calle: mComa[1].trim(), numero: mComa[2].trim(), localidad: mComa[3].trim() };
+    }
+    const soloNum = raw.match(/^(.+?)\s+(\d{1,6})$/);
+    if (soloNum && fb) {
+        return { calle: soloNum[1].trim(), numero: soloNum[2].trim(), localidad: fb };
+    }
+    const triple = raw.match(
+        /^(.+?)\s+(\d{1,6})\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s\-.]{2,79})$/u
+    );
+    if (triple) {
+        const locCand = triple[3].trim();
+        if (!/^\d+$/.test(locCand) && locCand.length >= 3) {
+            return { calle: triple[1].trim(), numero: triple[2].trim(), localidad: locCand };
+        }
+    }
+    return null;
+}
+
+function domicilioParaGeocodePedido(p) {
+    if (!p) return null;
+    let calle = (p.ccal || '').trim();
+    let loc = (p.cloc || '').trim();
+    let num = (p.cnum || '').trim();
+    const cdir = (p.cdir || '').trim();
+    if (calle && loc) return { calle, loc, num };
+    const parsed = cdir ? parseDomicilioLibreArgentinaFront(cdir, loc || null) : null;
+    if (parsed && parsed.calle && parsed.localidad) {
+        return {
+            calle: parsed.calle,
+            loc: parsed.localidad,
+            num: num || parsed.numero || '',
+        };
+    }
+    return null;
+}
+
 function _normGeoTxt(s) {
     try {
         return String(s || '')
@@ -2738,11 +2785,12 @@ function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
 }
 
 async function nominatimGeocodeDomicilioPedido(p) {
-    const calle = (p.ccal || '').trim();
-    const loc = (p.cloc || '').trim();
-    if (!calle || !loc) return null;
+    const dom = domicilioParaGeocodePedido(p);
+    if (!dom) return null;
+    const calle = dom.calle;
+    const loc = dom.loc;
+    const num = (dom.num || '').trim();
     await new Promise((res) => setTimeout(res, 1100));
-    const num = (p.cnum || '').trim();
     const streetLine = num ? `${num} ${calle}` : calle;
 
     const intentar = async (lista) => {
@@ -2812,7 +2860,7 @@ async function enriquecerCoordsGeocodificadasPedidos() {
         const id = String(p.id);
         const prev = window._pedidoCoordsInferidas[id];
         if (prev && (prev.skip || (Number.isFinite(prev.la) && Number.isFinite(prev.ln)))) return false;
-        return (p.ccal || '').trim() && (p.cloc || '').trim();
+        return !!domicilioParaGeocodePedido(p);
     });
     for (const p of candidatos) {
         try {
