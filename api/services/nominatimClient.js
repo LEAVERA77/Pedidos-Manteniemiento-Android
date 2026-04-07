@@ -8,14 +8,23 @@ const MIN_INTERVAL_MS = 1100;
 let _lastAt = 0;
 let _chain = Promise.resolve();
 
+/** En tests: `NOMINATIM_THROTTLE_MS_FOR_TESTS=0` evita esperas ~1.1s entre llamadas. */
+function throttleIntervalMs() {
+  const raw = process.env.NOMINATIM_THROTTLE_MS_FOR_TESTS;
+  if (raw === "0" || raw === "false") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : MIN_INTERVAL_MS;
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 async function throttle() {
+  const interval = throttleIntervalMs();
   _chain = _chain.then(async () => {
     const now = Date.now();
-    const wait = _lastAt + MIN_INTERVAL_MS - now;
+    const wait = _lastAt + interval - now;
     if (wait > 0) await sleep(wait);
     _lastAt = Date.now();
   });
@@ -56,7 +65,7 @@ function tenantViewboxDeltaDeg() {
 
 function houseParityMaxSteps() {
   const v = parseInt(process.env.NOMINATIM_HOUSE_PARITY_MAX_STEPS || "8", 10);
-  return Number.isFinite(v) ? Math.min(20, Math.max(1, v)) : 8;
+  return Number.isFinite(v) ? Math.min(20, Math.max(0, v)) : 8;
 }
 
 /**

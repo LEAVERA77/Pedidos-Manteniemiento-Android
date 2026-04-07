@@ -10729,7 +10729,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 22;
+        const hMmMax = 19;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
@@ -10737,7 +10737,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             if (!dataUrl) continue;
             let hMm = hMmMax;
             let wMm = maxW;
-            if (y + hMm + 4 > pageH - 14) {
+            if (y + hMm + 3.5 > pageH - 14) {
                 pdf.addPage();
                 y = margin;
             }
@@ -10749,7 +10749,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 pdf.text(`(No se pudo embeber el gráfico «${kpiPdfTruncCell(KPI_METRICA_ETIQUETAS[mk] || mk, 40)}»)`, margin, y + 4);
                 hMm = 6;
             }
-            y += hMm + 4;
+            y += hMm + 3.5;
         }
         if (y + 14 > pageH - 14) {
             pdf.addPage();

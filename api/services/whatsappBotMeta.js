@@ -285,6 +285,8 @@ function aplicarSuministroCatalogoWhatsappRes(sess, res) {
   const f = trimOrNullWhatsapp(res.catalogoFases);
   if (t) sess.suministroTipoConexion = t;
   if (f) sess.suministroFases = f;
+  const prov = trimOrNullWhatsapp(res.catalogoProvincia);
+  if (prov) sess.catalogoProvinciaParaGeocode = prov;
 }
 
 function interpretaSuministroConexionWhatsapp(text) {
@@ -559,9 +561,13 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       barrio: sess.barrio ?? null,
     });
     sessions.delete(sk);
+    const notaSinMapa =
+      sess._geocodeSinMapa && (latN == null || lngN == null)
+        ? "\n\n_No pudimos ubicar tu domicilio en el mapa con el callejero. El reclamo quedó registrado con la dirección del padrón; si hace falta, la cooperativa puede contactarte._"
+        : "";
     await reply(
       phone,
-      `Su reclamo N° *${pedido.numero_pedido}* ha sido cargado con éxito.\n\nTipo: *${sess.tipo}*\n\nGracias por contactarnos.`,
+      `Su reclamo N° *${pedido.numero_pedido}* ha sido cargado con éxito.\n\nTipo: *${sess.tipo}*${notaSinMapa}\n\nGracias por contactarnos.`,
       sess.tenantId,
       sess.phoneNumberId
     );
@@ -615,7 +621,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 
 /**
  * Geocodifica calle/número/localidad, guarda en sesión y finaliza el pedido (mismo fallback que el paso por chat).
- * @param {{ origenCatalogo?: boolean }} opts
+ * @param {{ origenCatalogo?: boolean, stateOrProvince?: string }} opts — stateOrProvince desambigua Nominatim (prioridad sobre `clientes.configuracion`).
  */
 async function geocodeStructuredAddressAndFinalizePedido(
   phone,
@@ -639,6 +645,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   sess.addrNumero = numero;
   sess.direccionDeclaradaUsuario = [ciudad, calle, numRaw || numero].filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
   sess._geocodeOrigenCatalogo = !!opts.origenCatalogo;
+  sess._geocodeSinMapa = false;
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
 
@@ -656,7 +663,9 @@ async function geocodeStructuredAddressAndFinalizePedido(
 
   const ciudadLabel = ciudad || "tu localidad";
   const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
-  const stateGeo = String(ctx?.geocodeState || "").trim();
+  const stateForGeo = String(
+    opts.stateOrProvince || sess.catalogoProvinciaParaGeocode || ctx?.geocodeState || ""
+  ).trim();
 
   let geoCiudad = null;
   try {
@@ -688,7 +697,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
     try {
       localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid, {
         allowTenantCentroidFallback: !catalogStrict,
-        stateOrProvince: stateGeo || undefined,
+        stateOrProvince: stateForGeo || undefined,
       });
     } catch (e) {
       console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
@@ -721,13 +730,13 @@ async function geocodeStructuredAddressAndFinalizePedido(
       catalogStrict,
       precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
       allowTenantCentroidFallback: !catalogStrict,
-      stateOrProvince: stateGeo || undefined,
+      stateOrProvince: stateForGeo || undefined,
     });
     if (geo?.audit) {
       console.log("[whatsapp-bot-meta] geocode audit", {
         tenantId: sess.tenantId,
         catalogStrict,
-        stateGeo: stateGeo || null,
+        stateGeo: stateForGeo || null,
         ...geo.audit,
         ciudad,
         calle,
@@ -855,6 +864,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const nom = String(sess.contactName || contactName || "").trim();
   const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
   if (catalogStrict && (endLat == null || endLng == null)) {
+    sess._geocodeSinMapa = true;
     sess.direccionTexto = nom
       ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (Sin coordenadas en mapa: no se verificó la ubicación con el servicio de callejero.)`
           .replace(/\s+/g, " ")
