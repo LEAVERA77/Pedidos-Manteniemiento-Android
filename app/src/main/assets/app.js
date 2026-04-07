@@ -905,6 +905,132 @@ function esMunicipioRubro() {
 function esCooperativaAguaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua';
 }
+
+/** Pestaña «Clientes afectados» (transformadores / kVA): no aplica a municipio ni coop. agua; u opción explícita. */
+function debeOcultarTabClientesAfectadosInfraAdmin() {
+    const cfg = window.EMPRESA_CFG || {};
+    const o = cfg.ocultar_modulos_redes;
+    if (o === true || o === 1 || String(o).toLowerCase() === 'true' || String(o) === '1') return true;
+    const r = normalizarRubroEmpresa(cfg.tipo);
+    return r === 'municipio' || r === 'cooperativa_agua';
+}
+
+/** Pestaña catálogo zona (Distribuidores / Barrios / Ramales): solo si el admin marca ocultar módulos de red eléctrica. */
+function debeOcultarTabDistribuidoresAdmin() {
+    const cfg = window.EMPRESA_CFG || {};
+    const o = cfg.ocultar_modulos_redes;
+    return o === true || o === 1 || String(o).toLowerCase() === 'true' || String(o) === '1';
+}
+
+function aplicarVisibilidadTabsAdminRedElectrica() {
+    const hideInfra = debeOcultarTabClientesAfectadosInfraAdmin();
+    const hideDist = debeOcultarTabDistribuidoresAdmin();
+    const d = document.getElementById('admin-tab-distribuidores');
+    const c = document.getElementById('admin-tab-confiabilidad');
+    if (c) c.style.display = hideInfra ? 'none' : '';
+    if (d) d.style.display = hideDist ? 'none' : '';
+}
+
+function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
+    if (!conf || typeof conf !== 'object') return;
+    const next = { ...(window.EMPRESA_CFG || {}) };
+    if (conf.derivaciones && typeof conf.derivaciones === 'object') {
+        next.derivaciones = conf.derivaciones;
+    }
+    if (conf.derivacion_reclamos && typeof conf.derivacion_reclamos === 'object') {
+        next.derivacion_reclamos = conf.derivacion_reclamos;
+    }
+    if (Object.prototype.hasOwnProperty.call(conf, 'ocultar_modulos_redes')) {
+        next.ocultar_modulos_redes = !!conf.ocultar_modulos_redes;
+    }
+    window.EMPRESA_CFG = next;
+    try {
+        aplicarVisibilidadTabsAdminRedElectrica();
+    } catch (_) {}
+}
+
+async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
+    if (!esAdmin() || !getApiToken()) return;
+    try {
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) return;
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        let conf = data?.cliente?.configuracion;
+        if (typeof conf === 'string') {
+            try {
+                conf = JSON.parse(conf);
+            } catch {
+                conf = {};
+            }
+        }
+        aplicarConfiguracionJsonClienteEnEmpresaCfg(conf && typeof conf === 'object' ? conf : {});
+    } catch (_) {}
+}
+
+function digitosWhatsappDerivacionForm(slot) {
+    const w = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
+    return w.replace(/\D/g, '');
+}
+
+function actualizarBotonesWhatsappDerivacionesUi() {
+    ['energia', 'agua'].forEach((slot) => {
+        const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
+        if (!btn) return;
+        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
+        const d = digitosWhatsappDerivacionForm(slot);
+        const ok = d.length >= 10 && d.length <= 15;
+        btn.disabled = !(act && ok);
+    });
+}
+
+let _cfgDerivWaInputBound = false;
+function bindDerivacionesFormInputsOnce() {
+    if (_cfgDerivWaInputBound) return;
+    _cfgDerivWaInputBound = true;
+    ['energia', 'agua'].forEach((slot) => {
+        const el = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
+        if (el) el.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
+        const ac = document.getElementById(`cfg-deriv-${slot}-activo`);
+        if (ac) ac.addEventListener('change', () => actualizarBotonesWhatsappDerivacionesUi());
+    });
+}
+
+function poblarFormDerivacionesDesdeEmpresaCfg() {
+    const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
+    ['energia', 'agua'].forEach((slot) => {
+        const s = der[slot] || {};
+        const ca = document.getElementById(`cfg-deriv-${slot}-activo`);
+        const cn = document.getElementById(`cfg-deriv-${slot}-nombre`);
+        const cw = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
+        if (ca) ca.checked = !!s.activo;
+        if (cn) cn.value = String(s.nombre != null ? s.nombre : '');
+        if (cw) cw.value = s.whatsapp != null && String(s.whatsapp) !== '' ? String(s.whatsapp) : '';
+    });
+    const om = document.getElementById('cfg-ocultar-modulos-redes');
+    if (om) om.checked = !!(window.EMPRESA_CFG && window.EMPRESA_CFG.ocultar_modulos_redes);
+    actualizarBotonesWhatsappDerivacionesUi();
+}
+
+function abrirWhatsappDerivacionForm(slot) {
+    const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
+    const d = digitosWhatsappDerivacionForm(slot);
+    if (!act) {
+        toast('Activá la derivación para usar WhatsApp.', 'info');
+        return;
+    }
+    if (d.length < 10 || d.length > 15) {
+        toast('Teléfono WhatsApp no válido (10 a 15 dígitos, con código país).', 'error');
+        return;
+    }
+    window.open('https://wa.me/' + d, '_blank', 'noopener,noreferrer');
+}
+window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
+
 /** Distribuidor (eléctrica) | Ramal (agua) | Barrio (municipio). */
 function etiquetaZonaPedido() {
     if (esMunicipioRubro()) return 'Barrio';
@@ -6820,6 +6946,7 @@ async function sqlInfraAfectadosTablasExisten() {
 }
 
 async function infraAfectadosDisponibleCierre() {
+    if (debeOcultarTabClientesAfectadosInfraAdmin()) return false;
     if (await sqlInfraAfectadosTablasExisten()) return true;
     if (puedeEnviarApiRestPedidos()) {
         try {
@@ -7637,6 +7764,40 @@ function detalle(p) {
             ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
            </div>`
             : '';
+    /** Opción A (spec): aviso + wa.me si el tipo es solo agua/municipio y el tenant es eléctrico. */
+    let htmlDerivacionCoopElectrica = '';
+    if (esCooperativaElectricaRubro() && esAdmin() && pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)) {
+        const dr = (window.EMPRESA_CFG || {}).derivacion_reclamos;
+        const agua = dr?.cooperativa_agua;
+        const energia = dr?.empresa_energia;
+        const waAgua = agua?.whatsapp ? normalizarWhatsappInternacionalWaMeUrl(agua.whatsapp) : '';
+        const waEn = energia?.whatsapp ? normalizarWhatsappInternacionalWaMeUrl(energia.whatsapp) : '';
+        const hrefAgua = waAgua ? String(waAgua).replace(/"/g, '&quot;') : '';
+        const hrefEn = waEn ? String(waEn).replace(/"/g, '&quot;') : '';
+        const labAgua = escDet(agua?.nombre || 'Cooperativa de agua');
+        const labEn = escDet(energia?.nombre || 'Empresa de energía');
+        const bits = [
+            `<p style="font-size:.82rem;margin:0 0 .55rem;line-height:1.45">El tipo <strong>${escDet(
+                p.tt
+            )}</strong> suele corresponder a <strong>agua potable</strong> u <strong>servicios municipales</strong>. Esta entidad atiende electricidad; podés orientar al vecino:</p>`,
+        ];
+        if (waAgua) {
+            bits.push(
+                `<a class="ba2" style="display:inline-block;margin:.2rem .45rem .2rem 0;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${hrefAgua}"><i class="fab fa-whatsapp"></i> ${labAgua}</a>`
+            );
+        }
+        if (waEn) {
+            bits.push(
+                `<a class="ba2" style="display:inline-block;margin:.2rem .45rem .2rem 0;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${hrefEn}"><i class="fab fa-whatsapp"></i> ${labEn}</a>`
+            );
+        }
+        if (!waAgua && !waEn) {
+            bits.push(
+                `<p style="font-size:.78rem;color:var(--tm);margin:.15rem 0 0">No hay contactos de derivación configurados. Cargalos en <strong>Admin → Empresa → Derivación de reclamos</strong>.</p>`
+            );
+        }
+        htmlDerivacionCoopElectrica = `<div class="ds admin-derivacion-pedido-hint">${bits.join('')}</div>`;
+    }
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
     const nAsig = (p.tai != null)
@@ -8415,6 +8576,125 @@ function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
 }
 
+/**
+ * Tipos que en catálogo son solo agua (no eléctrico): aviso derivación en coop. eléctrica (opción A spec).
+ * No incluye nombres compartidos con el rubro eléctrico (p. ej. Consumo elevado, Otros).
+ */
+const TIPOS_TRABAJO_DERIVACION_SOLO_AGUA = new Set([
+    'Pérdida en Vereda/Calle',
+    'Falta de Presión',
+    'Calidad del Agua',
+    'Obstrucción de Cloaca',
+]);
+const TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO = new Set([
+    'Bacheo y Pavimento',
+    'Recolección/Poda',
+    'Espacios Verdes',
+    'Señalización/Semáforos',
+    'Limpieza de Zanjas',
+    'Recolección (otros)',
+    'Cloacas',
+]);
+
+function pedidoSugiereDerivacionAguaOMunicipioEnElectrica(tt) {
+    const t = String(tt || '').trim();
+    return TIPOS_TRABAJO_DERIVACION_SOLO_AGUA.has(t) || TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO.has(t);
+}
+
+function normalizarWhatsappInternacionalWaMeUrl(raw) {
+    const s = String(raw ?? '').trim();
+    if (!/^\+\d{8,22}$/.test(s)) return '';
+    return 'https://wa.me/' + s.slice(1);
+}
+
+function syncAdminDerivacionElectricaWrap() {
+    const w = document.getElementById('admin-derivacion-electrica-wrap');
+    if (!w) return;
+    w.style.display = esCooperativaElectricaRubro() ? '' : 'none';
+}
+
+function validarDerivacionReclamosFormularioCliente() {
+    const out = [];
+    const checkWa = (id, label) => {
+        const el = document.getElementById(id);
+        const v = el ? String(el.value || '').trim() : '';
+        if (!v) return;
+        if (!/^\+\d{8,22}$/.test(v)) {
+            out.push(`${label}: usá formato internacional con + (solo dígitos después del +, 8–22).`);
+        }
+    };
+    checkWa('cfg-drv-energia-wa', 'WhatsApp empresa de energía');
+    checkWa('cfg-drv-agua-wa', 'WhatsApp cooperativa de agua');
+    const n1 = document.getElementById('cfg-drv-energia-nombre');
+    const n2 = document.getElementById('cfg-drv-agua-nombre');
+    if (n1 && String(n1.value || '').trim().length > 120) {
+        out.push('Nombre empresa de energía: máximo 120 caracteres.');
+    }
+    if (n2 && String(n2.value || '').trim().length > 120) {
+        out.push('Nombre cooperativa de agua: máximo 120 caracteres.');
+    }
+    return out;
+}
+
+function construirDerivacionReclamosParaApi() {
+    const eN = document.getElementById('cfg-drv-energia-nombre');
+    const eW = document.getElementById('cfg-drv-energia-wa');
+    const aN = document.getElementById('cfg-drv-agua-nombre');
+    const aW = document.getElementById('cfg-drv-agua-wa');
+    const empresa_energia = {
+        nombre: eN ? String(eN.value || '').trim() : '',
+        whatsapp: eW ? String(eW.value || '').trim() : '',
+    };
+    const cooperativa_agua = {
+        nombre: aN ? String(aN.value || '').trim() : '',
+        whatsapp: aW ? String(aW.value || '').trim() : '',
+    };
+    const o = {};
+    if (empresa_energia.nombre || empresa_energia.whatsapp) o.empresa_energia = empresa_energia;
+    if (cooperativa_agua.nombre || cooperativa_agua.whatsapp) o.cooperativa_agua = cooperativa_agua;
+    return o;
+}
+
+function setDerivacionInlineError(msg) {
+    const el = document.getElementById('cfg-drv-inline-error');
+    if (!el) return;
+    if (!msg) {
+        el.textContent = '';
+        el.style.display = 'none';
+        return;
+    }
+    el.textContent = msg;
+    el.style.display = '';
+}
+
+function setDerivacionesInlineError(msg) {
+    const el = document.getElementById('cfg-deriv-inline-error');
+    if (!el) return;
+    if (!msg) {
+        el.textContent = '';
+        el.style.display = 'none';
+        return;
+    }
+    el.textContent = msg;
+    el.style.display = '';
+}
+window.setDerivacionesInlineError = setDerivacionesInlineError;
+
+function validarDerivacionesTercerosFormulario() {
+    for (const slot of ['energia', 'agua']) {
+        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
+        const d = digitosWhatsappDerivacionForm(slot);
+        const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
+        if (act && (d.length < 10 || d.length > 15)) {
+            return `En ${slot === 'energia' ? 'empresa de energía' : 'cooperativa de agua'}: cargá un WhatsApp válido o desactivá el bloque.`;
+        }
+        if (raw && (d.length < 10 || d.length > 15)) {
+            return `WhatsApp inválido en ${slot === 'energia' ? 'empresa de energía' : 'cooperativa de agua'}.`;
+        }
+    }
+    return '';
+}
+
 let _nisPedidoCatalogoDebounceTimer = null;
 let _nisPedidoCatalogoCommitTimer = null;
 let _nisPedidoCatalogoUltimoValor = '';
@@ -8807,12 +9087,29 @@ async function cargarConfigEmpresa() {
         try {
             persistTenantBrandingCache({ subtitulo: cfg.subtitulo });
         } catch (_) {}
+        if (esAdmin()) {
+            try {
+                await fetchMiConfiguracionYAplicarEnEmpresaCfg();
+            } catch (_) {}
+        }
+        try {
+            aplicarVisibilidadTabsAdminRedElectrica();
+        } catch (_) {}
+        try {
+            syncAdminDerivacionElectricaWrap();
+        } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
         try { aplicarMarcaVisualCompleta(); } catch (_) {}
         poblarSelectTiposReclamo();
+        try {
+            aplicarVisibilidadTabsAdminRedElectrica();
+        } catch (_) {}
+        try {
+            syncAdminDerivacionElectricaWrap();
+        } catch (_) {}
     }
 }
 
@@ -9393,6 +9690,9 @@ async function verificarConfiguracionInicialObligatoria() {
                 }
             }
             extraParsed = extra && typeof extra === 'object' ? extra : {};
+            try {
+                aplicarConfiguracionJsonClienteEnEmpresaCfg(extraParsed);
+            } catch (_) {}
             cfg = {
                 ...(cli.nombre ? { nombre: cli.nombre } : {}),
                 ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
@@ -11068,6 +11368,13 @@ async function cargarAdminInfraAfectados() {
     const listT = document.getElementById('lista-infra-transformadores-admin');
     const listR = document.getElementById('lista-infra-resumen-dist-admin');
     if (!listT || !listR) return;
+    if (debeOcultarTabClientesAfectadosInfraAdmin()) {
+        if (sin) sin.style.display = 'none';
+        if (wrap) wrap.style.display = 'none';
+        listT.innerHTML = '';
+        listR.innerHTML = '';
+        return;
+    }
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
         if (sin) sin.style.display = 'none';
         if (wrap) wrap.style.display = 'none';
@@ -11266,7 +11573,7 @@ function adminTab(tab) {
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') cargarEstadisticas();
     if (tab === 'kpi') void cargarKpiSnapshotsAdmin();
-    if (tab === 'confiabilidad') void cargarAdminInfraAfectados();
+    if (tab === 'confiabilidad' && !debeOcultarTabClientesAfectadosInfraAdmin()) void cargarAdminInfraAfectados();
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
     if (tab === 'socios') {
@@ -11295,6 +11602,9 @@ function adminTab(tab) {
 
 function abrirAdmin() {
     document.getElementById('admin-panel').classList.add('active');
+    try {
+        aplicarVisibilidadTabsAdminRedElectrica();
+    } catch (_) {}
     adminTab('empresa');
     cargarFormEmpresa();
 }
@@ -11344,10 +11654,59 @@ async function cargarFormEmpresa() {
         }
         syncCoordModoVisibility();
         aplicarBloqueoIdentidadEmpresaFormulario();
+        syncAdminDerivacionElectricaWrap();
+        if (esAdmin()) {
+            try {
+                await asegurarJwtApiRest();
+                const token = getApiToken();
+                if (token) {
+                    const rcfg = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (rcfg.status === 401) {
+                        if (esCooperativaElectricaRubro()) {
+                            setDerivacionInlineError('Iniciá sesión de nuevo para cargar la derivación.');
+                        }
+                    } else if (rcfg.status === 403) {
+                        if (esCooperativaElectricaRubro()) {
+                            setDerivacionInlineError('Sin permiso para leer la configuración del tenant.');
+                        }
+                    } else if (rcfg.ok) {
+                        const j = await rcfg.json().catch(() => ({}));
+                        let apiCfg = j.cliente?.configuracion;
+                        if (typeof apiCfg === 'string') {
+                            try {
+                                apiCfg = JSON.parse(apiCfg);
+                            } catch (_) {
+                                apiCfg = {};
+                            }
+                        }
+                        apiCfg = apiCfg && typeof apiCfg === 'object' ? apiCfg : {};
+                        aplicarConfiguracionJsonClienteEnEmpresaCfg(apiCfg);
+                        if (esCooperativaElectricaRubro()) {
+                            const dr = apiCfg.derivacion_reclamos;
+                            const en = document.getElementById('cfg-drv-energia-nombre');
+                            const ew = document.getElementById('cfg-drv-energia-wa');
+                            const an = document.getElementById('cfg-drv-agua-nombre');
+                            const aw = document.getElementById('cfg-drv-agua-wa');
+                            if (en) en.value = dr?.empresa_energia?.nombre || '';
+                            if (ew) ew.value = dr?.empresa_energia?.whatsapp || '';
+                            if (an) an.value = dr?.cooperativa_agua?.nombre || '';
+                            if (aw) aw.value = dr?.cooperativa_agua?.whatsapp || '';
+                            window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), derivacion_reclamos: dr || {} };
+                            setDerivacionInlineError('');
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
+        bindDerivacionesFormInputsOnce();
+        poblarFormDerivacionesDesdeEmpresaCfg();
     } catch(e) { console.warn(e); }
 }
 
 async function guardarConfigEmpresa() {
+    const saveBtn = document.getElementById('cfg-guardar-empresa');
     const famEl = document.getElementById('cfg-coord-familia');
     const modoEl = document.getElementById('cfg-coord-modo');
     const famVal = famEl ? famEl.value : 'none';
@@ -11369,6 +11728,24 @@ async function guardarConfigEmpresa() {
         coord_proy_familia: famVal,
         coord_proy_modo: famVal === 'none' ? 'punto' : modoVal
     };
+    if (esCooperativaElectricaRubro()) {
+        const ev = validarDerivacionReclamosFormularioCliente();
+        if (ev.length) {
+            setDerivacionInlineError(ev.join(' '));
+            toast(ev[0], 'error');
+            return;
+        }
+        setDerivacionInlineError('');
+    }
+    const vDer = validarDerivacionesTercerosFormulario();
+    if (vDer) {
+        setDerivacionesInlineError(vDer);
+        toast(vDer, 'error');
+        return;
+    }
+    setDerivacionesInlineError('');
+    let apiSaveFailed = false;
+    if (saveBtn) saveBtn.disabled = true;
     try {
         for (const [k, v] of Object.entries(campos)) {
             await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES(${esc(k)}, ${esc(v)})
@@ -11383,43 +11760,104 @@ async function guardarConfigEmpresa() {
                     /** Solo publicar marca aquí; setup_wizard_completado lo pone el wizard al Finalizar. */
                     const body = {
                         configuracion: {
-                            marca_publicada_admin: true
-                        }
+                            marca_publicada_admin: true,
+                            derivaciones: {
+                                energia: {
+                                    activo: !!document.getElementById('cfg-deriv-energia-activo')?.checked,
+                                    nombre: (document.getElementById('cfg-deriv-energia-nombre')?.value || '').trim(),
+                                    whatsapp: (document.getElementById('cfg-deriv-energia-whatsapp')?.value || '').trim(),
+                                },
+                                agua: {
+                                    activo: !!document.getElementById('cfg-deriv-agua-activo')?.checked,
+                                    nombre: (document.getElementById('cfg-deriv-agua-nombre')?.value || '').trim(),
+                                    whatsapp: (document.getElementById('cfg-deriv-agua-whatsapp')?.value || '').trim(),
+                                },
+                            },
+                            ocultar_modulos_redes: !!document.getElementById('cfg-ocultar-modulos-redes')?.checked,
+                        },
                     };
+                    if (esCooperativaElectricaRubro()) {
+                        body.configuracion.derivacion_reclamos = construirDerivacionReclamosParaApi();
+                    }
                     if (campos.nombre) body.nombre = campos.nombre;
                     if (campos.tipo) body.tipo = campos.tipo;
                     const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`
+                            Authorization: `Bearer ${token}`,
                         },
-                        body: JSON.stringify(body)
+                        body: JSON.stringify(body),
                     });
+                    const rd = await resp.json().catch(() => ({}));
                     if (!resp.ok) {
-                        const err = await resp.json().catch(() => ({}));
-                        throw new Error(err.detail ? `${err.error || 'Error'}: ${err.detail}` : err.error || `HTTP ${resp.status}`);
+                        let det = rd.error || `HTTP ${resp.status}`;
+                        if (rd.detalles && typeof rd.detalles.mensaje === 'string') det = rd.detalles.mensaje;
+                        else if (rd.detail) det = `${rd.error || 'Error'}: ${rd.detail}`;
+                        if (resp.status === 401) {
+                            throw new Error('Iniciá sesión de nuevo para guardar en el servidor.');
+                        }
+                        if (resp.status === 403) {
+                            throw new Error('Sin permiso para guardar la configuración del tenant.');
+                        }
+                        throw new Error(det);
                     }
+                    if (rd.cliente?.configuracion != null) {
+                        let cfg = rd.cliente.configuracion;
+                        if (typeof cfg === 'string') {
+                            try {
+                                cfg = JSON.parse(cfg);
+                            } catch (_) {
+                                cfg = {};
+                            }
+                        }
+                        if (cfg && typeof cfg === 'object') {
+                            const next = { ...(window.EMPRESA_CFG || {}) };
+                            if (cfg.derivaciones && typeof cfg.derivaciones === 'object') {
+                                next.derivaciones = cfg.derivaciones;
+                            }
+                            if (Object.prototype.hasOwnProperty.call(cfg, 'ocultar_modulos_redes')) {
+                                next.ocultar_modulos_redes = !!cfg.ocultar_modulos_redes;
+                            }
+                            if (esCooperativaElectricaRubro()) {
+                                next.derivacion_reclamos = cfg.derivacion_reclamos || {};
+                            }
+                            window.EMPRESA_CFG = next;
+                        }
+                    }
+                    try {
+                        aplicarVisibilidadTabsAdminRedElectrica();
+                    } catch (_) {}
                 } else {
                     marcaApiOk = false;
                 }
             } catch (e) {
                 marcaApiOk = false;
-                console.warn('[empresa] PUT mi-configuracion:', e?.message || e);
+                apiSaveFailed = true;
+                const apiErrorMsg = String(e?.message || e || '');
+                console.warn('[empresa] PUT mi-configuracion:', apiErrorMsg);
+                if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(apiErrorMsg)) {
+                    toast(
+                        'No hay conexión con el servidor. La configuración local se guardó; reintentá cuando vuelva la red.',
+                        'error'
+                    );
+                } else {
+                    toast(apiErrorMsg || 'No se pudo guardar en el servidor', 'error');
+                }
             }
         }
         window.EMPRESA_CFG = {
             ...(window.EMPRESA_CFG || {}),
             nombre: campos.nombre,
             tipo: campos.tipo,
-            subtitulo: campos.subtitulo
+            subtitulo: campos.subtitulo,
         };
         window.__PMG_TENANT_BRANDING__ = {
             ...(window.__PMG_TENANT_BRANDING__ || {}),
             nombre_cliente: campos.nombre,
             tipo: campos.tipo,
             marca_publicada_admin: true,
-            from_local_cache: !marcaApiOk
+            from_local_cache: !marcaApiOk,
         };
         if (marcaApiOk) {
             window.__PMG_TENANT_BRANDING__.from_local_cache = false;
@@ -11435,11 +11873,21 @@ async function guardarConfigEmpresa() {
         await verificarConfiguracionInicialObligatoria();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
-        toast(
-            marcaApiOk ? 'Configuración guardada' : 'Configuración guardada en base local; no se pudo publicar marca en el servidor (revisá API o token)',
-            marcaApiOk ? 'success' : 'warning'
-        );
-    } catch(e) { toastError('guardar-config-empresa', e); }
+        if (apiSaveFailed) {
+            /* error ya mostrado arriba */
+        } else if (marcaApiOk) {
+            toast('Configuración guardada', 'success');
+        } else {
+            toast(
+                'Configuración guardada en base local; no se pudo publicar marca en el servidor (revisá API o token)',
+                'warning'
+            );
+        }
+    } catch (e) {
+        toastError('guardar-config-empresa', e);
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
 }
 
 // ── Usuarios admin ────────────────────────────────────────────

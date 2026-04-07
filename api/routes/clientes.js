@@ -7,8 +7,24 @@ import {
   normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
+import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
+import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
 
 const router = express.Router();
+
+function parseConfiguracionDb(val) {
+  if (val == null) return {};
+  if (typeof val === "object") return { ...val };
+  if (typeof val === "string") {
+    try {
+      const o = JSON.parse(val);
+      return o && typeof o === "object" ? o : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
 
 router.get("/mi-configuracion", authWithTenantHost, async (req, res) => {
   try {
@@ -36,7 +52,7 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
 
     const tenantId = req.tenantId;
     const body = req.body || {};
-    const { nombre, tipo, latitud, longitud, configuracion = {} } = body;
+    const { nombre, tipo, latitud, longitud, configuracion: configuracionBody } = body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;
     const barrioIn = Object.prototype.hasOwnProperty.call(body, "barrio") ? body.barrio : undefined;
 
@@ -53,14 +69,49 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       tipoDb = norm;
     }
 
+    const Inc =
+      typeof configuracionBody === "object" && configuracionBody !== null ? { ...configuracionBody } : {};
+
+    if (Object.prototype.hasOwnProperty.call(Inc, "derivaciones")) {
+      const r0 = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+      const existingCfg = parseConfiguracionDb(r0.rows?.[0]?.configuracion);
+      const vr = mergeAndValidateDerivaciones(existingCfg.derivaciones, Inc.derivaciones);
+      if (!vr.ok) {
+        return res.status(400).json({ error: vr.error, detalles: vr.detalles });
+      }
+      Inc.derivaciones = vr.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(Inc, "ocultar_modulos_redes")) {
+      const o = Inc.ocultar_modulos_redes;
+      Inc.ocultar_modulos_redes = !!(
+        o === true ||
+        o === 1 ||
+        String(o).toLowerCase() === "true" ||
+        String(o) === "1"
+      );
+    }
+
     const cfgJson = {
-      ...(typeof configuracion === "object" && configuracion ? configuracion : {}),
+      ...Inc,
       ...(latitud != null ? { lat_base: latitud } : {}),
       ...(longitud != null ? { lng_base: longitud } : {}),
     };
     if (Object.prototype.hasOwnProperty.call(body, "logo_url")) {
       const v = logo_url;
       cfgJson.logo_url = v === "" || v == null ? null : String(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(cfgJson, "derivacion_reclamos")) {
+      try {
+        const s = sanitizeDerivacionReclamosForStore(cfgJson.derivacion_reclamos);
+        cfgJson.derivacion_reclamos = s === null ? {} : s;
+      } catch (e) {
+        return res.status(400).json({
+          error: "derivacion_reclamos inválido",
+          detail: e?.message || String(e),
+        });
+      }
     }
 
     const params = [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)];

@@ -432,11 +432,11 @@
     <div class="admin-tabs">
       <button class="admin-tab active" onclick="adminTab('empresa')"><i class="fas fa-building"></i> Empresa</button>
       <button class="admin-tab" onclick="adminTab('usuarios')"><i class="fas fa-users"></i> Usuarios</button>
-      <button class="admin-tab" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
+      <button type="button" class="admin-tab" id="admin-tab-distribuidores" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
-      <button class="admin-tab" onclick="adminTab('confiabilidad')"><i class="fas fa-plug"></i> Clientes afectados</button>
+      <button type="button" class="admin-tab" id="admin-tab-confiabilidad" onclick="adminTab('confiabilidad')"><i class="fas fa-plug"></i> Clientes afectados</button>
       <button class="admin-tab" onclick="adminTab('mapa-usuarios')"><i class="fas fa-map-marker-alt"></i> Ubicaciones</button>
       <button class="admin-tab" onclick="adminTab('contrasena')"><i class="fas fa-key"></i> Contraseña</button>
     </div>
@@ -471,8 +471,41 @@
           </select>
           <p style="font-size:.76rem;color:var(--tl);margin:.4rem 0 0;line-height:1.35">Las fajas siguen el esquema IGN (franjas de 3°). La opción «primera ubicación» guarda la faja al obtener GPS por primera vez en este navegador o app.</p>
         </div>
+        <div id="admin-derivacion-terceros-wrap" class="full" style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--bo)">
+          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .65rem">Derivación de reclamos (agua / otra energía)</h4>
+          <p style="font-size:.76rem;color:var(--tl);margin:0 0 .85rem;line-height:1.4">Solo para <strong>cooperativas eléctricas</strong>: contactos para orientar vecinos (no reemplaza el número Meta del bot). Si marcás <strong>activo</strong>, el WhatsApp en formato internacional con <strong>+</strong> es obligatorio.</p>
+          <div class="form-grid" style="margin-bottom:1rem">
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-energia-activo" aria-describedby="cfg-deriv-energia-help">
+                <label for="cfg-deriv-energia-activo" style="margin:0;font-weight:600">Empresa de energía</label>
+              </div>
+              <p id="cfg-deriv-energia-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Visible en el panel cuando está activo y el teléfono es válido.</p>
+              <div><label for="cfg-deriv-energia-nombre">Nombre visible</label><input id="cfg-deriv-energia-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Empresa Provincial de Energía"></div>
+              <div><label for="cfg-deriv-energia-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-energia-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-energia-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('energia')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-agua-activo" aria-describedby="cfg-deriv-agua-help">
+                <label for="cfg-deriv-agua-activo" style="margin:0;font-weight:600">Cooperativa de agua</label>
+              </div>
+              <p id="cfg-deriv-agua-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Mismo criterio: activo implica WhatsApp al guardar.</p>
+              <div><label for="cfg-deriv-agua-nombre">Nombre visible</label><input id="cfg-deriv-agua-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Cooperativa de Agua del Norte"></div>
+              <div><label for="cfg-deriv-agua-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-agua-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493419998888" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-agua-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('agua')">Abrir WhatsApp</button>
+            </div>
+          </div>
+          <p id="cfg-deriv-wa-format" style="font-size:.72rem;color:var(--tm);margin:0 0 .45rem">Formato: <strong>+</strong> y solo dígitos después (8 a 22 dígitos totales sin el +), ej. <code style="font-size:.7rem">+543434123456</code>.</p>
+          <p id="cfg-deriv-inline-error" class="admin-derivacion-inline-error" style="display:none;margin:0 0 .65rem" role="alert"></p>
+          <div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem .55rem;background:#f8fafc;border:1px solid var(--bo);border-radius:.45rem">
+            <input type="checkbox" id="cfg-ocultar-modulos-redes" aria-describedby="cfg-ocultar-redes-help">
+            <div><label for="cfg-ocultar-modulos-redes" style="margin:0;font-weight:600;cursor:pointer">Ocultar módulos de red eléctrica en administración</label>
+            <p id="cfg-ocultar-redes-help" style="font-size:.72rem;color:var(--tl);margin:.25rem 0 0;line-height:1.35">Oculta la pestaña de catálogo de zona (Distribuidores / Barrios / Ramales) y la de Clientes afectados (transformadores / kVA). Por rubro, municipio y cooperativa de agua ya ocultan solo Clientes afectados; Barrios/Ramales siguen disponibles salvo que marques esta opción.</p></div>
+          </div>
+        </div>
       </div>
-      <button class="bp" style="margin-top:1rem;max-width:200px" onclick="guardarConfigEmpresa()"><i class="fas fa-save"></i> Guardar</button>
+      <button type="button" class="bp" id="cfg-guardar-empresa" style="margin-top:1rem;max-width:200px" onclick="guardarConfigEmpresa()"><i class="fas fa-save"></i> Guardar</button>
     </div>
     <div id="admin-usuarios" class="admin-section">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
