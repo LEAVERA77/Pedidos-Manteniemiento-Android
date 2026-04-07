@@ -611,6 +611,25 @@
         <button type="button" class="btn-sm" style="background:#4338ca;color:#fff;border:none" onclick="imprimirInformeConGraficos()"><i class="fas fa-chart-pie"></i> Todos los gráficos</button>
         <button type="button" class="btn-sm" style="background:#0f766e;color:#fff;border:none" onclick="generarPdfEstadisticasMultipaginaENRE()"><i class="fas fa-file-pdf"></i> PDF estadísticas (A4)</button>
       </div>
+      <div style="font-size:.8rem;padding:.65rem .75rem;margin-bottom:.85rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg)">
+        <strong>Exportar pedidos (CSV)</strong>
+        <p style="font-size:.74rem;color:var(--tm);margin:.35rem 0 .5rem;line-height:1.4">Usa el mismo período que el selector de arriba (y filtro por día si está activo). Máximo 10.000 filas.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+          <label style="font-size:.78rem;color:var(--tm)">Estado
+            <select id="est-csv-estado" style="display:block;margin-top:.2rem;padding:.35rem .5rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.82rem">
+              <option value="">Todos</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Asignado">Asignado</option>
+              <option value="En ejecución">En ejecución</option>
+              <option value="Cerrado">Cerrado</option>
+            </select>
+          </label>
+          <label style="font-size:.78rem;color:var(--tm);min-width:160px">Tipo reclamo (contiene)
+            <input id="est-csv-tipo" type="text" placeholder="Opcional" autocomplete="off" style="display:block;margin-top:.2rem;width:100%;max-width:220px;padding:.35rem .5rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.82rem">
+          </label>
+          <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosCsvAdmin()"><i class="fas fa-file-csv"></i> Descargar CSV</button>
+        </div>
+      </div>
       <div id="enre-marco" style="font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45">
         <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
       </div>

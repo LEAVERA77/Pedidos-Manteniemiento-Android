@@ -53,6 +53,8 @@ Los números configurados aquí son **contactos externos** para derivar al vecin
 
 Los botones «Abrir WhatsApp» usan `https://wa.me/<dígitos>` en una nueva pestaña.
 
+En el **detalle del pedido** (municipio / cooperativa de agua), admin y supervisor ven los mismos contactos para derivar al vecino: ver `docs/DERIVACION_PEDIDO_OPERADORES.md`.
+
 ## Seguridad / logs
 
 No registrar números completos en logs de aplicación; si hiciera falta trazas, usar máscara (últimos 4 dígitos).

@@ -1071,6 +1071,52 @@ function abrirWhatsappDerivacionForm(slot) {
 }
 window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
 
+/** Dígitos wa.me desde `EMPRESA_CFG.derivaciones` (+ opcional o solo dígitos). */
+function digitosWhatsAppDerivacionEmpresaCfg(slot) {
+    const d = (window.EMPRESA_CFG?.derivaciones || {})[slot];
+    if (!d || !d.activo) return '';
+    const raw = String(d.whatsapp || '').trim();
+    if (!raw) return '';
+    const dg = raw.replace(/\D/g, '');
+    if (dg.length >= 10 && dg.length <= 15) return dg;
+    return '';
+}
+
+function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
+    const dg = digitosWhatsAppDerivacionEmpresaCfg(slot);
+    return dg ? `https://wa.me/${dg}` : '';
+}
+
+/** Bloque en detalle de pedido: municipio / coop. agua; admin y supervisor. */
+function htmlDerivacionTercerosPedidoDetalle() {
+    if (!(esAdmin() || esTecnicoOSupervisor())) return '';
+    if (esCooperativaElectricaRubro()) return '';
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    if (rubro !== 'municipio' && rubro !== 'cooperativa_agua') return '';
+    const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const slots = [
+        { key: 'energia', def: 'Empresa de energía' },
+        { key: 'agua', def: 'Cooperativa de agua' },
+    ];
+    const links = [];
+    for (const { key, def } of slots) {
+        const url = obtenerWaMeUrlDerivacionEmpresaCfg(key);
+        if (!url) continue;
+        const nom = String((window.EMPRESA_CFG?.derivaciones || {})[key]?.nombre || '').trim() || def;
+        const href = String(url).replace(/"/g, '&quot;');
+        links.push(
+            `<a class="ba2" style="display:inline-block;margin:.25rem .5rem .25rem 0;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${href}"><i class="fab fa-whatsapp"></i> Contactar ${escD(nom)}</a>`
+        );
+    }
+    if (!links.length) return '';
+    const labPer = escD(etiquetaFirmaPersona());
+    return `<div class="ds gn-deriv-terceros-pedido">
+            <h4>📞 Derivación a terceros</h4>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .5rem;line-height:1.4">Contactos configurados en <strong>Admin → Empresa</strong> para orientar al ${labPer}. <strong>No</strong> son el número Meta del bot.</p>
+            ${links.join('')}
+        </div>`;
+}
+
 /** Distribuidor (eléctrica) | Ramal (agua) | Barrio (municipio). */
 function etiquetaZonaPedido() {
     if (esMunicipioRubro()) return 'Barrio';
@@ -5465,7 +5511,7 @@ async function imprimirPedidoAsync(p) {
             <h2>🏢 Datos del Trabajo</h2>
             <table>
                 <tr><td>${etiquetaZonaPedido()}:</td><td>${escHtmlPrint(valorZonaPedidoUI(p))}</td></tr>
-                ${String(p.trf || '').trim() ? `<tr><td>Trafo:</td><td>${escHtmlPrint(p.trf)}</td></tr>` : ''}
+                ${esCooperativaElectricaRubro() && String(p.trf || '').trim() ? `<tr><td>Trafo:</td><td>${escHtmlPrint(p.trf)}</td></tr>` : ''}
                 ${String(p.nis || '').trim() ? `<tr><td>NIS</td><td>${escHtmlPrint(p.nis)}</td></tr>` : ''}
                 ${String(p.cnom || p.cl || '').trim() ? `<tr><td>Nombre y apellido</td><td>${escHtmlPrint(p.cnom || p.cl)}</td></tr>` : ''}
                 ${String(p.ccal || '').trim() ? `<tr><td>Calle</td><td>${escHtmlPrint(p.ccal)}</td></tr>` : ''}
@@ -7772,7 +7818,8 @@ function detalle(p) {
     const stcD = String(p.stc || '').trim();
     const sfsD = String(p.sfs || '').trim();
     if (stcD || sfsD) {
-        filasDatosCliente.push(`<div class="dr" style="grid-column:1/-1;margin:.35rem 0 0"><span class="dl" style="font-weight:700;color:#b45309">Suministro eléctrico</span></div>`);
+        const headSum = esCooperativaElectricaRubro() ? 'Suministro eléctrico' : 'Datos de suministro (catálogo)';
+        filasDatosCliente.push(`<div class="dr" style="grid-column:1/-1;margin:.35rem 0 0"><span class="dl" style="font-weight:700;color:#b45309">${escDet(headSum)}</span></div>`);
         if (stcD) {
             filasDatosCliente.push(`<div class="dr"><span class="dl">Tipo de conexión</span><span class="dv" style="font-weight:700">${escDet(stcD)}</span></div>`);
         }
@@ -7806,7 +7853,11 @@ function detalle(p) {
             : '';
     /** Opción A (spec): aviso + wa.me si el tipo es solo agua/municipio y el tenant es eléctrico. */
     let htmlDerivacionCoopElectrica = '';
-    if (esCooperativaElectricaRubro() && esAdmin() && pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)) {
+    if (
+        esCooperativaElectricaRubro() &&
+        (esAdmin() || esTecnicoOSupervisor()) &&
+        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)
+    ) {
         const dr = (window.EMPRESA_CFG || {}).derivacion_reclamos;
         const agua = dr?.cooperativa_agua;
         const energia = dr?.empresa_energia;
@@ -7833,11 +7884,44 @@ function detalle(p) {
         }
         if (!waAgua && !waEn) {
             bits.push(
-                `<p style="font-size:.78rem;color:var(--tm);margin:.15rem 0 0">No hay contactos de derivación configurados. Cargalos en <strong>Admin → Empresa → Derivación de reclamos</strong>.</p>`
+                `<p style="font-size:.78rem;color:var(--tm);margin:.15rem 0 0">No hay contactos de derivación configurados. Cargalos en <strong>Admin → Empresa</strong> en la sección de <strong>derivación por tipo de reclamo</strong> (campos internacionales con +).</p>`
             );
         }
         htmlDerivacionCoopElectrica = `<div class="ds admin-derivacion-pedido-hint">${bits.join('')}</div>`;
     }
+    const htmlLineaTiempoPedido = [
+        `<div class="dr"><span class="dl">Alta del pedido</span><span class="dv">${f}</span></div>`,
+        p.fasi && p.tai
+            ? `<div class="dr"><span class="dl">Asignación a técnico</span><span class="dv">${new Date(p.fasi).toLocaleString('es-AR', {
+                  ...tz,
+                  hour12: false,
+              })}</span></div>`
+            : '',
+        fa
+            ? `<div class="dr"><span class="dl">Último avance registrado</span><span class="dv">${fa}${
+                  p.es !== 'Cerrado' ? ` (${p.av}%)` : ''
+              }</span></div>`
+            : '',
+        p.es === 'Cerrado' && fc ? `<div class="dr"><span class="dl">Cierre</span><span class="dv">${fc}</span></div>` : '',
+    ]
+        .filter(Boolean)
+        .join('');
+    const htmlBloqueCambiosAuditoria =
+        htmlLineaTiempoPedido || _auditLineas
+            ? `<div class="ds"><h4>🕐 Últimos cambios y auditoría</h4>${
+                  htmlLineaTiempoPedido
+                      ? `<div style="font-size:.72rem;font-weight:600;color:var(--tm);margin:0 0 .25rem">Línea de tiempo</div>${htmlLineaTiempoPedido}`
+                      : ''
+              }${
+                  htmlLineaTiempoPedido && _auditLineas
+                      ? '<div style="margin:.55rem 0 .35rem;padding-top:.45rem;border-top:1px solid var(--bo)"></div>'
+                      : ''
+              }${
+                  _auditLineas
+                      ? `<div style="font-size:.72rem;font-weight:600;color:var(--tm);margin:0 0 .25rem">Usuarios (auditoría)</div>${_auditLineas}`
+                      : ''
+              }</div>`
+            : '';
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
     const nAsig = (p.tai != null)
@@ -7909,14 +7993,17 @@ function detalle(p) {
         
         <div class="ds">
             <h4>🏢 Datos del Trabajo</h4>
-            <div class="dr"><span class="dl">${etiquetaZonaPedido()}</span><span class="dv">${valorZonaPedidoUI(p) || '—'}</span></div>
-            ${String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
+            <div class="dr"><span class="dl">${etiquetaZonaPedido()}</span><span class="dv">${valorZonaPedidoUI(p) || (esMunicipioRubro() ? 'Sin barrio indicado' : esCooperativaAguaRubro() ? 'Sin ramal indicado' : '—')}</span></div>
+            ${esCooperativaElectricaRubro() && String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
         </div>
         
         ${htmlOpinionCliente}
+        
+        ${htmlDerivacionTercerosPedidoDetalle()}
+        ${htmlDerivacionCoopElectrica}
         
         ${p.es === 'Cerrado' ? `
         <div class="ds">
@@ -7944,7 +8031,7 @@ function detalle(p) {
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
         </div>
         
-        ${_auditLineas ? `<div class="ds"><h4>👤 Auditoría</h4>${_auditLineas}</div>` : ''}
+        ${htmlBloqueCambiosAuditoria}
         ${fotosHtml ? `
         <div class="ds">
             <h4>📸 Fotos del trabajo</h4>
@@ -12537,6 +12624,98 @@ function aplicarFiltroDiaEstadisticas() {
     void cargarEstadisticas();
 }
 window.aplicarFiltroDiaEstadisticas = aplicarFiltroDiaEstadisticas;
+
+function escapeCsvCeldaPedidos(v) {
+    const s = String(v ?? '');
+    if (/[\r\n",]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+async function exportarPedidosCsvAdmin() {
+    if (!esAdmin()) {
+        toast('Solo administradores pueden exportar el listado.', 'error');
+        return;
+    }
+    if (!NEON_OK || !_sql) {
+        toast('Se requiere conexión a la base (Neon).', 'error');
+        return;
+    }
+    const tsql = await pedidosFiltroTenantSql();
+    const { condFecha } = await resolveCondicionFechaPedidosStats(tsql);
+    const estadoSel = (document.getElementById('est-csv-estado')?.value || '').trim();
+    const tipoFilt = (document.getElementById('est-csv-tipo')?.value || '').trim();
+    let where = `WHERE ${condFecha}${tsql}`;
+    if (estadoSel) where += ` AND estado = ${esc(estadoSel)}`;
+    if (tipoFilt) {
+        where += ` AND POSITION(LOWER(${esc(tipoFilt.toLowerCase())}) IN LOWER(COALESCE(tipo_trabajo,''))) > 0`;
+    }
+    const q = `SELECT id, numero_pedido, fecha_creacion, fecha_cierre, estado, prioridad, tipo_trabajo,
+        COALESCE(TRIM(distribuidor),'') AS distribuidor,
+        COALESCE(TRIM(barrio),'') AS barrio,
+        COALESCE(TRIM(trafo),'') AS trafo,
+        COALESCE(TRIM(nis_medidor),'') AS nis_medidor,
+        COALESCE(NULLIF(TRIM(cliente_nombre),''), NULLIF(TRIM(cliente),''), '') AS contacto,
+        COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto,
+        descripcion
+        FROM pedidos ${where} ORDER BY fecha_creacion DESC LIMIT 10000`;
+    try {
+        const r = await sqlSimple(q);
+        const rows = r.rows || [];
+        if (!rows.length) {
+            toast('No hay pedidos con esos filtros.', 'info');
+            return;
+        }
+        const headers = [
+            'id',
+            'numero_pedido',
+            'fecha_creacion',
+            'fecha_cierre',
+            'estado',
+            'prioridad',
+            'tipo_trabajo',
+            'distribuidor',
+            'barrio',
+            'trafo',
+            'nis_medidor',
+            'contacto',
+            'telefono_contacto',
+            'descripcion',
+        ];
+        const lines = [headers.join(',')];
+        for (const row of rows) {
+            lines.push(
+                [
+                    row.id,
+                    row.numero_pedido,
+                    row.fecha_creacion,
+                    row.fecha_cierre,
+                    row.estado,
+                    row.prioridad,
+                    row.tipo_trabajo,
+                    row.distribuidor,
+                    row.barrio,
+                    row.trafo,
+                    row.nis_medidor,
+                    row.contacto,
+                    row.telefono_contacto,
+                    row.descripcion,
+                ]
+                    .map(escapeCsvCeldaPedidos)
+                    .join(',')
+            );
+        }
+        const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `pedidos_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast(`Exportados ${rows.length} pedidos`, 'success');
+    } catch (e) {
+        toastError('export-pedidos-csv', e);
+    }
+}
+window.exportarPedidosCsvAdmin = exportarPedidosCsvAdmin;
 
 function periodoInformeDesdeSelectEstadisticasSync() {
     const dia = (document.getElementById('est-fecha-dia')?.value || '').trim();
