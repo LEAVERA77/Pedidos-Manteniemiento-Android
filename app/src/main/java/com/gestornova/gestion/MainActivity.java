@@ -27,6 +27,8 @@ import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.location.Location;
+import android.location.LocationManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -676,6 +678,52 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "No se pudo guardar el archivo", Toast.LENGTH_LONG).show());
                 return false;
             }
+        }
+
+        /**
+         * GPS para geocerca (Haversine validado en API). Llama en el hilo UI a {@code callback(json)}.
+         * json: ok, lat, lng, accuracy | error (sin_permiso_ubicacion, sin_ubicacion, exception).
+         */
+        @JavascriptInterface
+        public void getCurrentLocationForGeocerca(String jsCallback) {
+            final String cb = jsCallback != null ? jsCallback.trim() : "";
+            runOnUiThread(() -> {
+                if (webView == null || cb.isEmpty()) return;
+                if (!cb.matches("^[a-zA-Z0-9_.]+$")) return;
+                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"sin_permiso_ubicacion\"})", null);
+                    return;
+                }
+                try {
+                    LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+                    Location best = null;
+                    if (lm != null) {
+                        for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                            try {
+                                Location l = lm.getLastKnownLocation(p);
+                                if (l != null && (best == null || l.getTime() > best.getTime())) {
+                                    best = l;
+                                }
+                            } catch (SecurityException ignored) {
+                            }
+                        }
+                    }
+                    if (best == null) {
+                        webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"sin_ubicacion\"})", null);
+                        return;
+                    }
+                    JSONObject o = new JSONObject();
+                    o.put("ok", true);
+                    o.put("lat", best.getLatitude());
+                    o.put("lng", best.getLongitude());
+                    o.put("accuracy", best.hasAccuracy() ? best.getAccuracy() : JSONObject.NULL);
+                    webView.evaluateJavascript(cb + "(" + o.toString() + ")", null);
+                } catch (Exception e) {
+                    Log.w(TAG, "getCurrentLocationForGeocerca", e);
+                    webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"exception\"})", null);
+                }
+            });
         }
 
         /** Abre la carpeta Descargas/GestorNova en el gestor de archivos del sistema (API 24+). */

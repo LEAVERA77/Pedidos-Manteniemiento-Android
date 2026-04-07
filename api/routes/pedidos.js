@@ -1,6 +1,7 @@
 import express from "express";
-import { authMiddleware, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
+import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
 import { uploadManyBase64 } from "../services/cloudinary.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
@@ -22,29 +23,15 @@ import {
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "../services/pedidoZonaOutage.js";
 import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
+import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
 
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authWithTenantHost);
 
-let _pedidosHasTenantId;
-async function pedidosTableHasTenantId() {
-  if (_pedidosHasTenantId !== undefined) return _pedidosHasTenantId;
-  try {
-    const c = await query(
-      `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
-    );
-    _pedidosHasTenantId = c.rows.length > 0;
-  } catch {
-    _pedidosHasTenantId = false;
-  }
-  return _pedidosHasTenantId;
-}
-
-async function assertPedidoMismoTenant(pedido, userId) {
-  if (!(await pedidosTableHasTenantId())) return;
+async function assertPedidoMismoTenant(pedido, req) {
+  if (!(await pedidosTableHasTenantIdColumn())) return;
   if (pedido.tenant_id == null) return;
-  const ut = await getUserTenantId(userId);
-  if (Number(pedido.tenant_id) !== Number(ut)) {
+  if (Number(pedido.tenant_id) !== Number(req.tenantId)) {
     const e = new Error("Sin permiso para este pedido");
     e.statusCode = 403;
     throw e;
@@ -177,7 +164,11 @@ function scheduleNotifyClientePedidoWhatsapp({
   });
 }
 
-async function getPedidoById(id) {
+async function getPedidoInTenant(id, tenantId) {
+  if (await pedidosTableHasTenantIdColumn()) {
+    const r = await query("SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1", [id, tenantId]);
+    return r.rows[0] || null;
+  }
   const r = await query("SELECT * FROM pedidos WHERE id = $1 LIMIT 1", [id]);
   return r.rows[0] || null;
 }
@@ -205,7 +196,7 @@ router.post("/", async (req, res) => {
       barrio: barrioBodyRaw,
     } = req.body;
 
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const cr = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
     const tipoCliente = cr.rows?.[0]?.tipo ?? null;
     const rubro = normalizarRubroCliente(tipoCliente);
@@ -288,44 +279,47 @@ router.post("/", async (req, res) => {
     const stc = String(suministro_tipo_conexion || "").trim() || null;
     const sfa = String(suministro_fases || "").trim() || null;
 
+    const hasTIns = await pedidosTableHasTenantIdColumn();
+    const insertParams = [
+      numeroPedido,
+      distribuidorFinal,
+      trafoFinal,
+      cliente || null,
+      tipo_trabajo || null,
+      descripcion || null,
+      prioridadFinal,
+      lat ?? null,
+      lng ?? null,
+      req.user.id,
+      telefono_contacto || null,
+      cliente_nombre || cliente || null,
+      toJoinedUrls(fotoUrls) || null,
+      nis || null,
+      medidor || null,
+      cliente_calle ?? null,
+      cliente_localidad ?? null,
+      cliente_numero_puerta ?? null,
+      cliente_direccion ?? null,
+      stc,
+      sfa,
+      barrioFinal,
+    ];
+    if (hasTIns) insertParams.push(tenantId);
     const insert = await query(
       `INSERT INTO pedidos (
         numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
         telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
         cliente_calle, cliente_localidad, cliente_numero_puerta, cliente_direccion,
-        suministro_tipo_conexion, suministro_fases, barrio
+        suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         'Pendiente',0,$8,$9,$10,$10,NOW(),
         $11,$12,$13,$14,$15,
         $16,$17,$18,$19,
-        $20,$21,$22
+        $20,$21,$22${hasTIns ? ",$23" : ""}
       ) RETURNING *`,
-      [
-        numeroPedido,
-        distribuidorFinal,
-        trafoFinal,
-        cliente || null,
-        tipo_trabajo || null,
-        descripcion || null,
-        prioridadFinal,
-        lat ?? null,
-        lng ?? null,
-        req.user.id,
-        telefono_contacto || null,
-        cliente_nombre || cliente || null,
-        toJoinedUrls(fotoUrls) || null,
-        nis || null,
-        medidor || null,
-        cliente_calle ?? null,
-        cliente_localidad ?? null,
-        cliente_numero_puerta ?? null,
-        cliente_direccion ?? null,
-        stc,
-        sfa,
-        barrioFinal,
-      ]
+      insertParams
     );
     const created = insert.rows[0];
     scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
@@ -340,6 +334,10 @@ router.get("/", async (req, res) => {
     const { estado, limit = 300 } = req.query;
     const params = [];
     const where = [];
+    if (await pedidosTableHasTenantIdColumn()) {
+      params.push(req.tenantId);
+      where.push(`tenant_id = $${params.length}`);
+    }
     if (estado) {
       params.push(estado);
       where.push(`estado = $${params.length}`);
@@ -365,12 +363,18 @@ router.get("/", async (req, res) => {
 
 router.get("/mis-pedidos", async (req, res) => {
   try {
+    const hasT = await pedidosTableHasTenantIdColumn();
     const r = await query(
-      `SELECT * FROM pedidos
+      hasT
+        ? `SELECT * FROM pedidos
+       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1) AND tenant_id = $2
+       ORDER BY fecha_creacion DESC
+       LIMIT 500`
+        : `SELECT * FROM pedidos
        WHERE tecnico_asignado_id = $1 OR usuario_id = $1
        ORDER BY fecha_creacion DESC
        LIMIT 500`,
-      [req.user.id]
+      hasT ? [req.user.id, req.tenantId] : [req.user.id]
     );
     return res.json(r.rows.map((p) => ({ ...p, fotos: splitUrls(p.foto_urls) })));
   } catch (error) {
@@ -395,8 +399,14 @@ router.get("/buscar", async (req, res) => {
       where.push(`medidor = $${params.length}`);
     }
 
+    const hasTb = await pedidosTableHasTenantIdColumn();
+    let sqlWhere = where.join(" OR ");
+    if (hasTb) {
+      params.push(req.tenantId);
+      sqlWhere = `tenant_id = $${params.length} AND (${sqlWhere})`;
+    }
     const r = await query(
-      `SELECT * FROM pedidos WHERE ${where.join(" OR ")} ORDER BY fecha_creacion DESC LIMIT 200`,
+      `SELECT * FROM pedidos WHERE ${sqlWhere} ORDER BY fecha_creacion DESC LIMIT 200`,
       params
     );
     return res.json(r.rows);
@@ -409,19 +419,27 @@ router.get("/historial/nis/:nis", async (req, res) => {
   try {
     const nis = String(req.params.nis || "").trim();
     if (!nis) return res.status(400).json({ error: "NIS requerido" });
-    const r = await query("SELECT * FROM pedidos WHERE nis = $1 ORDER BY fecha_creacion DESC", [nis]);
+    const hasTh = await pedidosTableHasTenantIdColumn();
+    const r = await query(
+      hasTh
+        ? "SELECT * FROM pedidos WHERE nis = $1 AND tenant_id = $2 ORDER BY fecha_creacion DESC"
+        : "SELECT * FROM pedidos WHERE nis = $1 ORDER BY fecha_creacion DESC",
+      hasTh ? [nis, req.tenantId] : [nis]
+    );
     return res.json(r.rows);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo obtener historial", detail: error.message });
   }
 });
 
+registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
+
 router.get("/:id", async (req, res) => {
   try {
-    const p = await getPedidoById(req.params.id);
+    const p = await getPedidoInTenant(req.params.id, req.tenantId);
     if (!p) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(p, req.user.id);
+      await assertPedidoMismoTenant(p, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -447,10 +465,10 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     if (!["inicio", "avance"].includes(event)) {
       return res.status(400).json({ error: "event debe ser inicio o avance" });
     }
-    const pedido = await getPedidoById(id);
+    const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(pedido, req.user.id);
+      await assertPedidoMismoTenant(pedido, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -459,7 +477,7 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
       return res.status(403).json({ error: "Sin permiso para notificar este pedido" });
     }
 
-    const ut = await getUserTenantId(req.user.id);
+    const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
     const nombreEntidad = await loadNombreCliente(tenantId);
@@ -500,10 +518,10 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
 router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoById(id);
+    const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(pedido, req.user.id);
+      await assertPedidoMismoTenant(pedido, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -518,7 +536,7 @@ router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
     if (!esAdmin && !creador && !owner) {
       return res.status(403).json({ error: "Sin permiso para notificar este pedido" });
     }
-    const ut = await getUserTenantId(req.user.id);
+    const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
     const nombreEntidad = await loadNombreCliente(tenantId);
@@ -540,10 +558,10 @@ router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
 router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoById(id);
+    const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(pedido, req.user.id);
+      await assertPedidoMismoTenant(pedido, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -551,7 +569,7 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
     if (String(pedido.estado || "") !== "Cerrado") {
       return res.status(400).json({ error: "El pedido debe estar en estado Cerrado" });
     }
-    const ut = await getUserTenantId(req.user.id);
+    const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
     const nombreEntidad = await loadNombreCliente(tenantId);
@@ -573,10 +591,10 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
 router.post("/:id/clientes-afectados", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoById(id);
+    const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(pedido, req.user.id);
+      await assertPedidoMismoTenant(pedido, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -615,10 +633,10 @@ router.post("/:id/clientes-afectados", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoById(id);
+    const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
-      await assertPedidoMismoTenant(pedido, req.user.id);
+      await assertPedidoMismoTenant(pedido, req);
     } catch (e) {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
@@ -657,6 +675,29 @@ router.put("/:id", async (req, res) => {
     }
 
     const estadoAntes = String(pedido.estado || "");
+    const hasTUp = await pedidosTableHasTenantIdColumn();
+    const upParams = [
+      id,
+      estado ?? null,
+      avance ?? null,
+      trabajo_realizado ?? null,
+      tecnico_cierre ?? null,
+      mergedUrls.length ? toJoinedUrls(mergedUrls) : null,
+      firma_cliente ?? null,
+      firma_nombre ?? null,
+      req.user.id,
+      nis ?? null,
+      medidor ?? null,
+      cliente_nombre ?? null,
+      cliente_direccion ?? null,
+      cliente_numero_puerta ?? null,
+      cliente_referencia ?? null,
+      telefono_contacto ?? null,
+      estadoAntes,
+      cliente_calle ?? null,
+      cliente_localidad ?? null,
+    ];
+    if (hasTUp) upParams.push(req.tenantId);
     const r = await query(
       `UPDATE pedidos SET
          estado = COALESCE($2, estado),
@@ -685,29 +726,9 @@ router.put("/:id", async (req, res) => {
          telefono_contacto = COALESCE($16, telefono_contacto),
          cliente_calle = COALESCE($18, cliente_calle),
          cliente_localidad = COALESCE($19, cliente_localidad)
-       WHERE id = $1
+       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}
        RETURNING *`,
-      [
-        id,
-        estado ?? null,
-        avance ?? null,
-        trabajo_realizado ?? null,
-        tecnico_cierre ?? null,
-        mergedUrls.length ? toJoinedUrls(mergedUrls) : null,
-        firma_cliente ?? null,
-        firma_nombre ?? null,
-        req.user.id,
-        nis ?? null,
-        medidor ?? null,
-        cliente_nombre ?? null,
-        cliente_direccion ?? null,
-        cliente_numero_puerta ?? null,
-        cliente_referencia ?? null,
-        telefono_contacto ?? null,
-        estadoAntes,
-        cliente_calle ?? null,
-        cliente_localidad ?? null,
-      ]
+      upParams
     );
     const updated = r.rows[0];
     const becameCerrado = String(estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
@@ -741,15 +762,27 @@ router.put("/:id/asignar", adminOnly, async (req, res) => {
     const tecnicoAsignadoId = Number(req.body.tecnico_asignado_id);
     if (!tecnicoAsignadoId) return res.status(400).json({ error: "tecnico_asignado_id es requerido" });
 
-    const ru = await query("SELECT id, rol, activo FROM usuarios WHERE id = $1 LIMIT 1", [tecnicoAsignadoId]);
+    const ucol = await usuariosTenantColumnName();
+    const ru = ucol
+      ? await query(
+          `SELECT id, rol, activo FROM usuarios WHERE id = $1 AND ${ucol} = $2 AND activo = TRUE LIMIT 1`,
+          [tecnicoAsignadoId, req.tenantId]
+        )
+      : await query("SELECT id, rol, activo FROM usuarios WHERE id = $1 LIMIT 1", [tecnicoAsignadoId]);
     if (!ru.rows.length || !ru.rows[0].activo) return res.status(400).json({ error: "Técnico inválido o inactivo" });
 
+    const hasTa = await pedidosTableHasTenantIdColumn();
     const r = await query(
-      `UPDATE pedidos
+      hasTa
+        ? `UPDATE pedidos
+       SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
+       WHERE id = $1 AND tenant_id = $4
+       RETURNING *`
+        : `UPDATE pedidos
        SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
        WHERE id = $1
        RETURNING *`,
-      [id, tecnicoAsignadoId, req.user.id]
+      hasTa ? [id, tecnicoAsignadoId, req.user.id, req.tenantId] : [id, tecnicoAsignadoId, req.user.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     return res.json(r.rows[0]);

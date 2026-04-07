@@ -52,3 +52,75 @@ export async function enqueueNotificacionPedidoCerradoParaTecnico({
     console.error("[notificacionesMovilEnqueue] cierre técnico", e.message);
   }
 }
+
+async function tenantColumnForUsuarios() {
+  try {
+    const c = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'usuarios'`);
+    const names = c.rows.map((r) => r.column_name);
+    if (names.includes("tenant_id")) return "tenant_id";
+    if (names.includes("cliente_id")) return "cliente_id";
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Chat interno pedido: avisa al técnico si escribió admin, o a admins del tenant si escribió técnico.
+ */
+export async function enqueueNotificacionChatInternoPedido({
+  pedido,
+  autorUserId,
+  autorRol,
+  cuerpoSnippet,
+  tenantId,
+}) {
+  if (!(await ensureNotificacionesMovilTable())) return;
+  const pid = Number(pedido?.id);
+  if (!Number.isFinite(pid) || pid < 1) return;
+  const np = String(pedido.numero_pedido || "").trim() || `#${pid}`;
+  const tid = Number(tenantId);
+  const autor = Number(autorUserId);
+  const snippet = String(cuerpoSnippet || "").trim().slice(0, 120);
+  const titulo = `Mensaje en reclamo ${np}`;
+  const cuerpo = snippet || "Nuevo mensaje en el chat del reclamo";
+
+  try {
+    if (autorRol === "admin") {
+      const tech = pedido.tecnico_asignado_id != null ? Number(pedido.tecnico_asignado_id) : null;
+      if (Number.isFinite(tech) && tech >= 1 && tech !== autor) {
+        await query(
+          `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+           VALUES ($1, $2, $3, $4, FALSE)`,
+          [tech, pid, titulo, cuerpo]
+        );
+      }
+      return;
+    }
+
+    const col = await tenantColumnForUsuarios();
+    let rows;
+    if (col && Number.isFinite(tid) && tid >= 1) {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND rol = 'admin' AND activo = TRUE AND id != $2`,
+        [tid, autor]
+      );
+      rows = r.rows;
+    } else {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE rol = 'admin' AND activo = TRUE AND id != $1`,
+        [autor]
+      );
+      rows = r.rows;
+    }
+    for (const row of rows || []) {
+      const uid = Number(row.id);
+      if (!Number.isFinite(uid) || uid < 1) continue;
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [uid, pid, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.error("[notificacionesMovilEnqueue] chat interno", e.message);
+  }
+}

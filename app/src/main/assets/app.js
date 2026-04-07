@@ -1328,6 +1328,114 @@ function getApiToken() {
     } catch (_) {}
     return null;
 }
+
+/** API Render: geocerca, chat interno y fotos clasificadas (ver docs/PLAN_TOP3_COOPERATIVA_GEOCERCA_CHAT_FOTOS.md). */
+async function gnOperativaFetch(path, opts = {}) {
+    const tok = getApiToken();
+    if (!tok) throw new Error('Sin token API (iniciá sesión con backend activo).');
+    const r = await fetch(apiUrl(path), {
+        ...opts,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tok}`,
+            ...(opts.headers || {}),
+        },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || j.detail || r.statusText || 'Error API');
+    return j;
+}
+window.gnOperativaGeocercaVerificar = async function (pedidoId, lat, lng) {
+    const id = parseInt(pedidoId, 10);
+    return gnOperativaFetch(`/api/pedidos/${id}/geocerca/verificar`, {
+        method: 'POST',
+        body: JSON.stringify({ lat: Number(lat), lng: Number(lng) }),
+    });
+};
+window.gnOperativaGeocercaEventos = async function (pedidoId) {
+    const id = parseInt(pedidoId, 10);
+    return gnOperativaFetch(`/api/pedidos/${id}/geocerca/eventos`, { method: 'GET' });
+};
+window.gnOperativaChatListar = async function (pedidoId) {
+    const id = parseInt(pedidoId, 10);
+    return gnOperativaFetch(`/api/pedidos/${id}/chat-interno/mensajes`, { method: 'GET' });
+};
+window.gnOperativaChatEnviar = async function (pedidoId, cuerpo) {
+    const id = parseInt(pedidoId, 10);
+    return gnOperativaFetch(`/api/pedidos/${id}/chat-interno/mensajes`, {
+        method: 'POST',
+        body: JSON.stringify({ cuerpo: String(cuerpo || '').trim() }),
+    });
+};
+window.gnOperativaFotosListar = async function (pedidoId) {
+    const id = parseInt(pedidoId, 10);
+    return gnOperativaFetch(`/api/pedidos/${id}/fotos-clasificadas`, { method: 'GET' });
+};
+/** tipo: antes | despues | otro — fotosBase64: string[] data URLs */
+window.gnOperativaFotosSubir = async function (pedidoId, tipo, fotosBase64) {
+    const id = parseInt(pedidoId, 10);
+    const arr = Array.isArray(fotosBase64) ? fotosBase64 : [];
+    return gnOperativaFetch(`/api/pedidos/${id}/fotos-clasificadas`, {
+        method: 'POST',
+        body: JSON.stringify({ tipo: String(tipo || 'otro').toLowerCase(), fotos_base64: arr }),
+    });
+};
+window.gnOperativaTenantGeocercaGet = async function () {
+    return gnOperativaFetch('/api/tenant-operativa/geocerca-settings', { method: 'GET' });
+};
+window.gnOperativaTenantGeocercaPut = async function (habilitada, radioMetros) {
+    return gnOperativaFetch('/api/tenant-operativa/geocerca-settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+            habilitada: habilitada !== false,
+            radio_metros: Number(radioMetros) || 100,
+        }),
+    });
+};
+/**
+ * Android: pide GPS y llama callback(json). En navegador usa navigator.geolocation si existe.
+ * callbackName ejemplo: "window.__gnGeoCb"
+ */
+function gnOperativaInvokeCallback(callbackPath, payload) {
+    const raw = String(callbackPath || '').trim();
+    if (!raw) return;
+    const path = raw.startsWith('window.') ? raw.slice(7) : raw;
+    try {
+        const segs = path.split('.').filter(Boolean);
+        let o = window;
+        for (const s of segs) o = o?.[s];
+        if (typeof o === 'function') o(payload);
+    } catch (_) {}
+}
+window.gnOperativaObtenerUbicacionDispositivo = function (callbackName) {
+    const cb = String(callbackName || '').trim();
+    if (!/^[a-zA-Z0-9_.]+$/.test(cb)) return;
+    try {
+        if (window.AndroidDevice && typeof window.AndroidDevice.getCurrentLocationForGeocerca === 'function') {
+            window.AndroidDevice.getCurrentLocationForGeocerca(cb);
+            return;
+        }
+    } catch (_) {}
+    if (!navigator.geolocation) {
+        gnOperativaInvokeCallback(cb, { ok: false, error: 'sin_geolocation' });
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            gnOperativaInvokeCallback(cb, {
+                ok: true,
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+            });
+        },
+        () => {
+            gnOperativaInvokeCallback(cb, { ok: false, error: 'denied_or_unavailable' });
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+};
+
 function rolApp() {
     return app.u ? normalizarRolStr(app.u.rol) : '';
 }
