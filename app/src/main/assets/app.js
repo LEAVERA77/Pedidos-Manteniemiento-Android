@@ -2442,6 +2442,7 @@ async function nominatimGeocodeDomicilioPedido(p) {
     const calle = (p.ccal || '').trim();
     const loc = (p.cloc || '').trim();
     if (!calle || !loc) return null;
+    await new Promise((res) => setTimeout(res, 1100));
     const num = (p.cnum || '').trim();
     const q = num ? `${calle} ${num}, ${loc}, Argentina` : `${calle}, ${loc}, Argentina`;
     const params = new URLSearchParams({
@@ -2491,7 +2492,6 @@ async function enriquecerCoordsGeocodificadasPedidos() {
     });
     for (const p of candidatos) {
         try {
-            await new Promise((res) => setTimeout(res, 1100));
             const hit = await nominatimGeocodeDomicilioPedido(p);
             const id = String(p.id);
             if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
