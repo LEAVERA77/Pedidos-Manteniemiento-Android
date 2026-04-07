@@ -201,37 +201,62 @@ export function viewboxAroundPoint(lat, lng, deltaDeg) {
 }
 
 /**
- * Geocode solo localidad → bbox ampliada + viewbox string. Fallback: centro tenant si viene.
+ * Geocode solo localidad → bbox ampliada + viewbox string.
+ * @param {{ allowTenantCentroidFallback?: boolean, stateOrProvince?: string }} [options]
+ * - allowTenantCentroidFallback: default true. Si false (p. ej. domicilio desde catálogo), no usar lat/lng del tenant como viewbox sustituto.
+ * - stateOrProvince: desambigua homónimos (ej. Entre Ríos) vía parámetro `state` o búsqueda `q`.
  * @returns {Promise<{ viewboxStr: string, bbox: object, center: {lat,lng}, fromTenantCentroid?: boolean } | null>}
  */
-export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid) {
+export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid, options = {}) {
   const loc = String(localidad || "").trim();
   if (loc.length < 2) return null;
   const delta = tenantViewboxDeltaDeg();
-  await throttle();
-  const p = nominatimBaseParams();
-  p.set("city", loc);
-  p.set("country", "Argentina");
-  p.set("limit", "10");
-  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
-  if (!res.ok) return null;
-  const arr = await res.json();
-  if (!Array.isArray(arr) || !arr.length) {
-    if (
-      tenantCentroid &&
-      Number.isFinite(Number(tenantCentroid.lat)) &&
-      Number.isFinite(Number(tenantCentroid.lng))
-    ) {
-      const vb = viewboxAroundPoint(Number(tenantCentroid.lat), Number(tenantCentroid.lng), delta);
-      if (vb) return { viewboxStr: vb.viewboxStr, bbox: vb, center: vb.center, fromTenantCentroid: true };
-    }
-    return null;
+  const margin = localityMarginDeg();
+  const allowTenant = options.allowTenantCentroidFallback !== false;
+  const state = String(options.stateOrProvince || "").trim();
+
+  async function searchStructured(useState) {
+    await throttle();
+    const p = nominatimBaseParams();
+    p.set("city", loc);
+    p.set("country", "Argentina");
+    if (useState && state.length >= 2) p.set("state", state);
+    p.set("limit", "10");
+    const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+    const res = await fetch(url, { headers: nominatimHeaders() });
+    if (!res.ok) return [];
+    const arr = await res.json();
+    return Array.isArray(arr) ? arr : [];
   }
-  const filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+
+  async function searchQState() {
+    if (state.length < 2) return [];
+    await throttle();
+    const p = nominatimBaseParams();
+    p.set("q", `${loc}, ${state}, Argentina`);
+    p.set("limit", "10");
+    const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+    const res = await fetch(url, { headers: nominatimHeaders() });
+    if (!res.ok) return [];
+    const arr = await res.json();
+    return Array.isArray(arr) ? arr : [];
+  }
+
+  let arr = await searchStructured(false);
+  let filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+  if (!filtered.length && state.length >= 2) {
+    arr = await searchStructured(true);
+    filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+  }
+  if (!filtered.length && state.length >= 2) {
+    arr = await searchQState();
+    filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+  }
+
   const hit = filtered[0];
   if (!hit) {
     if (
+      allowTenant &&
       tenantCentroid &&
       Number.isFinite(Number(tenantCentroid.lat)) &&
       Number.isFinite(Number(tenantCentroid.lng))
@@ -242,7 +267,6 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid)
     return null;
   }
   const bb = hit.boundingbox;
-  const margin = localityMarginDeg();
   if (Array.isArray(bb) && bb.length >= 4) {
     const expanded = expandBBoxFromNominatim(bb, margin);
     if (expanded) {
@@ -251,7 +275,10 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid)
       return {
         viewboxStr: viewboxStringFromBBox(expanded),
         bbox: expanded,
-        center: { lat: Number.isFinite(lat) ? lat : (expanded.minLat + expanded.maxLat) / 2, lng: Number.isFinite(lng) ? lng : (expanded.minLon + expanded.maxLon) / 2 },
+        center: {
+          lat: Number.isFinite(lat) ? lat : (expanded.minLat + expanded.maxLat) / 2,
+          lng: Number.isFinite(lng) ? lng : (expanded.minLon + expanded.maxLon) / 2,
+        },
       };
     }
   }
@@ -356,8 +383,10 @@ export function hasMeaningfulHouseNumber(numeroStr) {
  * Geocodifica calle + número + ciudad: localidad → viewbox → búsqueda estructurada + fallback paridad.
  * Sin localidad en catálogo (ciudad vacía): consultas libres como antes (sin sufijos de provincia arbitrarios).
  *
- * @param {{ tenantCentroid?: { lat: number, lng: number }, catalogStrict?: boolean, precomputedViewboxMeta?: object | null }} options
+ * @param {{ tenantCentroid?: { lat: number, lng: number }, catalogStrict?: boolean, precomputedViewboxMeta?: object | null, allowTenantCentroidFallback?: boolean, stateOrProvince?: string }} options
  * catalogStrict: exige candidato dentro del viewbox cuando existe; si viola localidad, descarta.
+ * allowTenantCentroidFallback: default !catalogStrict para el viewbox de localidad (catálogo no usa centro cooperativa como bbox sustituto).
+ * stateOrProvince: provincia para desambiguar localidad en Nominatim.
  * precomputedViewboxMeta: evita un segundo geocode de la misma localidad (p. ej. WhatsApp ya calculó viewbox).
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, audit?: object } | null>}
  */
@@ -368,6 +397,11 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   if (cal.length < 2) return null;
   const catalogStrict = !!options.catalogStrict;
   const tenantCentroid = options.tenantCentroid;
+  const allowTenantCentroidFallback =
+    options.allowTenantCentroidFallback !== undefined
+      ? !!options.allowTenantCentroidFallback
+      : !catalogStrict;
+  const stateOrProvince = String(options.stateOrProvince || "").trim();
 
   const audit = {
     requestedHouseNumber: hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null,
@@ -399,16 +433,22 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
 
   const vbMeta = Object.prototype.hasOwnProperty.call(options, "precomputedViewboxMeta")
     ? options.precomputedViewboxMeta
-    : await geocodeLocalityViewboxArgentina(c, tenantCentroid);
+    : await geocodeLocalityViewboxArgentina(c, tenantCentroid, {
+        allowTenantCentroidFallback,
+        stateOrProvince: stateOrProvince || undefined,
+      });
   if (vbMeta?.viewboxStr) audit.viewboxUsed = true;
   const bbox = vbMeta?.bbox || null;
   const bounded = vbMeta?.viewboxStr ? { viewbox: vbMeta.viewboxStr, bounded: "1" } : {};
+  const mayRunBoundedStructured = !catalogStrict || !!vbMeta?.viewboxStr;
 
   const tryStructured = async (streetLine, wantHouse) => {
+    if (!mayRunBoundedStructured) return null;
     const hits = await nominatimSearch({
       street: streetLine,
       city: c,
       country: "Argentina",
+      ...(stateOrProvince.length >= 2 ? { state: stateOrProvince } : {}),
       limit: "12",
       ...bounded,
     });
@@ -469,7 +509,8 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   const targetNum = hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null;
   const geoCiudad =
     (await geocodeAddressArgentina(`${c}, Argentina`, { filterLocalidad: c })) ||
-    (tenantCentroid &&
+    (!catalogStrict &&
+    tenantCentroid &&
     Number.isFinite(Number(tenantCentroid.lat)) &&
     Number.isFinite(Number(tenantCentroid.lng))
       ? {
@@ -807,5 +848,30 @@ export async function reverseGeocodeArgentina(lat, lng) {
   const dn = String(hit.display_name || "").trim();
   if (!dn) return null;
   const barrio = barrioDesdeNominatimAddress(hit.address);
-  return { displayName: dn, ...(barrio ? { barrio } : {}) };
+  const addr = hit.address && typeof hit.address === "object" ? hit.address : null;
+  return { displayName: dn, ...(barrio ? { barrio } : {}), ...(addr ? { address: addr } : {}) };
+}
+
+/**
+ * Comprueba si un resultado de reverse encaja con localidad + calle del padrón (sin llamar a la red).
+ */
+export function reverseHitMatchesCatalog(rev, localidad, calle) {
+  if (!rev || !rev.displayName) return false;
+  const loc = String(localidad || "").trim();
+  const cal = String(calle || "").trim();
+  if (loc.length < 2 || cal.length < 2) return true;
+  const hitLike = { display_name: rev.displayName, address: rev.address || null };
+  return nominatimHitStrictLocalidad(hitLike, loc) && nominatimHitMatchesCalle(hitLike, cal);
+}
+
+/**
+ * Reverse Nominatim y validación estricta para domicilio desde catálogo (evita pin en otra ciudad).
+ */
+export async function verifyCatalogGeocodeReverse(lat, lng, localidad, calle) {
+  const loc = String(localidad || "").trim();
+  const cal = String(calle || "").trim();
+  if (loc.length < 2 || cal.length < 2) return true;
+  const rev = await reverseGeocodeArgentina(lat, lng);
+  if (!rev) return false;
+  return reverseHitMatchesCatalog(rev, loc, cal);
 }

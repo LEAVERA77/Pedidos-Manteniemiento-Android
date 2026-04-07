@@ -30,6 +30,7 @@ import {
   parseHouseNumberInt,
   searchCalleLocalidadArgentina,
   resolveStructuredAddressCoords,
+  verifyCatalogGeocodeReverse,
 } from "./nominatimClient.js";
 import {
   humanChatOpenOrGetSession,
@@ -334,12 +335,16 @@ async function loadTenantBotContext(tenantId) {
   }
   const c = normCfg(cfg);
   const bloqueo = resolveWhatsappBloqueoReclamos(c);
+  const provRaw = c.provincia ?? c.state ?? c.provincia_nominatim ?? c.provincia_geocode;
+  const geocodeState =
+    provRaw != null && String(provRaw).trim().length >= 2 ? String(provRaw).trim() : null;
   return {
     id: row.id,
     nombre: row.nombre,
     tipo: row.tipo,
     lat: c.lat_base != null ? Number(c.lat_base) : null,
     lng: c.lng_base != null ? Number(c.lng_base) : null,
+    geocodeState,
     tipos: tiposReclamoParaClienteTipo(row.tipo),
     whatsappBloqueoReclamos: bloqueo.active,
     whatsappBloqueoMensaje: bloqueo.mensaje,
@@ -650,6 +655,9 @@ async function geocodeStructuredAddressAndFinalizePedido(
   }
 
   const ciudadLabel = ciudad || "tu localidad";
+  const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
+  const stateGeo = String(ctx?.geocodeState || "").trim();
+
   let geoCiudad = null;
   try {
     geoCiudad = await geocodeAddressArgentina(`${ciudadLabel}, Argentina`, {
@@ -663,7 +671,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const fallbackCity =
     geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
       ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
-      : baseLat != null && baseLng != null
+      : !catalogStrict && baseLat != null && baseLng != null
         ? { lat: baseLat, lng: baseLng }
         : null;
 
@@ -678,7 +686,10 @@ async function geocodeStructuredAddressAndFinalizePedido(
   let localityViewboxMeta = null;
   if (ciudad.length >= 2) {
     try {
-      localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid);
+      localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid, {
+        allowTenantCentroidFallback: !catalogStrict,
+        stateOrProvince: stateGeo || undefined,
+      });
     } catch (e) {
       console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
     }
@@ -704,18 +715,19 @@ async function geocodeStructuredAddressAndFinalizePedido(
     Number.isFinite(targetNum) &&
     houseHits.some((h) => h.houseNum === targetNum);
 
-  const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
-
   try {
     const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, {
       tenantCentroid,
       catalogStrict,
       precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
+      allowTenantCentroidFallback: !catalogStrict,
+      stateOrProvince: stateGeo || undefined,
     });
     if (geo?.audit) {
       console.log("[whatsapp-bot-meta] geocode audit", {
         tenantId: sess.tenantId,
         catalogStrict,
+        stateGeo: stateGeo || null,
         ...geo.audit,
         ciudad,
         calle,
@@ -731,6 +743,21 @@ async function geocodeStructuredAddressAndFinalizePedido(
         acceptDirectGeocode = true;
       } else if (exactInHouseHits) {
         acceptDirectGeocode = true;
+      }
+      if (acceptDirectGeocode) {
+        if (catalogStrict) {
+          const revOk = await verifyCatalogGeocodeReverse(geo.lat, geo.lng, ciudad, calle);
+          if (!revOk) {
+            console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (direct)", {
+              tenantId: sess.tenantId,
+              ciudad,
+              calle,
+              lat: geo.lat,
+              lng: geo.lng,
+            });
+            acceptDirectGeocode = false;
+          }
+        }
       }
       if (acceptDirectGeocode) {
         if (userGps) {
@@ -770,41 +797,80 @@ async function geocodeStructuredAddressAndFinalizePedido(
     nearMeters: nearM,
   });
   if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
-    sess.lat = picked.lat;
-    sess.lng = picked.lng;
-    const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-    const anchor = picked.anchorHouse != null ? ` (frente ref. ${calle} ${picked.anchorHouse})` : "";
-    const modoMapa =
-      picked.source === "user_gps_near"
-        ? `GPS del usuario (cercano a domicilio estimado${anchor})`
-        : picked.source === "exact_house"
-          ? `Domicilio geocodificado${anchor}`
-          : picked.source === "street_center"
-            ? `Eje de calle (centro estimado de la vía en ${ciudadLabel})`
-            : picked.source === "fallback"
-              ? `Centro de localidad (referencia)`
-              : picked.source === "house_search_parity"
-                ? `Ubicación estimada por *misma paridad* (calle impar/par)${anchor}`
-                : `Ubicación estimada en mapa${anchor}`;
-    sess.direccionTexto = `${modoMapa}, ${origen}: ${calle} ${numero}, ${ciudadLabel}`
-      .replace(/\s+/g, " ")
-      .trim();
-    sessions.set(sk, sess);
-    await finalizePedidoFromSession(phone, sess, contactName);
-    return;
-  }
-
-  sess.lat = geoCiudad?.lat ?? baseLat;
-  sess.lng = geoCiudad?.lng ?? baseLng;
-  const nom = String(sess.contactName || contactName || "").trim();
-  const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-  sess.direccionTexto = nom
-    ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-        .replace(/\s+/g, " ")
-        .trim()
-    : `Ubicación aproximada (centro de ciudad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+    const pickedRevOk =
+      !catalogStrict || (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
+    if (!pickedRevOk) {
+      console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (picked)", {
+        tenantId: sess.tenantId,
+        ciudad,
+        calle,
+        lat: picked.lat,
+        lng: picked.lng,
+      });
+    }
+    if (pickedRevOk) {
+      sess.lat = picked.lat;
+      sess.lng = picked.lng;
+      const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
+      const anchor = picked.anchorHouse != null ? ` (frente ref. ${calle} ${picked.anchorHouse})` : "";
+      const modoMapa =
+        picked.source === "user_gps_near"
+          ? `GPS del usuario (cercano a domicilio estimado${anchor})`
+          : picked.source === "exact_house"
+            ? `Domicilio geocodificado${anchor}`
+            : picked.source === "street_center"
+              ? `Eje de calle (centro estimado de la vía en ${ciudadLabel})`
+              : picked.source === "fallback"
+                ? `Centro de localidad (referencia)`
+                : picked.source === "house_search_parity"
+                  ? `Ubicación estimada por *misma paridad* (calle impar/par)${anchor}`
+                  : `Ubicación estimada en mapa${anchor}`;
+      sess.direccionTexto = `${modoMapa}, ${origen}: ${calle} ${numero}, ${ciudadLabel}`
         .replace(/\s+/g, " ")
         .trim();
+      sessions.set(sk, sess);
+      await finalizePedidoFromSession(phone, sess, contactName);
+      return;
+    }
+  }
+
+  let endLat = geoCiudad?.lat ?? (catalogStrict ? null : baseLat);
+  let endLng = geoCiudad?.lng ?? (catalogStrict ? null : baseLng);
+  if (catalogStrict && endLat != null && endLng != null) {
+    const okEnd = await verifyCatalogGeocodeReverse(endLat, endLng, ciudad, calle);
+    if (!okEnd) {
+      console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (fallback city)", {
+        tenantId: sess.tenantId,
+        ciudad,
+        calle,
+        lat: endLat,
+        lng: endLng,
+      });
+      endLat = null;
+      endLng = null;
+    }
+  }
+  sess.lat = endLat;
+  sess.lng = endLng;
+  const nom = String(sess.contactName || contactName || "").trim();
+  const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
+  if (catalogStrict && (endLat == null || endLng == null)) {
+    sess.direccionTexto = nom
+      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (Sin coordenadas en mapa: no se verificó la ubicación con el servicio de callejero.)`
+          .replace(/\s+/g, " ")
+          .trim()
+      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (Sin coordenadas en mapa: no se verificó la ubicación con el servicio de callejero.)`
+          .replace(/\s+/g, " ")
+          .trim();
+  } else {
+    sess.direccionTexto = nom
+      ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+          .replace(/\s+/g, " ")
+          .trim()
+      : `Ubicación aproximada (centro de ciudad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+          .replace(/\s+/g, " ")
+          .trim();
+  }
   sessions.set(sk, sess);
   await finalizePedidoFromSession(phone, sess, contactName);
 }

@@ -4,6 +4,7 @@ import {
   iterHouseNumbersSameParity,
   pointInBBox,
   viewboxStringFromBBox,
+  reverseHitMatchesCatalog,
 } from "../services/nominatimClient.js";
 
 describe("nominatimHitStrictLocalidad (homónimos de localidad)", () => {
@@ -21,6 +22,24 @@ describe("nominatimHitStrictLocalidad (homónimos de localidad)", () => {
       address: { road: "San Martín", house_number: "100", city: "Cerrito", state: "Entre Ríos" },
     };
     expect(nominatimHitStrictLocalidad(hit, "Hasenkamp")).toBe(false);
+  });
+});
+
+describe("reverseHitMatchesCatalog (post-validación domicilio padrón)", () => {
+  it("acepta reverse en Hasenkamp con calle Urquiza", () => {
+    const rev = {
+      displayName: "730, Justo José de Urquiza, Hasenkamp, Entre Ríos, Argentina",
+      address: { road: "Justo José de Urquiza", house_number: "730", city: "Hasenkamp", state: "Entre Ríos" },
+    };
+    expect(reverseHitMatchesCatalog(rev, "Hasenkamp", "Justo José de Urquiza")).toBe(true);
+  });
+
+  it("rechaza reverse en Cerrito para padrón Hasenkamp", () => {
+    const rev = {
+      displayName: "Jujuy, Cerrito, Entre Ríos, Argentina",
+      address: { road: "Jujuy", city: "Cerrito", state: "Entre Ríos" },
+    };
+    expect(reverseHitMatchesCatalog(rev, "Hasenkamp", "Justo José de Urquiza")).toBe(false);
   });
 });
 
