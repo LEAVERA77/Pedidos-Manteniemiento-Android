@@ -6,6 +6,10 @@ vi.mock("../db/neon.js", () => ({
   query: vi.fn(),
 }));
 
+vi.mock("../utils/tenantUser.js", () => ({
+  getUserTenantId: vi.fn().mockResolvedValue(1),
+}));
+
 import { query } from "../db/neon.js";
 import { createHttpApp } from "../httpApp.js";
 
@@ -69,7 +73,7 @@ describe("Integración — POST /api/auth/login", () => {
       .send({ email: "admin@test.com", password: "miClavePlana" })
       .expect(200);
     expect(res.body.token).toBeTruthy();
-    expect(res.body.user).toMatchObject({ id: 42, email: "admin@test.com", rol: "admin" });
+    expect(res.body.user).toMatchObject({ id: 42, email: "admin@test.com", rol: "admin", tenant_id: 1 });
   });
 
   it("200 con bcrypt", async () => {
@@ -93,5 +97,6 @@ describe("Integración — POST /api/auth/login", () => {
       .expect(200);
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.rol).toBe("supervisor");
+    expect(res.body.user.tenant_id).toBe(1);
   });
 });

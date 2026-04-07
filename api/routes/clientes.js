@@ -1,7 +1,6 @@
 import express from "express";
-import { authMiddleware, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
-import { getUserTenantId } from "../utils/tenantUser.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
@@ -11,9 +10,9 @@ import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 
 const router = express.Router();
 
-router.get("/mi-configuracion", authMiddleware, async (req, res) => {
+router.get("/mi-configuracion", authWithTenantHost, async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const r = await query(
       `SELECT id, nombre, tipo, plan, configuracion, activo, fecha_registro, fecha_actualizacion, barrio
        FROM clientes
@@ -28,14 +27,14 @@ router.get("/mi-configuracion", authMiddleware, async (req, res) => {
   }
 });
 
-router.put("/mi-configuracion", authMiddleware, async (req, res) => {
+router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
   try {
     const rol = String(req.user.rol || "").toLowerCase();
     if (rol !== "admin" && rol !== "administrador") {
       return res.status(403).json({ error: "Requiere rol administrador" });
     }
 
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const body = req.body || {};
     const { nombre, tipo, latitud, longitud, configuracion = {} } = body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;
@@ -54,7 +53,6 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
       tipoDb = norm;
     }
 
-    // Merge: top-level logo/lat/lng + body.configuracion (p. ej. setup_wizard_completado).
     const cfgJson = {
       ...(typeof configuracion === "object" && configuracion ? configuracion : {}),
       ...(latitud != null ? { lat_base: latitud } : {}),
@@ -116,9 +114,9 @@ router.put("/mi-configuracion", authMiddleware, async (req, res) => {
   }
 });
 
-router.get("/tipos-reclamo", authMiddleware, async (req, res) => {
+router.get("/tipos-reclamo", authWithTenantHost, async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const r = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
     const tipoCliente = r.rows?.[0]?.tipo ?? null;
     return res.json({
@@ -132,15 +130,23 @@ router.get("/tipos-reclamo", authMiddleware, async (req, res) => {
   }
 });
 
-router.use(authMiddleware, adminOnly);
+router.use(authWithTenantHost, adminOnly);
 
-router.get("/", async (_req, res) => {
-  const r = await query("SELECT * FROM clientes ORDER BY id DESC");
+router.get("/", async (req, res) => {
+  const r = await query("SELECT * FROM clientes WHERE id = $1 LIMIT 1", [req.tenantId]);
   res.json(r.rows);
 });
 
 router.post("/", async (req, res) => {
   try {
+    const secret = String(process.env.PLATFORM_TENANT_SIGNUP_SECRET || "").trim();
+    const hdr = String(req.headers["x-platform-signup"] || "").trim();
+    if (!secret || hdr !== secret) {
+      return res.status(403).json({
+        error: "Alta de nuevos tenants deshabilitada desde la API",
+        hint: "Definí PLATFORM_TENANT_SIGNUP_SECRET y enviá X-Platform-Signup, o creá la fila en Neon.",
+      });
+    }
     const { nombre, tipo, plan = "basico", configuracion = {}, activo = true } = req.body;
     if (!nombre || !tipo) return res.status(400).json({ error: "nombre y tipo requeridos" });
     const r = await query(
@@ -156,6 +162,9 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const id = Number(req.params.id);
+  if (id !== Number(req.tenantId)) {
+    return res.status(403).json({ error: "Solo podés modificar el tenant de tu sesión" });
+  }
   const { nombre, tipo, plan, activo, configuracion } = req.body;
   const r = await query(
     `UPDATE clientes
@@ -173,9 +182,12 @@ router.put("/:id", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
-  await query("UPDATE clientes SET activo = FALSE, fecha_actualizacion = NOW() WHERE id = $1", [Number(req.params.id)]);
+  const id = Number(req.params.id);
+  if (id !== Number(req.tenantId)) {
+    return res.status(403).json({ error: "Solo podés dar de baja el tenant de tu sesión" });
+  }
+  await query("UPDATE clientes SET activo = FALSE, fecha_actualizacion = NOW() WHERE id = $1", [id]);
   res.json({ ok: true });
 });
 
 export default router;
-

@@ -1,9 +1,10 @@
 import express from "express";
-import { authMiddleware } from "../middleware/auth.js";
+import { authWithTenantHost } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
+import { usuarioPerteneceATenant } from "../utils/tenantScope.js";
 
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authWithTenantHost);
 
 router.post("/enviar-push", async (req, res) => {
   try {
@@ -11,6 +12,10 @@ router.post("/enviar-push", async (req, res) => {
     const { usuario_id, pedido_id, titulo, cuerpo } = req.body;
     if (!usuario_id || !titulo || !cuerpo) {
       return res.status(400).json({ error: "usuario_id, titulo y cuerpo son requeridos" });
+    }
+    const okUser = await usuarioPerteneceATenant(usuario_id, req.tenantId);
+    if (!okUser) {
+      return res.status(403).json({ error: "El usuario no pertenece a este tenant" });
     }
     const r = await query(
       `INSERT INTO notificaciones_movil(usuario_id, pedido_id, titulo, cuerpo, leida)
@@ -39,4 +44,3 @@ router.get("/mis-notificaciones", async (req, res) => {
 });
 
 export default router;
-

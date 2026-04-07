@@ -2,6 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db/neon.js";
 import { authMiddleware, signToken } from "../middleware/auth.js";
+import { getUserTenantId } from "../utils/tenantUser.js";
 
 const router = express.Router();
 
@@ -28,10 +29,11 @@ router.post("/login", async (req, res) => {
     }
     if (!ok) return res.status(401).json({ error: "Credenciales inválidas" });
 
-    const token = signToken({ userId: u.id, rol: u.rol });
+    const tenant_id = await getUserTenantId(u.id);
+    const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
     return res.json({
       token,
-      user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol },
+      user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
     });
   } catch (error) {
     return res.status(500).json({ error: "Error en login", detail: error.message });
@@ -39,7 +41,7 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/verify-token", authMiddleware, async (req, res) => {
-  return res.json({ ok: true, user: req.user });
+  return res.json({ ok: true, user: req.user, tenant_id: req.tenantId });
 });
 
 /** Confirma la contraseña del usuario autenticado (p. ej. antes de cambiar rubro del tenant en la web admin). */

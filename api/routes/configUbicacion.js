@@ -1,6 +1,6 @@
 import express from "express";
 import { query } from "../db/neon.js";
-import { authMiddleware } from "../middleware/auth.js";
+import { authWithTenantHost } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import {
   getUbicacionCentralFromTable,
@@ -64,6 +64,11 @@ router.get("/ubicacion-central", async (req, res) => {
         const decoded = jwt.verify(token, secret);
         if (decoded?.userId) {
           tid = await getUserTenantId(decoded.userId);
+          if (decoded.tenant_id != null && Number.isFinite(Number(decoded.tenant_id))) {
+            if (Number(decoded.tenant_id) !== Number(tid)) {
+              return res.status(403).json({ error: "Token no válido para este tenant" });
+            }
+          }
         }
       } catch (_) {
         /* seguir con tenant_id query */
@@ -91,13 +96,13 @@ router.get("/ubicacion-central", async (req, res) => {
   }
 });
 
-router.put("/ubicacion-central", authMiddleware, async (req, res) => {
+router.put("/ubicacion-central", authWithTenantHost, async (req, res) => {
   try {
     const rol = String(req.user.rol || "").toLowerCase();
     if (rol !== "admin" && rol !== "administrador") {
       return res.status(403).json({ error: "Requiere rol administrador" });
     }
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const body = req.body || {};
     const lat = body.lat;
     const lng = body.lng;

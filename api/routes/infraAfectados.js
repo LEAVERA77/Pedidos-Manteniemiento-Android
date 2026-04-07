@@ -1,13 +1,12 @@
 import express from "express";
 import multer from "multer";
 import XLSX from "xlsx";
-import { authMiddleware, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
-import { getUserTenantId } from "../utils/tenantUser.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
-router.use(authMiddleware);
+router.use(authWithTenantHost);
 
 function badTable(error) {
   const m = String(error?.message || error || "");
@@ -48,7 +47,7 @@ function cellNum(row, ...keys) {
 
 router.get("/transformadores", async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const r = await query(
       `SELECT t.id, t.tenant_id, t.codigo, t.nombre, t.capacidad_kva, t.clientes_conectados, t.barrio_texto,
               t.distribuidor_id, t.alimentador, t.latitud, t.longitud, t.activo, t.created_at,
@@ -73,7 +72,7 @@ router.get("/transformadores", async (req, res) => {
 /** Suma kVA y socios de todos los trafos activos del tenant bajo cada distribuidor. */
 router.get("/resumen-por-distribuidor", async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const r = await query(
       `SELECT d.id AS distribuidor_id, d.codigo, d.nombre, d.localidad,
               COALESCE(SUM(t.capacidad_kva), 0)::bigint AS total_kva,
@@ -99,7 +98,7 @@ router.get("/resumen-por-distribuidor", async (req, res) => {
 
 router.get("/resumen-por-alimentador", async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const did = Number(req.query.distribuidor_id);
     if (!Number.isFinite(did) || did <= 0) {
       return res.status(400).json({ error: "distribuidor_id query requerido" });
@@ -129,7 +128,7 @@ router.get("/resumen-por-alimentador", async (req, res) => {
 
 router.post("/transformadores", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const codigo = String(req.body?.codigo || "").trim().toUpperCase();
     if (!codigo) return res.status(400).json({ error: "codigo es requerido" });
     const nombre = req.body?.nombre != null ? String(req.body.nombre).trim() : null;
@@ -198,7 +197,7 @@ router.post("/transformadores", adminOnly, async (req, res) => {
 
 router.put("/transformadores/:id", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const id = Number(req.params.id);
     const chk = await query(
       `SELECT id FROM infra_transformadores WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
@@ -277,7 +276,7 @@ router.put("/transformadores/:id", adminOnly, async (req, res) => {
 
 router.delete("/transformadores/:id", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     await query(`UPDATE infra_transformadores SET activo = FALSE WHERE id = $1 AND tenant_id = $2`, [
       Number(req.params.id),
       tid,
@@ -297,7 +296,7 @@ router.delete("/transformadores/:id", adminOnly, async (req, res) => {
 router.post("/transformadores/import-excel", adminOnly, upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
@@ -370,7 +369,7 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
 router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
@@ -415,7 +414,7 @@ router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single
 
 router.get("/zonas-clientes", async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const r = await query(
       `SELECT id, tenant_id, nombre, clientes_estimados, activo, created_at
        FROM infra_zonas_clientes
@@ -436,7 +435,7 @@ router.get("/zonas-clientes", async (req, res) => {
 
 router.post("/zonas-clientes", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const nombre = String(req.body?.nombre || "").trim();
     if (!nombre) return res.status(400).json({ error: "nombre es requerido" });
     const clientes_estimados = Math.max(0, Number(req.body?.clientes_estimados) || 0);
@@ -462,7 +461,7 @@ router.post("/zonas-clientes", adminOnly, async (req, res) => {
 
 router.put("/zonas-clientes/:id", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     const id = Number(req.params.id);
     const chk = await query(
       `SELECT id FROM infra_zonas_clientes WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
@@ -495,7 +494,7 @@ router.put("/zonas-clientes/:id", adminOnly, async (req, res) => {
 
 router.delete("/zonas-clientes/:id", adminOnly, async (req, res) => {
   try {
-    const tid = await getUserTenantId(req.user.id);
+    const tid = req.tenantId;
     await query(`UPDATE infra_zonas_clientes SET activo = FALSE WHERE id = $1 AND tenant_id = $2`, [
       Number(req.params.id),
       tid,

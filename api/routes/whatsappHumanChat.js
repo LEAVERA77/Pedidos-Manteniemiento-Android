@@ -1,6 +1,5 @@
 import express from "express";
-import { authMiddleware, adminOnly } from "../middleware/auth.js";
-import { getUserTenantId } from "../utils/tenantUser.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import {
   humanChatListOpenSessions,
   humanChatGetMessages,
@@ -13,11 +12,11 @@ import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 
 const router = express.Router();
 
-router.use(authMiddleware, adminOnly);
+router.use(authWithTenantHost, adminOnly);
 
 router.get("/sessions", async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const sinceRaw = req.query.since;
     let since = null;
     if (sinceRaw) {
@@ -33,7 +32,7 @@ router.get("/sessions", async (req, res) => {
 
 router.get("/sessions/:id/messages", async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const id = Number(req.params.id);
     const messages = await humanChatGetMessages(id, tenantId);
     const session = await humanChatGetSessionForTenant(id, tenantId);
@@ -46,7 +45,7 @@ router.get("/sessions/:id/messages", async (req, res) => {
 
 router.post("/sessions/:id/activate", async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const id = Number(req.params.id);
     const s = await humanChatActivateSession(id, tenantId, req.user.id);
     return res.json({ ok: true, session: s });
@@ -59,7 +58,7 @@ router.post("/sessions/:id/activate", async (req, res) => {
 
 router.post("/sessions/:id/close", async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const id = Number(req.params.id);
     await humanChatCloseSessionAdmin(id, tenantId);
     return res.json({ ok: true });
@@ -70,7 +69,7 @@ router.post("/sessions/:id/close", async (req, res) => {
 
 router.post("/sessions/:id/send", async (req, res) => {
   try {
-    const tenantId = await getUserTenantId(req.user.id);
+    const tenantId = req.tenantId;
     const id = Number(req.params.id);
     const text = String(req.body?.text || "").trim();
     if (!text) return res.status(400).json({ error: "text requerido" });

@@ -1,16 +1,20 @@
 import express from "express";
 import multer from "multer";
 import XLSX from "xlsx";
-import { authMiddleware, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
+import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
-router.use(authMiddleware, adminOnly);
+router.use(authWithTenantHost, adminOnly);
 
 router.get("/", async (req, res) => {
   const limit = Number(req.query.limit || 300);
-  const r = await query("SELECT * FROM clientes_finales ORDER BY id DESC LIMIT $1", [limit]);
+  const r = await query("SELECT * FROM clientes_finales WHERE cliente_id = $1 ORDER BY id DESC LIMIT $2", [
+    req.tenantId,
+    limit,
+  ]);
   res.json(r.rows);
 });
 
@@ -18,8 +22,8 @@ router.get("/buscar", async (req, res) => {
   const nis = String(req.query.nis || "").trim();
   const medidor = String(req.query.medidor || "").trim();
   if (!nis && !medidor) return res.status(400).json({ error: "nis o medidor requerido" });
-  const params = [];
-  const where = [];
+  const params = [req.tenantId];
+  const where = ["cliente_id = $1"];
   if (nis) {
     params.push(nis);
     where.push(`nis = $${params.length}`);
@@ -28,13 +32,19 @@ router.get("/buscar", async (req, res) => {
     params.push(medidor);
     where.push(`medidor = $${params.length}`);
   }
-  const r = await query(`SELECT * FROM clientes_finales WHERE ${where.join(" OR ")} LIMIT 200`, params);
+  const cond = where.slice(1).length ? `${where[0]} AND (${where.slice(1).join(" OR ")})` : where.join(" AND ");
+  const r = await query(`SELECT * FROM clientes_finales WHERE ${cond} LIMIT 200`, params);
   res.json(r.rows);
 });
 
 router.get("/:id/historial", async (req, res) => {
-  const rcf = await query("SELECT nis, medidor FROM clientes_finales WHERE id = $1 LIMIT 1", [Number(req.params.id)]);
+  const rcf = await query("SELECT nis, medidor, cliente_id FROM clientes_finales WHERE id = $1 LIMIT 1", [
+    Number(req.params.id),
+  ]);
   if (!rcf.rows.length) return res.status(404).json({ error: "Cliente final no encontrado" });
+  if (Number(rcf.rows[0].cliente_id) !== Number(req.tenantId)) {
+    return res.status(403).json({ error: "Sin acceso a este registro" });
+  }
   const { nis, medidor } = rcf.rows[0];
   const params = [];
   const where = [];
@@ -47,6 +57,16 @@ router.get("/:id/historial", async (req, res) => {
     where.push(`medidor = $${params.length}`);
   }
   if (!where.length) return res.json([]);
+  const hasT = await pedidosTableHasTenantIdColumn();
+  if (hasT) {
+    params.push(req.tenantId);
+    const inner = where.join(" OR ");
+    const r = await query(
+      `SELECT * FROM pedidos WHERE tenant_id = $${params.length} AND (${inner}) ORDER BY fecha_creacion DESC`,
+      params
+    );
+    return res.json(r.rows);
+  }
   const r = await query(`SELECT * FROM pedidos WHERE ${where.join(" OR ")} ORDER BY fecha_creacion DESC`, params);
   res.json(r.rows);
 });
@@ -62,7 +82,7 @@ router.post("/", async (req, res) => {
       $12,$13,$14,$15,$16::jsonb,COALESCE($17,TRUE),NOW()
     ) RETURNING *`,
     [
-      d.cliente_id,
+      req.tenantId,
       d.tipo || "socio",
       d.numero_cliente || null,
       d.nombre || null,
@@ -105,7 +125,7 @@ router.put("/:id", async (req, res) => {
       medidor = COALESCE($15,medidor),
       metadata = COALESCE($16::jsonb,metadata),
       activo = COALESCE($17,activo)
-     WHERE id = $1 RETURNING *`,
+     WHERE id = $1 AND cliente_id = $18 RETURNING *`,
     [
       id,
       d.tipo ?? null,
@@ -124,6 +144,7 @@ router.put("/:id", async (req, res) => {
       d.medidor ?? null,
       d.metadata ? JSON.stringify(d.metadata) : null,
       d.activo ?? null,
+      req.tenantId,
     ]
   );
   if (!r.rows.length) return res.status(404).json({ error: "Cliente final no encontrado" });
@@ -131,7 +152,11 @@ router.put("/:id", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
-  await query("UPDATE clientes_finales SET activo = FALSE WHERE id = $1", [Number(req.params.id)]);
+  const r = await query("UPDATE clientes_finales SET activo = FALSE WHERE id = $1 AND cliente_id = $2 RETURNING id", [
+    Number(req.params.id),
+    req.tenantId,
+  ]);
+  if (!r.rows.length) return res.status(404).json({ error: "Cliente final no encontrado" });
   res.json({ ok: true });
 });
 
@@ -148,7 +173,7 @@ router.post("/import-excel", upload.single("file"), async (req, res) => {
           `INSERT INTO clientes_finales(cliente_id, tipo, numero_cliente, nombre, apellido, telefono, email, nis, medidor, activo, fecha_registro)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,NOW())`,
           [
-            row.cliente_id || req.body.cliente_id,
+            req.tenantId,
             row.tipo || "socio",
             row.numero_cliente || null,
             row.nombre || null,
@@ -169,4 +194,3 @@ router.post("/import-excel", upload.single("file"), async (req, res) => {
 });
 
 export default router;
-
