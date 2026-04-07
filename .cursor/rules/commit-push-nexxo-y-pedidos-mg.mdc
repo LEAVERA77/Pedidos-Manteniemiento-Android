@@ -1,36 +1,46 @@
 ---
-description: Tras cambios en el proyecto, commit y push en Nexxo (Android) y en Pedidos-MG
+description: Tras cada cambio implementado, commit y push en Nexxo (Android) y en Pedidos-MG (GitHub)
 alwaysApply: true
 ---
 
-# Commit y push dual: Nexxo + Pedidos-MG
+# Commit y push dual: Nexxo (Android) + Pedidos-MG
 
-A partir de ahora, cuando el usuario pida un cambio y el agente **implemente modificaciones reales** en el workspace **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe:
+**Norma por defecto:** cuando el agente **implemente cambios reales** en el workspace **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe quedar todo versionado y subido en **los dos** remotos, salvo que el usuario diga explícitamente lo contrario (solo un repo, no push, borrador local, etc.).
 
-## 1. Repositorio Nexxo (Android / GestorNova)
+## 1. Proyecto Nexxo (Android / GestorNova)
 
-- `git add` de los archivos tocados (no incluir secretos: `.env`, `config.json` local, etc.).
-- `git commit` con mensaje claro en español o inglés.
-- `git push origin main` (remoto habitual: [Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android)).
+- Ruta habitual del repo: `AndroidStudioProjects/Nexxo`.
+- Remoto habitual: [LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) (`origin`, rama `main`).
+- Pasos: `git add` de lo tocado (sin secretos: `.env`, `config.json` local, claves), `git commit` con mensaje claro, `git push origin main`.
 
-## 2. Repositorio [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
+## 2. [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
 
-Mantener **paridad** según qué se haya cambiado:
+- Remoto: **https://github.com/LEAVERA77/Pedidos-MG** — `git push origin main` en la rama principal tras sincronizar lo que corresponda desde Nexxo.
+- Clon local típico: `AndroidStudioProjects/Pedidos-MG` (hermano de Nexxo).
 
-| Área cambiada en Nexxo | Acción en Pedidos-MG |
-|------------------------|----------------------|
-| `api/**` | Copiar carpeta `api/` al clon local de Pedidos-MG (p. ej. `robocopy` desde la raíz de Nexxo, excluyendo `node_modules` y `.env`), luego commit + push en Pedidos-MG. |
-| Front embebido `app/src/main/assets/*` (HTML/CSS/JS del panel, `sw.js`, etc.) | Ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` desde la raíz de Nexxo (o copia equivalente), luego commit + push en Pedidos-MG. |
-| Solo Kotlin/Android sin tocar `api/` ni assets web compartidos | No hace falta commit en Pedidos-MG salvo que el usuario pida explícitamente subir algo allí. |
+### Qué sincronizar antes del commit en Pedidos-MG
 
-- En Pedidos-MG: **no** commitear `config.json` con secretos; respeta `.gitignore` del repo.
+| Cambios en Nexxo | Acción |
+|------------------|--------|
+| `api/**` | Copiar `api/` al clon de Pedidos-MG (sin `node_modules`, sin `.env`), luego commit + push allí. |
+| `app/src/main/assets/*` (panel web, PWA) | Ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` desde la raíz de Nexxo, o copia manual equivalente a la raíz de Pedidos-MG; luego commit + push. |
+| `docs/**` si son operativos compartidos con el repo web | Copiar los mismos archivos a `Pedidos-MG/docs/` cuando aplique paridad. |
+| Solo Kotlin/Android (`app/src/main/java`, Gradle, etc.) sin tocar `api/` ni assets compartidos | **Nexxo:** commit + push obligatorio. **Pedidos-MG:** no hay archivos que copiar; **no** hacer commit vacío allí salvo petición explícita del usuario. |
 
-## 3. Excepciones
+**No** commitear secretos en Pedidos-MG (`config.json` con credenciales, etc.); respetar `.gitignore`.
 
-- Si el usuario indica **solo un repo** o **no subir aún**, respetar esa instrucción.
-- Si `git push` falla (red, permisos), informar el error y dejar el commit local listo; no inventar que se subió.
+## 3. Orden recomendado
+
+1. Completar cambios y tests en Nexxo.  
+2. Commit + push **Nexxo**.  
+3. Sincronizar a Pedidos-MG lo que corresponda; commit + push **Pedidos-MG**.  
+
+## 4. Fallos y excepciones
+
+- Si `git push` falla (red, permisos), informar el error y dejar commits locales listos; no afirmar que se subió.
+- Si el usuario pide **solo un repo** o **sin push**, priorizar esa instrucción sobre esta regla.
 
 ## Relación con otras reglas
 
-- Detalle de front Pages y script de sync: regla **pedidos-mg-web-repo**.
+- Detalle del front en Pages y script de sync: **pedidos-mg-web-repo**.
 - Arquitectura de repos: **pedidos-repos-arquitectura**.
