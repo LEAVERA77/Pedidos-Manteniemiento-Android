@@ -10,7 +10,36 @@ import {
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "./pedidoZonaOutage.js";
 import { parseDomicilioLibreArgentina } from "../utils/parseDomicilioArg.js";
-import { geocodeCalleNumeroLocalidadArgentina } from "./nominatimClient.js";
+import {
+  geocodeCalleNumeroLocalidadArgentina,
+  verifyCatalogGeocodeReverse,
+} from "./nominatimClient.js";
+
+async function loadTenantGeocodeHintsForPedido(tenantId) {
+  const r = await query(
+    `SELECT configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
+    [Number(tenantId)]
+  );
+  const row = r.rows?.[0];
+  if (!row) return { geocodeState: null, tenantCentroid: null };
+  let cfg = row.configuracion;
+  if (typeof cfg === "string") {
+    try {
+      cfg = JSON.parse(cfg);
+    } catch (_) {
+      cfg = {};
+    }
+  }
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  const provRaw = c.provincia ?? c.state ?? c.provincia_nominatim ?? c.provincia_geocode;
+  const geocodeState =
+    provRaw != null && String(provRaw).trim().length >= 2 ? String(provRaw).trim() : null;
+  const lat = c.lat_base != null ? Number(c.lat_base) : null;
+  const lng = c.lng_base != null ? Number(c.lng_base) : null;
+  const tenantCentroid =
+    Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  return { geocodeState, tenantCentroid };
+}
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -205,15 +234,23 @@ export async function crearPedidoDesdeWhatsappBot({
   let lngFinal = lng != null && Number.isFinite(Number(lng)) ? Number(lng) : null;
   if ((latFinal == null || lngFinal == null) && calleT && locT) {
     try {
+      const hints = await loadTenantGeocodeHintsForPedido(tenantId);
       const g = await geocodeCalleNumeroLocalidadArgentina(
         locT,
         calleT,
         numT && String(numT).trim() ? String(numT).trim() : "0",
-        { allowTenantCentroidFallback: true }
+        {
+          allowTenantCentroidFallback: true,
+          tenantCentroid: hints.tenantCentroid || undefined,
+          stateOrProvince: hints.geocodeState || undefined,
+        }
       );
       if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
-        if (latFinal == null) latFinal = g.lat;
-        if (lngFinal == null) lngFinal = g.lng;
+        const revOk = await verifyCatalogGeocodeReverse(g.lat, g.lng, locT, calleT);
+        if (revOk) {
+          if (latFinal == null) latFinal = g.lat;
+          if (lngFinal == null) lngFinal = g.lng;
+        }
       }
     } catch (_) {}
   }

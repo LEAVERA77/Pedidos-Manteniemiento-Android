@@ -107,4 +107,34 @@ describe("geocodeCalleNumeroLocalidadArgentina (fetch mock)", () => {
     expect(r).toBeNull();
     expect(globalThis.fetch.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
+
+  it("(d) sin catalogStrict: structured fuera del viewbox no se acepta (misma política que catálogo)", async () => {
+    process.env.NOMINATIM_HOUSE_PARITY_MAX_STEPS = "0";
+    const outsideBBox = {
+      lat: "-30.00",
+      lon: "-58.00",
+      display_name: "San Martín 100, Hasenkamp, Argentina",
+      address: { road: "San Martín", house_number: "100", city: "Hasenkamp" },
+    };
+    mockFetchQueue([
+      [outsideBBox],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ]);
+
+    const r = await geocodeCalleNumeroLocalidadArgentina("Hasenkamp", "San Martín", "100", {
+      catalogStrict: false,
+      precomputedViewboxMeta,
+    });
+
+    expect(r).toBeNull();
+  });
 });

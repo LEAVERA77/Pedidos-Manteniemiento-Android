@@ -68,6 +68,27 @@ function houseParityMaxSteps() {
   return Number.isFinite(v) ? Math.min(20, Math.max(0, v)) : 8;
 }
 
+/** Radio máximo (m) entre punto geocodificado y centro de la localidad declarada (evita pins en otra ciudad). */
+export function maxMetersFromLocalityAnchorForBot() {
+  const km = Number(process.env.WHATSAPP_GEOCODE_MAX_KM_FROM_LOCALITY || 45);
+  if (!Number.isFinite(km)) return 45000;
+  const clampedKm = Math.min(200, Math.max(5, km));
+  return clampedKm * 1000;
+}
+
+/**
+ * @param {number} lat
+ * @param {number} lng
+ * @param {{ lat: number, lng: number } | null | undefined} anchor — centro de localidad (Nominatim), no sustituto del tenant
+ */
+export function isGeocodePlausibleForLocalityAnchor(lat, lng, anchor) {
+  if (!anchor || !Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return true;
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+  return haversineMeters(la, lo, anchor.lat, anchor.lng) <= maxMetersFromLocalityAnchorForBot();
+}
+
 /**
  * Barrio / zona urbana desde addressdetails de Nominatim (útil para municipios).
  * Orden: más específico primero.
@@ -392,11 +413,12 @@ export function hasMeaningfulHouseNumber(numeroStr) {
  * Geocodifica calle + número + ciudad: localidad → viewbox → búsqueda estructurada + fallback paridad.
  * Sin localidad en catálogo (ciudad vacía): consultas libres como antes (sin sufijos de provincia arbitrarios).
  *
- * @param {{ tenantCentroid?: { lat: number, lng: number }, catalogStrict?: boolean, precomputedViewboxMeta?: object | null, allowTenantCentroidFallback?: boolean, stateOrProvince?: string }} options
+ * @param {{ tenantCentroid?: { lat: number, lng: number }, catalogStrict?: boolean, precomputedViewboxMeta?: object | null, allowTenantCentroidFallback?: boolean, stateOrProvince?: string, localityMaxDistanceMeters?: number }} options
  * catalogStrict: exige candidato dentro del viewbox cuando existe; si viola localidad, descarta.
  * allowTenantCentroidFallback: default !catalogStrict para el viewbox de localidad (catálogo no usa centro cooperativa como bbox sustituto).
  * stateOrProvince: provincia para desambiguar localidad en Nominatim.
  * precomputedViewboxMeta: evita un segundo geocode de la misma localidad (p. ej. WhatsApp ya calculó viewbox).
+ * localityMaxDistanceMeters: tope de distancia al centroide de la localidad (Nominatim); por defecto env o 20 km.
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, audit?: object } | null>}
  */
 export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, options = {}) {
@@ -450,6 +472,12 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   const bbox = vbMeta?.bbox || null;
   const bounded = vbMeta?.viewboxStr ? { viewbox: vbMeta.viewboxStr, bounded: "1" } : {};
   const mayRunBoundedStructured = !catalogStrict || !!vbMeta?.viewboxStr;
+  const maxDistOpt = options.localityMaxDistanceMeters;
+  const passesLocalPlausibility = (la, lo) => {
+    if (bbox != null && !pointInBBox(la, lo, bbox)) return false;
+    if (!coordsPassLocalityCentroidGuard(la, lo, vbMeta, maxDistOpt)) return false;
+    return true;
+  };
 
   const tryStructured = async (streetLine, wantHouse) => {
     if (!mayRunBoundedStructured) return null;
@@ -461,7 +489,8 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       limit: "12",
       ...bounded,
     });
-    return pickBestStructuredHit(hits, cal, c, catalogStrict ? bbox : null, wantHouse);
+    /* Siempre acotar por bbox de la localidad cuando existe (antes solo con catalogStrict → homónimos lejanos). */
+    return pickBestStructuredHit(hits, cal, c, bbox, wantHouse);
   };
 
   if (hasMeaningfulHouseNumber(nRaw)) {
@@ -474,7 +503,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         const lat = Number(hit.lat);
         const lng = Number(hit.lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        if (catalogStrict && bbox && !pointInBBox(lat, lng, bbox)) continue;
+        if (!passesLocalPlausibility(lat, lng)) continue;
         audit.usedHouseNumber = hn;
         audit.approximate = hn !== target;
         audit.source = audit.approximate ? "structured_parity_fallback" : "structured_exact";
@@ -493,7 +522,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     if (hit) {
       const lat = Number(hit.lat);
       const lng = Number(hit.lon);
-      if (Number.isFinite(lat) && Number.isFinite(lng) && (!catalogStrict || !bbox || pointInBBox(lat, lng, bbox))) {
+      if (Number.isFinite(lat) && Number.isFinite(lng) && passesLocalPlausibility(lat, lng)) {
         audit.source = "structured_street_only";
         audit.usedHouseNumber = null;
         const barrio = barrioDesdeNominatimAddress(hit.address);
@@ -511,14 +540,15 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   const pack = await searchCalleLocalidadArgentina(c, cal, 40, vbMeta?.viewboxStr || null);
   let houseHits = pack.houseHits || [];
   let streetCenter = pack.streetCenter || null;
-  if (catalogStrict && bbox && houseHits.length) {
+  if (bbox && houseHits.length) {
     houseHits = houseHits.filter((h) => pointInBBox(h.lat, h.lng, bbox));
     if (streetCenter && !pointInBBox(streetCenter.lat, streetCenter.lng, bbox)) streetCenter = null;
   }
   const targetNum = hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null;
   const geoCiudad =
     (await geocodeAddressArgentina(`${c}, Argentina`, { filterLocalidad: c })) ||
-    (!catalogStrict &&
+    (allowTenantCentroidFallback &&
+    c.length < 2 &&
     tenantCentroid &&
     Number.isFinite(Number(tenantCentroid.lat)) &&
     Number.isFinite(Number(tenantCentroid.lng))
@@ -541,7 +571,12 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     fallbackCity,
     nearMeters: 120,
   });
-  if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
+  if (
+    picked &&
+    Number.isFinite(picked.lat) &&
+    Number.isFinite(picked.lng) &&
+    passesLocalPlausibility(picked.lat, picked.lng)
+  ) {
     audit.source = picked.source || "search_calle_resolve";
     audit.usedHouseNumber = picked.anchorHouse ?? audit.requestedHouseNumber;
     audit.approximate =
@@ -580,7 +615,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         const lat = Number(hit.lat);
         const lng = Number(hit.lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        if (catalogStrict && bbox && !pointInBBox(lat, lng, bbox)) continue;
+        if (!passesLocalPlausibility(lat, lng)) continue;
         audit.source = "final_q_filtered";
         audit.usedHouseNumber = n;
         return {
@@ -613,6 +648,32 @@ export function haversineMeters(lat1, lng1, lat2, lng2) {
   const s1 = Math.sin(dLat / 2) ** 2;
   const s2 = Math.cos(toR(a1)) * Math.cos(toR(a2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s1 + s2)));
+}
+
+/** Máx. distancia (m) del centroide Nominatim de la localidad; evita pins en homónimos lejanos. */
+export function localityCentroidMaxDistanceMetersFromEnv() {
+  const v = Number(process.env.NOMINATIM_LOCALITY_MAX_DISTANCE_METERS);
+  /* 20 km por defecto: separa localidades vecinas (p. ej. Hasenkamp vs Cerrito ~24–26 km). */
+  return Number.isFinite(v) && v >= 5000 && v <= 200000 ? v : 20000;
+}
+
+/**
+ * Si el viewbox viene del geocode de la localidad (no del centro del tenant), el punto no debe caer
+ * demasiado lejos de ese centro (p. ej. Sarmiento en Cerrito vs Hasenkamp).
+ */
+export function coordsPassLocalityCentroidGuard(lat, lng, vbMeta, maxMeters) {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+  if (!vbMeta || vbMeta.fromTenantCentroid) return true;
+  const c = vbMeta.center;
+  if (!c || !Number.isFinite(Number(c.lat)) || !Number.isFinite(Number(c.lng))) return true;
+  const cap =
+    maxMeters != null && Number.isFinite(Number(maxMeters)) && Number(maxMeters) > 0
+      ? Number(maxMeters)
+      : localityCentroidMaxDistanceMetersFromEnv();
+  const d = haversineMeters(la, lo, Number(c.lat), Number(c.lng));
+  return Number.isFinite(d) && d <= cap;
 }
 
 /** Primer entero en el string (número de puerta). */

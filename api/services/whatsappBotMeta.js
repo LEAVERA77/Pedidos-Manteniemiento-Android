@@ -27,6 +27,7 @@ import {
   geocodeCalleNumeroLocalidadArgentina,
   geocodeLocalityViewboxArgentina,
   haversineMeters,
+  isGeocodePlausibleForLocalityAnchor,
   parseHouseNumberInt,
   searchCalleLocalidadArgentina,
   resolveStructuredAddressCoords,
@@ -46,14 +47,20 @@ const MSG_SALIR_ATRAS =
   "\n\n_Escribí *menú* o *0* para salir · *atrás* para el paso anterior._";
 
 const MSG_ADDR_CIUDAD =
-  "¿En qué *ciudad o localidad* está el reclamo? (ej: *Cerrito*, *Rosario*).\n\n" +
-  "Si preferís, podés enviar tu *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* (la usamos solo si coincide con el domicilio que indiques)." +
+  "¿En qué *ciudad o localidad* está el reclamo? (ej: *Hasenkamp*, *Rosario*).\n\n" +
+  "Lo más preciso es *ubicación GPS*: *Adjuntar* (📎) → *Ubicación*. " +
+  "Si no podés, escribí bien la *localidad* y luego *calle y número*." +
   MSG_SALIR_ATRAS;
 
-const MSG_ADDR_CALLE = "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre*." + MSG_SALIR_ATRAS;
+const MSG_ADDR_CALLE =
+  "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre* o *Sarmiento*.\n\n" +
+  "_En cualquier momento podés mandar *GPS* con *Adjuntar* → *Ubicación*._" +
+  MSG_SALIR_ATRAS;
 
 const MSG_ADDR_NUMERO =
-  "Por último el *número de puerta* (ej: *245*). Con esto buscamos el punto en el mapa." + MSG_SALIR_ATRAS;
+  "Por último el *número de puerta* (ej: *315*). Con esto intentamos ubicar el reclamo en el mapa.\n\n" +
+  "_Si podés enviar *ubicación GPS* (*Adjuntar* → *Ubicación*), el pin será más exacto._" +
+  MSG_SALIR_ATRAS;
 
 const MSG_SUMINISTRO_CONEXION =
   "Para este tipo de reclamo necesitamos datos del *suministro eléctrico*.\n\n" +
@@ -734,9 +741,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const fallbackCity =
     geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
       ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
-      : !catalogStrict && baseLat != null && baseLng != null
-        ? { lat: baseLat, lng: baseLng }
-        : null;
+      : null;
 
   const targetNum = parseHouseNumberInt(numero);
   const userGps =
@@ -750,13 +755,25 @@ async function geocodeStructuredAddressAndFinalizePedido(
   if (ciudad.length >= 2) {
     try {
       localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid, {
-        allowTenantCentroidFallback: !catalogStrict,
+        allowTenantCentroidFallback: false,
         stateOrProvince: stateForGeo || undefined,
       });
     } catch (e) {
       console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
     }
   }
+
+  const localityAnchor =
+    geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
+      ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
+      : localityViewboxMeta &&
+          !localityViewboxMeta.fromTenantCentroid &&
+          localityViewboxMeta.center &&
+          Number.isFinite(Number(localityViewboxMeta.center.lat)) &&
+          Number.isFinite(Number(localityViewboxMeta.center.lng))
+        ? { lat: Number(localityViewboxMeta.center.lat), lng: Number(localityViewboxMeta.center.lng) }
+        : null;
+  const localityResolutionRequired = !userGps && ciudad.length >= 2;
 
   let houseHits = [];
   let streetCenter = null;
@@ -783,7 +800,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
       tenantCentroid,
       catalogStrict,
       precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
-      allowTenantCentroidFallback: !catalogStrict,
+      allowTenantCentroidFallback: false,
       stateOrProvince: stateForGeo || undefined,
     });
     if (geo?.audit) {
@@ -807,19 +824,19 @@ async function geocodeStructuredAddressAndFinalizePedido(
       } else if (exactInHouseHits) {
         acceptDirectGeocode = true;
       }
-      if (acceptDirectGeocode) {
-        if (catalogStrict) {
-          const revOk = await verifyCatalogGeocodeReverse(geo.lat, geo.lng, ciudad, calle);
-          if (!revOk) {
-            console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (direct)", {
-              tenantId: sess.tenantId,
-              ciudad,
-              calle,
-              lat: geo.lat,
-              lng: geo.lng,
-            });
-            acceptDirectGeocode = false;
-          }
+      if (acceptDirectGeocode && (catalogStrict || !userGps)) {
+        const revOk = await verifyCatalogGeocodeReverse(geo.lat, geo.lng, ciudad, calle);
+        if (!revOk) {
+          console.warn("[whatsapp-bot-meta] geocode reverse mismatch (direct)", {
+            tenantId: sess.tenantId,
+            catalogStrict,
+            userGps: !!userGps,
+            ciudad,
+            calle,
+            lat: geo.lat,
+            lng: geo.lng,
+          });
+          acceptDirectGeocode = false;
         }
       }
       if (acceptDirectGeocode) {
@@ -861,7 +878,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   });
   if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
     const pickedRevOk =
-      !catalogStrict || (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
+      userGps || (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
     if (!pickedRevOk) {
       console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (picked)", {
         tenantId: sess.tenantId,
@@ -899,10 +916,10 @@ async function geocodeStructuredAddressAndFinalizePedido(
 
   let endLat = geoCiudad?.lat ?? (catalogStrict ? null : baseLat);
   let endLng = geoCiudad?.lng ?? (catalogStrict ? null : baseLng);
-  if (catalogStrict && endLat != null && endLng != null) {
+  if (endLat != null && endLng != null && (catalogStrict || !userGps)) {
     const okEnd = await verifyCatalogGeocodeReverse(endLat, endLng, ciudad, calle);
     if (!okEnd) {
-      console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (fallback city)", {
+      console.warn("[whatsapp-bot-meta] geocode reverse mismatch (fallback city)", {
         tenantId: sess.tenantId,
         ciudad,
         calle,
@@ -917,16 +934,20 @@ async function geocodeStructuredAddressAndFinalizePedido(
   sess.lng = endLng;
   const nom = String(sess.contactName || contactName || "").trim();
   const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-  if (catalogStrict && (endLat == null || endLng == null)) {
+  const sinCoordsConfiables = endLat == null || endLng == null;
+  const gpsPie =
+    " Si podés, enviá *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* para ubicar el reclamo con precisión.";
+  if (sinCoordsConfiables) {
     sess._geocodeSinMapa = true;
     sess.direccionTexto = nom
-      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (Sin coordenadas en mapa: no se verificó la ubicación con el servicio de callejero.)`
+      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (Sin coordenadas confiables en el mapa.)${gpsPie}`
           .replace(/\s+/g, " ")
           .trim()
-      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (Sin coordenadas en mapa: no se verificó la ubicación con el servicio de callejero.)`
+      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (Sin coordenadas confiables en el mapa.)${gpsPie}`
           .replace(/\s+/g, " ")
           .trim();
   } else {
+    sess._geocodeSinMapa = false;
     sess.direccionTexto = nom
       ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
           .replace(/\s+/g, " ")
