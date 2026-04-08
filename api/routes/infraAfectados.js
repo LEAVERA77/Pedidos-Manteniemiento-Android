@@ -308,14 +308,21 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
         for (const [k, v] of Object.entries(raw)) {
           row[String(k).trim().toLowerCase().replace(/\s+/g, "_")] = v;
         }
-        const codigo = cellStr(row, "codigo", "código", "code").toUpperCase();
+        const codigo = cellStr(row, "codigo", "código", "code", "id_transformador", "transformador_id", "id_trafo").toUpperCase();
         if (!codigo) continue;
         const nombre = cellStr(row, "nombre", "name") || null;
         const kva = cellNum(row, "capacidad_kva", "kva", "potencia_kva");
         const socios = cellNum(row, "clientes_conectados", "socios", "clientes");
         const clientes_conectados = socios != null ? Math.max(0, Math.floor(socios)) : 0;
         const barrio = cellStr(row, "barrio", "barrio_texto") || null;
-        const distCod = cellStr(row, "distribuidor_codigo", "distribuidor", "dist_codigo");
+        const distCod = cellStr(
+          row,
+          "distribuidor_codigo",
+          "distribuidor",
+          "dist_codigo",
+          "codigo_de_distribuidor",
+          "código_de_distribuidor"
+        );
         let distribuidor_id = null;
         if (distCod) {
           const r0 = await client.query(`SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = $1 LIMIT 1`, [
@@ -323,7 +330,8 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
           ]);
           distribuidor_id = r0.rows[0]?.id ?? null;
         }
-        const alimentador = cellStr(row, "alimentador", "alim", "feeder") || null;
+        const alimentador =
+          cellStr(row, "alimentador", "alim", "feeder", "codigo_de_alimentador", "código_de_alimentador") || null;
         try {
           await client.query(
             `INSERT INTO infra_transformadores
@@ -365,7 +373,7 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
   }
 });
 
-/** Solo actualiza distribuidor_id y alimentador por código de trafo. Columnas: codigo | distribuidor_codigo | alimentador (opc.) */
+/** Solo actualiza distribuidor_id y alimentador por código de trafo. Encabezados: codigo o Id transformador; distribuidor_codigo o Código de distribuidor; alimentador o Código de alimentador (opc.). */
 router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
@@ -381,9 +389,16 @@ router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single
         for (const [k, v] of Object.entries(raw)) {
           row[String(k).trim().toLowerCase().replace(/\s+/g, "_")] = v;
         }
-        const codigo = cellStr(row, "codigo", "código", "code").toUpperCase();
+        const codigo = cellStr(row, "codigo", "código", "code", "id_transformador", "transformador_id", "id_trafo").toUpperCase();
         if (!codigo) continue;
-        const distCod = cellStr(row, "distribuidor_codigo", "distribuidor", "dist_codigo");
+        const distCod = cellStr(
+          row,
+          "distribuidor_codigo",
+          "distribuidor",
+          "dist_codigo",
+          "codigo_de_distribuidor",
+          "código_de_distribuidor"
+        );
         let distribuidor_id = null;
         if (distCod) {
           const r0 = await client.query(`SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = $1 LIMIT 1`, [
@@ -391,7 +406,8 @@ router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single
           ]);
           distribuidor_id = r0.rows[0]?.id ?? null;
         }
-        const alimentador = cellStr(row, "alimentador", "alim", "feeder") || null;
+        const alimentador =
+          cellStr(row, "alimentador", "alim", "feeder", "codigo_de_alimentador", "código_de_alimentador") || null;
         const r1 = await client.query(
           `UPDATE infra_transformadores SET distribuidor_id = $3, alimentador = $4
            WHERE tenant_id = $1 AND UPPER(TRIM(codigo)) = $2 AND activo = TRUE`,

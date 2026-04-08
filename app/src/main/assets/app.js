@@ -11430,19 +11430,36 @@ async function repoblarSelectDistribuidoresInfraAdmin() {
 
 function mostrarFormatoExcelInfraTrafo() {
     alert(
-        'Formato Excel — transformadores (hoja 1, fila 1 = encabezados):\n\n' +
-            'codigo | nombre | capacidad_kva (o kva) | clientes_conectados (o socios) | barrio (opc.) | distribuidor_codigo (opc., debe existir en Distribuidores) | alimentador (opc.)\n\n' +
-            '• codigo: obligatorio (se normaliza a mayúsculas).\n' +
-            '• Si el código ya existe para tu tenant, la fila actualiza datos y reactiva el trafo.\n' +
-            '• distribuidor_codigo: mismo código que en el panel Distribuidores (ej. D001).'
+        'Formato Excel — transformadores (hoja 1, fila 1 = encabezados).\n\n' +
+            'Títulos recomendados (también valen los nombres técnicos entre paréntesis):\n' +
+            '• Id transformador (codigo) · obligatorio\n' +
+            '• nombre\n' +
+            '• capacidad_kva o kva\n' +
+            '• clientes_conectados o socios\n' +
+            '• barrio (opc.)\n' +
+            '• Código de distribuidor (distribuidor_codigo, opc.; debe existir en Distribuidores)\n' +
+            '• Código de alimentador (alimentador, opc.)\n\n' +
+            'Ejemplo ficticio — fila 1 títulos, fila 2 datos:\n' +
+            'Id transformador | nombre | kva | socios | barrio | Código de distribuidor | Código de alimentador\n' +
+            'TRF-001 | Centro Norte | 315 | 42 | Centro | DIS05H | ALIM-NORTE\n\n' +
+            '• Si el Id transformador ya existe para tu tenant, la fila actualiza datos y reactiva el trafo.\n' +
+            '• Código de distribuidor = mismo código que en el panel Distribuidores (ej. DIS05H).'
     );
 }
 
 function mostrarFormatoExcelInfraAsignacion() {
     alert(
-        'Formato Excel — solo asignar distribuidor / alimentador a trafos ya cargados:\n\n' +
-            'codigo | distribuidor_codigo | alimentador (opcional)\n\n' +
-            'Actualiza solo transformadores activos del tenant cuyo código coincida. Si no hay fila, suma en «sin coincidencia».'
+        'Formato Excel — solo asignar distribuidor / alimentador a trafos ya cargados.\n\n' +
+            'Fila 1 = encabezados. Títulos recomendados (también valen los nombres técnicos entre paréntesis):\n' +
+            '• Id transformador (codigo)\n' +
+            '• Código de distribuidor (distribuidor_codigo)\n' +
+            '• Código de alimentador (alimentador, opcional)\n\n' +
+            'Ejemplo ficticio — fila 1 títulos, fila 2 datos:\n' +
+            'Id transformador | Código de distribuidor | Código de alimentador\n' +
+            'TRF-001 | DIS05H | ALIM-NORTE\n' +
+            'TRF-002 | DIS01C |\n\n' +
+            'Actualiza solo transformadores activos del tenant cuyo código coincida. ' +
+            'Si una fila no coincide con ningún trafo, suma en «sin coincidencia».'
     );
 }
 
@@ -11531,14 +11548,21 @@ async function importarExcelInfraTransformadores(event) {
         let err = 0;
         for (const raw of rows) {
             const row = _normKeyInfraRow(raw);
-            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code').toUpperCase();
+            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code', 'id_transformador', 'transformador_id', 'id_trafo').toUpperCase();
             if (!codigo) continue;
             const nombre = _cellStrInfra(row, 'nombre', 'name') || null;
             const kva = _cellNumInfra(row, 'capacidad_kva', 'kva', 'potencia_kva');
             const soc = _cellNumInfra(row, 'clientes_conectados', 'socios', 'clientes');
             const clientes = soc != null ? Math.max(0, Math.floor(soc)) : 0;
             const barrio = _cellStrInfra(row, 'barrio', 'barrio_texto') || null;
-            const distCod = _cellStrInfra(row, 'distribuidor_codigo', 'distribuidor', 'dist_codigo');
+            const distCod = _cellStrInfra(
+                row,
+                'distribuidor_codigo',
+                'distribuidor',
+                'dist_codigo',
+                'codigo_de_distribuidor',
+                'código_de_distribuidor'
+            );
             let distId = null;
             if (distCod) {
                 const rd = await sqlSimple(
@@ -11546,7 +11570,9 @@ async function importarExcelInfraTransformadores(event) {
                 );
                 distId = rd.rows?.[0]?.id ?? null;
             }
-            const alim = _cellStrInfra(row, 'alimentador', 'alim', 'feeder') || null;
+            const alim =
+                _cellStrInfra(row, 'alimentador', 'alim', 'feeder', 'codigo_de_alimentador', 'código_de_alimentador') ||
+                null;
             const kvaSql = kva != null && Number.isFinite(kva) ? esc(Math.floor(kva)) : 'NULL';
             try {
                 await sqlSimple(
@@ -11619,9 +11645,16 @@ async function importarExcelInfraAsignacion(event) {
         let err = 0;
         for (const raw of rows) {
             const row = _normKeyInfraRow(raw);
-            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code').toUpperCase();
+            const codigo = _cellStrInfra(row, 'codigo', 'código', 'code', 'id_transformador', 'transformador_id', 'id_trafo').toUpperCase();
             if (!codigo) continue;
-            const distCod = _cellStrInfra(row, 'distribuidor_codigo', 'distribuidor', 'dist_codigo');
+            const distCod = _cellStrInfra(
+                row,
+                'distribuidor_codigo',
+                'distribuidor',
+                'dist_codigo',
+                'codigo_de_distribuidor',
+                'código_de_distribuidor'
+            );
             let distId = null;
             if (distCod) {
                 const rd = await sqlSimple(
@@ -11629,7 +11662,9 @@ async function importarExcelInfraAsignacion(event) {
                 );
                 distId = rd.rows?.[0]?.id ?? null;
             }
-            const alim = _cellStrInfra(row, 'alimentador', 'alim', 'feeder') || null;
+            const alim =
+                _cellStrInfra(row, 'alimentador', 'alim', 'feeder', 'codigo_de_alimentador', 'código_de_alimentador') ||
+                null;
             try {
                 const ru = await sqlSimple(
                     `UPDATE infra_transformadores SET distribuidor_id = ${esc(distId)}, alimentador = ${esc(
