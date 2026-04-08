@@ -1142,32 +1142,6 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     actualizarBotonesWhatsappDerivacionesUi();
 }
 
-/** Popups: si el navegador bloquea, instrucciones para permitir el sitio (GitHub Pages u origen actual). */
-function abrirVentanaEmergenteConAviso(url, windowFeatures) {
-    const feats = windowFeatures || 'noopener,noreferrer';
-    let w = null;
-    try {
-        w = window.open(url, '_blank', feats);
-    } catch (_) {
-        w = null;
-    }
-    if (!w) {
-        const origen = (() => {
-            try {
-                return window.location.hostname || 'este sitio';
-            } catch (_) {
-                return 'este sitio';
-            }
-        })();
-        toast(
-            `Ventana emergente bloqueada. Permití popups para ${origen} (ícono en la barra de direcciones → ventanas bloqueadas → Permitir) y reintentá.`,
-            'warning'
-        );
-        return null;
-    }
-    return w;
-}
-
 function abrirWhatsappDerivacionForm(slot) {
     const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
     const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
@@ -1180,7 +1154,7 @@ function abrirWhatsappDerivacionForm(slot) {
         toast('WhatsApp no válido: usá formato internacional con + (8 a 22 dígitos).', 'error');
         return;
     }
-    abrirVentanaEmergenteConAviso(`https://wa.me/${w.slice(1)}`, 'noopener,noreferrer');
+    window.open(`https://wa.me/${w.slice(1)}`, '_blank', 'noopener,noreferrer');
 }
 window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
 
@@ -1205,6 +1179,7 @@ const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
     'Alumbrado Público (Mantenimiento)',
     'Riesgo en la vía pública',
     'Corrimiento de poste/columna',
+    'Cables Caídos/Peligro',
 ]);
 
 function tipoPermiteSolicitudDerivacionTercero(tt) {
@@ -2417,6 +2392,7 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS barrio TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS medidor TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -4298,7 +4274,8 @@ function crearVentanaFlotanteWaHc(sidNum) {
     body.className = 'wa-hc-float-body';
     const metaEl = document.createElement('div');
     metaEl.className = 'wa-hc-float-meta';
-    metaEl.textContent = 'Cargando…';
+    metaEl.style.display = 'none';
+    metaEl.textContent = '';
     const msgBox = document.createElement('div');
     msgBox.className = 'wa-hc-thread';
     const ta = document.createElement('textarea');
@@ -4371,10 +4348,8 @@ async function refrescarMensajesWaHcVentana(sidNum) {
         const data = await r.json();
         if (data.session) {
             const cn = String(data.session.contact_name || '').trim();
-            const line = (cn ? cn + ' · ' : '') +
-                'Tel: ' + fmtTelWaMeta(data.session.phone_canonical) +
-                ' · Estado: ' + (data.session.estado || '');
-            st.metaEl.textContent = line;
+            st.metaEl.textContent = '';
+            st.metaEl.style.display = 'none';
             actualizarTituloYChipDockWaHc(sidStr, cn || ('Chat · ' + fmtTelWaMeta(data.session.phone_canonical)));
         }
         if (Array.isArray(data.messages)) {
@@ -6639,7 +6614,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                     'En las últimas horas hay varios reclamos abiertos en la misma zona (mismo distribuidor o trafo). Podría tratarse de un corte de sector o general.\n\n' +
                     (wa ? '¿Abrimos WhatsApp para hablar con un representante de la cooperativa antes de cargar el reclamo?' : 'Contactá a la cooperativa antes de cargar otro reclamo.');
                 if (wa && confirm(msg)) {
-                    abrirVentanaEmergenteConAviso(wa, 'noopener');
+                    window.open(wa, '_blank', 'noopener');
                     btn.disabled = false;
                     return;
                 }
@@ -8138,12 +8113,16 @@ function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
     const num = String(p?.cnum || '').trim();
     const loc = String(p?.cloc || '').trim();
     const dir = [calle, num, loc].filter(Boolean).join(', ') || String(p?.cdir || '').trim();
-    const lat = Number(p?.la);
-    const lng = Number(p?.ln);
-    const ubicacion =
-        Number.isFinite(lat) && Number.isFinite(lng)
-            ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
-            : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
+    const { la: laEf, ln: lnEf } = coordsEfectivasPedidoMapa(p);
+    const lat = Number(laEf);
+    const lng = Number(lnEf);
+    const coordsValidas =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        !(Math.abs(lat) < 1e-5 && Math.abs(lng) < 1e-5);
+    const ubicacion = coordsValidas
+        ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
+        : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
     const obsTxt = String(obs || '').trim() || '—';
     const recl = cliente || tel ? `${cliente || '—'}${tel ? ` · Tel.: ${tel}` : ''}` : '—';
     return [
@@ -8260,36 +8239,11 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
         render();
         const digits = String(wa || '').replace(/\D/g, '');
         if (digits.length >= 8) {
-            const contactNombre = String(row.derivado_destino_nombre || '').trim() || 'Derivación externa';
-            try {
-                const cr = await fetch(apiUrl('/api/whatsapp/human-chat/sessions/start-outbound'), {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        phone: digits,
-                        contact_name: contactNombre,
-                        initial_text: msg || '',
-                    }),
-                });
-                const jd = await cr.json().catch(() => ({}));
-                if (cr.ok && jd.session_id) {
-                    await abrirModalWhatsappHumanChat(Number(jd.session_id));
-                } else {
-                    toast(
-                        String(jd.detail || jd.error || 'No se abrió el chat por la API; se abre WhatsApp en pestaña.'),
-                        'warning'
-                    );
-                    abrirVentanaEmergenteConAviso(
-                        `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
-                        'noopener,noreferrer'
-                    );
-                }
-            } catch (_e) {
-                abrirVentanaEmergenteConAviso(
-                    `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
-                    'noopener,noreferrer'
-                );
-            }
+            window.open(
+                `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
+                '_blank',
+                'noopener,noreferrer'
+            );
         }
         cerrarModalDerivacionPreviewAdmin();
         toast('Derivación registrada.', 'success');
@@ -8385,6 +8339,48 @@ async function rechazarSolicitudDerivacionAdmin(pid) {
 }
 window.rechazarSolicitudDerivacionAdmin = rechazarSolicitudDerivacionAdmin;
 
+async function guardarObservacionVisitaTecnico(pid) {
+    const pidNum = parseInt(pid, 10);
+    if (!Number.isFinite(pidNum)) return;
+    const ta = document.getElementById(`tec-obs-visita-${pidNum}`);
+    const text = String(ta?.value || '').trim();
+    if (text.length < 3) {
+        toast('Escribí al menos 3 caracteres.', 'warning');
+        return;
+    }
+    if (text.length > 2000) {
+        toast('El texto es demasiado largo.', 'warning');
+        return;
+    }
+    const p0 = app.p.find((x) => String(x.id) === String(pid));
+    if (!p0 || (String(p0.es) !== 'Asignado' && String(p0.es) !== 'En ejecución')) {
+        toast('Este pedido ya no admite edición de observaciones.', 'warning');
+        return;
+    }
+    try {
+        if (puedeEnviarApiRestPedidos()) {
+            const row = await pedidoPutApi(pidNum, { trabajo_realizado: text, avance: p0.av });
+            if (row) {
+                const rowN = norm(row);
+                const ix = app.p.findIndex((x) => String(x.id) === String(pid));
+                if (ix !== -1) app.p[ix] = rowN;
+                else app.p.push(rowN);
+                offlinePedidosSave(app.p);
+                render();
+                toast('Observación guardada.', 'success');
+                detalle(app.p[ix !== -1 ? ix : app.p.length - 1]);
+                return;
+            }
+        }
+        await updPedido(pid, { trabajo_realizado: text, avance: p0.av }, app.u?.id);
+        toast('Observación guardada (modo offline / local).', 'success');
+        detalle(app.p.find((x) => String(x.id) === String(pid)) || p0);
+    } catch (e) {
+        toastError('guardar-obs-tecnico', e, 'No se pudo guardar la observación.');
+    }
+}
+window.guardarObservacionVisitaTecnico = guardarObservacionVisitaTecnico;
+
 function detalle(p) {
     const pidKey = String(p.id);
     try {
@@ -8472,6 +8468,30 @@ function detalle(p) {
         p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + (findUser(p.uci) || 'id:'+p.uci) + '</span></div>' : '',
     ].filter(Boolean).join('');
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escTa = t =>
+        String(t ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    let htmlObsTecnicoVisita = '';
+    if (esAdmin() && p.tr && p.es !== 'Cerrado' && p.es !== 'Derivado externo') {
+        htmlObsTecnicoVisita += `<div class="ds" style="border-left:4px solid #0f766e">
+            <h4>📝 Observaciones del técnico</h4>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .45rem;line-height:1.4">Registradas con el pedido <strong>antes del cierre</strong> (también si sigue en curso).</p>
+            <div class="trb" style="white-space:pre-wrap">${escDet(p.tr)}</div>
+        </div>`;
+    }
+    if (ed && !esAdmin() && (p.es === 'Asignado' || p.es === 'En ejecución')) {
+        const pidEscObs = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        htmlObsTecnicoVisita += `<div class="ds" style="border-left:4px solid #6366f1">
+            <h4>Observaciones de visita</h4>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .45rem;line-height:1.4">Quedan guardadas en el pedido; el administrador las ve en el detalle.</p>
+            <textarea id="tec-obs-visita-${p.id}" rows="4" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical;white-space:pre-wrap">${escTa(
+                p.tr || ''
+            )}</textarea>
+            <button type="button" class="ba2 p2" onclick="guardarObservacionVisitaTecnico('${pidEscObs}')"><i class="fas fa-save"></i> Guardar observación</button>
+        </div>`;
+    }
     const nombreClienteDet = String((p.cnom || p.cl || '')).trim();
     const filasDatosCliente = [];
     if (String(p.nis || '').trim()) {
@@ -8738,6 +8758,7 @@ function detalle(p) {
         ${htmlSolicitudDerivacionCoopElectricaTecnico(p)}
         ${htmlDerivacionCoopElectrica}
         ${htmlDerivacionAdminExterna}
+        ${htmlObsTecnicoVisita}
         
         ${p.es === 'Cerrado' ? `
         <div class="ds">
@@ -8867,6 +8888,7 @@ function exportPedido(pedidos, nombre) {
             'Número': p.cnum || '',
             'Localidad': p.cloc || '',
             'Tel. contacto': p.tel || '',
+            'Dirección consolidada': [p.ccal || '', p.cnum || '', p.cloc || ''].filter(Boolean).join(', ') || p.cdir || '',
             'Tipo de conexión': p.stc || '',
             'Fases': p.sfs || '',
             'Referencia ubicación': p.cdir || '',
@@ -8895,7 +8917,7 @@ function exportPedido(pedidos, nombre) {
                 { wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
                 { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
                 { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 8 }, { wch: 16 },
-                { wch: 28 }, { wch: 10 }, { wch: 12 },
+                { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
                 { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
                 { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
                 { wch: 10 }, { wch: 10 }
@@ -9817,8 +9839,11 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
 
     try {
         const r = await sqlSimple(
-            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio FROM socios_catalogo
-             WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
+            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio, nis_medidor, medidor FROM socios_catalogo
+             WHERE activo = TRUE AND (
+               UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
+               OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${esc(raw)}))
+             )
              LIMIT 1`
         );
         const row = r.rows?.[0];
@@ -10252,10 +10277,24 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
 let _pollBannerAdminInterval = null;
-/** Persiste en la pestaña para no reiniciar el acuse al volver a cargar el poll (evita que el cartel reaparezca). */
-const GN_OPINION_BANNER_WM_KEY = 'gn_admin_opinion_banner_wm';
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
+
+const _LS_BANNER_OPINION_WM = 'gn_banner_opinion_wm_v2';
+
+function _opinionBannerPersistedWmLoad() {
+    try {
+        return localStorage.getItem(_LS_BANNER_OPINION_WM) || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function _opinionBannerPersistedWmSave(iso) {
+    try {
+        if (iso) localStorage.setItem(_LS_BANNER_OPINION_WM, iso);
+    } catch (_) {}
+}
 
 async function iniciarWatermarkBannerReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
@@ -10269,15 +10308,6 @@ async function iniciarWatermarkBannerReclamoCliente() {
 async function iniciarWatermarkBannerOpinionCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
     try {
-        let sess = '';
-        try {
-            sess = String(sessionStorage.getItem(GN_OPINION_BANNER_WM_KEY) || '').trim();
-        } catch (_) {}
-        const sessT = sess ? new Date(sess).getTime() : NaN;
-        if (sess && !Number.isNaN(sessT)) {
-            _adminBannerOpinionWatermarkIso = new Date(sessT).toISOString();
-            return;
-        }
         const col = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
         );
@@ -10291,6 +10321,12 @@ async function iniciarWatermarkBannerOpinionCliente() {
         );
         const m = r.rows?.[0]?.m;
         _adminBannerOpinionWatermarkIso = m ? new Date(m).toISOString() : new Date(0).toISOString();
+        const ls = _opinionBannerPersistedWmLoad();
+        if (ls) {
+            const tLs = new Date(ls).getTime();
+            const tMem = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
+            if (Number.isFinite(tLs) && tLs > tMem) _adminBannerOpinionWatermarkIso = new Date(tLs).toISOString();
+        }
     } catch (_) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
     }
@@ -10319,17 +10355,13 @@ function _commitAdminBannerOpinionWatermark() {
         }
     }
     if (iso) {
-        const t = new Date(iso).getTime();
+        const t = new Date(iso).getTime() + 1500;
         const cur = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
         if (t > cur) _adminBannerOpinionWatermarkIso = new Date(t).toISOString();
     } else if (pid) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
     }
-    try {
-        if (_adminBannerOpinionWatermarkIso) {
-            sessionStorage.setItem(GN_OPINION_BANNER_WM_KEY, _adminBannerOpinionWatermarkIso);
-        }
-    } catch (_) {}
+    if (_adminBannerOpinionWatermarkIso) _opinionBannerPersistedWmSave(_adminBannerOpinionWatermarkIso);
 }
 
 function ocultarBannerOpinionCliente() {
@@ -10461,10 +10493,7 @@ function adminBannerOpinionClickWhatsapp() {
     const msg = `Hola, te escribo desde ${String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim()} respecto de tu experiencia con el servicio${
         pid ? ` (pedido #${pid})` : ''
     }.${est ? ` Vimos la calificación ${est}/5 y queremos resolver cualquier inconveniente.` : ''}`;
-    abrirVentanaEmergenteConAviso(
-        `https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`,
-        'noopener,noreferrer'
-    );
+    window.open(`https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
 }
 window.adminBannerOpinionClickWhatsapp = adminBannerOpinionClickWhatsapp;
 
@@ -11574,19 +11603,6 @@ function populateKpiChartMetricaSelect(rows) {
     }
 }
 
-const KPI_PDF_PALETTE_SOFT = [
-    'rgba(147, 197, 253, 0.9)',
-    'rgba(167, 243, 208, 0.92)',
-    'rgba(253, 224, 71, 0.88)',
-    'rgba(251, 207, 232, 0.9)',
-    'rgba(196, 181, 253, 0.9)',
-    'rgba(253, 186, 116, 0.88)',
-    'rgba(153, 246, 228, 0.92)',
-    'rgba(254, 202, 202, 0.88)',
-    'rgba(186, 230, 253, 0.9)',
-    'rgba(217, 249, 157, 0.85)',
-];
-
 /** Evolución por periodo (misma métrica, varios registros). Requiere Chart.js. */
 window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
     const wrap = document.getElementById('kpi-chart-wrap');
@@ -11640,39 +11656,26 @@ window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
         window._chartKpiAdmin = null;
     }
     const lab = KPI_METRICA_ETIQUETAS[metrica] || metrica;
-    const fills = points.map((_, i) => KPI_PDF_PALETTE_SOFT[i % KPI_PDF_PALETTE_SOFT.length]);
     window._chartKpiAdmin = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels: points.map(p => p.label),
             datasets: [
                 {
                     label: lab,
                     data: points.map(p => p.y),
-                    backgroundColor: fills,
-                    borderColor: 'rgba(30, 41, 59, 0.35)',
-                    borderWidth: 1,
+                    borderColor: '#0d9488',
+                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                    tension: 0.25,
+                    fill: true,
                 },
             ],
         },
         options: {
-            indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-                legend: { display: true, labels: { color: '#0f172a', font: { size: 11 } } },
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    ticks: { color: '#0f172a' },
-                    grid: { color: 'rgba(148,163,184,0.25)' },
-                },
-                y: {
-                    ticks: { color: '#0f172a' },
-                    grid: { display: false },
-                },
-            },
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: false } },
         },
     });
 };
@@ -11962,15 +11965,24 @@ function kpiAgruparSnapshotsNumericosPorMetrica(rows) {
     return map;
 }
 
+function kpiSnapshotOrdenTemporal(row) {
+    const raw = String(row?.periodo_fin || row?.periodo_inicio || row?.created_at || '').trim();
+    if (!raw) return 0;
+    const d = new Date(raw.length <= 10 && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
+    const t = d.getTime();
+    return Number.isNaN(t) ? 0 : t;
+}
+
 function kpiPuntosDesdeFilasSnapshot(filas) {
     return (filas || [])
         .map((r) => {
             const pf = fmtFechaKpiSnapshotCorta(r.periodo_fin);
             const pi = fmtFechaKpiSnapshotCorta(r.periodo_inicio);
             const lab = pf && pi && pf !== pi ? `${pi}→${pf}` : pf || pi || String(r.created_at || '').slice(0, 10);
-            return { label: lab || '—', y: Number(r.valor_numero) };
+            return { label: lab || '—', y: Number(r.valor_numero), _t: kpiSnapshotOrdenTemporal(r) };
         })
-        .sort((a, b) => a.label.localeCompare(b.label));
+        .sort((a, b) => (a._t !== b._t ? a._t - b._t : a.label.localeCompare(b.label)))
+        .map(({ label, y }) => ({ label, y }));
 }
 
 function textoBreveInterpretacionKpiPdf(rows) {
@@ -11981,7 +11993,7 @@ function textoBreveInterpretacionKpiPdf(rows) {
     ).length;
     return (
         `Informe KPI piloto: ${nReg} registro(s) con valor numérico en ${nTipos} tipo(s) de métrica. ` +
-        'Cada tipo incluye un gráfico de barras por periodo (colores suaves, legible en impresión). ' +
+        'Cada tipo incluye un gráfico compacto (línea si hay varios periodos, barra si hay uno). ' +
         'Debajo se listan todos los snapshots. Documento para uso interno.'
     );
 }
@@ -12061,15 +12073,13 @@ function kpiPdfPiePaginas(pdf) {
 
 async function kpiPdfMiniChartDataUrl(metricaKey, points) {
     if (!points.length || typeof Chart === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 420;
+    canvas.height = 220;
+    const ctx = canvas.getContext('2d');
     const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
     const labels = points.map((p) => kpiPdfTruncCell(p.label, 18));
     const data = points.map((p) => p.y);
-    const horizontal = points.length >= 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = 540;
-    canvas.height = horizontal ? Math.min(380, 96 + points.length * 36) : 168;
-    const ctx = canvas.getContext('2d');
-    const fills = points.map((_, i) => KPI_PDF_PALETTE_SOFT[i % KPI_PDF_PALETTE_SOFT.length]);
     const chart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -12078,48 +12088,39 @@ async function kpiPdfMiniChartDataUrl(metricaKey, points) {
                 {
                     label: lab,
                     data,
-                    backgroundColor: fills,
-                    borderColor: 'rgba(30, 41, 59, 0.42)',
+                    borderColor: '#0d9488',
+                    backgroundColor: 'rgba(13, 148, 136, 0.55)',
                     borderWidth: 1,
+                    borderRadius: 4,
+                    maxBarThickness: 48,
                 },
             ],
         },
         options: {
-            indexAxis: horizontal ? 'y' : 'x',
             animation: false,
             responsive: false,
             devicePixelRatio: 1.35,
-            layout: { padding: { top: 10, bottom: horizontal ? 12 : 22, left: horizontal ? 6 : 8, right: 10 } },
+            layout: { padding: { top: 8, bottom: 6, left: 6, right: 8 } },
             plugins: {
-                title: { display: true, text: lab, color: '#0f172a', font: { size: 11, weight: '600' } },
+                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 11, weight: '600' } },
                 legend: { display: false },
             },
-            scales: horizontal
-                ? {
-                      x: {
-                          beginAtZero: true,
-                          ticks: { color: '#0f172a', font: { size: 9 } },
-                          grid: { color: 'rgba(148,163,184,0.28)' },
-                      },
-                      y: {
-                          ticks: { color: '#0f172a', font: { size: 8.5 } },
-                          grid: { display: false },
-                      },
-                  }
-                : {
-                      x: {
-                          ticks: { color: '#0f172a', font: { size: 8 }, maxRotation: 48 },
-                          grid: { display: false },
-                      },
-                      y: {
-                          beginAtZero: false,
-                          ticks: { color: '#0f172a', font: { size: 9 } },
-                          grid: { color: 'rgba(148,163,184,0.28)' },
-                      },
-                  },
+            scales: {
+                x: {
+                    offset: true,
+                    ticks: { font: { size: 8 }, maxRotation: 45, minRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                    grid: { display: false },
+                },
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: undefined,
+                    ticks: { font: { size: 8 } },
+                    grid: { color: 'rgba(148, 163, 184, 0.25)' },
+                },
+            },
         },
     });
-    await new Promise((r) => setTimeout(r, 140));
+    await new Promise((r) => setTimeout(r, 120));
     let url = null;
     try {
         url = canvas.toDataURL('image/png');
@@ -12155,6 +12156,17 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         toast('Chart.js no está cargado; recargá la página e intentá de nuevo.', 'error');
         return;
     }
+    const wKpi = window.open('', '_blank');
+    if (!wKpi) {
+        toast('Permití ventanas emergentes para abrir el informe.', 'error');
+        return;
+    }
+    try {
+        wKpi.document.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui;padding:2rem">Generando informe KPI…</body></html>'
+        );
+        wKpi.document.close();
+    } catch (_) {}
     try {
         toast('Generando informe…', 'info');
         const { jsPDF } = window.jspdf;
@@ -12193,12 +12205,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             pdf.addPage();
             y = margin;
         }
-        pdf.text('Gráficos por tipo de métrica (barras por periodo)', margin, y);
+        pdf.text('Gráficos por tipo de métrica (compactos)', margin, y);
         y += 5;
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 32;
+        const hMmMax = 52;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
@@ -12265,24 +12277,23 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
         const url = URL.createObjectURL(blob);
-        const w = abrirVentanaEmergenteConAviso(url, 'noopener,noreferrer');
-        if (!w) {
-            URL.revokeObjectURL(url);
-            return;
-        }
+        wKpi.location.href = url;
         setTimeout(() => {
             try {
-                w.focus();
-                w.print();
+                wKpi.focus();
+                wKpi.print();
             } catch (_) {}
             setTimeout(() => {
                 try {
                     URL.revokeObjectURL(url);
                 } catch (_) {}
             }, 120000);
-        }, 450);
+        }, 600);
         toast('Informe listo — se abrió la vista de impresión.', 'success');
     } catch (e) {
+        try {
+            wKpi.close();
+        } catch (_) {}
         toastError('kpi-informe-pdf', e);
     }
 };
@@ -13579,7 +13590,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -13587,12 +13598,12 @@ async function cargarListaSociosAdmin() {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
             rows.map(s => {
                 const e = (x) => String(x ?? '').replace(/</g, '&lt;');
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             }).join('') + '</tbody></table></div>';
     } catch (e) {
         logErrorWeb('lista-socios-admin', e);
@@ -13655,8 +13666,20 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
-                'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
+            const nisMedidorUnif = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
+            const nisSolo = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis');
+            const medSolo = valorSociosPorEncabezados(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
+            let nis = null;
+            let medidorImp = null;
+            if (nisMedidorUnif) {
+                nis = String(nisMedidorUnif).trim();
+                if (medSolo) medidorImp = String(medSolo).trim();
+            } else if (nisSolo) {
+                nis = String(nisSolo).trim();
+                if (medSolo) medidorImp = String(medSolo).trim();
+            } else if (medSolo) {
+                nis = String(medSolo).trim();
+            }
             if (!nis) continue;
             actualizarOverlayImportacion(`Importando socios… ${filaN} / ${rawRows.length}`);
             if (filaN % 80 === 0) await new Promise(r => setTimeout(r, 0));
@@ -13690,9 +13713,9 @@ async function importarExcelSocios(event) {
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
-                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+                    VALUES(${esc(nis)}, ${esc(medidorImp)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET medidor = EXCLUDED.medidor, nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
                 ok++;
             } catch (e) {
                 fail++;
@@ -13722,7 +13745,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• nis_medidor · nombre · Calle · Numero\n• telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS; con “vaciar”, se borra todo el catálogo antes.\nTeléfono: formato texto en Excel para el 0 inicial.');
+    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• Columna A/B o encabezados: nis + medidor (NIS en catálogo; medidor opcional, 5 cifras típico)\n• O una sola columna nis_medidor (compatibilidad)\n• nombre · Calle · Numero · telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS (clave nis_medidor); con “vaciar”, se borra todo el catálogo antes.\nBúsqueda en pedidos y autocompletar aceptan NIS o número de medidor.\nTeléfono: formato texto en Excel para el 0 inicial.');
 }
 
 async function buscarHistorialPorNIS() {
@@ -13733,7 +13756,15 @@ async function buscarHistorialPorNIS() {
     out.innerHTML = '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</div>';
     try {
         const tsql = await pedidosFiltroTenantSql();
-        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo FROM pedidos WHERE (
+          UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
+          OR EXISTS (
+            SELECT 1 FROM socios_catalogo sc
+            WHERE COALESCE(sc.activo, TRUE)
+            AND UPPER(TRIM(COALESCE(sc.medidor,''))) = UPPER(TRIM(${esc(raw)}))
+            AND UPPER(TRIM(COALESCE(pedidos.nis_medidor,''))) = UPPER(TRIM(COALESCE(sc.nis_medidor,'')))
+          )
+        )${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
         const rows = r.rows || [];
         if (!rows.length) {
             out.innerHTML = '<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin reclamos para ese NIS o medidor.</p>';
@@ -13889,6 +13920,7 @@ async function exportarPedidosCsvAdmin() {
             'cliente_numero_puerta',
             'cliente_localidad',
             'cliente_direccion',
+            'direccion_consolidada',
             'telefono_contacto',
             'descripcion',
         ];
@@ -13912,6 +13944,7 @@ async function exportarPedidosCsvAdmin() {
                     row.cliente_numero_puerta,
                     row.cliente_localidad,
                     row.cliente_direccion,
+                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || '',
                     row.telefono_contacto,
                     row.descripcion,
                 ]
@@ -14098,7 +14131,7 @@ async function exportInformeMensualExcel() {
             Numero: row.cliente_numero_puerta,
             Localidad: row.cliente_localidad,
             Telefono: row.telefono_contacto,
-            Referencia_ubicacion: row.cliente_direccion || ''
+            Direccion_consolidada: [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || ''
         }));
         const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Pedido: '—', Nota: 'Sin filas en el período' }]);
         const wb = XLSX.utils.book_new();
@@ -14157,19 +14190,9 @@ function aplicarEstadisticasInkSaveCharts(activar) {
     if (activar) {
         if (_chartDataSnapshotForPdf) return;
         _chartDataSnapshotForPdf = {};
-        const softFill = [
-            'rgba(147, 197, 253, 0.82)',
-            'rgba(167, 243, 208, 0.85)',
-            'rgba(253, 224, 71, 0.8)',
-            'rgba(251, 207, 232, 0.85)',
-            'rgba(196, 181, 253, 0.82)',
-            'rgba(253, 186, 116, 0.8)',
-            'rgba(153, 246, 228, 0.85)',
-            'rgba(254, 202, 202, 0.82)',
-            'rgba(186, 230, 253, 0.85)',
-            'rgba(217, 249, 157, 0.78)',
-        ];
-        const strokeCol = 'rgba(30, 41, 59, 0.5)';
+        const inkA = 'rgba(100,116,139,0.22)';
+        const inkB = 'rgba(148,163,184,0.18)';
+        const inkStroke = '#334155';
         Object.entries(_charts).forEach(([id, chart]) => {
             try {
                 _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
@@ -14178,26 +14201,23 @@ function aplicarEstadisticasInkSaveCharts(activar) {
                     borderWidth: ds.borderWidth,
                 }));
                 const type = chart.config.type;
-                chart.data.datasets.forEach((ds, dsi) => {
+                chart.data.datasets.forEach(ds => {
                     const n = Array.isArray(ds.data) ? ds.data.length : 1;
                     if (type === 'doughnut' || type === 'pie') {
+                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
                         const fills = [];
-                        for (let i = 0; i < n; i++) fills.push(softFill[(i + dsi) % softFill.length]);
+                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
                         ds.backgroundColor = fills;
-                        ds.borderColor = strokeCol;
-                        ds.borderWidth = 1.2;
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
                     } else {
-                        const nDs = chart.data.datasets.length;
-                        if (nDs > 1) {
-                            const one = softFill[dsi % softFill.length];
-                            ds.backgroundColor = Array.isArray(ds.data) ? ds.data.map((_, i) => softFill[(i + dsi) % softFill.length]) : one;
-                        } else if (Array.isArray(ds.data)) {
-                            ds.backgroundColor = ds.data.map((_, i) => softFill[i % softFill.length]);
+                        if (Array.isArray(ds.backgroundColor)) {
+                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
                         } else {
-                            ds.backgroundColor = softFill[0];
+                            ds.backgroundColor = inkA;
                         }
-                        ds.borderColor = strokeCol;
-                        ds.borderWidth = Math.max(1, Number(ds.borderWidth) || 1);
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
                     }
                 });
                 chart.update('none');
@@ -14325,13 +14345,6 @@ async function html2canvasCapturaElemento(el, opts = {}) {
                     node.style.minHeight = '0';
                     node.style.maxHeight = 'none';
                     node.style.alignSelf = 'flex-start';
-                    if (statsExport) {
-                        node.style.paddingBottom = '40px';
-                        node.querySelectorAll('.chart-wrap').forEach((cw) => {
-                            cw.style.paddingBottom = '36px';
-                            cw.style.overflow = 'visible';
-                        });
-                    }
                     node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
                 } catch (_) {}
             }
@@ -14357,12 +14370,29 @@ async function imprimirInformeConGraficos() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
     if (typeof html2canvas !== 'function') { toast('html2canvas no disponible', 'error'); return; }
+    const wPop = window.open('', '_blank');
+    if (!wPop) {
+        toast('Permití ventanas emergentes para imprimir', 'error');
+        return;
+    }
+    try {
+        wPop.document.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui,sans-serif;padding:2rem">Generando vista para imprimir…</body></html>'
+        );
+        wPop.document.close();
+    } catch (_) {}
     document.getElementById('admin-panel')?.classList.add('active');
     adminTab('estadisticas');
     await cargarEstadisticas();
     await new Promise(r => setTimeout(r, 500));
     const secciones = coleccionSeccionesPdfEstadisticas();
-    if (!secciones.length) { toast('No hay secciones para imprimir', 'error'); return; }
+    if (!secciones.length) {
+        try {
+            wPop.close();
+        } catch (_) {}
+        toast('No hay secciones para imprimir', 'error');
+        return;
+    }
     const urls = [];
     const liberarUrls = () => {
         urls.forEach(u => {
@@ -14434,12 +14464,11 @@ async function imprimirInformeConGraficos() {
             });
         }
         if (!pageBlocks.length) {
-            toast('No se pudo capturar el panel', 'error');
-            return;
-        }
-        const w = abrirVentanaEmergenteConAviso('', 'noopener,noreferrer');
-        if (!w) {
             liberarUrls();
+            try {
+                wPop.close();
+            } catch (_) {}
+            toast('No se pudo capturar el panel', 'error');
             return;
         }
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
@@ -14487,32 +14516,36 @@ async function imprimirInformeConGraficos() {
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
             '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:none}' +
-            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#0f172a;margin:0 0 1.5mm;padding:0;border:none;width:100%;text-align:center}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
+            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
-            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0;padding-bottom:4mm}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:128mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
-        w.document.write(
+        wPop.document.open();
+        wPop.document.write(
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
                 escAttrPrint(ent) +
                 ' — Estadísticas</title><style>' +
                 css +
                 '</style></head><body>' + bloques + '</body></html>'
         );
-        w.document.close();
-        w.focus();
+        wPop.document.close();
+        wPop.focus();
         setTimeout(() => {
             try {
-                w.print();
+                wPop.print();
             } catch (_) {}
         }, 500);
         setTimeout(liberarUrls, 120000);
     } catch (e) {
         liberarUrls();
+        try {
+            wPop.close();
+        } catch (_) {}
         toastError('imprimir-stats-graficos', e);
     } finally {
         await prepararVistaCapturaEstadisticasPdf(false);
@@ -14679,6 +14712,17 @@ async function generarPdfEstadisticasMultipaginaENRE() {
 async function generarInformeMensualENRE() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
+    const w = window.open('', '_blank');
+    if (!w) {
+        toast('Permití ventanas emergentes para el informe', 'error');
+        return;
+    }
+    try {
+        w.document.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui;padding:2rem">Generando informe…</body></html>'
+        );
+        w.document.close();
+    } catch (_) {}
     try {
         const tsql = await pedidosFiltroTenantSql();
         const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
@@ -14692,13 +14736,17 @@ async function generarInformeMensualENRE() {
             tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_nombre || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_calle || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_numero_puerta || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_localidad || '').replace(/</g, '&lt;')}</td></tr>`;
         });
         tab += '</tbody></table>';
-        const w = abrirVentanaEmergenteConAviso('', 'noopener,noreferrer');
-        if (!w) return;
-        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
+        w.document.open();
+        w.document.write('<html><head><meta charset="utf-8"><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
-    } catch (e) { toastError('informe-mensual-enre', e); }
+    } catch (e) {
+        try {
+            w.close();
+        } catch (_) {}
+        toastError('informe-mensual-enre', e);
+    }
 }
 
 // ── Estadísticas con Chart.js ─────────────────────────────────
@@ -14725,11 +14773,11 @@ async function generarInformeMensualENRE() {
                 const pct = Math.round(1000 * v / total) / 10;
                 const { x, y } = arc.tooltipPosition();
                 const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
+                ctx.lineWidth = ink ? 0 : 4;
+                ctx.strokeStyle = 'rgba(255,255,255,.95)';
                 ctx.fillStyle = '#0f172a';
                 const t = pct + '%';
-                ctx.lineWidth = ink ? 2.2 : 4;
-                ctx.strokeStyle = 'rgba(255,255,255,.93)';
-                ctx.strokeText(t, x, y);
+                if (!ink) ctx.strokeText(t, x, y);
                 ctx.fillText(t, x, y);
             });
             ctx.restore();
@@ -14773,10 +14821,10 @@ async function generarInformeMensualENRE() {
                     }
                     const t = pct + '%';
                     const inkP = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                    ctx.lineWidth = inkP ? 2 : 3;
-                    ctx.strokeStyle = 'rgba(255,255,255,.92)';
+                    ctx.lineWidth = inkP ? 0 : 3;
+                    ctx.strokeStyle = 'rgba(255,255,255,.95)';
                     ctx.fillStyle = '#0f172a';
-                    ctx.strokeText(t, x, ty);
+                    if (!inkP) ctx.strokeText(t, x, ty);
                     ctx.fillText(t, x, ty);
                 });
             };
@@ -14795,11 +14843,11 @@ async function generarInformeMensualENRE() {
                         ctx.font = '600 11px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        ctx.lineWidth = inkM ? 2 : 3;
+                        ctx.lineWidth = inkM ? 0 : 3;
                         ctx.strokeStyle = 'rgba(255,255,255,.92)';
                         ctx.fillStyle = '#0f172a';
                         const t = String(v);
-                        ctx.strokeText(t, x, y);
+                        if (!inkM) ctx.strokeText(t, x, y);
                         ctx.fillText(t, x, y);
                     });
                 });

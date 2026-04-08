@@ -1,5 +1,5 @@
 /**
- * Genera socios-demo-300.xlsx: Calle + Numero (cooperativa), calles OSM vía Overpass.
+ * Genera socios-demo-300.xlsx: columnas NIS + Medidor (5 cifras), Calle + Numero, OSM vía Overpass.
  * Ejecutar: cd api && node scripts/generate-socios-demo-xlsx.mjs
  */
 import XLSX from "xlsx";
@@ -37,6 +37,15 @@ const OVERPASS_HOSTS = ["overpass.kumi.systems", "lz4.overpass-api.de", "overpas
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function random5Unique(used) {
+  let v;
+  do {
+    v = String(10000 + Math.floor(Math.random() * 90000));
+  } while (used.has(v));
+  used.add(v);
+  return v;
 }
 
 function overpassPost(hostname, query) {
@@ -168,6 +177,7 @@ function main() {
     }
 
     const rows = [];
+    const medUsed = new Set();
     let nisBase = 700_000_001;
     const dists = ["DIS01", "DIS02", "DIS03", "DIS04", "DIS05"];
     const tarifas = ["T1-R1", "T1-R2", "T2-R1", "T2-GM", "T3-BT"];
@@ -185,7 +195,8 @@ function main() {
         const calle = picked[j] || `Calle ${j + 1}`;
         const alt = 50 + ((idx * 13 + j * 7) % 1950);
         rows.push({
-          nis_medidor: String(nisBase++),
+          NIS: String(nisBase++),
+          Medidor: random5Unique(medUsed),
           nombre: fakeNombre(idx),
           Calle: calle,
           Numero: String(alt),

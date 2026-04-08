@@ -1,6 +1,16 @@
 import { query } from "../db/neon.js";
 
 let _pedidosColsCache = null;
+let _sociosCatalogoColsCache = null;
+
+async function columnasSociosCatalogo() {
+  if (_sociosCatalogoColsCache) return _sociosCatalogoColsCache;
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo'`
+  );
+  _sociosCatalogoColsCache = new Set((r.rows || []).map((c) => c.column_name));
+  return _sociosCatalogoColsCache;
+}
 
 async function columnasPedidos() {
   if (_pedidosColsCache) return _pedidosColsCache;
@@ -20,9 +30,16 @@ export async function lookupDistribuidorTrafoPorNisMedidor(nisMedidorStr) {
     return { distribuidor: null, trafo: null };
   }
   try {
+    const scCols = await columnasSociosCatalogo();
+    const medMatch = scCols.has("medidor")
+      ? "OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM($1))"
+      : "";
     const r = await query(
       `SELECT distribuidor_codigo, transformador FROM socios_catalogo
-       WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))
+       WHERE activo = TRUE AND (
+         UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))
+         ${medMatch}
+       )
        LIMIT 1`,
       [key]
     );

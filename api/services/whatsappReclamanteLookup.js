@@ -114,6 +114,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const provExpr = scCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
+    const medMatch = scCols.has("medidor")
+      ? "OR UPPER(TRIM(COALESCE(medidor, ''))) = UPPER(TRIM($1))"
+      : "";
     const r = await query(
       `SELECT nis_medidor, nombre,
               NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
@@ -124,7 +127,10 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${provExpr}
        FROM socios_catalogo
        WHERE activo = TRUE
-         AND UPPER(TRIM(nis_medidor)) = UPPER(TRIM($1))
+         AND (
+           UPPER(TRIM(COALESCE(nis_medidor, ''))) = UPPER(TRIM($1))
+           ${medMatch}
+         )
        LIMIT 1`,
       [raw]
     );
