@@ -8359,7 +8359,7 @@ async function guardarObservacionVisitaTecnico(pid) {
     }
     try {
         if (puedeEnviarApiRestPedidos()) {
-            const row = await pedidoPutApi(pidNum, { trabajo_realizado: text, avance: p0.av });
+            const row = await pedidoPutApi(pidNum, { trabajo_realizado: text });
             if (row) {
                 const rowN = norm(row);
                 const ix = app.p.findIndex((x) => String(x.id) === String(pid));
@@ -8372,7 +8372,7 @@ async function guardarObservacionVisitaTecnico(pid) {
                 return;
             }
         }
-        await updPedido(pid, { trabajo_realizado: text, avance: p0.av }, app.u?.id);
+        await updPedido(pid, { trabajo_realizado: text }, app.u?.id);
         toast('Observación guardada (modo offline / local).', 'success');
         detalle(app.p.find((x) => String(x.id) === String(pid)) || p0);
     } catch (e) {

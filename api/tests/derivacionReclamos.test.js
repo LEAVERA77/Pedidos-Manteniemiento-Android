@@ -127,6 +127,30 @@ describe("derivacionReclamos utils", () => {
     expect(t).toContain("Gracias por su atención.");
   });
 
+  it("buildDerivacionExternaMensaje trata 0,0 como sin GPS (fallback a dirección)", () => {
+    const t = buildDerivacionExternaMensaje({
+      nombreTenant: "Coop",
+      pedido: {
+        id: 3,
+        numero_pedido: 3,
+        tipo_trabajo: "T",
+        descripcion: "D",
+        prioridad: "Media",
+        estado: "En ejecución",
+        cliente_calle: "San Martín",
+        cliente_numero_puerta: "50",
+        cliente_localidad: "Cerrito",
+        lat: 0,
+        lng: 0,
+      },
+      nombreEmpresaDestino: "Tercero",
+      textoObservacionesTecnico: "Obs.",
+    });
+    expect(t).toContain("Sin coordenadas GPS registradas en el sistema");
+    expect(t).toContain("San Martín");
+    expect(t).not.toMatch(/maps\?q=0,0/);
+  });
+
   it("buildDerivacionExternaMensaje sin GPS usa dirección y aclaración sin coordenadas", () => {
     const t = buildDerivacionExternaMensaje({
       nombreTenant: "Municipio X",

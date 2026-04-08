@@ -31,6 +31,8 @@ import {
   buildDerivacionExternaMensaje,
   etiquetaDestinoDerivacion,
 } from "../utils/derivacionReclamos.js";
+import { registerDerivacionExternaWaThread } from "../services/whatsappBotMeta.js";
+import { normalizeWhatsAppRecipientForMeta } from "../services/metaWhatsapp.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -463,6 +465,7 @@ const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set([
   "Alumbrado Público (Mantenimiento)",
   "Riesgo en la vía pública",
   "Corrimiento de poste/columna",
+  "Cables Caídos/Peligro",
 ]);
 
 function pedidoTipoPermiteSolicitudDerivacion(tt) {
@@ -763,6 +766,14 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
 
     const row = r.rows[0];
+    try {
+      const extDigits = normalizeWhatsAppRecipientForMeta(String(rContact.whatsapp || "").replace(/\D/g, ""));
+      if (extDigits.length >= 8) {
+        registerDerivacionExternaWaThread(req.tenantId, extDigits, id);
+      }
+    } catch (e) {
+      console.warn("[pedidos] hilo WA tercero (derivación)", e?.message || e);
+    }
     void (async () => {
       try {
         await notifyPedidoDerivacionClienteWhatsAppSafe({

@@ -275,6 +275,33 @@ function sessionKey(phoneDigits, tenantId) {
   return `${String(phoneDigits || "").replace(/\D/g, "")}:${Number(tenantId)}`;
 }
 
+const DERIV_EXTERNA_HILO_MS = Math.max(
+  60_000,
+  Number(process.env.WHATSAPP_DERIV_EXTERNA_TTL_MS || 7 * 24 * 3600 * 1000)
+);
+
+/**
+ * Tras derivar un pedido por WA al tercero, el número destino queda en este paso para que
+ * las respuestas no disparen el menú principal hasta *finalizar* / *menú* (o vencimiento).
+ */
+export function registerDerivacionExternaWaThread(tenantId, phoneDigitsRaw, pedidoId) {
+  const d = String(phoneDigitsRaw || "").replace(/\D/g, "");
+  const phone = normalizeWhatsAppRecipientForMeta(d);
+  if (!phone || phone.length < 8) return;
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return;
+  const pid = Number(pedidoId);
+  if (!Number.isFinite(pid) || pid < 1) return;
+  const sk = sessionKey(phone, tid);
+  sessions.set(sk, {
+    step: "deriv_externa_hilo",
+    tenantId: tid,
+    pedidoId: pid,
+    derivExtStartedAt: Date.now(),
+    phoneNumberId: null,
+  });
+}
+
 function trimOrNullWhatsapp(v) {
   const s = v != null ? String(v).trim() : "";
   return s ? s : null;
@@ -1227,6 +1254,16 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
 
+  if (sess && sess.step === "deriv_externa_hilo") {
+    await reply(
+      phone,
+      "Si querés indicar ubicación, escribí *calle y localidad* en texto.\n\n_Para cerrar este intercambio con el asistente: *finalizar*, *listo* o *menú*._",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "human_chat") {
     await reply(
       phone,
@@ -1372,6 +1409,52 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
   } catch (e) {
     console.error("[whatsapp-bot-meta] opinion reply", e.message);
+  }
+
+  const sessDeriv = sessions.get(sk);
+  if (sessDeriv?.step === "deriv_externa_hilo") {
+    const started = Number(sessDeriv.derivExtStartedAt) || 0;
+    if (Date.now() - started > DERIV_EXTERNA_HILO_MS) {
+      sessions.delete(sk);
+    } else {
+      const low = String(text || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const salirHilo =
+        low === "menu" ||
+        low === "menú" ||
+        low === "0" ||
+        low === "fin" ||
+        low === "finalizar" ||
+        low === "listo" ||
+        low === "terminar" ||
+        low === "terminado" ||
+        low === "chau";
+      if (salirHilo) {
+        sessions.delete(sk);
+        const nom = ctx?.nombre || "la entidad";
+        await reply(
+          phone,
+          `Listo, cerramos este intercambio. Si necesitás otra cosa con *${nom}*, escribí *menú*.`,
+          tid,
+          phoneNumberId
+        );
+        return;
+      }
+      sessDeriv.derivExtStartedAt = Date.now();
+      if (phoneNumberId) sessDeriv.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sessDeriv);
+      await reply(
+        phone,
+        "Recibido, gracias. La cooperativa sigue la coordinación del reclamo por sus canales.\n\n" +
+          "_Para cerrar este hilo con el asistente: *finalizar*, *listo* o *menú*._",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
   }
 
   /** Tras cierre por WA: ventana de opinión abierta (evita confundir "5" o "10" con menú / reinicio). */
