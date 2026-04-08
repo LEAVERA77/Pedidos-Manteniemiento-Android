@@ -3908,14 +3908,16 @@ async function pollPedidosActividadAdmin() {
                 COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav,
                 COALESCE(MAX(fecha_avance), to_timestamp(0)) AS mfa,
                 COALESCE(MAX(fecha_asignacion), to_timestamp(0)) AS mfas,
-                COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc
+                COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc,
+                COUNT(*) FILTER (WHERE solicitud_derivacion_pendiente = TRUE)::bigint AS nsdp
              FROM pedidos WHERE 1=1${tsql}`;
         const qMin = `SELECT COALESCE(MAX(id),0)::bigint AS mid,
                 COUNT(*) FILTER (WHERE estado='Pendiente')::bigint AS np,
                 COUNT(*) FILTER (WHERE estado='Asignado')::bigint AS na,
                 COUNT(*) FILTER (WHERE estado='En ejecución')::bigint AS ne,
                 COUNT(*) FILTER (WHERE estado='Cerrado')::bigint AS nc,
-                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav
+                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav,
+                COUNT(*) FILTER (WHERE solicitud_derivacion_pendiente = TRUE)::bigint AS nsdp
              FROM pedidos WHERE 1=1${tsql}`;
         let r;
         try {
@@ -3945,6 +3947,7 @@ async function pollPedidosActividadAdmin() {
             row.mfa != null ? row.mfa : '0',
             row.mfas != null ? row.mfas : '0',
             row.mfc != null ? row.mfc : '0',
+            row.nsdp || '0',
         ]
             .map((x) => String(x))
             .join('|');

@@ -100,14 +100,13 @@ export async function enqueueNotificacionChatInternoPedido({
     let rows;
     if (col && Number.isFinite(tid) && tid >= 1) {
       const r = await query(
-        `SELECT id FROM usuarios WHERE ${col} = $1 AND rol = 'admin' AND activo = TRUE AND id != $2`,
-        [tid, autor]
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND rol = 'admin' AND activo = TRUE`,
+        [tid]
       );
       rows = r.rows;
     } else {
       const r = await query(
-        `SELECT id FROM usuarios WHERE rol = 'admin' AND activo = TRUE AND id != $1`,
-        [autor]
+        `SELECT id FROM usuarios WHERE rol = 'admin' AND activo = TRUE`
       );
       rows = r.rows;
     }
@@ -134,6 +133,7 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
   numeroPedido,
   tipoTrabajo,
   motivoSnippet,
+  tituloOverride,
 }) {
   if (!(await ensureNotificacionesMovilTable())) return;
   const pid = Number(pedidoId);
@@ -142,7 +142,7 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
   const np = String(numeroPedido || "").trim() || `#${pid}`;
   const tt = String(tipoTrabajo || "").trim() || "Reclamo";
   const snip = String(motivoSnippet || "").trim().slice(0, 220);
-  const titulo = "Derivación pendiente";
+  const titulo = tituloOverride || "Derivación pendiente";
   const cuerpo = `${np} · ${tt}${snip ? ` — ${snip}` : ""}`.slice(0, 480);
   try {
     const col = await tenantColumnForUsuarios();

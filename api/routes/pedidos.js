@@ -1124,6 +1124,18 @@ router.put("/:id", async (req, res) => {
           cerradoPorUsuarioId: req.user.id,
         }).catch(() => {});
       });
+    } else if (trabajo_realizado != null && String(trabajo_realizado).trim() !== "" && req.user.rol !== "admin") {
+      // Técnico guarda observación: avisar a admins
+      setImmediate(() => {
+        enqueueNotificacionSolicitudDerivacionParaAdmins({
+          tenantId: req.tenantId,
+          pedidoId: updated.id,
+          numeroPedido: updated.numero_pedido,
+          tipoTrabajo: updated.tipo_trabajo,
+          motivoSnippet: String(trabajo_realizado).trim(),
+          tituloOverride: "Observación de técnico",
+        }).catch(() => {});
+      });
     }
     scheduleNotifyClientePedidoWhatsapp({
       pedidoAntes: pedido,
