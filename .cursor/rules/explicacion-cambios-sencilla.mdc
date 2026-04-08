@@ -1,0 +1,19 @@
+---
+description: Tras implementar o modificar código, resumir los cambios en lenguaje claro y breve.
+alwaysApply: true
+---
+
+# Explicación sencilla de los cambios (cada interacción)
+
+Cuando en una misma conversación implementes, corrijas o refactores código (o despliegues pasos concretos como commit, sync o push):
+
+1. **Al final de la respuesta**, incluí un apartado breve (puede titularse algo como “En pocas palabras” o “Resumen”) que explique **en castellano simple**:
+   - **Qué** cambió (qué problema se resolvió o qué se agregó).
+   - **Dónde** afecta (pantalla, archivo clave o flujo), sin listar cada línea.
+   - **Qué debe notar el usuario** (si aplica).
+
+2. Evitá jerga innecesaria; si usás un término técnico, una frase de contexto basta.
+
+3. Si no hubo cambios de código (solo consulta o plan), no inventes un resumen de “cambios”; respondé a la pregunta sin ese apartado.
+
+4. Mantené el resumen **proporcional**: pocas líneas para tareas chicas, un poco más si el alcance fue grande.
