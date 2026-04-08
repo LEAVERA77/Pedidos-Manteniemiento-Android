@@ -824,13 +824,12 @@ async function geocodeStructuredAddressAndFinalizePedido(
       } else if (exactInHouseHits) {
         acceptDirectGeocode = true;
       }
-      if (acceptDirectGeocode && (catalogStrict || !userGps)) {
+      if (acceptDirectGeocode && !userGps && ciudad.length >= 2 && calle.length >= 2) {
         const revOk = await verifyCatalogGeocodeReverse(geo.lat, geo.lng, ciudad, calle);
         if (!revOk) {
           console.warn("[whatsapp-bot-meta] geocode reverse mismatch (direct)", {
             tenantId: sess.tenantId,
             catalogStrict,
-            userGps: !!userGps,
             ciudad,
             calle,
             lat: geo.lat,
@@ -838,6 +837,27 @@ async function geocodeStructuredAddressAndFinalizePedido(
           });
           acceptDirectGeocode = false;
         }
+      }
+      if (acceptDirectGeocode && !userGps && localityResolutionRequired && !localityAnchor) {
+        console.warn("[whatsapp-bot-meta] geocode sin ancla de localidad (direct)", {
+          tenantId: sess.tenantId,
+          ciudad,
+        });
+        acceptDirectGeocode = false;
+      }
+      if (
+        acceptDirectGeocode &&
+        !userGps &&
+        localityAnchor &&
+        !isGeocodePlausibleForLocalityAnchor(geo.lat, geo.lng, localityAnchor)
+      ) {
+        console.warn("[whatsapp-bot-meta] geocode implausible vs locality anchor (direct)", {
+          tenantId: sess.tenantId,
+          ciudad,
+          lat: geo.lat,
+          lng: geo.lng,
+        });
+        acceptDirectGeocode = false;
       }
       if (acceptDirectGeocode) {
         if (userGps) {
@@ -878,17 +898,37 @@ async function geocodeStructuredAddressAndFinalizePedido(
   });
   if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
     const pickedRevOk =
-      userGps || (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
+      userGps ||
+      ciudad.length < 2 ||
+      calle.length < 2 ||
+      (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
+    const pickedPlausible =
+      userGps ||
+      !localityAnchor ||
+      isGeocodePlausibleForLocalityAnchor(picked.lat, picked.lng, localityAnchor);
+    const pickedOkResolution = userGps || !(localityResolutionRequired && !localityAnchor);
     if (!pickedRevOk) {
-      console.warn("[whatsapp-bot-meta] geocode catalog reverse mismatch (picked)", {
+      console.warn("[whatsapp-bot-meta] geocode reverse mismatch (picked)", {
         tenantId: sess.tenantId,
         ciudad,
         calle,
         lat: picked.lat,
         lng: picked.lng,
       });
+    } else if (!pickedPlausible) {
+      console.warn("[whatsapp-bot-meta] geocode implausible vs locality anchor (picked)", {
+        tenantId: sess.tenantId,
+        ciudad,
+        lat: picked.lat,
+        lng: picked.lng,
+      });
+    } else if (!pickedOkResolution) {
+      console.warn("[whatsapp-bot-meta] geocode sin ancla de localidad (picked)", {
+        tenantId: sess.tenantId,
+        ciudad,
+      });
     }
-    if (pickedRevOk) {
+    if (pickedRevOk && pickedPlausible && pickedOkResolution) {
       sess.lat = picked.lat;
       sess.lng = picked.lng;
       const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
@@ -914,21 +954,42 @@ async function geocodeStructuredAddressAndFinalizePedido(
     }
   }
 
-  let endLat = geoCiudad?.lat ?? (catalogStrict ? null : baseLat);
-  let endLng = geoCiudad?.lng ?? (catalogStrict ? null : baseLng);
-  if (endLat != null && endLng != null && (catalogStrict || !userGps)) {
-    const okEnd = await verifyCatalogGeocodeReverse(endLat, endLng, ciudad, calle);
-    if (!okEnd) {
-      console.warn("[whatsapp-bot-meta] geocode reverse mismatch (fallback city)", {
-        tenantId: sess.tenantId,
-        ciudad,
-        calle,
-        lat: endLat,
-        lng: endLng,
-      });
+  let endLat = geoCiudad?.lat ?? null;
+  let endLng = geoCiudad?.lng ?? null;
+  if (!userGps) {
+    if (endLat != null && endLng != null && ciudad.length >= 2 && calle.length >= 2) {
+      const okEnd = await verifyCatalogGeocodeReverse(endLat, endLng, ciudad, calle);
+      if (!okEnd) {
+        console.warn("[whatsapp-bot-meta] geocode reverse mismatch (fallback city)", {
+          tenantId: sess.tenantId,
+          ciudad,
+          calle,
+          lat: endLat,
+          lng: endLng,
+        });
+        endLat = null;
+        endLng = null;
+      }
+    }
+    if (
+      endLat != null &&
+      endLng != null &&
+      localityAnchor &&
+      !isGeocodePlausibleForLocalityAnchor(endLat, endLng, localityAnchor)
+    ) {
       endLat = null;
       endLng = null;
     }
+    if (localityResolutionRequired && !localityAnchor) {
+      endLat = null;
+      endLng = null;
+    }
+  }
+  let usedGpsTextoFallback = false;
+  if (userGps) {
+    endLat = userGps.lat;
+    endLng = userGps.lng;
+    usedGpsTextoFallback = true;
   }
   sess.lat = endLat;
   sess.lng = endLng;
@@ -939,22 +1000,35 @@ async function geocodeStructuredAddressAndFinalizePedido(
     " Si podés, enviá *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* para ubicar el reclamo con precisión.";
   if (sinCoordsConfiables) {
     sess._geocodeSinMapa = true;
+    const detalle = catalogStrict
+      ? "Sin coordenadas confiables en el mapa (no se verificó con el callejero)."
+      : "Sin coordenadas confiables en el mapa.";
     sess.direccionTexto = nom
-      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (Sin coordenadas confiables en el mapa.)${gpsPie}`
+      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (${detalle})${gpsPie}`
           .replace(/\s+/g, " ")
           .trim()
-      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (Sin coordenadas confiables en el mapa.)${gpsPie}`
+      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (${detalle})${gpsPie}`
           .replace(/\s+/g, " ")
           .trim();
   } else {
     sess._geocodeSinMapa = false;
-    sess.direccionTexto = nom
-      ? `Ubicación aproximada (centro de ciudad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-          .replace(/\s+/g, " ")
-          .trim()
-      : `Ubicación aproximada (centro de ciudad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-          .replace(/\s+/g, " ")
-          .trim();
+    if (usedGpsTextoFallback) {
+      sess.direccionTexto = nom
+        ? `Ubicación por *GPS del usuario* (sin geocodificar calle): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+            .replace(/\s+/g, " ")
+            .trim()
+        : `Ubicación por *GPS del usuario* (sin geocodificar calle): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+            .replace(/\s+/g, " ")
+            .trim();
+    } else {
+      sess.direccionTexto = nom
+        ? `Ubicación aproximada (centro de localidad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+            .replace(/\s+/g, " ")
+            .trim()
+        : `Ubicación aproximada (centro de localidad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
+            .replace(/\s+/g, " ")
+            .trim();
+    }
   }
   sessions.set(sk, sess);
   await finalizePedidoFromSession(phone, sess, contactName);

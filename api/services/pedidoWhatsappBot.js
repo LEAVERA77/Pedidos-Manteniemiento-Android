@@ -11,7 +11,9 @@ import {
 } from "./pedidoZonaOutage.js";
 import { parseDomicilioLibreArgentina } from "../utils/parseDomicilioArg.js";
 import {
+  geocodeAddressArgentina,
   geocodeCalleNumeroLocalidadArgentina,
+  isGeocodePlausibleForLocalityAnchor,
   verifyCatalogGeocodeReverse,
 } from "./nominatimClient.js";
 
@@ -240,14 +242,24 @@ export async function crearPedidoDesdeWhatsappBot({
         calleT,
         numT && String(numT).trim() ? String(numT).trim() : "0",
         {
-          allowTenantCentroidFallback: true,
+          allowTenantCentroidFallback: false,
           tenantCentroid: hints.tenantCentroid || undefined,
           stateOrProvince: hints.geocodeState || undefined,
         }
       );
       if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
+        let anchorPt = null;
+        try {
+          const ac = await geocodeAddressArgentina(`${locT}, Argentina`, { filterLocalidad: locT });
+          if (ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lng)) {
+            anchorPt = { lat: ac.lat, lng: ac.lng };
+          }
+        } catch (_) {}
         const revOk = await verifyCatalogGeocodeReverse(g.lat, g.lng, locT, calleT);
-        if (revOk) {
+        const localityResolved = locT.length < 2 || anchorPt != null;
+        const plausible =
+          !anchorPt || isGeocodePlausibleForLocalityAnchor(g.lat, g.lng, anchorPt);
+        if (revOk && plausible && localityResolved) {
           if (latFinal == null) latFinal = g.lat;
           if (lngFinal == null) lngFinal = g.lng;
         }

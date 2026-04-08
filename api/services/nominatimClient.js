@@ -70,8 +70,9 @@ function houseParityMaxSteps() {
 
 /** Radio máximo (m) entre punto geocodificado y centro de la localidad declarada (evita pins en otra ciudad). */
 export function maxMetersFromLocalityAnchorForBot() {
-  const km = Number(process.env.WHATSAPP_GEOCODE_MAX_KM_FROM_LOCALITY || 45);
-  if (!Number.isFinite(km)) return 45000;
+  /** Default 22 km: ej. Hasenkamp vs punto ~24 km en otra localidad queda fuera sin depender solo del reverse. */
+  const km = Number(process.env.WHATSAPP_GEOCODE_MAX_KM_FROM_LOCALITY || 22);
+  if (!Number.isFinite(km)) return 22000;
   const clampedKm = Math.min(200, Math.max(5, km));
   return clampedKm * 1000;
 }
