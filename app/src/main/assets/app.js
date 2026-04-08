@@ -1948,6 +1948,8 @@ function aplicarMarcaVisualCompleta() {
 
 /** Primera vez en este navegador: modal de rubro. Luego: botón «Cambiar rubro» con contraseña. */
 const LS_ADMIN_WEB_TIPO_ACK = 'pmg_admin_web_tipo_ack_v1';
+/** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
+const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
 let _resolveAdminTipoModal = null;
 
 function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
@@ -5625,6 +5627,27 @@ window.confirmarImpresionPedido = function() {
     }
 };
 
+function tituloPedidoDocumento(p) {
+    const tt = String(p?.tt ?? '').trim();
+    const np = String(p?.np ?? '').trim();
+    if (tt && np) return `${tt} N° ${np}`;
+    if (np) return `Pedido N° ${np}`;
+    return tt || 'Pedido';
+}
+
+function nombreArchivoExportPedidoUnico(p) {
+    const base = tituloPedidoDocumento(p);
+    let safe = base.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '_');
+    if (safe.length > 120) safe = safe.slice(0, 120);
+    return safe || ('pedido_' + String(p?.np || 'export').replace(/[\\/:*?"<>|]/g, '-'));
+}
+
+function nombreHojaExcelPedidoUnico(p) {
+    let s = tituloPedidoDocumento(p).replace(/[:\\/*?\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (s.length > 31) s = s.slice(0, 31).trim();
+    return s || 'Pedidos';
+}
+
 async function imprimirPedidoAsync(p) {
     if (!p) { toast('Pedido inválido', 'error'); return; }
     const tz = { timeZone: 'America/Argentina/Buenos_Aires' };
@@ -5683,7 +5706,7 @@ async function imprimirPedidoAsync(p) {
             : '';
 
     const contenidoCuerpo = `
-            <h1>Pedido de Mantenimiento N° ${escHtmlPrint(p.np)}</h1>
+            <h1>${escHtmlPrint(tituloPedidoDocumento(p))}</h1>
             
             <h2>📋 Información General</h2>
             <table>
@@ -8361,7 +8384,8 @@ function exportPedido(pedidos, nombre) {
             ];
             ws['!cols'] = colWidths;
             
-            XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+            const sheetName = pedidos.length === 1 ? nombreHojaExcelPedidoUnico(pedidos[0]) : 'Pedidos';
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
             const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
             const fileName = nombre + '.xlsx';
             const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -8414,12 +8438,12 @@ function dl(data, nombre, mime) {
 
 window._xl = id => {
     const p = app.p.find(x => String(x.id) === String(id));
-    if (p) exportPedido([p], 'pedido_' + p.np);
+    if (p) exportPedido([p], nombreArchivoExportPedidoUnico(p));
 };
 
 
 function tabPedidoListaPorEstado(es) {
-    if (es === 'Cerrado') return 'c';
+    if (es === 'Cerrado' || es === 'Derivado externo') return 'c';
     if (es === 'Asignado' || es === 'En ejecución') return 'a';
     return 'p';
 }
@@ -9715,6 +9739,19 @@ window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
 window.adminBannerOpinionClickVerDetalle = adminBannerOpinionClickVerDetalle;
 window.adminBannerOpinionCerrar = ocultarBannerOpinionCliente;
 
+function pedidoEsDerivadoFuera(p) {
+    if (!p) return false;
+    return String(p.es || '') === 'Derivado externo' || p.dex === true || p.dex === 1;
+}
+
+function adminMuestraPedidosDerivadosFuera() {
+    try {
+        return esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {
     const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
@@ -9731,7 +9768,12 @@ function pedidoVisibleSegunRubro(p) {
 }
 
 function pedidosVisiblesEnUI() {
-    return (app.p || []).filter(pedidoVisibleSegunRubro);
+    const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
+    return (app.p || []).filter((p) => {
+        if (!pedidoVisibleSegunRubro(p)) return false;
+        if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
+        return true;
+    });
 }
 
 function configInicialIncompleta(cfg) {
@@ -10157,7 +10199,9 @@ async function guardarConfiguracionInicialObligatoria() {
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
-            await promptAdminTipoNegocioWebIfNeeded();
+            try {
+                localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
+            } catch (_) {}
             toast('Setup inicial completado', 'success');
             // El login ya había salido antes de completar el wizard (cfgLista === false),
             // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
