@@ -11664,7 +11664,7 @@ window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
             },
             scales: {
                 x: {
-                    beginAtZero: false,
+                    beginAtZero: true,
                     ticks: { color: '#0f172a' },
                     grid: { color: 'rgba(148,163,184,0.25)' },
                 },
