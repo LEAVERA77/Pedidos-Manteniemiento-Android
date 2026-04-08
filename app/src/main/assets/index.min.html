@@ -82,6 +82,12 @@
     <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminBannerOpinionClickVerDetalle()">Ver pedido</button>
     <button type="button" class="admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Cerrar">&times;</button>
   </div>
+  <div id="admin-banner-derivacion-pendiente" class="admin-banner-opinion-cliente" style="display:none;background:linear-gradient(90deg,#1d4ed8,#2563eb)" role="status" aria-live="polite">
+    <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-code-branch"></i></span>
+    <span id="admin-banner-derivacion-pendiente-txt" class="admin-banner-opinion-cliente-txt">Solicitudes de derivación pendientes.</span>
+    <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminDerivacionPendienteIrPrimera()">Revisar</button>
+    <button type="button" class="admin-banner-x" onclick="ocultarBannerDerivacionPendiente()" title="Cerrar">&times;</button>
+  </div>
   <div class="hd">
     <button type="button" id="mt" class="ib" title="Admin: abre el asistente de marca, logo y ubicación base del tenant. Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
     <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
@@ -97,6 +103,10 @@
       </div>
       <button id="btn-android-descargas" type="button" class="ib" title="Abrir carpeta Descargas (exports)" style="display:none" onclick="if(window.AndroidDevice&amp;&amp;typeof AndroidDevice.openExportsFolder==='function')AndroidDevice.openExportsFolder();"><i class="fas fa-folder-open"></i></button>
       <button id="btn-dashboard-gerencia" class="ib" onclick="abrirModalDashboardGerencia()" title="Dashboard tiempo real" style="display:none"><i class="fas fa-tachometer-alt"></i></button>
+      <button id="btn-derivaciones-pendientes" type="button" class="ib" onclick="adminDerivacionPendienteIrPrimera()" title="Solicitudes de derivación pendientes" style="display:none;position:relative">
+        <i class="fas fa-code-branch"></i>
+        <span id="badge-derivaciones-pendientes" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:999px;min-width:16px;height:16px;padding:0 4px;font-size:.65rem;line-height:16px;text-align:center;font-weight:700"></span>
+      </button>
       <button id="btn-admin-cambiar-rubro" type="button" class="ib" onclick="abrirModalCambioRubroAdminConPassword()" title="Cambiar tipo de negocio (rubro)" style="display:none"><i class="fas fa-briefcase"></i></button>
       <button id="btn-admin" class="ib" onclick="abrirAdmin()" title="Panel Admin" style="display:none"><i class="fas fa-cog"></i></button>
     </div>
@@ -1175,6 +1185,23 @@
         <button type="button" class="sec" onclick="document.getElementById('modal-asignar-tecnico').classList.remove('active')">Cancelar</button>
         <button type="button" class="sec" id="btn-desasignar-tecnico" style="display:none;border-color:#f97316;color:#c2410c" onclick="confirmarDesasignarPedido()"><i class="fas fa-user-slash"></i> Desasignar</button>
         <button type="button" class="bp" id="btn-confirmar-asignar-tecnico" onclick="confirmarEnviarNotifPedido()"><i class="fas fa-paper-plane"></i> Asignar y notificar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-derivacion-preview-admin" class="mo">
+  <div class="mc" style="max-width:680px">
+    <div class="mh"><h3><i class="fas fa-whatsapp"></i> Revisar derivación antes de enviar</h3><button type="button" class="cm" onclick="cerrarModalDerivacionPreviewAdmin()"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <p style="font-size:.82rem;color:var(--tm);margin-bottom:.75rem">Revisá destino, teléfono y mensaje final. Recién al confirmar se abre WhatsApp con el texto editable ya preparado.</p>
+      <input type="hidden" id="deriv-prev-pid">
+      <div class="fg" style="padding:0"><label>Destino</label><select id="deriv-prev-destino"></select></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label>Teléfono destino (WhatsApp)</label><input id="deriv-prev-telefono" type="text" readonly></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label>Mensaje final (editable)</label><textarea id="deriv-prev-mensaje" rows="11" style="width:100%;margin-top:.25rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical"></textarea></div>
+      <div style="display:flex;gap:.65rem;flex-wrap:wrap;margin-top:.9rem">
+        <button type="button" class="sec" onclick="cerrarModalDerivacionPreviewAdmin()">Cancelar</button>
+        <button type="button" class="bp" id="btn-deriv-prev-enviar" onclick="confirmarEnvioDerivacionPreviewAdmin()"><i class="fab fa-whatsapp"></i> Enviar por WhatsApp</button>
       </div>
     </div>
   </div>

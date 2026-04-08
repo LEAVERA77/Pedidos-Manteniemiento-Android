@@ -15,6 +15,7 @@ import {
   notifyPedidoCierreWhatsAppSafe,
   notifyPedidoClienteActualizacionWhatsAppSafe,
   notifyPedidoAltaClienteWhatsAppSafe,
+  notifyPedidoDerivacionClienteWhatsAppSafe,
 } from "../services/whatsappService.js";
 import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
 import {
@@ -640,7 +641,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
 
-    const { destino, fila_index: filaIndexRaw, motivo } = req.body || {};
+    const { destino, fila_index: filaIndexRaw, motivo, mensaje_final: mensajeFinalRaw } = req.body || {};
     const destinoStr = String(destino || "").trim();
     if (!destinoStr) return res.status(400).json({ error: "destino es obligatorio" });
 
@@ -687,12 +688,17 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     }
     const destinoEtiqueta = etiquetaDestinoDerivacion(destinoStr);
     const nombreEmpresaDestino = (rContact.nombre && String(rContact.nombre).trim()) || destinoEtiqueta;
-    const snap = buildDerivacionExternaMensaje({
+    const snapBase = buildDerivacionExternaMensaje({
       nombreTenant,
       pedido,
       nombreEmpresaDestino,
       textoObservacionesTecnico: textoObservaciones,
     });
+    const mensajeFinal =
+      mensajeFinalRaw != null && String(mensajeFinalRaw).trim()
+        ? String(mensajeFinalRaw).trim().slice(0, 6000)
+        : "";
+    const snap = mensajeFinal || snapBase;
 
     const hasTa = await pedidosTableHasTenantIdColumn();
     const upParams = [
@@ -757,6 +763,20 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
 
     const row = r.rows[0];
+    void (async () => {
+      try {
+        await notifyPedidoDerivacionClienteWhatsAppSafe({
+          tenantId: req.tenantId,
+          numeroPedido: row.numero_pedido,
+          nombreEntidad: nombreTenant,
+          telefonoContactoRaw: row.telefono_contacto,
+          pedidoId: row.id,
+          destinoNombre: row.derivado_destino_nombre || nombreEmpresaDestino,
+        });
+      } catch (e) {
+        console.error("[pedidos] aviso cliente derivación externa (no bloqueante)", e.message);
+      }
+    })();
     return res.json({
       ...row,
       _derivacion_whatsapp: rContact.whatsapp,

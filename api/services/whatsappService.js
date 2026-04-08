@@ -377,3 +377,47 @@ export async function notifyPedidoClienteActualizacionWhatsAppSafe({
   }
 }
 
+/**
+ * Aviso al cliente cuando el reclamo se deriva a una empresa externa.
+ * No bloquea el flujo principal si falla.
+ */
+export async function notifyPedidoDerivacionClienteWhatsAppSafe({
+  tenantId,
+  numeroPedido,
+  nombreEntidad,
+  telefonoContactoRaw,
+  pedidoId,
+  destinoNombre,
+}) {
+  const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) {
+    return { sent: false, skipped: true, reason: "no_phone" };
+  }
+  const np = String(numeroPedido || "").trim() || `#${pedidoId}`;
+  const ent = String(nombreEntidad || "la entidad").trim();
+  const dest = String(destinoNombre || "la empresa correspondiente").trim();
+  const body =
+    `*${ent}* informa: su reclamo *#${np}* fue *derivado* a *${dest}* para su atención.\n\n` +
+    `El caso queda registrado y en seguimiento.`;
+  try {
+    const r = await sendTenantWhatsAppText({
+      tenantId,
+      toDigits: phone,
+      bodyText: body,
+      pedidoId,
+      logContext: "cliente_pedido_derivado_externo",
+    });
+    if (!r.ok) {
+      console.error("[whatsapp-service] aviso derivación cliente: envío falló", {
+        pedidoId,
+        tenantId,
+        detail: r.error || r.graph,
+      });
+    }
+    return { sent: !!r.ok, skipped: false, ok: r.ok };
+  } catch (e) {
+    console.error("[whatsapp-service] aviso derivación cliente: excepción", e.message);
+    return { sent: false, skipped: false, error: e.message };
+  }
+}
+

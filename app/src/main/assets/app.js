@@ -2471,6 +2471,8 @@ document.getElementById('lf').addEventListener('submit', async e => {
         if (btnRubro) btnRubro.style.display = esAdminSesionWebPublica() ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
+        const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
+        if (btnDerivPend) btnDerivPend.style.display = esAdmin() ? 'inline-flex' : 'none';
         const mapDashCard = document.getElementById('mapa-card-dashboard');
         if (mapDashCard) mapDashCard.style.display = esAdmin() ? 'block' : 'none';
         const wrapTog = document.getElementById('wrap-toggle-ver-todos');
@@ -8069,7 +8071,85 @@ function construirOpcionesDerivacionAdminHtml(escFn) {
     return out.join('');
 }
 
-async function ejecutarDerivacionExternaAdmin(pid) {
+function normalizarDestinoDerivacionSeleccion(v) {
+    const raw = String(v || '').trim();
+    if (!raw || !raw.includes('::')) return null;
+    const cut = raw.indexOf('::');
+    const destino = raw.slice(0, cut);
+    const idxStr = raw.slice(cut + 2);
+    let fila_index;
+    if (idxStr !== '') {
+        const n = parseInt(idxStr, 10);
+        if (!Number.isFinite(n)) return null;
+        fila_index = n;
+    }
+    return { destino, idxStr, fila_index };
+}
+
+function obtenerTelefonoDerivacionDesdeEmpresaCfg(v) {
+    const sel = normalizarDestinoDerivacionSeleccion(v);
+    if (!sel) return '';
+    const dr = window.EMPRESA_CFG?.derivacion_reclamos;
+    if (!dr || typeof dr !== 'object') return '';
+    if (sel.idxStr !== '') {
+        const arr = Array.isArray(dr[sel.destino]) ? dr[sel.destino] : [];
+        const slot = arr[sel.fila_index];
+        return String(slot?.whatsapp || '').trim();
+    }
+    return String(dr[sel.destino]?.whatsapp || '').trim();
+}
+
+function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
+    const entidad = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
+    const np = String(p?.np || p?.numero_pedido || '—').trim();
+    const pid = String(p?.id || '—').trim();
+    const tipo = String(p?.tt || '—').trim();
+    const prioridad = String(p?.pr || '—').trim();
+    const estado = String(p?.es || '—').trim();
+    const cliente = String(p?.cnom || p?.cl || '').trim();
+    const tel = String(p?.tel || '').trim();
+    const calle = String(p?.ccal || '').trim();
+    const num = String(p?.cnum || '').trim();
+    const loc = String(p?.cloc || '').trim();
+    const dir = [calle, num, loc].filter(Boolean).join(', ') || String(p?.cdir || '').trim();
+    const lat = Number(p?.la);
+    const lng = Number(p?.ln);
+    const ubicacion =
+        Number.isFinite(lat) && Number.isFinite(lng)
+            ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
+            : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
+    const obsTxt = String(obs || '').trim() || '—';
+    const recl = cliente || tel ? `${cliente || '—'}${tel ? ` · Tel.: ${tel}` : ''}` : '—';
+    return [
+        `A: ${destinoNombre || '—'}`,
+        '',
+        `${entidad} le informa que recibimos el reclamo *N° ${np}* (ref. interna id ${pid}) y que, *en visita / según lo informado por el técnico*, se constató en el lugar que *corresponde atenderlo vuestra empresa*.`,
+        '',
+        'Derivamos el reclamo con las *observaciones del técnico / operador*:',
+        obsTxt,
+        '',
+        '*Ubicación para relevo en campo:*',
+        ubicacion,
+        '',
+        '*Datos útiles del reclamo*',
+        `• Tipo: ${tipo || '—'}`,
+        `• Prioridad: ${prioridad || '—'}`,
+        `• Estado al derivar: ${estado || '—'}`,
+        `• Reclamante / contacto: ${recl}`,
+        '',
+        'Los datos se comparten solo para coordinar este reclamo entre entidades. No reenviarlos fuera del circuito operativo acordado.',
+        '',
+        'Gracias por su atención.',
+        entidad,
+    ].join('\n');
+}
+
+function cerrarModalDerivacionPreviewAdmin() {
+    document.getElementById('modal-derivacion-preview-admin')?.classList.remove('active');
+}
+window.cerrarModalDerivacionPreviewAdmin = cerrarModalDerivacionPreviewAdmin;
+
+function abrirModalRevisionDerivacionAdmin(pid) {
     const sel = document.getElementById('admin-derivar-destino');
     const ta = document.getElementById('admin-derivar-motivo');
     const v = (sel?.value || '').trim();
@@ -8078,6 +8158,7 @@ async function ejecutarDerivacionExternaAdmin(pid) {
         return;
     }
     const pRow = app.p.find((x) => String(x.id) === String(pid));
+    if (!pRow) return;
     const obsTa = (ta?.value || '').trim();
     const obsTec = String(pRow?.sdm || '').trim();
     if (!obsTa && !obsTec) {
@@ -8087,19 +8168,40 @@ async function ejecutarDerivacionExternaAdmin(pid) {
         );
         return;
     }
-    const cut = v.indexOf('::');
-    const destino = v.slice(0, cut);
-    const idxStr = v.slice(cut + 2);
-    let fila_index;
-    if (idxStr !== '') {
-        const n = parseInt(idxStr, 10);
-        if (!Number.isFinite(n)) {
-            toast('Destino inválido.', 'error');
-            return;
-        }
-        fila_index = n;
+    const destinoSel = normalizarDestinoDerivacionSeleccion(v);
+    if (!destinoSel) {
+        toast('Destino inválido.', 'error');
+        return;
     }
-    const motivo = obsTa.slice(0, 2000);
+    const destinoNombre = String(sel?.selectedOptions?.[0]?.textContent || '').trim() || destinoSel.destino;
+    const tel = obtenerTelefonoDerivacionDesdeEmpresaCfg(v);
+    const msg = buildPreviewMensajeDerivacionAdmin(pRow, destinoNombre, obsTa || obsTec);
+    const mp = document.getElementById('modal-derivacion-preview-admin');
+    document.getElementById('deriv-prev-pid').value = String(pid);
+    const dstEl = document.getElementById('deriv-prev-destino');
+    if (dstEl) dstEl.innerHTML = `<option value="${v.replace(/"/g, '&quot;')}">${destinoNombre.replace(/</g, '&lt;')}</option>`;
+    const telEl = document.getElementById('deriv-prev-telefono');
+    if (telEl) telEl.value = tel || '';
+    const msgEl = document.getElementById('deriv-prev-mensaje');
+    if (msgEl) msgEl.value = msg;
+    mp?.classList.add('active');
+}
+window.abrirModalRevisionDerivacionAdmin = abrirModalRevisionDerivacionAdmin;
+
+async function ejecutarDerivacionExternaAdmin(pid, override) {
+    const dataModal = override || {};
+    const v = String(dataModal.destinoValue || '').trim();
+    const destinoSel = normalizarDestinoDerivacionSeleccion(v);
+    if (!destinoSel) {
+        toast('Destino inválido.', 'error');
+        return;
+    }
+    const motivo = String(dataModal.motivo || '').trim().slice(0, 2000);
+    const mensajeFinal = String(dataModal.mensajeFinal || '').trim().slice(0, 6000);
+    if (!motivo) {
+        toast('Falta el texto de observaciones para la derivación.', 'warning');
+        return;
+    }
     await asegurarJwtApiRest();
     const tok = getApiToken();
     if (!tok) {
@@ -8109,8 +8211,8 @@ async function ejecutarDerivacionExternaAdmin(pid) {
     const pidNum = parseInt(pid, 10);
     if (!Number.isFinite(pidNum)) return;
     try {
-        const body = { destino, motivo: motivo || undefined };
-        if (idxStr !== '') body.fila_index = fila_index;
+        const body = { destino: destinoSel.destino, motivo: motivo || undefined, mensaje_final: mensajeFinal || undefined };
+        if (destinoSel.idxStr !== '') body.fila_index = destinoSel.fila_index;
         const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/derivar-externo`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
@@ -8138,6 +8240,7 @@ async function ejecutarDerivacionExternaAdmin(pid) {
                 'noopener,noreferrer'
             );
         }
+        cerrarModalDerivacionPreviewAdmin();
         toast('Derivación registrada.', 'success');
         detalle(idx !== -1 ? app.p[idx] : row);
     } catch (e) {
@@ -8145,6 +8248,22 @@ async function ejecutarDerivacionExternaAdmin(pid) {
     }
 }
 window.ejecutarDerivacionExternaAdmin = ejecutarDerivacionExternaAdmin;
+
+async function confirmarEnvioDerivacionPreviewAdmin() {
+    const pid = document.getElementById('deriv-prev-pid')?.value;
+    const destinoValue = document.getElementById('deriv-prev-destino')?.value || '';
+    const mensajeFinal = document.getElementById('deriv-prev-mensaje')?.value || '';
+    const detTa = document.getElementById('admin-derivar-motivo');
+    const pRow = app.p.find((x) => String(x.id) === String(pid));
+    const motivo = String(detTa?.value || pRow?.sdm || '').trim();
+    if (!pid) return;
+    await ejecutarDerivacionExternaAdmin(pid, {
+        destinoValue,
+        motivo,
+        mensajeFinal,
+    });
+}
+window.confirmarEnvioDerivacionPreviewAdmin = confirmarEnvioDerivacionPreviewAdmin;
 
 async function solicitarDerivacionTerceroDesdeTecnico(pid) {
     const pidNum = parseInt(pid, 10);
@@ -8531,7 +8650,7 @@ function detalle(p) {
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
             <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
-            <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="ejecutarDerivacionExternaAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Confirmar y abrir WhatsApp</button>
+            <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y abrir WhatsApp</button>
         </div>`;
     }
     
@@ -8696,6 +8815,8 @@ function exportPedido(pedidos, nombre) {
             'Calle': p.ccal || '',
             'Número': p.cnum || '',
             'Localidad': p.cloc || '',
+            'Tel. contacto': p.tel || '',
+            'Dirección consolidada': [p.ccal || '', p.cnum || '', p.cloc || ''].filter(Boolean).join(', ') || p.cdir || '',
             'Tipo de conexión': p.stc || '',
             'Fases': p.sfs || '',
             'Referencia ubicación': p.cdir || '',
@@ -8795,7 +8916,50 @@ function tabPedidoListaPorEstado(es) {
     return 'p';
 }
 
+function pedidosConSolicitudDerivacionPendiente() {
+    return (app.p || []).filter((p) => p && p.sdpen === true);
+}
+
+function ocultarBannerDerivacionPendiente() {
+    const b = document.getElementById('admin-banner-derivacion-pendiente');
+    if (b) b.style.display = 'none';
+}
+window.ocultarBannerDerivacionPendiente = ocultarBannerDerivacionPendiente;
+
+function adminDerivacionPendienteIrPrimera() {
+    const pend = pedidosConSolicitudDerivacionPendiente();
+    if (!pend.length) {
+        toast('No hay solicitudes pendientes.', 'info');
+        ocultarBannerDerivacionPendiente();
+        return;
+    }
+    detalle(pend[0]);
+}
+window.adminDerivacionPendienteIrPrimera = adminDerivacionPendienteIrPrimera;
+
+function actualizarIndicadorSolicitudesDerivacionAdmin() {
+    const btn = document.getElementById('btn-derivaciones-pendientes');
+    const badge = document.getElementById('badge-derivaciones-pendientes');
+    const banner = document.getElementById('admin-banner-derivacion-pendiente');
+    const txt = document.getElementById('admin-banner-derivacion-pendiente-txt');
+    const esAdm = esAdmin();
+    const n = esAdm ? pedidosConSolicitudDerivacionPendiente().length : 0;
+    if (btn) btn.style.display = esAdm ? 'inline-flex' : 'none';
+    if (badge) {
+        badge.style.display = esAdm && n > 0 ? 'inline-block' : 'none';
+        badge.textContent = n > 99 ? '99+' : String(n);
+    }
+    if (banner) banner.style.display = esAdm && n > 0 ? 'flex' : 'none';
+    if (txt) {
+        txt.textContent =
+            n > 0
+                ? `${n} solicitud${n === 1 ? '' : 'es'} de derivación pendiente${n === 1 ? '' : 's'} para revisar.`
+                : 'Solicitudes de derivación pendientes.';
+    }
+}
+
 function render() {
+    actualizarIndicadorSolicitudesDerivacionAdmin();
     const vis = pedidosVisiblesEnUI();
     const cer = vis.filter(p => p.es === 'Cerrado' || p.es === 'Derivado externo').length;
     const asg = vis.filter(p => p.es === 'Asignado' || p.es === 'En ejecución').length;
@@ -9106,6 +9270,11 @@ function ejecutarCerrarSesion() {
     if (btnAdm) btnAdm.style.display = 'none';
     const btnDg = document.getElementById('btn-dashboard-gerencia');
     if (btnDg) btnDg.style.display = 'none';
+    const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
+    if (btnDerivPend) btnDerivPend.style.display = 'none';
+    const badgeDerivPend = document.getElementById('badge-derivaciones-pendientes');
+    if (badgeDerivPend) badgeDerivPend.style.display = 'none';
+    ocultarBannerDerivacionPendiente();
     const mapDashCard = document.getElementById('mapa-card-dashboard');
     if (mapDashCard) mapDashCard.style.display = 'none';
     const wvt = document.getElementById('wrap-toggle-ver-todos');
@@ -9783,6 +9952,8 @@ try {
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
         const btnDash2 = document.getElementById('btn-dashboard-gerencia');
         if (btnDash2) btnDash2.style.display = esAdmin() ? 'flex' : 'none';
+        const btnDerivPend2 = document.getElementById('btn-derivaciones-pendientes');
+        if (btnDerivPend2) btnDerivPend2.style.display = esAdmin() ? 'inline-flex' : 'none';
         const mapDashCard2 = document.getElementById('mapa-card-dashboard');
         if (mapDashCard2) mapDashCard2.style.display = esAdmin() ? 'block' : 'none';
         const wrapTog2 = document.getElementById('wrap-toggle-ver-todos');
@@ -13574,6 +13745,10 @@ async function exportarPedidosCsvAdmin() {
         COALESCE(TRIM(trafo),'') AS trafo,
         COALESCE(TRIM(nis_medidor),'') AS nis_medidor,
         COALESCE(NULLIF(TRIM(cliente_nombre),''), NULLIF(TRIM(cliente),''), '') AS contacto,
+        COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
+        COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
+        COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad,
+        COALESCE(TRIM(cliente_direccion),'') AS cliente_direccion,
         COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto,
         descripcion
         FROM pedidos ${where} ORDER BY fecha_creacion DESC LIMIT 10000`;
@@ -13597,6 +13772,11 @@ async function exportarPedidosCsvAdmin() {
             'trafo',
             'nis_medidor',
             'contacto',
+            'cliente_calle',
+            'cliente_numero_puerta',
+            'cliente_localidad',
+            'cliente_direccion',
+            'direccion_consolidada',
             'telefono_contacto',
             'descripcion',
         ];
@@ -13616,6 +13796,11 @@ async function exportarPedidosCsvAdmin() {
                     row.trafo,
                     row.nis_medidor,
                     row.contacto,
+                    row.cliente_calle,
+                    row.cliente_numero_puerta,
+                    row.cliente_localidad,
+                    row.cliente_direccion,
+                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || '',
                     row.telefono_contacto,
                     row.descripcion,
                 ]
@@ -13779,7 +13964,14 @@ async function exportInformeMensualExcel() {
     try {
         const tsql = await pedidosFiltroTenantSql();
         const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion,
+            COALESCE(NULLIF(TRIM(cliente_nombre),''), NULLIF(TRIM(cliente),''), '') AS cliente_nombre,
+            COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
+            COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
+            COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad,
+            COALESCE(TRIM(cliente_direccion),'') AS cliente_direccion,
+            COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto
+            FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = (r.rows || []).map(row => ({
             Pedido: row.numero_pedido,
             NIS: row.nis_medidor,
@@ -13789,7 +13981,13 @@ async function exportInformeMensualExcel() {
             Cierre: fmtInformeFecha(row.fecha_cierre),
             Distribuidor: row.distribuidor,
             Tipo: row.tipo_trabajo,
-            Descripcion: row.descripcion
+            Descripcion: row.descripcion,
+            Cliente: row.cliente_nombre,
+            Calle: row.cliente_calle,
+            Numero: row.cliente_numero_puerta,
+            Localidad: row.cliente_localidad,
+            Telefono: row.telefono_contacto,
+            Direccion_consolidada: [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || ''
         }));
         const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Pedido: '—', Nota: 'Sin filas en el período' }]);
         const wb = XLSX.utils.book_new();
@@ -13980,7 +14178,7 @@ async function html2canvasCapturaElemento(el, opts = {}) {
             opts.useFullScrollHeight || statsExport
                 ? Math.max(el.scrollHeight, el.offsetHeight, 40)
                 : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
-        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 3000 : opts.maxHeightPx || 3400);
+        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
         const scale = statsExport
             ? Math.min(2.65, 2700 / Math.max(sw, 260))
             : Math.min(1.2, 1850 / Math.max(sw, 380));
@@ -14119,6 +14317,7 @@ async function imprimirInformeConGraficos() {
         const totalPag = pageBlocks.length;
         const notaPie =
             '<p class="gn-print-nota">Documento para gestión interna. Desactivá «Encabezado y pie de página» del navegador al imprimir para evitar URLs en el borde.</p>';
+        const hdrHtml = construirHtmlEncabezadoInformeEmpresa(subt);
         const bloques = pageBlocks
             .map((bl, pi) => {
                 const pnum = pi + 1;
@@ -14148,7 +14347,6 @@ async function imprimirInformeConGraficos() {
                 );
             })
             .join('');
-        const hdrHtml = construirHtmlEncabezadoInformeEmpresa(subt);
         const css =
             '@page{size:A4;margin:10mm}' +
             '*{box-sizing:border-box}' +
@@ -14359,14 +14557,14 @@ async function generarInformeMensualENRE() {
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
         const tit = ent + ' — Informe de pedidos';
         const hdr = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
-        let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th></tr></thead><tbody>';
+        let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th><th>Cliente</th><th>Calle</th><th>N°</th><th>Localidad</th></tr></thead><tbody>';
         rows.forEach(row => {
-            tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td></tr>`;
+            tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_nombre || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_calle || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_numero_puerta || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_localidad || '').replace(/</g, '&lt;')}</td></tr>`;
         });
         tab += '</tbody></table>';
         const w = window.open('', '_blank');
         if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
-        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4;margin:12mm}body{font-family:system-ui;padding:0.5rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:9pt} th,td{border:1px solid #cbd5e1;padding:4px} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:13pt;color:#1e3a8a;margin:.5rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:1rem;font-size:8pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
+        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
@@ -14705,9 +14903,10 @@ async function cargarEstadisticas() {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    animation: { duration: 400 },
-                    layout: { padding: { top: 4, bottom: 4, left: 4, right: 8 } },
-                    plugins: { legend: { display: false }, tooltip: { callbacks: {
+                    animation: { duration: 520, easing: 'easeOutQuart' },
+                    clip: false,
+                    layout: { padding: { top: 12, bottom: 14, left: 12, right: 18 } },
+                    plugins: { legend: { display: false, labels: { boxWidth: 18, boxHeight: 8, padding: 14, color: '#334155', font: { size: 11, weight: '600' } } }, tooltip: { callbacks: {
                         label: ctx2 => {
                             const v = ctx2.parsed && typeof ctx2.parsed === 'object' && 'y' in ctx2.parsed
                                 ? ctx2.parsed.y : (ctx2.parsed ?? ctx2.raw);
@@ -14719,9 +14918,9 @@ async function cargarEstadisticas() {
                               scales: {
                                   x: {
                                       grid: { display: false },
-                                      ticks: { font: { size: 11 }, maxRotation: 50, minRotation: 0 },
+                                      ticks: { color: '#475569', font: { size: 11, weight: '600' }, maxRotation: 40, minRotation: 0, autoSkipPadding: 10 },
                                   },
-                                  y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } } },
+                                  y: { beginAtZero: true, grace: '8%', ticks: { color: '#475569', precision: 0, font: { size: 11, weight: '600' } }, grid: { color: 'rgba(148,163,184,.22)' } },
                               },
                           }
                         : {}),
@@ -14733,7 +14932,7 @@ async function cargarEstadisticas() {
             });
         };
 
-        const COLORES = ['#6b8cae','#7aab8f','#c49a6c','#c08080','#b8a86e','#9b8bb8','#6fa3b5','#9bb87a','#b87a8f','#8a9bb8'];
+        const COLORES = ['rgba(59,130,246,.55)','rgba(16,185,129,.5)','rgba(245,158,11,.55)','rgba(244,114,182,.5)','rgba(99,102,241,.5)','rgba(20,184,166,.5)','rgba(249,115,22,.52)','rgba(168,85,247,.52)','rgba(14,165,233,.52)','rgba(132,204,22,.52)'];
         const priorColor = {
             Crítica: 'rgba(180, 100, 100, 0.55)',
             Alta: 'rgba(200, 140, 90, 0.5)',
