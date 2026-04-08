@@ -44,4 +44,21 @@ describe("resolveStructuredAddressCoords sin GPS (paridad)", () => {
     expect(r.source).toBe("street_center");
     expect(r.lat).toBe(-31.5);
   });
+
+  it("empate en distancia de número → preferir frente más cerca del eje de calle", () => {
+    const hits = [
+      { lat: -31.0, lng: -60.0, houseNum: 1101, displayName: "a" },
+      { lat: -31.02, lng: -60.02, houseNum: 1103, displayName: "b" },
+    ];
+    const streetCenter = { lat: -31.015, lng: -60.015, displayName: "axis" };
+    const r = resolveStructuredAddressCoords({
+      houseHits: hits,
+      streetCenter,
+      targetNum: 1102,
+      userGps: null,
+      fallbackCity: null,
+    });
+    expect(r.source).toBe("house_search_parity");
+    expect(r.anchorHouse).toBe(1103);
+  });
 });

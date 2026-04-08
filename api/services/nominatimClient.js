@@ -2,7 +2,16 @@
  * Cliente Nominatim (OSM) con rate limit ~1 req/s y cabeceras de uso responsable.
  * Geocodificación estructurada + viewbox por localidad del catálogo (evita homónimos entre ciudades).
  * @see https://operations.osmfoundation.org/policies/nominatim/
+ *
+ * Cobertura OSM: si el frente no está mapeado con `house_number`, no hay punto exacto; se intenta
+ * paridad + vecinos en número, eje de vía (`street_center`) o consulta `q` filtrada. Todo queda
+ * acotado al bbox de la localidad declarada (no se usa el centro del tenant como sustituto de ciudad
+ * cuando `allowTenantCentroidFallback: false`).
+ *
+ * Opcional: `LOCAL_ADDRESS_INDEX_PATH` → `lookupLocalAddressInIndex` (mismo viewbox + reverse + ancla).
  */
+
+import { lookupLocalAddressInIndex } from "./localAddressIndex.js";
 
 const MIN_INTERVAL_MS = 1100;
 let _lastAt = 0;
@@ -344,7 +353,7 @@ function scoreStructuredHit(hit, wantHouse) {
   return 2;
 }
 
-function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse) {
+function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCenter) {
   const cal = String(calle || "").trim();
   const loc = String(localidad || "").trim();
   let pool = hits.filter((h) => nominatimHitStrictLocalidad(h, loc) && nominatimHitMatchesCalle(h, cal));
@@ -356,7 +365,29 @@ function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse) {
     });
   }
   if (!pool.length) return null;
-  pool.sort((a, b) => scoreStructuredHit(a, wantHouse) - scoreStructuredHit(b, wantHouse));
+  const ac =
+    anchorCenter &&
+    Number.isFinite(Number(anchorCenter.lat)) &&
+    Number.isFinite(Number(anchorCenter.lng))
+      ? { lat: Number(anchorCenter.lat), lng: Number(anchorCenter.lng) }
+      : null;
+  pool.sort((a, b) => {
+    const sa = scoreStructuredHit(a, wantHouse);
+    const sb = scoreStructuredHit(b, wantHouse);
+    if (sa !== sb) return sa - sb;
+    if (ac) {
+      const la = Number(a.lat);
+      const lo = Number(a.lon);
+      const lb = Number(b.lat);
+      const lob = Number(b.lon);
+      if ([la, lo, lb, lob].every((x) => Number.isFinite(x))) {
+        const da = haversineMeters(la, lo, ac.lat, ac.lng);
+        const db = haversineMeters(lb, lob, ac.lat, ac.lng);
+        if (da !== db) return da - db;
+      }
+    }
+    return 0;
+  });
   return pool[0];
 }
 
@@ -421,6 +452,9 @@ export function hasMeaningfulHouseNumber(numeroStr) {
  * precomputedViewboxMeta: evita un segundo geocode de la misma localidad (p. ej. WhatsApp ya calculó viewbox).
  * localityMaxDistanceMeters: tope de distancia al centroide de la localidad (Nominatim); por defecto env o 20 km.
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, audit?: object } | null>}
+ *
+ * Orden interno: viewbox de la ciudad → índice local (`LOCAL_ADDRESS_INDEX_PATH`) si aplica → búsqueda
+ * estructurada Nominatim → `searchCalleLocalidadArgentina` + `resolveStructuredAddressCoords` → `q` acotada.
  */
 export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, options = {}) {
   const c = String(ciudad || "").trim();
@@ -480,6 +514,37 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     return true;
   };
 
+  const anchorForStructured =
+    vbMeta && !vbMeta.fromTenantCentroid && vbMeta.center &&
+    Number.isFinite(Number(vbMeta.center.lat)) && Number.isFinite(Number(vbMeta.center.lng))
+      ? { lat: Number(vbMeta.center.lat), lng: Number(vbMeta.center.lng) }
+      : null;
+
+  const localPt = lookupLocalAddressInIndex(c, cal, nRaw);
+  if (localPt && Number.isFinite(localPt.lat) && Number.isFinite(localPt.lng)) {
+    const la = localPt.lat;
+    const lo = localPt.lng;
+    if (passesLocalPlausibility(la, lo)) {
+      const needsRev = c.length >= 2 && cal.length >= 2;
+      const revOk = !needsRev || (await verifyCatalogGeocodeReverse(la, lo, c, cal));
+      const plausible =
+        !anchorForStructured || isGeocodePlausibleForLocalityAnchor(la, lo, anchorForStructured);
+      if (revOk && plausible) {
+        audit.source = "local_address_index";
+        audit.usedHouseNumber = audit.requestedHouseNumber;
+        audit.approximate = false;
+        const hn = hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null;
+        const numBit = hn != null ? ` ${hn}` : "";
+        return {
+          lat: la,
+          lng: lo,
+          displayName: `Índice local: ${cal}${numBit}, ${c}`.replace(/\s+/g, " ").trim(),
+          audit,
+        };
+      }
+    }
+  }
+
   const tryStructured = async (streetLine, wantHouse) => {
     if (!mayRunBoundedStructured) return null;
     const hits = await nominatimSearch({
@@ -491,7 +556,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       ...bounded,
     });
     /* Siempre acotar por bbox de la localidad cuando existe (antes solo con catalogStrict → homónimos lejanos). */
-    return pickBestStructuredHit(hits, cal, c, bbox, wantHouse);
+    return pickBestStructuredHit(hits, cal, c, bbox, wantHouse, anchorForStructured);
   };
 
   if (hasMeaningfulHouseNumber(nRaw)) {
@@ -708,6 +773,7 @@ export async function searchCalleLocalidadArgentina(ciudad, calle, limit = 40, v
   const lim = Math.min(50, Math.max(8, Number(limit) || 40));
   await throttle();
   const p = nominatimBaseParams();
+  /* OSM devuelve mezcla de frentes con housenumber y geometrías de vía; se clasifican para paridad / eje. */
   p.set("q", `${cal}, ${c}, Argentina`);
   p.set("limit", String(lim));
   const vb = viewboxStr != null ? String(viewboxStr).trim() : "";
@@ -826,7 +892,7 @@ export function resolveStructuredAddressCoords({
     Number.isFinite(userGps.lat) &&
     Number.isFinite(userGps.lng)
   ) {
-    return pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, near);
+    return pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCity, near, streetCenter);
   }
 
   let pool = hits;
@@ -840,6 +906,15 @@ export function resolveStructuredAddressCoords({
       const da = Math.abs(a.houseNum - targetNum);
       const db = Math.abs(b.houseNum - targetNum);
       if (da !== db) return da - db;
+      if (
+        streetCenter &&
+        Number.isFinite(streetCenter.lat) &&
+        Number.isFinite(streetCenter.lng)
+      ) {
+        const ha = haversineMeters(a.lat, a.lng, streetCenter.lat, streetCenter.lng);
+        const hb = haversineMeters(b.lat, b.lng, streetCenter.lat, streetCenter.lng);
+        if (ha !== hb) return ha - hb;
+      }
     }
     return 0;
   });
@@ -859,7 +934,14 @@ export function resolveStructuredAddressCoords({
 /**
  * Elige coordenadas según número pedido, paridad y GPS del usuario (si aplica).
  */
-export function pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCoords, nearMeters = 120) {
+export function pickCoordsWithParityAndGps(
+  hits,
+  targetNum,
+  userGps,
+  fallbackCoords,
+  nearMeters = 120,
+  streetCenter = null
+) {
   const near = Number.isFinite(Number(nearMeters)) && Number(nearMeters) > 0 ? Number(nearMeters) : 120;
   if (!hits.length) {
     return fallbackCoords && Number.isFinite(fallbackCoords.lat) && Number.isFinite(fallbackCoords.lng)
@@ -877,6 +959,15 @@ export function pickCoordsWithParityAndGps(hits, targetNum, userGps, fallbackCoo
       const da = Math.abs(a.houseNum - targetNum);
       const db = Math.abs(b.houseNum - targetNum);
       if (da !== db) return da - db;
+      if (
+        streetCenter &&
+        Number.isFinite(streetCenter.lat) &&
+        Number.isFinite(streetCenter.lng)
+      ) {
+        const ha = haversineMeters(a.lat, a.lng, streetCenter.lat, streetCenter.lng);
+        const hb = haversineMeters(b.lat, b.lng, streetCenter.lat, streetCenter.lng);
+        if (ha !== hb) return ha - hb;
+      }
     }
     return 0;
   });

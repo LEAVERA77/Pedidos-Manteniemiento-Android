@@ -16,7 +16,6 @@ import {
   isGeocodePlausibleForLocalityAnchor,
   verifyCatalogGeocodeReverse,
 } from "./nominatimClient.js";
-import { geocodeCalleNumeroLocalidadGoogleArgentina } from "./googleGeocodeClient.js";
 
 async function loadTenantGeocodeHintsForPedido(tenantId) {
   const r = await query(
@@ -263,31 +262,6 @@ export async function crearPedidoDesdeWhatsappBot({
         if (revOk && plausible && localityResolved) {
           if (latFinal == null) latFinal = g.lat;
           if (lngFinal == null) lngFinal = g.lng;
-        }
-      }
-      if ((latFinal == null || lngFinal == null) && calleT && locT) {
-        const gg = await geocodeCalleNumeroLocalidadGoogleArgentina({
-          calle: calleT,
-          localidad: locT,
-          numero: numT && String(numT).trim() ? String(numT).trim() : "0",
-          stateOrProvince: hints.geocodeState || undefined,
-        });
-        if (gg && Number.isFinite(gg.lat) && Number.isFinite(gg.lng)) {
-          let anchorPtG = null;
-          try {
-            const ac = await geocodeAddressArgentina(`${locT}, Argentina`, { filterLocalidad: locT });
-            if (ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lng)) {
-              anchorPtG = { lat: ac.lat, lng: ac.lng };
-            }
-          } catch (_) {}
-          const revOkG = await verifyCatalogGeocodeReverse(gg.lat, gg.lng, locT, calleT);
-          const localityResolvedG = locT.length < 2 || anchorPtG != null;
-          const plausibleG =
-            !anchorPtG || isGeocodePlausibleForLocalityAnchor(gg.lat, gg.lng, anchorPtG);
-          if (revOkG && plausibleG && localityResolvedG) {
-            if (latFinal == null) latFinal = gg.lat;
-            if (lngFinal == null) lngFinal = gg.lng;
-          }
         }
       }
     } catch (_) {}

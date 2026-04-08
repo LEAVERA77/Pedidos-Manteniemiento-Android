@@ -40,7 +40,6 @@ import {
   humanChatCloseBySessionId,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
-import { geocodeCalleNumeroLocalidadGoogleArgentina } from "./googleGeocodeClient.js";
 
 const sessions = new Map();
 
@@ -683,6 +682,13 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 
 /**
  * Geocodifica calle/número/localidad, guarda en sesión y finaliza el pedido (mismo fallback que el paso por chat).
+ *
+ * Flujo gratuito (solo OSM): texto → ancla de localidad vía `geocodeAddressArgentina` / viewbox `geocodeLocalityViewboxArgentina`
+ * (sin usar centro del tenant como ciudad; `allowTenantCentroidFallback: false` en catálogo). Luego `searchCalleLocalidadArgentina`
+ * (candidatos con housenumber + eje de vía) y `geocodeCalleNumeroLocalidadArgentina` (estructurado + paridad + resolución).
+ * Sin housenumber en OSM no hay frente exacto: se usa paridad + distancia en número o `street_center` / fallback ciudad.
+ * Cada coordenada aceptada: `verifyCatalogGeocodeReverse` + `isGeocodePlausibleForLocalityAnchor` (y GPS del usuario si aplica).
+ *
  * @param {{ origenCatalogo?: boolean, stateOrProvince?: string }} opts — stateOrProvince desambigua Nominatim (prioridad sobre `clientes.configuracion`).
  */
 async function geocodeStructuredAddressAndFinalizePedido(
@@ -795,36 +801,6 @@ async function geocodeStructuredAddressAndFinalizePedido(
     targetNum != null &&
     Number.isFinite(targetNum) &&
     houseHits.some((h) => h.houseNum === targetNum);
-
-  if (!userGps && calle.length >= 2 && ciudad.length >= 2) {
-    try {
-      const gG = await geocodeCalleNumeroLocalidadGoogleArgentina({
-        calle,
-        numero,
-        localidad: ciudad,
-        stateOrProvince: stateForGeo || undefined,
-      });
-      if (gG && Number.isFinite(gG.lat) && Number.isFinite(gG.lng)) {
-        let acceptG = await verifyCatalogGeocodeReverse(gG.lat, gG.lng, ciudad, calle);
-        if (acceptG && localityAnchor && !isGeocodePlausibleForLocalityAnchor(gG.lat, gG.lng, localityAnchor)) {
-          acceptG = false;
-        }
-        if (acceptG) {
-          sess.lat = gG.lat;
-          sess.lng = gG.lng;
-          const origenGg = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-          sess.direccionTexto = `${origenGg} (Google ${gG.locationType}): ${gG.formattedAddress}`
-            .replace(/\s+/g, " ")
-            .trim();
-          sessions.set(sk, sess);
-          await finalizePedidoFromSession(phone, sess, contactName);
-          return;
-        }
-      }
-    } catch (e) {
-      console.error("[whatsapp-bot-meta] google geocode", e?.message || e);
-    }
-  }
 
   try {
     const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, {
