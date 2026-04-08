@@ -943,10 +943,77 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     if (Object.prototype.hasOwnProperty.call(conf, 'ocultar_modulos_redes')) {
         next.ocultar_modulos_redes = !!conf.ocultar_modulos_redes;
     }
+    for (const k of ['provincia', 'state', 'provincia_nominatim']) {
+        if (Object.prototype.hasOwnProperty.call(conf, k) && conf[k] != null && String(conf[k]).trim()) {
+            next[k] = String(conf[k]).trim();
+        }
+    }
     window.EMPRESA_CFG = next;
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
     } catch (_) {}
+}
+
+const _NOMINATIM_UA_CFG_PROV = 'GestorNova-ProvinciaTenant/1.0 (contact: gestornova-app@users.noreply.github.com)';
+
+/** Provincia / estado para Nominatim (Argentina) desde coordenadas de la oficina. */
+async function nominatimReverseProvinciaArgentina(lat, lng) {
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    await new Promise((res) => setTimeout(res, 1100));
+    const p = new URLSearchParams({
+        format: 'json',
+        lat: String(la),
+        lon: String(lo),
+        addressdetails: '1',
+        'accept-language': 'es',
+        zoom: '8',
+        email: 'gestornova-app@users.noreply.github.com',
+    });
+    const url = 'https://nominatim.openstreetmap.org/reverse?' + p.toString();
+    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_CFG_PROV } });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    const a = j && j.address;
+    if (!a || typeof a !== 'object') return null;
+    const state = a.state || a.region || a['ISO3166-2-lvl4'];
+    const s = state != null ? String(state).trim() : '';
+    return s.length >= 2 ? s : null;
+}
+
+/**
+ * Guarda provincia/state en clientes.configuracion (API) según lat/lng de la oficina.
+ * No pisa el campo del formulario si el admin ya escribió una provincia.
+ */
+async function actualizarProvinciaTenantDesdeCoords(lat, lng) {
+    if (!esAdmin() || modoOffline || typeof fetch !== 'function') return null;
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    try {
+        const prov = await nominatimReverseProvinciaArgentina(la, lo);
+        if (!prov) return null;
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (!token) return null;
+        const inp = document.getElementById('cfg-provincia-nominatim');
+        if (inp && String(inp.value || '').trim().length >= 2) return String(inp.value).trim();
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                configuracion: { provincia: prov, state: prov, provincia_nominatim: prov },
+            }),
+        });
+        if (!resp.ok) return null;
+        const ec = window.EMPRESA_CFG || {};
+        window.EMPRESA_CFG = { ...ec, provincia: prov, state: prov, provincia_nominatim: prov };
+        if (inp) inp.value = prov;
+        return prov;
+    } catch (_) {
+        return null;
+    }
 }
 
 async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
@@ -3630,6 +3697,7 @@ async function registrarUbicacionManualAdmin(lat, lng) {
             VALUES(${esc(app.u.id)}, ${esc(lat)}, ${esc(lng)}, ${esc(80)}, NOW())`);
         await sqlSimple(`DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`);
         toast('Ubicación de oficina registrada', 'success');
+        void actualizarProvinciaTenantDesdeCoords(lat, lng);
     } catch (e) {
         toastError('ubicacion-oficina-admin', e, 'No se pudo guardar la ubicación.');
     }
@@ -3714,8 +3782,7 @@ async function pollPedidosActividadAdmin() {
     if (!app.u || !esAdmin() || modoOffline || !NEON_OK) return;
     try {
         const tsql = await pedidosFiltroTenantSql();
-        const r = await sqlSimple(
-            `SELECT COALESCE(MAX(id),0)::bigint AS mid,
+        const qFull = `SELECT COALESCE(MAX(id),0)::bigint AS mid,
                 COUNT(*) FILTER (WHERE estado='Pendiente')::bigint AS np,
                 COUNT(*) FILTER (WHERE estado='Asignado')::bigint AS na,
                 COUNT(*) FILTER (WHERE estado='En ejecución')::bigint AS ne,
@@ -3724,10 +3791,45 @@ async function pollPedidosActividadAdmin() {
                 COALESCE(MAX(fecha_avance), to_timestamp(0)) AS mfa,
                 COALESCE(MAX(fecha_asignacion), to_timestamp(0)) AS mfas,
                 COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc
-             FROM pedidos WHERE 1=1${tsql}`
-        );
+             FROM pedidos WHERE 1=1${tsql}`;
+        const qMin = `SELECT COALESCE(MAX(id),0)::bigint AS mid,
+                COUNT(*) FILTER (WHERE estado='Pendiente')::bigint AS np,
+                COUNT(*) FILTER (WHERE estado='Asignado')::bigint AS na,
+                COUNT(*) FILTER (WHERE estado='En ejecución')::bigint AS ne,
+                COUNT(*) FILTER (WHERE estado='Cerrado')::bigint AS nc,
+                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav
+             FROM pedidos WHERE 1=1${tsql}`;
+        let r;
+        try {
+            r = await sqlSimple(qFull);
+        } catch (e) {
+            const m = String(e && e.message ? e.message : e);
+            if (
+                m.includes('fecha_avance') ||
+                m.includes('fecha_asignacion') ||
+                m.includes('fecha_cierre') ||
+                m.includes('does not exist') ||
+                m.includes('column')
+            ) {
+                r = await sqlSimple(qMin);
+            } else {
+                throw e;
+            }
+        }
         const row = r.rows?.[0] || {};
-        const f = [row.mid, row.np, row.na, row.ne, row.nc, row.sav, row.mfa, row.mfas, row.mfc].map(x => String(x)).join('|');
+        const f = [
+            row.mid,
+            row.np,
+            row.na,
+            row.ne,
+            row.nc,
+            row.sav,
+            row.mfa != null ? row.mfa : '0',
+            row.mfas != null ? row.mfas : '0',
+            row.mfc != null ? row.mfc : '0',
+        ]
+            .map((x) => String(x))
+            .join('|');
         if (!_pedidosActividadFinger) {
             _pedidosActividadFinger = f;
             return;
@@ -5359,10 +5461,10 @@ async function confirmarEnviarNotifPedido() {
         if (oldTai && oldTai !== uid) {
             const tOld = 'Pedido reasignado';
             const cOld = msgExtra || ('Ya no estás asignado a ' + (p?.np || '#' + _assignPedidoId));
-            await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(oldTai)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)})`);
+            await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(oldTai)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)}, FALSE)`);
             await enviarWhatsappMetaTecnico(oldTai, pidNum, `${tOld}: ${cOld}`);
         }
-        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(uid)}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)})`);
+        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(uid)}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)}, FALSE)`);
         await enviarWhatsappMetaTecnico(uid, pidNum, `${titulo}: ${cuerpo}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
@@ -5393,7 +5495,7 @@ async function ejecutarDesasignarPedidoPorId(pedidoId, opts) {
         }, app.u?.id);
         const tOld = 'Pedido desasignado';
         const cOld = 'Te quitaron la asignación de ' + (p?.np || '#' + id) + '. Revisá el mapa.';
-        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(oldUid)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)})`);
+        await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(oldUid)}, ${esc(pidNum)}, ${esc(tOld)}, ${esc(cOld)}, FALSE)`);
         await enviarWhatsappMetaTecnico(oldUid, pidNum, `${tOld}: ${cOld}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
@@ -5412,10 +5514,16 @@ async function confirmarDesasignarPedido() {
 window.confirmarDesasignarPedido = confirmarDesasignarPedido;
 window.ejecutarDesasignarPedidoPorId = ejecutarDesasignarPedidoPorId;
 
+let _pollNotifMovilUsaColumnaLeida = true;
+
 window.pollNotificacionesMovil = async function () {
     if (!app.u || esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    const uid = app.u.id;
+    const filtroLeida = _pollNotifMovilUsaColumnaLeida ? ' AND leida = FALSE' : '';
     try {
-        const r = await sqlSimple(`SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil WHERE usuario_id = ${esc(app.u.id)} AND leida = FALSE ORDER BY id ASC LIMIT 15`);
+        const r = await sqlSimple(
+            `SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil WHERE usuario_id = ${esc(uid)}${filtroLeida} ORDER BY id ASC LIMIT 15`
+        );
         const rows = r.rows || [];
         const tienePuente = window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function';
         for (const row of rows) {
@@ -5425,13 +5533,20 @@ window.pollNotificacionesMovil = async function () {
             if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
-                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    if (_pollNotifMovilUsaColumnaLeida) {
+                        await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    }
                     if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true });
                 } catch (_) {}
             }
         }
     } catch (e) {
-        if (!String(e.message || e).includes('notificaciones_movil')) console.warn('[notif-movil]', e.message || e);
+        const m = String(e.message || e);
+        if (_pollNotifMovilUsaColumnaLeida && (m.includes('leida') || (m.includes('column') && m.includes('notificaciones_movil')))) {
+            _pollNotifMovilUsaColumnaLeida = false;
+            return window.pollNotificacionesMovil();
+        }
+        if (!m.includes('notificaciones_movil')) console.warn('[notif-movil]', m);
     }
 };
 
@@ -6570,9 +6685,9 @@ async function updPedido(id, campos, usuarioId) {
                 const titulo = 'Pedido cerrado';
                 const cuerpo = `El reclamo ${np || '#' + id} fue cerrado desde la central.`;
                 await sqlSimple(
-                    `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo) VALUES (${esc(
+                    `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(
                         parseInt(taiAsignado, 10)
-                    )}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)})`
+                    )}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)}, FALSE)`
                 );
             } catch (e) {
                 if (!String(e.message || e).includes('notificaciones_movil')) {
@@ -9944,6 +10059,11 @@ async function guardarConfiguracionInicialObligatoria() {
             toast('Sesión API no disponible. Cerrá sesión e ingresá nuevamente con internet.', 'error');
             return;
         }
+        let provExtra = {};
+        try {
+            const pv = await nominatimReverseProvinciaArgentina(_setupLat, _setupLng);
+            if (pv) provExtra = { provincia: pv, state: pv, provincia_nominatim: pv };
+        } catch (_) {}
         const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
             method: 'PUT',
             headers: {
@@ -9956,7 +10076,7 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
-                configuracion: { setup_wizard_completado: true, marca_publicada_admin: true }
+                configuracion: { setup_wizard_completado: true, marca_publicada_admin: true, ...provExtra }
             })
         });
         if (!resp.ok) {
@@ -9978,7 +10098,8 @@ async function guardarConfiguracionInicialObligatoria() {
             tipo,
             logo_url: logoUrl,
             lat_base: String(_setupLat),
-            lng_base: String(_setupLng)
+            lng_base: String(_setupLng),
+            ...(provExtra.provincia ? { ...provExtra } : {})
         };
         if (NEON_OK && _sql) {
             try {
@@ -11831,6 +11952,12 @@ async function cargarFormEmpresa() {
         }
         bindDerivacionesFormInputsOnce();
         poblarFormDerivacionesDesdeEmpresaCfg();
+        const provEl = document.getElementById('cfg-provincia-nominatim');
+        if (provEl) {
+            const ec = window.EMPRESA_CFG || {};
+            const cur = String(ec.provincia || ec.provincia_nominatim || ec.state || '').trim();
+            if (cur) provEl.value = cur;
+        }
     } catch(e) { console.warn(e); }
 }
 
@@ -11889,6 +12016,12 @@ async function guardarConfigEmpresa() {
                             ocultar_modulos_redes: !!document.getElementById('cfg-ocultar-modulos-redes')?.checked,
                         },
                     };
+                    const provNom = (document.getElementById('cfg-provincia-nominatim')?.value || '').trim();
+                    if (provNom.length >= 2) {
+                        body.configuracion.provincia = provNom;
+                        body.configuracion.state = provNom;
+                        body.configuracion.provincia_nominatim = provNom;
+                    }
                     if (esCooperativaElectricaRubro() && derivacionReclamosPayload !== null) {
                         body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
                     }

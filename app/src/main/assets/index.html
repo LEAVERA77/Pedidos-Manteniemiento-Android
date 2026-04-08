@@ -127,15 +127,15 @@
     <div id="mapa-card-colores" class="moui-card">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-palette"></i> Colores (prioridad) <span id="mapa-colores-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-colores',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-colores-body" class="moui-bd">
-        <div class="ll-grid">
-          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-critica" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#ef4444"></span><span class="ll-txt">Crítica</span></label>
-          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-alta" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#f97316"></span><span class="ll-txt">Alta</span></label>
-          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-media" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#eab308"></span><span class="ll-txt">Media</span></label>
-          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-baja" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#3b82f6"></span><span class="ll-txt">Baja</span></label>
-          <label class="ll-row ll-span2"><input type="checkbox" id="mapa-flt-prio-cerrado" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#94a3b8"></span><span class="ll-txt">Cerrado</span></label>
-        </div>
-        <div class="ll-foot">Casco verde: técnico con GPS reciente (solo admin).</div>
+      <div class="ll-grid">
+        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-critica" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#ef4444"></span><span class="ll-txt">Crítica</span></label>
+        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-alta" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#f97316"></span><span class="ll-txt">Alta</span></label>
+        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-media" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#eab308"></span><span class="ll-txt">Media</span></label>
+        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-baja" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#3b82f6"></span><span class="ll-txt">Baja</span></label>
+        <label class="ll-row ll-span2"><input type="checkbox" id="mapa-flt-prio-cerrado" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#94a3b8"></span><span class="ll-txt">Cerrado</span></label>
       </div>
+      <div class="ll-foot">Casco verde: técnico con GPS reciente (solo admin).</div>
+    </div>
     </div>
     <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-dashboard',true)"><i class="fas fa-eye-slash"></i></button></div>
@@ -160,8 +160,8 @@
         <select id="sel-android-pedidos-scope" class="mas-scope-select" onchange="onAndroidPedidosScopeChange()">
           <option value="asignados">Solo asignados</option>
           <option value="todos">Todos</option>
-        </select>
-      </span>
+      </select>
+    </span>
       <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
     </div>
   </div></div>
@@ -449,6 +449,10 @@
         <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text" placeholder="Sistema de gestión de pedidos y reclamos"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
+        <div class="full"><label for="cfg-provincia-nominatim">Provincia (Nominatim / bot WhatsApp)</label>
+          <input id="cfg-provincia-nominatim" type="text" placeholder="Ej. Entre Ríos — se completa al guardar la ubicación base del asistente o al fijar oficina en el mapa">
+          <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0;line-height:1.35">Debe coincidir con el nombre que usa OpenStreetMap para desambiguar localidades. En municipios muy extensos, el operador del servidor puede subir <code style="font-size:.68rem">NOMINATIM_LOCALITY_MAX_DISTANCE_METERS</code> (p. ej. 35000).</p>
+        </div>
         <div class="full"><label>Coordenadas en detalle de pedido (además de WGS84)</label>
           <select id="cfg-coord-familia" onchange="syncCoordModoVisibility()">
             <option value="none">Solo WGS84</option>
@@ -479,7 +483,7 @@
               <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
                 <input type="checkbox" id="cfg-deriv-energia-activo" aria-describedby="cfg-deriv-energia-help">
                 <label for="cfg-deriv-energia-activo" style="margin:0;font-weight:600">Empresa de energía</label>
-              </div>
+      </div>
               <p id="cfg-deriv-energia-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Visible en el panel cuando está activo y el teléfono es válido.</p>
               <div><label for="cfg-deriv-energia-nombre">Nombre visible</label><input id="cfg-deriv-energia-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Empresa Provincial de Energía"></div>
               <div><label for="cfg-deriv-energia-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-energia-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
@@ -890,8 +894,10 @@
     </div>
   </div>
 </div>
-<div id="cierre-toast-host" aria-live="polite"></div>
-<div id="wa-human-chat-toast-host" aria-live="polite"></div>
+<div id="gn-notificaciones-front-stack" class="gn-notificaciones-front-stack" aria-live="polite">
+  <div id="cierre-toast-host"></div>
+  <div id="wa-human-chat-toast-host"></div>
+</div>
 <div id="wa-human-chat-dock" aria-label="Chats WhatsApp minimizados"></div>
 <div id="modal-admin-verify-pw-setup-saas" class="mo" style="z-index:12050">
   <div class="mc" style="max-width:400px">
