@@ -101,15 +101,20 @@ export function proyectarCoordPedido(lat, lng) {
     const fam = (cfg.coord_proy_familia || 'none').trim();
     if (!fam || fam === 'none' || typeof proj4 === 'undefined') return null;
     const arr = PMG_AR_PROJ4[fam];
-    if (!arr || !isFinite(lat) || !isFinite(lng)) return null;
+    /* isFinite(null) === true (coerce a 0): sin coords reales no llamar a proj4. */
+    if (lat == null || lng == null || lat === '' || lng === '') return null;
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!arr || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
     const modo = (cfg.coord_proy_modo || 'punto').trim();
-    const z = resolverFajaProyeccion(modo, lng);
+    const z = resolverFajaProyeccion(modo, lo);
     asegurarDefsProyeccionesARG();
     const defName = 'PMG_' + fam + '_Z' + z;
     let e;
     let n;
     try {
-        [e, n] = proj4('EPSG:4326', defName, [lng, lat]);
+        [e, n] = proj4('EPSG:4326', defName, [lo, la]);
     } catch (err) {
         console.warn('[coords]', err);
         return null;
