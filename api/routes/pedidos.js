@@ -17,7 +17,10 @@ import {
   notifyPedidoAltaClienteWhatsAppSafe,
   notifyPedidoDerivacionClienteWhatsAppSafe,
 } from "../services/whatsappService.js";
-import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
+import {
+  enqueueNotificacionPedidoCerradoParaTecnico,
+  enqueueNotificacionSolicitudDerivacionParaAdmins,
+} from "../services/notificacionesMovilEnqueue.js";
 import {
   lookupDistribuidorTrafoPorNisMedidor,
   contarPedidosAbiertosMismaZona,
@@ -472,6 +475,11 @@ function pedidoTipoPermiteSolicitudDerivacion(tt) {
   return TIPOS_SOLICITUD_DERIVACION_TERCERO.has(String(tt || "").trim());
 }
 
+/** Booleanos desde PG / JSON intermedio (Android, proxies). */
+function esTruthyPgBool(v) {
+  return v === true || v === "t" || v === "true" || v === 1 || v === "1";
+}
+
 function esRolTecnicoOSupervisorAuth(rol) {
   const r = String(rol || "").toLowerCase();
   return r === "tecnico" || r === "supervisor";
@@ -513,7 +521,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     if (!pedidoTipoPermiteSolicitudDerivacion(pedido.tipo_trabajo)) {
       return res.status(400).json({ error: "Este tipo de reclamo no admite solicitud de derivación desde el técnico" });
     }
-    if (pedido.solicitud_derivacion_pendiente === true) {
+    if (esTruthyPgBool(pedido.solicitud_derivacion_pendiente)) {
       return res.status(400).json({ error: "Ya hay una solicitud pendiente" });
     }
     if (!motivoStr || motivoStr.length < 8) {
@@ -559,7 +567,17 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
       throw err;
     }
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
-    return res.json(r.rows[0]);
+    const saved = r.rows[0];
+    setImmediate(() => {
+      enqueueNotificacionSolicitudDerivacionParaAdmins({
+        tenantId: req.tenantId,
+        pedidoId: saved.id,
+        numeroPedido: saved.numero_pedido,
+        tipoTrabajo: saved.tipo_trabajo,
+        motivoSnippet: motivoStr,
+      }).catch(() => {});
+    });
+    return res.json(saved);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo registrar la solicitud", detail: error.message });
   }
@@ -583,7 +601,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
     }
-    if (pedido.solicitud_derivacion_pendiente !== true) {
+    if (!esTruthyPgBool(pedido.solicitud_derivacion_pendiente)) {
       return res.status(400).json({ error: "No hay solicitud pendiente" });
     }
 
@@ -769,7 +787,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     try {
       const extDigits = normalizeWhatsAppRecipientForMeta(String(rContact.whatsapp || "").replace(/\D/g, ""));
       if (extDigits.length >= 8) {
-        registerDerivacionExternaWaThread(req.tenantId, extDigits, id);
+        await registerDerivacionExternaWaThread(req.tenantId, extDigits, id);
       }
     } catch (e) {
       console.warn("[pedidos] hilo WA tercero (derivación)", e?.message || e);

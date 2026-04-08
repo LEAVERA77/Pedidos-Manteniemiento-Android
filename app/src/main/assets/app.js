@@ -2754,7 +2754,9 @@ const norm = p => ({
     sdpen: !!(
         p.solicitud_derivacion_pendiente === true ||
         p.solicitud_derivacion_pendiente === 't' ||
-        p.solicitud_derivacion_pendiente === 1
+        p.solicitud_derivacion_pendiente === 'true' ||
+        p.solicitud_derivacion_pendiente === 1 ||
+        p.solicitud_derivacion_pendiente === '1'
     ),
     sdm: String(p.solicitud_derivacion_motivo || '').trim(),
     sdf: p.solicitud_derivacion_fecha || null,
@@ -14178,68 +14180,28 @@ function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
     return { iw, ih };
 }
 
-let _chartDataSnapshotForPdf = null;
-
 function adminEstadisticasSetCaptureCompact(on) {
     const root = document.getElementById('admin-estadisticas');
     if (root) root.classList.toggle('gn-stats-capture-compact', !!on);
-    if (typeof window !== 'undefined') window.__gnStatsInkSave = !!on;
+    if (typeof window !== 'undefined') window.__gnStatsInkSave = false;
 }
 
 function aplicarEstadisticasInkSaveCharts(activar) {
+    /* Ya no forzamos escala de grises en PDF: se mantienen las paletas del panel + sombras vía plugin. */
     if (activar) {
-        if (_chartDataSnapshotForPdf) return;
-        _chartDataSnapshotForPdf = {};
-        const inkA = 'rgba(100,116,139,0.22)';
-        const inkB = 'rgba(148,163,184,0.18)';
-        const inkStroke = '#334155';
-        Object.entries(_charts).forEach(([id, chart]) => {
+        if (typeof window !== 'undefined') window.__gnStatsPdfEnhance = true;
+        Object.entries(_charts).forEach(([, chart]) => {
             try {
-                _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
-                    backgroundColor: ds.backgroundColor,
-                    borderColor: ds.borderColor,
-                    borderWidth: ds.borderWidth,
-                }));
-                const type = chart.config.type;
-                chart.data.datasets.forEach(ds => {
-                    const n = Array.isArray(ds.data) ? ds.data.length : 1;
-                    if (type === 'doughnut' || type === 'pie') {
-                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
-                        const fills = [];
-                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
-                        ds.backgroundColor = fills;
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
-                    } else {
-                        if (Array.isArray(ds.backgroundColor)) {
-                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
-                        } else {
-                            ds.backgroundColor = inkA;
-                        }
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
-                    }
-                });
                 chart.update('none');
             } catch (_) {}
         });
     } else {
-        if (!_chartDataSnapshotForPdf) return;
-        Object.entries(_charts).forEach(([id, chart]) => {
+        if (typeof window !== 'undefined') window.__gnStatsPdfEnhance = false;
+        Object.entries(_charts).forEach(([, chart]) => {
             try {
-                const snap = _chartDataSnapshotForPdf[id];
-                if (!snap) return;
-                chart.data.datasets.forEach((ds, i) => {
-                    const s = snap[i];
-                    if (!s) return;
-                    ds.backgroundColor = s.backgroundColor;
-                    ds.borderColor = s.borderColor;
-                    ds.borderWidth = s.borderWidth;
-                });
                 chart.update('none');
             } catch (_) {}
         });
-        _chartDataSnapshotForPdf = null;
     }
 }
 
@@ -14516,12 +14478,12 @@ async function imprimirInformeConGraficos() {
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
             '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:128mm;padding-bottom:3mm}' +
             '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
             '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:118mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
@@ -14763,25 +14725,49 @@ async function generarInformeMensualENRE() {
             if (!total) return;
             const ctx = chart.ctx;
             const meta = chart.getDatasetMeta(0);
+            const cw = chart.width || 360;
+            const ch = chart.height || 260;
+            const basePx = Math.max(9, Math.min(20, Math.round(Math.min(cw, ch) * 0.034)));
             ctx.save();
-            ctx.font = '600 12px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             meta.data.forEach((arc, i) => {
                 const v = Number(ds.data[i] || 0);
                 if (!v) return;
                 const pct = Math.round(1000 * v / total) / 10;
+                if (pct < 4) return;
+                const a0 = arc.startAngle;
+                const a1 = arc.endAngle;
+                const span = Math.abs(a1 - a0);
+                if (span < 0.22) return;
                 const { x, y } = arc.tooltipPosition();
-                const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                ctx.lineWidth = ink ? 0 : 4;
-                ctx.strokeStyle = 'rgba(255,255,255,.95)';
+                const fs = span < 0.45 ? Math.max(8, basePx - 2) : basePx;
+                ctx.font = `600 ${fs}px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(255,255,255,.92)';
                 ctx.fillStyle = '#0f172a';
                 const t = pct + '%';
-                if (!ink) ctx.strokeText(t, x, y);
+                ctx.strokeText(t, x, y);
                 ctx.fillText(t, x, y);
             });
             ctx.restore();
         }
+    });
+    Chart.register({
+        id: 'gestornovaPdfChartShadow',
+        beforeDatasetsDraw(chart) {
+            if (typeof window === 'undefined' || !window.__gnStatsPdfEnhance) return;
+            const ctx = chart.ctx;
+            ctx.save();
+            ctx.shadowColor = 'rgba(15,23,42,0.18)';
+            ctx.shadowBlur = chart.config.type === 'doughnut' ? 14 : 10;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 3;
+        },
+        afterDatasetsDraw(chart) {
+            if (typeof window === 'undefined' || !window.__gnStatsPdfEnhance) return;
+            chart.ctx.restore();
+        },
     });
     Chart.register({
         id: 'gestornovaStatsBarLabels',
@@ -15083,7 +15069,7 @@ async function cargarEstadisticas() {
                     maintainAspectRatio: false,
                     animation: { duration: 520, easing: 'easeOutQuart' },
                     clip: false,
-                    layout: { padding: { top: 12, bottom: 14, left: 12, right: 18 } },
+                    layout: { padding: { top: 14, bottom: 28, left: 14, right: 20 } },
                     plugins: { legend: { display: false, labels: { boxWidth: 18, boxHeight: 8, padding: 14, color: '#334155', font: { size: 11, weight: '600' } } }, tooltip: { callbacks: {
                         label: ctx2 => {
                             const v = ctx2.parsed && typeof ctx2.parsed === 'object' && 'y' in ctx2.parsed
@@ -15125,7 +15111,7 @@ async function cargarEstadisticas() {
                 { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(90, 120, 165, 0.42)', borderColor: 'rgba(75, 105, 150, 0.85)', borderWidth: 1.5 },
                 { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(110, 155, 125, 0.4)', borderColor: 'rgba(85, 130, 105, 0.85)', borderWidth: 1.5 }
             ],
-            { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
+            { layout: { padding: { top: 12, bottom: 32, left: 6, right: 10 } },
                 plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}}}
         );
@@ -15159,7 +15145,8 @@ async function cargarEstadisticas() {
             [{ data: rEstados.rows.map(r => parseInt(r.n)),
                backgroundColor: rEstados.rows.map(r => estadoColors[r.estado] || 'rgba(148, 163, 184, 0.45)'),
                borderWidth: 1.5, borderColor: 'rgba(248, 250, 252, 0.95)' }],
-            { plugins: { legend: { display: true, position: 'bottom' },
+            { layout: { padding: { top: 8, bottom: 28, left: 8, right: 8 } },
+                plugins: { legend: { display: true, position: 'bottom' },
                 tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + c.parsed + ' pedidos' }}}}
         );
 
@@ -15168,7 +15155,7 @@ async function cargarEstadisticas() {
             rPrior.rows.map(r => r.prioridad),
             [{ label: 'Pedidos', data: rPrior.rows.map(r => parseInt(r.n)),
                backgroundColor: rPrior.rows.map(r => priorColor[r.prioridad] || '#94a3b8') }],
-            { layout: { padding: { top: 32, bottom: 4, left: 4, right: 8 } },
+            { layout: { padding: { top: 36, bottom: 22, left: 6, right: 10 } },
                 plugins: { legend: { display: false },
                 tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}}}
         );
@@ -15192,10 +15179,10 @@ async function cargarEstadisticas() {
                 { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(95, 125, 170, 0.38)', borderColor: 'rgba(80, 110, 155, 0.8)', borderWidth: 1 },
                 { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(110, 155, 125, 0.38)', borderColor: 'rgba(85, 130, 105, 0.8)', borderWidth: 1 }
             ],
-            { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
+            { layout: { padding: { top: 10, bottom: 52, left: 6, right: 12 } },
               plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}},
-              scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
+              scales: { x: { ticks: { maxRotation: 50, minRotation: 0, autoSkip: false, font: { size: 10, weight: '600' } } } } }
         );
 
         if (esMun && (rBarT?.rows || []).length) {

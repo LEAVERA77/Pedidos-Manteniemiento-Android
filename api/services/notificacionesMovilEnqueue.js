@@ -124,3 +124,49 @@ export async function enqueueNotificacionChatInternoPedido({
     console.error("[notificacionesMovilEnqueue] chat interno", e.message);
   }
 }
+
+/**
+ * Técnico solicita derivación a terceros: avisar a administradores del tenant (app Android / cola).
+ */
+export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
+  tenantId,
+  pedidoId,
+  numeroPedido,
+  tipoTrabajo,
+  motivoSnippet,
+}) {
+  if (!(await ensureNotificacionesMovilTable())) return;
+  const pid = Number(pedidoId);
+  const tid = Number(tenantId);
+  if (!Number.isFinite(pid) || pid < 1 || !Number.isFinite(tid) || tid < 1) return;
+  const np = String(numeroPedido || "").trim() || `#${pid}`;
+  const tt = String(tipoTrabajo || "").trim() || "Reclamo";
+  const snip = String(motivoSnippet || "").trim().slice(0, 220);
+  const titulo = "Derivación pendiente";
+  const cuerpo = `${np} · ${tt}${snip ? ` — ${snip}` : ""}`.slice(0, 480);
+  try {
+    const col = await tenantColumnForUsuarios();
+    let rows;
+    if (col) {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND rol = 'admin' AND activo = TRUE`,
+        [tid]
+      );
+      rows = r.rows;
+    } else {
+      const r = await query(`SELECT id FROM usuarios WHERE rol = 'admin' AND activo = TRUE`);
+      rows = r.rows;
+    }
+    for (const row of rows || []) {
+      const uid = Number(row.id);
+      if (!Number.isFinite(uid) || uid < 1) continue;
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [uid, pid, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.error("[notificacionesMovilEnqueue] solicitud derivación", e.message);
+  }
+}
