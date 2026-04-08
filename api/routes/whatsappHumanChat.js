@@ -7,7 +7,6 @@ import {
   humanChatCloseSessionAdmin,
   humanChatAppendOutbound,
   humanChatGetSessionForTenant,
-  humanChatOpenOrGetSession,
 } from "../services/whatsappHumanChat.js";
 import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 
@@ -65,42 +64,6 @@ router.post("/sessions/:id/close", async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo cerrar", detail: e.message });
-  }
-});
-
-/**
- * Admin: abre (o reutiliza) sesión humana y envía el primer mensaje por Meta (misma vía que el chat «Otros»).
- * Usado tras derivar un reclamo a un tercero con WhatsApp.
- */
-router.post("/sessions/start-outbound", async (req, res) => {
-  try {
-    const tenantId = req.tenantId;
-    const phoneRaw = String(req.body?.phone || "").trim();
-    const digits = phoneRaw.replace(/\D/g, "");
-    const contactName =
-      req.body?.contact_name != null ? String(req.body.contact_name).trim().slice(0, 200) : null;
-    const initialText = String(req.body?.initial_text || "").trim().slice(0, 4000);
-    if (digits.length < 8) return res.status(400).json({ error: "Teléfono inválido (mínimo 8 dígitos)" });
-    if (!initialText) return res.status(400).json({ error: "initial_text requerido" });
-    const { id } = await humanChatOpenOrGetSession(tenantId, digits, contactName || null);
-    await humanChatActivateSession(id, tenantId, req.user.id);
-    const rSend = await sendTenantWhatsAppText({
-      tenantId,
-      toDigits: digits,
-      bodyText: initialText,
-      logContext: "whatsapp_human_chat_derivacion_externa",
-    });
-    if (!rSend.ok) {
-      return res.status(502).json({
-        error: "No se pudo enviar por WhatsApp",
-        detail: rSend.error || rSend.graph || "",
-      });
-    }
-    await humanChatAppendOutbound(id, initialText, { by: req.user.id, context: "derivacion_externa" });
-    const session = await humanChatGetSessionForTenant(id, tenantId);
-    return res.json({ ok: true, session_id: id, session });
-  } catch (e) {
-    return res.status(500).json({ error: "No se pudo iniciar el chat saliente", detail: e.message });
   }
 });
 
