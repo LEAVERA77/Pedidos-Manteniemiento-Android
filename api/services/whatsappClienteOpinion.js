@@ -210,15 +210,19 @@ function ackOpinionClienteGuardada() {
 
 function ackPedirCalificacion() {
   return (
-    "Primero *calificá la atención del 1 al 5* (1 = muy malo, 5 = excelente).\n\n" +
-    "Respondé *solo con el número* o con estrellas (⭐). Ejemplo: *5* o *⭐⭐⭐⭐⭐*"
+    "*Paso 1 de 2 — Calificación*\n\n" +
+    "¿Cómo fue la atención del *1* al *5*?\n" +
+    "· *1* = muy malo · *3* = regular · *5* = excelente\n\n" +
+    "Respondé con *un número* o con *estrellas* (⭐).\n" +
+    "Ejemplos válidos: *4* · *⭐⭐⭐⭐*"
   );
 }
 
 function ackTrasCalificacion() {
   return (
-    "¡Gracias! Si querés, escribí ahora un *comentario breve* (opcional).\n\n" +
-    "Escribí *omitir* si no querés agregar texto."
+    "*Paso 2 de 2 — Comentario (opcional)*\n\n" +
+    "Si querés, escribí una *frase corta* con tu opinión.\n" +
+    "Si no querés texto, respondé *omitir*."
   );
 }
 

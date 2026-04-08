@@ -1174,6 +1174,47 @@ function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
     return dg ? `https://wa.me/${dg}` : '';
 }
 
+const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
+    'Poste Inclinado/Dañado',
+    'Alumbrado Público (Mantenimiento)',
+    'Riesgo en la vía pública',
+    'Corrimiento de poste/columna',
+]);
+
+function tipoPermiteSolicitudDerivacionTercero(tt) {
+    return TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO.has(String(tt || '').trim());
+}
+
+/** Cooperativa eléctrica: técnico asignado puede pedir al admin que derive a un tercero (cola de aprobación). */
+function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
+    if (!esCooperativaElectricaRubro()) return '';
+    if (!esTecnicoOSupervisor() || esAdmin()) return '';
+    if (!tipoPermiteSolicitudDerivacionTercero(p.tt)) return '';
+    if (pedidoEsDerivadoFuera(p)) return '';
+    const esOk = p.es === 'Asignado' || p.es === 'En ejecución';
+    if (!esOk) return '';
+    const uid = String(app.u?.id ?? '');
+    if (p.tai == null || String(p.tai) !== uid) return '';
+    const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    if (p.sdpen) {
+        const fxs = p.sdf ? fmtInformeFecha(p.sdf) : '—';
+        return `<div class="ds" style="border-left:4px solid #f59e0b">
+            <h4>⏳ Derivación a terceros — solicitud enviada</h4>
+            <p style="font-size:.8rem;color:var(--tm);margin:0;line-height:1.45">El administrador debe aprobar la derivación operativa. Mientras tanto no podés cargar materiales en este pedido.</p>
+            <p style="font-size:.76rem;color:var(--tl);margin:.45rem 0 0">${escD(p.sdm || 'Sin motivo breve')}</p>
+            <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">Pedida: ${escD(fxs)}</p>
+        </div>`;
+    }
+    return `<div class="ds" style="border-left:4px solid #6366f1">
+        <h4>🛠 Solicitar derivación a terceros</h4>
+        <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y se envía WhatsApp al contacto configurado.</p>
+        <label style="font-size:.76rem;font-weight:600">Motivo / contexto para el admin</label>
+        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="2" maxlength="800" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Ej.: cable de otra distribuidora, arbolado municipal…"></textarea>
+        <button type="button" class="ba2 p2" onclick="solicitarDerivacionTerceroDesdeTecnico('${pidEsc}')"><i class="fas fa-paper-plane"></i> Enviar solicitud al administrador</button>
+    </div>`;
+}
+
 /** Bloque en detalle de pedido: municipio / coop. agua; admin y supervisor. */
 function htmlDerivacionTercerosPedidoDetalle() {
     if (!(esAdmin() || esTecnicoOSupervisor())) return '';
@@ -1253,7 +1294,8 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto',
     'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad',
     'suministro_tipo_conexion','suministro_fases',
-    'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot']);
+    'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot',
+    'solicitud_derivacion_pendiente','solicitud_derivacion_fecha','solicitud_derivacion_usuario_id','solicitud_derivacion_motivo','solicitud_derivacion_destino_sugerido']);
 
 const app = {
     u: null,
@@ -2492,7 +2534,6 @@ document.getElementById('lf').addEventListener('submit', async e => {
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
-                await promptAdminTipoNegocioWebIfNeeded();
                 await cargarConfigEmpresa();
                 await cargarPedidos();
                 if (esAdmin()) iniciarPollBannerReclamoCliente();
@@ -2705,7 +2746,19 @@ const norm = p => ({
     fder: p.fecha_derivacion || null,
     uider: p.usuario_derivacion_id != null ? parseInt(p.usuario_derivacion_id, 10) : null,
     dnota: String(p.derivacion_nota || '').trim(),
-    dsnap: String(p.derivacion_mensaje_snapshot || '').trim()
+    dsnap: String(p.derivacion_mensaje_snapshot || '').trim(),
+    sdpen: !!(
+        p.solicitud_derivacion_pendiente === true ||
+        p.solicitud_derivacion_pendiente === 't' ||
+        p.solicitud_derivacion_pendiente === 1
+    ),
+    sdm: String(p.solicitud_derivacion_motivo || '').trim(),
+    sdf: p.solicitud_derivacion_fecha || null,
+    sduid:
+        p.solicitud_derivacion_usuario_id != null
+            ? parseInt(p.solicitud_derivacion_usuario_id, 10)
+            : null,
+    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim()
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -3580,6 +3633,9 @@ function aplicarUIMapaPlataforma() {
     const cardCol = document.getElementById('mapa-card-colores');
     if (!strip || !card) return;
     if (esAndroidWebViewMapa()) {
+        try {
+            document.documentElement.classList.add('gn-android-webview');
+        } catch (_) {}
         strip.style.display = 'block';
         const adv = localStorage.getItem('pmg_show_map_filters') === '1';
         const chk = document.getElementById('chk-android-filtros-av');
@@ -3608,6 +3664,9 @@ function aplicarUIMapaPlataforma() {
             tabBar?.classList.remove('visible');
         }
     } else {
+        try {
+            document.documentElement.classList.remove('gn-android-webview');
+        } catch (_) {}
         strip.style.display = 'none';
         document.getElementById('map-tab-android-bar')?.classList.remove('visible');
         card.style.display = 'block';
@@ -6947,7 +7006,9 @@ function escHtmlPrint(s) {
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
+    if (p.es !== 'En ejecución') return false;
     if (tipoPedidoExcluyeMateriales(p.tt)) return false;
+    if (p.sdpen && esTecnicoOSupervisor() && !esAdmin()) return false;
     const uid = String(app.u?.id ?? '');
     return (
         esAdmin() ||
@@ -8075,6 +8136,71 @@ async function ejecutarDerivacionExternaAdmin(pid) {
 }
 window.ejecutarDerivacionExternaAdmin = ejecutarDerivacionExternaAdmin;
 
+async function solicitarDerivacionTerceroDesdeTecnico(pid) {
+    const pidNum = parseInt(pid, 10);
+    if (!Number.isFinite(pidNum)) return;
+    const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
+    const motivo = (ta?.value || '').trim();
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) {
+        toast('No hay sesión API. Reintentá con conexión.', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/solicitar-derivacion-tercero`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motivo: motivo || undefined }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
+        const row = norm(data);
+        const ix = app.p.findIndex((x) => String(x.id) === String(pid));
+        if (ix !== -1) app.p[ix] = row;
+        else app.p.push(row);
+        offlinePedidosSave(app.p);
+        render();
+        toast('Solicitud enviada al administrador.', 'success');
+        detalle(ix !== -1 ? app.p[ix] : row);
+    } catch (e) {
+        toast(String(e?.message || e), 'error');
+    }
+}
+window.solicitarDerivacionTerceroDesdeTecnico = solicitarDerivacionTerceroDesdeTecnico;
+
+async function rechazarSolicitudDerivacionAdmin(pid) {
+    const pidNum = parseInt(pid, 10);
+    if (!Number.isFinite(pidNum)) return;
+    const nota = window.prompt('Motivo del rechazo (opcional, queda en auditoría):', '') || '';
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) {
+        toast('No hay sesión API.', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/rechazar-solicitud-derivacion-tercero`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nota_admin: nota.trim() || undefined }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
+        const row = norm(data);
+        const ix = app.p.findIndex((x) => String(x.id) === String(pid));
+        if (ix !== -1) app.p[ix] = row;
+        else app.p.push(row);
+        offlinePedidosSave(app.p);
+        render();
+        toast('Solicitud rechazada.', 'success');
+        detalle(ix !== -1 ? app.p[ix] : row);
+    } catch (e) {
+        toast(String(e?.message || e), 'error');
+    }
+}
+window.rechazarSolicitudDerivacionAdmin = rechazarSolicitudDerivacionAdmin;
+
 function detalle(p) {
     const pidKey = String(p.id);
     try {
@@ -8367,7 +8493,24 @@ function detalle(p) {
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        htmlDerivacionAdminExterna = `<div class="ds" style="border-left:4px solid #0ea5e9">
+        let pendienteSolicitudHtml = '';
+        if (p.sdpen) {
+            const whoTec = findUser(p.sduid) || (p.sduid != null ? 'id:' + p.sduid : '—');
+            const fxs = p.sdf
+                ? new Date(p.sdf).toLocaleString('es-AR', { ...tz, hour12: false })
+                : '—';
+            pendienteSolicitudHtml = `<div class="ds" style="border-left:4px solid #f97316;margin-bottom:.65rem">
+            <h4>⚠ Solicitud de derivación pendiente</h4>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .5rem;line-height:1.45">El técnico pidió derivar este reclamo a un tercero. Revisá el motivo, elegí destino y confirmá; o rechazá si no corresponde.</p>
+            <div class="dr"><span class="dl">Técnico</span><span class="dv">${escDet(whoTec)}</span></div>
+            <div class="dr"><span class="dl">Fecha pedido</span><span class="dv">${escDet(fxs)}</span></div>
+            ${p.sdm ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Motivo</span><div class="trb">${escDet(p.sdm)}</div></div>` : ''}
+            <div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.55rem">
+            <button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="rechazarSolicitudDerivacionAdmin('${pidEsc}')"><i class="fas fa-times"></i> Rechazar solicitud</button>
+            </div>
+        </div>`;
+        }
+        htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" style="border-left:4px solid #0ea5e9">
             <h4>📲 Derivación operativa (admin)</h4>
             <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Cuando el técnico indique que corresponde a otra red, registrá la derivación: queda auditada, se excluye de listados y mapa por defecto, y se abre WhatsApp al contacto configurado.</p>
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
@@ -8408,6 +8551,7 @@ function detalle(p) {
         ${htmlOpinionCliente}
         
         ${htmlDerivacionTercerosPedidoDetalle()}
+        ${htmlSolicitudDerivacionCoopElectricaTecnico(p)}
         ${htmlDerivacionCoopElectrica}
         ${htmlDerivacionAdminExterna}
         
@@ -8881,64 +9025,215 @@ document.getElementById('ph').addEventListener('click', (e) => {
     togglePanel();
 });
 
-document.getElementById('ub').addEventListener('click', () => {
-    if (confirm('¿Cerrar sesión?')) {
-        invalidatePedidosTenantSqlCache();
-        detenerKeepAlive(); 
-        detenerTracking();
-        detenerDashboardGerenciaPoll();
-        detenerPollWhatsappHumanChat();
-        destruirTodasVentanasWaHc();
-        detenerTecnicosMapaPrincipalPoll();
-        detenerPollSincroPedidosTecnico();
-        _dashCierresInit = false;
-        _seenClosedIds.clear();
-        try {
-            if (window.AndroidSession && typeof AndroidSession.clearUser === 'function') AndroidSession.clearUser();
-        } catch (_) {}
-        detenerSyncCatalogos();
-        limpiarEstadoMapaSesion();
-        const btnRubro2 = document.getElementById('btn-admin-cambiar-rubro');
-        if (btnRubro2) btnRubro2.style.display = 'none';
-        localStorage.removeItem('pmg');
-        localStorage.removeItem('pmg_api_token');
-        app.apiToken = null;
-        app.u = null;
-        hydrateBrandingForPublicScreen();
-        try { aplicarMarcaVisualCompleta(); } catch (_) {}
-        mapaInicializado = false;
-        _mapLazyQueued = false;
-        if (app.map) {
-            app.map.remove();
-            app.map = null;
-        }
-        _marcadoresTecnicosPrincipal = [];
-        const btnAdm = document.getElementById('btn-admin');
-        if (btnAdm) btnAdm.style.display = 'none';
-        const btnDg = document.getElementById('btn-dashboard-gerencia');
-        if (btnDg) btnDg.style.display = 'none';
-        const mapDashCard = document.getElementById('mapa-card-dashboard');
-        if (mapDashCard) mapDashCard.style.display = 'none';
-        const wvt = document.getElementById('wrap-toggle-ver-todos');
-        if (wvt) wvt.style.display = 'none';
-        const wdf = document.getElementById('wrap-chk-derivados-fuera');
-        if (wdf) wdf.style.display = 'none';
-        cerrarAdminPanel();
-        document.getElementById('gw')?.classList.remove('active');
-        document.getElementById('ls').classList.add('active');
-        document.getElementById('ms').classList.remove('active');
-        try {
-            localStorage.removeItem('gestornova_saved_login');
-            const emEl = document.getElementById('em');
-            const pwEl = document.getElementById('pw');
-            if (emEl) emEl.value = '';
-            if (pwEl) pwEl.value = '';
-        } catch (_) {}
+function cerrarUserMenuPop() {
+    const pop = document.getElementById('user-menu-pop');
+    if (pop) {
+        pop.classList.remove('user-menu-pop-open');
+        pop.setAttribute('aria-hidden', 'true');
     }
+}
+
+function toggleUserMenuPop() {
+    const pop = document.getElementById('user-menu-pop');
+    if (!pop) return;
+    const open = pop.classList.toggle('user-menu-pop-open');
+    pop.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+document.addEventListener(
+    'click',
+    (e) => {
+        if (e.target.closest('#user-menu-wrap')) return;
+        cerrarUserMenuPop();
+    },
+    false
+);
+
+document.getElementById('ub')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleUserMenuPop();
 });
 
+function ejecutarCerrarSesion() {
+    invalidatePedidosTenantSqlCache();
+    detenerKeepAlive();
+    detenerTracking();
+    detenerDashboardGerenciaPoll();
+    detenerPollWhatsappHumanChat();
+    destruirTodasVentanasWaHc();
+    detenerTecnicosMapaPrincipalPoll();
+    detenerPollSincroPedidosTecnico();
+    _dashCierresInit = false;
+    _seenClosedIds.clear();
+    try {
+        if (window.AndroidSession && typeof AndroidSession.clearUser === 'function') AndroidSession.clearUser();
+    } catch (_) {}
+    detenerSyncCatalogos();
+    limpiarEstadoMapaSesion();
+    const btnRubro2 = document.getElementById('btn-admin-cambiar-rubro');
+    if (btnRubro2) btnRubro2.style.display = 'none';
+    localStorage.removeItem('pmg');
+    localStorage.removeItem('pmg_api_token');
+    app.apiToken = null;
+    app.u = null;
+    hydrateBrandingForPublicScreen();
+    try {
+        aplicarMarcaVisualCompleta();
+    } catch (_) {}
+    mapaInicializado = false;
+    _mapLazyQueued = false;
+    if (app.map) {
+        app.map.remove();
+        app.map = null;
+    }
+    _marcadoresTecnicosPrincipal = [];
+    const btnAdm = document.getElementById('btn-admin');
+    if (btnAdm) btnAdm.style.display = 'none';
+    const btnDg = document.getElementById('btn-dashboard-gerencia');
+    if (btnDg) btnDg.style.display = 'none';
+    const mapDashCard = document.getElementById('mapa-card-dashboard');
+    if (mapDashCard) mapDashCard.style.display = 'none';
+    const wvt = document.getElementById('wrap-toggle-ver-todos');
+    if (wvt) wvt.style.display = 'none';
+    const wdf = document.getElementById('wrap-chk-derivados-fuera');
+    if (wdf) wdf.style.display = 'none';
+    cerrarAdminPanel();
+    document.getElementById('gw')?.classList.remove('active');
+    document.getElementById('ls').classList.add('active');
+    document.getElementById('ms').classList.remove('active');
+    try {
+        localStorage.removeItem('gestornova_saved_login');
+        const emEl = document.getElementById('em');
+        const pwEl = document.getElementById('pw');
+        if (emEl) emEl.value = '';
+        if (pwEl) pwEl.value = '';
+    } catch (_) {}
+    cerrarUserMenuPop();
+}
+
+function confirmarCerrarSesionDesdeMenu() {
+    cerrarUserMenuPop();
+    if (confirm('¿Cerrar sesión?')) ejecutarCerrarSesion();
+}
+window.confirmarCerrarSesionDesdeMenu = confirmarCerrarSesionDesdeMenu;
+
+function abrirModalMiCuentaDesdeMenu() {
+    cerrarUserMenuPop();
+    if (modoOffline || !NEON_OK) {
+        toast('Cambiar cuenta requiere conexión (no está disponible en modo offline).', 'warning');
+        return;
+    }
+    const tok = getApiToken() || app.apiToken;
+    if (!tok || !app.u) {
+        toast('No hay sesión activa con token de API.', 'error');
+        return;
+    }
+    const m = document.getElementById('modal-mi-cuenta');
+    const n = document.getElementById('micuenta-nombre');
+    const em = document.getElementById('micuenta-email');
+    const pa = document.getElementById('micuenta-pw-actual');
+    const p1 = document.getElementById('micuenta-pw-nueva');
+    const p2 = document.getElementById('micuenta-pw-nueva2');
+    const msg = document.getElementById('micuenta-msg');
+    if (n) n.value = String(app.u.nombre || '').trim();
+    if (em) em.value = String(app.u.email || '').trim();
+    if (pa) pa.value = '';
+    if (p1) p1.value = '';
+    if (p2) p2.value = '';
+    if (msg) {
+        msg.textContent = '';
+        msg.style.color = '';
+    }
+    m?.classList.add('active');
+}
+window.abrirModalMiCuentaDesdeMenu = abrirModalMiCuentaDesdeMenu;
+
+async function guardarMiCuentaUsuario() {
+    const msg = document.getElementById('micuenta-msg');
+    const setErr = (t) => {
+        if (msg) {
+            msg.textContent = t;
+            msg.style.color = 'var(--re)';
+        }
+    };
+    if (modoOffline) {
+        setErr('No disponible en modo offline.');
+        return;
+    }
+    const tok = getApiToken() || app.apiToken;
+    if (!tok || !app.u) {
+        setErr('Sesión no válida.');
+        return;
+    }
+    const n = document.getElementById('micuenta-nombre');
+    const em = document.getElementById('micuenta-email');
+    const pa = document.getElementById('micuenta-pw-actual');
+    const p1 = document.getElementById('micuenta-pw-nueva');
+    const p2 = document.getElementById('micuenta-pw-nueva2');
+    const nombre = (n?.value || '').trim();
+    const email = (em?.value || '').trim().toLowerCase();
+    const password_actual = pa?.value || '';
+    const password_nueva = (p1?.value || '').trim();
+    const password_nueva2 = (p2?.value || '').trim();
+    if (!password_actual) {
+        setErr('La contraseña actual es obligatoria.');
+        return;
+    }
+    if (password_nueva && password_nueva !== password_nueva2) {
+        setErr('Las contraseñas nuevas no coinciden.');
+        return;
+    }
+    if (!email) {
+        setErr('El email no puede quedar vacío.');
+        return;
+    }
+    const body = { password_actual, nombre, email };
+    if (password_nueva) body.password_nueva = password_nueva;
+    const btn = document.getElementById('btn-micuenta-guardar');
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset._html = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando…';
+    }
+    try {
+        const resp = await fetch(apiUrl('/api/auth/me'), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            setErr(data.error || data.detail || 'No se pudo actualizar.');
+            return;
+        }
+        if (data.user) {
+            app.u.nombre = data.user.nombre || app.u.nombre;
+            app.u.email = data.user.email || app.u.email;
+            try {
+                localStorage.setItem('pmg', JSON.stringify(app.u));
+            } catch (_) {}
+            const un = document.getElementById('un');
+            if (un && app.u.nombre) un.textContent = app.u.nombre.split(' ')[0];
+        }
+        toast('Datos actualizados.', 'success');
+        document.getElementById('modal-mi-cuenta')?.classList.remove('active');
+        if (pa) pa.value = '';
+        if (p1) p1.value = '';
+        if (p2) p2.value = '';
+    } catch (e) {
+        setErr(e?.message || 'Error de red.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            if (btn.dataset._html) btn.innerHTML = btn.dataset._html;
+        }
+    }
+}
+window.guardarMiCuentaUsuario = guardarMiCuentaUsuario;
+
 function logout() {
-    document.getElementById('ub')?.click();
+    if (confirm('¿Cerrar sesión?')) ejecutarCerrarSesion();
 }
 
 document.querySelectorAll('.tb').forEach(b => {
@@ -9526,7 +9821,6 @@ try {
             if (!modoOffline) {
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
-                await promptAdminTipoNegocioWebIfNeeded();
                 await cargarConfigEmpresa();
             }
             await cargarPedidos();
@@ -9795,7 +10089,11 @@ function ocultarBannerOpinionCliente() {
         delete box.dataset.visible;
         delete box.dataset.pedidoId;
         delete box.dataset.fechaOpinionIso;
+        delete box.dataset.waTelE164;
+        delete box.dataset.estrellasOpinion;
     }
+    const btnWa = document.getElementById('admin-banner-opinion-wa');
+    if (btnWa) btnWa.style.display = 'none';
 }
 
 async function pollBannerNuevoReclamoCliente() {
@@ -9839,39 +10137,59 @@ async function pollBannerOpinionCliente() {
         if (!col.rows?.length) return;
         const tsql = await pedidosFiltroTenantSql();
         if (box.dataset.visible === '1' && box.dataset.pedidoId) {
-            const pid = parseInt(box.dataset.pedidoId, 10);
-            if (Number.isFinite(pid) && pid > 0) {
-                const rchk = await sqlSimple(
-                    `SELECT estado FROM pedidos WHERE id = ${esc(pid)}${tsql} LIMIT 1`
-                );
-                const row0 = rchk.rows?.[0];
-                const est = String(row0?.estado || '');
-                if (!row0 || est === 'Cerrado') {
-                    ocultarBannerOpinionCliente();
-                    return;
-                }
-            }
             return;
         }
         const wm = _adminBannerOpinionWatermarkIso || new Date(0).toISOString();
-        const r = await sqlSimple(
-            `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente FROM pedidos
-             WHERE fecha_opinion_cliente IS NOT NULL
-             AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
-             AND COALESCE(estado,'') <> 'Cerrado'${tsql}
-             ORDER BY fecha_opinion_cliente ASC LIMIT 1`
-        );
+        let r;
+        try {
+            r = await sqlSimple(
+                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente,
+                        telefono_contacto, opinion_cliente_estrellas
+                 FROM pedidos
+                 WHERE fecha_opinion_cliente IS NOT NULL
+                 AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
+                 ${tsql}
+                 ORDER BY fecha_opinion_cliente ASC LIMIT 1`
+            );
+        } catch (_e) {
+            r = await sqlSimple(
+                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente, telefono_contacto
+                 FROM pedidos
+                 WHERE fecha_opinion_cliente IS NOT NULL
+                 AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
+                 ${tsql}
+                 ORDER BY fecha_opinion_cliente ASC LIMIT 1`
+            );
+        }
         const row = r.rows?.[0];
         if (!row) return;
         const nid = Number(row.id);
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
+        const estrellas = parseInt(row.opinion_cliente_estrellas, 10);
+        const tieneE = Number.isFinite(estrellas) && estrellas >= 1 && estrellas <= 5;
+        const wTel = normalizarWhatsappInternacionalDesdeInput(row.telefono_contacto || '');
+        const waOk = /^\+\d{8,22}$/.test(wTel);
+        const btnWa = document.getElementById('admin-banner-opinion-wa');
+        if (btnWa) {
+            const baja = tieneE && estrellas < 3;
+            btnWa.style.display = baja && waOk ? 'inline-flex' : 'none';
+        }
+        box.dataset.waTelE164 = waOk ? wTel : '';
+        box.dataset.estrellasOpinion = tieneE ? String(estrellas) : '';
         const txt = document.getElementById('admin-banner-opinion-cliente-txt');
         if (txt) {
             const np = row.numero_pedido || nid;
             const tit = (row.tipo_trabajo || '').trim();
-            txt.textContent = `Observación del cliente · #${np}${tit ? ` · ${tit}` : ''}${snip ? ` — «${snip}»` : ''}`;
+            const sfxStar = tieneE ? ` · ${estrellas}/5` : '';
+            const avisoBaja =
+                tieneE && estrellas < 3
+                    ? 'Calificación baja — conviene hablar con el cliente. '
+                    : '';
+            txt.textContent = `${avisoBaja}Observación del cliente${sfxStar} · #${np}${tit ? ` · ${tit}` : ''}${
+                snip ? ` — «${snip}»` : ''
+            }`;
         }
         box.style.display = 'flex';
         box.dataset.visible = '1';
@@ -9879,6 +10197,22 @@ async function pollBannerOpinionCliente() {
         if (fop) box.dataset.fechaOpinionIso = new Date(fop).toISOString();
     } catch (_) {}
 }
+
+function adminBannerOpinionClickWhatsapp() {
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    const w = (box?.dataset?.waTelE164 || '').trim();
+    const pid = box?.dataset?.pedidoId;
+    const est = box?.dataset?.estrellasOpinion || '';
+    if (!w || !/^\+\d{8,22}$/.test(w)) {
+        toast('No hay un WhatsApp de contacto válido para este pedido.', 'warning');
+        return;
+    }
+    const msg = `Hola, te escribo desde ${String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim()} respecto de tu experiencia con el servicio${
+        pid ? ` (pedido #${pid})` : ''
+    }.${est ? ` Vimos la calificación ${est}/5 y queremos resolver cualquier inconveniente.` : ''}`;
+    window.open(`https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+}
+window.adminBannerOpinionClickWhatsapp = adminBannerOpinionClickWhatsapp;
 
 function detenerPollBannerReclamoCliente() {
     if (_pollBannerAdminInterval) {
@@ -10007,7 +10341,6 @@ function actualizarStepWizard() {
     document.getElementById('cfgi-guardar').style.display = _setupWizardStep === 3 ? '' : 'none';
     if (_setupWizardStep === 3) {
         setTimeout(inicializarMapaSetupWizard, 20);
-        setTimeout(usarUbicacionAutomaticaSetupWizard, 80);
     }
     const hintBar = document.getElementById('cfgi-hint-bar');
     if (hintBar && esAdmin()) {
@@ -10018,7 +10351,7 @@ function actualizarStepWizard() {
         const perStep = {
             1: 'Paso 1: nombre y tipo (municipio vs cooperativa) adaptan textos y el catálogo NIS en toda la app.',
             2: 'Paso 2: logo opcional para encabezado e informes (URL o archivo).',
-            3: 'Paso 3: ubicación base: arrastrá el pin o tocá el mapa. «Finalizar» guarda y marca el setup completado en el servidor.'
+            3: 'Paso 3: ubicación base del tenant (oficina): usá el mapa o el pin. No se reemplaza sola por el GPS del dispositivo; opcionalmente tocá «Usar mi ubicación» si querés empezar desde ahí. «Finalizar» guarda en servidor.'
         };
         hintBar.textContent = manual + (perStep[_setupWizardStep] || '');
     } else if (hintBar) {

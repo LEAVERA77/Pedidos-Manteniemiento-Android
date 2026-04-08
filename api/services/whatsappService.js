@@ -236,9 +236,11 @@ export async function notifyPedidoCierreWhatsAppSafe({
   const ent = String(nombreEntidad || "nuestro equipo").trim();
   const body =
     `*${ent}* informa: su reclamo *#${np}* fue *finalizado* por el equipo técnico.\n\n` +
-    `Tu opinión nos ayuda a mejorar:\n` +
-    `1️⃣ *Primero* calificá del *1 al 5* (1 = muy malo, 5 = excelente). Podés responder solo con el número o con ⭐.\n` +
-    `2️⃣ *Después* podés escribir un comentario breve (opcional). Escribí *omitir* si no querés texto.\n\n` +
+    `*Encuesta rápida (2 pasos)*\n\n` +
+    `*Paso 1 — Nota (obligatorio)*\n` +
+    `Calificá del *1* al *5* (1 = muy malo, 5 = excelente). Respondé con el *número* o con *⭐*.\n\n` +
+    `*Paso 2 — Comentario (opcionario)*\n` +
+    `Si querés, una frase. Si no, respondé *omitir*.\n\n` +
     `_Gracias por tu tiempo._`;
 
   try {

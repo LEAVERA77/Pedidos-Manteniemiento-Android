@@ -454,6 +454,175 @@ router.get("/historial/nis/:nis", async (req, res) => {
 
 registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
 
+/** Tipos de reclamo (catálogo eléctrico) para los que el técnico puede pedir derivación a terceros. */
+const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set([
+  "Poste Inclinado/Dañado",
+  "Alumbrado Público (Mantenimiento)",
+  "Riesgo en la vía pública",
+  "Corrimiento de poste/columna",
+]);
+
+function pedidoTipoPermiteSolicitudDerivacion(tt) {
+  return TIPOS_SOLICITUD_DERIVACION_TERCERO.has(String(tt || "").trim());
+}
+
+function esRolTecnicoOSupervisorAuth(rol) {
+  const r = String(rol || "").toLowerCase();
+  return r === "tecnico" || r === "supervisor";
+}
+
+/**
+ * Técnico/supervisor asignado: solicita derivación (cola admin). Ver docs/NEON_pedidos_solicitud_derivacion_tercero.sql
+ */
+router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    if (!esRolTecnicoOSupervisorAuth(req.user?.rol)) {
+      return res.status(403).json({ error: "Solo técnico o supervisor asignado puede solicitar derivación" });
+    }
+
+    const { motivo, destino_sugerido: destinoSugRaw } = req.body || {};
+    const motivoStr = motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, 800) : "";
+    const destinoSug = destinoSugRaw != null ? String(destinoSugRaw).trim().slice(0, 64) : "";
+
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (Number(pedido.tecnico_asignado_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: "Solo el técnico asignado puede solicitar la derivación" });
+    }
+    const es = String(pedido.estado || "");
+    if (es !== "Asignado" && es !== "En ejecución") {
+      return res.status(400).json({ error: "Solo con asignación o en ejecución" });
+    }
+    if (pedido.derivado_externo === true || String(pedido.estado || "") === "Derivado externo") {
+      return res.status(400).json({ error: "El pedido ya está derivado" });
+    }
+    if (!pedidoTipoPermiteSolicitudDerivacion(pedido.tipo_trabajo)) {
+      return res.status(400).json({ error: "Este tipo de reclamo no admite solicitud de derivación desde el técnico" });
+    }
+    if (pedido.solicitud_derivacion_pendiente === true) {
+      return res.status(400).json({ error: "Ya hay una solicitud pendiente" });
+    }
+
+    const hasTa = await pedidosTableHasTenantIdColumn();
+    const sql = hasTa
+      ? `UPDATE pedidos SET
+          solicitud_derivacion_pendiente = TRUE,
+          solicitud_derivacion_fecha = NOW(),
+          solicitud_derivacion_usuario_id = $2,
+          solicitud_derivacion_motivo = $3,
+          solicitud_derivacion_destino_sugerido = NULLIF($4,'')
+        WHERE id = $1 AND tenant_id = $5
+        RETURNING *`
+      : `UPDATE pedidos SET
+          solicitud_derivacion_pendiente = TRUE,
+          solicitud_derivacion_fecha = NOW(),
+          solicitud_derivacion_usuario_id = $2,
+          solicitud_derivacion_motivo = $3,
+          solicitud_derivacion_destino_sugerido = NULLIF($4,'')
+        WHERE id = $1
+        RETURNING *`;
+    const bind = hasTa
+      ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
+      : [id, req.user.id, motivoStr || null, destinoSug];
+    let r;
+    try {
+      r = await query(sql, bind);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/solicitud_derivacion|column/i.test(msg)) {
+        return res.status(503).json({
+          error:
+            "Faltan columnas de solicitud de derivación. Ejecutá docs/NEON_pedidos_solicitud_derivacion_tercero.sql en Neon.",
+          detail: msg.slice(0, 240),
+        });
+      }
+      throw err;
+    }
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+    return res.json(r.rows[0]);
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo registrar la solicitud", detail: error.message });
+  }
+});
+
+/** Admin: rechaza la solicitud del técnico (sin derivar). */
+router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    const notaAdmin =
+      req.body?.nota_admin != null && String(req.body.nota_admin).trim()
+        ? String(req.body.nota_admin).trim().slice(0, 500)
+        : "";
+
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (pedido.solicitud_derivacion_pendiente !== true) {
+      return res.status(400).json({ error: "No hay solicitud pendiente" });
+    }
+
+    const nuevaNota = notaAdmin
+      ? String(pedido.derivacion_nota || "").trim()
+        ? `${pedido.derivacion_nota}\n[Rechazo solicitud derivación admin]: ${notaAdmin}`
+        : `[Rechazo solicitud derivación admin]: ${notaAdmin}`
+      : pedido.derivacion_nota;
+
+    const hasTa = await pedidosTableHasTenantIdColumn();
+    const sql = hasTa
+      ? `UPDATE pedidos SET
+          solicitud_derivacion_pendiente = FALSE,
+          solicitud_derivacion_fecha = NULL,
+          solicitud_derivacion_usuario_id = NULL,
+          solicitud_derivacion_motivo = NULL,
+          solicitud_derivacion_destino_sugerido = NULL,
+          derivacion_nota = $2
+        WHERE id = $1 AND tenant_id = $3 AND solicitud_derivacion_pendiente = TRUE
+        RETURNING *`
+      : `UPDATE pedidos SET
+          solicitud_derivacion_pendiente = FALSE,
+          solicitud_derivacion_fecha = NULL,
+          solicitud_derivacion_usuario_id = NULL,
+          solicitud_derivacion_motivo = NULL,
+          solicitud_derivacion_destino_sugerido = NULL,
+          derivacion_nota = $2
+        WHERE id = $1 AND solicitud_derivacion_pendiente = TRUE
+        RETURNING *`;
+    const bind = hasTa ? [id, nuevaNota ?? null, req.tenantId] : [id, nuevaNota ?? null];
+    let r;
+    try {
+      r = await query(sql, bind);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/solicitud_derivacion|column/i.test(msg)) {
+        return res.status(503).json({
+          error:
+            "Faltan columnas de solicitud de derivación. Ejecutá docs/NEON_pedidos_solicitud_derivacion_tercero.sql en Neon.",
+          detail: msg.slice(0, 240),
+        });
+      }
+      throw err;
+    }
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado o sin solicitud" });
+    return res.json(r.rows[0]);
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo rechazar la solicitud", detail: error.message });
+  }
+});
+
 /**
  * Admin: deriva el reclamo a un tercero con WhatsApp configurado en derivacion_reclamos.
  * Persistencia: estado Derivado externo + flags/columnas (ver docs/NEON_pedidos_derivacion_externa.sql).
@@ -526,7 +695,12 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
           fecha_derivacion = NOW(),
           usuario_derivacion_id = $6,
           derivacion_nota = $7,
-          derivacion_mensaje_snapshot = $8
+          derivacion_mensaje_snapshot = $8,
+          solicitud_derivacion_pendiente = FALSE,
+          solicitud_derivacion_fecha = NULL,
+          solicitud_derivacion_usuario_id = NULL,
+          solicitud_derivacion_motivo = NULL,
+          solicitud_derivacion_destino_sugerido = NULL
         WHERE id = $1 AND tenant_id = $9
         RETURNING *`
       : `UPDATE pedidos SET
@@ -537,7 +711,12 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
           fecha_derivacion = NOW(),
           usuario_derivacion_id = $6,
           derivacion_nota = $7,
-          derivacion_mensaje_snapshot = $8
+          derivacion_mensaje_snapshot = $8,
+          solicitud_derivacion_pendiente = FALSE,
+          solicitud_derivacion_fecha = NULL,
+          solicitud_derivacion_usuario_id = NULL,
+          solicitud_derivacion_motivo = NULL,
+          solicitud_derivacion_destino_sugerido = NULL
         WHERE id = $1
         RETURNING *`;
     const bind = hasTa ? [...upParams, req.tenantId] : upParams;
