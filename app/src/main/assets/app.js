@@ -20,6 +20,25 @@ import {
   convertirAInchauspe
 } from './map.js';
 
+/** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
+(function installCanvas2DWillReadFrequently() {
+  if (typeof HTMLCanvasElement === 'undefined') return;
+  const proto = HTMLCanvasElement.prototype;
+  if (proto.__gestornovaWillReadPatch) return;
+  const orig = proto.getContext;
+  proto.getContext = function (type, attrib) {
+    if (type === '2d') {
+      const a =
+        attrib && typeof attrib === 'object'
+          ? { ...attrib, willReadFrequently: true }
+          : { willReadFrequently: true };
+      return orig.call(this, type, a);
+    }
+    return orig.call(this, type, attrib);
+  };
+  proto.__gestornovaWillReadPatch = true;
+})();
+
 
 
 
@@ -948,6 +967,7 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
             next[k] = String(conf[k]).trim();
         }
     }
+    next.subtitulo = GN_SUBTITULO_FIJO;
     window.EMPRESA_CFG = next;
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
@@ -1744,6 +1764,10 @@ function esAdminSesionWebPublica() {
 
 /** Marca por defecto hasta que el admin complete el setup inicial en servidor (setup_wizard_completado). */
 const BRAND_DEFAULT_NAME = 'GestorNova';
+/** Subtítulo fijo del producto (login, wizard, informes); no se personaliza por tenant. */
+const GN_SUBTITULO_FIJO = 'Sistema de gestión de pedidos y reclamos';
+/** Versión de la interfaz web/PWA (la app Android muestra la versión nativa en Acerca de). */
+const GN_VERSION_WEB = '2.0';
 
 /** Persiste nombre/logo/subtítulo entre sesiones (incl. tras cerrar sesión en la web pública). */
 const PMG_BRANDING_LS_KEY = 'pmg_tenant_branding_v1';
@@ -1792,7 +1816,7 @@ function persistTenantBrandingCache(extra) {
             nombre_cliente: String(b.nombre_cliente || '').trim(),
             logo_url: String(b.logo_url || '').trim(),
             tipo: String(b.tipo || '').trim(),
-            subtitulo: String((extra && extra.subtitulo) || window.EMPRESA_CFG?.subtitulo || '').trim(),
+            subtitulo: GN_SUBTITULO_FIJO,
             from_local_cache: !!b.from_local_cache
         };
         localStorage.setItem(PMG_BRANDING_LS_KEY, JSON.stringify(o));
@@ -1822,8 +1846,7 @@ function hydrateBrandingForPublicScreen() {
             tipo: String(c.tipo || ''),
             from_local_cache: !!c.from_local_cache
         };
-        const sub = String(c.subtitulo || '').trim();
-        window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...(sub ? { subtitulo: sub } : {}) };
+        window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), subtitulo: GN_SUBTITULO_FIJO };
     } else {
         resetBrandingSesionNoAutenticada();
     }
@@ -1899,13 +1922,15 @@ function resetBrandingSesionNoAutenticada() {
 function aplicarMarcaVisualCompleta() {
     const m = resolveMarcaTenantUI();
     document.title = m.nombre + ' — Pedidos';
-    const h1 = document.querySelector('.lc h1');
-    if (h1) h1.textContent = m.nombre;
-    const subEl = document.querySelector('.lc .sub');
-    if (subEl) {
-        const st = String(window.EMPRESA_CFG?.subtitulo || '').trim();
-        subEl.textContent = st || 'Sistema de gestión de pedidos y reclamos';
-    }
+    document.querySelectorAll('#app-titulo, #gw .gn-wizard-card h1').forEach((h1) => {
+        if (h1) h1.textContent = m.nombre;
+    });
+    try {
+        window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), subtitulo: GN_SUBTITULO_FIJO };
+    } catch (_) {}
+    document.querySelectorAll('#app-subtitulo, #gw .gn-wizard-card .sub').forEach((subEl) => {
+        if (subEl) subEl.textContent = GN_SUBTITULO_FIJO;
+    });
     const h2 = document.querySelector('.hd h2');
     if (h2) {
         h2.textContent = '';
@@ -4407,7 +4432,9 @@ function mostrarToastCierreGerencia(row) {
 
 function abrirModalDashboardGerencia() {
     if (!app.u || !esAdmin()) return;
-    document.getElementById('modal-dashboard-gerencia')?.classList.add('active');
+    const m = document.getElementById('modal-dashboard-gerencia');
+    if (m) m.classList.add('active');
+    syncDashboardModalMaxButtons();
     refrescarDashboardGerencia(false);
 }
 
@@ -4553,8 +4580,8 @@ async function refrescarDashboardGerencia(silent) {
 }
 
 window.cerrarModalDashYAbrirPedido = async function (pid) {
-    document.getElementById('modal-dashboard-gerencia')?.classList.remove('active');
-    document.getElementById('admin-panel')?.classList.remove('active');
+    cerrarModalDashboardGerencia();
+    cerrarAdminPanel();
     await cargarPedidos();
     const p = app.p.find(x => String(x.id) === String(pid));
     if (!p) { toast('Pedido no encontrado', 'error'); return; }
@@ -6211,7 +6238,11 @@ const esAndroidApp = /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.tes
     var el = document.getElementById('app-version');
     if (!el) return;
     if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getAppVersion === 'function') {
-        try { el.textContent = 'Versión ' + window.AndroidConfig.getAppVersion(); } catch (_) {}
+        try {
+            el.textContent = 'Versión ' + window.AndroidConfig.getAppVersion();
+        } catch (_) {}
+    } else {
+        el.textContent = 'Versión web ' + GN_VERSION_WEB;
     }
 })();
 
@@ -8481,6 +8512,8 @@ function limpiarFotosYPreviewNuevoPedido() {
 
 function closeAll() {
     const forzarPw = document.getElementById('modal-forzar-cambio-pw');
+    document.getElementById('modal-dashboard-gerencia')?.classList.remove('modal-dash--maximized');
+    syncDashboardModalMaxButtons();
     document.querySelectorAll('.mo').forEach(m => {
         if (m === forzarPw && window._pendingAndroidPasswordChange) return;
         m.classList.remove('active');
@@ -8674,8 +8707,7 @@ document.getElementById('ub').addEventListener('click', () => {
         if (mapDashCard) mapDashCard.style.display = 'none';
         const wvt = document.getElementById('wrap-toggle-ver-todos');
         if (wvt) wvt.style.display = 'none';
-        const adminPanel = document.getElementById('admin-panel');
-        if (adminPanel) adminPanel.classList.remove('active');
+        cerrarAdminPanel();
         document.getElementById('gw')?.classList.remove('active');
         document.getElementById('ls').classList.add('active');
         document.getElementById('ms').classList.remove('active');
@@ -10096,6 +10128,7 @@ async function guardarConfiguracionInicialObligatoria() {
             ...(window.EMPRESA_CFG || {}),
             nombre,
             tipo,
+            subtitulo: GN_SUBTITULO_FIJO,
             logo_url: logoUrl,
             lat_base: String(_setupLat),
             lng_base: String(_setupLng),
@@ -10108,8 +10141,7 @@ async function guardarConfiguracionInicialObligatoria() {
                     ['tipo', tipo],
                     ['empresa_identidad_bloqueada', '1'],
                 ];
-                const subW = String((window.EMPRESA_CFG || {}).subtitulo || '').trim();
-                if (subW) pairs.push(['subtitulo', subW]);
+                pairs.push(['subtitulo', GN_SUBTITULO_FIJO]);
                 for (const [k, v] of pairs) {
                     await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES(${esc(k)}, ${esc(v)})
                         ON CONFLICT(clave) DO UPDATE SET valor = ${esc(v)}, actualizado = NOW()`);
@@ -11860,8 +11892,89 @@ function adminTab(tab) {
     if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
 }
 
+function cerrarAdminPanel() {
+    const p = document.getElementById('admin-panel');
+    if (!p) return;
+    p.classList.remove('active', 'admin-panel--maximized');
+    syncAdminPanelMaxButtons();
+}
+window.cerrarAdminPanel = cerrarAdminPanel;
+
+function syncAdminPanelMaxButtons() {
+    const p = document.getElementById('admin-panel');
+    const maxed = !!(p && p.classList.contains('admin-panel--maximized'));
+    const bMax = document.getElementById('admin-panel-btn-max');
+    const bRest = document.getElementById('admin-panel-btn-restore');
+    if (bMax) bMax.style.display = maxed ? 'none' : '';
+    if (bRest) bRest.style.display = maxed ? '' : 'none';
+}
+
+function toggleAdminPanelMaximized() {
+    const p = document.getElementById('admin-panel');
+    if (!p || !p.classList.contains('active')) return;
+    p.classList.toggle('admin-panel--maximized');
+    syncAdminPanelMaxButtons();
+    try {
+        window.dispatchEvent(new Event('resize'));
+    } catch (_) {}
+}
+window.toggleAdminPanelMaximized = toggleAdminPanelMaximized;
+
+function syncDashboardModalMaxButtons() {
+    const m = document.getElementById('modal-dashboard-gerencia');
+    const maxed = !!(m && m.classList.contains('modal-dash--maximized'));
+    const bMax = document.getElementById('dashboard-modal-btn-max');
+    const bRest = document.getElementById('dashboard-modal-btn-restore');
+    if (bMax) bMax.style.display = maxed ? 'none' : '';
+    if (bRest) bRest.style.display = maxed ? '' : 'none';
+}
+
+function toggleDashboardModalMaximized() {
+    const m = document.getElementById('modal-dashboard-gerencia');
+    if (!m || !m.classList.contains('active')) return;
+    m.classList.toggle('modal-dash--maximized');
+    syncDashboardModalMaxButtons();
+    try {
+        window.dispatchEvent(new Event('resize'));
+    } catch (_) {}
+}
+window.toggleDashboardModalMaximized = toggleDashboardModalMaximized;
+
+function cerrarModalDashboardGerencia() {
+    const m = document.getElementById('modal-dashboard-gerencia');
+    if (m) m.classList.remove('active', 'modal-dash--maximized');
+    syncDashboardModalMaxButtons();
+}
+window.cerrarModalDashboardGerencia = cerrarModalDashboardGerencia;
+
+function abrirModalAcercaDe() {
+    const modal = document.getElementById('modal-acerca-de');
+    const vLine = document.getElementById('acerca-version-line');
+    if (vLine) {
+        let v = GN_VERSION_WEB;
+        if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getAppVersion === 'function') {
+            try {
+                v = String(window.AndroidConfig.getAppVersion());
+            } catch (_) {}
+        }
+        vLine.textContent =
+            'Versión: ' + v + (esAndroidApp ? ' (aplicación Android)' : ' (web / PWA)');
+    }
+    modal?.classList.add('active');
+}
+window.abrirModalAcercaDe = abrirModalAcercaDe;
+
+function cerrarModalAcercaDe() {
+    document.getElementById('modal-acerca-de')?.classList.remove('active');
+}
+window.cerrarModalAcercaDe = cerrarModalAcercaDe;
+
 function abrirAdmin() {
-    document.getElementById('admin-panel').classList.add('active');
+    const p = document.getElementById('admin-panel');
+    if (!p) return;
+    p.classList.remove('admin-panel--maximized');
+    syncAdminPanelMaxButtons();
+    p.classList.add('active');
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
     } catch (_) {}
@@ -11882,8 +11995,7 @@ function aplicarBloqueoIdentidadEmpresaFormulario() {
     const lock = empresaIdentidadEdicionBloqueada();
     const nombre = document.getElementById('cfg-nombre');
     const tipo = document.getElementById('cfg-tipo');
-    const sub = document.getElementById('cfg-subtitulo');
-    [nombre, tipo, sub].forEach((el) => {
+    [nombre, tipo].forEach((el) => {
         if (!el) return;
         el.readOnly = !!lock;
         el.title = lock ? 'Definido en el setup inicial — no editable' : '';
@@ -11899,7 +12011,8 @@ async function cargarFormEmpresa() {
         (r.rows || []).forEach(row => { cfg[row.clave] = row.valor; });
         document.getElementById('cfg-nombre').value    = cfg.nombre || '';
         document.getElementById('cfg-tipo').value      = cfg.tipo || '';
-        document.getElementById('cfg-subtitulo').value = cfg.subtitulo || '';
+        const subIn = document.getElementById('cfg-subtitulo');
+        if (subIn) subIn.value = GN_SUBTITULO_FIJO;
         document.getElementById('cfg-email').value     = cfg.email_contacto || '';
         document.getElementById('cfg-telefono').value  = cfg.telefono || '';
         const fam = document.getElementById('cfg-coord-familia');
@@ -11976,9 +12089,7 @@ async function guardarConfigEmpresa() {
         tipo: lockIdent
             ? String(prev.tipo || '').trim()
             : document.getElementById('cfg-tipo').value.trim(),
-        subtitulo: lockIdent
-            ? String(prev.subtitulo || '').trim()
-            : document.getElementById('cfg-subtitulo').value.trim(),
+        subtitulo: GN_SUBTITULO_FIJO,
         email_contacto: document.getElementById('cfg-email').value.trim(),
         telefono:       document.getElementById('cfg-telefono').value.trim(),
         coord_proy_familia: famVal,
@@ -12964,7 +13075,7 @@ function escInformePdfTexto(s) {
 
 function construirHtmlEncabezadoInformeEmpresa(lineaPeriodo) {
     const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
-    const sub = String(window.EMPRESA_CFG?.subtitulo || '').trim();
+    const sub = GN_SUBTITULO_FIJO;
     const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
     const logoSrc = escInformePdfTexto(logo || 'gestornova-logo.png');
     const lp = lineaPeriodo
@@ -13009,7 +13120,7 @@ async function pdfEncabezadoEmpresaBloque(pdf, margin, pageW, yStart, lineasPeri
         } catch (_) {}
     }
     const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
-    const sub = String(window.EMPRESA_CFG?.subtitulo || '').trim();
+    const sub = GN_SUBTITULO_FIJO;
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(11);
     pdf.setTextColor(30, 58, 138);
@@ -13238,10 +13349,11 @@ async function html2canvasCapturaElemento(el, opts = {}) {
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         await new Promise(r => setTimeout(r, delayAfterResize));
         const sw = Math.max(el.offsetWidth, el.clientWidth, 120);
-        const rawSh = opts.useFullScrollHeight
-            ? Math.max(el.scrollHeight, el.offsetHeight, 40)
-            : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
-        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 1200 : opts.maxHeightPx || 3400);
+        const rawSh =
+            opts.useFullScrollHeight || statsExport
+                ? Math.max(el.scrollHeight, el.offsetHeight, 40)
+                : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
+        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 3000 : opts.maxHeightPx || 3400);
         const scale = statsExport
             ? Math.min(2.65, 2700 / Math.max(sw, 260))
             : Math.min(1.2, 1850 / Math.max(sw, 380));
@@ -13350,7 +13462,7 @@ async function imprimirInformeConGraficos() {
                 const canvas = await html2canvasCapturaElemento(sec.el, {
                     delayAfterResize: 120,
                     statsExport: true,
-                    maxHeightPx: 1300,
+                    maxHeightPx: 2800,
                 });
                 if (canvas) {
                     const u = await canvasToUrl(canvas);
@@ -13378,16 +13490,20 @@ async function imprimirInformeConGraficos() {
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
         const subt = lineaPeriodoInformeEstadisticas();
         const totalPag = pageBlocks.length;
+        const notaPie =
+            '<p class="gn-print-nota">Documento para gestión interna. Desactivá «Encabezado y pie de página» del navegador al imprimir para evitar URLs en el borde.</p>';
         const bloques = pageBlocks
             .map((bl, pi) => {
                 const pnum = pi + 1;
                 const pie = `<footer class="gn-print-footer">Página ${pnum} / ${totalPag} · ${escAttrPrint(ent)}</footer>`;
+                const notaUlt = pi === totalPag - 1 ? notaPie : '';
                 if (bl.kind === 'resumen') {
                     return (
-                        `<section class="gn-print-page">` +
+                        `<section class="gn-print-page gn-print-page--first">` +
+                        `<div class="gn-print-empresa-head">${hdrHtml}</div>` +
                         `<h1 class="gn-print-h1">${escAttrPrint(bl.title)}</h1>` +
                         `<p class="gn-print-sub">${escAttrPrint(subt)}</p>` +
-                        `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div>${pie}</section>`
+                        `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div>${pie}${notaUlt}</section>`
                     );
                 }
                 const cells = bl.items
@@ -13401,7 +13517,7 @@ async function imprimirInformeConGraficos() {
                 return (
                     `<section class="gn-print-page gn-print-page--grid">` +
                     `<p class="gn-print-sub gn-print-sub--tight">${escAttrPrint(subt)}</p>` +
-                    `<div class="gn-print-grid4">${cells}</div>${pie}</section>`
+                    `<div class="gn-print-grid4">${cells}</div>${pie}${notaUlt}</section>`
                 );
             })
             .join('');
@@ -13415,24 +13531,22 @@ async function imprimirInformeConGraficos() {
             '.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}' +
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
-            '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:3mm;min-height:248mm;align-content:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:122mm}' +
+            '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
             '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
             '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
             '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
-            '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}';
+            '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
+            '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
+            '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
         w.document.write(
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
                 escAttrPrint(ent) +
                 ' — Estadísticas</title><style>' +
                 css +
-                '</style></head><body><div class="gn-print-doc-header" style="margin-bottom:8mm">' +
-                hdrHtml +
-                '</div>' +
-                bloques +
-                '<p style="font-size:7pt;color:#94a3b8;margin-top:4mm">Documento para gestión interna. Desactivá «Encabezado y pie de página» del navegador al imprimir para evitar URLs en el borde.</p></body></html>'
+                '</style></head><body>' + bloques + '</body></html>'
         );
         w.document.close();
         w.focus();
@@ -13493,8 +13607,9 @@ async function generarPdfEstadisticasMultipaginaENRE() {
             const x0 = margin + (maxW - iw) / 2;
             pdf.addImage(imgData, 'JPEG', x0, y0 + 1, iw, ih, undefined, 'FAST');
         };
-        const addFourChartsPage = async entries => {
-            if (!entries?.length) return;
+        const addChartsPageCombined = async (entries) => {
+            const list = (entries || []).filter((e) => e?.canvas?.width);
+            if (!list.length) return;
             if (nPag > 0) pdf.addPage();
             nPag++;
             pdf.setFillColor(252, 252, 253);
@@ -13503,46 +13618,86 @@ async function generarPdfEstadisticasMultipaginaENRE() {
             y0 += 1.5;
             const gap = 3;
             const maxW = pageW - 2 * margin;
-            const maxH = pageH - y0 - margin - 1.5;
+            const maxH = pageH - y0 - margin - 2;
+            const titleH = 4.2;
+            const drawTitle = (title, x, y) => {
+                if (!title) return;
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(7);
+                pdf.setTextColor(71, 85, 105);
+                pdf.text(String(title).slice(0, 56), x, y);
+            };
+            const placeImg = (canvas, x, y, wBox, hBox) => {
+                const imgData = canvas.toDataURL('image/jpeg', 0.87);
+                const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, Math.max(20, wBox - 1), Math.max(24, hBox));
+                const xi = x + (wBox - iw) / 2;
+                const yi = y + (hBox - ih) / 2;
+                pdf.addImage(imgData, 'JPEG', xi, yi, iw, ih, undefined, 'FAST');
+            };
+            const n = list.length;
+            if (n === 1) {
+                const e = list[0];
+                drawTitle(e.title, margin, y0 + 2.8);
+                placeImg(e.canvas, margin, y0 + titleH, maxW, maxH - titleH - 1);
+                return;
+            }
+            if (n === 2) {
+                const cellW = (maxW - gap) / 2;
+                const imgH = maxH - titleH - 2;
+                list.forEach((e, i) => {
+                    const xCell = margin + i * (cellW + gap);
+                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
+                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH);
+                });
+                return;
+            }
+            if (n === 3) {
+                const row1H = maxH * 0.56;
+                const row2H = maxH - row1H - gap;
+                const cellW = (maxW - gap) / 2;
+                const imgH1 = Math.max(28, row1H - titleH - 1.5);
+                for (let i = 0; i < 2; i++) {
+                    const e = list[i];
+                    const xCell = margin + i * (cellW + gap);
+                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
+                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH1);
+                }
+                const e = list[2];
+                const w3 = Math.min(maxW * 0.78, maxW);
+                const x3 = margin + (maxW - w3) / 2;
+                const y2 = y0 + row1H + gap;
+                drawTitle(e.title, x3 + 0.5, y2 + 2.5);
+                placeImg(e.canvas, x3, y2 + titleH, w3, row2H - titleH - 1);
+                return;
+            }
             const cellW = (maxW - gap) / 2;
             const cellH = (maxH - gap) / 2;
-            const titleH = 4.2;
-            const imgMaxH = Math.max(26, cellH - titleH - 1.5);
-            const imgMaxW = cellW - 1;
-            entries.forEach((entry, i) => {
-                const canvas = entry.canvas;
-                if (!canvas?.width) return;
+            const imgMaxH = Math.max(28, cellH - titleH - 1.5);
+            list.forEach((e, i) => {
                 const row = Math.floor(i / 2);
                 const col = i % 2;
                 const xCell = margin + col * (cellW + gap);
                 const yCell = y0 + row * (cellH + gap);
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(7);
-                pdf.setTextColor(71, 85, 105);
-                pdf.text(String(entry.title || `Gráfico ${i + 1}`).slice(0, 54), xCell + 0.5, yCell + 2.8);
-                const imgData = canvas.toDataURL('image/jpeg', 0.87);
-                const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, imgMaxW - 0.5, imgMaxH);
-                const xi = xCell + (imgMaxW - iw) / 2;
-                const yi = yCell + titleH + (imgMaxH - ih) / 2;
-                pdf.addImage(imgData, 'JPEG', xi, yi, iw, ih, undefined, 'FAST');
+                drawTitle(e.title, xCell + 0.5, yCell + 2.8);
+                placeImg(e.canvas, xCell, yCell + titleH, cellW, imgMaxH);
             });
         };
         const chartQueue = [];
         const flushChartRows = async () => {
             while (chartQueue.length >= 4) {
-                await addFourChartsPage(chartQueue.splice(0, 4));
+                await addChartsPageCombined(chartQueue.splice(0, 4));
             }
         };
         for (const sec of secciones) {
             if (sec.type === 'resumen') {
                 await flushChartRows();
-                if (chartQueue.length) await addFourChartsPage(chartQueue.splice(0, chartQueue.length));
+                if (chartQueue.length) await addChartsPageCombined(chartQueue.splice(0, chartQueue.length));
                 await addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
             } else if (sec.type === 'chart') {
                 const c = await html2canvasCapturaElemento(sec.el, {
                     delayAfterResize: 120,
                     statsExport: true,
-                    maxHeightPx: 1300,
+                    maxHeightPx: 2800,
                 });
                 if (c) {
                     chartQueue.push({ canvas: c, title: sec.title });
@@ -13550,11 +13705,12 @@ async function generarPdfEstadisticasMultipaginaENRE() {
                 }
             }
         }
-        if (chartQueue.length) await addFourChartsPage(chartQueue);
+        if (chartQueue.length) await addChartsPageCombined(chartQueue);
         if (nPag === 0) {
             toast('No se pudo generar ninguna página', 'error');
             return;
         }
+        kpiPdfPiePaginas(pdf);
         const slug = String(window.EMPRESA_CFG?.nombre || 'GestorNova').replace(/[^\w\-]+/g, '_').slice(0, 48);
         pdf.save(`${slug}_estadisticas_A4_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
         toast('PDF listo', 'success');
@@ -13950,15 +14106,20 @@ async function cargarEstadisticas() {
             });
         };
 
-        const COLORES = ['#1e3a8a','#10b981','#f97316','#ef4444','#eab308','#8b5cf6','#06b6d4','#84cc16','#f43f5e','#a78bfa'];
-        const priorColor = { 'Crítica':'#ef4444','Alta':'#f97316','Media':'#eab308','Baja':'#3b82f6' };
+        const COLORES = ['#6b8cae','#7aab8f','#c49a6c','#c08080','#b8a86e','#9b8bb8','#6fa3b5','#9bb87a','#b87a8f','#8a9bb8'];
+        const priorColor = {
+            Crítica: 'rgba(180, 100, 100, 0.55)',
+            Alta: 'rgba(200, 140, 90, 0.5)',
+            Media: 'rgba(190, 170, 95, 0.5)',
+            Baja: 'rgba(95, 130, 175, 0.45)',
+        };
 
         // ── Gráfico mensual: total y cerrados por mes ─────────
         crearChart('chart-mensual', 'bar',
             rMensual.rows.map(r => r.mes),
             [
-                { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: '#1e3a8a88', borderColor: '#1e3a8a', borderWidth: 2 },
-                { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: '#10b98188', borderColor: '#10b981', borderWidth: 2 }
+                { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(90, 120, 165, 0.42)', borderColor: 'rgba(75, 105, 150, 0.85)', borderWidth: 1.5 },
+                { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(110, 155, 125, 0.4)', borderColor: 'rgba(85, 130, 105, 0.85)', borderWidth: 1.5 }
             ],
             { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
                 plugins: { legend: { display: true, position: 'top' },
@@ -13983,12 +14144,17 @@ async function cargarEstadisticas() {
         }
 
         // ── Gráfico estados: doughnut ─────────────────────────
-        const estadoColors = { 'Pendiente':'#eab308','Asignado':'#a855f7','En ejecución':'#3b82f6','Cerrado':'#10b981' };
+        const estadoColors = {
+            Pendiente: 'rgba(200, 175, 95, 0.55)',
+            Asignado: 'rgba(155, 130, 185, 0.5)',
+            'En ejecución': 'rgba(110, 145, 195, 0.5)',
+            Cerrado: 'rgba(115, 165, 130, 0.5)',
+        };
         crearChart('chart-estados', 'doughnut',
             rEstados.rows.map(r => r.estado),
             [{ data: rEstados.rows.map(r => parseInt(r.n)),
-               backgroundColor: rEstados.rows.map(r => estadoColors[r.estado] || '#94a3b8'),
-               borderWidth: 2, borderColor: '#fff' }],
+               backgroundColor: rEstados.rows.map(r => estadoColors[r.estado] || 'rgba(148, 163, 184, 0.45)'),
+               borderWidth: 1.5, borderColor: 'rgba(248, 250, 252, 0.95)' }],
             { plugins: { legend: { display: true, position: 'bottom' },
                 tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + c.parsed + ' pedidos' }}}}
         );
@@ -14008,7 +14174,7 @@ async function cargarEstadisticas() {
         crearChart('chart-tipos', 'bar',
             rTipos.rows.map(r => r.tipo.length > 25 ? r.tipo.substring(0,25)+'…' : r.tipo),
             [{ label: 'Pedidos', data: rTipos.rows.map(r => parseInt(r.n)),
-               backgroundColor: '#1e3a8a88', borderColor: '#1e3a8a', borderWidth: 1 }],
+               backgroundColor: 'rgba(95, 125, 170, 0.38)', borderColor: 'rgba(80, 110, 155, 0.8)', borderWidth: 1 }],
             { indexAxis: 'y',
               layout: { padding: { top: 4, bottom: 4, left: 4, right: 36 } },
               plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + c.parsed.x + ' pedidos' }}},
@@ -14019,8 +14185,8 @@ async function cargarEstadisticas() {
         crearChart('chart-distribuidores', 'bar',
             rDist.rows.map(r => r.distribuidor),
             [
-                { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: '#1e3a8a88', borderColor: '#1e3a8a', borderWidth: 1 },
-                { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: '#10b98188', borderColor: '#10b981', borderWidth: 1 }
+                { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(95, 125, 170, 0.38)', borderColor: 'rgba(80, 110, 155, 0.8)', borderWidth: 1 },
+                { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(110, 155, 125, 0.38)', borderColor: 'rgba(85, 130, 105, 0.8)', borderWidth: 1 }
             ],
             { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
               plugins: { legend: { display: true, position: 'top' },
@@ -14037,8 +14203,8 @@ async function cargarEstadisticas() {
                     {
                         label: 'Horas prom. cierre',
                         data: rBarT.rows.map((r) => parseFloat(r.horas_prom || 0)),
-                        backgroundColor: '#0d948888',
-                        borderColor: '#0d9488',
+                        backgroundColor: 'rgba(95, 155, 150, 0.4)',
+                        borderColor: 'rgba(70, 130, 125, 0.75)',
                         borderWidth: 1,
                     },
                 ],
@@ -14104,13 +14270,13 @@ async function cargarEstadisticas() {
         if (capM) {
             const totCr = rMensual.rows.reduce((s, r) => s + parseInt(r.total || 0, 10), 0);
             const totCe = rMensual.rows.reduce((s, r) => s + parseInt(r.cerrados || 0, 10), 0);
-            capM.innerHTML = `<strong>Resumen numérico</strong> · Suma de pedidos creados (por mes): ${totCr}. Suma de cierres registrados por mes: ${totCe}.<br><strong>Colores:</strong> azul = ingresos del mes; verde = cierres del mes.`;
+            capM.innerHTML = `<strong>Resumen numérico</strong> · Suma de pedidos creados (por mes): ${totCr}. Suma de cierres registrados por mes: ${totCe}.<br><strong>Colores:</strong> tono azulado = ingresos del mes; tono verdoso = cierres del mes.`;
         }
         const totEst = (rEstados.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
         const capE = document.getElementById('chart-cap-estados');
         if (capE) {
             if (totEst) {
-                const estadoLeg = 'Amarillo: Pendiente · Violeta: Asignado · Azul: En ejecución · Verde: Cerrado.';
+                const estadoLeg = 'Tonos suaves: amarillento Pendiente · violáceo Asignado · azulado En ejecución · verdoso Cerrado.';
                 const lines = rEstados.rows.map(r => {
                     const n = parseInt(r.n || 0, 10);
                     return `${scap(r.estado)} <strong>${pctOf(n, totEst)}%</strong> (${n})`;
@@ -14122,7 +14288,7 @@ async function cargarEstadisticas() {
         const capP = document.getElementById('chart-cap-prioridades');
         if (capP) {
             if (totPr) {
-                const prLeg = 'Rojo: Crítica · Naranja: Alta · Amarillo: Media · Azul: Baja.';
+                const prLeg = 'Tonos suaves: rojizo Crítica · albaricoque Alta · amarillento Media · azulado Baja.';
                 const lines = rPrior.rows.map(r => {
                     const n = parseInt(r.n || 0, 10);
                     return `${scap(r.prioridad)} <strong>${pctOf(n, totPr)}%</strong> (${n})`;
@@ -14140,7 +14306,7 @@ async function cargarEstadisticas() {
                     const pc = n ? pctOf(c, n) : 0;
                     return `${scap(r.distribuidor)}: total ${n}, cerrados ${c} (<strong>${pc}%</strong> del propio ${lblZ})`;
                 }).join('<br>');
-                capD.innerHTML = `<strong>Por ${lblZ}</strong><br>${lines}<br><strong>Colores:</strong> azul = total de pedidos; verde = cerrados en el período.`;
+                capD.innerHTML = `<strong>Por ${lblZ}</strong><br>${lines}<br><strong>Colores:</strong> azulado = total de pedidos; verdoso = cerrados en el período.`;
             } else capD.textContent = 'Sin datos en el período.';
         }
         const capBT = document.getElementById('chart-cap-barrios-tiempo');
@@ -14159,7 +14325,7 @@ async function cargarEstadisticas() {
                     const n = parseInt(r.n || 0, 10);
                     return `${scap(r.tipo)} <strong>${pctOf(n, totTip)}%</strong> (${n})`;
                 }).join(' · ');
-                capT.innerHTML = `<strong>Top tipos (${totTip} pedidos en la muestra)</strong><br>${lines}<br><strong>Color:</strong> azul = volumen relativo de cada tipo (barras horizontales).`;
+                capT.innerHTML = `<strong>Top tipos (${totTip} pedidos en la muestra)</strong><br>${lines}<br><strong>Color:</strong> tono azulado = volumen relativo de cada tipo (barras horizontales).`;
             } else capT.textContent = 'Sin datos en el período.';
         }
         const totU = (rUsuarios?.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);

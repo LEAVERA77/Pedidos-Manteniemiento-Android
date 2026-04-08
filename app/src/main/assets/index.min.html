@@ -1018,6 +1018,19 @@
     </div>
   </div>
 </div>
+<div id="modal-acerca-de" class="mo" style="z-index:2050">
+  <div class="mc" style="max-width:440px">
+    <div class="mh"><h3><i class="fas fa-info-circle"></i> Acerca de</h3><button type="button" class="cm" onclick="cerrarModalAcercaDe()"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <p style="font-size:1.05rem;font-weight:700;color:var(--bd);margin:0 0 .35rem">GestorNova</p>
+      <p style="font-size:.88rem;color:var(--tm);margin:0 0 1rem;line-height:1.45">Sistema de gestión de pedidos y reclamos</p>
+      <p style="font-size:.88rem;margin:.5rem 0;line-height:1.5"><strong>Autor:</strong> Leandro Federico Vera</p>
+      <p id="acerca-version-line" style="font-size:.88rem;margin:.5rem 0;line-height:1.5"></p>
+      <p style="font-size:.78rem;color:var(--tl);margin:1rem 0 0;line-height:1.45">Interfaz web y PWA con mapas OpenStreetMap. Los datos del servicio dependen de la configuración de tu organización y del servidor API.</p>
+      <p style="font-size:.72rem;color:var(--tl);margin:.75rem 0 0">© Leandro Federico Vera · GestorNova</p>
+    </div>
+  </div>
+</div>
 <div id="cache-progress-bar"><i class="fas fa-map"></i><span id="cache-msg">Descargando mapa offline...</span><div class="bar"><div class="fill" id="cache-fill" style="width:0%"></div></div><span id="cache-pct">0%</span><button onclick="document.getElementById('cache-progress-bar').classList.remove('visible')" style="background:none;border:none;color:white;cursor:pointer">✕</button></div>
 <div id="offline-toggle" onclick="toggleOfflineBanner()"><i class="fas fa-wifi-slash"></i></div>
 <div id="modal-forzar-cambio-pw" class="mo">

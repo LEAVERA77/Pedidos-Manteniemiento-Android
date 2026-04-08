@@ -60,6 +60,7 @@
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem"><button type="button" onclick="document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button></div>
     <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
+    <div style="text-align:center;margin-top:.25rem"><button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button></div>
   </div>
 </div>
 
@@ -127,15 +128,15 @@
     <div id="mapa-card-colores" class="moui-card">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-palette"></i> Colores (prioridad) <span id="mapa-colores-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-colores',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-colores-body" class="moui-bd">
-      <div class="ll-grid">
-        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-critica" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#ef4444"></span><span class="ll-txt">Crítica</span></label>
-        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-alta" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#f97316"></span><span class="ll-txt">Alta</span></label>
-        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-media" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#eab308"></span><span class="ll-txt">Media</span></label>
-        <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-baja" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#3b82f6"></span><span class="ll-txt">Baja</span></label>
-        <label class="ll-row ll-span2"><input type="checkbox" id="mapa-flt-prio-cerrado" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#94a3b8"></span><span class="ll-txt">Cerrado</span></label>
+        <div class="ll-grid">
+          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-critica" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#ef4444"></span><span class="ll-txt">Crítica</span></label>
+          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-alta" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#f97316"></span><span class="ll-txt">Alta</span></label>
+          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-media" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#eab308"></span><span class="ll-txt">Media</span></label>
+          <label class="ll-row"><input type="checkbox" id="mapa-flt-prio-baja" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#3b82f6"></span><span class="ll-txt">Baja</span></label>
+          <label class="ll-row ll-span2"><input type="checkbox" id="mapa-flt-prio-cerrado" checked onchange="onMapaFiltroPrioridadChange()"><span class="ll-dot" style="background:#94a3b8"></span><span class="ll-txt">Cerrado</span></label>
+        </div>
+        <div class="ll-foot">Casco verde: técnico con GPS reciente (solo admin).</div>
       </div>
-      <div class="ll-foot">Casco verde: técnico con GPS reciente (solo admin).</div>
-    </div>
     </div>
     <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tachometer-alt"></i> Dashboard <span id="mapa-dash-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-dashboard',true)"><i class="fas fa-eye-slash"></i></button></div>
@@ -425,9 +426,13 @@
 <!-- PANEL ADMIN -->
 <div id="admin-panel" class="admin-panel">
   <div class="admin-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--bo)">
-      <h2 style="color:var(--bd);font-size:1.05rem"><i class="fas fa-cog"></i> Panel Administración</h2>
-      <button onclick="document.getElementById('admin-panel').classList.remove('active')" style="background:none;border:none;font-size:1.3rem;color:var(--tl);cursor:pointer"><i class="fas fa-times"></i></button>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--bo);gap:.5rem">
+      <h2 style="color:var(--bd);font-size:1.05rem;margin:0"><i class="fas fa-cog"></i> Panel Administración</h2>
+      <div style="display:flex;align-items:center;gap:.15rem;flex-shrink:0">
+        <button type="button" id="admin-panel-btn-max" class="panel-win-btn" onclick="toggleAdminPanelMaximized()" title="Maximizar"><i class="fas fa-expand"></i></button>
+        <button type="button" id="admin-panel-btn-restore" class="panel-win-btn" onclick="toggleAdminPanelMaximized()" title="Restaurar tamaño" style="display:none"><i class="fas fa-compress"></i></button>
+        <button type="button" class="panel-win-btn" onclick="cerrarAdminPanel()" title="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
     </div>
     <div class="admin-tabs">
       <button class="admin-tab active" onclick="adminTab('empresa')"><i class="fas fa-building"></i> Empresa</button>
@@ -442,11 +447,14 @@
     </div>
     <div id="admin-empresa" class="admin-section active">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Datos de la Empresa</h3>
-      <p id="cfg-identidad-bloqueada-hint" style="display:none;font-size:.78rem;color:#b45309;margin:-.5rem 0 .85rem;line-height:1.4;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem">El <strong>nombre</strong>, <strong>tipo</strong> y <strong>subtítulo</strong> quedaron fijados al completar el <strong>setup inicial</strong> (asistente de primera ejecución) y no se pueden modificar desde aquí.</p>
+      <p id="cfg-identidad-bloqueada-hint" style="display:none;font-size:.78rem;color:#b45309;margin:-.5rem 0 .85rem;line-height:1.4;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem">El <strong>nombre</strong> y el <strong>tipo</strong> quedaron fijados al completar el <strong>setup inicial</strong> (asistente de primera ejecución) y no se pueden modificar desde aquí. El <strong>subtítulo</strong> es fijo del producto.</p>
       <div class="form-grid">
         <div><label>Nombre</label><input id="cfg-nombre" type="text"></div>
         <div><label>Tipo (cooperativa, municipio, empresa)</label><input id="cfg-tipo" type="text" placeholder="cooperativa"></div>
-        <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text" placeholder="Sistema de gestión de pedidos y reclamos"></div>
+        <div class="full"><label>Subtítulo</label>
+          <p style="font-size:.93rem;color:var(--td);margin:0;padding:.55rem .7rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem;line-height:1.4">Sistema de gestión de pedidos y reclamos</p>
+          <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0;line-height:1.35">Texto fijo del programa; no se personaliza.</p>
+          <input type="hidden" id="cfg-subtitulo" value="Sistema de gestión de pedidos y reclamos" autocomplete="off"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
         <div class="full"><label for="cfg-provincia-nominatim">Provincia (Nominatim / bot WhatsApp)</label>
@@ -1007,8 +1015,14 @@
   </div>
 </div>
 <div id="modal-dashboard-gerencia" class="mo">
-  <div class="mc" style="max-width:920px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
-    <div class="mh"><h3><i class="fas fa-tachometer-alt"></i> Dashboard tiempo real</h3><button type="button" class="cm" onclick="document.getElementById('modal-dashboard-gerencia').classList.remove('active')"><i class="fas fa-times"></i></button></div>
+  <div class="mc modal-dashboard-mc" style="max-width:920px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="mh"><h3 style="margin:0;flex:1;min-width:0"><i class="fas fa-tachometer-alt"></i> Dashboard tiempo real</h3>
+      <div style="display:flex;align-items:center;gap:.15rem;flex-shrink:0">
+        <button type="button" id="dashboard-modal-btn-max" class="panel-win-btn" onclick="toggleDashboardModalMaximized()" title="Maximizar"><i class="fas fa-expand"></i></button>
+        <button type="button" id="dashboard-modal-btn-restore" class="panel-win-btn" onclick="toggleDashboardModalMaximized()" title="Restaurar tamaño" style="display:none"><i class="fas fa-compress"></i></button>
+        <button type="button" class="cm" onclick="cerrarModalDashboardGerencia()" title="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
+    </div>
     <div class="mb" style="overflow-y:auto;flex:1;padding-top:0">
       <p style="font-size:.8rem;color:var(--tm);margin:0 0 .75rem">Pedidos activos, técnicos con posición reciente y cierres. Las alertas de cierre aparecen también como avisos en pantalla.</p>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
@@ -1021,6 +1035,19 @@
       <div id="dashboard-lista-tecnicos" style="font-size:.82rem;color:var(--tm);margin-bottom:1rem"></div>
       <h4 style="font-size:.85rem;color:var(--bd);margin:.75rem 0 .4rem"><i class="fas fa-check-double"></i> Últimos cierres</h4>
       <div id="dashboard-lista-cierres" style="font-size:.82rem;max-height:200px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+<div id="modal-acerca-de" class="mo" style="z-index:2050">
+  <div class="mc" style="max-width:440px">
+    <div class="mh"><h3><i class="fas fa-info-circle"></i> Acerca de</h3><button type="button" class="cm" onclick="cerrarModalAcercaDe()"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <p style="font-size:1.05rem;font-weight:700;color:var(--bd);margin:0 0 .35rem">GestorNova</p>
+      <p style="font-size:.88rem;color:var(--tm);margin:0 0 1rem;line-height:1.45">Sistema de gestión de pedidos y reclamos</p>
+      <p style="font-size:.88rem;margin:.5rem 0;line-height:1.5"><strong>Autor:</strong> Leandro Federico Vera</p>
+      <p id="acerca-version-line" style="font-size:.88rem;margin:.5rem 0;line-height:1.5"></p>
+      <p style="font-size:.78rem;color:var(--tl);margin:1rem 0 0;line-height:1.45">Interfaz web y PWA con mapas OpenStreetMap. Los datos del servicio dependen de la configuración de tu organización y del servidor API.</p>
+      <p style="font-size:.72rem;color:var(--tl);margin:.75rem 0 0">© Leandro Federico Vera · GestorNova</p>
     </div>
   </div>
 </div>
