@@ -34,6 +34,8 @@ import {
 const router = express.Router();
 router.use(authWithTenantHost);
 
+const MAX_OBSERVACIONES_DERIVACION_API = 2000;
+
 async function assertPedidoMismoTenant(pedido, req) {
   if (!(await pedidosTableHasTenantIdColumn())) return;
   if (pedido.tenant_id == null) return;
@@ -483,7 +485,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     }
 
     const { motivo, destino_sugerido: destinoSugRaw } = req.body || {};
-    const motivoStr = motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, 800) : "";
+    const motivoStr = motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API) : "";
     const destinoSug = destinoSugRaw != null ? String(destinoSugRaw).trim().slice(0, 64) : "";
 
     const pedido = await getPedidoInTenant(id, req.tenantId);
@@ -509,6 +511,12 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     }
     if (pedido.solicitud_derivacion_pendiente === true) {
       return res.status(400).json({ error: "Ya hay una solicitud pendiente" });
+    }
+    if (!motivoStr || motivoStr.length < 8) {
+      return res.status(400).json({
+        error:
+          "Las observaciones para el administrador son obligatorias (mínimo 8 caracteres): qué viste en campo y por qué corresponde derivar.",
+      });
     }
 
     const hasTa = await pedidosTableHasTenantIdColumn();
@@ -664,15 +672,26 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       return res.status(400).json({ error: rContact.error });
     }
 
-    const motivoStr =
-      motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, 500) : "";
+    const adminObs =
+      motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API) : "";
+    const obsTecnico =
+      pedido.solicitud_derivacion_motivo != null && String(pedido.solicitud_derivacion_motivo).trim()
+        ? String(pedido.solicitud_derivacion_motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API)
+        : "";
+    const textoObservaciones = adminObs || obsTecnico;
+    if (!textoObservaciones) {
+      return res.status(400).json({
+        error:
+          "Indicá las observaciones para el tercero (motivo de derivación). Si el técnico ya cargó una solicitud, podés dejar el cuadro con ese texto o editarlo antes de confirmar.",
+      });
+    }
     const destinoEtiqueta = etiquetaDestinoDerivacion(destinoStr);
+    const nombreEmpresaDestino = (rContact.nombre && String(rContact.nombre).trim()) || destinoEtiqueta;
     const snap = buildDerivacionExternaMensaje({
       nombreTenant,
       pedido,
-      destinoEtiqueta,
-      contactoNombre: rContact.nombre,
-      motivo: motivoStr,
+      nombreEmpresaDestino,
+      textoObservacionesTecnico: textoObservaciones,
     });
 
     const hasTa = await pedidosTableHasTenantIdColumn();
@@ -683,7 +702,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       destinoStr,
       rContact.nombre ? rContact.nombre.slice(0, 200) : null,
       req.user.id,
-      motivoStr || null,
+      textoObservaciones.slice(0, MAX_OBSERVACIONES_DERIVACION_API),
       snap,
     ];
     const sql = hasTa

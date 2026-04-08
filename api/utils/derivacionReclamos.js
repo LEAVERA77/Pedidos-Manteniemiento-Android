@@ -183,8 +183,10 @@ export function resolverContactoDerivacion(dr, destino, filaIndex) {
   };
 }
 
-const MAX_NOTA = 500;
+/** Límite razonable para nota / observaciones persistidas y cuerpo del WA. */
+const MAX_OBSERVACIONES_DERIVACION = 2000;
 const MAX_DESC_SNAP = 400;
+const MAX_NOMBRE_DESTINO = 160;
 
 function trunc(s, n) {
   const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -193,21 +195,34 @@ function trunc(s, n) {
 }
 
 /**
- * Texto para WhatsApp y columna derivacion_mensaje_snapshot (auditoría).
+ * Arma el texto único para WhatsApp (`wa.me/?text=`) y para `derivacion_mensaje_snapshot`.
+ *
+ * **Ubicación:** con `https://wa.me/número?text=...` (Web o API) solo se envía **texto** plano;
+ * no garantiza la burbuja de ubicación nativa de WhatsApp. La paridad útil es **enlace a
+ * Google Maps** en el cuerpo (en app Android nativa podría evaluarse aparte un `geo:` / intent).
+ *
+ * @param {object} params
+ * @param {string} params.nombreTenant — Entidad que usa GestorNova (remitente del encabezado).
+ * @param {object} params.pedido — Fila pedido (lat/lng, domicilio, tipo, etc.).
+ * @param {string} params.nombreEmpresaDestino — Nombre del contacto configurado o rubro destino (línea "A:").
+ * @param {string} params.textoObservacionesTecnico — Observaciones del técnico y/o editadas por admin (obligatorias vía ruta).
  */
 export function buildDerivacionExternaMensaje({
   nombreTenant,
   pedido,
-  destinoEtiqueta,
-  contactoNombre,
-  motivo,
+  nombreEmpresaDestino,
+  textoObservacionesTecnico,
 }) {
+  const entidad = trunc(nombreTenant, 120) || "GestorNova";
+  const destinoNombre = trunc(nombreEmpresaDestino, MAX_NOMBRE_DESTINO) || "—";
   const np = pedido?.numero_pedido != null ? String(pedido.numero_pedido) : "";
   const id = pedido?.id != null ? String(pedido.id) : "";
+  const obs = trunc(textoObservacionesTecnico, MAX_OBSERVACIONES_DERIVACION) || "—";
+
   const tt = trunc(pedido?.tipo_trabajo, 120);
-  const de = trunc(pedido?.descripcion, MAX_DESC_SNAP);
   const pr = trunc(pedido?.prioridad, 40);
   const es = trunc(pedido?.estado, 40);
+  const de = trunc(pedido?.descripcion, MAX_DESC_SNAP);
   const partsDir = [
     pedido?.cliente_calle,
     pedido?.cliente_numero_puerta,
@@ -218,36 +233,51 @@ export function buildDerivacionExternaMensaje({
   const dirTxt = partsDir.length ? partsDir.join(", ") : trunc(pedido?.cliente_direccion, 280);
   const cnom = trunc(pedido?.cliente_nombre || pedido?.cliente, 120);
   const tel = trunc(pedido?.telefono_contacto, 40);
+
   const lat = pedido?.lat;
   const lng = pedido?.lng;
-  let ubicacion = "";
   const la = lat != null && lat !== "" ? Number(lat) : NaN;
   const ln = lng != null && lng !== "" ? Number(lng) : NaN;
+  let lineaUbicacion = "";
   if (Number.isFinite(la) && Number.isFinite(ln)) {
-    ubicacion = `Maps: https://www.google.com/maps?q=${la},${ln}`;
+    const url = `https://www.google.com/maps?q=${la},${ln}`;
+    lineaUbicacion = `Coordenadas GPS: ${la}, ${ln}\nAbrí en Maps: ${url}`;
   } else if (dirTxt) {
-    ubicacion = `Dirección (sin coordenadas GPS): ${dirTxt}`;
+    lineaUbicacion = `${dirTxt}\n(Sin coordenadas GPS registradas en el sistema.)`;
   } else {
-    ubicacion = "Ubicación: sin coordenadas ni domicilio estructurado cargado.";
+    lineaUbicacion =
+      "Sin domicilio estructurado ni coordenadas GPS en el sistema. Coordinar relevo con el área emisora si hace falta más precisión.";
   }
-  const mot = motivo ? trunc(motivo, MAX_NOTA) : "";
+
+  const reclamante =
+    cnom || tel
+      ? `${cnom || "—"}${tel ? ` · Tel.: ${tel}` : ""}`
+      : "—";
+
   const lines = [
-    `*Derivación de reclamo* — ${trunc(nombreTenant, 80)}`,
-    `Pedido: #${np} (ref. interna id ${id})`,
-    `Tipo de reclamo: ${tt || "—"}`,
-    `Descripción: ${de || "—"}`,
-    `Dirección / localidad: ${dirTxt || "—"}`,
-    `Prioridad: ${pr || "—"} · Estado al derivar: ${es || "—"}`,
-    ubicacion,
+    `A: ${destinoNombre}`,
+    "",
+    `${entidad} le informa que recibimos el reclamo *N° ${np || "—"}* (ref. interna id ${id || "—"}) y que, *en visita / según lo informado por el técnico*, se constató en el lugar que *corresponde atenderlo vuestra empresa*.`,
+    "",
+    "Derivamos el reclamo con las *observaciones del técnico / operador*:",
+    obs,
+    "",
+    "*Ubicación para relevo en campo:*",
+    lineaUbicacion,
+    "",
+    "*Datos útiles del reclamo*",
+    `• Tipo: ${tt || "—"}`,
+    `• Prioridad: ${pr || "—"}`,
+    `• Estado al derivar: ${es || "—"}`,
+    `• Resumen pedido: ${de || "—"}`,
+    `• Reclamante / contacto: ${reclamante}`,
+    "",
+    "Los datos se comparten solo para coordinar este reclamo entre entidades. No reenviarlos fuera del circuito operativo acordado.",
+    "",
+    "Gracias por su atención.",
+    entidad,
   ];
-  if (cnom || tel) {
-    lines.push(`Reclamante: ${cnom || "—"}${tel ? ` · Tel: ${tel}` : ""}`);
-  }
-  lines.push(`Destino: ${trunc(destinoEtiqueta, 120)}${contactoNombre ? ` (${trunc(contactoNombre, 120)})` : ""}`);
-  if (mot) lines.push(`Motivo: ${mot}`);
-  lines.push(
-    "Los datos se comparten solo para coordinar este reclamo entre entidades. No reenviar fuera del circuito operativo."
-  );
+
   return lines.join("\n");
 }
 

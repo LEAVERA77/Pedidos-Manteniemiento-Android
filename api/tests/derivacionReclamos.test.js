@@ -95,7 +95,7 @@ describe("derivacionReclamos utils", () => {
     expect(c.error).toBeTruthy();
   });
 
-  it("buildDerivacionExternaMensaje incluye pedido y maps si hay lat/lng", () => {
+  it("buildDerivacionExternaMensaje incluye A:, pedido, Maps si hay lat/lng y observaciones", () => {
     const t = buildDerivacionExternaMensaje({
       nombreTenant: "Cooperativa Demo",
       pedido: {
@@ -113,19 +113,23 @@ describe("derivacionReclamos utils", () => {
         lat: "-32.95",
         lng: "-60.65",
       },
-      destinoEtiqueta: "Gas natural",
-      contactoNombre: "Gas SA",
-      motivo: "Corresponde a red de gas",
+      nombreEmpresaDestino: "Gas SA",
+      textoObservacionesTecnico: "Corresponde a red de gas.",
     });
-    expect(t).toContain("#99");
+    expect(t).toMatch(/^A: Gas SA/m);
+    expect(t).toContain("N° 99");
+    expect(t).toContain("ref. interna id 12");
     expect(t).toContain("maps?q=");
+    expect(t).toContain("Abrí en Maps:");
     expect(t).toContain("Cooperativa Demo");
-    expect(t).toContain("Corresponde a red de gas");
+    expect(t).toContain("vuestra empresa");
+    expect(t).toContain("Corresponde a red de gas.");
+    expect(t).toContain("Gracias por su atención.");
   });
 
-  it("buildDerivacionExternaMensaje sin GPS usa texto de dirección", () => {
+  it("buildDerivacionExternaMensaje sin GPS usa dirección y aclaración sin coordenadas", () => {
     const t = buildDerivacionExternaMensaje({
-      nombreTenant: "X",
+      nombreTenant: "Municipio X",
       pedido: {
         id: 1,
         numero_pedido: 1,
@@ -133,15 +137,17 @@ describe("derivacionReclamos utils", () => {
         descripcion: "D",
         prioridad: "Media",
         estado: "En ejecución",
-        cliente_direccion: "Ruta 11 km 20",
+        cliente_calle: "Ruta 11",
+        cliente_numero_puerta: "km 20",
+        cliente_localidad: "",
         lat: null,
         lng: null,
       },
-      destinoEtiqueta: "Internet",
-      contactoNombre: "",
-      motivo: "",
+      nombreEmpresaDestino: "Fibra Norte",
+      textoObservacionesTecnico: "Poste inclinado de telefonía a cargo de terceros.",
     });
-    expect(t).toContain("sin coordenadas");
+    expect(t).toContain("Sin coordenadas GPS registradas en el sistema");
     expect(t).toContain("Ruta 11");
+    expect(t).toContain("Municipio X le informa");
   });
 });

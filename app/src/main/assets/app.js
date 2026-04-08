@@ -1208,9 +1208,9 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
     }
     return `<div class="ds" style="border-left:4px solid #6366f1">
         <h4>🛠 Solicitar derivación a terceros</h4>
-        <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y se envía WhatsApp al contacto configurado.</p>
-        <label style="font-size:.76rem;font-weight:600">Motivo / contexto para el admin</label>
-        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="2" maxlength="800" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Ej.: cable de otra distribuidora, arbolado municipal…"></textarea>
+        <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y arma el mismo texto que se envía por WhatsApp al contacto configurado.</p>
+        <label style="font-size:.76rem;font-weight:600">Observaciones de campo <span style="color:var(--re)">*</span> <span style="font-weight:500;color:var(--tl)">(mín. 8 caracteres)</span></label>
+        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…)."></textarea>
         <button type="button" class="ba2 p2" onclick="solicitarDerivacionTerceroDesdeTecnico('${pidEsc}')"><i class="fas fa-paper-plane"></i> Enviar solicitud al administrador</button>
     </div>`;
 }
@@ -8077,6 +8077,16 @@ async function ejecutarDerivacionExternaAdmin(pid) {
         toast('Elegí un destino con WhatsApp configurado.', 'warning');
         return;
     }
+    const pRow = app.p.find((x) => String(x.id) === String(pid));
+    const obsTa = (ta?.value || '').trim();
+    const obsTec = String(pRow?.sdm || '').trim();
+    if (!obsTa && !obsTec) {
+        toast(
+            'Cargá las observaciones para el tercero. Si el técnico ya mandó una solicitud, deberían aparecer prellenadas: revisalas o editá antes de confirmar.',
+            'warning'
+        );
+        return;
+    }
     const cut = v.indexOf('::');
     const destino = v.slice(0, cut);
     const idxStr = v.slice(cut + 2);
@@ -8089,7 +8099,7 @@ async function ejecutarDerivacionExternaAdmin(pid) {
         }
         fila_index = n;
     }
-    const motivo = (ta?.value || '').trim().slice(0, 500);
+    const motivo = obsTa.slice(0, 2000);
     await asegurarJwtApiRest();
     const tok = getApiToken();
     if (!tok) {
@@ -8141,6 +8151,10 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
     if (!Number.isFinite(pidNum)) return;
     const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
     const motivo = (ta?.value || '').trim();
+    if (motivo.length < 8) {
+        toast('Las observaciones de campo son obligatorias (mínimo 8 caracteres).', 'error');
+        return;
+    }
     await asegurarJwtApiRest();
     const tok = getApiToken();
     if (!tok) {
@@ -8512,11 +8526,11 @@ function detalle(p) {
         }
         htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" style="border-left:4px solid #0ea5e9">
             <h4>📲 Derivación operativa (admin)</h4>
-            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Cuando el técnico indique que corresponde a otra red, registrá la derivación: queda auditada, se excluye de listados y mapa por defecto, y se abre WhatsApp al contacto configurado.</p>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Registrá la derivación al contacto configurado en <strong>Admin → Empresa</strong>. Queda el <strong>mensaje final</strong> guardado en auditoría y se abre WhatsApp con ese texto. Desde el enlace web no se manda la &quot;ubicación en vivo&quot; nativa: el mensaje incluye link a Google Maps cuando hay GPS.</p>
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
-            <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Motivo (opcional)</label>
-            <textarea id="admin-derivar-motivo" rows="2" maxlength="500" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical" placeholder="Ej.: Corresponde a red de gas"></textarea></div>
+            <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
+            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
             <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="ejecutarDerivacionExternaAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Confirmar y abrir WhatsApp</button>
         </div>`;
     }
