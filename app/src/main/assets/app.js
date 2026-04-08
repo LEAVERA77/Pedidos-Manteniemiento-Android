@@ -1142,6 +1142,32 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     actualizarBotonesWhatsappDerivacionesUi();
 }
 
+/** Popups: si el navegador bloquea, instrucciones para permitir el sitio (GitHub Pages u origen actual). */
+function abrirVentanaEmergenteConAviso(url, windowFeatures) {
+    const feats = windowFeatures || 'noopener,noreferrer';
+    let w = null;
+    try {
+        w = window.open(url, '_blank', feats);
+    } catch (_) {
+        w = null;
+    }
+    if (!w) {
+        const origen = (() => {
+            try {
+                return window.location.hostname || 'este sitio';
+            } catch (_) {
+                return 'este sitio';
+            }
+        })();
+        toast(
+            `Ventana emergente bloqueada. Permití popups para ${origen} (ícono en la barra de direcciones → ventanas bloqueadas → Permitir) y reintentá.`,
+            'warning'
+        );
+        return null;
+    }
+    return w;
+}
+
 function abrirWhatsappDerivacionForm(slot) {
     const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
     const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
@@ -1154,7 +1180,7 @@ function abrirWhatsappDerivacionForm(slot) {
         toast('WhatsApp no válido: usá formato internacional con + (8 a 22 dígitos).', 'error');
         return;
     }
-    window.open(`https://wa.me/${w.slice(1)}`, '_blank', 'noopener,noreferrer');
+    abrirVentanaEmergenteConAviso(`https://wa.me/${w.slice(1)}`, 'noopener,noreferrer');
 }
 window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
 
@@ -6613,7 +6639,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
                     'En las últimas horas hay varios reclamos abiertos en la misma zona (mismo distribuidor o trafo). Podría tratarse de un corte de sector o general.\n\n' +
                     (wa ? '¿Abrimos WhatsApp para hablar con un representante de la cooperativa antes de cargar el reclamo?' : 'Contactá a la cooperativa antes de cargar otro reclamo.');
                 if (wa && confirm(msg)) {
-                    window.open(wa, '_blank', 'noopener');
+                    abrirVentanaEmergenteConAviso(wa, 'noopener');
                     btn.disabled = false;
                     return;
                 }
@@ -8234,11 +8260,36 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
         render();
         const digits = String(wa || '').replace(/\D/g, '');
         if (digits.length >= 8) {
-            window.open(
-                `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
-                '_blank',
-                'noopener,noreferrer'
-            );
+            const contactNombre = String(row.derivado_destino_nombre || '').trim() || 'Derivación externa';
+            try {
+                const cr = await fetch(apiUrl('/api/whatsapp/human-chat/sessions/start-outbound'), {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone: digits,
+                        contact_name: contactNombre,
+                        initial_text: msg || '',
+                    }),
+                });
+                const jd = await cr.json().catch(() => ({}));
+                if (cr.ok && jd.session_id) {
+                    await abrirModalWhatsappHumanChat(Number(jd.session_id));
+                } else {
+                    toast(
+                        String(jd.detail || jd.error || 'No se abrió el chat por la API; se abre WhatsApp en pestaña.'),
+                        'warning'
+                    );
+                    abrirVentanaEmergenteConAviso(
+                        `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
+                        'noopener,noreferrer'
+                    );
+                }
+            } catch (_e) {
+                abrirVentanaEmergenteConAviso(
+                    `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
+                    'noopener,noreferrer'
+                );
+            }
         }
         cerrarModalDerivacionPreviewAdmin();
         toast('Derivación registrada.', 'success');
@@ -8816,7 +8867,6 @@ function exportPedido(pedidos, nombre) {
             'Número': p.cnum || '',
             'Localidad': p.cloc || '',
             'Tel. contacto': p.tel || '',
-            'Dirección consolidada': [p.ccal || '', p.cnum || '', p.cloc || ''].filter(Boolean).join(', ') || p.cdir || '',
             'Tipo de conexión': p.stc || '',
             'Fases': p.sfs || '',
             'Referencia ubicación': p.cdir || '',
@@ -8845,7 +8895,7 @@ function exportPedido(pedidos, nombre) {
                 { wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
                 { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 20 },
                 { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 8 }, { wch: 16 },
-                { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
+                { wch: 28 }, { wch: 10 }, { wch: 12 },
                 { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
                 { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
                 { wch: 10 }, { wch: 10 }
@@ -10202,6 +10252,8 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
 let _pollBannerAdminInterval = null;
+/** Persiste en la pestaña para no reiniciar el acuse al volver a cargar el poll (evita que el cartel reaparezca). */
+const GN_OPINION_BANNER_WM_KEY = 'gn_admin_opinion_banner_wm';
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
 
@@ -10217,6 +10269,15 @@ async function iniciarWatermarkBannerReclamoCliente() {
 async function iniciarWatermarkBannerOpinionCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
     try {
+        let sess = '';
+        try {
+            sess = String(sessionStorage.getItem(GN_OPINION_BANNER_WM_KEY) || '').trim();
+        } catch (_) {}
+        const sessT = sess ? new Date(sess).getTime() : NaN;
+        if (sess && !Number.isNaN(sessT)) {
+            _adminBannerOpinionWatermarkIso = new Date(sessT).toISOString();
+            return;
+        }
         const col = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
         );
@@ -10264,6 +10325,11 @@ function _commitAdminBannerOpinionWatermark() {
     } else if (pid) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
     }
+    try {
+        if (_adminBannerOpinionWatermarkIso) {
+            sessionStorage.setItem(GN_OPINION_BANNER_WM_KEY, _adminBannerOpinionWatermarkIso);
+        }
+    } catch (_) {}
 }
 
 function ocultarBannerOpinionCliente() {
@@ -10395,7 +10461,10 @@ function adminBannerOpinionClickWhatsapp() {
     const msg = `Hola, te escribo desde ${String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim()} respecto de tu experiencia con el servicio${
         pid ? ` (pedido #${pid})` : ''
     }.${est ? ` Vimos la calificación ${est}/5 y queremos resolver cualquier inconveniente.` : ''}`;
-    window.open(`https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+    abrirVentanaEmergenteConAviso(
+        `https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`,
+        'noopener,noreferrer'
+    );
 }
 window.adminBannerOpinionClickWhatsapp = adminBannerOpinionClickWhatsapp;
 
@@ -11505,6 +11574,19 @@ function populateKpiChartMetricaSelect(rows) {
     }
 }
 
+const KPI_PDF_PALETTE_SOFT = [
+    'rgba(147, 197, 253, 0.9)',
+    'rgba(167, 243, 208, 0.92)',
+    'rgba(253, 224, 71, 0.88)',
+    'rgba(251, 207, 232, 0.9)',
+    'rgba(196, 181, 253, 0.9)',
+    'rgba(253, 186, 116, 0.88)',
+    'rgba(153, 246, 228, 0.92)',
+    'rgba(254, 202, 202, 0.88)',
+    'rgba(186, 230, 253, 0.9)',
+    'rgba(217, 249, 157, 0.85)',
+];
+
 /** Evolución por periodo (misma métrica, varios registros). Requiere Chart.js. */
 window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
     const wrap = document.getElementById('kpi-chart-wrap');
@@ -11558,26 +11640,39 @@ window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
         window._chartKpiAdmin = null;
     }
     const lab = KPI_METRICA_ETIQUETAS[metrica] || metrica;
+    const fills = points.map((_, i) => KPI_PDF_PALETTE_SOFT[i % KPI_PDF_PALETTE_SOFT.length]);
     window._chartKpiAdmin = new Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: points.map(p => p.label),
             datasets: [
                 {
                     label: lab,
                     data: points.map(p => p.y),
-                    borderColor: '#0d9488',
-                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
-                    tension: 0.25,
-                    fill: true,
+                    backgroundColor: fills,
+                    borderColor: 'rgba(30, 41, 59, 0.35)',
+                    borderWidth: 1,
                 },
             ],
         },
         options: {
+            indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: false } },
+            plugins: {
+                legend: { display: true, labels: { color: '#0f172a', font: { size: 11 } } },
+            },
+            scales: {
+                x: {
+                    beginAtZero: false,
+                    ticks: { color: '#0f172a' },
+                    grid: { color: 'rgba(148,163,184,0.25)' },
+                },
+                y: {
+                    ticks: { color: '#0f172a' },
+                    grid: { display: false },
+                },
+            },
         },
     });
 };
@@ -11886,7 +11981,7 @@ function textoBreveInterpretacionKpiPdf(rows) {
     ).length;
     return (
         `Informe KPI piloto: ${nReg} registro(s) con valor numérico en ${nTipos} tipo(s) de métrica. ` +
-        'Cada tipo incluye un gráfico compacto (línea si hay varios periodos, barra si hay uno). ' +
+        'Cada tipo incluye un gráfico de barras por periodo (colores suaves, legible en impresión). ' +
         'Debajo se listan todos los snapshots. Documento para uso interno.'
     );
 }
@@ -11966,46 +12061,65 @@ function kpiPdfPiePaginas(pdf) {
 
 async function kpiPdfMiniChartDataUrl(metricaKey, points) {
     if (!points.length || typeof Chart === 'undefined') return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = 520;
-    canvas.height = 132;
-    const ctx = canvas.getContext('2d');
     const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
-    const labels = points.map((p) => kpiPdfTruncCell(p.label, 14));
+    const labels = points.map((p) => kpiPdfTruncCell(p.label, 18));
     const data = points.map((p) => p.y);
-    const type = points.length === 1 ? 'bar' : 'line';
+    const horizontal = points.length >= 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = 540;
+    canvas.height = horizontal ? Math.min(380, 96 + points.length * 36) : 168;
+    const ctx = canvas.getContext('2d');
+    const fills = points.map((_, i) => KPI_PDF_PALETTE_SOFT[i % KPI_PDF_PALETTE_SOFT.length]);
     const chart = new Chart(ctx, {
-        type,
+        type: 'bar',
         data: {
             labels,
             datasets: [
                 {
                     label: lab,
                     data,
-                    borderColor: '#0d9488',
-                    backgroundColor: type === 'bar' ? 'rgba(13, 148, 136, 0.5)' : 'rgba(13, 148, 136, 0.14)',
-                    borderWidth: type === 'line' ? 2 : 1,
-                    tension: 0.25,
-                    fill: type === 'line',
+                    backgroundColor: fills,
+                    borderColor: 'rgba(30, 41, 59, 0.42)',
+                    borderWidth: 1,
                 },
             ],
         },
         options: {
+            indexAxis: horizontal ? 'y' : 'x',
             animation: false,
             responsive: false,
-            devicePixelRatio: 1.25,
-            layout: { padding: { top: 6, bottom: 2, left: 2, right: 4 } },
+            devicePixelRatio: 1.35,
+            layout: { padding: { top: 10, bottom: horizontal ? 12 : 22, left: horizontal ? 6 : 8, right: 10 } },
             plugins: {
-                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 11, weight: '600' } },
+                title: { display: true, text: lab, color: '#0f172a', font: { size: 11, weight: '600' } },
                 legend: { display: false },
             },
-            scales: {
-                x: { ticks: { font: { size: 8 }, maxRotation: 55 } },
-                y: { beginAtZero: false, ticks: { font: { size: 8 } } },
-            },
+            scales: horizontal
+                ? {
+                      x: {
+                          beginAtZero: true,
+                          ticks: { color: '#0f172a', font: { size: 9 } },
+                          grid: { color: 'rgba(148,163,184,0.28)' },
+                      },
+                      y: {
+                          ticks: { color: '#0f172a', font: { size: 8.5 } },
+                          grid: { display: false },
+                      },
+                  }
+                : {
+                      x: {
+                          ticks: { color: '#0f172a', font: { size: 8 }, maxRotation: 48 },
+                          grid: { display: false },
+                      },
+                      y: {
+                          beginAtZero: false,
+                          ticks: { color: '#0f172a', font: { size: 9 } },
+                          grid: { color: 'rgba(148,163,184,0.28)' },
+                      },
+                  },
         },
     });
-    await new Promise((r) => setTimeout(r, 120));
+    await new Promise((r) => setTimeout(r, 140));
     let url = null;
     try {
         url = canvas.toDataURL('image/png');
@@ -12079,12 +12193,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             pdf.addPage();
             y = margin;
         }
-        pdf.text('Gráficos por tipo de métrica (compactos)', margin, y);
+        pdf.text('Gráficos por tipo de métrica (barras por periodo)', margin, y);
         y += 5;
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 19;
+        const hMmMax = 32;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
@@ -12151,10 +12265,9 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
         const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');
+        const w = abrirVentanaEmergenteConAviso(url, 'noopener,noreferrer');
         if (!w) {
             URL.revokeObjectURL(url);
-            toast('Permití ventanas emergentes para abrir el informe.', 'error');
             return;
         }
         setTimeout(() => {
@@ -13776,7 +13889,6 @@ async function exportarPedidosCsvAdmin() {
             'cliente_numero_puerta',
             'cliente_localidad',
             'cliente_direccion',
-            'direccion_consolidada',
             'telefono_contacto',
             'descripcion',
         ];
@@ -13800,7 +13912,6 @@ async function exportarPedidosCsvAdmin() {
                     row.cliente_numero_puerta,
                     row.cliente_localidad,
                     row.cliente_direccion,
-                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || '',
                     row.telefono_contacto,
                     row.descripcion,
                 ]
@@ -13987,7 +14098,7 @@ async function exportInformeMensualExcel() {
             Numero: row.cliente_numero_puerta,
             Localidad: row.cliente_localidad,
             Telefono: row.telefono_contacto,
-            Direccion_consolidada: [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || ''
+            Referencia_ubicacion: row.cliente_direccion || ''
         }));
         const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Pedido: '—', Nota: 'Sin filas en el período' }]);
         const wb = XLSX.utils.book_new();
@@ -14046,9 +14157,19 @@ function aplicarEstadisticasInkSaveCharts(activar) {
     if (activar) {
         if (_chartDataSnapshotForPdf) return;
         _chartDataSnapshotForPdf = {};
-        const inkA = 'rgba(100,116,139,0.22)';
-        const inkB = 'rgba(148,163,184,0.18)';
-        const inkStroke = '#334155';
+        const softFill = [
+            'rgba(147, 197, 253, 0.82)',
+            'rgba(167, 243, 208, 0.85)',
+            'rgba(253, 224, 71, 0.8)',
+            'rgba(251, 207, 232, 0.85)',
+            'rgba(196, 181, 253, 0.82)',
+            'rgba(253, 186, 116, 0.8)',
+            'rgba(153, 246, 228, 0.85)',
+            'rgba(254, 202, 202, 0.82)',
+            'rgba(186, 230, 253, 0.85)',
+            'rgba(217, 249, 157, 0.78)',
+        ];
+        const strokeCol = 'rgba(30, 41, 59, 0.5)';
         Object.entries(_charts).forEach(([id, chart]) => {
             try {
                 _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
@@ -14057,23 +14178,26 @@ function aplicarEstadisticasInkSaveCharts(activar) {
                     borderWidth: ds.borderWidth,
                 }));
                 const type = chart.config.type;
-                chart.data.datasets.forEach(ds => {
+                chart.data.datasets.forEach((ds, dsi) => {
                     const n = Array.isArray(ds.data) ? ds.data.length : 1;
                     if (type === 'doughnut' || type === 'pie') {
-                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
                         const fills = [];
-                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
+                        for (let i = 0; i < n; i++) fills.push(softFill[(i + dsi) % softFill.length]);
                         ds.backgroundColor = fills;
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
+                        ds.borderColor = strokeCol;
+                        ds.borderWidth = 1.2;
                     } else {
-                        if (Array.isArray(ds.backgroundColor)) {
-                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
+                        const nDs = chart.data.datasets.length;
+                        if (nDs > 1) {
+                            const one = softFill[dsi % softFill.length];
+                            ds.backgroundColor = Array.isArray(ds.data) ? ds.data.map((_, i) => softFill[(i + dsi) % softFill.length]) : one;
+                        } else if (Array.isArray(ds.data)) {
+                            ds.backgroundColor = ds.data.map((_, i) => softFill[i % softFill.length]);
                         } else {
-                            ds.backgroundColor = inkA;
+                            ds.backgroundColor = softFill[0];
                         }
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
+                        ds.borderColor = strokeCol;
+                        ds.borderWidth = Math.max(1, Number(ds.borderWidth) || 1);
                     }
                 });
                 chart.update('none');
@@ -14201,6 +14325,13 @@ async function html2canvasCapturaElemento(el, opts = {}) {
                     node.style.minHeight = '0';
                     node.style.maxHeight = 'none';
                     node.style.alignSelf = 'flex-start';
+                    if (statsExport) {
+                        node.style.paddingBottom = '40px';
+                        node.querySelectorAll('.chart-wrap').forEach((cw) => {
+                            cw.style.paddingBottom = '36px';
+                            cw.style.overflow = 'visible';
+                        });
+                    }
                     node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
                 } catch (_) {}
             }
@@ -14306,10 +14437,9 @@ async function imprimirInformeConGraficos() {
             toast('No se pudo capturar el panel', 'error');
             return;
         }
-        const w = window.open('', '_blank');
+        const w = abrirVentanaEmergenteConAviso('', 'noopener,noreferrer');
         if (!w) {
             liberarUrls();
-            toast('Permití ventanas emergentes para imprimir', 'error');
             return;
         }
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
@@ -14357,12 +14487,12 @@ async function imprimirInformeConGraficos() {
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
             '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
-            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:none}' +
+            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#0f172a;margin:0 0 1.5mm;padding:0;border:none;width:100%;text-align:center}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
-            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0;padding-bottom:4mm}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:128mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
@@ -14562,8 +14692,8 @@ async function generarInformeMensualENRE() {
             tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_nombre || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_calle || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_numero_puerta || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_localidad || '').replace(/</g, '&lt;')}</td></tr>`;
         });
         tab += '</tbody></table>';
-        const w = window.open('', '_blank');
-        if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
+        const w = abrirVentanaEmergenteConAviso('', 'noopener,noreferrer');
+        if (!w) return;
         w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
         w.document.close();
         w.focus();
@@ -14595,11 +14725,11 @@ async function generarInformeMensualENRE() {
                 const pct = Math.round(1000 * v / total) / 10;
                 const { x, y } = arc.tooltipPosition();
                 const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                ctx.lineWidth = ink ? 0 : 4;
-                ctx.strokeStyle = 'rgba(255,255,255,.95)';
                 ctx.fillStyle = '#0f172a';
                 const t = pct + '%';
-                if (!ink) ctx.strokeText(t, x, y);
+                ctx.lineWidth = ink ? 2.2 : 4;
+                ctx.strokeStyle = 'rgba(255,255,255,.93)';
+                ctx.strokeText(t, x, y);
                 ctx.fillText(t, x, y);
             });
             ctx.restore();
@@ -14643,10 +14773,10 @@ async function generarInformeMensualENRE() {
                     }
                     const t = pct + '%';
                     const inkP = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                    ctx.lineWidth = inkP ? 0 : 3;
-                    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+                    ctx.lineWidth = inkP ? 2 : 3;
+                    ctx.strokeStyle = 'rgba(255,255,255,.92)';
                     ctx.fillStyle = '#0f172a';
-                    if (!inkP) ctx.strokeText(t, x, ty);
+                    ctx.strokeText(t, x, ty);
                     ctx.fillText(t, x, ty);
                 });
             };
@@ -14665,11 +14795,11 @@ async function generarInformeMensualENRE() {
                         ctx.font = '600 11px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        ctx.lineWidth = inkM ? 0 : 3;
+                        ctx.lineWidth = inkM ? 2 : 3;
                         ctx.strokeStyle = 'rgba(255,255,255,.92)';
                         ctx.fillStyle = '#0f172a';
                         const t = String(v);
-                        if (!inkM) ctx.strokeText(t, x, y);
+                        ctx.strokeText(t, x, y);
                         ctx.fillText(t, x, y);
                     });
                 });
