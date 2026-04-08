@@ -210,7 +210,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .ph2{display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem}
 .pn{font-weight:700;color:var(--bd);font-size:.9rem}
 .pe{font-size:.7rem;padding:.2rem .55rem;border-radius:1rem;font-weight:600}
-.ep{background:#fef9c3;color:#854d0e}.ea{background:#fae8ff;color:#86198f}.ee{background:#dbeafe;color:#1d4ed8}.ec{background:#dcfce7;color:#166534}
+.ep{background:#fef9c3;color:#854d0e}.ea{background:#fae8ff;color:#86198f}.ee{background:#dbeafe;color:#1d4ed8}.ec{background:#dcfce7;color:#166534}.edex{background:#e2e8f0;color:#334155}
 /* Avisos de cierre / WhatsApp: borde izquierdo, por encima de filtros del mapa (.map-slide-tab 9600–9650) */
 .gn-notificaciones-front-stack{position:fixed;top:4.65rem;left:.45rem;z-index:10280;display:flex;flex-direction:column;gap:.5rem;max-width:min(360px,calc(100vw - .9rem));pointer-events:none;align-items:stretch}
 #cierre-toast-host,#wa-human-chat-toast-host{display:flex;flex-direction:column;gap:.45rem;width:100%;position:relative;pointer-events:none}

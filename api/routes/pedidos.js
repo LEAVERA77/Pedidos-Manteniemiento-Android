@@ -24,6 +24,12 @@ import {
 } from "../services/pedidoZonaOutage.js";
 import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
 import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
+import {
+  derivacionReclamosDesdeConfig,
+  resolverContactoDerivacion,
+  buildDerivacionExternaMensaje,
+  etiquetaDestinoDerivacion,
+} from "../utils/derivacionReclamos.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -43,6 +49,20 @@ async function loadNombreCliente(tenantId) {
   if (!Number.isFinite(tid)) return "GestorNova";
   const r = await query(`SELECT nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
   return String(r.rows?.[0]?.nombre || "GestorNova").trim() || "GestorNova";
+}
+
+function parseClienteConfigJson(raw) {
+  if (raw == null) return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const p = JSON.parse(raw);
+      return p && typeof p === "object" ? p : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function scheduleNotifyAltaReclamoWhatsApp(row, userId) {
@@ -433,6 +453,121 @@ router.get("/historial/nis/:nis", async (req, res) => {
 });
 
 registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
+
+/**
+ * Admin: deriva el reclamo a un tercero con WhatsApp configurado en derivacion_reclamos.
+ * Persistencia: estado Derivado externo + flags/columnas (ver docs/NEON_pedidos_derivacion_externa.sql).
+ */
+router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+
+    const { destino, fila_index: filaIndexRaw, motivo } = req.body || {};
+    const destinoStr = String(destino || "").trim();
+    if (!destinoStr) return res.status(400).json({ error: "destino es obligatorio" });
+
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+
+    const es = String(pedido.estado || "");
+    if (es !== "Asignado" && es !== "En ejecución") {
+      return res.status(400).json({ error: "Solo se puede derivar un pedido asignado o en ejecución" });
+    }
+    if (pedido.derivado_externo === true) {
+      return res.status(400).json({ error: "El pedido ya fue derivado fuera del tenant" });
+    }
+
+    const cr = await query(`SELECT nombre, configuracion FROM clientes WHERE id = $1 LIMIT 1`, [req.tenantId]);
+    const rowC = cr.rows?.[0];
+    const nombreTenant = String(rowC?.nombre || "GestorNova").trim() || "GestorNova";
+    const cfg = parseClienteConfigJson(rowC?.configuracion);
+    const dr = derivacionReclamosDesdeConfig(cfg) || {};
+
+    const rContact = resolverContactoDerivacion(dr, destinoStr, filaIndexRaw);
+    if (rContact.error) {
+      return res.status(400).json({ error: rContact.error });
+    }
+
+    const motivoStr =
+      motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, 500) : "";
+    const destinoEtiqueta = etiquetaDestinoDerivacion(destinoStr);
+    const snap = buildDerivacionExternaMensaje({
+      nombreTenant,
+      pedido,
+      destinoEtiqueta,
+      contactoNombre: rContact.nombre,
+      motivo: motivoStr,
+    });
+
+    const hasTa = await pedidosTableHasTenantIdColumn();
+    const upParams = [
+      id,
+      "Derivado externo",
+      true,
+      destinoStr,
+      rContact.nombre ? rContact.nombre.slice(0, 200) : null,
+      req.user.id,
+      motivoStr || null,
+      snap,
+    ];
+    const sql = hasTa
+      ? `UPDATE pedidos SET
+          estado = $2,
+          derivado_externo = $3,
+          derivado_a = $4,
+          derivado_destino_nombre = $5,
+          fecha_derivacion = NOW(),
+          usuario_derivacion_id = $6,
+          derivacion_nota = $7,
+          derivacion_mensaje_snapshot = $8
+        WHERE id = $1 AND tenant_id = $9
+        RETURNING *`
+      : `UPDATE pedidos SET
+          estado = $2,
+          derivado_externo = $3,
+          derivado_a = $4,
+          derivado_destino_nombre = $5,
+          fecha_derivacion = NOW(),
+          usuario_derivacion_id = $6,
+          derivacion_nota = $7,
+          derivacion_mensaje_snapshot = $8
+        WHERE id = $1
+        RETURNING *`;
+    const bind = hasTa ? [...upParams, req.tenantId] : upParams;
+
+    let r;
+    try {
+      r = await query(sql, bind);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/derivado_externo|derivacion_|column/i.test(msg)) {
+        return res.status(503).json({
+          error:
+            "Faltan columnas de derivación en la base. Ejecutá docs/NEON_pedidos_derivacion_externa.sql en Neon.",
+          detail: msg.slice(0, 240),
+        });
+      }
+      throw err;
+    }
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+
+    const row = r.rows[0];
+    return res.json({
+      ...row,
+      _derivacion_whatsapp: rContact.whatsapp,
+      _derivacion_mensaje: snap,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo registrar la derivación", detail: error.message });
+  }
+});
 
 router.get("/:id", async (req, res) => {
   try {

@@ -185,6 +185,9 @@
         <label id="wrap-toggle-ver-todos" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
           <input type="checkbox" id="toggle-ver-todos-pedidos" title="Ver todos los reclamos del sistema"> Todos
         </label>
+        <label id="wrap-chk-derivados-fuera" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
+          <input type="checkbox" id="chk-mostrar-derivados-fuera" title="Mostrar en listas y mapa los reclamos ya derivados a otras empresas"> Derivados fuera
+        </label>
         <button id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>
         <span id="zoom-altura" class="zoom-indicator">1000 m</span>
       </div>
@@ -484,8 +487,8 @@
           <p style="font-size:.76rem;color:var(--tl);margin:.4rem 0 0;line-height:1.35">Las fajas siguen el esquema IGN (franjas de 3°). La opción «primera ubicación» guarda la faja al obtener GPS por primera vez en este navegador o app.</p>
         </div>
         <div id="admin-derivacion-terceros-wrap" class="full" style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--bo)">
-          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .65rem">Derivación de reclamos (agua / otra energía)</h4>
-          <p style="font-size:.76rem;color:var(--tl);margin:0 0 .85rem;line-height:1.4">Solo para <strong>cooperativas eléctricas</strong>: contactos para orientar vecinos (no reemplaza el número Meta del bot). Si marcás <strong>activo</strong>, el WhatsApp en formato internacional con <strong>+</strong> es obligatorio.</p>
+          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .65rem">Derivación de reclamos a terceros</h4>
+          <p style="font-size:.76rem;color:var(--tl);margin:0 0 .85rem;line-height:1.4">Contactos para orientar al vecino o para que el <strong>admin</strong> registre una derivación operativa (WhatsApp al tercero). No reemplaza el número Meta del bot. Si marcás <strong>activo</strong> en un bloque simple, el WhatsApp internacional con <strong>+</strong> es obligatorio al guardar.</p>
           <div class="form-grid" style="margin-bottom:1rem">
             <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
               <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
@@ -506,6 +509,38 @@
               <div><label for="cfg-deriv-agua-nombre">Nombre visible</label><input id="cfg-deriv-agua-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Cooperativa de Agua del Norte"></div>
               <div><label for="cfg-deriv-agua-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-agua-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493419998888" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
               <button type="button" class="btn-sm primary" id="cfg-deriv-agua-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('agua')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-gas-activo" aria-describedby="cfg-deriv-gas-help">
+                <label for="cfg-deriv-gas-activo" style="margin:0;font-weight:600">Gas natural (distribución)</label>
+              </div>
+              <p id="cfg-deriv-gas-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Un solo contacto guardia / mesa de ayuda.</p>
+              <div><label for="cfg-deriv-gas-nombre">Nombre visible</label><input id="cfg-deriv-gas-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Distribuidora de gas"></div>
+              <div><label for="cfg-deriv-gas-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-gas-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-gas-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('gas')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-tel-activo" aria-describedby="cfg-deriv-tel-help">
+                <label for="cfg-deriv-tel-activo" style="margin:0;font-weight:600">Telefonía (un contacto)</label>
+              </div>
+              <p id="cfg-deriv-tel-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Mismo criterio que gas: activo implica WhatsApp al guardar.</p>
+              <div><label for="cfg-deriv-tel-nombre">Nombre visible</label><input id="cfg-deriv-tel-nombre" type="text" maxlength="120" autocomplete="organization"></div>
+              <div><label for="cfg-deriv-tel-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-tel-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-tel-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('tel')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <h5 style="margin:0 0 .5rem;font-size:.8rem;color:var(--bd)">Proveedores de internet (varios)</h5>
+              <p style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem;line-height:1.35">Una fila por empresa; WhatsApp en formato internacional. Podés agregar o quitar filas.</p>
+              <div id="cfg-deriv-internet-rows"></div>
+              <button type="button" class="btn-sm" style="margin-top:.35rem;background:var(--bg);border:1px solid var(--bo)" onclick="agregarFilaDerivacionLista('internet')"><i class="fas fa-plus"></i> Agregar proveedor</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <h5 style="margin:0 0 .5rem;font-size:.8rem;color:var(--bd)">TV por cable (varios)</h5>
+              <p style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem;line-height:1.35">Igual que internet: nombre + WhatsApp por fila.</p>
+              <div id="cfg-deriv-tv-rows"></div>
+              <button type="button" class="btn-sm" style="margin-top:.35rem;background:var(--bg);border:1px solid var(--bo)" onclick="agregarFilaDerivacionLista('tv')"><i class="fas fa-plus"></i> Agregar empresa de TV</button>
             </div>
           </div>
           <p id="cfg-deriv-wa-format" style="font-size:.72rem;color:var(--tm);margin:0 0 .45rem">Formato: <strong>+</strong> y solo dígitos después (8 a 22 dígitos totales sin el +), ej. <code style="font-size:.7rem">+543434123456</code>.</p>

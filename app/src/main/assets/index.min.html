@@ -60,6 +60,7 @@
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem"><button type="button" onclick="document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button></div>
     <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
+    <div style="text-align:center;margin-top:.25rem"><button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button></div>
   </div>
 </div>
 
@@ -160,8 +161,8 @@
         <select id="sel-android-pedidos-scope" class="mas-scope-select" onchange="onAndroidPedidosScopeChange()">
           <option value="asignados">Solo asignados</option>
           <option value="todos">Todos</option>
-        </select>
-      </span>
+      </select>
+    </span>
       <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
     </div>
   </div></div>
@@ -183,6 +184,9 @@
         <button class="tb" data-tab="c"><span class="tb-stack"><span class="tb-line"><i class="fas fa-check-circle"></i> Cerrados</span><span id="cc" class="bge">0</span></span></button>
         <label id="wrap-toggle-ver-todos" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
           <input type="checkbox" id="toggle-ver-todos-pedidos" title="Ver todos los reclamos del sistema"> Todos
+        </label>
+        <label id="wrap-chk-derivados-fuera" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
+          <input type="checkbox" id="chk-mostrar-derivados-fuera" title="Mostrar en listas y mapa los reclamos ya derivados a otras empresas"> Derivados fuera
         </label>
         <button id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>
         <span id="zoom-altura" class="zoom-indicator">1000 m</span>
@@ -425,9 +429,13 @@
 <!-- PANEL ADMIN -->
 <div id="admin-panel" class="admin-panel">
   <div class="admin-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--bo)">
-      <h2 style="color:var(--bd);font-size:1.05rem"><i class="fas fa-cog"></i> Panel Administración</h2>
-      <button onclick="document.getElementById('admin-panel').classList.remove('active')" style="background:none;border:none;font-size:1.3rem;color:var(--tl);cursor:pointer"><i class="fas fa-times"></i></button>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--bo);gap:.5rem">
+      <h2 style="color:var(--bd);font-size:1.05rem;margin:0"><i class="fas fa-cog"></i> Panel Administración</h2>
+      <div style="display:flex;align-items:center;gap:.15rem;flex-shrink:0">
+        <button type="button" id="admin-panel-btn-max" class="panel-win-btn" onclick="toggleAdminPanelMaximized()" title="Maximizar"><i class="fas fa-expand"></i></button>
+        <button type="button" id="admin-panel-btn-restore" class="panel-win-btn" onclick="toggleAdminPanelMaximized()" title="Restaurar tamaño" style="display:none"><i class="fas fa-compress"></i></button>
+        <button type="button" class="panel-win-btn" onclick="cerrarAdminPanel()" title="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
     </div>
     <div class="admin-tabs">
       <button class="admin-tab active" onclick="adminTab('empresa')"><i class="fas fa-building"></i> Empresa</button>
@@ -442,13 +450,20 @@
     </div>
     <div id="admin-empresa" class="admin-section active">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Datos de la Empresa</h3>
-      <p id="cfg-identidad-bloqueada-hint" style="display:none;font-size:.78rem;color:#b45309;margin:-.5rem 0 .85rem;line-height:1.4;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem">El <strong>nombre</strong>, <strong>tipo</strong> y <strong>subtítulo</strong> quedaron fijados al completar el <strong>setup inicial</strong> (asistente de primera ejecución) y no se pueden modificar desde aquí.</p>
+      <p id="cfg-identidad-bloqueada-hint" style="display:none;font-size:.78rem;color:#b45309;margin:-.5rem 0 .85rem;line-height:1.4;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem">El <strong>nombre</strong> y el <strong>tipo</strong> quedaron fijados al completar el <strong>setup inicial</strong> (asistente de primera ejecución) y no se pueden modificar desde aquí. El <strong>subtítulo</strong> es fijo del producto.</p>
       <div class="form-grid">
         <div><label>Nombre</label><input id="cfg-nombre" type="text"></div>
         <div><label>Tipo (cooperativa, municipio, empresa)</label><input id="cfg-tipo" type="text" placeholder="cooperativa"></div>
-        <div class="full"><label>Subtítulo</label><input id="cfg-subtitulo" type="text" placeholder="Sistema de gestión de pedidos y reclamos"></div>
+        <div class="full"><label>Subtítulo</label>
+          <p style="font-size:.93rem;color:var(--td);margin:0;padding:.55rem .7rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem;line-height:1.4">Sistema de gestión de pedidos y reclamos</p>
+          <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0;line-height:1.35">Texto fijo del programa; no se personaliza.</p>
+          <input type="hidden" id="cfg-subtitulo" value="Sistema de gestión de pedidos y reclamos" autocomplete="off"></div>
         <div><label>Email de contacto</label><input id="cfg-email" type="email"></div>
         <div><label>Teléfono</label><input id="cfg-telefono" type="text"></div>
+        <div class="full"><label for="cfg-provincia-nominatim">Provincia (Nominatim / bot WhatsApp)</label>
+          <input id="cfg-provincia-nominatim" type="text" placeholder="Ej. Entre Ríos — se completa al guardar la ubicación base del asistente o al fijar oficina en el mapa">
+          <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0;line-height:1.35">Debe coincidir con el nombre que usa OpenStreetMap para desambiguar localidades. En municipios muy extensos, el operador del servidor puede subir <code style="font-size:.68rem">NOMINATIM_LOCALITY_MAX_DISTANCE_METERS</code> (p. ej. 35000).</p>
+        </div>
         <div class="full"><label>Coordenadas en detalle de pedido (además de WGS84)</label>
           <select id="cfg-coord-familia" onchange="syncCoordModoVisibility()">
             <option value="none">Solo WGS84</option>
@@ -472,14 +487,14 @@
           <p style="font-size:.76rem;color:var(--tl);margin:.4rem 0 0;line-height:1.35">Las fajas siguen el esquema IGN (franjas de 3°). La opción «primera ubicación» guarda la faja al obtener GPS por primera vez en este navegador o app.</p>
         </div>
         <div id="admin-derivacion-terceros-wrap" class="full" style="margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--bo)">
-          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .65rem">Derivación de reclamos (agua / otra energía)</h4>
-          <p style="font-size:.76rem;color:var(--tl);margin:0 0 .85rem;line-height:1.4">Solo para <strong>cooperativas eléctricas</strong>: contactos para orientar vecinos (no reemplaza el número Meta del bot). Si marcás <strong>activo</strong>, el WhatsApp en formato internacional con <strong>+</strong> es obligatorio.</p>
+          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .65rem">Derivación de reclamos a terceros</h4>
+          <p style="font-size:.76rem;color:var(--tl);margin:0 0 .85rem;line-height:1.4">Contactos para orientar al vecino o para que el <strong>admin</strong> registre una derivación operativa (WhatsApp al tercero). No reemplaza el número Meta del bot. Si marcás <strong>activo</strong> en un bloque simple, el WhatsApp internacional con <strong>+</strong> es obligatorio al guardar.</p>
           <div class="form-grid" style="margin-bottom:1rem">
             <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
               <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
                 <input type="checkbox" id="cfg-deriv-energia-activo" aria-describedby="cfg-deriv-energia-help">
                 <label for="cfg-deriv-energia-activo" style="margin:0;font-weight:600">Empresa de energía</label>
-              </div>
+      </div>
               <p id="cfg-deriv-energia-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Visible en el panel cuando está activo y el teléfono es válido.</p>
               <div><label for="cfg-deriv-energia-nombre">Nombre visible</label><input id="cfg-deriv-energia-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Empresa Provincial de Energía"></div>
               <div><label for="cfg-deriv-energia-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-energia-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
@@ -494,6 +509,38 @@
               <div><label for="cfg-deriv-agua-nombre">Nombre visible</label><input id="cfg-deriv-agua-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Cooperativa de Agua del Norte"></div>
               <div><label for="cfg-deriv-agua-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-agua-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493419998888" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
               <button type="button" class="btn-sm primary" id="cfg-deriv-agua-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('agua')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-gas-activo" aria-describedby="cfg-deriv-gas-help">
+                <label for="cfg-deriv-gas-activo" style="margin:0;font-weight:600">Gas natural (distribución)</label>
+              </div>
+              <p id="cfg-deriv-gas-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Un solo contacto guardia / mesa de ayuda.</p>
+              <div><label for="cfg-deriv-gas-nombre">Nombre visible</label><input id="cfg-deriv-gas-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Distribuidora de gas"></div>
+              <div><label for="cfg-deriv-gas-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-gas-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-gas-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('gas')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-tel-activo" aria-describedby="cfg-deriv-tel-help">
+                <label for="cfg-deriv-tel-activo" style="margin:0;font-weight:600">Telefonía (un contacto)</label>
+              </div>
+              <p id="cfg-deriv-tel-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Mismo criterio que gas: activo implica WhatsApp al guardar.</p>
+              <div><label for="cfg-deriv-tel-nombre">Nombre visible</label><input id="cfg-deriv-tel-nombre" type="text" maxlength="120" autocomplete="organization"></div>
+              <div><label for="cfg-deriv-tel-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-tel-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+5493415551234" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-tel-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('tel')">Abrir WhatsApp</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <h5 style="margin:0 0 .5rem;font-size:.8rem;color:var(--bd)">Proveedores de internet (varios)</h5>
+              <p style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem;line-height:1.35">Una fila por empresa; WhatsApp en formato internacional. Podés agregar o quitar filas.</p>
+              <div id="cfg-deriv-internet-rows"></div>
+              <button type="button" class="btn-sm" style="margin-top:.35rem;background:var(--bg);border:1px solid var(--bo)" onclick="agregarFilaDerivacionLista('internet')"><i class="fas fa-plus"></i> Agregar proveedor</button>
+            </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <h5 style="margin:0 0 .5rem;font-size:.8rem;color:var(--bd)">TV por cable (varios)</h5>
+              <p style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem;line-height:1.35">Igual que internet: nombre + WhatsApp por fila.</p>
+              <div id="cfg-deriv-tv-rows"></div>
+              <button type="button" class="btn-sm" style="margin-top:.35rem;background:var(--bg);border:1px solid var(--bo)" onclick="agregarFilaDerivacionLista('tv')"><i class="fas fa-plus"></i> Agregar empresa de TV</button>
             </div>
           </div>
           <p id="cfg-deriv-wa-format" style="font-size:.72rem;color:var(--tm);margin:0 0 .45rem">Formato: <strong>+</strong> y solo dígitos después (8 a 22 dígitos totales sin el +), ej. <code style="font-size:.7rem">+543434123456</code>.</p>
@@ -890,8 +937,10 @@
     </div>
   </div>
 </div>
-<div id="cierre-toast-host" aria-live="polite"></div>
-<div id="wa-human-chat-toast-host" aria-live="polite"></div>
+<div id="gn-notificaciones-front-stack" class="gn-notificaciones-front-stack" aria-live="polite">
+  <div id="cierre-toast-host"></div>
+  <div id="wa-human-chat-toast-host"></div>
+</div>
 <div id="wa-human-chat-dock" aria-label="Chats WhatsApp minimizados"></div>
 <div id="modal-admin-verify-pw-setup-saas" class="mo" style="z-index:12050">
   <div class="mc" style="max-width:400px">
@@ -1001,8 +1050,14 @@
   </div>
 </div>
 <div id="modal-dashboard-gerencia" class="mo">
-  <div class="mc" style="max-width:920px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
-    <div class="mh"><h3><i class="fas fa-tachometer-alt"></i> Dashboard tiempo real</h3><button type="button" class="cm" onclick="document.getElementById('modal-dashboard-gerencia').classList.remove('active')"><i class="fas fa-times"></i></button></div>
+  <div class="mc modal-dashboard-mc" style="max-width:920px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="mh"><h3 style="margin:0;flex:1;min-width:0"><i class="fas fa-tachometer-alt"></i> Dashboard tiempo real</h3>
+      <div style="display:flex;align-items:center;gap:.15rem;flex-shrink:0">
+        <button type="button" id="dashboard-modal-btn-max" class="panel-win-btn" onclick="toggleDashboardModalMaximized()" title="Maximizar"><i class="fas fa-expand"></i></button>
+        <button type="button" id="dashboard-modal-btn-restore" class="panel-win-btn" onclick="toggleDashboardModalMaximized()" title="Restaurar tamaño" style="display:none"><i class="fas fa-compress"></i></button>
+        <button type="button" class="cm" onclick="cerrarModalDashboardGerencia()" title="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
+    </div>
     <div class="mb" style="overflow-y:auto;flex:1;padding-top:0">
       <p style="font-size:.8rem;color:var(--tm);margin:0 0 .75rem">Pedidos activos, técnicos con posición reciente y cierres. Las alertas de cierre aparecen también como avisos en pantalla.</p>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">

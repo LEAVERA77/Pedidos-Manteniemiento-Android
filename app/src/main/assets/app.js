@@ -1252,7 +1252,8 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
     'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto',
     'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad',
-    'suministro_tipo_conexion','suministro_fases']);
+    'suministro_tipo_conexion','suministro_fases',
+    'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot']);
 
 const app = {
     u: null,
@@ -2436,6 +2437,18 @@ document.getElementById('lf').addEventListener('submit', async e => {
             wrapTog.style.display = esTecnicoOSupervisor() ? 'inline-flex' : 'none';
             chkTod.checked = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
         }
+        const wrapDf = document.getElementById('wrap-chk-derivados-fuera');
+        const chkDf = document.getElementById('chk-mostrar-derivados-fuera');
+        if (wrapDf && chkDf) {
+            wrapDf.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkDf.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
+                } catch (_) {}
+                chkDf.checked = false;
+            }
+        }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
                 AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
@@ -2680,7 +2693,19 @@ const norm = p => ({
         const n = parseInt(p.opinion_cliente_estrellas, 10);
         return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
     })(),
-    orc: String(p.origen_reclamo || '').trim().toLowerCase()
+    orc: String(p.origen_reclamo || '').trim().toLowerCase(),
+    dex: !!(
+        p.derivado_externo === true ||
+        p.derivado_externo === 't' ||
+        p.derivado_externo === 1 ||
+        String(p.estado || '') === 'Derivado externo'
+    ),
+    dda: String(p.derivado_a || '').trim(),
+    ddn: String(p.derivado_destino_nombre || '').trim(),
+    fder: p.fecha_derivacion || null,
+    uider: p.usuario_derivacion_id != null ? parseInt(p.usuario_derivacion_id, 10) : null,
+    dnota: String(p.derivacion_nota || '').trim(),
+    dsnap: String(p.derivacion_mensaje_snapshot || '').trim()
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -3095,7 +3120,7 @@ function pedidosParaMarcadoresMapa() {
         if (es === 'Pendiente') return chk('mapa-flt-pendiente');
         if (es === 'Asignado') return chk('mapa-flt-asignado');
         if (es === 'En ejecución') return chk('mapa-flt-ejecucion');
-        if (es === 'Cerrado') return chk('mapa-flt-cerrado');
+        if (es === 'Cerrado' || es === 'Derivado externo') return chk('mapa-flt-cerrado');
         return true;
     };
     const selU = document.getElementById('mapa-filtro-usuario');
@@ -3120,12 +3145,13 @@ function pedidosParaMarcadoresMapa() {
                 const el = document.getElementById(id);
                 return !el || el.checked;
             };
-            if ((p.es || '') === 'Cerrado') return chkP('mapa-flt-prio-cerrado');
+            if ((p.es || '') === 'Cerrado' || (p.es || '') === 'Derivado externo') return chkP('mapa-flt-prio-cerrado');
             const mapPr = { 'Crítica': 'mapa-flt-prio-critica', 'Alta': 'mapa-flt-prio-alta', 'Media': 'mapa-flt-prio-media', 'Baja': 'mapa-flt-prio-baja' };
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
+        if (pedidoEsDerivadoFuera(p) && !adminMuestraPedidosDerivadosFuera()) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
         return true;
     });
@@ -5154,7 +5180,7 @@ function renderMk() {
     pedidosParaMarcadoresMapa().forEach(p => {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
-        const cer = p.es === 'Cerrado';
+        const cer = p.es === 'Cerrado' || p.es === 'Derivado externo';
         const col = cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6');
         const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         let m;
@@ -5190,8 +5216,8 @@ function renderMk() {
                 <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
                     <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-                    ${esAdmin() && p.es !== 'Cerrado' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
-                    ${esAdmin() && p.es !== 'Cerrado' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
+                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
+                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
                 </div>
             </div>`, { maxWidth: 260 });
         
@@ -6777,7 +6803,14 @@ async function updPedido(id, campos, usuarioId) {
             trafo: 'trf',
             usuario_inicio_id: 'ui2',
             usuario_cierre_id: 'uci',
-            usuario_avance_id: 'uav'
+            usuario_avance_id: 'uav',
+            derivado_externo: 'dex',
+            derivado_a: 'dda',
+            derivado_destino_nombre: 'ddn',
+            fecha_derivacion: 'fder',
+            usuario_derivacion_id: 'uider',
+            derivacion_nota: 'dnota',
+            derivacion_mensaje_snapshot: 'dsnap'
         };
         for (const [k, v2] of Object.entries(campos)) {
             if (pm[k]) app.p[idx][pm[k]] = v2;
@@ -7929,6 +7962,118 @@ document.getElementById('cc2').addEventListener('click', async () => {
     }
 });
 
+function pedidoEsDerivadoFuera(p) {
+    if (!p) return false;
+    return String(p.es || '') === 'Derivado externo' || p.dex === true || p.dex === 1;
+}
+
+function adminMuestraPedidosDerivadosFuera() {
+    try {
+        return esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function construirOpcionesDerivacionAdminHtml(escFn) {
+    const dr = window.EMPRESA_CFG?.derivacion_reclamos;
+    if (!dr || typeof dr !== 'object') {
+        return `<option value="">${escFn('Configurá contactos en Admin → Empresa')}</option>`;
+    }
+    const out = [];
+    const one = (k, shortLab) => {
+        const s = dr[k];
+        if (s?.whatsapp && /^\+\d{8,22}$/.test(String(s.whatsapp))) {
+            const n = String(s.nombre || '').trim();
+            const label = n ? `${shortLab} — ${n}` : shortLab;
+            out.push(`<option value="${k}::">${escFn(label)}</option>`);
+        }
+    };
+    one('empresa_energia', 'Energía eléctrica');
+    one('cooperativa_agua', 'Cooperativa de agua');
+    one('empresa_gas_natural', 'Gas natural');
+    one('empresa_telefonia', 'Telefonía');
+    [['empresa_internet', 'Internet'], ['empresa_tv_cable', 'TV cable']].forEach(([k, shortLab]) => {
+        const arr = Array.isArray(dr[k]) ? dr[k] : [];
+        arr.forEach((slot, i) => {
+            if (slot?.whatsapp && /^\+\d{8,22}$/.test(String(slot.whatsapp))) {
+                const sub = String(slot.nombre || '').trim() || 'Contacto ' + (i + 1);
+                out.push(`<option value="${k}::${i}">${escFn(`${shortLab} — ${sub}`)}</option>`);
+            }
+        });
+    });
+    if (!out.length) {
+        return `<option value="">${escFn('Sin WhatsApp válido en derivaciones')}</option>`;
+    }
+    return out.join('');
+}
+
+async function ejecutarDerivacionExternaAdmin(pid) {
+    const sel = document.getElementById('admin-derivar-destino');
+    const ta = document.getElementById('admin-derivar-motivo');
+    const v = (sel?.value || '').trim();
+    if (!v || !v.includes('::')) {
+        toast('Elegí un destino con WhatsApp configurado.', 'warning');
+        return;
+    }
+    const cut = v.indexOf('::');
+    const destino = v.slice(0, cut);
+    const idxStr = v.slice(cut + 2);
+    let fila_index;
+    if (idxStr !== '') {
+        const n = parseInt(idxStr, 10);
+        if (!Number.isFinite(n)) {
+            toast('Destino inválido.', 'error');
+            return;
+        }
+        fila_index = n;
+    }
+    const motivo = (ta?.value || '').trim().slice(0, 500);
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) {
+        toast('No hay sesión API. Reintentá con conexión.', 'error');
+        return;
+    }
+    const pidNum = parseInt(pid, 10);
+    if (!Number.isFinite(pidNum)) return;
+    try {
+        const body = { destino, motivo: motivo || undefined };
+        if (idxStr !== '') body.fila_index = fila_index;
+        const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/derivar-externo`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
+        }
+        const wa = data._derivacion_whatsapp;
+        const msg = data._derivacion_mensaje || '';
+        delete data._derivacion_whatsapp;
+        delete data._derivacion_mensaje;
+        const row = norm(data);
+        const idx = app.p.findIndex((x) => String(x.id) === String(pid));
+        if (idx !== -1) app.p[idx] = row;
+        else app.p.push(row);
+        offlinePedidosSave(app.p);
+        render();
+        const digits = String(wa || '').replace(/\D/g, '');
+        if (digits.length >= 8) {
+            window.open(
+                `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
+                '_blank',
+                'noopener,noreferrer'
+            );
+        }
+        toast('Derivación registrada.', 'success');
+        detalle(idx !== -1 ? app.p[idx] : row);
+    } catch (e) {
+        toast(String(e?.message || e), 'error');
+    }
+}
+window.ejecutarDerivacionExternaAdmin = ejecutarDerivacionExternaAdmin;
 
 function detalle(p) {
     const pidKey = String(p.id);
@@ -7991,14 +8136,16 @@ function detalle(p) {
         'Pendiente': '#fef9c3',
         'Asignado': '#fae8ff',
         'En ejecución': '#dbeafe',
-        'Cerrado': '#dcfce7'
+        'Cerrado': '#dcfce7',
+        'Derivado externo': '#e2e8f0'
     };
     
     const co = {
         'Pendiente': '#854d0e',
         'Asignado': '#86198f',
         'En ejecución': '#1d4ed8',
-        'Cerrado': '#166534'
+        'Cerrado': '#166534',
+        'Derivado externo': '#334155'
     };
     
     const ed = esAdmin() || String(p.ui) === String(app.u?.id)
@@ -8120,6 +8267,12 @@ function detalle(p) {
               }</span></div>`
             : '',
         p.es === 'Cerrado' && fc ? `<div class="dr"><span class="dl">Cierre</span><span class="dv">${fc}</span></div>` : '',
+        pedidoEsDerivadoFuera(p) && p.fder
+            ? `<div class="dr"><span class="dl">Derivación a tercero</span><span class="dv">${new Date(p.fder).toLocaleString('es-AR', {
+                  ...tz,
+                  hour12: false,
+              })}</span></div>`
+            : '',
     ]
         .filter(Boolean)
         .join('');
@@ -8191,6 +8344,39 @@ function detalle(p) {
             <div class="dr"><span class="dl">Inchauspe X (histórico al crear)</span><span class="dv">${xi} <span class="dv-copy" onclick="copiarTexto('${xi.replace(/'/g, "\\'")}')"><i class="fas fa-copy"></i> Copiar</span></span></div>
             <div class="dr"><span class="dl">Inchauspe Y (histórico al crear)</span><span class="dv">${yi} <span class="dv-copy" onclick="copiarTexto('${yi.replace(/'/g, "\\'")}')"><i class="fas fa-copy"></i> Copiar</span></span></div>`;
     }
+
+    let htmlDerivacionAdminExterna = '';
+    if (esAdmin() && pedidoEsDerivadoFuera(p)) {
+        const fdx = p.fder ? new Date(p.fder).toLocaleString('es-AR', { ...tz, hour12: false }) : '—';
+        const who = findUser(p.uider) || (p.uider != null ? 'id:' + p.uider : '—');
+        htmlDerivacionAdminExterna = `<div class="ds" style="border-left:4px solid #64748b">
+            <h4>➡️ Derivado a tercero</h4>
+            <p style="font-size:.78rem;margin:0 0 .5rem;line-height:1.4">Este reclamo ya no está en la operativa habitual del tenant. Para verlo en listas y mapa, activá <strong>Derivados fuera</strong> en la barra de pedidos.</p>
+            <div class="dr"><span class="dl">Fecha</span><span class="dv">${escDet(fdx)}</span></div>
+            <div class="dr"><span class="dl">Destino (clave)</span><span class="dv">${escDet(p.dda || '—')}</span></div>
+            <div class="dr"><span class="dl">Contacto</span><span class="dv">${escDet(p.ddn || '—')}</span></div>
+            <div class="dr"><span class="dl">Registró</span><span class="dv">${escDet(who)}</span></div>
+            ${p.dnota ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Motivo</span><div class="trb">${escDet(p.dnota)}</div></div>` : ''}
+            ${p.dsnap ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Mensaje (auditoría)</span><div class="trb" style="white-space:pre-wrap;font-size:.78rem">${escDet(p.dsnap)}</div></div>` : ''}
+        </div>`;
+    } else if (
+        esAdmin() &&
+        puedeEnviarApiRestPedidos() &&
+        (p.es === 'Asignado' || p.es === 'En ejecución') &&
+        !pedidoEsDerivadoFuera(p)
+    ) {
+        const opts = construirOpcionesDerivacionAdminHtml(escDet);
+        const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        htmlDerivacionAdminExterna = `<div class="ds" style="border-left:4px solid #0ea5e9">
+            <h4>📲 Derivación operativa (admin)</h4>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Cuando el técnico indique que corresponde a otra red, registrá la derivación: queda auditada, se excluye de listados y mapa por defecto, y se abre WhatsApp al contacto configurado.</p>
+            <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
+            <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
+            <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Motivo (opcional)</label>
+            <textarea id="admin-derivar-motivo" rows="2" maxlength="500" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical" placeholder="Ej.: Corresponde a red de gas"></textarea></div>
+            <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="ejecutarDerivacionExternaAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Confirmar y abrir WhatsApp</button>
+        </div>`;
+    }
     
     document.getElementById('dmc').innerHTML = `
         <div class="ds">
@@ -8199,7 +8385,9 @@ function detalle(p) {
             <div class="dr"><span class="dl">Fecha Creación</span><span class="dv">${f}</span></div>
             ${p.es === 'Cerrado' ? 
                 `<div class="dr"><span class="dl">Fecha Cierre</span><span class="dv">${fc}</span></div>` : 
-                p.es === 'En ejecución' && fa ? 
+                p.es === 'Derivado externo' && p.fder
+                ? `<div class="dr"><span class="dl">Fecha derivación</span><span class="dv">${new Date(p.fder).toLocaleString('es-AR', {...tz, hour12:false})}</span></div>`
+                : p.es === 'En ejecución' && fa ? 
                 `<div class="dr"><span class="dl">Último Avance</span><span class="dv">${fa}</span></div>` : ''}
             <div class="dr"><span class="dl">Estado</span><span class="dv"><span style="background:${bg[p.es]||'#e5e7eb'};color:${co[p.es]||'#374151'};padding:2px 10px;border-radius:12px;font-size:.82rem;font-weight:600">${p.es}</span></span></div>
             <div class="dr"><span class="dl">Prioridad</span><span class="dv">${p.pr}</span></div>
@@ -8221,6 +8409,7 @@ function detalle(p) {
         
         ${htmlDerivacionTercerosPedidoDetalle()}
         ${htmlDerivacionCoopElectrica}
+        ${htmlDerivacionAdminExterna}
         
         ${p.es === 'Cerrado' ? `
         <div class="ds">
@@ -8256,9 +8445,9 @@ function detalle(p) {
         </div>` : ''}
         
         <div class="da">
-            ${esAdmin() && p.es !== 'Cerrado' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
-            ${esAdmin() && p.es !== 'Cerrado' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
-            ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') ? `<button class="ba2 p2" onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Iniciar en sitio</button><button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
+            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
+            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
+            ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button class="ba2 p2" onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Iniciar en sitio</button><button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
             ${ed && p.es === 'En ejecución' ? `<button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
             <button class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
             <button class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>
@@ -8450,7 +8639,7 @@ function tabPedidoListaPorEstado(es) {
 
 function render() {
     const vis = pedidosVisiblesEnUI();
-    const cer = vis.filter(p => p.es === 'Cerrado').length;
+    const cer = vis.filter(p => p.es === 'Cerrado' || p.es === 'Derivado externo').length;
     const asg = vis.filter(p => p.es === 'Asignado' || p.es === 'En ejecución').length;
     const pen = vis.filter(p => p.es === 'Pendiente').length;
     const pcEl = document.getElementById('pc');
@@ -8463,7 +8652,7 @@ function render() {
     const fl = vis.filter(p => {
         if (app.tab === 'p') return p.es === 'Pendiente';
         if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-        return p.es === 'Cerrado';
+        return p.es === 'Cerrado' || p.es === 'Derivado externo';
     });
     const c = document.getElementById('pl');
     c.innerHTML = '';
@@ -8486,7 +8675,8 @@ function render() {
         'Pendiente': 'ep',
         'Asignado': 'ea',
         'En ejecución': 'ee',
-        'Cerrado': 'ec'
+        'Cerrado': 'ec',
+        'Derivado externo': 'edex'
     };
     
     const pC = {
@@ -8731,6 +8921,8 @@ document.getElementById('ub').addEventListener('click', () => {
         if (mapDashCard) mapDashCard.style.display = 'none';
         const wvt = document.getElementById('wrap-toggle-ver-todos');
         if (wvt) wvt.style.display = 'none';
+        const wdf = document.getElementById('wrap-chk-derivados-fuera');
+        if (wdf) wdf.style.display = 'none';
         cerrarAdminPanel();
         document.getElementById('gw')?.classList.remove('active');
         document.getElementById('ls').classList.add('active');
@@ -8762,14 +8954,24 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
     if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) cargarPedidos();
 });
 
+document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change', function () {
+    try {
+        localStorage.setItem(LS_MOSTRAR_DERIVADOS_FUERA, this.checked ? '1' : '0');
+    } catch (_) {}
+    try {
+        render();
+        renderMk();
+    } catch (_) {}
+});
+
 document.getElementById('eb').addEventListener('click', () => {
     const flt = p => {
         if (app.tab === 'p') return p.es === 'Pendiente';
         if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-        return p.es === 'Cerrado';
+        return p.es === 'Cerrado' || p.es === 'Derivado externo';
     };
     exportPedido(
-        app.p.filter(flt),
+        pedidosVisiblesEnUI().filter(flt),
         'pedidos_' + app.tab + '_' + new Date().toISOString().slice(0,10)
     );
 });
@@ -8956,7 +9158,7 @@ function normalizarWhatsappInternacionalWaMeUrl(raw) {
 function syncDerivacionesTercerosWrap() {
     const w = document.getElementById('admin-derivacion-terceros-wrap');
     if (!w) return;
-    w.style.display = esCooperativaElectricaRubro() ? '' : 'none';
+    w.style.display = '';
 }
 
 /**
@@ -9279,6 +9481,18 @@ try {
         if (wrapTog2 && chkTod2) {
             wrapTog2.style.display = esTecnicoOSupervisor() ? 'inline-flex' : 'none';
             chkTod2.checked = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
+        }
+        const wrapDf2 = document.getElementById('wrap-chk-derivados-fuera');
+        const chkDf2 = document.getElementById('chk-mostrar-derivados-fuera');
+        if (wrapDf2 && chkDf2) {
+            wrapDf2.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkDf2.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
+                } catch (_) {}
+                chkDf2.checked = false;
+            }
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
@@ -9738,19 +9952,6 @@ window.adminBannerClickVerDetalle = adminBannerClickVerDetalle;
 window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
 window.adminBannerOpinionClickVerDetalle = adminBannerOpinionClickVerDetalle;
 window.adminBannerOpinionCerrar = ocultarBannerOpinionCliente;
-
-function pedidoEsDerivadoFuera(p) {
-    if (!p) return false;
-    return String(p.es || '') === 'Derivado externo' || p.dex === true || p.dex === 1;
-}
-
-function adminMuestraPedidosDerivadosFuera() {
-    try {
-        return esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
-    } catch (_) {
-        return false;
-    }
-}
 
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {
@@ -12116,11 +12317,11 @@ async function cargarFormEmpresa() {
                         headers: { Authorization: `Bearer ${token}` },
                     });
                     if (rcfg.status === 401) {
-                        if (esCooperativaElectricaRubro()) {
+                        if (document.getElementById('admin-derivacion-terceros-wrap')) {
                             setDerivacionesInlineError('Iniciá sesión de nuevo para cargar la derivación.');
                         }
                     } else if (rcfg.status === 403) {
-                        if (esCooperativaElectricaRubro()) {
+                        if (document.getElementById('admin-derivacion-terceros-wrap')) {
                             setDerivacionesInlineError('Sin permiso para leer la configuración del tenant.');
                         }
                     } else if (rcfg.ok) {
@@ -12135,7 +12336,7 @@ async function cargarFormEmpresa() {
                         }
                         apiCfg = apiCfg && typeof apiCfg === 'object' ? apiCfg : {};
                         aplicarConfiguracionJsonClienteEnEmpresaCfg(apiCfg);
-                        if (esCooperativaElectricaRubro()) {
+                        if (document.getElementById('admin-derivacion-terceros-wrap')) {
                             setDerivacionesInlineError('');
                         }
                     }
@@ -12175,7 +12376,7 @@ async function guardarConfigEmpresa() {
         coord_proy_modo: famVal === 'none' ? 'punto' : modoVal
     };
     let derivacionReclamosPayload = null;
-    if (esCooperativaElectricaRubro()) {
+    if (document.getElementById('admin-derivacion-terceros-wrap')) {
         try {
             derivacionReclamosPayload = construirDerivacionReclamosDesdeFormularioDerivaciones();
         } catch (e) {
@@ -12212,7 +12413,7 @@ async function guardarConfigEmpresa() {
                         body.configuracion.state = provNom;
                         body.configuracion.provincia_nominatim = provNom;
                     }
-                    if (esCooperativaElectricaRubro() && derivacionReclamosPayload !== null) {
+                    if (derivacionReclamosPayload !== null) {
                         body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
                     }
                     if (campos.nombre) body.nombre = campos.nombre;
