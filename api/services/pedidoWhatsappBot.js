@@ -282,6 +282,35 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
+  if (!coordsValidasWgs84(latFinal, lngFinal)) {
+    try {
+      const gFin = await resolverGeolocalizacionGarantizadaWhatsapp({
+        tenantId: Number(tenantId),
+        entradaLat: null,
+        entradaLng: null,
+        catalogoCalle: calleT,
+        catalogoNumero: numT,
+        catalogoLocalidad: locT,
+        excludeNisMedidor: lookupKey || null,
+        identificadoPorPadron: !!tieneIdentificadorSum,
+      });
+      if (coordsValidasWgs84(gFin.lat, gFin.lng)) {
+        latFinal = gFin.lat;
+        lngFinal = gFin.lng;
+        const nFin = gFin.nota != null ? String(gFin.nota).trim() : "";
+        if (nFin && !de.includes(nFin)) {
+          de = `${de}\n\n${nFin}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] geolocalizacion ultimo recurso", e?.message || e);
+    }
+  }
+  if (!coordsValidasWgs84(latFinal, lngFinal)) {
+    latFinal = -34.6037;
+    lngFinal = -58.3816;
+  }
+
   const cols = [
     "numero_pedido",
     "distribuidor",

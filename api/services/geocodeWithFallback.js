@@ -1,5 +1,5 @@
 /**
- * Geocodificación con caché (cache_geocodificacion) + Nominatim + reintentos.
+ * Geocodificación con caché (geocodificacion_cache) + Nominatim + reintentos.
  * Uso: script por lotes o fallback opcional (WHATSAPP_GEOCODE_NOMINATIM_FALLBACK).
  * made by leavera77
  */

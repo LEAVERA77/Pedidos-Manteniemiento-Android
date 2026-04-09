@@ -14,6 +14,8 @@ const NOTA_TENANT =
   "[Sistema] Ubicación aproximada: coordenadas base de la empresa / sede (sin GPS en padrón ni referencias en calle).";
 const NOTA_FALLBACK_AR =
   "[Sistema] Ubicación aproximada: punto de respaldo Argentina (configurar lat_base/lng_base en Empresa).";
+const NOTA_GEOCACHE =
+  "[Sistema] Coordenadas desde caché interna de direcciones (geocodificacion_cache); sin llamadas externas en tiempo real.";
 
 export function coordsValidasWgs84(lat, lng) {
   const la = lat != null ? Number(lat) : NaN;
@@ -211,26 +213,21 @@ export async function resolverGeolocalizacionGarantizadaWhatsapp(opts) {
   const excl = opts.excludeNisMedidor != null ? String(opts.excludeNisMedidor).trim() : "";
 
   if (!identificado && loc.length < 2 && calle.length < 2) {
-    return { lat: null, lng: null, fuente: "sin_datos", nota: null };
-  }
-
-  if (identificado && calle.length >= 2 && num) {
-    try {
-      const fb = await buscarCoordenadasVecinosMismaCalle({
-        tenantId: tid,
-        calle,
-        localidad: loc || null,
-        numeroTexto: num,
-        excludeNisMedidor: excl || null,
-        excludeClienteFinalId: null,
-        preferTable: "socios_catalogo",
-      });
-      if (fb && coordsValidasWgs84(fb.lat, fb.lng)) {
-        return { lat: fb.lat, lng: fb.lng, fuente: "vecino_padron", nota: fb.nota || null };
-      }
-    } catch (e) {
-      console.warn("[geo-garantizada] vecinos", e?.message || e);
+    const cfg0 = await loadTenantCentroid(tid);
+    if (coordsValidasWgs84(cfg0.tenantLat, cfg0.tenantLng)) {
+      return {
+        lat: cfg0.tenantLat,
+        lng: cfg0.tenantLng,
+        fuente: "tenant_base",
+        nota: NOTA_TENANT,
+      };
     }
+    return {
+      lat: -34.6037,
+      lng: -58.3816,
+      fuente: "fallback_argentina",
+      nota: NOTA_FALLBACK_AR,
+    };
   }
 
   if (calle.length >= 2 && loc.length >= 2) {
@@ -252,6 +249,43 @@ export async function resolverGeolocalizacionGarantizadaWhatsapp(opts) {
       }
     } catch (e) {
       console.warn("[geo-garantizada] padron coords", e?.message || e);
+    }
+  }
+
+  if (calle.length >= 2 && loc.length >= 2) {
+    try {
+      const { cacheGeocodificacionGet, normalizarClaveDireccion } = await import("./cacheGeocodificacion.js");
+      const clave = normalizarClaveDireccion(calle, num, loc, "");
+      const cached = await cacheGeocodificacionGet(clave);
+      if (cached && coordsValidasWgs84(cached.lat, cached.lng)) {
+        return {
+          lat: cached.lat,
+          lng: cached.lng,
+          fuente: "geocodificacion_cache",
+          nota: NOTA_GEOCACHE,
+        };
+      }
+    } catch (e) {
+      console.warn("[geo-garantizada] geocodificacion_cache", e?.message || e);
+    }
+  }
+
+  if (identificado && calle.length >= 2 && num) {
+    try {
+      const fb = await buscarCoordenadasVecinosMismaCalle({
+        tenantId: tid,
+        calle,
+        localidad: loc || null,
+        numeroTexto: num,
+        excludeNisMedidor: excl || null,
+        excludeClienteFinalId: null,
+        preferTable: "socios_catalogo",
+      });
+      if (fb && coordsValidasWgs84(fb.lat, fb.lng)) {
+        return { lat: fb.lat, lng: fb.lng, fuente: "vecino_padron", nota: fb.nota || null };
+      }
+    } catch (e) {
+      console.warn("[geo-garantizada] vecinos", e?.message || e);
     }
   }
 

@@ -1,23 +1,43 @@
 /**
- * Tabla cache_geocodificacion: clave de dirección normalizada → lat/lng (Nominatim por lotes o on-demand).
+ * Tabla geocodificacion_cache: clave de dirección normalizada → lat/lng (lotes / on-demand).
+ * Migra datos desde cache_geocodificacion si existía (compatibilidad).
  * made by leavera77
  */
 import { query } from "../db/neon.js";
 
 let _ensured = false;
 
+async function migrateFromLegacyIfExists() {
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'cache_geocodificacion' LIMIT 1`
+    );
+    if (!r.rows.length) return;
+    await query(`
+      INSERT INTO geocodificacion_cache (direccion_normalizada, latitud, longitud, fecha_actualizacion)
+      SELECT direccion_normalizada, latitud, longitud, COALESCE(created_at, NOW())
+      FROM cache_geocodificacion
+      ON CONFLICT (direccion_normalizada) DO NOTHING
+    `);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 export async function ensureCacheGeocodificacionTable() {
   if (_ensured) return;
   await query(`
-    CREATE TABLE IF NOT EXISTS cache_geocodificacion (
+    CREATE TABLE IF NOT EXISTS geocodificacion_cache (
       direccion_normalizada TEXT PRIMARY KEY,
       latitud NUMERIC(10, 8) NOT NULL,
       longitud NUMERIC(11, 8) NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      fecha_actualizacion TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
   await query(
-    `CREATE INDEX IF NOT EXISTS idx_cache_geocodificacion_created ON cache_geocodificacion (created_at DESC)`
+    `CREATE INDEX IF NOT EXISTS idx_geocod_cache_fecha ON geocodificacion_cache (fecha_actualizacion DESC)`
   );
+  await migrateFromLegacyIfExists();
   _ensured = true;
 }
 
@@ -38,10 +58,20 @@ export async function cacheGeocodificacionGet(clave) {
   const k = String(clave || "").trim();
   if (k.length < 3) return null;
   await ensureCacheGeocodificacionTable();
-  const r = await query(
-    `SELECT latitud, longitud FROM cache_geocodificacion WHERE direccion_normalizada = $1 LIMIT 1`,
+  let r = await query(
+    `SELECT latitud, longitud FROM geocodificacion_cache WHERE direccion_normalizada = $1 LIMIT 1`,
     [k]
   );
+  if (!r.rows?.[0]) {
+    try {
+      r = await query(
+        `SELECT latitud, longitud FROM cache_geocodificacion WHERE direccion_normalizada = $1 LIMIT 1`,
+        [k]
+      );
+    } catch (_) {
+      r = { rows: [] };
+    }
+  }
   const row = r.rows?.[0];
   if (!row) return null;
   const la = Number(row.latitud);
@@ -60,12 +90,12 @@ export async function cacheGeocodificacionSet(clave, lat, lng) {
   if (Math.abs(la) < 1e-6 && Math.abs(lo) < 1e-6) return;
   await ensureCacheGeocodificacionTable();
   await query(
-    `INSERT INTO cache_geocodificacion (direccion_normalizada, latitud, longitud)
+    `INSERT INTO geocodificacion_cache (direccion_normalizada, latitud, longitud)
      VALUES ($1, $2, $3)
      ON CONFLICT (direccion_normalizada) DO UPDATE SET
        latitud = EXCLUDED.latitud,
        longitud = EXCLUDED.longitud,
-       created_at = NOW()`,
+       fecha_actualizacion = NOW()`,
     [k, la, lo]
   );
 }

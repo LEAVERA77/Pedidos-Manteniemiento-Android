@@ -1,6 +1,7 @@
 /**
  * Geocodificar filas del padrón sin coordenadas válidas (corrida única o mantenimiento).
- * Usa cache_geocodificacion + Nominatim con throttle/reintentos (desactivar con DISABLE_NOMINATIM).
+ * Usa geocodificacion_cache + Nominatim con throttle/reintentos (desactivar con DISABLE_NOMINATIM).
+ * Ver también: scripts/geocodificarPadron.js (alias).
  *
  * Uso (desde carpeta api):
  *   node scripts/geocodificarPadronLote.mjs --tenant-id=1 [--limit=500] [--dry-run] [--table=socios|cf|all]

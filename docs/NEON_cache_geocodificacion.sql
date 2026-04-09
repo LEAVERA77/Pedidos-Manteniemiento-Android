@@ -1,5 +1,6 @@
+-- LEGACY: nombre antiguo `cache_geocodificacion`. Preferí `geocodificacion_cache` (ver NEON_geocodificacion_cache.sql).
+-- La API puede migrar filas al arrancar (ensureCacheGeocodificacionTable).
 -- Caché de direcciones → coordenadas (evita golpear Nominatim con la misma consulta).
--- La API/script la crea al vuelo; este DDL es opcional para Neon.
 
 CREATE TABLE IF NOT EXISTS cache_geocodificacion (
     direccion_normalizada TEXT PRIMARY KEY,
