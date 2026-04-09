@@ -124,6 +124,8 @@ describe("derivacionReclamos utils", () => {
     expect(t).toContain("Cooperativa Demo");
     expect(t).toContain("vuestra empresa");
     expect(t).toContain("Corresponde a red de gas.");
+    expect(t).toContain("mismo hilo de WhatsApp");
+    expect(t).toContain("panel de gestión");
     expect(t).toContain("Gracias por su atención.");
   });
 

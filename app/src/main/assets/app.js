@@ -4043,7 +4043,7 @@ function refrescarDetalleSiAbiertoTrasSync() {
     const fresh = app.p.find(x => String(x.id) === String(app.cid));
     if (fresh) {
         try {
-            detalle(fresh);
+            void detalle(fresh);
         } catch (_) {}
     } else {
         try {
@@ -4117,6 +4117,20 @@ async function pollPedidosActividadAdmin() {
             }
         }
         const row = r.rows?.[0] || {};
+        let msdf = '0';
+        let nsdp = '0';
+        try {
+            const rDer = await sqlSimple(
+                `SELECT COALESCE(MAX(solicitud_derivacion_fecha), to_timestamp(0)) AS msdf,
+                 COUNT(*) FILTER (WHERE COALESCE(solicitud_derivacion_pendiente, FALSE))::bigint AS nsdp
+                 FROM pedidos WHERE 1=1${tsql}`
+            );
+            const rd = rDer.rows?.[0] || {};
+            msdf = rd.msdf != null ? String(rd.msdf) : '0';
+            nsdp = rd.nsdp != null ? String(rd.nsdp) : '0';
+        } catch (_) {
+            /* columnas solicitud_derivacion_* ausentes en BD antigua */
+        }
         const f = [
             row.mid,
             row.np,
@@ -4127,6 +4141,8 @@ async function pollPedidosActividadAdmin() {
             row.mfa != null ? row.mfa : '0',
             row.mfas != null ? row.mfas : '0',
             row.mfc != null ? row.mfc : '0',
+            msdf,
+            nsdp,
         ]
             .map((x) => String(x))
             .join('|');
@@ -4696,7 +4712,7 @@ function mostrarToastCierreGerencia(row) {
             app.tab = 'c';
             document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
             render();
-            detalle(p);
+            void detalle(p);
         } else {
             toast('Actualizá la lista — pedido no encontrado en caché', 'info');
         }
@@ -4870,7 +4886,7 @@ window.cerrarModalDashYAbrirPedido = async function (pid) {
     app.tab = tabPedidoListaPorEstado(p.es);
     document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
     render();
-    detalle(p);
+    void detalle(p);
 };
 window.cerrarModalDashYVerCierre = window.cerrarModalDashYAbrirPedido;
 
@@ -5483,7 +5499,7 @@ function renderMk() {
 window._d = id => {
     app.map?.closePopup();
     const p = app.p.find(x => String(x.id) === String(id));
-    if (p) detalle(p);
+    if (p) void detalle(p);
 };
 
 window._z = id => {
@@ -5692,7 +5708,7 @@ async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
 
     try {
         closeAll();
-        detalle(pedido);
+        void detalle(pedido);
         _zm(String(pedido.id));
         if (opts.scrollDerivacion) {
             requestAnimationFrame(() => {
@@ -6467,7 +6483,7 @@ function comprimirImagen(file, opts = {}) {
                     btnGuardarBD.style.display = 'none';
                     
                     const pedidoActual = app.p.find(x => String(x.id) === String(ctx3.id));
-                    if (pedidoActual) detalle(pedidoActual);
+                    if (pedidoActual) void detalle(pedidoActual);
                     toast('✓ Rotación guardada en el pedido', 'success');
 
                 } else if (ctx3.tipo === 'pedido_cierre') {
@@ -6488,7 +6504,7 @@ function comprimirImagen(file, opts = {}) {
                     btnGuardar.style.display = 'none';
                     btnGuardarBD.style.display = 'none';
                     const pedidoActual2 = app.p.find(x => String(x.id) === String(ctx3.id));
-                    if (pedidoActual2) detalle(pedidoActual2);
+                    if (pedidoActual2) void detalle(pedidoActual2);
                     toast('✓ Rotación de foto de cierre guardada', 'success');
                 }
             } catch(err) {
@@ -8459,6 +8475,9 @@ function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
         `• Estado al derivar: ${estado || '—'}`,
         `• Reclamante / contacto: ${recl}`,
         '',
+        '*Respuesta por este mismo chat (WhatsApp):*',
+        'Pueden responder por este mismo hilo de WhatsApp; un operador de nuestra entidad verá el mensaje en el panel de gestión y podrá continuar la coordinación de este reclamo.',
+        '',
         'Los datos se comparten solo para coordinar este reclamo entre entidades. No reenviarlos fuera del circuito operativo acordado.',
         '',
         'Gracias por su atención.',
@@ -8575,7 +8594,7 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
                 waErr ? 'warning' : 'info'
             );
         }
-        detalle(idx !== -1 ? app.p[idx] : row);
+        void detalle(idx !== -1 ? app.p[idx] : row);
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
@@ -8628,7 +8647,7 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         offlinePedidosSave(app.p);
         render();
         toast('Solicitud enviada al administrador.', 'success');
-        detalle(ix !== -1 ? app.p[ix] : row);
+        void detalle(ix !== -1 ? app.p[ix] : row);
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
@@ -8660,14 +8679,72 @@ async function rechazarSolicitudDerivacionAdmin(pid) {
         offlinePedidosSave(app.p);
         render();
         toast('Solicitud rechazada.', 'success');
-        detalle(ix !== -1 ? app.p[ix] : row);
+        void detalle(ix !== -1 ? app.p[ix] : row);
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
 }
 window.rechazarSolicitudDerivacionAdmin = rechazarSolicitudDerivacionAdmin;
 
-function detalle(p) {
+/** Admin / técnico asignado: fila fresca desde API o Neon para ver motivo de derivación sin F5. */
+async function refetchPedidoFilaParaDetalle(pedidoId) {
+    const id = parseInt(String(pedidoId), 10);
+    if (!Number.isFinite(id) || id < 1) return null;
+    if (esAdmin() && puedeEnviarApiRestPedidos()) {
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) return null;
+            const r = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(id))}`), {
+                headers: { Authorization: `Bearer ${tok}` },
+            });
+            if (!r.ok) return null;
+            const row = await r.json();
+            const merged = norm(row);
+            const ix = app.p.findIndex((x) => String(x.id) === String(merged.id));
+            if (ix >= 0) app.p[ix] = merged;
+            else app.p.unshift(merged);
+            try {
+                offlinePedidosSave(app.p);
+            } catch (_) {}
+            return merged;
+        } catch (_) {
+            return null;
+        }
+    }
+    if (NEON_OK && _sql && !modoOffline) {
+        try {
+            const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(id)} LIMIT 1`);
+            const row = rr.rows?.[0];
+            if (!row) return null;
+            const merged = norm(row);
+            const ix = app.p.findIndex((x) => String(x.id) === String(merged.id));
+            if (ix >= 0) app.p[ix] = merged;
+            else app.p.unshift(merged);
+            try {
+                offlinePedidosSave(app.p);
+            } catch (_) {}
+            return merged;
+        } catch (_) {
+            return null;
+        }
+    }
+    return null;
+}
+
+async function detalle(p) {
+    if (p?.id != null && !String(p.id).startsWith('off_') && !modoOffline) {
+        const okRol =
+            esAdmin() ||
+            (esTecnicoOSupervisor() &&
+                app.u &&
+                p.tai != null &&
+                String(p.tai) === String(app.u.id));
+        if (okRol) {
+            const fr = await refetchPedidoFilaParaDetalle(p.id);
+            if (fr) p = fr;
+        }
+    }
     const pidKey = String(p.id);
     try {
         const dmRoot = document.getElementById('dm');
@@ -8714,7 +8791,7 @@ function detalle(p) {
                     cur.fopin = fp;
                     changed = true;
                 }
-                if (changed) detalle(cur);
+                if (changed) void detalle(cur);
             } catch (_) {}
         })();
     }
@@ -8959,6 +9036,10 @@ function detalle(p) {
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const sdmMot = String(p.sdm || '').trim();
+        const bloqueMotivoTecnicoDer = sdmMot
+            ? `<div style="font-size:.8rem;margin:0 0 .45rem;padding:.5rem;background:rgba(14,165,233,.08);border:1px solid var(--bo);border-radius:.45rem;white-space:pre-wrap;line-height:1.45"><strong>Motivo del técnico</strong> (referencia; editable debajo)<br>${escDet(sdmMot)}</div>`
+            : '';
         let pendienteSolicitudHtml = '';
         if (p.sdpen) {
             const whoTec = findUser(p.sduid) || (p.sduid != null ? 'id:' + p.sduid : '—');
@@ -8982,6 +9063,7 @@ function detalle(p) {
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
+            ${bloqueMotivoTecnicoDer}
             <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
             <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y enviar (servidor)</button>
         </div>`;
@@ -9266,7 +9348,7 @@ function adminDerivacionPendienteIrPrimera() {
         ocultarBannerDerivacionPendiente();
         return;
     }
-    detalle(pend[0]);
+    void detalle(pend[0]);
 }
 window.adminDerivacionPendienteIrPrimera = adminDerivacionPendienteIrPrimera;
 
@@ -9347,7 +9429,7 @@ function render() {
         const d = document.createElement('div');
         d.className = 'pi';
         d.style.borderLeftColor = bC[p.pr] || '#3b82f6';
-        d.addEventListener('click', () => detalle(p));
+        d.addEventListener('click', () => void detalle(p));
         
         const f = p.f ? new Date(p.f).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, ...tz }) : '';
         
@@ -10798,7 +10880,7 @@ async function adminBannerClickVerDetalle() {
             }
         } catch (_) {}
     }
-    if (p) detalle(p);
+    if (p) void detalle(p);
     else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
 }
 
@@ -10820,7 +10902,7 @@ async function adminBannerOpinionClickVerDetalle() {
             }
         } catch (_) {}
     }
-    if (p) detalle(p);
+    if (p) void detalle(p);
     else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
 }
 
@@ -11367,7 +11449,7 @@ function mostrarAlertaPedidoUrgente(pedido) {
             app.tab = 'c';
             document.querySelectorAll('.tb').forEach(b => b.classList.toggle('active', b.dataset.tab === app.tab));
             render();
-            detalle(p);
+            void detalle(p);
         } else {
             toast('Actualizá la lista — pedido no encontrado en caché', 'info');
         }
