@@ -13814,11 +13814,7 @@ function sociosCatalogoNisCelda(s) {
 }
 
 function sociosCatalogoMedidorCelda(s) {
-    const direct = String(s.medidor ?? '').trim();
-    if (direct) return direct;
-    const nm = String(s.nis_medidor ?? '').trim();
-    const ix = nm.indexOf('-');
-    return ix > 0 ? nm.slice(ix + 1).trim() : '';
+    return String(s.medidor ?? '').trim();
 }
 
 /** Lotes más grandes = menos viajes a Neon (20k+ socios). */
