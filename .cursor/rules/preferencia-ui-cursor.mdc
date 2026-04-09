@@ -1,11 +1,23 @@
 ---
-description: Layout e interfaz preferida del usuario en Cursor
+description: Layout e interfaz preferida del usuario en Cursor (línea base estable)
 alwaysApply: true
 ---
 
 # Interfaz Cursor (preferencia del usuario)
 
-- Trabaja con el panel **Agent** visible y un panel **Ask** para consultas rápidas.
+## Prioridad: mantener esta visualización
+
+- Trata el layout siguiente como **configuración por defecto y estable**: el usuario quiere **mantenerla siempre así**, salvo que **pida explícitamente** cambiar paneles, modelo en Ask u otra disposición.
+- **No** sugieras mover el explorador a la izquierda, cerrar Agent, sustituir Ask por otro flujo, ni “reorganizar el IDE” por comodidad del agente. Si algo depende del layout, **asumí este layout**.
+- Si en un mensaje el usuario **indica que quiere otra visualización** (u otro modelo en Ask), **a partir de ahí** seguí esa nueva preferencia en esa conversación y en futuras hasta que la vuelva a cambiar.
+
+## Detalle del layout preferido
+
+- Panel **Agent** visible y panel **Ask** para consultas rápidas.
 - Modelo preferido en **Ask**: **Gemini 3 Flash** (cuando aplique al flujo).
 - Proyecto principal de trabajo: **Nexxo** (`AndroidStudioProjects/Nexxo`).
 - Explorador de archivos suele estar a la **derecha**; no recomendar layouts que lo contradigan sin que el usuario lo pida.
+
+## Nota
+
+- Esta regla orienta al **asistente** sobre qué asumir y qué no sugerir. La posición real de paneles la guarda Cursor/VS Code en el workspace; si se resetea el layout del editor, podés volver a colocarlo a mano o desde **View → Appearance** según prefieras.
