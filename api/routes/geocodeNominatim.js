@@ -1,39 +1,101 @@
 /**
- * Proxy Nominatim para el panel web (GitHub Pages no puede fetch directo a openstreetmap.org por CORS).
+ * Proxy Nominatim para el panel web + caché BD (menos 502 por rate limit; respuesta stale si OSM falla).
  * made by leavera77
  */
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
 import { nominatimProxySearch, nominatimProxyReverseRaw } from "../services/nominatimClient.js";
+import {
+  ensureGeocodeNominatimCacheTable,
+  cacheKeySearch,
+  cacheKeyReverse,
+  geocodeCacheGet,
+  geocodeCacheSet,
+} from "../services/geocodeNominatimCache.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
 
+const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function cacheFresh(createdAt) {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  return Number.isFinite(t) && Date.now() - t < CACHE_TTL_MS;
+}
+
 router.post("/nominatim/search", async (req, res) => {
   try {
+    await ensureGeocodeNominatimCacheTable();
     const params =
       req.body?.params && typeof req.body.params === "object" && !Array.isArray(req.body.params)
         ? req.body.params
         : req.body && typeof req.body === "object" && !Array.isArray(req.body)
           ? req.body
           : {};
-    const results = await nominatimProxySearch(params);
-    res.json({ ok: true, results });
+    const key = cacheKeySearch(params);
+    const hit = await geocodeCacheGet(key);
+    if (hit && cacheFresh(hit.createdAt) && Array.isArray(hit.payload)) {
+      return res.json({ ok: true, results: hit.payload, cached: true });
+    }
+    try {
+      const results = await nominatimProxySearch(params);
+      await geocodeCacheSet(key, "search", results);
+      return res.json({ ok: true, results, cached: false });
+    } catch (e) {
+      const msg = String(e?.message || e);
+      console.warn("[geocode-proxy] nominatim search upstream", msg);
+      if (hit && Array.isArray(hit.payload)) {
+        return res.json({
+          ok: true,
+          results: hit.payload,
+          stale: true,
+          warning: msg,
+        });
+      }
+      return res.status(503).json({ ok: false, error: msg, results: [] });
+    }
   } catch (e) {
-    res.status(502).json({ ok: false, error: String(e?.message || e) });
+    console.error("[geocode-proxy] search", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
 router.post("/nominatim/reverse", async (req, res) => {
   try {
-    const hit = await nominatimProxyReverseRaw(req.body || {});
-    res.json({ ok: true, result: hit });
-  } catch (e) {
-    const msg = String(e?.message || e);
-    if (msg.includes("lat_lon")) {
-      return res.status(400).json({ ok: false, error: msg });
+    await ensureGeocodeNominatimCacheTable();
+    const body = req.body || {};
+    const la = Number(body.lat);
+    const lo = Number(body.lon ?? body.lng);
+    const zoom = body.zoom != null ? String(body.zoom) : "8";
+    const key = cacheKeyReverse(la, lo, zoom);
+    if (key) {
+      const hit = await geocodeCacheGet(key);
+      if (hit && cacheFresh(hit.createdAt) && hit.payload && typeof hit.payload === "object") {
+        return res.json({ ok: true, result: hit.payload, cached: true });
+      }
     }
-    res.status(502).json({ ok: false, error: msg });
+    try {
+      const hit = await nominatimProxyReverseRaw(body);
+      if (key) await geocodeCacheSet(key, "reverse", hit);
+      return res.json({ ok: true, result: hit, cached: false });
+    } catch (e) {
+      const msg = String(e?.message || e);
+      console.warn("[geocode-proxy] nominatim reverse upstream", msg);
+      if (key) {
+        const staleHit = await geocodeCacheGet(key);
+        if (staleHit?.payload && typeof staleHit.payload === "object") {
+          return res.json({ ok: true, result: staleHit.payload, stale: true, warning: msg });
+        }
+      }
+      if (msg.includes("lat_lon")) {
+        return res.status(400).json({ ok: false, error: msg });
+      }
+      return res.status(503).json({ ok: false, error: msg });
+    }
+  } catch (e) {
+    console.error("[geocode-proxy] reverse", e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
 

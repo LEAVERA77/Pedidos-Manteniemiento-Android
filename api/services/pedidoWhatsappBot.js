@@ -11,37 +11,9 @@ import {
 } from "./pedidoZonaOutage.js";
 import { parseDomicilioLibreArgentina } from "../utils/parseDomicilioArg.js";
 import {
-  geocodeAddressArgentina,
-  geocodeCalleNumeroLocalidadArgentina,
-  isGeocodePlausibleForLocalityAnchor,
-  verifyCatalogGeocodeReverse,
-} from "./nominatimClient.js";
-
-async function loadTenantGeocodeHintsForPedido(tenantId) {
-  const r = await query(
-    `SELECT configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
-    [Number(tenantId)]
-  );
-  const row = r.rows?.[0];
-  if (!row) return { geocodeState: null, tenantCentroid: null };
-  let cfg = row.configuracion;
-  if (typeof cfg === "string") {
-    try {
-      cfg = JSON.parse(cfg);
-    } catch (_) {
-      cfg = {};
-    }
-  }
-  const c = cfg && typeof cfg === "object" ? cfg : {};
-  const provRaw = c.provincia ?? c.state ?? c.provincia_nominatim ?? c.provincia_geocode;
-  const geocodeState =
-    provRaw != null && String(provRaw).trim().length >= 2 ? String(provRaw).trim() : null;
-  const lat = c.lat_base != null ? Number(c.lat_base) : null;
-  const lng = c.lng_base != null ? Number(c.lng_base) : null;
-  const tenantCentroid =
-    Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-  return { geocodeState, tenantCentroid };
-}
+  resolverGeolocalizacionGarantizadaWhatsapp,
+  coordsValidasWgs84,
+} from "./whatsappGeolocalizacionGarantizada.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -251,37 +223,63 @@ export async function crearPedidoDesdeWhatsappBot({
     latFinal = null;
     lngFinal = null;
   }
-  if ((latFinal == null || lngFinal == null) && calleT && locT) {
+
+  /**
+   * WhatsApp: sin Nominatim en creación (502/CORS). Padrón + vecinos SQL + localidad + sede.
+   * Si hay NIS/medidor o calle+localidad y aún no hay GPS válido, se fuerza ubicación interna.
+   */
+  const debeGarantizarUbicacion =
+    !coordsValidasWgs84(latFinal, lngFinal) &&
+    (tieneIdentificadorSum || (calleT && locT));
+
+  if (debeGarantizarUbicacion) {
     try {
-      const hints = await loadTenantGeocodeHintsForPedido(tenantId);
-      const g = await geocodeCalleNumeroLocalidadArgentina(
-        locT,
-        calleT,
-        numT && String(numT).trim() ? String(numT).trim() : "0",
-        {
-          allowTenantCentroidFallback: false,
-          tenantCentroid: hints.tenantCentroid || undefined,
-          stateOrProvince: hints.geocodeState || undefined,
-        }
-      );
-      if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
-        let anchorPt = null;
-        try {
-          const ac = await geocodeAddressArgentina(`${locT}, Argentina`, { filterLocalidad: locT });
-          if (ac && Number.isFinite(ac.lat) && Number.isFinite(ac.lng)) {
-            anchorPt = { lat: ac.lat, lng: ac.lng };
-          }
-        } catch (_) {}
-        const revOk = await verifyCatalogGeocodeReverse(g.lat, g.lng, locT, calleT);
-        const localityResolved = locT.length < 2 || anchorPt != null;
-        const plausible =
-          !anchorPt || isGeocodePlausibleForLocalityAnchor(g.lat, g.lng, anchorPt);
-        if (revOk && plausible && localityResolved) {
-          if (latFinal == null) latFinal = g.lat;
-          if (lngFinal == null) lngFinal = g.lng;
+      const g = await resolverGeolocalizacionGarantizadaWhatsapp({
+        tenantId: Number(tenantId),
+        entradaLat: latFinal,
+        entradaLng: lngFinal,
+        catalogoCalle: calleT,
+        catalogoNumero: numT,
+        catalogoLocalidad: locT,
+        excludeNisMedidor: lookupKey || null,
+        identificadoPorPadron: tieneIdentificadorSum,
+      });
+      if (coordsValidasWgs84(g.lat, g.lng)) {
+        latFinal = g.lat;
+        lngFinal = g.lng;
+        const n = g.nota != null ? String(g.nota).trim() : "";
+        if (n && !de.includes(n)) {
+          de = `${de}\n\n${n}`;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] geolocalizacion garantizada", e?.message || e);
+    }
+  }
+
+  if (tieneIdentificadorSum && !coordsValidasWgs84(latFinal, lngFinal)) {
+    try {
+      const g2 = await resolverGeolocalizacionGarantizadaWhatsapp({
+        tenantId: Number(tenantId),
+        entradaLat: null,
+        entradaLng: null,
+        catalogoCalle: calleT,
+        catalogoNumero: numT,
+        catalogoLocalidad: locT,
+        excludeNisMedidor: lookupKey || null,
+        identificadoPorPadron: true,
+      });
+      if (coordsValidasWgs84(g2.lat, g2.lng)) {
+        latFinal = g2.lat;
+        lngFinal = g2.lng;
+        const n2 = g2.nota != null ? String(g2.nota).trim() : "";
+        if (n2 && !de.includes(n2)) {
+          de = `${de}\n\n${n2}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] geolocalizacion garantizada refuerzo", e?.message || e);
+    }
   }
 
   const cols = [
