@@ -202,3 +202,15 @@ const TIPOS_ELECTRICO_PIDE_SUMINISTRO = new Set([
 export function tipoReclamoElectricoPideSuministroWhatsapp(tipoTrabajo) {
   return TIPOS_ELECTRICO_PIDE_SUMINISTRO.has(String(tipoTrabajo || "").trim());
 }
+
+/**
+ * Cooperativa eléctrica: tipos para los que el técnico puede solicitar derivación a terceros.
+ * Debe coincidir con `TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO` en app.js y con el Set en api/routes/pedidos.js.
+ */
+export const TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA = [
+  "Cables Caídos/Peligro",
+  "Poste Inclinado/Dañado",
+  "Alumbrado Público (Mantenimiento)",
+  "Riesgo en la vía pública",
+  "Corrimiento de poste/columna",
+];

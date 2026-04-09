@@ -10,6 +10,7 @@ import {
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
   normalizarRubroCliente,
+  TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA,
 } from "../services/tiposReclamo.js";
 import {
   notifyPedidoCierreWhatsAppSafe,
@@ -484,12 +485,7 @@ router.get("/historial/nis/:nis", async (req, res) => {
 registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
 
 /** Tipos de reclamo (catálogo eléctrico) para los que el técnico puede pedir derivación a terceros. */
-const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set([
-  "Poste Inclinado/Dañado",
-  "Alumbrado Público (Mantenimiento)",
-  "Riesgo en la vía pública",
-  "Corrimiento de poste/columna",
-]);
+const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set(TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA);
 
 function pedidoTipoPermiteSolicitudDerivacion(tt) {
   return TIPOS_SOLICITUD_DERIVACION_TERCERO.has(String(tt || "").trim());
@@ -502,6 +498,7 @@ function esRolTecnicoOSupervisorAuth(rol) {
 
 /**
  * Técnico/supervisor asignado: solicita derivación (cola admin). Ver docs/NEON_pedidos_solicitud_derivacion_tercero.sql
+ * El estado operativo del pedido sigue «Asignado» o «En ejecución»; la solicitud queda marcada con solicitud_derivacion_pendiente.
  */
 router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
   try {
@@ -588,6 +585,8 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
       pedidoId: updated.id,
       numeroPedido: updated.numero_pedido,
       motivoSnippet: motivoStr,
+      tecnicoNombre: req.user?.nombre || req.user?.email || null,
+      tipoTrabajo: updated.tipo_trabajo || pedido.tipo_trabajo,
     }).catch(() => {});
     return res.json(coercePedidoLatLng(updated));
   } catch (error) {

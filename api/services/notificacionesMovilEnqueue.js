@@ -133,6 +133,8 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
   pedidoId,
   numeroPedido,
   motivoSnippet,
+  tecnicoNombre,
+  tipoTrabajo,
 }) {
   if (!(await ensureNotificacionesMovilTable())) return;
   const tid = Number(tenantId);
@@ -142,10 +144,16 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
   const snip = String(motivoSnippet || "")
     .trim()
     .slice(0, 160);
-  const titulo = "Solicitud de derivación (técnico)";
-  const cuerpo = snip
-    ? `${np}: el técnico pide derivar a un tercero. Motivo: ${snip}`
-    : `${np}: el técnico pidió derivar el reclamo a un tercero. Revisá la cola de derivaciones.`;
+  const nombreTec = String(tecnicoNombre || "")
+    .trim()
+    .slice(0, 120);
+  const tipoTxt = String(tipoTrabajo || "")
+    .trim()
+    .slice(0, 120);
+  const quien = nombreTec || "Un técnico";
+  const titulo = `Derivación: pedido ${np}`;
+  let cuerpo = `Técnico ${quien} solicita derivar pedido ${np}${tipoTxt ? ` (${tipoTxt})` : ""}.`;
+  if (snip) cuerpo += ` Motivo: ${snip}`;
   try {
     const col = await tenantColumnForUsuarios();
     let rows;

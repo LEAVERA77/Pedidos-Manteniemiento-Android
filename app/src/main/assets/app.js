@@ -1188,6 +1188,7 @@ function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
 }
 
 const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
+    'Cables Caídos/Peligro',
     'Poste Inclinado/Dañado',
     'Alumbrado Público (Mantenimiento)',
     'Riesgo en la vía pública',
