@@ -39,13 +39,15 @@ import {
   proto.__gestornovaWillReadPatch = true;
 })();
 
-/** Prefijo unificado para avisos del sistema (toasts, alert, confirm). */
-const GN_DICE_PREFIX = 'GestorNova Dice:';
+/** Quita prefijos históricos «GestorNova Dice:» en toasts / alert / confirm (mensaje limpio). */
+function stripGestornovaDicePrefix(s) {
+    return String(s ?? '')
+        .replace(/^\s*GestorNova\s+Dice\s*:\s*/i, '')
+        .replace(/^\s*Gestornova\s+dice\s*:\s*/i, '')
+        .trim();
+}
 function gnDice(msg) {
-    const s = String(msg ?? '').trim();
-    if (!s) return GN_DICE_PREFIX;
-    if (/^GestorNova\s+Dice\s*:/i.test(s)) return s;
-    return `${GN_DICE_PREFIX} ${s}`;
+    return stripGestornovaDicePrefix(String(msg ?? ''));
 }
 
 
@@ -3111,6 +3113,59 @@ async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
     } catch (_) {}
 }
 
+/** Admin: corrección manual WGS84 (sobrescribe lat/lng en servidor). */
+async function persistirCoordsManualPedidoPanel(pedidoId, la, ln) {
+    if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
+    await asegurarJwtApiRest();
+    const token = getApiToken();
+    if (!token) return;
+    try {
+        const r = await fetch(
+            apiUrl(`/api/pedidos/${encodeURIComponent(String(pedidoId))}/coords-manual`),
+            {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ lat: la, lng: ln }),
+            }
+        );
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            toast(String(body.error || 'No se pudieron guardar las coordenadas'), 'error');
+            return;
+        }
+        const row = body;
+        if (!row || row.lat == null || row.lng == null) return;
+        const nla = Number(row.lat);
+        const nln = Number(row.lng);
+        if (!Number.isFinite(nla) || !Number.isFinite(nln)) return;
+        const idStr = String(pedidoId);
+        const idx = app.p.findIndex((x) => String(x.id) === idStr);
+        if (idx >= 0) {
+            app.p[idx].la = nla;
+            app.p[idx].ln = nln;
+            if (row.descripcion != null) app.p[idx].de = String(row.descripcion);
+        }
+        try {
+            if (window._pedidoCoordsInferidas && window._pedidoCoordsInferidas[idStr]) {
+                delete window._pedidoCoordsInferidas[idStr];
+            }
+        } catch (_) {}
+        try {
+            render();
+            renderMk();
+        } catch (_) {}
+        try {
+            refrescarDetalleSiAbiertoTrasSync();
+        } catch (_) {}
+        toast('Ubicación del pedido actualizada en el mapa.', 'success');
+    } catch (e) {
+        toastError('coords-manual', e);
+    }
+}
+
 async function enriquecerCoordsGeocodificadasPedidos() {
     if (modoOffline || typeof fetch !== 'function') return;
     if (!app.p || !app.p.length) return;
@@ -5417,6 +5472,7 @@ function renderMk() {
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
                     ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
                     ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
+                    ${esAdmin() && puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !pedidoEsDerivadoFuera(p) ? `<button style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
                 </div>
             </div>`, { maxWidth: 260 });
         
@@ -5457,6 +5513,100 @@ window._assignMapa = id => {
 window._desasignarMapa = id => {
     try { app.map?.closePopup(); } catch (_) {}
     ejecutarDesasignarPedidoPorId(id, { confirmar: true });
+};
+
+let _moverUbicMapaState = null;
+
+function cancelarMoverUbicacionMapa() {
+    if (!_moverUbicMapaState) return;
+    try {
+        if (_moverUbicMapaState.marker) _moverUbicMapaState.marker.remove();
+        if (_moverUbicMapaState.onMapClick && app.map) app.map.off('click', _moverUbicMapaState.onMapClick);
+    } catch (_) {}
+    if (_moverUbicMapaState.barEl?.parentNode) _moverUbicMapaState.barEl.remove();
+    _moverUbicMapaState = null;
+    try {
+        if (app.map) {
+            app.map.getContainer().style.cursor = '';
+            app.map.dragging.enable();
+        }
+    } catch (_) {}
+}
+
+async function confirmarMoverUbicacionMapa() {
+    if (!_moverUbicMapaState?.marker || !_moverUbicMapaState.pedidoId) return;
+    const ll = _moverUbicMapaState.marker.getLatLng();
+    const la = ll.lat;
+    const ln = ll.lng;
+    if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) {
+        toast('Coordenadas inválidas.', 'error');
+        return;
+    }
+    if (Math.abs(la) < 1e-6 && Math.abs(ln) < 1e-6) {
+        toast('No se acepta la posición 0,0.', 'error');
+        return;
+    }
+    const pid = _moverUbicMapaState.pedidoId;
+    cancelarMoverUbicacionMapa();
+    await persistirCoordsManualPedidoPanel(pid, la, ln);
+}
+
+window._moverUbicMapa = function (pedidoId) {
+    if (!esAdmin() || !puedeEnviarApiRestPedidos()) {
+        toast('Solo administrador con API activa puede corregir la posición.', 'warning');
+        return;
+    }
+    const p = app.p.find((x) => String(x.id) === String(pedidoId));
+    if (!p) {
+        toast('Pedido no encontrado en la lista.', 'error');
+        return;
+    }
+    if (p.es === 'Cerrado' || p.es === 'Derivado externo' || pedidoEsDerivadoFuera(p)) {
+        toast('No se puede mover la ubicación de un pedido cerrado o derivado.', 'warning');
+        return;
+    }
+    void (async () => {
+        await ensureMapReady();
+        if (!app.map || typeof L === 'undefined') return;
+        cancelarMoverUbicacionMapa();
+        try {
+            app.map.closePopup();
+        } catch (_) {}
+        const { la: la0, ln: ln0 } = coordsEfectivasPedidoMapa(p);
+        let la = la0;
+        let ln = ln0;
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+            const c = app.map.getCenter();
+            la = c.lat;
+            ln = c.lng;
+        }
+        const mk = L.marker([la, ln], { draggable: true, zIndexOffset: 900 }).addTo(app.map);
+        app.map.panTo([la, ln], { animate: true });
+        const bar = document.createElement('div');
+        bar.setAttribute('role', 'toolbar');
+        bar.style.cssText =
+            'position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:12000;background:#1e293b;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.35);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:min(96vw,28rem)';
+        bar.innerHTML =
+            '<span style="opacity:.95">Arrastrá el pin o tocá el mapa para moverlo.</span>' +
+            '<button type="button" style="background:#059669;color:#fff;border:none;padding:6px 12px;border-radius:8px;cursor:pointer;font-weight:600">Confirmar</button>' +
+            '<button type="button" style="background:#64748b;color:#fff;border:none;padding:6px 12px;border-radius:8px;cursor:pointer">Cancelar</button>';
+        document.body.appendChild(bar);
+        const [btnOk, btnCan] = bar.querySelectorAll('button');
+        btnOk.addEventListener('click', () => void confirmarMoverUbicacionMapa());
+        btnCan.addEventListener('click', () => {
+            cancelarMoverUbicacionMapa();
+            toast('Corrección de posición cancelada.', 'info');
+        });
+        const onMapClick = (ev) => {
+            if (!_moverUbicMapaState?.marker) return;
+            _moverUbicMapaState.marker.setLatLng(ev.latlng);
+        };
+        app.map.on('click', onMapClick);
+        try {
+            app.map.getContainer().style.cursor = 'crosshair';
+        } catch (_) {}
+        _moverUbicMapaState = { pedidoId: p.id, marker: mk, onMapClick, barEl: bar };
+    })();
 };
 
 window._a = (a, id) => {
@@ -5515,21 +5665,28 @@ async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
     const pid = String(pedidoId || '').trim();
     if (!pid || !app.u) return false;
 
-    let pedido = app.p.find(x => String(x.id) === pid);
+    try {
+        document.getElementById('ls')?.classList.remove('active');
+        document.getElementById('ms')?.classList.add('active');
+        cerrarAdminPanel();
+        document.getElementById('gw')?.classList.remove('active');
+    } catch (_) {}
+
+    let pedido = app.p.find((x) => String(x.id) === pid);
     if (!pedido && !modoOffline && NEON_OK && _sql) {
         try {
             const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
             const row = rr.rows?.[0];
             if (row) {
                 pedido = norm(row);
-                const idx = app.p.findIndex(x => String(x.id) === String(pedido.id));
+                const idx = app.p.findIndex((x) => String(x.id) === String(pedido.id));
                 if (idx >= 0) app.p[idx] = pedido;
                 else app.p.unshift(pedido);
             }
         } catch (_) {}
     }
     if (!pedido) return false;
-    if (!document.getElementById('ms')?.classList.contains('active')) return false;
+
     await ensureMapReady();
     if (!app.map) return false;
 
@@ -5537,6 +5694,14 @@ async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
         closeAll();
         detalle(pedido);
         _zm(String(pedido.id));
+        if (opts.scrollDerivacion) {
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    const el = document.getElementById('gn-focus-derivacion-pedido');
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 180);
+            });
+        }
         if (!opts.silent) toast('📍 Pedido #' + (pedido.np || pedido.id) + ' centrado en el mapa', 'info');
         return true;
     } catch (_) {
@@ -5785,13 +5950,15 @@ window.pollNotificacionesMovil = async function () {
             const t = row.titulo || 'GestorNova';
             const b = row.cuerpo || '';
             const pid = row.pedido_id != null ? String(row.pedido_id) : '';
+            const esNotifDerivacion =
+                /derivaci/i.test(t) || /derivaci/i.test(b) || /solicita derivar/i.test(b);
             if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
                     if (_pollNotifMovilUsaColumnaLeida) {
                         await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
                     }
-                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true });
+                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true, scrollDerivacion: esNotifDerivacion });
                 } catch (_) {}
             } else if (esAdm) {
                 try {
@@ -5799,7 +5966,12 @@ window.pollNotificacionesMovil = async function () {
                     if (_pollNotifMovilUsaColumnaLeida) {
                         await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
                     }
-                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true });
+                    if (pid) {
+                        await resolverFocoPedidoNotificacion(pid, {
+                            silent: true,
+                            scrollDerivacion: esNotifDerivacion,
+                        });
+                    }
                 } catch (_) {}
             }
         }
@@ -8793,7 +8965,7 @@ function detalle(p) {
             const fxs = p.sdf
                 ? new Date(p.sdf).toLocaleString('es-AR', { ...tz, hour12: false })
                 : '—';
-            pendienteSolicitudHtml = `<div class="ds" style="border-left:4px solid #f97316;margin-bottom:.65rem">
+            pendienteSolicitudHtml = `<div class="ds" id="gn-focus-derivacion-pedido" style="border-left:4px solid #f97316;margin-bottom:.65rem">
             <h4>⚠ Solicitud de derivación pendiente</h4>
             <p style="font-size:.76rem;color:var(--tm);margin:0 0 .5rem;line-height:1.45">El técnico pidió derivar este reclamo a un tercero. Revisá el motivo, elegí destino y confirmá; o rechazá si no corresponde.</p>
             <div class="dr"><span class="dl">Técnico</span><span class="dv">${escDet(whoTec)}</span></div>
@@ -8804,7 +8976,7 @@ function detalle(p) {
             </div>
         </div>`;
         }
-        htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" style="border-left:4px solid #0ea5e9">
+        htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" ${p.sdpen ? '' : 'id="gn-focus-derivacion-pedido"'} style="border-left:4px solid #0ea5e9">
             <h4>📲 Derivación operativa (admin)</h4>
             <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Registrá la derivación al contacto configurado en <strong>Admin → Empresa</strong>. El <strong>mensaje final</strong> queda en auditoría y se envía al tercero por <strong>WhatsApp desde el servidor</strong> (Meta Cloud API); no se abre pestaña del navegador. Incluye enlace a Google Maps cuando hay coordenadas del pedido.</p>
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>

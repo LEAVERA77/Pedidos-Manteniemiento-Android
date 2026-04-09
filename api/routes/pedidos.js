@@ -1121,6 +1121,68 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * Admin: corrección manual WGS84 en mapa (sobrescribe lat/lng aunque ya existan).
+ * No aplica a pedidos cerrados o derivados fuera (solo operativa abierta).
+ */
+router.put("/:id/coords-manual", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    const la = Number(req.body?.lat);
+    const ln = Number(req.body?.lng ?? req.body?.lon);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+      return res.status(400).json({ error: "lat y lng numéricos requeridos" });
+    }
+    if (Math.abs(la) > 90 || Math.abs(ln) > 180) {
+      return res.status(400).json({ error: "coordenadas fuera de rango WGS84" });
+    }
+    if (Math.abs(la) < 1e-6 && Math.abs(ln) < 1e-6) {
+      return res.status(400).json({ error: "No se aceptan coordenadas 0,0" });
+    }
+
+    const notaExtra =
+      req.body?.nota != null && String(req.body.nota).trim()
+        ? String(req.body.nota).trim().slice(0, 500)
+        : "";
+
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+
+    const es = String(pedido.estado || "");
+    if (es === "Cerrado" || es === "Derivado externo" || pedido.derivado_externo === true) {
+      return res.status(400).json({ error: "No se puede mover la ubicación de un pedido cerrado o derivado" });
+    }
+
+    const nombreAdm = String(req.user?.nombre || req.user?.email || "admin").trim().slice(0, 120);
+    const marca = `\n\n[Sistema] Coordenadas corregidas manualmente en el mapa por ${nombreAdm} (${new Date().toISOString()}).${notaExtra ? ` Nota: ${notaExtra}` : ""}`;
+    const desc0 = String(pedido.descripcion || "");
+    const nuevaDesc = desc0.includes("Coordenadas corregidas manualmente en el mapa") ? desc0 : `${desc0}${marca}`;
+
+    const hasT = await pedidosTableHasTenantIdColumn();
+    const r = await query(
+      hasT
+        ? `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
+           WHERE id = $1 AND tenant_id = $5
+           RETURNING *`
+        : `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
+           WHERE id = $1
+           RETURNING *`,
+      hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+    return res.json(coercePedidoLatLng(r.rows[0]));
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
+  }
+});
+
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
