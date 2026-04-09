@@ -983,32 +983,36 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     } catch (_) {}
 }
 
-const _NOMINATIM_UA_CFG_PROV = 'GestorNova-ProvinciaTenant/1.0 (contact: gestornova-app@users.noreply.github.com)';
-
 /** Provincia / estado para Nominatim (Argentina) desde coordenadas de la oficina. */
 async function nominatimReverseProvinciaArgentina(lat, lng) {
     const la = Number(lat);
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
     await new Promise((res) => setTimeout(res, 1100));
-    const p = new URLSearchParams({
-        format: 'json',
-        lat: String(la),
-        lon: String(lo),
-        addressdetails: '1',
-        'accept-language': 'es',
-        zoom: '8',
-        email: 'gestornova-app@users.noreply.github.com',
-    });
-    const url = 'https://nominatim.openstreetmap.org/reverse?' + p.toString();
-    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_CFG_PROV } });
-    if (!r.ok) return null;
-    const j = await r.json().catch(() => null);
-    const a = j && j.address;
-    if (!a || typeof a !== 'object') return null;
-    const state = a.state || a.region || a['ISO3166-2-lvl4'];
-    const s = state != null ? String(state).trim() : '';
-    return s.length >= 2 ? s : null;
+    try {
+        if (modoOffline || typeof fetch !== 'function') return null;
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (!token) return null;
+        const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ lat: la, lon: lo, zoom: 8 }),
+        });
+        if (!r.ok) return null;
+        const j = await r.json().catch(() => null);
+        const hit = j && j.result;
+        const a = hit && hit.address;
+        if (!a || typeof a !== 'object') return null;
+        const state = a.state || a.region || a['ISO3166-2-lvl4'];
+        const s = state != null ? String(state).trim() : '';
+        return s.length >= 2 ? s : null;
+    } catch (_) {
+        return null;
+    }
 }
 
 /**
@@ -2800,9 +2804,6 @@ function coordsEfectivasPedidoMapa(p) {
     return { la: null, ln: null };
 }
 
-const _NOMINATIM_UA_PEDIDO = 'GestorNova-PedidoMap/1.0 (contact: gestornova-app@users.noreply.github.com)';
-const _NOMINATIM_EMAIL_PEDIDO = 'gestornova-app@users.noreply.github.com';
-
 /** Igual que api/utils/parseDomicilioArg.js — texto libre tipo "Doctor Haedo 365, Hasenkamp". */
 function parseDomicilioLibreArgentinaFront(cdir, localidadFallback) {
     const raw = String(cdir || '')
@@ -2908,19 +2909,32 @@ function _filtrarNominatimPorLocalidad(results, locPedido) {
     return arr.filter((r) => _nominatimResultadoCoincideLocalidad(r, locPedido));
 }
 
+/** Nominatim solo desde la API Node (GitHub Pages / navegador: CORS bloquea openstreetmap.org). */
 async function _nominatimFetchSearch(params) {
-    const p = new URLSearchParams({
-        format: 'json',
-        addressdetails: '1',
-        'accept-language': 'es',
-        email: _NOMINATIM_EMAIL_PEDIDO,
-        ...params,
-    });
-    const url = 'https://nominatim.openstreetmap.org/search?' + p.toString();
-    const r = await fetch(url, { headers: { 'User-Agent': _NOMINATIM_UA_PEDIDO } });
-    if (!r.ok) return [];
-    const j = await r.json();
-    return Array.isArray(j) ? j : [];
+    const merged = params && typeof params === 'object' ? { ...params } : {};
+    try {
+        if (modoOffline || typeof fetch !== 'function') return [];
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (!token) return [];
+        const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ params: merged }),
+        });
+        if (!r.ok) {
+            console.warn('[geocode-proxy] search HTTP', r.status);
+            return [];
+        }
+        const j = await r.json().catch(() => ({}));
+        return Array.isArray(j.results) ? j.results : [];
+    } catch (e) {
+        console.warn('[geocode-proxy] search', e && e.message ? e.message : e);
+        return [];
+    }
 }
 
 /** viewbox = min_lon, max_lat, max_lon, min_lat (Nominatim). */
@@ -3053,8 +3067,48 @@ async function nominatimGeocodeDomicilioPedido(p) {
     return null;
 }
 
+async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
+    if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
+    await asegurarJwtApiRest();
+    const token = getApiToken();
+    if (!token) return;
+    try {
+        const r = await fetch(
+            apiUrl(`/api/pedidos/${encodeURIComponent(String(pedidoId))}/coords-geocode-panel`),
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ lat: la, lng: ln }),
+            }
+        );
+        if (!r.ok) return;
+        const row = await r.json().catch(() => null);
+        if (!row || row.lat == null || row.lng == null) return;
+        const nla = Number(row.lat);
+        const nln = Number(row.lng);
+        if (!Number.isFinite(nla) || !Number.isFinite(nln)) return;
+        const idStr = String(pedidoId);
+        const idx = app.p.findIndex((x) => String(x.id) === idStr);
+        if (idx >= 0) {
+            app.p[idx].la = nla;
+            app.p[idx].ln = nln;
+        }
+        try {
+            render();
+            renderMk();
+        } catch (_) {}
+        try {
+            refrescarDetalleSiAbiertoTrasSync();
+        } catch (_) {}
+    } catch (_) {}
+}
+
 async function enriquecerCoordsGeocodificadasPedidos() {
-    if (modoOffline || !NEON_OK || !_sql || typeof fetch !== 'function') return;
+    if (modoOffline || typeof fetch !== 'function') return;
+    if (!app.p || !app.p.length) return;
     const candidatos = (app.p || []).filter((p) => {
         if (Number.isFinite(p.la) && Number.isFinite(p.ln)) return false;
         const id = String(p.id);
@@ -3068,6 +3122,9 @@ async function enriquecerCoordsGeocodificadasPedidos() {
             const id = String(p.id);
             if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
                 window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
+                if (esAdmin()) {
+                    void persistirCoordsGeocodePedidoPanel(p.id, hit.lat, hit.lng);
+                }
             } else {
                 window._pedidoCoordsInferidas[id] = { skip: true };
             }

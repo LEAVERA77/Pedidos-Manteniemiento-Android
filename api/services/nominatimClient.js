@@ -1037,3 +1037,77 @@ export async function verifyCatalogGeocodeReverse(lat, lng, localidad, calle) {
   if (!rev) return false;
   return reverseHitMatchesCatalog(rev, loc, cal);
 }
+
+/** Parámetros permitidos en el proxy (evita abuso como proxy HTTP genérico). */
+const NOMINATIM_PROXY_SEARCH_ALLOW = new Set([
+  "q",
+  "street",
+  "city",
+  "state",
+  "country",
+  "postalcode",
+  "countrycodes",
+  "limit",
+  "viewbox",
+  "bounded",
+  "extratags",
+  "namedetails",
+]);
+
+/**
+ * Búsqueda Nominatim desde el servidor (panel web / GitHub Pages: el navegador no puede llamar OSM por CORS).
+ * @param {Record<string, string|number>} clientParams
+ * @returns {Promise<object[]>}
+ */
+export async function nominatimProxySearch(clientParams = {}) {
+  await throttle();
+  const p = nominatimBaseParams();
+  const o = clientParams && typeof clientParams === "object" && !Array.isArray(clientParams) ? clientParams : {};
+  for (const [k, v] of Object.entries(o)) {
+    const lk = String(k).toLowerCase();
+    if (!NOMINATIM_PROXY_SEARCH_ALLOW.has(lk)) continue;
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    p.set(lk, s);
+  }
+  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+  const res = await fetch(url, { headers: nominatimHeaders() });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`nominatim search ${res.status}: ${t.slice(0, 200)}`);
+  }
+  const j = await res.json();
+  return Array.isArray(j) ? j : [];
+}
+
+/**
+ * Reverse Nominatim crudo (misma forma que consume el front para provincia desde coords).
+ * @param {object} body lat, lon|lng, zoom opcional
+ */
+export async function nominatimProxyReverseRaw(body = {}) {
+  await throttle();
+  const la = Number(body.lat);
+  const lo = Number(body.lon ?? body.lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+    throw new Error("lat_lon_invalidos");
+  }
+  const zoom =
+    body.zoom != null && String(body.zoom).trim() ? String(body.zoom).trim() : "18";
+  const p = new URLSearchParams({
+    format: "json",
+    lat: String(la),
+    lon: String(lo),
+    addressdetails: "1",
+    "accept-language": "es",
+    zoom,
+    email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
+  });
+  const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
+  const res = await fetch(url, { headers: nominatimHeaders() });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`nominatim reverse ${res.status}: ${t.slice(0, 200)}`);
+  }
+  return await res.json();
+}
