@@ -184,18 +184,7 @@
           <option value="todos">Todos</option>
         </select>
       </span>
-      <span id="wrap-android-estado" class="mas-scope-wrap">
-        <span class="mas-scope-lbl">Estado</span>
-        <select id="sel-android-mapa-estado" class="mas-scope-select" onchange="onAndroidMapaEstadoChange()">
-          <option value="todos">Todos</option>
-          <option value="abiertos">Abiertos</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="asignado">Asignado</option>
-          <option value="ejecucion">En ejecución</option>
-          <option value="cerrado">Cerrado</option>
-          <option value="pers">Varios (Av.)</option>
-        </select>
-      </span>
+      <button type="button" class="mas-filtros-panel-btn" onclick="abrirAndroidFiltrosMapaRapidos()" title="Estados, prioridad y filtros (igual que en admin web)">Filtros mapa</button>
       </div>
       <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
     </div>

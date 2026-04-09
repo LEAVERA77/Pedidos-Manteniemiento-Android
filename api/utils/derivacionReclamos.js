@@ -194,6 +194,34 @@ function trunc(s, n) {
   return t.slice(0, n - 1) + "…";
 }
 
+function numCoord(v) {
+  if (v == null || v === "") return NaN;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Lat/lng útiles para Maps: acepta columnas habituales y descarta (0,0) u omitidos.
+ * @param {object} pedido
+ * @returns {{ lat: number, lng: number } | null}
+ */
+export function effectivePedidoLatLngParaDerivacion(pedido) {
+  if (!pedido || typeof pedido !== "object") return null;
+  const pairs = [
+    [pedido.lat, pedido.lng],
+    [pedido.latitude, pedido.longitude],
+    [pedido.la, pedido.ln],
+  ];
+  for (const [a, b] of pairs) {
+    const la = numCoord(a);
+    const ln = numCoord(b);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) continue;
+    if (Math.abs(la) < 1e-7 && Math.abs(ln) < 1e-7) continue;
+    return { lat: la, lng: ln };
+  }
+  return null;
+}
+
 /**
  * Arma el texto único para WhatsApp (`wa.me/?text=`) y para `derivacion_mensaje_snapshot`.
  *
@@ -234,10 +262,9 @@ export function buildDerivacionExternaMensaje({
   const cnom = trunc(pedido?.cliente_nombre || pedido?.cliente, 120);
   const tel = trunc(pedido?.telefono_contacto, 40);
 
-  const lat = pedido?.lat;
-  const lng = pedido?.lng;
-  const la = lat != null && lat !== "" ? Number(lat) : NaN;
-  const ln = lng != null && lng !== "" ? Number(lng) : NaN;
+  const eff = effectivePedidoLatLngParaDerivacion(pedido);
+  const la = eff ? eff.lat : NaN;
+  const ln = eff ? eff.lng : NaN;
   let lineaUbicacion = "";
   if (Number.isFinite(la) && Number.isFinite(ln)) {
     const url = `https://www.google.com/maps?q=${la},${ln}`;

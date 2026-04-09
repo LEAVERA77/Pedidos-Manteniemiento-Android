@@ -3259,9 +3259,6 @@ function onMapaFiltroChange() {
     try {
         renderMk();
     } catch (_) {}
-    try {
-        if (esAndroidWebViewMapa()) syncAndroidMapaEstadoSelectFromCheckboxes();
-    } catch (_) {}
 }
 
 const MAPA_PRIO_CHK_IDS = ['mapa-flt-prio-critica', 'mapa-flt-prio-alta', 'mapa-flt-prio-media', 'mapa-flt-prio-baja', 'mapa-flt-prio-cerrado'];
@@ -3288,82 +3285,23 @@ function syncMapaPrioFiltrosFromStorage() {
     });
 }
 
-const PMG_ANDROID_MAPA_ESTADO_KEY = 'pmg_android_mapa_estado_v1';
-const ANDROID_MAPA_EST_CHK_IDS = ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'];
-/** Presets: [pendiente, asignado, ejecución, cerrado] — 1 = visible en mapa */
-const ANDROID_MAPA_ESTADO_PRESET = {
-    todos: [1, 1, 1, 1],
-    abiertos: [1, 1, 1, 0],
-    pendiente: [1, 0, 0, 0],
-    asignado: [0, 1, 0, 0],
-    ejecucion: [0, 0, 1, 0],
-    cerrado: [0, 0, 0, 1],
-};
-
-function applyAndroidMapaEstadoPreset(preset) {
-    const bits = ANDROID_MAPA_ESTADO_PRESET[preset];
-    if (!bits) return false;
-    ANDROID_MAPA_EST_CHK_IDS.forEach((id, i) => {
-        const el = document.getElementById(id);
-        if (el) el.checked = !!bits[i];
-    });
-    return true;
-}
-
-function detectAndroidMapaEstadoPresetFromDom() {
-    const p = !!document.getElementById('mapa-flt-pendiente')?.checked;
-    const a = !!document.getElementById('mapa-flt-asignado')?.checked;
-    const e = !!document.getElementById('mapa-flt-ejecucion')?.checked;
-    const c = !!document.getElementById('mapa-flt-cerrado')?.checked;
-    if (p && a && e && c) return 'todos';
-    if (p && a && e && !c) return 'abiertos';
-    if (p && !a && !e && !c) return 'pendiente';
-    if (!p && a && !e && !c) return 'asignado';
-    if (!p && !a && e && !c) return 'ejecucion';
-    if (!p && !a && !e && c) return 'cerrado';
-    return 'pers';
-}
-
-function syncAndroidMapaEstadoSelectFromCheckboxes() {
-    const sel = document.getElementById('sel-android-mapa-estado');
-    if (!sel) return;
-    const v = detectAndroidMapaEstadoPresetFromDom();
-    if (sel.value !== v) sel.value = v;
-}
-
-function syncAndroidMapaEstadoFromStorage() {
-    const sel = document.getElementById('sel-android-mapa-estado');
-    if (!sel) return;
-    let v = 'todos';
+/** Android WebView: abre el mismo panel de filtros por checkboxes que en admin (evita el selector nativo tipo radio). */
+function abrirAndroidFiltrosMapaRapidos() {
+    const chk = document.getElementById('chk-android-filtros-av');
+    if (chk && !chk.checked) {
+        chk.checked = true;
+        onToggleAndroidFiltrosMapa();
+    }
     try {
-        v = localStorage.getItem(PMG_ANDROID_MAPA_ESTADO_KEY) || 'todos';
-    } catch (_) {}
-    if (v === 'pers' || !ANDROID_MAPA_ESTADO_PRESET[v]) v = 'todos';
-    sel.value = v;
-    applyAndroidMapaEstadoPreset(v);
-}
-
-function onAndroidMapaEstadoChange() {
-    const sel = document.getElementById('sel-android-mapa-estado');
-    if (!sel) return;
-    const v = sel.value;
-    if (v === 'pers') return;
-    if (!applyAndroidMapaEstadoPreset(v)) return;
-    try {
-        localStorage.setItem(PMG_ANDROID_MAPA_ESTADO_KEY, v);
+        toggleMapaCardSlideoff('mapa-card-filtros', false);
     } catch (_) {}
     try {
         onMapaFiltroChange();
     } catch (_) {}
 }
-window.onAndroidMapaEstadoChange = onAndroidMapaEstadoChange;
+window.abrirAndroidFiltrosMapaRapidos = abrirAndroidFiltrosMapaRapidos;
 
 function resetMapaFiltros() {
-    try {
-        localStorage.removeItem(PMG_ANDROID_MAPA_ESTADO_KEY);
-    } catch (_) {}
-    const sEst = document.getElementById('sel-android-mapa-estado');
-    if (sEst) sEst.value = 'todos';
     ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
@@ -3749,11 +3687,6 @@ function aplicarUIMapaPlataforma() {
             const sel = document.getElementById('sel-android-pedidos-scope');
             if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
         }
-        const wrapEst = document.getElementById('wrap-android-estado');
-        if (wrapEst) wrapEst.style.display = 'inline-flex';
-        try {
-            syncAndroidMapaEstadoFromStorage();
-        } catch (_) {}
         const tabBar = document.getElementById('map-tab-android-bar');
         if (localStorage.getItem('pmg_android_strip_collapsed') === '1') {
             strip.classList.add('mas-collapsed');
@@ -4659,6 +4592,8 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
         q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion FROM pedidos WHERE estado = 'En ejecución'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else if (filter === 'cerrados_hoy') {
         q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE${tsql} ORDER BY fecha_cierre DESC LIMIT ${lim}`;
+    } else if (filter === 'derivados_terceros') {
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion, derivado_destino_nombre FROM pedidos WHERE (estado = 'Derivado externo' OR COALESCE(derivado_externo, FALSE) = TRUE)${tsql} ORDER BY COALESCE(fecha_derivacion, fecha_creacion) DESC NULLS LAST LIMIT ${lim}`;
     } else {
         host.style.display = 'none';
         host.innerHTML = '';
@@ -4677,7 +4612,10 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
             const es = String(row.estado || '').replace(/</g, '&lt;');
             const de = String(row.descripcion || '').replace(/</g, '&lt;').substring(0, 72);
             const fe = row.fecha_cierre ? fmtInformeFecha(row.fecha_cierre) : fmtInformeFecha(row.fecha_creacion);
-            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
+            const ddn = row.derivado_destino_nombre
+                ? ` · → ${String(row.derivado_destino_nombre).replace(/</g, '&lt;')}`
+                : '';
+            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}${ddn}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
         }).join('');
     } catch (e) {
         logErrorWeb('dashboard-filtro-lista', e);
@@ -4707,7 +4645,8 @@ async function refrescarDashboardGerencia(silent) {
                 COUNT(*) FILTER (WHERE estado = 'Asignado') AS asignados,
                 COUNT(*) FILTER (WHERE estado = 'En ejecución') AS en_ejec,
                 COUNT(*) FILTER (WHERE estado = 'Pendiente') AS pendientes,
-                COUNT(*) FILTER (WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
+                COUNT(*) FILTER (WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy,
+                COUNT(*) FILTER (WHERE estado = 'Derivado externo' OR COALESCE(derivado_externo, FALSE) = TRUE) AS derivados_terceros
                 FROM pedidos WHERE 1=1${tsql}`),
             sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
                 FROM ubicaciones_usuarios uu
@@ -4724,6 +4663,7 @@ async function refrescarDashboardGerencia(silent) {
             { val: a.pendientes || 0, lbl: 'Pendiente', cls: '', filter: 'pendientes' },
             { val: a.asignados || 0, lbl: 'Asignados', cls: 'dash-kpi-blue', filter: 'asignados' },
             { val: a.en_ejec || 0, lbl: 'En ejecución', cls: 'dash-kpi-blue', filter: 'en_ejecucion' },
+            { val: a.derivados_terceros || 0, lbl: 'Derivados (terceros)', cls: 'dash-kpi-slate', filter: 'derivados_terceros' },
             { val: a.cerrados_hoy || 0, lbl: 'Cerrados hoy', cls: 'green', filter: 'cerrados_hoy' },
             { val: (rTec.rows || []).length, lbl: 'Con posición &lt;20 min', cls: '', filter: 'tecnicos_gps' }
         ];
@@ -8209,12 +8149,16 @@ function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
     const num = String(p?.cnum || '').trim();
     const loc = String(p?.cloc || '').trim();
     const dir = [calle, num, loc].filter(Boolean).join(', ') || String(p?.cdir || '').trim();
-    const lat = Number(p?.la);
-    const lng = Number(p?.ln);
-    const ubicacion =
-        Number.isFinite(lat) && Number.isFinite(lng)
-            ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
-            : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
+    const { la: laEf, ln: lnEf } = coordsEfectivasPedidoMapa(p);
+    const lat = Number(laEf);
+    const lng = Number(lnEf);
+    const coordsOk =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        (Math.abs(lat) > 1e-7 || Math.abs(lng) > 1e-7);
+    const ubicacion = coordsOk
+        ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
+        : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
     const obsTxt = String(obs || '').trim() || '—';
     const recl = cliente || tel ? `${cliente || '—'}${tel ? ` · Tel.: ${tel}` : ''}` : '—';
     return [
@@ -8310,6 +8254,16 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
     try {
         const body = { destino: destinoSel.destino, motivo: motivo || undefined, mensaje_final: mensajeFinal || undefined };
         if (destinoSel.idxStr !== '') body.fila_index = destinoSel.fila_index;
+        const pRow = app.p.find((x) => String(x.id) === String(pidNum));
+        if (pRow) {
+            const { la: laEf, ln: lnEf } = coordsEfectivasPedidoMapa(pRow);
+            const lx = Number(laEf);
+            const ly = Number(lnEf);
+            if (Number.isFinite(lx) && Number.isFinite(ly) && (Math.abs(lx) > 1e-7 || Math.abs(ly) > 1e-7)) {
+                body.lat = lx;
+                body.lng = ly;
+            }
+        }
         const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/derivar-externo`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
@@ -10302,6 +10256,27 @@ let _pollBannerAdminInterval = null;
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
 
+const SESS_KEY_BANNER_OPINION_DISMISS = 'pmg_sess_banner_opinion_dismiss_v1';
+
+function _sessionOpinionBannerDismissedIds() {
+    try {
+        const j = sessionStorage.getItem(SESS_KEY_BANNER_OPINION_DISMISS);
+        const a = JSON.parse(j || '[]');
+        return new Set((Array.isArray(a) ? a : []).map(String));
+    } catch (_) {
+        return new Set();
+    }
+}
+
+function _sessionDismissOpinionBannerPedido(pid) {
+    if (pid == null || pid === '') return;
+    const s = _sessionOpinionBannerDismissedIds();
+    s.add(String(pid));
+    try {
+        sessionStorage.setItem(SESS_KEY_BANNER_OPINION_DISMISS, JSON.stringify([...s]));
+    } catch (_) {}
+}
+
 async function iniciarWatermarkBannerReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
     try {
@@ -10364,6 +10339,8 @@ function _commitAdminBannerOpinionWatermark() {
 }
 
 function ocultarBannerOpinionCliente() {
+    const boxPre = document.getElementById('admin-banner-opinion-cliente');
+    if (boxPre?.dataset?.pedidoId) _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
     _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
@@ -10446,6 +10423,7 @@ async function pollBannerOpinionCliente() {
         const row = r.rows?.[0];
         if (!row) return;
         const nid = Number(row.id);
+        if (_sessionOpinionBannerDismissedIds().has(String(nid))) return;
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
@@ -11655,26 +11633,54 @@ window.renderKpiAdminHistoricoChart = function renderKpiAdminHistoricoChart() {
         window._chartKpiAdmin = null;
     }
     const lab = KPI_METRICA_ETIQUETAS[metrica] || metrica;
+    const kpiSoftLine = { border: '#5b7cba', fill: 'rgba(91, 124, 186, 0.12)' };
+    const shortLabel = (s) => {
+        const t = String(s || '').trim();
+        if (!t) return '';
+        const d = new Date(t);
+        if (!Number.isNaN(d.getTime())) {
+            return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: '2-digit' });
+        }
+        return t.length > 22 ? `${t.slice(0, 20)}…` : t;
+    };
     window._chartKpiAdmin = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: points.map(p => p.label),
+            labels: points.map(p => shortLabel(p.label)),
             datasets: [
                 {
                     label: lab,
                     data: points.map(p => p.y),
-                    borderColor: '#0d9488',
-                    backgroundColor: 'rgba(13, 148, 136, 0.15)',
+                    borderColor: kpiSoftLine.border,
+                    backgroundColor: kpiSoftLine.fill,
                     tension: 0.25,
                     fill: true,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: kpiSoftLine.border,
                 },
             ],
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: false } },
+            maintainAspectRatio: true,
+            aspectRatio: 1.55,
+            layout: { padding: { bottom: 8, top: 4 } },
+            plugins: {
+                legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+                y: { beginAtZero: false, ticks: { font: { size: 10 } } },
+                x: {
+                    ticks: {
+                        font: { size: 9 },
+                        maxRotation: 45,
+                        minRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 10,
+                    },
+                },
+            },
         },
     });
 };
@@ -11738,7 +11744,8 @@ async function cargarKpiSnapshotsAdmin() {
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Valor</th>' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Unidad</th>' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Fuente</th>' +
-            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta (fecha)</th>' +
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta (hora)</th>' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)"></th></tr></thead><tbody>';
         const body = rows
             .map(row => {
@@ -11746,6 +11753,7 @@ async function cargarKpiSnapshotsAdmin() {
                 const vjShort = vj.length > 48 ? vj.slice(0, 45) + '…' : vj;
                 const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
                 const labM = KPI_METRICA_ETIQUETAS[row.metrica];
+                const al = splitFechaHoraExportAR(row.created_at);
                 const celMetrica = labM
                     ? `<span style="font-weight:600">${_escOpt(labM)}</span><br><code style="font-size:.68rem;color:var(--tl)">${_escOpt(row.metrica)}</code>`
                     : `<code>${_escOpt(row.metrica)}</code>`;
@@ -11756,7 +11764,8 @@ async function cargarKpiSnapshotsAdmin() {
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(vn)}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(formatearUnidadKpiVista(row.unidad))}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">${_escOpt(row.fuente || '')}</td>` +
-                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);white-space:nowrap">${_escOpt(String(row.created_at || '').replace('T', ' ').slice(0, 16))}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);white-space:nowrap">${_escOpt(al.fecha)}</td>` +
+                    `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo);white-space:nowrap">${_escOpt(al.hora)}</td>` +
                     `<td style="padding:.4rem .5rem;border-bottom:1px solid var(--bo)">` +
                     `<button type="button" class="btn-sm" style="padding:.2rem .45rem;font-size:.72rem;background:var(--bg);border:1px solid var(--bo)" onclick="eliminarKpiSnapshotAdmin(${Number(row.id)})" title="${_escOpt(vjShort)}">Eliminar</button></td></tr>`
                 );
@@ -12025,13 +12034,14 @@ function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
     pdf.setFontSize(7);
     pdf.setTextColor(30, 41, 59);
     const cols = [
-        { w: 52, t: 'Métrica' },
-        { w: 20, t: 'Desde' },
-        { w: 20, t: 'Hasta' },
-        { w: 14, t: 'Valor' },
-        { w: 18, t: 'Unidad' },
-        { w: 22, t: 'Fuente' },
-        { w: 36, t: 'Alta' },
+        { w: 50, t: 'Métrica' },
+        { w: 19, t: 'Desde' },
+        { w: 19, t: 'Hasta' },
+        { w: 13, t: 'Valor' },
+        { w: 17, t: 'Unidad' },
+        { w: 20, t: 'Fuente' },
+        { w: 22, t: 'Alta fecha' },
+        { w: 22, t: 'Alta hora' },
     ];
     let x = margin;
     cols.forEach(c => {
@@ -12040,7 +12050,7 @@ function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
     });
     pdf.setDrawColor(203, 213, 225);
     pdf.setLineWidth(0.25);
-    pdf.line(margin, y + 1.2, margin + 182, y + 1.2);
+    pdf.line(margin, y + 1.2, margin + 182, y + 1.2); /* suma anchos ≈ 182 */
     return y + 5;
 }
 
@@ -12064,13 +12074,15 @@ function kpiPdfPiePaginas(pdf) {
 async function kpiPdfMiniChartDataUrl(metricaKey, points) {
     if (!points.length || typeof Chart === 'undefined') return null;
     const canvas = document.createElement('canvas');
-    canvas.width = 520;
-    canvas.height = 132;
+    canvas.width = 420;
+    canvas.height = 200;
     const ctx = canvas.getContext('2d');
     const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
-    const labels = points.map((p) => kpiPdfTruncCell(p.label, 14));
+    const labels = points.map((p) => kpiPdfTruncCell(p.label, 12));
     const data = points.map((p) => p.y);
     const type = points.length === 1 ? 'bar' : 'line';
+    const lineC = '#5b7cba';
+    const fillC = type === 'bar' ? 'rgba(91, 124, 186, 0.45)' : 'rgba(91, 124, 186, 0.14)';
     const chart = new Chart(ctx, {
         type,
         data: {
@@ -12079,8 +12091,8 @@ async function kpiPdfMiniChartDataUrl(metricaKey, points) {
                 {
                     label: lab,
                     data,
-                    borderColor: '#0d9488',
-                    backgroundColor: type === 'bar' ? 'rgba(13, 148, 136, 0.5)' : 'rgba(13, 148, 136, 0.14)',
+                    borderColor: lineC,
+                    backgroundColor: fillC,
                     borderWidth: type === 'line' ? 2 : 1,
                     tension: 0.25,
                     fill: type === 'line',
@@ -12091,13 +12103,21 @@ async function kpiPdfMiniChartDataUrl(metricaKey, points) {
             animation: false,
             responsive: false,
             devicePixelRatio: 1.25,
-            layout: { padding: { top: 6, bottom: 2, left: 2, right: 4 } },
+            layout: { padding: { top: 8, bottom: 22, left: 6, right: 8 } },
             plugins: {
-                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 11, weight: '600' } },
+                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 10, weight: '600' } },
                 legend: { display: false },
             },
             scales: {
-                x: { ticks: { font: { size: 8 }, maxRotation: 55 } },
+                x: {
+                    ticks: {
+                        font: { size: 8 },
+                        maxRotation: 40,
+                        minRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 8,
+                    },
+                },
                 y: { beginAtZero: false, ticks: { font: { size: 8 } } },
             },
         },
@@ -12181,14 +12201,14 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 19;
+        const hMmMax = 52;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
             const dataUrl = await kpiPdfMiniChartDataUrl(mk, pts);
             if (!dataUrl) continue;
             let hMm = hMmMax;
-            let wMm = maxW;
+            let wMm = Math.min(maxW, 168);
             if (y + hMm + 3.5 > pageH - 14) {
                 pdf.addPage();
                 y = margin;
@@ -12230,14 +12250,16 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             let x = margin;
             const labM = KPI_METRICA_ETIQUETAS[row.metrica] || row.metrica;
             const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+            const al = splitFechaHoraExportAR(row.created_at);
             const cells = [
-                { w: 52, t: kpiPdfTruncCell(labM, 34) },
-                { w: 20, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_inicio), 14) },
-                { w: 20, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_fin), 14) },
-                { w: 14, t: kpiPdfTruncCell(vn, 10) },
-                { w: 18, t: kpiPdfTruncCell(formatearUnidadKpiVista(row.unidad), 12) },
-                { w: 22, t: kpiPdfTruncCell(row.fuente || '', 14) },
-                { w: 36, t: kpiPdfTruncCell(String(row.created_at || '').replace('T', ' ').slice(0, 16), 22) },
+                { w: 50, t: kpiPdfTruncCell(labM, 32) },
+                { w: 19, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_inicio), 12) },
+                { w: 19, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_fin), 12) },
+                { w: 13, t: kpiPdfTruncCell(vn, 8) },
+                { w: 17, t: kpiPdfTruncCell(formatearUnidadKpiVista(row.unidad), 10) },
+                { w: 20, t: kpiPdfTruncCell(row.fuente || '', 12) },
+                { w: 22, t: kpiPdfTruncCell(al.fecha, 14) },
+                { w: 22, t: kpiPdfTruncCell(al.hora, 8) },
             ];
             cells.forEach(c => {
                 pdf.text(c.t, x, y);
@@ -13818,6 +13840,16 @@ function escapeCsvCeldaPedidos(v) {
     return s;
 }
 
+function splitFechaHoraExportAR(v) {
+    if (v == null || v === '') return { fecha: '', hora: '' };
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return { fecha: String(v), hora: '' };
+    return {
+        fecha: d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        hora: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    };
+}
+
 async function exportarPedidosCsvAdmin() {
     if (!esAdmin()) {
         toast('Solo administradores pueden exportar el listado.', 'error');
@@ -13845,7 +13877,6 @@ async function exportarPedidosCsvAdmin() {
         COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
         COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
         COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad,
-        COALESCE(TRIM(cliente_direccion),'') AS cliente_direccion,
         COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto,
         descripcion
         FROM pedidos ${where} ORDER BY fecha_creacion DESC LIMIT 10000`;
@@ -13859,8 +13890,10 @@ async function exportarPedidosCsvAdmin() {
         const headers = [
             'id',
             'numero_pedido',
-            'fecha_creacion',
-            'fecha_cierre',
+            'fecha_creacion_fecha',
+            'fecha_creacion_hora',
+            'fecha_cierre_fecha',
+            'fecha_cierre_hora',
             'estado',
             'prioridad',
             'tipo_trabajo',
@@ -13872,19 +13905,22 @@ async function exportarPedidosCsvAdmin() {
             'cliente_calle',
             'cliente_numero_puerta',
             'cliente_localidad',
-            'cliente_direccion',
             'direccion_consolidada',
             'telefono_contacto',
             'descripcion',
         ];
         const lines = [headers.join(',')];
         for (const row of rows) {
+            const fc = splitFechaHoraExportAR(row.fecha_creacion);
+            const ff = splitFechaHoraExportAR(row.fecha_cierre);
             lines.push(
                 [
                     row.id,
                     row.numero_pedido,
-                    row.fecha_creacion,
-                    row.fecha_cierre,
+                    fc.fecha,
+                    fc.hora,
+                    ff.fecha,
+                    ff.hora,
                     row.estado,
                     row.prioridad,
                     row.tipo_trabajo,
@@ -13896,8 +13932,7 @@ async function exportarPedidosCsvAdmin() {
                     row.cliente_calle,
                     row.cliente_numero_puerta,
                     row.cliente_localidad,
-                    row.cliente_direccion,
-                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || '',
+                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || '',
                     row.telefono_contacto,
                     row.descripcion,
                 ]
@@ -14066,26 +14101,31 @@ async function exportInformeMensualExcel() {
             COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
             COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
             COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad,
-            COALESCE(TRIM(cliente_direccion),'') AS cliente_direccion,
             COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto
             FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
-        const rows = (r.rows || []).map(row => ({
-            Pedido: row.numero_pedido,
-            NIS: row.nis_medidor,
-            Estado: row.estado,
-            Prioridad: row.prioridad,
-            Creado: fmtInformeFecha(row.fecha_creacion),
-            Cierre: fmtInformeFecha(row.fecha_cierre),
-            Distribuidor: row.distribuidor,
-            Tipo: row.tipo_trabajo,
-            Descripcion: row.descripcion,
-            Cliente: row.cliente_nombre,
-            Calle: row.cliente_calle,
-            Numero: row.cliente_numero_puerta,
-            Localidad: row.cliente_localidad,
-            Telefono: row.telefono_contacto,
-            Direccion_consolidada: [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || row.cliente_direccion || ''
-        }));
+        const rows = (r.rows || []).map(row => {
+            const fc = splitFechaHoraExportAR(row.fecha_creacion);
+            const ff = splitFechaHoraExportAR(row.fecha_cierre);
+            return {
+                Pedido: row.numero_pedido,
+                NIS: row.nis_medidor,
+                Estado: row.estado,
+                Prioridad: row.prioridad,
+                Creado_fecha: fc.fecha,
+                Creado_hora: fc.hora,
+                Cierre_fecha: ff.fecha,
+                Cierre_hora: ff.hora,
+                Distribuidor: row.distribuidor,
+                Tipo: row.tipo_trabajo,
+                Descripcion: row.descripcion,
+                Cliente: row.cliente_nombre,
+                Calle: row.cliente_calle,
+                Numero: row.cliente_numero_puerta,
+                Localidad: row.cliente_localidad,
+                Telefono: row.telefono_contacto,
+                Direccion_consolidada: [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || '',
+            };
+        });
         const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Pedido: '—', Nota: 'Sin filas en el período' }]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
@@ -14649,19 +14689,29 @@ async function generarInformeMensualENRE() {
     try {
         const tsql = await pedidosFiltroTenantSql();
         const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
-        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
+        const r = await sqlSimple(`SELECT numero_pedido, nis_medidor, estado, prioridad, fecha_creacion, fecha_cierre, distribuidor, tipo_trabajo, descripcion,
+            COALESCE(NULLIF(TRIM(cliente_nombre),''), NULLIF(TRIM(cliente),''), '') AS cliente_nombre,
+            COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
+            COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
+            COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad
+            FROM pedidos WHERE ${condFecha}${tsql} ORDER BY fecha_creacion DESC LIMIT 500`);
         const rows = r.rows || [];
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
         const tit = ent + ' — Informe de pedidos';
         const hdr = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
-        let tab = '<table><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>Creado</th><th>Cierre</th><th>Dist.</th><th>Tipo</th><th>Cliente</th><th>Calle</th><th>N°</th><th>Localidad</th></tr></thead><tbody>';
+        let tab = '<p style="font-size:7.5pt;color:#475569;margin:0 0 .35rem">Arrastrá el borde derecho de cada encabezado para ajustar el ancho de columna antes de imprimir.</p><table id="gn-informe-pedidos-tab"><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>F. alta</th><th>H. alta</th><th>F. cierre</th><th>H. cierre</th><th>Dist.</th><th>Tipo</th><th>Cliente</th><th>Calle</th><th>N°</th><th>Loc.</th></tr></thead><tbody>';
         rows.forEach(row => {
-            tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_nombre || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_calle || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_numero_puerta || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_localidad || '').replace(/</g, '&lt;')}</td></tr>`;
+            const fc = splitFechaHoraExportAR(row.fecha_creacion);
+            const ff = splitFechaHoraExportAR(row.fecha_cierre);
+            const esc = (s) => String(s ?? '').replace(/</g, '&lt;');
+            tab += `<tr><td>${esc(row.numero_pedido)}</td><td>${esc(row.nis_medidor)}</td><td>${esc(row.estado)}</td><td>${esc(row.prioridad)}</td><td>${esc(fc.fecha)}</td><td>${esc(fc.hora)}</td><td>${esc(ff.fecha)}</td><td>${esc(ff.hora)}</td><td>${esc(row.distribuidor)}</td><td>${esc(row.tipo_trabajo)}</td><td>${esc(row.cliente_nombre)}</td><td>${esc(row.cliente_calle)}</td><td>${esc(row.cliente_numero_puerta)}</td><td>${esc(row.cliente_localidad)}</td></tr>`;
         });
         tab += '</tbody></table>';
         const w = window.open('', '_blank');
         if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
-        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
+        const sty = '@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:auto} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap} th{background:#eff6ff;position:relative}.gn-col-grip{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:2}';
+        const scr = `(function(){document.querySelectorAll('#gn-informe-pedidos-tab th').forEach(function(th){var g=document.createElement('div');g.className='gn-col-grip';th.appendChild(g);g.addEventListener('mousedown',function(e){e.preventDefault();var th0=th,start=e.pageX,w0=th0.getBoundingClientRect().width;function mv(ev){var nw=Math.max(36,w0+ev.pageX-start);th0.style.width=nw+'px';th0.style.minWidth=nw+'px';}function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});});})();`;
+        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>' + sty + '</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p><script>' + scr + '</script></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
@@ -14683,7 +14733,7 @@ async function generarInformeMensualENRE() {
             const ctx = chart.ctx;
             const meta = chart.getDatasetMeta(0);
             ctx.save();
-            ctx.font = '600 12px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+            ctx.font = '600 9.5px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             meta.data.forEach((arc, i) => {
@@ -14759,7 +14809,7 @@ async function generarInformeMensualENRE() {
                         const y = cp?.y ?? bar.y;
                         if (x == null || y == null) return;
                         const inkM = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                        ctx.font = '600 11px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+                        ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.lineWidth = inkM ? 0 : 3;

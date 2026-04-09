@@ -56,6 +56,25 @@ export async function ensureHumanChatTables() {
  * Obtiene o crea sesión abierta (queued|active) para teléfono+tenant.
  * @returns {Promise<{ id: number, isNew: boolean }>}
  */
+/**
+ * Sesión humana abierta (cola o activa) para un teléfono en el tenant.
+ * @returns {Promise<{ id: number } | null>}
+ */
+export async function humanChatFindOpenSessionForPhone(tenantId, phoneCanonical) {
+  await ensureHumanChatTables();
+  const tid = Number(tenantId);
+  const phone = String(phoneCanonical || "").replace(/\D/g, "");
+  if (!Number.isFinite(tid) || tid < 1 || phone.length < 8) return null;
+  const r = await query(
+    `SELECT id FROM whatsapp_human_chat_session
+     WHERE tenant_id = $1 AND phone_canonical = $2 AND estado IN ('queued', 'active')
+     LIMIT 1`,
+    [tid, phone]
+  );
+  const id = r.rows?.[0]?.id;
+  return id != null ? { id: Number(id) } : null;
+}
+
 export async function humanChatOpenOrGetSession(tenantId, phoneCanonical, contactName) {
   await ensureHumanChatTables();
   const tid = Number(tenantId);

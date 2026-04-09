@@ -31,6 +31,7 @@ import {
   buildDerivacionExternaMensaje,
   etiquetaDestinoDerivacion,
 } from "../utils/derivacionReclamos.js";
+import { humanChatOpenOrGetSession, humanChatAppendOutbound } from "../services/whatsappHumanChat.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -688,9 +689,19 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     }
     const destinoEtiqueta = etiquetaDestinoDerivacion(destinoStr);
     const nombreEmpresaDestino = (rContact.nombre && String(rContact.nombre).trim()) || destinoEtiqueta;
+    let pedidoParaMensaje = { ...pedido };
+    const latBody = req.body?.lat ?? req.body?.latitude;
+    const lngBody = req.body?.lng ?? req.body?.longitude;
+    if (latBody != null && lngBody != null) {
+      const lx = Number(latBody);
+      const ly = Number(lngBody);
+      if (Number.isFinite(lx) && Number.isFinite(ly) && (Math.abs(lx) > 1e-7 || Math.abs(ly) > 1e-7)) {
+        pedidoParaMensaje = { ...pedidoParaMensaje, lat: lx, lng: ly };
+      }
+    }
     const snapBase = buildDerivacionExternaMensaje({
       nombreTenant,
-      pedido,
+      pedido: pedidoParaMensaje,
       nombreEmpresaDestino,
       textoObservacionesTecnico: textoObservaciones,
     });
@@ -777,6 +788,25 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
         console.error("[pedidos] aviso cliente derivación externa (no bloqueante)", e.message);
       }
     })();
+    const waDigits = String(rContact.whatsapp || "").replace(/\D/g, "");
+    if (waDigits.length >= 8) {
+      void (async () => {
+        try {
+          const { id: sid } = await humanChatOpenOrGetSession(
+            req.tenantId,
+            waDigits,
+            rContact.nombre || nombreEmpresaDestino
+          );
+          const stub = `[Derivación externa] Pedido #${row.numero_pedido ?? row.id} — el admin abrirá WhatsApp con el texto completo. Respondé por este hilo; un operador te verá en el panel de chat.`;
+          await humanChatAppendOutbound(sid, stub, {
+            source: "derivacion_externa",
+            pedido_id: row.id,
+          });
+        } catch (e) {
+          console.error("[pedidos] human chat derivación tercero (no bloqueante)", e?.message || e);
+        }
+      })();
+    }
     return res.json({
       ...row,
       _derivacion_whatsapp: rContact.whatsapp,

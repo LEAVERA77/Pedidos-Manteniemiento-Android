@@ -38,6 +38,7 @@ import {
   humanChatQueueSnapshot,
   humanChatAppendInbound,
   humanChatCloseBySessionId,
+  humanChatFindOpenSessionForPhone,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
 
@@ -1355,6 +1356,21 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const ctx = await loadTenantBotContext(tid);
+  const wpidBootstrap = phoneNumberId ? String(phoneNumberId).trim() : null;
+  try {
+    const hcOpen = await humanChatFindOpenSessionForPhone(tid, phone);
+    if (hcOpen?.id && ctx) {
+      sessions.set(sk, {
+        step: "human_chat",
+        humanChatSessionId: Number(hcOpen.id),
+        tenantId: tid,
+        tipoCliente: ctx.tipo,
+        contactName: contactName || null,
+        phoneNumberId: wpidBootstrap,
+        humanChatFirstAcked: true,
+      });
+    }
+  } catch (_) {}
 
   try {
     const opinionTry = await tryConsumeClienteOpinionReply({

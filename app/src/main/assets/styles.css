@@ -86,6 +86,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .dash-kpi-click.active-ring{outline:2px solid var(--bm);outline-offset:2px}
 .dash-kpi-click.dash-kpi-blue{background:linear-gradient(180deg,#eff6ff,#fff);border:1px solid rgba(37,99,235,.22)}
 .dash-kpi-click.dash-kpi-blue .val{color:#1d4ed8}
+.dash-kpi-click.dash-kpi-slate{background:linear-gradient(180deg,#f1f5f9,#fff);border:1px solid rgba(71,85,105,.28)}
+.dash-kpi-click.dash-kpi-slate .val{color:#334155}
 .bp2.bp2-fullhide{transform:translateY(100%)!important}
 .ib-mini{background:var(--bg);border:1px solid var(--bo);border-radius:.35rem;padding:.15rem .4rem;font-size:.7rem;cursor:pointer;color:var(--bd)}
 .fab-show-pedidos{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:1002;display:none;align-items:center;gap:.35rem;padding:.4rem 1rem;background:var(--bd);color:#fff;border:none;border-radius:2rem;font-size:.78rem;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)}
@@ -115,7 +117,11 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #mapa-android-strip .mas-scope-wrap{align-items:center;gap:.3rem;flex:1;min-width:0}
 #mapa-android-strip .mas-scope-lbl{color:var(--tl);flex-shrink:0}
 #mapa-android-strip .mas-scope-select{font-size:.62rem!important;padding:.12rem .3rem!important;border-radius:.3rem!important;border:1px solid var(--bo)!important;max-width:min(9.5rem,46vw)}
-#mapa-android-strip #wrap-android-estado .mas-scope-select{max-width:min(10.5rem,48vw)}
+#mapa-android-strip .mas-filtros-panel-btn{
+  flex-shrink:0;font-size:.62rem;font-weight:600;padding:.2rem .45rem;border-radius:.3rem;border:1px solid var(--bo);
+  background:var(--bg);color:var(--bd);cursor:pointer;white-space:nowrap
+}
+#mapa-android-strip .mas-filtros-panel-btn:active{opacity:.92}
 .map-slide-tab.map-tab-android-bar{top:64px;left:0!important;right:auto!important;z-index:9650}
 #mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:854;max-width:min(12rem,calc(100vw - 1rem));max-height:min(26vh,220px);overflow-y:auto;font-size:.58rem}
 #mapa-card-colores .moui-bd{padding:.25rem .35rem .3rem}
