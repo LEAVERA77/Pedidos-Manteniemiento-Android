@@ -1,4 +1,5 @@
 import { query } from "../db/neon.js";
+import { soloDigitosIdentificadorReclamo } from "./whatsappReclamanteLookup.js";
 
 let _pedidosColsCache = null;
 
@@ -19,12 +20,21 @@ export async function lookupDistribuidorTrafoPorNisMedidor(nisMedidorStr) {
   if (!key) {
     return { distribuidor: null, trafo: null };
   }
+  const dKey = soloDigitosIdentificadorReclamo(key);
+  const useDigit = dKey.length >= 4 && dKey.length <= 24;
   try {
     const r = await query(
       `SELECT distribuidor_codigo, transformador FROM socios_catalogo
-       WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))
+       WHERE activo = TRUE AND (
+         UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))
+         OR (
+           $2::text <> ''
+           AND LENGTH($2::text) >= 4
+           AND regexp_replace(TRIM(COALESCE(nis_medidor,'')), '[^0-9]', '', 'g') = $2
+         )
+       )
        LIMIT 1`,
-      [key]
+      [key, useDigit ? dKey : ""]
     );
     const row = r.rows?.[0];
     if (!row) return { distribuidor: null, trafo: null };

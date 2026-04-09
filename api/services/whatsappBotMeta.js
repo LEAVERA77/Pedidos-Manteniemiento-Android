@@ -12,7 +12,10 @@ import {
   sendTenantWhatsAppText,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
-import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.js";
+import {
+  buscarIdentidadParaReclamoWhatsApp,
+  soloDigitosIdentificadorReclamo,
+} from "./whatsappReclamanteLookup.js";
 import {
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
@@ -253,6 +256,14 @@ function resolveWhatsappBloqueoReclamos(cfgObj) {
 function esIdentificacionLibreRazonable(texto) {
   const t = String(texto || "").trim();
   if (t.length < 3 || t.length > 500) return false;
+  const soloDig = soloDigitosIdentificadorReclamo(t);
+  if (
+    soloDig.length >= 4 &&
+    soloDig.length <= 20 &&
+    /^[\d\s.\-_\u00a0/]+$/u.test(t.replace(/\u00a0/g, " "))
+  ) {
+    return false;
+  }
   if (!/[\p{L}\p{N}]/u.test(t)) return false;
   const sinEsp = t.replace(/\s/g, "");
   if (sinEsp.length < 2) return false;
@@ -296,6 +307,20 @@ function aplicarSuministroCatalogoWhatsappRes(sess, res) {
   if (f) sess.suministroFases = f;
   const prov = trimOrNullWhatsapp(res.catalogoProvincia);
   if (prov) sess.catalogoProvinciaParaGeocode = prov;
+}
+
+/** Coordenadas del padrón (clientes_finales / socios_catalogo) para el mapa si el geocode falla. */
+function aplicarPadronCoordsWhatsapp(sess, res) {
+  if (!sess || !res) return;
+  const la = res.catalogoLatitud;
+  const lo = res.catalogoLongitud;
+  if (la == null || lo == null) return;
+  const lat = Number(la);
+  const lng = Number(lo);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+  sess.padronLat = lat;
+  sess.padronLng = lng;
 }
 
 function interpretaSuministroConexionWhatsapp(text) {
@@ -599,8 +624,16 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   if (!calleT && !locT && !numT && dirDecl) {
     clienteDireccion = dirDecl;
   }
-  const latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
-  const lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
+  let latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
+  let lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
+  if ((latN == null || lngN == null) && sess.padronLat != null && sess.padronLng != null) {
+    const pl = Number(sess.padronLat);
+    const pg = Number(sess.padronLng);
+    if (Number.isFinite(pl) && Number.isFinite(pg)) {
+      latN = pl;
+      lngN = pg;
+    }
+  }
   try {
     const pedido = await crearPedidoDesdeWhatsappBot({
       tenantId: sess.tenantId,
@@ -998,6 +1031,14 @@ async function geocodeStructuredAddressAndFinalizePedido(
     endLat = userGps.lat;
     endLng = userGps.lng;
     usedGpsTextoFallback = true;
+  }
+  if ((endLat == null || endLng == null) && sess.padronLat != null && sess.padronLng != null) {
+    const pl = Number(sess.padronLat);
+    const pg = Number(sess.padronLng);
+    if (Number.isFinite(pl) && Number.isFinite(pg)) {
+      endLat = pl;
+      endLng = pg;
+    }
   }
   sess.lat = endLat;
   sess.lng = endLng;
@@ -1641,6 +1682,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         phoneNumberId: sess.phoneNumberId || wpid,
       };
       aplicarSuministroCatalogoWhatsappRes(nextSess, res);
+      aplicarPadronCoordsWhatsapp(nextSess, res);
       sessions.set(sk, nextSess);
       await reply(
         phone,
@@ -1674,6 +1716,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       phoneNumberId: sess.phoneNumberId || wpid,
     };
     aplicarSuministroCatalogoWhatsappRes(sessOpc, res);
+    aplicarPadronCoordsWhatsapp(sessOpc, res);
     sessions.set(sk, sessOpc);
     await reply(
       phone,
@@ -1721,6 +1764,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.nisMedidorParaPedido = res.nisMedidor ?? null;
     sess.contactName = nuevoNombre || sess.contactName;
     aplicarSuministroCatalogoWhatsappRes(sess, res);
+    aplicarPadronCoordsWhatsapp(sess, res);
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
 
     if (puedeMapaDesdePadron) {
