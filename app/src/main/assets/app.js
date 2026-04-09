@@ -2390,6 +2390,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS barrio TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS latitud NUMERIC(12, 8)`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS longitud NUMERIC(12, 8)`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -13736,20 +13738,62 @@ function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
     return null;
 }
 
-const SOCIOS_BULK_CHUNK = 160;
+/** Lee número desde celda Excel (raw o texto): latitud, longitud, etc. */
+function leerCoordExcelSocios(row, mapNormAOriginal, ...clavesCanon) {
+    for (const canon of clavesCanon) {
+        const orig = mapNormAOriginal[canon];
+        if (orig != null && row[orig] != null && row[orig] !== '') {
+            const v = row[orig];
+            if (typeof v === 'number' && Number.isFinite(v)) return v;
+            const s = String(v).trim().replace(',', '.');
+            if (s) {
+                const n = parseFloat(s);
+                if (Number.isFinite(n)) return n;
+            }
+        }
+    }
+    for (const orig of Object.keys(row)) {
+        const n = normalizarEncabezadoExcelSocios(orig);
+        if (clavesCanon.includes(n)) {
+            const v = row[orig];
+            if (v == null || v === '') continue;
+            if (typeof v === 'number' && Number.isFinite(v)) return v;
+            const s = String(v).trim().replace(',', '.');
+            if (s) {
+                const pn = parseFloat(s);
+                if (Number.isFinite(pn)) return pn;
+            }
+        }
+    }
+    return null;
+}
+
+function validarWgs84Import(lat, lng) {
+    if (lat == null || lng == null) return { la: null, lo: null };
+    const a = Number(lat);
+    const b = Number(lng);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return { la: null, lo: null };
+    if (Math.abs(a) > 90 || Math.abs(b) > 180) return { la: null, lo: null };
+    if (Math.abs(a) < 1e-9 && Math.abs(b) < 1e-9) return { la: null, lo: null };
+    return { la: a, lo: b };
+}
+
+/** Lotes más grandes = menos viajes a Neon (20k+ socios). */
+const SOCIOS_BULK_CHUNK = 1000;
 
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const vals = lote
         .map(
             (p) =>
-                `(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)})`
+                `(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
         )
         .join(',');
     await sqlSimple(
-        `INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+        `INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
          VALUES ${vals}
-         ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`
+         ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
+         latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`
     );
 }
 
@@ -13828,7 +13872,8 @@ async function importarExcelSocios(event) {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        /* raw:false conserva teléfonos como texto; coords se parsean en leerCoordExcelSocios */
+        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false, blankrows: false });
         if (!rawRows.length) {
             ocultarOverlayImportacion();
             toast('Excel vacío o sin filas de datos', 'error');
@@ -13845,10 +13890,16 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
-                'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
+            let nis = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
+            if (!nis) {
+                const nisPart = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis');
+                const medPart = valorSociosPorEncabezados(row, mapNormAOriginal,
+                    'medidor', 'nro_medidor', 'numero_medidor');
+                if (nisPart && medPart) nis = `${String(nisPart).trim()}-${String(medPart).trim()}`;
+                else nis = nisPart || medPart;
+            }
             if (!nis) continue;
-            if (filaN % 400 === 0) {
+            if (filaN % 2500 === 0) {
                 actualizarOverlayImportacion(`Analizando Excel… ${filaN} / ${rawRows.length}`);
                 await new Promise((r) => setTimeout(r, 0));
             }
@@ -13879,6 +13930,9 @@ async function importarExcelSocios(event) {
             const tcon = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
+            const laRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'latitud', 'lat', 'latitude', 'lat_gps');
+            const loRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'longitud', 'lng', 'lon', 'longitude', 'lng_gps');
+            const { la: latitud, lo: longitud } = validarWgs84Import(laRaw, loRaw);
             payloads.push({
                 nis,
                 nombre,
@@ -13892,7 +13946,9 @@ async function importarExcelSocios(event) {
                 ur,
                 transf,
                 tcon,
-                fas
+                fas,
+                latitud,
+                longitud
             });
         }
         let ok = 0;
@@ -13907,9 +13963,9 @@ async function importarExcelSocios(event) {
             } catch (e) {
                 for (const p of chunk) {
                     try {
-                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
-                    VALUES(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
+                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+                    VALUES(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`);
                         ok++;
                     } catch (e2) {
                         fail++;
@@ -13942,7 +13998,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• nis_medidor · nombre · Calle · Numero\n• telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS; con “vaciar”, se borra todo el catálogo antes.\nTeléfono: formato texto en Excel para el 0 inicial.');
+    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nClave: columna nis_medidor, o bien nis + medidor (se unen con guion).\nCoordenadas opcionales: latitud y longitud (WGS84). Si una fila no trae GPS, al fusionar no se borran coordenadas ya cargadas.\n\nRecomendado:\n• nis_medidor · nombre · Calle · Numero · latitud · longitud\n• telefono · distribuidor_codigo · localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion · fases\n\nImportación en lotes grandes (rápida para 20.000+ filas).\nSin “vaciar”, se fusiona por clave; con “vaciar”, se borra el catálogo antes.');
 }
 
 async function buscarHistorialPorNIS() {
