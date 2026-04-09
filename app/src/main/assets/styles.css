@@ -391,7 +391,8 @@ textarea{resize:vertical;min-height:80px}
 .avance-buttons button{flex:1;padding:.5rem;border:none;border-radius:.5rem;cursor:pointer}
 .avance-buttons .guardar{background:var(--bd);color:white}
 .avance-buttons .cancelar{background:var(--bg);color:var(--td)}
-#toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3)}
+#toast{position:fixed;bottom:6rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--td);color:white;padding:.65rem 1.25rem;border-radius:2rem;font-size:.88rem;z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 15px rgba(0,0,0,.3);line-height:1.35}
+#toast.toast-multiline{border-radius:.75rem;padding:.75rem 1rem;pointer-events:auto;max-height:min(55vh,22rem);overflow-y:auto}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.success{background:#059669}#toast.error{background:#dc2626}#toast.info{background:var(--bd)}
 @media(min-width:1024px){

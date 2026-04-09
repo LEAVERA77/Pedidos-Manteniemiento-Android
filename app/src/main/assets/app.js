@@ -39,6 +39,15 @@ import {
   proto.__gestornovaWillReadPatch = true;
 })();
 
+/** Prefijo unificado para avisos del sistema (toasts, alert, confirm). */
+const GN_DICE_PREFIX = 'GestorNova Dice:';
+function gnDice(msg) {
+    const s = String(msg ?? '').trim();
+    if (!s) return GN_DICE_PREFIX;
+    if (/^GestorNova\s+Dice\s*:/i.test(s)) return s;
+    return `${GN_DICE_PREFIX} ${s}`;
+}
+
 
 
 
@@ -2651,18 +2660,45 @@ function toast(msg, tipo = 'info') {
         el.id = 'toast';
         document.body.appendChild(el);
     }
-    let s = String(msg ?? '');
-    if (s.length > 360) s = s.slice(0, 357) + '…';
+    let s = gnDice(String(msg ?? ''));
+    const maxLen = tipo === 'error' ? 400 : 2200;
+    if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…';
     el.textContent = s;
-    el.className = 'show ' + tipo;
+    el.className = 'show ' + tipo + (s.length > 100 ? ' toast-multiline' : '');
+    try {
+        el.style.whiteSpace = s.length > 100 ? 'normal' : 'nowrap';
+        el.style.maxWidth = s.length > 100 ? 'min(92vw, 32rem)' : '';
+    } catch (_) {}
     if (tipo === 'error') el.setAttribute('role', 'alert');
     else el.removeAttribute('role');
     clearTimeout(window.toastTimer);
     window.toastTimer = setTimeout(() => {
         el.className = tipo;
+        try {
+            el.style.whiteSpace = '';
+            el.style.maxWidth = '';
+        } catch (_) {}
         if (tipo === 'error') el.removeAttribute('role');
-    }, 4200);
+    }, tipo === 'error' ? 5200 : 5200);
 }
+
+(function wrapConfirmGestorNova() {
+    if (typeof window === 'undefined' || window.__gnConfirmWrapped) return;
+    const orig = window.confirm.bind(window);
+    window.confirm = function (msg) {
+        return orig(gnDice(msg));
+    };
+    window.__gnConfirmWrapped = true;
+})();
+
+(function wrapAlertGestorNova() {
+    if (typeof window === 'undefined' || window.__gnAlertWrapped) return;
+    const orig = window.alert.bind(window);
+    window.alert = function (msg) {
+        orig(gnDice(msg));
+    };
+    window.__gnAlertWrapped = true;
+})();
 
 const norm = p => ({
     id: p.id,
