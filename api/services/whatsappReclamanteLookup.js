@@ -61,6 +61,23 @@ function pickCoord(row, latKey, lngKey) {
   return { catalogoLatitud: lat, catalogoLongitud: lng };
 }
 
+/** Expresión SQL: primera coordenada numérica disponible (latitud | lat). */
+function sqlLatPadExpr(cols) {
+  const parts = [];
+  if (cols.has("latitud")) parts.push("latitud::numeric");
+  if (cols.has("lat")) parts.push("lat::numeric");
+  if (!parts.length) return "NULL::numeric AS lat_pad";
+  return parts.length === 1 ? `${parts[0]} AS lat_pad` : `COALESCE(${parts.join(", ")}) AS lat_pad`;
+}
+
+function sqlLngPadExpr(cols) {
+  const parts = [];
+  if (cols.has("longitud")) parts.push("longitud::numeric");
+  if (cols.has("lng")) parts.push("lng::numeric");
+  if (!parts.length) return "NULL::numeric AS lng_pad";
+  return parts.length === 1 ? `${parts[0]} AS lng_pad` : `COALESCE(${parts.join(", ")}) AS lng_pad`;
+}
+
 /**
  * Comparación SQL: mismo identificador numérico ignorando ceros a la izquierda (041686 ≡ 41686).
  * @param {string} campoSql expresión de columna (ej. nis_medidor::text)
@@ -135,8 +152,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const provExpr = cfCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
-    const latExpr = cfCols.has("latitud") ? "latitud AS lat_pad" : "NULL::numeric AS lat_pad";
-    const lngExpr = cfCols.has("longitud") ? "longitud AS lng_pad" : "NULL::numeric AS lng_pad";
+    const latExpr = sqlLatPadExpr(cfCols);
+    const lngExpr = sqlLngPadExpr(cfCols);
     const params = [tid, rawTrim];
     let extraMatch = "";
     if (useDigitMatch) {
@@ -208,8 +225,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const provExpr = scCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
-    const latExpr = scCols.has("latitud") ? "latitud AS lat_pad" : "NULL::numeric AS lat_pad";
-    const lngExpr = scCols.has("longitud") ? "longitud AS lng_pad" : "NULL::numeric AS lng_pad";
+    const latExpr = sqlLatPadExpr(scCols);
+    const lngExpr = sqlLngPadExpr(scCols);
 
     const tenantColSc = scCols.has("cliente_id")
       ? "cliente_id"
@@ -327,6 +344,15 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       const nisV = row.nis_raw != null && String(row.nis_raw).trim() ? String(row.nis_raw).trim() : null;
       const medV = row.medidor_raw != null && String(row.medidor_raw).trim() ? String(row.medidor_raw).trim() : null;
       const coords = pickCoord(row, "lat_pad", "lng_pad");
+      if (coords.catalogoLatitud == null) {
+        debugReclamanteLookup("socios_sin_coords_en_padron", {
+          nis_medidor: nm,
+          nis: nisV,
+          medidor: medV,
+          tiene_latitud: scCols.has("latitud"),
+          tiene_lat: scCols.has("lat"),
+        });
+      }
       debugReclamanteLookup("match_socios_catalogo", { nis_medidor: nm, nis: nisV, medidor: medV, ...coords });
       return {
         ok: true,

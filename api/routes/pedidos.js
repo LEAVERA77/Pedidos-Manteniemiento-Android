@@ -18,7 +18,10 @@ import {
   notifyPedidoDerivacionClienteWhatsAppSafe,
   sendTenantWhatsAppText,
 } from "../services/whatsappService.js";
-import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
+import {
+  enqueueNotificacionPedidoCerradoParaTecnico,
+  enqueueNotificacionSolicitudDerivacionParaAdmins,
+} from "../services/notificacionesMovilEnqueue.js";
 import {
   lookupDistribuidorTrafoPorNisMedidor,
   contarPedidosAbiertosMismaZona,
@@ -574,7 +577,14 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
       throw err;
     }
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
-    return res.json(coercePedidoLatLng(r.rows[0]));
+    const updated = r.rows[0];
+    void enqueueNotificacionSolicitudDerivacionParaAdmins({
+      tenantId: req.tenantId,
+      pedidoId: updated.id,
+      numeroPedido: updated.numero_pedido,
+      motivoSnippet: motivoStr,
+    }).catch(() => {});
+    return res.json(coercePedidoLatLng(updated));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo registrar la solicitud", detail: error.message });
   }

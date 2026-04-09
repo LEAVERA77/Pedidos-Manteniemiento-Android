@@ -124,3 +124,57 @@ export async function enqueueNotificacionChatInternoPedido({
     console.error("[notificacionesMovilEnqueue] chat interno", e.message);
   }
 }
+
+/**
+ * Técnico solicita derivación a tercero → avisar a admins del tenant (panel web + cola móvil).
+ */
+export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
+  tenantId,
+  pedidoId,
+  numeroPedido,
+  motivoSnippet,
+}) {
+  if (!(await ensureNotificacionesMovilTable())) return;
+  const tid = Number(tenantId);
+  const pid = Number(pedidoId);
+  if (!Number.isFinite(tid) || tid < 1 || !Number.isFinite(pid) || pid < 1) return;
+  const np = String(numeroPedido || "").trim() || `#${pid}`;
+  const snip = String(motivoSnippet || "")
+    .trim()
+    .slice(0, 160);
+  const titulo = "Solicitud de derivación (técnico)";
+  const cuerpo = snip
+    ? `${np}: el técnico pide derivar a un tercero. Motivo: ${snip}`
+    : `${np}: el técnico pidió derivar el reclamo a un tercero. Revisá la cola de derivaciones.`;
+  try {
+    const col = await tenantColumnForUsuarios();
+    let rows;
+    if (col && Number.isFinite(tid) && tid >= 1) {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE
+         AND (LOWER(COALESCE(rol::text,'')) = 'admin' OR LOWER(COALESCE(rol::text,'')) = 'administrador')`,
+        [tid]
+      );
+      rows = r.rows;
+    } else {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE activo = TRUE
+         AND (LOWER(COALESCE(rol::text,'')) = 'admin' OR LOWER(COALESCE(rol::text,'')) = 'administrador')`,
+        []
+      );
+      rows = r.rows;
+    }
+    if (!rows?.length) return;
+    for (const row of rows) {
+      const uid = Number(row.id);
+      if (!Number.isFinite(uid) || uid < 1) continue;
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [uid, pid, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.error("[notificacionesMovilEnqueue] solicitud derivación admin", e.message);
+  }
+}

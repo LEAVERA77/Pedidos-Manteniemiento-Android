@@ -660,7 +660,7 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden && app.u) {
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
-        if (!esAdmin()) window.pollNotificacionesMovil();
+        window.pollNotificacionesMovil();
         if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
             void cargarPedidos({ silent: true });
         }
@@ -3476,20 +3476,29 @@ function initBp2PanelFlotanteDesktop() {
             moved: false,
             hadCol
         };
+        let rafMove = null;
         const onMove = (ev) => {
             if (!_bp2DragState) return;
             const cx = ev.clientX != null ? ev.clientX : (ev.touches && ev.touches[0] ? ev.touches[0].clientX : 0);
             const cy = ev.clientY != null ? ev.clientY : (ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0);
-            const dx = cx - _bp2DragState.sx;
-            const dy = cy - _bp2DragState.sy;
-            if (Math.abs(dx) + Math.abs(dy) > 5) _bp2DragState.moved = true;
-            bp2.style.right = 'auto';
-            bp2.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padX: 0, padBottom: 0 });
-            bp2.style.left = c.left + 'px';
-            bp2.style.top = c.top + 'px';
+            if (Math.abs(cx - _bp2DragState.sx) + Math.abs(cy - _bp2DragState.sy) > 5) _bp2DragState.moved = true;
+            if (_bp2DragState.moved && ev.cancelable) ev.preventDefault();
+            if (rafMove) cancelAnimationFrame(rafMove);
+            rafMove = requestAnimationFrame(() => {
+                rafMove = null;
+                if (!_bp2DragState) return;
+                const dx = cx - _bp2DragState.sx;
+                const dy = cy - _bp2DragState.sy;
+                bp2.style.right = 'auto';
+                bp2.style.bottom = 'auto';
+                const c = clampFloatingPanelToViewport(bp2, _bp2DragState.sl + dx, _bp2DragState.st + dy, { padX: 0, padBottom: 0 });
+                bp2.style.left = c.left + 'px';
+                bp2.style.top = c.top + 'px';
+            });
         };
         const onUp = () => {
+            if (rafMove) cancelAnimationFrame(rafMove);
+            rafMove = null;
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
             document.removeEventListener('touchmove', onMove);
@@ -3566,24 +3575,32 @@ function initMouiCardDraggable(cardId) {
             st: r.top,
             moved: false
         };
+        let rafMove = null;
         const onMove = (ev) => {
             if (!_mouiCardDragState) return;
             const cx = ev.clientX != null ? ev.clientX : (ev.touches && ev.touches[0] ? ev.touches[0].clientX : 0);
             const cy = ev.clientY != null ? ev.clientY : (ev.touches && ev.touches[0] ? ev.touches[0].clientY : 0);
-            const dx = cx - _mouiCardDragState.sx;
-            const dy = cy - _mouiCardDragState.sy;
-            if (Math.abs(dx) + Math.abs(dy) > 5) _mouiCardDragState.moved = true;
+            if (Math.abs(cx - _mouiCardDragState.sx) + Math.abs(cy - _mouiCardDragState.sy) > 5) _mouiCardDragState.moved = true;
             if (_mouiCardDragState.moved && ev.cancelable) ev.preventDefault();
-            card.style.right = 'auto';
-            card.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(card, _mouiCardDragState.sl + dx, _mouiCardDragState.st + dy, {
-                padX: 0,
-                padBottom: 0
+            if (rafMove) cancelAnimationFrame(rafMove);
+            rafMove = requestAnimationFrame(() => {
+                rafMove = null;
+                if (!_mouiCardDragState) return;
+                const dx = cx - _mouiCardDragState.sx;
+                const dy = cy - _mouiCardDragState.sy;
+                card.style.right = 'auto';
+                card.style.bottom = 'auto';
+                const c = clampFloatingPanelToViewport(card, _mouiCardDragState.sl + dx, _mouiCardDragState.st + dy, {
+                    padX: 0,
+                    padBottom: 0
+                });
+                card.style.left = c.left + 'px';
+                card.style.top = c.top + 'px';
             });
-            card.style.left = c.left + 'px';
-            card.style.top = c.top + 'px';
         };
         const onUp = () => {
+            if (rafMove) cancelAnimationFrame(rafMove);
+            rafMove = null;
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
             document.removeEventListener('touchmove', onMove);
@@ -5656,7 +5673,7 @@ window.ejecutarDesasignarPedidoPorId = ejecutarDesasignarPedidoPorId;
 let _pollNotifMovilUsaColumnaLeida = true;
 
 window.pollNotificacionesMovil = async function () {
-    if (!app.u || esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    if (!app.u || modoOffline || !NEON_OK || !_sql) return;
     const uid = app.u.id;
     const filtroLeida = _pollNotifMovilUsaColumnaLeida ? ' AND leida = FALSE' : '';
     try {
@@ -5665,6 +5682,7 @@ window.pollNotificacionesMovil = async function () {
         );
         const rows = r.rows || [];
         const tienePuente = window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function';
+        const esAdm = esAdmin();
         for (const row of rows) {
             const t = row.titulo || 'GestorNova';
             const b = row.cuerpo || '';
@@ -5672,6 +5690,14 @@ window.pollNotificacionesMovil = async function () {
             if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
+                    if (_pollNotifMovilUsaColumnaLeida) {
+                        await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    }
+                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true });
+                } catch (_) {}
+            } else if (esAdm) {
+                try {
+                    toast(t + (b ? ': ' + b : ''), 'info');
                     if (_pollNotifMovilUsaColumnaLeida) {
                         await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
                     }
@@ -5691,9 +5717,8 @@ window.pollNotificacionesMovil = async function () {
 
 function iniciarPollNotifMovil() {
     detenerPollNotifMovil();
-    if (esAdmin()) return;
     window.pollNotificacionesMovil();
-    _pollNotifMovilInterval = setInterval(() => { window.pollNotificacionesMovil(); }, 18000);
+    _pollNotifMovilInterval = setInterval(() => { window.pollNotificacionesMovil(); }, esAdmin() ? 12000 : 18000);
 }
 
 function detenerPollNotifMovil() {

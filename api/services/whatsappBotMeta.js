@@ -113,6 +113,7 @@ const WHATSAPP_PASOS_CERO_ES_DATO = new Set(["awaiting_addr_numero", "awaiting_o
  * No deben ejecutarse antes que los pasos del flujo cuando el texto es parte del reclamo.
  */
 function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
+  if (sess && sess.step === "human_chat") return false;
   if (lower === "menú" || lower === "menu" || lower === "inicio" || lower === "ayuda") return true;
   if (lower === "volver") {
     if (sess && WHATSAPP_PASOS_VOLVER_ES_ATRAS.has(sess.step)) return false;
@@ -1416,6 +1417,56 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   );
 }
 
+/**
+ * Sesión humana abierta (vecino «Otros» o tercero por derivación): sin menús del bot.
+ * Debe ejecutarse antes de `!ctx`, cooperativa/derivación y menú principal.
+ */
+async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId }) {
+  const sess = sessions.get(sk);
+  if (!sess || sess.step !== "human_chat") return false;
+  const lower = text
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (lower === "salir" || lower === "fin" || lower === "chau") {
+    try {
+      await humanChatCloseBySessionId(sess.humanChatSessionId);
+    } catch (_) {}
+    sessions.delete(sk);
+    await reply(
+      phone,
+      "Cerramos el chat con el representante. Cuando quieras, escribí *menú* para ver las opciones.",
+      tid,
+      phoneNumberId
+    );
+    return true;
+  }
+  try {
+    await humanChatAppendInbound(sess.humanChatSessionId, text);
+  } catch (e) {
+    if (e && (e.code === "HUMAN_CHAT_CLOSED" || String(e.message || "").includes("human_chat_session_closed"))) {
+      sessions.delete(sk);
+      await reply(
+        phone,
+        "El chat con el representante ya *finalizó*. Escribí *menú* para ver las opciones del asistente.",
+        tid,
+        phoneNumberId
+      );
+      return true;
+    }
+    console.error("[whatsapp-bot-meta] human_chat inbound", e);
+    await reply(phone, "No pudimos registrar el mensaje. Intentá de nuevo.", tid, phoneNumberId);
+    return true;
+  }
+  if (!sess.humanChatFirstAcked) {
+    sess.humanChatFirstAcked = true;
+    sessions.set(sk, sess);
+    await reply(phone, "Recibimos tu mensaje. Un *representante* te responderá a la brevedad.", tid, phoneNumberId);
+  }
+  return true;
+}
+
 async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
@@ -1427,12 +1478,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const wpidBootstrap = phoneNumberId ? String(phoneNumberId).trim() : null;
   try {
     const hcOpen = await humanChatFindOpenSessionForPhone(tid, phone);
-    if (hcOpen?.id && ctx) {
+    if (hcOpen?.id) {
       sessions.set(sk, {
         step: "human_chat",
         humanChatSessionId: Number(hcOpen.id),
         tenantId: tid,
-        tipoCliente: ctx.tipo,
+        tipoCliente: ctx?.tipo ?? null,
         contactName: contactName || null,
         phoneNumberId: wpidBootstrap,
         humanChatFirstAcked: true,
@@ -1456,6 +1507,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
   } catch (e) {
     console.error("[whatsapp-bot-meta] opinion reply", e.message);
+  }
+
+  try {
+    if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
+      return;
+    }
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] human_chat inbound (early)", e?.message || e);
   }
 
   /** Tras cierre por WA: ventana de opinión abierta (evita confundir "5" o "10" con menú / reinicio). */
@@ -1996,45 +2055,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       sess.addrNumero,
       { origenCatalogo: false }
     );
-    return;
-  }
-
-  if (sess && sess.step === "human_chat") {
-    if (lower === "salir" || lower === "fin" || lower === "chau") {
-      try {
-        await humanChatCloseBySessionId(sess.humanChatSessionId);
-      } catch (_) {}
-      sessions.delete(sk);
-      await reply(
-        phone,
-        "Cerramos el chat con el representante. Cuando quieras, escribí *menú* para ver las opciones.",
-        tid,
-        phoneNumberId
-      );
-      return;
-    }
-    try {
-      await humanChatAppendInbound(sess.humanChatSessionId, text);
-    } catch (e) {
-      if (e && (e.code === "HUMAN_CHAT_CLOSED" || String(e.message || "").includes("human_chat_session_closed"))) {
-        sessions.delete(sk);
-        await reply(
-          phone,
-          "El chat con el representante ya *finalizó*. Escribí *menú* para ver las opciones del asistente.",
-          tid,
-          phoneNumberId
-        );
-        return;
-      }
-      console.error("[whatsapp-bot-meta] human_chat inbound", e);
-      await reply(phone, "No pudimos registrar el mensaje. Intentá de nuevo.", tid, phoneNumberId);
-      return;
-    }
-    if (!sess.humanChatFirstAcked) {
-      sess.humanChatFirstAcked = true;
-      sessions.set(sk, sess);
-      await reply(phone, "Recibimos tu mensaje. Un *representante* te responderá a la brevedad.", tid, phoneNumberId);
-    }
     return;
   }
 
