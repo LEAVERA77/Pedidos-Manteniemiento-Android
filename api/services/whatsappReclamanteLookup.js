@@ -87,7 +87,18 @@ function pickCoord(row, latKey, lngKey) {
     if (segs.length >= 2) {
       const a = segs[0];
       const b = segs[1];
-      if (Math.abs(a) <= 90 && Math.abs(b) <= 180 && Math.abs(b) > 60) {
+      const enCajaAR = (x, y) =>
+        x <= -20 &&
+        x >= -56 &&
+        y <= -48 &&
+        y >= -74;
+      if (enCajaAR(a, b)) {
+        la = a;
+        lo = b;
+      } else if (enCajaAR(b, a)) {
+        la = b;
+        lo = a;
+      } else if (Math.abs(a) <= 90 && Math.abs(b) <= 180 && Math.abs(b) > 60) {
         la = a;
         lo = b;
       } else if (Math.abs(b) <= 90 && Math.abs(a) <= 180 && Math.abs(a) > 60) {
