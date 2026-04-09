@@ -234,6 +234,15 @@ export async function crearPedidoDesdeWhatsappBot({
 
   let latFinal = lat != null && Number.isFinite(Number(lat)) ? Number(lat) : null;
   let lngFinal = lng != null && Number.isFinite(Number(lng)) ? Number(lng) : null;
+  if (
+    latFinal != null &&
+    lngFinal != null &&
+    Math.abs(latFinal) < 1e-6 &&
+    Math.abs(lngFinal) < 1e-6
+  ) {
+    latFinal = null;
+    lngFinal = null;
+  }
   if ((latFinal == null || lngFinal == null) && calleT && locT) {
     try {
       const hints = await loadTenantGeocodeHintsForPedido(tenantId);

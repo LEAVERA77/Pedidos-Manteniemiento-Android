@@ -1,7 +1,17 @@
 import { query } from "../db/neon.js";
-import { soloDigitosIdentificadorReclamo } from "./whatsappReclamanteLookup.js";
+import { soloDigitosIdentificadorReclamo, sqlDigitosMismaMagnitud } from "./whatsappReclamanteLookup.js";
 
 let _pedidosColsCache = null;
+let _sociosColsCache = null;
+
+async function columnasSociosCatalogo() {
+  if (_sociosColsCache) return _sociosColsCache;
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo'`
+  );
+  _sociosColsCache = new Set((r.rows || []).map((c) => c.column_name));
+  return _sociosColsCache;
+}
 
 async function columnasPedidos() {
   if (_pedidosColsCache) return _pedidosColsCache;
@@ -23,15 +33,15 @@ export async function lookupDistribuidorTrafoPorNisMedidor(nisMedidorStr) {
   const dKey = soloDigitosIdentificadorReclamo(key);
   const useDigit = dKey.length >= 4 && dKey.length <= 24;
   try {
+    const scCols = await columnasSociosCatalogo();
+    const digitOr = [sqlDigitosMismaMagnitud("nis_medidor::text", 2)];
+    if (scCols.has("medidor")) digitOr.push(sqlDigitosMismaMagnitud("medidor::text", 2));
+    if (scCols.has("nis")) digitOr.push(sqlDigitosMismaMagnitud("nis::text", 2));
     const r = await query(
       `SELECT distribuidor_codigo, transformador FROM socios_catalogo
        WHERE COALESCE(activo, TRUE) = TRUE AND (
          UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
-         OR (
-           $2::text <> ''
-           AND LENGTH($2::text) >= 4
-           AND regexp_replace(TRIM(COALESCE(nis_medidor::text,'')), '[^0-9]', '', 'g') = $2
-         )
+         OR (${digitOr.join(" OR ")})
        )
        LIMIT 1`,
       [key, useDigit ? dKey : ""]

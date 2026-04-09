@@ -319,6 +319,7 @@ function aplicarPadronCoordsWhatsapp(sess, res) {
   const lng = Number(lo);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+  if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return;
   sess.padronLat = lat;
   sess.padronLng = lng;
 }
@@ -626,10 +627,23 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   }
   let latN = sess.lat != null && Number.isFinite(Number(sess.lat)) ? Number(sess.lat) : null;
   let lngN = sess.lng != null && Number.isFinite(Number(sess.lng)) ? Number(sess.lng) : null;
+  if (
+    latN != null &&
+    lngN != null &&
+    Math.abs(latN) < 1e-6 &&
+    Math.abs(lngN) < 1e-6
+  ) {
+    latN = null;
+    lngN = null;
+  }
   if ((latN == null || lngN == null) && sess.padronLat != null && sess.padronLng != null) {
     const pl = Number(sess.padronLat);
     const pg = Number(sess.padronLng);
-    if (Number.isFinite(pl) && Number.isFinite(pg)) {
+    if (
+      Number.isFinite(pl) &&
+      Number.isFinite(pg) &&
+      !(Math.abs(pl) < 1e-6 && Math.abs(pg) < 1e-6)
+    ) {
       latN = pl;
       lngN = pg;
     }
@@ -1035,10 +1049,23 @@ async function geocodeStructuredAddressAndFinalizePedido(
   if ((endLat == null || endLng == null) && sess.padronLat != null && sess.padronLng != null) {
     const pl = Number(sess.padronLat);
     const pg = Number(sess.padronLng);
-    if (Number.isFinite(pl) && Number.isFinite(pg)) {
+    if (
+      Number.isFinite(pl) &&
+      Number.isFinite(pg) &&
+      !(Math.abs(pl) < 1e-6 && Math.abs(pg) < 1e-6)
+    ) {
       endLat = pl;
       endLng = pg;
     }
+  }
+  if (
+    endLat != null &&
+    endLng != null &&
+    Math.abs(endLat) < 1e-6 &&
+    Math.abs(endLng) < 1e-6
+  ) {
+    endLat = null;
+    endLng = null;
   }
   sess.lat = endLat;
   sess.lng = endLng;

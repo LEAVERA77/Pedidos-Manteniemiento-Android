@@ -56,7 +56,23 @@ function pickCoord(row, latKey, lngKey) {
   const lng = lo != null ? Number(lo) : NaN;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { catalogoLatitud: null, catalogoLongitud: null };
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return { catalogoLatitud: null, catalogoLongitud: null };
+  /* Placeholder 0,0 en padrón: no heredar (el pedido debe usar geocode u otra fuente). */
+  if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return { catalogoLatitud: null, catalogoLongitud: null };
   return { catalogoLatitud: lat, catalogoLongitud: lng };
+}
+
+/**
+ * Comparación SQL: mismo identificador numérico ignorando ceros a la izquierda (041686 ≡ 41686).
+ * @param {string} campoSql expresión de columna (ej. nis_medidor::text)
+ * @param {number} digitParamIndex índice $ del parámetro con solo dígitos del usuario
+ */
+export function sqlDigitosMismaMagnitud(campoSql, digitParamIndex) {
+  return `(
+    LENGTH($${digitParamIndex}::text) >= 4
+    AND regexp_replace(TRIM(COALESCE(${campoSql}, '')), '[^0-9]', '', 'g') ~ '^[0-9]+$'
+    AND LENGTH(regexp_replace(TRIM(COALESCE(${campoSql}, '')), '[^0-9]', '', 'g')) <= 24
+    AND regexp_replace(TRIM(COALESCE(${campoSql}, '')), '[^0-9]', '', 'g')::numeric = $${digitParamIndex}::numeric
+  )`;
 }
 
 /** Evita cortar toda la búsqueda si el tenant llega mal desde el webhook. */
@@ -128,9 +144,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       const dk = 3;
       extraMatch += ` OR (
           LENGTH($${dk}::text) >= 4 AND (
-            regexp_replace(TRIM(COALESCE(nis, '')), '[^0-9]', '', 'g') = $${dk}
-            OR regexp_replace(TRIM(COALESCE(medidor, '')), '[^0-9]', '', 'g') = $${dk}
-            OR regexp_replace(TRIM(COALESCE(numero_cliente::text, '')), '[^0-9]', '', 'g') = $${dk}
+            ${sqlDigitosMismaMagnitud("nis::text", dk)}
+            OR ${sqlDigitosMismaMagnitud("medidor::text", dk)}
+            OR ${sqlDigitosMismaMagnitud("numero_cliente::text", dk)}
           )
         )`;
       if (cfCols.has("metadata")) {
@@ -201,20 +217,22 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         ? "tenant_id"
         : null;
 
-    const nisExpr =
-      "regexp_replace(TRIM(COALESCE(nis_medidor::text, '')), '[^0-9]', '', 'g')";
     const idMatchOr = `(
           TRIM($1) ~ '^[0-9]+$'
           AND LENGTH(TRIM($1)) <= 12
           AND CAST(id AS TEXT) = TRIM($1)
         )`;
+    /** Prioridad: medidor propio > NIS propio > columna unificada nis_medidor (mismo valor en varias columnas). */
+    const digitOrParts = [];
+    if (useDigitMatch) {
+      digitOrParts.push(sqlDigitosMismaMagnitud("nis_medidor::text", 2));
+      if (scCols.has("medidor")) digitOrParts.push(sqlDigitosMismaMagnitud("medidor::text", 2));
+      if (scCols.has("nis")) digitOrParts.push(sqlDigitosMismaMagnitud("nis::text", 2));
+    }
     const matchClause = useDigitMatch
       ? `(
           UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
-          OR (
-            LENGTH($2::text) >= 4
-            AND ${nisExpr} = $2
-          )
+          OR (${digitOrParts.join(" OR ")})
           OR ${idMatchOr}
         )`
       : `(
@@ -230,7 +248,20 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       scParams.push(tid);
     }
 
+    const rankParts = [];
+    if (useDigitMatch) {
+      if (scCols.has("medidor")) rankParts.push(`CASE WHEN ${sqlDigitosMismaMagnitud("medidor::text", 2)} THEN 4 ELSE 0 END`);
+      if (scCols.has("nis")) rankParts.push(`CASE WHEN ${sqlDigitosMismaMagnitud("nis::text", 2)} THEN 2 ELSE 0 END`);
+      rankParts.push(`CASE WHEN ${sqlDigitosMismaMagnitud("nis_medidor::text", 2)} THEN 1 ELSE 0 END`);
+    }
+    const orderByRank =
+      useDigitMatch && rankParts.length > 0 ? ` ORDER BY ${rankParts.join(" + ")} DESC, id ASC` : ` ORDER BY id ASC`;
+
+    const selMedNis = `${scCols.has("medidor") ? "NULLIF(TRIM(COALESCE(medidor::text,'')), '') AS medidor_raw" : "NULL::text AS medidor_raw"},
+              ${scCols.has("nis") ? "NULLIF(TRIM(COALESCE(nis::text,'')), '') AS nis_raw" : "NULL::text AS nis_raw"},`;
+
     const baseSelect = `SELECT nis_medidor, nombre,
+              ${selMedNis}
               NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
               NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
               NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
@@ -244,13 +275,27 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
          AND ${matchClause}
          ${tenantSql}`;
 
-    let r = await query(`${baseSelect} LIMIT 1`, scParams);
+    let r = await query(`${baseSelect}${orderByRank} LIMIT 1`, scParams);
     let row = r.rows?.[0];
 
     if (!row && tenantColSc) {
       const scParamsWide = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
+      const tidIdx = scParamsWide.length + 1;
+      const orderFallback =
+        useDigitMatch && rankParts.length > 0
+          ? `ORDER BY CASE
+           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${tidIdx}::bigint THEN 0
+           WHEN ${tenantColSc} IS NULL THEN 1
+           ELSE 2
+         END, ${rankParts.join(" + ")} DESC, id ASC`
+          : `ORDER BY CASE
+           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${tidIdx}::bigint THEN 0
+           WHEN ${tenantColSc} IS NULL THEN 1
+           ELSE 2
+         END, id ASC`;
       r = await query(
         `SELECT nis_medidor, nombre,
+              ${selMedNis}
               NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
               NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
               NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
@@ -262,11 +307,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
          FROM socios_catalogo
          WHERE COALESCE(activo, TRUE) = TRUE
            AND ${matchClause}
-         ORDER BY CASE
-           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${scParamsWide.length + 1}::bigint THEN 0
-           WHEN ${tenantColSc} IS NULL THEN 1
-           ELSE 2
-         END, id ASC
+         ${orderFallback}
          LIMIT 1`,
         [...scParamsWide, tid]
       );
@@ -283,14 +324,16 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     if (row) {
       const nm = String(row.nis_medidor || rawTrim).trim();
       const nombre = String(row.nombre || "").trim() || `Socio NIS ${nm}`;
+      const nisV = row.nis_raw != null && String(row.nis_raw).trim() ? String(row.nis_raw).trim() : null;
+      const medV = row.medidor_raw != null && String(row.medidor_raw).trim() ? String(row.medidor_raw).trim() : null;
       const coords = pickCoord(row, "lat_pad", "lng_pad");
-      debugReclamanteLookup("match_socios_catalogo", { nis_medidor: nm, ...coords });
+      debugReclamanteLookup("match_socios_catalogo", { nis_medidor: nm, nis: nisV, medidor: medV, ...coords });
       return {
         ok: true,
         clienteNombre: nombre,
-        nis: null,
-        medidor: null,
-        nisMedidor: nm,
+        nis: nisV,
+        medidor: medV,
+        nisMedidor: medV || nisV || nm,
         catalogoCalle: row.calle_cat != null ? String(row.calle_cat).trim() || null : null,
         catalogoNumero: row.numero_cat != null ? String(row.numero_cat).trim() || null : null,
         catalogoLocalidad: row.localidad_cat != null ? String(row.localidad_cat).trim() || null : null,
