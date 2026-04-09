@@ -720,6 +720,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     }
     const destinoEtiqueta = etiquetaDestinoDerivacion(destinoStr);
     const nombreEmpresaDestino = (rContact.nombre && String(rContact.nombre).trim()) || destinoEtiqueta;
+    const terceroWaCliente = String(rContact.whatsapp || "").replace(/\D/g, "");
     let pedidoParaMensaje = { ...pedido };
     const latBody = req.body?.lat ?? req.body?.latitude;
     const lngBody = req.body?.lng ?? req.body?.longitude;
@@ -814,6 +815,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
           telefonoContactoRaw: row.telefono_contacto,
           pedidoId: row.id,
           destinoNombre: row.derivado_destino_nombre || nombreEmpresaDestino,
+          terceroWhatsAppDigits: terceroWaCliente.length >= 8 ? terceroWaCliente : undefined,
         });
       } catch (e) {
         console.error("[pedidos] aviso cliente derivación externa (no bloqueante)", e.message);

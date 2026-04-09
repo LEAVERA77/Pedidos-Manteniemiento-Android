@@ -388,6 +388,8 @@ export async function notifyPedidoDerivacionClienteWhatsAppSafe({
   telefonoContactoRaw,
   pedidoId,
   destinoNombre,
+  /** Dígitos del WhatsApp del tercero (config. derivación); solo para enlace wa.me opcional al vecino. */
+  terceroWhatsAppDigits,
 }) {
   const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
   if (!phone || phone.length < 8) {
@@ -396,8 +398,14 @@ export async function notifyPedidoDerivacionClienteWhatsAppSafe({
   const np = String(numeroPedido || "").trim() || `#${pedidoId}`;
   const ent = String(nombreEntidad || "la entidad").trim();
   const dest = String(destinoNombre || "la empresa correspondiente").trim();
+  const td = String(terceroWhatsAppDigits || "").replace(/\D/g, "");
+  const waLine =
+    td.length >= 8 && td.length <= 22
+      ? `\n\nEnlace directo a WhatsApp de *${dest}*:\nhttps://wa.me/${td}`
+      : "";
   const body =
     `*${ent}* informa: su reclamo *#${np}* fue *derivado* a *${dest}* para su atención.\n\n` +
+    `Podés comunicarte con *${dest}* para coordinar o consultas sobre tu reclamo.${waLine}\n\n` +
     `El caso queda registrado y en seguimiento.`;
   try {
     const r = await sendTenantWhatsAppText({

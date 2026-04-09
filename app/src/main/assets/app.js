@@ -8647,7 +8647,26 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         offlinePedidosSave(app.p);
         render();
         toast('Solicitud enviada al administrador.', 'success');
-        void detalle(ix !== -1 ? app.p[ix] : row);
+        try {
+            const dm = document.getElementById('dm');
+            if (dm) {
+                dm.classList.remove('active');
+                try {
+                    delete dm.dataset.detallePedidoId;
+                } catch (_) {}
+            }
+        } catch (_) {}
+        try {
+            if (window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function') {
+                const np = row.np != null && String(row.np).trim() !== '' ? String(row.np).trim() : String(pidNum);
+                window.AndroidLocalNotify.show(
+                    `sol-deriv-${pidNum}-${Date.now()}`,
+                    'Solicitud de derivación enviada a la central',
+                    `Pedido #${np}`,
+                    String(pidNum)
+                );
+            }
+        } catch (_) {}
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
