@@ -238,10 +238,8 @@ export function buildDerivacionExternaMensaje({
   const lng = pedido?.lng;
   const la = lat != null && lat !== "" ? Number(lat) : NaN;
   const ln = lng != null && lng !== "" ? Number(lng) : NaN;
-  const coordsOk =
-    Number.isFinite(la) && Number.isFinite(ln) && !(Math.abs(la) < 1e-5 && Math.abs(ln) < 1e-5);
   let lineaUbicacion = "";
-  if (coordsOk) {
+  if (Number.isFinite(la) && Number.isFinite(ln)) {
     const url = `https://www.google.com/maps?q=${la},${ln}`;
     lineaUbicacion = `Coordenadas GPS: ${la}, ${ln}\nAbrí en Maps: ${url}`;
   } else if (dirTxt) {

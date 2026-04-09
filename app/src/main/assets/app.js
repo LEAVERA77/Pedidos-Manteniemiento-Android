@@ -1179,7 +1179,6 @@ const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
     'Alumbrado Público (Mantenimiento)',
     'Riesgo en la vía pública',
     'Corrimiento de poste/columna',
-    'Cables Caídos/Peligro',
 ]);
 
 function tipoPermiteSolicitudDerivacionTercero(tt) {
@@ -2392,7 +2391,6 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS calle TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS numero TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS barrio TEXT`);
-                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS medidor TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -2754,9 +2752,7 @@ const norm = p => ({
     sdpen: !!(
         p.solicitud_derivacion_pendiente === true ||
         p.solicitud_derivacion_pendiente === 't' ||
-        p.solicitud_derivacion_pendiente === 'true' ||
-        p.solicitud_derivacion_pendiente === 1 ||
-        p.solicitud_derivacion_pendiente === '1'
+        p.solicitud_derivacion_pendiente === 1
     ),
     sdm: String(p.solicitud_derivacion_motivo || '').trim(),
     sdf: p.solicitud_derivacion_fecha || null,
@@ -3908,16 +3904,14 @@ async function pollPedidosActividadAdmin() {
                 COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav,
                 COALESCE(MAX(fecha_avance), to_timestamp(0)) AS mfa,
                 COALESCE(MAX(fecha_asignacion), to_timestamp(0)) AS mfas,
-                COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc,
-                COUNT(*) FILTER (WHERE solicitud_derivacion_pendiente = TRUE)::bigint AS nsdp
+                COALESCE(MAX(fecha_cierre), to_timestamp(0)) AS mfc
              FROM pedidos WHERE 1=1${tsql}`;
         const qMin = `SELECT COALESCE(MAX(id),0)::bigint AS mid,
                 COUNT(*) FILTER (WHERE estado='Pendiente')::bigint AS np,
                 COUNT(*) FILTER (WHERE estado='Asignado')::bigint AS na,
                 COUNT(*) FILTER (WHERE estado='En ejecución')::bigint AS ne,
                 COUNT(*) FILTER (WHERE estado='Cerrado')::bigint AS nc,
-                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav,
-                COUNT(*) FILTER (WHERE solicitud_derivacion_pendiente = TRUE)::bigint AS nsdp
+                COALESCE(SUM(COALESCE(avance,0)),0)::bigint AS sav
              FROM pedidos WHERE 1=1${tsql}`;
         let r;
         try {
@@ -3947,7 +3941,6 @@ async function pollPedidosActividadAdmin() {
             row.mfa != null ? row.mfa : '0',
             row.mfas != null ? row.mfas : '0',
             row.mfc != null ? row.mfc : '0',
-            row.nsdp || '0',
         ]
             .map((x) => String(x))
             .join('|');
@@ -4279,8 +4272,7 @@ function crearVentanaFlotanteWaHc(sidNum) {
     body.className = 'wa-hc-float-body';
     const metaEl = document.createElement('div');
     metaEl.className = 'wa-hc-float-meta';
-    metaEl.style.display = 'none';
-    metaEl.textContent = '';
+    metaEl.textContent = 'Cargando…';
     const msgBox = document.createElement('div');
     msgBox.className = 'wa-hc-thread';
     const ta = document.createElement('textarea');
@@ -4353,8 +4345,10 @@ async function refrescarMensajesWaHcVentana(sidNum) {
         const data = await r.json();
         if (data.session) {
             const cn = String(data.session.contact_name || '').trim();
-            st.metaEl.textContent = '';
-            st.metaEl.style.display = 'none';
+            const line = (cn ? cn + ' · ' : '') +
+                'Tel: ' + fmtTelWaMeta(data.session.phone_canonical) +
+                ' · Estado: ' + (data.session.estado || '');
+            st.metaEl.textContent = line;
             actualizarTituloYChipDockWaHc(sidStr, cn || ('Chat · ' + fmtTelWaMeta(data.session.phone_canonical)));
         }
         if (Array.isArray(data.messages)) {
@@ -8118,16 +8112,12 @@ function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
     const num = String(p?.cnum || '').trim();
     const loc = String(p?.cloc || '').trim();
     const dir = [calle, num, loc].filter(Boolean).join(', ') || String(p?.cdir || '').trim();
-    const { la: laEf, ln: lnEf } = coordsEfectivasPedidoMapa(p);
-    const lat = Number(laEf);
-    const lng = Number(lnEf);
-    const coordsValidas =
-        Number.isFinite(lat) &&
-        Number.isFinite(lng) &&
-        !(Math.abs(lat) < 1e-5 && Math.abs(lng) < 1e-5);
-    const ubicacion = coordsValidas
-        ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
-        : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
+    const lat = Number(p?.la);
+    const lng = Number(p?.ln);
+    const ubicacion =
+        Number.isFinite(lat) && Number.isFinite(lng)
+            ? `Coordenadas GPS: ${lat}, ${lng}\nAbrí en Maps: https://www.google.com/maps?q=${lat},${lng}`
+            : `${dir || 'Sin domicilio estructurado'}\n(Sin coordenadas GPS registradas en el sistema.)`;
     const obsTxt = String(obs || '').trim() || '—';
     const recl = cliente || tel ? `${cliente || '—'}${tel ? ` · Tel.: ${tel}` : ''}` : '—';
     return [
@@ -8344,48 +8334,6 @@ async function rechazarSolicitudDerivacionAdmin(pid) {
 }
 window.rechazarSolicitudDerivacionAdmin = rechazarSolicitudDerivacionAdmin;
 
-async function guardarObservacionVisitaTecnico(pid) {
-    const pidNum = parseInt(pid, 10);
-    if (!Number.isFinite(pidNum)) return;
-    const ta = document.getElementById(`tec-obs-visita-${pidNum}`);
-    const text = String(ta?.value || '').trim();
-    if (text.length < 3) {
-        toast('Escribí al menos 3 caracteres.', 'warning');
-        return;
-    }
-    if (text.length > 2000) {
-        toast('El texto es demasiado largo.', 'warning');
-        return;
-    }
-    const p0 = app.p.find((x) => String(x.id) === String(pid));
-    if (!p0 || (String(p0.es) !== 'Asignado' && String(p0.es) !== 'En ejecución')) {
-        toast('Este pedido ya no admite edición de observaciones.', 'warning');
-        return;
-    }
-    try {
-        if (puedeEnviarApiRestPedidos()) {
-            const row = await pedidoPutApi(pidNum, { trabajo_realizado: text });
-            if (row) {
-                const rowN = norm(row);
-                const ix = app.p.findIndex((x) => String(x.id) === String(pid));
-                if (ix !== -1) app.p[ix] = rowN;
-                else app.p.push(rowN);
-                offlinePedidosSave(app.p);
-                render();
-                toast('Observación guardada.', 'success');
-                detalle(app.p[ix !== -1 ? ix : app.p.length - 1]);
-                return;
-            }
-        }
-        await updPedido(pid, { trabajo_realizado: text }, app.u?.id);
-        toast('Observación guardada (modo offline / local).', 'success');
-        detalle(app.p.find((x) => String(x.id) === String(pid)) || p0);
-    } catch (e) {
-        toastError('guardar-obs-tecnico', e, 'No se pudo guardar la observación.');
-    }
-}
-window.guardarObservacionVisitaTecnico = guardarObservacionVisitaTecnico;
-
 function detalle(p) {
     const pidKey = String(p.id);
     try {
@@ -8473,30 +8421,6 @@ function detalle(p) {
         p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + (findUser(p.uci) || 'id:'+p.uci) + '</span></div>' : '',
     ].filter(Boolean).join('');
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const escTa = t =>
-        String(t ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-    let htmlObsTecnicoVisita = '';
-    if (esAdmin() && p.tr && p.es !== 'Cerrado' && p.es !== 'Derivado externo') {
-        htmlObsTecnicoVisita += `<div class="ds" style="border-left:4px solid #0f766e">
-            <h4>📝 Observaciones del técnico</h4>
-            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .45rem;line-height:1.4">Registradas con el pedido <strong>antes del cierre</strong> (también si sigue en curso).</p>
-            <div class="trb" style="white-space:pre-wrap">${escDet(p.tr)}</div>
-        </div>`;
-    }
-    if (ed && !esAdmin() && (p.es === 'Asignado' || p.es === 'En ejecución')) {
-        const pidEscObs = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        htmlObsTecnicoVisita += `<div class="ds" style="border-left:4px solid #6366f1">
-            <h4>Observaciones de visita</h4>
-            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .45rem;line-height:1.4">Quedan guardadas en el pedido; el administrador las ve en el detalle.</p>
-            <textarea id="tec-obs-visita-${p.id}" rows="4" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical;white-space:pre-wrap">${escTa(
-                p.tr || ''
-            )}</textarea>
-            <button type="button" class="ba2 p2" onclick="guardarObservacionVisitaTecnico('${pidEscObs}')"><i class="fas fa-save"></i> Guardar observación</button>
-        </div>`;
-    }
     const nombreClienteDet = String((p.cnom || p.cl || '')).trim();
     const filasDatosCliente = [];
     if (String(p.nis || '').trim()) {
@@ -8763,7 +8687,6 @@ function detalle(p) {
         ${htmlSolicitudDerivacionCoopElectricaTecnico(p)}
         ${htmlDerivacionCoopElectrica}
         ${htmlDerivacionAdminExterna}
-        ${htmlObsTecnicoVisita}
         
         ${p.es === 'Cerrado' ? `
         <div class="ds">
@@ -9844,11 +9767,8 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
 
     try {
         const r = await sqlSimple(
-            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio, nis_medidor, medidor FROM socios_catalogo
-             WHERE activo = TRUE AND (
-               UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
-               OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${esc(raw)}))
-             )
+            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio FROM socios_catalogo
+             WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
              LIMIT 1`
         );
         const row = r.rows?.[0];
@@ -10285,22 +10205,6 @@ let _pollBannerAdminInterval = null;
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
 
-const _LS_BANNER_OPINION_WM = 'gn_banner_opinion_wm_v2';
-
-function _opinionBannerPersistedWmLoad() {
-    try {
-        return localStorage.getItem(_LS_BANNER_OPINION_WM) || '';
-    } catch (_) {
-        return '';
-    }
-}
-
-function _opinionBannerPersistedWmSave(iso) {
-    try {
-        if (iso) localStorage.setItem(_LS_BANNER_OPINION_WM, iso);
-    } catch (_) {}
-}
-
 async function iniciarWatermarkBannerReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
     try {
@@ -10326,12 +10230,6 @@ async function iniciarWatermarkBannerOpinionCliente() {
         );
         const m = r.rows?.[0]?.m;
         _adminBannerOpinionWatermarkIso = m ? new Date(m).toISOString() : new Date(0).toISOString();
-        const ls = _opinionBannerPersistedWmLoad();
-        if (ls) {
-            const tLs = new Date(ls).getTime();
-            const tMem = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
-            if (Number.isFinite(tLs) && tLs > tMem) _adminBannerOpinionWatermarkIso = new Date(tLs).toISOString();
-        }
     } catch (_) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
     }
@@ -10360,13 +10258,12 @@ function _commitAdminBannerOpinionWatermark() {
         }
     }
     if (iso) {
-        const t = new Date(iso).getTime() + 1500;
+        const t = new Date(iso).getTime();
         const cur = _adminBannerOpinionWatermarkIso ? new Date(_adminBannerOpinionWatermarkIso).getTime() : 0;
         if (t > cur) _adminBannerOpinionWatermarkIso = new Date(t).toISOString();
     } else if (pid) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
     }
-    if (_adminBannerOpinionWatermarkIso) _opinionBannerPersistedWmSave(_adminBannerOpinionWatermarkIso);
 }
 
 function ocultarBannerOpinionCliente() {
@@ -11970,24 +11867,15 @@ function kpiAgruparSnapshotsNumericosPorMetrica(rows) {
     return map;
 }
 
-function kpiSnapshotOrdenTemporal(row) {
-    const raw = String(row?.periodo_fin || row?.periodo_inicio || row?.created_at || '').trim();
-    if (!raw) return 0;
-    const d = new Date(raw.length <= 10 && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
-    const t = d.getTime();
-    return Number.isNaN(t) ? 0 : t;
-}
-
 function kpiPuntosDesdeFilasSnapshot(filas) {
     return (filas || [])
         .map((r) => {
             const pf = fmtFechaKpiSnapshotCorta(r.periodo_fin);
             const pi = fmtFechaKpiSnapshotCorta(r.periodo_inicio);
             const lab = pf && pi && pf !== pi ? `${pi}→${pf}` : pf || pi || String(r.created_at || '').slice(0, 10);
-            return { label: lab || '—', y: Number(r.valor_numero), _t: kpiSnapshotOrdenTemporal(r) };
+            return { label: lab || '—', y: Number(r.valor_numero) };
         })
-        .sort((a, b) => (a._t !== b._t ? a._t - b._t : a.label.localeCompare(b.label)))
-        .map(({ label, y }) => ({ label, y }));
+        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function textoBreveInterpretacionKpiPdf(rows) {
@@ -12079,14 +11967,15 @@ function kpiPdfPiePaginas(pdf) {
 async function kpiPdfMiniChartDataUrl(metricaKey, points) {
     if (!points.length || typeof Chart === 'undefined') return null;
     const canvas = document.createElement('canvas');
-    canvas.width = 420;
-    canvas.height = 220;
+    canvas.width = 520;
+    canvas.height = 132;
     const ctx = canvas.getContext('2d');
     const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
-    const labels = points.map((p) => kpiPdfTruncCell(p.label, 18));
+    const labels = points.map((p) => kpiPdfTruncCell(p.label, 14));
     const data = points.map((p) => p.y);
+    const type = points.length === 1 ? 'bar' : 'line';
     const chart = new Chart(ctx, {
-        type: 'bar',
+        type,
         data: {
             labels,
             datasets: [
@@ -12094,34 +11983,25 @@ async function kpiPdfMiniChartDataUrl(metricaKey, points) {
                     label: lab,
                     data,
                     borderColor: '#0d9488',
-                    backgroundColor: 'rgba(13, 148, 136, 0.55)',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    maxBarThickness: 48,
+                    backgroundColor: type === 'bar' ? 'rgba(13, 148, 136, 0.5)' : 'rgba(13, 148, 136, 0.14)',
+                    borderWidth: type === 'line' ? 2 : 1,
+                    tension: 0.25,
+                    fill: type === 'line',
                 },
             ],
         },
         options: {
             animation: false,
             responsive: false,
-            devicePixelRatio: 1.35,
-            layout: { padding: { top: 8, bottom: 6, left: 6, right: 8 } },
+            devicePixelRatio: 1.25,
+            layout: { padding: { top: 6, bottom: 2, left: 2, right: 4 } },
             plugins: {
                 title: { display: true, text: lab, color: '#1e3a8a', font: { size: 11, weight: '600' } },
                 legend: { display: false },
             },
             scales: {
-                x: {
-                    offset: true,
-                    ticks: { font: { size: 8 }, maxRotation: 45, minRotation: 0, autoSkip: true, maxTicksLimit: 12 },
-                    grid: { display: false },
-                },
-                y: {
-                    beginAtZero: true,
-                    suggestedMax: undefined,
-                    ticks: { font: { size: 8 } },
-                    grid: { color: 'rgba(148, 163, 184, 0.25)' },
-                },
+                x: { ticks: { font: { size: 8 }, maxRotation: 55 } },
+                y: { beginAtZero: false, ticks: { font: { size: 8 } } },
             },
         },
     });
@@ -12161,17 +12041,6 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         toast('Chart.js no está cargado; recargá la página e intentá de nuevo.', 'error');
         return;
     }
-    const wKpi = window.open('', '_blank');
-    if (!wKpi) {
-        toast('Permití ventanas emergentes para abrir el informe.', 'error');
-        return;
-    }
-    try {
-        wKpi.document.write(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui;padding:2rem">Generando informe KPI…</body></html>'
-        );
-        wKpi.document.close();
-    } catch (_) {}
     try {
         toast('Generando informe…', 'info');
         const { jsPDF } = window.jspdf;
@@ -12215,7 +12084,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 52;
+        const hMmMax = 19;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
@@ -12282,23 +12151,25 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
         const url = URL.createObjectURL(blob);
-        wKpi.location.href = url;
+        const w = window.open(url, '_blank');
+        if (!w) {
+            URL.revokeObjectURL(url);
+            toast('Permití ventanas emergentes para abrir el informe.', 'error');
+            return;
+        }
         setTimeout(() => {
             try {
-                wKpi.focus();
-                wKpi.print();
+                w.focus();
+                w.print();
             } catch (_) {}
             setTimeout(() => {
                 try {
                     URL.revokeObjectURL(url);
                 } catch (_) {}
             }, 120000);
-        }, 600);
+        }, 450);
         toast('Informe listo — se abrió la vista de impresión.', 'success');
     } catch (e) {
-        try {
-            wKpi.close();
-        } catch (_) {}
         toastError('kpi-informe-pdf', e);
     }
 };
@@ -13595,7 +13466,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -13603,12 +13474,12 @@ async function cargarListaSociosAdmin() {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
+        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
             rows.map(s => {
                 const e = (x) => String(x ?? '').replace(/</g, '&lt;');
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             }).join('') + '</tbody></table></div>';
     } catch (e) {
         logErrorWeb('lista-socios-admin', e);
@@ -13671,20 +13542,8 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nisMedidorUnif = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            const nisSolo = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis');
-            const medSolo = valorSociosPorEncabezados(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
-            let nis = null;
-            let medidorImp = null;
-            if (nisMedidorUnif) {
-                nis = String(nisMedidorUnif).trim();
-                if (medSolo) medidorImp = String(medSolo).trim();
-            } else if (nisSolo) {
-                nis = String(nisSolo).trim();
-                if (medSolo) medidorImp = String(medSolo).trim();
-            } else if (medSolo) {
-                nis = String(medSolo).trim();
-            }
+            const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
+                'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
             if (!nis) continue;
             actualizarOverlayImportacion(`Importando socios… ${filaN} / ${rawRows.length}`);
             if (filaN % 80 === 0) await new Promise(r => setTimeout(r, 0));
@@ -13718,9 +13577,9 @@ async function importarExcelSocios(event) {
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
-                    VALUES(${esc(nis)}, ${esc(medidorImp)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET medidor = EXCLUDED.medidor, nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
+                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
                 ok++;
             } catch (e) {
                 fail++;
@@ -13750,7 +13609,7 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• Columna A/B o encabezados: nis + medidor (NIS en catálogo; medidor opcional, 5 cifras típico)\n• O una sola columna nis_medidor (compatibilidad)\n• nombre · Calle · Numero · telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS (clave nis_medidor); con “vaciar”, se borra todo el catálogo antes.\nBúsqueda en pedidos y autocompletar aceptan NIS o número de medidor.\nTeléfono: formato texto en Excel para el 0 inicial.');
+    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nRecomendado (cooperativa eléctrica):\n• nis_medidor · nombre · Calle · Numero\n• telefono · distribuidor_ o distribuidor_codigo\n• localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion (aéreo/subterráneo) · fases (monofásico/trifásico)\n\nOpcional: una sola columna direccion (se intenta separar calle y número al final).\nImportación: sin “vaciar”, se actualizan/agregan por NIS; con “vaciar”, se borra todo el catálogo antes.\nTeléfono: formato texto en Excel para el 0 inicial.');
 }
 
 async function buscarHistorialPorNIS() {
@@ -13761,15 +13620,7 @@ async function buscarHistorialPorNIS() {
     out.innerHTML = '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</div>';
     try {
         const tsql = await pedidosFiltroTenantSql();
-        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo FROM pedidos WHERE (
-          UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
-          OR EXISTS (
-            SELECT 1 FROM socios_catalogo sc
-            WHERE COALESCE(sc.activo, TRUE)
-            AND UPPER(TRIM(COALESCE(sc.medidor,''))) = UPPER(TRIM(${esc(raw)}))
-            AND UPPER(TRIM(COALESCE(pedidos.nis_medidor,''))) = UPPER(TRIM(COALESCE(sc.nis_medidor,'')))
-          )
-        )${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
+        const r = await sqlSimple(`SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo FROM pedidos WHERE UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))${tsql} ORDER BY fecha_creacion DESC LIMIT 100`);
         const rows = r.rows || [];
         if (!rows.length) {
             out.innerHTML = '<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin reclamos para ese NIS o medidor.</p>';
@@ -14183,28 +14034,68 @@ function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
     return { iw, ih };
 }
 
+let _chartDataSnapshotForPdf = null;
+
 function adminEstadisticasSetCaptureCompact(on) {
     const root = document.getElementById('admin-estadisticas');
     if (root) root.classList.toggle('gn-stats-capture-compact', !!on);
-    if (typeof window !== 'undefined') window.__gnStatsInkSave = false;
+    if (typeof window !== 'undefined') window.__gnStatsInkSave = !!on;
 }
 
 function aplicarEstadisticasInkSaveCharts(activar) {
-    /* Ya no forzamos escala de grises en PDF: se mantienen las paletas del panel + sombras vía plugin. */
     if (activar) {
-        if (typeof window !== 'undefined') window.__gnStatsPdfEnhance = true;
-        Object.entries(_charts).forEach(([, chart]) => {
+        if (_chartDataSnapshotForPdf) return;
+        _chartDataSnapshotForPdf = {};
+        const inkA = 'rgba(100,116,139,0.22)';
+        const inkB = 'rgba(148,163,184,0.18)';
+        const inkStroke = '#334155';
+        Object.entries(_charts).forEach(([id, chart]) => {
             try {
+                _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
+                    backgroundColor: ds.backgroundColor,
+                    borderColor: ds.borderColor,
+                    borderWidth: ds.borderWidth,
+                }));
+                const type = chart.config.type;
+                chart.data.datasets.forEach(ds => {
+                    const n = Array.isArray(ds.data) ? ds.data.length : 1;
+                    if (type === 'doughnut' || type === 'pie') {
+                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
+                        const fills = [];
+                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
+                        ds.backgroundColor = fills;
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
+                    } else {
+                        if (Array.isArray(ds.backgroundColor)) {
+                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
+                        } else {
+                            ds.backgroundColor = inkA;
+                        }
+                        ds.borderColor = inkStroke;
+                        ds.borderWidth = 1;
+                    }
+                });
                 chart.update('none');
             } catch (_) {}
         });
     } else {
-        if (typeof window !== 'undefined') window.__gnStatsPdfEnhance = false;
-        Object.entries(_charts).forEach(([, chart]) => {
+        if (!_chartDataSnapshotForPdf) return;
+        Object.entries(_charts).forEach(([id, chart]) => {
             try {
+                const snap = _chartDataSnapshotForPdf[id];
+                if (!snap) return;
+                chart.data.datasets.forEach((ds, i) => {
+                    const s = snap[i];
+                    if (!s) return;
+                    ds.backgroundColor = s.backgroundColor;
+                    ds.borderColor = s.borderColor;
+                    ds.borderWidth = s.borderWidth;
+                });
                 chart.update('none');
             } catch (_) {}
         });
+        _chartDataSnapshotForPdf = null;
     }
 }
 
@@ -14335,29 +14226,12 @@ async function imprimirInformeConGraficos() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
     if (typeof html2canvas !== 'function') { toast('html2canvas no disponible', 'error'); return; }
-    const wPop = window.open('', '_blank');
-    if (!wPop) {
-        toast('Permití ventanas emergentes para imprimir', 'error');
-        return;
-    }
-    try {
-        wPop.document.write(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui,sans-serif;padding:2rem">Generando vista para imprimir…</body></html>'
-        );
-        wPop.document.close();
-    } catch (_) {}
     document.getElementById('admin-panel')?.classList.add('active');
     adminTab('estadisticas');
     await cargarEstadisticas();
     await new Promise(r => setTimeout(r, 500));
     const secciones = coleccionSeccionesPdfEstadisticas();
-    if (!secciones.length) {
-        try {
-            wPop.close();
-        } catch (_) {}
-        toast('No hay secciones para imprimir', 'error');
-        return;
-    }
+    if (!secciones.length) { toast('No hay secciones para imprimir', 'error'); return; }
     const urls = [];
     const liberarUrls = () => {
         urls.forEach(u => {
@@ -14429,11 +14303,13 @@ async function imprimirInformeConGraficos() {
             });
         }
         if (!pageBlocks.length) {
-            liberarUrls();
-            try {
-                wPop.close();
-            } catch (_) {}
             toast('No se pudo capturar el panel', 'error');
+            return;
+        }
+        const w = window.open('', '_blank');
+        if (!w) {
+            liberarUrls();
+            toast('Permití ventanas emergentes para imprimir', 'error');
             return;
         }
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
@@ -14481,36 +14357,32 @@ async function imprimirInformeConGraficos() {
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
             '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:128mm;padding-bottom:3mm}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
             '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
             '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:118mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
-        wPop.document.open();
-        wPop.document.write(
+        w.document.write(
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
                 escAttrPrint(ent) +
                 ' — Estadísticas</title><style>' +
                 css +
                 '</style></head><body>' + bloques + '</body></html>'
         );
-        wPop.document.close();
-        wPop.focus();
+        w.document.close();
+        w.focus();
         setTimeout(() => {
             try {
-                wPop.print();
+                w.print();
             } catch (_) {}
         }, 500);
         setTimeout(liberarUrls, 120000);
     } catch (e) {
         liberarUrls();
-        try {
-            wPop.close();
-        } catch (_) {}
         toastError('imprimir-stats-graficos', e);
     } finally {
         await prepararVistaCapturaEstadisticasPdf(false);
@@ -14677,17 +14549,6 @@ async function generarPdfEstadisticasMultipaginaENRE() {
 async function generarInformeMensualENRE() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
-    const w = window.open('', '_blank');
-    if (!w) {
-        toast('Permití ventanas emergentes para el informe', 'error');
-        return;
-    }
-    try {
-        w.document.write(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando…</title></head><body style="font-family:system-ui;padding:2rem">Generando informe…</body></html>'
-        );
-        w.document.close();
-    } catch (_) {}
     try {
         const tsql = await pedidosFiltroTenantSql();
         const { fechaDesde, condFecha } = await resolveCondicionFechaPedidosStats(tsql);
@@ -14701,17 +14562,13 @@ async function generarInformeMensualENRE() {
             tab += `<tr><td>${String(row.numero_pedido || '').replace(/</g, '&lt;')}</td><td>${String(row.nis_medidor || '').replace(/</g, '&lt;')}</td><td>${String(row.estado || '').replace(/</g, '&lt;')}</td><td>${String(row.prioridad || '').replace(/</g, '&lt;')}</td><td>${fmtInformeFecha(row.fecha_creacion)}</td><td>${fmtInformeFecha(row.fecha_cierre)}</td><td>${String(row.distribuidor || '').replace(/</g, '&lt;')}</td><td>${String(row.tipo_trabajo || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_nombre || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_calle || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_numero_puerta || '').replace(/</g, '&lt;')}</td><td>${String(row.cliente_localidad || '').replace(/</g, '&lt;')}</td></tr>`;
         });
         tab += '</tbody></table>';
-        w.document.open();
-        w.document.write('<html><head><meta charset="utf-8"><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
+        const w = window.open('', '_blank');
+        if (!w) { toast('Permití ventanas emergentes para el informe', 'error'); return; }
+        w.document.write('<html><head><title>' + tit.replace(/</g, '&lt;') + '</title><style>@page{size:A4 portrait;margin:9mm}body{font-family:system-ui;padding:.2rem;max-width:210mm;margin:0 auto} table{border-collapse:collapse;width:100%;font-size:7.3pt;table-layout:fixed} th,td{border:1px solid #cbd5e1;padding:2px 3px;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} th{background:#eff6ff}</style></head><body>' + hdr + '<h1 style="font-size:12pt;color:#1e3a8a;margin:.45rem 0">' + tit.replace(/</g, '&lt;') + '</h1>' + tab + '<p style="margin-top:.6rem;font-size:7pt;color:#64748b">Documento para gestión interna. Complementar con datos de red (SAIDI/SAIFI oficiales) según normativa. Al imprimir, desactivá encabezado/pie del navegador.</p></body></html>');
         w.document.close();
         w.focus();
         setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
-    } catch (e) {
-        try {
-            w.close();
-        } catch (_) {}
-        toastError('informe-mensual-enre', e);
-    }
+    } catch (e) { toastError('informe-mensual-enre', e); }
 }
 
 // ── Estadísticas con Chart.js ─────────────────────────────────
@@ -14728,49 +14585,25 @@ async function generarInformeMensualENRE() {
             if (!total) return;
             const ctx = chart.ctx;
             const meta = chart.getDatasetMeta(0);
-            const cw = chart.width || 360;
-            const ch = chart.height || 260;
-            const basePx = Math.max(9, Math.min(20, Math.round(Math.min(cw, ch) * 0.034)));
             ctx.save();
+            ctx.font = '600 12px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             meta.data.forEach((arc, i) => {
                 const v = Number(ds.data[i] || 0);
                 if (!v) return;
                 const pct = Math.round(1000 * v / total) / 10;
-                if (pct < 4) return;
-                const a0 = arc.startAngle;
-                const a1 = arc.endAngle;
-                const span = Math.abs(a1 - a0);
-                if (span < 0.22) return;
                 const { x, y } = arc.tooltipPosition();
-                const fs = span < 0.45 ? Math.max(8, basePx - 2) : basePx;
-                ctx.font = `600 ${fs}px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'rgba(255,255,255,.92)';
+                const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
+                ctx.lineWidth = ink ? 0 : 4;
+                ctx.strokeStyle = 'rgba(255,255,255,.95)';
                 ctx.fillStyle = '#0f172a';
                 const t = pct + '%';
-                ctx.strokeText(t, x, y);
+                if (!ink) ctx.strokeText(t, x, y);
                 ctx.fillText(t, x, y);
             });
             ctx.restore();
         }
-    });
-    Chart.register({
-        id: 'gestornovaPdfChartShadow',
-        beforeDatasetsDraw(chart) {
-            if (typeof window === 'undefined' || !window.__gnStatsPdfEnhance) return;
-            const ctx = chart.ctx;
-            ctx.save();
-            ctx.shadowColor = 'rgba(15,23,42,0.18)';
-            ctx.shadowBlur = chart.config.type === 'doughnut' ? 14 : 10;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 3;
-        },
-        afterDatasetsDraw(chart) {
-            if (typeof window === 'undefined' || !window.__gnStatsPdfEnhance) return;
-            chart.ctx.restore();
-        },
     });
     Chart.register({
         id: 'gestornovaStatsBarLabels',
@@ -15072,7 +14905,7 @@ async function cargarEstadisticas() {
                     maintainAspectRatio: false,
                     animation: { duration: 520, easing: 'easeOutQuart' },
                     clip: false,
-                    layout: { padding: { top: 14, bottom: 28, left: 14, right: 20 } },
+                    layout: { padding: { top: 12, bottom: 14, left: 12, right: 18 } },
                     plugins: { legend: { display: false, labels: { boxWidth: 18, boxHeight: 8, padding: 14, color: '#334155', font: { size: 11, weight: '600' } } }, tooltip: { callbacks: {
                         label: ctx2 => {
                             const v = ctx2.parsed && typeof ctx2.parsed === 'object' && 'y' in ctx2.parsed
@@ -15114,7 +14947,7 @@ async function cargarEstadisticas() {
                 { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(90, 120, 165, 0.42)', borderColor: 'rgba(75, 105, 150, 0.85)', borderWidth: 1.5 },
                 { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(110, 155, 125, 0.4)', borderColor: 'rgba(85, 130, 105, 0.85)', borderWidth: 1.5 }
             ],
-            { layout: { padding: { top: 12, bottom: 32, left: 6, right: 10 } },
+            { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
                 plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}}}
         );
@@ -15148,8 +14981,7 @@ async function cargarEstadisticas() {
             [{ data: rEstados.rows.map(r => parseInt(r.n)),
                backgroundColor: rEstados.rows.map(r => estadoColors[r.estado] || 'rgba(148, 163, 184, 0.45)'),
                borderWidth: 1.5, borderColor: 'rgba(248, 250, 252, 0.95)' }],
-            { layout: { padding: { top: 8, bottom: 28, left: 8, right: 8 } },
-                plugins: { legend: { display: true, position: 'bottom' },
+            { plugins: { legend: { display: true, position: 'bottom' },
                 tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + c.parsed + ' pedidos' }}}}
         );
 
@@ -15158,7 +14990,7 @@ async function cargarEstadisticas() {
             rPrior.rows.map(r => r.prioridad),
             [{ label: 'Pedidos', data: rPrior.rows.map(r => parseInt(r.n)),
                backgroundColor: rPrior.rows.map(r => priorColor[r.prioridad] || '#94a3b8') }],
-            { layout: { padding: { top: 36, bottom: 22, left: 6, right: 10 } },
+            { layout: { padding: { top: 32, bottom: 4, left: 4, right: 8 } },
                 plugins: { legend: { display: false },
                 tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}}}
         );
@@ -15182,10 +15014,10 @@ async function cargarEstadisticas() {
                 { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(95, 125, 170, 0.38)', borderColor: 'rgba(80, 110, 155, 0.8)', borderWidth: 1 },
                 { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(110, 155, 125, 0.38)', borderColor: 'rgba(85, 130, 105, 0.8)', borderWidth: 1 }
             ],
-            { layout: { padding: { top: 10, bottom: 52, left: 6, right: 12 } },
+            { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
               plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}},
-              scales: { x: { ticks: { maxRotation: 50, minRotation: 0, autoSkip: false, font: { size: 10, weight: '600' } } } } }
+              scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
         );
 
         if (esMun && (rBarT?.rows || []).length) {

@@ -37,7 +37,6 @@ import {
   humanChatOpenOrGetSession,
   humanChatQueueSnapshot,
   humanChatAppendInbound,
-  humanChatAppendOutbound,
   humanChatCloseBySessionId,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
@@ -274,47 +273,6 @@ function botTenantId() {
 
 function sessionKey(phoneDigits, tenantId) {
   return `${String(phoneDigits || "").replace(/\D/g, "")}:${Number(tenantId)}`;
-}
-
-const DERIV_EXTERNA_HILO_MS = Math.max(
-  60_000,
-  Number(process.env.WHATSAPP_DERIV_EXTERNA_TTL_MS || 7 * 24 * 3600 * 1000)
-);
-
-/**
- * Tras derivar un pedido por WA al tercero: sesión multi-turno vinculada al mismo flujo que el chat humano
- * (Neon whatsapp_human_chat_*), para que el admin responda desde la web sin perder el hilo.
- */
-export async function registerDerivacionExternaWaThread(tenantId, phoneDigitsRaw, pedidoId) {
-  const d = String(phoneDigitsRaw || "").replace(/\D/g, "");
-  const phone = normalizeWhatsAppRecipientForMeta(d);
-  if (!phone || phone.length < 8) return;
-  const tid = Number(tenantId);
-  if (!Number.isFinite(tid) || tid < 1) return;
-  const pid = Number(pedidoId);
-  if (!Number.isFinite(pid) || pid < 1) return;
-  const sk = sessionKey(phone, tid);
-  let humanChatSessionId = null;
-  try {
-    const { id } = await humanChatOpenOrGetSession(tid, phone, `Derivación pedido #${pid}`);
-    humanChatSessionId = id;
-    await humanChatAppendOutbound(
-      id,
-      `[Derivación externa] Pedido #${pid}. Mensajes de este contacto quedan en el panel «Derivación externa» / chat humano hasta *finalizar* o cierre del admin.`,
-      { kind: "deriv_externa_open", pedidoId: pid }
-    );
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] deriv_externa human_chat seed", e?.message || e);
-  }
-  sessions.set(sk, {
-    step: "deriv_externa_hilo",
-    tenantId: tid,
-    pedidoId: pid,
-    derivExtStartedAt: Date.now(),
-    phoneNumberId: null,
-    humanChatSessionId,
-    derivExtFirstAcked: false,
-  });
 }
 
 function trimOrNullWhatsapp(v) {
@@ -1269,16 +1227,6 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
 
-  if (sess && sess.step === "deriv_externa_hilo") {
-    await reply(
-      phone,
-      "Si querés indicar ubicación, escribí *calle y localidad* en texto.\n\n_Para cerrar este intercambio con el asistente: *finalizar*, *listo* o *menú*._",
-      tid,
-      phoneNumberId
-    );
-    return;
-  }
-
   if (sess && sess.step === "human_chat") {
     await reply(
       phone,
@@ -1426,103 +1374,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     console.error("[whatsapp-bot-meta] opinion reply", e.message);
   }
 
-  const sessDeriv = sessions.get(sk);
-  if (sessDeriv?.step === "deriv_externa_hilo") {
-    const started = Number(sessDeriv.derivExtStartedAt) || 0;
-    if (Date.now() - started > DERIV_EXTERNA_HILO_MS) {
-      sessions.delete(sk);
-      try {
-        if (sessDeriv.humanChatSessionId) await humanChatCloseBySessionId(sessDeriv.humanChatSessionId);
-      } catch (_) {}
-    } else {
-      const low = String(text || "")
-        .trim()
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
-      const salirHilo =
-        low === "menu" ||
-        low === "menú" ||
-        low === "0" ||
-        low === "fin" ||
-        low === "finalizar" ||
-        low === "listo" ||
-        low === "terminar" ||
-        low === "terminado" ||
-        low === "chau";
-      if (salirHilo) {
-        sessions.delete(sk);
-        try {
-          if (sessDeriv.humanChatSessionId) await humanChatCloseBySessionId(sessDeriv.humanChatSessionId);
-        } catch (_) {}
-        const nom = ctx?.nombre || "la entidad";
-        await reply(
-          phone,
-          `Listo, cerramos este intercambio. Si necesitás otra cosa con *${nom}*, escribí *menú*.`,
-          tid,
-          phoneNumberId
-        );
-        return;
-      }
-      let sid = sessDeriv.humanChatSessionId;
-      if (!sid) {
-        try {
-          const opened = await humanChatOpenOrGetSession(tid, phone, contactName || `Derivación #${sessDeriv.pedidoId}`);
-          sid = opened.id;
-          sessDeriv.humanChatSessionId = sid;
-        } catch (e) {
-          console.error("[whatsapp-bot-meta] deriv_externa reopen human_chat", e?.message || e);
-        }
-      }
-      if (sid) {
-        try {
-          await humanChatAppendInbound(sid, text);
-        } catch (e) {
-          if (e && (e.code === "HUMAN_CHAT_CLOSED" || String(e.message || "").includes("human_chat_session_closed"))) {
-            sessions.delete(sk);
-            await reply(
-              phone,
-              "El chat de coordinación ya *finalizó* desde la central. Escribí *menú* para ver las opciones.",
-              tid,
-              phoneNumberId
-            );
-            return;
-          }
-          console.error("[whatsapp-bot-meta] deriv_externa inbound", e);
-          await reply(phone, "No pudimos registrar el mensaje. Intentá de nuevo.", tid, phoneNumberId);
-          return;
-        }
-      }
-      sessDeriv.derivExtStartedAt = Date.now();
-      if (phoneNumberId) sessDeriv.phoneNumberId = String(phoneNumberId).trim();
-      if (!sessDeriv.derivExtFirstAcked) {
-        sessDeriv.derivExtFirstAcked = true;
-        sessions.set(sk, sessDeriv);
-        await reply(
-          phone,
-          "Recibimos tu mensaje. La cooperativa lo ve en el panel de coordinación y puede responderte por este mismo chat.\n\n" +
-            "_Para cerrar este hilo con el asistente: *finalizar*, *listo* o *menú*._",
-          tid,
-          phoneNumberId
-        );
-      } else {
-        sessions.set(sk, sessDeriv);
-      }
-      return;
-    }
-  }
-
   /** Tras cierre por WA: ventana de opinión abierta (evita confundir "5" o "10" con menú / reinicio). */
   let pendOpinionActiva = false;
   try {
     pendOpinionActiva = await hasPendingClienteOpinion(tid, phone);
   } catch (_) {}
 
-  // En chat humano u hilo de derivación externa, "Hola" no reinicia el menú.
-  if (
-    /\bhola\b/i.test(String(text || "").trim()) &&
-    !["human_chat", "deriv_externa_hilo"].includes(sessions.get(sk)?.step)
-  ) {
+  // En chat humano (Otros), "Hola" es mensaje del cliente, no reinicio del menú automático.
+  if (/\bhola\b/i.test(String(text || "").trim()) && sessions.get(sk)?.step !== "human_chat") {
     let pendOpinionHola = false;
     try {
       pendOpinionHola = await hasPendingClienteOpinion(tid, phone);
