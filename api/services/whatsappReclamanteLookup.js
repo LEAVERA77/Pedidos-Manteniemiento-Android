@@ -192,6 +192,21 @@ export function sqlDigitosMismaMagnitud(campoSql, digitParamIndex) {
   )`;
 }
 
+/**
+ * El usuario escribió solo dígitos (ej. 98464) pero en BD puede venir en campo compuesto, con prefijos o letras:
+ * busca la subcadena de dígitos dentro del valor normalizado (sin afectar igualdad numérica exacta arriba).
+ */
+export function sqlDigitosContieneSubcadena(campoSql, digitParamIndex) {
+  return `(
+    LENGTH($${digitParamIndex}::text) >= 4
+    AND LENGTH(regexp_replace(TRIM(COALESCE(${campoSql}, '')), '[^0-9]', '', 'g')) >= LENGTH($${digitParamIndex}::text)
+    AND strpos(
+      regexp_replace(TRIM(COALESCE(${campoSql}, '')), '[^0-9]', '', 'g'),
+      $${digitParamIndex}::text
+    ) > 0
+  )`;
+}
+
 /** Evita cortar toda la búsqueda si el tenant llega mal desde el webhook. */
 function resolveTenantIdReclamoLookup(tenantIdRaw) {
   let t = Number(tenantIdRaw);
@@ -269,6 +284,16 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
             ${sqlDigitosMismaMagnitud("nis::text", dk)}
             OR ${sqlDigitosMismaMagnitud("medidor::text", dk)}
             OR ${sqlDigitosMismaMagnitud("numero_cliente::text", dk)}
+            OR ${sqlDigitosContieneSubcadena("nis::text", dk)}
+            OR ${sqlDigitosContieneSubcadena("medidor::text", dk)}
+            OR ${sqlDigitosContieneSubcadena("numero_cliente::text", dk)}
+          )
+        )`;
+      extraMatch += ` OR (
+          LENGTH(TRIM($2)) >= 4 AND (
+            UPPER(TRIM(COALESCE(nis::text,''))) LIKE '%' || UPPER(TRIM($2)) || '%'
+            OR UPPER(TRIM(COALESCE(medidor::text,''))) LIKE '%' || UPPER(TRIM($2)) || '%'
+            OR UPPER(TRIM(COALESCE(numero_cliente::text,''))) LIKE '%' || UPPER(TRIM($2)) || '%'
           )
         )`;
       if (cfCols.has("metadata")) {
@@ -292,10 +317,10 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
        FROM clientes_finales
        WHERE cliente_id = $1 AND COALESCE(activo, TRUE) = TRUE
          AND (
-           TRIM(COALESCE(nis, '')) = $2
-           OR TRIM(COALESCE(medidor, '')) = $2
-           OR TRIM(COALESCE(numero_cliente::text, '')) = $2
-           OR CAST(id AS TEXT) = $2
+           UPPER(TRIM(COALESCE(nis::text,''))) = UPPER(TRIM($2))
+           OR UPPER(TRIM(COALESCE(medidor::text,''))) = UPPER(TRIM($2))
+           OR UPPER(TRIM(COALESCE(numero_cliente::text,''))) = UPPER(TRIM($2))
+           OR CAST(id AS TEXT) = TRIM($2)
            ${extraMatch}
          )
        LIMIT 1`,
@@ -356,15 +381,32 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         )`;
     /** Prioridad: medidor propio > NIS propio > columna unificada nis_medidor (mismo valor en varias columnas). */
     const digitOrParts = [];
+    const digitPartialParts = [];
     if (useDigitMatch) {
       digitOrParts.push(sqlDigitosMismaMagnitud("nis_medidor::text", 2));
       if (scCols.has("medidor")) digitOrParts.push(sqlDigitosMismaMagnitud("medidor::text", 2));
       if (scCols.has("nis")) digitOrParts.push(sqlDigitosMismaMagnitud("nis::text", 2));
+      digitPartialParts.push(sqlDigitosContieneSubcadena("nis_medidor::text", 2));
+      if (scCols.has("medidor")) digitPartialParts.push(sqlDigitosContieneSubcadena("medidor::text", 2));
+      if (scCols.has("nis")) digitPartialParts.push(sqlDigitosContieneSubcadena("nis::text", 2));
     }
+    /** ILIKE insensible a mayúsculas; TRIM quita espacios. Útil si el valor trae texto alrededor del número. */
+    const ilikeContiene = useDigitMatch
+      ? `OR (
+          LENGTH(TRIM($1)) >= 4
+          AND (
+            UPPER(TRIM(COALESCE(nis_medidor::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'
+            ${scCols.has("medidor") ? `OR UPPER(TRIM(COALESCE(medidor::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'` : ""}
+            ${scCols.has("nis") ? `OR UPPER(TRIM(COALESCE(nis::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'` : ""}
+          )
+        )`
+      : "";
     const matchClause = useDigitMatch
       ? `(
           UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
           OR (${digitOrParts.join(" OR ")})
+          OR (${digitPartialParts.join(" OR ")})
+          ${ilikeContiene}
           OR ${idMatchOr}
         )`
       : `(

@@ -7,6 +7,7 @@ vi.mock("../db/neon.js", () => ({
 import {
   normalizarIdentificadorReclamoWhatsapp,
   soloDigitosIdentificadorReclamo,
+  sqlDigitosContieneSubcadena,
 } from "../services/whatsappReclamanteLookup.js";
 
 describe("whatsappReclamanteLookup — normalización", () => {
@@ -21,5 +22,12 @@ describe("whatsappReclamanteLookup — normalización", () => {
   it("soloDigitos quita separadores comunes", () => {
     expect(soloDigitosIdentificadorReclamo("74.133")).toBe("74133");
     expect(soloDigitosIdentificadorReclamo("074-133")).toBe("074133");
+  });
+
+  it("sqlDigitosContieneSubcadena usa strpos sobre dígitos normalizados", () => {
+    const s = sqlDigitosContieneSubcadena("medidor::text", 2);
+    expect(s).toContain("strpos");
+    expect(s).toContain("medidor::text");
+    expect(s).toContain("$2::text");
   });
 });
