@@ -1,0 +1,18 @@
+---
+description: En Ask mode, ante tareas de código/producto, responder y cerrar con un prompt listo para Agent mode.
+alwaysApply: true
+---
+
+# Ask mode → prompt para Agent
+
+Cuando el usuario escriba en **Ask mode** planteando una tarea, mejora, bug o duda que implique trabajo en el código o en el producto:
+
+1. **Responder** a la pregunta (explicación, causas, opciones) como hasta ahora.
+2. **Incluir siempre** al final un bloque listo para copiar: **“Prompt para el agente”** — un único texto autocontenido que pueda pegarse en **Agent mode** para implementar o investigar lo planteado (contexto del repo Nexxo/Pedidos-MG, objetivos, archivos probables, criterios de aceptación, pruebas manuales).
+3. Si el mensaje en Ask es **solo** informativo (definición, opinión, sin cambios posibles), **no** hace falta prompt de implementación; basta la respuesta.
+
+No sustituir la respuesta útil por solo el prompt: el usuario debe entender qué pasa y qué haría el agente.
+
+## Formato sugerido del prompt (opcional)
+
+Si encaja la tarea, el bloque puede estructurarse con: contexto breve, pasos o archivos, criterios de aceptación, pruebas manuales, y cierre con sync Nexxo/Pedidos-MG + commit/push y firma `made by leavera77` cuando corresponda.
