@@ -1,0 +1,28 @@
+---
+description: URLs canónicas de repos admin vs Android y dónde editar o sincronizar en ambos.
+alwaysApply: true
+---
+
+# Repos GitHub: admin (web) vs Android (técnicos)
+
+**URLs canónicas (no confundir):**
+
+| Rol | Repositorio | URL |
+|-----|-------------|-----|
+| **Admin / versión web** (PWA, GitHub Pages, API en `api/`) | **Pedidos-MG** | https://github.com/LEAVERA77/Pedidos-MG |
+| **App Android** (cuadrillas / técnicos, WebView + Kotlin) | **Pedidos-Manteniemiento-Android** | https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android |
+
+El workspace local habitual del Android es **`AndroidStudioProjects/Nexxo`** (carpeta en el PC); el remoto `origin` apunta a **Pedidos-Manteniemiento-Android**, no a Pedidos-MG.
+
+## Dónde hacer cada tipo de cambio
+
+| Tipo de cambio | Repo principal | ¿También el otro repo? |
+|----------------|----------------|------------------------|
+| Panel web: `index.html`, `app.js`, `styles.css`, `map*.js`, `offline.js`, `sw.js`, branding | **Pedidos-MG** (raíz) | Sí: copiar a **`Nexxo/app/src/main/assets/`** (o script `scripts/sync-assets-to-pedidos-mg.ps1` si el flujo sale de Nexxo) para paridad APK/WebView. |
+| Backend Node: carpeta **`api/`** | **Pedidos-MG** (`api/` despliega p. ej. Render) | Si editaste en **Nexxo/api**, sincronizar **`api/`** hacia Pedidos-MG antes de deploy. |
+| Kotlin, Java, Gradle, `AndroidManifest`, recursos nativos | **Pedidos-Manteniemiento-Android** (Nexxo) | No aplica Pedidos-MG salvo que también toques assets compartidos arriba. |
+| Docs SQL / operativos compartidos (`docs/**`) | Según convención del equipo | A veces copia a ambos clones si documentan lo mismo. |
+
+**Regla práctica:** si el cambio afecta **solo navegador + API**, trabajá en **Pedidos-MG**. Si afecta **solo la shell nativa o empaquetado**, trabajá en **Nexxo**. Si afecta **la misma UI embebida** que usa el WebView, hacé el cambio en el lugar que elijas como fuente y **replicá** al otro repo (ver `pedidos-mg-web-repo` y `commit-push-nexxo-y-pedidos-mg`).
+
+Al cerrar la tarea, dejá claro si hubo **un repo, dos repos** o **sync sin commit** en uno de ellos.
