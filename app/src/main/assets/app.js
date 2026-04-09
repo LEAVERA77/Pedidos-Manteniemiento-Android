@@ -13694,7 +13694,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -13707,7 +13707,7 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles).</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
@@ -13803,6 +13803,24 @@ function valorIdentificadorTextoSocios(row, mapNormAOriginal, ...clavesCanon) {
     return null;
 }
 
+/** Columnas NIS / Medidor en panel admin (catálogo virtual). */
+function sociosCatalogoNisCelda(s) {
+    const direct = String(s.nis ?? '').trim();
+    if (direct) return direct;
+    const nm = String(s.nis_medidor ?? '').trim();
+    if (!nm) return '';
+    const ix = nm.indexOf('-');
+    return ix > 0 ? nm.slice(0, ix).trim() : nm;
+}
+
+function sociosCatalogoMedidorCelda(s) {
+    const direct = String(s.medidor ?? '').trim();
+    if (direct) return direct;
+    const nm = String(s.nis_medidor ?? '').trim();
+    const ix = nm.indexOf('-');
+    return ix > 0 ? nm.slice(ix + 1).trim() : '';
+}
+
 /** Lotes más grandes = menos viajes a Neon (20k+ socios). */
 const SOCIOS_BULK_CHUNK = 1000;
 
@@ -13845,15 +13863,15 @@ function renderSociosCatalogoVirtual() {
     const e = (x) => String(x ?? '').replace(/</g, '&lt;');
     const slice = data.slice(start, end);
     tb.innerHTML =
-        `<tr class="gn-vspad"><td colspan="14" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
+        `<tr class="gn-vspad"><td colspan="15" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
         slice
             .map((s) => {
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
-        `<tr class="gn-vspad"><td colspan="14" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
+        `<tr class="gn-vspad"><td colspan="15" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
 }
 
 function bindSociosCatalogoVirtualScroll() {
