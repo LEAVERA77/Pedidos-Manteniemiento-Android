@@ -18,7 +18,7 @@ let _lastAt = 0;
 let _chain = Promise.resolve();
 
 /** En tests: `NOMINATIM_THROTTLE_MS_FOR_TESTS=0` evita esperas ~1.1s entre llamadas. */
-function throttleIntervalMs() {
+export function throttleIntervalMs() {
   const raw = process.env.NOMINATIM_THROTTLE_MS_FOR_TESTS;
   if (raw === "0" || raw === "false") return 0;
   const n = Number(raw);
@@ -40,7 +40,7 @@ async function throttle() {
   return _chain;
 }
 
-function nominatimHeaders() {
+export function nominatimHeaders() {
   const ua =
     process.env.NOMINATIM_USER_AGENT ||
     "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";

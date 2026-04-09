@@ -233,6 +233,57 @@ export async function resolverGeolocalizacionGarantizadaWhatsapp(opts) {
     }
   }
 
+  if (calle.length >= 2 && loc.length >= 2) {
+    try {
+      const { getCoordinatesFromPadron } = await import("./coordenadasDesdePadron.js");
+      const pb = await getCoordinatesFromPadron({
+        calle,
+        localidad: loc,
+        codigoPostal: null,
+        tenantId: tid,
+      });
+      if (pb && coordsValidasWgs84(pb.lat, pb.lng)) {
+        return {
+          lat: pb.lat,
+          lng: pb.lng,
+          fuente: pb.fuente || "padron",
+          nota: "[Sistema] Coordenadas ya cargadas en el padrón (sin Nominatim en tiempo real).",
+        };
+      }
+    } catch (e) {
+      console.warn("[geo-garantizada] padron coords", e?.message || e);
+    }
+  }
+
+  if (
+    (process.env.WHATSAPP_GEOCODE_NOMINATIM_FALLBACK === "1" ||
+      process.env.WHATSAPP_GEOCODE_NOMINATIM_FALLBACK === "true") &&
+    calle.length >= 2 &&
+    loc.length >= 2
+  ) {
+    try {
+      const { geocodeWithFallback } = await import("./geocodeWithFallback.js");
+      const g = await geocodeWithFallback({
+        calle,
+        localidad: loc,
+        numero: num || undefined,
+        tenantId: tid,
+        retries: 2,
+      });
+      if (g && coordsValidasWgs84(g.lat, g.lng)) {
+        return {
+          lat: g.lat,
+          lng: g.lng,
+          fuente: g.fromCache ? "nominatim_cache_tabla" : "nominatim_fallback",
+          nota:
+            "[Sistema] Geocodificación Nominatim (caché o red); conviene completar GPS en el padrón para no depender del servicio.",
+        };
+      }
+    } catch (e) {
+      console.warn("[geo-garantizada] nominatim fallback", e?.message || e);
+    }
+  }
+
   const cfg = await loadTenantCentroid(tid);
   if (loc.length >= 2) {
     const desdeCfg = coordsDesdeConfigLocalidad(cfg.localidadesCoords, loc);

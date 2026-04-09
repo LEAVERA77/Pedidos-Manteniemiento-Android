@@ -4,7 +4,12 @@
  */
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
-import { nominatimProxySearch, nominatimProxyReverseRaw } from "../services/nominatimClient.js";
+import {
+  nominatimHeaders,
+  nominatimProxySearch,
+  nominatimProxyReverseRaw,
+  throttleIntervalMs,
+} from "../services/nominatimClient.js";
 import {
   ensureGeocodeNominatimCacheTable,
   cacheKeySearch,
@@ -14,6 +19,65 @@ import {
 } from "../services/geocodeNominatimCache.js";
 
 const router = express.Router();
+
+/**
+ * Salud del geocode (sin auth): DISABLE_NOMINATIM + ping directo a OSM Nominatim.
+ * GET /api/geocode/health
+ */
+router.get("/health", async (_req, res) => {
+  const disabled =
+    process.env.DISABLE_NOMINATIM === "1" || process.env.DISABLE_NOMINATIM === "true";
+  const throttleMs = throttleIntervalMs();
+  const base = {
+    ok: true,
+    disable_nominatim: disabled,
+    nominatim_throttle_ms_nominal: throttleMs,
+    nominatim_user_agent_set: Boolean(
+      process.env.NOMINATIM_USER_AGENT || process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM
+    ),
+    note:
+      "OSM no expone estado de rate limit por request; se respeta throttle local en nominatimClient.",
+  };
+  if (disabled) {
+    return res.json({
+      ...base,
+      nominatim_reachable: null,
+      nominatim_status: "skipped",
+    });
+  }
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&q=Rosario%20Argentina&limit=1";
+  const t0 = Date.now();
+  try {
+    const r = await fetch(url, { headers: nominatimHeaders() });
+    const ms = Date.now() - t0;
+    const ok = r.ok;
+    let sampleCount = null;
+    if (ok) {
+      try {
+        const j = await r.json();
+        sampleCount = Array.isArray(j) ? j.length : null;
+      } catch (_) {
+        sampleCount = null;
+      }
+    }
+    return res.json({
+      ...base,
+      nominatim_reachable: ok,
+      nominatim_http_status: r.status,
+      nominatim_latency_ms: ms,
+      nominatim_sample_results: sampleCount,
+    });
+  } catch (e) {
+    return res.json({
+      ...base,
+      ok: false,
+      nominatim_reachable: false,
+      nominatim_error: String(e?.message || e),
+    });
+  }
+});
+
 router.use(authWithTenantHost);
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
