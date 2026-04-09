@@ -11,6 +11,7 @@
  *   node scripts/enriquecerPadronDesdeExcel.mjs --tenant-id=1 --ensure-latlng   # si la tabla no tiene lat/long
  *
  * Caché: tabla `cache_geocodificacion` (no `geocodificacion_cache`).
+ * `--fallback-localidad`: si falla calle+número, un hit de Nominatim solo por localidad (provincia: ENRIQUECER_PROVINCIA, default Entre Ríos).
  *
  * made by leavera77
  */
@@ -22,6 +23,7 @@ import XLSX from "xlsx";
 import { query } from "../db/neon.js";
 import { geocodeWithFallback } from "../services/geocodeWithFallback.js";
 import { ensureCacheGeocodificacionTable } from "../services/cacheGeocodificacion.js";
+import { geocodeAddressArgentina } from "../services/nominatimClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,11 +37,13 @@ function parseArgs() {
     skipExisting: false,
     offset: 0,
     ensureLatlng: false,
+    fallbackLocalidad: false,
   };
   for (const a of process.argv.slice(2)) {
     if (a === "--dry-run") out.dryRun = true;
     else if (a === "--skip-existing") out.skipExisting = true;
     else if (a === "--ensure-latlng") out.ensureLatlng = true;
+    else if (a === "--fallback-localidad") out.fallbackLocalidad = true;
     else if (a.startsWith("--tenant-id=")) out.tenantId = Number(a.split("=")[1]);
     else if (a.startsWith("--file=")) out.file = a.slice("--file=".length).replace(/^["']|["']$/g, "");
     else if (a.startsWith("--sheet=")) out.sheet = a.slice("--sheet=".length).replace(/^["']|["']$/g, "");
@@ -321,7 +325,7 @@ async function main() {
   const args = parseArgs();
   if (!Number.isFinite(args.tenantId) || args.tenantId < 1) {
     console.error(
-      "Uso: node scripts/enriquecerPadronDesdeExcel.mjs --tenant-id=N [--file=ruta.xlsx] [--sheet=Socios] [--dry-run] [--limit=N] [--offset=N] [--skip-existing] [--ensure-latlng]"
+      "Uso: node scripts/enriquecerPadronDesdeExcel.mjs --tenant-id=N [--file=ruta.xlsx] [--sheet=Socios] [--dry-run] [--limit=N] [--offset=N] [--skip-existing] [--ensure-latlng] [--fallback-localidad]"
     );
     process.exit(1);
   }
@@ -445,13 +449,35 @@ async function main() {
       continue;
     }
 
-    const g = await geocodeWithFallback({
+    let g = await geocodeWithFallback({
       calle,
       localidad,
       numero: numero || undefined,
       tenantId: args.tenantId,
       retries: 3,
     });
+
+    if (
+      !g &&
+      args.fallbackLocalidad &&
+      process.env.DISABLE_NOMINATIM !== "1" &&
+      process.env.DISABLE_NOMINATIM !== "true"
+    ) {
+      const prov = String(process.env.ENRIQUECER_PROVINCIA || "Entre Ríos").trim();
+      const locG = await geocodeAddressArgentina(`${localidad}, ${prov}, Argentina`, {
+        filterLocalidad: localidad,
+      });
+      if (
+        locG &&
+        Number.isFinite(locG.lat) &&
+        Number.isFinite(locG.lng) &&
+        Math.abs(locG.lat) > 1e-5 &&
+        Math.abs(locG.lng) > 1e-5
+      ) {
+        g = { lat: locG.lat, lng: locG.lng, fromCache: false };
+        console.warn(`[aprox-localidad] ${rowLabel} → ${localidad} (${prov})`);
+      }
+    }
 
     if (!g) {
       failures.push({ row: rowLabel, reason: "geocode_null", calle, numero, localidad, socios_id: sociosId });
