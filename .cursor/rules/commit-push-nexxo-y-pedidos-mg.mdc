@@ -1,21 +1,31 @@
 ---
-description: Tras cada cambio implementado, commit y push en Nexxo (Android) y en Pedidos-MG (GitHub)
+description: Tras implementar cambios, commit y push en Pedidos-Manteniemiento-Android y Pedidos-MG (GitHub)
 alwaysApply: true
 ---
 
-# Commit y push dual: Nexxo (Android) + Pedidos-MG
+# Commit y push en los dos repos de GitHub
 
-**Norma por defecto:** cuando el agente **implemente cambios reales** en el workspace **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe quedar todo versionado y subido en **los dos** remotos, salvo que el usuario diga explícitamente lo contrario (solo un repo, no push, borrador local, etc.).
+**Repos (siempre estos):**
 
-## 1. Proyecto Nexxo (Android / GestorNova)
+- **Android / Nexxo (este workspace):** [github.com/LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) — rama `main`, remoto habitual `origin`.
+- **Web + API (admin / Pages):** [github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) — rama `main`, remoto habitual `origin`.
 
-- Ruta habitual del repo: `AndroidStudioProjects/Nexxo`.
-- Remoto habitual: [LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) (`origin`, rama `main`).
-- Pasos: `git add` de lo tocado (sin secretos: `.env`, `config.json` local, claves), `git commit` con mensaje claro, `git push origin main`.
+**Norma por defecto:** cuando el agente **implemente cambios reales** en **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe quedar el trabajo **versionado y subido** según corresponda:
 
-## 2. [Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG)
+1. **Siempre** `git commit` + `git push` en **Pedidos-Manteniemiento-Android** para todo lo modificado en este repo (sin secretos: `.env`, `config.json` con credenciales, claves).
+2. **Siempre** completar también **Pedidos-MG** cuando la tarea haya tocado algo que allí debe vivir en paridad (`api/**`, `app/src/main/assets/*`, `docs/**` compartidos): sincronizar al clon local de Pedidos-MG, luego `commit` + `push` allí. **No** cerrar la tarea dejando Pedidos-MG desactualizado si hubo esos cambios.
 
-- Remoto: **https://github.com/LEAVERA77/Pedidos-MG** — `git push origin main` en la rama principal tras sincronizar lo que corresponda desde Nexxo.
+Si solo se tocó código **solo Android** (Kotlin, Gradle, etc.) sin `api/` ni assets compartidos, **no** hace falta commit vacío en Pedidos-MG salvo que el usuario lo pida.
+
+**Salvo** que el usuario diga explícitamente lo contrario: un solo repo, sin push, borrador local, etc.
+
+## 1. Proyecto Nexxo → Pedidos-Manteniemiento-Android
+
+- Ruta habitual: `AndroidStudioProjects/Nexxo`.
+- Pasos: `git add` de lo tocado, `git commit` con mensaje claro (y atribución según regla del proyecto), `git push origin main`.
+
+## 2. Pedidos-MG
+
 - Clon local típico: `AndroidStudioProjects/Pedidos-MG` (hermano de Nexxo).
 
 ### Qué sincronizar antes del commit en Pedidos-MG
@@ -25,15 +35,15 @@ alwaysApply: true
 | `api/**` | Copiar `api/` al clon de Pedidos-MG (sin `node_modules`, sin `.env`), luego commit + push allí. |
 | `app/src/main/assets/*` (panel web, PWA) | Ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` desde la raíz de Nexxo, o copia manual equivalente a la raíz de Pedidos-MG; luego commit + push. |
 | `docs/**` si son operativos compartidos con el repo web | Copiar los mismos archivos a `Pedidos-MG/docs/` cuando aplique paridad. |
-| Solo Kotlin/Android (`app/src/main/java`, Gradle, etc.) sin tocar `api/` ni assets compartidos | **Nexxo:** commit + push obligatorio. **Pedidos-MG:** no hay archivos que copiar; **no** hacer commit vacío allí salvo petición explícita del usuario. |
+| Solo Kotlin/Android (`app/src/main/java`, Gradle, etc.) sin tocar `api/` ni assets compartidos | **Nexxo:** commit + push obligatorio. **Pedidos-MG:** no hay archivos que copiar; no hacer commit vacío allí salvo petición explícita del usuario. |
 
 **No** commitear secretos en Pedidos-MG (`config.json` con credenciales, etc.); respetar `.gitignore`.
 
 ## 3. Orden recomendado
 
 1. Completar cambios y tests en Nexxo.  
-2. Commit + push **Nexxo**.  
-3. Sincronizar a Pedidos-MG lo que corresponda; commit + push **Pedidos-MG**.  
+2. Commit + push **Pedidos-Manteniemiento-Android**.  
+3. Sincronizar a **Pedidos-MG** lo que corresponda; commit + push **Pedidos-MG**.  
 
 ## 4. Fallos y excepciones
 
