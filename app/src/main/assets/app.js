@@ -13639,15 +13639,17 @@ async function cargarListaSociosAdmin() {
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
+            window._sociosVirtualRows = null;
             return;
         }
-        cont.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody>' +
-            rows.map(s => {
-                const e = (x) => String(x ?? '').replace(/</g, '&lt;');
-                const calleDisp = String(s.calle || '').trim();
-                const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
-            }).join('') + '</tbody></table></div>';
+        window._sociosVirtualRows = rows;
+        window._sociosVirtualRowHeight = 31;
+        cont.innerHTML =
+            `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
+<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles).</p></div>`;
+        bindSociosCatalogoVirtualScroll();
+        renderSociosCatalogoVirtual();
     } catch (e) {
         logErrorWeb('lista-socios-admin', e);
         cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
@@ -13675,6 +13677,83 @@ function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
         }
     }
     return null;
+}
+
+const SOCIOS_BULK_CHUNK = 160;
+
+async function ejecutarBulkInsertSociosCatalogo(lote) {
+    if (!lote.length) return;
+    const vals = lote
+        .map(
+            (p) =>
+                `(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)})`
+        )
+        .join(',');
+    await sqlSimple(
+        `INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+         VALUES ${vals}
+         ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`
+    );
+}
+
+let _sociosVirtualScrollRaf = null;
+function renderSociosCatalogoVirtual() {
+    const wrap = document.getElementById('lista-socios-admin-scroll');
+    const tb = document.getElementById('lista-socios-vtbody');
+    if (!wrap || !tb || !window._sociosVirtualRows || !window._sociosVirtualRows.length) return;
+    const data = window._sociosVirtualRows;
+    const total = data.length;
+    const rh = window._sociosVirtualRowHeight || 31;
+    const buf = 35;
+    const st = wrap.scrollTop;
+    const vh = wrap.clientHeight || 480;
+    let start = Math.floor(st / rh) - buf;
+    if (start < 0) start = 0;
+    let end = Math.ceil((st + vh) / rh) + buf;
+    if (end > total) end = total;
+    const padTop = start * rh;
+    const padBot = Math.max(0, (total - end) * rh);
+    const e = (x) => String(x ?? '').replace(/</g, '&lt;');
+    const slice = data.slice(start, end);
+    tb.innerHTML =
+        `<tr class="gn-vspad"><td colspan="14" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
+        slice
+            .map((s) => {
+                const calleDisp = String(s.calle || '').trim();
+                const numDisp = String(s.numero || '').trim();
+                return `<tr><td>${e(s.nis_medidor)}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+            })
+            .join('') +
+        `<tr class="gn-vspad"><td colspan="14" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
+}
+
+function bindSociosCatalogoVirtualScroll() {
+    const wrap = document.getElementById('lista-socios-admin-scroll');
+    if (!wrap || wrap.dataset.gnVirtBound === '1') return;
+    wrap.dataset.gnVirtBound = '1';
+    wrap.addEventListener(
+        'scroll',
+        () => {
+            if (_sociosVirtualScrollRaf) cancelAnimationFrame(_sociosVirtualScrollRaf);
+            _sociosVirtualScrollRaf = requestAnimationFrame(() => {
+                _sociosVirtualScrollRaf = null;
+                renderSociosCatalogoVirtual();
+            });
+        },
+        { passive: true }
+    );
+    if (!window.__gnSociosVirtResize) {
+        window.__gnSociosVirtResize = true;
+        window.addEventListener(
+            'resize',
+            () => {
+                if (window._sociosVirtualRows && window._sociosVirtualRows.length) {
+                    requestAnimationFrame(() => renderSociosCatalogoVirtual());
+                }
+            },
+            { passive: true }
+        );
+    }
 }
 
 async function importarExcelSocios(event) {
@@ -13705,19 +13784,20 @@ async function importarExcelSocios(event) {
             const n = normalizarEncabezadoExcelSocios(orig);
             if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
         });
-        let ok = 0, fail = 0;
+        const payloads = [];
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
             const nis = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'nis_medidor', 'nis', 'medidor', 'nro_medidor', 'numero_medidor');
             if (!nis) continue;
-            actualizarOverlayImportacion(`Importando socios… ${filaN} / ${rawRows.length}`);
-            if (filaN % 80 === 0) await new Promise(r => setTimeout(r, 0));
+            if (filaN % 400 === 0) {
+                actualizarOverlayImportacion(`Analizando Excel… ${filaN} / ${rawRows.length}`);
+                await new Promise((r) => setTimeout(r, 0));
+            }
             const nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
             let calle = valorSociosPorEncabezados(row, mapNormAOriginal, 'calle', 'calle_nombre', 'via');
             let numero = valorSociosPorEncabezados(row, mapNormAOriginal, 'numero', 'nro', 'num', 'altura', 'numero_calle', 'n');
-            /* Excel: una sola columna de dirección (encabezado direccion u otros sinónimos normalizados) */
             const textoDireccionUnica = valorSociosPorEncabezados(row, mapNormAOriginal, 'direccion', 'domicilio');
             if (textoDireccionUnica && !calle && !numero) {
                 const t = String(textoDireccionUnica).trim();
@@ -13732,7 +13812,6 @@ async function importarExcelSocios(event) {
                 calle = String(textoDireccionUnica).trim();
             }
             const telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
-            /* Excel cooperativa: columna "distribuidor_" (guión bajo al final) */
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
@@ -13743,15 +13822,45 @@ async function importarExcelSocios(event) {
             const tcon = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
+            payloads.push({
+                nis,
+                nombre,
+                calle,
+                numero,
+                barrioSoc,
+                telefono,
+                dist,
+                loc,
+                tar,
+                ur,
+                transf,
+                tcon,
+                fas
+            });
+        }
+        let ok = 0;
+        let fail = 0;
+        const totalPay = payloads.length;
+        for (let i = 0; i < totalPay; i += SOCIOS_BULK_CHUNK) {
+            const chunk = payloads.slice(i, i + SOCIOS_BULK_CHUNK);
+            actualizarOverlayImportacion(`Importando socios… ${Math.min(i + chunk.length, totalPay)} / ${totalPay}`);
             try {
-                await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
-                    VALUES(${esc(nis)}, ${esc(nombre)}, ${esc(calle)}, ${esc(numero)}, ${esc(barrioSoc)}, ${esc(telefono)}, ${esc(dist)}, ${esc(loc)}, ${esc(tar)}, ${esc(ur)}, ${esc(transf)}, ${esc(tcon)}, ${esc(fas)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
-                ok++;
+                await ejecutarBulkInsertSociosCatalogo(chunk);
+                ok += chunk.length;
             } catch (e) {
-                fail++;
-                if (errMsgs.length < 8) errMsgs.push(`NIS ${nis}: ${e && e.message ? e.message : String(e)}`);
+                for (const p of chunk) {
+                    try {
+                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases)
+                    VALUES(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases`);
+                        ok++;
+                    } catch (e2) {
+                        fail++;
+                        if (errMsgs.length < 8) errMsgs.push(`NIS ${p.nis}: ${e2 && e2.message ? e2.message : String(e2)}`);
+                    }
+                }
             }
+            await new Promise((r) => setTimeout(r, 0));
         }
         ocultarOverlayImportacion();
         const sufS = reemplazar ? ' (catálogo reemplazado)' : '';

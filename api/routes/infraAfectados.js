@@ -293,6 +293,8 @@ router.delete("/transformadores/:id", adminOnly, async (req, res) => {
 });
 
 /** Excel: codigo | nombre | capacidad_kva (o kva) | clientes_conectados (o socios) | barrio (opc.) | distribuidor_codigo (opc.) | alimentador (opc.) */
+const TRAFO_IMPORT_BATCH = 150;
+
 router.post("/transformadores/import-excel", adminOnly, upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
@@ -300,43 +302,76 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+    const distMap = new Map();
+    try {
+      const dr = await query(`SELECT id, UPPER(TRIM(codigo)) AS c FROM distribuidores`);
+      for (const r of dr.rows || []) {
+        if (r.c) distMap.set(String(r.c), r.id);
+      }
+    } catch (_) {}
+    const prepared = [];
+    for (const raw of rows) {
+      const row = {};
+      for (const [k, v] of Object.entries(raw)) {
+        row[String(k).trim().toLowerCase().replace(/\s+/g, "_")] = v;
+      }
+      const codigo = cellStr(row, "codigo", "código", "code", "id_transformador", "transformador_id", "id_trafo").toUpperCase();
+      if (!codigo) continue;
+      const nombre = cellStr(row, "nombre", "name") || null;
+      const kva = cellNum(row, "capacidad_kva", "kva", "potencia_kva");
+      const socios = cellNum(row, "clientes_conectados", "socios", "clientes");
+      const clientes_conectados = socios != null ? Math.max(0, Math.floor(socios)) : 0;
+      const barrio = cellStr(row, "barrio", "barrio_texto") || null;
+      const distCod = cellStr(
+        row,
+        "distribuidor_codigo",
+        "distribuidor",
+        "dist_codigo",
+        "codigo_de_distribuidor",
+        "código_de_distribuidor"
+      );
+      let distribuidor_id = null;
+      if (distCod) distribuidor_id = distMap.get(distCod.toUpperCase().trim()) ?? null;
+      const alimentador =
+        cellStr(row, "alimentador", "alim", "feeder", "codigo_de_alimentador", "código_de_alimentador") || null;
+      prepared.push({
+        codigo,
+        nombre,
+        kva: kva != null && Number.isFinite(kva) ? Math.floor(kva) : null,
+        clientes_conectados,
+        barrio,
+        distribuidor_id,
+        alimentador,
+      });
+    }
     let ok = 0;
     let err = 0;
     await withTransaction(async (client) => {
-      for (const raw of rows) {
-        const row = {};
-        for (const [k, v] of Object.entries(raw)) {
-          row[String(k).trim().toLowerCase().replace(/\s+/g, "_")] = v;
+      for (let off = 0; off < prepared.length; off += TRAFO_IMPORT_BATCH) {
+        const batch = prepared.slice(off, off + TRAFO_IMPORT_BATCH);
+        const ph = [];
+        const params = [];
+        let n = 1;
+        for (const p of batch) {
+          ph.push(
+            `($${n++},$${n++},$${n++},$${n++},$${n++},$${n++},$${n++},TRUE)`
+          );
+          params.push(
+            tid,
+            p.codigo,
+            p.nombre,
+            p.kva,
+            p.clientes_conectados,
+            p.barrio,
+            p.distribuidor_id,
+            p.alimentador
+          );
         }
-        const codigo = cellStr(row, "codigo", "código", "code", "id_transformador", "transformador_id", "id_trafo").toUpperCase();
-        if (!codigo) continue;
-        const nombre = cellStr(row, "nombre", "name") || null;
-        const kva = cellNum(row, "capacidad_kva", "kva", "potencia_kva");
-        const socios = cellNum(row, "clientes_conectados", "socios", "clientes");
-        const clientes_conectados = socios != null ? Math.max(0, Math.floor(socios)) : 0;
-        const barrio = cellStr(row, "barrio", "barrio_texto") || null;
-        const distCod = cellStr(
-          row,
-          "distribuidor_codigo",
-          "distribuidor",
-          "dist_codigo",
-          "codigo_de_distribuidor",
-          "código_de_distribuidor"
-        );
-        let distribuidor_id = null;
-        if (distCod) {
-          const r0 = await client.query(`SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = $1 LIMIT 1`, [
-            distCod.toUpperCase(),
-          ]);
-          distribuidor_id = r0.rows[0]?.id ?? null;
-        }
-        const alimentador =
-          cellStr(row, "alimentador", "alim", "feeder", "codigo_de_alimentador", "código_de_alimentador") || null;
         try {
-          await client.query(
+          const ins = await client.query(
             `INSERT INTO infra_transformadores
               (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, distribuidor_id, alimentador, activo)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
+             VALUES ${ph.join(",")}
              ON CONFLICT (tenant_id, codigo) DO UPDATE SET
                nombre = EXCLUDED.nombre,
                capacidad_kva = EXCLUDED.capacidad_kva,
@@ -345,20 +380,40 @@ router.post("/transformadores/import-excel", adminOnly, upload.single("file"), a
                distribuidor_id = EXCLUDED.distribuidor_id,
                alimentador = EXCLUDED.alimentador,
                activo = TRUE`,
-            [
-              tid,
-              codigo,
-              nombre,
-              kva != null && Number.isFinite(kva) ? Math.floor(kva) : null,
-              clientes_conectados,
-              barrio,
-              distribuidor_id,
-              alimentador,
-            ]
+            params
           );
-          ok += 1;
+          ok += ins.rowCount || batch.length;
         } catch {
-          err += 1;
+          for (const p of batch) {
+            try {
+              await client.query(
+                `INSERT INTO infra_transformadores
+                  (tenant_id, codigo, nombre, capacidad_kva, clientes_conectados, barrio_texto, distribuidor_id, alimentador, activo)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
+                 ON CONFLICT (tenant_id, codigo) DO UPDATE SET
+                   nombre = EXCLUDED.nombre,
+                   capacidad_kva = EXCLUDED.capacidad_kva,
+                   clientes_conectados = EXCLUDED.clientes_conectados,
+                   barrio_texto = EXCLUDED.barrio_texto,
+                   distribuidor_id = EXCLUDED.distribuidor_id,
+                   alimentador = EXCLUDED.alimentador,
+                   activo = TRUE`,
+                [
+                  tid,
+                  p.codigo,
+                  p.nombre,
+                  p.kva,
+                  p.clientes_conectados,
+                  p.barrio,
+                  p.distribuidor_id,
+                  p.alimentador,
+                ]
+              );
+              ok += 1;
+            } catch {
+              err += 1;
+            }
+          }
         }
       }
     });
@@ -381,6 +436,13 @@ router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+    const distMap = new Map();
+    try {
+      const dr = await query(`SELECT id, UPPER(TRIM(codigo)) AS c FROM distribuidores`);
+      for (const r of dr.rows || []) {
+        if (r.c) distMap.set(String(r.c), r.id);
+      }
+    } catch (_) {}
     let ok = 0;
     let err = 0;
     await withTransaction(async (client) => {
@@ -400,12 +462,7 @@ router.post("/transformadores/import-excel-asignacion", adminOnly, upload.single
           "código_de_distribuidor"
         );
         let distribuidor_id = null;
-        if (distCod) {
-          const r0 = await client.query(`SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = $1 LIMIT 1`, [
-            distCod.toUpperCase(),
-          ]);
-          distribuidor_id = r0.rows[0]?.id ?? null;
-        }
+        if (distCod) distribuidor_id = distMap.get(distCod.toUpperCase().trim()) ?? null;
         const alimentador =
           cellStr(row, "alimentador", "alim", "feeder", "codigo_de_alimentador", "código_de_alimentador") || null;
         const r1 = await client.query(

@@ -160,20 +160,24 @@ router.delete("/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+const CLIENTES_FINALES_IMPORT_BATCH = 200;
+
 router.post("/import-excel", upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
     const wb = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const tenant = req.tenantId;
     let ok = 0;
     await withTransaction(async (client) => {
-      for (const row of rows) {
-        await client.query(
-          `INSERT INTO clientes_finales(cliente_id, tipo, numero_cliente, nombre, apellido, telefono, email, nis, medidor, activo, fecha_registro)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,NOW())`,
-          [
-            req.tenantId,
+      for (let off = 0; off < rows.length; off += CLIENTES_FINALES_IMPORT_BATCH) {
+        const batch = rows.slice(off, off + CLIENTES_FINALES_IMPORT_BATCH);
+        const ph = [];
+        const params = [tenant];
+        for (const row of batch) {
+          const start = params.length + 1;
+          params.push(
             row.tipo || "socio",
             row.numero_cliente || null,
             row.nombre || null,
@@ -181,10 +185,19 @@ router.post("/import-excel", upload.single("file"), async (req, res) => {
             row.telefono || null,
             row.email || null,
             row.nis || null,
-            row.medidor || null,
-          ]
+            row.medidor || null
+          );
+          ph.push(
+            `($1,$${start},$${start + 1},$${start + 2},$${start + 3},$${start + 4},$${start + 5},$${start + 6},$${start + 7},TRUE,NOW())`
+          );
+        }
+        if (!ph.length) continue;
+        const ins = await client.query(
+          `INSERT INTO clientes_finales(cliente_id, tipo, numero_cliente, nombre, apellido, telefono, email, nis, medidor, activo, fecha_registro)
+           VALUES ${ph.join(",")}`,
+          params
         );
-        ok += 1;
+        ok += ins.rowCount != null ? ins.rowCount : batch.length;
       }
     });
     res.json({ ok: true, importados: ok });
