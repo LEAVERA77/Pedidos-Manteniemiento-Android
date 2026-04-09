@@ -3422,9 +3422,18 @@ function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
     return { left: l, top: t };
 }
 
+/** Escritorio ancho o WebView Android: mismos paneles arrastrables (ratón, DeX, tablet). */
+function floatingPanelsDragEnabled() {
+    try {
+        return window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa();
+    } catch (_) {
+        return esAndroidWebViewMapa();
+    }
+}
+
 function aplicarPosicionBp2Guardada() {
     const bp2 = document.getElementById('bp2');
-    if (!bp2 || !window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+    if (!bp2 || !floatingPanelsDragEnabled()) return;
     try {
         const raw = localStorage.getItem('pmg_bp2_pos');
         if (!raw) {
@@ -3448,7 +3457,7 @@ function initBp2PanelFlotanteDesktop() {
     const bp2 = document.getElementById('bp2');
     const ph = document.getElementById('ph');
     if (!bp2 || !ph || ph.dataset.bp2DragInit === '1') return;
-    if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+    if (!floatingPanelsDragEnabled()) return;
     ph.dataset.bp2DragInit = '1';
     aplicarPosicionBp2Guardada();
     const startDrag = (clientX, clientY) => {
@@ -3505,13 +3514,13 @@ function initBp2PanelFlotanteDesktop() {
         document.addEventListener('touchcancel', onUp);
     };
     ph.addEventListener('mousedown', (e) => {
-        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (!floatingPanelsDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
     });
     ph.addEventListener('touchstart', (e) => {
-        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (!floatingPanelsDragEnabled()) return;
         if (e.touches.length !== 1 || e.target.closest('button')) return;
         e.preventDefault();
         const t = e.touches[0];
@@ -3521,16 +3530,16 @@ function initBp2PanelFlotanteDesktop() {
 
 let _mouiCardDragState = null;
 
-/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Solo escritorio ≥1024px. */
+/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Escritorio ≥1024px o WebView Android. */
 function initMouiCardDraggable(cardId) {
     const card = document.getElementById(cardId);
-    if (!card || esAndroidWebViewMapa()) return;
+    if (!card) return;
     const hd = card.querySelector('.moui-hd');
     if (!hd || card.dataset.mouiCardDragInit === '1') return;
     card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
-        if (!window.matchMedia('(min-width:1024px)').matches) return;
+        if (!floatingPanelsDragEnabled()) return;
         try {
             const raw = localStorage.getItem(key);
             if (!raw) return;
@@ -3598,7 +3607,7 @@ function initMouiCardDraggable(cardId) {
         document.addEventListener('touchcancel', onUp);
     };
     hd.addEventListener('mousedown', (e) => {
-        if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+        if (!floatingPanelsDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
@@ -3606,7 +3615,7 @@ function initMouiCardDraggable(cardId) {
     hd.addEventListener(
         'touchstart',
         (e) => {
-            if (!window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa()) return;
+            if (!floatingPanelsDragEnabled()) return;
             if (e.touches.length !== 1 || e.target.closest('button')) return;
             e.preventDefault();
             const t = e.touches[0];

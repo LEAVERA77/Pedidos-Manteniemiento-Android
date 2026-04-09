@@ -217,12 +217,19 @@ export async function runInitMap() {
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,
-        inertia: false
+        inertia: false,
+        scrollWheelZoom: true,
+        wheelPxPerZoomLevel: 60
     }).setView([latBase, lngBase], zoomInit);
 
     gnAttachBaseMapLayers(ctx.app.map);
 
     const map = ctx.app.map;
+    try {
+        if (ctx.esAndroidWebViewMapa() && map.scrollWheelZoom && typeof map.scrollWheelZoom.enable === 'function') {
+            map.scrollWheelZoom.enable();
+        }
+    } catch (_) {}
     if (!map.getPane('gnPanePedidos')) {
         map.createPane('gnPanePedidos');
         map.getPane('gnPanePedidos').style.zIndex = 650;
