@@ -113,7 +113,6 @@
   </div>
   <div id="mc"></div>
   <div id="mapa-overlay-ui">
-    <button type="button" id="map-tab-android-bar" class="map-slide-tab map-tab-android-bar" onclick="toggleAndroidMapStripCollapsed(false)" title="Mostrar barra (filtros / alcance)">Barra</button>
     <div id="map-slide-tabs-cluster" class="map-slide-tabs-cluster">
     <button type="button" id="map-tab-filtros" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
     <button type="button" id="map-tab-filtro-tipo" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtro-tipo',false)" title="Mostrar filtro por tipo de reclamo">Tipo</button>
@@ -127,6 +126,13 @@
     <div id="mapa-card-filtros" class="moui-card">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-filtros-body" class="moui-bd">
+        <div id="wrap-android-scope" class="moui-row" style="display:none;align-items:center;gap:.35rem;flex-wrap:wrap;margin-bottom:.35rem;width:100%">
+          <span class="moui-lbl">Alcance</span>
+          <select id="sel-android-pedidos-scope" class="moui-sel" style="max-width:min(12rem,70vw)" onchange="onAndroidPedidosScopeChange()">
+            <option value="asignados">Solo a mí</option>
+            <option value="todos">Todos</option>
+          </select>
+        </div>
         <div class="moui-row moui-estados">
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-pendiente" checked onchange="onMapaFiltroChange()"> Pendiente</label>
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-asignado" checked onchange="onMapaFiltroChange()"> Asignado</label>
@@ -171,24 +177,6 @@
       </div>
     </div>
   </div>
-  <div id="mapa-android-strip"><div class="mas-inner">
-    <div class="mas-line-top">
-      <div class="mas-actions mas-actions-lead">
-        <button type="button" class="ib-mini" title="Ocultar esta barra" onclick="toggleAndroidMapStripCollapsed(true)"><i class="fas fa-chevron-right"></i></button>
-      </div>
-      <div class="mas-filters-cluster" id="wrap-android-filtros-rapidos">
-      <span id="wrap-android-scope" class="mas-scope-wrap" style="display:none">
-        <span class="mas-scope-lbl">Alcance</span>
-        <select id="sel-android-pedidos-scope" class="mas-scope-select" onchange="onAndroidPedidosScopeChange()">
-          <option value="asignados">Solo a mí</option>
-          <option value="todos">Todos</option>
-        </select>
-      </span>
-      <button type="button" class="mas-filtros-panel-btn" onclick="abrirAndroidFiltrosMapaRapidos()" title="Estados, prioridad y filtros (igual que en admin web)">Filtros mapa</button>
-      </div>
-      <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
-    </div>
-  </div></div>
   
   <button type="button" id="btn-mapa-nuevo-gps" class="btn-mapa-nuevo-gps" title="Nuevo pedido en mi ubicación" aria-label="Nuevo pedido en mi ubicación">
     <i class="fas fa-plus"></i>

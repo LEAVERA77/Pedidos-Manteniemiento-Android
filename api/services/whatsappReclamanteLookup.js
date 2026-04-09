@@ -59,6 +59,16 @@ function pickCoord(row, latKey, lngKey) {
   return { catalogoLatitud: lat, catalogoLongitud: lng };
 }
 
+/** Evita cortar toda la búsqueda si el tenant llega mal desde el webhook. */
+function resolveTenantIdReclamoLookup(tenantIdRaw) {
+  let t = Number(tenantIdRaw);
+  if (!Number.isFinite(t) || t < 1) {
+    const fb = Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+    t = Number.isFinite(fb) && fb >= 1 ? fb : 1;
+  }
+  return t;
+}
+
 /**
  * Busca nombre / NIS para el reclamo: ID usuario del tenant, NIS/medidor/número en clientes_finales, o socios_catalogo.
  * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoProvincia?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null, catalogoLatitud?: number|null, catalogoLongitud?: number|null } | { ok: false } | { skip: true }}
@@ -71,8 +81,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     return { skip: true };
   }
 
-  const tid = Number(tenantId);
-  if (!Number.isFinite(tid) || tid < 1) return { ok: false };
+  const tid = resolveTenantIdReclamoLookup(tenantId);
 
   const dKey = soloDigitosIdentificadorReclamo(rawTrim);
   const useDigitMatch = dKey.length >= 4 && dKey.length <= 24;
@@ -194,6 +203,11 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
 
     const nisExpr =
       "regexp_replace(TRIM(COALESCE(nis_medidor::text, '')), '[^0-9]', '', 'g')";
+    const idMatchOr = `(
+          TRIM($1) ~ '^[0-9]+$'
+          AND LENGTH(TRIM($1)) <= 12
+          AND CAST(id AS TEXT) = TRIM($1)
+        )`;
     const matchClause = useDigitMatch
       ? `(
           UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
@@ -201,8 +215,12 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
             LENGTH($2::text) >= 4
             AND ${nisExpr} = $2
           )
+          OR ${idMatchOr}
         )`
-      : `UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))`;
+      : `(
+          UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
+          OR ${idMatchOr}
+        )`;
 
     const scParams = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
     let tenantSql = "";

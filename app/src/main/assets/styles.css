@@ -77,10 +77,6 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .map-slide-tabs-cluster .map-slide-tab.visible{
   display:block!important;
 }
-/* Android: si la pestaña "Barra" está visible, el grupo baja para no superponerse */
-.map-slide-tab.map-tab-android-bar.visible + .map-slide-tabs-cluster{
-  top:calc(var(--app-header-h, 58px) + 1.9rem);
-}
 .dash-kpi-click{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .dash-kpi-click:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(30,58,138,.12)}
 .dash-kpi-click.active-ring{outline:2px solid var(--bm);outline-offset:2px}
@@ -104,25 +100,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .print-content.print-a4-tight table{font-size:8.5pt;margin-top:.35rem}
 .print-content.print-a4-tight td{padding:.25rem}
 .print-content.print-a4-tight .firma-print{max-height:70px;object-fit:contain}
-#mapa-android-strip{display:none;position:absolute;top:58px;left:0;right:0;z-index:852;pointer-events:none;transition:transform .28s ease;transform:translateX(0)}
-#mapa-android-strip.mas-collapsed{transform:translateX(100vw)}
-#mapa-android-strip.mas-collapsed .mas-inner{pointer-events:none}
-#mapa-android-strip .mas-inner{pointer-events:auto;margin:.2rem .4rem;padding:.22rem .4rem;background:#fff;border:1px solid var(--bo);border-radius:.4rem;display:flex;flex-direction:column;gap:.2rem;align-items:stretch;font-size:.68rem;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-#mapa-android-strip .mas-line-top{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;justify-content:flex-start;width:100%;min-height:0}
-#mapa-android-strip .mas-filters-cluster{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;flex:1;min-width:0}
-#mapa-android-strip .mas-line-top .mas-actions{display:flex;gap:.2rem;align-items:center;flex-shrink:0}
-#mapa-android-strip .mas-actions-lead{order:-1}
-#mapa-android-strip .mas-filtros-av-mini{display:inline-flex;align-items:center;gap:.2rem;cursor:pointer;white-space:nowrap;margin:0;flex-shrink:0;font-size:.62rem;color:var(--tm)}
-#mapa-android-strip .mas-filtros-av-mini input{width:auto;margin:0;flex-shrink:0}
-#mapa-android-strip .mas-scope-wrap{align-items:center;gap:.3rem;flex:1;min-width:0}
-#mapa-android-strip .mas-scope-lbl{color:var(--tl);flex-shrink:0}
-#mapa-android-strip .mas-scope-select{font-size:.62rem!important;padding:.12rem .3rem!important;border-radius:.3rem!important;border:1px solid var(--bo)!important;max-width:min(9.5rem,46vw)}
-#mapa-android-strip .mas-filtros-panel-btn{
-  flex-shrink:0;font-size:.62rem;font-weight:600;padding:.2rem .45rem;border-radius:.3rem;border:1px solid var(--bo);
-  background:var(--bg);color:var(--bd);cursor:pointer;white-space:nowrap
-}
-#mapa-android-strip .mas-filtros-panel-btn:active{opacity:.92}
-.map-slide-tab.map-tab-android-bar{top:64px;left:0!important;right:auto!important;z-index:9650}
+/* Alcance técnico (Android): primera fila dentro de «Filtros del mapa», mismo estilo que el resto del panel */
+#wrap-android-scope .moui-lbl{color:var(--tl);font-size:.72rem;min-width:4.25rem}
 #mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:854;max-width:min(12rem,calc(100vw - 1rem));max-height:min(26vh,220px);overflow-y:auto;font-size:.58rem}
 #mapa-card-colores .moui-bd{padding:.25rem .35rem .3rem}
 #mapa-card-colores .ll-hd{font-weight:700;color:var(--bd);font-size:.6rem;margin:0 0 .12rem;line-height:1.15}

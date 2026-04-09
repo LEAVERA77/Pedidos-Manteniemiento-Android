@@ -2192,22 +2192,8 @@ function marcarGpsRecibidoEstaSesion() {
     _gpsRecibidoEstaSesion = true;
 }
 
-function toggleAndroidMapStripCollapsed(collapse) {
-    const strip = document.getElementById('mapa-android-strip');
-    const tab = document.getElementById('map-tab-android-bar');
-    if (!strip) return;
-    if (collapse === undefined) {
-        collapse = !strip.classList.contains('mas-collapsed');
-    }
-    const hide = !!collapse;
-    strip.classList.toggle('mas-collapsed', hide);
-    if (esAndroidWebViewMapa()) strip.style.display = 'block';
-    if (tab) {
-        if (hide && esAndroidWebViewMapa()) tab.classList.add('visible');
-        else tab.classList.remove('visible');
-    }
-    try { localStorage.setItem('pmg_android_strip_collapsed', hide ? '1' : '0'); } catch (_) {}
-}
+/** Barra superior Android eliminada: mapa = mismas paletas que admin (pestañas laterales). */
+function toggleAndroidMapStripCollapsed() {}
 window.toggleAndroidMapStripCollapsed = toggleAndroidMapStripCollapsed;
 
 limpiarPersistenciaClienteGestorNovaMigracionV2();
@@ -3285,13 +3271,8 @@ function syncMapaPrioFiltrosFromStorage() {
     });
 }
 
-/** Android WebView: abre el mismo panel de filtros por checkboxes que en admin (evita el selector nativo tipo radio). */
+/** Android WebView: abre el panel de filtros (misma paleta que admin web). */
 function abrirAndroidFiltrosMapaRapidos() {
-    const chk = document.getElementById('chk-android-filtros-av');
-    if (chk && !chk.checked) {
-        chk.checked = true;
-        onToggleAndroidFiltrosMapa();
-    }
     try {
         toggleMapaCardSlideoff('mapa-card-filtros', false);
     } catch (_) {}
@@ -3334,6 +3315,7 @@ function syncMapaLabelsNpCheckbox() {
 
 function onToggleAndroidFiltrosMapa() {
     const chk = document.getElementById('chk-android-filtros-av');
+    if (!chk) return;
     const card = document.getElementById('mapa-card-filtros');
     const cardTipo = document.getElementById('mapa-card-filtro-tipo');
     const cardCol = document.getElementById('mapa-card-colores');
@@ -3659,48 +3641,30 @@ function bindMouiCardHeaderToggles() {
 function aplicarUIMapaPlataforma() {
     syncMapaLabelsNpCheckbox();
     syncMapaPrioFiltrosFromStorage();
-    const strip = document.getElementById('mapa-android-strip');
     const card = document.getElementById('mapa-card-filtros');
     const cardTipo = document.getElementById('mapa-card-filtro-tipo');
     const cardCol = document.getElementById('mapa-card-colores');
-    if (!strip || !card) return;
+    if (!card) return;
     if (esAndroidWebViewMapa()) {
         try {
             document.documentElement.classList.add('gn-android-webview');
         } catch (_) {}
-        strip.style.display = 'block';
-        const adv = localStorage.getItem('pmg_show_map_filters') === '1';
-        const chk = document.getElementById('chk-android-filtros-av');
-        if (chk) chk.checked = adv;
-        card.style.display = adv ? 'block' : 'none';
-        if (cardTipo) cardTipo.style.display = adv ? 'block' : 'none';
-        if (cardCol) cardCol.style.display = adv ? 'block' : 'none';
-        if (!adv) {
-            document.getElementById('map-tab-filtros')?.classList.remove('visible');
-            document.getElementById('map-tab-filtro-tipo')?.classList.remove('visible');
-            document.getElementById('map-tab-colores')?.classList.remove('visible');
-            document.getElementById('map-tab-dash')?.classList.remove('visible');
-        }
+        /* Mismas paletas que admin: paneles en DOM; mostrar/ocultar con pestañas + ojo (slideoff). */
+        card.style.display = 'block';
+        if (cardTipo) cardTipo.style.display = 'block';
+        if (cardCol) cardCol.style.display = 'block';
+        const mapDash = document.getElementById('mapa-card-dashboard');
+        if (mapDash) mapDash.style.display = esAdmin() ? 'block' : 'none';
         const wrap = document.getElementById('wrap-android-scope');
         if (wrap) {
-            wrap.style.display = esTecnicoOSupervisor() ? 'inline-flex' : 'none';
+            wrap.style.display = esTecnicoOSupervisor() ? 'flex' : 'none';
             const sel = document.getElementById('sel-android-pedidos-scope');
             if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
-        }
-        const tabBar = document.getElementById('map-tab-android-bar');
-        if (localStorage.getItem('pmg_android_strip_collapsed') === '1') {
-            strip.classList.add('mas-collapsed');
-            tabBar?.classList.add('visible');
-        } else {
-            strip.classList.remove('mas-collapsed');
-            tabBar?.classList.remove('visible');
         }
     } else {
         try {
             document.documentElement.classList.remove('gn-android-webview');
         } catch (_) {}
-        strip.style.display = 'none';
-        document.getElementById('map-tab-android-bar')?.classList.remove('visible');
         card.style.display = 'block';
         if (cardTipo) cardTipo.style.display = 'block';
         if (cardCol) cardCol.style.display = 'block';
