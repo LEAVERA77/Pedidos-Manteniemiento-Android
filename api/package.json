@@ -9,7 +9,8 @@
     "dev": "nodemon server.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "geocode:padron-lote": "node scripts/geocodificarPadronLote.mjs"
+    "geocode:padron-lote": "node scripts/geocodificarPadronLote.mjs",
+    "enriquecer:excel-padron": "node scripts/enriquecerPadronDesdeExcel.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
