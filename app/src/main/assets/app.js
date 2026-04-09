@@ -3256,7 +3256,12 @@ function llenarSelectsFiltroMapa() {
 }
 
 function onMapaFiltroChange() {
-    try { renderMk(); } catch (_) {}
+    try {
+        renderMk();
+    } catch (_) {}
+    try {
+        if (esAndroidWebViewMapa()) syncAndroidMapaEstadoSelectFromCheckboxes();
+    } catch (_) {}
 }
 
 const MAPA_PRIO_CHK_IDS = ['mapa-flt-prio-critica', 'mapa-flt-prio-alta', 'mapa-flt-prio-media', 'mapa-flt-prio-baja', 'mapa-flt-prio-cerrado'];
@@ -3283,7 +3288,82 @@ function syncMapaPrioFiltrosFromStorage() {
     });
 }
 
+const PMG_ANDROID_MAPA_ESTADO_KEY = 'pmg_android_mapa_estado_v1';
+const ANDROID_MAPA_EST_CHK_IDS = ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'];
+/** Presets: [pendiente, asignado, ejecución, cerrado] — 1 = visible en mapa */
+const ANDROID_MAPA_ESTADO_PRESET = {
+    todos: [1, 1, 1, 1],
+    abiertos: [1, 1, 1, 0],
+    pendiente: [1, 0, 0, 0],
+    asignado: [0, 1, 0, 0],
+    ejecucion: [0, 0, 1, 0],
+    cerrado: [0, 0, 0, 1],
+};
+
+function applyAndroidMapaEstadoPreset(preset) {
+    const bits = ANDROID_MAPA_ESTADO_PRESET[preset];
+    if (!bits) return false;
+    ANDROID_MAPA_EST_CHK_IDS.forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!bits[i];
+    });
+    return true;
+}
+
+function detectAndroidMapaEstadoPresetFromDom() {
+    const p = !!document.getElementById('mapa-flt-pendiente')?.checked;
+    const a = !!document.getElementById('mapa-flt-asignado')?.checked;
+    const e = !!document.getElementById('mapa-flt-ejecucion')?.checked;
+    const c = !!document.getElementById('mapa-flt-cerrado')?.checked;
+    if (p && a && e && c) return 'todos';
+    if (p && a && e && !c) return 'abiertos';
+    if (p && !a && !e && !c) return 'pendiente';
+    if (!p && a && !e && !c) return 'asignado';
+    if (!p && !a && e && !c) return 'ejecucion';
+    if (!p && !a && !e && c) return 'cerrado';
+    return 'pers';
+}
+
+function syncAndroidMapaEstadoSelectFromCheckboxes() {
+    const sel = document.getElementById('sel-android-mapa-estado');
+    if (!sel) return;
+    const v = detectAndroidMapaEstadoPresetFromDom();
+    if (sel.value !== v) sel.value = v;
+}
+
+function syncAndroidMapaEstadoFromStorage() {
+    const sel = document.getElementById('sel-android-mapa-estado');
+    if (!sel) return;
+    let v = 'todos';
+    try {
+        v = localStorage.getItem(PMG_ANDROID_MAPA_ESTADO_KEY) || 'todos';
+    } catch (_) {}
+    if (v === 'pers' || !ANDROID_MAPA_ESTADO_PRESET[v]) v = 'todos';
+    sel.value = v;
+    applyAndroidMapaEstadoPreset(v);
+}
+
+function onAndroidMapaEstadoChange() {
+    const sel = document.getElementById('sel-android-mapa-estado');
+    if (!sel) return;
+    const v = sel.value;
+    if (v === 'pers') return;
+    if (!applyAndroidMapaEstadoPreset(v)) return;
+    try {
+        localStorage.setItem(PMG_ANDROID_MAPA_ESTADO_KEY, v);
+    } catch (_) {}
+    try {
+        onMapaFiltroChange();
+    } catch (_) {}
+}
+window.onAndroidMapaEstadoChange = onAndroidMapaEstadoChange;
+
 function resetMapaFiltros() {
+    try {
+        localStorage.removeItem(PMG_ANDROID_MAPA_ESTADO_KEY);
+    } catch (_) {}
+    const sEst = document.getElementById('sel-android-mapa-estado');
+    if (sEst) sEst.value = 'todos';
     ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
@@ -3317,10 +3397,22 @@ function syncMapaLabelsNpCheckbox() {
 function onToggleAndroidFiltrosMapa() {
     const chk = document.getElementById('chk-android-filtros-av');
     const card = document.getElementById('mapa-card-filtros');
+    const cardTipo = document.getElementById('mapa-card-filtro-tipo');
+    const cardCol = document.getElementById('mapa-card-colores');
     if (!card) return;
     const on = !!chk?.checked;
-    try { localStorage.setItem('pmg_show_map_filters', on ? '1' : '0'); } catch (_) {}
+    try {
+        localStorage.setItem('pmg_show_map_filters', on ? '1' : '0');
+    } catch (_) {}
     card.style.display = on ? 'block' : 'none';
+    if (cardTipo) cardTipo.style.display = on ? 'block' : 'none';
+    if (cardCol) cardCol.style.display = on ? 'block' : 'none';
+    if (!on) {
+        document.getElementById('map-tab-filtros')?.classList.remove('visible');
+        document.getElementById('map-tab-filtro-tipo')?.classList.remove('visible');
+        document.getElementById('map-tab-colores')?.classList.remove('visible');
+        document.getElementById('map-tab-dash')?.classList.remove('visible');
+    }
 }
 
 function onAndroidPedidosScopeChange() {
@@ -3657,6 +3749,11 @@ function aplicarUIMapaPlataforma() {
             const sel = document.getElementById('sel-android-pedidos-scope');
             if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
         }
+        const wrapEst = document.getElementById('wrap-android-estado');
+        if (wrapEst) wrapEst.style.display = 'inline-flex';
+        try {
+            syncAndroidMapaEstadoFromStorage();
+        } catch (_) {}
         const tabBar = document.getElementById('map-tab-android-bar');
         if (localStorage.getItem('pmg_android_strip_collapsed') === '1') {
             strip.classList.add('mas-collapsed');

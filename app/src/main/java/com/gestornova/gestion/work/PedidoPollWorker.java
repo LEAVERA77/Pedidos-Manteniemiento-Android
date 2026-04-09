@@ -20,6 +20,7 @@ import com.gestornova.gestion.MainActivity;
 import com.gestornova.gestion.R;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 
 /**
  * Consulta periódica a la tabla {@code pedidos} en Neon y muestra una notificación local
@@ -73,6 +74,10 @@ public class PedidoPollWorker extends Worker {
                 Log.i(TAG, "Nuevos pedidos: " + nuevos + " (maxId " + stored + " -> " + maxId + ")");
             }
 
+            return Result.success();
+        } catch (SQLException e) {
+            // Emulador sin Neon válido / red: evita reintentos infinitos y ruido en logcat.
+            Log.w(TAG, "Neon no disponible (config.json / red). Notif. pedidos desactivada: " + e.getMessage());
             return Result.success();
         } catch (Exception e) {
             Log.e(TAG, "Error consultando Neon", e);

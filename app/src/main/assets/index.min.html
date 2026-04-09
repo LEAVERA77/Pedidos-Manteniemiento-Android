@@ -176,13 +176,27 @@
       <div class="mas-actions mas-actions-lead">
         <button type="button" class="ib-mini" title="Ocultar esta barra" onclick="toggleAndroidMapStripCollapsed(true)"><i class="fas fa-chevron-right"></i></button>
       </div>
+      <div class="mas-filters-cluster" id="wrap-android-filtros-rapidos">
       <span id="wrap-android-scope" class="mas-scope-wrap" style="display:none">
-        <span class="mas-scope-lbl">Pedidos</span>
+        <span class="mas-scope-lbl">Alcance</span>
         <select id="sel-android-pedidos-scope" class="mas-scope-select" onchange="onAndroidPedidosScopeChange()">
-          <option value="asignados">Solo asignados</option>
+          <option value="asignados">Solo a mí</option>
           <option value="todos">Todos</option>
-      </select>
-    </span>
+        </select>
+      </span>
+      <span id="wrap-android-estado" class="mas-scope-wrap">
+        <span class="mas-scope-lbl">Estado</span>
+        <select id="sel-android-mapa-estado" class="mas-scope-select" onchange="onAndroidMapaEstadoChange()">
+          <option value="todos">Todos</option>
+          <option value="abiertos">Abiertos</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="asignado">Asignado</option>
+          <option value="ejecucion">En ejecución</option>
+          <option value="cerrado">Cerrado</option>
+          <option value="pers">Varios (Av.)</option>
+        </select>
+      </span>
+      </div>
       <label class="mas-filtros-av-mini" title="Filtros avanzados (prioridad, colores, dashboard)"><input type="checkbox" id="chk-android-filtros-av" onchange="onToggleAndroidFiltrosMapa()"><span>Av.</span></label>
     </div>
   </div></div>
