@@ -3655,9 +3655,18 @@ function aplicarUIMapaPlataforma() {
         if (cardCol) cardCol.style.display = 'block';
         const mapDash = document.getElementById('mapa-card-dashboard');
         if (mapDash) mapDash.style.display = esAdmin() ? 'block' : 'none';
+        const tabDash = document.getElementById('map-tab-dash');
+        if (tabDash) {
+            if (!esAdmin()) {
+                tabDash.classList.remove('visible');
+                tabDash.style.setProperty('display', 'none', 'important');
+            } else {
+                tabDash.style.removeProperty('display');
+            }
+        }
         const wrap = document.getElementById('wrap-android-scope');
         if (wrap) {
-            wrap.style.display = esTecnicoOSupervisor() ? 'flex' : 'none';
+            wrap.style.display = 'flex';
             const sel = document.getElementById('sel-android-pedidos-scope');
             if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
         }
