@@ -379,7 +379,17 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
           AND LENGTH(TRIM($1)) <= 12
           AND CAST(id AS TEXT) = TRIM($1)
         )`;
-    /** Prioridad: medidor propio > NIS propio > columna unificada nis_medidor (mismo valor en varias columnas). */
+    /** Coincidencia textual: columnas separadas (exacto) + nis_medidor unificado por ILIKE (guiones, sufijos). */
+    const exactUnifiedText = `UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))`;
+    const exactMedidorText = scCols.has("medidor")
+      ? `UPPER(TRIM(COALESCE(medidor::text,''))) = UPPER(TRIM($1))`
+      : null;
+    const exactNisColText = scCols.has("nis") ? `UPPER(TRIM(COALESCE(nis::text,''))) = UPPER(TRIM($1))` : null;
+    const likeNisMedidorUnificado = `(
+      LENGTH(TRIM($1)) >= 3
+      AND TRIM(COALESCE(nis_medidor::text,'')) ILIKE '%' || TRIM($1) || '%'
+    )`;
+    /** Prioridad numérica: dígitos equivalentes y subcadenas (ceros / valores compuestos). */
     const digitOrParts = [];
     const digitPartialParts = [];
     if (useDigitMatch) {
@@ -390,27 +400,20 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       if (scCols.has("medidor")) digitPartialParts.push(sqlDigitosContieneSubcadena("medidor::text", 2));
       if (scCols.has("nis")) digitPartialParts.push(sqlDigitosContieneSubcadena("nis::text", 2));
     }
-    /** ILIKE insensible a mayúsculas; TRIM quita espacios. Útil si el valor trae texto alrededor del número. */
-    const ilikeContiene = useDigitMatch
-      ? `OR (
-          LENGTH(TRIM($1)) >= 4
-          AND (
-            UPPER(TRIM(COALESCE(nis_medidor::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'
-            ${scCols.has("medidor") ? `OR UPPER(TRIM(COALESCE(medidor::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'` : ""}
-            ${scCols.has("nis") ? `OR UPPER(TRIM(COALESCE(nis::text,''))) LIKE '%' || UPPER(TRIM($1)) || '%'` : ""}
-          )
-        )`
-      : "";
+    const textoPrincipalParts = [exactUnifiedText];
+    if (exactMedidorText) textoPrincipalParts.push(exactMedidorText);
+    if (exactNisColText) textoPrincipalParts.push(exactNisColText);
+    textoPrincipalParts.push(likeNisMedidorUnificado);
+
     const matchClause = useDigitMatch
       ? `(
-          UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
+          ${textoPrincipalParts.join("\n          OR ")}
           OR (${digitOrParts.join(" OR ")})
           OR (${digitPartialParts.join(" OR ")})
-          ${ilikeContiene}
           OR ${idMatchOr}
         )`
       : `(
-          UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
+          ${textoPrincipalParts.join("\n          OR ")}
           OR ${idMatchOr}
         )`;
 

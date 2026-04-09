@@ -2392,6 +2392,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS latitud NUMERIC(12, 8)`);
                 await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS longitud NUMERIC(12, 8)`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS nis TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS medidor TEXT`);
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedido_materiales(
                     id SERIAL PRIMARY KEY,
                     pedido_id INTEGER NOT NULL,
@@ -13778,6 +13780,29 @@ function validarWgs84Import(lat, lng) {
     return { la: a, lo: b };
 }
 
+/** Medidor/NIS como texto (evita pérdida de formato; números Excel → String). */
+function valorIdentificadorTextoSocios(row, mapNormAOriginal, ...clavesCanon) {
+    for (const canon of clavesCanon) {
+        const orig = mapNormAOriginal[canon];
+        if (orig == null || row[orig] == null || row[orig] === '') continue;
+        const v = row[orig];
+        if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+        const s = String(v).trim();
+        return s || null;
+    }
+    for (const orig of Object.keys(row)) {
+        const n = normalizarEncabezadoExcelSocios(orig);
+        if (clavesCanon.includes(n)) {
+            const v = row[orig];
+            if (v == null || v === '') continue;
+            if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+            const s = String(v).trim();
+            return s || null;
+        }
+    }
+    return null;
+}
+
 /** Lotes más grandes = menos viajes a Neon (20k+ socios). */
 const SOCIOS_BULK_CHUNK = 1000;
 
@@ -13786,14 +13811,17 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
     const vals = lote
         .map(
             (p) =>
-                `(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
+                `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
         )
         .join(',');
     await sqlSimple(
-        `INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+        `INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
          VALUES ${vals}
-         ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
-         latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`
+         ON CONFLICT (nis_medidor) DO UPDATE SET
+           nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
+           medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
+           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
+           latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`
     );
 }
 
@@ -13890,15 +13918,22 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            let nis = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            if (!nis) {
-                const nisPart = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis');
-                const medPart = valorSociosPorEncabezados(row, mapNormAOriginal,
-                    'medidor', 'nro_medidor', 'numero_medidor');
-                if (nisPart && medPart) nis = `${String(nisPart).trim()}-${String(medPart).trim()}`;
-                else nis = nisPart || medPart;
+            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
+            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
+            let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
+            let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
+            if (!nis_medidor) {
+                if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
+                else nis_medidor = nisPart || medPart;
             }
-            if (!nis) continue;
+            if (!nis_medidor) continue;
+            if (nisColUni && (!nisPart || !medPart) && /-/.test(String(nisColUni))) {
+                const sp = String(nisColUni).split('-');
+                if (sp.length >= 2) {
+                    if (!nisPart) nisPart = sp[0].trim() || null;
+                    if (!medPart) medPart = sp.slice(1).join('-').trim() || null;
+                }
+            }
             if (filaN % 2500 === 0) {
                 actualizarOverlayImportacion(`Analizando Excel… ${filaN} / ${rawRows.length}`);
                 await new Promise((r) => setTimeout(r, 0));
@@ -13934,7 +13969,9 @@ async function importarExcelSocios(event) {
             const loRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'longitud', 'lng', 'lon', 'longitude', 'lng_gps');
             const { la: latitud, lo: longitud } = validarWgs84Import(laRaw, loRaw);
             payloads.push({
-                nis,
+                nis_medidor,
+                nis: nisPart || null,
+                medidor: medPart || null,
                 nombre,
                 calle,
                 numero,
@@ -13947,8 +13984,8 @@ async function importarExcelSocios(event) {
                 transf,
                 tcon,
                 fas,
-                latitud,
-                longitud
+                latitud: latitud != null ? latitud : null,
+                longitud: longitud != null ? longitud : null
             });
         }
         let ok = 0;
@@ -13963,13 +14000,13 @@ async function importarExcelSocios(event) {
             } catch (e) {
                 for (const p of chunk) {
                     try {
-                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
-                    VALUES(${esc(p.nis)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`);
+                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+                    VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`);
                         ok++;
                     } catch (e2) {
                         fail++;
-                        if (errMsgs.length < 8) errMsgs.push(`NIS ${p.nis}: ${e2 && e2.message ? e2.message : String(e2)}`);
+                        if (errMsgs.length < 8) errMsgs.push(`NIS ${p.nis_medidor}: ${e2 && e2.message ? e2.message : String(e2)}`);
                     }
                 }
             }
@@ -13998,7 +14035,17 @@ async function importarExcelSocios(event) {
 }
 
 function mostrarFormatoExcelSocios() {
-    alert('Excel socios — fila 1 = encabezados (el orden no importa).\n\nClave: columna nis_medidor, o bien nis + medidor (se unen con guion).\nCoordenadas opcionales: latitud y longitud (WGS84). Si una fila no trae GPS, al fusionar no se borran coordenadas ya cargadas.\n\nRecomendado:\n• nis_medidor · nombre · Calle · Numero · latitud · longitud\n• telefono · distribuidor_codigo · localidad · tipo_tarifa · urbano_rural · transformador\n• tipo_conexion · fases\n\nImportación en lotes grandes (rápida para 20.000+ filas).\nSin “vaciar”, se fusiona por clave; con “vaciar”, se borra el catálogo antes.');
+    alert(
+        'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
+            'Columnas recomendadas:\n' +
+            'nis | medidor | nombre | calle | numero | localidad | latitud | longitud\n\n' +
+            '• nis y medidor se guardan en columnas separadas y también en la clave unificada nis_medidor.\n' +
+            '• Alternativa: una sola columna nis_medidor (ej. NIS-MEDIDOR).\n' +
+            '• Coordenadas opcionales (WGS84): si latitud o longitud vienen vacías, se envía NULL y al fusionar NO se borran coordenadas ya cargadas.\n' +
+            '• Medidor: preferí formato texto en Excel para no perder ceros a la izquierda.\n\n' +
+            'Opcionales: telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
+            'Importación en lotes (rápida para 20.000+ filas). Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
+    );
 }
 
 async function buscarHistorialPorNIS() {
