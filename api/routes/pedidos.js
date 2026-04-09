@@ -18,6 +18,7 @@ import {
   notifyPedidoDerivacionClienteWhatsAppSafe,
   sendTenantWhatsAppText,
 } from "../services/whatsappService.js";
+import { normalizeWhatsAppRecipientForMeta } from "../services/metaWhatsapp.js";
 import {
   enqueueNotificacionPedidoCerradoParaTecnico,
   enqueueNotificacionSolicitudDerivacionParaAdmins,
@@ -35,7 +36,11 @@ import {
   buildDerivacionExternaMensaje,
   etiquetaDestinoDerivacion,
 } from "../utils/derivacionReclamos.js";
-import { humanChatOpenOrGetSession, humanChatAppendOutbound } from "../services/whatsappHumanChat.js";
+import {
+  humanChatOpenOrGetSession,
+  humanChatAppendOutbound,
+  humanChatActivateSession,
+} from "../services/whatsappHumanChat.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -815,32 +820,34 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
         console.error("[pedidos] aviso cliente derivación externa (no bloqueante)", e.message);
       }
     })();
-    const waDigits = String(rContact.whatsapp || "").replace(/\D/g, "");
+    const waRaw = String(rContact.whatsapp || "").replace(/\D/g, "");
+    /** Misma forma canónica que el webhook (`normalizeWhatsAppRecipientForMeta`) para que el bot encuentre la sesión. */
+    const waDigits = normalizeWhatsAppRecipientForMeta(waRaw);
     let waTerceroResult = { ok: false, error: "sin_numero_whatsapp_valido" };
     if (waDigits.length >= 8) {
       waTerceroResult = await sendTenantWhatsAppText({
         tenantId: req.tenantId,
-        toDigits: waDigits,
+        toDigits: waRaw,
         bodyText: snap,
         pedidoId: row.id,
         logContext: "derivacion_tercero",
       });
-      void (async () => {
-        try {
-          const { id: sid } = await humanChatOpenOrGetSession(
-            req.tenantId,
-            waDigits,
-            rContact.nombre || nombreEmpresaDestino
-          );
-          const stub = `[Derivación externa] Pedido #${row.numero_pedido ?? row.id}. El mensaje operativo se envió al contacto por WhatsApp (servidor). Respondé por este hilo; un operador te verá en el panel.`;
-          await humanChatAppendOutbound(sid, stub, {
-            source: "derivacion_externa",
-            pedido_id: row.id,
-          });
-        } catch (e) {
-          console.error("[pedidos] human chat derivación tercero (no bloqueante)", e?.message || e);
-        }
-      })();
+      try {
+        const { id: sid } = await humanChatOpenOrGetSession(
+          req.tenantId,
+          waDigits,
+          rContact.nombre || nombreEmpresaDestino,
+          { expiresInHours: 2 }
+        );
+        const stub = `[Derivación externa] Pedido #${row.numero_pedido ?? row.id}. El mensaje operativo se envió al contacto por WhatsApp (servidor). Respondé por este hilo; un operador te verá en el panel.`;
+        await humanChatAppendOutbound(sid, stub, {
+          source: "derivacion_externa",
+          pedido_id: row.id,
+        });
+        await humanChatActivateSession(sid, req.tenantId, req.user.id);
+      } catch (e) {
+        console.error("[pedidos] human chat derivación tercero", e?.message || e);
+      }
     }
     return res.json({
       ...coercePedidoLatLng(row),

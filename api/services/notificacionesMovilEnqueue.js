@@ -178,3 +178,57 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
     console.error("[notificacionesMovilEnqueue] solicitud derivación admin", e.message);
   }
 }
+
+/**
+ * Tercero responde en sesión «chat humano» WhatsApp → avisar admins (misma cola que derivaciones).
+ */
+export async function enqueueNotificacionWhatsappHumanChatTercero({
+  tenantId,
+  sessionId,
+  phoneDigits,
+  snippet,
+}) {
+  if (!(await ensureNotificacionesMovilTable())) return;
+  const tid = Number(tenantId);
+  const sid = Number(sessionId);
+  if (!Number.isFinite(tid) || tid < 1 || !Number.isFinite(sid) || sid < 1) return;
+  const ph = String(phoneDigits || "").replace(/\D/g, "").slice(-8);
+  const snip = String(snippet || "")
+    .trim()
+    .slice(0, 160);
+  const titulo = "WhatsApp — respuesta tercero";
+  const cuerpo = snip
+    ? `Chat #${sid}${ph ? ` · …${ph}` : ""}: ${snip}`
+    : `Nuevo mensaje en chat humano WhatsApp (sesión #${sid}).`;
+  try {
+    const col = await tenantColumnForUsuarios();
+    let rows;
+    if (col && Number.isFinite(tid) && tid >= 1) {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE
+         AND (LOWER(COALESCE(rol::text,'')) = 'admin' OR LOWER(COALESCE(rol::text,'')) = 'administrador')`,
+        [tid]
+      );
+      rows = r.rows;
+    } else {
+      const r = await query(
+        `SELECT id FROM usuarios WHERE activo = TRUE
+         AND (LOWER(COALESCE(rol::text,'')) = 'admin' OR LOWER(COALESCE(rol::text,'')) = 'administrador')`,
+        []
+      );
+      rows = r.rows;
+    }
+    if (!rows?.length) return;
+    for (const row of rows) {
+      const uid = Number(row.id);
+      if (!Number.isFinite(uid) || uid < 1) continue;
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, NULL, $2, $3, FALSE)`,
+        [uid, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.error("[notificacionesMovilEnqueue] human chat tercero", e.message);
+  }
+}
