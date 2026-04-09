@@ -14,6 +14,10 @@ describe("whatsappReclamanteLookup — normalización", () => {
     expect(normalizarIdentificadorReclamoWhatsapp("  74133 \u00a0")).toBe("74133");
   });
 
+  it("quita BOM y marcas de dirección implícita", () => {
+    expect(normalizarIdentificadorReclamoWhatsapp("\uFEFF37985")).toBe("37985");
+  });
+
   it("soloDigitos quita separadores comunes", () => {
     expect(soloDigitosIdentificadorReclamo("74.133")).toBe("74133");
     expect(soloDigitosIdentificadorReclamo("074-133")).toBe("074133");

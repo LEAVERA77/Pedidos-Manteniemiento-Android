@@ -31,6 +31,8 @@ function nombreCompletoClienteFinal(row) {
 /** Quita espacios raros y recorta; no altera mayúsculas (comparaciones SQL hacen TRIM/UPPER donde aplica). */
 export function normalizarIdentificadorReclamoWhatsapp(texto) {
   return String(texto || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u200e\u200f]/g, "")
     .replace(/\u00a0/g, " ")
     .trim();
 }
@@ -84,13 +86,13 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
   const colSet = await columnasUsuarios();
   const tenantCol = colSet.has("tenant_id") ? "tenant_id" : colSet.has("cliente_id") ? "cliente_id" : null;
 
-  // 1) ID numérico → usuario del mismo tenant
+  // 1) ID numérico → usuario interno (solo IDs pequeños; evita colisión con NIS/medidor de 5+ dígitos)
   if (/^\d+$/.test(rawTrim) && tenantCol) {
     const idNum = parseInt(rawTrim, 10);
-    if (Number.isFinite(idNum) && idNum >= 1) {
+    if (Number.isFinite(idNum) && idNum >= 1 && idNum <= 9999) {
       const ru = await query(
         `SELECT id, nombre, email FROM usuarios
-         WHERE id = $1 AND ${tenantCol} = $2 AND activo = TRUE LIMIT 1`,
+         WHERE id = $1 AND ${tenantCol} = $2 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
         [idNum, tid]
       );
       const u = ru.rows?.[0];
@@ -140,7 +142,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${lngExpr},
               ${provExpr}
        FROM clientes_finales
-       WHERE cliente_id = $1 AND activo = TRUE
+       WHERE cliente_id = $1 AND COALESCE(activo, TRUE) = TRUE
          AND (
            TRIM(COALESCE(nis, '')) = $2
            OR TRIM(COALESCE(medidor, '')) = $2
@@ -190,15 +192,17 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         ? "tenant_id"
         : null;
 
+    const nisExpr =
+      "regexp_replace(TRIM(COALESCE(nis_medidor::text, '')), '[^0-9]', '', 'g')";
     const matchClause = useDigitMatch
       ? `(
-          UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))
+          UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))
           OR (
             LENGTH($2::text) >= 4
-            AND regexp_replace(TRIM(COALESCE(nis_medidor,'')), '[^0-9]', '', 'g') = $2
+            AND ${nisExpr} = $2
           )
         )`
-      : `UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($1))`;
+      : `UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($1))`;
 
     const scParams = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
     let tenantSql = "";
@@ -208,8 +212,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       scParams.push(tid);
     }
 
-    const r = await query(
-      `SELECT nis_medidor, nombre,
+    const baseSelect = `SELECT nis_medidor, nombre,
               NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
               NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
               NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
@@ -219,13 +222,46 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${lngExpr},
               ${provExpr}
        FROM socios_catalogo
-       WHERE activo = TRUE
+       WHERE COALESCE(activo, TRUE) = TRUE
          AND ${matchClause}
-         ${tenantSql}
-       LIMIT 1`,
-      scParams
-    );
-    const row = r.rows?.[0];
+         ${tenantSql}`;
+
+    let r = await query(`${baseSelect} LIMIT 1`, scParams);
+    let row = r.rows?.[0];
+
+    if (!row && tenantColSc) {
+      const scParamsWide = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
+      r = await query(
+        `SELECT nis_medidor, nombre,
+              NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
+              NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
+              NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
+              NULLIF(TRIM(COALESCE(tipo_conexion, '')), '') AS tipo_conexion_cat,
+              NULLIF(TRIM(COALESCE(fases, '')), '') AS fases_cat,
+              ${latExpr},
+              ${lngExpr},
+              ${provExpr}
+         FROM socios_catalogo
+         WHERE COALESCE(activo, TRUE) = TRUE
+           AND ${matchClause}
+         ORDER BY CASE
+           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${scParamsWide.length + 1}::bigint THEN 0
+           WHEN ${tenantColSc} IS NULL THEN 1
+           ELSE 2
+         END, id ASC
+         LIMIT 1`,
+        [...scParamsWide, tid]
+      );
+      row = r.rows?.[0];
+      if (row) {
+        console.warn("[whatsapp-reclamante-lookup] socios_catalogo: coincidencia sin filtro tenant estricto", {
+          tenantId: tid,
+          nis_medidor: row.nis_medidor,
+          tenantCol: tenantColSc,
+        });
+      }
+    }
+
     if (row) {
       const nm = String(row.nis_medidor || rawTrim).trim();
       const nombre = String(row.nombre || "").trim() || `Socio NIS ${nm}`;
