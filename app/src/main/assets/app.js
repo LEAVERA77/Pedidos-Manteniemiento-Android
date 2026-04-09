@@ -2680,11 +2680,15 @@ const norm = p => ({
     es: p.estado || 'Pendiente',
     av: parseInt(p.avance) || 0,
     la: (() => {
-        const v = parseFloat(p.lat);
+        const raw = p.lat;
+        if (raw == null || raw === '') return null;
+        const v = parseFloat(String(raw).trim().replace(',', '.'));
         return Number.isFinite(v) ? v : null;
     })(),
     ln: (() => {
-        const v = parseFloat(p.lng);
+        const raw = p.lng;
+        if (raw == null || raw === '') return null;
+        const v = parseFloat(String(raw).trim().replace(',', '.'));
         return Number.isFinite(v) ? v : null;
     })(),
     ui: p.usuario_id,
@@ -8255,26 +8259,27 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
         if (!resp.ok) {
             throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
         }
-        const wa = data._derivacion_whatsapp;
-        const msg = data._derivacion_mensaje || '';
-        delete data._derivacion_whatsapp;
-        delete data._derivacion_mensaje;
+        const waOk = data._derivacion_whatsapp_enviado === true;
+        const waErr = String(data._derivacion_whatsapp_envio_error || '').trim();
+        delete data._derivacion_whatsapp_enviado;
+        delete data._derivacion_whatsapp_envio_error;
         const row = norm(data);
         const idx = app.p.findIndex((x) => String(x.id) === String(pid));
         if (idx !== -1) app.p[idx] = row;
         else app.p.push(row);
         offlinePedidosSave(app.p);
         render();
-        const digits = String(wa || '').replace(/\D/g, '');
-        if (digits.length >= 8) {
-            window.open(
-                `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,
-                '_blank',
-                'noopener,noreferrer'
+        cerrarModalDerivacionPreviewAdmin();
+        if (waOk) {
+            toast('Derivación registrada. El mensaje se envió al tercero por WhatsApp (servidor).', 'success');
+        } else {
+            toast(
+                waErr
+                    ? `Derivación registrada. WhatsApp automático no disponible: ${waErr}`
+                    : 'Derivación registrada. Revisá credenciales Meta (Empresa) o contactá al tercero desde el panel de chat humano.',
+                waErr ? 'warning' : 'info'
             );
         }
-        cerrarModalDerivacionPreviewAdmin();
-        toast('Derivación registrada.', 'success');
         detalle(idx !== -1 ? app.p[idx] : row);
     } catch (e) {
         toast(String(e?.message || e), 'error');
@@ -8678,12 +8683,12 @@ function detalle(p) {
         }
         htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" style="border-left:4px solid #0ea5e9">
             <h4>📲 Derivación operativa (admin)</h4>
-            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Registrá la derivación al contacto configurado en <strong>Admin → Empresa</strong>. Queda el <strong>mensaje final</strong> guardado en auditoría y se abre WhatsApp con ese texto. Desde el enlace web no se manda la &quot;ubicación en vivo&quot; nativa: el mensaje incluye link a Google Maps cuando hay GPS.</p>
+            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Registrá la derivación al contacto configurado en <strong>Admin → Empresa</strong>. El <strong>mensaje final</strong> queda en auditoría y se envía al tercero por <strong>WhatsApp desde el servidor</strong> (Meta Cloud API); no se abre pestaña del navegador. Incluye enlace a Google Maps cuando hay coordenadas del pedido.</p>
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
             <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
-            <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y abrir WhatsApp</button>
+            <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y enviar (servidor)</button>
         </div>`;
     }
     

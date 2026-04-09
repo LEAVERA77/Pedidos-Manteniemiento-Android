@@ -78,6 +78,8 @@
     <string name="tecnico_mvp_ref_ubicacion">Referencia (mapa / notas)</string>
     <string name="tecnico_mvp_tipo_conexion">Tipo de conexión</string>
     <string name="tecnico_mvp_fases">Fases</string>
+    <string name="tecnico_mvp_ubicacion_wgs84">Ubicación (WGS84)</string>
+    <string name="tecnico_mvp_abrir_mapa">Abrir en mapa</string>
     <string name="tecnico_mvp_observacion_cliente_wa">Observación del cliente (WhatsApp)</string>
     <string name="tecnico_mvp_fecha_observacion_cliente">Fecha observación</string>
 </resources>

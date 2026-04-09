@@ -16,6 +16,7 @@ import {
   notifyPedidoClienteActualizacionWhatsAppSafe,
   notifyPedidoAltaClienteWhatsAppSafe,
   notifyPedidoDerivacionClienteWhatsAppSafe,
+  sendTenantWhatsAppText,
 } from "../services/whatsappService.js";
 import { enqueueNotificacionPedidoCerradoParaTecnico } from "../services/notificacionesMovilEnqueue.js";
 import {
@@ -67,6 +68,22 @@ function parseClienteConfigJson(raw) {
     }
   }
   return {};
+}
+
+/** Neon puede devolver NUMERIC como string; la app Android (Gson) espera números JSON para lat/lng. */
+function coercePedidoLatLng(row) {
+  if (!row || typeof row !== "object") return row;
+  const o = { ...row };
+  for (const key of ["lat", "lng"]) {
+    const v = o[key];
+    if (v == null || v === "") {
+      o[key] = null;
+      continue;
+    }
+    const n = typeof v === "number" ? v : parseFloat(String(v).trim().replace(",", "."));
+    o[key] = Number.isFinite(n) ? n : null;
+  }
+  return o;
 }
 
 function scheduleNotifyAltaReclamoWhatsApp(row, userId) {
@@ -347,7 +364,7 @@ router.post("/", async (req, res) => {
     );
     const created = insert.rows[0];
     scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
-    return res.status(201).json(created);
+    return res.status(201).json(coercePedidoLatLng(created));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo crear el pedido", detail: error.message });
   }
@@ -378,7 +395,7 @@ router.get("/", async (req, res) => {
       LIMIT $${params.length}
     `;
     const r = await query(sql, params);
-    const rows = r.rows.map((p) => ({ ...p, fotos: splitUrls(p.foto_urls) }));
+    const rows = r.rows.map((p) => ({ ...coercePedidoLatLng(p), fotos: splitUrls(p.foto_urls) }));
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron listar pedidos", detail: error.message });
@@ -400,7 +417,7 @@ router.get("/mis-pedidos", async (req, res) => {
        LIMIT 500`,
       hasT ? [req.user.id, req.tenantId] : [req.user.id]
     );
-    return res.json(r.rows.map((p) => ({ ...p, fotos: splitUrls(p.foto_urls) })));
+    return res.json(r.rows.map((p) => ({ ...coercePedidoLatLng(p), fotos: splitUrls(p.foto_urls) })));
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron obtener mis pedidos", detail: error.message });
   }
@@ -433,7 +450,7 @@ router.get("/buscar", async (req, res) => {
       `SELECT * FROM pedidos WHERE ${sqlWhere} ORDER BY fecha_creacion DESC LIMIT 200`,
       params
     );
-    return res.json(r.rows);
+    return res.json(r.rows.map((row) => coercePedidoLatLng(row)));
   } catch (error) {
     return res.status(500).json({ error: "Error en búsqueda", detail: error.message });
   }
@@ -450,7 +467,7 @@ router.get("/historial/nis/:nis", async (req, res) => {
         : "SELECT * FROM pedidos WHERE nis = $1 ORDER BY fecha_creacion DESC",
       hasTh ? [nis, req.tenantId] : [nis]
     );
-    return res.json(r.rows);
+    return res.json(r.rows.map((row) => coercePedidoLatLng(row)));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo obtener historial", detail: error.message });
   }
@@ -557,7 +574,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
       throw err;
     }
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
-    return res.json(r.rows[0]);
+    return res.json(coercePedidoLatLng(r.rows[0]));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo registrar la solicitud", detail: error.message });
   }
@@ -627,7 +644,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
       throw err;
     }
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado o sin solicitud" });
-    return res.json(r.rows[0]);
+    return res.json(coercePedidoLatLng(r.rows[0]));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo rechazar la solicitud", detail: error.message });
   }
@@ -789,7 +806,15 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       }
     })();
     const waDigits = String(rContact.whatsapp || "").replace(/\D/g, "");
+    let waTerceroResult = { ok: false, error: "sin_numero_whatsapp_valido" };
     if (waDigits.length >= 8) {
+      waTerceroResult = await sendTenantWhatsAppText({
+        tenantId: req.tenantId,
+        toDigits: waDigits,
+        bodyText: snap,
+        pedidoId: row.id,
+        logContext: "derivacion_tercero",
+      });
       void (async () => {
         try {
           const { id: sid } = await humanChatOpenOrGetSession(
@@ -797,7 +822,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
             waDigits,
             rContact.nombre || nombreEmpresaDestino
           );
-          const stub = `[Derivación externa] Pedido #${row.numero_pedido ?? row.id} — el admin abrirá WhatsApp con el texto completo. Respondé por este hilo; un operador te verá en el panel de chat.`;
+          const stub = `[Derivación externa] Pedido #${row.numero_pedido ?? row.id}. El mensaje operativo se envió al contacto por WhatsApp (servidor). Respondé por este hilo; un operador te verá en el panel.`;
           await humanChatAppendOutbound(sid, stub, {
             source: "derivacion_externa",
             pedido_id: row.id,
@@ -808,9 +833,9 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       })();
     }
     return res.json({
-      ...row,
-      _derivacion_whatsapp: rContact.whatsapp,
-      _derivacion_mensaje: snap,
+      ...coercePedidoLatLng(row),
+      _derivacion_whatsapp_enviado: waTerceroResult.ok === true,
+      _derivacion_whatsapp_envio_error: waTerceroResult.ok ? null : String(waTerceroResult.error || "send_failed"),
     });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo registrar la derivación", detail: error.message });
@@ -830,7 +855,7 @@ router.get("/:id", async (req, res) => {
     if (req.user.rol !== "admin" && p.tecnico_asignado_id && p.tecnico_asignado_id !== req.user.id) {
       return res.status(403).json({ error: "Sin permiso para ver este pedido" });
     }
-    return res.json({ ...p, fotos: splitUrls(p.foto_urls) });
+    return res.json({ ...coercePedidoLatLng(p), fotos: splitUrls(p.foto_urls) });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo obtener pedido", detail: error.message });
   }
@@ -1133,7 +1158,7 @@ router.put("/:id", async (req, res) => {
       userId: req.user.id,
       estadoAntes,
     });
-    return res.json(updated);
+    return res.json(coercePedidoLatLng(updated));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar pedido", detail: error.message });
   }
@@ -1168,7 +1193,7 @@ router.put("/:id/asignar", adminOnly, async (req, res) => {
       hasTa ? [id, tecnicoAsignadoId, req.user.id, req.tenantId] : [id, tecnicoAsignadoId, req.user.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
-    return res.json(r.rows[0]);
+    return res.json(coercePedidoLatLng(r.rows[0]));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo asignar técnico", detail: error.message });
   }

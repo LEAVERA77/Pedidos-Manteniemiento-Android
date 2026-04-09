@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.gestornova.gestion.R
 import com.gestornova.gestion.tecnico.network.PedidoDto
 import com.gestornova.gestion.tecnico.ui.TecnicoViewModel
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +79,7 @@ fun PedidoDetailScreen(
 
 @Composable
 private fun DetalleBody(p: PedidoDto) {
+    val uriHandler = LocalUriHandler.current
     val nisTxt = listOfNotNull(p.nisMedidor, p.nis).firstOrNull { !it.isNullOrBlank() }
     DetailLine(stringResource(R.string.tecnico_mvp_numero), p.numeroPedido ?: "#${p.id}")
     DetailLine(stringResource(R.string.tecnico_mvp_estado), p.estado)
@@ -100,6 +104,22 @@ private fun DetalleBody(p: PedidoDto) {
     DetailLine(stringResource(R.string.tecnico_mvp_fecha_observacion_cliente), p.fechaOpinionCliente)
     DetailLine(stringResource(R.string.tecnico_mvp_fecha_creacion), p.fechaCreacion)
     DetailLine(stringResource(R.string.tecnico_mvp_telefono), p.telefonoContacto)
+    val la = p.lat
+    val ln = p.lng
+    if (la != null && ln != null) {
+        DetailLine(
+            stringResource(R.string.tecnico_mvp_ubicacion_wgs84),
+            String.format(Locale.US, "%.6f, %.6f", la, ln),
+        )
+        TextButton(
+            onClick = {
+                uriHandler.openUri("https://www.google.com/maps?q=$la,$ln")
+            },
+        ) {
+            Text(stringResource(R.string.tecnico_mvp_abrir_mapa))
+        }
+        Spacer(Modifier.height(8.dp))
+    }
 }
 
 @Composable
