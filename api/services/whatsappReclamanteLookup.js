@@ -1,4 +1,5 @@
 import { query } from "../db/neon.js";
+import { buscarCoordenadasVecinosMismaCalle } from "./whatsappPadronVecinos.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -21,6 +22,28 @@ async function columnasTabla(name) {
     [name]
   );
   return new Set((r.rows || []).map((c) => c.column_name));
+}
+
+async function columnasTablaMeta(name) {
+  const r = await query(
+    `SELECT column_name, data_type, udt_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [name]
+  );
+  const set = new Set((r.rows || []).map((c) => c.column_name));
+  const types = {};
+  for (const row of r.rows || []) types[row.column_name] = row;
+  return { set, types };
+}
+
+function findPointColumnName(meta) {
+  const candidates = ["coordenadas", "ubicacion", "punto", "geom", "location", "gps"];
+  for (const c of candidates) {
+    if (!meta.set.has(c)) continue;
+    const t = meta.types[c];
+    if (t && String(t.udt_name || "") === "point") return c;
+  }
+  return null;
 }
 
 function nombreCompletoClienteFinal(row) {
@@ -50,8 +73,32 @@ function debugReclamanteLookup(msg, data) {
 }
 
 function pickCoord(row, latKey, lngKey) {
-  const la = row?.[latKey];
-  const lo = row?.[lngKey];
+  let la = row?.[latKey];
+  let lo = row?.[lngKey];
+  if (
+    typeof la === "string" &&
+    /[,;]/.test(la) &&
+    (lo == null || String(lo).trim() === "")
+  ) {
+    const segs = la
+      .split(/[,;]/)
+      .map((s) => parseFloat(String(s).trim().replace(",", ".")))
+      .filter((n) => Number.isFinite(n));
+    if (segs.length >= 2) {
+      const a = segs[0];
+      const b = segs[1];
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180 && Math.abs(b) > 60) {
+        la = a;
+        lo = b;
+      } else if (Math.abs(b) <= 90 && Math.abs(a) <= 180 && Math.abs(a) > 60) {
+        la = b;
+        lo = a;
+      } else {
+        la = a;
+        lo = b;
+      }
+    }
+  }
   const lat = la != null ? Number(la) : NaN;
   const lng = lo != null ? Number(lo) : NaN;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { catalogoLatitud: null, catalogoLongitud: null };
@@ -59,6 +106,47 @@ function pickCoord(row, latKey, lngKey) {
   /* Placeholder 0,0 en padrón: no heredar (el pedido debe usar geocode u otra fuente). */
   if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return { catalogoLatitud: null, catalogoLongitud: null };
   return { catalogoLatitud: lat, catalogoLongitud: lng };
+}
+
+/** lat_pad/lng_pad o columna PostgreSQL `point` como lat_pt/lng_pt (orden nativo e intento cruzado). */
+function pickCoordDesdeFilaPadron(row, latKey, lngKey) {
+  const base = pickCoord(row, latKey, lngKey);
+  if (base.catalogoLatitud != null) return base;
+  const la = row?.lat_pt != null ? Number(row.lat_pt) : NaN;
+  const lo = row?.lng_pt != null ? Number(row.lng_pt) : NaN;
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return base;
+  const tryA = pickCoord({ ...row, [latKey]: la, [lngKey]: lo }, latKey, lngKey);
+  if (tryA.catalogoLatitud != null) return tryA;
+  return pickCoord({ ...row, [latKey]: lo, [lngKey]: la }, latKey, lngKey);
+}
+
+async function enrichCoordsVecinosSiFalta(tenantId, out, source) {
+  if (!out || !out.ok) return out;
+  if (out.catalogoLatitud != null && out.catalogoLongitud != null) return out;
+  const calle = out.catalogoCalle != null ? String(out.catalogoCalle).trim() : "";
+  const num = out.catalogoNumero != null ? String(out.catalogoNumero).trim() : "";
+  if (calle.length < 2 || !num) return out;
+  const excludeNm = out.nisMedidor || out.medidor || out.nis || null;
+  const excludeCf = source === "cf" ? out._lookupCfId : null;
+  try {
+    const fb = await buscarCoordenadasVecinosMismaCalle({
+      tenantId,
+      calle,
+      localidad: out.catalogoLocalidad,
+      numeroTexto: num,
+      excludeNisMedidor: excludeNm,
+      excludeClienteFinalId: excludeCf,
+      preferTable: source === "cf" ? "clientes_finales" : "socios_catalogo",
+    });
+    if (fb) {
+      out.catalogoLatitud = fb.lat;
+      out.catalogoLongitud = fb.lng;
+      out.notaUbicacionProximidad = fb.nota;
+    }
+  } catch (e) {
+    console.warn("[whatsapp-reclamante-lookup] vecinos", e?.message || e);
+  }
+  return out;
 }
 
 /** Expresión SQL: primera coordenada numérica disponible (latitud | lat). */
@@ -104,7 +192,7 @@ function resolveTenantIdReclamoLookup(tenantIdRaw) {
 
 /**
  * Busca nombre / NIS para el reclamo: ID usuario del tenant, NIS/medidor/número en clientes_finales, o socios_catalogo.
- * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoProvincia?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null, catalogoLatitud?: number|null, catalogoLongitud?: number|null } | { ok: false } | { skip: true }}
+ * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoProvincia?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null, catalogoLatitud?: number|null, catalogoLongitud?: number|null, notaUbicacionProximidad?: string|null } | { ok: false } | { skip: true }}
  */
 export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
   const rawTrim = normalizarIdentificadorReclamoWhatsapp(texto);
@@ -148,7 +236,12 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
 
   // 2) clientes_finales (cliente_id = tenant)
   if (await tableExists("clientes_finales")) {
-    const cfCols = await columnasTabla("clientes_finales");
+    const cfMeta = await columnasTablaMeta("clientes_finales");
+    const cfCols = cfMeta.set;
+    const ptCf = findPointColumnName(cfMeta);
+    const ptSelCf = ptCf
+      ? `(clientes_finales.${ptCf})[0]::numeric AS lat_pt, (clientes_finales.${ptCf})[1]::numeric AS lng_pt`
+      : "NULL::numeric AS lat_pt, NULL::numeric AS lng_pt";
     const provExpr = cfCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
@@ -182,6 +275,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               NULLIF(TRIM(COALESCE(barrio, '')), '') AS barrio_cat,
               ${latExpr},
               ${lngExpr},
+              ${ptSelCf},
               ${provExpr}
        FROM clientes_finales
        WHERE cliente_id = $1 AND COALESCE(activo, TRUE) = TRUE
@@ -201,9 +295,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       const label = cn || `Socio #${row.id}`;
       const nisVal = row.nis != null && String(row.nis).trim() ? String(row.nis).trim() : null;
       const med = row.medidor != null && String(row.medidor).trim() ? String(row.medidor).trim() : null;
-      const coords = pickCoord(row, "lat_pad", "lng_pad");
+      const coords = pickCoordDesdeFilaPadron(row, "lat_pad", "lng_pad");
       debugReclamanteLookup("match_clientes_finales", { id: row.id, nis: nisVal, medidor: med, ...coords });
-      return {
+      const out = {
         ok: true,
         clienteNombre: label,
         nis: nisVal,
@@ -215,13 +309,22 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         catalogoBarrio: row.barrio_cat != null ? String(row.barrio_cat).trim() || null : null,
         catalogoProvincia: row.provincia_cat != null ? String(row.provincia_cat).trim() || null : null,
         ...coords,
+        _lookupCfId: row.id,
       };
+      await enrichCoordsVecinosSiFalta(tid, out, "cf");
+      delete out._lookupCfId;
+      return out;
     }
   }
 
   // 3) socios_catalogo (cooperativa eléctrica; match exacto o por dígitos; tenant si la columna existe)
   if (await tableExists("socios_catalogo")) {
-    const scCols = await columnasTabla("socios_catalogo");
+    const scMeta = await columnasTablaMeta("socios_catalogo");
+    const scCols = scMeta.set;
+    const ptSc = findPointColumnName(scMeta);
+    const ptSelSc = ptSc
+      ? `(socios_catalogo.${ptSc})[0]::numeric AS lat_pt, (socios_catalogo.${ptSc})[1]::numeric AS lng_pt`
+      : "NULL::numeric AS lat_pt, NULL::numeric AS lng_pt";
     const provExpr = scCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
@@ -286,6 +389,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               NULLIF(TRIM(COALESCE(fases, '')), '') AS fases_cat,
               ${latExpr},
               ${lngExpr},
+              ${ptSelSc},
               ${provExpr}
        FROM socios_catalogo
        WHERE COALESCE(activo, TRUE) = TRUE
@@ -320,6 +424,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               NULLIF(TRIM(COALESCE(fases, '')), '') AS fases_cat,
               ${latExpr},
               ${lngExpr},
+              ${ptSelSc},
               ${provExpr}
          FROM socios_catalogo
          WHERE COALESCE(activo, TRUE) = TRUE
@@ -343,7 +448,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       const nombre = String(row.nombre || "").trim() || `Socio NIS ${nm}`;
       const nisV = row.nis_raw != null && String(row.nis_raw).trim() ? String(row.nis_raw).trim() : null;
       const medV = row.medidor_raw != null && String(row.medidor_raw).trim() ? String(row.medidor_raw).trim() : null;
-      const coords = pickCoord(row, "lat_pad", "lng_pad");
+      const coords = pickCoordDesdeFilaPadron(row, "lat_pad", "lng_pad");
       if (coords.catalogoLatitud == null) {
         debugReclamanteLookup("socios_sin_coords_en_padron", {
           nis_medidor: nm,
@@ -354,7 +459,7 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         });
       }
       debugReclamanteLookup("match_socios_catalogo", { nis_medidor: nm, nis: nisV, medidor: medV, ...coords });
-      return {
+      const out = {
         ok: true,
         clienteNombre: nombre,
         nis: nisV,
@@ -369,6 +474,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         catalogoFases: row.fases_cat != null ? String(row.fases_cat).trim() || null : null,
         ...coords,
       };
+      await enrichCoordsVecinosSiFalta(tid, out, "socios");
+      return out;
     }
   }
 

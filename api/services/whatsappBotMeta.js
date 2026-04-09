@@ -323,6 +323,8 @@ function aplicarPadronCoordsWhatsapp(sess, res) {
   if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return;
   sess.padronLat = lat;
   sess.padronLng = lng;
+  const nota = res.notaUbicacionProximidad != null ? String(res.notaUbicacionProximidad).trim() : "";
+  if (nota) sess.notaUbicacionInternaWhatsapp = nota;
 }
 
 function interpretaSuministroConexionWhatsapp(text) {
@@ -650,6 +652,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     }
   }
   try {
+    const notaInt = sess.notaUbicacionInternaWhatsapp != null ? String(sess.notaUbicacionInternaWhatsapp).trim() : "";
     const pedido = await crearPedidoDesdeWhatsappBot({
       tenantId: sess.tenantId,
       tipoCliente: sess.tipoCliente,
@@ -669,6 +672,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       suministroTipoConexion: trimOrNullWhatsapp(sess.suministroTipoConexion),
       suministroFases: trimOrNullWhatsapp(sess.suministroFases),
       barrio: sess.barrio ?? null,
+      notaUbicacionInterna: notaInt || null,
     });
     sessions.delete(sk);
     const notaSinMapa =

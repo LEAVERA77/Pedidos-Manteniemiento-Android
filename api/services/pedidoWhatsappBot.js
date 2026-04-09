@@ -148,9 +148,17 @@ export async function crearPedidoDesdeWhatsappBot({
   suministroTipoConexion,
   suministroFases,
   barrio,
+  notaUbicacionInterna,
 }) {
   const tt = String(tipoTrabajo || "").trim();
-  const de = String(descripcion || "").trim();
+  let de = String(descripcion || "").trim();
+  const notaInt =
+    notaUbicacionInterna != null && String(notaUbicacionInterna).trim()
+      ? String(notaUbicacionInterna).trim()
+      : "";
+  if (notaInt && !de.includes(notaInt)) {
+    de = `${de}\n\n${notaInt}`;
+  }
   if (!tt || !de) {
     throw new Error("tipo_y_descripcion_requeridos");
   }
