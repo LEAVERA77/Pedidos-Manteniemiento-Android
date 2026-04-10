@@ -20,6 +20,7 @@ import {
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
+import { normalizarDireccion } from "../utils/normalizarCalles.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -215,6 +216,28 @@ export async function crearPedidoDesdeWhatsappBot({
       if (!calleT) calleT = parsed.calle;
       if (!numT && parsed.numero) numT = parsed.numero;
       if (!locT) locT = parsed.localidad;
+    }
+  }
+
+  // NORMALIZACIÓN DE NOMBRES DE CALLES: corregir errores ortográficos del usuario
+  let calleNormalizada = calleT;
+  let normalizacionInfo = null;
+  if (calleT && locT) {
+    const normResult = normalizarDireccion({ calle: calleT, ciudad: locT });
+    if (normResult && normResult.cambio) {
+      calleNormalizada = normResult.calleNormalizada;
+      normalizacionInfo = normResult;
+      console.info("[pedido-whatsapp-bot] Calle normalizada: '%s' → '%s' (confianza: %.2f)", 
+        calleT, calleNormalizada, normResult.confianza);
+      
+      // Agregar nota sobre normalización a la descripción
+      if (normResult.confianza < 1.0) {
+        const notaNorm = `[Sistema] Nombre de calle corregido: "${calleT}" → "${calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%)`;
+        de = `${de}\n\n${notaNorm}`;
+      }
+      
+      // Usar el nombre normalizado para todo el flujo siguiente
+      calleT = calleNormalizada;
     }
   }
 

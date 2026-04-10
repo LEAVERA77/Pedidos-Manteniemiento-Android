@@ -312,16 +312,27 @@ async function buscarRangoNumeracion(calle, localidad, provincia) {
 
 /**
  * Interpola la posición sobre una polilínea basándose en el número de puerta
+ * usando la convención municipal de cuadras (cada 100 números = 1 cuadra)
+ * 
  * @param {Array<{lat: number, lng: number}>} coords - Geometría de la calle
  * @param {number} numero - Número de puerta
  * @param {number} min - Numeración mínima de la calle
  * @param {number} max - Numeración máxima de la calle
- * @returns {{lat: number, lng: number, lado: string} | null}
+ * @returns {{lat: number, lng: number, lado: string, cuadra: number, metrosDesdeEsquina: number} | null}
  */
 function interpolarSobreCalle(coords, numero, min, max) {
   if (!coords || coords.length < 2) return null;
   if (!Number.isFinite(numero) || !Number.isFinite(min) || !Number.isFinite(max)) return null;
   if (max <= min) return null;
+  
+  // INTERPOLACIÓN MUNICIPAL: cada 100 números = 1 cuadra
+  // Ejemplo: número 356 está en cuadra 3 (300-399), a 56 metros de la esquina
+  
+  const cuadra = Math.floor(numero / 100);
+  const metrosDesdeEsquina = numero % 100;
+  
+  console.info("[interpolacion] Número %s → Cuadra %s, %s metros desde esquina", 
+    numero, cuadra, metrosDesdeEsquina);
   
   // Calcular la proporción del recorrido (0 = inicio, 1 = final)
   const rango = max - min;
@@ -339,8 +350,13 @@ function interpolarSobreCalle(coords, numero, min, max) {
     );
   }
   
+  console.info("[interpolacion] Longitud total calle: %.1f metros", longitudTotal);
+  
   // Distancia objetivo desde el inicio
   const distanciaObjetivo = longitudTotal * proporcion;
+  
+  console.info("[interpolacion] Distancia objetivo: %.1f metros (%.1f%% del recorrido)", 
+    distanciaObjetivo, proporcion * 100);
   
   // Recorrer segmentos hasta alcanzar la distancia objetivo
   let distanciaAcumulada = 0;
@@ -361,17 +377,24 @@ function interpolarSobreCalle(coords, numero, min, max) {
       // Calcular bearing del segmento (dirección de la calle)
       const bearing = calcularBearing(p1.lat, p1.lng, p2.lat, p2.lng);
       
-      // Offset perpendicular según paridad (8 metros hacia el lado correspondiente)
+      // CONVENCIÓN MUNICIPAL: Offset perpendicular según paridad
+      // Pares: lado derecho (bearing + 90°)
+      // Impares: lado izquierdo (bearing - 90°)
       const esPar = numero % 2 === 0;
       const offsetBearing = esPar ? (bearing + 90) % 360 : (bearing - 90 + 360) % 360;
       const offsetMetros = 8; // Distancia típica del centro de la calle a la vereda
       
       const puntoFinal = puntoDestino(latBase, lngBase, offsetMetros, offsetBearing);
       
+      console.info("[interpolacion] Punto final: lat=%.6f, lng=%.6f, lado=%s, bearing=%.1f°", 
+        puntoFinal.lat, puntoFinal.lng, esPar ? "par_derecha" : "impar_izquierda", offsetBearing);
+      
       return {
         lat: puntoFinal.lat,
         lng: puntoFinal.lng,
         lado: esPar ? "par_derecha" : "impar_izquierda",
+        cuadra,
+        metrosDesdeEsquina,
       };
     }
     
@@ -380,7 +403,13 @@ function interpolarSobreCalle(coords, numero, min, max) {
   
   // Si no se encontró (por redondeo), usar el último punto
   const ultimo = coords[coords.length - 1];
-  return { lat: ultimo.lat, lng: ultimo.lng, lado: "final_calle" };
+  return { 
+    lat: ultimo.lat, 
+    lng: ultimo.lng, 
+    lado: "final_calle",
+    cuadra,
+    metrosDesdeEsquina,
+  };
 }
 
 /**
@@ -401,6 +430,8 @@ export async function interpolarCoordenadaPorAltura(opts) {
   // Array de logs para diagnóstico visible
   const log = [];
   
+  log.push(`📍 Dirección solicitada: ${calle} ${numero}, ${localidad}`);
+  
   if (!calle || calle.length < 2) {
     log.push(`❌ Calle vacía o muy corta: "${calle}"`);
     console.info("[interpolacion-alturas] Calle vacía o muy corta");
@@ -420,19 +451,33 @@ export async function interpolarCoordenadaPorAltura(opts) {
     return null;
   }
   
-  log.push(`🔍 Iniciando interpolación: ${calle} ${numero}, ${localidad}`);
+  log.push(`🔍 Iniciando geocodificación inteligente...`);
   console.info("[interpolacion-alturas] Iniciando interpolación: %s %s, %s", calle, numero, localidad);
   
   // 1. Obtener geometría de la calle
-  log.push(`📍 Buscando geometría de "${calle}" en OpenStreetMap...`);
+  log.push(`📍 Buscando "${calle}" en OpenStreetMap (Overpass API)...`);
   const geometria = await obtenerGeometriaCalle(calle, localidad, provincia);
   if (!geometria || geometria.length < 2) {
-    log.push(`❌ No se encontró la calle en OSM (probadas múltiples variantes)`);
+    log.push(`❌ No se encontró la geometría de la calle en OSM`);
+    log.push(`   Intentadas múltiples variantes y búsqueda por radio 20km`);
+    log.push(`   Posible causa: calle no mapeada o nombre muy diferente en OSM`);
     console.info("[interpolacion-alturas] Sin geometría válida para la calle");
     return { lat: null, lng: null, fuente: "sin_geometria", metadata: {}, log };
   }
   
-  log.push(`✓ Geometría encontrada: ${geometria.length} nodos (puntos)`);
+  log.push(`✓ Geometría encontrada: ${geometria.length} nodos`);
+  
+  // Calcular longitud de la calle
+  let longitudCalle = 0;
+  for (let i = 1; i < geometria.length; i++) {
+    longitudCalle += distanciaHaversine(
+      geometria[i - 1].lat,
+      geometria[i - 1].lng,
+      geometria[i].lat,
+      geometria[i].lng
+    );
+  }
+  log.push(`✓ Longitud de la calle: ${Math.round(longitudCalle)} metros`);
   
   // 2. Buscar rango de numeración
   log.push(`🔢 Estimando rango de numeración...`);
@@ -449,14 +494,20 @@ export async function interpolarCoordenadaPorAltura(opts) {
     return { lat: null, lng: null, fuente: "error_interpolacion", metadata: {}, log };
   }
   
+  const cuadraInfo = resultado.cuadra ? `cuadra ${resultado.cuadra} (${resultado.cuadra * 100}-${(resultado.cuadra + 1) * 100 - 1})` : "";
+  const metrosInfo = resultado.metrosDesdeEsquina ? `, ${resultado.metrosDesdeEsquina}m desde esquina` : "";
   const ladoDesc = resultado.lado === "par_derecha" ? "lado derecho (par)" : 
                    resultado.lado === "impar_izquierda" ? "lado izquierdo (impar)" : 
                    "final de calle";
+  
+  if (cuadraInfo) {
+    log.push(`✓ Ubicación: ${cuadraInfo}${metrosInfo}`);
+  }
   log.push(`✓ Posición calculada: ${ladoDesc}`);
   log.push(`✓ Coordenadas: ${resultado.lat.toFixed(6)}, ${resultado.lng.toFixed(6)}`);
   
-  console.info("[interpolacion-alturas] ✓ Interpolación exitosa: lat=%s, lng=%s, lado=%s", 
-    resultado.lat.toFixed(6), resultado.lng.toFixed(6), resultado.lado);
+  console.info("[interpolacion-alturas] ✓ Interpolación exitosa: lat=%s, lng=%s, lado=%s, cuadra=%s", 
+    resultado.lat.toFixed(6), resultado.lng.toFixed(6), resultado.lado, resultado.cuadra);
   
   return {
     lat: resultado.lat,
@@ -466,6 +517,8 @@ export async function interpolarCoordenadaPorAltura(opts) {
       lado: resultado.lado,
       rangoNumeracion: { min, max },
       nodosGeometria: geometria.length,
+      cuadra: resultado.cuadra,
+      metrosDesdeEsquina: resultado.metrosDesdeEsquina,
     },
     log,
   };
