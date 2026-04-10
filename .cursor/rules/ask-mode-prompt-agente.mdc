@@ -19,6 +19,11 @@ Cuando el usuario **pida algo** fuera de Ask o en una sesión Agent, si formula 
 
 ## Formato del prompt
 
-- Prioridad: un único bloque copiable; evitar prosa duplicada.
-- Incluir cuando aplique: pasos, rutas, criterios de aceptación, pruebas manuales, sync `api`/assets a Pedidos-MG, commit/push, `made by leavera77`.
+- **Primera línea obligatoria (rol):** el bloque **«Prompt para el agente»** debe empezar con **«Actúa como …»** — rol concreto acorde a la tarea. Plantilla por defecto del proyecto (adaptar si el pedido es solo backend, solo Android nativo, etc.):
+
+  `Actúa como ingeniero/a senior full-stack en el proyecto GestorNova (panel web embebido en WebView + API Node), familiarizado con el repo Nexxo y la paridad con Pedidos-MG. Priorizá cambios mínimos y claros; documentá decisiones que afecten datos, CRS o despliegue.`
+
+- Después del rol: **contexto de repos**, **objetivos numerados o por sección**, **referencias de archivos/rutas si se conocen**, **criterios de aceptación**, **pruebas manuales**, **entregables**.
+- Prioridad: un único bloque copiable; evitar prosa duplicada fuera del bloque.
+- Incluir cuando aplique: sync `api`/assets a Pedidos-MG, commit/push en ambos GitHub según regla **commit-push-nexxo-y-pedidos-mg**, `made by leavera77`, y línea **«En Android Studio: …»** según **android-studio-tras-cambios**.
 - El texto debe permitir a Agent ejecutar o investigar sin adivinar el alcance.
