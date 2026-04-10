@@ -2518,6 +2518,16 @@ document.getElementById('lf').addEventListener('submit', async e => {
         if (btnRubro) btnRubro.style.display = esAdminSesionWebPublica() ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
+        const mtBtn = document.getElementById('mt');
+        if (mtBtn) {
+            if (esAdmin()) {
+                mtBtn.title = 'Dashboard tiempo real (mismas funciones que el botón superior derecho)';
+                mtBtn.innerHTML = '<i class="fas fa-tachometer-alt"></i>';
+            } else {
+                mtBtn.title = 'Panel de pedidos / asistente de marca';
+                mtBtn.innerHTML = '<i class="fas fa-list"></i>';
+            }
+        }
         const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
         if (btnDerivPend) btnDerivPend.style.display = esAdmin() ? 'inline-flex' : 'none';
         const mapDashCard = document.getElementById('mapa-card-dashboard');
@@ -5523,9 +5533,9 @@ function renderMk() {
         }
         m.bindPopup(`
             <div style="min-width:160px;font-family:system-ui">
-                <b style="color:#1e3a8a">#${p.np} - ${p.pr}</b><br>
-                <span style="font-size:11px;color:#475569">${p.tt} - ${p.es} (${p.av}%)</span><br>
-                <div style="font-size:12px;margin-top:4px">${(p.de || '').substring(0,70)}${(p.de && p.de.length > 70) ? '…' : ''}</div>
+                <b style="color:#1e3a8a">#${p.np}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
+                <span style="font-size:11px;color:#334155">${p.tt}</span><br>
+                <span style="font-size:11px;font-weight:600;color:#0f172a">${p.es}</span>${p.es !== 'Cerrado' ? ` · Av. ${p.av}%` : ''}<br>
                 <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
                     <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
                     <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
@@ -7396,6 +7406,19 @@ function escHtmlPrint(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Oculta en pantalla ruido técnico ([Sistema]…, caché, sugerencias GPS) ya persistido en descripción. */
+function sanitizarTextoDescripcionPedidoVista(s) {
+    if (s == null || s === '') return '';
+    let t = String(s).replace(/\r\n/g, '\n');
+    t = t.replace(/\n\nSi podés, enviá[\s\S]*?precisión\./gi, '');
+    t = t.replace(/\n\n\[Sistema\][^\n]*/g, '');
+    t = t.replace(/\n\[Sistema\][^\n]*/g, '');
+    t = t.replace(/\[Sistema\][^\n]*/g, '');
+    t = t.replace(/geocodificacion_cache[^\n]*/gi, '');
+    t = t.replace(/\n{3,}/g, '\n\n');
+    return t.trim();
+}
+
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
@@ -7430,6 +7453,13 @@ async function refrescarMaterialesEnDetalle(p) {
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
     const pid = parseInt(p.id, 10);
+    if (
+        p.es === 'Cerrado' &&
+        body.dataset.stableMatPid === String(pid) &&
+        body.querySelector('table.mat-det-table')
+    ) {
+        return;
+    }
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
         return;
@@ -7452,6 +7482,7 @@ async function refrescarMaterialesEnDetalle(p) {
             });
             html += '</tbody></table>';
             body.innerHTML = html;
+            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
         } catch (e) {
             logErrorWeb('materiales-detalle-readonly', e);
             body.innerHTML =
@@ -7498,8 +7529,10 @@ async function refrescarMaterialesEnDetalle(p) {
         }
         if (!rows.length && !puedeAgregar) {
             body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
+            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
         } else {
             body.innerHTML = html;
+            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
         }
     } catch (e) {
         logErrorWeb('materiales-detalle', e);
@@ -9006,11 +9039,6 @@ async function detalle(p) {
                   hour12: false,
               })}</span></div>`
             : '',
-        fa
-            ? `<div class="dr"><span class="dl">Último avance registrado</span><span class="dv">${fa}${
-                  p.es !== 'Cerrado' ? ` (${p.av}%)` : ''
-              }</span></div>`
-            : '',
         p.es === 'Cerrado' && fc ? `<div class="dr"><span class="dl">Cierre</span><span class="dv">${fc}</span></div>` : '',
         pedidoEsDerivadoFuera(p) && p.fder
             ? `<div class="dr"><span class="dl">Derivación a tercero</span><span class="dv">${new Date(p.fder).toLocaleString('es-AR', {
@@ -9169,7 +9197,7 @@ async function detalle(p) {
             ${esCooperativaElectricaRubro() && String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
-            <div class="dr"><span class="dl">Descripción</span><span class="dv">${p.de}</span></div>
+            <div class="dr"><span class="dl">Descripción</span><span class="dv">${escDet(sanitizarTextoDescripcionPedidoVista(p.de))}</span></div>
         </div>
         
         ${htmlOpinionCliente}
@@ -9684,6 +9712,10 @@ function switchTab(t) {
 
 
 document.getElementById('mt').addEventListener('click', () => {
+    if (typeof esAdmin === 'function' && esAdmin() && typeof abrirModalDashboardGerencia === 'function') {
+        abrirModalDashboardGerencia();
+        return;
+    }
     abrirWizardMarcaEmpresaManual().catch((e) => {
         console.warn('[wizard-marca-manual]', e?.message || e);
     });
@@ -10793,6 +10825,8 @@ function ocultarBannerOpinionCliente() {
     }
     const btnWa = document.getElementById('admin-banner-opinion-wa');
     if (btnWa) btnWa.style.display = 'none';
+    const btnHc = document.getElementById('admin-banner-opinion-hc');
+    if (btnHc) btnHc.style.display = 'none';
 }
 
 async function pollBannerNuevoReclamoCliente() {
@@ -10872,9 +10906,15 @@ async function pollBannerOpinionCliente() {
         const wTel = normalizarWhatsappInternacionalDesdeInput(row.telefono_contacto || '');
         const waOk = /^\+\d{8,22}$/.test(wTel);
         const btnWa = document.getElementById('admin-banner-opinion-wa');
+        const btnHc = document.getElementById('admin-banner-opinion-hc');
         if (btnWa) {
             const baja = tieneE && estrellas < 3;
             btnWa.style.display = baja && waOk ? 'inline-flex' : 'none';
+        }
+        if (btnHc) {
+            const baja = tieneE && estrellas < 3;
+            const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
+            btnHc.style.display = baja && apiOk ? 'inline-flex' : 'none';
         }
         box.dataset.waTelE164 = waOk ? wTel : '';
         box.dataset.estrellasOpinion = tieneE ? String(estrellas) : '';
@@ -10913,6 +10953,36 @@ function adminBannerOpinionClickWhatsapp() {
     window.open(`https://wa.me/${w.slice(1)}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
 }
 window.adminBannerOpinionClickWhatsapp = adminBannerOpinionClickWhatsapp;
+
+async function adminBannerOpinionAbrirChatOperador() {
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    const pid = box?.dataset?.pedidoId;
+    if (!pid) return;
+    if (!puedeEnviarApiRestPedidos()) {
+        toast('Sin API activa para abrir el chat operador.', 'warning');
+        return;
+    }
+    await asegurarJwtApiRest();
+    const tok = getApiToken();
+    if (!tok) return;
+    try {
+        const r = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}/abrir-chat-calificacion-baja`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            toast(String(data.error || 'No se pudo abrir el chat operador'), 'error');
+            return;
+        }
+        const sid = data.humanChatSessionId;
+        if (sid != null) await abrirModalWhatsappHumanChat(Number(sid));
+        else toast('Sesión de chat no disponible.', 'warning');
+    } catch (e) {
+        toastError('opinion-chat-operador', e);
+    }
+}
+window.adminBannerOpinionAbrirChatOperador = adminBannerOpinionAbrirChatOperador;
 
 function detenerPollBannerReclamoCliente() {
     if (_pollBannerAdminInterval) {
@@ -13954,7 +14024,8 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
            nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
-           latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`
+           latitud = CASE WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END,
+           longitud = CASE WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`
     );
 }
 
@@ -14352,7 +14423,7 @@ async function importarExcelSocios(event) {
                     try {
                         await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
                     VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = COALESCE(EXCLUDED.latitud, socios_catalogo.latitud), longitud = COALESCE(EXCLUDED.longitud, socios_catalogo.longitud)`);
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
                         ok++;
                     } catch (e2) {
                         fail++;
@@ -15748,20 +15819,31 @@ async function cargarEstadisticas() {
             });
         };
 
-        const COLORES = ['rgba(59,130,246,.55)','rgba(16,185,129,.5)','rgba(245,158,11,.55)','rgba(244,114,182,.5)','rgba(99,102,241,.5)','rgba(20,184,166,.5)','rgba(249,115,22,.52)','rgba(168,85,247,.52)','rgba(14,165,233,.52)','rgba(132,204,22,.52)'];
+        const COLORES = [
+            'rgba(186, 230, 253, 0.75)',
+            'rgba(167, 243, 208, 0.78)',
+            'rgba(254, 215, 170, 0.78)',
+            'rgba(233, 213, 255, 0.78)',
+            'rgba(253, 224, 231, 0.82)',
+            'rgba(207, 250, 254, 0.78)',
+            'rgba(254, 249, 195, 0.82)',
+            'rgba(221, 214, 254, 0.78)',
+            'rgba(209, 250, 229, 0.78)',
+            'rgba(254, 202, 202, 0.72)',
+        ];
         const priorColor = {
-            Crítica: 'rgba(252, 165, 165, 0.55)',
-            Alta: 'rgba(253, 186, 116, 0.52)',
-            Media: 'rgba(253, 224, 71, 0.45)',
-            Baja: 'rgba(147, 197, 253, 0.5)',
+            Crítica: 'rgba(254, 202, 202, 0.72)',
+            Alta: 'rgba(253, 186, 116, 0.55)',
+            Media: 'rgba(253, 224, 71, 0.52)',
+            Baja: 'rgba(186, 230, 253, 0.72)',
         };
 
         // ── Gráfico mensual: total y cerrados por mes ─────────
         crearChart('chart-mensual', 'bar',
             rMensual.rows.map(r => r.mes),
             [
-                { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(90, 120, 165, 0.42)', borderColor: 'rgba(75, 105, 150, 0.85)', borderWidth: 1.5 },
-                { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(110, 155, 125, 0.4)', borderColor: 'rgba(85, 130, 105, 0.85)', borderWidth: 1.5 }
+                { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(186, 230, 253, 0.85)', borderColor: 'rgba(56, 189, 248, 0.55)', borderWidth: 1.5 },
+                { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(167, 243, 208, 0.88)', borderColor: 'rgba(52, 211, 153, 0.55)', borderWidth: 1.5 }
             ],
             { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
                 plugins: { legend: { display: true, position: 'top' },
@@ -15787,17 +15869,27 @@ async function cargarEstadisticas() {
 
         // ── Gráfico estados: doughnut ─────────────────────────
         const estadoColors = {
-            Pendiente: 'rgba(253, 224, 71, 0.48)',
-            Asignado: 'rgba(196, 181, 253, 0.5)',
-            'En ejecución': 'rgba(147, 197, 253, 0.52)',
-            Cerrado: 'rgba(167, 243, 208, 0.52)',
-            'Derivado externo': 'rgba(199, 210, 254, 0.55)',
+            Pendiente: 'rgba(254, 249, 195, 0.92)',
+            Asignado: 'rgba(233, 213, 255, 0.9)',
+            'En ejecución': 'rgba(186, 230, 253, 0.92)',
+            Cerrado: 'rgba(167, 243, 208, 0.92)',
+            'Derivado externo': 'rgba(221, 214, 254, 0.9)',
         };
+        const pastelDonutFallback = [
+            'rgba(254, 215, 170, 0.9)',
+            'rgba(253, 224, 231, 0.92)',
+            'rgba(207, 250, 254, 0.9)',
+            'rgba(209, 250, 229, 0.92)',
+            'rgba(243, 232, 255, 0.9)',
+            'rgba(254, 243, 199, 0.92)',
+        ];
         crearChart('chart-estados', 'doughnut',
             rEstados.rows.map(r => r.estado),
             [{ data: rEstados.rows.map(r => parseInt(r.n)),
-               backgroundColor: rEstados.rows.map(r => estadoColors[r.estado] || 'rgba(226, 232, 240, 0.55)'),
-               borderWidth: 1.5, borderColor: 'rgba(248, 250, 252, 0.95)' }],
+               backgroundColor: rEstados.rows.map((row, i) =>
+                   estadoColors[row.estado] || pastelDonutFallback[i % pastelDonutFallback.length]
+               ),
+               borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.98)' }],
             { plugins: { legend: { display: true, position: 'bottom' },
                 tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + c.parsed + ' pedidos' }}}}
         );
@@ -15818,7 +15910,7 @@ async function cargarEstadisticas() {
             rTipos.rows.map(r => r.tipo.length > 25 ? r.tipo.substring(0,25)+'…' : r.tipo),
             [{ label: 'Pedidos', data: rTipos.rows.map(r => parseInt(r.n)),
                backgroundColor: rTipos.rows.map((_, i) => COLORES[i % COLORES.length]),
-               borderColor: 'rgba(100, 116, 139, 0.4)',
+               borderColor: 'rgba(148, 163, 184, 0.35)',
                borderWidth: 1 }],
             { indexAxis: 'y',
               layout: { padding: { top: 4, bottom: 4, left: 4, right: 36 } },
@@ -15830,8 +15922,8 @@ async function cargarEstadisticas() {
         crearChart('chart-distribuidores', 'bar',
             rDist.rows.map(r => r.distribuidor),
             [
-                { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(95, 125, 170, 0.38)', borderColor: 'rgba(80, 110, 155, 0.8)', borderWidth: 1 },
-                { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(110, 155, 125, 0.38)', borderColor: 'rgba(85, 130, 105, 0.8)', borderWidth: 1 }
+                { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(186, 230, 253, 0.82)', borderColor: 'rgba(125, 211, 252, 0.65)', borderWidth: 1 },
+                { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(167, 243, 208, 0.85)', borderColor: 'rgba(110, 231, 183, 0.65)', borderWidth: 1 }
             ],
             { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
               plugins: { legend: { display: true, position: 'top' },
@@ -15848,8 +15940,8 @@ async function cargarEstadisticas() {
                     {
                         label: 'Horas prom. cierre',
                         data: rBarT.rows.map((r) => parseFloat(r.horas_prom || 0)),
-                        backgroundColor: 'rgba(95, 155, 150, 0.4)',
-                        borderColor: 'rgba(70, 130, 125, 0.75)',
+                        backgroundColor: 'rgba(186, 230, 253, 0.75)',
+                        borderColor: 'rgba(125, 211, 252, 0.55)',
                         borderWidth: 1,
                     },
                 ],

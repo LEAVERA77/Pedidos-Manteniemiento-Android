@@ -184,7 +184,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .hd h2{font-size:1.05rem;color:var(--bd);font-weight:700;display:flex;align-items:center;gap:.4rem}
 .hr{display:flex;align-items:center;gap:.4rem}
 .di{font-size:.85rem;padding:.3rem .5rem;border-radius:.4rem;display:flex;align-items:center;gap:.3rem}
-.di.ok{color:var(--gr)}.di.er{color:var(--re)}
+.di.ok{color:#15803d}.di.er{color:#b91c1c}
+.di.ok i,.di.er i{opacity:.95}
 .un{font-size:.82rem;color:var(--tm);font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib{background:none;border:none;font-size:1.3rem;color:var(--tm);cursor:pointer;padding:.4rem;border-radius:.4rem}
 .ib:hover{background:var(--bg);color:var(--bd)}
@@ -304,6 +305,13 @@ textarea{resize:vertical;min-height:80px}
 .dr.coord-proy-row .dv{width:100%;justify-content:flex-start;align-items:center}
 @media print{
   .no-print,.print-preview-toolbar{display:none!important}
+  /* Mantener colores de gráficos y fondos al imprimir / PDF */
+  #admin-panel.active #admin-estadisticas canvas,
+  #admin-panel.active #admin-estadisticas .chart-wrap,
+  #admin-panel.active #admin-estadisticas .stat-grid{
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+  }
   .print-content.print-a4-tight{max-width:100%!important;padding:0!important;font-size:9pt!important}
   .print-content.print-a4-tight h1{font-size:14pt!important}
   .print-content.print-a4-tight h2{font-size:10pt!important;margin:.4rem 0 .2rem!important}

@@ -1212,8 +1212,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const nom = String(sess.contactName || contactName || "").trim();
   const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
   const sinCoordsConfiables = endLat == null || endLng == null;
-  const gpsPie =
-    " Si podés, enviá *ubicación GPS* con *Adjuntar* (📎) → *Ubicación* para ubicar el reclamo con precisión.";
+  const gpsPie = "";
   if (sinCoordsConfiables) {
     sess._geocodeSinMapa = true;
     const detalle = catalogStrict

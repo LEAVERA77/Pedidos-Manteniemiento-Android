@@ -1099,23 +1099,16 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
       return res.json(coercePedidoLatLng(pedido));
     }
 
-    const marca =
-      "\n\n[Sistema] Coordenadas asignadas automáticamente por geocodificación de domicilio (panel web, Nominatim vía servidor).";
-    const desc0 = String(pedido.descripcion || "");
-    const nuevaDesc = desc0.includes("geocodificación de domicilio (panel web")
-      ? desc0
-      : `${desc0}${marca}`;
-
     const hasT = await pedidosTableHasTenantIdColumn();
     const r = await query(
       hasT
-        ? `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
-           WHERE id = $1 AND tenant_id = $5
+        ? `UPDATE pedidos SET lat = $2, lng = $3
+           WHERE id = $1 AND tenant_id = $4
            RETURNING *`
-        : `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
+        : `UPDATE pedidos SET lat = $2, lng = $3
            WHERE id = $1
            RETURNING *`,
-      hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
+      hasT ? [id, la, ln, req.tenantId] : [id, la, ln]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     return res.json(coercePedidoLatLng(r.rows[0]));
@@ -1144,11 +1137,6 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "No se aceptan coordenadas 0,0" });
     }
 
-    const notaExtra =
-      req.body?.nota != null && String(req.body.nota).trim()
-        ? String(req.body.nota).trim().slice(0, 500)
-        : "";
-
     const pedido = await getPedidoInTenant(id, req.tenantId);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
@@ -1163,21 +1151,16 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "No se puede mover la ubicación de un pedido cerrado o derivado" });
     }
 
-    const nombreAdm = String(req.user?.nombre || req.user?.email || "admin").trim().slice(0, 120);
-    const marca = `\n\n[Sistema] Coordenadas corregidas manualmente en el mapa por ${nombreAdm} (${new Date().toISOString()}).${notaExtra ? ` Nota: ${notaExtra}` : ""}`;
-    const desc0 = String(pedido.descripcion || "");
-    const nuevaDesc = desc0.includes("Coordenadas corregidas manualmente en el mapa") ? desc0 : `${desc0}${marca}`;
-
     const hasT = await pedidosTableHasTenantIdColumn();
     const r = await query(
       hasT
-        ? `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
-           WHERE id = $1 AND tenant_id = $5
+        ? `UPDATE pedidos SET lat = $2, lng = $3
+           WHERE id = $1 AND tenant_id = $4
            RETURNING *`
-        : `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
+        : `UPDATE pedidos SET lat = $2, lng = $3
            WHERE id = $1
            RETURNING *`,
-      hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
+      hasT ? [id, la, ln, req.tenantId] : [id, la, ln]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     const updated = coercePedidoLatLng(r.rows[0]);
@@ -1192,6 +1175,35 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
     return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
+  }
+});
+
+/** Admin: abrir hilo de chat humano (panel) ante valoración baja — mismo patrón que derivación a terceros. */
+router.post("/:id/abrir-chat-calificacion-baja", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    const raw = String(pedido.telefono_contacto || "").replace(/\D/g, "");
+    const waDigits = normalizeWhatsAppRecipientForMeta(raw);
+    if (!waDigits || String(waDigits).length < 8) {
+      return res.status(400).json({ error: "Teléfono de contacto inválido para WhatsApp" });
+    }
+    const nombre = String(pedido.cliente_nombre || "").trim() || `Pedido #${pedido.numero_pedido ?? id}`;
+    const { id: sid } = await humanChatOpenOrGetSession(req.tenantId, waDigits, nombre, { expiresInHours: 48 });
+    const stub = `[Seguimiento calificación] Pedido #${pedido.numero_pedido ?? id}. Valoración baja: coordiná la respuesta con el cliente por este hilo.`;
+    await humanChatAppendOutbound(sid, stub, { source: "opinion_cliente_baja", pedido_id: id });
+    await humanChatActivateSession(sid, req.tenantId, req.user.id);
+    return res.json({ ok: true, humanChatSessionId: sid });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo abrir el chat", detail: error.message });
   }
 });
 
@@ -1240,11 +1252,16 @@ router.put("/:id", async (req, res) => {
     }
 
     const estadoAntes = String(pedido.estado || "");
+    const estadoNuevo = estado !== undefined && estado !== null ? String(estado) : null;
+    const cerrandoOperativo =
+      estadoNuevo === "Cerrado" && estadoAntes !== "Cerrado";
+    let avanceParam = avance ?? null;
+    if (cerrandoOperativo) avanceParam = 100;
     const hasTUp = await pedidosTableHasTenantIdColumn();
     const upParams = [
       id,
       estado ?? null,
-      avance ?? null,
+      avanceParam,
       trabajo_realizado ?? null,
       tecnico_cierre ?? null,
       mergedUrls.length ? toJoinedUrls(mergedUrls) : null,

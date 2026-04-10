@@ -10,9 +10,9 @@
 //  junto a index.html para que funcione correctamente.
 // =============================================================
 
-const CACHE_TILES = 'pmg-tiles-v5';
-const CACHE_SHELL = 'pmg-shell-v20';
-const SW_VERSION  = '1.2.1';
+const CACHE_TILES = 'pmg-tiles-v6';
+const CACHE_SHELL = 'pmg-shell-v21';
+const SW_VERSION  = '1.2.2';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -407,32 +407,36 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (isMapTileRequest(url)) {
     event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request)
+      (async () => {
+        const cache = await caches.open(CACHE_TILES);
+        const cached = await cache.match(event.request);
+        const netP = fetch(event.request)
           .then(async (resp) => {
             if (resp.ok) {
               try {
-                const c = await caches.open(CACHE_TILES);
-                const copy = resp.clone();
-                await c.put(event.request, copy);
+                await cache.put(event.request, resp.clone());
               } catch (_) {}
             }
             return resp;
           })
-          .catch(() => {
-            return new Response(
-              Uint8Array.from([
-                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde,
-                0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xd8, 0xd8, 0xd8, 0x00, 0x00, 0x00,
-                0x04, 0x00, 0x01, 0xa9, 0xf1, 0x9e, 0x7d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
-                0x60, 0x82
-              ]).buffer,
-              { headers: { 'Content-Type': 'image/png' } }
-            );
-          });
-      })
+          .catch(() => null);
+        if (cached) {
+          netP.catch(() => {});
+          return cached;
+        }
+        const fresh = await netP;
+        if (fresh) return fresh;
+        return new Response(
+          Uint8Array.from([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde,
+            0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xd8, 0xd8, 0xd8, 0x00, 0x00, 0x00,
+            0x04, 0x00, 0x01, 0xa9, 0xf1, 0x9e, 0x7d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42,
+            0x60, 0x82
+          ]).buffer,
+          { headers: { 'Content-Type': 'image/png' } }
+        );
+      })()
     );
     return;
   }
