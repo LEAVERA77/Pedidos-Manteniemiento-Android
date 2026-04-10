@@ -68,6 +68,42 @@ function calcularBearing(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Obtiene coordenadas aproximadas del centro de una localidad (fallback para query geográfica)
+ */
+async function obtenerCoordsLocalidad(localidad) {
+  const locClean = String(localidad).trim();
+  const url = `${NOMINATIM_API}/search?` +
+    new URLSearchParams({
+      q: `${locClean}, Argentina`,
+      format: "json",
+      limit: "1",
+    });
+  
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+    });
+    
+    if (!response.ok) return { lat: -31.3, lng: -60.5 }; // Fallback Santa Fe
+    
+    const results = await response.json();
+    if (!results || results.length === 0) return { lat: -31.3, lng: -60.5 };
+    
+    const lat = parseFloat(results[0].lat);
+    const lng = parseFloat(results[0].lon);
+    
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lat, lng };
+    }
+    
+    return { lat: -31.3, lng: -60.5 };
+  } catch (e) {
+    console.warn("[interpolacion-alturas] Error al obtener coords localidad:", e?.message || e);
+    return { lat: -31.3, lng: -60.5 };
+  }
+}
+
+/**
  * Obtiene la geometría de una calle desde Overpass API
  */
 async function obtenerGeometriaCalle(calle, localidad, provincia) {
@@ -75,15 +111,24 @@ async function obtenerGeometriaCalle(calle, localidad, provincia) {
   const locClean = String(localidad).trim();
   const provClean = provincia ? String(provincia).trim() : "";
   
+  // Normalizar calle para búsqueda (sin tildes, lowercase)
+  const calleNorm = calleClean
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  
   // Query Overpass QL para buscar la calle (way con name)
+  // Usar regex case-insensitive y sin preocuparse por tildes
   const query = `
-[out:json][timeout:10];
+[out:json][timeout:25];
 area[name="${locClean}"]["place"~"city|town|village"]->.loc;
 (
   way["highway"]["name"~"${calleClean}",i](area.loc);
 );
 out geom;
   `.trim();
+  
+  console.info("[interpolacion-alturas] Query Overpass: %s", query.substring(0, 150));
   
   try {
     const response = await fetch(OVERPASS_API, {
@@ -100,8 +145,49 @@ out geom;
     const data = await response.json();
     const elements = data.elements || [];
     
+    console.info("[interpolacion-alturas] Overpass retornó %s elementos", elements.length);
+    
     if (elements.length === 0) {
-      console.info("[interpolacion-alturas] No se encontró geometría para la calle %s en %s", calleClean, locClean);
+      console.info("[interpolacion-alturas] No se encontró geometría para '%s' en %s", calleClean, locClean);
+      
+      // FALLBACK: buscar por radio geográfico desde el centro de la localidad
+      const coordsLoc = await obtenerCoordsLocalidad(locClean);
+      const queryFallback = `
+[out:json][timeout:25];
+(
+  way["highway"]["name"~"${calleClean}",i](around:15000,${coordsLoc.lat},${coordsLoc.lng}); 
+);
+out geom;
+      `.trim();
+      
+      console.info("[interpolacion-alturas] Intentando query fallback (radio 15km desde %s, %s)", 
+        coordsLoc.lat.toFixed(4), coordsLoc.lng.toFixed(4));
+      
+      try {
+        const resp2 = await fetch(OVERPASS_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(queryFallback)}`,
+        });
+        
+        if (resp2.ok) {
+          const data2 = await resp2.json();
+          const elems2 = data2.elements || [];
+          console.info("[interpolacion-alturas] Fallback retornó %s elementos", elems2.length);
+          
+          if (elems2.length > 0) {
+            const way = elems2[0];
+            if (way.geometry && way.geometry.length >= 2) {
+              const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+              console.info("[interpolacion-alturas] Geometría obtenida (fallback): %s nodos", coords.length);
+              return coords;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[interpolacion-alturas] Error en query fallback:", e?.message || e);
+      }
+      
       return null;
     }
     
@@ -115,7 +201,7 @@ out geom;
     // Convertir geometry a array de {lat, lng}
     const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
     
-    console.info("[interpolacion-alturas] Geometría obtenida: %s nodos para %s", coords.length, calleClean);
+    console.info("[interpolacion-alturas] Geometría obtenida: %s nodos para '%s'", coords.length, calleClean);
     return coords;
   } catch (e) {
     console.warn("[interpolacion-alturas] Error al consultar Overpass:", e?.message || e);

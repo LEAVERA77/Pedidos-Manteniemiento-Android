@@ -14256,15 +14256,8 @@ async function importarExcelSocios(event) {
         mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando catálogo (se conservan filas con coordenadas GPS o marcadas como manuales)…');
-            await sqlSimple(
-                `DELETE FROM socios_catalogo
-                 WHERE NOT (
-                   (latitud IS NOT NULL AND longitud IS NOT NULL
-                    AND ABS(latitud::numeric) > 1e-7 AND ABS(longitud::numeric) > 1e-7)
-                   OR COALESCE(ubicacion_manual, FALSE) = TRUE
-                 )`
-            );
+            actualizarOverlayImportacion('Vaciando catálogo completo (TODOS los registros, incluyendo coordenadas)…');
+            await sqlSimple(`DELETE FROM socios_catalogo`);
         }
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
