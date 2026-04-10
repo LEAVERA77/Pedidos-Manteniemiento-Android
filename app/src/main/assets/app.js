@@ -19,7 +19,10 @@ import {
   leerPreferenciaCoordsDisplayNuevoPedido,
   convertirAInchauspe,
   resolverFajaProyeccion,
-  convertirProyectadasARGaWgs84
+  convertirProyectadasARGaWgs84,
+  proyectarWgs84AFamiliaFaja,
+  PMG_FAMILIAS_PROYECCION_LIST,
+  etiquetaFamiliaProyeccionCorta
 } from './map.js';
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
@@ -978,6 +981,11 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     for (const k of ['provincia', 'state', 'provincia_nominatim']) {
         if (Object.prototype.hasOwnProperty.call(conf, k) && conf[k] != null && String(conf[k]).trim()) {
             next[k] = String(conf[k]).trim();
+        }
+    }
+    for (const k of ['lat_base', 'lng_base', 'coord_proy_familia', 'coord_proy_modo', 'zoom_mapa', 'logo_url']) {
+        if (Object.prototype.hasOwnProperty.call(conf, k) && conf[k] != null && String(conf[k]).trim() !== '') {
+            next[k] = conf[k];
         }
     }
     next.subtitulo = GN_SUBTITULO_FIJO;
@@ -11001,8 +11009,11 @@ function setupWizardCompletadoEnApi(extra) {
     return extra && extra.setup_wizard_completado === true;
 }
 function debeMostrarSetupInicial(cfg, extra) {
-    if (configInicialIncompleta(cfg)) return true;
-    if (esAdmin() && !setupWizardCompletadoEnApi(extra)) return true;
+    const completado = setupWizardCompletadoEnApi(extra);
+    const incompleto = configInicialIncompleta(cfg);
+    if (completado && !incompleto) return false;
+    if (incompleto) return true;
+    if (esAdmin() && !completado) return true;
     return false;
 }
 function actualizarStepWizard() {
@@ -11230,16 +11241,23 @@ async function verificarConfiguracionInicialObligatoria() {
             try {
                 aplicarConfiguracionJsonClienteEnEmpresaCfg(extraParsed);
             } catch (_) {}
-            cfg = {
-                ...(cli.nombre ? { nombre: cli.nombre } : {}),
-                ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
-                ...(extraParsed.lat_base != null ? { lat_base: String(extraParsed.lat_base) } : {}),
-                ...(extraParsed.lng_base != null ? { lng_base: String(extraParsed.lng_base) } : {})
-            };
-            if (cli && Object.prototype.hasOwnProperty.call(cli, 'tipo')) {
-                cfg.tipo = String(cli.tipo ?? '').trim();
-            }
             const nombreTrim = String(cli.nombre || '').trim();
+            const lbApi =
+                extraParsed.lat_base != null && String(extraParsed.lat_base).trim() !== ''
+                    ? String(extraParsed.lat_base).trim()
+                    : '';
+            const lbgApi =
+                extraParsed.lng_base != null && String(extraParsed.lng_base).trim() !== ''
+                    ? String(extraParsed.lng_base).trim()
+                    : '';
+            const ec = window.EMPRESA_CFG || {};
+            cfg = {
+                nombre: nombreTrim,
+                tipo: String(cli.tipo ?? '').trim(),
+                ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
+                lat_base: lbApi || (ec.lat_base != null && String(ec.lat_base).trim() !== '' ? String(ec.lat_base).trim() : ''),
+                lng_base: lbgApi || (ec.lng_base != null && String(ec.lng_base).trim() !== '' ? String(ec.lng_base).trim() : '')
+            };
             window.__PMG_TENANT_BRANDING__ = {
                 setup_wizard_completado: !!extraParsed.setup_wizard_completado,
                 marca_publicada_admin: !!extraParsed.marca_publicada_admin || nombreTrim.length > 0,
@@ -13204,6 +13222,9 @@ function adminTab(tab) {
         try {
             if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
         } catch (_) {}
+        try {
+            if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
+        } catch (_) {}
         cargarListaSociosAdmin();
         if (!document.getElementById('nis-historial-item-style')) {
             const st = document.createElement('style');
@@ -14023,6 +14044,119 @@ function obtenerZonaImportSociosProyectadas() {
     return fajaArgentinaPorLongitud(-64);
 }
 
+const SOCIOS_TABLA_COLS_BASE = 17;
+const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
+
+function leerPrefsVistaProyeccionSociosCatalogo() {
+    try {
+        const raw = localStorage.getItem(LS_SOC_VISTA_PROY);
+        if (raw) {
+            const o = JSON.parse(raw);
+            if (o && typeof o === 'object' && (o.modo === 'solo_wgs' || o.modo === 'extra_proy')) {
+                const fams = Array.isArray(o.familias)
+                    ? o.familias.filter((f) => PMG_FAMILIAS_PROYECCION_LIST.includes(f))
+                    : [];
+                return { modo: o.modo, familias: fams };
+            }
+        }
+    } catch (_) {}
+    return { modo: 'solo_wgs', familias: [] };
+}
+
+function guardarPrefsVistaProyeccionSociosCatalogo(p) {
+    try {
+        localStorage.setItem(LS_SOC_VISTA_PROY, JSON.stringify(p));
+    } catch (_) {}
+}
+
+function obtenerNumColsTablaSociosAdmin() {
+    const p = leerPrefsVistaProyeccionSociosCatalogo();
+    const n = p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
+    return SOCIOS_TABLA_COLS_BASE + n;
+}
+
+/** Misma regla que import Este/Norte: faja Auto según longitud de la central (`lng_base`). */
+function obtenerZonaVistaSociosCatalogo() {
+    return obtenerZonaImportSociosProyectadas();
+}
+
+function armarHeadExtraProyeccionSociosHtml() {
+    const prefs = leerPrefsVistaProyeccionSociosCatalogo();
+    if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
+    const z = obtenerZonaVistaSociosCatalogo();
+    let h = '';
+    for (const fam of prefs.familias) {
+        const ab = etiquetaFamiliaProyeccionCorta(fam);
+        h += `<th align="right" title="Este (m), ${ab}, faja ${z}">X·${ab}</th><th align="right" title="Norte (m)">Y·${ab}</th>`;
+    }
+    return h;
+}
+
+function htmlCeldasProyeccionSociosDesdeLatLng(lat, lon) {
+    const prefs = leerPrefsVistaProyeccionSociosCatalogo();
+    if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
+    const la = Number(lat);
+    const lo = Number(lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+        return prefs.familias.map(() => '<td>—</td><td>—</td>').join('');
+    }
+    const z = obtenerZonaVistaSociosCatalogo();
+    let out = '';
+    for (const fam of prefs.familias) {
+        const pr = proyectarWgs84AFamiliaFaja(la, lo, fam, z);
+        const ab = etiquetaFamiliaProyeccionCorta(fam);
+        if (pr) {
+            const xe = pr.e.toFixed(1).replace('.', ',');
+            const yn = pr.n.toFixed(1).replace('.', ',');
+            out += `<td align="right" title="${ab} · F${z}">${xe}</td><td align="right">${yn}</td>`;
+        } else {
+            out += '<td>—</td><td>—</td>';
+        }
+    }
+    return out;
+}
+
+function actualizarUiSociosVistaProyeccion() {
+    try {
+        const p = leerPrefsVistaProyeccionSociosCatalogo();
+        const rSolo = document.querySelector('input[name="socios-tabla-proy-mode"][value="solo_wgs"]');
+        const rEx = document.querySelector('input[name="socios-tabla-proy-mode"][value="extra_proy"]');
+        if (rSolo && rEx) {
+            if (p.modo === 'extra_proy') rEx.checked = true;
+            else rSolo.checked = true;
+        }
+        const box = document.getElementById('socios-vista-proy-checks');
+        if (box) box.style.display = p.modo === 'extra_proy' ? 'flex' : 'none';
+        document.querySelectorAll('.socios-proy-fam-cb').forEach((cb) => {
+            const fam = cb.getAttribute('data-fam');
+            if (fam) cb.checked = p.familias.includes(fam);
+        });
+    } catch (_) {}
+}
+
+function onCambioVistaProySocios() {
+    const m = document.querySelector('input[name="socios-tabla-proy-mode"]:checked')?.value || 'solo_wgs';
+    const prev = leerPrefsVistaProyeccionSociosCatalogo();
+    const famsSel = [...document.querySelectorAll('.socios-proy-fam-cb:checked')]
+        .map((c) => c.getAttribute('data-fam'))
+        .filter(Boolean);
+    const fams =
+        m === 'extra_proy' ? (famsSel.length ? famsSel : prev.familias) : prev.familias;
+    guardarPrefsVistaProyeccionSociosCatalogo({ modo: m, familias });
+    actualizarUiSociosVistaProyeccion();
+    if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
+}
+window.onCambioVistaProySocios = onCambioVistaProySocios;
+
+function onCambioCheckFamProySocios() {
+    const m = document.querySelector('input[name="socios-tabla-proy-mode"]:checked')?.value || 'solo_wgs';
+    if (m !== 'extra_proy') return;
+    const fams = [...document.querySelectorAll('.socios-proy-fam-cb:checked')].map((c) => c.getAttribute('data-fam')).filter(Boolean);
+    guardarPrefsVistaProyeccionSociosCatalogo({ modo: 'extra_proy', familias: fams });
+    if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
+}
+window.onCambioCheckFamProySocios = onCambioCheckFamProySocios;
+
 async function cargarListaSociosAdmin() {
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
@@ -14040,10 +14174,12 @@ async function cargarListaSociosAdmin() {
         }
         window._sociosVirtualRows = rows;
         window._sociosVirtualRowHeight = 31;
+        window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
+        const headExtra = armarHeadExtraProyeccionSociosHtml();
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right">Lat</th><th align="right">Lon</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
-<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles).</p></div>`;
+<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right">Lat</th><th align="right">Lon</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles). Las columnas X/Y son solo lectura (proyección desde WGS84).</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
     } catch (e) {
@@ -14198,16 +14334,18 @@ function renderSociosCatalogoVirtual() {
         const n = Number(v);
         return Number.isFinite(n) ? n.toFixed(6) : '—';
     };
+    const ncol = window._sociosTablaColCount || obtenerNumColsTablaSociosAdmin();
     tb.innerHTML =
-        `<tr class="gn-vspad"><td colspan="17" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
+        `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
         slice
             .map((s) => {
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td align="right">${fmtLon(s.latitud)}</td><td align="right">${fmtLon(s.longitud)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                const proy = htmlCeldasProyeccionSociosDesdeLatLng(s.latitud, s.longitud);
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td align="right">${fmtLon(s.latitud)}</td><td align="right">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
-        `<tr class="gn-vspad"><td colspan="17" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
+        `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
 }
 
 function bindSociosCatalogoVirtualScroll() {

@@ -165,6 +165,43 @@ export function convertirAInchauspe(lat, lng) {
  * @param {string} fam inchauspe | posgar94 | posgar98 | posgar2007
  * @param {number} z 1–7
  */
+/** Familias con defs PMG_* en proj4 (misma lista que PMG_AR_PROJ4). */
+export const PMG_FAMILIAS_PROYECCION_LIST = Object.keys(PMG_AR_PROJ4);
+
+export function etiquetaFamiliaProyeccionCorta(fam) {
+    const m = { inchauspe: 'Inc', posgar94: 'P94', posgar98: 'P98', posgar2007: 'P07' };
+    const k = String(fam || '').trim();
+    return m[k] || k || '—';
+}
+
+/**
+ * WGS84 → Este/Norte (m) en una familia y faja. Reutiliza defs PMG_* de este módulo.
+ * @param {number} lat
+ * @param {number} lng
+ * @param {string} familia inchauspe | posgar94 | posgar98 | posgar2007
+ * @param {number} zona 1–7
+ */
+export function proyectarWgs84AFamiliaFaja(lat, lng, familia, zona) {
+    const fam = String(familia || '').trim();
+    const arr = PMG_AR_PROJ4[fam];
+    const la = Number(lat);
+    const lo = Number(lng);
+    const zi = parseInt(zona, 10);
+    if (!arr || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+    if (!Number.isFinite(zi) || zi < 1 || zi > 7) return null;
+    asegurarDefsProyeccionesARG();
+    const defName = 'PMG_' + fam + '_Z' + zi;
+    try {
+        const [e, n] = proj4('EPSG:4326', defName, [lo, la]);
+        if (!Number.isFinite(e) || !Number.isFinite(n)) return null;
+        return { e, n, z: zi, fam, defName };
+    } catch (err) {
+        console.warn('[coords] proyectarWgs84AFamiliaFaja', err);
+        return null;
+    }
+}
+
 export function convertirProyectadasARGaWgs84(fam, z, eEste, nNorte) {
     const f = String(fam || '').trim();
     if (!f || f === 'none' || typeof proj4 === 'undefined') return null;

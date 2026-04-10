@@ -656,6 +656,24 @@
           </select>
         </div>
       </div>
+      <div id="socios-vista-proy-wrap" style="margin-bottom:.85rem;padding:.65rem .85rem;background:#f0fdf4;border-radius:.5rem;border:1px solid #86efac;font-size:.78rem;color:var(--tl)">
+        <div style="font-weight:600;color:var(--bd);margin-bottom:.35rem">Vista del catálogo (solo pantalla; la base sigue guardando solo WGS84)</div>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:.2rem 0">
+          <input type="radio" name="socios-tabla-proy-mode" value="solo_wgs" checked onchange="if(typeof onCambioVistaProySocios==='function')onCambioVistaProySocios()" />
+          Sin conversión extra — solo columnas lat/lon de la BD
+        </label>
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:.2rem 0">
+          <input type="radio" name="socios-tabla-proy-mode" value="extra_proy" onchange="if(typeof onCambioVistaProySocios==='function')onCambioVistaProySocios()" />
+          Convertir / mostrar también Este·Norte (m) en proyecciones…
+        </label>
+        <div id="socios-vista-proy-checks" style="display:none;margin:.45rem 0 0 1.1rem;flex-wrap:wrap;gap:.45rem .9rem;align-items:center">
+          <span style="color:var(--tm);width:100%;font-size:.74rem">Familias de salida (defs proj4 de map.js). Faja: misma regla que el import (Auto = según <code>lng_base</code> de la central; si falta, ~faja 4 por -64°).</span>
+          <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="inchauspe" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> Inchauspe</label>
+          <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="posgar94" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> POSGAR 94</label>
+          <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="posgar98" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> POSGAR 98</label>
+          <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="posgar2007" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> POSGAR 2007</label>
+        </div>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
         <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
@@ -667,7 +685,7 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según el selector de arriba: <code style="font-size:.72rem">latitud | longitud</code> (WGS84) o <code style="font-size:.72rem">este | norte</code> (metros, familia de proyección configurada en Empresa). La tabla del catálogo muestra lat/lon guardadas. Las coordenadas son opcionales (vacías no borran valores previos al fusionar). Clave única: <strong>nis_medidor</strong> o <strong>nis</strong> + <strong>medidor</strong>. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según «Coordenadas en el Excel»: <code style="font-size:.72rem">latitud | longitud</code> (WGS84, se guardan en Neon) o <code style="font-size:.72rem">este | norte</code> (metros; familia según Empresa; convierte a WGS84 con proj4). La sección verde solo agrega columnas X/Y de otras proyecciones en pantalla. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">
