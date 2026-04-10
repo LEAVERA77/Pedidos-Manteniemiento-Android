@@ -14219,12 +14219,13 @@ async function importarExcelSocios(event) {
         mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando catálogo (se conservan filas con coordenadas GPS ya cargadas)…');
+            actualizarOverlayImportacion('Vaciando catálogo (se conservan filas con coordenadas GPS o marcadas como manuales)…');
             await sqlSimple(
                 `DELETE FROM socios_catalogo
                  WHERE NOT (
-                   latitud IS NOT NULL AND longitud IS NOT NULL
-                   AND ABS(latitud::numeric) > 1e-7 AND ABS(longitud::numeric) > 1e-7
+                   (latitud IS NOT NULL AND longitud IS NOT NULL
+                    AND ABS(latitud::numeric) > 1e-7 AND ABS(longitud::numeric) > 1e-7)
+                   OR COALESCE(ubicacion_manual, FALSE) = TRUE
                  )`
             );
         }
@@ -14370,7 +14371,7 @@ async function importarExcelSocios(event) {
                     try {
                         await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
                     VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN (socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN (socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
                         ok++;
                     } catch (e2) {
                         fail++;

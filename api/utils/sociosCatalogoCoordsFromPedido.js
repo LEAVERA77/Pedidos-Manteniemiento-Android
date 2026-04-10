@@ -156,13 +156,15 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
     }
 
     const sid = ids[0];
-    const u = await query(
-      `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`,
-      [la, ln, sid]
-    );
+    const hasUbicManual = cols.has("ubicacion_manual");
+    const updateSql = hasUbicManual
+      ? `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric, ubicacion_manual = TRUE WHERE id = $3 RETURNING id`
+      : `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`;
+    const u = await query(updateSql, [la, ln, sid]);
     const ok = !!(u.rows && u.rows.length);
     if (ok) {
-      console.info("[coords-manual→socios_catalogo] actualizado socio id=%s (pedido %s)", sid, pedido.id);
+      const marcaManual = hasUbicManual ? " (marcada como manual)" : "";
+      console.info("[coords-manual→socios_catalogo] actualizado socio id=%s (pedido %s)%s", sid, pedido.id, marcaManual);
     }
     return { ok, sociosId: sid, reason: ok ? undefined : "update_failed" };
   } catch (e) {
@@ -365,13 +367,15 @@ export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
       return { ok: false, reason: "coords_ya_cercanas", sociosId: sid };
     }
 
-    const u = await query(
-      `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`,
-      [newLa, newLn, sid]
-    );
+    const hasUbicManual = cols.has("ubicacion_manual");
+    const updateSql = hasUbicManual
+      ? `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric, ubicacion_manual = TRUE WHERE id = $3 RETURNING id`
+      : `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`;
+    const u = await query(updateSql, [newLa, newLn, sid]);
     const ok = !!(u.rows && u.rows.length);
     if (ok) {
-      console.info("[wa→socios_catalogo] coords actualizadas socio id=%s (pedido %s)", sid, pedido.id);
+      const marcaEnriq = hasUbicManual ? " (enriquecimiento automático)" : "";
+      console.info("[wa→socios_catalogo] coords actualizadas socio id=%s (pedido %s)%s", sid, pedido.id, marcaEnriq);
     }
     return { ok, sociosId: sid, reason: ok ? undefined : "update_failed" };
   } catch (e) {
