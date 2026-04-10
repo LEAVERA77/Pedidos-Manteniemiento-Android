@@ -3122,6 +3122,26 @@ async function nominatimGeocodeDomicilioPedido(p) {
         if (hit) return hit;
     }
 
+    await new Promise((res) => setTimeout(res, 1100));
+    raw = await _nominatimFetchSearch({
+        q: `${loc}, Argentina`,
+        countrycodes: 'ar',
+        limit: '3',
+    });
+    if (raw && raw.length > 0) {
+        const cityHit = raw.find(h => {
+            const n = String(h.display_name || '').toLowerCase();
+            return n.includes(loc.toLowerCase()) && n.includes('argentina');
+        }) || raw[0];
+        if (cityHit) {
+            const la = Number(cityHit.lat);
+            const lo = Number(cityHit.lon);
+            if (Number.isFinite(la) && Number.isFinite(lo)) {
+                return { lat: la, lng: lo, src: 'ciudad_centro' };
+            }
+        }
+    }
+
     return null;
 }
 
@@ -4096,8 +4116,10 @@ function iniciarPollSincroPedidosTecnico() {
 /** Si el detalle está abierto, repinta con la fila actual de app.p (p. ej. cierre remoto). */
 function refrescarDetalleSiAbiertoTrasSync() {
     const dm = document.getElementById('dm');
-    if (!dm || !dm.classList.contains('active') || app.cid == null || app.cid === '') return;
-    const fresh = app.p.find(x => String(x.id) === String(app.cid));
+    if (!dm || !dm.classList.contains('active')) return;
+    const pidKey = dm.dataset?.detallePedidoId;
+    if (!pidKey || pidKey === '') return;
+    const fresh = app.p.find(x => String(x.id) === pidKey);
     if (fresh) {
         try {
             void detalle(fresh);
@@ -9512,6 +9534,11 @@ function closeAll() {
         if (m === forzarPw && window._pendingAndroidPasswordChange) return;
         m.classList.remove('active');
     });
+    app.cid = null;
+    try {
+        const dm = document.getElementById('dm');
+        if (dm) delete dm.dataset.detallePedidoId;
+    } catch (_) {}
     document.getElementById('pf').reset();
     limpiarFotosYPreviewNuevoPedido();
     _nisPedidoCatalogoUltimoValor = '';
@@ -10762,8 +10789,6 @@ function ocultarBannerOpinionCliente() {
         delete box.dataset.waTelE164;
         delete box.dataset.estrellasOpinion;
     }
-    const btnWa = document.getElementById('admin-banner-opinion-wa');
-    if (btnWa) btnWa.style.display = 'none';
     const btnHc = document.getElementById('admin-banner-opinion-hc');
     if (btnHc) btnHc.style.display = 'none';
 }
@@ -10846,16 +10871,11 @@ async function pollBannerOpinionCliente() {
         const tieneE = Number.isFinite(estrellas) && estrellas >= 1 && estrellas <= 5;
         const wTel = normalizarWhatsappInternacionalDesdeInput(row.telefono_contacto || '');
         const waOk = /^\+\d{8,22}$/.test(wTel);
-        const btnWa = document.getElementById('admin-banner-opinion-wa');
         const btnHc = document.getElementById('admin-banner-opinion-hc');
-        if (btnWa) {
-            const baja = tieneE && estrellas < 3;
-            btnWa.style.display = baja && waOk ? 'inline-flex' : 'none';
-        }
         if (btnHc) {
             const baja = tieneE && estrellas < 3;
             const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
-            btnHc.style.display = baja && apiOk ? 'inline-flex' : 'none';
+            btnHc.style.display = baja && apiOk && waOk ? 'inline-flex' : 'none';
         }
         box.dataset.waTelE164 = waOk ? wTel : '';
         box.dataset.estrellasOpinion = tieneE ? String(estrellas) : '';
