@@ -82,8 +82,10 @@ const BLOQUEO_RECLAMOS_MSG_DEFAULT =
 
 /** En estos pasos se acepta ubicación GPS por adjunto. */
 const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
+  "awaiting_desc",
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
+  "awaiting_opcional_id",
   "awaiting_addr_ciudad",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
@@ -438,14 +440,8 @@ function formatDerivacionBotMessage(ctx) {
 function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
-  const drvHint =
-    normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica" && ctx.derivacionReclamos
-      ? `Si tu consulta es de *agua potable* u *otra empresa eléctrica*, escribí *Otros servicios*.\n\n`
-      : "";
   return (
     `Bienvenido al centro de atención de *${n}*.\n\n` +
-    drvHint +
-    `Para ver los tipos de reclamo, escribí *Cargar reclamo* (te enviaremos una lista en el chat).\n\n` +
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
@@ -465,11 +461,6 @@ function menuTextoNumerado(ctx) {
     lineas.push(`${i + 1}) ${t}`);
   });
   lineas.push("");
-  lineas.push("O escribí *Cargar reclamo* para abrir la lista.");
-  if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica" && ctx.derivacionReclamos) {
-    lineas.push("");
-    lineas.push("¿Agua u otra energía? Escribí *Otros servicios*.");
-  }
   lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
 }
@@ -586,6 +577,132 @@ export function extractLocationFromMetaMessage(msg) {
   if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
   if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
   return { lat: la, lng: lo };
+}
+
+/** Ciudad / calle / número desde Nominatim reverse (`addressdetails`). */
+function extraerCiudadCalleNumeroDesdeReverse(rev) {
+  if (!rev?.address || typeof rev.address !== "object") return null;
+  const a = rev.address;
+  const ciudad = String(
+    a.city ||
+      a.town ||
+      a.village ||
+      a.municipality ||
+      a.city_district ||
+      a.county ||
+      a.state_district ||
+      ""
+  ).trim();
+  const calle = String(
+    a.road || a.pedestrian || a.path || a.footway || a.residential || a.street || ""
+  ).trim();
+  const hn = String(a.house_number || "").trim();
+  const numero = hn.length ? hn : "0";
+  if (ciudad.length < 2 || calle.length < 2) return null;
+  return { ciudad, calle, numero };
+}
+
+/**
+ * GPS en pasos de domicilio: reverse OSM + misma ruta que texto → `geocodeStructuredAddressAndFinalizePedido`.
+ * Si el usuario ya cargó localidad/calle por texto, se respeta y se completa con el reverse.
+ */
+async function inferirDireccionDesdeGpsYGeocodificar(
+  phone,
+  sess,
+  sk,
+  contactName,
+  ctx,
+  phoneNumberId,
+  lat,
+  lng,
+  stepAddr
+) {
+  const tid = sess.tenantId;
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
+  let rev = null;
+  try {
+    rev = await reverseGeocodeArgentina(lat, lng);
+  } catch (_) {}
+  const ext = extraerCiudadCalleNumeroDesdeReverse(rev);
+
+  sess.userSharedGps = { lat, lng };
+  sess.lat = lat;
+  sess.lng = lng;
+  if (rev?.displayName) sess.direccionTexto = rev.displayName;
+  if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio" && !sess.barrio) {
+    sess.barrio = rev.barrio;
+  }
+  if (wpid) sess.phoneNumberId = wpid;
+
+  const ciudadTxt = String(sess.addrCiudad || "").trim();
+  const calleTxt = String(sess.addrCalle || "").trim();
+  const numTxt = String(sess.addrNumero ?? "").trim();
+
+  let ciudad = "";
+  let calle = "";
+  let numero = "0";
+
+  if (ext) {
+    ciudad = ciudadTxt.length >= 2 ? ciudadTxt : ext.ciudad;
+    calle = calleTxt.length >= 2 ? calleTxt : ext.calle;
+    if (stepAddr === "awaiting_addr_numero" && numTxt.length) {
+      numero = numTxt;
+    } else if (ext.numero && ext.numero !== "0") {
+      numero = ext.numero;
+    } else {
+      numero = numTxt.length ? numTxt : ext.numero || "0";
+    }
+  } else if (ciudadTxt.length >= 2 && calleTxt.length >= 2) {
+    ciudad = ciudadTxt;
+    calle = calleTxt;
+    numero = numTxt.length ? numTxt : "0";
+    sessions.set(sk, sess);
+    await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
+      stateOrProvince: ctx?.geocodeState,
+    });
+    return;
+  } else {
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *ubicación GPS*, pero no pudimos inferir calle y ciudad automáticamente. Seguí con los mensajes de texto del paso anterior.",
+      tid,
+      wpid
+    );
+    return;
+  }
+
+  if (ciudad.length < 2 || calle.length < 2) {
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *GPS*. Completá con *texto* lo que falte según el paso anterior.",
+      tid,
+      wpid
+    );
+    return;
+  }
+
+  sessions.set(sk, sess);
+  await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
+    stateOrProvince: ctx?.geocodeState,
+  });
+}
+
+/**
+ * Si el usuario mandó GPS antes del paso ciudad (descripción / identificación / nombre),
+ * intenta inferir domicilio y cerrar sin mostrar MSG_ADDR_CIUDAD.
+ * @returns {Promise<boolean>} true si había pin y se ejecutó la inferencia (no enviar MSG_ADDR_CIUDAD después).
+ */
+async function intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, wpid) {
+  const pin = sess.ubicacionGpsPin;
+  if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return false;
+  const { lat, lng } = pin;
+  delete sess.ubicacionGpsPin;
+  sess.step = "awaiting_addr_ciudad";
+  sessions.set(sk, sess);
+  await inferirDireccionDesdeGpsYGeocodificar(phone, sess, sk, contactName, ctx, wpid, lat, lng, "awaiting_addr_ciudad");
+  return true;
 }
 
 /** Municipio: completa `sess.barrio` con Nominatim reverse si aún no está (p. ej. flujo calle/número). */
@@ -1323,58 +1440,92 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
-  /** Durante dirección estructurada: guardamos GPS y seguimos el flujo por texto (evita pin incorrecto). */
   const stepAddr = String(sess.step || "");
+
+  /** Pasos de domicilio: reverse Nominatim + misma geocodificación estructurada que el texto (sin volver a pedir ciudad/calle). */
   if (
     stepAddr === "awaiting_addr_ciudad" ||
     stepAddr === "awaiting_addr_calle" ||
-    stepAddr === "awaiting_addr_numero" ||
-    stepAddr === "awaiting_suministro_conexion" ||
-    stepAddr === "awaiting_suministro_fases" ||
-    stepAddr === "awaiting_nombre_persona" ||
-    stepAddr === "awaiting_opcional_id" ||
-    stepAddr === "awaiting_identificacion_modo"
+    stepAddr === "awaiting_addr_numero"
   ) {
+    await inferirDireccionDesdeGpsYGeocodificar(
+      phone,
+      sess,
+      sk,
+      contactName,
+      ctxOk,
+      phoneNumberId,
+      lat,
+      lng,
+      stepAddr
+    );
+    return;
+  }
+
+  /** Descripción u opciones previas: guardamos el pin para usarlo al ubicar (reverse al avanzar). */
+  if (stepAddr === "awaiting_desc") {
+    sess.ubicacionGpsPin = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa. Ahora escribí la *descripción* del problema (texto).\n\n" +
+        `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (stepAddr === "awaiting_identificacion_modo" || stepAddr === "awaiting_opcional_id") {
+    sess.ubicacionGpsPin = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *ubicación GPS*; la usaremos más adelante para el mapa. Seguí con el paso anterior en *texto*.\n\n" +
+        `_*menú* = salir · *atrás* = paso anterior_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (stepAddr === "awaiting_nombre_persona") {
+    sess.ubicacionGpsPin = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n¿Cuál es tu *nombre y apellido* (o del titular)?" +
+        MSG_SALIR_ATRAS,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (stepAddr === "awaiting_suministro_conexion" || stepAddr === "awaiting_suministro_fases") {
     sess.userSharedGps = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     let hint = "Recibimos tu *ubicación GPS*. ";
-    if (stepAddr === "awaiting_addr_numero") {
-      hint += "Indicá el *número de puerta* en un mensaje de texto.";
-    } else if (stepAddr === "awaiting_suministro_conexion") {
-      hint += "Respondé *1* (aéreo) o *2* (subterráneo) en texto.";
-    } else if (stepAddr === "awaiting_suministro_fases") {
+    if (stepAddr === "awaiting_suministro_fases") {
       hint += "Respondé *1* (monofásico) o *2* (trifásico) en texto.";
-    } else if (stepAddr === "awaiting_addr_calle") {
-      hint += "Seguí con el *nombre de la calle*.";
-    } else if (stepAddr === "awaiting_addr_ciudad") {
-      hint += "Indicá la *ciudad o localidad*.";
-    } else if (stepAddr === "awaiting_nombre_persona") {
-      hint += "Indicá tu *nombre y apellido*.";
-    } else if (stepAddr === "awaiting_opcional_id") {
-      hint += "Enviá *NIS* / *medidor* o escribí *no*.";
     } else {
-      hint += "Elegí *1* o *2* para continuar.";
+      hint += "Respondé *1* (aéreo) o *2* (subterráneo) en texto.";
     }
     hint += " _(*menú* = salir · *atrás* = paso anterior)_";
     await reply(phone, hint, tid, phoneNumberId);
     return;
   }
 
-  sess.lat = lat;
-  sess.lng = lng;
-  sess.direccionTexto = null;
-  sess.barrio = null;
-  try {
-    const rev = await reverseGeocodeArgentina(lat, lng);
-    if (rev?.displayName) sess.direccionTexto = rev.displayName;
-    if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
-      sess.barrio = rev.barrio;
-    }
-  } catch (_) {}
-  if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-  sessions.set(sk, sess);
-  await finalizePedidoFromSession(phone, sess, contactName);
+  await reply(
+    phone,
+    "Recibimos la *ubicación*, pero este paso no admite GPS así. Escribí *menú* o seguí con *texto*.",
+    tid,
+    phoneNumberId
+  );
 }
 
 async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
@@ -1686,9 +1837,13 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     sess.contactName = t;
-    sess.step = "awaiting_addr_ciudad";
     sess.addrOrigenPaso = "nombre";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
+      return;
+    }
+    sess.step = "awaiting_addr_ciudad";
     sessions.set(sk, sess);
     await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
     return;
@@ -1739,6 +1894,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
           next.contactName = raw;
         }
         sessions.set(sk, next);
+        if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, next, sk, contactName, ctx, phoneNumberId || wpid)) {
+          return;
+        }
         await reply(
           phone,
           "Listo. *Tomamos* tu *nombre o referencia* para este reclamo.\n\n" + MSG_ADDR_CIUDAD,
@@ -1808,6 +1966,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     aplicarSuministroCatalogoWhatsappRes(sessOpc, res);
     aplicarPadronCoordsWhatsapp(sessOpc, res);
     sessions.set(sk, sessOpc);
+    if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sessOpc, sk, contactName, ctx, phoneNumberId || wpid)) {
+      return;
+    }
     await reply(
       phone,
       `Listo, registramos a *${nuevoNombre}*.\n\n` + MSG_ADDR_CIUDAD,
@@ -1883,6 +2044,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.step = "awaiting_addr_ciudad";
     sess.addrOrigenPaso = "nis_solo";
     sessions.set(sk, sess);
+    if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
+      return;
+    }
     await reply(
       phone,
       `Registramos el *NIS*. Para ubicar el reclamo en el mapa, indicá la *ciudad o localidad*${nuevoNombre ? ` (titular: *${nuevoNombre}*)` : ""}.\n\n` + MSG_ADDR_CIUDAD,
