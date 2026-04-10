@@ -8828,8 +8828,8 @@ async function detalle(p) {
                     cur.opin = os;
                     changed = true;
                 }
-                const nEs = parseInt(row.opinion_cliente_estrellas, 10);
-                const oesNew = Number.isFinite(nEs) && nEs >= 1 && nEs <= 5 ? nEs : null;
+                const nEs = Number(row.opinion_cliente_estrellas);
+                const oesNew = Number.isFinite(nEs) && nEs >= 1 && nEs <= 5 ? Math.round(nEs) : null;
                 if (oesNew !== cur.oes) {
                     cur.oes = oesNew;
                     changed = true;
