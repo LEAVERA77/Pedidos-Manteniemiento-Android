@@ -1,8 +1,10 @@
 # Publicar APK y avisar de nuevas versiones en la app
 
-La app compara su `versionCode` (definido en `app/build.gradle.kts`) con un JSON publicado en Internet. Si el remoto es mayor, al iniciar sesión se ofrece descargar la APK.
+La app compara su `versionCode` (definido en `app/build.gradle.kts`) con un JSON publicado en Internet. Si el remoto es mayor, al abrir la app se ofrece descargar la APK (también al volver a primer plano y al conectar Neon).
 
-**Versión actual:** `versionCode` 3, `versionName` 1.0.2
+**Versión actual del proyecto (Gradle):** ver `app/build.gradle.kts` (`versionCode` / `versionName`).
+
+**Publicar una versión nueva (ej. 1.0.21):** compilá la APK con el `versionCode` nuevo, subila a Drive, ejecutá en Neon el SQL de `docs/NEON_app_version_1_0_21.sql` (o copiá el patrón cambiando números y URL). El `apk_url` debe ser el APK que **ya lleva** ese `versionCode` dentro del manifest; si Neon dice 21 y el APK es 20, Android puede rechazar la instalación.
 
 ---
 

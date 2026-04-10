@@ -1,7 +1,7 @@
 {
-  "versionCode": 3,
-  "versionName": "1.0.2",
+  "versionCode": 21,
+  "versionName": "1.0.21",
   "apkUrl": "https://drive.google.com/uc?export=download&id=REEMPLAZAR_ID_APK",
-  "forceUpdate": true,
-  "releaseNotes": "Novedades de esta versión (opcional)."
+  "forceUpdate": false,
+  "releaseNotes": "Misma forma que devuelve GET /api/app-version (Neon tabla app_version)."
 }
