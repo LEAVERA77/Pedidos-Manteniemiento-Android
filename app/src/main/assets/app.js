@@ -17,7 +17,9 @@ import {
   proyectarCoordPedido,
   tieneProyeccionEmpresaConfigurada,
   leerPreferenciaCoordsDisplayNuevoPedido,
-  convertirAInchauspe
+  convertirAInchauspe,
+  resolverFajaProyeccion,
+  convertirProyectadasARGaWgs84
 } from './map.js';
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
@@ -1524,7 +1526,21 @@ async function verificarLoginSoloAdminSinPersistir(email, password) {
 
 const GESTORNOVA_LS_PULSE = 'gestornova_ls_pulse';
 const GESTORNOVA_ONBOARDING_DONE = 'gestornova_onboarding_done';
+/** Primera vez del asistente solo en navegador / PWA (no WebView empaquetado). */
+const PMG_ONBOARDING_WEB_DONE = 'pmg_onboarding_web_done';
 let _gnWizardEsReapertura = false;
+
+function esGestorNovaWebPublico() {
+    return typeof window.AndroidConfig === 'undefined';
+}
+
+function onboardingWebMarcadoCompletado() {
+    try {
+        if (localStorage.getItem(PMG_ONBOARDING_WEB_DONE) === '1') return true;
+        if (localStorage.getItem(GESTORNOVA_ONBOARDING_DONE) === '1') return true;
+    } catch (_) {}
+    return false;
+}
 
 function limpiarPersistenciaClienteGestorNovaMigracionV2() {
     try {
@@ -1563,7 +1579,14 @@ function aplicarCapaOnboardingVsLoginInicial() {
         const gw = document.getElementById('gw');
         const ls = document.getElementById('ls');
         if (!gw || !ls) return;
-        if (localStorage.getItem(GESTORNOVA_ONBOARDING_DONE) === '1') {
+        if (!esGestorNovaWebPublico()) {
+            gw.classList.remove('active');
+            ls.classList.add('active');
+            _gnWizardEsReapertura = false;
+            sincronizarTextosBotonesWizardOnboarding();
+            return;
+        }
+        if (onboardingWebMarcadoCompletado()) {
             gw.classList.remove('active');
             ls.classList.add('active');
         } else {
@@ -1609,7 +1632,10 @@ function cerrarVistaWizardMostrarLogin() {
 
 function finalizarOnboardingPrimeraVezGestorNova() {
     try {
-        localStorage.setItem(GESTORNOVA_ONBOARDING_DONE, '1');
+        if (esGestorNovaWebPublico()) {
+            localStorage.setItem(PMG_ONBOARDING_WEB_DONE, '1');
+            localStorage.setItem(GESTORNOVA_ONBOARDING_DONE, '1');
+        }
     } catch (_) {}
     cerrarVistaWizardMostrarLogin();
 }
@@ -13169,6 +13195,9 @@ function adminTab(tab) {
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
     if (tab === 'socios') {
+        try {
+            if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
+        } catch (_) {}
         cargarListaSociosAdmin();
         if (!document.getElementById('nis-historial-item-style')) {
             const st = document.createElement('style');
@@ -13962,13 +13991,39 @@ async function importarExcelDistribuidores(event) {
     event.target.value = '';
 }
 
+function actualizarUiSociosImportCrs() {
+    try {
+        const optArg = document.getElementById('socios-import-crs-arg-opt');
+        const fam = String((window.EMPRESA_CFG || {}).coord_proy_familia || '').trim();
+        const ok = !!fam && fam !== 'none';
+        if (optArg) {
+            optArg.disabled = !ok;
+            const sel = document.getElementById('socios-import-crs');
+            if (!ok && sel && sel.value === 'arg_en') sel.value = 'wgs84';
+        }
+        const crs = document.getElementById('socios-import-crs')?.value;
+        const w = document.getElementById('socios-import-faja-wrap');
+        if (w) w.style.display = crs === 'arg_en' ? '' : 'none';
+    } catch (_) {}
+}
+window.actualizarUiSociosImportCrs = actualizarUiSociosImportCrs;
+
+function obtenerZonaImportSociosProyectadas() {
+    const sel = document.getElementById('socios-import-faja')?.value || 'auto';
+    if (/^[1-7]$/.test(sel)) return parseInt(sel, 10);
+    const cfg = window.EMPRESA_CFG || {};
+    const lo = Number(cfg.lng_base);
+    if (Number.isFinite(lo)) return resolverFajaProyeccion('instal', lo);
+    return fajaArgentinaPorLongitud(-64);
+}
+
 async function cargarListaSociosAdmin() {
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, activo FROM socios_catalogo',
+            'SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo',
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -13981,7 +14036,7 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right">Lat</th><th align="right">Lon</th><th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles).</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
@@ -14132,16 +14187,21 @@ function renderSociosCatalogoVirtual() {
     const padBot = Math.max(0, (total - end) * rh);
     const e = (x) => String(x ?? '').replace(/</g, '&lt;');
     const slice = data.slice(start, end);
+    const fmtLon = (v) => {
+        if (v == null || v === '') return '—';
+        const n = Number(v);
+        return Number.isFinite(n) ? n.toFixed(6) : '—';
+    };
     tb.innerHTML =
-        `<tr class="gn-vspad"><td colspan="15" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
+        `<tr class="gn-vspad"><td colspan="17" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
         slice
             .map((s) => {
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td><td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td align="right">${fmtLon(s.latitud)}</td><td align="right">${fmtLon(s.longitud)}</td><td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
-        `<tr class="gn-vspad"><td colspan="15" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
+        `<tr class="gn-vspad"><td colspan="17" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
 }
 
 function bindSociosCatalogoVirtualScroll() {
@@ -14177,8 +14237,20 @@ async function importarExcelSocios(event) {
     const file = event.target.files[0];
     if (!file) return;
     if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    try {
+        if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
+    } catch (_) {}
+    const crsMode = document.getElementById('socios-import-crs')?.value || 'wgs84';
     const errMsgs = [];
     try {
+        if (crsMode === 'arg_en') {
+            const fam = String((window.EMPRESA_CFG || {}).coord_proy_familia || '').trim();
+            if (!fam || fam === 'none') {
+                toast('Configurá la familia de proyección en Empresa (coordenadas) antes de importar Este/Norte.', 'error');
+                event.target.value = '';
+                return;
+            }
+        }
         mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
@@ -14253,9 +14325,46 @@ async function importarExcelSocios(event) {
             const tcon = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'tipo_conexion', 'conexion', 'tipo_de_conexion');
             const fas = valorSociosPorEncabezados(row, mapNormAOriginal, 'fases', 'fase', 'cantidad_fases');
-            const laRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'latitud', 'lat', 'latitude', 'lat_gps');
-            const loRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'longitud', 'lng', 'lon', 'longitude', 'lng_gps');
-            const { la: latitud, lo: longitud } = validarWgs84Import(laRaw, loRaw);
+            let latitud = null;
+            let longitud = null;
+            if (crsMode === 'arg_en') {
+                const fam = String((window.EMPRESA_CFG || {}).coord_proy_familia || '').trim();
+                const eVal = leerCoordExcelSocios(
+                    row,
+                    mapNormAOriginal,
+                    'este',
+                    'oeste',
+                    'coordenada_e',
+                    'coordenada_x',
+                    'easting',
+                    'e',
+                    'x',
+                    'este_m'
+                );
+                const nVal = leerCoordExcelSocios(
+                    row,
+                    mapNormAOriginal,
+                    'norte',
+                    'coordenada_n',
+                    'coordenada_y',
+                    'northing',
+                    'n',
+                    'y',
+                    'norte_m'
+                );
+                const z = obtenerZonaImportSociosProyectadas();
+                const conv = convertirProyectadasARGaWgs84(fam, z, eVal, nVal);
+                if (conv) {
+                    latitud = conv.lat;
+                    longitud = conv.lng;
+                }
+            } else {
+                const laRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'latitud', 'lat', 'latitude', 'lat_gps');
+                const loRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'longitud', 'lng', 'lon', 'longitude', 'lng_gps');
+                const wgs = validarWgs84Import(laRaw, loRaw);
+                latitud = wgs.la;
+                longitud = wgs.lo;
+            }
             payloads.push({
                 nis_medidor,
                 nis: nisPart || null,
@@ -14325,14 +14434,15 @@ async function importarExcelSocios(event) {
 function mostrarFormatoExcelSocios() {
     alert(
         'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
+            'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
             'Columnas recomendadas:\n' +
-            'nis | medidor | nombre | calle | numero | localidad | latitud | longitud\n\n' +
-            '• nis y medidor se guardan en columnas separadas y también en la clave unificada nis_medidor.\n' +
-            '• Alternativa: una sola columna nis_medidor (ej. NIS-MEDIDOR).\n' +
-            '• Coordenadas opcionales (WGS84): si latitud o longitud vienen vacías, se envía NULL y al fusionar NO se borran coordenadas ya cargadas.\n' +
-            '• Medidor: preferí formato texto en Excel para no perder ceros a la izquierda.\n\n' +
+            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
+            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
+            '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
+            '• Faja «Auto»: según longitud de la ubicación central de la empresa (EMPRESA).\n' +
+            '• Medidor: preferí texto en Excel para no perder ceros.\n\n' +
             'Opcionales: telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
-            'Importación en lotes (rápida para 20.000+ filas). Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
+            'Importación en lotes. Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
     );
 }
 

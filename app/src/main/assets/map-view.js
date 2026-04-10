@@ -230,6 +230,38 @@ export async function runInitMap() {
             map.scrollWheelZoom.enable();
         }
     } catch (_) {}
+    try {
+        let emu = false;
+        if (ctx.esAndroidWebViewMapa() && ctx.window.AndroidDevice && typeof ctx.window.AndroidDevice.isEmulator === 'function') {
+            emu = !!ctx.window.AndroidDevice.isEmulator();
+        }
+        if (ctx.esAndroidWebViewMapa() && emu) {
+            try {
+                map.scrollWheelZoom.disable();
+            } catch (_) {}
+            const mc = ctx.document.getElementById('mc');
+            if (mc && !mc._gnWheelEmu) {
+                mc._gnWheelEmu = true;
+                mc.addEventListener(
+                    'wheel',
+                    (ev) => {
+                        if (!ctx.app.map) return;
+                        const dy = ev.deltaY;
+                        if (!dy) return;
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        const z = ctx.app.map.getZoom();
+                        const next = Math.max(
+                            ctx.app.map.getMinZoom(),
+                            Math.min(ctx.app.map.getMaxZoom(), z + (dy > 0 ? -1 : 1))
+                        );
+                        ctx.app.map.setZoom(next, { animate: !ctx.gnMapaLigero() });
+                    },
+                    { passive: false, capture: true }
+                );
+            }
+        }
+    } catch (_) {}
     if (!map.getPane('gnPanePedidos')) {
         map.createPane('gnPanePedidos');
         map.getPane('gnPanePedidos').style.zIndex = 650;

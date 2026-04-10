@@ -634,6 +634,28 @@
         </div>
         <div id="historial-nis-result" role="region" aria-label="Resultados de reclamos" style="margin-top:.85rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
       </div>
+      <div id="socios-import-crs-wrap" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:.85rem;padding:.65rem .85rem;background:var(--bg2,#f8fafc);border-radius:.5rem;border:1px solid var(--bo)">
+        <div>
+          <label for="socios-import-crs" style="font-size:.72rem;font-weight:600;color:var(--tm);display:block">Coordenadas en el Excel (antes de importar)</label>
+          <select id="socios-import-crs" onchange="if(typeof actualizarUiSociosImportCrs==='function')actualizarUiSociosImportCrs()" style="margin-top:.2rem;padding:.4rem .55rem;border-radius:.4rem;font-size:.8rem;max-width:100%">
+            <option value="wgs84" selected>WGS84 (latitud / longitud)</option>
+            <option value="arg_en" id="socios-import-crs-arg-opt">Este / Norte proyectadas (Argentina)</option>
+          </select>
+        </div>
+        <div id="socios-import-faja-wrap" style="display:none">
+          <label for="socios-import-faja" style="font-size:.72rem;color:var(--tm);display:block">Faja (si no usás «Auto»)</label>
+          <select id="socios-import-faja" style="margin-top:.2rem;padding:.4rem .55rem;border-radius:.4rem;font-size:.8rem">
+            <option value="auto" selected>Auto (ubicación central de la empresa)</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+          </select>
+        </div>
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
         <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
@@ -645,7 +667,7 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad | latitud | longitud</code>. Las coordenadas son opcionales (si vienen vacías no borran GPS previo al fusionar). Clave única: <strong>nis_medidor</strong> (o columna única equivalente) o par <strong>nis</strong> + <strong>medidor</strong> (se persisten en columnas separadas y en la clave unificada). Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, <strong>tipo_tarifa</strong>, <strong>urbano_rural</strong>, <strong>transformador</strong>, <strong>tipo_conexion</strong>, <strong>fases</strong>, <strong>direccion</strong> (una celda). Fila 1 = encabezados; importación en lotes de 1000 filas.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según el selector de arriba: <code style="font-size:.72rem">latitud | longitud</code> (WGS84) o <code style="font-size:.72rem">este | norte</code> (metros, familia de proyección configurada en Empresa). La tabla del catálogo muestra lat/lon guardadas. Las coordenadas son opcionales (vacías no borran valores previos al fusionar). Clave única: <strong>nis_medidor</strong> o <strong>nis</strong> + <strong>medidor</strong>. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">

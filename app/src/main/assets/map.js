@@ -159,3 +159,32 @@ export function convertirAInchauspe(lat, lng) {
         return { x: 'Error', y: 'Error' };
     }
 }
+
+/**
+ * Inverso de proyectarCoordPedido: E/N en metros (PMG_* zona z) → WGS84.
+ * @param {string} fam inchauspe | posgar94 | posgar98 | posgar2007
+ * @param {number} z 1–7
+ */
+export function convertirProyectadasARGaWgs84(fam, z, eEste, nNorte) {
+    const f = String(fam || '').trim();
+    if (!f || f === 'none' || typeof proj4 === 'undefined') return null;
+    const arr = PMG_AR_PROJ4[f];
+    const zi = parseInt(z, 10);
+    if (!arr || !Number.isFinite(zi) || zi < 1 || zi > 7) return null;
+    const ee = Number(eEste);
+    const nn = Number(nNorte);
+    if (!Number.isFinite(ee) || !Number.isFinite(nn)) return null;
+    asegurarDefsProyeccionesARG();
+    const defName = 'PMG_' + f + '_Z' + zi;
+    try {
+        const out = proj4(defName, 'EPSG:4326', [ee, nn]);
+        const lo = out[0];
+        const la = out[1];
+        if (!Number.isFinite(lo) || !Number.isFinite(la)) return null;
+        if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+        return { lat: la, lng: lo };
+    } catch (err) {
+        console.warn('[coords] inverse proj', err);
+        return null;
+    }
+}

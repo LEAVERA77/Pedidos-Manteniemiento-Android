@@ -658,6 +658,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
+        /** AVD / emulador: el mapa puede no recibir bien la rueda; el front usa zoom alternativo (Leaflet). */
+        @JavascriptInterface
+        public boolean isEmulator() {
+            return isProbablyEmulator();
+        }
+
         @JavascriptInterface
         public boolean saveBase64File(String fileName, String mimeType, String base64Data) {
             try {
