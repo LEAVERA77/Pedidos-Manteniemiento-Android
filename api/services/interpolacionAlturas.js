@@ -87,14 +87,26 @@ function generarVariantesNombre(calle) {
   const variantes = [base];
   
   // Variante sin "calle", "avenida", etc.
-  const sinPrefijo = base.replace(/^(calle|avenida|av|avda|pasaje|pje)\s+/i, "");
+  const sinPrefijo = base
+    .replace(/^(calle|avenida|av|avda|pasaje|pje|boulevard|bv|bvd|blvd)\s+/i, "");
   if (sinPrefijo !== base) variantes.push(sinPrefijo);
+  
+  // Variantes con abreviaturas de Boulevard
+  if (/boulevard|bv|bvd|blvd/i.test(base)) {
+    const sinBoulevard = base.replace(/boulevard|bv|bvd|blvd/gi, "").trim();
+    if (sinBoulevard.length >= 3) {
+      variantes.push(sinBoulevard);
+      variantes.push(`boulevard ${sinBoulevard}`);
+      variantes.push(`bv ${sinBoulevard}`);
+      variantes.push(`bvd ${sinBoulevard}`);
+    }
+  }
   
   // Variante sin números al final (ej: "9 de Julio" → "julio")
   const sinNumeros = base.replace(/\d+\s*(de|del)?\s*/gi, "");
   if (sinNumeros !== base && sinNumeros.length >= 3) variantes.push(sinNumeros);
   
-  return [...new Set(variantes)];
+  return [...new Set(variantes)].filter(v => v.length >= 3);
 }
 
 /**
@@ -378,7 +390,7 @@ function interpolarSobreCalle(coords, numero, min, max) {
  * @param {string} opts.numero
  * @param {string} opts.localidad
  * @param {string} [opts.provincia]
- * @returns {Promise<{lat: number, lng: number, fuente: string, metadata: object} | null>}
+ * @returns {Promise<{lat: number, lng: number, fuente: string, metadata: object, log: string[]} | null>}
  */
 export async function interpolarCoordenadaPorAltura(opts) {
   const calle = opts.calle ? String(opts.calle).trim() : "";
@@ -386,41 +398,62 @@ export async function interpolarCoordenadaPorAltura(opts) {
   const localidad = opts.localidad ? String(opts.localidad).trim() : "";
   const provincia = opts.provincia ? String(opts.provincia).trim() : "";
   
+  // Array de logs para diagnóstico visible
+  const log = [];
+  
   if (!calle || calle.length < 2) {
+    log.push(`❌ Calle vacía o muy corta: "${calle}"`);
     console.info("[interpolacion-alturas] Calle vacía o muy corta");
     return null;
   }
   
   if (!localidad || localidad.length < 2) {
+    log.push(`❌ Localidad vacía o muy corta: "${localidad}"`);
     console.info("[interpolacion-alturas] Localidad vacía o muy corta");
     return null;
   }
   
   const numero = parseInt(numeroStr.replace(/\D/g, ""), 10);
   if (!Number.isFinite(numero) || numero <= 0) {
+    log.push(`❌ Número de puerta inválido: "${numeroStr}"`);
     console.info("[interpolacion-alturas] Número de puerta inválido: %s", numeroStr);
     return null;
   }
   
+  log.push(`🔍 Iniciando interpolación: ${calle} ${numero}, ${localidad}`);
   console.info("[interpolacion-alturas] Iniciando interpolación: %s %s, %s", calle, numero, localidad);
   
   // 1. Obtener geometría de la calle
+  log.push(`📍 Buscando geometría de "${calle}" en OpenStreetMap...`);
   const geometria = await obtenerGeometriaCalle(calle, localidad, provincia);
   if (!geometria || geometria.length < 2) {
+    log.push(`❌ No se encontró la calle en OSM (probadas múltiples variantes)`);
     console.info("[interpolacion-alturas] Sin geometría válida para la calle");
-    return null;
+    return { lat: null, lng: null, fuente: "sin_geometria", metadata: {}, log };
   }
   
+  log.push(`✓ Geometría encontrada: ${geometria.length} nodos (puntos)`);
+  
   // 2. Buscar rango de numeración
+  log.push(`🔢 Estimando rango de numeración...`);
   const { min, max } = await buscarRangoNumeracion(calle, localidad, provincia);
+  log.push(`✓ Rango estimado: ${min} - ${max}`);
   console.info("[interpolacion-alturas] Rango de numeración estimado: %s - %s", min || "?", max || "?");
   
   // 3. Interpolar
+  log.push(`📐 Interpolando posición del número ${numero}...`);
   const resultado = interpolarSobreCalle(geometria, numero, min || 100, max || 900);
   if (!resultado) {
+    log.push(`❌ No se pudo calcular la posición sobre la geometría`);
     console.warn("[interpolacion-alturas] No se pudo interpolar sobre la geometría");
-    return null;
+    return { lat: null, lng: null, fuente: "error_interpolacion", metadata: {}, log };
   }
+  
+  const ladoDesc = resultado.lado === "par_derecha" ? "lado derecho (par)" : 
+                   resultado.lado === "impar_izquierda" ? "lado izquierdo (impar)" : 
+                   "final de calle";
+  log.push(`✓ Posición calculada: ${ladoDesc}`);
+  log.push(`✓ Coordenadas: ${resultado.lat.toFixed(6)}, ${resultado.lng.toFixed(6)}`);
   
   console.info("[interpolacion-alturas] ✓ Interpolación exitosa: lat=%s, lng=%s, lado=%s", 
     resultado.lat.toFixed(6), resultado.lng.toFixed(6), resultado.lado);
@@ -434,5 +467,6 @@ export async function interpolarCoordenadaPorAltura(opts) {
       rangoNumeracion: { min, max },
       nodosGeometria: geometria.length,
     },
+    log,
   };
 }

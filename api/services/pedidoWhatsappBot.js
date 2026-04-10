@@ -359,18 +359,33 @@ export async function crearPedidoDesdeWhatsappBot({
         localidad: locT,
         provincia: null, // La API de Overpass lo maneja sin provincia
       });
-      if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
-        latFinal = interpol.lat;
-        lngFinal = interpol.lng;
-        const notaInterpol = `[Sistema] Ubicación calculada por interpolación de alturas (${interpol.metadata?.lado || "aproximado"}). Se recomienda verificar en el mapa.`;
-        if (!de.includes(notaInterpol)) {
-          de = `${de}\n\n${notaInterpol}`;
+      
+      if (interpol) {
+        // Agregar logs del algoritmo a la descripción para diagnóstico visible
+        if (interpol.log && interpol.log.length > 0) {
+          const logSection = "\n\n━━━ DIAGNÓSTICO DE GEOCODIFICACIÓN ━━━\n" + 
+            interpol.log.join("\n") + 
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+          de = `${de}${logSection}`;
         }
-        console.info("[pedido-whatsapp-bot] ✓ Interpolación de alturas exitosa: lat=%s, lng=%s", 
-          latFinal.toFixed(6), lngFinal.toFixed(6));
+        
+        if (coordsValidasWgs84(interpol.lat, interpol.lng)) {
+          latFinal = interpol.lat;
+          lngFinal = interpol.lng;
+          const notaInterpol = `[Sistema] Ubicación calculada por interpolación de alturas (${interpol.metadata?.lado || "aproximado"}). Verificar en el mapa.`;
+          if (!de.includes(notaInterpol)) {
+            de = `${notaInterpol}\n\n${de}`;
+          }
+          console.info("[pedido-whatsapp-bot] ✓ Interpolación de alturas exitosa: lat=%s, lng=%s", 
+            latFinal.toFixed(6), lngFinal.toFixed(6));
+        } else {
+          // Interpolación falló, logs agregados a descripción para diagnóstico
+          console.warn("[pedido-whatsapp-bot] Interpolación no retornó coordenadas válidas");
+        }
       }
     } catch (e) {
       console.warn("[pedido-whatsapp-bot] interpolacion de alturas", e?.message || e);
+      de = `${de}\n\n[Sistema] Error en interpolación: ${e?.message || "desconocido"}`;
     }
   }
 
