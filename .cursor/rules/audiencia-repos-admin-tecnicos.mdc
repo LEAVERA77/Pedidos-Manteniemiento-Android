@@ -1,0 +1,30 @@
+---
+description: Audiencia y uso de cada repositorio (Admin vs Técnicos) — quién usa qué plataforma
+alwaysApply: true
+---
+
+# Audiencia y plataforma por repositorio
+
+## Repositorios y URLs canónicas
+
+| Repositorio | URL GitHub | Uso / Audiencia | Plataforma principal |
+|-------------|------------|-----------------|---------------------|
+| **Pedidos-MG** | [https://github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) | **Admin / Oficina** — gestión completa de pedidos, WhatsApp con vecinos, asignación de cuadrillas, estadísticas, configuración de empresa | **PC / Navegador** (GitHub Pages PWA en `https://leavera77.github.io/Pedidos-MG`). Puede usarse desde celular en casos excepcionales. |
+| **Pedidos-Manteniemiento-Android** | [https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) | **Técnicos / Cuadrillas** — app de campo con GPS, fotos, firma, materiales, carga de avances y cierre de reclamos. El admin también puede loguearse y ejecutar las mismas tareas. | **Android** (APK instalado). WebView embebido carga UI desde `app/src/main/assets/` o desde GitHub Pages según configuración. |
+
+## Workspace local
+
+- **Nexxo** (`C:\Users\leave\AndroidStudioProjects\Nexxo`): clon local del repo **Pedidos-Manteniemiento-Android** (remoto `origin`).
+- **Pedidos-MG** (típicamente hermano: `C:\Users\leave\AndroidStudioProjects\Pedidos-MG`): clon local del repo **Pedidos-MG**.
+
+## Resumen de roles
+
+- **Admin (PC/navegador):** opera desde **Pedidos-MG** (GitHub Pages). Recibe reclamos por WhatsApp (bot), asigna técnicos, consulta estadísticas, gestiona empresa y catálogo de socios.
+- **Técnicos (Android/APK):** trabajan desde la app en **Nexxo** (repo Android). Cámara, GPS, materiales, firma del socio, cierre en campo. Notificaciones push cuando el admin asigna.
+- **Admin en Android:** puede autenticarse en la APK y ejecutar las mismas operaciones que en PC (modo excepcional).
+
+## Paridad
+
+El **frontend** (HTML/CSS/JS) es compartido entre ambos: la fuente de verdad suele ser `Nexxo/app/src/main/assets/`, y tras cambios se sincroniza a `Pedidos-MG` (raíz) mediante `.\scripts\sync-assets-to-pedidos-mg.ps1`.
+
+**Backend** (`api/`): vive en ambos repos; tras editar en Nexxo, copiar a Pedidos-MG antes de desplegar (Render toma `api/` de Pedidos-MG).
