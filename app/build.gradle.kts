@@ -28,8 +28,8 @@ android {
         applicationId = "com.gestornova.gestion"
         minSdk = 24
         targetSdk = 35  // Usar 35 para compatibilidad
-        versionCode = 21
-        versionName = "1.0.21"
+        versionCode = 22
+        versionName = "1.0.22"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

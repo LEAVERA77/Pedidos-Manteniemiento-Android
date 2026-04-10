@@ -1151,16 +1151,22 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "No se puede mover la ubicación de un pedido cerrado o derivado" });
     }
 
+    const nombreAdm = String(req.user?.nombre || req.user?.email || "admin").trim().slice(0, 120);
+    const marcaUbic =
+      "\n\n[Ubicación] Posición del pedido corregida manualmente en el mapa por " + nombreAdm + ".";
+    const desc0 = String(pedido.descripcion || "");
+    const nuevaDesc = desc0.includes("corregida manualmente en el mapa") ? desc0 : `${desc0}${marcaUbic}`;
+
     const hasT = await pedidosTableHasTenantIdColumn();
     const r = await query(
       hasT
-        ? `UPDATE pedidos SET lat = $2, lng = $3
-           WHERE id = $1 AND tenant_id = $4
+        ? `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
+           WHERE id = $1 AND tenant_id = $5
            RETURNING *`
-        : `UPDATE pedidos SET lat = $2, lng = $3
+        : `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
            WHERE id = $1
            RETURNING *`,
-      hasT ? [id, la, ln, req.tenantId] : [id, la, ln]
+      hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     const updated = coercePedidoLatLng(r.rows[0]);

@@ -66,8 +66,12 @@ fun PedidoDetailScreen(
                     Spacer(Modifier.height(32.dp))
                     CircularProgressIndicator()
                 }
-                vm.pedidoDetalle != null -> {
+                vm.pedidoDetalle != null && vm.pedidoDetalle!!.id == pedidoId -> {
                     DetalleBody(vm.pedidoDetalle!!)
+                }
+                vm.loadingDetalle -> {
+                    Spacer(Modifier.height(32.dp))
+                    CircularProgressIndicator()
                 }
                 else -> {
                     Text(stringResource(R.string.tecnico_mvp_error_generico))

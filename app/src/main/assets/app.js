@@ -629,16 +629,10 @@ async function heartbeat() {
         }
     } catch (err) {
         console.warn('Keep-alive: fallo de red:', err.message);
-        
-        
-        NEON_OK = false;
-        setModoOffline(true);
-        
-        
         if (app.u) {
-            setTimeout(async () => {
-                if (await hayInternet()) {
-                    try {
+            void (async () => {
+                try {
+                    if (await hayInternet()) {
                         _sql = null;
                         const reconectado = await initNeon();
                         if (reconectado) {
@@ -647,10 +641,16 @@ async function heartbeat() {
                             toast('Conexión restaurada ✓', 'success');
                             if (offlineQueue().length > 0) sincronizarOffline();
                             else cargarPedidos();
+                            return;
                         }
-                    } catch(_) {}
-                }
-            }, 3000);
+                    }
+                } catch (_) {}
+                NEON_OK = false;
+                setModoOffline(true);
+            })();
+        } else {
+            NEON_OK = false;
+            setModoOffline(true);
         }
     }
 }
@@ -5598,6 +5598,11 @@ window._desasignarMapa = id => {
 };
 
 let _moverUbicMapaState = null;
+try {
+    window.__gnEsReubicarPedidoMapa = function () {
+        return _moverUbicMapaState != null;
+    };
+} catch (_) {}
 
 function cancelarMoverUbicacionMapa() {
     if (!_moverUbicMapaState) return;
@@ -7448,6 +7453,19 @@ async function sqlMaterialesPedidoRows(pid) {
     throw ult;
 }
 
+function _materialesDetalleSigueSiendoPedidoActual(p) {
+    const dm = document.getElementById('dm');
+    if (!dm?.classList.contains('active')) return false;
+    const cur = dm.dataset?.detallePedidoId;
+    return cur != null && String(cur) === String(p.id);
+}
+
+function _materialesCierreModalSigueSiendoPedidoActual(p) {
+    const cm2 = document.getElementById('cm2');
+    if (!cm2?.classList.contains('active')) return false;
+    return app.cid != null && String(app.cid) === String(p.id);
+}
+
 async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
@@ -7468,6 +7486,7 @@ async function refrescarMaterialesEnDetalle(p) {
     if (excluyeMat) {
         try {
             const rows = await sqlMaterialesPedidoRows(pid);
+            if (!_materialesDetalleSigueSiendoPedidoActual(p)) return;
             const aviso = '<p style="font-size:.8rem;color:var(--tl);margin-bottom:.5rem">Este tipo de pedido no admite registrar ni editar materiales.</p>';
             if (!rows.length) {
                 body.innerHTML = aviso;
@@ -7497,6 +7516,7 @@ async function refrescarMaterialesEnDetalle(p) {
     const puedeEditarMat = puedeEditarMaterialesEnPedido(p);
     try {
         const rows = await sqlMaterialesPedidoRows(pid);
+        if (!_materialesDetalleSigueSiendoPedidoActual(p)) return;
         let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
         rows.forEach(row => {
             const des = String(row.descripcion || '').replace(/</g, '&lt;');
@@ -7527,6 +7547,7 @@ async function refrescarMaterialesEnDetalle(p) {
                 <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeDetalle(${pid})">+ Agregar</button>
             </div>`;
         }
+        if (!_materialesDetalleSigueSiendoPedidoActual(p)) return;
         if (!rows.length && !puedeAgregar) {
             body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
             if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
@@ -7566,6 +7587,7 @@ async function refrescarMaterialesEnModalCierre(p) {
     const puedeEditarMat = puedeEditarMaterialesEnPedido(p);
     try {
         const rows = await sqlMaterialesPedidoRows(pid);
+        if (!_materialesCierreModalSigueSiendoPedidoActual(p)) return;
         let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
         rows.forEach(row => {
             const des = String(row.descripcion || '').replace(/</g, '&lt;');
@@ -7595,6 +7617,7 @@ async function refrescarMaterialesEnModalCierre(p) {
                 <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeCierreModal(${pid})">+ Agregar</button>
             </div>`;
         }
+        if (!_materialesCierreModalSigueSiendoPedidoActual(p)) return;
         if (!rows.length && !puedeEditarMat) {
             body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
         } else {
@@ -7627,7 +7650,7 @@ function sincronizarVistaMaterialesPedido(p) {
 
 window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
     if (modoOffline || !NEON_OK) return;
-    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    const p0 = app.p.find((x) => String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
@@ -7642,15 +7665,16 @@ window.actualizarCampoMaterial = async function (mid, pid, campo, valor) {
         } else if (campo === 'cantidad') {
             const c = valor === '' || valor == null ? null : parseFloat(valor);
             if (valor !== '' && Number.isNaN(c)) { toast('Cantidad inválida', 'error'); return; }
+            if (c != null && c <= 0) { toast('La cantidad debe ser mayor que cero', 'error'); return; }
             await sqlSimple(`UPDATE pedido_materiales SET cantidad = ${esc(c)} WHERE id = ${esc(parseInt(mid, 10))}`);
         }
-        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        const p = app.p.find(x => String(x.id) === String(pid));
         if (p) await sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-editar', e); }
 };
 
 window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
-    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    const p0 = app.p.find((x) => String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
@@ -7664,16 +7688,20 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
     const cantRaw = document.getElementById('mat-cant-' + pid)?.value;
     const un = document.getElementById('mat-un-' + pid)?.value?.trim() || '';
     const cant = cantRaw === '' || cantRaw == null ? null : parseFloat(cantRaw);
+    if (cant == null || !Number.isFinite(cant) || cant <= 0) {
+        toast('Indicá una cantidad mayor que cero', 'error');
+        return;
+    }
     try {
         await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
         toast('Material registrado', 'success');
-        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        const p = app.p.find(x => String(x.id) === String(pid));
         if (p) sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-agregar', e); }
 };
 
 window.agregarMaterialPedidoDesdeCierreModal = async function (pid) {
-    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    const p0 = app.p.find((x) => String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
@@ -7687,16 +7715,20 @@ window.agregarMaterialPedidoDesdeCierreModal = async function (pid) {
     const cantRaw = document.getElementById('cierre-mat-cant-' + pid)?.value;
     const un = document.getElementById('cierre-mat-un-' + pid)?.value?.trim() || '';
     const cant = cantRaw === '' || cantRaw == null ? null : parseFloat(cantRaw);
+    if (cant == null || !Number.isFinite(cant) || cant <= 0) {
+        toast('Indicá una cantidad mayor que cero', 'error');
+        return;
+    }
     try {
         await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
         toast('Material registrado', 'success');
-        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        const p = app.p.find(x => String(x.id) === String(pid));
         if (p) sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-agregar-cierre', e); }
 };
 
 window.eliminarMaterialPedido = async function (mid, pid) {
-    const p0 = app.p.find((x) => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+    const p0 = app.p.find((x) => String(x.id) === String(pid));
     if (p0 && tipoPedidoExcluyeMateriales(p0.tt)) {
         toast('Este tipo de pedido no admite materiales', 'error');
         return;
@@ -7708,7 +7740,7 @@ window.eliminarMaterialPedido = async function (mid, pid) {
     if (!confirm('¿Eliminar material?')) return;
     try {
         await sqlSimple(`DELETE FROM pedido_materiales WHERE id=${esc(parseInt(mid, 10))}`);
-        const p = app.p.find(x => parseInt(x.id, 10) === pid || String(x.id) === String(pid));
+        const p = app.p.find(x => String(x.id) === String(pid));
         if (p) sincronizarVistaMaterialesPedido(p);
     } catch (e) { toastError('material-eliminar', e); }
 };
@@ -8104,95 +8136,11 @@ async function aplicarPresetInfraCierreDesdePedido(p) {
     }
 }
 
-async function prepararBloqueClientesAfectadosCierre(p) {
-    const blk = document.getElementById('cierre-afectados-block');
-    if (!blk) return;
-    document.querySelectorAll('input[name="cierre-afect-metodo"]').forEach((el) => {
-        el.onchange = syncCierreAfectadosPanels;
-    });
-    const omitir = blk.querySelector('input[value="omitir"]');
-    if (omitir) omitir.checked = true;
-    syncCierreAfectadosPanels();
-    [
-        'cierre-afect-sel-trafo',
-        'cierre-afect-sel-distribuidor',
-        'cierre-afect-alim-dist',
-        'cierre-afect-sel-alimentador',
-        'cierre-afect-med-desde',
-        'cierre-afect-med-hasta',
-        'cierre-afect-rango-cant',
-        'cierre-afect-manual-cant'
-    ].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    if (!esCooperativaElectricaRubro() || !p || String(p.id).startsWith('off_') || modoOffline) {
-        blk.style.display = 'none';
-        return;
-    }
-    if (!(await infraAfectadosDisponibleCierre())) {
-        blk.style.display = 'none';
-        return;
-    }
-    blk.style.display = '';
-    await llenarCatalogosCierreAfectados();
-    await aplicarPresetInfraCierreDesdePedido(p);
+async function prepararBloqueClientesAfectadosCierre(_p) {
+    /* Bloque SAIDI/SAIFI manual eliminado: los índices se calculan en estadísticas. */
 }
 
 function leerCuerpoValidadoCierreAfectados() {
-    const blk = document.getElementById('cierre-afectados-block');
-    if (!blk || blk.style.display === 'none') return { ok: true, body: null };
-    const metodo = document.querySelector('input[name="cierre-afect-metodo"]:checked')?.value || 'omitir';
-    if (metodo === 'omitir') return { ok: true, body: null };
-    if (metodo === 'transformador') {
-        const id = Number(document.getElementById('cierre-afect-sel-trafo')?.value);
-        if (!Number.isFinite(id) || id <= 0) {
-            return { ok: false, error: 'Elegí un transformador o marcá «No registrar ahora».' };
-        }
-        return { ok: true, body: { metodo: 'transformador', transformador_id: id } };
-    }
-    if (metodo === 'distribuidor') {
-        const id = Number(document.getElementById('cierre-afect-sel-distribuidor')?.value);
-        if (!Number.isFinite(id) || id <= 0) {
-            return { ok: false, error: 'Elegí un distribuidor o marcá «No registrar ahora».' };
-        }
-        return { ok: true, body: { metodo: 'distribuidor', distribuidor_id: id } };
-    }
-    if (metodo === 'alimentador') {
-        const did = Number(document.getElementById('cierre-afect-alim-dist')?.value);
-        const alim = (document.getElementById('cierre-afect-sel-alimentador')?.value || '').trim();
-        if (!Number.isFinite(did) || did <= 0) {
-            return { ok: false, error: 'Elegí el distribuidor del alimentador.' };
-        }
-        if (!alim) {
-            return { ok: false, error: 'Elegí un alimentador de la lista (cargá trafos con alimentador en el admin).' };
-        }
-        return { ok: true, body: { metodo: 'alimentador', distribuidor_id: did, alimentador: alim } };
-    }
-    if (metodo === 'rango') {
-        const desde = (document.getElementById('cierre-afect-med-desde')?.value || '').trim();
-        const hasta = (document.getElementById('cierre-afect-med-hasta')?.value || '').trim();
-        if (!desde || !hasta) return { ok: false, error: 'Completá medidor desde y hasta, o elegí otro método.' };
-        const a = Number.parseInt(desde, 10);
-        const b = Number.parseInt(hasta, 10);
-        const body = { metodo: 'rango', medidor_desde: desde, medidor_hasta: hasta };
-        if (!(Number.isFinite(a) && Number.isFinite(b) && b >= a)) {
-            const n = Math.max(0, Number(document.getElementById('cierre-afect-rango-cant')?.value));
-            if (!n) {
-                return {
-                    ok: false,
-                    error: 'Si los medidores no son numéricos correlativos, indicá la cantidad estimada.',
-                };
-            }
-            body.cantidad = n;
-        }
-        return { ok: true, body };
-    }
-    if (metodo === 'manual') {
-        const n = Math.max(0, Number(document.getElementById('cierre-afect-manual-cant')?.value));
-        if (!n) return { ok: false, error: 'Ingresá la cantidad estimada de clientes afectados.' };
-        return { ok: true, body: { metodo: 'manual', cantidad: n, es_estimado: true } };
-    }
     return { ok: true, body: null };
 }
 
@@ -8393,11 +8341,6 @@ document.getElementById('cc2').addEventListener('click', async () => {
         toast('Describí el trabajo realizado', 'error');
         return;
     }
-    const af = leerCuerpoValidadoCierreAfectados();
-    if (!af.ok) {
-        toast(af.error, 'error');
-        return;
-    }
     const pCierre = app.p.find(x => String(x.id) === String(app.cid));
     const firmaObligatoria = pedidoTieneClienteCargado(pCierre);
     if (firmaObligatoria && firmaCierreCanvasVacio()) {
@@ -8428,10 +8371,6 @@ document.getElementById('cc2').addEventListener('click', async () => {
         };
         if (telCierre) camposCierre.telefono_contacto = telCierre;
         await updPedido(app.cid, camposCierre, app.u?.id);
-        if (af.body && !String(app.cid).startsWith('off_')) {
-            const rAf = await enviarRegistroClientesAfectados(app.cid, af.body);
-            if (rAf.warning) toast(rAf.warning, 'warning');
-        }
         if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) {
@@ -10886,7 +10825,8 @@ async function pollBannerOpinionCliente() {
             );
         } catch (_e) {
             r = await sqlSimple(
-                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente, telefono_contacto
+                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente,
+                        telefono_contacto, opinion_cliente_estrellas
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
@@ -10901,7 +10841,8 @@ async function pollBannerOpinionCliente() {
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
-        const estrellas = parseInt(row.opinion_cliente_estrellas, 10);
+        const rawEst = row.opinion_cliente_estrellas;
+        const estrellas = rawEst != null && rawEst !== '' ? Number(rawEst) : NaN;
         const tieneE = Number.isFinite(estrellas) && estrellas >= 1 && estrellas <= 5;
         const wTel = normalizarWhatsappInternacionalDesdeInput(row.telefono_contacto || '');
         const waOk = /^\+\d{8,22}$/.test(wTel);
@@ -14278,8 +14219,14 @@ async function importarExcelSocios(event) {
         mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando catálogo de socios…');
-            await sqlSimple('DELETE FROM socios_catalogo');
+            actualizarOverlayImportacion('Vaciando catálogo (se conservan filas con coordenadas GPS ya cargadas)…');
+            await sqlSimple(
+                `DELETE FROM socios_catalogo
+                 WHERE NOT (
+                   latitud IS NOT NULL AND longitud IS NOT NULL
+                   AND ABS(latitud::numeric) > 1e-7 AND ABS(longitud::numeric) > 1e-7
+                 )`
+            );
         }
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
@@ -14920,59 +14867,22 @@ function adminEstadisticasSetCaptureCompact(on) {
 }
 
 function aplicarEstadisticasInkSaveCharts(activar) {
+    /** PDF / impresión: conservar los mismos colores pasteles que en pantalla (sin escala de grises). */
     if (activar) {
         if (_chartDataSnapshotForPdf) return;
-        _chartDataSnapshotForPdf = {};
-        const inkA = 'rgba(100,116,139,0.22)';
-        const inkB = 'rgba(148,163,184,0.18)';
-        const inkStroke = '#334155';
-        Object.entries(_charts).forEach(([id, chart]) => {
+        _chartDataSnapshotForPdf = { _noop: true };
+        Object.values(_charts).forEach((chart) => {
             try {
-                _chartDataSnapshotForPdf[id] = chart.data.datasets.map(ds => ({
-                    backgroundColor: ds.backgroundColor,
-                    borderColor: ds.borderColor,
-                    borderWidth: ds.borderWidth,
-                }));
-                const type = chart.config.type;
-                chart.data.datasets.forEach(ds => {
-                    const n = Array.isArray(ds.data) ? ds.data.length : 1;
-                    if (type === 'doughnut' || type === 'pie') {
-                        const pals = [inkA, inkB, 'rgba(71,85,105,0.2)', 'rgba(203,213,225,0.32)'];
-                        const fills = [];
-                        for (let i = 0; i < n; i++) fills.push(pals[i % pals.length]);
-                        ds.backgroundColor = fills;
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
-                    } else {
-                        if (Array.isArray(ds.backgroundColor)) {
-                            ds.backgroundColor = ds.backgroundColor.map((_, i) => (i % 2 === 0 ? inkA : inkB));
-                        } else {
-                            ds.backgroundColor = inkA;
-                        }
-                        ds.borderColor = inkStroke;
-                        ds.borderWidth = 1;
-                    }
-                });
                 chart.update('none');
             } catch (_) {}
         });
     } else {
-        if (!_chartDataSnapshotForPdf) return;
-        Object.entries(_charts).forEach(([id, chart]) => {
+        _chartDataSnapshotForPdf = null;
+        Object.values(_charts).forEach((chart) => {
             try {
-                const snap = _chartDataSnapshotForPdf[id];
-                if (!snap) return;
-                chart.data.datasets.forEach((ds, i) => {
-                    const s = snap[i];
-                    if (!s) return;
-                    ds.backgroundColor = s.backgroundColor;
-                    ds.borderColor = s.borderColor;
-                    ds.borderWidth = s.borderWidth;
-                });
                 chart.update('none');
             } catch (_) {}
         });
-        _chartDataSnapshotForPdf = null;
     }
 }
 

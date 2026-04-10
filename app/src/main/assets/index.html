@@ -78,7 +78,7 @@
   <div id="admin-banner-opinion-cliente" class="admin-banner-opinion-cliente" style="display:none" role="status" aria-live="polite">
     <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
     <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
-    <button type="button" id="admin-banner-opinion-wa" class="admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="adminBannerOpinionClickWhatsapp()" title="Abrir WhatsApp con el cliente"><i class="fab fa-whatsapp"></i> Cliente</button>
+    <button type="button" id="admin-banner-opinion-wa" class="admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="adminBannerOpinionClickWhatsapp()" title="Abrir chat con el cliente (WhatsApp)"><i class="fab fa-whatsapp"></i> Abrir chat con cliente</button>
     <button type="button" id="admin-banner-opinion-hc" class="admin-banner-btn admin-banner-btn-opinion" style="display:none" onclick="adminBannerOpinionAbrirChatOperador()" title="Abrir chat operador (WhatsApp Business)"><i class="fas fa-comments"></i> Chat</button>
     <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminBannerOpinionClickVerDetalle()">Ver pedido</button>
     <button type="button" class="admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Cerrar">&times;</button>
@@ -346,46 +346,6 @@
         <label><i class="fas fa-boxes"></i> Materiales utilizados</label>
         <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .5rem">Si el tipo de reclamo admite materiales, podés cargarlos o editarlos antes de confirmar el cierre.</p>
         <div id="cierre-materiales-body"></div>
-      </div>
-      <div id="cierre-afectados-block" class="fg" style="padding:0;margin-top:1rem;display:none">
-        <label><i class="fas fa-bolt"></i> Clientes sin servicio (SAIDI / SAIFI)</label>
-        <p style="font-size:.72rem;color:var(--tm);margin:.25rem 0 .55rem;line-height:1.4">Los totales por <strong>distribuidor</strong> o <strong>alimentador</strong> suman los transformadores cargados (kVA y socios). Si no sabés el dato, omití.</p>
-        <div style="display:flex;flex-direction:column;gap:.35rem;font-size:.86rem">
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="omitir" checked onchange="syncCierreAfectadosPanels()"> No registrar ahora</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="transformador" onchange="syncCierreAfectadosPanels()"> Por transformador</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="distribuidor" onchange="syncCierreAfectadosPanels()"> Por distribuidor (suma de trafos)</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="alimentador" onchange="syncCierreAfectadosPanels()"> Por alimentador (suma por distribuidor)</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="rango" onchange="syncCierreAfectadosPanels()"> Rango de medidores</label>
-          <label style="display:flex;align-items:center;gap:.45rem;font-weight:500"><input type="radio" name="cierre-afect-metodo" value="manual" onchange="syncCierreAfectadosPanels()"> Cantidad manual (emergencia)</label>
-        </div>
-        <div id="cierre-afect-panel-trafo" style="display:none;margin-top:.65rem">
-          <label for="cierre-afect-sel-trafo" style="font-size:.8rem">Transformador</label>
-          <select id="cierre-afect-sel-trafo" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
-        </div>
-        <div id="cierre-afect-panel-distribuidor" style="display:none;margin-top:.65rem">
-          <label for="cierre-afect-sel-distribuidor" style="font-size:.8rem">Distribuidor</label>
-          <select id="cierre-afect-sel-distribuidor" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
-        </div>
-        <div id="cierre-afect-panel-alimentador" style="display:none;margin-top:.65rem">
-          <label for="cierre-afect-alim-dist" style="font-size:.78rem">Distribuidor</label>
-          <select id="cierre-afect-alim-dist" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
-          <label for="cierre-afect-sel-alimentador" style="font-size:.78rem;margin-top:.5rem;display:block">Alimentador</label>
-          <select id="cierre-afect-sel-alimentador" style="width:100%;margin-top:.2rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.88rem"></select>
-        </div>
-        <div id="cierre-afect-panel-rango" style="display:none;margin-top:.65rem">
-          <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:.5rem">
-            <div><label for="cierre-afect-med-desde" style="font-size:.78rem">Medidor desde</label><input id="cierre-afect-med-desde" type="text" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem"></div>
-            <div><label for="cierre-afect-med-hasta" style="font-size:.78rem">Medidor hasta</label><input id="cierre-afect-med-hasta" type="text" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem"></div>
-          </div>
-          <div style="margin-top:.45rem">
-            <label for="cierre-afect-rango-cant" style="font-size:.72rem;color:var(--tm)">Si no son números correlativos, cantidad estimada</label>
-            <input id="cierre-afect-rango-cant" type="number" min="1" step="1" inputmode="numeric" placeholder="Opcional si el rango es numérico" style="width:100%;max-width:220px;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem">
-          </div>
-        </div>
-        <div id="cierre-afect-panel-manual" style="display:none;margin-top:.65rem">
-          <label for="cierre-afect-manual-cant" style="font-size:.8rem">Cantidad estimada de clientes afectados</label>
-          <input id="cierre-afect-manual-cant" type="number" min="1" step="1" inputmode="numeric" style="width:100%;max-width:220px;margin-top:.2rem;padding:.4rem;border:1px solid var(--bo);border-radius:.45rem">
-        </div>
       </div>
       <div class="fg" style="padding:0;margin-top:1rem">
         <label id="lbl-firma-cierre"><i class="fas fa-signature"></i> Firma del cliente / socio</label>

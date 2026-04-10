@@ -44,6 +44,8 @@ class TecnicoViewModel(
     var loadingDetalle by mutableStateOf(false)
         private set
 
+    private var pedidoDetalleRequestSeq = 0L
+
     var bannerError by mutableStateOf<String?>(null)
         private set
     var loginLoading by mutableStateOf(false)
@@ -135,26 +137,32 @@ class TecnicoViewModel(
 
     fun loadPedido(id: Long) {
         val r = repo() ?: return
+        val seq = ++pedidoDetalleRequestSeq
         loadingDetalle = true
         pedidoDetalle = null
         bannerError = null
         viewModelScope.launch {
             val res = r.pedido(id)
+            if (seq != pedidoDetalleRequestSeq) return@launch
             loadingDetalle = false
-            res.onSuccess { pedidoDetalle = it }
-                .onFailure {
-                    TecnicoErrorMapper.log(logTag, "pedido/$id", it)
-                    bannerError = TecnicoErrorMapper.userMessage(ctx, it)
-                    val code = (it as? HttpException)?.code()
-                    if (code == 401 || code == 403) {
-                        logout()
-                    }
+            res.onSuccess {
+                if (seq == pedidoDetalleRequestSeq) pedidoDetalle = it
+            }.onFailure {
+                if (seq != pedidoDetalleRequestSeq) return@onFailure
+                TecnicoErrorMapper.log(logTag, "pedido/$id", it)
+                bannerError = TecnicoErrorMapper.userMessage(ctx, it)
+                val code = (it as? HttpException)?.code()
+                if (code == 401 || code == 403) {
+                    logout()
                 }
+            }
         }
     }
 
     fun clearDetalle() {
+        pedidoDetalleRequestSeq++
         pedidoDetalle = null
+        loadingDetalle = false
     }
 
     companion object {

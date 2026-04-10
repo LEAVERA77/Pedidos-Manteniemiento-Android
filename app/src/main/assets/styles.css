@@ -305,12 +305,18 @@ textarea{resize:vertical;min-height:80px}
 .dr.coord-proy-row .dv{width:100%;justify-content:flex-start;align-items:center}
 @media print{
   .no-print,.print-preview-toolbar{display:none!important}
-  /* Mantener colores de gráficos y fondos al imprimir / PDF */
+  /* Mantener colores de gráficos y fondos al imprimir / PDF (sin forzar escala de grises del navegador) */
+  html,body,#admin-panel,#admin-estadisticas{
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+    color-adjust:exact!important;
+  }
   #admin-panel.active #admin-estadisticas canvas,
   #admin-panel.active #admin-estadisticas .chart-wrap,
   #admin-panel.active #admin-estadisticas .stat-grid{
     -webkit-print-color-adjust:exact!important;
     print-color-adjust:exact!important;
+    filter:none!important;
   }
   .print-content.print-a4-tight{max-width:100%!important;padding:0!important;font-size:9pt!important}
   .print-content.print-a4-tight h1{font-size:14pt!important}

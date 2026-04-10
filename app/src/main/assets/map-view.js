@@ -299,6 +299,10 @@ export async function runInitMap() {
             return;
         }
 
+        try {
+            if (typeof ctx.window.__gnEsReubicarPedidoMapa === 'function' && ctx.window.__gnEsReubicarPedidoMapa()) return;
+        } catch (_) {}
+
         if (ctx.app.map._popup && ctx.app.map._popup.isOpen && ctx.app.map._popup.isOpen()) return;
 
         const dmModal = ctx.document.getElementById('dm');
