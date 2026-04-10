@@ -1,26 +1,44 @@
 ---
-description: Qué hacer en Android Studio según dónde se tocaron archivos (assets, Kotlin, Gradle, API).
+description: Qué hacer siempre en Android Studio tras cambios (Sync, Run, Clean) según tipo de archivo.
 alwaysApply: true
 ---
 
-# Android Studio tras los cambios (guía por tipo de archivo)
+# Android Studio — qué hacer siempre
 
-Al **cerrar una tarea** en la que haya habido cambios reales, indicá al usuario **qué hacer en Android Studio** según esta tabla. No hace falta preguntar en cada paso: seguí esta referencia.
+Usá esta guía **después de cambiar código en el proyecto** (o cuando el agente cierre una tarea que tocó la app). No hace falta Sync en cada guardado: solo cuando corresponda.
+
+## Decisión rápida
+
+1. **¿Tocaste archivos de Gradle o dependencias?** (`build.gradle`, `build.gradle.kts`, `settings.gradle`, versiones de plugins, `implementation` / `classpath`, etc.)  
+   → **Sí:** **Sync Project with Gradle Files** (ícono del elefante azul). Cuando termine sin error → **Run** ▶.  
+   → **No:** seguí abajo.
+
+2. **¿Tocaste solo `app/src/main/assets/`** (HTML, JS, CSS, `sw.js`, etc.) **o solo Kotlin/Java** sin Gradle?  
+   → **Run** ▶. Si la app no muestra cambios en la WebView: **Build → Clean Project** → **Run** ▶.
+
+3. **¿Solo cambiaste `api/`** (Node en servidor) u otro backend?  
+   → **Nada** en Android Studio. El impacto es al **desplegar la API**; en el dispositivo no hay paso del IDE.
+
+4. **¿Solo documentación, `.cursor/rules`, o cosas que no son la app?**  
+   → **Nada** obligatorio en Android Studio; podés **Run** ▶ si querés verificar que el proyecto sigue compilando.
+
+## Tabla detallada
 
 | Dónde se cambió | Qué hacer en Android Studio |
 |-----------------|----------------------------|
-| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `sw.js`, etc.) | Pulsar **Run** (▶). Si no se ven cambios: **Build → Clean Project** y luego **Run** ▶. |
-| **`app/src/main/java/`** (Kotlin/Java: notificaciones, GPS, cámara, WebView bridge, etc.) | Pulsar **Run** ▶. |
-| **`build.gradle`**, `settings.gradle`, nuevas dependencias o plugins | Primero **Sync Project with Gradle Files** (elefante azul); al terminar, **Run** ▶. |
-| **`api/`** (Node, Render, WhatsApp, Neon desde el servidor) | **Nada** en Android Studio. La API no la compila el IDE; el impacto es tras **deploy** / `git push` al backend o reinicio del servidor local. |
+| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `sw.js`, etc.) | **Run** ▶. Si no se ven cambios: **Clean Project** y luego **Run** ▶. |
+| **`app/src/main/java/`** (Kotlin/Java: notificaciones, GPS, cámara, WebView bridge, etc.) | **Run** ▶. |
+| **`build.gradle`**, `settings.gradle`, nuevas dependencias o plugins | **Sync** (elefante) → luego **Run** ▶. |
+| **`api/`** (Node, Render, WhatsApp, Neon desde el servidor) | **Nada** en Android Studio. |
 
-**Atajo mental:** si decís *“Listo, subido a GitHub”* y el usuario trabaja en la app Android, en **assets o Kotlin** suele bastar **Run ▶**; en **API**, en el teléfono/emulador no hay paso extra salvo que la app apunte a un backend ya actualizado.
+**Atajo mental:** Gradle tocado → **Sync + Run**. Solo código o assets → **Run**. Solo API → **nada** en el IDE.
 
 ## Para el agente (respuesta al usuario)
 
-- Si tocaste **varias áreas**, listá el paso que aplique a cada una (ej.: assets → Run; si además Gradle → Sync + Run).
-- En el apartado breve final (“En pocas palabras” / resumen), cuando aplique, incluí una línea **“En Android Studio: …”** con lo de la tabla.
+- Al cerrar una tarea que haya modificado la app, indicar **qué hacer en Android Studio** según la tabla o la decisión rápida.
+- Si se tocaron **varias áreas**, listar el paso por cada una (ej.: assets → Run; si además Gradle → Sync + Run).
+- En el resumen final (“En pocas palabras”), cuando aplique, una línea **“En Android Studio: …”**.
 
-## Catálogo de socios / columnas NIS y Medidor (dato operativo)
+## Catálogo de socios / NIS y Medidor (dato operativo)
 
 Si el usuario ya tenía datos importados **antes** de separar NIS y Medidor en BD/UI, puede que filas viejas tengan el medidor solo dentro de texto unificado. Tras cambios en **import o columnas** de socios: en la app, **Socios / NIS**, conviene **volver a importar el Excel** con la lógica nueva para rellenar `medidor` (y NIS) en la base.
