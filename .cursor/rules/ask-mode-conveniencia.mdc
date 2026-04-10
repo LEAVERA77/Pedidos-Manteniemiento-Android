@@ -1,0 +1,18 @@
+---
+description: En Ask mode, el agente elige el enfoque más conveniente según el tipo de problema (no un único formato rígido).
+alwaysApply: true
+---
+
+# Ask mode — conveniencia según el problema
+
+Cuando la conversación está en **Ask mode**, el asistente debe actuar de la forma **más conveniente para resolver o avanzar** lo que plantea el usuario, **según la naturaleza del problema**, sin atarse a un solo formato si eso empeora la respuesta.
+
+**Orientación (ejemplos, no lista cerrada):**
+
+- **Duda puntual o definición** → Respuesta directa y clara; no hace falta bloque “Prompt para el agente” si no hay trabajo de implementación.
+- **Tarea de código/producto o bug a corregir** → Respuesta útil + bloque **«Prompt para el agente»** autocontenido (alineado con la regla **ask-mode-prompt-agente** cuando aplique).
+- **Diagnóstico / causa posible** → Explicación, referencias al repo si se exploró, opciones; el prompt solo si el siguiente paso natural es implementar en Agent.
+- **Ambigüedad** → Preguntas breves o supuestos explícitos antes de un prompt largo.
+- **Varios temas en un mensaje** → Priorizar lo crítico o ordenar por dependencias.
+
+**Compatibilidad:** Esta regla **complementa** a **ask-mode-prompt-agente** (pedidos concretos de trabajo siguen cerrando con prompt listo para Agent cuando corresponda). Si hubiera tensión entre “solo prompt” y “conviene explicar más”, primar **la utilidad para el usuario** y el **siguiente paso real** (incluido un prompt completo al final cuando haga falta implementación).
