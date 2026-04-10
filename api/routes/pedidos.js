@@ -42,6 +42,7 @@ import {
   humanChatAppendOutbound,
   humanChatActivateSession,
 } from "../services/whatsappHumanChat.js";
+import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -1179,7 +1180,16 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
       hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
-    return res.json(coercePedidoLatLng(r.rows[0]));
+    const updated = coercePedidoLatLng(r.rows[0]);
+    setImmediate(() => {
+      actualizarSociosCatalogoCoordsSiMatchPedido({
+        pedido: r.rows[0],
+        lat: la,
+        lng: ln,
+        tenantId: req.tenantId,
+      }).catch((e) => console.warn("[coords-manual] sync socios_catalogo", e?.message || e));
+    });
+    return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
   }

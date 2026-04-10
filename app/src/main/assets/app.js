@@ -3173,6 +3173,12 @@ async function persistirCoordsManualPedidoPanel(pedidoId, la, ln) {
             app.p[idx].la = nla;
             app.p[idx].ln = nln;
             if (row.descripcion != null) app.p[idx].de = String(row.descripcion);
+        } else {
+            try {
+                const merged = norm(row);
+                app.p.push(merged);
+                offlinePedidosSave(app.p);
+            } catch (_) {}
         }
         try {
             if (window._pedidoCoordsInferidas && window._pedidoCoordsInferidas[idStr]) {
