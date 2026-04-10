@@ -68,6 +68,36 @@ function calcularBearing(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Normaliza un string para búsqueda (sin tildes, minúsculas, sin espacios extra)
+ */
+function normalizarParaBusqueda(str) {
+  return String(str)
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Genera variantes de búsqueda para tolerar errores ortográficos
+ */
+function generarVariantesNombre(calle) {
+  const base = normalizarParaBusqueda(calle);
+  const variantes = [base];
+  
+  // Variante sin "calle", "avenida", etc.
+  const sinPrefijo = base.replace(/^(calle|avenida|av|avda|pasaje|pje)\s+/i, "");
+  if (sinPrefijo !== base) variantes.push(sinPrefijo);
+  
+  // Variante sin números al final (ej: "9 de Julio" → "julio")
+  const sinNumeros = base.replace(/\d+\s*(de|del)?\s*/gi, "");
+  if (sinNumeros !== base && sinNumeros.length >= 3) variantes.push(sinNumeros);
+  
+  return [...new Set(variantes)];
+}
+
+/**
  * Obtiene coordenadas aproximadas del centro de una localidad (fallback para query geográfica)
  */
 async function obtenerCoordsLocalidad(localidad) {
@@ -104,109 +134,116 @@ async function obtenerCoordsLocalidad(localidad) {
 }
 
 /**
- * Obtiene la geometría de una calle desde Overpass API
+ * Obtiene la geometría de una calle desde Overpass API (tolerante a errores ortográficos)
  */
 async function obtenerGeometriaCalle(calle, localidad, provincia) {
   const calleClean = String(calle).trim();
   const locClean = String(localidad).trim();
-  const provClean = provincia ? String(provincia).trim() : "";
   
-  // Normalizar calle para búsqueda (sin tildes, lowercase)
-  const calleNorm = calleClean
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+  // Generar variantes de búsqueda para tolerar errores
+  const variantes = generarVariantesNombre(calleClean);
+  console.info("[interpolacion-alturas] Variantes de búsqueda para '%s': %s", calleClean, variantes.join(", "));
   
-  // Query Overpass QL para buscar la calle (way con name)
-  // Usar regex case-insensitive y sin preocuparse por tildes
-  const query = `
+  // Intentar búsqueda con cada variante
+  for (let i = 0; i < variantes.length; i++) {
+    const varianteBusqueda = variantes[i];
+    
+    // 1. Intentar búsqueda por área de la localidad
+    const query = `
 [out:json][timeout:25];
-area[name="${locClean}"]["place"~"city|town|village"]->.loc;
+area[name~"${locClean}",i]["place"~"city|town|village"]->.loc;
 (
-  way["highway"]["name"~"${calleClean}",i](area.loc);
+  way["highway"]["name"~"${varianteBusqueda}",i](area.loc);
 );
 out geom;
-  `.trim();
-  
-  console.info("[interpolacion-alturas] Query Overpass: %s", query.substring(0, 150));
-  
-  try {
-    const response = await fetch(OVERPASS_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    });
+    `.trim();
     
-    if (!response.ok) {
-      console.warn("[interpolacion-alturas] Overpass HTTP error:", response.status);
-      return null;
-    }
+    console.info("[interpolacion-alturas] Query Overpass (variante %s/%s): buscando '%s'", 
+      i + 1, variantes.length, varianteBusqueda);
     
-    const data = await response.json();
-    const elements = data.elements || [];
-    
-    console.info("[interpolacion-alturas] Overpass retornó %s elementos", elements.length);
-    
-    if (elements.length === 0) {
-      console.info("[interpolacion-alturas] No se encontró geometría para '%s' en %s", calleClean, locClean);
+    try {
+      const response = await fetch(OVERPASS_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+      });
       
-      // FALLBACK: buscar por radio geográfico desde el centro de la localidad
-      const coordsLoc = await obtenerCoordsLocalidad(locClean);
-      const queryFallback = `
-[out:json][timeout:25];
-(
-  way["highway"]["name"~"${calleClean}",i](around:15000,${coordsLoc.lat},${coordsLoc.lng}); 
-);
-out geom;
-      `.trim();
-      
-      console.info("[interpolacion-alturas] Intentando query fallback (radio 15km desde %s, %s)", 
-        coordsLoc.lat.toFixed(4), coordsLoc.lng.toFixed(4));
-      
-      try {
-        const resp2 = await fetch(OVERPASS_API, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `data=${encodeURIComponent(queryFallback)}`,
-        });
-        
-        if (resp2.ok) {
-          const data2 = await resp2.json();
-          const elems2 = data2.elements || [];
-          console.info("[interpolacion-alturas] Fallback retornó %s elementos", elems2.length);
-          
-          if (elems2.length > 0) {
-            const way = elems2[0];
-            if (way.geometry && way.geometry.length >= 2) {
-              const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
-              console.info("[interpolacion-alturas] Geometría obtenida (fallback): %s nodos", coords.length);
-              return coords;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[interpolacion-alturas] Error en query fallback:", e?.message || e);
+      if (!response.ok) {
+        console.warn("[interpolacion-alturas] Overpass HTTP error:", response.status);
+        continue;
       }
       
-      return null;
+      const data = await response.json();
+      const elements = data.elements || [];
+      
+      console.info("[interpolacion-alturas] Overpass retornó %s elementos para variante '%s'", 
+        elements.length, varianteBusqueda);
+      
+      if (elements.length > 0) {
+        const way = elements[0];
+        if (way.geometry && way.geometry.length >= 2) {
+          const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+          console.info("[interpolacion-alturas] ✓ Geometría obtenida: %s nodos para '%s' (variante: '%s')", 
+            coords.length, calleClean, varianteBusqueda);
+          return coords;
+        }
+      }
+    } catch (e) {
+      console.warn("[interpolacion-alturas] Error en query con variante '%s': %s", 
+        varianteBusqueda, e?.message || e);
     }
-    
-    // Tomar el primer way encontrado
-    const way = elements[0];
-    if (!way.geometry || way.geometry.length < 2) {
-      console.warn("[interpolacion-alturas] Geometría de calle incompleta");
-      return null;
-    }
-    
-    // Convertir geometry a array de {lat, lng}
-    const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
-    
-    console.info("[interpolacion-alturas] Geometría obtenida: %s nodos para '%s'", coords.length, calleClean);
-    return coords;
-  } catch (e) {
-    console.warn("[interpolacion-alturas] Error al consultar Overpass:", e?.message || e);
-    return null;
   }
+  
+  // 2. FALLBACK GEOGRÁFICO: buscar por radio desde el centro de la localidad
+  console.info("[interpolacion-alturas] No se encontró con variantes de área. Intentando fallback geográfico...");
+  const coordsLoc = await obtenerCoordsLocalidad(locClean);
+  
+  for (let i = 0; i < variantes.length; i++) {
+    const varianteBusqueda = variantes[i];
+    
+    const queryFallback = `
+[out:json][timeout:25];
+(
+  way["highway"]["name"~"${varianteBusqueda}",i](around:20000,${coordsLoc.lat},${coordsLoc.lng}); 
+);
+out geom;
+    `.trim();
+    
+    console.info("[interpolacion-alturas] Fallback geográfico (variante %s/%s, radio 20km desde %s, %s)", 
+      i + 1, variantes.length, coordsLoc.lat.toFixed(4), coordsLoc.lng.toFixed(4));
+    
+    try {
+      const resp2 = await fetch(OVERPASS_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(queryFallback)}`,
+      });
+      
+      if (resp2.ok) {
+        const data2 = await resp2.json();
+        const elems2 = data2.elements || [];
+        console.info("[interpolacion-alturas] Fallback retornó %s elementos para variante '%s'", 
+          elems2.length, varianteBusqueda);
+        
+        if (elems2.length > 0) {
+          const way = elems2[0];
+          if (way.geometry && way.geometry.length >= 2) {
+            const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+            console.info("[interpolacion-alturas] ✓ Geometría obtenida (fallback): %s nodos para '%s' (variante: '%s')", 
+              coords.length, calleClean, varianteBusqueda);
+            return coords;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[interpolacion-alturas] Error en fallback con variante '%s': %s", 
+        varianteBusqueda, e?.message || e);
+    }
+  }
+  
+  console.warn("[interpolacion-alturas] ✗ No se encontró geometría para '%s' en %s (probadas %s variantes)", 
+    calleClean, locClean, variantes.length);
+  return null;
 }
 
 /**
