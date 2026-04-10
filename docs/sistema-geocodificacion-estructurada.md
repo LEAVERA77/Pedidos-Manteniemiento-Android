@@ -183,6 +183,7 @@ GET https://nominatim.openstreetmap.org/search
   &city=Cerrito
   &state=Entre+Ríos
   &country=Argentina
+  &layer=address
   &format=json
   &addressdetails=1
   &limit=12
@@ -193,6 +194,7 @@ GET https://nominatim.openstreetmap.org/search
 **Ventajas de la búsqueda estructurada:**
 - Evita homónimos (calles con el mismo nombre en ciudades diferentes)
 - Acota al bbox de la localidad (`viewbox` + `bounded=1`)
+- Filtra solo direcciones con `layer=address` (excluye POIs, comercios, restaurantes)
 - Prioriza frentes con `house_number` existente
 - Aplica paridad (pares/impares) en caso de aproximación
 

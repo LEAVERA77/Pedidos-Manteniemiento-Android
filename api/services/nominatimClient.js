@@ -552,6 +552,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       city: c,
       country: "Argentina",
       ...(stateOrProvince.length >= 2 ? { state: stateOrProvince } : {}),
+      layer: "address",
       limit: "12",
       ...bounded,
     });
