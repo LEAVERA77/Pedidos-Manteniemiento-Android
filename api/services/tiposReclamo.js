@@ -179,16 +179,17 @@ export function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
 /** Solo NIS: no exigimos nombre de cliente en el formulario (puede venir del catálogo). */
 export function tipoReclamoSoloNisSinNombreCliente(tipoTrabajo) {
   const v = String(tipoTrabajo || "").trim();
-  return v === "Problemas de Tensión";
+  return v === "Problemas de Tensión" || v === "Consumo elevado";
 }
 
 export function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
   return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }
 
-/** Flujo WhatsApp: tras la descripción, pedir NIS y saltar menú nombre/dirección. */
+/** Flujo WhatsApp: tras la descripción, pedir NIS y saltar menú nombre/dirección (no aplica a Consumo elevado: flujo domicilio). */
 export function tipoReclamoWhatsappFlujoSoloNis(tipoTrabajo) {
-  return tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
+  const v = String(tipoTrabajo || "").trim();
+  return v === "Problemas de Tensión";
 }
 
 /** Cooperativa eléctrica (WhatsApp / formulario): estos tipos exigen tipo de conexión y fases si no vienen del padrón. */
