@@ -174,6 +174,12 @@ export function etiquetaFamiliaProyeccionCorta(fam) {
     return m[k] || k || '—';
 }
 
+/** Nombre legible para encabezados / tooltips (Inchauspe, POSGAR 94/98/2007). */
+export function etiquetaFamiliaProyeccionLarga(fam) {
+    const k = String(fam || '').trim();
+    return PMG_COORD_TITULO[k] || k || '—';
+}
+
 /**
  * WGS84 → Este/Norte (m) en una familia y faja. Reutiliza defs PMG_* de este módulo.
  * @param {number} lat

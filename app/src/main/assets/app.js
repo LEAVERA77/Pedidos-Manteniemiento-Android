@@ -22,7 +22,8 @@ import {
   convertirProyectadasARGaWgs84,
   proyectarWgs84AFamiliaFaja,
   PMG_FAMILIAS_PROYECCION_LIST,
-  etiquetaFamiliaProyeccionCorta
+  etiquetaFamiliaProyeccionCorta,
+  etiquetaFamiliaProyeccionLarga
 } from './map.js';
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
@@ -2248,6 +2249,15 @@ window.toggleAndroidMapStripCollapsed = toggleAndroidMapStripCollapsed;
 
 limpiarPersistenciaClienteGestorNovaMigracionV2();
 aplicarCapaOnboardingVsLoginInicial();
+(function reaplicarCapaOnboardingTrasDomReady() {
+    const run = () => {
+        try {
+            aplicarCapaOnboardingVsLoginInicial();
+        } catch (_) {}
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+    else run();
+})();
 
 const dbs = document.getElementById('dbs');
 const lb  = document.getElementById('lb');
@@ -11221,55 +11231,70 @@ async function verificarConfiguracionInicialObligatoria() {
     let cfg = {};
     let extraParsed = {};
     let apiOk = false;
-    try {
-        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (resp.ok) {
-            apiOk = true;
-            const data = await resp.json();
-            const cli = data?.cliente || {};
-            let extra = cli?.configuracion || {};
-            if (typeof extra === 'string') {
-                try {
-                    extra = JSON.parse(extra);
-                } catch (_) {
-                    extra = {};
+    const maxIntentos = 3;
+    for (let intento = 1; intento <= maxIntentos; intento++) {
+        try {
+            const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resp.ok) {
+                apiOk = true;
+                const data = await resp.json();
+                const cli = data?.cliente || {};
+                let extra = cli?.configuracion || {};
+                if (typeof extra === 'string') {
+                    try {
+                        extra = JSON.parse(extra);
+                    } catch (_) {
+                        extra = {};
+                    }
                 }
+                extraParsed = extra && typeof extra === 'object' ? extra : {};
+                try {
+                    aplicarConfiguracionJsonClienteEnEmpresaCfg(extraParsed);
+                } catch (_) {}
+                const nombreTrim = String(cli.nombre || '').trim();
+                const lbApi =
+                    extraParsed.lat_base != null && String(extraParsed.lat_base).trim() !== ''
+                        ? String(extraParsed.lat_base).trim()
+                        : '';
+                const lbgApi =
+                    extraParsed.lng_base != null && String(extraParsed.lng_base).trim() !== ''
+                        ? String(extraParsed.lng_base).trim()
+                        : '';
+                const ec = window.EMPRESA_CFG || {};
+                cfg = {
+                    nombre: nombreTrim,
+                    tipo: String(cli.tipo ?? '').trim(),
+                    ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
+                    lat_base: lbApi || (ec.lat_base != null && String(ec.lat_base).trim() !== '' ? String(ec.lat_base).trim() : ''),
+                    lng_base: lbgApi || (ec.lng_base != null && String(ec.lng_base).trim() !== '' ? String(ec.lng_base).trim() : '')
+                };
+                window.__PMG_TENANT_BRANDING__ = {
+                    setup_wizard_completado: !!extraParsed.setup_wizard_completado,
+                    marca_publicada_admin: !!extraParsed.marca_publicada_admin || nombreTrim.length > 0,
+                    nombre_cliente: nombreTrim,
+                    logo_url: String(extraParsed.logo_url || '').trim(),
+                    tipo: String(cli.tipo ?? '').trim(),
+                    from_local_cache: false
+                };
+                try {
+                    window.__PMG_MI_CFG_FETCH_FAIL = false;
+                } catch (_) {}
+                break;
             }
-            extraParsed = extra && typeof extra === 'object' ? extra : {};
-            try {
-                aplicarConfiguracionJsonClienteEnEmpresaCfg(extraParsed);
-            } catch (_) {}
-            const nombreTrim = String(cli.nombre || '').trim();
-            const lbApi =
-                extraParsed.lat_base != null && String(extraParsed.lat_base).trim() !== ''
-                    ? String(extraParsed.lat_base).trim()
-                    : '';
-            const lbgApi =
-                extraParsed.lng_base != null && String(extraParsed.lng_base).trim() !== ''
-                    ? String(extraParsed.lng_base).trim()
-                    : '';
-            const ec = window.EMPRESA_CFG || {};
-            cfg = {
-                nombre: nombreTrim,
-                tipo: String(cli.tipo ?? '').trim(),
-                ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
-                lat_base: lbApi || (ec.lat_base != null && String(ec.lat_base).trim() !== '' ? String(ec.lat_base).trim() : ''),
-                lng_base: lbgApi || (ec.lng_base != null && String(ec.lng_base).trim() !== '' ? String(ec.lng_base).trim() : '')
-            };
-            window.__PMG_TENANT_BRANDING__ = {
-                setup_wizard_completado: !!extraParsed.setup_wizard_completado,
-                marca_publicada_admin: !!extraParsed.marca_publicada_admin || nombreTrim.length > 0,
-                nombre_cliente: nombreTrim,
-                logo_url: String(extraParsed.logo_url || '').trim(),
-                tipo: String(cli.tipo ?? '').trim(),
-                from_local_cache: false
-            };
-        }
-    } catch (_) {}
+        } catch (_) {}
+        if (intento < maxIntentos) await new Promise((r) => setTimeout(r, 400 * intento));
+    }
     if (!apiOk) {
-        console.warn('[setup] /api/clientes/mi-configuracion no disponible; no se bloquea con el wizard');
+        console.warn('[setup] /api/clientes/mi-configuracion no disponible tras reintentos');
+        try {
+            window.__PMG_MI_CFG_FETCH_FAIL = true;
+        } catch (_) {}
+        toast(
+            'No se pudo leer la configuración del tenant (red o servidor). Reintentá o recargá la página; el asistente inicial puede no reflejar el estado real.',
+            'warning'
+        );
         hydrateBrandingForPublicScreen();
         try {
             aplicarMarcaVisualCompleta();
@@ -14056,17 +14081,36 @@ function leerPrefsVistaProyeccionSociosCatalogo() {
                 const fams = Array.isArray(o.familias)
                     ? o.familias.filter((f) => PMG_FAMILIAS_PROYECCION_LIST.includes(f))
                     : [];
-                return { modo: o.modo, familias: fams };
+                const fp = String(o.familia_primaria || '').trim();
+                return {
+                    modo: o.modo,
+                    familias: fams,
+                    familia_primaria: PMG_FAMILIAS_PROYECCION_LIST.includes(fp) ? fp : ''
+                };
             }
         }
     } catch (_) {}
-    return { modo: 'solo_wgs', familias: [] };
+    return { modo: 'solo_wgs', familias: [], familia_primaria: '' };
 }
 
 function guardarPrefsVistaProyeccionSociosCatalogo(p) {
     try {
-        localStorage.setItem(LS_SOC_VISTA_PROY, JSON.stringify(p));
+        const prev = leerPrefsVistaProyeccionSociosCatalogo();
+        const next = {
+            modo: p.modo !== undefined ? p.modo : prev.modo,
+            familias: p.familias !== undefined ? p.familias : prev.familias,
+            familia_primaria: p.familia_primaria !== undefined ? p.familia_primaria : prev.familia_primaria
+        };
+        localStorage.setItem(LS_SOC_VISTA_PROY, JSON.stringify(next));
     } catch (_) {}
+}
+
+/** Orden de columnas X/Y: la familia «principal» va primero si está entre las elegidas. */
+function ordenarFamiliasVistaProy(fams, primaria) {
+    const arr = Array.isArray(fams) ? fams.filter((f) => PMG_FAMILIAS_PROYECCION_LIST.includes(f)) : [];
+    const p = String(primaria || '').trim();
+    if (!p || !arr.includes(p)) return arr;
+    return [p, ...arr.filter((f) => f !== p)];
 }
 
 function obtenerNumColsTablaSociosAdmin() {
@@ -14084,10 +14128,12 @@ function armarHeadExtraProyeccionSociosHtml() {
     const prefs = leerPrefsVistaProyeccionSociosCatalogo();
     if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
     const z = obtenerZonaVistaSociosCatalogo();
+    const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
     let h = '';
-    for (const fam of prefs.familias) {
+    for (const fam of orden) {
         const ab = etiquetaFamiliaProyeccionCorta(fam);
-        h += `<th align="right" title="Este (m), ${ab}, faja ${z}">X·${ab}</th><th align="right" title="Norte (m)">Y·${ab}</th>`;
+        const larga = etiquetaFamiliaProyeccionLarga(fam);
+        h += `<th align="right" title="Este X (m) · ${larga} · faja ${z} (proyección desde WGS84)">X (${ab})</th><th align="right" title="Norte Y (m) · ${larga} · faja ${z}">Y (${ab})</th>`;
     }
     return h;
 }
@@ -14097,18 +14143,21 @@ function htmlCeldasProyeccionSociosDesdeLatLng(lat, lon) {
     if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
     const la = Number(lat);
     const lo = Number(lon);
+    const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) {
-        return prefs.familias.map(() => '<td>—</td><td>—</td>').join('');
+        return orden.map(() => '<td>—</td><td>—</td>').join('');
     }
     const z = obtenerZonaVistaSociosCatalogo();
     let out = '';
-    for (const fam of prefs.familias) {
+    for (const fam of orden) {
         const pr = proyectarWgs84AFamiliaFaja(la, lo, fam, z);
         const ab = etiquetaFamiliaProyeccionCorta(fam);
+        const larga = etiquetaFamiliaProyeccionLarga(fam);
+        const tip = `${larga} · faja ${z} · Este/Norte (m)`;
         if (pr) {
             const xe = pr.e.toFixed(1).replace('.', ',');
             const yn = pr.n.toFixed(1).replace('.', ',');
-            out += `<td align="right" title="${ab} · F${z}">${xe}</td><td align="right">${yn}</td>`;
+            out += `<td align="right" title="${tip}">${xe}</td><td align="right" title="${tip}">${yn}</td>`;
         } else {
             out += '<td>—</td><td>—</td>';
         }
@@ -14131,6 +14180,11 @@ function actualizarUiSociosVistaProyeccion() {
             const fam = cb.getAttribute('data-fam');
             if (fam) cb.checked = p.familias.includes(fam);
         });
+        const selP = document.getElementById('socios-proy-fam-primaria');
+        if (selP) {
+            const v = p.familia_primaria && p.familias.includes(p.familia_primaria) ? p.familia_primaria : '';
+            selP.value = v || '';
+        }
     } catch (_) {}
 }
 
@@ -14142,7 +14196,7 @@ function onCambioVistaProySocios() {
         .filter(Boolean);
     const fams =
         m === 'extra_proy' ? (famsSel.length ? famsSel : prev.familias) : prev.familias;
-    guardarPrefsVistaProyeccionSociosCatalogo({ modo: m, familias });
+    guardarPrefsVistaProyeccionSociosCatalogo({ modo: m, familias: fams, familia_primaria: prev.familia_primaria });
     actualizarUiSociosVistaProyeccion();
     if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
 }
@@ -14151,11 +14205,38 @@ window.onCambioVistaProySocios = onCambioVistaProySocios;
 function onCambioCheckFamProySocios() {
     const m = document.querySelector('input[name="socios-tabla-proy-mode"]:checked')?.value || 'solo_wgs';
     if (m !== 'extra_proy') return;
+    const prev = leerPrefsVistaProyeccionSociosCatalogo();
     const fams = [...document.querySelectorAll('.socios-proy-fam-cb:checked')].map((c) => c.getAttribute('data-fam')).filter(Boolean);
-    guardarPrefsVistaProyeccionSociosCatalogo({ modo: 'extra_proy', familias: fams });
+    let fp = prev.familia_primaria;
+    if (fp && !fams.includes(fp)) fp = '';
+    guardarPrefsVistaProyeccionSociosCatalogo({ modo: 'extra_proy', familias: fams, familia_primaria: fp });
+    actualizarUiSociosVistaProyeccion();
     if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
 }
 window.onCambioCheckFamProySocios = onCambioCheckFamProySocios;
+
+function onCambioFamiliaPrimariaSociosCatalogo() {
+    const sel = document.getElementById('socios-proy-fam-primaria');
+    const prim = (sel?.value || '').trim();
+    const prev = leerPrefsVistaProyeccionSociosCatalogo();
+    const m = document.querySelector('input[name="socios-tabla-proy-mode"]:checked')?.value || 'solo_wgs';
+    let fams = [...document.querySelectorAll('.socios-proy-fam-cb:checked')].map((c) => c.getAttribute('data-fam')).filter(Boolean);
+    if (m === 'extra_proy' && prim && PMG_FAMILIAS_PROYECCION_LIST.includes(prim)) {
+        const cb = document.querySelector(`.socios-proy-fam-cb[data-fam="${prim}"]`);
+        if (cb && !cb.checked) {
+            cb.checked = true;
+            if (!fams.includes(prim)) fams.push(prim);
+        }
+    }
+    guardarPrefsVistaProyeccionSociosCatalogo({
+        modo: m,
+        familias: m === 'extra_proy' ? fams : prev.familias,
+        familia_primaria: prim
+    });
+    actualizarUiSociosVistaProyeccion();
+    if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
+}
+window.onCambioFamiliaPrimariaSociosCatalogo = onCambioFamiliaPrimariaSociosCatalogo;
 
 async function cargarListaSociosAdmin() {
     const cont = document.getElementById('lista-socios-admin');
@@ -14178,8 +14259,8 @@ async function cargarListaSociosAdmin() {
         const headExtra = armarHeadExtraProyeccionSociosHtml();
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right">Lat</th><th align="right">Lon</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
-<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo se renderizan filas visibles). Las columnas X/Y son solo lectura (proyección desde WGS84).</p></div>`;
+<table style="width:100%;font-size:.8rem;border-collapse:collapse"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
     } catch (e) {
@@ -14211,17 +14292,55 @@ function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
     return null;
 }
 
-/** Lee número desde celda Excel (raw o texto): latitud, longitud, etc. */
+/**
+ * Decimal con coma/punto o texto en grados/minutos/segundos (p. ej. 34°30'15,2"S).
+ * Si hay símbolos ° ′ ″ no se usa parseFloat directo sobre todo el string.
+ */
+function parseDecimalODmsCoord(val) {
+    if (val == null || val === '') return null;
+    if (typeof val === 'number' && Number.isFinite(val)) return val;
+    const raw = String(val).trim();
+    if (!raw) return null;
+    if (!/[°'′″]/.test(raw)) {
+        const n = parseFloat(raw.replace(/\s/g, '').replace(',', '.'));
+        return Number.isFinite(n) ? n : null;
+    }
+    return parsearDmsLatLonFlexible(raw);
+}
+
+/** DMS compacto tipo Excel / Argentina: 34°30'15,2"S o S 34°30'15" */
+function parsearDmsLatLonFlexible(str) {
+    const t = String(str).replace(/\u00a0/g, ' ').trim();
+    const m = t.match(
+        /^\s*(?:([NnSsEeWw])\s+)?(-?\d+(?:[.,]\d+)?)\s*°\s*(\d+)\s*['′]\s*(\d+(?:[.,]\d+)?)?\s*(?:"|″|'')?\s*([NnSsEeWw])?\s*$/i
+    );
+    if (!m) return null;
+    const hemiLead = (m[1] || '').toUpperCase();
+    const hemiTail = (m[5] || '').toUpperCase();
+    const hemi = hemiLead || hemiTail;
+    const degAbs = Math.abs(parseFloat(String(m[2]).replace(',', '.')));
+    const min = parseInt(m[3], 10) || 0;
+    const sec = m[4] ? parseFloat(String(m[4]).replace(',', '.')) : 0;
+    if (!Number.isFinite(degAbs) || min < 0 || min >= 60 || sec < 0 || sec >= 60) return null;
+    let dec = degAbs + min / 60 + sec / 3600;
+    if (hemi === 'S' || hemi === 'W') dec = -dec;
+    else if (String(m[2]).trim().startsWith('-')) dec = -dec;
+    return dec;
+}
+
+/** Lee número desde celda Excel (raw o texto): latitud, longitud, este, norte, etc. */
 function leerCoordExcelSocios(row, mapNormAOriginal, ...clavesCanon) {
     for (const canon of clavesCanon) {
         const orig = mapNormAOriginal[canon];
         if (orig != null && row[orig] != null && row[orig] !== '') {
             const v = row[orig];
             if (typeof v === 'number' && Number.isFinite(v)) return v;
-            const s = String(v).trim().replace(',', '.');
+            const s = String(v).trim();
             if (s) {
-                const n = parseFloat(s);
-                if (Number.isFinite(n)) return n;
+                const n = parseFloat(s.replace(/\s/g, '').replace(',', '.'));
+                if (Number.isFinite(n) && !/[°'′″]/.test(s)) return n;
+                const d = parseDecimalODmsCoord(v);
+                if (d != null && Number.isFinite(d)) return d;
             }
         }
     }
@@ -14231,10 +14350,12 @@ function leerCoordExcelSocios(row, mapNormAOriginal, ...clavesCanon) {
             const v = row[orig];
             if (v == null || v === '') continue;
             if (typeof v === 'number' && Number.isFinite(v)) return v;
-            const s = String(v).trim().replace(',', '.');
+            const s = String(v).trim();
             if (s) {
-                const pn = parseFloat(s);
-                if (Number.isFinite(pn)) return pn;
+                const pn = parseFloat(s.replace(/\s/g, '').replace(',', '.'));
+                if (Number.isFinite(pn) && !/[°'′″]/.test(s)) return pn;
+                const d = parseDecimalODmsCoord(v);
+                if (d != null && Number.isFinite(d)) return d;
             }
         }
     }
@@ -14376,6 +14497,167 @@ function bindSociosCatalogoVirtualScroll() {
         );
     }
 }
+
+function _encabezadosNormSetSocios(mapNormAOriginal) {
+    return new Set(Object.keys(mapNormAOriginal || {}));
+}
+
+function _celdaPareceDmsSocios(v) {
+    const s = String(v ?? '');
+    return /[°'′″]/.test(s) && /\d/.test(s);
+}
+
+/**
+ * Muestra de filas del Excel (sin persistir): sugiere WGS84 vs Este/Norte y mensaje de faja Auto / fallback.
+ */
+async function inferirCrsSociosExcelAntesImport(file) {
+    const msgEl = document.getElementById('socios-import-detect-msg');
+    const crsSel = document.getElementById('socios-import-crs');
+    const fajaSel = document.getElementById('socios-import-faja');
+    const setMsg = (t) => {
+        if (msgEl) msgEl.textContent = t || '';
+    };
+    if (!file || typeof XLSX === 'undefined') {
+        setMsg('');
+        return;
+    }
+    let buf;
+    try {
+        buf = await file.arrayBuffer();
+    } catch (_) {
+        setMsg('');
+        return;
+    }
+    let wb;
+    try {
+        wb = XLSX.read(buf, { type: 'array' });
+    } catch (_) {
+        setMsg('No se pudo leer el archivo como Excel.');
+        return;
+    }
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false, blankrows: false });
+    if (!rawRows.length) {
+        setMsg('');
+        return;
+    }
+    const primera = rawRows[0];
+    const mapNormAOriginal = {};
+    Object.keys(primera).forEach((orig) => {
+        const n = normalizarEncabezadoExcelSocios(orig);
+        if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
+    });
+    const kn = _encabezadosNormSetSocios(mapNormAOriginal);
+    const tieneParesEn =
+        (kn.has('este') && kn.has('norte')) ||
+        (kn.has('easting') && kn.has('northing')) ||
+        (kn.has('coordenada_x') && kn.has('coordenada_y')) ||
+        (kn.has('coordenada_e') && kn.has('coordenada_n')) ||
+        (kn.has('x') && kn.has('y'));
+    const sample = rawRows.slice(0, 25);
+    let scoreWgs = 0;
+    let scoreEn = 0;
+    let scoreDms = 0;
+    for (const row of sample) {
+        const laRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'latitud', 'lat', 'latitude', 'lat_gps');
+        const loRaw = leerCoordExcelSocios(row, mapNormAOriginal, 'longitud', 'lng', 'lon', 'longitude', 'lng_gps');
+        const wgs = validarWgs84Import(laRaw, loRaw);
+        if (wgs.la != null && wgs.lo != null) scoreWgs++;
+        const eVal = leerCoordExcelSocios(
+            row,
+            mapNormAOriginal,
+            'este',
+            'oeste',
+            'coordenada_e',
+            'coordenada_x',
+            'easting',
+            'e',
+            'x',
+            'este_m'
+        );
+        const nVal = leerCoordExcelSocios(
+            row,
+            mapNormAOriginal,
+            'norte',
+            'coordenada_n',
+            'coordenada_y',
+            'northing',
+            'n',
+            'y',
+            'norte_m'
+        );
+        if (eVal != null && nVal != null) {
+            const e = Number(eVal);
+            const nn = Number(nVal);
+            if (Number.isFinite(e) && Number.isFinite(nn)) {
+                const absE = Math.abs(e);
+                const absN = Math.abs(nn);
+                if (absE >= 50000 && absE <= 9900000 && absN >= 50000 && absN <= 15000000) scoreEn++;
+            }
+        }
+        for (const k of ['latitud', 'lat', 'longitud', 'lng', 'lon']) {
+            const o = mapNormAOriginal[k];
+            if (o != null && _celdaPareceDmsSocios(row[o])) scoreDms++;
+        }
+    }
+    let modo = null;
+    if (scoreEn >= 2 && scoreEn > scoreWgs && tieneParesEn) modo = 'arg_en';
+    else if (scoreWgs >= 2) modo = 'wgs84';
+    else if (scoreDms >= 2 && scoreWgs < 2) modo = 'wgs84';
+    else if (scoreEn >= 1 && scoreWgs === 0 && tieneParesEn) modo = 'arg_en';
+    if (!modo) {
+        setMsg(
+            'Detectado: sin patrón claro en las primeras filas. Elegí manualmente WGS84 o Este/Norte y la faja si aplica.'
+        );
+        return;
+    }
+    if (crsSel) crsSel.value = modo;
+    if (modo === 'arg_en') {
+        if (fajaSel) fajaSel.value = 'auto';
+        const fam = String((window.EMPRESA_CFG || {}).coord_proy_familia || '').trim();
+        const cfg = window.EMPRESA_CFG || {};
+        const loBase = Number(cfg.lng_base);
+        const zTxt = Number.isFinite(loBase)
+            ? `Auto según longitud de la central (lng_base ≈ ${loBase.toFixed(2)}° → faja ${fajaArgentinaPorLongitud(loBase)}).`
+            : 'Auto sin lng_base en empresa: fallback faja 4 (meridiano central ~−64°), igual que el mapa.';
+        let det = 'Este/Norte en metros (proyectadas)';
+        if (!fam || fam === 'none') {
+            det += ' — falta familia en Empresa (Inchauspe / POSGAR): configurá y volvé a importar si el modo Este/Norte falla.';
+        } else {
+            det += ` Conversión con familia Empresa: ${etiquetaFamiliaProyeccionLarga(fam)}.`;
+        }
+        setMsg(`Detectado: ${det} ${zTxt}`);
+    } else {
+        let extra = '';
+        if (scoreDms >= 2) extra = ' Texto tipo ° ′ ″: se convierte al importar.';
+        setMsg(`Detectado: latitud / longitud WGS84 (decimal o DMS).${extra} En BD se guarda siempre EPSG:4326.`);
+    }
+}
+
+async function onInputExcelSociosConInferencia(event) {
+    const file = event && event.target && event.target.files && event.target.files[0];
+    if (!file) return;
+    if (typeof XLSX === 'undefined') {
+        toast('Librería Excel no cargada', 'error');
+        event.target.value = '';
+        return;
+    }
+    try {
+        await inferirCrsSociosExcelAntesImport(file);
+    } catch (e) {
+        console.warn('[socios] inferir CRS Excel', e);
+        const msgEl = document.getElementById('socios-import-detect-msg');
+        if (msgEl) {
+            msgEl.textContent =
+                'No se pudo analizar el archivo; revisá manualmente el sistema de coordenadas y la faja.';
+        }
+    }
+    try {
+        if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
+    } catch (_) {}
+    await importarExcelSocios(event);
+}
+window.onInputExcelSociosConInferencia = onInputExcelSociosConInferencia;
 
 async function importarExcelSocios(event) {
     const file = event.target.files[0];
@@ -14583,7 +14865,8 @@ function mostrarFormatoExcelSocios() {
             'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
             '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
             '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
-            '• Faja «Auto»: según longitud de la ubicación central de la empresa (EMPRESA).\n' +
+            '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
+            '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
             '• Medidor: preferí texto en Excel para no perder ceros.\n\n' +
             'Opcionales: telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
             'Importación en lotes. Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'

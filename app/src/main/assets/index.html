@@ -639,13 +639,13 @@
           <label for="socios-import-crs" style="font-size:.72rem;font-weight:600;color:var(--tm);display:block">Coordenadas en el Excel (antes de importar)</label>
           <select id="socios-import-crs" onchange="if(typeof actualizarUiSociosImportCrs==='function')actualizarUiSociosImportCrs()" style="margin-top:.2rem;padding:.4rem .55rem;border-radius:.4rem;font-size:.8rem;max-width:100%">
             <option value="wgs84" selected>WGS84 (latitud / longitud)</option>
-            <option value="arg_en" id="socios-import-crs-arg-opt">Este / Norte proyectadas (Argentina)</option>
+            <option value="arg_en" id="socios-import-crs-arg-opt">Este / Norte cartesianas (Inchauspe / POSGAR según Empresa)</option>
           </select>
         </div>
         <div id="socios-import-faja-wrap" style="display:none">
           <label for="socios-import-faja" style="font-size:.72rem;color:var(--tm);display:block">Faja (si no usás «Auto»)</label>
           <select id="socios-import-faja" style="margin-top:.2rem;padding:.4rem .55rem;border-radius:.4rem;font-size:.8rem">
-            <option value="auto" selected>Auto (ubicación central de la empresa)</option>
+            <option value="auto" selected>Auto (meridiano central = lng_base de la empresa)</option>
             <option value="1">1</option>
             <option value="2">2</option>
             <option value="3">3</option>
@@ -655,6 +655,7 @@
             <option value="7">7</option>
           </select>
         </div>
+        <p id="socios-import-detect-msg" style="flex:1 1 100%;margin:.35rem 0 0;font-size:.74rem;color:var(--bd);line-height:1.35;min-height:1.2em" aria-live="polite"></p>
       </div>
       <div id="socios-vista-proy-wrap" style="margin-bottom:.85rem;padding:.65rem .85rem;background:#f0fdf4;border-radius:.5rem;border:1px solid #86efac;font-size:.78rem;color:var(--tl)">
         <div style="font-weight:600;color:var(--bd);margin-bottom:.35rem">Vista del catálogo (solo pantalla; la base sigue guardando solo WGS84)</div>
@@ -664,10 +665,19 @@
         </label>
         <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:.2rem 0">
           <input type="radio" name="socios-tabla-proy-mode" value="extra_proy" onchange="if(typeof onCambioVistaProySocios==='function')onCambioVistaProySocios()" />
-          Convertir / mostrar también Este·Norte (m) en proyecciones…
+          Convertir / mostrar Este·Norte (m): Inchauspe, POSGAR 94 / 98 / 2007 (solo pantalla)
         </label>
         <div id="socios-vista-proy-checks" style="display:none;margin:.45rem 0 0 1.1rem;flex-wrap:wrap;gap:.45rem .9rem;align-items:center">
-          <span style="color:var(--tm);width:100%;font-size:.74rem">Familias de salida (defs proj4 de map.js). Faja: misma regla que el import (Auto = según <code>lng_base</code> de la central; si falta, ~faja 4 por -64°).</span>
+          <span style="color:var(--tm);width:100%;font-size:.74rem">Familias de salida (proj4 en map.js). Faja: misma regla que el import — <strong>Auto</strong> = meridiano central según <code>lng_base</code> de la empresa; si no hay base, <strong>fallback faja 4</strong> (~ −64°).</span>
+          <label for="socios-proy-fam-primaria" style="width:100%;font-size:.74rem;color:var(--bd)">Familia principal (orden de columnas X/Y)
+            <select id="socios-proy-fam-primaria" onchange="if(typeof onCambioFamiliaPrimariaSociosCatalogo==='function')onCambioFamiliaPrimariaSociosCatalogo()" style="display:block;margin-top:.25rem;padding:.35rem .5rem;border-radius:.4rem;font-size:.78rem;max-width:min(100%,280px);border:1px solid var(--bo)">
+              <option value="">(ninguna — orden por checkboxes)</option>
+              <option value="inchauspe">Campo Inchauspe 1969</option>
+              <option value="posgar94">POSGAR 1994</option>
+              <option value="posgar98">POSGAR 1998</option>
+              <option value="posgar2007">POSGAR 2007</option>
+            </select>
+          </label>
           <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="inchauspe" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> Inchauspe</label>
           <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="posgar94" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> POSGAR 94</label>
           <label style="cursor:pointer;white-space:nowrap"><input type="checkbox" class="socios-proy-fam-cb" data-fam="posgar98" onchange="if(typeof onCambioCheckFamProySocios==='function')onCambioCheckFamProySocios()" /> POSGAR 98</label>
@@ -677,7 +687,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
         <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-          <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="importarExcelSocios(event)"></label>
+          <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
           <a class="btn-sm primary" href="ejemplos/socios-demo-300.xlsx" download="socios-demo-300.xlsx" style="text-decoration:none;display:inline-flex;align-items:center;gap:.35rem"><i class="fas fa-download"></i> Ejemplo 300 (OSM)</a>
           <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
