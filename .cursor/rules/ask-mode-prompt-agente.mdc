@@ -1,18 +1,18 @@
 ---
-description: En Ask mode, ante tareas de código/producto, responder y cerrar con un prompt listo para Agent mode.
+description: Cuando el usuario pide algo, la respuesta es siempre un prompt listo para Agent mode (salvo excepciones mínimas).
 alwaysApply: true
 ---
 
-# Ask mode → prompt para Agent
+# Pedidos del usuario → respuesta = prompt para Agent
 
-Cuando el usuario escriba en **Ask mode** planteando una tarea, mejora, bug o duda que implique trabajo en el código o en el producto:
+Cuando el usuario **pida algo** (funcionalidad, corrección, cambio en código o producto, análisis que deba ejecutarse en el repo, pasos de implementación, etc.), la respuesta del asistente **debe ser en esencia un único bloque listo para copiar**: **«Prompt para el agente»** — texto autocontenido para pegar en **Agent mode** (contexto Nexxo/Pedidos-MG, objetivos, archivos probables, criterios de aceptación, pruebas, sync/commit si aplica).
 
-1. **Responder** a la pregunta (explicación, causas, opciones) como hasta ahora.
-2. **Incluir siempre** al final un bloque listo para copiar: **“Prompt para el agente”** — un único texto autocontenido que pueda pegarse en **Agent mode** para implementar o investigar lo planteado (contexto del repo Nexxo/Pedidos-MG, objetivos, archivos probables, criterios de aceptación, pruebas manuales).
-3. Si el mensaje en Ask es **solo** informativo (definición, opinión, sin cambios posibles), **no** hace falta prompt de implementación; basta la respuesta.
+- **Prioridad:** el cuerpo de la respuesta es ese prompt; si hace falta **una línea** de contexto (ej. «Incluye X e Y»), puede ir **antes** del bloque, sin repetir el mismo contenido en prosa larga.
+- **Excepción:** mensajes **solo** conversacionales, saludos, o definiciones/opiniones **sin** pedido de trabajo ni de prompt (el usuario no está pidiendo «que se haga» nada). Ahí basta respuesta breve **sin** bloque Agent.
+- **Modo:** aplica en **Ask** y **Agent** si el usuario formula un pedido nuevo: entregar prompt para una siguiente sesión Agent o para continuar el trabajo.
 
-No sustituir la respuesta útil por solo el prompt: el usuario debe entender qué pasa y qué haría el agente.
+No sustituir el prompt por vaguedades: el texto debe permitir a Agent ejecutar o investigar sin adivinar el alcance.
 
-## Formato sugerido del prompt (opcional)
+## Formato sugerido del prompt
 
-Si encaja la tarea, el bloque puede estructurarse con: contexto breve, pasos o archivos, criterios de aceptación, pruebas manuales, y cierre con sync Nexxo/Pedidos-MG + commit/push y firma `made by leavera77` cuando corresponda.
+Contexto breve, pasos numerados, archivos/rutas si se conocen, criterios de aceptación, pruebas manuales, y cierre con sync `api`/assets a Pedidos-MG + commit/push + `made by leavera77` cuando corresponda.
