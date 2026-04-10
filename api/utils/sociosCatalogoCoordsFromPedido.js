@@ -133,9 +133,63 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
         params,
       };
     } else {
-      console.info("[coords-manual→socios_catalogo] pedido sin nis_medidor ni par nis+medidor; sin sync catálogo", {
+      console.info("[coords-manual→socios_catalogo] pedido sin nis_medidor ni par nis+medidor; intentando match por dirección+nombre", {
         pedidoId: pedido.id,
       });
+      const calleP = pedido.cliente_calle != null ? String(pedido.cliente_calle).trim() : "";
+      const numP = pedido.cliente_numero_puerta != null ? String(pedido.cliente_numero_puerta).trim() : "";
+      const locP = pedido.cliente_localidad != null ? String(pedido.cliente_localidad).trim() : "";
+      const nomP = pedido.cliente_nombre != null ? String(pedido.cliente_nombre).trim() : "";
+      
+      if (calleP.length >= 2 && locP.length >= 2 && nomP.length >= 3 && cols.has("calle") && cols.has("localidad") && cols.has("nombre")) {
+        const params = [];
+        let t = "";
+        if (hasTenant && Number.isFinite(tenantId)) {
+          params.push(tenantId);
+          t = ` AND tenant_id = $${params.length}`;
+        }
+        params.push(calleP, locP, nomP);
+        const iCal = params.length - 2;
+        const iLoc = params.length - 1;
+        const iNom = params.length;
+        const numCond = numP && cols.has("numero") 
+          ? ` AND UPPER(TRIM(COALESCE(numero::text,''))) = UPPER(TRIM($${params.length + 1}))` 
+          : "";
+        if (numP && cols.has("numero")) params.push(numP);
+        
+        const fallbackSql = {
+          sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+            AND UPPER(TRIM(COALESCE(calle::text,''))) = UPPER(TRIM($${iCal}))
+            AND UPPER(TRIM(COALESCE(localidad::text,''))) = UPPER(TRIM($${iLoc}))
+            AND UPPER(TRIM(COALESCE(nombre::text,''))) = UPPER(TRIM($${iNom}))${numCond}
+            ORDER BY id ASC LIMIT 3`,
+          params,
+        };
+        
+        const rFallback = await query(fallbackSql.sql, fallbackSql.params);
+        const idsFb = (rFallback.rows || []).map((x) => x.id);
+        if (idsFb.length === 1) {
+          const sidFb = idsFb[0];
+          const hasUbicManual = cols.has("ubicacion_manual");
+          const updateSql = hasUbicManual
+            ? `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric, ubicacion_manual = TRUE WHERE id = $3 RETURNING id`
+            : `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`;
+          const u = await query(updateSql, [la, ln, sidFb]);
+          const ok = !!(u.rows && u.rows.length);
+          if (ok) {
+            const marcaManual = hasUbicManual ? " (marcada como manual)" : "";
+            console.info("[coords-manual→socios_catalogo] actualizado socio id=%s por dirección+nombre (pedido %s)%s", sidFb, pedido.id, marcaManual);
+          }
+          return { ok, sociosId: sidFb, reason: ok ? "match_direccion_nombre" : "update_failed" };
+        } else if (idsFb.length > 1) {
+          console.warn("[coords-manual→socios_catalogo] varias filas por dirección+nombre; no se actualiza", {
+            pedidoId: pedido.id,
+            ids: idsFb,
+          });
+          return { ok: false, reason: "ambiguo_direccion", ids: idsFb };
+        }
+      }
+      
       return { ok: false, reason: "sin_clave_padron" };
     }
 

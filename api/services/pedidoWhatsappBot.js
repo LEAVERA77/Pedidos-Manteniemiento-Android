@@ -231,15 +231,20 @@ export async function crearPedidoDesdeWhatsappBot({
 
   /**
    * PRIORIDAD ABSOLUTA: buscar coordenadas corregidas manualmente en socios_catalogo por NIS/Medidor.
+   * Si no encuentra por identificadores, intenta por dirección estructurada + nombre del titular.
    * Esto garantiza persistencia de ubicaciones corregidas por el admin para el mismo cliente.
    */
-  if (!coordsValidasWgs84(latFinal, lngFinal) && tieneIdentificadorSum) {
+  if (!coordsValidasWgs84(latFinal, lngFinal) && (tieneIdentificadorSum || calleT || locT)) {
     try {
       const coordsPadron = await buscarCoordenadasPorNisMedidor({
         tenantId: Number(tenantId),
         nis: nisT,
         medidor: medT,
         nisMedidor: nmT,
+        calle: calleT,
+        numero: numT,
+        localidad: locT,
+        nombreCliente: String(clienteNombre || "").trim(),
       });
       if (coordsPadron && coordsValidasWgs84(coordsPadron.lat, coordsPadron.lng)) {
         latFinal = coordsPadron.lat;
@@ -252,7 +257,7 @@ export async function crearPedidoDesdeWhatsappBot({
         }
       }
     } catch (e) {
-      console.warn("[pedido-whatsapp-bot] buscar coords por NIS/Medidor", e?.message || e);
+      console.warn("[pedido-whatsapp-bot] buscar coords por NIS/Medidor/dirección", e?.message || e);
     }
   }
 
