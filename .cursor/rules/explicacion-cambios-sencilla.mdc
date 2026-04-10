@@ -1,13 +1,15 @@
 ---
-description: Tras implementar o modificar código, resumir los cambios en lenguaje claro y breve.
+description: Al resolver algo (código o pasos operativos), cerrar con explicación sencilla debajo.
 alwaysApply: true
 ---
 
 # Explicación sencilla de los cambios (cada interacción)
 
+**Norma:** cuando **soluciones** algo en esta conversación (bug, tarea de implementación, ajuste de config, sync, commit/push u otro arreglo concreto), **siempre debajo** del cuerpo principal de la respuesta incluí una **explicación breve y en castellano claro** de lo que hiciste.
+
 Cuando en una misma conversación implementes, corrijas o refactores código (o despliegues pasos concretos como commit, sync o push):
 
-1. **Al final de la respuesta**, incluí un apartado breve (puede titularse algo como “En pocas palabras” o “Resumen”) que explique **en castellano simple**:
+1. **Al final de la respuesta** (como último bloque, “debajo” del resto), incluí un apartado breve (puede titularse algo como “En pocas palabras”, “Resumen” o “Cambios”) que explique **en castellano simple**:
    - **Qué** cambió (qué problema se resolvió o qué se agregó).
    - **Dónde** afecta (pantalla, archivo clave o flujo), sin listar cada línea.
    - **Qué debe notar el usuario** (si aplica).
