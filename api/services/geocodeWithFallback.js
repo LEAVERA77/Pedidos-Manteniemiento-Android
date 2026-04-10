@@ -56,6 +56,7 @@ function coordsUsables(la, lo) {
  * @param {string} [o.numero]
  * @param {string} [o.codigoPostal]
  * @param {number} [o.tenantId]
+ * @param {string} [o.stateOrProvince] provincia (p. ej. Entre Ríos) si no hay tenant o para reforzar Nominatim
  * @param {number} [o.retries] reintentos tras fallo (default 2)
  * @returns {Promise<{ lat: number, lng: number, displayName?: string, fromCache: boolean } | null>}
  */
@@ -78,6 +79,9 @@ export async function geocodeWithFallback(o) {
   }
 
   const hints = o.tenantId != null ? await loadTenantGeocodeHints(o.tenantId) : { geocodeState: null, tenantCentroid: null };
+  const explicitState = String(o.stateOrProvince || "").trim();
+  const stateOrProvince =
+    explicitState.length >= 2 ? explicitState : hints.geocodeState || undefined;
   const retries = Number.isFinite(Number(o.retries)) ? Math.max(0, Math.min(5, Number(o.retries))) : 2;
 
   let lastErr = null;
@@ -86,7 +90,7 @@ export async function geocodeWithFallback(o) {
       const g = await geocodeCalleNumeroLocalidadArgentina(loc, calle, num, {
         allowTenantCentroidFallback: true,
         tenantCentroid: hints.tenantCentroid || undefined,
-        stateOrProvince: hints.geocodeState || undefined,
+        stateOrProvince: stateOrProvince || undefined,
       });
       if (g && coordsUsables(g.lat, g.lng)) {
         await cacheGeocodificacionSet(clave, g.lat, g.lng);

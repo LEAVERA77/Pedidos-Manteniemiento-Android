@@ -4,7 +4,7 @@
  *
  * Proveedores:
  * - **Google Geocoding** si existe `GOOGLE_MAPS_API_KEY` o `GOOGLE_MAPS_GEOCODING_API_KEY` (recomendado para coincidir con Google Maps).
- * - Si no hay clave: **Nominatim** (OSM) vía `geocodeCalleNumeroLocalidadArgentina` (~1 req/s; respetar políticas OSM).
+ * - Si no hay clave: **Nominatim** (OSM). Con `DATABASE_URL` / `DB_CONNECTION` se usa antes la tabla **geocodificacion_cache** en Neon (misma lógica que `geocodeWithFallback`).
  *
  * Uso (desde carpeta `api/`):
  *   node scripts/geocodificarExcelSocios.mjs --file="G:\\Mi unidad\\Programas\\socios-demo-300-enriquecido.xlsx"
@@ -23,6 +23,8 @@ import { fileURLToPath } from "url";
 import XLSX from "xlsx";
 import { geocodeCalleNumeroLocalidadArgentina } from "../services/nominatimClient.js";
 import { geocodeAddressArgentina } from "../services/nominatimClient.js";
+import { geocodeWithFallback } from "../services/geocodeWithFallback.js";
+import { ensureCacheGeocodificacionTable } from "../services/cacheGeocodificacion.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -147,6 +149,11 @@ function coordsUsables(lat, lng) {
   return true;
 }
 
+function hasNeonConnection() {
+  const u = process.env.DATABASE_URL || process.env.DB_CONNECTION;
+  return typeof u === "string" && u.trim().length > 8;
+}
+
 function findHeaderIndex(headers, aliases) {
   const norm = headers.map((h) => normalizeKey(h));
   for (const a of aliases) {
@@ -196,6 +203,33 @@ async function geocodeOneRow(m, opts) {
 
   if (localidad.length < 2 || calle.length < 2) {
     return { err: "falta_localidad_o_calle" };
+  }
+
+  if (hasNeonConnection()) {
+    try {
+      await ensureCacheGeocodificacionTable();
+      const tidRaw = process.env.GEOCODE_TENANT_ID;
+      const tid = tidRaw != null && String(tidRaw).trim() !== "" ? Number(tidRaw) : undefined;
+      const cp = pick(m, ["codigo_postal", "cp", "postal", "codigo postal"]);
+      const gw = await geocodeWithFallback({
+        calle,
+        localidad,
+        numero: numero || undefined,
+        codigoPostal: cp || undefined,
+        tenantId: Number.isFinite(tid) && tid > 0 ? tid : undefined,
+        stateOrProvince: prov,
+        retries: 3,
+      });
+      if (gw && coordsUsables(gw.lat, gw.lng)) {
+        return {
+          lat: gw.lat,
+          lng: gw.lng,
+          source: gw.fromCache ? "neon_cache" : "nominatim",
+        };
+      }
+    } catch (e) {
+      console.warn(`[excel-geocode] Neon/cache: ${e?.message || e}`);
+    }
   }
 
   let g = await geocodeCalleNumeroLocalidadArgentina(localidad, calle, numero || undefined, {
