@@ -4244,8 +4244,8 @@ function iniciarPedidosActividadPollAdmin() {
     if (!esAdmin()) return;
     pollPedidosActividadAdmin();
     _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 8000);
-    void mostrarBannerOpinionCliente();
-    setInterval(() => void mostrarBannerOpinionCliente(), 15000);
+    void pollBannerOpinionCliente();
+    setInterval(() => void pollBannerOpinionCliente(), 15000);
 }
 
 function detenerTecnicosMapaPrincipalPoll() {
@@ -10842,10 +10842,6 @@ async function pollBannerOpinionCliente() {
         );
         if (!col.rows?.length) return;
         const tsql = await pedidosFiltroTenantSql();
-        if (box.dataset.visible === '1' && box.dataset.pedidoId) {
-            return;
-        }
-        const wm = _adminBannerOpinionWatermarkIso || new Date(0).toISOString();
         let r;
         try {
             r = await sqlSimple(
@@ -10853,9 +10849,10 @@ async function pollBannerOpinionCliente() {
                         telefono_contacto, opinion_cliente_estrellas
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
-                 AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
+                 AND opinion_cliente_estrellas IS NOT NULL
+                 AND opinion_cliente_estrellas < 3
                  ${tsql}
-                 ORDER BY fecha_opinion_cliente ASC LIMIT 1`
+                 ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
         } catch (_e) {
             r = await sqlSimple(
@@ -10863,13 +10860,21 @@ async function pollBannerOpinionCliente() {
                         telefono_contacto, opinion_cliente_estrellas
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
-                 AND fecha_opinion_cliente > (${esc(wm)})::timestamptz
+                 AND opinion_cliente_estrellas IS NOT NULL
+                 AND opinion_cliente_estrellas < 3
                  ${tsql}
-                 ORDER BY fecha_opinion_cliente ASC LIMIT 1`
+                 ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
         }
         const row = r.rows?.[0];
-        if (!row) return;
+        if (!row) {
+            if (box.dataset.visible === '1') {
+                box.style.display = 'none';
+                delete box.dataset.visible;
+                delete box.dataset.pedidoId;
+            }
+            return;
+        }
         const nid = Number(row.id);
         if (_sessionOpinionBannerDismissedIds().has(String(nid))) return;
         const fop = row.fecha_opinion_cliente;
