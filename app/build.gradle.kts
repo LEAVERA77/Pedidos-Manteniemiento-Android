@@ -126,15 +126,30 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 }
 
-// APK renombrado fuera del build/ (no toca salidas AGP → sin conflicto Gradle 9).
+/**
+ * Carpeta destino de la tarea [renameReleaseApk].
+ * Por defecto: [rootProject]/release-export/ (disco local; compatible con Gradle 9).
+ * Opcional: variable de entorno `GESTORNOVA_RELEASE_COPY_DIR` = ruta absoluta (ej. carpeta en Google Drive).
+ *
+ * No enlaces `app/build` ni la salida de `packageRelease` a Google Drive: Gradle 9 inspecciona esas rutas y suele fallar con
+ * AccessDeniedException en "Mi unidad". La APK release se genera siempre en `app/build/outputs/apk/release/`; esta tarea solo copia.
+ */
+val gestornovaReleaseCopyDir: String? =
+    System.getenv("GESTORNOVA_RELEASE_COPY_DIR")?.trim()?.takeIf { it.isNotEmpty() }
+
+// APK renombrado: primero siempre en build estándar; esta tarea solo copia a release-export/ o a GESTORNOVA_RELEASE_COPY_DIR.
 tasks.register<Copy>("renameReleaseApk") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release")) {
         include("app-release.apk", "app-release-unsigned.apk")
     }
-    into(file("G:/Mi unidad/Programas/Actualizaciones Android/release/release"))
+    val destRoot =
+        gestornovaReleaseCopyDir?.let { rootProject.file(it) }
+            ?: rootProject.file("release-export")
+    into(destRoot)
     val vName = android.defaultConfig.versionName ?: "0.0.0"
     val vCode = android.defaultConfig.versionCode ?: 0
     rename { "GestorNova-$vName($vCode)-release.apk" }
+    doNotTrackState("Destino puede ser carpeta externa (Drive); no rastrear para el incremental build")
 }
 

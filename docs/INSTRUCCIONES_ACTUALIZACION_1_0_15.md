@@ -9,7 +9,7 @@ cd C:\Users\leave\AndroidStudioProjects\Nexxo
 .\gradlew renameReleaseApk
 ```
 
-- Requiere **Google Drive para escritorio** montado en `G:` si usás la tarea `renameReleaseApk` (copia a `G:\Mi unidad\Programas\Actualizaciones Android\release\release`).
+- La tarea Gradle `renameReleaseApk` copia la APK a **`release-export/`** en la raíz del repo (disco local). Si querés copiar a Google Drive, definí la variable de entorno **`GESTORNOVA_RELEASE_COPY_DIR`** con la ruta absoluta (ej. `G:\Mi unidad\Programas\Actualizaciones Android\release`). No configures la salida de `packageRelease` directamente en Drive: Gradle 9 falla con `AccessDeniedException` al inspeccionar esa ruta.
 - Si no tenés `G:`, usá **Build → Build Bundle(s) / APK(s) → Build APK(s)** y tomá el APK desde `app\build\outputs\apk\release\` (o `release-renamed` si configuraste otra ruta).
 
 El archivo esperado: `GestorNova-1.0.15(15)-release.apk`.
