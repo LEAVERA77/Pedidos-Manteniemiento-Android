@@ -7500,13 +7500,22 @@ async function refrescarMaterialesEnDetalle(p) {
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
     const pid = parseInt(p.id, 10);
-    if (
-        p.es === 'Cerrado' &&
-        body.dataset.stableMatPid === String(pid) &&
-        body.querySelector('table.mat-det-table')
-    ) {
-        return;
+    
+    // GUARD MEJORADO: si el pedido está cerrado y ya hay materiales renderizados, NO recargar
+    // Esto previene el parpadeo cuando se llama recursivamente a detalle()
+    if (p.es === 'Cerrado') {
+        const yaRenderizado = body.dataset.stableMatPid === String(pid);
+        const tieneTabla = body.querySelector('table.mat-det-table');
+        if (yaRenderizado && tieneTabla) {
+            console.debug('[materiales-detalle] Pedido cerrado ya renderizado, skip reload', pid);
+            return;
+        }
+        // Si no tiene tabla pero dice stable, limpiar el estado
+        if (yaRenderizado && !tieneTabla) {
+            delete body.dataset.stableMatPid;
+        }
     }
+    
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
         return;
@@ -8868,7 +8877,12 @@ async function detalle(p) {
                     cur.fopin = fp;
                     changed = true;
                 }
-                if (changed) void detalle(cur);
+                if (changed) {
+                    // Solo recargar si el pedido NO está cerrado (evita bucle de recarga)
+                    if (p.es !== 'Cerrado' && cur.es !== 'Cerrado') {
+                        void detalle(cur);
+                    }
+                }
             } catch (_) {}
         })();
     }
@@ -10837,14 +10851,23 @@ async function pollBannerNuevoReclamoCliente() {
 }
 
 async function pollBannerOpinionCliente() {
-    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
+        console.debug('[poll-banner-opinion] Skip: no admin o offline o sin Neon');
+        return;
+    }
     const box = document.getElementById('admin-banner-opinion-cliente');
-    if (!box) return;
+    if (!box) {
+        console.debug('[poll-banner-opinion] Skip: elemento banner no existe');
+        return;
+    }
     try {
         const col = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
         );
-        if (!col.rows?.length) return;
+        if (!col.rows?.length) {
+            console.warn('[poll-banner-opinion] Columna fecha_opinion_cliente no existe');
+            return;
+        }
         const tsql = await pedidosFiltroTenantSql();
         let r;
         try {
@@ -10859,6 +10882,7 @@ async function pollBannerOpinionCliente() {
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
         } catch (_e) {
+            console.warn('[poll-banner-opinion] Query principal falló, intentando fallback sin tsql');
             r = await sqlSimple(
                 `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente,
                         telefono_contacto, opinion_cliente_estrellas
@@ -10872,6 +10896,7 @@ async function pollBannerOpinionCliente() {
         }
         const row = r.rows?.[0];
         if (!row) {
+            console.debug('[poll-banner-opinion] No hay pedidos con calificación baja');
             if (box.dataset.visible === '1') {
                 box.style.display = 'none';
                 delete box.dataset.visible;
@@ -10880,7 +10905,11 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const nid = Number(row.id);
-        if (_sessionOpinionBannerDismissedIds().has(String(nid))) return;
+        if (_sessionOpinionBannerDismissedIds().has(String(nid))) {
+            console.debug('[poll-banner-opinion] Pedido %s ya fue descartado en esta sesión', nid);
+            return;
+        }
+        console.info('[poll-banner-opinion] ✓ Mostrando banner para pedido %s (estrellas: %s)', nid, row.opinion_cliente_estrellas);
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
@@ -10914,7 +10943,9 @@ async function pollBannerOpinionCliente() {
         box.dataset.visible = '1';
         box.dataset.pedidoId = String(nid);
         if (fop) box.dataset.fechaOpinionIso = new Date(fop).toISOString();
-    } catch (_) {}
+    } catch (e) {
+        console.error('[poll-banner-opinion] Error:', e?.message || e);
+    }
 }
 
 function adminBannerOpinionClickWhatsapp() {
@@ -14003,8 +14034,16 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
            nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
-           latitud = CASE WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END,
-           longitud = CASE WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`
+           latitud = CASE 
+             WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud
+             WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud 
+             ELSE EXCLUDED.latitud 
+           END,
+           longitud = CASE 
+             WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud
+             WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud 
+             ELSE EXCLUDED.longitud 
+           END`
     );
 }
 
@@ -14257,8 +14296,10 @@ async function importarExcelSocios(event) {
         mostrarOverlayImportacion('Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando catálogo completo (TODOS los registros, incluyendo coordenadas)…');
-            await sqlSimple(`DELETE FROM socios_catalogo`);
+            actualizarOverlayImportacion('Vaciando catálogo (preservando coordenadas corregidas manualmente)…');
+            // NO borrar filas con ubicacion_manual = TRUE (son correcciones del admin que deben persistir)
+            await sqlSimple(`DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE`);
+            console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
         }
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });

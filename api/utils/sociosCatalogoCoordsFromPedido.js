@@ -171,14 +171,19 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
         if (idsFb.length === 1) {
           const sidFb = idsFb[0];
           const hasUbicManual = cols.has("ubicacion_manual");
-          const updateSql = hasUbicManual
-            ? `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric, ubicacion_manual = TRUE WHERE id = $3 RETURNING id`
-            : `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`;
+          const hasFechaCorr = cols.has("fecha_correccion_coords");
+          
+          let updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
+          if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
+          if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
+          updateSql += ` WHERE id = $3 RETURNING id`;
+          
           const u = await query(updateSql, [la, ln, sidFb]);
           const ok = !!(u.rows && u.rows.length);
           if (ok) {
             const marcaManual = hasUbicManual ? " (marcada como manual)" : "";
-            console.info("[coords-manual→socios_catalogo] actualizado socio id=%s por dirección+nombre (pedido %s)%s", sidFb, pedido.id, marcaManual);
+            const marcaFecha = hasFechaCorr ? " con timestamp" : "";
+            console.info("[coords-manual→socios_catalogo] ✓ actualizado socio id=%s por dirección+nombre (pedido %s)%s%s", sidFb, pedido.id, marcaManual, marcaFecha);
           }
           return { ok, sociosId: sidFb, reason: ok ? "match_direccion_nombre" : "update_failed" };
         } else if (idsFb.length > 1) {
@@ -211,14 +216,21 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
 
     const sid = ids[0];
     const hasUbicManual = cols.has("ubicacion_manual");
-    const updateSql = hasUbicManual
-      ? `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric, ubicacion_manual = TRUE WHERE id = $3 RETURNING id`
-      : `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`;
+    const hasFechaCorr = cols.has("fecha_correccion_coords");
+    
+    let updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
+    if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
+    if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
+    updateSql += ` WHERE id = $3 RETURNING id`;
+    
     const u = await query(updateSql, [la, ln, sid]);
     const ok = !!(u.rows && u.rows.length);
     if (ok) {
       const marcaManual = hasUbicManual ? " (marcada como manual)" : "";
-      console.info("[coords-manual→socios_catalogo] actualizado socio id=%s (pedido %s)%s", sid, pedido.id, marcaManual);
+      const marcaFecha = hasFechaCorr ? " con timestamp" : "";
+      console.info("[coords-manual→socios_catalogo] ✓ actualizado socio id=%s (pedido %s)%s%s", sid, pedido.id, marcaManual, marcaFecha);
+    } else {
+      console.warn("[coords-manual→socios_catalogo] ✗ UPDATE falló para socio id=%s", sid);
     }
     return { ok, sociosId: sid, reason: ok ? undefined : "update_failed" };
   } catch (e) {

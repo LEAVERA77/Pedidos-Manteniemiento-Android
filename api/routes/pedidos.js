@@ -1171,15 +1171,33 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     const updated = coercePedidoLatLng(r.rows[0]);
-    setImmediate(() => {
-      actualizarSociosCatalogoCoordsSiMatchPedido({
+    
+    // Actualizar socios_catalogo de forma síncrona para asegurar persistencia inmediata
+    let catalogoActualizado = false;
+    let catalogoInfo = null;
+    try {
+      const resultado = await actualizarSociosCatalogoCoordsSiMatchPedido({
         pedido: r.rows[0],
         lat: la,
         lng: ln,
         tenantId: req.tenantId,
-      }).catch((e) => console.warn("[coords-manual] sync socios_catalogo", e?.message || e));
+      });
+      catalogoActualizado = resultado.ok === true;
+      catalogoInfo = resultado;
+      if (catalogoActualizado) {
+        console.info("[coords-manual] ✓ Catálogo actualizado: socio id=%s", resultado.sociosId);
+      } else {
+        console.info("[coords-manual] ⚠ Catálogo NO actualizado: %s", resultado.reason || "sin razón");
+      }
+    } catch (e) {
+      console.warn("[coords-manual] ✗ Error al actualizar catálogo:", e?.message || e);
+    }
+    
+    return res.json({
+      ...updated,
+      _catalogoActualizado: catalogoActualizado,
+      _catalogoInfo: catalogoInfo
     });
-    return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
   }
