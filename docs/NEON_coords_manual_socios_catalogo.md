@@ -27,3 +27,11 @@ Para generar un `.xlsx` nuevo con coordenadas WGS84 en **dos columnas numéricas
 `npm run geocodificar:excel-socios -- --file="RUTA\\socios.xlsx" [--out="RUTA\\salida.xlsx"]`
 
 Si configurás `GOOGLE_MAPS_API_KEY` (o `GOOGLE_MAPS_GEOCODING_API_KEY`), se usa **Google Geocoding**; si no, **Nominatim** (OSM), con intervalo ~1 s entre consultas. Ver `api/scripts/geocodificarExcelSocios.mjs`.
+
+### Excel demo 300 socios (Entre Ríos) con lat/lon verificadas por Nominatim
+
+El ejemplo `app/src/main/assets/ejemplos/socios-demo-300.xlsx` usa las mismas cuatro localidades (75 filas c/u). Para generar **`socios-demo-300-nominatim-verificado.xlsx`** (mismas columnas + **latitud** y **longitud** numéricas en columnas propias, todas las filas con hit Nominatim o el script aborta):
+
+`npm run generar:demo-socios-nominatim-verificado` (desde la carpeta `api/`; ~6 minutos por el rate limit público de Nominatim; en pruebas locales podés usar `NOMINATIM_THROTTLE_MS_FOR_TESTS=0`).
+
+Salida por defecto: `app/src/main/assets/ejemplos/socios-demo-300-nominatim-verificado.xlsx`. Opciones: `--ref=`, `--out=`, `--limit=N`.

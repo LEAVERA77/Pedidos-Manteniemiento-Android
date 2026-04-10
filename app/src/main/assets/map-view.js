@@ -285,6 +285,13 @@ export async function runInitMap() {
     setTimeout(actualizarEscala, 200);
 
     ctx.app.map.on('click', (e) => {
+        /* Android/WebView: el toque en un botón del popup puede cerrar el popup y disparar este click en el mapa → abre #pm. */
+        try {
+            const w = ctx.window;
+            const until = w._gnSuppressMapClickUntil;
+            if (typeof until === 'number' && Date.now() < until) return;
+        } catch (_) {}
+
         if (ctx._modoFijarUbicacionAdmin) {
             ctx._modoFijarUbicacionAdmin = false;
             ctx.document.body.classList.remove('modo-fijar-ubicacion');

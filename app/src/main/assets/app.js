@@ -5546,13 +5546,24 @@ function renderMk() {
     });
 }
 
+/** Tras tocar un botón del popup de Leaflet, el mismo gesto puede generar un click en el mapa (p. ej. WebView Android). */
+function suppressNextMapClickFromPopup(ms = 520) {
+    try {
+        window._gnSuppressMapClickUntil = Date.now() + ms;
+    } catch (_) {}
+}
+window.suppressNextMapClickFromPopup = suppressNextMapClickFromPopup;
+
 window._d = id => {
+    suppressNextMapClickFromPopup(550);
     app.map?.closePopup();
     const p = app.p.find(x => String(x.id) === String(id));
     if (p) void detalle(p);
+    else toast('No se encontró el pedido en la lista actual. Actualizá el listado e intentá de nuevo.', 'warning');
 };
 
 window._z = id => {
+    suppressNextMapClickFromPopup(550);
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) return;
     void (async () => {
@@ -5572,11 +5583,13 @@ window._z = id => {
 };
 
 window._assignMapa = id => {
+    suppressNextMapClickFromPopup(550);
     try { app.map?.closePopup(); } catch (_) {}
     abrirModalAsignarTecnico(id);
 };
 
 window._desasignarMapa = id => {
+    suppressNextMapClickFromPopup(550);
     try { app.map?.closePopup(); } catch (_) {}
     ejecutarDesasignarPedidoPorId(id, { confirmar: true });
 };
@@ -5632,6 +5645,7 @@ window._moverUbicMapa = function (pedidoId) {
         return;
     }
     void (async () => {
+        suppressNextMapClickFromPopup(550);
         await ensureMapReady();
         if (!app.map || typeof L === 'undefined') return;
         cancelarMoverUbicacionMapa();
