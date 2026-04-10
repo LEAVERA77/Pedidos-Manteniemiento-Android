@@ -1,5 +1,5 @@
 /**
- * Busca coordenadas corregidas manualmente en socios_catalogo por NIS/Medidor.
+ * Busca coordenadas corregidas manualmente en socios_catalogo por NIS/Medidor o dirección+nombre.
  * Esta función tiene prioridad absoluta sobre geocodificación para asegurar que
  * las ubicaciones corregidas por el admin persistan en nuevos pedidos del mismo cliente.
  * made by leavera77
@@ -51,66 +51,6 @@ function sqlLngExpr(cols, alias) {
 
 /**
  * Busca coordenadas en socios_catalogo por NIS, Medidor o NIS_Medidor.
- * Prioriza coordenadas marcadas como manuales (ubicacion_manual = TRUE).
- * @param {object} p
- * @param {number} p.tenantId
- * @param {string} [p.nis]
- * @param {string} [p.medidor]
- * @param {string} [p.nisMedidor]
- * @returns {Promise<{ lat: number, lng: number, fuente: string, esManual: boolean } | null>}
- */
-export async function buscarCoordenadasPorNisMedidor(p) {
-  const tid = Number(p.tenantId);
-  if (!Number.isFinite(tid) || tid < 1) return null;
-
-  const nisT = p.nis != null && String(p.nis).trim() ? String(p.nis).trim() : "";
-  const medT = p.medidor != null && String(p.medidor).trim() ? String(p.medidor).trim() : "";
-  const nmT = p.nisMedidor != null && String(p.nisMedidor).trim() ? String(p.nisMedidor).trim() : "";
-
-  if (!nisT && !medT && !nmT) return null;
-
-  if (!(await tableExists("socios_catalogo"))) return null;
-
-  const cols = await columnas("socios_catalogo");
-  const latX = sqlLatExpr(cols, "s");
-  const lngX = sqlLngExpr(cols, "s");
-  if (!latX || !lngX) return null;
-
-  const tenantCol = cols.has("cliente_id")
-    ? "cliente_id"
-    : cols.has("tenant_id")
-      ? "tenant_id"
-      : null;
-  const hasNis = cols.has("nis");
-  const hasMed = cols.has("medidor");
-  const hasNisMed = cols.has("nis_medidor");
-  const hasUbicManual = cols.has("ubicacion_manual");
-
-  if (!hasNis && !hasMed && !hasNisMed) return null;
-
-  const conditions = [];
-  const params = [];
-  let pIdx = 1;
-
-  if (nmT && hasNisMed) {
-    conditions.push(`UPPER(TRIM(COALESCE(s.nis_medidor,''))) = UPPER(TRIM($${pIdx}))`);
-    params.push(nmT);
-    pIdx++;
-  } else {
-    if (nisT && hasNis) {
-      conditions.push(`UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx}))`);
-      params.push(nisT);
-      pIdx++;
-    }
-    if (medT && hasMed) {
-      conditions.push(`UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx}))`);
-      params.push(medT);
-      pIdx++;
-    }
-  }
-
-/**
- * Busca coordenadas en socios_catalogo por NIS, Medidor o NIS_Medidor.
  * Si no encuentra por identificadores, intenta match por dirección + nombre.
  * Prioriza coordenadas marcadas como manuales (ubicacion_manual = TRUE).
  * @param {object} p
@@ -126,18 +66,30 @@ export async function buscarCoordenadasPorNisMedidor(p) {
  */
 export async function buscarCoordenadasPorNisMedidor(p) {
   const tid = Number(p.tenantId);
-  if (!Number.isFinite(tid) || tid < 1) return null;
+  if (!Number.isFinite(tid) || tid < 1) {
+    console.info("[buscar-coords] tenantId inválido:", tid);
+    return null;
+  }
 
   const nisT = p.nis != null && String(p.nis).trim() ? String(p.nis).trim() : "";
   const medT = p.medidor != null && String(p.medidor).trim() ? String(p.medidor).trim() : "";
   const nmT = p.nisMedidor != null && String(p.nisMedidor).trim() ? String(p.nisMedidor).trim() : "";
 
-  if (!(await tableExists("socios_catalogo"))) return null;
+  console.info("[buscar-coords] Búsqueda iniciada para tenantId=%s, NIS=%s, Medidor=%s, NIS_Medidor=%s", 
+    tid, nisT || "(vacío)", medT || "(vacío)", nmT || "(vacío)");
+
+  if (!(await tableExists("socios_catalogo"))) {
+    console.warn("[buscar-coords] Tabla socios_catalogo NO existe");
+    return null;
+  }
 
   const cols = await columnas("socios_catalogo");
   const latX = sqlLatExpr(cols, "s");
   const lngX = sqlLngExpr(cols, "s");
-  if (!latX || !lngX) return null;
+  if (!latX || !lngX) {
+    console.warn("[buscar-coords] Sin columnas de coordenadas en socios_catalogo");
+    return null;
+  }
 
   const tenantCol = cols.has("cliente_id")
     ? "cliente_id"
@@ -149,8 +101,14 @@ export async function buscarCoordenadasPorNisMedidor(p) {
   const hasNisMed = cols.has("nis_medidor");
   const hasUbicManual = cols.has("ubicacion_manual");
 
+  console.info("[buscar-coords] Columnas disponibles: tenantCol=%s, hasNis=%s, hasMed=%s, hasNisMed=%s, hasUbicManual=%s", 
+    tenantCol || "(ninguna)", hasNis, hasMed, hasNisMed, hasUbicManual);
+
   if (nisT || medT || nmT) {
-    if (!hasNis && !hasMed && !hasNisMed) return null;
+    if (!hasNis && !hasMed && !hasNisMed) {
+      console.warn("[buscar-coords] No hay columnas NIS/Medidor en socios_catalogo");
+      return null;
+    }
 
     const conditions = [];
     const params = [];
@@ -189,24 +147,36 @@ export async function buscarCoordenadasPorNisMedidor(p) {
 
       sql += hasUbicManual ? ` ORDER BY s.ubicacion_manual DESC NULLS LAST LIMIT 1` : ` LIMIT 1`;
 
+      console.info("[buscar-coords] SQL NIS/Medidor:", sql);
+      console.info("[buscar-coords] Params:", params);
+
       try {
         const r = await query(sql, params);
+        console.info("[buscar-coords] Resultado query NIS/Medidor: %s filas", r.rows?.length || 0);
+        
         const row = r.rows?.[0];
         if (row) {
           const la = Number(row.la);
           const lo = Number(row.lo);
+          const manual = hasUbicManual && row.manual === true;
+          console.info("[buscar-coords] Fila encontrada: lat=%s, lng=%s, manual=%s", la, lo, manual);
+          
           if (coordsOk(la, lo)) {
-            const esManual = hasUbicManual && row.manual === true;
+            console.info("[buscar-coords] ✓ Coordenadas válidas retornadas (NIS/Medidor)");
             return {
               lat: la,
               lng: lo,
-              fuente: esManual ? "socios_catalogo_manual_corregido" : "socios_catalogo_nis_medidor",
-              esManual,
+              fuente: manual ? "socios_catalogo_manual_corregido" : "socios_catalogo_nis_medidor",
+              esManual: manual,
             };
+          } else {
+            console.warn("[buscar-coords] Coordenadas NO válidas (fuera de rango o cero)");
           }
+        } else {
+          console.info("[buscar-coords] No se encontró ninguna fila por NIS/Medidor");
         }
       } catch (e) {
-        console.warn("[buscar-coords-nis-medidor]", e?.message || e);
+        console.warn("[buscar-coords] Error en query NIS/Medidor:", e?.message || e);
       }
     }
   }
@@ -218,6 +188,9 @@ export async function buscarCoordenadasPorNisMedidor(p) {
 
   if (calleP.length >= 2 && locP.length >= 2 && nomP.length >= 3 && 
       cols.has("calle") && cols.has("localidad") && cols.has("nombre")) {
+    
+    console.info("[buscar-coords] Intentando fallback por dirección+nombre: %s %s, %s (%s)", 
+      calleP, numP || "(s/n)", locP, nomP);
     
     const params = [];
     let pIdx = 1;
@@ -253,27 +226,35 @@ export async function buscarCoordenadasPorNisMedidor(p) {
       ${hasUbicManual ? "ORDER BY s.ubicacion_manual DESC NULLS LAST" : ""}
       LIMIT 1`;
 
+    console.info("[buscar-coords] SQL dirección+nombre:", sql);
+    console.info("[buscar-coords] Params:", params);
+
     try {
       const r = await query(sql, params);
+      console.info("[buscar-coords] Resultado query dirección+nombre: %s filas", r.rows?.length || 0);
+      
       const row = r.rows?.[0];
       if (row) {
         const la = Number(row.la);
         const lo = Number(row.lo);
+        const manual = hasUbicManual && row.manual === true;
+        console.info("[buscar-coords] Fila encontrada: lat=%s, lng=%s, manual=%s", la, lo, manual);
+        
         if (coordsOk(la, lo)) {
-          const esManual = hasUbicManual && row.manual === true;
-          console.info("[buscar-coords-nis-medidor] match por dirección+nombre: socio encontrado");
+          console.info("[buscar-coords] ✓ Coordenadas válidas retornadas (dirección+nombre)");
           return {
             lat: la,
             lng: lo,
-            fuente: esManual ? "socios_catalogo_manual_corregido_direccion" : "socios_catalogo_direccion_nombre",
-            esManual,
+            fuente: manual ? "socios_catalogo_manual_corregido_direccion" : "socios_catalogo_direccion_nombre",
+            esManual: manual,
           };
         }
       }
     } catch (e) {
-      console.warn("[buscar-coords-nis-medidor] fallback dirección+nombre", e?.message || e);
+      console.warn("[buscar-coords] Error en query dirección+nombre:", e?.message || e);
     }
   }
 
+  console.info("[buscar-coords] Sin coordenadas encontradas en socios_catalogo (retornando null)");
   return null;
 }
