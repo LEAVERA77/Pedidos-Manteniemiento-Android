@@ -4123,6 +4123,9 @@ function refrescarDetalleSiAbiertoTrasSync() {
     if (!pidKey || pidKey === '') return;
     const fresh = app.p.find(x => String(x.id) === pidKey);
     if (fresh) {
+        if (fresh.es === 'Cerrado' || fresh.es === 'Derivado externo') {
+            return;
+        }
         try {
             void detalle(fresh);
         } catch (_) {}
