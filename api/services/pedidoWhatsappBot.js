@@ -223,7 +223,7 @@ export async function crearPedidoDesdeWhatsappBot({
   let calleNormalizada = calleT;
   let normalizacionInfo = null;
   if (calleT && locT) {
-    const normResult = normalizarDireccion({ calle: calleT, ciudad: locT });
+    const normResult = await normalizarDireccion({ calle: calleT, ciudad: locT });
     if (normResult && normResult.cambio) {
       calleNormalizada = normResult.calleNormalizada;
       normalizacionInfo = normResult;
