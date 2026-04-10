@@ -18,6 +18,7 @@ import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 import configUbicacionRoutes from "./routes/configUbicacion.js";
 import whatsappGeocodeRoutes from "./routes/whatsappGeocode.js";
 import geocodeNominatimRoutes from "./routes/geocodeNominatim.js";
+import callesNormalizadasRoutes from "./routes/callesNormalizadas.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 
@@ -82,6 +83,7 @@ export function createHttpApp() {
   app.use("/api/config", configUbicacionRoutes);
   app.use("/api/whatsapp", whatsappGeocodeRoutes);
   app.use("/api/geocode", geocodeNominatimRoutes);
+  app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);
   app.use("/api/tenant-operativa", tenantOperativaSettingsRoutes);
   app.use("/api/infra-afectados", infraAfectadosRoutes);

@@ -43,6 +43,7 @@ import {
   humanChatActivateSession,
 } from "../services/whatsappHumanChat.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
+import { regeocodificarPedido } from "../services/regeocodificarPedido.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -1181,6 +1182,74 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
     return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
+  }
+});
+
+/**
+ * Admin: Re-geocodificar pedido con sistema inteligente de 5 capas
+ * Actualiza coordenadas usando: catálogo → normalización → Nominatim → interpolación → fallback
+ * Útil para pedidos viejos o con coords incorrectas
+ */
+router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+    
+    const pedido = await getPedidoInTenant(id, req.tenantId);
+    if (!pedido) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+    
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) {
+        return res.status(403).json({ error: e.message });
+      }
+      throw e;
+    }
+    
+    // Ejecutar re-geocodificación
+    const resultado = await regeocodificarPedido(id, req.tenantId);
+    
+    if (!resultado.success) {
+      return res.status(400).json({
+        error: resultado.mensaje || "No se pudo re-geocodificar",
+        log: resultado.log || []
+      });
+    }
+    
+    // Actualizar socios_catalogo si aplica
+    if (resultado.fuente !== "catalogo_manual" && resultado.fuente !== "catalogo") {
+      setImmediate(() => {
+        actualizarSociosCatalogoCoordsSiMatchPedido({
+          pedido,
+          lat: resultado.lat,
+          lng: resultado.lng,
+          tenantId: req.tenantId,
+        }).catch((e) => console.warn("[regeocodificar] sync socios_catalogo", e?.message || e));
+      });
+    }
+    
+    return res.json({
+      success: true,
+      mensaje: resultado.mensaje,
+      coordenadas: {
+        lat: resultado.lat,
+        lng: resultado.lng
+      },
+      fuente: resultado.fuente,
+      log: resultado.log
+    });
+    
+  } catch (error) {
+    console.error("[regeocodificar] Error:", error);
+    return res.status(500).json({
+      error: "Error al re-geocodificar pedido",
+      detail: error.message
+    });
   }
 });
 
