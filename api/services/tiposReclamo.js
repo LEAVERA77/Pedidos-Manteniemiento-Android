@@ -81,7 +81,7 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Consumo elevado": "Baja",
   /** Histórico (antes del rename a Consumo elevado). */
   "Cambio de Medidor": "Baja",
-  "Alumbrado Público (Mantenimiento)": "Baja",
+  "Alumbrado Público (Mantenimiento)": "Media",
   "Riesgo en la vía pública": "Crítica",
   "Corrimiento de poste/columna": "Crítica",
   "Pedido de factibilidad (nuevo servicio)": "Baja",
@@ -179,7 +179,7 @@ export function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
 /** Solo NIS: no exigimos nombre de cliente en el formulario (puede venir del catálogo). */
 export function tipoReclamoSoloNisSinNombreCliente(tipoTrabajo) {
   const v = String(tipoTrabajo || "").trim();
-  return v === "Problemas de Tensión" || v === "Consumo elevado";
+  return v === "Problemas de Tensión";
 }
 
 export function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
@@ -196,6 +196,7 @@ const TIPOS_ELECTRICO_PIDE_SUMINISTRO = new Set([
   "Problemas de Tensión",
   "Consumo elevado",
   "Corte de Energía",
+  "Alumbrado Público (Mantenimiento)",
   "Pedido de factibilidad (nuevo servicio)",
 ]);
 

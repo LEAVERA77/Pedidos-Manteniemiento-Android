@@ -96,6 +96,7 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
 /** En estos pasos *volver* / *atrás* debe manejar el flujo, no reiniciar al menú principal. */
 const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_desc",
+  "awaiting_factibilidad_post_gps",
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
   "awaiting_addr_ciudad",
@@ -146,6 +147,23 @@ function interpretaMenuIdentificacion(raw) {
   if (t === "1" || t === "1." || t.startsWith("1)") || t === "uno" || /^1\s+/.test(t)) return 1;
   if (t === "2" || t === "2." || t.startsWith("2)") || t === "dos" || /^2\s+/.test(t)) return 2;
   return 0;
+}
+
+/** Tras GPS en factibilidad: 1 servicio / 2 nombre y dirección; null = texto no reconocido (*0* sale al menú vía `debeSalirAlMenuPrincipalWhatsApp`). */
+function interpretaOpcionFactibilidadPostGpsWhatsapp(raw) {
+  const t = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!t) return null;
+  if (t === "1" || t === "1." || t.startsWith("1)") || t === "uno" || /^1\s+/.test(t)) return "servicio";
+  if (t === "2" || t === "2." || t.startsWith("2)") || t === "dos" || /^2\s+/.test(t)) return "nombre";
+  return null;
+}
+
+function esPedidoFactibilidadNuevoServicioWhatsapp(tipo) {
+  return /factibilidad/i.test(String(tipo || "").trim());
 }
 
 function mensajeMenuIdentificacion(ctx) {
@@ -1467,6 +1485,18 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sess.ubicacionGpsPin = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
+    if (esPedidoFactibilidadNuevoServicioWhatsapp(sess.tipo)) {
+      sess.step = "awaiting_factibilidad_post_gps";
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección) o *0* (salir).\n\n" +
+          `_(*menú* = salir · *atrás* = volver a describir / otra ubicación)_`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     await reply(
       phone,
       "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa. Ahora escribí la *descripción* del problema (texto).\n\n" +
@@ -1777,6 +1807,45 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   let sess = sessions.get(sk);
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+
+  if (sess && sess.step === "awaiting_factibilidad_post_gps") {
+    if (esComandoAtras(text)) {
+      sess.step = "awaiting_desc";
+      delete sess.factibilidadPostGpsRama;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Volvimos atrás. Podés enviar otra *ubicación GPS* o escribir la *descripción* del pedido.\n\n" +
+          `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const opt = interpretaOpcionFactibilidadPostGpsWhatsapp(text);
+    if (opt === "servicio" || opt === "nombre") {
+      sess.factibilidadPostGpsRama = opt;
+      sess.step = "awaiting_desc";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Perfecto. Ahora escribí una *breve descripción* del pedido de factibilidad (una o varias líneas).\n\n" +
+          `_(*menú* / *0* = salir · *atrás* = paso anterior)_`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    await reply(
+      phone,
+      "No reconocimos la opción. Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *0* (salir).",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
 
   if (sess && sess.step === "awaiting_identificacion_modo") {
     if (esComandoAtras(text)) {
@@ -2287,8 +2356,22 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  if (sess.step === "awaiting_desc") {
+  if (sess && sess.step === "awaiting_desc") {
     if (esComandoAtras(text)) {
+      if (sess.factibilidadPostGpsRama === "servicio" || sess.factibilidadPostGpsRama === "nombre") {
+        sess.step = "awaiting_factibilidad_post_gps";
+        delete sess.factibilidadPostGpsRama;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(
+          phone,
+          "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección) o *0* (salir).\n\n" +
+            `_(*menú* = salir · *atrás* = volver a describir / otra ubicación)_`,
+          tid,
+          phoneNumberId
+        );
+        return;
+      }
       sessions.delete(sk);
       await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
       return;
@@ -2296,6 +2379,28 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     const desc = text;
     if (desc.length < 4) {
       await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.", tid, phoneNumberId);
+      return;
+    }
+    const ramaFac = sess.factibilidadPostGpsRama;
+    if (ramaFac === "servicio" || ramaFac === "nombre") {
+      delete sess.factibilidadPostGpsRama;
+      if (ramaFac === "servicio") {
+        sessions.set(sk, {
+          ...sess,
+          step: "awaiting_opcional_id",
+          descripcion: desc,
+          phoneNumberId: sess.phoneNumberId || wpid,
+        });
+        await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
+        return;
+      }
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_nombre_persona",
+        descripcion: desc,
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
       return;
     }
     if (tipoReclamoWhatsappFlujoSoloNis(sess.tipo)) {

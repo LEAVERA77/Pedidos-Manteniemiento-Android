@@ -170,3 +170,212 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
     return { ok: false, reason: "error", detail: String(e?.message || e) };
   }
 }
+
+/** Fallback de mapa en `crearPedidoDesdeWhatsappBot` cuando no hay geocodificación válida. */
+export function esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(lat, lng) {
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) return true;
+  return Math.abs(la - -34.6037) < 0.001 && Math.abs(ln - -58.3816) < 0.001;
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function coordsCatalogoDbValidas(la, ln) {
+  if (la == null || ln == null) return false;
+  const a = Number(la);
+  const b = Number(ln);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (Math.abs(a) > 90 || Math.abs(b) > 180) return false;
+  if (Math.abs(a) < 1e-6 && Math.abs(b) < 1e-6) return false;
+  if (esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(a, b)) return false;
+  return true;
+}
+
+function debeSobrescribirCoordsCatalogoWhatsapp(oldLa, oldLn, newLa, newLn) {
+  if (!coordsCatalogoDbValidas(oldLa, oldLn)) return true;
+  return haversineMeters(Number(oldLa), Number(oldLn), newLa, newLn) > 200;
+}
+
+function nombreTitularPedidoParaMatchCatalogo(clienteNombre) {
+  const n = String(clienteNombre || "").trim();
+  if (n.length < 3 || n.length > 200) return null;
+  if (/^whatsapp\s*\d/i.test(n)) return null;
+  return n;
+}
+
+/**
+ * Tras un reclamo WhatsApp con coordenadas confiables: actualiza `socios_catalogo` si hay
+ * match único por NIS/medidor o por nombre (tenant), y las coords actuales faltan o difieren (>200 m).
+ *
+ * @param {{ pedido: object, tenantId: number, lat: number, lng: number }} opts
+ */
+export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
+  const pedido = opts.pedido;
+  const newLa = Number(opts.lat);
+  const newLn = Number(opts.lng);
+  const tenantId = Number(opts.tenantId);
+  if (!pedido || !Number.isFinite(newLa) || !Number.isFinite(newLn)) {
+    return { ok: false, reason: "parametros" };
+  }
+  if (esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(newLa, newLn)) {
+    return { ok: false, reason: "placeholder_coords" };
+  }
+
+  try {
+    if (!(await tablaExiste("socios_catalogo"))) {
+      return { ok: false, reason: "sin_tabla" };
+    }
+
+    const cols = await columnasSociosCatalogo();
+    const latLng = pickLatLngColumns(cols);
+    if (!latLng) {
+      return { ok: false, reason: "sin_columnas_latlng" };
+    }
+
+    const hasTenant = cols.has("tenant_id");
+    const hasNm = cols.has("nis_medidor");
+    const hasNis = cols.has("nis");
+    const hasMed = cols.has("medidor");
+    const hasNombre = cols.has("nombre");
+
+    const nmRaw = pedido.nis_medidor != null ? String(pedido.nis_medidor).trim() : "";
+    const nisP = pedido.nis != null ? String(pedido.nis).trim() : "";
+    const medP = pedido.medidor != null ? String(pedido.medidor).trim() : "";
+
+    /** @type {{ sql: string, params: any[] } | null} */
+    let findSql = null;
+
+    if (hasNm && nmRaw) {
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      } else if (hasTenant) {
+        console.warn("[wa→socios_catalogo] tenant_id en tabla pero tenantId inválido; match sin filtro tenant");
+      }
+      params.push(nmRaw);
+      const iNm = params.length;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($${iNm}))
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    } else if (hasNis && hasMed && nisP && medP) {
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      } else if (hasTenant) {
+        console.warn("[wa→socios_catalogo] tenant_id en tabla pero tenantId inválido; match sin filtro tenant");
+      }
+      params.push(nisP, medP);
+      const iMed = params.length;
+      const iNis = params.length - 1;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND TRIM(COALESCE(nis::text,'')) = TRIM($${iNis})
+          AND TRIM(COALESCE(medidor::text,'')) = TRIM($${iMed})
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    } else if (hasNm && nisP && medP) {
+      const composed = `${nisP}-${medP}`;
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      } else if (hasTenant) {
+        console.warn("[wa→socios_catalogo] tenant_id en tabla pero tenantId inválido; match sin filtro tenant");
+      }
+      params.push(composed);
+      const iC = params.length;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($${iC}))
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    }
+
+    let ids = [];
+    if (findSql) {
+      const rFind = await query(findSql.sql, findSql.params);
+      ids = (rFind.rows || []).map((x) => x.id);
+    }
+
+    if (ids.length > 1) {
+      return { ok: false, reason: "ambiguo_nis", ids };
+    }
+
+    if (ids.length === 0 && hasNombre) {
+      const nom = nombreTitularPedidoParaMatchCatalogo(pedido.cliente_nombre);
+      if (nom) {
+        const params = [];
+        let t = "";
+        if (hasTenant && Number.isFinite(tenantId)) {
+          params.push(tenantId);
+          t = ` AND tenant_id = $${params.length}`;
+        } else if (hasTenant) {
+          console.warn("[wa→socios_catalogo] match por nombre sin tenantId válido");
+        }
+        params.push(nom);
+        const iN = params.length;
+        const rN = await query(
+          `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+           AND LOWER(TRIM(COALESCE(nombre::text,''))) = LOWER(TRIM($${iN}))
+           ORDER BY id ASC LIMIT 4`,
+          params
+        );
+        const idn = (rN.rows || []).map((x) => x.id);
+        if (idn.length === 1) ids = idn;
+        else if (idn.length > 1) {
+          return { ok: false, reason: "ambiguo_nombre", ids: idn };
+        }
+      }
+    }
+
+    if (ids.length === 0) {
+      return { ok: false, reason: "sin_match" };
+    }
+    if (ids.length > 1) {
+      return { ok: false, reason: "ambiguo", ids };
+    }
+
+    const sid = ids[0];
+    const cur = await query(
+      `SELECT ${latLng.la} AS la, ${latLng.ln} AS ln FROM socios_catalogo WHERE id = $1 LIMIT 1`,
+      [sid]
+    );
+    const row = cur.rows?.[0];
+    if (!debeSobrescribirCoordsCatalogoWhatsapp(row?.la, row?.ln, newLa, newLn)) {
+      return { ok: false, reason: "coords_ya_cercanas", sociosId: sid };
+    }
+
+    const u = await query(
+      `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric WHERE id = $3 RETURNING id`,
+      [newLa, newLn, sid]
+    );
+    const ok = !!(u.rows && u.rows.length);
+    if (ok) {
+      console.info("[wa→socios_catalogo] coords actualizadas socio id=%s (pedido %s)", sid, pedido.id);
+    }
+    return { ok, sociosId: sid, reason: ok ? undefined : "update_failed" };
+  } catch (e) {
+    console.warn("[wa→socios_catalogo]", e?.message || e);
+    return { ok: false, reason: "error", detail: String(e?.message || e) };
+  }
+}

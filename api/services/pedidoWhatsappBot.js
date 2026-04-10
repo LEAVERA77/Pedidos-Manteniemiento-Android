@@ -14,6 +14,10 @@ import {
   resolverGeolocalizacionGarantizadaWhatsapp,
   coordsValidasWgs84,
 } from "./whatsappGeolocalizacionGarantizada.js";
+import {
+  enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
+  esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
+} from "../utils/sociosCatalogoCoordsFromPedido.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -306,6 +310,14 @@ export async function crearPedidoDesdeWhatsappBot({
       console.warn("[pedido-whatsapp-bot] geolocalizacion ultimo recurso", e?.message || e);
     }
   }
+  let coordsWhatsappParaCatalogo = null;
+  if (
+    coordsValidasWgs84(latFinal, lngFinal) &&
+    !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal)
+  ) {
+    coordsWhatsappParaCatalogo = { lat: latFinal, lng: lngFinal };
+  }
+
   if (!coordsValidasWgs84(latFinal, lngFinal)) {
     latFinal = -34.6037;
     lngFinal = -58.3816;
@@ -430,6 +442,14 @@ export async function crearPedidoDesdeWhatsappBot({
   const pedidoRow = insert.rows[0];
   setImmediate(() => {
     notificarAdminsNuevoPedidoWhatsappSafe(Number(tenantId), pedidoRow).catch(() => {});
+    if (coordsWhatsappParaCatalogo) {
+      enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp({
+        pedido: pedidoRow,
+        tenantId: Number(tenantId),
+        lat: coordsWhatsappParaCatalogo.lat,
+        lng: coordsWhatsappParaCatalogo.lng,
+      }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
+    }
   });
   return pedidoRow;
 }

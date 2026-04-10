@@ -552,17 +552,17 @@ textarea{resize:vertical;min-height:80px}
 }
 #admin-estadisticas.gn-stats-capture-compact #chart-wrap-confiabilidad > p{
   font-size:.65rem!important;
-  line-height:1.25!important;
+  line-height:1.35!important;
   margin-bottom:.35rem!important;
-  max-height:2.8em;
-  overflow:hidden;
+  overflow:visible!important;
+  max-height:none!important;
 }
 #admin-estadisticas.gn-stats-capture-compact .chart-legend-caption{
   font-size:.62rem!important;
-  line-height:1.25!important;
+  line-height:1.38!important;
   margin-top:.25rem!important;
-  max-height:3.2em;
-  overflow:hidden;
+  overflow:visible!important;
+  max-height:none!important;
 }
 .kpi-neon-calc-panel{
   background:linear-gradient(135deg,#ecfeff,#f0fdf4);
