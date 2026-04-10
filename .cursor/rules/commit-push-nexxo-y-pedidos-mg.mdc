@@ -1,32 +1,33 @@
 ---
-description: Tras implementar cambios, commit y push en Pedidos-Manteniemiento-Android y Pedidos-MG (GitHub)
+description: Commit y push obligatorio en GitHub — Android (Pedidos-Manteniemiento-Android) y web (Pedidos-MG) según cambios.
 alwaysApply: true
 ---
 
 # Commit y push en los dos repos de GitHub
 
-**Repos (siempre estos):**
+Tras **implementar cambios reales**, el agente debe dejar el trabajo **commiteado y pusheado** en el remoto correcto, salvo que el usuario pida explícitamente lo contrario.
 
-- **Android / Nexxo (este workspace):** [github.com/LEAVERA77/Pedidos-Manteniemiento-Android](https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android) — rama `main`, remoto habitual `origin`.
-- **Web + API (admin / Pages):** [github.com/LEAVERA77/Pedidos-MG](https://github.com/LEAVERA77/Pedidos-MG) — rama `main`, remoto habitual `origin`.
+## URLs canónicas (remoto `origin`, rama `main`)
 
-**Norma por defecto:** cuando el agente **implemente cambios reales** en **Nexxo** (`AndroidStudioProjects/Nexxo`), al **cerrar la tarea** debe quedar el trabajo **versionado y subido** según corresponda:
+| Rol | Versión | Repositorio |
+|-----|---------|-------------|
+| **Android** (APK, Kotlin, WebView embebido desde assets locales) | App técnicos / cuadrillas | **https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android** |
+| **Web** (GitHub Pages, PWA, admin en navegador) + **API Node** en `api/` | Panel público / admin + backend desplegable | **https://github.com/LEAVERA77/Pedidos-MG** |
 
-1. **Siempre** `git commit` + `git push` en **Pedidos-Manteniemiento-Android** para todo lo modificado en este repo (sin secretos: `.env`, `config.json` con credenciales, claves).
+Workspace local habitual del Android: `AndroidStudioProjects/Nexxo` (remoto → Pedidos-Manteniemiento-Android). Clon típico del web: `AndroidStudioProjects/Pedidos-MG` (hermano de Nexxo).
+
+**Norma por defecto:**
+
+1. **Siempre** `git commit` + `git push origin main` en **Pedidos-Manteniemiento-Android** para todo lo modificado en este repo (sin secretos: `.env`, `config.json` con credenciales, claves).
 2. **Siempre** completar también **Pedidos-MG** cuando la tarea haya tocado algo que allí debe vivir en paridad (`api/**`, `app/src/main/assets/*`, `docs/**` compartidos): sincronizar al clon local de Pedidos-MG, luego `commit` + `push` allí. **No** cerrar la tarea dejando Pedidos-MG desactualizado si hubo esos cambios.
 
 Si solo se tocó código **solo Android** (Kotlin, Gradle, etc.) sin `api/` ni assets compartidos, **no** hace falta commit vacío en Pedidos-MG salvo que el usuario lo pida.
 
-**Salvo** que el usuario diga explícitamente lo contrario: un solo repo, sin push, borrador local, etc.
+## 1. Nexxo → Pedidos-Manteniemiento-Android
 
-## 1. Proyecto Nexxo → Pedidos-Manteniemiento-Android
+- Pasos: `git add` de lo tocado, `git commit` con mensaje claro (atribución `made by leavera77` según regla del proyecto), `git push origin main`.
 
-- Ruta habitual: `AndroidStudioProjects/Nexxo`.
-- Pasos: `git add` de lo tocado, `git commit` con mensaje claro (y atribución según regla del proyecto), `git push origin main`.
-
-## 2. Pedidos-MG
-
-- Clon local típico: `AndroidStudioProjects/Pedidos-MG` (hermano de Nexxo).
+## 2. Pedidos-MG (versión web + API)
 
 ### Qué sincronizar antes del commit en Pedidos-MG
 
