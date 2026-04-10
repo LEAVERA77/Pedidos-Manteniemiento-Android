@@ -14473,6 +14473,8 @@ async function vaciarCoordenadasSociosCatalogo() {
         toast('Error al vaciar tabla: ' + (e?.message || e), 'error');
     }
 }
+// Exponer globalmente para onclick
+window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
 
 function mostrarFormatoExcelSocios() {
     alert(
