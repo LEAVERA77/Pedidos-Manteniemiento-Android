@@ -18,6 +18,7 @@ import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
+import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -226,6 +227,33 @@ export async function crearPedidoDesdeWhatsappBot({
   ) {
     latFinal = null;
     lngFinal = null;
+  }
+
+  /**
+   * PRIORIDAD ABSOLUTA: buscar coordenadas corregidas manualmente en socios_catalogo por NIS/Medidor.
+   * Esto garantiza persistencia de ubicaciones corregidas por el admin para el mismo cliente.
+   */
+  if (!coordsValidasWgs84(latFinal, lngFinal) && tieneIdentificadorSum) {
+    try {
+      const coordsPadron = await buscarCoordenadasPorNisMedidor({
+        tenantId: Number(tenantId),
+        nis: nisT,
+        medidor: medT,
+        nisMedidor: nmT,
+      });
+      if (coordsPadron && coordsValidasWgs84(coordsPadron.lat, coordsPadron.lng)) {
+        latFinal = coordsPadron.lat;
+        lngFinal = coordsPadron.lng;
+        const notaPadron = coordsPadron.esManual
+          ? "[Sistema] Ubicación corregida manualmente en pedidos anteriores del mismo cliente."
+          : "[Sistema] Ubicación desde el padrón de clientes (socios_catalogo).";
+        if (!de.includes(notaPadron)) {
+          de = `${de}\n\n${notaPadron}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] buscar coords por NIS/Medidor", e?.message || e);
+    }
   }
 
   /**

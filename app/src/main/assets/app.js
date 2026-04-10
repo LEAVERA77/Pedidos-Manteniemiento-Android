@@ -4242,6 +4242,8 @@ function iniciarPedidosActividadPollAdmin() {
     if (!esAdmin()) return;
     pollPedidosActividadAdmin();
     _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 8000);
+    void mostrarBannerOpinionCliente();
+    setInterval(() => void mostrarBannerOpinionCliente(), 15000);
 }
 
 function detenerTecnicosMapaPrincipalPoll() {
