@@ -2800,7 +2800,9 @@ const norm = p => ({
     uci: p.usuario_cierre_id,
     x_inchauspe: p.x_inchauspe,
     y_inchauspe: p.y_inchauspe,
-    nis: (p.nis_medidor || '').trim(),
+    nis: (p.nis || '').trim(),
+    med: (p.medidor || '').trim(),
+    nis_med: (p.nis_medidor || '').trim(),
     cdir: (p.cliente_direccion || '').trim(),
     cnom: (p.cliente_nombre || p.cliente || '').trim(),
     ccal: (p.cliente_calle || '').trim(),
@@ -8905,8 +8907,13 @@ async function detalle(p) {
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const nombreClienteDet = String((p.cnom || p.cl || '')).trim();
     const filasDatosCliente = [];
-    if (String(p.nis || '').trim()) {
-        filasDatosCliente.push(`<div class="dr"><span class="dl">NIS</span><span class="dv" style="font-weight:700">${escDet(p.nis)}</span></div>`);
+    const nisVal = String(p.nis || '').trim();
+    const medVal = String(p.med || '').trim();
+    if (nisVal) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">NIS</span><span class="dv" style="font-weight:700">${escDet(nisVal)}</span></div>`);
+    }
+    if (medVal) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Medidor</span><span class="dv" style="font-weight:700">${escDet(medVal)}</span></div>`);
     }
     if (nombreClienteDet) {
         filasDatosCliente.push(`<div class="dr"><span class="dl">Nombre y apellido</span><span class="dv">${escDet(nombreClienteDet)}</span></div>`);
