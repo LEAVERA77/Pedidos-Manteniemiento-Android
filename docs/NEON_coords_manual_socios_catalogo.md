@@ -19,3 +19,11 @@ Cuando un administrador guarda posición con **PUT** `/api/pedidos/:id/coords-ma
 3. Dos socios con el mismo identificador (ambigüedad) → pedido OK; catálogo sin cambio; log `ambiguo`.
 
 Implementación: `api/utils/sociosCatalogoCoordsFromPedido.js`.
+
+## Excel de padrón: geocodificar por dirección (columnas `latitud` / `longitud`)
+
+Para generar un `.xlsx` nuevo con coordenadas WGS84 en **dos columnas numéricas separadas** (sin mezclar con calle ni otros campos), desde la carpeta `api/`:
+
+`npm run geocodificar:excel-socios -- --file="RUTA\\socios.xlsx" [--out="RUTA\\salida.xlsx"]`
+
+Si configurás `GOOGLE_MAPS_API_KEY` (o `GOOGLE_MAPS_GEOCODING_API_KEY`), se usa **Google Geocoding**; si no, **Nominatim** (OSM), con intervalo ~1 s entre consultas. Ver `api/scripts/geocodificarExcelSocios.mjs`.

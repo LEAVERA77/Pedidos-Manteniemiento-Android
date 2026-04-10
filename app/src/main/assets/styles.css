@@ -608,3 +608,7 @@ textarea{resize:vertical;min-height:80px}
 /* Derivación reclamos (coop. eléctrica): error inline + aviso en detalle pedido */
 .admin-derivacion-inline-error{font-size:.78rem;color:#b91c1c;line-height:1.4;padding:.4rem .5rem;background:#fef2f2;border:1px solid #fecaca;border-radius:.4rem}
 .admin-derivacion-pedido-hint{border-left:4px solid #f59e0b;background:linear-gradient(90deg,rgba(245,158,11,.08),transparent)}
+
+/* Catálogo socios (admin): lat/lon en columnas propias, sin fundirse con Calle/Dist. */
+.gn-soc-admin-table .gn-soc-coord{white-space:nowrap;min-width:7.25rem;max-width:11rem;font-variant-numeric:tabular-nums}
+.gn-soc-admin-table .gn-soc-lat,.gn-soc-admin-table .gn-soc-lon{vertical-align:middle}
