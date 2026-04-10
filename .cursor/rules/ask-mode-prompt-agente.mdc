@@ -1,18 +1,24 @@
 ---
-description: Cuando el usuario pide algo, la respuesta es siempre un prompt listo para Agent mode (salvo excepciones mínimas).
+description: En modo Ask (y ante pedidos concretos en general), la respuesta es un prompt listo para Agent mode.
 alwaysApply: true
 ---
 
-# Pedidos del usuario → respuesta = prompt para Agent
+# Modo Ask y pedidos del usuario → prompt para Agent
 
-Cuando el usuario **pida algo** (funcionalidad, corrección, cambio en código o producto, análisis que deba ejecutarse en el repo, pasos de implementación, etc.), la respuesta del asistente **debe ser en esencia un único bloque listo para copiar**: **«Prompt para el agente»** — texto autocontenido para pegar en **Agent mode** (contexto Nexxo/Pedidos-MG, objetivos, archivos probables, criterios de aceptación, pruebas, sync/commit si aplica).
+## Modo Ask
 
-- **Prioridad:** el cuerpo de la respuesta es ese prompt; si hace falta **una línea** de contexto (ej. «Incluye X e Y»), puede ir **antes** del bloque, sin repetir el mismo contenido en prosa larga.
-- **Excepción:** mensajes **solo** conversacionales, saludos, o definiciones/opiniones **sin** pedido de trabajo ni de prompt (el usuario no está pidiendo «que se haga» nada). Ahí basta respuesta breve **sin** bloque Agent.
-- **Modo:** aplica en **Ask** y **Agent** si el usuario formula un pedido nuevo: entregar prompt para una siguiente sesión Agent o para continuar el trabajo.
+Si la conversación está en **Ask mode** y el usuario **pide algo** (tarea, mejora, bug, cambio de código/producto, o análisis que implique trabajo en el repo), la respuesta del asistente **debe ser en esencia** un bloque listo para copiar: **«Prompt para el agente»** — texto autocontenido para pegar en **Agent mode** (contexto Nexxo/Pedidos-MG, objetivos, archivos probables, criterios de aceptación, pruebas, sync/commit si aplica).
 
-No sustituir el prompt por vaguedades: el texto debe permitir a Agent ejecutar o investigar sin adivinar el alcance.
+En Ask **no** sustituir el pedido por solo explicación larga sin prompt: la explicación breve puede ir **antes** del bloque si aporta; el **entregable principal** es el prompt.
 
-## Formato sugerido del prompt
+**Excepción en Ask:** mensajes solo informativos o conversacionales **sin** pedido de implementación ni de investigación en el proyecto → respuesta corta **sin** bloque Agent.
 
-Contexto breve, pasos numerados, archivos/rutas si se conocen, criterios de aceptación, pruebas manuales, y cierre con sync `api`/assets a Pedidos-MG + commit/push + `made by leavera77` cuando corresponda.
+## Otros modos (Agent, etc.)
+
+Cuando el usuario **pida algo** fuera de Ask o en una sesión Agent, si formula un pedido nuevo de trabajo, entregar igualmente un **«Prompt para el agente»** (para continuar o delegar), salvo la misma excepción conversacional.
+
+## Formato del prompt
+
+- Prioridad: un único bloque copiable; evitar prosa duplicada.
+- Incluir cuando aplique: pasos, rutas, criterios de aceptación, pruebas manuales, sync `api`/assets a Pedidos-MG, commit/push, `made by leavera77`.
+- El texto debe permitir a Agent ejecutar o investigar sin adivinar el alcance.
