@@ -128,9 +128,6 @@ dependencies {
 
 // APK renombrado fuera del build/ (no toca salidas AGP → sin conflicto Gradle 9).
 tasks.register<Copy>("renameReleaseApk") {
-    // Desactivar el seguimiento de estado para evitar AccessDeniedException en Google Drive (G:\)
-    doNotTrackState("Evitar bloqueos de sincronización de Google Drive")
-    
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release")) {
         include("app-release.apk", "app-release-unsigned.apk")
@@ -141,9 +138,3 @@ tasks.register<Copy>("renameReleaseApk") {
     rename { "GestorNova-$vName($vCode)-release.apk" }
 }
 
-// Forzar que packageRelease ignore el estado si hay problemas de acceso en el sistema de archivos
-tasks.configureEach {
-    if (name == "packageRelease") {
-        doNotTrackState("Workaround para AccessDeniedException en carpetas sincronizadas")
-    }
-}
