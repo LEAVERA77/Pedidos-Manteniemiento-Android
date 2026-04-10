@@ -260,12 +260,58 @@ out geom;
 
 /**
  * Busca el rango de numeración de la calle en Nominatim (usando addressdetails)
+ * Ahora con búsqueda más específica del número exacto solicitado
  */
-async function buscarRangoNumeracion(calle, localidad, provincia) {
+async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
   const calleClean = String(calle).trim();
   const locClean = String(localidad).trim();
   const provClean = provincia ? String(provincia).trim() : "";
   
+  // ESTRATEGIA 1: Buscar el número exacto primero
+  const numeroInt = parseInt(String(numero).replace(/\D/g, ""), 10);
+  if (Number.isFinite(numeroInt) && numeroInt > 0) {
+    const qExacto = provClean
+      ? `${calleClean} ${numeroInt}, ${locClean}, ${provClean}, Argentina`
+      : `${calleClean} ${numeroInt}, ${locClean}, Argentina`;
+    
+    const urlExacto = `${NOMINATIM_API}/search?` +
+      new URLSearchParams({
+        q: qExacto,
+        format: "json",
+        addressdetails: "1",
+        limit: "3",
+      });
+    
+    console.info("[rango-numeracion] Buscando número exacto: %s", qExacto);
+    
+    try {
+      const respExacto = await fetch(urlExacto, {
+        headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+      });
+      
+      if (respExacto.ok) {
+        const resultsExacto = await respExacto.json();
+        if (resultsExacto && resultsExacto.length > 0) {
+          const mejor = resultsExacto[0];
+          if (mejor.lat && mejor.lon) {
+            console.info("[rango-numeracion] ✓ Nominatim encontró el número exacto: lat=%s, lon=%s", 
+              mejor.lat, mejor.lon);
+            
+            // Si encontró el número exacto, retornar un rango estrecho
+            return { 
+              min: numeroInt - 50, 
+              max: numeroInt + 50, 
+              exacto: { lat: parseFloat(mejor.lat), lng: parseFloat(mejor.lon) }
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[rango-numeracion] Error al buscar número exacto:", e?.message || e);
+    }
+  }
+  
+  // ESTRATEGIA 2: Buscar la calle general y extraer números
   const q = provClean
     ? `${calleClean}, ${locClean}, ${provClean}, Argentina`
     : `${calleClean}, ${locClean}, Argentina`;
@@ -283,10 +329,10 @@ async function buscarRangoNumeracion(calle, localidad, provincia) {
       headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
     });
     
-    if (!response.ok) return { min: null, max: null };
+    if (!response.ok) return { min: 100, max: 900, exacto: null };
     
     const results = await response.json();
-    if (!results || results.length === 0) return { min: null, max: null };
+    if (!results || results.length === 0) return { min: 100, max: 900, exacto: null };
     
     // Intentar extraer house_number si viene en algún resultado
     const numeros = results
@@ -299,14 +345,14 @@ async function buscarRangoNumeracion(calle, localidad, provincia) {
       .filter((n) => n != null);
     
     if (numeros.length >= 2) {
-      return { min: Math.min(...numeros), max: Math.max(...numeros) };
+      return { min: Math.min(...numeros), max: Math.max(...numeros), exacto: null };
     }
     
-    // Fallback: asumir rango típico (100-900)
-    return { min: 100, max: 900 };
+    // Fallback: asumir rango típico municipal (0-900)
+    return { min: 0, max: 900, exacto: null };
   } catch (e) {
-    console.warn("[interpolacion-alturas] Error al buscar rango numeración:", e?.message || e);
-    return { min: 100, max: 900 };
+    console.warn("[rango-numeracion] Error al buscar rango numeración:", e?.message || e);
+    return { min: 0, max: 900, exacto: null };
   }
 }
 
@@ -454,7 +500,30 @@ export async function interpolarCoordenadaPorAltura(opts) {
   log.push(`🔍 Iniciando geocodificación inteligente...`);
   console.info("[interpolacion-alturas] Iniciando interpolación: %s %s, %s", calle, numero, localidad);
   
-  // 1. Obtener geometría de la calle
+  // 1. PRIORIDAD: Intentar geocodificación exacta con Nominatim (número específico)
+  log.push(`🎯 Intentando geocodificación directa del número exacto en Nominatim...`);
+  const { min, max, exacto } = await buscarRangoNumeracion(calle, numero, localidad, provincia);
+  
+  if (exacto && coordsOk(exacto.lat, exacto.lng)) {
+    log.push(`✓ ¡Nominatim encontró el número exacto!`);
+    log.push(`✓ Coordenadas: ${exacto.lat.toFixed(6)}, ${exacto.lng.toFixed(6)}`);
+    console.info("[interpolacion-alturas] ✓ Número exacto en Nominatim: lat=%s, lng=%s", 
+      exacto.lat, exacto.lng);
+    
+    return {
+      lat: exacto.lat,
+      lng: exacto.lng,
+      fuente: "nominatim_numero_exacto",
+      metadata: {
+        metodo: "geocodificacion_exacta",
+      },
+      log,
+    };
+  }
+  
+  log.push(`→ Número exacto no encontrado, usando interpolación municipal...`);
+  
+  // 2. Obtener geometría de la calle
   log.push(`📍 Buscando "${calle}" en OpenStreetMap (Overpass API)...`);
   const geometria = await obtenerGeometriaCalle(calle, localidad, provincia);
   if (!geometria || geometria.length < 2) {
@@ -479,23 +548,20 @@ export async function interpolarCoordenadaPorAltura(opts) {
   }
   log.push(`✓ Longitud de la calle: ${Math.round(longitudCalle)} metros`);
   
-  // 2. Buscar rango de numeración
-  log.push(`🔢 Estimando rango de numeración...`);
-  const { min, max } = await buscarRangoNumeracion(calle, localidad, provincia);
-  log.push(`✓ Rango estimado: ${min} - ${max}`);
-  console.info("[interpolacion-alturas] Rango de numeración estimado: %s - %s", min || "?", max || "?");
-  
   // 3. Interpolar
+  log.push(`🔢 Rango de numeración: ${min} - ${max}`);
+  console.info("[interpolacion-alturas] Rango de numeración: %s - %s", min, max);
+  
   log.push(`📐 Interpolando posición del número ${numero}...`);
-  const resultado = interpolarSobreCalle(geometria, numero, min || 100, max || 900);
+  const resultado = interpolarSobreCalle(geometria, numero, min || 0, max || 900);
   if (!resultado) {
     log.push(`❌ No se pudo calcular la posición sobre la geometría`);
     console.warn("[interpolacion-alturas] No se pudo interpolar sobre la geometría");
     return { lat: null, lng: null, fuente: "error_interpolacion", metadata: {}, log };
   }
   
-  const cuadraInfo = resultado.cuadra ? `cuadra ${resultado.cuadra} (${resultado.cuadra * 100}-${(resultado.cuadra + 1) * 100 - 1})` : "";
-  const metrosInfo = resultado.metrosDesdeEsquina ? `, ${resultado.metrosDesdeEsquina}m desde esquina` : "";
+  const cuadraInfo = resultado.cuadra >= 0 ? `cuadra ${resultado.cuadra} (${resultado.cuadra * 100}-${(resultado.cuadra + 1) * 100 - 1})` : "";
+  const metrosInfo = resultado.metrosDesdeEsquina >= 0 ? `, ${resultado.metrosDesdeEsquina}m desde esquina` : "";
   const ladoDesc = resultado.lado === "par_derecha" ? "lado derecho (par)" : 
                    resultado.lado === "impar_izquierda" ? "lado izquierdo (impar)" : 
                    "final de calle";
