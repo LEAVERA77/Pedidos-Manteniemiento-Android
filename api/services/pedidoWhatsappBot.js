@@ -19,6 +19,7 @@ import {
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
+import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -343,6 +344,36 @@ export async function crearPedidoDesdeWhatsappBot({
       console.warn("[pedido-whatsapp-bot] geolocalizacion ultimo recurso", e?.message || e);
     }
   }
+
+  /**
+   * FALLBACK ADICIONAL: Interpolación de alturas (address interpolation)
+   * Si todavía no hay coordenadas válidas, pero tenemos calle, número y localidad,
+   * intentar calcular la posición interpolando sobre la geometría de la calle.
+   */
+  if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
+    console.info("[pedido-whatsapp-bot] Intentando interpolación de alturas como último recurso");
+    try {
+      const interpol = await interpolarCoordenadaPorAltura({
+        calle: calleT,
+        numero: numT,
+        localidad: locT,
+        provincia: null, // La API de Overpass lo maneja sin provincia
+      });
+      if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
+        latFinal = interpol.lat;
+        lngFinal = interpol.lng;
+        const notaInterpol = `[Sistema] Ubicación calculada por interpolación de alturas (${interpol.metadata?.lado || "aproximado"}). Se recomienda verificar en el mapa.`;
+        if (!de.includes(notaInterpol)) {
+          de = `${de}\n\n${notaInterpol}`;
+        }
+        console.info("[pedido-whatsapp-bot] ✓ Interpolación de alturas exitosa: lat=%s, lng=%s", 
+          latFinal.toFixed(6), lngFinal.toFixed(6));
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] interpolacion de alturas", e?.message || e);
+    }
+  }
+
   let coordsWhatsappParaCatalogo = null;
   if (
     coordsValidasWgs84(latFinal, lngFinal) &&
