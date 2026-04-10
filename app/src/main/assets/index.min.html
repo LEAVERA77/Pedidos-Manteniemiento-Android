@@ -649,7 +649,7 @@
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
           <a class="btn-sm primary" href="ejemplos/socios-demo-300.xlsx" download="socios-demo-300.xlsx" style="text-decoration:none;display:inline-flex;align-items:center;gap:.35rem"><i class="fas fa-download"></i> Ejemplo 300 (OSM)</a>
           <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
-          <button type="button" class="btn-sm" onclick="vaciarCoordenadasSociosCatalogo()" style="background:#dc2626;color:#fff;border:none" title="Elimina latitud, longitud y ubicacion_manual de todos los registros"><i class="fas fa-map-marker-times"></i> Vaciar coordenadas</button>
+          <button type="button" class="btn-sm" onclick="vaciarCoordenadasSociosCatalogo()" style="background:#dc2626;color:#fff;border:none" title="Elimina TODOS los registros de la tabla (100%)"><i class="fas fa-trash-alt"></i> Vaciar tabla</button>
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
             <input type="checkbox" id="socios-import-reemplazar"> Vaciar catálogo antes de importar
           </label>

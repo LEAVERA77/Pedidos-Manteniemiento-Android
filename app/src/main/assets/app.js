@@ -14439,44 +14439,25 @@ async function vaciarCoordenadasSociosCatalogo() {
         return;
     }
     const confirmar = confirm(
-        '¿VACIAR TODAS LAS COORDENADAS del catálogo de socios?\n\n' +
-        'Se eliminarán latitud, longitud y la marca de ubicacion_manual de TODOS los registros.\n' +
-        'Los demás datos (NIS, nombre, dirección, etc.) se conservan.\n\n' +
+        '⚠️ ¿ELIMINAR TODOS LOS REGISTROS del catálogo de socios?\n\n' +
+        'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n' +
+        'Esta acción NO se puede deshacer.\n\n' +
         '¿Continuar?'
     );
     if (!confirmar) return;
+    
+    const confirmar2 = confirm(
+        '⚠️⚠️ ÚLTIMA CONFIRMACIÓN ⚠️⚠️\n\n' +
+        'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
+        'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
+        '¿Estás SEGURO/A?'
+    );
+    if (!confirmar2) return;
 
     try {
-        mostrarOverlayImportacion('Vaciando coordenadas del catálogo...');
+        mostrarOverlayImportacion('Eliminando TODOS los registros del catálogo...');
         
-        // Verificar si existe columna ubicacion_manual
-        const cols = await sqlSimple(
-            `SELECT column_name FROM information_schema.columns 
-             WHERE table_schema = 'public' AND table_name = 'socios_catalogo'`
-        );
-        const columnNames = (cols.rows || []).map(c => c.column_name);
-        const hasUbicManual = columnNames.includes('ubicacion_manual');
-        const hasLatitud = columnNames.includes('latitud');
-        const hasLongitud = columnNames.includes('longitud');
-        const hasLat = columnNames.includes('lat');
-        const hasLng = columnNames.includes('lng');
-        
-        // Construir UPDATE dinámico según columnas existentes
-        const updates = [];
-        if (hasLatitud) updates.push('latitud = NULL');
-        if (hasLongitud) updates.push('longitud = NULL');
-        if (hasLat) updates.push('lat = NULL');
-        if (hasLng) updates.push('lng = NULL');
-        if (hasUbicManual) updates.push('ubicacion_manual = FALSE');
-        
-        if (updates.length === 0) {
-            ocultarOverlayImportacion();
-            toast('No hay columnas de coordenadas en la tabla', 'info');
-            return;
-        }
-        
-        const sql = `UPDATE socios_catalogo SET ${updates.join(', ')}`;
-        const resultado = await sqlSimple(sql);
+        await sqlSimple(`DELETE FROM socios_catalogo`);
         
         ocultarOverlayImportacion();
         
@@ -14485,11 +14466,11 @@ async function vaciarCoordenadasSociosCatalogo() {
             await listarSociosAdmin();
         }
         
-        toast(`✓ Coordenadas eliminadas de todos los registros`, 'success');
+        toast('✓ Tabla de socios eliminada completamente', 'success');
     } catch (e) {
         ocultarOverlayImportacion();
-        console.error('[vaciar-coords-socios]', e);
-        toast('Error al vaciar coordenadas: ' + (e?.message || e), 'error');
+        console.error('[vaciar-tabla-socios]', e);
+        toast('Error al vaciar tabla: ' + (e?.message || e), 'error');
     }
 }
 
