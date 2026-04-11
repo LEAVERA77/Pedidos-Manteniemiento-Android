@@ -1,7 +1,7 @@
 /**
  * Servicio de re-geocodificación de pedidos con el sistema inteligente de 5 capas
  * Permite actualizar coordenadas de pedidos viejos con el algoritmo mejorado
- * 
+ *
  * made by leavera77
  */
 
@@ -11,6 +11,7 @@ import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor
 import { geocodeCalleNumeroLocalidadArgentina } from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
+import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
 
 /**
  * Valida coords WGS84
@@ -24,55 +25,73 @@ function coordsValidasWgs84(lat, lng) {
   return true;
 }
 
+function normCp(s) {
+  if (s == null) return "";
+  const d = String(s).replace(/\D/g, "");
+  return d.length >= 4 && d.length <= 8 ? d : "";
+}
+
 /**
  * Re-geocodifica un pedido existente con el sistema inteligente
- * 
- * @param {number} pedidoId - ID del pedido
- * @param {number} tenantId - ID del tenant
+ *
+ * @param {number} pedidoId
+ * @param {number} tenantId
+ * @param {{ silent?: boolean }} [options] — silent: sin log detallado (WhatsApp / jobs)
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
-export async function regeocodificarPedido(pedidoId, tenantId) {
+export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
+  const silent = !!options.silent;
   const log = [];
-  log.push("🔄 Iniciando re-geocodificación inteligente...");
+  const L = (msg) => {
+    if (!silent) log.push(msg);
+  };
+
+  L("🔄 Iniciando re-geocodificación inteligente...");
   const provinciaTenant = await getTenantProvinciaNominatim(tenantId);
   if (provinciaTenant) {
-    log.push(`🏛️ Provincia tenant (oficina / config): ${provinciaTenant}`);
+    L(`🏛️ Provincia tenant (oficina / config): ${provinciaTenant}`);
   } else {
-    log.push(`⚠️ Sin provincia de tenant: Nominatim no se acota por estado (configurá provincia o ubicación central)`);
+    L(`⚠️ Sin provincia de tenant: Nominatim no se acota por estado (configurá provincia o ubicación central)`);
   }
 
   try {
-    // 1. Obtener datos del pedido
     const pedidoResult = await query(
       `SELECT 
         id, nis, medidor, nis_medidor, 
         cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
-        lat, lng
+        lat, lng, provincia, codigo_postal
        FROM pedidos 
        WHERE id = $1 AND tenant_id = $2`,
       [pedidoId, tenantId]
     );
-    
+
     if (!pedidoResult.rows || pedidoResult.rows.length === 0) {
       return {
         success: false,
         mensaje: "Pedido no encontrado",
-        log
+        log,
       };
     }
-    
+
     const pedido = pedidoResult.rows[0];
     const coordsActuales = coordsValidasWgs84(pedido.lat, pedido.lng);
-    
-    log.push(`📦 Pedido #${pedido.id}: ${pedido.cliente_nombre || "Sin nombre"}`);
-    log.push(`📍 Dirección: ${pedido.cliente_calle || "?"} ${pedido.cliente_numero_puerta || "?"}, ${pedido.cliente_localidad || "?"}`);
+
+    const provPed = pedido.provincia != null ? String(pedido.provincia).trim() : "";
+    const provinciaEfectiva = provPed.length >= 2 ? provPed : provinciaTenant || "";
+    const postalDigits = normCp(pedido.codigo_postal);
+
+    L(`📦 Pedido #${pedido.id}: ${pedido.cliente_nombre || "Sin nombre"}`);
+    L(
+      `📍 Dirección: ${pedido.cliente_calle || "?"} ${pedido.cliente_numero_puerta || "?"}, ${pedido.cliente_localidad || "?"}`
+    );
+    if (provinciaEfectiva) L(`🏛️ Provincia (pedido/tenant): ${provinciaEfectiva}`);
+    if (postalDigits) L(`📮 CP: ${postalDigits}`);
     if (coordsActuales) {
-      log.push(`📌 Coords actuales: ${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}`);
+      L(`📌 Coords actuales: ${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}`);
     } else {
-      log.push(`⚠️  Sin coordenadas válidas actuales`);
+      L(`⚠️  Sin coordenadas válidas actuales`);
     }
-    
-    // Extraer datos
+
     const nisT = pedido.nis ? String(pedido.nis).trim() : null;
     const medT = pedido.medidor ? String(pedido.medidor).trim() : null;
     const nmT = pedido.nis_medidor ? String(pedido.nis_medidor).trim() : null;
@@ -80,40 +99,38 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
     const numT = pedido.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
     const locT = pedido.cliente_localidad ? String(pedido.cliente_localidad).trim() : null;
     const nombreT = pedido.cliente_nombre ? String(pedido.cliente_nombre).trim() : null;
-    
+
     if (!calleT && !locT && !nisT && !medT && !nmT) {
-      log.push("❌ Sin datos suficientes para geocodificar");
+      L("❌ Sin datos suficientes para geocodificar");
       return {
         success: false,
         mensaje: "Pedido sin dirección ni identificadores",
-        log
+        log,
       };
     }
-    
+
     let latFinal = null;
     let lngFinal = null;
     let fuente = null;
-    
-    // 2. NORMALIZACIÓN DE CALLES
-    log.push("\n🔤 PASO 1: Normalización de calle");
+
+    L("\n🔤 PASO 1: Normalización de calle");
     if (calleT && locT) {
       try {
         const normResult = await normalizarDireccion({ calle: calleT, ciudad: locT });
         if (normResult && normResult.cambio) {
-          log.push(`  ✓ "${calleT}" → "${normResult.calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%)`);
+          L(`  ✓ "${calleT}" → "${normResult.calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%)`);
           calleT = normResult.calleNormalizada;
         } else {
-          log.push(`  ✓ Nombre de calle OK (sin cambios)`);
+          L(`  ✓ Nombre de calle OK (sin cambios)`);
         }
       } catch (err) {
-        log.push(`  ⚠️  Error en normalización: ${err?.message || err}`);
+        L(`  ⚠️  Error en normalización: ${err?.message || err}`);
       }
     } else {
-      log.push(`  → Sin calle/localidad para normalizar`);
+      L(`  → Sin calle/localidad para normalizar`);
     }
-    
-    // 3. BÚSQUEDA EN CATÁLOGO
-    log.push("\n📚 PASO 2: Búsqueda en catálogo (socios_catalogo)");
+
+    L("\n📚 PASO 2: Búsqueda en catálogo (socios_catalogo)");
     const tieneIdentificador = !!(nisT || medT || nmT);
     if (tieneIdentificador || (calleT && locT)) {
       try {
@@ -127,122 +144,140 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
           localidad: locT,
           nombreCliente: nombreT,
         });
-        
+
         if (coordsCatalogo && coordsValidasWgs84(coordsCatalogo.lat, coordsCatalogo.lng)) {
           latFinal = coordsCatalogo.lat;
           lngFinal = coordsCatalogo.lng;
           fuente = coordsCatalogo.esManual ? "catalogo_manual" : "catalogo";
-          log.push(`  ✓ Encontrado en catálogo: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          L(`  ✓ Encontrado en catálogo: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
           if (coordsCatalogo.esManual) {
-            log.push(`  ✓ Coordenadas corregidas manualmente (prioridad absoluta)`);
+            L(`  ✓ Coordenadas corregidas manualmente (prioridad absoluta)`);
           }
         } else {
-          log.push(`  → Sin resultados en catálogo`);
+          L(`  → Sin resultados en catálogo`);
         }
       } catch (err) {
-        log.push(`  ⚠️  Error al buscar en catálogo: ${err?.message || err}`);
+        L(`  ⚠️  Error al buscar en catálogo: ${err?.message || err}`);
       }
     } else {
-      log.push(`  → Sin identificadores ni dirección completa`);
+      L(`  → Sin identificadores ni dirección completa`);
     }
-    
-    // 4. NOMINATIM (si no hay coords del catálogo)
+
     if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
-      log.push("\n🌍 PASO 3: Geocodificación con Nominatim");
+      L("\n🌍 PASO 3: Geocodificación con Nominatim (city + state + postalcode)");
       try {
         const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleT, numT || "", {
           allowTenantCentroidFallback: false,
           catalogStrict: false,
-          stateOrProvince: provinciaTenant || undefined,
+          stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
         });
-        
+
         if (geoResult && coordsValidasWgs84(geoResult.lat, geoResult.lng)) {
           latFinal = geoResult.lat;
           lngFinal = geoResult.lng;
           fuente = geoResult.audit?.source || "nominatim";
-          log.push(`  ✓ Nominatim: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-          log.push(`  ✓ Fuente: ${fuente}`);
+          L(`  ✓ Nominatim: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          L(`  ✓ Fuente: ${fuente}`);
         } else {
-          log.push(`  → Nominatim sin resultados`);
+          L(`  → Nominatim sin resultados`);
         }
       } catch (err) {
-        log.push(`  ⚠️  Error en Nominatim: ${err?.message || err}`);
+        L(`  ⚠️  Error en Nominatim: ${err?.message || err}`);
       }
     }
-    
-    // 5. INTERPOLACIÓN (si aún no hay coords)
+
     if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
-      log.push("\n📐 PASO 4: Interpolación municipal");
+      L("\n📐 PASO 4: Interpolación municipal");
       try {
         const interpol = await interpolarCoordenadaPorAltura({
           calle: calleT,
           numero: numT,
           localidad: locT,
-          provincia: provinciaTenant || undefined,
+          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
         });
-        
+
         if (interpol && interpol.log) {
-          interpol.log.forEach(line => log.push(`  ${line}`));
+          interpol.log.forEach((line) => L(`  ${line}`));
         }
-        
+
         if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
           latFinal = interpol.lat;
           lngFinal = interpol.lng;
           fuente = "interpolacion";
-          log.push(`  ✓ Interpolación exitosa: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          L(`  ✓ Interpolación exitosa: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
         } else {
-          log.push(`  → Interpolación sin resultados válidos`);
+          L(`  → Interpolación sin resultados válidos`);
         }
       } catch (err) {
-        log.push(`  ⚠️  Error en interpolación: ${err?.message || err}`);
+        L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
       }
     }
-    
-    // 6. RESULTADO
-    log.push("\n" + "═".repeat(60));
-    
+
+    L("\n" + "═".repeat(60));
+
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
-      log.push("❌ No se pudo geocodificar con ningún método");
+      L("❌ No se pudo geocodificar con ningún método");
       return {
         success: false,
         mensaje: "No se pudieron obtener coordenadas válidas",
-        log
+        log,
       };
     }
-    
-    // Persistir en columnas canónicas del modelo (mismo patrón que PUT /pedidos/:id/coords y coords-manual)
+
+    const provPersist = provinciaEfectiva.length >= 2 ? provinciaEfectiva : null;
+    const cpPersist = postalDigits.length >= 4 ? postalDigits : null;
+
     await query(
       `UPDATE pedidos 
        SET lat = $1, lng = $2,
-           provincia = COALESCE($5, provincia)
+           provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
+           codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END
        WHERE id = $3 AND tenant_id = $4`,
-      [latFinal, lngFinal, pedidoId, tenantId, provinciaTenant || null]
+      [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist]
     );
-    
+
+    const pedidoParaSocios = {
+      ...pedido,
+      lat: latFinal,
+      lng: lngFinal,
+      provincia: provPersist || pedido.provincia,
+      codigo_postal: cpPersist || pedido.codigo_postal,
+    };
+    try {
+      await actualizarSociosCatalogoCoordsSiMatchPedido({
+        pedido: pedidoParaSocios,
+        tenantId: Number(tenantId),
+        lat: latFinal,
+        lng: lngFinal,
+      });
+    } catch (e) {
+      console.warn("[regeocodificar] socios_catalogo coords", e?.message || e);
+    }
+
     const cambio = coordsActuales
       ? `Actualizado de (${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}) → (${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)})`
       : `Agregado: (${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)})`;
-    
-    log.push(`✅ Re-geocodificación exitosa`);
-    log.push(`   ${cambio}`);
-    log.push(`   Fuente: ${fuente}`);
-    
+
+    L(`✅ Re-geocodificación exitosa`);
+    L(`   ${cambio}`);
+    L(`   Fuente: ${fuente}`);
+
     return {
       success: true,
       lat: latFinal,
       lng: lngFinal,
       fuente,
       log,
-      mensaje: "Pedido re-geocodificado exitosamente"
+      mensaje: "Pedido re-geocodificado exitosamente",
     };
-    
   } catch (err) {
-    log.push(`\n❌ Error fatal: ${err?.message || err}`);
+    L(`\n❌ Error fatal: ${err?.message || err}`);
     console.error("[regeocodificar] Error:", err);
     return {
       success: false,
       mensaje: `Error: ${err?.message || String(err)}`,
-      log
+      log,
     };
   }
 }

@@ -21,6 +21,7 @@ import {
 import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { normalizarDireccion } from "../utils/normalizarCalles.js";
+import { regeocodificarPedido } from "./regeocodificarPedido.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -124,6 +125,8 @@ export async function crearPedidoDesdeWhatsappBot({
   clienteCalle,
   clienteNumeroPuerta,
   clienteLocalidad,
+  provincia,
+  codigoPostal,
   suministroTipoConexion,
   suministroFases,
   barrio,
@@ -146,6 +149,7 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const rubroCliente = normalizarRubroCliente(tipoCliente);
+  const provinciaIn = provincia != null && String(provincia).trim() ? String(provincia).trim() : null;
 
   const usuarioId = await resolveUsuarioCreadorParaPedidoWhatsapp(Number(tenantId));
 
@@ -380,7 +384,7 @@ export async function crearPedidoDesdeWhatsappBot({
         calle: calleT,
         numero: numT,
         localidad: locT,
-        provincia: null, // La API de Overpass lo maneja sin provincia
+        provincia: provinciaIn || undefined,
       });
       
       if (interpol) {
@@ -501,6 +505,23 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(locT);
   }
 
+  const provT = provinciaIn;
+  const cpT =
+    codigoPostal != null && String(codigoPostal).trim()
+      ? String(codigoPostal)
+          .trim()
+          .replace(/\D/g, "")
+      : null;
+  const cpOk = cpT && cpT.length >= 4 && cpT.length <= 8 ? cpT : null;
+  if (pCols.has("provincia") && provT) {
+    cols.push("provincia");
+    vals.push(provT);
+  }
+  if (pCols.has("codigo_postal") && cpOk) {
+    cols.push("codigo_postal");
+    vals.push(cpOk);
+  }
+
   const stc =
     suministroTipoConexion != null && String(suministroTipoConexion).trim()
       ? String(suministroTipoConexion).trim()
@@ -552,6 +573,9 @@ export async function crearPedidoDesdeWhatsappBot({
         lng: coordsWhatsappParaCatalogo.lng,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
     }
+    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), { silent: true }).catch((e) =>
+      console.warn("[pedido-whatsapp-bot] regeo automático silencioso", e?.message || e)
+    );
   });
   return pedidoRow;
 }

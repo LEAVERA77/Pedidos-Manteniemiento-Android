@@ -56,6 +56,45 @@ const MSG_ADDR_CIUDAD =
   "Si no podés, escribí bien la *localidad* y luego *calle y número*." +
   MSG_SALIR_ATRAS;
 
+/** 24 jurisdicciones (Nominatim / Argentina). */
+const PROVINCIAS_ARG_BOT = [
+  "Buenos Aires",
+  "Ciudad Autónoma de Buenos Aires",
+  "Catamarca",
+  "Chaco",
+  "Chubut",
+  "Córdoba",
+  "Corrientes",
+  "Entre Ríos",
+  "Formosa",
+  "Jujuy",
+  "La Pampa",
+  "La Rioja",
+  "Mendoza",
+  "Misiones",
+  "Neuquén",
+  "Río Negro",
+  "Salta",
+  "San Juan",
+  "San Luis",
+  "Santa Cruz",
+  "Santa Fe",
+  "Santiago del Estero",
+  "Tierra del Fuego",
+  "Tucumán",
+];
+
+const MSG_ADDR_PROVINCIA =
+  "¿De qué *provincia* es la localidad?\n\n" +
+  PROVINCIAS_ARG_BOT.map((p, i) => `*${i + 1}.* ${p}`).join("\n") +
+  "\n\nRespondé con el *número* del 1 al 24." +
+  MSG_SALIR_ATRAS;
+
+const MSG_ADDR_CP =
+  "Si conocés el *código postal* (CPA), envialo en un mensaje (solo números, ej: *3100* o *C1425* sin letras obligatorias).\n\n" +
+  "Si no lo sabés, escribí *no* o *0* para continuar sin CP." +
+  MSG_SALIR_ATRAS;
+
 const MSG_ADDR_CALLE =
   "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre* o *Sarmiento*.\n\n" +
   "_En cualquier momento podés mandar *GPS* con *Adjuntar* → *Ubicación*._" +
@@ -87,6 +126,8 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_nombre_persona",
   "awaiting_opcional_id",
   "awaiting_addr_ciudad",
+  "awaiting_addr_provincia",
+  "awaiting_addr_codigo_postal",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
   "awaiting_suministro_conexion",
@@ -100,6 +141,8 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
   "awaiting_addr_ciudad",
+  "awaiting_addr_provincia",
+  "awaiting_addr_codigo_postal",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
   "awaiting_suministro_conexion",
@@ -109,7 +152,11 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
 ]);
 
 /** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
-const WHATSAPP_PASOS_CERO_ES_DATO = new Set(["awaiting_addr_numero", "awaiting_opcional_id"]);
+const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
+  "awaiting_addr_numero",
+  "awaiting_addr_codigo_postal",
+  "awaiting_opcional_id",
+]);
 
 /**
  * Comandos que borran la sesión y muestran el menú principal.
@@ -652,6 +699,28 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   }
   if (wpid) sess.phoneNumberId = wpid;
 
+  if (stepAddr === "awaiting_addr_provincia" && rev?.address?.state) {
+    sess.addrProvincia = String(rev.address.state).trim();
+    sess.step = "awaiting_addr_codigo_postal";
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      `Desde el *GPS* tomamos la provincia: *${sess.addrProvincia}*.\n\n${MSG_ADDR_CP}`,
+      tid,
+      wpid
+    );
+    return;
+  }
+  if (stepAddr === "awaiting_addr_codigo_postal") {
+    const pc = rev?.address?.postcode ? String(rev.address.postcode).replace(/\D/g, "") : "";
+    if (pc.length >= 4 && pc.length <= 8) sess.addrCodigoPostal = pc;
+    sess.step = "awaiting_addr_calle";
+    sessions.set(sk, sess);
+    const pie = sess.addrCodigoPostal ? `\n\n_Inferimos CP *${sess.addrCodigoPostal}* desde el mapa._` : "";
+    await reply(phone, `${MSG_ADDR_CALLE}${pie}`, tid, wpid);
+    return;
+  }
+
   const ciudadTxt = String(sess.addrCiudad || "").trim();
   const calleTxt = String(sess.addrCalle || "").trim();
   const numTxt = String(sess.addrNumero ?? "").trim();
@@ -676,7 +745,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     numero = numTxt.length ? numTxt : "0";
     sessions.set(sk, sess);
     await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
-      stateOrProvince: ctx?.geocodeState,
+      stateOrProvince: sess.addrProvincia || ctx?.geocodeState,
     });
     return;
   } else {
@@ -703,7 +772,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
 
   sessions.set(sk, sess);
   await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
-    stateOrProvince: ctx?.geocodeState,
+    stateOrProvince: sess.addrProvincia || ctx?.geocodeState,
   });
 }
 
@@ -804,6 +873,9 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       clienteCalle: calleT || null,
       clienteNumeroPuerta: numT,
       clienteLocalidad: locT || null,
+      provincia: sess.addrProvincia != null ? String(sess.addrProvincia).trim() || null : null,
+      codigoPostal:
+        sess.addrCodigoPostal != null ? String(sess.addrCodigoPostal).trim().replace(/\D/g, "") || null : null,
       suministroTipoConexion: trimOrNullWhatsapp(sess.suministroTipoConexion),
       suministroFases: trimOrNullWhatsapp(sess.suministroFases),
       barrio: sess.barrio ?? null,
@@ -920,13 +992,26 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const ciudadLabel = ciudad || "tu localidad";
   const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
   const stateForGeo = String(
-    opts.stateOrProvince || sess.catalogoProvinciaParaGeocode || ctx?.geocodeState || ""
+    opts.stateOrProvince || sess.addrProvincia || sess.catalogoProvinciaParaGeocode || ctx?.geocodeState || ""
   ).trim();
+  const postalForGeo = String(opts.postalCode || sess.addrCodigoPostal || "")
+    .trim()
+    .replace(/\D/g, "");
 
   let geoCiudad = null;
   try {
-    geoCiudad = await geocodeAddressArgentina(`${ciudadLabel}, Argentina`, {
+    const qCiudadGeo =
+      postalForGeo.length >= 4
+        ? `${ciudadLabel}, ${postalForGeo}, ${stateForGeo.length >= 2 ? `${stateForGeo}, ` : ""}Argentina`.replace(
+            /\s+/g,
+            " "
+          )
+        : stateForGeo.length >= 2
+          ? `${ciudadLabel}, ${stateForGeo}, Argentina`
+          : `${ciudadLabel}, Argentina`;
+    geoCiudad = await geocodeAddressArgentina(qCiudadGeo, {
       filterLocalidad: ciudad.length >= 2 ? ciudad : undefined,
+      filterState: stateForGeo.length >= 2 ? stateForGeo : "",
     });
   } catch (_) {}
   const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
@@ -952,6 +1037,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
       localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid, {
         allowTenantCentroidFallback: false,
         stateOrProvince: stateForGeo || undefined,
+        postalCode: postalForGeo.length >= 4 ? postalForGeo : undefined,
       });
     } catch (e) {
       console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
@@ -977,7 +1063,9 @@ async function geocodeStructuredAddressAndFinalizePedido(
       ciudad,
       calle,
       40,
-      localityViewboxMeta?.viewboxStr || null
+      localityViewboxMeta?.viewboxStr || null,
+      stateForGeo,
+      postalForGeo.length >= 4 ? postalForGeo : null
     );
     houseHits = pack.houseHits || [];
     streetCenter = pack.streetCenter || null;
@@ -997,6 +1085,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
       precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
       allowTenantCentroidFallback: false,
       stateOrProvince: stateForGeo || undefined,
+      postalCode: postalForGeo.length >= 4 ? postalForGeo : undefined,
     });
     if (geo?.audit) {
       console.log("[whatsapp-bot-meta] geocode audit", {
@@ -1462,6 +1551,8 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   /** Pasos de domicilio: reverse Nominatim + misma geocodificación estructurada que el texto (sin volver a pedir ciudad/calle). */
   if (
     stepAddr === "awaiting_addr_ciudad" ||
+    stepAddr === "awaiting_addr_provincia" ||
+    stepAddr === "awaiting_addr_codigo_postal" ||
     stepAddr === "awaiting_addr_calle" ||
     stepAddr === "awaiting_addr_numero"
   ) {
@@ -2166,6 +2257,60 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.addrCiudad = t;
     sess.addrCalle = null;
     sess.addrNumero = null;
+    delete sess.addrProvincia;
+    delete sess.addrCodigoPostal;
+    sess.step = "awaiting_addr_provincia";
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_addr_provincia") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_addr_ciudad";
+      delete sess.addrProvincia;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
+      return;
+    }
+    const n = parseInt(t, 10);
+    if (!Number.isFinite(n) || n < 1 || n > PROVINCIAS_ARG_BOT.length) {
+      await reply(phone, `Respondé con un *número del 1 al ${PROVINCIAS_ARG_BOT.length}* según la lista de provincias.`, tid, phoneNumberId);
+      return;
+    }
+    sess.addrProvincia = PROVINCIAS_ARG_BOT[n - 1];
+    sess.step = "awaiting_addr_codigo_postal";
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(phone, MSG_ADDR_CP, tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_addr_codigo_postal") {
+    const t = String(text || "").trim().toLowerCase();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_addr_provincia";
+      delete sess.addrCodigoPostal;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
+      return;
+    }
+    const raw = String(text || "").trim();
+    if (t === "no" || t === "n" || t === "s/c" || t === "-" || raw === "0") {
+      delete sess.addrCodigoPostal;
+    } else {
+      const digits = raw.replace(/\D/g, "");
+      if (digits.length >= 4 && digits.length <= 8) {
+        sess.addrCodigoPostal = digits;
+      } else if (digits.length > 0) {
+        await reply(phone, "El código postal debe tener *entre 4 y 8 dígitos*, o escribí *no* para omitir.", tid, phoneNumberId);
+        return;
+      }
+    }
     sess.step = "awaiting_addr_calle";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
@@ -2176,12 +2321,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (sess && sess.step === "awaiting_addr_calle") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
-      sess.step = "awaiting_addr_ciudad";
+      sess.step = "awaiting_addr_codigo_postal";
       sess.addrCalle = null;
       sess.addrNumero = null;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
+      await reply(phone, MSG_ADDR_CP, tid, phoneNumberId);
       return;
     }
     if (t.length < 2) {
