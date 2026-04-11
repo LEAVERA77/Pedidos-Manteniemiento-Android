@@ -2913,6 +2913,16 @@ const norm = p => ({
             return null;
         }
     })(),
+    gaudit: (() => {
+        const g = p.geocoding_audit;
+        if (g == null || g === '') return null;
+        if (typeof g === 'object' && !Array.isArray(g)) return g;
+        try {
+            return JSON.parse(String(g));
+        } catch (_) {
+            return null;
+        }
+    })(),
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -2925,6 +2935,29 @@ function coordsSonPinValidasMapaWgs84(la, ln) {
     if (a === 0 && b === 0) return false;
     if (a < -90 || a > 90 || b < -180 || b > 180) return false;
     return true;
+}
+
+/** Texto admin: cómo se obtuvo el pin (política A / re-geocodificación). */
+function etiquetaModoUbicPedido(a) {
+    if (!a || typeof a !== 'object') return '';
+    const m = String(a.modo || '').trim();
+    if (m === 'interpolado_via') {
+        return 'Aproximada — interpolación sobre vía OSM y vereda por paridad (heurística; no es medición catastral).';
+    }
+    if (m === 'localidad') {
+        return 'Aproximada — centro o búsqueda por localidad / ciudad.';
+    }
+    if (m === 'tenant') {
+        return 'Aproximada — sede o área de referencia del tenant.';
+    }
+    if (m === 'region') {
+        return 'Muy aproximada — región o respaldo geográfico (último recurso).';
+    }
+    if (m === 'exacto_aprox') {
+        return 'Según mapas / catálogo; puede no coincidir con la puerta exacta.';
+    }
+    if (m === 'aprox') return 'Aproximada (ver fuente en auditoría).';
+    return '';
 }
 
 /** Coordenadas para mapa: GPS del pedido o geocodificación aproximada por domicilio. */
@@ -3252,6 +3285,7 @@ function gnGeocodePrecargarWhatsappRegeoLog(p) {
 }
 
 if (typeof window !== 'undefined') {
+    window.etiquetaModoUbicPedido = etiquetaModoUbicPedido;
     window.gnGeocodeUiLogAppend = gnGeocodeUiLogAppend;
     window.gnGeocodeUiLogStartSession = gnGeocodeUiLogStartSession;
     window.gnGeocodeUiLogEndSession = gnGeocodeUiLogEndSession;
@@ -9905,6 +9939,12 @@ async function detalle(p) {
     const latFormateada = laM != null ? laM.toFixed(6).replace('.', ',') : '';
     const lngFormateada = lnM != null ? lnM.toFixed(6).replace('.', ',') : '';
     const wgs84UnaLinea = laM != null && lnM != null ? `${latFormateada}, ${lngFormateada}` : '--';
+    const gaudit = p.gaudit && typeof p.gaudit === 'object' ? p.gaudit : null;
+    const txtModoUbic = gaudit ? etiquetaModoUbicPedido(gaudit) : '';
+    const htmlBadgeUbicModo =
+        esAdmin() && txtModoUbic
+            ? `<p class="gn-ubic-modo-badge" style="font-size:.76rem;color:#1e293b;margin:.2rem 0 .55rem;padding:.4rem .55rem;background:#e0f2fe;border-left:3px solid #0284c7;border-radius:4px;line-height:1.45">${escDet(txtModoUbic)}</p>`
+            : '';
     const pcDet = proyectarCoordPedido(laM, lnM);
     const cfgFam = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
     let filasProyectadas = '';
@@ -10033,6 +10073,7 @@ async function detalle(p) {
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
+            ${htmlBadgeUbicModo}
             ${bannerSinPinAdmin}
             <div class="dr"><span class="dl">Provincia</span><span class="dv">${escDet(String(p.cpcia || '').trim() || '—')}</span></div>
             <div class="dr"><span class="dl">Código postal</span><span class="dv">${escDet(String(p.ccp || '').trim() || '—')}</span></div>

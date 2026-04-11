@@ -21,7 +21,10 @@ import {
   geocodeLocalityViewboxArgentina,
   reverseGeocodeArgentina,
 } from "./nominatimClient.js";
-import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
+import {
+  interpolarCoordenadaPorAltura,
+  interpolarPaso5dAnclaInicioVia,
+} from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
 
@@ -44,6 +47,30 @@ function normCp(s) {
   if (s == null) return "";
   const d = String(s).replace(/\D/g, "");
   return d.length >= 4 && d.length <= 8 ? d : "";
+}
+
+/** Modo de pin para auditoría / UI (política A). */
+function inferirModoUbicacion(fuenteStr) {
+  const s = String(fuenteStr || "");
+  if (/interpolacion_via_ancla|interpolacion_alturas_osm/i.test(s)) return "interpolado_via";
+  if (/region_provincia|fallback_argentina_aprox_obligatorio/i.test(s)) return "region";
+  if (/centro_tenant|aprox_area_oficina_tenant|tenant_config/i.test(s)) return "tenant";
+  if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
+  if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode/i.test(s)) return "exacto_aprox";
+  return "aprox";
+}
+
+async function pedidosColumnExists(columnName) {
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = $1 LIMIT 1`,
+      [columnName]
+    );
+    return !!r.rows?.length;
+  } catch (_) {
+    return false;
+  }
 }
 
 /**
@@ -435,6 +462,35 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       }
     }
 
+    if (
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleT &&
+      numT &&
+      locT &&
+      String(numT).replace(/\D/g, "").length >= 1
+    ) {
+      L("\n📍 PASO 5d: Ancla inicio de vía + metros sobre eje (heurística OSM)");
+      try {
+        const p5d = await interpolarPaso5dAnclaInicioVia({
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          provincia: provinciaEfectiva,
+          L,
+        });
+        for (const line of p5d.log || []) {
+          if (line && String(line).trim()) L(String(line));
+        }
+        if (p5d.ok && coordsValidasWgs84(p5d.lat, p5d.lng)) {
+          latFinal = p5d.lat;
+          lngFinal = p5d.lng;
+          fuente = p5d.fuente || "interpolacion_via_ancla_p5d";
+        }
+      } catch (err) {
+        L(`  ⚠️ PASO 5d: ${err?.message || err}`);
+      }
+    }
+
     let tenantCentroidPaso5 = null;
     try {
       const ubi = await resolveUbicacionCentralPublic(Number(tenantId));
@@ -503,17 +559,33 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       L(`  ✓ Pin aproximado en sede/configuración del tenant (${latFinal.toFixed(5)}, ${lngFinal.toFixed(5)})`);
     }
 
-    L("\n" + "═".repeat(60));
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      L("\n📍 PASO 5e: Fallback provincia / región (política A — pin obligatorio)");
+      const provF = provinciaEfectiva.length >= 2 ? provinciaEfectiva : provinciaTenant || "";
+      if (provF.length >= 2) {
+        try {
+          const gr = await geocodeAddressArgentina(`${provF}, Argentina`, { nominatimLimit: "2" });
+          if (gr && coordsValidasWgs84(gr.lat, gr.lng)) {
+            latFinal = gr.lat;
+            lngFinal = gr.lng;
+            fuente = "region_provincia_fallback";
+            L(`  ✓ Pin regional aprox. (${provF}): ${latFinal.toFixed(5)}, ${lngFinal.toFixed(5)}`);
+          }
+        } catch (err) {
+          L(`  ⚠️ PASO 5e: ${err?.message || err}`);
+        }
+      }
+    }
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
-      L("❌ No se pudo geocodificar con ningún método");
-      return {
-        success: false,
-        mensaje: "No se pudieron obtener coordenadas válidas",
-        log: outLog(),
-        _logLines: log.slice(),
-      };
+      latFinal = -34.6037;
+      lngFinal = -58.3816;
+      fuente = "fallback_argentina_aprox_obligatorio";
+      L("\n📍 PASO 5f: Último recurso absoluto — centro aproximado Argentina (solo si todo lo anterior falló)");
+      L(`  ✓ Coordenadas de respaldo: ${latFinal.toFixed(4)}, ${lngFinal.toFixed(4)}`);
     }
+
+    L("\n" + "═".repeat(60));
 
     const provPersist = provinciaEfectiva.length >= 2 ? provinciaEfectiva : null;
 
@@ -531,14 +603,34 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     }
     const cpPersist = cpPersistStr.length >= 4 ? cpPersistStr : null;
 
-    await query(
-      `UPDATE pedidos 
-       SET lat = $1, lng = $2,
-           provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
-           codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END
-       WHERE id = $3 AND tenant_id = $4`,
-      [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist]
-    );
+    const geocodingAudit = {
+      policy: "A",
+      fuente,
+      modo: inferirModoUbicacion(fuente),
+      at: new Date().toISOString(),
+    };
+    L(`   🏷️ Auditoría ubicación: modo=${geocodingAudit.modo} · política ${geocodingAudit.policy}`);
+
+    if (await pedidosColumnExists("geocoding_audit")) {
+      await query(
+        `UPDATE pedidos 
+         SET lat = $1, lng = $2,
+             provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
+             codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END,
+             geocoding_audit = $7::jsonb
+         WHERE id = $3 AND tenant_id = $4`,
+        [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist, JSON.stringify(geocodingAudit)]
+      );
+    } else {
+      await query(
+        `UPDATE pedidos 
+         SET lat = $1, lng = $2,
+             provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
+             codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END
+         WHERE id = $3 AND tenant_id = $4`,
+        [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist]
+      );
+    }
 
     const pedidoParaSocios = {
       ...pedido,
@@ -571,6 +663,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       lat: latFinal,
       lng: lngFinal,
       fuente,
+      geocoding_audit: geocodingAudit,
       log: outLog(),
       _logLines: log.slice(),
       mensaje: "Pedido re-geocodificado exitosamente",

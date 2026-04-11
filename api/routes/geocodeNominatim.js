@@ -115,6 +115,7 @@ router.post("/nominatim/search", async (req, res) => {
           ok: true,
           results: hit.payload,
           stale: true,
+          stale_reason: "upstream_error_or_rate_limit_use_cached_payload",
           warning: msg,
         });
       }
@@ -150,7 +151,13 @@ router.post("/nominatim/reverse", async (req, res) => {
       if (key) {
         const staleHit = await geocodeCacheGet(key);
         if (staleHit?.payload && typeof staleHit.payload === "object") {
-          return res.json({ ok: true, result: staleHit.payload, stale: true, warning: msg });
+          return res.json({
+            ok: true,
+            result: staleHit.payload,
+            stale: true,
+            stale_reason: "upstream_error_or_rate_limit_use_cached_payload",
+            warning: msg,
+          });
         }
       }
       if (msg.includes("lat_lon")) {

@@ -245,8 +245,9 @@ area[name~"${locEscaped}",i]["place"~"city|town|village"]->.loc;
 
 /**
  * Obtiene la geometría de una calle desde Overpass API (tolerante a errores ortográficos)
+ * @returns {Promise<{ geometry: Array<{lat:number,lng:number}>, tags: Record<string,string> } | null>}
  */
-async function obtenerGeometriaCalle(calle, localidad, provincia) {
+export async function obtenerGeometriaCalle(calle, localidad, provincia) {
   const calleClean = String(calle).trim();
   const locClean = String(localidad).trim();
   const provClean = provincia ? String(provincia).trim() : "";
@@ -281,7 +282,9 @@ async function obtenerGeometriaCalle(calle, localidad, provincia) {
     if (elements.length > 0) {
       const way = elements[0];
       if (way.geometry && way.geometry.length >= 2) {
-        return way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+        const geometry = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+        const tags = way.tags && typeof way.tags === "object" ? way.tags : {};
+        return { geometry, tags };
       }
     }
     return null;
@@ -300,14 +303,14 @@ out geom;
     `.trim();
 
     try {
-      const coords = await intentarQuery(query, `variante ${i + 1}/${variantes.length} '${variantes[i]}'`);
-      if (coords && coords.length >= 2) {
+      const pack = await intentarQuery(query, `variante ${i + 1}/${variantes.length} '${variantes[i]}'`);
+      if (pack?.geometry && pack.geometry.length >= 2) {
         console.info(
           "[interpolacion-alturas] ✓ Geometría obtenida: %s nodos para '%s'",
-          coords.length,
+          pack.geometry.length,
           calleClean
         );
-        return coords;
+        return pack;
       }
     } catch (e) {
       console.warn("[interpolacion-alturas] Error en query con variante '%s': %s", varianteBusqueda, e?.message || e);
@@ -335,13 +338,17 @@ out geom;
     `.trim();
 
     try {
-      const coords = await intentarQuery(
+      const pack = await intentarQuery(
         queryFallback,
         `fallback 20km variante ${i + 1}/${variantes.length}`
       );
-      if (coords && coords.length >= 2) {
-        console.info("[interpolacion-alturas] ✓ Geometría obtenida (fallback): %s nodos para '%s'", coords.length, calleClean);
-        return coords;
+      if (pack?.geometry && pack.geometry.length >= 2) {
+        console.info(
+          "[interpolacion-alturas] ✓ Geometría obtenida (fallback): %s nodos para '%s'",
+          pack.geometry.length,
+          calleClean
+        );
+        return pack;
       }
     } catch (e) {
       console.warn("[interpolacion-alturas] Error en fallback con variante '%s': %s", varianteBusqueda, e?.message || e);
@@ -669,7 +676,8 @@ export async function interpolarCoordenadaPorAltura(opts) {
   
   // 2. Obtener geometría de la calle
   log.push(`📍 Buscando "${calle}" en OpenStreetMap (Overpass API)...`);
-  const geometria = await obtenerGeometriaCalle(calle, localidad, provincia);
+  const packGeom = await obtenerGeometriaCalle(calle, localidad, provincia);
+  const geometria = packGeom?.geometry;
   if (!geometria || geometria.length < 2) {
     log.push(`❌ No se encontró la geometría de la calle en OSM`);
     log.push(`   Intentadas múltiples variantes y búsqueda por radio 20km`);
@@ -744,4 +752,123 @@ export async function interpolarCoordenadaPorAltura(opts) {
       log,
     };
   }
+}
+
+const P5D_MAX_KM = 3.2;
+const P5D_DEFAULT_MAX_M_ALONG = 2800;
+const P5D_DEFAULT_M_PER_NUM = 14;
+const P5D_DEFAULT_OFFSET_VEREDA_M = 10;
+
+/**
+ * PASO 5d (re-geocodificación): pin aproximado desde el inicio lógico de la vía (orden de nodos OSM) + avance en eje + desplazamiento por paridad.
+ * Heurística; no reemplaza catastro. Si Overpass trae `oneway`, se invierte el lado impar/par respecto del eje.
+ */
+export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
+  const calle = opts.calle ? String(opts.calle).trim() : "";
+  const localidad = opts.localidad ? String(opts.localidad).trim() : "";
+  const provincia = opts.provincia ? String(opts.provincia || "").trim() : "";
+  const numeroStr = opts.numero != null ? String(opts.numero).trim() : "";
+  const logLines = [];
+  const L = typeof opts.L === "function" ? opts.L : () => {};
+  const push = (msg) => {
+    logLines.push(msg);
+    try {
+      L(msg);
+    } catch (_) {}
+  };
+
+  push("\n📍 PASO 5d: Ancla inicio de vía OSM (aprox.) — avance por número + vereda");
+  if (!calle || calle.length < 2 || !localidad || localidad.length < 2) {
+    push("  → Sin calle/localidad para PASO 5d");
+    return { ok: false, log: logLines };
+  }
+  const numero = parseInt(numeroStr.replace(/\D/g, ""), 10);
+  if (!Number.isFinite(numero) || numero <= 0) {
+    push("  → Número inválido para PASO 5d");
+    return { ok: false, log: logLines };
+  }
+
+  const pack = await obtenerGeometriaCalle(calle, localidad, provincia);
+  if (!pack?.geometry || pack.geometry.length < 2) {
+    push("  → Sin geometría de vía en OSM");
+    return { ok: false, log: logLines };
+  }
+  const coords = pack.geometry;
+  const tags = pack.tags || {};
+  const onewayRaw = tags.oneway != null ? String(tags.oneway).trim().toLowerCase() : "";
+
+  let totalM = 0;
+  for (let i = 1; i < coords.length; i++) {
+    totalM += distanciaHaversine(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
+  }
+  push(`  ✓ Geometría: ${coords.length} nodos, ~${Math.round(totalM)} m de eje`);
+  if (totalM < 8) {
+    push("  → Vía demasiado corta; se omite PASO 5d");
+    return { ok: false, log: logLines };
+  }
+
+  const maxAlongEnv = Number(process.env.GEOCODE_P5D_MAX_M_ALONG || P5D_DEFAULT_MAX_M_ALONG);
+  const mPerNum = Number(process.env.GEOCODE_P5D_M_PER_NUM || P5D_DEFAULT_M_PER_NUM);
+  const offsetVereda = Math.min(
+    25,
+    Number(process.env.GEOCODE_P5D_OFFSET_VEREDA_M || P5D_DEFAULT_OFFSET_VEREDA_M)
+  );
+
+  const capAlong = Math.min(maxAlongEnv, totalM * 0.96, P5D_MAX_KM * 1000);
+  let targetM = Math.min(capAlong, numero * mPerNum * 0.085, totalM * 0.9);
+  targetM = Math.max(12, targetM);
+  if (targetM > totalM) targetM = totalM * 0.88;
+
+  push(
+    `  → Ancla: primer nodo de la vía (inicio lógico OSM). Distancia aprox. sobre eje: ${Math.round(targetM)} m`
+  );
+  if (onewayRaw) push(`  → oneway (OSM): ${onewayRaw}`);
+
+  let acum = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const d = distanciaHaversine(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
+    if (acum + d >= targetM) {
+      const rest = targetM - acum;
+      const frac = d > 0 ? rest / d : 0;
+      const latB = coords[i - 1].lat + (coords[i].lat - coords[i - 1].lat) * frac;
+      const lngB = coords[i - 1].lng + (coords[i].lng - coords[i - 1].lng) * frac;
+      const br = calcularBearing(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
+      const esPar = numero % 2 === 0;
+      let offsetDeg = esPar ? (br + 90) % 360 : (br - 90 + 360) % 360;
+      if (onewayRaw === "-1" || onewayRaw === "reverse") {
+        offsetDeg = esPar ? (br - 90 + 360) % 360 : (br + 90) % 360;
+      }
+      const pt = puntoDestino(latB, lngB, offsetVereda, offsetDeg);
+      push(
+        `  ✓ Punto sobre eje + vereda (${esPar ? "par" : "impar"})${onewayRaw ? ` · oneway=${onewayRaw}` : ""}`
+      );
+      push(`  ✓ Coordenadas aprox.: ${pt.lat.toFixed(6)}, ${pt.lng.toFixed(6)}`);
+      push(`  ℹ️ Ancla: inicio de vía en OSM (aprox.) — no es puerta catastral exacta`);
+      return {
+        ok: true,
+        lat: pt.lat,
+        lng: pt.lng,
+        fuente: "interpolacion_via_ancla_p5d",
+        log: logLines,
+        metadata: {
+          modo: "interpolado_via",
+          oneway: onewayRaw || null,
+          metrosEjeAprox: Math.round(targetM),
+          nodos: coords.length,
+        },
+      };
+    }
+    acum += d;
+  }
+
+  const last = coords[coords.length - 1];
+  push("  → Se usa extremo de geometría (fallback interno)");
+  return {
+    ok: true,
+    lat: last.lat,
+    lng: last.lng,
+    fuente: "interpolacion_via_ancla_p5d_extremo",
+    log: logLines,
+    metadata: { modo: "interpolado_via", warn: "fin_geometria" },
+  };
 }
