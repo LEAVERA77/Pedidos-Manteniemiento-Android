@@ -11,11 +11,11 @@
 import {
   nominatimStateMatchesTenant,
   stateFromNominatimHit,
+  getNominatimBaseUrl,
 } from "./nominatimClient.js";
 import { iso3166ArgDesdeNombreProvincia } from "../utils/provinciaArgentinaIso.js";
 
 const OVERPASS_API = "https://overpass-api.de/api/interpreter";
-const NOMINATIM_API = "https://nominatim.openstreetmap.org";
 
 /** Elige el primer resultado Nominatim cuya provincia coincide con la esperada (evita homónimos entre jurisdicciones). */
 function pickHitProvincia(hits, provClean) {
@@ -168,7 +168,7 @@ async function obtenerCoordsLocalidad(localidad, provincia) {
   const locClean = String(localidad).trim();
   const provClean = provincia ? String(provincia).trim() : "";
   const q = provClean.length >= 2 ? `${locClean}, ${provClean}, Argentina` : `${locClean}, Argentina`;
-  const url = `${NOMINATIM_API}/search?` +
+  const url = `${getNominatimBaseUrl()}/search?` +
     new URLSearchParams({
       q,
       format: "json",
@@ -388,7 +388,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       });
       if (provClean) structured.set("state", provClean);
 
-      const urlStruct = `${NOMINATIM_API}/search?${structured}`;
+      const urlStruct = `${getNominatimBaseUrl()}/search?${structured}`;
       console.info("[rango-numeracion] Nominatim structured: street=%s, city=%s", `${calleClean} ${numeroInt}`, locClean);
 
       const respStruct = await fetch(urlStruct, { headers: headersN });
@@ -414,7 +414,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       ? `${calleClean} ${numeroInt}, ${locClean}, ${provClean}, Argentina`
       : `${calleClean} ${numeroInt}, ${locClean}, Argentina`;
     
-    const urlExacto = `${NOMINATIM_API}/search?` +
+    const urlExacto = `${getNominatimBaseUrl()}/search?` +
       new URLSearchParams({
         q: qExacto,
         format: "json",
@@ -459,7 +459,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
     ? `${calleClean}, ${locClean}, ${provClean}, Argentina`
     : `${calleClean}, ${locClean}, Argentina`;
   
-  const url = `${NOMINATIM_API}/search?` +
+  const url = `${getNominatimBaseUrl()}/search?` +
     new URLSearchParams({
       q,
       format: "json",

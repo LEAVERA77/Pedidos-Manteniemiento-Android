@@ -53,6 +53,16 @@ export function nominatimHeaders() {
   };
 }
 
+/**
+ * Base URL del servicio Nominatim (sin barra final). Default: API pública OSM.
+ * Para instancia propia: `NOMINATIM_BASE_URL=https://tu-servidor:8080` (después de importar datos con el proyecto Nominatim).
+ * Nota: un repo GitHub (p. ej. NOMINATIM en LEAVERA77) es *código*; el HTTP que usa GestorNova es el host donde corre `nominatim serve`.
+ */
+export function getNominatimBaseUrl() {
+  const raw = String(process.env.NOMINATIM_BASE_URL || "https://nominatim.openstreetmap.org").trim();
+  return raw.replace(/\/+$/, "");
+}
+
 /** Timeout por request HTTP a Nominatim (ms). Evita bloqueos largos en worker único. */
 export function nominatimFetchTimeoutMs() {
   const n = Number(process.env.NOMINATIM_FETCH_TIMEOUT_MS ?? 12000);
@@ -340,7 +350,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     if (useState && state.length >= 2) p.set("state", state);
     if (postal.length >= 4) p.set("postalcode", postal);
     p.set("limit", "10");
-    const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+    const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
     const res = await nominatimFetch(url);
     if (!res.ok) return [];
     const arr = await res.json();
@@ -353,7 +363,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     const p = nominatimBaseParams();
     p.set("q", `${loc}, ${state}, Argentina`);
     p.set("limit", "10");
-    const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+    const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
     const res = await nominatimFetch(url);
     if (!res.ok) return [];
     const arr = await res.json();
@@ -430,7 +440,7 @@ async function nominatimSearch(params) {
     if (v == null || v === "") continue;
     p.set(k, String(v));
   }
-  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
   const res = await nominatimFetch(url);
   if (!res.ok) return [];
   const arr = await res.json();
@@ -524,7 +534,7 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   p.set("q", q);
   const limRaw = opts.nominatimLimit != null ? String(opts.nominatimLimit).trim() : "";
   if (limRaw && /^\d+$/.test(limRaw)) p.set("limit", limRaw);
-  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
   const res = await nominatimFetch(url);
   if (!res.ok) return null;
   const arr = await res.json();
@@ -1060,7 +1070,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         p.set("viewbox", vbMeta.viewboxStr);
         p.set("bounded", "1");
       }
-      const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+      const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
       const res = await nominatimFetch(url);
       if (!res.ok) continue;
       const arr = await res.json();
@@ -1200,7 +1210,7 @@ export async function searchCalleLocalidadArgentina(
     p.set("viewbox", vb);
     p.set("bounded", "1");
   }
-  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
   const res = await nominatimFetch(url);
   if (!res.ok) return { houseHits: [], streetCenter: null };
   const arr = await res.json();
@@ -1422,7 +1432,7 @@ export async function reverseGeocodeArgentina(lat, lng) {
     zoom: "18",
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
-  const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/reverse?${p.toString()}`;
   const res = await nominatimFetch(url);
   if (!res.ok) return null;
   const hit = await res.json();
@@ -1500,7 +1510,7 @@ export async function nominatimProxySearch(clientParams = {}) {
     if (!s) continue;
     p.set(lk, s);
   }
-  const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
   const backoff503 = [1500, 4000, 9000, 16000, 22000];
   let lastErr = null;
   const maxAttempts = 5;
@@ -1543,7 +1553,7 @@ export async function nominatimProxyReverseRaw(body = {}) {
     zoom,
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
-  const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
+  const url = `${getNominatimBaseUrl()}/reverse?${p.toString()}`;
   const backoff503 = [1500, 4000, 9000, 16000, 22000];
   let lastErr = null;
   const maxAttempts = 5;

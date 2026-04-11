@@ -14,6 +14,7 @@ import {
   coordsValidasWgs84,
   parLatLngPasaCheckWhatsappDb,
   ensureWhatsappPedidoCoordsForDb,
+  FALLBACK_WGS84_ARGENTINA,
 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
@@ -482,6 +483,10 @@ export async function crearPedidoDesdeWhatsappBot({
   const ensuredInsert = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
   latFinal = ensuredInsert.lat;
   lngFinal = ensuredInsert.lng;
+  if (!parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
+    latFinal = FALLBACK_WGS84_ARGENTINA.lat;
+    lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
+  }
   if (ensuredInsert.coerced && telemetria?.recordPaso) {
     try {
       await telemetria.recordPaso({
@@ -491,11 +496,9 @@ export async function crearPedidoDesdeWhatsappBot({
       });
     } catch (_) {}
   }
-  {
-    const li = cols.indexOf("lat");
-    const gi = cols.indexOf("lng");
-    if (li >= 0) vals[li] = latFinal;
-    if (gi >= 0) vals[gi] = lngFinal;
+  for (let i = 0; i < cols.length; i++) {
+    if (cols[i] === "lat") vals[i] = latFinal;
+    if (cols[i] === "lng") vals[i] = lngFinal;
   }
 
   if (pCols.has("geocoding_audit") && geoRes.geocoding_audit) {

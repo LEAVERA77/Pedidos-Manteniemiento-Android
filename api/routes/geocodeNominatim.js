@@ -9,6 +9,7 @@ import {
   nominatimProxySearch,
   nominatimProxyReverseRaw,
   throttleIntervalMs,
+  getNominatimBaseUrl,
 } from "../services/nominatimClient.js";
 import {
   ensureGeocodeNominatimCacheTable,
@@ -45,8 +46,7 @@ router.get("/health", async (_req, res) => {
       nominatim_status: "skipped",
     });
   }
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=json&q=Rosario%20Argentina&limit=1";
+  const url = `${getNominatimBaseUrl()}/search?format=json&q=Rosario%20Argentina&limit=1`;
   const t0 = Date.now();
   try {
     const r = await fetch(url, { headers: nominatimHeaders() });
