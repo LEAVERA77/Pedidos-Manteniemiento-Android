@@ -6,12 +6,15 @@
  */
 
 import { query } from "../db/neon.js";
+import { resolveUbicacionCentralPublic } from "../routes/configUbicacion.js";
+import { separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
 import { normalizarDireccion } from "../utils/normalizarCalles.js";
 import {
   buscarCoordenadasPorNisMedidor,
   existeSocioCatalogoPorIdentificadorSinCoords,
 } from "./buscarCoordenadasPorNisMedidor.js";
 import {
+  geocodeAddressArgentina,
   geocodeCalleNumeroLocalidadArgentina,
   geocodeDomicilioLineaLibreArgentina,
   geocodeDomicilioSimpleQArgentina,
@@ -21,6 +24,9 @@ import {
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
+
+/** Evita dos re-geos en paralelo para el mismo pedido (p. ej. doble webhook / race). */
+const _regeoPedidoEnCurso = new Set();
 
 /**
  * Valida coords WGS84
@@ -96,9 +102,21 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         success: false,
         mensaje: "Pedido no encontrado",
         log: outLog(),
+        _logLines: log.slice(),
       };
     }
 
+    if (_regeoPedidoEnCurso.has(Number(pedidoId))) {
+      L("⏳ Ya hay una re-geocodificación en curso para este pedido; se omite la llamada duplicada.");
+      return {
+        success: false,
+        mensaje: "Re-geocodificación ya en curso para este pedido",
+        log: outLog(),
+        _logLines: log.slice(),
+      };
+    }
+    _regeoPedidoEnCurso.add(Number(pedidoId));
+    try {
     const pedido = pedidoResult.rows[0];
     const origenWa =
       preferSimpleQOpt ||
@@ -128,9 +146,18 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     const nmT = pedido.nis_medidor ? String(pedido.nis_medidor).trim() : null;
     let calleT = pedido.cliente_calle ? String(pedido.cliente_calle).trim() : null;
     const calleOriginalPedido = calleT ? String(calleT).trim() : null;
-    const numT = pedido.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
+    let numT = pedido.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
     const locT = pedido.cliente_localidad ? String(pedido.cliente_localidad).trim() : null;
     const nombreT = pedido.cliente_nombre ? String(pedido.cliente_nombre).trim() : null;
+
+    const sepCalle = separarNumeroDuplicadoEnCalle(calleT, numT);
+    if (sepCalle.stripped) {
+      L(
+        `  ✂️ Calle / número alineados (sin duplicar n° en columna calle): "${sepCalle.calle}" · puerta ${sepCalle.numero || numT || "—"}`
+      );
+      calleT = sepCalle.calle;
+      if (!numT && sepCalle.numero) numT = String(sepCalle.numero);
+    }
 
     if (!calleT && !locT && !nisT && !medT && !nmT) {
       L("❌ Sin datos suficientes para geocodificar");
@@ -138,6 +165,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         success: false,
         mensaje: "Pedido sin dirección ni identificadores",
         log: outLog(),
+        _logLines: log.slice(),
       };
     }
 
@@ -396,7 +424,9 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       !mismoTextoCalle(calleOriginalPedido, calleT)
     ) {
       L("\n↩ Reintento con calle original del pedido (sin volver a PASO 1 diccionario)…");
-      const r2 = await ejecutarNominatim3_3b_4(calleOriginalPedido, { simpleQOnly: origenWa });
+      const sepOrig = separarNumeroDuplicadoEnCalle(calleOriginalPedido, numT);
+      const calleParaRetry = sepOrig.stripped ? sepOrig.calle : calleOriginalPedido;
+      const r2 = await ejecutarNominatim3_3b_4(calleParaRetry, { simpleQOnly: origenWa });
       if (coordsValidasWgs84(r2.lat, r2.lng)) {
         latFinal = r2.lat;
         lngFinal = r2.lng;
@@ -405,11 +435,19 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       }
     }
 
+    let tenantCentroidPaso5 = null;
+    try {
+      const ubi = await resolveUbicacionCentralPublic(Number(tenantId));
+      if (ubi && Number.isFinite(Number(ubi.lat)) && Number.isFinite(Number(ubi.lng))) {
+        tenantCentroidPaso5 = { lat: Number(ubi.lat), lng: Number(ubi.lng) };
+      }
+    } catch (_) {}
+
     if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
-      L("\n📍 PASO 5: Centro de localidad (OSM, pin aproximado)");
+      L("\n📍 PASO 5: Centro de localidad (OSM + fallback oficina si aplica)");
       try {
-        const vb = await geocodeLocalityViewboxArgentina(locT, null, {
-          allowTenantCentroidFallback: false,
+        const vb = await geocodeLocalityViewboxArgentina(locT, tenantCentroidPaso5, {
+          allowTenantCentroidFallback: true,
           stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
           postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
         });
@@ -418,14 +456,51 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         if (coordsValidasWgs84(cLat, cLng)) {
           latFinal = cLat;
           lngFinal = cLng;
-          fuente = "centro_localidad_osm";
-          L(`  ✓ Pin aproximado (OSM) en centro de "${locT}" — ubicación estimada, no domicilio exacto`);
+          fuente = vb?.fromTenantCentroid ? "aprox_area_oficina_tenant" : "centro_localidad_osm";
+          L(
+            vb?.fromTenantCentroid
+              ? `  ✓ Pin aproximado según área de referencia (ubicación central del tenant) — no reemplaza domicilio exacto`
+              : `  ✓ Pin aproximado (OSM) en centro de "${locT}" — ubicación estimada, no domicilio exacto`
+          );
         } else {
-          L(`  → Sin centro OSM útil para la localidad`);
+          L(`  → Sin centro OSM útil para la localidad (ni bbox tenant)`);
         }
       } catch (err) {
         L(`  ⚠️  Error PASO 5 (centro localidad): ${err?.message || err}`);
       }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
+      L("\n📍 PASO 5b: Nominatim q — localidad + provincia (fallback)");
+      try {
+        const qLoc =
+          provinciaEfectiva.length >= 2
+            ? `${locT}, ${provinciaEfectiva}, Argentina`
+            : `${locT}, Argentina`;
+        const gl = await geocodeAddressArgentina(qLoc, {
+          filterLocalidad: locT,
+          filterState: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+          nominatimLimit: "8",
+        });
+        if (gl && coordsValidasWgs84(gl.lat, gl.lng)) {
+          latFinal = gl.lat;
+          lngFinal = gl.lng;
+          fuente = "nominatim_q_localidad_fallback";
+          L(`  ✓ Coordenadas por búsqueda libre de localidad: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        } else {
+          L(`  → Sin resultado útil en PASO 5b`);
+        }
+      } catch (err) {
+        L(`  ⚠️  PASO 5b: ${err?.message || err}`);
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && tenantCentroidPaso5) {
+      L("\n📍 PASO 5c: Último recurso — coordenadas centrales del tenant (config)");
+      latFinal = tenantCentroidPaso5.lat;
+      lngFinal = tenantCentroidPaso5.lng;
+      fuente = "centro_tenant_config_ultimo_recurso";
+      L(`  ✓ Pin aproximado en sede/configuración del tenant (${latFinal.toFixed(5)}, ${lngFinal.toFixed(5)})`);
     }
 
     L("\n" + "═".repeat(60));
@@ -436,6 +511,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         success: false,
         mensaje: "No se pudieron obtener coordenadas válidas",
         log: outLog(),
+        _logLines: log.slice(),
       };
     }
 
@@ -496,8 +572,12 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       lng: lngFinal,
       fuente,
       log: outLog(),
+      _logLines: log.slice(),
       mensaje: "Pedido re-geocodificado exitosamente",
     };
+    } finally {
+      _regeoPedidoEnCurso.delete(Number(pedidoId));
+    }
   } catch (err) {
     L(`\n❌ Error fatal: ${err?.message || err}`);
     console.error("[regeocodificar] Error:", err);
@@ -505,6 +585,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       success: false,
       mensaje: `Error: ${err?.message || String(err)}`,
       log: outLog(),
+      _logLines: log.slice(),
     };
   }
 }

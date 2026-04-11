@@ -48,3 +48,37 @@ export function parseDomicilioLibreArgentina(cdir, localidadFallback = null) {
 
   return null;
 }
+
+/**
+ * Si `cliente_calle` termina con el mismo número que `cliente_numero_puerta`, separa para no duplicar en Nominatim (ej. "Sarmiento 365" + "365").
+ * @param {string|null|undefined} calleStr
+ * @param {string|null|undefined} numPuerta
+ * @returns {{ calle: string, numero: string|null, stripped: boolean }}
+ */
+export function separarNumeroDuplicadoEnCalle(calleStr, numPuerta) {
+  let calle = String(calleStr || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const numRaw = numPuerta != null ? String(numPuerta).trim() : "";
+  const numDig = numRaw.replace(/\D/g, "");
+  if (!calle) return { calle: "", numero: numRaw || null, stripped: false };
+  if (numDig.length >= 1 && /^\d+$/.test(numDig)) {
+    const re = new RegExp(`^(.*?)\\s+${numDig}\\s*$`, "i");
+    const m = calle.match(re);
+    if (m && m[1].trim().length >= 2) {
+      return { calle: m[1].trim(), numero: numRaw || numDig, stripped: true };
+    }
+  }
+  const tail = calle.match(/\s+(\d{1,6})$/);
+  if (tail) {
+    const rest = calle.slice(0, calle.length - tail[0].length).trim();
+    if (rest.length >= 2 && (!numDig || tail[1] === numDig)) {
+      return {
+        calle: rest,
+        numero: numRaw || tail[1],
+        stripped: true,
+      };
+    }
+  }
+  return { calle, numero: numRaw || null, stripped: false };
+}

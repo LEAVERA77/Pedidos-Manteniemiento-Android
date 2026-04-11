@@ -225,6 +225,62 @@ function validarCalleWhatsApp(raw) {
   return { ok: true, value: t };
 }
 
+const _MESES_VIA_ARG =
+  "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+
+/** Nombre de vía donde un dígito forma parte del nombre (no confundir con número de puerta). */
+function esNombreViaConDigitosLegitimos(rest) {
+  const r = String(rest || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!r) return false;
+  if (/^calle\s+\d{1,3}$/i.test(r)) return true;
+  if (/^pasaje\s+\d{1,3}$/i.test(r)) return true;
+  if (new RegExp(`^\\d{1,2}\\s+de\\s+(${_MESES_VIA_ARG})$`, "i").test(r)) return true;
+  if (/^(ruta|camino)\s+\d{1,4}$/i.test(r)) return true;
+  return false;
+}
+
+/**
+ * Paso *solo calle*: rechaza "Sarmiento 365" (número de puerta al final); admite "9 de Julio 200", "Calle 5 10", etc.
+ * @returns {{ ok: boolean, msg?: string, calle?: string, numeroSugerido?: string|null }}
+ */
+function analizarEntradaCalleWhatsapp(raw) {
+  const base = validarCalleWhatsApp(raw);
+  if (!base.ok) return base;
+  const t = base.value;
+
+  if (/^calle\s+\d{1,3}$/i.test(t)) {
+    return { ok: true, calle: t, numeroSugerido: null };
+  }
+  if (new RegExp(`^\\d{1,2}\\s+de\\s+(${_MESES_VIA_ARG})$`, "i").test(t)) {
+    return { ok: true, calle: t, numeroSugerido: null };
+  }
+  if (/^(ruta|camino)\s+\d{1,4}$/i.test(t)) {
+    return { ok: true, calle: t, numeroSugerido: null };
+  }
+  if (/^pasaje\s+\d{1,3}$/i.test(t)) {
+    return { ok: true, calle: t, numeroSugerido: null };
+  }
+
+  const mTrail = t.match(/^(.+?)\s+(\d{1,6})$/);
+  if (!mTrail) {
+    return { ok: true, calle: t, numeroSugerido: null };
+  }
+  const rest = mTrail[1].trim();
+  const numTok = mTrail[2];
+  if (esNombreViaConDigitosLegitimos(rest)) {
+    return { ok: true, calle: rest, numeroSugerido: numTok };
+  }
+  return {
+    ok: false,
+    msg:
+      "En este paso va *solo el nombre de la calle*, *sin número de puerta*.\n\n" +
+      "Ej.: *Sarmiento* o *Mitre* (el número lo pedimos después).\n\n" +
+      "Si tu calle es *9 de Julio*, *25 de Mayo* o *Calle 5*, escribí el nombre completo en este paso; el número de puerta lo indicás en el siguiente.",
+  };
+}
+
 /** Puerta: solo dígitos, 1 a 6; *0* = sin número / no aplica. */
 function validarNumeroPuertaWhatsApp(raw) {
   const t = String(raw || "").trim();
@@ -2101,20 +2157,32 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       sess.step = "awaiting_addr_provincia";
       sess.addrCalle = null;
       sess.addrNumero = null;
+      delete sess.addrNumeroSugerido;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
       await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
       return;
     }
-    const vCal = validarCalleWhatsApp(t);
-    if (!vCal.ok) {
-      await reply(phone, vCal.msg, tid, phoneNumberId);
+    const aCal = analizarEntradaCalleWhatsapp(t);
+    if (!aCal.ok) {
+      await reply(phone, aCal.msg, tid, phoneNumberId);
       return;
     }
-    sess.addrCalle = vCal.value;
+    sess.addrCalle = aCal.calle;
+    if (aCal.numeroSugerido) {
+      sess.addrNumeroSugerido = String(aCal.numeroSugerido);
+    } else {
+      delete sess.addrNumeroSugerido;
+    }
     sess.step = "awaiting_addr_numero";
     sessions.set(sk, sess);
-    await reply(phone, MSG_ADDR_NUMERO, tid, phoneNumberId);
+    let msgNum = MSG_ADDR_NUMERO;
+    if (sess.addrNumeroSugerido) {
+      msgNum =
+        `Si el número de puerta que querías era *${sess.addrNumeroSugerido}*, escribilo así; si no, indicá el correcto.\n\n` +
+        MSG_ADDR_NUMERO;
+    }
+    await reply(phone, msgNum, tid, phoneNumberId);
     return;
   }
 
@@ -2246,6 +2314,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (esComandoAtras(t)) {
       sess.step = "awaiting_addr_calle";
       sess.addrNumero = null;
+      delete sess.addrNumeroSugerido;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
       await reply(phone, MSG_ADDR_CALLE, tid, phoneNumberId);
@@ -2257,6 +2326,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     sess.addrNumero = vNum.value;
+    delete sess.addrNumeroSugerido;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await geocodeStructuredAddressAndFinalizePedido(

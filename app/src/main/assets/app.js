@@ -3190,19 +3190,41 @@ function gnGeocodeAdminLogBindDockOnce() {
     } catch (_) {}
 }
 
-/** Admin: inyecta en el dock el log de re-geocodificación guardado en servidor (pedidos WhatsApp). Una vez por sesión de navegador y pedido. */
+/** Admin: inyecta en el dock el log de re-geocodificación guardado en servidor (WhatsApp o pedido sin pin). Una vez por sesión de navegador y pedido cuando hay `wgeo`. */
 function gnGeocodePrecargarWhatsappRegeoLog(p) {
     if (typeof esAdmin !== 'function' || !esAdmin()) return;
-    if (!p || String(p.orc || '').toLowerCase() !== 'whatsapp') return;
+    if (!p) return;
+    const wa = String(p.orc || '').toLowerCase() === 'whatsapp';
+    const sinPin = !coordsSonPinValidasMapaWgs84(p.la, p.ln);
+    if (!wa && !sinPin) return;
     const w = p.wgeo;
-    if (!w || typeof w !== 'object') return;
+    if (!w || typeof w !== 'object') {
+        if (wa && sinPin) {
+            try {
+                const kw = `gn_nogeolog_warn_${p.id}`;
+                if (sessionStorage.getItem(kw) === '1') return;
+                sessionStorage.setItem(kw, '1');
+                gnGeocodeAdminLogBindDockOnce();
+                gnGeocodeUiLogStartSession(`Re-geocodificación servidor — pedido #${p.id}`);
+                gnGeocodeUiLogAppend(
+                    'warn',
+                    'Aún no hay registro de re-geocodificación en el servidor (puede estar en curso). Volvé a abrir el pedido en unos segundos o usá Re-geocodificar.'
+                );
+                gnGeocodeUiLogEndSession();
+                gnGeocodeAdminLogOpenPanel();
+            } catch (_) {}
+        }
+        return;
+    }
     const key = `gn_wa_geolog_done_${p.id}`;
     try {
         if (sessionStorage.getItem(key) === '1') return;
         sessionStorage.setItem(key, '1');
     } catch (_) {}
     gnGeocodeAdminLogBindDockOnce();
-    gnGeocodeUiLogStartSession(`Re-geocodificación en servidor — pedido WhatsApp #${p.id}`);
+    gnGeocodeUiLogStartSession(
+        `Re-geocodificación en servidor — pedido #${p.id}${wa ? ' (WhatsApp)' : ' (sin pin)'}`
+    );
     if (w.at) gnGeocodeUiLogAppend('info', `Instante: ${w.at}`);
     gnGeocodeUiLogAppend(
         'info',

@@ -9,7 +9,7 @@ import {
   contarPedidosAbiertosMismaZona,
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "./pedidoZonaOutage.js";
-import { parseDomicilioLibreArgentina } from "../utils/parseDomicilioArg.js";
+import { parseDomicilioLibreArgentina, separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
 import { coordsValidasWgs84 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
@@ -56,7 +56,7 @@ export async function persistirGeocodeLogWhatsappEnPedido(pedidoId, tenantId, re
       mensaje: resultado.mensaje || null,
       lat: resultado.lat != null ? Number(resultado.lat) : null,
       lng: resultado.lng != null ? Number(resultado.lng) : null,
-      log: Array.isArray(resultado.log) ? resultado.log.slice(0, 500) : [],
+      log: (Array.isArray(resultado._logLines) ? resultado._logLines : resultado.log || []).slice(0, 500),
     };
     await query(
       `UPDATE pedidos SET geocode_log_whatsapp = $1::jsonb WHERE id = $2 AND tenant_id = $3`,
@@ -276,6 +276,14 @@ export async function crearPedidoDesdeWhatsappBot({
       if (!calleT) calleT = parsed.calle;
       if (!numT && parsed.numero) numT = parsed.numero;
       if (!locT) locT = parsed.localidad;
+    }
+  }
+
+  if (calleT) {
+    const sp = separarNumeroDuplicadoEnCalle(calleT, numT);
+    if (sp.stripped) {
+      calleT = sp.calle;
+      if (!numT && sp.numero) numT = sp.numero;
     }
   }
 
