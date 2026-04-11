@@ -90,11 +90,6 @@ const MSG_ADDR_PROVINCIA =
   "\n\nRespondé con el *número* del 1 al 24." +
   MSG_SALIR_ATRAS;
 
-const MSG_ADDR_CP =
-  "Si conocés el *código postal* (CPA), envialo en un mensaje (solo números, ej: *3100* o *C1425* sin letras obligatorias).\n\n" +
-  "Si no lo sabés, escribí *no* o *0* para continuar sin CP." +
-  MSG_SALIR_ATRAS;
-
 const MSG_ADDR_CALLE =
   "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre* o *Sarmiento*.\n\n" +
   "_En cualquier momento podés mandar *GPS* con *Adjuntar* → *Ubicación*._" +
@@ -127,7 +122,6 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_opcional_id",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
-  "awaiting_addr_codigo_postal",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
   "awaiting_suministro_conexion",
@@ -142,7 +136,6 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_nombre_persona",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
-  "awaiting_addr_codigo_postal",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
   "awaiting_suministro_conexion",
@@ -154,7 +147,6 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
 /** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
 const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
   "awaiting_addr_numero",
-  "awaiting_addr_codigo_postal",
   "awaiting_opcional_id",
 ]);
 
@@ -701,23 +693,14 @@ async function inferirDireccionDesdeGpsYGeocodificar(
 
   if (stepAddr === "awaiting_addr_provincia" && rev?.address?.state) {
     sess.addrProvincia = String(rev.address.state).trim();
-    sess.step = "awaiting_addr_codigo_postal";
+    sess.step = "awaiting_addr_calle";
     sessions.set(sk, sess);
     await reply(
       phone,
-      `Desde el *GPS* tomamos la provincia: *${sess.addrProvincia}*.\n\n${MSG_ADDR_CP}`,
+      `Desde el *GPS* tomamos la provincia: *${sess.addrProvincia}*.\n\n${MSG_ADDR_CALLE}`,
       tid,
       wpid
     );
-    return;
-  }
-  if (stepAddr === "awaiting_addr_codigo_postal") {
-    const pc = rev?.address?.postcode ? String(rev.address.postcode).replace(/\D/g, "") : "";
-    if (pc.length >= 4 && pc.length <= 8) sess.addrCodigoPostal = pc;
-    sess.step = "awaiting_addr_calle";
-    sessions.set(sk, sess);
-    const pie = sess.addrCodigoPostal ? `\n\n_Inferimos CP *${sess.addrCodigoPostal}* desde el mapa._` : "";
-    await reply(phone, `${MSG_ADDR_CALLE}${pie}`, tid, wpid);
     return;
   }
 
@@ -1552,7 +1535,6 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   if (
     stepAddr === "awaiting_addr_ciudad" ||
     stepAddr === "awaiting_addr_provincia" ||
-    stepAddr === "awaiting_addr_codigo_postal" ||
     stepAddr === "awaiting_addr_calle" ||
     stepAddr === "awaiting_addr_numero"
   ) {
@@ -2282,35 +2264,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     sess.addrProvincia = PROVINCIAS_ARG_BOT[n - 1];
-    sess.step = "awaiting_addr_codigo_postal";
-    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-    sessions.set(sk, sess);
-    await reply(phone, MSG_ADDR_CP, tid, phoneNumberId);
-    return;
-  }
-
-  if (sess && sess.step === "awaiting_addr_codigo_postal") {
-    const t = String(text || "").trim().toLowerCase();
-    if (esComandoAtras(t)) {
-      sess.step = "awaiting_addr_provincia";
-      delete sess.addrCodigoPostal;
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
-      return;
-    }
-    const raw = String(text || "").trim();
-    if (t === "no" || t === "n" || t === "s/c" || t === "-" || raw === "0") {
-      delete sess.addrCodigoPostal;
-    } else {
-      const digits = raw.replace(/\D/g, "");
-      if (digits.length >= 4 && digits.length <= 8) {
-        sess.addrCodigoPostal = digits;
-      } else if (digits.length > 0) {
-        await reply(phone, "El código postal debe tener *entre 4 y 8 dígitos*, o escribí *no* para omitir.", tid, phoneNumberId);
-        return;
-      }
-    }
+    delete sess.addrCodigoPostal;
     sess.step = "awaiting_addr_calle";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
@@ -2321,12 +2275,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (sess && sess.step === "awaiting_addr_calle") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
-      sess.step = "awaiting_addr_codigo_postal";
+      sess.step = "awaiting_addr_provincia";
       sess.addrCalle = null;
       sess.addrNumero = null;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_CP, tid, phoneNumberId);
+      await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
       return;
     }
     if (t.length < 2) {

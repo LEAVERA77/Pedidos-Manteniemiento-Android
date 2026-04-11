@@ -8,7 +8,7 @@
 import { query } from "../db/neon.js";
 import { normalizarDireccion } from "../utils/normalizarCalles.js";
 import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
-import { geocodeCalleNumeroLocalidadArgentina } from "./nominatimClient.js";
+import { geocodeCalleNumeroLocalidadArgentina, reverseGeocodeArgentina } from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
@@ -112,6 +112,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     let latFinal = null;
     let lngFinal = null;
     let fuente = null;
+    /** CP desde resultado directo de Nominatim (forward), si existe. */
+    let nominatimPostcode = null;
 
     L("\n🔤 PASO 1: Normalización de calle");
     if (calleT && locT) {
@@ -177,6 +179,10 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
           latFinal = geoResult.lat;
           lngFinal = geoResult.lng;
           fuente = geoResult.audit?.source || "nominatim";
+          if (geoResult.postcode) {
+            nominatimPostcode = normCp(geoResult.postcode);
+            if (nominatimPostcode) L(`  📮 CP (Nominatim): ${nominatimPostcode}`);
+          }
           L(`  ✓ Nominatim: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
           L(`  ✓ Fuente: ${fuente}`);
         } else {
@@ -226,7 +232,20 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     }
 
     const provPersist = provinciaEfectiva.length >= 2 ? provinciaEfectiva : null;
-    const cpPersist = postalDigits.length >= 4 ? postalDigits : null;
+
+    let cpPersistStr = postalDigits.length >= 4 ? postalDigits : "";
+    if (!cpPersistStr && nominatimPostcode) cpPersistStr = nominatimPostcode;
+    if (!cpPersistStr && coordsValidasWgs84(latFinal, lngFinal)) {
+      try {
+        const revCp = await reverseGeocodeArgentina(latFinal, lngFinal);
+        const rcp = normCp(revCp?.address?.postcode);
+        if (rcp) {
+          cpPersistStr = rcp;
+          L(`  📮 CP inferido (reverse Nominatim): ${rcp}`);
+        }
+      } catch (_) {}
+    }
+    const cpPersist = cpPersistStr.length >= 4 ? cpPersistStr : null;
 
     await query(
       `UPDATE pedidos 

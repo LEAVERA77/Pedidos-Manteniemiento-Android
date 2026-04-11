@@ -16,6 +16,12 @@
 
 import { query } from "../db/neon.js";
 
+function digitsCp(s) {
+  if (s == null) return "";
+  const d = String(s).replace(/\D/g, "");
+  return d.length >= 4 && d.length <= 8 ? d : "";
+}
+
 let _colsCache = null;
 async function columnasSociosCatalogo() {
   if (_colsCache) return _colsCache;
@@ -174,11 +180,30 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
           const hasFechaCorr = cols.has("fecha_correccion_coords");
           
           let updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
+          const paramsFb = [la, ln];
+          let nextFb = 3;
+          if (cols.has("provincia")) {
+            const pv = pedido.provincia != null ? String(pedido.provincia).trim() : "";
+            if (pv) {
+              updateSql += `, provincia = $${nextFb}`;
+              paramsFb.push(pv);
+              nextFb++;
+            }
+          }
+          if (cols.has("codigo_postal")) {
+            const cp = digitsCp(pedido.codigo_postal);
+            if (cp) {
+              updateSql += `, codigo_postal = $${nextFb}`;
+              paramsFb.push(cp);
+              nextFb++;
+            }
+          }
           if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
           if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
-          updateSql += ` WHERE id = $3 RETURNING id`;
-          
-          const u = await query(updateSql, [la, ln, sidFb]);
+          updateSql += ` WHERE id = $${nextFb} RETURNING id`;
+          paramsFb.push(sidFb);
+
+          const u = await query(updateSql, paramsFb);
           const ok = !!(u.rows && u.rows.length);
           if (ok) {
             const marcaManual = hasUbicManual ? " (marcada como manual)" : "";
@@ -219,11 +244,30 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
     const hasFechaCorr = cols.has("fecha_correccion_coords");
     
     let updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
+    const paramsUp = [la, ln];
+    let next = 3;
+    if (cols.has("provincia")) {
+      const pv = pedido.provincia != null ? String(pedido.provincia).trim() : "";
+      if (pv) {
+        updateSql += `, provincia = $${next}`;
+        paramsUp.push(pv);
+        next++;
+      }
+    }
+    if (cols.has("codigo_postal")) {
+      const cp = digitsCp(pedido.codigo_postal);
+      if (cp) {
+        updateSql += `, codigo_postal = $${next}`;
+        paramsUp.push(cp);
+        next++;
+      }
+    }
     if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
     if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
-    updateSql += ` WHERE id = $3 RETURNING id`;
-    
-    const u = await query(updateSql, [la, ln, sid]);
+    updateSql += ` WHERE id = $${next} RETURNING id`;
+    paramsUp.push(sid);
+
+    const u = await query(updateSql, paramsUp);
     const ok = !!(u.rows && u.rows.length);
     if (ok) {
       const marcaManual = hasUbicManual ? " (marcada como manual)" : "";

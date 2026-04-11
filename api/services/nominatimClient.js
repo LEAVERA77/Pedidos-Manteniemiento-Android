@@ -115,6 +115,15 @@ export function barrioDesdeNominatimAddress(addr) {
   return null;
 }
 
+/** CPA / código postal desde `addressdetails` de Nominatim (solo dígitos 4–8). */
+export function postcodeDesdeNominatimAddress(addr) {
+  if (!addr || typeof addr !== "object") return null;
+  const raw = addr.postcode;
+  if (raw == null) return null;
+  const d = String(raw).replace(/\D/g, "");
+  return d.length >= 4 && d.length <= 8 ? d : null;
+}
+
 function normTxt(s) {
   return String(s || "")
     .toLowerCase()
@@ -476,11 +485,13 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   const lng = Number(hit.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   const barrio = barrioDesdeNominatimAddress(hit.address);
+  const postcode = postcodeDesdeNominatimAddress(hit.address);
   return {
     lat,
     lng,
     displayName: String(hit.display_name || q).trim(),
     ...(barrio ? { barrio } : {}),
+    ...(postcode ? { postcode } : {}),
   };
 }
 
@@ -513,7 +524,7 @@ export function hasMeaningfulHouseNumber(numeroStr) {
  * postalCode: CPA (solo dígitos, 4–8) para búsqueda estructurada Nominatim.
  * precomputedViewboxMeta: evita un segundo geocode de la misma localidad (p. ej. WhatsApp ya calculó viewbox).
  * localityMaxDistanceMeters: tope de distancia al centroide de la localidad (Nominatim); por defecto env o 20 km.
- * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, audit?: object } | null>}
+ * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string, audit?: object } | null>}
  *
  * Orden interno: viewbox de la ciudad → índice local (`LOCAL_ADDRESS_INDEX_PATH`) si aplica → búsqueda
  * estructurada Nominatim → `searchCalleLocalidadArgentina` + `resolveStructuredAddressCoords` → `q` acotada.
@@ -642,11 +653,13 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         audit.approximate = hn !== target;
         audit.source = audit.approximate ? "structured_parity_fallback" : "structured_exact";
         const barrio = barrioDesdeNominatimAddress(hit.address);
+        const postcode = postcodeDesdeNominatimAddress(hit.address);
         return {
           lat,
           lng,
           displayName: String(hit.display_name || "").trim(),
           ...(barrio ? { barrio } : {}),
+          ...(postcode ? { postcode } : {}),
           audit,
         };
       }
@@ -660,11 +673,13 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         audit.source = "structured_street_only";
         audit.usedHouseNumber = null;
         const barrio = barrioDesdeNominatimAddress(hit.address);
+        const postcode = postcodeDesdeNominatimAddress(hit.address);
         return {
           lat,
           lng,
           displayName: String(hit.display_name || "").trim(),
           ...(barrio ? { barrio } : {}),
+          ...(postcode ? { postcode } : {}),
           audit,
         };
       }
@@ -738,10 +753,16 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       audit.usedHouseNumber !== audit.requestedHouseNumber;
     const anchorHouse = picked.anchorHouse;
     const displayTail = anchorHouse != null ? ` (ref. ${cal} ${anchorHouse})` : "";
+    let postcodePick = null;
+    try {
+      const revPick = await reverseGeocodeArgentina(picked.lat, picked.lng);
+      postcodePick = postcodeDesdeNominatimAddress(revPick?.address);
+    } catch (_) {}
     return {
       lat: picked.lat,
       lng: picked.lng,
       displayName: `${picked.source}${displayTail}, ${cal}, ${c}`,
+      ...(postcodePick ? { postcode: postcodePick } : {}),
       audit,
     };
   }
@@ -777,13 +798,14 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         if (!passesLocalPlausibility(lat, lng)) continue;
         audit.source = "final_q_filtered";
         audit.usedHouseNumber = n;
+        const br = barrioDesdeNominatimAddress(hit.address);
+        const postcode = postcodeDesdeNominatimAddress(hit.address);
         return {
           lat,
           lng,
           displayName: String(hit.display_name || "").trim(),
-          ...(barrioDesdeNominatimAddress(hit.address)
-            ? { barrio: barrioDesdeNominatimAddress(hit.address) }
-            : {}),
+          ...(br ? { barrio: br } : {}),
+          ...(postcode ? { postcode } : {}),
           audit,
         };
       }
