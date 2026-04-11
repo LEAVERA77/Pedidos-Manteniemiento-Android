@@ -353,12 +353,20 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           nombreCliente: nombreT,
           soloIdentificador: true,
         });
+        const ignManualCat =
+          process.env.IGNORAR_CATALOGO_MANUAL === "1" || process.env.IGNORAR_CATALOGO_MANUAL === "true";
         if (coordsId && coordsValidasWgs84(coordsId.lat, coordsId.lng)) {
-          latFinal = coordsId.lat;
-          lngFinal = coordsId.lng;
-          fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
-          L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-          if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
+          if (ignManualCat && coordsId.esManual) {
+            L(
+              `  → Catálogo manual ignorado (IGNORAR_CATALOGO_MANUAL); se continúa con Nominatim / resto del pipeline`
+            );
+          } else {
+            latFinal = coordsId.lat;
+            lngFinal = coordsId.lng;
+            fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
+            L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+            if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
+          }
         } else {
           const existeSinCoords = await existeSocioCatalogoPorIdentificadorSinCoords({
             tenantId: Number(tenantId),
@@ -392,11 +400,19 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           localidad: locT,
           nombreCliente: nombreT,
         });
+        const ignManualDir =
+          process.env.IGNORAR_CATALOGO_MANUAL === "1" || process.env.IGNORAR_CATALOGO_MANUAL === "true";
         if (coordsDir && coordsValidasWgs84(coordsDir.lat, coordsDir.lng)) {
-          latFinal = coordsDir.lat;
-          lngFinal = coordsDir.lng;
-          fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
-          L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          if (ignManualDir && coordsDir.esManual) {
+            L(
+              `  → Catálogo manual (dirección) ignorado (IGNORAR_CATALOGO_MANUAL); se sigue con el pipeline`
+            );
+          } else {
+            latFinal = coordsDir.lat;
+            lngFinal = coordsDir.lng;
+            fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
+            L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          }
         } else {
           L(`  → Sin coincidencia por dirección+nombre en catálogo`);
         }
