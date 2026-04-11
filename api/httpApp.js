@@ -23,6 +23,7 @@ import adminRoutes from "./routes/admin.js";
 import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
+import debugRoutes from "./routes/debug.js";
 
 export function createHttpApp() {
   const app = express();
@@ -89,6 +90,9 @@ export function createHttpApp() {
       node: process.version,
     });
   });
+
+  /** Diagnóstico despliegue: GET /api/debug/version (commit + heurísticas WA INSERT). */
+  app.use("/api/debug", debugRoutes);
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);
