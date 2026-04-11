@@ -363,7 +363,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
           latFinal = cLat;
           lngFinal = cLng;
           fuente = "centro_localidad_osm";
-          L(`  ✓ Pin aproximado en centro de "${locT}" (Nominatim)`);
+          L(`  ✓ Pin aproximado (OSM) en centro de "${locT}" — ubicación estimada, no domicilio exacto`);
         } else {
           L(`  → Sin centro OSM útil para la localidad`);
         }

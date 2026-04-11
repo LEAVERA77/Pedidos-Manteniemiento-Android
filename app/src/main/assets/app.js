@@ -999,13 +999,13 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
     await new Promise((res) => setTimeout(res, 1100));
-    const delays = [800, 2000];
+    const backoffs = [1500, 4000, 9000, 16000];
     try {
         if (modoOffline || typeof fetch !== 'function') return null;
         await asegurarJwtApiRest();
         const token = getApiToken();
         if (!token) return null;
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 4; attempt++) {
             const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
                 method: 'POST',
                 headers: {
@@ -1014,12 +1014,24 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
                 },
                 body: JSON.stringify({ lat: la, lon: lo, zoom: 8 }),
             });
-            if ((r.status === 503 || r.status === 429) && attempt < 2) {
-                console.warn('[geocode-proxy] reverse HTTP', r.status, 'reintento', attempt + 1, '/2');
-                await new Promise((res) => setTimeout(res, delays[attempt]));
+            if ((r.status === 503 || r.status === 429) && attempt < 3) {
+                console.info(
+                    '[geocode-proxy] reverse HTTP',
+                    r.status,
+                    'reintento',
+                    attempt + 1,
+                    '/3',
+                    'espera',
+                    backoffs[attempt],
+                    'ms'
+                );
+                await new Promise((res) => setTimeout(res, backoffs[attempt]));
                 continue;
             }
-            if (!r.ok) return null;
+            if (!r.ok) {
+                console.warn('[geocode-proxy] reverse HTTP final', r.status);
+                return null;
+            }
             const j = await r.json().catch(() => null);
             const hit = j && j.result;
             const a = hit && hit.address;
@@ -1028,6 +1040,7 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
             const s = state != null ? String(state).trim() : '';
             return s.length >= 2 ? s : null;
         }
+        console.warn('[geocode-proxy] reverse agotó reintentos (503/429)');
         return null;
     } catch (_) {
         return null;
@@ -2982,6 +2995,8 @@ function _nominatimCamposLocalidad(addr) {
 function _nominatimResultadoCoincideLocalidad(r, locPedido) {
     const want = _normGeoTxt(locPedido);
     if (!want) return true;
+    const dn = _normGeoTxt(r.display_name || '');
+    if (dn.includes(want)) return true;
     const addr = r && r.address ? r.address : {};
     const fields = _nominatimCamposLocalidad(addr);
     for (const f of fields) {
@@ -2989,8 +3004,6 @@ function _nominatimResultadoCoincideLocalidad(r, locPedido) {
         if (!nf) continue;
         if (nf === want || nf.includes(want) || want.includes(nf)) return true;
     }
-    const dn = _normGeoTxt(r.display_name || '');
-    if (dn.includes(want)) return true;
     return false;
 }
 
@@ -2999,41 +3012,73 @@ function _filtrarNominatimPorLocalidad(results, locPedido) {
     return arr.filter((r) => _nominatimResultadoCoincideLocalidad(r, locPedido));
 }
 
+/** Cola global: una búsqueda proxy a la vez + ~1,25 s entre fin de una y la siguiente (política OSM). */
+const _NOMINATIM_PROXY_MIN_GAP_MS = 1250;
+let _nominatimSearchQueue = Promise.resolve();
+let _nominatimSearchLastEnd = 0;
+
+function _nominatimSearchEnqueue(run) {
+    _nominatimSearchQueue = _nominatimSearchQueue.then(async () => {
+        const wait = _nominatimSearchLastEnd + _NOMINATIM_PROXY_MIN_GAP_MS - Date.now();
+        if (wait > 0) {
+            await new Promise((r) => setTimeout(r, wait));
+        }
+        try {
+            return await run();
+        } finally {
+            _nominatimSearchLastEnd = Date.now();
+        }
+    });
+    return _nominatimSearchQueue;
+}
+
 /** Nominatim solo desde la API Node (GitHub Pages / navegador: CORS bloquea openstreetmap.org). */
 async function _nominatimFetchSearch(params) {
-    const merged = params && typeof params === 'object' ? { ...params } : {};
-    const delays = [800, 2000];
-    try {
-        if (modoOffline || typeof fetch !== 'function') return [];
-        await asegurarJwtApiRest();
-        const token = getApiToken();
-        if (!token) return [];
-        for (let attempt = 0; attempt < 3; attempt++) {
-            const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ params: merged }),
-            });
-            if ((r.status === 503 || r.status === 429) && attempt < 2) {
-                console.warn('[geocode-proxy] search HTTP', r.status, 'reintento', attempt + 1, '/2');
-                await new Promise((res) => setTimeout(res, delays[attempt]));
-                continue;
+    return _nominatimSearchEnqueue(async () => {
+        const merged = params && typeof params === 'object' ? { ...params } : {};
+        const backoffs = [1500, 4000, 9000, 16000];
+        try {
+            if (modoOffline || typeof fetch !== 'function') return [];
+            await asegurarJwtApiRest();
+            const token = getApiToken();
+            if (!token) return [];
+            for (let attempt = 0; attempt < 4; attempt++) {
+                const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ params: merged }),
+                });
+                if ((r.status === 503 || r.status === 429) && attempt < 3) {
+                    console.info(
+                        '[geocode-proxy] search HTTP',
+                        r.status,
+                        'reintento',
+                        attempt + 1,
+                        '/3',
+                        'espera',
+                        backoffs[attempt],
+                        'ms'
+                    );
+                    await new Promise((res) => setTimeout(res, backoffs[attempt]));
+                    continue;
+                }
+                if (!r.ok) {
+                    console.warn('[geocode-proxy] search HTTP', r.status, merged.q || merged.street || '');
+                    return [];
+                }
+                const j = await r.json().catch(() => ({}));
+                return Array.isArray(j.results) ? j.results : [];
             }
-            if (!r.ok) {
-                console.warn('[geocode-proxy] search HTTP', r.status);
-                return [];
-            }
-            const j = await r.json().catch(() => ({}));
-            return Array.isArray(j.results) ? j.results : [];
+            console.warn('[geocode-proxy] search agotó reintentos (503/429)', merged.q || merged.street || '');
+            return [];
+        } catch (e) {
+            console.warn('[geocode-proxy] search', e && e.message ? e.message : e);
+            return [];
         }
-        return [];
-    } catch (e) {
-        console.warn('[geocode-proxy] search', e && e.message ? e.message : e);
-        return [];
-    }
+    });
 }
 
 /** viewbox = min_lon, max_lat, max_lon, min_lat (Nominatim). */
@@ -3057,44 +3102,50 @@ function _parseHouseNumberNominatim(addr) {
     return Number.isFinite(n) ? n : null;
 }
 
+function _nominatimTipoRankPedido(r) {
+    const t = String((r && r.type) || '').toLowerCase();
+    if (t === 'house') return 0;
+    if (t === 'building' || t === 'apartments' || t === 'residential') return 1;
+    return 2;
+}
+
 function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
     const arr = Array.isArray(results) ? results : [];
     if (!arr.length) return null;
     const target = parseInt(String(numeroPuertaStr || '').replace(/\D/g, ''), 10);
-    const scored = [];
+    const rows = [];
     for (const r of arr) {
         const la = Number(r.lat);
         const lo = Number(r.lon);
         if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
         const hn = _parseHouseNumberNominatim(r.address || {});
-        scored.push({ la, lo, hn, r });
+        const typeR = _nominatimTipoRankPedido(r);
+        let hnTier = 2;
+        let hnDist = 9999;
+        if (Number.isFinite(target)) {
+            if (hn === target) hnTier = 0;
+            else if (hn != null) {
+                hnTier = 1;
+                hnDist = Math.abs(hn - target);
+            }
+        } else if (hn != null) hnTier = 1;
+        const sortKey = typeR * 10000 + hnTier * 1000 + hnDist;
+        rows.push({ la, lo, hn, r, sortKey });
     }
-    if (!scored.length) {
+    if (!rows.length) {
         const r0 = arr[0];
         const la = Number(r0.lat);
         const lo = Number(r0.lon);
         return Number.isFinite(la) && Number.isFinite(lo) ? { lat: la, lng: lo, src: 'aprox' } : null;
     }
-    if (!Number.isFinite(target)) {
-        const x = scored[0];
-        return { lat: x.la, lng: x.lo, src: 'calle' };
-    }
-    const exact = scored.find((x) => x.hn === target);
-    if (exact) return { lat: exact.la, lng: exact.lo, src: 'exacta' };
-    const parity = target % 2;
-    const pool = scored.filter((x) => x.hn != null && x.hn % 2 === parity);
-    const use = pool.length ? pool : scored.filter((x) => x.hn != null);
-    const finalPool = use.length ? use : scored;
-    let best = finalPool[0];
-    let bd = Math.abs((best.hn ?? target) - target);
-    for (const x of finalPool) {
-        const d = Math.abs((x.hn ?? target) - target);
-        if (d < bd) {
-            bd = d;
-            best = x;
-        }
-    }
-    return { lat: best.la, lng: best.lo, src: best.hn != null ? 'vecino' : 'aprox' };
+    rows.sort((a, b) => a.sortKey - b.sortKey);
+    const best = rows[0];
+    let src = 'aprox';
+    if (Number.isFinite(target) && best.hn === target) src = 'exacta';
+    else if (Number.isFinite(target) && best.hn != null) src = 'vecino';
+    else if (_nominatimTipoRankPedido(best.r) === 0) src = 'casa';
+    else if (!Number.isFinite(target)) src = 'calle';
+    return { lat: best.la, lng: best.lo, src };
 }
 
 async function nominatimGeocodeDomicilioPedido(p) {
@@ -3103,77 +3154,98 @@ async function nominatimGeocodeDomicilioPedido(p) {
     const calle = dom.calle;
     const loc = dom.loc;
     const num = (dom.num || '').trim();
-    await new Promise((res) => setTimeout(res, 1100));
     const streetLine = num ? `${num} ${calle}` : calle;
+    let calleSinTilde = calle;
+    try {
+        calleSinTilde = String(calle)
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+    } catch (_) {}
 
     const intentar = async (lista) => {
         const fil = _filtrarNominatimPorLocalidad(lista, loc);
         return _elegirMejorResultadoNominatimPorPuerta(fil.length ? fil : [], num);
     };
 
-    // 1) Búsqueda estructurada: calle+número y ciudad = localidad del cliente (evita homónimos en otras ciudades).
+    const baseSearch = { countrycodes: 'ar', limit: '25', addressdetails: '1' };
+    const qList = [];
+    const pushQ = (q) => {
+        const s = String(q || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (s.length >= 4 && !qList.includes(s)) qList.push(s);
+    };
+    if (num) {
+        pushQ(`${calle} ${num}, ${loc}`);
+        pushQ(`${calle} ${num}, ${loc}, Argentina`);
+        if (calleSinTilde !== calle) pushQ(`${calleSinTilde} ${num}, ${loc}, Argentina`);
+        pushQ(`${num} ${calle}, ${loc}, Argentina`);
+        pushQ(`${streetLine}, ${loc}, Argentina`);
+        pushQ(`${streetLine}, ${loc}`);
+    } else {
+        pushQ(`${calle}, ${loc}, Argentina`);
+        pushQ(`${calle}, ${loc}`);
+    }
+
+    for (const q of qList) {
+        const raw = await _nominatimFetchSearch({ ...baseSearch, q });
+        const hit = await intentar(raw);
+        if (hit) return hit;
+    }
+
     let raw = await _nominatimFetchSearch({
         street: streetLine,
         city: loc,
         country: 'Argentina',
-        countrycodes: 'ar',
-        limit: '12',
+        ...baseSearch,
+        limit: '15',
     });
     let hit = await intentar(raw);
     if (hit) return hit;
 
-    await new Promise((res) => setTimeout(res, 1100));
     raw = await _nominatimFetchSearch({
         street: calle,
         city: loc,
         country: 'Argentina',
-        countrycodes: 'ar',
-        limit: '12',
+        ...baseSearch,
+        limit: '15',
     });
     hit = await intentar(raw);
     if (hit) return hit;
 
-    // 2) Texto libre filtrado por localidad (solo resultados cuyo address/display contengan la localidad).
-    await new Promise((res) => setTimeout(res, 1100));
-    const q = num ? `${calle} ${num}, ${loc}, Argentina` : `${calle}, ${loc}, Argentina`;
-    raw = await _nominatimFetchSearch({ q, countrycodes: 'ar', limit: '20' });
-    hit = await intentar(raw);
-    if (hit) return hit;
-
-    // 3) Acotar con viewbox de la localidad y repetir (Hasenkamp vs Cerrito, etc.).
     const vb = await _nominatimViewboxLocalidad(loc);
     if (vb) {
-        await new Promise((res) => setTimeout(res, 1100));
-        raw = await _nominatimFetchSearch({
-            q,
-            countrycodes: 'ar',
-            limit: '25',
-            viewbox: vb,
-            bounded: '1',
-        });
-        hit = await intentar(raw);
-        if (hit) return hit;
+        for (const q of qList) {
+            raw = await _nominatimFetchSearch({
+                ...baseSearch,
+                q,
+                viewbox: vb,
+                bounded: '1',
+            });
+            hit = await intentar(raw);
+            if (hit) return hit;
+        }
     }
 
     if (num) {
-        await new Promise((res) => setTimeout(res, 1100));
-        const q2 = `${calle}, ${loc}, Argentina`;
-        raw = await _nominatimFetchSearch({ q: q2, countrycodes: 'ar', limit: '20' });
+        raw = await _nominatimFetchSearch({ ...baseSearch, q: `${calle}, ${loc}, Argentina` });
         hit = await intentar(raw);
         if (hit) return hit;
     }
 
-    await new Promise((res) => setTimeout(res, 1100));
     raw = await _nominatimFetchSearch({
         q: `${loc}, Argentina`,
         countrycodes: 'ar',
-        limit: '3',
+        limit: '5',
+        addressdetails: '1',
     });
     if (raw && raw.length > 0) {
-        const cityHit = raw.find(h => {
-            const n = String(h.display_name || '').toLowerCase();
-            return n.includes(loc.toLowerCase()) && n.includes('argentina');
-        }) || raw[0];
+        const locLow = loc.toLowerCase();
+        const cityHit =
+            raw.find((h) => {
+                const n = String(h.display_name || '').toLowerCase();
+                return n.includes(locLow) && n.includes('argentina');
+            }) || raw[0];
         if (cityHit) {
             const la = Number(cityHit.lat);
             const lo = Number(cityHit.lon);

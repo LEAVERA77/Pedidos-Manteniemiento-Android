@@ -206,6 +206,8 @@ export function nominatimAddressMatchesLocalidad(addr, localidad) {
 export function nominatimHitStrictLocalidad(hit, localidad) {
   const loc = normTxt(localidad);
   if (!loc || loc.length < 2) return true;
+  const dnAll = normTxt(String(hit?.display_name || ""));
+  if (dnAll.includes(loc)) return true;
   const addr = hit?.address;
   if (!addr || typeof addr !== "object") {
     return nominatimDisplayMatchesLocalidad(String(hit?.display_name || ""), localidad);
@@ -412,6 +414,20 @@ function scoreStructuredHit(hit, wantHouse) {
   return 2;
 }
 
+/** Menor = mejor: prioriza type=house y número de puerta coincidente. */
+function structuredHitSortKey(hit, wantHouse) {
+  const t = String(hit?.type || "").toLowerCase();
+  let typeTier = 2;
+  if (t === "house") typeTier = 0;
+  else if (t === "building" || t === "apartments" || t === "residential") typeTier = 1;
+  const hn = hit?.address?.house_number;
+  const parsed = hn != null ? parseHouseNumberInt(String(hn)) : null;
+  let hnTier = 2;
+  if (wantHouse != null && Number.isFinite(wantHouse) && parsed === wantHouse) hnTier = 0;
+  else if (parsed != null) hnTier = 1;
+  return typeTier * 10 + hnTier;
+}
+
 function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCenter, tenantState) {
   const cal = String(calle || "").trim();
   const loc = String(localidad || "").trim();
@@ -435,6 +451,9 @@ function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCe
       ? { lat: Number(anchorCenter.lat), lng: Number(anchorCenter.lng) }
       : null;
   pool.sort((a, b) => {
+    const ka = structuredHitSortKey(a, wantHouse);
+    const kb = structuredHitSortKey(b, wantHouse);
+    if (ka !== kb) return ka - kb;
     const sa = scoreStructuredHit(a, wantHouse);
     const sb = scoreStructuredHit(b, wantHouse);
     if (sa !== sb) return sa - sb;
@@ -478,6 +497,9 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   }
   if (filterSt.length >= 2) {
     candidates = candidates.filter((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), filterSt));
+  }
+  if (candidates.length > 1) {
+    candidates = [...candidates].sort((a, b) => structuredHitSortKey(a, null) - structuredHitSortKey(b, null));
   }
   const hit = candidates.length ? candidates[0] : null;
   if (!hit) return null;
@@ -1325,6 +1347,7 @@ const NOMINATIM_PROXY_SEARCH_ALLOW = new Set([
   "bounded",
   "extratags",
   "namedetails",
+  "addressdetails",
 ]);
 
 /**
@@ -1344,14 +1367,14 @@ export async function nominatimProxySearch(clientParams = {}) {
     p.set(lk, s);
   }
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const delays = [1500, 3000];
+  const backoff503 = [1500, 4000, 9000, 16000];
   let lastErr = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     await throttle();
     const res = await fetch(url, { headers: nominatimHeaders() });
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim search ${res.status}`);
-      if (attempt < 2) await sleep(delays[attempt]);
+      if (attempt < 3) await sleep(backoff503[attempt]);
       continue;
     }
     if (!res.ok) {
@@ -1386,14 +1409,14 @@ export async function nominatimProxyReverseRaw(body = {}) {
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
   const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
-  const delays = [1500, 3000];
+  const backoff503 = [1500, 4000, 9000, 16000];
   let lastErr = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     await throttle();
     const res = await fetch(url, { headers: nominatimHeaders() });
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim reverse ${res.status}`);
-      if (attempt < 2) await sleep(delays[attempt]);
+      if (attempt < 3) await sleep(backoff503[attempt]);
       continue;
     }
     if (!res.ok) {
