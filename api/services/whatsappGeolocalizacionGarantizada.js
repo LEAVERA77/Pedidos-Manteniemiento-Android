@@ -83,24 +83,38 @@ export function ensureWhatsappPedidoCoordsForDb(lat, lng) {
   return { lat: la, lng: lo, coerced: false };
 }
 
+function collectLatLngIndices(cols) {
+  const latIdxs = [];
+  const lngIdxs = [];
+  for (let i = 0; i < cols.length; i++) {
+    if (cols[i] === "lat") latIdxs.push(i);
+    if (cols[i] === "lng") lngIdxs.push(i);
+  }
+  return { latIdxs, lngIdxs };
+}
+
 /**
- * Escribe en `vals` los índices donde `cols[i]` es `lat` o `lng`, usando siempre un par que pasa el CHECK WhatsApp.
- * `pedidos_whatsapp_coords_wgs84_check` aplica a columnas `lat`/`lng` (no `latitud`/`longitud`).
- * Llamar con `cols`/`vals` ya construidos y misma longitud; debe haber **exactamente** una `lat` y una `lng`.
+ * Escribe en `vals` **todos** los índices donde `cols[i]` es `lat` o `lng` (soporta duplicados raros en esquema).
+ * `pedidos_whatsapp_coords_wgs84_check` aplica a columnas `lat`/`lng` en `pedidos` (no rellenamos `latitud`/`longitud` en este INSERT).
  */
 export function applyFinalLatLngToPedidoVals(cols, vals, lat, lng) {
-  const nLat = cols.reduce((n, c) => n + (c === "lat" ? 1 : 0), 0);
-  const nLng = cols.reduce((n, c) => n + (c === "lng" ? 1 : 0), 0);
-  if (nLat !== 1 || nLng !== 1) {
-    throw new Error(`pedido_wa_lat_lng_cols_esperadas_1: nLat=${nLat} nLng=${nLng}`);
+  const { latIdxs, lngIdxs } = collectLatLngIndices(cols);
+  if (latIdxs.length < 1 || lngIdxs.length < 1) {
+    throw new Error(`pedido_wa_faltan_cols_lat_lng nLat=${latIdxs.length} nLng=${lngIdxs.length}`);
   }
   const e = ensureWhatsappPedidoCoordsForDb(lat, lng);
-  const la = Number(e.lat);
-  const lo = Number(e.lng);
-  for (let i = 0; i < cols.length; i++) {
-    if (cols[i] === "lat") vals[i] = la;
-    if (cols[i] === "lng") vals[i] = lo;
+  let la = Number(e.lat);
+  let lo = Number(e.lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+    la = FALLBACK_WGS84_ARGENTINA.lat;
+    lo = FALLBACK_WGS84_ARGENTINA.lng;
   }
+  if (!parLatLngPasaCheckWhatsappDb(la, lo)) {
+    la = FALLBACK_WGS84_ARGENTINA.lat;
+    lo = FALLBACK_WGS84_ARGENTINA.lng;
+  }
+  for (const i of latIdxs) vals[i] = la;
+  for (const i of lngIdxs) vals[i] = lo;
   return { ...e, lat: la, lng: lo };
 }
 
@@ -161,49 +175,109 @@ export function assertPedidoWaValsBound(cols, vals) {
       throw new Error(`pedido_wa_val_undefined idx=${i} col=${String(cols[i] ?? "?")}`);
     }
   }
-  const latIdx = cols.indexOf("lat");
-  const lngIdx = cols.indexOf("lng");
-  if (latIdx < 0 || lngIdx < 0) {
-    throw new Error(`pedido_wa_faltan_lat_lng latIdx=${latIdx} lngIdx=${lngIdx}`);
+  const { latIdxs, lngIdxs } = collectLatLngIndices(cols);
+  if (latIdxs.length < 1 || lngIdxs.length < 1) {
+    throw new Error(`pedido_wa_faltan_lat_lng nLat=${latIdxs.length} nLng=${lngIdxs.length}`);
   }
-  let e = ensureWhatsappPedidoCoordsForDb(vals[latIdx], vals[lngIdx]);
-  vals[latIdx] = Number(e.lat);
-  vals[lngIdx] = Number(e.lng);
-  if (!parLatLngPasaCheckWhatsappDb(vals[latIdx], vals[lngIdx])) {
+  let e = ensureWhatsappPedidoCoordsForDb(vals[latIdxs[0]], vals[lngIdxs[0]]);
+  let la = Number(e.lat);
+  let lo = Number(e.lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) {
     e = ensureWhatsappPedidoCoordsForDb(FALLBACK_WGS84_ARGENTINA.lat, FALLBACK_WGS84_ARGENTINA.lng);
-    vals[latIdx] = Number(e.lat);
-    vals[lngIdx] = Number(e.lng);
+    la = Number(e.lat);
+    lo = Number(e.lng);
   }
-  if (!Number.isFinite(vals[latIdx]) || !Number.isFinite(vals[lngIdx])) {
+  if (!parLatLngPasaCheckWhatsappDb(la, lo)) {
+    e = ensureWhatsappPedidoCoordsForDb(FALLBACK_WGS84_ARGENTINA.lat, FALLBACK_WGS84_ARGENTINA.lng);
+    la = Number(e.lat);
+    lo = Number(e.lng);
+  }
+  for (const i of latIdxs) vals[i] = la;
+  for (const i of lngIdxs) vals[i] = lo;
+  if (!Number.isFinite(vals[latIdxs[0]]) || !Number.isFinite(vals[lngIdxs[0]])) {
     throw new Error(
-      `pedido_wa_vals_latlng_nonfinite lat=${String(vals[latIdx])} lng=${String(vals[lngIdx])}`
+      `pedido_wa_vals_latlng_nonfinite lat=${String(vals[latIdxs[0]])} lng=${String(vals[lngIdxs[0]])}`
     );
   }
-  if (!parLatLngPasaCheckWhatsappDb(vals[latIdx], vals[lngIdx])) {
+  if (!parLatLngPasaCheckWhatsappDb(vals[latIdxs[0]], vals[lngIdxs[0]])) {
     throw new Error(
       `pedido_wa_vals_check_imposible: ${JSON.stringify({
-        latV: vals[latIdx],
-        lngV: vals[lngIdx],
-        diag: diagnoseWhatsappCoordsForInsert(vals[latIdx], vals[lngIdx]),
+        latV: vals[latIdxs[0]],
+        lngV: vals[lngIdxs[0]],
+        diag: diagnoseWhatsappCoordsForInsert(vals[latIdxs[0]], vals[lngIdxs[0]]),
       })}`
     );
   }
-  return { latIdx, lngIdx, lat: vals[latIdx], lng: vals[lngIdx] };
+  return { latIdx: latIdxs[0], lngIdx: lngIdxs[0], lat: la, lng: lo, latIdxs, lngIdxs };
 }
 
 /**
- * Orquesta pre-INSERT WhatsApp: coerción si hace falta → escribe `vals` → valida placeholders y CHECK.
+ * Barrera final inmediatamente antes del `query(INSERT...)`: única fuente numérica `latIns`/`lngIns`,
+ * reescribe **todos** los índices lat/lng y no permite INSERT si el par no pasa el CHECK (tras fallback AR).
+ * @returns {{ latIns: number, lngIns: number, latIdx: number, lngIdx: number }}
+ */
+export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFinal) {
+  if (cols.length !== vals.length) {
+    throw new Error(`pedido_wa_preinsert_len cols=${cols.length} vals=${vals.length}`);
+  }
+  const e0 = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
+  let latIns = Number(e0.lat);
+  let lngIns = Number(e0.lng);
+  if (!Number.isFinite(latIns) || !Number.isFinite(lngIns)) {
+    latIns = FALLBACK_WGS84_ARGENTINA.lat;
+    lngIns = FALLBACK_WGS84_ARGENTINA.lng;
+  }
+  if (!parLatLngPasaCheckWhatsappDb(latIns, lngIns)) {
+    try {
+      console.warn(
+        JSON.stringify({
+          evt: "pedido_wa_pre_insert_fallback_explicito",
+          antes: diagnoseWhatsappCoordsForInsert(latFinal, lngFinal),
+        })
+      );
+    } catch (_) {}
+    latIns = FALLBACK_WGS84_ARGENTINA.lat;
+    lngIns = FALLBACK_WGS84_ARGENTINA.lng;
+  }
+  const { latIdxs, lngIdxs } = collectLatLngIndices(cols);
+  if (latIdxs.length < 1 || lngIdxs.length < 1) {
+    throw new Error(`pedido_wa_preinsert_sin_lat_lng nLat=${latIdxs.length} nLng=${lngIdxs.length}`);
+  }
+  for (const i of latIdxs) vals[i] = latIns;
+  for (const i of lngIdxs) vals[i] = lngIns;
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i] === undefined) {
+      throw new Error(`pedido_wa_preinsert_undefined idx=${i} col=${String(cols[i] ?? "?")}`);
+    }
+  }
+  if (!parLatLngPasaCheckWhatsappDb(latIns, lngIns)) {
+    latIns = FALLBACK_WGS84_ARGENTINA.lat;
+    lngIns = FALLBACK_WGS84_ARGENTINA.lng;
+    for (const i of latIdxs) vals[i] = latIns;
+    for (const i of lngIdxs) vals[i] = lngIns;
+  }
+  if (!parLatLngPasaCheckWhatsappDb(latIns, lngIns)) {
+    throw new Error(
+      `pedido_wa_pre_insert_coords_fatal: ${JSON.stringify(diagnoseWhatsappCoordsForInsert(latIns, lngIns))}`
+    );
+  }
+  return { latIns, lngIns, latIdx: latIdxs[0], lngIdx: lngIdxs[0] };
+}
+
+/**
+ * Orquesta pre-INSERT WhatsApp: coerción → escribe `vals` → valida → barrera estricta final.
  * @returns {{ latFinal: number, lngFinal: number, latIdx: number, lngIdx: number }}
  */
 export function finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal) {
   const ready = assertPedidoWaCoordsReadyForInsert(latFinal, lngFinal);
   const ens = applyFinalLatLngToPedidoVals(cols, vals, ready.lat, ready.lng);
   const bound = assertPedidoWaValsBound(cols, vals);
+  const strict = preInsertWhatsappPedidoCoordsStrict(cols, vals, bound.lat, bound.lng);
   return {
-    latFinal: bound.lat,
-    lngFinal: bound.lng,
-    latIdx: bound.latIdx,
-    lngIdx: bound.lngIdx,
+    latFinal: strict.latIns,
+    lngFinal: strict.lngIns,
+    latIdx: strict.latIdx,
+    lngIdx: strict.lngIdx,
     coercedFromEnsure: ens.coerced,
   };
 }

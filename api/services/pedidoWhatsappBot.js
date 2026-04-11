@@ -531,6 +531,7 @@ export async function crearPedidoDesdeWhatsappBot({
     throw new Error(`pedido_wa_cols_vals_mismatch cols=${cols.length} vals=${vals.length}`);
   }
 
+  // `pedidos`: CHECK solo sobre columnas `lat`/`lng` (migración pedidos_whatsapp_coords_wgs84_check); no hay `latitud`/`longitud` en este INSERT.
   const finalized = finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal);
   latFinal = finalized.latFinal;
   lngFinal = finalized.lngFinal;
@@ -580,6 +581,8 @@ export async function crearPedidoDesdeWhatsappBot({
         colNames: cols.slice(),
         code: insertErr?.code,
         message: String(insertErr?.message || insertErr).slice(0, 800),
+        pgDetail: insertErr?.detail != null ? String(insertErr.detail).slice(0, 400) : null,
+        constraint: insertErr?.constraint ?? null,
       };
       console.error(JSON.stringify(baseLog));
       if (process.env.DEBUG_WA_PEDIDO_INSERT === "1" || process.env.DEBUG_WA_PEDIDO_INSERT === "true") {
