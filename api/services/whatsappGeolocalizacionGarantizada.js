@@ -17,13 +17,41 @@ const NOTA_FALLBACK_AR =
 const NOTA_GEOCACHE =
   "[Sistema] Coordenadas desde caché interna de direcciones (geocodificacion_cache); sin llamadas externas en tiempo real.";
 
-export function coordsValidasWgs84(lat, lng) {
-  const la = lat != null ? Number(lat) : NaN;
-  const lo = lng != null ? Number(lng) : NaN;
+/** Misma tolerancia que `pedidos_whatsapp_coords_wgs84_check.sql` (no placeholder ~0,0). */
+const WGS84_EPS_WHATSAPP_DB = 1e-6;
+
+/** Centro aproximado Argentina (último recurso; alineado con pipeline paso 5g). */
+export const FALLBACK_WGS84_ARGENTINA = Object.freeze({ lat: -34.6037, lng: -58.3816 });
+
+/**
+ * Parsea lat/lng desde número o string (acepta coma decimal). Evita NaN silencioso hacia Postgres.
+ * @param {unknown} v
+ * @returns {number}
+ */
+export function parseCoordLoose(v) {
+  if (v == null || v === "") return NaN;
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  const t = String(v).trim();
+  if (!t) return NaN;
+  const n = Number(t.replace(/\s/g, "").replace(/,/g, "."));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Equivalente a la cláusula positiva de `pedidos_whatsapp_coords_wgs84_check` (origen whatsapp).
+ * Usar antes del INSERT y para alinear validación JS ↔ SQL.
+ */
+export function parLatLngPasaCheckWhatsappDb(lat, lng) {
+  const la = parseCoordLoose(lat);
+  const lo = parseCoordLoose(lng);
   if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
-  if (Math.abs(la) > 90 || Math.abs(lo) > 180) return false;
-  if (Math.abs(la) < 1e-6 && Math.abs(lo) < 1e-6) return false;
+  if (la < -90 || la > 90 || lo < -180 || lo > 180) return false;
+  if (Math.abs(la) < WGS84_EPS_WHATSAPP_DB && Math.abs(lo) < WGS84_EPS_WHATSAPP_DB) return false;
   return true;
+}
+
+export function coordsValidasWgs84(lat, lng) {
+  return parLatLngPasaCheckWhatsappDb(lat, lng);
 }
 
 async function tableExists(name) {

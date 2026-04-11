@@ -25,7 +25,12 @@ import {
   interpolarPaso5dAnclaInicioVia,
 } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
-import { coordsValidasWgs84 } from "./whatsappGeolocalizacionGarantizada.js";
+import {
+  coordsValidasWgs84,
+  parseCoordLoose,
+  parLatLngPasaCheckWhatsappDb,
+  FALLBACK_WGS84_ARGENTINA,
+} from "./whatsappGeolocalizacionGarantizada.js";
 import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/sociosCatalogoCoordsFromPedido.js";
 
 export { coordsValidasWgs84 };
@@ -599,8 +604,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
       await teleRecord(tele, "paso5g_fallback_argentina");
-      latFinal = -34.6037;
-      lngFinal = -58.3816;
+      latFinal = FALLBACK_WGS84_ARGENTINA.lat;
+      lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
       fuente = "fallback_argentina_aprox_obligatorio";
       L("\n📍 PASO 5g: Último recurso absoluto — centro aproximado Argentina (solo si todo lo anterior falló)");
       L(`  ✓ Coordenadas de respaldo: ${latFinal.toFixed(4)}, ${lngFinal.toFixed(4)}`);
@@ -645,6 +650,19 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       `   🏷️ Auditoría ubicación: modo=${geocodingAudit.modo} · política ${geocodingAudit.policy}` +
         (geocodingAudit.metodo_ancla ? ` · ancla=${geocodingAudit.metodo_ancla}` : "")
     );
+
+    latFinal = parseCoordLoose(latFinal);
+    lngFinal = parseCoordLoose(lngFinal);
+    if (!parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
+      await teleRecord(tele, "coords_normalizacion_fin_pipeline", {
+        ok: false,
+        detail: "par no cumple CHECK SQL; aplicando fallback Argentina",
+      });
+      latFinal = FALLBACK_WGS84_ARGENTINA.lat;
+      lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
+      fuente = fuente || "fallback_argentina_normalizado_fin_pipeline";
+      L("\n⚠️ Normalización final: coords no válidas para CHECK WhatsApp → centro Argentina (auditable).");
+    }
 
   return {
     ok: true,

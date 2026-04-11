@@ -10,7 +10,12 @@ import {
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "./pedidoZonaOutage.js";
 import { parseDomicilioLibreArgentina, separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
-import { coordsValidasWgs84 } from "./whatsappGeolocalizacionGarantizada.js";
+import {
+  coordsValidasWgs84,
+  parseCoordLoose,
+  parLatLngPasaCheckWhatsappDb,
+  FALLBACK_WGS84_ARGENTINA,
+} from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
@@ -326,8 +331,24 @@ export async function crearPedidoDesdeWhatsappBot({
   if (!geoRes.success || !coordsValidasWgs84(geoRes.lat, geoRes.lng)) {
     throw new Error("whatsapp_geocod_fallo");
   }
-  const latFinal = Number(geoRes.lat);
-  const lngFinal = Number(geoRes.lng);
+  let latFinal = parseCoordLoose(geoRes.lat);
+  let lngFinal = parseCoordLoose(geoRes.lng);
+  if (!parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
+    try {
+      console.error(
+        JSON.stringify({
+          evt: "whatsapp_pedido_coords_coercion_pre_insert",
+          tenantId: Number(tenantId),
+          rawLat: geoRes.lat,
+          rawLng: geoRes.lng,
+          parsedLat: latFinal,
+          parsedLng: lngFinal,
+        })
+      );
+    } catch (_) {}
+    latFinal = FALLBACK_WGS84_ARGENTINA.lat;
+    lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
+  }
 
   const provTMerge =
     (geoRes.provincia_persistencia != null && String(geoRes.provincia_persistencia).trim()) ||
@@ -473,7 +494,7 @@ export async function crearPedidoDesdeWhatsappBot({
         at: new Date().toISOString(),
         pipeline: "pre_insert",
         success: true,
-        pin_ok: true,
+        pin_ok: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
         fuente: geoRes.fuente_final || geoRes.fuente || null,
         fuente_final: geoRes.fuente_final || geoRes.fuente || null,
         mensaje: null,
@@ -497,10 +518,25 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
-  const insert = await query(
-    `INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`,
-    vals
-  );
+  let insert;
+  try {
+    insert = await query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);
+  } catch (insertErr) {
+    try {
+      console.error(
+        JSON.stringify({
+          evt: "pedido_wa_insert_error",
+          tenantId: Number(tenantId),
+          origen_reclamo: hasOrigen ? "whatsapp" : "(sin columna)",
+          lat: latFinal,
+          lng: lngFinal,
+          code: insertErr?.code,
+          message: String(insertErr?.message || insertErr).slice(0, 800),
+        })
+      );
+    } catch (_) {}
+    throw insertErr;
+  }
   const pedidoRow = insert.rows[0];
   if (correlationId) {
     await geocodWaOperacionFinishOk(correlationId, {
