@@ -14,7 +14,7 @@ import {
   coordsValidasWgs84,
   parLatLngPasaCheckWhatsappDb,
   ensureWhatsappPedidoCoordsForDb,
-  FALLBACK_WGS84_ARGENTINA,
+  applyFinalLatLngToPedidoVals,
 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
@@ -480,25 +480,17 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(barrioT);
   }
 
-  const ensuredInsert = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
-  latFinal = ensuredInsert.lat;
-  lngFinal = ensuredInsert.lng;
-  if (!parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
-    latFinal = FALLBACK_WGS84_ARGENTINA.lat;
-    lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
-  }
-  if (ensuredInsert.coerced && telemetria?.recordPaso) {
+  const ensuredMid = applyFinalLatLngToPedidoVals(cols, vals, latFinal, lngFinal);
+  latFinal = ensuredMid.lat;
+  lngFinal = ensuredMid.lng;
+  if (ensuredMid.coerced && telemetria?.recordPaso) {
     try {
       await telemetria.recordPaso({
         slug: "coords_ensure_antes_insert",
         ok: true,
-        detail: "ultima_capa_anti_check",
+        detail: "pre_geocode_log",
       });
     } catch (_) {}
-  }
-  for (let i = 0; i < cols.length; i++) {
-    if (cols[i] === "lat") vals[i] = latFinal;
-    if (cols[i] === "lng") vals[i] = lngFinal;
   }
 
   if (pCols.has("geocoding_audit") && geoRes.geocoding_audit) {
@@ -535,6 +527,16 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push("whatsapp");
   }
 
+  if (cols.length !== vals.length) {
+    throw new Error(`pedido_wa_cols_vals_mismatch cols=${cols.length} vals=${vals.length}`);
+  }
+
+  const ensuredFinal = applyFinalLatLngToPedidoVals(cols, vals, latFinal, lngFinal);
+  latFinal = ensuredFinal.lat;
+  lngFinal = ensuredFinal.lng;
+
+  const latIdx = cols.indexOf("lat");
+  const lngIdx = cols.indexOf("lng");
   const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
   let insert;
   try {
@@ -552,6 +554,13 @@ export async function crearPedidoDesdeWhatsappBot({
           lngType: typeof lngFinal,
           latFinite: Number.isFinite(Number(latFinal)),
           lngFinite: Number.isFinite(Number(lngFinal)),
+          latIdx,
+          lngIdx,
+          valsAtLat: latIdx >= 0 ? vals[latIdx] : null,
+          valsAtLng: lngIdx >= 0 ? vals[lngIdx] : null,
+          checkPasa: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
+          colsLen: cols.length,
+          cols: cols.slice(),
           code: insertErr?.code,
           message: String(insertErr?.message || insertErr).slice(0, 800),
         })

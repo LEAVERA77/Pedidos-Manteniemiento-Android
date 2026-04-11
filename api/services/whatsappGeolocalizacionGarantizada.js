@@ -83,6 +83,19 @@ export function ensureWhatsappPedidoCoordsForDb(lat, lng) {
   return { lat: la, lng: lo, coerced: false };
 }
 
+/**
+ * Escribe en `vals` los índices donde `cols[i]` es `lat` o `lng`, usando siempre un par que pasa el CHECK WhatsApp.
+ * Llamar con `cols`/`vals` ya construidos y misma longitud.
+ */
+export function applyFinalLatLngToPedidoVals(cols, vals, lat, lng) {
+  const e = ensureWhatsappPedidoCoordsForDb(lat, lng);
+  for (let i = 0; i < cols.length; i++) {
+    if (cols[i] === "lat") vals[i] = e.lat;
+    if (cols[i] === "lng") vals[i] = e.lng;
+  }
+  return e;
+}
+
 async function tableExists(name) {
   const r = await query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
