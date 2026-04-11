@@ -33,6 +33,7 @@ import {
 } from "./whatsappGeolocalizacionGarantizada.js";
 import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { buscarCoordenadasVecinoParidadOverpass } from "./overpassVecinosParidad.js";
+import { evaluarIgnorarCoordenadasCatalogoPipeline } from "./sociosCatalogoPipelineFiltro.js";
 
 export { coordsValidasWgs84 };
 
@@ -361,11 +362,16 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
               `  → Catálogo manual ignorado (IGNORAR_CATALOGO_MANUAL); se continúa con Nominatim / resto del pipeline`
             );
           } else {
-            latFinal = coordsId.lat;
-            lngFinal = coordsId.lng;
-            fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
-            L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-            if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
+            const filtroCat = evaluarIgnorarCoordenadasCatalogoPipeline(coordsId);
+            if (filtroCat.ignore) {
+              L(`  → Catálogo ignorado (${filtroCat.razon || "filtro_calidad"})`);
+            } else {
+              latFinal = coordsId.lat;
+              lngFinal = coordsId.lng;
+              fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
+              L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+              if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
+            }
           }
         } else {
           const existeSinCoords = await existeSocioCatalogoPorIdentificadorSinCoords({
@@ -408,10 +414,15 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
               `  → Catálogo manual (dirección) ignorado (IGNORAR_CATALOGO_MANUAL); se sigue con el pipeline`
             );
           } else {
-            latFinal = coordsDir.lat;
-            lngFinal = coordsDir.lng;
-            fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
-            L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+            const filtroDir = evaluarIgnorarCoordenadasCatalogoPipeline(coordsDir);
+            if (filtroDir.ignore) {
+              L(`  → Catálogo (dirección) ignorado (${filtroDir.razon || "filtro_calidad"})`);
+            } else {
+              latFinal = coordsDir.lat;
+              lngFinal = coordsDir.lng;
+              fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
+              L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+            }
           }
         } else {
           L(`  → Sin coincidencia por dirección+nombre en catálogo`);

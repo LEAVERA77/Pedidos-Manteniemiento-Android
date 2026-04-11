@@ -15,6 +15,7 @@
  */
 
 import { query } from "../db/neon.js";
+import { validarCoordenadasParaPersistirCatalogo } from "../services/sociosCatalogoCoordsValidacion.js";
 
 function digitsCp(s) {
   if (s == null) return "";
@@ -267,6 +268,14 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
     const hasUbicManual = cols.has("ubicacion_manual");
     const hasFechaCorr = cols.has("fecha_correccion_coords");
 
+    const valCoords = validarCoordenadasParaPersistirCatalogo(la, ln, {
+      provincia: pedido.provincia != null ? String(pedido.provincia) : "",
+    });
+    if (!valCoords.ok) {
+      console.warn("[coords-manual→socios_catalogo] validación coords rechazada", valCoords);
+      return { ok: false, reason: valCoords.code || "validacion_catalogo", detail: valCoords.message };
+    }
+
     const cur = await query(
       `SELECT ${latLng.la}::numeric AS ola, ${latLng.ln}::numeric AS olo FROM socios_catalogo WHERE id = $1`,
       [sid]
@@ -405,6 +414,14 @@ export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
   }
   if (esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(newLa, newLn)) {
     return { ok: false, reason: "placeholder_coords" };
+  }
+
+  const valEnr = validarCoordenadasParaPersistirCatalogo(newLa, newLn, {
+    provincia: pedido.provincia != null ? String(pedido.provincia) : "",
+  });
+  if (!valEnr.ok) {
+    console.warn("[wa→socios_catalogo] validación coords rechazada", valEnr);
+    return { ok: false, reason: valEnr.code || "validacion_catalogo", detail: valEnr.message };
   }
 
   try {

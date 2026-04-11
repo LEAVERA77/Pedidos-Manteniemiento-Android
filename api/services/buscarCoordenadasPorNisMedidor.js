@@ -235,6 +235,11 @@ export async function buscarCoordenadasPorNisMedidor(p) {
   const hasMed = cols.has("medidor");
   const hasNisMed = cols.has("nis_medidor");
   const hasUbicManual = cols.has("ubicacion_manual");
+  const hasFecCoords = cols.has("fecha_actualizacion_coords");
+  const hasCoordSusp = cols.has("coordenada_sospechosa");
+  let extraMeta = "";
+  if (hasFecCoords) extraMeta += ", s.fecha_actualizacion_coords AS fec_coords_meta";
+  if (hasCoordSusp) extraMeta += ", COALESCE(s.coordenada_sospechosa, FALSE) AS coord_susp_meta";
 
   console.info("[buscar-coords] Columnas disponibles: tenantCol=%s, hasNis=%s, hasMed=%s, hasNisMed=%s, hasUbicManual=%s", 
     tenantCol || "(ninguna)", hasNis, hasMed, hasNisMed, hasUbicManual);
@@ -276,7 +281,7 @@ export async function buscarCoordenadasPorNisMedidor(p) {
       conditions.length === 0 ? "" : conditions.length === 1 ? conditions[0] : `(${conditions.join(" OR ")})`;
 
     if (conditions.length > 0) {
-      let sql = `SELECT ${latX} AS la, ${lngX} AS lo${hasUbicManual ? ", COALESCE(s.ubicacion_manual, FALSE) AS manual" : ""}
+      let sql = `SELECT ${latX} AS la, ${lngX} AS lo${hasUbicManual ? ", COALESCE(s.ubicacion_manual, FALSE) AS manual" : ""}${extraMeta}
         FROM socios_catalogo s
         WHERE COALESCE(s.activo, TRUE) = TRUE
           AND ${whereIdent}
@@ -312,6 +317,8 @@ export async function buscarCoordenadasPorNisMedidor(p) {
               lng: lo,
               fuente: manual ? "socios_catalogo_manual_corregido" : "socios_catalogo_nis_medidor",
               esManual: manual,
+              fechaActualizacionCoords: row.fec_coords_meta ?? null,
+              coordenadaSospechosa: hasCoordSusp ? row.coord_susp_meta === true : false,
             };
           } else {
             console.warn("[buscar-coords] Coordenadas NO válidas (fuera de rango o cero)");
@@ -364,7 +371,7 @@ export async function buscarCoordenadasPorNisMedidor(p) {
       pIdx++;
     }
 
-    const sql = `SELECT ${latX} AS la, ${lngX} AS lo${hasUbicManual ? ", COALESCE(s.ubicacion_manual, FALSE) AS manual" : ""}
+    const sql = `SELECT ${latX} AS la, ${lngX} AS lo${hasUbicManual ? ", COALESCE(s.ubicacion_manual, FALSE) AS manual" : ""}${extraMeta}
       FROM socios_catalogo s
       WHERE COALESCE(s.activo, TRUE) = TRUE${t}
         AND UPPER(TRIM(COALESCE(s.calle::text,''))) = UPPER(TRIM($${iCal}))
@@ -396,6 +403,8 @@ export async function buscarCoordenadasPorNisMedidor(p) {
             lng: lo,
             fuente: manual ? "socios_catalogo_manual_corregido_direccion" : "socios_catalogo_direccion_nombre",
             esManual: manual,
+            fechaActualizacionCoords: row.fec_coords_meta ?? null,
+            coordenadaSospechosa: hasCoordSusp ? row.coord_susp_meta === true : false,
           };
         }
       }

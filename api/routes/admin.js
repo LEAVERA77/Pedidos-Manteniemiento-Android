@@ -174,4 +174,46 @@ router.post("/db/migrate/socios_catalogo", adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/socios-catalogo/:id/marcar-sospechoso
+ * Body JSON opcional: { "motivo": "texto" }
+ */
+router.post("/socios-catalogo/:id/marcar-sospechoso", adminOnly, async (req, res) => {
+  try {
+    const id = parseInt(String(req.params.id || "").trim(), 10);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: "id_invalido" });
+    }
+    const motivo =
+      req.body?.motivo != null ? String(req.body.motivo).trim().slice(0, 2000) : "marcado_admin";
+    const colR = await query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'socios_catalogo'`
+    );
+    const has = new Set((colR.rows || []).map((c) => c.column_name));
+    if (!has.has("coordenada_sospechosa")) {
+      return res.status(400).json({
+        error: "faltan_columnas_auditoria",
+        detail: "Aplicar migración api/db/migrations/add_socios_catalogo_coord_auditoria.sql en Neon",
+      });
+    }
+    const u = await query(
+      `UPDATE socios_catalogo
+       SET coordenada_sospechosa = TRUE,
+           motivo_sospecha = $1,
+           fecha_sospecha = NOW()
+       WHERE id = $2
+       RETURNING id`,
+      [motivo || "marcado_admin", id]
+    );
+    if (!u.rows?.length) {
+      return res.status(404).json({ error: "socios_catalogo_not_found", id });
+    }
+    return res.json({ ok: true, id: u.rows[0].id });
+  } catch (err) {
+    console.error("[admin] marcar-sospechoso:", err);
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 export default router;
