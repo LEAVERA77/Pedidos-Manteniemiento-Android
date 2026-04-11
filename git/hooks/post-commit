@@ -1,0 +1,72 @@
+#!/usr/bin/env pwsh
+# Git post-commit hook para Nexxo
+# Sincroniza automáticamente cambios relevantes a Pedidos-MG
+# made by leavera77
+
+# Configuración
+$NexxoRoot = "C:\Users\leave\AndroidStudioProjects\Nexxo"
+$PedidosMgRoot = "C:\Users\leave\AndroidStudioProjects\Pedidos-MG"
+$SyncScript = "$NexxoRoot\scripts\sync-assets-to-pedidos-mg.ps1"
+
+# Detectar si el último commit tocó archivos relevantes
+$changedFiles = git diff-tree --no-commit-id --name-only -r HEAD
+
+$touchedAssets = $changedFiles | Where-Object { $_ -match '^app/src/main/assets/' }
+$touchedApi = $changedFiles | Where-Object { $_ -match '^api/' }
+$touchedDocs = $changedFiles | Where-Object { $_ -match '^docs/' }
+
+# Si no se tocó nada relevante, salir
+if (-not ($touchedAssets -or $touchedApi -or $touchedDocs)) {
+    Write-Host "[hook] No hay cambios en assets/, api/ o docs/. Sync omitido." -ForegroundColor Gray
+    exit 0
+}
+
+Write-Host "[hook] Cambios detectados, sincronizando a Pedidos-MG..." -ForegroundColor Cyan
+
+# Ejecutar script de sync
+try {
+    & $SyncScript -ErrorAction Stop
+    Write-Host "[hook] Sync completado" -ForegroundColor Green
+} catch {
+    Write-Host "[hook] Error en sync: $_" -ForegroundColor Red
+    exit 0  # No fallar el commit, solo advertir
+}
+
+# Cambiar a Pedidos-MG y hacer commit + push
+Push-Location $PedidosMgRoot
+
+try {
+    # Verificar si hay cambios
+    $status = git status --porcelain
+    if (-not $status) {
+        Write-Host "[hook] No hay cambios que commitear en Pedidos-MG" -ForegroundColor Yellow
+        Pop-Location
+        exit 0
+    }
+    
+    # Obtener mensaje del commit de Nexxo
+    $lastCommitMsg = git -C $NexxoRoot log -1 --pretty=%B
+    $commitMsg = "sync: $lastCommitMsg`n`nmade by leavera77"
+    
+    # Add, commit y push
+    git add .
+    git commit -m $commitMsg
+    
+    Write-Host "[hook] Commit creado en Pedidos-MG, haciendo push..." -ForegroundColor Cyan
+    git push origin main
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[hook] ✓ Push exitoso. Deploy automático en progreso..." -ForegroundColor Green
+        Write-Host "      GitHub Pages: https://leavera77.github.io/Pedidos-MG/" -ForegroundColor Gray
+        Write-Host "      Render API: https://nexxo-api-418k.onrender.com/" -ForegroundColor Gray
+    } else {
+        Write-Host "[hook] ✗ Error en push. Revisa manualmente Pedidos-MG" -ForegroundColor Red
+    }
+    
+} catch {
+    Write-Host "[hook] Error: $_" -ForegroundColor Red
+} finally {
+    Pop-Location
+}
+
+exit 0

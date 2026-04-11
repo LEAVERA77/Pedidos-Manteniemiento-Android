@@ -1,0 +1,134 @@
+# Sincronización automática a Pedidos-MG
+
+## Objetivo
+
+Cuando se hace `git push` en **Nexxo** (repo Android), sincronizar automáticamente los cambios relevantes a **Pedidos-MG** (repo web/API) y hacer push allí también.
+
+## Qué se sincroniza automáticamente
+
+### 1. Assets del Frontend (WebView embebido)
+Desde `Nexxo/app/src/main/assets/` hacia `Pedidos-MG/`:
+- `index.html`
+- `app.js`
+- `styles.css`
+- `map.js`
+- `map-view.js`
+- `offline.js`
+- `sw.js`
+- `autocompletado-calles.js`
+- `gestornova-logo.png`
+
+### 2. API Backend (Node.js)
+Desde `Nexxo/api/` hacia `Pedidos-MG/api/`:
+- Todos los archivos excepto:
+  - `node_modules/`
+  - `.env` (secretos locales)
+  - `config.json` (secretos locales)
+  - `package-lock.json` (generado)
+
+### 3. Documentación compartida
+Desde `Nexxo/docs/` hacia `Pedidos-MG/docs/` (cuando aplique):
+- Documentos operativos compartidos
+- Guías de pruebas
+- Especificaciones del sistema de geocodificación
+
+## Hook de Git (post-commit)
+
+El hook `.git/hooks/post-commit` en Nexxo ejecuta automáticamente:
+
+1. Detecta si el commit tocó archivos en `app/src/main/assets/` o `api/`
+2. Si sí, ejecuta el script `scripts/sync-assets-to-pedidos-mg.ps1`
+3. En el repo Pedidos-MG:
+   - Hace `git add` de los archivos sincronizados
+   - Crea un commit con mensaje descriptivo
+   - Hace `git push origin main` (disparando deploy automático en Render y GitHub Pages)
+
+## Uso del script manualmente
+
+Si el hook está deshabilitado o quieres sincronizar manualmente:
+
+```powershell
+cd C:\Users\leave\AndroidStudioProjects\Nexxo
+.\scripts\sync-assets-to-pedidos-mg.ps1
+```
+
+Luego en Pedidos-MG:
+```powershell
+cd C:\Users\leave\AndroidStudioProjects\Pedidos-MG
+git add .
+git commit -m "sync: actualizar desde Nexxo
+
+made by leavera77"
+git push origin main
+```
+
+## Deploy automático en producción
+
+Después del push a Pedidos-MG, se disparan automáticamente:
+
+1. **GitHub Actions**:
+   - Workflow "Deploy GitHub Pages" (frontend web)
+   - Workflow "API CI" (tests de API)
+
+2. **Render**:
+   - Auto-deploy del backend Node.js
+   - Tiempo estimado: 2-5 minutos
+
+## Verificación post-deploy
+
+Después de sincronizar, verifica:
+
+1. **GitHub Pages** (frontend):
+   ```
+   https://leavera77.github.io/Pedidos-MG/
+   ```
+   - Espera 30-60 segundos para que el workflow termine
+   - Recarga con Ctrl+F5 para evitar cache
+
+2. **Render** (API):
+   ```
+   https://nexxo-api-418k.onrender.com/health
+   ```
+   - Espera 2-5 minutos para que Render termine el deploy
+   - Verifica el endpoint en Actions → API CI
+
+## Seguridad
+
+**NUNCA** sincronizar:
+- `.env` (secretos locales)
+- `config.json` (credenciales)
+- `node_modules/`
+- Archivos personales o temporales
+
+Los secretos de producción se configuran en:
+- **GitHub Pages**: Settings → Secrets → Actions
+- **Render**: Dashboard → Environment Variables
+
+## Troubleshooting
+
+### El hook no se ejecuta
+```powershell
+# Verificar que el archivo existe y es ejecutable
+ls C:\Users\leave\AndroidStudioProjects\Nexxo\.git\hooks\post-commit
+```
+
+### Sync falla por conflictos
+```powershell
+cd C:\Users\leave\AndroidStudioProjects\Pedidos-MG
+git status
+# Resolver conflictos manualmente, luego:
+git add .
+git commit -m "sync: resolver conflictos desde Nexxo"
+git push origin main
+```
+
+### Render no despliega
+- Verifica que el commit llegó a GitHub: `gh run list --limit 3`
+- Verifica en Render Dashboard que el auto-deploy esté activado
+- Si es necesario, dispara "Manual Deploy" en Render
+
+## Relación con otras reglas
+
+- **commit-push-nexxo-y-pedidos-mg**: Proceso manual paso a paso
+- **pedidos-mg-web-repo**: Detalles del frontend en GitHub Pages
+- **pedidos-repos-arquitectura**: Arquitectura general de los repos
