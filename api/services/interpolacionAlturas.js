@@ -38,7 +38,7 @@ function coordsOk(lat, lng) {
 /**
  * Calcula la distancia entre dos puntos WGS84 en metros (Haversine)
  */
-function distanciaHaversine(lat1, lon1, lat2, lon2) {
+export function distanciaHaversine(lat1, lon1, lat2, lon2) {
   const R = 6371000; // Radio de la Tierra en metros
   const toRad = (deg) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -94,7 +94,7 @@ function calcularBearing(lat1, lon1, lat2, lon2) {
 /**
  * Normaliza un string para búsqueda (sin tildes, minúsculas, sin espacios extra)
  */
-function normalizarParaBusqueda(str) {
+export function normalizarParaBusqueda(str) {
   return String(str)
     .trim()
     .normalize("NFD")
@@ -106,14 +106,14 @@ function normalizarParaBusqueda(str) {
 }
 
 /** Overpass `name~` usa regex; escapa metacaracteres para que "Antártida" no rompa el patrón. */
-function escapeOverpassRegexLiteral(str) {
+export function escapeOverpassRegexLiteral(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
  * Genera variantes de búsqueda para tolerar errores ortográficos
  */
-function generarVariantesNombre(calle) {
+export function generarVariantesNombre(calle) {
   const raw = String(calle || "").trim();
   const base = normalizarParaBusqueda(raw);
   const variantes = new Set([base]);
@@ -220,7 +220,7 @@ async function obtenerCoordsLocalidad(localidad, provincia) {
 /**
  * Construye bloques Overpass: localidad opcionalmente restringida a provincia (ISO o boundary).
  */
-function bloquesAreaLocalidadProvincia(locEscaped, provClean) {
+export function bloquesAreaLocalidadProvincia(locEscaped, provClean) {
   const provTrim = provClean ? String(provClean).trim() : "";
   const p = provTrim.length >= 2 ? provTrim : "";
   const iso = p ? iso3166ArgDesdeNombreProvincia(p) : null;
@@ -760,14 +760,15 @@ const P5D_DEFAULT_M_PER_NUM = 14;
 const P5D_DEFAULT_OFFSET_VEREDA_M = 10;
 
 /**
- * PASO 5d (re-geocodificación): pin aproximado desde el inicio lógico de la vía (orden de nodos OSM) + avance en eje + desplazamiento por paridad.
- * Heurística; no reemplaza catastro. Si Overpass trae `oneway`, se invierte el lado impar/par respecto del eje.
+ * PASO 5d (re-geocodificación): cascada B→C→D para ancla, luego avance en eje + vereda por paridad.
+ * import() dinámico de anclaInicioCalle evita dependencia circular con este módulo.
  */
 export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
   const calle = opts.calle ? String(opts.calle).trim() : "";
   const localidad = opts.localidad ? String(opts.localidad).trim() : "";
   const provincia = opts.provincia ? String(opts.provincia || "").trim() : "";
   const numeroStr = opts.numero != null ? String(opts.numero).trim() : "";
+  const postalDigits = opts.postalDigits != null ? String(opts.postalDigits).replace(/\D/g, "") : "";
   const logLines = [];
   const L = typeof opts.L === "function" ? opts.L : () => {};
   const push = (msg) => {
@@ -777,7 +778,7 @@ export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
     } catch (_) {}
   };
 
-  push("\n📍 PASO 5d: Ancla inicio de vía OSM (aprox.) — avance por número + vereda");
+  push("\n📍 PASO 5d: Ancla inicio de vía (cascada B→C→D) + avance sobre eje + vereda");
   if (!calle || calle.length < 2 || !localidad || localidad.length < 2) {
     push("  → Sin calle/localidad para PASO 5d");
     return { ok: false, log: logLines };
@@ -788,22 +789,72 @@ export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
     return { ok: false, log: logLines };
   }
 
-  const pack = await obtenerGeometriaCalle(calle, localidad, provincia);
-  if (!pack?.geometry || pack.geometry.length < 2) {
-    push("  → Sin geometría de vía en OSM");
-    return { ok: false, log: logLines };
+  const { resolverCascadaAnclaInicio } = await import("./anclaInicioCalle.js");
+  const cascade = await resolverCascadaAnclaInicio({
+    calle,
+    localidad,
+    provincia,
+    postalDigits,
+    L,
+  });
+  for (const line of cascade.log || []) {
+    if (line && String(line).trim()) push(String(line));
   }
-  const coords = pack.geometry;
-  const tags = pack.tags || {};
+
+  let geometry = cascade.geometry;
+  let tags = cascade.tags || {};
+  let metodoAncla = cascade.metodo || null;
+  let precisionAncla = cascade.precision || null;
+
+  if (!cascade.ok) {
+    push("  → Cascada sin hit; fallback geometría única (primera way, primer nodo)");
+    const pack = await obtenerGeometriaCalle(calle, localidad, provincia);
+    if (!pack?.geometry || pack.geometry.length < 2) {
+      push("  → Sin geometría de vía en OSM");
+      return { ok: false, log: logLines };
+    }
+    geometry = pack.geometry;
+    tags = pack.tags || {};
+    metodoAncla = "overpass_geom_first_node";
+    precisionAncla = "aprox_inicio";
+  } else if (!geometry || geometry.length < 2) {
+    push("  → Ancla B/C sin polilínea; se busca eje de vía para dirección y offset");
+    const pack = await obtenerGeometriaCalle(calle, localidad, provincia);
+    if (pack?.geometry?.length >= 2) {
+      geometry = pack.geometry;
+      tags = { ...tags, ...pack.tags };
+    } else if (coordsOk(cascade.lat, cascade.lng)) {
+      push("  ✓ Solo ancla puntual (sin eje); pin en coords de ancla");
+      return {
+        ok: true,
+        lat: cascade.lat,
+        lng: cascade.lng,
+        fuente: "interpolacion_via_ancla_solo_punto",
+        log: logLines,
+        metodoAncla,
+        precisionAncla,
+        metadata: {
+          modo: "interpolado_via",
+          metodo_ancla: metodoAncla,
+          precision_ancla: precisionAncla,
+          nodos: 0,
+        },
+      };
+    } else {
+      return { ok: false, log: logLines };
+    }
+  }
+
+  const coords = geometry;
   const onewayRaw = tags.oneway != null ? String(tags.oneway).trim().toLowerCase() : "";
 
   let totalM = 0;
   for (let i = 1; i < coords.length; i++) {
     totalM += distanciaHaversine(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
   }
-  push(`  ✓ Geometría: ${coords.length} nodos, ~${Math.round(totalM)} m de eje`);
+  push(`  ✓ Geometría eje: ${coords.length} nodos, ~${Math.round(totalM)} m`);
   if (totalM < 8) {
-    push("  → Vía demasiado corta; se omite PASO 5d");
+    push("  → Vía demasiado corta; se omite avance");
     return { ok: false, log: logLines };
   }
 
@@ -819,20 +870,30 @@ export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
   targetM = Math.max(12, targetM);
   if (targetM > totalM) targetM = totalM * 0.88;
 
+  let anchorLat = cascade.ok ? cascade.lat : coords[0].lat;
+  let anchorLng = cascade.ok ? cascade.lng : coords[0].lng;
+  let bi = 0;
+  let bd = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const d = distanciaHaversine(anchorLat, anchorLng, coords[i].lat, coords[i].lng);
+    if (d < bd) {
+      bd = d;
+      bi = i;
+    }
+  }
   push(
-    `  → Ancla: primer nodo de la vía (inicio lógico OSM). Distancia aprox. sobre eje: ${Math.round(targetM)} m`
+    `  → Ancla proyectada al vértice ${bi} (~${Math.round(bd)} m al eje). Avance objetivo desde ahí: ${Math.round(targetM)} m`
   );
   if (onewayRaw) push(`  → oneway (OSM): ${onewayRaw}`);
 
-  let acum = 0;
-  for (let i = 1; i < coords.length; i++) {
-    const d = distanciaHaversine(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
-    if (acum + d >= targetM) {
-      const rest = targetM - acum;
-      const frac = d > 0 ? rest / d : 0;
-      const latB = coords[i - 1].lat + (coords[i].lat - coords[i - 1].lat) * frac;
-      const lngB = coords[i - 1].lng + (coords[i].lng - coords[i - 1].lng) * frac;
-      const br = calcularBearing(coords[i - 1].lat, coords[i - 1].lng, coords[i].lat, coords[i].lng);
+  let remaining = targetM;
+  for (let i = bi; i < coords.length - 1; i++) {
+    const d = distanciaHaversine(coords[i].lat, coords[i].lng, coords[i + 1].lat, coords[i + 1].lng);
+    if (remaining <= d) {
+      const frac = d > 0 ? remaining / d : 0;
+      const latB = coords[i].lat + (coords[i + 1].lat - coords[i].lat) * frac;
+      const lngB = coords[i].lng + (coords[i + 1].lng - coords[i].lng) * frac;
+      const br = calcularBearing(coords[i].lat, coords[i].lng, coords[i + 1].lat, coords[i + 1].lng);
       const esPar = numero % 2 === 0;
       let offsetDeg = esPar ? (br + 90) % 360 : (br - 90 + 360) % 360;
       if (onewayRaw === "-1" || onewayRaw === "reverse") {
@@ -840,25 +901,29 @@ export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
       }
       const pt = puntoDestino(latB, lngB, offsetVereda, offsetDeg);
       push(
-        `  ✓ Punto sobre eje + vereda (${esPar ? "par" : "impar"})${onewayRaw ? ` · oneway=${onewayRaw}` : ""}`
+        `  ✓ Punto eje + vereda (${esPar ? "par" : "impar"})${onewayRaw ? ` · oneway=${onewayRaw}` : ""}`
       );
       push(`  ✓ Coordenadas aprox.: ${pt.lat.toFixed(6)}, ${pt.lng.toFixed(6)}`);
-      push(`  ℹ️ Ancla: inicio de vía en OSM (aprox.) — no es puerta catastral exacta`);
+      push(`  ℹ️ Método ancla: ${metodoAncla || "?"} — no es puerta catastral exacta`);
       return {
         ok: true,
         lat: pt.lat,
         lng: pt.lng,
         fuente: "interpolacion_via_ancla_p5d",
         log: logLines,
+        metodoAncla,
+        precisionAncla,
         metadata: {
           modo: "interpolado_via",
+          metodo_ancla: metodoAncla,
+          precision_ancla: precisionAncla,
           oneway: onewayRaw || null,
           metrosEjeAprox: Math.round(targetM),
           nodos: coords.length,
         },
       };
     }
-    acum += d;
+    remaining -= d;
   }
 
   const last = coords[coords.length - 1];
@@ -869,6 +934,13 @@ export async function interpolarPaso5dAnclaInicioVia(opts = {}) {
     lng: last.lng,
     fuente: "interpolacion_via_ancla_p5d_extremo",
     log: logLines,
-    metadata: { modo: "interpolado_via", warn: "fin_geometria" },
+    metodoAncla,
+    precisionAncla,
+    metadata: {
+      modo: "interpolado_via",
+      metodo_ancla: metodoAncla,
+      precision_ancla: precisionAncla,
+      warn: "fin_geometria",
+    },
   };
 }

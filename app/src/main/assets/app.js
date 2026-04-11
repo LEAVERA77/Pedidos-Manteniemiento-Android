@@ -2940,23 +2940,31 @@ function coordsSonPinValidasMapaWgs84(la, ln) {
 /** Texto admin: cómo se obtuvo el pin (política A / re-geocodificación). */
 function etiquetaModoUbicPedido(a) {
     if (!a || typeof a !== 'object') return '';
+    const ma = String(a.metodo_ancla || '').trim();
+    const anclaEtq = {
+        nominatim_inicio_num1: 'Ancla Nominatim (n°1 como inicio aprox.)',
+        overpass_addr_min: 'Ancla Overpass (menor addr:housenumber en la zona)',
+        overpass_geom_first_node: 'Ancla Overpass (primer nodo, vía más larga)',
+    };
+    const preAncla = ma ? `${anclaEtq[ma] || `Ancla: ${ma}`}. ` : '';
     const m = String(a.modo || '').trim();
     if (m === 'interpolado_via') {
-        return 'Aproximada — interpolación sobre vía OSM y vereda por paridad (heurística; no es medición catastral).';
+        return `${preAncla}Aproximada — interpolación sobre vía OSM y vereda por paridad (heurística; no es medición catastral).`;
     }
     if (m === 'localidad') {
-        return 'Aproximada — centro o búsqueda por localidad / ciudad.';
+        return `${preAncla}Aproximada — centro o búsqueda por localidad / ciudad.`;
     }
     if (m === 'tenant') {
-        return 'Aproximada — sede o área de referencia del tenant.';
+        return `${preAncla}Aproximada — sede o área de referencia del tenant.`;
     }
     if (m === 'region') {
-        return 'Muy aproximada — región o respaldo geográfico (último recurso).';
+        return `${preAncla}Muy aproximada — región o respaldo geográfico (último recurso).`;
     }
     if (m === 'exacto_aprox') {
-        return 'Según mapas / catálogo; puede no coincidir con la puerta exacta.';
+        return `${preAncla}Según mapas / catálogo; puede no coincidir con la puerta exacta.`;
     }
-    if (m === 'aprox') return 'Aproximada (ver fuente en auditoría).';
+    if (m === 'aprox') return `${preAncla}Aproximada (ver fuente en auditoría).`;
+    if (preAncla) return preAncla.trim();
     return '';
 }
 

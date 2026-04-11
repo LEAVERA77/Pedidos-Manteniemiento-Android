@@ -462,6 +462,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       }
     }
 
+    let metodoAnclaP5d = null;
+    let precisionAnclaP5d = null;
     if (
       !coordsValidasWgs84(latFinal, lngFinal) &&
       calleT &&
@@ -476,6 +478,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
           numero: numT,
           localidad: locT,
           provincia: provinciaEfectiva,
+          postalDigits,
           L,
         });
         for (const line of p5d.log || []) {
@@ -485,6 +488,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
           latFinal = p5d.lat;
           lngFinal = p5d.lng;
           fuente = p5d.fuente || "interpolacion_via_ancla_p5d";
+          metodoAnclaP5d = p5d.metodoAncla ?? p5d.metadata?.metodo_ancla ?? null;
+          precisionAnclaP5d = p5d.precisionAncla ?? p5d.metadata?.precision_ancla ?? null;
         }
       } catch (err) {
         L(`  ⚠️ PASO 5d: ${err?.message || err}`);
@@ -607,9 +612,14 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       policy: "A",
       fuente,
       modo: inferirModoUbicacion(fuente),
+      metodo_ancla: metodoAnclaP5d || null,
+      precision_ancla: precisionAnclaP5d || null,
       at: new Date().toISOString(),
     };
-    L(`   🏷️ Auditoría ubicación: modo=${geocodingAudit.modo} · política ${geocodingAudit.policy}`);
+    L(
+      `   🏷️ Auditoría ubicación: modo=${geocodingAudit.modo} · política ${geocodingAudit.policy}` +
+        (geocodingAudit.metodo_ancla ? ` · ancla=${geocodingAudit.metodo_ancla}` : "")
+    );
 
     if (await pedidosColumnExists("geocoding_audit")) {
       await query(
