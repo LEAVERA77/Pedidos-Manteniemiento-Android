@@ -8,16 +8,24 @@ $HookTarget = "$PSScriptRoot\..\.git\hooks\post-commit"
 Write-Host "=== Instalador de Hook de Sync Automático ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Verificar que existe el hook
-if (-not (Test-Path $HookSource)) {
-    Write-Host "✗ No se encontró el hook en: $HookSource" -ForegroundColor Red
-    Write-Host "  Verifica que el repositorio esté completo." -ForegroundColor Yellow
-    exit 1
+# Verificar que existe la carpeta git/hooks (versionada)
+if (-not (Test-Path "$PSScriptRoot\..\git\hooks")) {
+    New-Item -ItemType Directory -Path "$PSScriptRoot\..\git\hooks" -Force | Out-Null
 }
 
-# Copiar hook
+# Crear el hook (script shell que llama a PowerShell)
+$HookContent = @"
+#!/bin/sh
+# Git post-commit hook para Nexxo
+# Sincroniza automáticamente cambios relevantes a Pedidos-MG
+# made by leavera77
+
+# Ejecutar con PowerShell en Windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "`$(git rev-parse --show-toplevel)/scripts/post-commit-sync.ps1"
+"@
+
 try {
-    Copy-Item -Path $HookSource -Destination $HookTarget -Force
+    Set-Content -Path $HookTarget -Value $HookContent -NoNewline
     Write-Host "✓ Hook instalado correctamente" -ForegroundColor Green
 } catch {
     Write-Host "✗ Error al instalar hook: $_" -ForegroundColor Red
