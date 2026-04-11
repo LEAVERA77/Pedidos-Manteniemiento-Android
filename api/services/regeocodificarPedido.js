@@ -10,6 +10,7 @@ import { normalizarDireccion } from "../utils/normalizarCalles.js";
 import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
 import { geocodeCalleNumeroLocalidadArgentina } from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
+import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
 
 /**
  * Valida coords WGS84
@@ -33,7 +34,13 @@ function coordsValidasWgs84(lat, lng) {
 export async function regeocodificarPedido(pedidoId, tenantId) {
   const log = [];
   log.push("🔄 Iniciando re-geocodificación inteligente...");
-  
+  const provinciaTenant = await getTenantProvinciaNominatim(tenantId);
+  if (provinciaTenant) {
+    log.push(`🏛️ Provincia tenant (oficina / config): ${provinciaTenant}`);
+  } else {
+    log.push(`⚠️ Sin provincia de tenant: Nominatim no se acota por estado (configurá provincia o ubicación central)`);
+  }
+
   try {
     // 1. Obtener datos del pedido
     const pedidoResult = await query(
@@ -146,6 +153,7 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
         const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleT, numT || "", {
           allowTenantCentroidFallback: false,
           catalogStrict: false,
+          stateOrProvince: provinciaTenant || undefined,
         });
         
         if (geoResult && coordsValidasWgs84(geoResult.lat, geoResult.lng)) {
@@ -170,7 +178,7 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
           calle: calleT,
           numero: numT,
           localidad: locT,
-          provincia: null,
+          provincia: provinciaTenant || undefined,
         });
         
         if (interpol && interpol.log) {
@@ -205,9 +213,10 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
     // Persistir en columnas canónicas del modelo (mismo patrón que PUT /pedidos/:id/coords y coords-manual)
     await query(
       `UPDATE pedidos 
-       SET lat = $1, lng = $2
+       SET lat = $1, lng = $2,
+           provincia = COALESCE($5, provincia)
        WHERE id = $3 AND tenant_id = $4`,
-      [latFinal, lngFinal, pedidoId, tenantId]
+      [latFinal, lngFinal, pedidoId, tenantId, provinciaTenant || null]
     );
     
     const cambio = coordsActuales

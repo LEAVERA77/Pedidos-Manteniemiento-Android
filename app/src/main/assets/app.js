@@ -1316,7 +1316,7 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'usuario_id','usuario_creador_id','usuario_inicio_id','usuario_cierre_id','usuario_avance_id',
     'trabajo_realizado','tecnico_cierre','foto_base64','x_inchauspe','y_inchauspe',
     'fecha_avance','foto_cierre','nis_medidor','tecnico_asignado_id','fecha_asignacion','firma_cliente','checklist_seguridad','telefono_contacto',
-    'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad',
+    'cliente_nombre','cliente_direccion','cliente_calle','cliente_numero_puerta','cliente_localidad','provincia',
     'suministro_tipo_conexion','suministro_fases',
     'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot',
     'solicitud_derivacion_pendiente','solicitud_derivacion_fecha','solicitud_derivacion_usuario_id','solicitud_derivacion_motivo','solicitud_derivacion_destino_sugerido']);
@@ -2403,6 +2403,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_calle TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_numero_puerta VARCHAR(20)`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_localidad TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS provincia TEXT`);
+                await sqlSimple(`ALTER TABLE socios_catalogo ADD COLUMN IF NOT EXISTS provincia TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_tipo_conexion TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS suministro_fases TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS trafo TEXT`);
@@ -2717,7 +2719,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
     }
 });
 
-function toast(msg, tipo = 'info') {
+function toast(msg, tipo = 'info', durationMs) {
     let el = document.getElementById('toast');
     if (!el) {
         el = document.createElement('div');
@@ -2743,6 +2745,10 @@ function toast(msg, tipo = 'info') {
     } catch (_) {}
     if (tipo === 'error') el.setAttribute('role', 'alert');
     else el.removeAttribute('role');
+    const dur =
+        durationMs != null && Number.isFinite(Number(durationMs)) && Number(durationMs) > 0
+            ? Number(durationMs)
+            : 5200;
     clearTimeout(window.toastTimer);
     window.toastTimer = setTimeout(() => {
         el.className = tipo;
@@ -2751,7 +2757,7 @@ function toast(msg, tipo = 'info') {
             el.style.maxWidth = '';
         } catch (_) {}
         if (tipo === 'error') el.removeAttribute('role');
-    }, tipo === 'error' ? 5200 : 5200);
+    }, dur);
 }
 window.toast = toast;
 
@@ -2819,6 +2825,7 @@ const norm = p => ({
     ccal: (p.cliente_calle || '').trim(),
     cnum: (p.cliente_numero_puerta || '').trim(),
     cloc: (p.cliente_localidad || '').trim(),
+    cpcia: (p.provincia || '').trim(),
     stc: (p.suministro_tipo_conexion || '').trim(),
     sfs: (p.suministro_fases || '').trim(),
     tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
@@ -6263,6 +6270,7 @@ async function imprimirPedidoAsync(p) {
                 ${String(p.ccal || '').trim() ? `<tr><td>Calle</td><td>${escHtmlPrint(p.ccal)}</td></tr>` : ''}
                 ${String(p.cnum || '').trim() ? `<tr><td>Número</td><td>${escHtmlPrint(p.cnum)}</td></tr>` : ''}
                 ${String(p.cloc || '').trim() ? `<tr><td>Localidad</td><td>${escHtmlPrint(p.cloc)}</td></tr>` : ''}
+                ${String(p.cpcia || '').trim() ? `<tr><td>Provincia</td><td>${escHtmlPrint(p.cpcia)}</td></tr>` : ''}
                 ${String(p.stc || '').trim() ? `<tr><td>Tipo de conexión</td><td>${escHtmlPrint(p.stc)}</td></tr>` : ''}
                 ${String(p.sfs || '').trim() ? `<tr><td>Fases</td><td>${escHtmlPrint(p.sfs)}</td></tr>` : ''}
                 ${String(p.cdir || '').trim() ? `<tr><td>Referencia / notas ubicación</td><td>${escHtmlPrint(p.cdir)}</td></tr>` : ''}
@@ -7305,6 +7313,7 @@ async function updPedido(id, campos, usuarioId) {
             cliente_calle: 'ccal',
             cliente_numero_puerta: 'cnum',
             cliente_localidad: 'cloc',
+            provincia: 'cpcia',
             suministro_tipo_conexion: 'stc',
             suministro_fases: 'sfs',
             trafo: 'trf',
@@ -8954,6 +8963,9 @@ async function detalle(p) {
     }
     if (String(p.cloc || '').trim()) {
         filasDatosCliente.push(`<div class="dr"><span class="dl">Localidad</span><span class="dv">${escDet(p.cloc)}</span></div>`);
+    }
+    if (String(p.cpcia || '').trim()) {
+        filasDatosCliente.push(`<div class="dr"><span class="dl">Provincia</span><span class="dv">${escDet(p.cpcia)}</span></div>`);
     }
     const stcD = String(p.stc || '').trim();
     const sfsD = String(p.sfs || '').trim();
@@ -13890,7 +13902,21 @@ async function cargarListaSociosAdmin() {
 function normalizarEncabezadoExcelSocios(k) {
     let s = String(k || '').trim().toLowerCase();
     try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
-    return s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (n === 'pcia' || n === 'provincia') return 'provincia';
+    if (n === 'estado' || n === 'state') return 'provincia';
+    return n;
+}
+
+/** Une sinónimos de encabezado ya normalizados a la clave canónica `provincia`. */
+function aliasEncabezadosProvinciaSocios(mapNormAOriginal) {
+    if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
+    const keys = ['pcia', 'estado', 'state'];
+    for (const k of keys) {
+        if (mapNormAOriginal[k] && !mapNormAOriginal.provincia) {
+            mapNormAOriginal.provincia = mapNormAOriginal[k];
+        }
+    }
 }
 
 function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
@@ -14035,16 +14061,16 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
     const vals = lote
         .map(
             (p) =>
-                `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
+                `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
         )
         .join(',');
     await sqlSimple(
-        `INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+        `INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
          VALUES ${vals}
          ON CONFLICT (nis_medidor) DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
-           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
+           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
            latitud = CASE 
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud
              WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud 
@@ -14329,6 +14355,7 @@ async function importarExcelSocios(event) {
             const n = normalizarEncabezadoExcelSocios(orig);
             if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
         });
+        aliasEncabezadosProvinciaSocios(mapNormAOriginal);
         const payloads = [];
         let filaN = 0;
         for (const row of rawRows) {
@@ -14373,6 +14400,7 @@ async function importarExcelSocios(event) {
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            const provinciaSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'provincia');
             const barrioSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'barrio', 'vecindario', 'zona');
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
@@ -14431,6 +14459,7 @@ async function importarExcelSocios(event) {
                 telefono,
                 dist,
                 loc,
+                provincia: provinciaSoc || null,
                 tar,
                 ur,
                 transf,
@@ -14452,9 +14481,9 @@ async function importarExcelSocios(event) {
             } catch (e) {
                 for (const p of chunk) {
                     try {
-                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
-                    VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN (socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN (socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
+                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+                    VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
+                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN (socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN (socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
                         ok++;
                     } catch (e2) {
                         fail++;

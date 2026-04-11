@@ -123,6 +123,37 @@ function normTxt(s) {
     .trim();
 }
 
+function normProvinciaCmp(s) {
+  return normTxt(String(s || "")).replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Provincia / región desde addressdetails (búsqueda o reverse Nominatim).
+ * @param {object} hit
+ * @returns {string | null}
+ */
+export function stateFromNominatimHit(hit) {
+  const a = hit?.address;
+  if (!a || typeof a !== "object") return null;
+  const v = a.state ?? a.region ?? a.state_district;
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length >= 2 ? s : null;
+}
+
+/**
+ * Compara etiqueta de provincia OSM con la provincia del tenant (desambiguación homónimos entre provincias).
+ */
+export function nominatimStateMatchesTenant(hitState, tenantState) {
+  if (!tenantState || String(tenantState).trim().length < 2) return true;
+  if (!hitState || String(hitState).trim().length < 2) return false;
+  const a = normProvinciaCmp(hitState);
+  const b = normProvinciaCmp(tenantState);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a);
+}
+
 const LOCALITY_ADDRESS_KEYS = [
   "city",
   "town",
@@ -282,15 +313,29 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     return Array.isArray(arr) ? arr : [];
   }
 
-  let arr = await searchStructured(false);
-  let filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
-  if (!filtered.length && state.length >= 2) {
+  let arr;
+  let filtered;
+  if (state.length >= 2) {
     arr = await searchStructured(true);
+    filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+    if (!filtered.length) {
+      arr = await searchStructured(false);
+      filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+    }
+  } else {
+    arr = await searchStructured(false);
     filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
   }
   if (!filtered.length && state.length >= 2) {
     arr = await searchQState();
     filtered = arr.filter((h) => nominatimHitStrictLocalidad(h, loc));
+  }
+  if (state.length >= 2 && filtered.length) {
+    filtered = filtered.filter((h) => {
+      const hs = stateFromNominatimHit(h);
+      if (!hs) return true;
+      return nominatimStateMatchesTenant(hs, state);
+    });
   }
 
   const hit = filtered[0];
@@ -353,10 +398,14 @@ function scoreStructuredHit(hit, wantHouse) {
   return 2;
 }
 
-function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCenter) {
+function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCenter, tenantState) {
   const cal = String(calle || "").trim();
   const loc = String(localidad || "").trim();
   let pool = hits.filter((h) => nominatimHitStrictLocalidad(h, loc) && nominatimHitMatchesCalle(h, cal));
+  const ts = tenantState != null ? String(tenantState).trim() : "";
+  if (ts.length >= 2) {
+    pool = pool.filter((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), ts));
+  }
   if (bbox) {
     pool = pool.filter((h) => {
       const la = Number(h.lat);
@@ -393,7 +442,7 @@ function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCe
 
 /**
  * @param {string} query
- * @param {{ filterLocalidad?: string } | undefined} opts
+ * @param {{ filterLocalidad?: string, filterState?: string } | undefined} opts
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string } | null>}
  */
 export async function geocodeAddressArgentina(query, opts = {}) {
@@ -408,8 +457,15 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   const arr = await res.json();
   if (!Array.isArray(arr) || !arr.length) return null;
   const filterLoc = opts.filterLocalidad != null ? String(opts.filterLocalidad).trim() : "";
-  const hit =
-    filterLoc.length >= 2 ? arr.find((h) => nominatimHitStrictLocalidad(h, filterLoc)) : arr[0];
+  const filterSt = opts.filterState != null ? String(opts.filterState).trim() : "";
+  let candidates = arr;
+  if (filterLoc.length >= 2) {
+    candidates = candidates.filter((h) => nominatimHitStrictLocalidad(h, filterLoc));
+  }
+  if (filterSt.length >= 2) {
+    candidates = candidates.filter((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), filterSt));
+  }
+  const hit = candidates.length ? candidates[0] : null;
   if (!hit) return null;
   const lat = Number(hit.lat);
   const lng = Number(hit.lon);
@@ -557,7 +613,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       ...bounded,
     });
     /* Siempre acotar por bbox de la localidad cuando existe (antes solo con catalogStrict → homónimos lejanos). */
-    return pickBestStructuredHit(hits, cal, c, bbox, wantHouse, anchorForStructured);
+    return pickBestStructuredHit(hits, cal, c, bbox, wantHouse, anchorForStructured, stateOrProvince);
   };
 
   if (hasMeaningfulHouseNumber(nRaw)) {
@@ -604,7 +660,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     }
   }
 
-  const pack = await searchCalleLocalidadArgentina(c, cal, 40, vbMeta?.viewboxStr || null);
+  const pack = await searchCalleLocalidadArgentina(c, cal, 40, vbMeta?.viewboxStr || null, stateOrProvince);
   let houseHits = pack.houseHits || [];
   let streetCenter = pack.streetCenter || null;
   if (bbox && houseHits.length) {
@@ -612,8 +668,13 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     if (streetCenter && !pointInBBox(streetCenter.lat, streetCenter.lng, bbox)) streetCenter = null;
   }
   const targetNum = hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null;
+  const qCiudad =
+    stateOrProvince.length >= 2 ? `${c}, ${stateOrProvince}, Argentina` : `${c}, Argentina`;
   const geoCiudad =
-    (await geocodeAddressArgentina(`${c}, Argentina`, { filterLocalidad: c })) ||
+    (await geocodeAddressArgentina(qCiudad, {
+      filterLocalidad: c,
+      filterState: stateOrProvince.length >= 2 ? stateOrProvince : "",
+    })) ||
     (allowTenantCentroidFallback &&
     c.length < 2 &&
     tenantCentroid &&
@@ -679,6 +740,12 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       if (!Array.isArray(arr)) continue;
       for (const hit of arr) {
         if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
+        if (
+          stateOrProvince.length >= 2 &&
+          !nominatimStateMatchesTenant(stateFromNominatimHit(hit), stateOrProvince)
+        ) {
+          continue;
+        }
         const lat = Number(hit.lat);
         const lng = Number(hit.lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
@@ -765,17 +832,20 @@ function bboxCenter(hit) {
 /**
  * Resultados en calle + localidad: frentes con número y, si aplica, centro de la vía (sin números en OSM).
  * @param {string | null} viewboxStr — si viene, bounded=1 (acota a la localidad conocida).
+ * @param {string | null} [stateOrProvince] — restringe resultados a la provincia del tenant.
  * @returns {{ houseHits: Array<{ lat: number, lng: number, houseNum: number, displayName: string }>, streetCenter: { lat: number, lng: number, displayName: string } | null }}
  */
-export async function searchCalleLocalidadArgentina(ciudad, calle, limit = 40, viewboxStr = null) {
+export async function searchCalleLocalidadArgentina(ciudad, calle, limit = 40, viewboxStr = null, stateOrProvince = null) {
   const c = String(ciudad || "").trim();
   const cal = String(calle || "").trim();
+  const st = String(stateOrProvince || "").trim();
   if (c.length < 2 || cal.length < 2) return { houseHits: [], streetCenter: null };
   const lim = Math.min(50, Math.max(8, Number(limit) || 40));
   await throttle();
   const p = nominatimBaseParams();
   /* OSM devuelve mezcla de frentes con housenumber y geometrías de vía; se clasifican para paridad / eje. */
-  p.set("q", `${cal}, ${c}, Argentina`);
+  const qStr = st.length >= 2 ? `${cal}, ${c}, ${st}, Argentina` : `${cal}, ${c}, Argentina`;
+  p.set("q", qStr);
   p.set("limit", String(lim));
   const vb = viewboxStr != null ? String(viewboxStr).trim() : "";
   if (vb.length > 0) {
@@ -792,6 +862,7 @@ export async function searchCalleLocalidadArgentina(ciudad, calle, limit = 40, v
   for (const hit of arr) {
     const displayName = String(hit.display_name || "").trim();
     if (!nominatimHitStrictLocalidad(hit, c)) continue;
+    if (st.length >= 2 && !nominatimStateMatchesTenant(stateFromNominatimHit(hit), st)) continue;
     if (!nominatimDisplayMatchesCalle(displayName, cal)) continue;
     const lat = Number(hit.lat);
     const lng = Number(hit.lon);

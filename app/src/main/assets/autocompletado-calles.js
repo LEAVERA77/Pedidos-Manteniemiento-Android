@@ -235,7 +235,8 @@ async function regeocodificarPedido(pedidoId) {
       if (window.toast) {
         window.toast(
           `<div><strong>⚠️ ${escapeHtml(errorMsg)}</strong>${logHtml}</div>`,
-          'error'
+          'error',
+          60000
         );
       }
       return;
@@ -253,7 +254,7 @@ async function regeocodificarPedido(pedidoId) {
     // Mostrar resultado exitoso con logs
     if (window.toast) {
       const msg = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)}<br><span style="color:#6b7280">Fuente: ${escapeHtml(String(result.fuente || ''))}</span></p>${logHtml}</div>`;
-      window.toast(msg, 'success');
+      window.toast(msg, 'success', 60000);
     }
     
     // Actualizar mapa si está visible

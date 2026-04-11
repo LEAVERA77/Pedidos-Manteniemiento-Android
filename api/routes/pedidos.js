@@ -44,6 +44,7 @@ import {
 } from "../services/whatsappHumanChat.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { regeocodificarPedido } from "../services/regeocodificarPedido.js";
+import { getTenantProvinciaNominatim } from "../services/tenantProvincia.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -331,6 +332,8 @@ router.post("/", async (req, res) => {
     const stc = String(suministro_tipo_conexion || "").trim() || null;
     const sfa = String(suministro_fases || "").trim() || null;
 
+    const provinciaDefault = await getTenantProvinciaNominatim(tenantId);
+
     const hasTIns = await pedidosTableHasTenantIdColumn();
     const insertParams = [
       numeroPedido,
@@ -350,6 +353,7 @@ router.post("/", async (req, res) => {
       medidor || null,
       cliente_calle ?? null,
       cliente_localidad ?? null,
+      provinciaDefault ?? null,
       cliente_numero_puerta ?? null,
       cliente_direccion ?? null,
       stc,
@@ -362,14 +366,14 @@ router.post("/", async (req, res) => {
         numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
         telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
-        cliente_calle, cliente_localidad, cliente_numero_puerta, cliente_direccion,
+        cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
         suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         'Pendiente',0,$8,$9,$10,$10,NOW(),
         $11,$12,$13,$14,$15,
-        $16,$17,$18,$19,
-        $20,$21,$22${hasTIns ? ",$23" : ""}
+        $16,$17,$18,$19,$20,
+        $21,$22,$23${hasTIns ? ",$24" : ""}
       ) RETURNING *`,
       insertParams
     );
