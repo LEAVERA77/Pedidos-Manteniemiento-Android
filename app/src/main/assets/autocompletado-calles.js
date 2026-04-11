@@ -38,10 +38,11 @@ async function autocompletarCalle(query, ciudad, callback) {
   // Nueva búsqueda con delay de 300ms
   const timeoutId = setTimeout(async () => {
     try {
-      const url = `/api/calles-normalizadas/sugerencias?` +
-        `q=${encodeURIComponent(qNorm)}&` +
-        `ciudad=${encodeURIComponent(ciudadNorm)}&` +
-        `limit=10`;
+      const qParam = `q=${encodeURIComponent(qNorm)}`;
+      const cParam = `ciudad=${encodeURIComponent(ciudadNorm)}`;
+      const lParam = `limit=10`;
+      const path = `/api/calles-normalizadas/sugerencias?${qParam}&${cParam}&${lParam}`;
+      const url = window.apiUrl ? window.apiUrl(path) : path;
       
       const response = await fetch(url);
       if (!response.ok) {
@@ -178,10 +179,18 @@ async function regeocodificarPedido(pedidoId) {
   }
   
   try {
-    const response = await fetch(`/api/pedidos/${pedidoId}/regeocodificar`, {
+    const token = window.getApiToken ? window.getApiToken() : null;
+    if (!token) {
+      throw new Error('No hay sesión activa. Por favor, inicia sesión.');
+    }
+    
+    const apiUrl = window.apiUrl ? window.apiUrl(`/api/pedidos/${pedidoId}/regeocodificar`) : `/api/pedidos/${pedidoId}/regeocodificar`;
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
       }
     });
     
@@ -201,16 +210,17 @@ async function regeocodificarPedido(pedidoId) {
       logHtml += '</div>';
     }
     
-    mostrarMensaje(
-      `<div style="text-align:left">
-        <p style="margin:0 0 0.5rem"><strong>✓ Pedido re-geocodificado</strong></p>
-        <p style="margin:0;font-size:0.9rem">Coordenadas: ${result.coordenadas.lat.toFixed(6)}, ${result.coordenadas.lng.toFixed(6)}</p>
-        <p style="margin:0.25rem 0 0;font-size:0.85rem;color:#6b7280">Fuente: ${result.fuente}</p>
-        ${logHtml}
-      </div>`,
-      'success',
-      10000
-    );
+    if (window.toast) {
+      window.toast(
+        `<div style="text-align:left">
+          <p style="margin:0 0 0.5rem"><strong>✓ Pedido re-geocodificado</strong></p>
+          <p style="margin:0;font-size:0.9rem">Coordenadas: ${result.coordenadas.lat.toFixed(6)}, ${result.coordenadas.lng.toFixed(6)}</p>
+          <p style="margin:0.25rem 0 0;font-size:0.85rem;color:#6b7280">Fuente: ${result.fuente}</p>
+          ${logHtml}
+        </div>`,
+        'success'
+      );
+    }
     
     // Actualizar mapa si está visible
     if (typeof actualizarPinEnMapa === 'function') {
@@ -226,7 +236,9 @@ async function regeocodificarPedido(pedidoId) {
     
   } catch (err) {
     console.error('[regeocodificar] Error:', err);
-    mostrarMensaje(`Error al re-geocodificar: ${err.message}`, 'error');
+    if (window.toast) {
+      window.toast(`Error al re-geocodificar: ${err.message}`, 'error');
+    }
   } finally {
     if (btnRegeo) {
       btnRegeo.disabled = false;

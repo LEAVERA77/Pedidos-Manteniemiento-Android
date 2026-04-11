@@ -1349,6 +1349,7 @@ function apiUrl(path) {
     if (!base) return p;
     return base + (p.startsWith('/') ? p : '/' + p);
 }
+window.apiUrl = apiUrl;
 /** Tras cerrar por SQL directo (Neon), dispara el aviso WA en la API sin bloquear la UI. */
 async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
     if (modoOffline) return;
@@ -1718,6 +1719,7 @@ function getApiToken() {
     } catch (_) {}
     return null;
 }
+window.getApiToken = getApiToken;
 
 /** API Render: geocerca, chat interno y fotos clasificadas (ver docs/PLAN_TOP3_COOPERATIVA_GEOCERCA_CHAT_FOTOS.md). */
 async function gnOperativaFetch(path, opts = {}) {
@@ -2743,6 +2745,7 @@ function toast(msg, tipo = 'info') {
         if (tipo === 'error') el.removeAttribute('role');
     }, tipo === 'error' ? 5200 : 5200);
 }
+window.toast = toast;
 
 (function wrapConfirmGestorNova() {
     if (typeof window === 'undefined' || window.__gnConfirmWrapped) return;
