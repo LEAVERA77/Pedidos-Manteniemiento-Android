@@ -1,13 +1,20 @@
 -- Regla de producto: pedidos con origen_reclamo = 'whatsapp' deben tener lat/lng WGS84 válidos
--- (no NULL, no (0,0), rangos coherentes). Alineado con coordsValidasWgs84 en API.
--- Nota esquema: en `public.pedidos` las coords del pin son columnas `lat`/`lng` (no `latitud`/`longitud`;
--- esas nombres existen p. ej. en `socios_catalogo`). Sin trigger en repo que reemplace `lat`/`lng` al INSERT.
+-- (no NULL, no (0,0), rangos coherentes). Alineado con coordsValidasWgs84 / parLatLngPasaCheckWhatsappDb en API.
+--
+-- IMPORTANTE: el CHECK debe referenciar columnas `lat` y `lng` de `public.pedidos` (como inserta la API).
+-- Si en algún entorno el constraint quedó sobre `latitud`/`longitud`, los INSERT con lat/lng dejan NULL
+-- en esas columnas y el CHECK falla. En ese caso ejecutar también:
+--   api/db/migrations/fix_neon_pedidos_whatsapp_check_lat_lng.sql
+--
+-- Uso `IS DISTINCT FROM 'whatsapp'` (no `!=`) para que filas con origen_reclamo NULL no queden con CHECK ambiguo.
 --
 -- Despliegue:
--- 1) Backfill de filas históricas que violen la regla (re-geocodificación o centro ciudad) ANTES de VALIDATE.
--- 2) O dejar NOT VALID hasta completar backfill, luego: ALTER TABLE pedidos VALIDATE CONSTRAINT pedidos_whatsapp_coords_wgs84_check;
+-- 1) Backfill de filas históricas que violen la regla ANTES de VALIDATE.
+-- 2) Opcional: NOT VALID primero; luego ALTER TABLE pedidos VALIDATE CONSTRAINT ...;
 --
 -- made by leavera77
+
+ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS pedidos_whatsapp_coords_wgs84_check;
 
 ALTER TABLE pedidos
   ADD CONSTRAINT pedidos_whatsapp_coords_wgs84_check
@@ -27,4 +34,4 @@ ALTER TABLE pedidos
   NOT VALID;
 
 COMMENT ON CONSTRAINT pedidos_whatsapp_coords_wgs84_check ON pedidos IS
-  'WhatsApp: lat/lng obligatorios y válidos WGS84 (no placeholder 0,0). NOT VALID hasta backfill. made by leavera77';
+  'WhatsApp: lat/lng obligatorios y válidos WGS84 (no placeholder 0,0). Columnas lat/lng (no latitud/longitud). made by leavera77';
