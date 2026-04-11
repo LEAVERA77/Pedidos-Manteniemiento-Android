@@ -1367,14 +1367,15 @@ export async function nominatimProxySearch(clientParams = {}) {
     p.set(lk, s);
   }
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const backoff503 = [1500, 4000, 9000, 16000];
+  const backoff503 = [1500, 4000, 9000, 16000, 22000];
   let lastErr = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await throttle();
     const res = await fetch(url, { headers: nominatimHeaders() });
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim search ${res.status}`);
-      if (attempt < 3) await sleep(backoff503[attempt]);
+      if (attempt < maxAttempts - 1) await sleep(backoff503[attempt]);
       continue;
     }
     if (!res.ok) {
@@ -1409,14 +1410,15 @@ export async function nominatimProxyReverseRaw(body = {}) {
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
   const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
-  const backoff503 = [1500, 4000, 9000, 16000];
+  const backoff503 = [1500, 4000, 9000, 16000, 22000];
   let lastErr = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await throttle();
     const res = await fetch(url, { headers: nominatimHeaders() });
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim reverse ${res.status}`);
-      if (attempt < 3) await sleep(backoff503[attempt]);
+      if (attempt < maxAttempts - 1) await sleep(backoff503[attempt]);
       continue;
     }
     if (!res.ok) {

@@ -999,13 +999,14 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
     await new Promise((res) => setTimeout(res, 1100));
-    const backoffs = [1500, 4000, 9000, 16000];
+    const backoffs = [1500, 4000, 9000, 16000, 22000];
+    const maxAttempts = 5;
     try {
         if (modoOffline || typeof fetch !== 'function') return null;
         await asegurarJwtApiRest();
         const token = getApiToken();
         if (!token) return null;
-        for (let attempt = 0; attempt < 4; attempt++) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
                 method: 'POST',
                 headers: {
@@ -1014,13 +1015,24 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
                 },
                 body: JSON.stringify({ lat: la, lon: lo, zoom: 8 }),
             });
-            if ((r.status === 503 || r.status === 429) && attempt < 3) {
+            const rateLimited = r.status === 503 || r.status === 429;
+            if (r.ok) {
+                const j = await r.json().catch(() => null);
+                const hit = j && j.result;
+                const a = hit && hit.address;
+                if (!a || typeof a !== 'object') return null;
+                const state = a.state || a.region || a['ISO3166-2-lvl4'];
+                const s = state != null ? String(state).trim() : '';
+                return s.length >= 2 ? s : null;
+            }
+            if (rateLimited && attempt < maxAttempts - 1) {
                 console.info(
                     '[geocode-proxy] reverse HTTP',
                     r.status,
                     'reintento',
                     attempt + 1,
-                    '/3',
+                    '/',
+                    maxAttempts - 1,
                     'espera',
                     backoffs[attempt],
                     'ms'
@@ -1028,19 +1040,13 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
                 await new Promise((res) => setTimeout(res, backoffs[attempt]));
                 continue;
             }
-            if (!r.ok) {
-                console.warn('[geocode-proxy] reverse HTTP final', r.status);
+            if (rateLimited) {
+                console.warn('[geocode-proxy] reverse agotó reintentos (503/429) lat/lng oficina');
                 return null;
             }
-            const j = await r.json().catch(() => null);
-            const hit = j && j.result;
-            const a = hit && hit.address;
-            if (!a || typeof a !== 'object') return null;
-            const state = a.state || a.region || a['ISO3166-2-lvl4'];
-            const s = state != null ? String(state).trim() : '';
-            return s.length >= 2 ? s : null;
+            console.warn('[geocode-proxy] reverse HTTP', r.status);
+            return null;
         }
-        console.warn('[geocode-proxy] reverse agotó reintentos (503/429)');
         return null;
     } catch (_) {
         return null;
@@ -3012,10 +3018,28 @@ function _filtrarNominatimPorLocalidad(results, locPedido) {
     return arr.filter((r) => _nominatimResultadoCoincideLocalidad(r, locPedido));
 }
 
-/** Cola global: una búsqueda proxy a la vez + ~1,25 s entre fin de una y la siguiente (política OSM). */
-const _NOMINATIM_PROXY_MIN_GAP_MS = 1250;
+/** Cola global: una búsqueda proxy a la vez + pausa entre fin de una y la siguiente (política OSM ~1 req/s). */
+const _NOMINATIM_PROXY_MIN_GAP_MS = 1800;
 let _nominatimSearchQueue = Promise.resolve();
 let _nominatimSearchLastEnd = 0;
+
+/** Caché en memoria: misma consulta no golpea el proxy durante 5 min tras un OK. */
+const _NOMINATIM_CLIENT_CACHE_MS = 5 * 60 * 1000;
+const _nominatimClientSearchCache = new Map();
+
+function _nominatimSearchCacheKey(merged) {
+    const o = merged && typeof merged === 'object' ? merged : {};
+    const keys = Object.keys(o).sort();
+    const norm = {};
+    for (const k of keys) {
+        const v = o[k];
+        if (v == null) continue;
+        const s = String(v).trim();
+        if (!s) continue;
+        norm[String(k).toLowerCase()] = s;
+    }
+    return JSON.stringify(norm);
+}
 
 function _nominatimSearchEnqueue(run) {
     _nominatimSearchQueue = _nominatimSearchQueue.then(async () => {
@@ -3036,13 +3060,21 @@ function _nominatimSearchEnqueue(run) {
 async function _nominatimFetchSearch(params) {
     return _nominatimSearchEnqueue(async () => {
         const merged = params && typeof params === 'object' ? { ...params } : {};
-        const backoffs = [1500, 4000, 9000, 16000];
+        const ctx = String(merged.q || merged.street || '').trim() || '(sin q/street)';
+        const cacheKey = _nominatimSearchCacheKey(merged);
+        const now = Date.now();
+        const mem = _nominatimClientSearchCache.get(cacheKey);
+        if (mem && now - mem.at < _NOMINATIM_CLIENT_CACHE_MS && Array.isArray(mem.results)) {
+            return mem.results;
+        }
+        const backoffs = [1500, 4000, 9000, 16000, 22000];
+        const maxAttempts = 5;
         try {
             if (modoOffline || typeof fetch !== 'function') return [];
             await asegurarJwtApiRest();
             const token = getApiToken();
             if (!token) return [];
-            for (let attempt = 0; attempt < 4; attempt++) {
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
                     method: 'POST',
                     headers: {
@@ -3051,31 +3083,39 @@ async function _nominatimFetchSearch(params) {
                     },
                     body: JSON.stringify({ params: merged }),
                 });
-                if ((r.status === 503 || r.status === 429) && attempt < 3) {
+                const rateLimited = r.status === 503 || r.status === 429;
+                if (r.ok) {
+                    const j = await r.json().catch(() => ({}));
+                    const out = Array.isArray(j.results) ? j.results : [];
+                    _nominatimClientSearchCache.set(cacheKey, { at: Date.now(), results: out });
+                    return out;
+                }
+                if (rateLimited && attempt < maxAttempts - 1) {
                     console.info(
                         '[geocode-proxy] search HTTP',
                         r.status,
                         'reintento',
                         attempt + 1,
-                        '/3',
+                        '/',
+                        maxAttempts - 1,
                         'espera',
                         backoffs[attempt],
-                        'ms'
+                        'ms',
+                        ctx
                     );
                     await new Promise((res) => setTimeout(res, backoffs[attempt]));
                     continue;
                 }
-                if (!r.ok) {
-                    console.warn('[geocode-proxy] search HTTP', r.status, merged.q || merged.street || '');
+                if (rateLimited) {
+                    console.warn('[geocode-proxy] search agotó reintentos (503/429) para:', ctx);
                     return [];
                 }
-                const j = await r.json().catch(() => ({}));
-                return Array.isArray(j.results) ? j.results : [];
+                console.warn('[geocode-proxy] search HTTP', r.status, '—', ctx);
+                return [];
             }
-            console.warn('[geocode-proxy] search agotó reintentos (503/429)', merged.q || merged.street || '');
             return [];
         } catch (e) {
-            console.warn('[geocode-proxy] search', e && e.message ? e.message : e);
+            console.warn('[geocode-proxy] search excepción', e && e.message ? e.message : e, ctx);
             return [];
         }
     });

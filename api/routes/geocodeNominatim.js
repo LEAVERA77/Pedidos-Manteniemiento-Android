@@ -108,7 +108,8 @@ router.post("/nominatim/search", async (req, res) => {
       return res.json({ ok: true, results, cached: false });
     } catch (e) {
       const msg = String(e?.message || e);
-      console.warn("[geocode-proxy] nominatim search upstream", msg);
+      const qHint = String(params.q || params.street || "").trim().slice(0, 100);
+      console.warn("[geocode-proxy] nominatim search upstream", msg, qHint ? `q≈${qHint}` : `key=${key}`);
       if (hit && Array.isArray(hit.payload)) {
         return res.json({
           ok: true,
