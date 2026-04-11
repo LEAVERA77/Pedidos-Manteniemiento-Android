@@ -1,8 +1,15 @@
-# Sync Automático Nexxo → Pedidos-MG
+# Scripts de Automatización
 
-Este directorio contiene el sistema de sincronización automática entre los repositorios Nexxo (Android) y Pedidos-MG (Web/API).
+Este directorio contiene scripts para automatizar tareas del proyecto GestorNova:
 
-## 🚀 Instalación (Una sola vez)
+1. **Sync automático** Nexxo → Pedidos-MG (frontend + API)
+2. **Migración automática** de base de datos (socios_catalogo)
+
+---
+
+## 🔄 Sync Automático Nexxo → Pedidos-MG
+
+### 🚀 Instalación (Una sola vez)
 
 Ejecuta este comando en PowerShell desde la raíz del proyecto Nexxo:
 
@@ -145,3 +152,60 @@ El hook **NUNCA** sincroniza:
 Los secretos de producción se configuran en:
 - **GitHub Pages**: Settings → Secrets → Actions
 - **Render**: Dashboard → Environment Variables
+
+---
+
+## 🗄️ Migración Automática de Base de Datos
+
+### Script: `migrar-socios-catalogo.ps1`
+
+Ejecuta la migración para agregar las columnas necesarias en la tabla `socios_catalogo`:
+- `latitud`
+- `longitud`
+- `ubicacion_manual`
+- `fecha_actualizacion_coords`
+
+### 🚀 Uso
+
+```powershell
+# Desde la raíz del proyecto Nexxo
+.\scripts\migrar-socios-catalogo.ps1
+```
+
+El script te pedirá:
+1. Tu token de administrador
+2. Confirmación para ejecutar la migración
+
+### 📋 Obtener Token de Admin
+
+1. Abre https://leavera77.github.io/Pedidos-MG/
+2. Login como administrador
+3. Presiona `F12` → Console
+4. Ejecuta: `localStorage.getItem('token')`
+5. Copia el token
+
+### ✨ Características
+
+- ✅ Verifica el estado actual de la tabla
+- ✅ Ejecuta la migración solo si es necesaria
+- ✅ Crea índices automáticamente
+- ✅ Muestra logs detallados del proceso
+- ✅ Verifica el resultado final
+- ✅ Idempotente (seguro de ejecutar múltiples veces)
+
+### 📚 Documentación Completa
+
+Ver: `docs/MIGRACION_AUTOMATICA_SOCIOS_CATALOGO.md`
+
+---
+
+## 🛠️ Otros Scripts
+
+### `sync-assets-to-pedidos-mg.ps1`
+Sincronización manual (sin Git hook) de assets frontend.
+
+### `post-commit-sync.ps1`
+Lógica del hook post-commit (no ejecutar manualmente).
+
+### `instalar-hook-sync.ps1`
+Instalador del hook de Git.
