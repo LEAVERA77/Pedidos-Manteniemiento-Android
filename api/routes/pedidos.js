@@ -1232,9 +1232,13 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
     // Ejecutar re-geocodificación
     const resultado = await regeocodificarPedido(id, req.tenantId);
     
+    // 200 + success:false: la petición es válida; el fallo es resultado de negocio (sin coords),
+    // no "Bad Request". Evita confusión en DevTools y monitores (400 = request mal formado).
     if (!resultado.success) {
-      return res.status(400).json({
+      return res.status(200).json({
+        success: false,
         error: resultado.mensaje || "No se pudo re-geocodificar",
+        mensaje: resultado.mensaje || "No se pudo re-geocodificar",
         log: resultado.log || []
       });
     }

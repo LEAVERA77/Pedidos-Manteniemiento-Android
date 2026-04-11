@@ -226,21 +226,12 @@ async function regeocodificarPedido(pedidoId) {
     }
     
     if (!response.ok) {
-      // 400 con logs es un caso especial (no pudo geocodificar pero no es error fatal)
-      if (response.status === 400 && result.log && result.log.length > 0) {
-        if (window.toast) {
-          const msg = `<div><strong>⚠️ ${escapeHtml(result.error || 'No se pudieron obtener coordenadas')}</strong>${logHtml}</div>`;
-          window.toast(msg, 'error');
-        }
-        return;
-      }
-      
-      // Otros errores (403, 404, 500)
-      throw new Error(result.error || 'Error al re-geocodificar');
+      throw new Error(result.error || result.detail || 'Error al re-geocodificar');
     }
     
-    if (!result.success) {
-      const errorMsg = result.mensaje || result.error || 'Error al re-geocodificar';
+    // API devuelve 200 con success:false cuando no hubo coords (no usar HTTP 400 para eso)
+    if (result.success === false) {
+      const errorMsg = result.mensaje || result.error || 'No se pudieron obtener coordenadas válidas';
       if (window.toast) {
         window.toast(
           `<div><strong>⚠️ ${escapeHtml(errorMsg)}</strong>${logHtml}</div>`,
@@ -250,15 +241,24 @@ async function regeocodificarPedido(pedidoId) {
       return;
     }
     
+    const latOk = result.coordenadas?.lat ?? result.lat;
+    const lngOk = result.coordenadas?.lng ?? result.lng;
+    if (latOk == null || lngOk == null || !Number.isFinite(Number(latOk)) || !Number.isFinite(Number(lngOk))) {
+      if (window.toast) {
+        window.toast(`Respuesta incompleta del servidor (sin coordenadas).`, 'error');
+      }
+      return;
+    }
+    
     // Mostrar resultado exitoso con logs
     if (window.toast) {
-      const msg = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}<br><span style="color:#6b7280">Fuente: ${result.fuente}</span></p>${logHtml}</div>`;
+      const msg = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)}<br><span style="color:#6b7280">Fuente: ${escapeHtml(String(result.fuente || ''))}</span></p>${logHtml}</div>`;
       window.toast(msg, 'success');
     }
     
     // Actualizar mapa si está visible
     if (typeof actualizarPinEnMapa === 'function') {
-      actualizarPinEnMapa(pedidoId, result.lat, result.lng);
+      actualizarPinEnMapa(pedidoId, Number(latOk), Number(lngOk));
     }
     
     // Recargar detalle

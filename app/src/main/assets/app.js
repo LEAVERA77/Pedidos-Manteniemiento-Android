@@ -2725,7 +2725,8 @@ function toast(msg, tipo = 'info') {
         document.body.appendChild(el);
     }
     let s = gnDice(String(msg ?? ''));
-    const maxLen = tipo === 'error' ? 400 : 2200;
+    const isRich = s.includes('<div') || s.includes('<p');
+    const maxLen = tipo === 'error' ? (isRich ? 12000 : 600) : 2200;
     if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…';
     
     // Usar innerHTML para renderizar HTML (el contenido ya viene sanitizado)
