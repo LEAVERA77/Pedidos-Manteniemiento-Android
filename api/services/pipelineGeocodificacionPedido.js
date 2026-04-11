@@ -215,7 +215,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
 
       if (simpleQOnly) {
         L(
-          `\n🌍 PASO 3 (WhatsApp): Nominatim solo API Simple / q — segmentos calleSinPrefijos;número;ciudad (sin cascada estructurada ni interpolación) [calle: "${calleBusqueda}"]`
+          `\n🌍 PASO 3 (WhatsApp): Nominatim Simple-q / free-form (geocodeDomicilioSimpleQArgentina: q tipo UI web, provincia OSM opcional) [calle: "${calleBusqueda}"]`
         );
         try {
           const sq = await geocodeDomicilioSimpleQArgentina({

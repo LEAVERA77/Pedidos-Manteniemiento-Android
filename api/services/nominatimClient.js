@@ -104,6 +104,119 @@ export async function nominatimFetch(url, init = {}) {
   }
 }
 
+const DEBUG_NOMINATIM = process.env.DEBUG_NOMINATIM === "1" || process.env.DEBUG_NOMINATIM === "true";
+
+/**
+ * Búsqueda libre Nominatim (`q`), alineada a la UI web (sin parámetros street/city).
+ * Por defecto puede omitir `countrycodes` (la UI pública no siempre lo envía; algunas queries largas fallan con él).
+ *
+ * @param {string} query
+ * @param {{
+ *   limit?: number,
+ *   acceptLanguage?: string,
+ *   addressdetails?: boolean,
+ *   omitCountryCodes?: boolean,
+ *   countrycodes?: string | false | null,
+ * }} [options]
+ * @returns {Promise<object[]>}
+ */
+export async function nominatimSearchFreeForm(query, options = {}) {
+  const q = String(query || "").trim();
+  if (q.length < 2) return [];
+  await throttle();
+  const lim = Math.min(50, Math.max(1, Number(options.limit) || 8));
+  const p = new URLSearchParams({
+    format: "json",
+    limit: String(lim),
+    "accept-language": options.acceptLanguage || "es",
+  });
+  if (options.addressdetails !== false) {
+    p.set("addressdetails", "1");
+  }
+  p.set("q", q);
+  const email = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "";
+  if (email) p.set("email", email);
+
+  const omitCC = options.omitCountryCodes === true;
+  if (!omitCC) {
+    const cc =
+      options.countrycodes !== undefined && options.countrycodes !== null && options.countrycodes !== false
+        ? String(options.countrycodes)
+        : "ar";
+    if (cc) p.set("countrycodes", cc);
+  }
+
+  const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
+  if (DEBUG_NOMINATIM) {
+    console.log(`[nominatimClient] nominatimSearchFreeForm: ${url.slice(0, 400)}`);
+  }
+  try {
+    const res = await nominatimFetch(url);
+    if (!res.ok) {
+      if (DEBUG_NOMINATIM) console.warn(`[nominatimClient] nominatimSearchFreeForm HTTP ${res.status}`);
+      return [];
+    }
+    const arr = await res.json();
+    if (DEBUG_NOMINATIM) {
+      const n = Array.isArray(arr) ? arr.length : 0;
+      const sample = Array.isArray(arr) && arr[0] ? JSON.stringify(arr[0]).slice(0, 600) : "";
+      console.log(`[nominatimClient] nominatimSearchFreeForm: ${n} hit(s) ${sample ? `ej: ${sample}` : ""}`);
+    }
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.error("[nominatimClient] nominatimSearchFreeForm:", e?.message || e);
+    return [];
+  }
+}
+
+/**
+ * Elige el mejor resultado de una búsqueda libre para WhatsApp: prioriza localidad + calle; la provincia en OSM a veces viene vacía.
+ * @param {object[]} hits
+ * @param {{
+ *   filterLocalidad?: string,
+ *   filterState?: string,
+ *   filterCalle?: string,
+ *   filterCalleAlt?: string,
+ * }} [opts]
+ */
+export function pickFreeFormHitForWhatsapp(hits, opts = {}) {
+  if (!Array.isArray(hits) || !hits.length) return null;
+  const filterLoc = opts.filterLocalidad != null ? String(opts.filterLocalidad).trim() : "";
+  const filterSt = opts.filterState != null ? String(opts.filterState).trim() : "";
+  const fc = opts.filterCalle != null ? String(opts.filterCalle).trim() : "";
+  const fca = opts.filterCalleAlt != null ? String(opts.filterCalleAlt).trim() : "";
+  const sorted = [...hits].sort((a, b) => (Number(b.importance) || 0) - (Number(a.importance) || 0));
+
+  const calleOk = (h) =>
+    fc.length < 2 ||
+    nominatimHitMatchesCalle(h, fc) ||
+    (fca.length >= 2 && nominatimHitMatchesCalle(h, fca));
+
+  const stateOk = (h) => {
+    if (filterSt.length < 2) return true;
+    const hs = stateFromNominatimHit(h);
+    if (hs == null || String(hs).trim().length < 2) return true;
+    return nominatimStateMatchesTenant(hs, filterSt);
+  };
+
+  for (const h of sorted) {
+    if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
+    if (!stateOk(h)) continue;
+    if (!calleOk(h)) continue;
+    return h;
+  }
+  for (const h of sorted) {
+    if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
+    if (!calleOk(h)) continue;
+    return h;
+  }
+  for (const h of sorted) {
+    if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
+    return h;
+  }
+  return sorted[0] || null;
+}
+
 function nominatimBaseParams() {
   return new URLSearchParams({
     format: "json",
@@ -458,6 +571,11 @@ async function nominatimSearch(params) {
   return Array.isArray(arr) ? arr : [];
 }
 
+/** Búsqueda estructurada (street, city, country, …) — mismo motor que el pipeline admin/no Simple-q. */
+export async function nominatimSearchStructured(params) {
+  return nominatimSearch(params);
+}
+
 function scoreStructuredHit(hit, wantHouse) {
   const hn = hit.address?.house_number;
   const parsed = hn != null ? parseHouseNumberInt(String(hn)) : null;
@@ -534,6 +652,7 @@ function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCe
  *   filterCalle?: string,
  *   filterCalleAlt?: string,
  *   nominatimLimit?: string | number,
+ *   skipStateFilter?: boolean,
  * } | undefined} opts
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string } | null>}
  */
@@ -562,8 +681,12 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   if (filterLoc.length >= 2) {
     candidates = candidates.filter((h) => nominatimHitStrictLocalidad(h, filterLoc));
   }
-  if (filterSt.length >= 2) {
-    candidates = candidates.filter((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), filterSt));
+  if (filterSt.length >= 2 && !opts.skipStateFilter) {
+    candidates = candidates.filter((h) => {
+      const hs = stateFromNominatimHit(h);
+      if (hs == null || String(hs).trim().length < 2) return true;
+      return nominatimStateMatchesTenant(hs, filterSt);
+    });
   }
   if (fc.length >= 2) {
     candidates = candidates.filter(
@@ -737,7 +860,8 @@ export function hasMeaningfulHouseNumber(numeroStr) {
 /**
  * Pipeline “tipo Nominatim Simple” para domicilio estructurado: solo `q` + JSON (throttle global del módulo).
  * Segmentos lógicos: `calleSinPrefijoTipoViaParaQuery(calle)` + número + localidad → variantes de `q`.
- * Sin búsqueda estructurada, sin interpolación, sin viewbox previo (menos llamadas; política OSM).
+ * Modo WhatsApp (`NOMINATIM_WHATSAPP_SEARCH_MODE=free-form`, default): búsqueda libre tipo UI web + omisión opcional de countrycodes.
+ * Sin búsqueda estructurada street/city en este paso, sin interpolación, sin viewbox previo (menos llamadas; política OSM).
  *
  * @param {{ calle: string, numero?: string, localidad: string, stateOrProvince?: string, postalCode?: string }} o
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string, audit?: object } | null>}
@@ -756,6 +880,13 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     .trim()
     .replace(/\D/g, "");
 
+  const mode = String(process.env.NOMINATIM_WHATSAPP_SEARCH_MODE || "free-form")
+    .trim()
+    .toLowerCase();
+  const useFreeForm = mode !== "structured" && mode !== "legacy";
+  const enableFb =
+    process.env.NOMINATIM_ENABLE_FALLBACKS !== "0" && process.env.NOMINATIM_ENABLE_FALLBACKS !== "false";
+
   const qList = [];
   const pushQ = (qx) => {
     const s = String(qx || "")
@@ -763,6 +894,13 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
       .trim();
     if (s.length >= 4 && !qList.includes(s)) qList.push(s);
   };
+
+  /** Queries cortas primero (la UI web suele acertar; algunas queries largas “… Entre Ríos Argentina” devuelven []). */
+  const priorityMinimal = [];
+  if (numPart) {
+    priorityMinimal.push(`${calleCore} ${numPart} ${loc}`.replace(/\s+/g, " ").trim());
+    priorityMinimal.push(`${calleCore} ${numPart}, ${loc}`.replace(/\s+/g, " ").trim());
+  }
 
   let calleSinTilde = calleCore;
   try {
@@ -785,6 +923,8 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     pushQ(`${calleCore}, ${loc}`);
   }
 
+  const qListOrdered = [...new Set([...priorityMinimal.filter((x) => x.length >= 4), ...qList])];
+
   const geoOptsBase = {
     filterLocalidad: loc,
     filterState: state,
@@ -794,10 +934,83 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     nominatimLimit: 25,
   };
 
-  for (const qx of qList) {
+  const hitToSimpleResult = (hit, qx, auditExtra = {}) => {
+    const lat = Number(hit.lat);
+    const lng = Number(hit.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const barrio = barrioDesdeNominatimAddress(hit.address);
+    const postcode = postcodeDesdeNominatimAddress(hit.address);
+    return {
+      lat,
+      lng,
+      displayName: String(hit.display_name || qx).trim(),
+      ...(barrio ? { barrio } : {}),
+      ...(postcode ? { postcode } : {}),
+      audit: { source: "nominatim_simple_q_freeform", q: qx, approximate: false, ...auditExtra },
+    };
+  };
+
+  if (useFreeForm) {
+    const omitFirst =
+      process.env.NOMINATIM_FREEFORM_OMIT_COUNTRYCODES_FIRST !== "0" &&
+      process.env.NOMINATIM_FREEFORM_OMIT_COUNTRYCODES_FIRST !== "false";
+    const passes = omitFirst
+      ? [
+          { omitCountryCodes: true, tag: "omit_cc" },
+          { omitCountryCodes: false, tag: "cc_ar" },
+        ]
+      : [
+          { omitCountryCodes: false, tag: "cc_ar" },
+          { omitCountryCodes: true, tag: "omit_cc" },
+        ];
+
+    for (const qx of qListOrdered) {
+      for (const { omitCountryCodes, tag } of passes) {
+        const hits = await nominatimSearchFreeForm(qx, {
+          limit: 15,
+          omitCountryCodes,
+          addressdetails: true,
+        });
+        const hit = pickFreeFormHitForWhatsapp(hits, geoOptsBase);
+        const g = hit ? hitToSimpleResult(hit, qx, { freeFormPass: tag }) : null;
+        if (g) return g;
+      }
+    }
+
+    if (enableFb && numPart) {
+      const fb = [
+        `${calleCore} ${loc}, Argentina`,
+        `${calleCore}, ${loc}`,
+        `${loc}, Argentina`,
+      ];
+      if (state.length >= 2) fb.push(`${loc}, ${state}, Argentina`);
+      for (const qx of fb) {
+        const s = qx.replace(/\s+/g, " ").trim();
+        if (s.length < 4) continue;
+        for (const omitCountryCodes of [true, false]) {
+          const hits = await nominatimSearchFreeForm(s, { limit: 8, omitCountryCodes, addressdetails: true });
+          const hit = pickFreeFormHitForWhatsapp(hits, geoOptsBase);
+          const g = hit ? hitToSimpleResult(hit, s, { freeFormPass: "fallback", fallback: true }) : null;
+          if (g) return g;
+        }
+      }
+    }
+  }
+
+  for (const qx of qListOrdered) {
     const g = await geocodeAddressArgentina(qx, geoOptsBase);
     if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
       return { ...g, audit: { source: "nominatim_simple_q", q: qx, approximate: false } };
+    }
+  }
+
+  for (const qx of qListOrdered) {
+    const g = await geocodeAddressArgentina(qx, { ...geoOptsBase, skipStateFilter: true });
+    if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
+      return {
+        ...g,
+        audit: { source: "nominatim_simple_q", q: qx, approximate: false, relaxed: "skip_state_osm_null" },
+      };
     }
   }
 
