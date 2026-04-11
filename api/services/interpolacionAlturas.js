@@ -11,6 +11,15 @@
 const OVERPASS_API = "https://overpass-api.de/api/interpreter";
 const NOMINATIM_API = "https://nominatim.openstreetmap.org";
 
+/** Valida lat/lng finitos y en rango WGS84 */
+function coordsOk(lat, lng) {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+  if (Math.abs(la) > 90 || Math.abs(lo) > 180) return false;
+  return true;
+}
+
 /**
  * Calcula la distancia entre dos puntos WGS84 en metros (Haversine)
  */
@@ -270,6 +279,45 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
   // ESTRATEGIA 1: Buscar el número exacto primero
   const numeroInt = parseInt(String(numero).replace(/\D/g, ""), 10);
   if (Number.isFinite(numeroInt) && numeroInt > 0) {
+    const headersN = { "User-Agent": "GestorNova/1.0 (geocoding)" };
+
+    // 1a) Búsqueda estructurada (mejor para "Calle N + ciudad", p.ej. Sarmiento 102, Cerrito)
+    try {
+      const structured = new URLSearchParams({
+        street: `${calleClean} ${numeroInt}`,
+        city: locClean,
+        country: "Argentina",
+        format: "json",
+        addressdetails: "1",
+        limit: "5",
+        layer: "address",
+        "accept-language": "es",
+        countrycodes: "ar",
+      });
+      if (provClean) structured.set("state", provClean);
+
+      const urlStruct = `${NOMINATIM_API}/search?${structured}`;
+      console.info("[rango-numeracion] Nominatim structured: street=%s, city=%s", `${calleClean} ${numeroInt}`, locClean);
+
+      const respStruct = await fetch(urlStruct, { headers: headersN });
+      if (respStruct.ok) {
+        const resStruct = await respStruct.json();
+        if (resStruct && resStruct.length > 0) {
+          const mejor = resStruct[0];
+          if (mejor.lat != null && mejor.lon != null && coordsOk(mejor.lat, mejor.lon)) {
+            console.info("[rango-numeracion] ✓ Nominatim (structured) número exacto: lat=%s, lon=%s", mejor.lat, mejor.lon);
+            return {
+              min: numeroInt - 50,
+              max: numeroInt + 50,
+              exacto: { lat: parseFloat(mejor.lat), lng: parseFloat(mejor.lon) },
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[rango-numeracion] structured search:", e?.message || e);
+    }
+
     const qExacto = provClean
       ? `${calleClean} ${numeroInt}, ${locClean}, ${provClean}, Argentina`
       : `${calleClean} ${numeroInt}, ${locClean}, Argentina`;
@@ -280,13 +328,16 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
         format: "json",
         addressdetails: "1",
         limit: "3",
+        layer: "address",
+        "accept-language": "es",
+        countrycodes: "ar",
       });
     
-    console.info("[rango-numeracion] Buscando número exacto: %s", qExacto);
+    console.info("[rango-numeracion] Buscando número exacto (q): %s", qExacto);
     
     try {
       const respExacto = await fetch(urlExacto, {
-        headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+        headers: headersN,
       });
       
       if (respExacto.ok) {
@@ -468,15 +519,15 @@ function interpolarSobreCalle(coords, numero, min, max) {
  * @returns {Promise<{lat: number, lng: number, fuente: string, metadata: object, log: string[]} | null>}
  */
 export async function interpolarCoordenadaPorAltura(opts) {
+  const log = [];
+  try {
   const calle = opts.calle ? String(opts.calle).trim() : "";
   const numeroStr = opts.numero ? String(opts.numero).trim() : "";
   const localidad = opts.localidad ? String(opts.localidad).trim() : "";
   const provincia = opts.provincia ? String(opts.provincia).trim() : "";
   
-  // Array de logs para diagnóstico visible
-  const log = [];
-  
-  log.push(`📍 Dirección solicitada: ${calle} ${numero}, ${localidad}`);
+  // No usar `numero` aquí: aún no está declarado (TDZ → ReferenceError)
+  log.push(`📍 Dirección solicitada: ${calle} ${numeroStr || "?"}, ${localidad}`);
   
   if (!calle || calle.length < 2) {
     log.push(`❌ Calle vacía o muy corta: "${calle}"`);
@@ -588,4 +639,16 @@ export async function interpolarCoordenadaPorAltura(opts) {
     },
     log,
   };
+  } catch (err) {
+    const msg = err?.message || String(err);
+    log.push(`❌ Error en interpolación municipal: ${msg}`);
+    console.error("[interpolacion-alturas] Error no controlado:", err);
+    return {
+      lat: null,
+      lng: null,
+      fuente: "error_interpolacion_js",
+      metadata: { error: msg },
+      log,
+    };
+  }
 }
