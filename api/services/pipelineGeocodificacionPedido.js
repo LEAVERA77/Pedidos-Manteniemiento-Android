@@ -32,6 +32,7 @@ import {
   FALLBACK_WGS84_ARGENTINA,
 } from "./whatsappGeolocalizacionGarantizada.js";
 import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/sociosCatalogoCoordsFromPedido.js";
+import { buscarCoordenadasVecinoParidadOverpass } from "./overpassVecinosParidad.js";
 
 export { coordsValidasWgs84 };
 
@@ -56,7 +57,7 @@ function inferirModoUbicacion(fuenteStr) {
   if (/region_provincia|fallback_argentina_aprox_obligatorio/i.test(s)) return "region";
   if (/centro_tenant|aprox_area_oficina_tenant|tenant_config/i.test(s)) return "tenant";
   if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
-  if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps/i.test(s))
+  if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps|osm_vecino_paridad/i.test(s))
     return "exacto_aprox";
   return "aprox";
 }
@@ -438,6 +439,58 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         lngFinal = r2.lng;
         fuente = r2.fuente;
         if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT && numT) {
+      const nd = String(numT).replace(/\D/g, "");
+      const nPedido = nd ? parseInt(nd, 10) : NaN;
+      if (Number.isFinite(nPedido) && nPedido > 0) {
+        L("\n📍 PASO 4b: Vecino OSM — misma calle, misma paridad (±20 / ±40 vía Overpass)");
+        await teleRecord(tele, "overpass_vecinos_inicio", { numero_pedido: nPedido, calle: String(calleT).slice(0, 80) });
+        const tOv = Date.now();
+        try {
+          const vec = await buscarCoordenadasVecinoParidadOverpass({
+            calle: calleT,
+            numeroPedido: nPedido,
+            localidad: locT,
+            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : null,
+            postalDigits,
+          });
+          const okHit = vec && coordsValidasWgs84(vec.lat, vec.lng);
+          await teleRecord(tele, "overpass_vecinos_fin", {
+            ms: Date.now() - tOv,
+            ok: !!okHit,
+            elegido: vec
+              ? {
+                  numero_osm: vec.numero_osm,
+                  numero_pedido: vec.numero_pedido,
+                  delta: vec.delta,
+                  rango: vec.rangoUsado,
+                }
+              : null,
+          });
+          if (vec?.rangoUsado === 40) {
+            await teleRecord(tele, "overpass_vecinos_ampliacion", { radio: 40, motivo: "sin_candidato_pm20" });
+          }
+          if (okHit) {
+            latFinal = vec.lat;
+            lngFinal = vec.lng;
+            fuente = vec.fuente || "osm_vecino_paridad";
+            L(
+              `  ✓ Vecino OSM: n° calle ${vec.numero_osm} (Δ${vec.delta}, rango ±${vec.rangoUsado}) → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`
+            );
+          } else {
+            L(`  → Sin vecino útil en OSM (misma paridad en ventana numérica)`);
+          }
+        } catch (err) {
+          await teleRecord(tele, "overpass_vecinos_fin", {
+            ms: Date.now() - tOv,
+            ok: false,
+            err: String(err?.message || err).slice(0, 400),
+          });
+          L(`  ⚠️ PASO 4b Overpass vecinos: ${err?.message || err}`);
+        }
       }
     }
 

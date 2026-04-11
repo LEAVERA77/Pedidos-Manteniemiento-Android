@@ -3060,6 +3060,30 @@ let _gnGeocodeLogPersistTimer = null;
 let _gnGeocodeLogDockBound = false;
 /** Polling lista operaciones geocod WA (panel admin abierto). */
 let _gnWaGeoOpsPollTimer = null;
+/** Usuario pausó explícitamente el auto-refresh. */
+let _gnWaGeoOpsUserPaused = false;
+
+function _gnWaGeoOpsListHasOpenDetails(listEl) {
+    if (!listEl) return false;
+    try {
+        return !!listEl.querySelector('details.gn-wa-geo-op[open]');
+    } catch (_) {
+        return false;
+    }
+}
+
+function _gnWaGeoOpsShouldSkipAutoRefresh(listEl) {
+    return _gnWaGeoOpsUserPaused || _gnWaGeoOpsListHasOpenDetails(listEl);
+}
+
+function _gnWaGeoOpsSyncPauseButtonUi() {
+    const btn = document.getElementById('gn-wa-geo-ops-pause');
+    if (!btn) return;
+    const paused = _gnWaGeoOpsUserPaused;
+    btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+    btn.textContent = paused ? 'Reanudar auto' : 'Pausar auto';
+    btn.title = paused ? 'Reanudar actualización automática cada ~2,5 s' : 'Pausar el refresco automático (podés seguir leyendo o copiando)';
+}
 
 function _gnEscWaHtml(s) {
     return String(s)
@@ -3069,8 +3093,11 @@ function _gnEscWaHtml(s) {
         .replace(/"/g, '&quot;');
 }
 
-/** Admin: GET /api/admin/geocod-wa-operaciones (últimas N filas del tenant). */
-function gnWaGeoOpsRefresh() {
+/**
+ * Admin: GET /api/admin/geocod-wa-operaciones (últimas N filas del tenant).
+ * @param {boolean} [force] — si true, ignora pausa y `<details open>` (p. ej. "Actualizar ahora").
+ */
+function gnWaGeoOpsRefresh(force) {
     const wrap = document.getElementById('gn-wa-geo-ops-list');
     if (!wrap) return;
     if (typeof esAdmin !== 'function' || !esAdmin()) {
@@ -3086,22 +3113,28 @@ function gnWaGeoOpsRefresh() {
         wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">Iniciá sesión para ver operaciones del servidor.</p>';
         return;
     }
+    if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) {
+        return;
+    }
     (async () => {
         try {
             const r = await fetch(apiUrl('/api/admin/geocod-wa-operaciones?limit=15'), {
                 headers: { Authorization: `Bearer ${tok}` },
             });
             if (!r.ok) {
+                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
                 wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(`No se pudo cargar (${r.status}).`)}</p>`;
                 return;
             }
             const j = await r.json();
             const items = j.items || [];
             if (!items.length) {
+                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
                 wrap.innerHTML =
                     '<p class="gn-wa-geo-ops-msg">Sin operaciones recientes (o migración <code>geocod_wa_operaciones</code> pendiente en la API).</p>';
                 return;
             }
+            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
             wrap.innerHTML = items
                 .map((row) => {
                     const st = String(row.estado || '');
@@ -3137,6 +3170,7 @@ function gnWaGeoOpsRefresh() {
                 })
                 .join('');
         } catch (e) {
+            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
             wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(String(e && e.message ? e.message : e))}</p>`;
         }
     })();
@@ -3144,8 +3178,8 @@ function gnWaGeoOpsRefresh() {
 
 function gnWaGeoOpsStartPoll() {
     gnWaGeoOpsStopPoll();
-    gnWaGeoOpsRefresh();
-    _gnWaGeoOpsPollTimer = setInterval(gnWaGeoOpsRefresh, 2500);
+    gnWaGeoOpsRefresh(true);
+    _gnWaGeoOpsPollTimer = setInterval(() => gnWaGeoOpsRefresh(false), 2500);
 }
 
 function gnWaGeoOpsStopPoll() {
@@ -3309,7 +3343,13 @@ function gnGeocodeAdminLogBindDockOnce() {
         if (typeof toast === 'function') toast('Registro de geocodificación vaciado.', 'info');
     });
     document.getElementById('gn-geocode-log-copy')?.addEventListener('click', gnGeocodeUiLogCopyAll);
-    document.getElementById('gn-wa-geo-ops-refresh')?.addEventListener('click', () => gnWaGeoOpsRefresh());
+    document.getElementById('gn-wa-geo-ops-refresh')?.addEventListener('click', () => gnWaGeoOpsRefresh(true));
+    document.getElementById('gn-wa-geo-ops-pause')?.addEventListener('click', () => {
+        _gnWaGeoOpsUserPaused = !_gnWaGeoOpsUserPaused;
+        _gnWaGeoOpsSyncPauseButtonUi();
+        if (!_gnWaGeoOpsUserPaused) gnWaGeoOpsRefresh(false);
+    });
+    _gnWaGeoOpsSyncPauseButtonUi();
     try {
         const raw = sessionStorage.getItem(GN_GEOCODE_LOG_STORAGE_KEY);
         const arr = raw ? JSON.parse(raw) : null;
