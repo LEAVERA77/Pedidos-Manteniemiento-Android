@@ -81,6 +81,15 @@ export function createHttpApp() {
     }
   });
 
+  /** Comparar con `git log` del repo: Render inyecta `RENDER_GIT_COMMIT` si el build viene de Git. */
+  app.get("/api/health/deploy", (_req, res) => {
+    res.json({
+      service: "pedidosmg-api",
+      gitCommit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.SOURCE_VERSION || null,
+      node: process.version,
+    });
+  });
+
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/admin/geocod-wa-operaciones", geocodWaOperacionesRoutes);

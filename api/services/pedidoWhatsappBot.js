@@ -538,6 +538,22 @@ export async function crearPedidoDesdeWhatsappBot({
   const lngIdx = finalized.lngIdx;
 
   const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
+  if (process.env.DEBUG_WA_PEDIDO_INSERT === "1" || process.env.DEBUG_WA_PEDIDO_INSERT === "true") {
+    const li = cols.indexOf("lat");
+    const gi = cols.indexOf("lng");
+    try {
+      console.log(
+        JSON.stringify({
+          evt: "DEBUG_INSERT",
+          latIndex: li,
+          lngIndex: gi,
+          latValue: li >= 0 ? vals[li] : null,
+          lngValue: gi >= 0 ? vals[gi] : null,
+          checkPasses: li >= 0 && gi >= 0 ? parLatLngPasaCheckWhatsappDb(vals[li], vals[gi]) : false,
+        })
+      );
+    } catch (_) {}
+  }
   let insert;
   try {
     insert = await query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);
