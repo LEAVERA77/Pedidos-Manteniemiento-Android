@@ -55,11 +55,11 @@ try {
     git push origin main 2>&1 | Out-Null
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "[hook] ✓ Push exitoso. Deploy automático en progreso..." -ForegroundColor Green
+        Write-Host "[hook] Push exitoso. Deploy automatico en progreso..." -ForegroundColor Green
         Write-Host "      GitHub Pages: https://leavera77.github.io/Pedidos-MG/" -ForegroundColor Gray
         Write-Host "      Render API: https://nexxo-api-418k.onrender.com/" -ForegroundColor Gray
     } else {
-        Write-Host "[hook] ✗ Error en push. Revisa manualmente Pedidos-MG" -ForegroundColor Red
+        Write-Host "[hook] Error en push. Revisa manualmente Pedidos-MG" -ForegroundColor Red
     }
     
 } catch {
