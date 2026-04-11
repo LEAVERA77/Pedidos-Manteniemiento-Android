@@ -2902,7 +2902,17 @@ const norm = p => ({
         p.solicitud_derivacion_usuario_id != null
             ? parseInt(p.solicitud_derivacion_usuario_id, 10)
             : null,
-    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim()
+    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
+    wgeo: (() => {
+        const g = p.geocode_log_whatsapp;
+        if (g == null || g === '') return null;
+        if (typeof g === 'object' && !Array.isArray(g)) return g;
+        try {
+            return JSON.parse(String(g));
+        } catch (_) {
+            return null;
+        }
+    })(),
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -3178,6 +3188,45 @@ function gnGeocodeAdminLogBindDockOnce() {
             body.scrollTop = body.scrollHeight;
         }
     } catch (_) {}
+}
+
+/** Admin: inyecta en el dock el log de re-geocodificación guardado en servidor (pedidos WhatsApp). Una vez por sesión de navegador y pedido. */
+function gnGeocodePrecargarWhatsappRegeoLog(p) {
+    if (typeof esAdmin !== 'function' || !esAdmin()) return;
+    if (!p || String(p.orc || '').toLowerCase() !== 'whatsapp') return;
+    const w = p.wgeo;
+    if (!w || typeof w !== 'object') return;
+    const key = `gn_wa_geolog_done_${p.id}`;
+    try {
+        if (sessionStorage.getItem(key) === '1') return;
+        sessionStorage.setItem(key, '1');
+    } catch (_) {}
+    gnGeocodeAdminLogBindDockOnce();
+    gnGeocodeUiLogStartSession(`Re-geocodificación en servidor — pedido WhatsApp #${p.id}`);
+    if (w.at) gnGeocodeUiLogAppend('info', `Instante: ${w.at}`);
+    gnGeocodeUiLogAppend(
+        'info',
+        `Resumen servidor: ${w.success ? 'coords OK' : 'sin coords'} · fuente: ${w.fuente != null ? String(w.fuente) : '—'}`
+    );
+    if (w.mensaje) gnGeocodeUiLogAppend(w.success ? 'info' : 'warn', String(w.mensaje));
+    const lines = Array.isArray(w.log) ? w.log : [];
+    for (const line of lines.slice(0, 150)) {
+        gnGeocodeUiLogAppend('info', String(line));
+    }
+    const pinOk = w.pin_ok === true || (w.success && coordsSonPinValidasMapaWgs84(w.lat, w.lng));
+    if (pinOk && Number.isFinite(Number(w.lat)) && Number.isFinite(Number(w.lng))) {
+        gnGeocodeUiLogAppend(
+            'info',
+            `Pin (servidor): SÍ (${Number(w.lat).toFixed(5)}, ${Number(w.lng).toFixed(5)})`
+        );
+    } else {
+        gnGeocodeUiLogAppend(
+            'warn',
+            'Pin (servidor): NO — revisá domicilio o usá Re-geocodificar en el detalle.'
+        );
+    }
+    gnGeocodeUiLogEndSession();
+    gnGeocodeAdminLogOpenPanel();
 }
 
 if (typeof window !== 'undefined') {
@@ -9570,6 +9619,9 @@ async function detalle(p) {
             if (fr) p = fr;
         }
     }
+    try {
+        gnGeocodePrecargarWhatsappRegeoLog(p);
+    } catch (_) {}
     const pidKey = String(p.id);
     try {
         const dmRoot = document.getElementById('dm');

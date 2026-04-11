@@ -131,6 +131,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_suministro_fases",
   "awaiting_opcional_id",
   "awaiting_nis_whatsapp",
+  "awaiting_confirmar_resumen",
 ]);
 
 /** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
@@ -155,6 +156,99 @@ function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
     return true;
   }
   return false;
+}
+
+/** Localidad: mínimo útil, al menos una letra, no solo números/símbolos; lista negra corta. */
+const LOCALIDAD_BLACKLIST = new Set([
+  "asd",
+  "qwe",
+  "xxx",
+  "test",
+  "prueba",
+  "aaa",
+  "eee",
+  "fff",
+  "na",
+  "s/n",
+  "sn",
+  "n/a",
+  "hola",
+  "ninguna",
+  "ninguno",
+]);
+
+function validarLocalidadWhatsApp(raw) {
+  const t = String(raw || "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,.;-]+|[\s,.;-]+$/g, "")
+    .trim();
+  if (t.length < 3) {
+    return {
+      ok: false,
+      msg: "La *ciudad o localidad* debe tener al menos *3 caracteres*. Escribí el nombre completo (ej: *Hasenkamp*, *Rosario*).",
+    };
+  }
+  if (!/[a-záéíóúüñ]/i.test(t)) {
+    return {
+      ok: false,
+      msg: "La localidad debe incluir *letras* (no solo números o símbolos). Probá de nuevo.",
+    };
+  }
+  const lower = t
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (LOCALIDAD_BLACKLIST.has(lower)) {
+    return {
+      ok: false,
+      msg: "Ese texto no sirve como *localidad*. Escribí el nombre real de tu ciudad o pueblo.",
+    };
+  }
+  if (/^[\d\s.\-_,;]+$/.test(t)) {
+    return { ok: false, msg: "La localidad no puede ser *solo números*. Escribí el nombre con letras." };
+  }
+  return { ok: true, value: t };
+}
+
+/** Calle: al menos 2 caracteres y al menos una letra. */
+function validarCalleWhatsApp(raw) {
+  const t = String(raw || "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,.;-]+|[\s,.;-]+$/g, "")
+    .trim();
+  if (t.length < 2) {
+    return { ok: false, msg: "Indicá el *nombre de la calle* con al menos 2 caracteres." };
+  }
+  if (!/[a-záéíóúüñ]/i.test(t)) {
+    return { ok: false, msg: "El nombre de calle debe tener *letras* (no solo números o símbolos)." };
+  }
+  return { ok: true, value: t };
+}
+
+/** Puerta: solo dígitos, 1 a 6; *0* = sin número / no aplica. */
+function validarNumeroPuertaWhatsApp(raw) {
+  const t = String(raw || "").trim();
+  if (t === "0") return { ok: true, value: "0" };
+  if (!/^\d{1,6}$/.test(t)) {
+    return {
+      ok: false,
+      msg:
+        "El *número de puerta* debe ser *solo dígitos* (1 a 6 cifras), sin letras ni símbolos. Ejemplo: *315*. Si no hay número, escribí *0*.",
+    };
+  }
+  return { ok: true, value: t };
+}
+
+function interpretaConfirmacionResumenWhatsapp(raw) {
+  const t = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!t) return null;
+  if (t === "si" || t === "ok" || t === "dale" || t === "listo" || t === "confirmo" || t === "1" || t === "si.") return "si";
+  if (t === "no" || t === "2" || t === "cancelar" || t === "nop") return "no";
+  return null;
 }
 
 /** Número de opción del menú principal solo si el mensaje es únicamente dígitos (evita parseInt("1 texto") === 1). */
@@ -717,11 +811,15 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     ciudad = ciudadTxt.length >= 2 ? ciudadTxt : ext.ciudad;
     calle = calleTxt.length >= 2 ? calleTxt : ext.calle;
     if (stepAddr === "awaiting_addr_numero" && numTxt.length) {
-      numero = numTxt;
+      const vn = validarNumeroPuertaWhatsApp(numTxt);
+      numero = vn.ok ? vn.value : "0";
     } else if (ext.numero && ext.numero !== "0") {
-      numero = ext.numero;
+      const d = String(ext.numero).replace(/\D/g, "").slice(0, 6);
+      numero = d.length ? d : "0";
     } else {
-      numero = numTxt.length ? numTxt : ext.numero || "0";
+      const fallback = numTxt.length ? numTxt : ext.numero || "0";
+      const vn2 = validarNumeroPuertaWhatsApp(String(fallback).trim() || "0");
+      numero = vn2.ok ? vn2.value : "0";
     }
   } else if (ciudadTxt.length >= 2 && calleTxt.length >= 2) {
     ciudad = ciudadTxt;
@@ -913,7 +1011,45 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 }
 
 /**
- * Guarda domicilio estructurado en sesión y cierra el pedido. La ubicación en mapa la resuelve
+ * Resumen legible + confirmación explícita antes del INSERT (`finalizePedidoFromSession`).
+ */
+async function pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId) {
+  const tid = sess.tenantId;
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
+  sess.step = "awaiting_confirmar_resumen";
+  sessions.set(sk, sess);
+  const ident = [];
+  if (sess.nisParaPedido) ident.push(`NIS: *${sess.nisParaPedido}*`);
+  if (sess.medidorParaPedido) ident.push(`Medidor: *${sess.medidorParaPedido}*`);
+  if (sess.nisMedidorParaPedido) ident.push(`NIS/medidor: *${sess.nisMedidorParaPedido}*`);
+  const nom = String(sess.contactName || contactName || "").trim();
+  if (nom && !ident.length) ident.push(`Nombre / titular: *${nom}*`);
+  if (!ident.length) ident.push("Identificación: *solo WhatsApp*");
+  const calle = String(sess.addrCalle || "").trim();
+  const loc = String(sess.addrCiudad || "").trim();
+  const num = String(sess.addrNumero ?? "").trim();
+  const prov = String(sess.addrProvincia || "").trim();
+  const desc = String(sess.descripcion || "").trim();
+  const descShort = desc.length > 220 ? `${desc.slice(0, 217)}…` : desc;
+  const sumLine =
+    sess.suministroTipoConexion || sess.suministroFases
+      ? `\n*Suministro:* ${String(sess.suministroTipoConexion || "—")} · ${String(sess.suministroFases || "—")}`
+      : "";
+  const body =
+    `*Resumen del reclamo*\n\n` +
+    `${ident.join(" · ")}\n` +
+    `*Tipo:* ${String(sess.tipo || "—")}\n` +
+    `*Domicilio:* ${calle} ${num === "0" ? "(s/n)" : num}, *${loc}*${prov ? `, *${prov}*` : ""}` +
+    sumLine +
+    `\n\n*Descripción:*\n${descShort || "—"}` +
+    `\n\n¿*Confirmás* el registro?\n` +
+    `Respondé *SI* o *1* para cargar el reclamo.\n` +
+    `Si querés corregir *calle o número*, escribí *atrás*. *menú* = cancelar todo.`;
+  await reply(phone, body + MSG_SALIR_ATRAS, tid, wpid);
+}
+
+/**
+ * Guarda domicilio estructurado en sesión y pide confirmación (INSERT tras SI). La ubicación en mapa la resuelve
  * `regeocodificarPedido` en el servidor (mismo pipeline que el botón Re-geocodificar).
  * Pedidos WhatsApp: solo estrategia API Simple / parámetro `q` (sin interpolación previa al INSERT).
  * Solo se usan coordenadas aquí si el usuario compartió GPS válido (`userSharedGps`).
@@ -935,7 +1071,14 @@ async function geocodeStructuredAddressAndFinalizePedido(
   const ciudad = String(addrCiudad || "").trim();
   const calle = String(addrCalle || "").trim();
   const numRaw = String(addrNumero ?? "").trim();
-  const numero = numRaw.length ? numRaw : "0";
+  let numero = "0";
+  if (opts.origenCatalogo) {
+    const digits = numRaw.replace(/\D/g, "").slice(0, 6);
+    numero = digits.length ? digits : "0";
+  } else {
+    const nv = validarNumeroPuertaWhatsApp(numRaw.length ? numRaw : "0");
+    numero = nv.ok ? nv.value : "0";
+  }
   sess.addrCiudad = ciudad;
   sess.addrCalle = calle;
   sess.addrNumero = numero;
@@ -995,7 +1138,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   }
 
   sessions.set(sk, sess);
-  await finalizePedidoFromSession(phone, sess, contactName);
+  await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId);
 }
 
 /** Cloud API: máximo 10 filas en una lista interactiva. */
@@ -1753,7 +1896,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       const extraPad = lineasExtraPadronWhatsapp(res);
       await reply(
         phone,
-        `Listo, registramos a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPad}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Registramos el reclamo…`,
+        `Listo, registramos a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPad}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Te mostramos un *resumen* para confirmar…`,
         tid,
         phoneNumberId
       );
@@ -1842,7 +1985,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       const extraPadNis = lineasExtraPadronWhatsapp(res);
       await reply(
         phone,
-        `Listo, registramos el *NIS* y a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPadNis}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Registramos el reclamo…`,
+        `Listo, registramos el *NIS* y a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPadNis}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Te mostramos un *resumen* para confirmar…`,
         tid,
         phoneNumberId
       );
@@ -1911,11 +2054,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
       return;
     }
-    if (t.length < 2) {
-      await reply(phone, "Indicá la *ciudad* o *localidad* con al menos 2 caracteres.", tid, phoneNumberId);
+    const vLoc = validarLocalidadWhatsApp(t);
+    if (!vLoc.ok) {
+      await reply(phone, vLoc.msg, tid, phoneNumberId);
       return;
     }
-    sess.addrCiudad = t;
+    sess.addrCiudad = vLoc.value;
     sess.addrCalle = null;
     sess.addrNumero = null;
     delete sess.addrProvincia;
@@ -1962,11 +2106,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
       return;
     }
-    if (t.length < 2) {
-      await reply(phone, "Indicá el *nombre de la calle*.", tid, phoneNumberId);
+    const vCal = validarCalleWhatsApp(t);
+    if (!vCal.ok) {
+      await reply(phone, vCal.msg, tid, phoneNumberId);
       return;
     }
-    sess.addrCalle = t;
+    sess.addrCalle = vCal.value;
     sess.step = "awaiting_addr_numero";
     sessions.set(sk, sess);
     await reply(phone, MSG_ADDR_NUMERO, tid, phoneNumberId);
@@ -2040,6 +2185,62 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
+  if (sess && sess.step === "awaiting_confirmar_resumen") {
+    const t = String(text || "").trim();
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, menuTextoNumerado(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (esComandoAtras(t)) {
+      delete sess.direccionDeclaradaUsuario;
+      delete sess.direccionTexto;
+      delete sess._geocodeSinMapa;
+      sess.addrNumero = null;
+      if (!sess.userSharedGps) {
+        sess.lat = null;
+        sess.lng = null;
+      }
+      sess.step = "awaiting_addr_numero";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Volvimos al *número de puerta*. Corregí el dato y seguimos.\n\n" + MSG_ADDR_NUMERO,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const conf = interpretaConfirmacionResumenWhatsapp(text);
+    if (conf === "no") {
+      delete sess.direccionDeclaradaUsuario;
+      delete sess.direccionTexto;
+      delete sess._geocodeSinMapa;
+      sess.addrNumero = null;
+      if (!sess.userSharedGps) {
+        sess.lat = null;
+        sess.lng = null;
+      }
+      sess.step = "awaiting_addr_numero";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, "Indicá de nuevo el *número de puerta* (solo dígitos, o *0* si no aplica).\n\n" + MSG_ADDR_NUMERO, tid, phoneNumberId);
+      return;
+    }
+    if (conf === "si") {
+      await finalizePedidoFromSession(phone, sess, contactName);
+      return;
+    }
+    await reply(
+      phone,
+      "No entendimos. Respondé *SI* o *1* para *registrar* el reclamo, *atrás* para corregir calle/número, o *menú* para salir.",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "awaiting_addr_numero") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
@@ -2050,11 +2251,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, MSG_ADDR_CALLE, tid, phoneNumberId);
       return;
     }
-    if (t.length < 1) {
-      await reply(phone, "Indicá el *número de puerta* (o *0* si no aplica).", tid, phoneNumberId);
+    const vNum = validarNumeroPuertaWhatsApp(t);
+    if (!vNum.ok) {
+      await reply(phone, vNum.msg, tid, phoneNumberId);
       return;
     }
-    sess.addrNumero = t;
+    sess.addrNumero = vNum.value;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await geocodeStructuredAddressAndFinalizePedido(

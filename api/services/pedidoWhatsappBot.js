@@ -35,6 +35,38 @@ async function columnasPedidos() {
   return _pedidosColsCache;
 }
 
+/** Persiste en BD el log de regeo automático (WhatsApp) para el panel admin; no falla si la columna no existe aún. */
+export async function persistirGeocodeLogWhatsappEnPedido(pedidoId, tenantId, resultado) {
+  if (!pedidoId || !Number.isFinite(Number(pedidoId)) || !resultado) return;
+  try {
+    const chk = await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'geocode_log_whatsapp'
+       LIMIT 1`
+    );
+    if (!chk.rows?.length) return;
+    const pin_ok =
+      !!resultado.success &&
+      coordsValidasWgs84(resultado.lat, resultado.lng);
+    const payload = {
+      at: new Date().toISOString(),
+      success: !!resultado.success,
+      pin_ok,
+      fuente: resultado.fuente || null,
+      mensaje: resultado.mensaje || null,
+      lat: resultado.lat != null ? Number(resultado.lat) : null,
+      lng: resultado.lng != null ? Number(resultado.lng) : null,
+      log: Array.isArray(resultado.log) ? resultado.log.slice(0, 500) : [],
+    };
+    await query(
+      `UPDATE pedidos SET geocode_log_whatsapp = $1::jsonb WHERE id = $2 AND tenant_id = $3`,
+      [JSON.stringify(payload), pedidoId, tenantId]
+    );
+  } catch (e) {
+    console.warn("[pedido-whatsapp-bot] geocode_log_whatsapp UPDATE", e?.message || e);
+  }
+}
+
 export async function getFirstAdminUserIdForTenant(tenantId) {
   const colSet = await columnasUsuarios();
   const hasTenant = colSet.has("tenant_id");
@@ -410,9 +442,14 @@ export async function crearPedidoDesdeWhatsappBot({
       silent: true,
       preferSimpleQNominatim: true,
     })
-      .then((res) =>
-        notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res, { silent: true })
-      )
+      .then(async (res) => {
+        try {
+          await persistirGeocodeLogWhatsappEnPedido(Number(pedidoRow.id), Number(tenantId), res);
+        } catch (e) {
+          console.warn("[pedido-whatsapp-bot] persist geocode_log_whatsapp", e?.message || e);
+        }
+        return notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res, { silent: true });
+      })
       .catch((e) => console.warn("[pedido-whatsapp-bot] regeo automático", e?.message || e));
   });
   return pedidoRow;
