@@ -214,8 +214,12 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       if (!calleBusqueda || !locT) return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
 
       if (simpleQOnly) {
+        const waMode = String(process.env.NOMINATIM_WHATSAPP_SEARCH_MODE || "free-form").trim();
         L(
           `\n🌍 PASO 3 (WhatsApp): Nominatim Simple-q / free-form (geocodeDomicilioSimpleQArgentina: q tipo UI web, provincia OSM opcional) [calle: "${calleBusqueda}"]`
+        );
+        L(
+          `  ⚙️ NOMINATIM_WHATSAPP_SEARCH_MODE=${waMode} (si es "structured"/"legacy" no se usa la ruta free-form; default free-form)`
         );
         try {
           const sq = await geocodeDomicilioSimpleQArgentina({
@@ -229,6 +233,9 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
             la = sq.lat;
             lo = sq.lng;
             fu = sq.audit?.source || "nominatim_simple_q";
+            if (sq.audit?.q) {
+              L(`  📝 Query audit: q="${String(sq.audit.q).slice(0, 120)}" source=${fu}`);
+            }
             if (sq.postcode) {
               const n = normCp(sq.postcode);
               if (n) {
