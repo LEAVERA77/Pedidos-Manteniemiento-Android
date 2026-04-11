@@ -40,7 +40,7 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
       `SELECT 
         id, nis, medidor, nis_medidor, 
         cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
-        latitud, longitud
+        lat, lng
        FROM pedidos 
        WHERE id = $1 AND tenant_id = $2`,
       [pedidoId, tenantId]
@@ -55,12 +55,12 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
     }
     
     const pedido = pedidoResult.rows[0];
-    const coordsActuales = coordsValidasWgs84(pedido.latitud, pedido.longitud);
+    const coordsActuales = coordsValidasWgs84(pedido.lat, pedido.lng);
     
     log.push(`📦 Pedido #${pedido.id}: ${pedido.cliente_nombre || "Sin nombre"}`);
     log.push(`📍 Dirección: ${pedido.cliente_calle || "?"} ${pedido.cliente_numero_puerta || "?"}, ${pedido.cliente_localidad || "?"}`);
     if (coordsActuales) {
-      log.push(`📌 Coords actuales: ${Number(pedido.latitud).toFixed(6)}, ${Number(pedido.longitud).toFixed(6)}`);
+      log.push(`📌 Coords actuales: ${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}`);
     } else {
       log.push(`⚠️  Sin coordenadas válidas actuales`);
     }
@@ -202,16 +202,16 @@ export async function regeocodificarPedido(pedidoId, tenantId) {
       };
     }
     
-    // Actualizar pedido
+    // Persistir en columnas canónicas del modelo (mismo patrón que PUT /pedidos/:id/coords y coords-manual)
     await query(
       `UPDATE pedidos 
-       SET latitud = $1, longitud = $2, fecha_actualizacion = NOW()
+       SET lat = $1, lng = $2
        WHERE id = $3 AND tenant_id = $4`,
       [latFinal, lngFinal, pedidoId, tenantId]
     );
     
     const cambio = coordsActuales
-      ? `Actualizado de (${Number(pedido.latitud).toFixed(6)}, ${Number(pedido.longitud).toFixed(6)}) → (${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)})`
+      ? `Actualizado de (${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}) → (${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)})`
       : `Agregado: (${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)})`;
     
     log.push(`✅ Re-geocodificación exitosa`);
