@@ -1,0 +1,665 @@
+/**
+ * Pipeline compartido de geocodificación (catálogo + Nominatim + interpolación + fallbacks).
+ * Usado por `regeocodificarPedido` y por la alta WhatsApp previa al INSERT.
+ *
+ * made by leavera77
+ */
+
+import { resolveUbicacionCentralPublic } from "../routes/configUbicacion.js";
+import { separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
+import { normalizarDireccion } from "../utils/normalizarCalles.js";
+import {
+  buscarCoordenadasPorNisMedidor,
+  existeSocioCatalogoPorIdentificadorSinCoords,
+} from "./buscarCoordenadasPorNisMedidor.js";
+import {
+  geocodeAddressArgentina,
+  geocodeCalleNumeroLocalidadArgentina,
+  geocodeDomicilioLineaLibreArgentina,
+  geocodeDomicilioSimpleQArgentina,
+  geocodeLocalityViewboxArgentina,
+  reverseGeocodeArgentina,
+} from "./nominatimClient.js";
+import {
+  interpolarCoordenadaPorAltura,
+  interpolarPaso5dAnclaInicioVia,
+} from "./interpolacionAlturas.js";
+import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
+import { coordsValidasWgs84 } from "./whatsappGeolocalizacionGarantizada.js";
+import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/sociosCatalogoCoordsFromPedido.js";
+
+export { coordsValidasWgs84 };
+
+function normCp(s) {
+  if (s == null) return "";
+  const d = String(s).replace(/\D/g, "");
+  return d.length >= 4 && d.length <= 8 ? d : "";
+}
+
+function inferirModoUbicacion(fuenteStr) {
+  const s = String(fuenteStr || "");
+  if (/interpolacion_via_ancla|interpolacion_alturas_osm/i.test(s)) return "interpolado_via";
+  if (/centro_ciudad_fallback/i.test(s)) return "localidad";
+  if (/region_provincia|fallback_argentina_aprox_obligatorio/i.test(s)) return "region";
+  if (/centro_tenant|aprox_area_oficina_tenant|tenant_config/i.test(s)) return "tenant";
+  if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
+  if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps/i.test(s))
+    return "exacto_aprox";
+  return "aprox";
+}
+
+/**
+ * @param {object} pedido
+ * @param {number|string} tenantId
+ * @param {{
+ *   log?: string[],
+ *   preferSimpleQNominatim?: boolean,
+ *   provinciaTenantPreloaded?: string|null,
+ *   respetarGpsWhatsapp?: boolean,
+ * }} [options]
+ */
+export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, tenantId, options = {}) {
+  const log = options.log != null ? options.log : [];
+  const L = (msg) => {
+    log.push(msg);
+  };
+  const preferSimpleQOpt = !!options.preferSimpleQNominatim;
+  let provinciaTenant = options.provinciaTenantPreloaded;
+  if (provinciaTenant === undefined) {
+    provinciaTenant = await getTenantProvinciaNominatim(tenantId);
+  }
+
+    /* pedido: parámetro */
+    const origenWa =
+      preferSimpleQOpt ||
+      String(pedido.origen_reclamo || "")
+        .trim()
+        .toLowerCase() === "whatsapp";
+    const coordsActuales = coordsValidasWgs84(pedido.lat, pedido.lng);
+
+    const provPed = pedido.provincia != null ? String(pedido.provincia).trim() : "";
+    const provinciaEfectiva = provPed.length >= 2 ? provPed : provinciaTenant || "";
+    const postalDigits = normCp(pedido.codigo_postal);
+
+    L(`📦 Pedido #${pedido.id != null ? pedido.id : "nuevo"}: ${pedido.cliente_nombre || "Sin nombre"}`);
+    L(
+      `📍 Dirección: ${pedido.cliente_calle || "?"} ${pedido.cliente_numero_puerta || "?"}, ${pedido.cliente_localidad || "?"}`
+    );
+    if (provinciaEfectiva) L(`🏛️ Provincia (pedido/tenant): ${provinciaEfectiva}`);
+    if (postalDigits) L(`📮 CP: ${postalDigits}`);
+    if (coordsActuales) {
+      L(`📌 Coords actuales: ${Number(pedido.lat).toFixed(6)}, ${Number(pedido.lng).toFixed(6)}`);
+    } else {
+      L(`⚠️  Sin coordenadas válidas actuales`);
+    }
+
+    const nisT = pedido.nis ? String(pedido.nis).trim() : null;
+    const medT = pedido.medidor ? String(pedido.medidor).trim() : null;
+    const nmT = pedido.nis_medidor ? String(pedido.nis_medidor).trim() : null;
+    let calleT = pedido.cliente_calle ? String(pedido.cliente_calle).trim() : null;
+    const calleOriginalPedido = calleT ? String(calleT).trim() : null;
+    let numT = pedido.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
+    const locT = pedido.cliente_localidad ? String(pedido.cliente_localidad).trim() : null;
+    const nombreT = pedido.cliente_nombre ? String(pedido.cliente_nombre).trim() : null;
+
+    const sepCalle = separarNumeroDuplicadoEnCalle(calleT, numT);
+    if (sepCalle.stripped) {
+      L(
+        `  ✂️ Calle / número alineados (sin duplicar n° en columna calle): "${sepCalle.calle}" · puerta ${sepCalle.numero || numT || "—"}`
+      );
+      calleT = sepCalle.calle;
+      if (!numT && sepCalle.numero) numT = String(sepCalle.numero);
+    }
+
+    if (!calleT && !locT && !nisT && !medT && !nmT) {
+      L("❌ Sin datos suficientes para geocodificar");
+      return {
+        ok: false,
+        motivo: "sin_datos_geocod",
+        mensaje: "Pedido sin dirección ni identificadores",
+        latFinal: null,
+        lngFinal: null,
+        fuente: null,
+        log,
+        _logLines: log.slice(),
+      };
+    }
+
+    let latFinal = null;
+    let lngFinal = null;
+    let fuente = null;
+    /** CP desde resultado directo de Nominatim (forward), si existe. */
+    let nominatimPostcode = null;
+
+    L("\n🔤 PASO 1: Normalización de calle");
+    if (calleT && locT) {
+      try {
+        const normResult = await normalizarDireccion({ calle: calleT, ciudad: locT });
+        if (normResult && normResult.cambio) {
+          L(
+            `  ✓ "${calleT}" → "${normResult.calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%, método: ${normResult.metodo || "similitud"})`
+          );
+          calleT = normResult.calleNormalizada;
+        } else {
+          L(`  ✓ Nombre de calle OK (sin cambios o sin match fuzzy ≥ 0,8 en diccionario)`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en normalización: ${err?.message || err}`);
+      }
+    } else {
+      L(`  → Sin calle/localidad para normalizar`);
+    }
+
+    
+    if (options.respetarGpsWhatsapp === true && !coordsValidasWgs84(latFinal, lngFinal)) {
+      const gla = pedido.lat != null ? Number(pedido.lat) : NaN;
+      const glo = pedido.lng != null ? Number(pedido.lng) : NaN;
+      if (
+        coordsValidasWgs84(gla, glo) &&
+        !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(gla, glo)
+      ) {
+        latFinal = gla;
+        lngFinal = glo;
+        fuente = "whatsapp_gps";
+        L("\n📍 PASO 0: GPS WhatsApp — coordenadas del dispositivo (prioridad)");
+        L(`  ✓ ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+      }
+    }
+
+    const mismoTextoCalle = (a, b) =>
+      String(a || "")
+        .trim()
+        .toLowerCase() ===
+      String(b || "")
+        .trim()
+        .toLowerCase();
+
+    /**
+     * PASO 3 + 3b + 4 con una calle concreta (sin repetir PASO 1 diccionario).
+     * @param {string | null} calleBusqueda
+     */
+    async function ejecutarNominatim3_3b_4(calleBusqueda, opts = {}) {
+      const simpleQOnly = !!opts.simpleQOnly;
+      let la = null;
+      let lo = null;
+      let fu = null;
+      let npc = null;
+      if (!calleBusqueda || !locT) return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+
+      if (simpleQOnly) {
+        L(
+          `\n🌍 PASO 3 (WhatsApp): Nominatim solo API Simple / q — segmentos calleSinPrefijos;número;ciudad (sin cascada estructurada ni interpolación) [calle: "${calleBusqueda}"]`
+        );
+        try {
+          const sq = await geocodeDomicilioSimpleQArgentina({
+            calle: calleBusqueda,
+            numero: numT || "",
+            localidad: locT,
+            stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+            postalCode: postalDigits.length >= 4 ? postalDigits : "",
+          });
+          if (sq && coordsValidasWgs84(sq.lat, sq.lng)) {
+            la = sq.lat;
+            lo = sq.lng;
+            fu = sq.audit?.source || "nominatim_simple_q";
+            if (sq.postcode) {
+              const n = normCp(sq.postcode);
+              if (n) {
+                npc = n;
+                L(`  📮 CP (Nominatim q): ${n}`);
+              }
+            }
+            L(`  ✓ Simple/q: ${la.toFixed(6)}, ${lo.toFixed(6)} (${fu})`);
+          } else {
+            L(`  → Simple/q sin punto útil`);
+          }
+        } catch (err) {
+          L(`  ⚠️  Error Nominatim Simple/q: ${err?.message || err}`);
+        }
+        return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+      }
+
+      L(`\n🌍 PASO 3: Nominatim (calle + localidad + provincia/CP si hay) [calle busqueda: "${calleBusqueda}"]`);
+      try {
+        const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleBusqueda, numT || "", {
+          allowTenantCentroidFallback: false,
+          catalogStrict: false,
+          stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
+        });
+
+        if (geoResult && coordsValidasWgs84(geoResult.lat, geoResult.lng)) {
+          la = geoResult.lat;
+          lo = geoResult.lng;
+          fu = geoResult.audit?.source || "nominatim";
+          if (geoResult.postcode) {
+            npc = normCp(geoResult.postcode);
+            if (npc) L(`  📮 CP (Nominatim): ${npc}`);
+          }
+          L(`  ✓ Nominatim: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          L(`  ✓ Fuente: ${fu}`);
+        } else {
+          L(`  → Nominatim sin resultados`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en Nominatim: ${err?.message || err}`);
+      }
+
+      if (!coordsValidasWgs84(la, lo)) {
+        L("\nPASO 3b: Nominatim linea libre (fallback q)");
+        try {
+          const ll = await geocodeDomicilioLineaLibreArgentina(
+            {
+              calle: calleBusqueda,
+              numero: numT || "",
+              localidad: locT,
+              provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+              postalCode: postalDigits.length >= 4 ? postalDigits : "",
+            },
+            {}
+          );
+          if (ll && coordsValidasWgs84(ll.lat, ll.lng)) {
+            la = ll.lat;
+            lo = ll.lng;
+            fu = ll.audit?.source || "nominatim_linea_libre";
+            if (ll.postcode) {
+              const n = normCp(ll.postcode);
+              if (n) {
+                npc = n;
+                L(`  CP (Nominatim linea libre): ${n}`);
+              }
+            }
+            L(`  Linea libre OK: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          } else {
+            L(`  Linea libre sin punto util`);
+          }
+        } catch (err) {
+          L(`  Error Nominatim linea libre: ${err?.message || err}`);
+        }
+      }
+
+      if (!coordsValidasWgs84(la, lo) && calleBusqueda && numT && locT) {
+        L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
+        try {
+          const interpol = await interpolarCoordenadaPorAltura({
+            calle: calleBusqueda,
+            numero: numT,
+            localidad: locT,
+            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          });
+
+          if (interpol && interpol.log) {
+            interpol.log.forEach((line) => L(`  ${line}`));
+          }
+
+          if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
+            la = interpol.lat;
+            lo = interpol.lng;
+            fu = "interpolacion";
+            L(`  ✓ Interpolación exitosa: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          } else {
+            L(`  → Interpolación sin resultados válidos`);
+          }
+        } catch (err) {
+          L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
+        }
+      }
+
+      return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+    L("\n📚 PASO 2: Catálogo (socios_catalogo)");
+    const tieneIdentificador = !!(nisT || medT || nmT);
+
+    if (tieneIdentificador) {
+      L("  2a — Prioridad NIS / Medidor / nis_medidor");
+      try {
+        const coordsId = await buscarCoordenadasPorNisMedidor({
+          tenantId: Number(tenantId),
+          nis: nisT,
+          medidor: medT,
+          nisMedidor: nmT,
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          nombreCliente: nombreT,
+          soloIdentificador: true,
+        });
+        if (coordsId && coordsValidasWgs84(coordsId.lat, coordsId.lng)) {
+          latFinal = coordsId.lat;
+          lngFinal = coordsId.lng;
+          fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
+          L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
+        } else {
+          const existeSinCoords = await existeSocioCatalogoPorIdentificadorSinCoords({
+            tenantId: Number(tenantId),
+            nis: nisT,
+            medidor: medT,
+            nisMedidor: nmT,
+          });
+          if (existeSinCoords) {
+            L(`  ⚠️ Socio hallado en catálogo por NIS/Medidor pero sin lat/lon útiles → se sigue con Nominatim / interpolación`);
+          } else {
+            L(`  → Sin fila en catálogo para los identificadores del pedido`);
+          }
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en búsqueda por identificador: ${err?.message || err}`);
+      }
+    } else {
+      L("  2a — Sin NIS/medidor en el pedido; se omite subpaso por identificador");
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT && nombreT && String(nombreT).trim().length >= 3) {
+      L("  2b — Respaldo por calle + localidad + nombre (titular)");
+      try {
+        const coordsDir = await buscarCoordenadasPorNisMedidor({
+          tenantId: Number(tenantId),
+          nis: null,
+          medidor: null,
+          nisMedidor: null,
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          nombreCliente: nombreT,
+        });
+        if (coordsDir && coordsValidasWgs84(coordsDir.lat, coordsDir.lng)) {
+          latFinal = coordsDir.lat;
+          lngFinal = coordsDir.lng;
+          fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
+          L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        } else {
+          L(`  → Sin coincidencia por dirección+nombre en catálogo`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en búsqueda por dirección: ${err?.message || err}`);
+      }
+    } else if (!coordsValidasWgs84(latFinal, lngFinal) && (!calleT || !locT)) {
+      L("  2b — Sin datos para búsqueda por dirección+nombre en catálogo");
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      const r1 = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: origenWa });
+      if (coordsValidasWgs84(r1.lat, r1.lng)) {
+        latFinal = r1.lat;
+        lngFinal = r1.lng;
+        fuente = r1.fuente;
+        if (r1.nominatimPostcode) nominatimPostcode = r1.nominatimPostcode;
+      }
+    }
+
+    if (
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleOriginalPedido &&
+      calleT &&
+      !mismoTextoCalle(calleOriginalPedido, calleT)
+    ) {
+      L("\n↩ Reintento con calle original del pedido (sin volver a PASO 1 diccionario)…");
+      const sepOrig = separarNumeroDuplicadoEnCalle(calleOriginalPedido, numT);
+      const calleParaRetry = sepOrig.stripped ? sepOrig.calle : calleOriginalPedido;
+      const r2 = await ejecutarNominatim3_3b_4(calleParaRetry, { simpleQOnly: origenWa });
+      if (coordsValidasWgs84(r2.lat, r2.lng)) {
+        latFinal = r2.lat;
+        lngFinal = r2.lng;
+        fuente = r2.fuente;
+        if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
+      }
+    }
+
+    }
+
+    let metodoAnclaP5d = null;
+    let precisionAnclaP5d = null;
+    if (
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleT &&
+      numT &&
+      locT &&
+      String(numT).replace(/\D/g, "").length >= 1
+    ) {
+      L("\n📍 PASO 5d: Ancla inicio de vía + metros sobre eje (heurística OSM)");
+      try {
+        const p5d = await interpolarPaso5dAnclaInicioVia({
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          provincia: provinciaEfectiva,
+          postalDigits,
+          L,
+        });
+        for (const line of p5d.log || []) {
+          if (line && String(line).trim()) L(String(line));
+        }
+        if (p5d.ok && coordsValidasWgs84(p5d.lat, p5d.lng)) {
+          latFinal = p5d.lat;
+          lngFinal = p5d.lng;
+          fuente = p5d.fuente || "interpolacion_via_ancla_p5d";
+          metodoAnclaP5d = p5d.metodoAncla ?? p5d.metadata?.metodo_ancla ?? null;
+          precisionAnclaP5d = p5d.precisionAncla ?? p5d.metadata?.precision_ancla ?? null;
+        }
+      } catch (err) {
+        L(`  ⚠️ PASO 5d: ${err?.message || err}`);
+      }
+    }
+
+    let tenantCentroidPaso5 = null;
+    try {
+      const ubi = await resolveUbicacionCentralPublic(Number(tenantId));
+      if (ubi && Number.isFinite(Number(ubi.lat)) && Number.isFinite(Number(ubi.lng))) {
+        tenantCentroidPaso5 = { lat: Number(ubi.lat), lng: Number(ubi.lng) };
+      }
+    } catch (_) {}
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
+      L("\n📍 PASO 5: Centro de localidad (OSM + fallback oficina si aplica)");
+      try {
+        const vb = await geocodeLocalityViewboxArgentina(locT, tenantCentroidPaso5, {
+          allowTenantCentroidFallback: true,
+          stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
+        });
+        const cLat = vb?.center != null ? Number(vb.center.lat) : NaN;
+        const cLng = vb?.center != null ? Number(vb.center.lng) : NaN;
+        if (coordsValidasWgs84(cLat, cLng)) {
+          latFinal = cLat;
+          lngFinal = cLng;
+          fuente = vb?.fromTenantCentroid ? "aprox_area_oficina_tenant" : "centro_localidad_osm";
+          L(
+            vb?.fromTenantCentroid
+              ? `  ✓ Pin aproximado según área de referencia (ubicación central del tenant) — no reemplaza domicilio exacto`
+              : `  ✓ Pin aproximado (OSM) en centro de "${locT}" — ubicación estimada, no domicilio exacto`
+          );
+        } else {
+          L(`  → Sin centro OSM útil para la localidad (ni bbox tenant)`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error PASO 5 (centro localidad): ${err?.message || err}`);
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
+      L("\n📍 PASO 5b: Nominatim q — localidad + provincia (fallback)");
+      try {
+        const qLoc =
+          provinciaEfectiva.length >= 2
+            ? `${locT}, ${provinciaEfectiva}, Argentina`
+            : `${locT}, Argentina`;
+        const gl = await geocodeAddressArgentina(qLoc, {
+          filterLocalidad: locT,
+          filterState: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+          nominatimLimit: "8",
+        });
+        if (gl && coordsValidasWgs84(gl.lat, gl.lng)) {
+          latFinal = gl.lat;
+          lngFinal = gl.lng;
+          fuente = "nominatim_q_localidad_fallback";
+          L(`  ✓ Coordenadas por búsqueda libre de localidad: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        } else {
+          L(`  → Sin resultado útil en PASO 5b`);
+        }
+      } catch (err) {
+        L(`  ⚠️  PASO 5b: ${err?.message || err}`);
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && tenantCentroidPaso5) {
+      L("\n📍 PASO 5c: Último recurso — coordenadas centrales del tenant (config)");
+      latFinal = tenantCentroidPaso5.lat;
+      lngFinal = tenantCentroidPaso5.lng;
+      fuente = "centro_tenant_config_ultimo_recurso";
+      L(`  ✓ Pin aproximado en sede/configuración del tenant (${latFinal.toFixed(5)}, ${lngFinal.toFixed(5)})`);
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      L("\n📍 PASO 5e: Fallback provincia / región (política A — pin obligatorio)");
+      const provF = provinciaEfectiva.length >= 2 ? provinciaEfectiva : provinciaTenant || "";
+      if (provF.length >= 2) {
+        try {
+          const gr = await geocodeAddressArgentina(`${provF}, Argentina`, { nominatimLimit: "2" });
+          if (gr && coordsValidasWgs84(gr.lat, gr.lng)) {
+            latFinal = gr.lat;
+            lngFinal = gr.lng;
+            fuente = "region_provincia_fallback";
+            L(`  ✓ Pin regional aprox. (${provF}): ${latFinal.toFixed(5)}, ${lngFinal.toFixed(5)}`);
+          }
+        } catch (err) {
+          L(`  ⚠️ PASO 5e: ${err?.message || err}`);
+        }
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
+      L("\n📍 PASO 5f: Centro ciudad — último intento Nominatim (q sin filtros estrictos)");
+      try {
+        const qcc =
+          provinciaEfectiva.length >= 2
+            ? `${locT}, ${provinciaEfectiva}, Argentina`
+            : `${locT}, Argentina`;
+        const gcc = await geocodeAddressArgentina(qcc, { nominatimLimit: "3" });
+        if (gcc && coordsValidasWgs84(gcc.lat, gcc.lng)) {
+          latFinal = gcc.lat;
+          lngFinal = gcc.lng;
+          fuente = "centro_ciudad_fallback";
+          L(`  ✓ ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)} (${fuente})`);
+        } else {
+          L(`  → Sin resultado útil en centro ciudad (Nominatim)`);
+        }
+      } catch (err) {
+        L(`  ⚠️ PASO 5f: ${err?.message || err}`);
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      latFinal = -34.6037;
+      lngFinal = -58.3816;
+      fuente = "fallback_argentina_aprox_obligatorio";
+      L("\n📍 PASO 5g: Último recurso absoluto — centro aproximado Argentina (solo si todo lo anterior falló)");
+      L(`  ✓ Coordenadas de respaldo: ${latFinal.toFixed(4)}, ${lngFinal.toFixed(4)}`);
+    }
+
+    L("\n" + "═".repeat(60));
+
+    const provPersist = provinciaEfectiva.length >= 2 ? provinciaEfectiva : null;
+
+    let cpPersistStr = postalDigits.length >= 4 ? postalDigits : "";
+    if (!cpPersistStr && nominatimPostcode) cpPersistStr = nominatimPostcode;
+    if (!cpPersistStr && coordsValidasWgs84(latFinal, lngFinal)) {
+      try {
+        const revCp = await reverseGeocodeArgentina(latFinal, lngFinal);
+        const rcp = normCp(revCp?.address?.postcode);
+        if (rcp) {
+          cpPersistStr = rcp;
+          L(`  📮 CP inferido (reverse Nominatim): ${rcp}`);
+        }
+      } catch (_) {}
+    }
+    const cpPersist = cpPersistStr.length >= 4 ? cpPersistStr : null;
+
+    const geocodingAudit = {
+      policy: "A",
+      fuente,
+      modo: inferirModoUbicacion(fuente),
+      metodo_ancla: metodoAnclaP5d || null,
+      precision_ancla: precisionAnclaP5d || null,
+      at: new Date().toISOString(),
+    };
+    L(
+      `   🏷️ Auditoría ubicación: modo=${geocodingAudit.modo} · política ${geocodingAudit.policy}` +
+        (geocodingAudit.metodo_ancla ? ` · ancla=${geocodingAudit.metodo_ancla}` : "")
+    );
+
+  return {
+    ok: true,
+    latFinal,
+    lngFinal,
+    fuente,
+    nominatimPostcode,
+    provPersist,
+    cpPersist,
+    geocodingAudit,
+    log,
+    metodoAnclaP5d,
+    precisionAnclaP5d,
+    mensaje: null,
+    motivo: null,
+  };
+}
+
+/**
+ * Resuelve coordenadas antes del INSERT de un pedido WhatsApp (misma tubería que re-geocodificación).
+ */
+export async function resolverCoordenadasCandidatoWhatsapp(payload, tenantId) {
+  const pedidoLike = {
+    id: null,
+    cliente_calle: payload.cliente_calle ?? null,
+    cliente_numero_puerta: payload.cliente_numero_puerta ?? null,
+    cliente_localidad: payload.cliente_localidad ?? null,
+    provincia: payload.provincia ?? null,
+    codigo_postal: payload.codigo_postal ?? null,
+    cliente_nombre: payload.cliente_nombre || "WhatsApp",
+    nis: payload.nis ?? null,
+    medidor: payload.medidor ?? null,
+    nis_medidor: payload.nis_medidor ?? null,
+    origen_reclamo: "whatsapp",
+    lat: payload.lat != null ? Number(payload.lat) : null,
+    lng: payload.lng != null ? Number(payload.lng) : null,
+  };
+  const log = [];
+  const res = await ejecutarPipelineGeocodificacionDesdePedidoLike(pedidoLike, Number(tenantId), {
+    log,
+    preferSimpleQNominatim: true,
+    respetarGpsWhatsapp: true,
+  });
+  if (!res.ok) {
+    return {
+      success: false,
+      mensaje: res.mensaje || "Fallo geocodificación",
+      lat: null,
+      lng: null,
+      fuente: null,
+      fuente_final: null,
+      geocoding_audit: null,
+      log: res.log || [],
+      pasos: res.log || [],
+      errores: [{ paso: "pipeline", detalle: res.motivo || "sin_datos" }],
+      provincia_persistencia: null,
+      codigo_postal_persistencia: null,
+    };
+  }
+  const fuenteFinal = res.fuente;
+  return {
+    success: true,
+    lat: res.latFinal,
+    lng: res.lngFinal,
+    fuente: fuenteFinal,
+    fuente_final: fuenteFinal,
+    geocoding_audit: res.geocodingAudit,
+    log: res.log,
+    pasos: res.log.slice(),
+    errores: [],
+    provincia_persistencia: res.provPersist,
+    codigo_postal_persistencia: res.cpPersist,
+  };
+}

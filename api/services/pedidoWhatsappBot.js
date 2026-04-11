@@ -16,7 +16,7 @@ import {
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { obtenerProvinciaCodigoPostalCatalogoPorIdentificador } from "./buscarCoordenadasPorNisMedidor.js";
-import { regeocodificarPedido } from "./regeocodificarPedido.js";
+import { resolverCoordenadasCandidatoWhatsapp } from "./pipelineGeocodificacionPedido.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -52,11 +52,17 @@ export async function persistirGeocodeLogWhatsappEnPedido(pedidoId, tenantId, re
       at: new Date().toISOString(),
       success: !!resultado.success,
       pin_ok,
+      pipeline: resultado.pipeline || null,
       fuente: resultado.fuente || null,
+      fuente_final: resultado.fuente_final != null ? resultado.fuente_final : resultado.fuente || null,
       mensaje: resultado.mensaje || null,
       lat: resultado.lat != null ? Number(resultado.lat) : null,
       lng: resultado.lng != null ? Number(resultado.lng) : null,
       log: (Array.isArray(resultado._logLines) ? resultado._logLines : resultado.log || []).slice(0, 500),
+      pasos: Array.isArray(resultado.pasos) ? resultado.pasos.slice(0, 400) : undefined,
+      errores: Array.isArray(resultado.errores) ? resultado.errores.slice(0, 80) : undefined,
+      warnings: Array.isArray(resultado.warnings) ? resultado.warnings.slice(0, 40) : undefined,
+      geocoding_audit: resultado.geocoding_audit || resultado.geocodingAudit || null,
     };
     await query(
       `UPDATE pedidos SET geocode_log_whatsapp = $1::jsonb WHERE id = $2 AND tenant_id = $3`,
@@ -287,18 +293,39 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
-  /** Solo GPS del usuario en el INSERT; el pin se resuelve en servidor con regeocodificarPedido. */
-  let latFinal = lat != null && Number.isFinite(Number(lat)) ? Number(lat) : null;
-  let lngFinal = lng != null && Number.isFinite(Number(lng)) ? Number(lng) : null;
-  if (
-    latFinal != null &&
-    lngFinal != null &&
-    Math.abs(latFinal) < 1e-6 &&
-    Math.abs(lngFinal) < 1e-6
-  ) {
-    latFinal = null;
-    lngFinal = null;
+  const geoRes = await resolverCoordenadasCandidatoWhatsapp(
+    {
+      cliente_calle: calleT,
+      cliente_numero_puerta: numT,
+      cliente_localidad: locT,
+      provincia: provinciaIn,
+      codigo_postal: codigoPostalIn,
+      cliente_nombre: clienteNombre,
+      nis: nisT,
+      medidor: medT,
+      nis_medidor: nmT,
+      lat,
+      lng,
+    },
+    tenantId
+  );
+  if (!geoRes.success || !coordsValidasWgs84(geoRes.lat, geoRes.lng)) {
+    throw new Error("whatsapp_geocod_fallo");
   }
+  const latFinal = Number(geoRes.lat);
+  const lngFinal = Number(geoRes.lng);
+
+  const provTMerge =
+    (geoRes.provincia_persistencia != null && String(geoRes.provincia_persistencia).trim()) ||
+    (provinciaIn != null && String(provinciaIn).trim()) ||
+    null;
+  const cpFromGeo = geoRes.codigo_postal_persistencia;
+  const cpMerge =
+    cpFromGeo && String(cpFromGeo).replace(/\D/g, "").length >= 4 && String(cpFromGeo).replace(/\D/g, "").length <= 8
+      ? String(cpFromGeo).replace(/\D/g, "")
+      : codigoPostalIn && codigoPostalIn.length >= 4 && codigoPostalIn.length <= 8
+        ? codigoPostalIn
+        : null;
 
   let coordsWhatsappParaCatalogo = null;
   if (
@@ -384,8 +411,8 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(locT);
   }
 
-  const provT = provinciaIn;
-  const cpOk = codigoPostalIn && codigoPostalIn.length >= 4 && codigoPostalIn.length <= 8 ? codigoPostalIn : null;
+  const provT = provTMerge;
+  const cpOk = cpMerge;
   if (pCols.has("provincia") && provT) {
     cols.push("provincia");
     vals.push(provT);
@@ -421,6 +448,31 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(barrioT);
   }
 
+  if (pCols.has("geocoding_audit") && geoRes.geocoding_audit) {
+    cols.push("geocoding_audit");
+    vals.push(JSON.stringify(geoRes.geocoding_audit));
+  }
+  if (pCols.has("geocode_log_whatsapp")) {
+    cols.push("geocode_log_whatsapp");
+    vals.push(
+      JSON.stringify({
+        at: new Date().toISOString(),
+        pipeline: "pre_insert",
+        success: true,
+        pin_ok: true,
+        fuente: geoRes.fuente_final || geoRes.fuente || null,
+        fuente_final: geoRes.fuente_final || geoRes.fuente || null,
+        mensaje: null,
+        lat: latFinal,
+        lng: lngFinal,
+        log: (geoRes.log || []).slice(0, 500),
+        pasos: (geoRes.pasos || []).slice(0, 400),
+        errores: geoRes.errores || [],
+        geocoding_audit: geoRes.geocoding_audit || null,
+      })
+    );
+  }
+
   if (hasTenant) {
     cols.push("tenant_id");
     vals.push(Number(tenantId));
@@ -446,86 +498,8 @@ export async function crearPedidoDesdeWhatsappBot({
         lng: coordsWhatsappParaCatalogo.lng,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
     }
-    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), {
-      silent: true,
-      preferSimpleQNominatim: true,
-    })
-      .then(async (res) => {
-        try {
-          await persistirGeocodeLogWhatsappEnPedido(Number(pedidoRow.id), Number(tenantId), res);
-        } catch (e) {
-          console.warn("[pedido-whatsapp-bot] persist geocode_log_whatsapp", e?.message || e);
-        }
-        return notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res, { silent: true });
-      })
-      .catch((e) => console.warn("[pedido-whatsapp-bot] regeo automático", e?.message || e));
   });
   return pedidoRow;
-}
-
-const REGEO_NOTIF_PREFIX = "GN_REGEO_LOG_V1\n";
-
-/** Notificación solo para admins: log de re-geocodificación automática (no bloquea al usuario de WhatsApp). */
-async function notificarAdminsRegeoPedidoWhatsappSafe(tenantId, pedido, resultado, opts = {}) {
-  if (opts.silent) return;
-  if (!pedido?.id || !resultado) return;
-  try {
-    const t = await query(
-      `SELECT 1 FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_name = 'notificaciones_movil' LIMIT 1`
-    );
-    if (!t.rows.length) return;
-
-    const colSet = await columnasUsuarios();
-    const hasTenant = colSet.has("tenant_id");
-    const hasCliente = colSet.has("cliente_id");
-    const col = hasTenant ? "tenant_id" : hasCliente ? "cliente_id" : null;
-    if (!col) return;
-
-    let admins = await query(
-      `SELECT id FROM usuarios
-       WHERE ${col} = $1 AND activo = TRUE
-         AND (
-           LOWER(COALESCE(rol::text, '')) = 'admin'
-           OR LOWER(COALESCE(rol::text, '')) = 'administrador'
-         )`,
-      [tenantId]
-    );
-    let recipients = admins.rows || [];
-    if (!recipients.length) {
-      const anyU = await query(
-        `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE ORDER BY id ASC`,
-        [tenantId]
-      );
-      recipients = anyU.rows || [];
-    }
-    if (!recipients.length) return;
-
-    const payload = {
-      success: !!resultado.success,
-      fuente: resultado.fuente || null,
-      mensaje: resultado.mensaje || null,
-      log: Array.isArray(resultado.log) ? resultado.log.slice(0, 220) : [],
-      np: pedido.numero_pedido || null,
-    };
-    let cuerpo = `${REGEO_NOTIF_PREFIX}${JSON.stringify(payload)}`;
-    const maxC = 14000;
-    if (cuerpo.length > maxC) {
-      cuerpo = `${cuerpo.slice(0, maxC - 40)}\n…[truncado]`;
-    }
-    const titulo = resultado.success
-      ? `Re-geocodificación automática · #${pedido.numero_pedido || pedido.id}`
-      : `Re-geocodificación automática · #${pedido.numero_pedido || pedido.id} (revisar)`;
-    for (const a of recipients) {
-      await query(
-        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-         VALUES ($1, $2, $3, $4, FALSE)`,
-        [a.id, pedido.id, titulo, cuerpo]
-      );
-    }
-  } catch (e) {
-    console.warn("[pedido-whatsapp-bot] notif regeo", e?.message || e);
-  }
 }
 
 /**

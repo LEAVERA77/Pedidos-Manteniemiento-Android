@@ -3267,14 +3267,21 @@ function gnGeocodePrecargarWhatsappRegeoLog(p) {
         `Re-geocodificación en servidor — pedido #${p.id}${wa ? ' (WhatsApp)' : ' (sin pin)'}`
     );
     if (w.at) gnGeocodeUiLogAppend('info', `Instante: ${w.at}`);
+    if (w.pipeline) gnGeocodeUiLogAppend('info', `Pipeline: ${String(w.pipeline)}`);
     gnGeocodeUiLogAppend(
         'info',
-        `Resumen servidor: ${w.success ? 'coords OK' : 'sin coords'} · fuente: ${w.fuente != null ? String(w.fuente) : '—'}`
+        `Resumen servidor: ${w.success ? 'coords OK' : 'sin coords'} · fuente: ${
+            w.fuente_final != null ? String(w.fuente_final) : w.fuente != null ? String(w.fuente) : '—'
+        }`
     );
     if (w.mensaje) gnGeocodeUiLogAppend(w.success ? 'info' : 'warn', String(w.mensaje));
     const lines = Array.isArray(w.log) ? w.log : [];
     for (const line of lines.slice(0, 150)) {
         gnGeocodeUiLogAppend('info', String(line));
+    }
+    const errs = Array.isArray(w.errores) ? w.errores : [];
+    for (const e of errs.slice(0, 30)) {
+        gnGeocodeUiLogAppend('warn', typeof e === 'object' ? JSON.stringify(e) : String(e));
     }
     const pinOk = w.pin_ok === true || (w.success && coordsSonPinValidasMapaWgs84(w.lat, w.lng));
     if (pinOk && Number.isFinite(Number(w.lat)) && Number.isFinite(Number(w.lng))) {
@@ -9953,6 +9960,17 @@ async function detalle(p) {
         esAdmin() && txtModoUbic
             ? `<p class="gn-ubic-modo-badge" style="font-size:.76rem;color:#1e293b;margin:.2rem 0 .55rem;padding:.4rem .55rem;background:#e0f2fe;border-left:3px solid #0284c7;border-radius:4px;line-height:1.45">${escDet(txtModoUbic)}</p>`
             : '';
+    const wgeoDet = p.wgeo && typeof p.wgeo === 'object' ? p.wgeo : null;
+    const htmlWgeoWa =
+        esAdmin() && wgeoDet && String(p.orc || '').trim().toLowerCase() === 'whatsapp'
+            ? `<details class="gn-wgeo-wa-details" style="margin:.45rem 0 .35rem;font-size:.74rem;line-height:1.45"><summary style="cursor:pointer;font-weight:600;color:#0e7490">Geocodificación WhatsApp (servidor)</summary>
+            <p style="margin:.35rem 0 .25rem;color:#334155">Fuente final: <strong>${escDet(String(wgeoDet.fuente_final != null ? wgeoDet.fuente_final : wgeoDet.fuente || '—'))}</strong>${wgeoDet.pipeline ? ` · pipeline: ${escDet(String(wgeoDet.pipeline))}` : ''}</p>
+            <div style="padding:.45rem .5rem;background:#f8fafc;border-radius:.35rem;border:1px solid #e2e8f0;max-height:240px;overflow:auto;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:.72rem">${escDet(
+                (Array.isArray(wgeoDet.log) ? wgeoDet.log : [])
+                    .slice(0, 120)
+                    .join('\n')
+            )}</div></details>`
+            : '';
     const pcDet = proyectarCoordPedido(laM, lnM);
     const cfgFam = ((window.EMPRESA_CFG || {}).coord_proy_familia || 'none').trim();
     let filasProyectadas = '';
@@ -10082,6 +10100,7 @@ async function detalle(p) {
         <div class="ds">
             <h4>📍 Ubicación</h4>
             ${htmlBadgeUbicModo}
+            ${htmlWgeoWa}
             ${bannerSinPinAdmin}
             <div class="dr"><span class="dl">Provincia</span><span class="dv">${escDet(String(p.cpcia || '').trim() || '—')}</span></div>
             <div class="dr"><span class="dl">Código postal</span><span class="dv">${escDet(String(p.ccp || '').trim() || '—')}</span></div>
