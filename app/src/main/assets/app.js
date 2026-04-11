@@ -2942,20 +2942,6 @@ function parseDomicilioLibreArgentinaFront(cdir, localidadFallback) {
     return null;
 }
 
-/**
- * URL de la demo Nominatim (pestaña Simple) — solo revisión manual en navegador.
- * Las coordenadas en BD deben venir del JSON de /search vía proxy (POST …/nominatim/search), no de esta UI.
- * @param {string} texto — texto libre tipo "{calle} {número}, {localidad}" o variantes
- * @returns {string} href o cadena vacía si no hay texto
- */
-function nominatimUiSearchUrlFromTexto(texto) {
-    const q = String(texto || '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    if (q.length < 2) return '';
-    return `https://nominatim.openstreetmap.org/ui/search.html?q=${encodeURIComponent(q)}`;
-}
-
 function domicilioParaGeocodePedido(p) {
     if (!p) return null;
     let calle = (p.ccal || '').trim();
@@ -3202,7 +3188,6 @@ function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
     return { lat: best.la, lng: best.lo, src };
 }
 
-/** Geocodificación canónica: API /search?format=json vía POST al proxy Node; semántica alineada a búsqueda Simple (parámetro q y variantes). */
 async function nominatimGeocodeDomicilioPedido(p) {
     const dom = domicilioParaGeocodePedido(p);
     if (!dom) return null;
@@ -9287,17 +9272,6 @@ async function detalle(p) {
     
     
     const { la: laM, ln: lnM } = coordsEfectivasPedidoMapa(p);
-    const domGeo = domicilioParaGeocodePedido(p);
-    let nominatimDemoQ = '';
-    if (domGeo) {
-        const n = String(domGeo.num || '').trim();
-        nominatimDemoQ = n ? `${domGeo.calle} ${n}, ${domGeo.loc}` : `${domGeo.calle}, ${domGeo.loc}`;
-    } else if (String(p.cdir || '').trim()) {
-        nominatimDemoQ = String(p.cdir || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-    const nominatimDemoHref = nominatimUiSearchUrlFromTexto(nominatimDemoQ);
     const usadaInferida = (p.la == null || p.ln == null) && laM != null && lnM != null;
     const latFormateada = laM != null ? laM.toFixed(6).replace('.', ',') : '';
     const lngFormateada = lnM != null ? lnM.toFixed(6).replace('.', ',') : '';
@@ -9437,11 +9411,6 @@ async function detalle(p) {
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
             ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}
-            ${
-                esAdmin() && nominatimDemoHref
-                    ? `<p style="font-size:.74rem;margin:.45rem 0 0;line-height:1.4;color:var(--tm)"><a href="${String(nominatimDemoHref).replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">Abrir en Nominatim (demo)</a> — revisión manual; el pin guardado sale de la API JSON vía Re-geocodificar, no de esta página.</p>`
-                    : ''
-            }
         </div>
         
         ${htmlBloqueCambiosAuditoria}
