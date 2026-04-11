@@ -495,6 +495,99 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   };
 }
 
+/**
+ * Fallback Nominatim por consultas `q` completas (calle + número + localidad + provincia).
+ * Usar cuando `geocodeCalleNumeroLocalidadArgentina` no devuelve punto (p. ej. "25 de Mayo" en Cerrito).
+ *
+ * @param {{ calle: string, numero?: string, localidad: string, provincia?: string, postalCode?: string }} dom
+ * @param {{ tenantCentroid?: { lat: number, lng: number } }} [options]
+ * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string, audit?: { source: string, q: string } } | null>}
+ */
+export async function geocodeDomicilioLineaLibreArgentina(dom, options = {}) {
+  const cal = String(dom?.calle || "").trim();
+  const loc = String(dom?.localidad || "").trim();
+  const prov = String(dom?.provincia || "").trim();
+  const numRaw = String(dom?.numero ?? "").trim();
+  const postal = String(dom?.postalCode || "")
+    .trim()
+    .replace(/\D/g, "");
+  if (cal.length < 2 || loc.length < 2) return null;
+
+  const tenantCentroid = options.tenantCentroid;
+  const vbMeta = await geocodeLocalityViewboxArgentina(loc, tenantCentroid || null, {
+    allowTenantCentroidFallback: false,
+    stateOrProvince: prov.length >= 2 ? prov : undefined,
+    postalCode: postal.length >= 4 ? postal : undefined,
+  });
+  const bbox = vbMeta?.bbox || null;
+  const anchor =
+    vbMeta?.center &&
+    Number.isFinite(Number(vbMeta.center.lat)) &&
+    Number.isFinite(Number(vbMeta.center.lng))
+      ? { lat: Number(vbMeta.center.lat), lng: Number(vbMeta.center.lng) }
+      : null;
+
+  const numPart =
+    numRaw && numRaw !== "0" && hasMeaningfulHouseNumber(numRaw) ? String(parseHouseNumberInt(numRaw) || numRaw) : "";
+  const lineaBase = numPart ? `${cal} ${numPart}`.replace(/\s+/g, " ").trim() : cal;
+
+  const qList = [];
+  const pushQ = (q) => {
+    const s = String(q || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (s.length >= 5 && !qList.includes(s)) qList.push(s);
+  };
+
+  if (prov.length >= 2) {
+    pushQ(`${lineaBase}, ${loc}, ${prov}, Argentina`);
+    pushQ(`${lineaBase} ${loc} ${prov}`);
+    pushQ(`${lineaBase}, ${loc}, ${prov}`);
+    pushQ(`${loc}, ${prov}, ${lineaBase}`);
+    if (postal.length >= 4) pushQ(`${lineaBase}, ${loc}, ${prov}, ${postal}, Argentina`);
+  }
+  pushQ(`${lineaBase}, ${loc}, Argentina`);
+  pushQ(`${lineaBase} ${loc}`);
+
+  const calSinTilde = cal
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (calSinTilde !== cal && numPart) {
+    if (prov.length >= 2) pushQ(`${calSinTilde} ${numPart}, ${loc}, ${prov}, Argentina`);
+    pushQ(`${calSinTilde} ${numPart}, ${loc}, Argentina`);
+  }
+
+  if (/25\s*de\s*mayo/i.test(cal)) {
+    if (numPart && prov.length >= 2) {
+      pushQ(`25 Mayo ${numPart}, ${loc}, ${prov}, Argentina`);
+      pushQ(`Veinticinco de Mayo ${numPart}, ${loc}, ${prov}, Argentina`);
+    }
+    if (numPart) {
+      pushQ(`25 Mayo ${numPart}, ${loc}, Argentina`);
+      pushQ(`Veinticinco de Mayo ${numPart}, ${loc}, Argentina`);
+    }
+  }
+
+  for (const q of qList) {
+    const g = await geocodeAddressArgentina(q, {
+      filterLocalidad: loc,
+      filterState: prov.length >= 2 ? prov : "",
+    });
+    if (!g || !Number.isFinite(g.lat) || !Number.isFinite(g.lng)) continue;
+    const la = g.lat;
+    const lo = g.lng;
+    if (bbox && !pointInBBox(la, lo, bbox)) continue;
+    if (anchor && !isGeocodePlausibleForLocalityAnchor(la, lo, anchor)) continue;
+    const revOk = await verifyCatalogGeocodeReverse(la, lo, loc, cal);
+    if (!revOk) continue;
+    return {
+      ...g,
+      audit: { source: "linea_libre_q", q },
+    };
+  }
+  return null;
+}
+
 /** Números a probar: objetivo primero, luego ±2, ±4, … manteniendo paridad. */
 export function iterHouseNumbersSameParity(numeroStr, maxSteps) {
   const steps = maxSteps != null ? maxSteps : houseParityMaxSteps();

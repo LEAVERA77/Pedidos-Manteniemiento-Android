@@ -272,6 +272,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const provExpr = cfCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
+    const cpExprCf = cfCols.has("codigo_postal")
+      ? "NULLIF(TRIM(COALESCE(codigo_postal::text, '')), '') AS codigo_postal_cat"
+      : "NULL::text AS codigo_postal_cat";
     const latExpr = sqlLatPadExpr(cfCols);
     const lngExpr = sqlLngPadExpr(cfCols);
     const params = [tid, rawTrim];
@@ -313,7 +316,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${latExpr},
               ${lngExpr},
               ${ptSelCf},
-              ${provExpr}
+              ${provExpr},
+              ${cpExprCf}
        FROM clientes_finales
        WHERE cliente_id = $1 AND COALESCE(activo, TRUE) = TRUE
          AND (
@@ -345,6 +349,12 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         catalogoLocalidad: row.localidad_cat != null ? String(row.localidad_cat).trim() || null : null,
         catalogoBarrio: row.barrio_cat != null ? String(row.barrio_cat).trim() || null : null,
         catalogoProvincia: row.provincia_cat != null ? String(row.provincia_cat).trim() || null : null,
+        catalogoCodigoPostal: (() => {
+          const raw = row.codigo_postal_cat;
+          if (raw == null || !String(raw).trim()) return null;
+          const d = String(raw).replace(/\D/g, "");
+          return d.length >= 4 && d.length <= 8 ? d : null;
+        })(),
         ...coords,
         _lookupCfId: row.id,
       };
@@ -365,6 +375,9 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const provExpr = scCols.has("provincia")
       ? "NULLIF(TRIM(COALESCE(provincia, '')), '') AS provincia_cat"
       : "NULL::text AS provincia_cat";
+    const cpExprSc = scCols.has("codigo_postal")
+      ? "NULLIF(TRIM(COALESCE(codigo_postal::text, '')), '') AS codigo_postal_cat"
+      : "NULL::text AS codigo_postal_cat";
     const latExpr = sqlLatPadExpr(scCols);
     const lngExpr = sqlLngPadExpr(scCols);
 
@@ -447,7 +460,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${latExpr},
               ${lngExpr},
               ${ptSelSc},
-              ${provExpr}
+              ${provExpr},
+              ${cpExprSc}
        FROM socios_catalogo
        WHERE COALESCE(activo, TRUE) = TRUE
          AND ${matchClause}
@@ -482,7 +496,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
               ${latExpr},
               ${lngExpr},
               ${ptSelSc},
-              ${provExpr}
+              ${provExpr},
+              ${cpExprSc}
          FROM socios_catalogo
          WHERE COALESCE(activo, TRUE) = TRUE
            AND ${matchClause}
@@ -502,6 +517,8 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
 
     if (row) {
       const nm = String(row.nis_medidor || rawTrim).trim();
+      const nmUnified =
+        row.nis_medidor != null && String(row.nis_medidor).trim() ? String(row.nis_medidor).trim() : null;
       const nombre = String(row.nombre || "").trim() || `Socio NIS ${nm}`;
       const nisV = row.nis_raw != null && String(row.nis_raw).trim() ? String(row.nis_raw).trim() : null;
       const medV = row.medidor_raw != null && String(row.medidor_raw).trim() ? String(row.medidor_raw).trim() : null;
@@ -521,11 +538,17 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
         clienteNombre: nombre,
         nis: nisV,
         medidor: medV,
-        nisMedidor: medV || nisV || nm,
+        nisMedidor: nmUnified || medV || nisV || nm,
         catalogoCalle: row.calle_cat != null ? String(row.calle_cat).trim() || null : null,
         catalogoNumero: row.numero_cat != null ? String(row.numero_cat).trim() || null : null,
         catalogoLocalidad: row.localidad_cat != null ? String(row.localidad_cat).trim() || null : null,
         catalogoProvincia: row.provincia_cat != null ? String(row.provincia_cat).trim() || null : null,
+        catalogoCodigoPostal: (() => {
+          const raw = row.codigo_postal_cat;
+          if (raw == null || !String(raw).trim()) return null;
+          const d = String(raw).replace(/\D/g, "");
+          return d.length >= 4 && d.length <= 8 ? d : null;
+        })(),
         catalogoTipoConexion:
           row.tipo_conexion_cat != null ? String(row.tipo_conexion_cat).trim() || null : null,
         catalogoFases: row.fases_cat != null ? String(row.fases_cat).trim() || null : null,

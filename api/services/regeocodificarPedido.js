@@ -11,7 +11,11 @@ import {
   buscarCoordenadasPorNisMedidor,
   existeSocioCatalogoPorIdentificadorSinCoords,
 } from "./buscarCoordenadasPorNisMedidor.js";
-import { geocodeCalleNumeroLocalidadArgentina, reverseGeocodeArgentina } from "./nominatimClient.js";
+import {
+  geocodeCalleNumeroLocalidadArgentina,
+  geocodeDomicilioLineaLibreArgentina,
+  reverseGeocodeArgentina,
+} from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
@@ -39,14 +43,16 @@ function normCp(s) {
  *
  * @param {number} pedidoId
  * @param {number} tenantId
- * @param {{ silent?: boolean }} [options] — compat.: el array `log` siempre se llena (auditoría / notificación admin)
+ * @param {{ silent?: boolean }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp)
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
 export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
+  const silent = !!options.silent;
   const log = [];
   const L = (msg) => {
     log.push(msg);
   };
+  const outLog = () => (silent ? [] : log);
 
   L("🔄 Iniciando re-geocodificación inteligente...");
   const provinciaTenant = await getTenantProvinciaNominatim(tenantId);
@@ -71,7 +77,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       return {
         success: false,
         mensaje: "Pedido no encontrado",
-        log,
+        log: outLog(),
       };
     }
 
@@ -107,7 +113,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       return {
         success: false,
         mensaje: "Pedido sin dirección ni identificadores",
-        log,
+        log: outLog(),
       };
     }
 
@@ -235,6 +241,36 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       }
     }
 
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
+      L("\nPASO 3b: Nominatim linea libre (fallback q)");
+      try {
+        const ll = await geocodeDomicilioLineaLibreArgentina(
+          {
+            calle: calleT,
+            numero: numT || "",
+            localidad: locT,
+            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+            postalCode: postalDigits.length >= 4 ? postalDigits : "",
+          },
+          {}
+        );
+        if (ll && coordsValidasWgs84(ll.lat, ll.lng)) {
+          latFinal = ll.lat;
+          lngFinal = ll.lng;
+          fuente = ll.audit?.source || "nominatim_linea_libre";
+          if (ll.postcode) {
+            nominatimPostcode = normCp(ll.postcode);
+            if (nominatimPostcode) L(`  CP (Nominatim linea libre): ${nominatimPostcode}`);
+          }
+          L(`  Linea libre OK: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        } else {
+          L(`  Linea libre sin punto util`);
+        }
+      } catch (err) {
+        L(`  Error Nominatim linea libre: ${err?.message || err}`);
+      }
+    }
+
     if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
       L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
       try {
@@ -269,7 +305,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       return {
         success: false,
         mensaje: "No se pudieron obtener coordenadas válidas",
-        log,
+        log: outLog(),
       };
     }
 
@@ -329,7 +365,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       lat: latFinal,
       lng: lngFinal,
       fuente,
-      log,
+      log: outLog(),
       mensaje: "Pedido re-geocodificado exitosamente",
     };
   } catch (err) {
@@ -338,7 +374,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     return {
       success: false,
       mensaje: `Error: ${err?.message || String(err)}`,
-      log,
+      log: outLog(),
     };
   }
 }

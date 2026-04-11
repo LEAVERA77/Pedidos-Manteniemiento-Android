@@ -10,20 +10,12 @@ import {
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "./pedidoZonaOutage.js";
 import { parseDomicilioLibreArgentina } from "../utils/parseDomicilioArg.js";
-import {
-  resolverGeolocalizacionGarantizadaWhatsapp,
-  coordsValidasWgs84,
-} from "./whatsappGeolocalizacionGarantizada.js";
+import { coordsValidasWgs84 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
-import {
-  buscarCoordenadasPorNisMedidor,
-  obtenerProvinciaCodigoPostalCatalogoPorIdentificador,
-} from "./buscarCoordenadasPorNisMedidor.js";
-import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
-import { normalizarDireccion } from "../utils/normalizarCalles.js";
+import { obtenerProvinciaCodigoPostalCatalogoPorIdentificador } from "./buscarCoordenadasPorNisMedidor.js";
 import { regeocodificarPedido } from "./regeocodificarPedido.js";
 
 async function columnasUsuarios() {
@@ -255,28 +247,7 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
-  // NORMALIZACIÓN DE NOMBRES DE CALLES: corregir errores ortográficos del usuario
-  let calleNormalizada = calleT;
-  let normalizacionInfo = null;
-  if (calleT && locT) {
-    const normResult = await normalizarDireccion({ calle: calleT, ciudad: locT });
-    if (normResult && normResult.cambio) {
-      calleNormalizada = normResult.calleNormalizada;
-      normalizacionInfo = normResult;
-      console.info("[pedido-whatsapp-bot] Calle normalizada: '%s' → '%s' (confianza: %.2f)", 
-        calleT, calleNormalizada, normResult.confianza);
-      
-      // Agregar nota sobre normalización a la descripción
-      if (normResult.confianza < 1.0) {
-        const notaNorm = `[Sistema] Nombre de calle corregido: "${calleT}" → "${calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%)`;
-        de = `${de}\n\n${notaNorm}`;
-      }
-      
-      // Usar el nombre normalizado para todo el flujo siguiente
-      calleT = calleNormalizada;
-    }
-  }
-
+  /** Solo GPS del usuario en el INSERT; el pin se resuelve en servidor con regeocodificarPedido. */
   let latFinal = lat != null && Number.isFinite(Number(lat)) ? Number(lat) : null;
   let lngFinal = lng != null && Number.isFinite(Number(lng)) ? Number(lng) : null;
   if (
@@ -289,176 +260,12 @@ export async function crearPedidoDesdeWhatsappBot({
     lngFinal = null;
   }
 
-  /**
-   * PRIORIDAD ABSOLUTA: buscar coordenadas corregidas manualmente en socios_catalogo por NIS/Medidor.
-   * Si no encuentra por identificadores, intenta por dirección estructurada + nombre del titular.
-   * Esto garantiza persistencia de ubicaciones corregidas por el admin para el mismo cliente.
-   */
-  if (!coordsValidasWgs84(latFinal, lngFinal) && (tieneIdentificadorSum || calleT || locT)) {
-    try {
-      const coordsPadron = await buscarCoordenadasPorNisMedidor({
-        tenantId: Number(tenantId),
-        nis: nisT,
-        medidor: medT,
-        nisMedidor: nmT,
-        calle: calleT,
-        numero: numT,
-        localidad: locT,
-        nombreCliente: String(clienteNombre || "").trim(),
-      });
-      if (coordsPadron && coordsValidasWgs84(coordsPadron.lat, coordsPadron.lng)) {
-        latFinal = coordsPadron.lat;
-        lngFinal = coordsPadron.lng;
-        const notaPadron = coordsPadron.esManual
-          ? "[Sistema] Ubicación corregida manualmente en pedidos anteriores del mismo cliente."
-          : "[Sistema] Ubicación desde el padrón de clientes (socios_catalogo).";
-        if (!de.includes(notaPadron)) {
-          de = `${de}\n\n${notaPadron}`;
-        }
-      }
-    } catch (e) {
-      console.warn("[pedido-whatsapp-bot] buscar coords por NIS/Medidor/dirección", e?.message || e);
-    }
-  }
-
-  /**
-   * WhatsApp: sin Nominatim en creación (502/CORS). Padrón + vecinos SQL + localidad + sede.
-   * Si hay NIS/medidor o calle+localidad y aún no hay GPS válido, se fuerza ubicación interna.
-   */
-  const debeGarantizarUbicacion =
-    !coordsValidasWgs84(latFinal, lngFinal) &&
-    (tieneIdentificadorSum || (calleT && locT));
-
-  if (debeGarantizarUbicacion) {
-    try {
-      const g = await resolverGeolocalizacionGarantizadaWhatsapp({
-        tenantId: Number(tenantId),
-        entradaLat: latFinal,
-        entradaLng: lngFinal,
-        catalogoCalle: calleT,
-        catalogoNumero: numT,
-        catalogoLocalidad: locT,
-        excludeNisMedidor: lookupKey || null,
-        identificadoPorPadron: tieneIdentificadorSum,
-      });
-      if (coordsValidasWgs84(g.lat, g.lng)) {
-        latFinal = g.lat;
-        lngFinal = g.lng;
-        const n = g.nota != null ? String(g.nota).trim() : "";
-        if (n && !de.includes(n)) {
-          de = `${de}\n\n${n}`;
-        }
-      }
-    } catch (e) {
-      console.warn("[pedido-whatsapp-bot] geolocalizacion garantizada", e?.message || e);
-    }
-  }
-
-  if (tieneIdentificadorSum && !coordsValidasWgs84(latFinal, lngFinal)) {
-    try {
-      const g2 = await resolverGeolocalizacionGarantizadaWhatsapp({
-        tenantId: Number(tenantId),
-        entradaLat: null,
-        entradaLng: null,
-        catalogoCalle: calleT,
-        catalogoNumero: numT,
-        catalogoLocalidad: locT,
-        excludeNisMedidor: lookupKey || null,
-        identificadoPorPadron: true,
-      });
-      if (coordsValidasWgs84(g2.lat, g2.lng)) {
-        latFinal = g2.lat;
-        lngFinal = g2.lng;
-        const n2 = g2.nota != null ? String(g2.nota).trim() : "";
-        if (n2 && !de.includes(n2)) {
-          de = `${de}\n\n${n2}`;
-        }
-      }
-    } catch (e) {
-      console.warn("[pedido-whatsapp-bot] geolocalizacion garantizada refuerzo", e?.message || e);
-    }
-  }
-
-  if (!coordsValidasWgs84(latFinal, lngFinal)) {
-    try {
-      const gFin = await resolverGeolocalizacionGarantizadaWhatsapp({
-        tenantId: Number(tenantId),
-        entradaLat: null,
-        entradaLng: null,
-        catalogoCalle: calleT,
-        catalogoNumero: numT,
-        catalogoLocalidad: locT,
-        excludeNisMedidor: lookupKey || null,
-        identificadoPorPadron: !!tieneIdentificadorSum,
-      });
-      if (coordsValidasWgs84(gFin.lat, gFin.lng)) {
-        latFinal = gFin.lat;
-        lngFinal = gFin.lng;
-        const nFin = gFin.nota != null ? String(gFin.nota).trim() : "";
-        if (nFin && !de.includes(nFin)) {
-          de = `${de}\n\n${nFin}`;
-        }
-      }
-    } catch (e) {
-      console.warn("[pedido-whatsapp-bot] geolocalizacion ultimo recurso", e?.message || e);
-    }
-  }
-
-  /**
-   * FALLBACK ADICIONAL: Interpolación de alturas (address interpolation)
-   * Si todavía no hay coordenadas válidas, pero tenemos calle, número y localidad,
-   * intentar calcular la posición interpolando sobre la geometría de la calle.
-   */
-  if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
-    console.info("[pedido-whatsapp-bot] Intentando interpolación de alturas como último recurso");
-    try {
-      const interpol = await interpolarCoordenadaPorAltura({
-        calle: calleT,
-        numero: numT,
-        localidad: locT,
-        provincia: provinciaIn || undefined,
-      });
-      
-      if (interpol) {
-        // Agregar logs del algoritmo a la descripción para diagnóstico visible
-        if (interpol.log && interpol.log.length > 0) {
-          const logSection = "\n\n━━━ DIAGNÓSTICO DE GEOCODIFICACIÓN ━━━\n" + 
-            interpol.log.join("\n") + 
-            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
-          de = `${de}${logSection}`;
-        }
-        
-        if (coordsValidasWgs84(interpol.lat, interpol.lng)) {
-          latFinal = interpol.lat;
-          lngFinal = interpol.lng;
-          const notaInterpol = `[Sistema] Ubicación calculada por interpolación de alturas (${interpol.metadata?.lado || "aproximado"}). Verificar en el mapa.`;
-          if (!de.includes(notaInterpol)) {
-            de = `${notaInterpol}\n\n${de}`;
-          }
-          console.info("[pedido-whatsapp-bot] ✓ Interpolación de alturas exitosa: lat=%s, lng=%s", 
-            latFinal.toFixed(6), lngFinal.toFixed(6));
-        } else {
-          // Interpolación falló, logs agregados a descripción para diagnóstico
-          console.warn("[pedido-whatsapp-bot] Interpolación no retornó coordenadas válidas");
-        }
-      }
-    } catch (e) {
-      console.warn("[pedido-whatsapp-bot] interpolacion de alturas", e?.message || e);
-      de = `${de}\n\n[Sistema] Error en interpolación: ${e?.message || "desconocido"}`;
-    }
-  }
-
   let coordsWhatsappParaCatalogo = null;
   if (
     coordsValidasWgs84(latFinal, lngFinal) &&
     !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal)
   ) {
     coordsWhatsappParaCatalogo = { lat: latFinal, lng: lngFinal };
-  }
-
-  if (!coordsValidasWgs84(latFinal, lngFinal)) {
-    latFinal = -34.6037;
-    lngFinal = -58.3816;
   }
 
   const cols = [
@@ -599,8 +406,10 @@ export async function crearPedidoDesdeWhatsappBot({
         lng: coordsWhatsappParaCatalogo.lng,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
     }
-    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), {})
-      .then((res) => notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res))
+    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), { silent: true })
+      .then((res) =>
+        notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res, { silent: true })
+      )
       .catch((e) => console.warn("[pedido-whatsapp-bot] regeo automático", e?.message || e));
   });
   return pedidoRow;
@@ -609,7 +418,8 @@ export async function crearPedidoDesdeWhatsappBot({
 const REGEO_NOTIF_PREFIX = "GN_REGEO_LOG_V1\n";
 
 /** Notificación solo para admins: log de re-geocodificación automática (no bloquea al usuario de WhatsApp). */
-async function notificarAdminsRegeoPedidoWhatsappSafe(tenantId, pedido, resultado) {
+async function notificarAdminsRegeoPedidoWhatsappSafe(tenantId, pedido, resultado, opts = {}) {
+  if (opts.silent) return;
   if (!pedido?.id || !resultado) return;
   try {
     const t = await query(

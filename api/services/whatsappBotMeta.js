@@ -24,18 +24,7 @@ import {
 } from "./tiposReclamo.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
-import {
-  geocodeAddressArgentina,
-  reverseGeocodeArgentina,
-  geocodeCalleNumeroLocalidadArgentina,
-  geocodeLocalityViewboxArgentina,
-  haversineMeters,
-  isGeocodePlausibleForLocalityAnchor,
-  parseHouseNumberInt,
-  searchCalleLocalidadArgentina,
-  resolveStructuredAddressCoords,
-  verifyCatalogGeocodeReverse,
-} from "./nominatimClient.js";
+import { reverseGeocodeArgentina } from "./nominatimClient.js";
 import {
   humanChatOpenOrGetSession,
   humanChatQueueSnapshot,
@@ -367,23 +356,35 @@ function aplicarSuministroCatalogoWhatsappRes(sess, res) {
   if (f) sess.suministroFases = f;
   const prov = trimOrNullWhatsapp(res.catalogoProvincia);
   if (prov) sess.catalogoProvinciaParaGeocode = prov;
+  if (prov && !trimOrNullWhatsapp(sess.addrProvincia)) sess.addrProvincia = prov;
+  const cpRaw =
+    res.catalogoCodigoPostal != null && String(res.catalogoCodigoPostal).trim()
+      ? String(res.catalogoCodigoPostal).replace(/\D/g, "")
+      : "";
+  const cpOk = cpRaw.length >= 4 && cpRaw.length <= 8 ? cpRaw : "";
+  if (cpOk && !trimOrNullWhatsapp(sess.addrCodigoPostal)) sess.addrCodigoPostal = cpOk;
 }
 
-/** Coordenadas del padrón (clientes_finales / socios_catalogo) para el mapa si el geocode falla. */
+/** Solo nota de proximidad del padrón (el pin lo define regeocodificarPedido tras el INSERT). */
 function aplicarPadronCoordsWhatsapp(sess, res) {
   if (!sess || !res) return;
-  const la = res.catalogoLatitud;
-  const lo = res.catalogoLongitud;
-  if (la == null || lo == null) return;
-  const lat = Number(la);
-  const lng = Number(lo);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
-  if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return;
-  sess.padronLat = lat;
-  sess.padronLng = lng;
   const nota = res.notaUbicacionProximidad != null ? String(res.notaUbicacionProximidad).trim() : "";
   if (nota) sess.notaUbicacionInternaWhatsapp = nota;
+}
+
+/** Texto breve para chat: provincia y CP del padrón si existen. */
+function lineasExtraPadronWhatsapp(res) {
+  if (!res) return "";
+  const prov = trimOrNullWhatsapp(res.catalogoProvincia);
+  const cpRaw =
+    res.catalogoCodigoPostal != null && String(res.catalogoCodigoPostal).trim()
+      ? String(res.catalogoCodigoPostal).replace(/\D/g, "")
+      : "";
+  const cpOk = cpRaw.length >= 4 && cpRaw.length <= 8 ? cpRaw : "";
+  const lines = [];
+  if (prov) lines.push(`Provincia: *${prov}*`);
+  if (cpOk) lines.push(`Código postal: *${cpOk}*`);
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
 }
 
 function interpretaSuministroConexionWhatsapp(text) {
@@ -826,18 +827,6 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     latN = null;
     lngN = null;
   }
-  if ((latN == null || lngN == null) && sess.padronLat != null && sess.padronLng != null) {
-    const pl = Number(sess.padronLat);
-    const pg = Number(sess.padronLng);
-    if (
-      Number.isFinite(pl) &&
-      Number.isFinite(pg) &&
-      !(Math.abs(pl) < 1e-6 && Math.abs(pg) < 1e-6)
-    ) {
-      latN = pl;
-      lngN = pg;
-    }
-  }
   try {
     const notaInt = sess.notaUbicacionInternaWhatsapp != null ? String(sess.notaUbicacionInternaWhatsapp).trim() : "";
     const pedido = await crearPedidoDesdeWhatsappBot({
@@ -867,7 +856,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     sessions.delete(sk);
     const notaSinMapa =
       sess._geocodeSinMapa && (latN == null || lngN == null)
-        ? "\n\n_No pudimos ubicar tu domicilio en el mapa con el callejero. El reclamo quedó registrado con la dirección del padrón; si hace falta, la cooperativa puede contactarte._"
+        ? "\n\n_Si no enviaste ubicación GPS, el mapa se actualizará automáticamente con tu domicilio._"
         : "";
     await reply(
       phone,
@@ -924,15 +913,11 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 }
 
 /**
- * Geocodifica calle/número/localidad, guarda en sesión y finaliza el pedido (mismo fallback que el paso por chat).
+ * Guarda domicilio estructurado en sesión y cierra el pedido. La ubicación en mapa la resuelve
+ * `regeocodificarPedido` en el servidor (mismo pipeline que el botón Re-geocodificar).
+ * Solo se usan coordenadas aquí si el usuario compartió GPS válido (`userSharedGps`).
  *
- * Flujo gratuito (solo OSM): texto → ancla de localidad vía `geocodeAddressArgentina` / viewbox `geocodeLocalityViewboxArgentina`
- * (sin usar centro del tenant como ciudad; `allowTenantCentroidFallback: false` en catálogo). Luego `searchCalleLocalidadArgentina`
- * (candidatos con housenumber + eje de vía) y `geocodeCalleNumeroLocalidadArgentina` (estructurado + paridad + resolución).
- * Sin housenumber en OSM no hay frente exacto: se usa paridad + distancia en número o `street_center` / fallback ciudad.
- * Cada coordenada aceptada: `verifyCatalogGeocodeReverse` + `isGeocodePlausibleForLocalityAnchor` (y GPS del usuario si aplica).
- *
- * @param {{ origenCatalogo?: boolean, stateOrProvince?: string }} opts — stateOrProvince desambigua Nominatim (prioridad sobre `clientes.configuracion`).
+ * @param {{ origenCatalogo?: boolean, stateOrProvince?: string }} opts
  */
 async function geocodeStructuredAddressAndFinalizePedido(
   phone,
@@ -946,7 +931,6 @@ async function geocodeStructuredAddressAndFinalizePedido(
   addrNumero,
   opts = {}
 ) {
-  const nearM = Number(process.env.WHATSAPP_GPS_NEAR_METERS || 120);
   const ciudad = String(addrCiudad || "").trim();
   const calle = String(addrCalle || "").trim();
   const numRaw = String(addrNumero ?? "").trim();
@@ -956,7 +940,6 @@ async function geocodeStructuredAddressAndFinalizePedido(
   sess.addrNumero = numero;
   sess.direccionDeclaradaUsuario = [ciudad, calle, numRaw || numero].filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
   sess._geocodeOrigenCatalogo = !!opts.origenCatalogo;
-  sess._geocodeSinMapa = false;
   if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
   sessions.set(sk, sess);
 
@@ -972,41 +955,10 @@ async function geocodeStructuredAddressAndFinalizePedido(
     return;
   }
 
+  const stOpt = String(opts.stateOrProvince || "").trim();
+  if (stOpt && !trimOrNullWhatsapp(sess.addrProvincia)) sess.addrProvincia = stOpt;
+
   const ciudadLabel = ciudad || "tu localidad";
-  const catalogStrict = !!opts.origenCatalogo && ciudad.length >= 2;
-  const stateForGeo = String(
-    opts.stateOrProvince || sess.addrProvincia || sess.catalogoProvinciaParaGeocode || ctx?.geocodeState || ""
-  ).trim();
-  const postalForGeo = String(opts.postalCode || sess.addrCodigoPostal || "")
-    .trim()
-    .replace(/\D/g, "");
-
-  let geoCiudad = null;
-  try {
-    const qCiudadGeo =
-      postalForGeo.length >= 4
-        ? `${ciudadLabel}, ${postalForGeo}, ${stateForGeo.length >= 2 ? `${stateForGeo}, ` : ""}Argentina`.replace(
-            /\s+/g,
-            " "
-          )
-        : stateForGeo.length >= 2
-          ? `${ciudadLabel}, ${stateForGeo}, Argentina`
-          : `${ciudadLabel}, Argentina`;
-    geoCiudad = await geocodeAddressArgentina(qCiudadGeo, {
-      filterLocalidad: ciudad.length >= 2 ? ciudad : undefined,
-      filterState: stateForGeo.length >= 2 ? stateForGeo : "",
-    });
-  } catch (_) {}
-  const baseLat = ctx.lat != null && Number.isFinite(Number(ctx.lat)) ? Number(ctx.lat) : null;
-  const baseLng = ctx.lng != null && Number.isFinite(Number(ctx.lng)) ? Number(ctx.lng) : null;
-  const tenantCentroid =
-    baseLat != null && baseLng != null ? { lat: baseLat, lng: baseLng } : null;
-  const fallbackCity =
-    geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
-      ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
-      : null;
-
-  const targetNum = parseHouseNumberInt(numero);
   const userGps =
     sess.userSharedGps &&
     Number.isFinite(Number(sess.userSharedGps.lat)) &&
@@ -1014,309 +966,33 @@ async function geocodeStructuredAddressAndFinalizePedido(
       ? { lat: Number(sess.userSharedGps.lat), lng: Number(sess.userSharedGps.lng) }
       : null;
 
-  let localityViewboxMeta = null;
-  if (ciudad.length >= 2) {
-    try {
-      localityViewboxMeta = await geocodeLocalityViewboxArgentina(ciudad, tenantCentroid, {
-        allowTenantCentroidFallback: false,
-        stateOrProvince: stateForGeo || undefined,
-        postalCode: postalForGeo.length >= 4 ? postalForGeo : undefined,
-      });
-    } catch (e) {
-      console.error("[whatsapp-bot-meta] locality viewbox", e?.message || e);
-    }
-  }
-
-  const localityAnchor =
-    geoCiudad && Number.isFinite(geoCiudad.lat) && Number.isFinite(geoCiudad.lng)
-      ? { lat: geoCiudad.lat, lng: geoCiudad.lng }
-      : localityViewboxMeta &&
-          !localityViewboxMeta.fromTenantCentroid &&
-          localityViewboxMeta.center &&
-          Number.isFinite(Number(localityViewboxMeta.center.lat)) &&
-          Number.isFinite(Number(localityViewboxMeta.center.lng))
-        ? { lat: Number(localityViewboxMeta.center.lat), lng: Number(localityViewboxMeta.center.lng) }
-        : null;
-  const localityResolutionRequired = !userGps && ciudad.length >= 2;
-
-  let houseHits = [];
-  let streetCenter = null;
-  try {
-    const pack = await searchCalleLocalidadArgentina(
-      ciudad,
-      calle,
-      40,
-      localityViewboxMeta?.viewboxStr || null,
-      stateForGeo,
-      postalForGeo.length >= 4 ? postalForGeo : null
-    );
-    houseHits = pack.houseHits || [];
-    streetCenter = pack.streetCenter || null;
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] search calle/localidad", e?.message || e);
-  }
-
-  const exactInHouseHits =
-    targetNum != null &&
-    Number.isFinite(targetNum) &&
-    houseHits.some((h) => h.houseNum === targetNum);
-
-  try {
-    const geo = await geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero, {
-      tenantCentroid,
-      catalogStrict,
-      precomputedViewboxMeta: ciudad.length >= 2 ? localityViewboxMeta : undefined,
-      allowTenantCentroidFallback: false,
-      stateOrProvince: stateForGeo || undefined,
-      postalCode: postalForGeo.length >= 4 ? postalForGeo : undefined,
-    });
-    if (geo?.audit) {
-      console.log("[whatsapp-bot-meta] geocode audit", {
-        tenantId: sess.tenantId,
-        catalogStrict,
-        stateGeo: stateForGeo || null,
-        ...geo.audit,
-        ciudad,
-        calle,
-      });
-    }
-    if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
-      // Sin GPS: si OSM tiene frentes numerados en la calle pero no el número del padrón, Nominatim suele devolver
-      // un punto genérico (mal ubicado). Preferimos paridad + frente más cercano vía resolveStructuredAddressCoords.
-      let acceptDirectGeocode = false;
-      if (userGps) {
-        acceptDirectGeocode = true;
-      } else if (!houseHits.length) {
-        acceptDirectGeocode = true;
-      } else if (exactInHouseHits) {
-        acceptDirectGeocode = true;
-      }
-      if (acceptDirectGeocode && !userGps && ciudad.length >= 2 && calle.length >= 2) {
-        const revOk = await verifyCatalogGeocodeReverse(geo.lat, geo.lng, ciudad, calle);
-        if (!revOk) {
-          console.warn("[whatsapp-bot-meta] geocode reverse mismatch (direct)", {
-            tenantId: sess.tenantId,
-            catalogStrict,
-            ciudad,
-            calle,
-            lat: geo.lat,
-            lng: geo.lng,
-          });
-          acceptDirectGeocode = false;
-        }
-      }
-      if (acceptDirectGeocode && !userGps && localityResolutionRequired && !localityAnchor) {
-        console.warn("[whatsapp-bot-meta] geocode sin ancla de localidad (direct)", {
-          tenantId: sess.tenantId,
-          ciudad,
-        });
-        acceptDirectGeocode = false;
-      }
-      if (
-        acceptDirectGeocode &&
-        !userGps &&
-        localityAnchor &&
-        !isGeocodePlausibleForLocalityAnchor(geo.lat, geo.lng, localityAnchor)
-      ) {
-        console.warn("[whatsapp-bot-meta] geocode implausible vs locality anchor (direct)", {
-          tenantId: sess.tenantId,
-          ciudad,
-          lat: geo.lat,
-          lng: geo.lng,
-        });
-        acceptDirectGeocode = false;
-      }
-      if (acceptDirectGeocode) {
-        if (userGps) {
-          const dG = haversineMeters(userGps.lat, userGps.lng, geo.lat, geo.lng);
-          if (dG <= nearM) {
-            sess.lat = userGps.lat;
-            sess.lng = userGps.lng;
-            sess.direccionTexto = geo.displayName;
-          } else {
-            sess.lat = geo.lat;
-            sess.lng = geo.lng;
-            sess.direccionTexto = geo.displayName;
-          }
-        } else {
-          sess.lat = geo.lat;
-          sess.lng = geo.lng;
-          sess.direccionTexto = geo.displayName;
-        }
-        if (geo.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio") {
-          sess.barrio = geo.barrio;
-        }
-        sessions.set(sk, sess);
-        await finalizePedidoFromSession(phone, sess, contactName);
-        return;
-      }
-    }
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] geocode estructurado", e?.message || e);
-  }
-
-  const picked = resolveStructuredAddressCoords({
-    houseHits,
-    streetCenter,
-    targetNum,
-    userGps,
-    fallbackCity: fallbackCity,
-    nearMeters: nearM,
-  });
-  if (picked && Number.isFinite(picked.lat) && Number.isFinite(picked.lng)) {
-    const pickedRevOk =
-      userGps ||
-      ciudad.length < 2 ||
-      calle.length < 2 ||
-      (await verifyCatalogGeocodeReverse(picked.lat, picked.lng, ciudad, calle));
-    const pickedPlausible =
-      userGps ||
-      !localityAnchor ||
-      isGeocodePlausibleForLocalityAnchor(picked.lat, picked.lng, localityAnchor);
-    const pickedOkResolution = userGps || !(localityResolutionRequired && !localityAnchor);
-    if (!pickedRevOk) {
-      console.warn("[whatsapp-bot-meta] geocode reverse mismatch (picked)", {
-        tenantId: sess.tenantId,
-        ciudad,
-        calle,
-        lat: picked.lat,
-        lng: picked.lng,
-      });
-    } else if (!pickedPlausible) {
-      console.warn("[whatsapp-bot-meta] geocode implausible vs locality anchor (picked)", {
-        tenantId: sess.tenantId,
-        ciudad,
-        lat: picked.lat,
-        lng: picked.lng,
-      });
-    } else if (!pickedOkResolution) {
-      console.warn("[whatsapp-bot-meta] geocode sin ancla de localidad (picked)", {
-        tenantId: sess.tenantId,
-        ciudad,
-      });
-    }
-    if (pickedRevOk && pickedPlausible && pickedOkResolution) {
-      sess.lat = picked.lat;
-      sess.lng = picked.lng;
-      const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-      const anchor = picked.anchorHouse != null ? ` (frente ref. ${calle} ${picked.anchorHouse})` : "";
-      const modoMapa =
-        picked.source === "user_gps_near"
-          ? `GPS del usuario (cercano a domicilio estimado${anchor})`
-          : picked.source === "exact_house"
-            ? `Domicilio geocodificado${anchor}`
-            : picked.source === "street_center"
-              ? `Eje de calle (centro estimado de la vía en ${ciudadLabel})`
-              : picked.source === "fallback"
-                ? `Centro de localidad (referencia)`
-                : picked.source === "house_search_parity"
-                  ? `Ubicación estimada por *misma paridad* (calle impar/par)${anchor}`
-                  : `Ubicación estimada en mapa${anchor}`;
-      sess.direccionTexto = `${modoMapa}, ${origen}: ${calle} ${numero}, ${ciudadLabel}`
-        .replace(/\s+/g, " ")
-        .trim();
-      sessions.set(sk, sess);
-      await finalizePedidoFromSession(phone, sess, contactName);
-      return;
-    }
-  }
-
-  let endLat = geoCiudad?.lat ?? null;
-  let endLng = geoCiudad?.lng ?? null;
-  if (!userGps) {
-    if (endLat != null && endLng != null && ciudad.length >= 2 && calle.length >= 2) {
-      const okEnd = await verifyCatalogGeocodeReverse(endLat, endLng, ciudad, calle);
-      if (!okEnd) {
-        console.warn("[whatsapp-bot-meta] geocode reverse mismatch (fallback city)", {
-          tenantId: sess.tenantId,
-          ciudad,
-          calle,
-          lat: endLat,
-          lng: endLng,
-        });
-        endLat = null;
-        endLng = null;
-      }
-    }
-    if (
-      endLat != null &&
-      endLng != null &&
-      localityAnchor &&
-      !isGeocodePlausibleForLocalityAnchor(endLat, endLng, localityAnchor)
-    ) {
-      endLat = null;
-      endLng = null;
-    }
-    if (localityResolutionRequired && !localityAnchor) {
-      endLat = null;
-      endLng = null;
-    }
-  }
-  let usedGpsTextoFallback = false;
-  if (userGps) {
-    endLat = userGps.lat;
-    endLng = userGps.lng;
-    usedGpsTextoFallback = true;
-  }
-  if ((endLat == null || endLng == null) && sess.padronLat != null && sess.padronLng != null) {
-    const pl = Number(sess.padronLat);
-    const pg = Number(sess.padronLng);
-    if (
-      Number.isFinite(pl) &&
-      Number.isFinite(pg) &&
-      !(Math.abs(pl) < 1e-6 && Math.abs(pg) < 1e-6)
-    ) {
-      endLat = pl;
-      endLng = pg;
-    }
-  }
-  if (
-    endLat != null &&
-    endLng != null &&
-    Math.abs(endLat) < 1e-6 &&
-    Math.abs(endLng) < 1e-6
-  ) {
-    endLat = null;
-    endLng = null;
-  }
-  sess.lat = endLat;
-  sess.lng = endLng;
   const nom = String(sess.contactName || contactName || "").trim();
   const origen = opts.origenCatalogo ? "Domicilio en padrón" : "Calle indicada por el usuario";
-  const sinCoordsConfiables = endLat == null || endLng == null;
-  const gpsPie = "";
-  if (sinCoordsConfiables) {
-    sess._geocodeSinMapa = true;
-    const detalle = catalogStrict
-      ? "Sin coordenadas confiables en el mapa (no se verificó con el callejero)."
-      : "Sin coordenadas confiables en el mapa.";
+
+  if (userGps) {
+    sess.lat = userGps.lat;
+    sess.lng = userGps.lng;
+    sess._geocodeSinMapa = false;
     sess.direccionTexto = nom
-      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (${detalle})${gpsPie}`
+      ? `Ubicación por *GPS del usuario*: ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
           .replace(/\s+/g, " ")
           .trim()
-      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (${detalle})${gpsPie}`
+      : `Ubicación por *GPS del usuario*: ${ciudadLabel}. ${origen}: ${calle} ${numero}`
           .replace(/\s+/g, " ")
           .trim();
   } else {
-    sess._geocodeSinMapa = false;
-    if (usedGpsTextoFallback) {
-      sess.direccionTexto = nom
-        ? `Ubicación por *GPS del usuario* (sin geocodificar calle): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-            .replace(/\s+/g, " ")
-            .trim()
-        : `Ubicación por *GPS del usuario* (sin geocodificar calle): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-            .replace(/\s+/g, " ")
-            .trim();
-    } else {
-      sess.direccionTexto = nom
-        ? `Ubicación aproximada (centro de localidad): ${nom}, ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-            .replace(/\s+/g, " ")
-            .trim()
-        : `Ubicación aproximada (centro de localidad): ${ciudadLabel}. ${origen}: ${calle} ${numero}`
-            .replace(/\s+/g, " ")
-            .trim();
-    }
+    sess.lat = null;
+    sess.lng = null;
+    sess._geocodeSinMapa = true;
+    sess.direccionTexto = nom
+      ? `${origen}: ${calle} ${numero}, ${ciudadLabel}. ${nom}. (El mapa se actualizará al procesar el reclamo.)`
+          .replace(/\s+/g, " ")
+          .trim()
+      : `${origen}: ${calle} ${numero}, ${ciudadLabel}. (El mapa se actualizará al procesar el reclamo.)`
+          .replace(/\s+/g, " ")
+          .trim();
   }
+
   sessions.set(sk, sess);
   await finalizePedidoFromSession(phone, sess, contactName);
 }
@@ -2073,9 +1749,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       aplicarSuministroCatalogoWhatsappRes(nextSess, res);
       aplicarPadronCoordsWhatsapp(nextSess, res);
       sessions.set(sk, nextSess);
+      const extraPad = lineasExtraPadronWhatsapp(res);
       await reply(
         phone,
-        `Listo, registramos a *${nuevoNombre}*.\n\nUbicamos tu domicilio en el padrón (${calleCat} ${numCat || "s/n"}, ${locCat}). Registramos el reclamo…`,
+        `Listo, registramos a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPad}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Registramos el reclamo…`,
         tid,
         phoneNumberId
       );
@@ -2089,7 +1766,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         locCat,
         calleCat,
         numCat || "0",
-        { origenCatalogo: true }
+        { origenCatalogo: true, stateOrProvince: trimOrNullWhatsapp(nextSess.addrProvincia) || ctx?.geocodeState || "" }
       );
       return;
     }
@@ -2161,9 +1838,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
     if (puedeMapaDesdePadron) {
       sessions.set(sk, sess);
+      const extraPadNis = lineasExtraPadronWhatsapp(res);
       await reply(
         phone,
-        `Listo, registramos el *NIS* y a *${nuevoNombre}*.\n\nUbicamos el domicilio en el padrón (${calleCat} ${numCat || "s/n"}, ${locCat}). Registramos el reclamo…`,
+        `Listo, registramos el *NIS* y a *${nuevoNombre}*.\n\n*Cliente encontrado en padrón.*${extraPadNis}\n\nDomicilio: *${calleCat} ${numCat || "s/n"}*, *${locCat}*. Registramos el reclamo…`,
         tid,
         phoneNumberId
       );
@@ -2177,7 +1855,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         locCat,
         calleCat,
         numCat || "0",
-        { origenCatalogo: true }
+        { origenCatalogo: true, stateOrProvince: trimOrNullWhatsapp(sess.addrProvincia) || ctx?.geocodeState || "" }
       );
       return;
     }
