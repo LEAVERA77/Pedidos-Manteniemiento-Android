@@ -480,15 +480,15 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(barrioT);
   }
 
-  const ensuredMid = applyFinalLatLngToPedidoVals(cols, vals, latFinal, lngFinal);
-  latFinal = ensuredMid.lat;
-  lngFinal = ensuredMid.lng;
-  if (ensuredMid.coerced && telemetria?.recordPaso) {
+  const preLog = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
+  latFinal = preLog.lat;
+  lngFinal = preLog.lng;
+  if (preLog.coerced && telemetria?.recordPaso) {
     try {
       await telemetria.recordPaso({
-        slug: "coords_ensure_antes_insert",
+        slug: "coords_ensure_pre_geocode_log",
         ok: true,
-        detail: "pre_geocode_log",
+        detail: "solo_variables_vals_se_actualizan_en_apply_final",
       });
     } catch (_) {}
   }

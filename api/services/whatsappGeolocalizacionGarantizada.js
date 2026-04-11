@@ -85,15 +85,23 @@ export function ensureWhatsappPedidoCoordsForDb(lat, lng) {
 
 /**
  * Escribe en `vals` los índices donde `cols[i]` es `lat` o `lng`, usando siempre un par que pasa el CHECK WhatsApp.
- * Llamar con `cols`/`vals` ya construidos y misma longitud.
+ * `pedidos_whatsapp_coords_wgs84_check` aplica a columnas `lat`/`lng` (no `latitud`/`longitud`).
+ * Llamar con `cols`/`vals` ya construidos y misma longitud; debe haber **exactamente** una `lat` y una `lng`.
  */
 export function applyFinalLatLngToPedidoVals(cols, vals, lat, lng) {
-  const e = ensureWhatsappPedidoCoordsForDb(lat, lng);
-  for (let i = 0; i < cols.length; i++) {
-    if (cols[i] === "lat") vals[i] = e.lat;
-    if (cols[i] === "lng") vals[i] = e.lng;
+  const nLat = cols.reduce((n, c) => n + (c === "lat" ? 1 : 0), 0);
+  const nLng = cols.reduce((n, c) => n + (c === "lng" ? 1 : 0), 0);
+  if (nLat !== 1 || nLng !== 1) {
+    throw new Error(`pedido_wa_lat_lng_cols_esperadas_1: nLat=${nLat} nLng=${nLng}`);
   }
-  return e;
+  const e = ensureWhatsappPedidoCoordsForDb(lat, lng);
+  const la = Number(e.lat);
+  const lo = Number(e.lng);
+  for (let i = 0; i < cols.length; i++) {
+    if (cols[i] === "lat") vals[i] = la;
+    if (cols[i] === "lng") vals[i] = lo;
+  }
+  return { ...e, lat: la, lng: lo };
 }
 
 async function tableExists(name) {
