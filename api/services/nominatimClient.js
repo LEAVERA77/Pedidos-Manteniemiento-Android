@@ -55,8 +55,19 @@ export function nominatimHeaders() {
 
 /**
  * Base URL del servicio Nominatim (sin barra final). Default: API pública OSM.
- * Para instancia propia: `NOMINATIM_BASE_URL=https://tu-servidor:8080` (después de importar datos con el proyecto Nominatim).
- * Nota: un repo GitHub (p. ej. NOMINATIM en LEAVERA77) es *código*; el HTTP que usa GestorNova es el host donde corre `nominatim serve`.
+ *
+ * El cliente arma `${base}/search` y `${base}/reverse` (ver usos en este archivo).
+ *
+ * - Raíz del host (típico Docker / reverse proxy en `/`):
+ *   `NOMINATIM_BASE_URL=https://nominatim.tudominio.com`
+ *   → `https://nominatim.tudominio.com/search?...`
+ *
+ * - Proxy con **path base** (Nginx/Caddy publica la API bajo un prefijo):
+ *   `NOMINATIM_BASE_URL=https://api.tuempresa.com/geo/nominatim`
+ *   → `https://api.tuempresa.com/geo/nominatim/search?...`
+ *   Comprobá en el navegador o curl que esa URL + `/search?format=json&q=test` responde JSON.
+ *
+ * Un repo GitHub del *software* Nominatim no es una URL: hay que desplegarlo y poner aquí el **origen HTTP** donde corre `nominatim serve`.
  */
 export function getNominatimBaseUrl() {
   const raw = String(process.env.NOMINATIM_BASE_URL || "https://nominatim.openstreetmap.org").trim();
