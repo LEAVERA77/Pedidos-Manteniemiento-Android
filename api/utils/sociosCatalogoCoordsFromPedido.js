@@ -22,6 +22,30 @@ function digitsCp(s) {
   return d.length >= 4 && d.length <= 8 ? d : "";
 }
 
+function haversineMetersQuick(lat1, lon1, lat2, lon2) {
+  const a1 = Number(lat1);
+  const o1 = Number(lon1);
+  const a2 = Number(lat2);
+  const o2 = Number(lon2);
+  if (![a1, o1, a2, o2].every((x) => Number.isFinite(x))) return Infinity;
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(a2 - a1);
+  const dLon = toRad(o2 - o1);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a1)) * Math.cos(toRad(a2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/** Misma heurística que `esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp` (evita referencia antes de su declaración). */
+function esPlaceholderBACoords(la, ln) {
+  const a = Number(la);
+  const b = Number(ln);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+  return Math.abs(a - -34.6037) < 0.001 && Math.abs(b - -58.3816) < 0.001;
+}
+
 let _colsCache = null;
 async function columnasSociosCatalogo() {
   if (_colsCache) return _colsCache;
@@ -242,28 +266,68 @@ export async function actualizarSociosCatalogoCoordsSiMatchPedido(opts) {
     const sid = ids[0];
     const hasUbicManual = cols.has("ubicacion_manual");
     const hasFechaCorr = cols.has("fecha_correccion_coords");
-    
-    let updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
-    const paramsUp = [la, ln];
-    let next = 3;
-    if (cols.has("provincia")) {
-      const pv = pedido.provincia != null ? String(pedido.provincia).trim() : "";
-      if (pv) {
+
+    const cur = await query(
+      `SELECT ${latLng.la}::numeric AS ola, ${latLng.ln}::numeric AS olo FROM socios_catalogo WHERE id = $1`,
+      [sid]
+    );
+    const ola = cur.rows?.[0]?.ola != null ? Number(cur.rows[0].ola) : NaN;
+    const olo = cur.rows?.[0]?.olo != null ? Number(cur.rows[0].olo) : NaN;
+    const coordsPreviasOk =
+      Number.isFinite(ola) &&
+      Number.isFinite(olo) &&
+      !(Math.abs(ola) < 1e-6 && Math.abs(olo) < 1e-6) &&
+      !esPlaceholderBACoords(ola, olo);
+    const mejoraCoords = !coordsPreviasOk || haversineMetersQuick(ola, olo, la, ln) > 45;
+
+    const pv = pedido.provincia != null ? String(pedido.provincia).trim() : "";
+    const cp = digitsCp(pedido.codigo_postal);
+
+    if (!mejoraCoords && !pv && !cp) {
+      console.info("[coords-manual→socios_catalogo] coords catálogo ya cercanas al pedido; sin cambios", {
+        pedidoId: pedido.id,
+        sid,
+      });
+      return { ok: true, sociosId: sid, reason: "coords_ya_cercanas" };
+    }
+
+    let updateSql;
+    const paramsUp = [];
+    let next = 1;
+
+    if (mejoraCoords) {
+      paramsUp.push(la, ln);
+      updateSql = `UPDATE socios_catalogo SET ${latLng.la} = $1::numeric, ${latLng.ln} = $2::numeric`;
+      next = 3;
+      if (cols.has("provincia") && pv) {
         updateSql += `, provincia = $${next}`;
         paramsUp.push(pv);
         next++;
       }
-    }
-    if (cols.has("codigo_postal")) {
-      const cp = digitsCp(pedido.codigo_postal);
-      if (cp) {
+      if (cols.has("codigo_postal") && cp) {
         updateSql += `, codigo_postal = $${next}`;
         paramsUp.push(cp);
         next++;
       }
+      if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
+      if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
+    } else {
+      const sets = [];
+      if (cols.has("provincia") && pv) {
+        sets.push(`provincia = $${next}`);
+        paramsUp.push(pv);
+        next++;
+      }
+      if (cols.has("codigo_postal") && cp) {
+        sets.push(`codigo_postal = $${next}`);
+        paramsUp.push(cp);
+        next++;
+      }
+      if (!sets.length) {
+        return { ok: true, sociosId: sid, reason: "sin_cambios" };
+      }
+      updateSql = `UPDATE socios_catalogo SET ${sets.join(", ")}`;
     }
-    if (hasUbicManual) updateSql += `, ubicacion_manual = TRUE`;
-    if (hasFechaCorr) updateSql += `, fecha_correccion_coords = NOW()`;
     updateSql += ` WHERE id = $${next} RETURNING id`;
     paramsUp.push(sid);
 

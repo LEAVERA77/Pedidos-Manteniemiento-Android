@@ -6088,6 +6088,41 @@ window.pollNotificacionesMovil = async function () {
             const t = row.titulo || 'GestorNova';
             const b = row.cuerpo || '';
             const pid = row.pedido_id != null ? String(row.pedido_id) : '';
+            const esNotifRegeo = typeof b === 'string' && b.startsWith('GN_REGEO_LOG_V1\n');
+            if (esAdm && esNotifRegeo) {
+                try {
+                    const raw = b.slice('GN_REGEO_LOG_V1\n'.length);
+                    const data = JSON.parse(raw);
+                    const lines = Array.isArray(data.log) ? data.log : [];
+                    let inner = `<div><p style="margin:0 0 .5rem;font-size:.9rem"><strong>${data.success ? '✅' : '⚠️'} Re-geocodificación automática</strong></p>`;
+                    if (data.np) inner += `<p style="font-size:.82rem;color:var(--tm)">Pedido ${escHtmlPrint(String(data.np))}</p>`;
+                    if (data.fuente) inner += `<p style="font-size:.78rem;color:var(--tm)">Fuente: ${escHtmlPrint(String(data.fuente))}</p>`;
+                    if (data.mensaje && !data.success) inner += `<p style="font-size:.78rem;color:#b45309">${escHtmlPrint(String(data.mensaje))}</p>`;
+                    inner += '<div style="background:var(--bg2,#f3f4f6);padding:.6rem;border-radius:.45rem;margin-top:.4rem;max-height:45vh;overflow:auto;font-family:ui-monospace,monospace;font-size:.7rem;line-height:1.4">';
+                    for (const line of lines) {
+                        const s = String(line);
+                        const escaped = escHtmlPrint(s);
+                        let color = 'var(--tm)';
+                        if (s.includes('✓') || s.includes('✅')) color = '#059669';
+                        else if (s.includes('⚠')) color = '#d97706';
+                        else if (s.includes('❌')) color = '#dc2626';
+                        else if (/PASO|📚|🌍|📐|═/.test(s)) color = '#2563eb';
+                        inner += `<div style="color:${color}">${escaped}</div>`;
+                    }
+                    inner += '</div></div>';
+                    if (typeof window.mostrarModalLogRegeocodificacion === 'function') {
+                        window.mostrarModalLogRegeocodificacion(inner, { durationMs: 60000 });
+                    } else {
+                        toast('Re-geocodificación automática (ver consola)', 'info', 8000);
+                    }
+                } catch (e) {
+                    logErrorWeb('notif-regeo-log', e);
+                }
+                if (_pollNotifMovilUsaColumnaLeida) {
+                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                }
+                continue;
+            }
             const esNotifDerivacion =
                 /derivaci/i.test(t) || /derivaci/i.test(b) || /solicita derivar/i.test(b);
             if (tienePuente) {

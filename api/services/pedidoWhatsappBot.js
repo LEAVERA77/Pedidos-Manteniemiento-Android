@@ -18,7 +18,10 @@ import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
-import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
+import {
+  buscarCoordenadasPorNisMedidor,
+  obtenerProvinciaCodigoPostalCatalogoPorIdentificador,
+} from "./buscarCoordenadasPorNisMedidor.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { normalizarDireccion } from "../utils/normalizarCalles.js";
 import { regeocodificarPedido } from "./regeocodificarPedido.js";
@@ -149,7 +152,16 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const rubroCliente = normalizarRubroCliente(tipoCliente);
-  const provinciaIn = provincia != null && String(provincia).trim() ? String(provincia).trim() : null;
+  let provinciaIn = provincia != null && String(provincia).trim() ? String(provincia).trim() : null;
+  let codigoPostalIn =
+    codigoPostal != null && String(codigoPostal).trim()
+      ? String(codigoPostal)
+          .trim()
+          .replace(/\D/g, "")
+      : null;
+  if (codigoPostalIn && (codigoPostalIn.length < 4 || codigoPostalIn.length > 8)) {
+    codigoPostalIn = null;
+  }
 
   const usuarioId = await resolveUsuarioCreadorParaPedidoWhatsapp(Number(tenantId));
 
@@ -158,6 +170,26 @@ export async function crearPedidoDesdeWhatsappBot({
   const nmT = nisMedidor != null && String(nisMedidor).trim() ? String(nisMedidor).trim() : null;
   const lookupKey = nmT || nisT || medT;
   const tieneIdentificadorSum = !!(nmT || nisT || medT);
+
+  if (tieneIdentificadorSum) {
+    try {
+      const metaCat = await obtenerProvinciaCodigoPostalCatalogoPorIdentificador({
+        tenantId: Number(tenantId),
+        nis: nisT,
+        medidor: medT,
+        nisMedidor: nmT,
+      });
+      if (metaCat) {
+        if (!provinciaIn && metaCat.provincia) provinciaIn = metaCat.provincia;
+        if (!codigoPostalIn && metaCat.codigo_postal) {
+          const d = String(metaCat.codigo_postal).replace(/\D/g, "");
+          if (d.length >= 4 && d.length <= 8) codigoPostalIn = d;
+        }
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] meta provincia/CP catálogo", e?.message || e);
+    }
+  }
 
   let distribuidorVal = null;
   let trafoVal = null;
@@ -506,13 +538,7 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const provT = provinciaIn;
-  const cpT =
-    codigoPostal != null && String(codigoPostal).trim()
-      ? String(codigoPostal)
-          .trim()
-          .replace(/\D/g, "")
-      : null;
-  const cpOk = cpT && cpT.length >= 4 && cpT.length <= 8 ? cpT : null;
+  const cpOk = codigoPostalIn && codigoPostalIn.length >= 4 && codigoPostalIn.length <= 8 ? codigoPostalIn : null;
   if (pCols.has("provincia") && provT) {
     cols.push("provincia");
     vals.push(provT);
@@ -573,11 +599,75 @@ export async function crearPedidoDesdeWhatsappBot({
         lng: coordsWhatsappParaCatalogo.lng,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
     }
-    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), { silent: true }).catch((e) =>
-      console.warn("[pedido-whatsapp-bot] regeo automático silencioso", e?.message || e)
-    );
+    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), {})
+      .then((res) => notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res))
+      .catch((e) => console.warn("[pedido-whatsapp-bot] regeo automático", e?.message || e));
   });
   return pedidoRow;
+}
+
+const REGEO_NOTIF_PREFIX = "GN_REGEO_LOG_V1\n";
+
+/** Notificación solo para admins: log de re-geocodificación automática (no bloquea al usuario de WhatsApp). */
+async function notificarAdminsRegeoPedidoWhatsappSafe(tenantId, pedido, resultado) {
+  if (!pedido?.id || !resultado) return;
+  try {
+    const t = await query(
+      `SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'notificaciones_movil' LIMIT 1`
+    );
+    if (!t.rows.length) return;
+
+    const colSet = await columnasUsuarios();
+    const hasTenant = colSet.has("tenant_id");
+    const hasCliente = colSet.has("cliente_id");
+    const col = hasTenant ? "tenant_id" : hasCliente ? "cliente_id" : null;
+    if (!col) return;
+
+    let admins = await query(
+      `SELECT id FROM usuarios
+       WHERE ${col} = $1 AND activo = TRUE
+         AND (
+           LOWER(COALESCE(rol::text, '')) = 'admin'
+           OR LOWER(COALESCE(rol::text, '')) = 'administrador'
+         )`,
+      [tenantId]
+    );
+    let recipients = admins.rows || [];
+    if (!recipients.length) {
+      const anyU = await query(
+        `SELECT id FROM usuarios WHERE ${col} = $1 AND activo = TRUE ORDER BY id ASC`,
+        [tenantId]
+      );
+      recipients = anyU.rows || [];
+    }
+    if (!recipients.length) return;
+
+    const payload = {
+      success: !!resultado.success,
+      fuente: resultado.fuente || null,
+      mensaje: resultado.mensaje || null,
+      log: Array.isArray(resultado.log) ? resultado.log.slice(0, 220) : [],
+      np: pedido.numero_pedido || null,
+    };
+    let cuerpo = `${REGEO_NOTIF_PREFIX}${JSON.stringify(payload)}`;
+    const maxC = 14000;
+    if (cuerpo.length > maxC) {
+      cuerpo = `${cuerpo.slice(0, maxC - 40)}\n…[truncado]`;
+    }
+    const titulo = resultado.success
+      ? `Re-geocodificación automática · #${pedido.numero_pedido || pedido.id}`
+      : `Re-geocodificación automática · #${pedido.numero_pedido || pedido.id} (revisar)`;
+    for (const a of recipients) {
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [a.id, pedido.id, titulo, cuerpo]
+      );
+    }
+  } catch (e) {
+    console.warn("[pedido-whatsapp-bot] notif regeo", e?.message || e);
+  }
 }
 
 /**

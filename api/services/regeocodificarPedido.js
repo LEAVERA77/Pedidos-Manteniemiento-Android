@@ -7,7 +7,10 @@
 
 import { query } from "../db/neon.js";
 import { normalizarDireccion } from "../utils/normalizarCalles.js";
-import { buscarCoordenadasPorNisMedidor } from "./buscarCoordenadasPorNisMedidor.js";
+import {
+  buscarCoordenadasPorNisMedidor,
+  existeSocioCatalogoPorIdentificadorSinCoords,
+} from "./buscarCoordenadasPorNisMedidor.js";
 import { geocodeCalleNumeroLocalidadArgentina, reverseGeocodeArgentina } from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
 import { getTenantProvinciaNominatim } from "./tenantProvincia.js";
@@ -36,14 +39,13 @@ function normCp(s) {
  *
  * @param {number} pedidoId
  * @param {number} tenantId
- * @param {{ silent?: boolean }} [options] — silent: sin log detallado (WhatsApp / jobs)
+ * @param {{ silent?: boolean }} [options] — compat.: el array `log` siempre se llena (auditoría / notificación admin)
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
 export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
-  const silent = !!options.silent;
   const log = [];
   const L = (msg) => {
-    if (!silent) log.push(msg);
+    log.push(msg);
   };
 
   L("🔄 Iniciando re-geocodificación inteligente...");
@@ -132,11 +134,13 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       L(`  → Sin calle/localidad para normalizar`);
     }
 
-    L("\n📚 PASO 2: Búsqueda en catálogo (socios_catalogo)");
+    L("\n📚 PASO 2: Catálogo (socios_catalogo)");
     const tieneIdentificador = !!(nisT || medT || nmT);
-    if (tieneIdentificador || (calleT && locT)) {
+
+    if (tieneIdentificador) {
+      L("  2a — Prioridad NIS / Medidor / nis_medidor");
       try {
-        const coordsCatalogo = await buscarCoordenadasPorNisMedidor({
+        const coordsId = await buscarCoordenadasPorNisMedidor({
           tenantId: Number(tenantId),
           nis: nisT,
           medidor: medT,
@@ -145,28 +149,64 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
           numero: numT,
           localidad: locT,
           nombreCliente: nombreT,
+          soloIdentificador: true,
         });
-
-        if (coordsCatalogo && coordsValidasWgs84(coordsCatalogo.lat, coordsCatalogo.lng)) {
-          latFinal = coordsCatalogo.lat;
-          lngFinal = coordsCatalogo.lng;
-          fuente = coordsCatalogo.esManual ? "catalogo_manual" : "catalogo";
-          L(`  ✓ Encontrado en catálogo: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-          if (coordsCatalogo.esManual) {
-            L(`  ✓ Coordenadas corregidas manualmente (prioridad absoluta)`);
-          }
+        if (coordsId && coordsValidasWgs84(coordsId.lat, coordsId.lng)) {
+          latFinal = coordsId.lat;
+          lngFinal = coordsId.lng;
+          fuente = coordsId.esManual ? "catalogo_manual" : "catalogo_nis_medidor";
+          L(`  ✓ Coincidencia en catálogo por identificador → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+          if (coordsId.esManual) L(`  ✓ Coordenadas marcadas como manuales en catálogo (prioridad)`);
         } else {
-          L(`  → Sin resultados en catálogo`);
+          const existeSinCoords = await existeSocioCatalogoPorIdentificadorSinCoords({
+            tenantId: Number(tenantId),
+            nis: nisT,
+            medidor: medT,
+            nisMedidor: nmT,
+          });
+          if (existeSinCoords) {
+            L(`  ⚠️ Socio hallado en catálogo por NIS/Medidor pero sin lat/lon útiles → se sigue con Nominatim / interpolación`);
+          } else {
+            L(`  → Sin fila en catálogo para los identificadores del pedido`);
+          }
         }
       } catch (err) {
-        L(`  ⚠️  Error al buscar en catálogo: ${err?.message || err}`);
+        L(`  ⚠️  Error en búsqueda por identificador: ${err?.message || err}`);
       }
     } else {
-      L(`  → Sin identificadores ni dirección completa`);
+      L("  2a — Sin NIS/medidor en el pedido; se omite subpaso por identificador");
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT && nombreT && String(nombreT).trim().length >= 3) {
+      L("  2b — Respaldo por calle + localidad + nombre (titular)");
+      try {
+        const coordsDir = await buscarCoordenadasPorNisMedidor({
+          tenantId: Number(tenantId),
+          nis: null,
+          medidor: null,
+          nisMedidor: null,
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          nombreCliente: nombreT,
+        });
+        if (coordsDir && coordsValidasWgs84(coordsDir.lat, coordsDir.lng)) {
+          latFinal = coordsDir.lat;
+          lngFinal = coordsDir.lng;
+          fuente = coordsDir.esManual ? "catalogo_manual_direccion" : "catalogo_direccion_nombre";
+          L(`  ✓ Coincidencia en catálogo por dirección+nombre → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        } else {
+          L(`  → Sin coincidencia por dirección+nombre en catálogo`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en búsqueda por dirección: ${err?.message || err}`);
+      }
+    } else if (!coordsValidasWgs84(latFinal, lngFinal) && (!calleT || !locT)) {
+      L("  2b — Sin datos para búsqueda por dirección+nombre en catálogo");
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
-      L("\n🌍 PASO 3: Geocodificación con Nominatim (city + state + postalcode)");
+      L("\n🌍 PASO 3: Nominatim (calle + localidad + provincia/CP si hay)");
       try {
         const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleT, numT || "", {
           allowTenantCentroidFallback: false,
@@ -194,7 +234,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
-      L("\n📐 PASO 4: Interpolación municipal");
+      L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
       try {
         const interpol = await interpolarCoordenadaPorAltura({
           calle: calleT,
@@ -280,7 +320,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
 
     L(`✅ Re-geocodificación exitosa`);
     L(`   ${cambio}`);
-    L(`   Fuente: ${fuente}`);
+    L(`   📊 Capa que definió el pin: ${fuente || "?"}`);
 
     return {
       success: true,

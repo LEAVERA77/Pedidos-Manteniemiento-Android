@@ -88,34 +88,47 @@ function normalizarParaBusqueda(str) {
     .replace(/\s+/g, " ");
 }
 
+/** Overpass `name~` usa regex; escapa metacaracteres para que "Antártida" no rompa el patrón. */
+function escapeOverpassRegexLiteral(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Genera variantes de búsqueda para tolerar errores ortográficos
  */
 function generarVariantesNombre(calle) {
-  const base = normalizarParaBusqueda(calle);
-  const variantes = [base];
-  
-  // Variante sin "calle", "avenida", etc.
-  const sinPrefijo = base
-    .replace(/^(calle|avenida|av|avda|pasaje|pje|boulevard|bv|bvd|blvd)\s+/i, "");
-  if (sinPrefijo !== base) variantes.push(sinPrefijo);
-  
-  // Variantes con abreviaturas de Boulevard
+  const raw = String(calle || "").trim();
+  const base = normalizarParaBusqueda(raw);
+  const variantes = new Set([base]);
+
+  const sinPrefijo = base.replace(/^(calle|avenida|av\.?|avda|pasaje|pje|boulevard|bv|bvd|blvd)\s+/i, "");
+  if (sinPrefijo !== base && sinPrefijo.length >= 3) variantes.add(sinPrefijo);
+
+  if (base.length >= 5 && !/^(calle|avenida|av\.?|boulevard|bv|bvd|blvd)\s/i.test(base)) {
+    variantes.add(`avenida ${base}`);
+    variantes.add(`av ${base}`);
+    variantes.add(`av. ${base}`);
+    variantes.add(`boulevard ${base}`);
+  }
+
   if (/boulevard|bv|bvd|blvd/i.test(base)) {
-    const sinBoulevard = base.replace(/boulevard|bv|bvd|blvd/gi, "").trim();
+    const sinBoulevard = base.replace(/\b(boulevard|bv|bvd|blvd)\b/gi, "").replace(/\s+/g, " ").trim();
     if (sinBoulevard.length >= 3) {
-      variantes.push(sinBoulevard);
-      variantes.push(`boulevard ${sinBoulevard}`);
-      variantes.push(`bv ${sinBoulevard}`);
-      variantes.push(`bvd ${sinBoulevard}`);
+      variantes.add(sinBoulevard);
+      variantes.add(`boulevard ${sinBoulevard}`);
+      variantes.add(`avenida ${sinBoulevard}`);
     }
   }
-  
-  // Variante sin números al final (ej: "9 de Julio" → "julio")
-  const sinNumeros = base.replace(/\d+\s*(de|del)?\s*/gi, "");
-  if (sinNumeros !== base && sinNumeros.length >= 3) variantes.push(sinNumeros);
-  
-  return [...new Set(variantes)].filter(v => v.length >= 3);
+
+  const sinNumeros = base.replace(/\d+\s*(de|del)?\s*/gi, "").trim();
+  if (sinNumeros !== base && sinNumeros.length >= 3) variantes.add(sinNumeros);
+
+  const palabras = base.split(/\s+/).filter((w) => w.length >= 2);
+  if (palabras.length >= 2) {
+    variantes.add(palabras.join(" "));
+  }
+
+  return [...variantes].filter((v) => v.length >= 3);
 }
 
 /**
@@ -160,27 +173,28 @@ async function obtenerCoordsLocalidad(localidad) {
 async function obtenerGeometriaCalle(calle, localidad, provincia) {
   const calleClean = String(calle).trim();
   const locClean = String(localidad).trim();
-  
+  const locNorm = normalizarParaBusqueda(locClean);
+  const locEscaped = escapeOverpassRegexLiteral(locNorm.length >= 2 ? locNorm : locClean);
+
   // Generar variantes de búsqueda para tolerar errores
   const variantes = generarVariantesNombre(calleClean);
   console.info("[interpolacion-alturas] Variantes de búsqueda para '%s': %s", calleClean, variantes.join(", "));
-  
+
   // Intentar búsqueda con cada variante
   for (let i = 0; i < variantes.length; i++) {
-    const varianteBusqueda = variantes[i];
-    
+    const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
+
     // 1. Intentar búsqueda por área de la localidad
     const query = `
 [out:json][timeout:25];
-area[name~"${locClean}",i]["place"~"city|town|village"]->.loc;
+area[name~"${locEscaped}",i]["place"~"city|town|village"]->.loc;
 (
   way["highway"]["name"~"${varianteBusqueda}",i](area.loc);
 );
 out geom;
     `.trim();
-    
-    console.info("[interpolacion-alturas] Query Overpass (variante %s/%s): buscando '%s'", 
-      i + 1, variantes.length, varianteBusqueda);
+
+    console.info("[interpolacion-alturas] Query Overpass (variante %s/%s): buscando '%s'", i + 1, variantes.length, variantes[i]);
     
     try {
       const response = await fetch(OVERPASS_API, {
@@ -220,8 +234,8 @@ out geom;
   const coordsLoc = await obtenerCoordsLocalidad(locClean);
   
   for (let i = 0; i < variantes.length; i++) {
-    const varianteBusqueda = variantes[i];
-    
+    const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
+
     const queryFallback = `
 [out:json][timeout:25];
 (

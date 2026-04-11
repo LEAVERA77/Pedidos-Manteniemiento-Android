@@ -64,7 +64,142 @@ function sqlLngExpr(cols, alias) {
  * @param {string} [p.nombreCliente]
  * @returns {Promise<{ lat: number, lng: number, fuente: string, esManual: boolean } | null>}
  */
+/**
+ * Devuelve provincia / código postal del catálogo si hay coincidencia por NIS/medidor/nis_medidor (sin exigir coords).
+ * @returns {Promise<{ provincia: string | null, codigo_postal: string | null } | null>}
+ */
+export async function obtenerProvinciaCodigoPostalCatalogoPorIdentificador(p) {
+  const tid = Number(p.tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return null;
+  const nisT = p.nis != null && String(p.nis).trim() ? String(p.nis).trim() : "";
+  const medT = p.medidor != null && String(p.medidor).trim() ? String(p.medidor).trim() : "";
+  const nmT = p.nisMedidor != null && String(p.nisMedidor).trim() ? String(p.nisMedidor).trim() : "";
+  if (!(await tableExists("socios_catalogo"))) return null;
+  const cols = await columnas("socios_catalogo");
+  const hasProv = cols.has("provincia");
+  const hasCp = cols.has("codigo_postal");
+  if (!hasProv && !hasCp) return null;
+  const hasNis = cols.has("nis");
+  const hasMed = cols.has("medidor");
+  const hasNisMed = cols.has("nis_medidor");
+  const tenantCol = cols.has("cliente_id")
+    ? "cliente_id"
+    : cols.has("tenant_id")
+      ? "tenant_id"
+      : null;
+  if (!(nisT || medT || nmT) || (!hasNis && !hasMed && !hasNisMed)) return null;
+
+  const conditions = [];
+  const params = [];
+  let pIdx = 1;
+  if (nmT && hasNisMed) {
+    conditions.push(`UPPER(TRIM(COALESCE(s.nis_medidor,''))) = UPPER(TRIM($${pIdx}))`);
+    params.push(nmT);
+    pIdx++;
+  } else if (nisT && hasNis && medT && hasMed) {
+    conditions.push(
+      `(UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx})) AND UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx + 1})))`
+    );
+    params.push(nisT, medT);
+    pIdx += 2;
+  } else {
+    if (nisT && hasNis) {
+      conditions.push(`UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx}))`);
+      params.push(nisT);
+      pIdx++;
+    }
+    if (medT && hasMed) {
+      conditions.push(`UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx}))`);
+      params.push(medT);
+      pIdx++;
+    }
+  }
+  if (!conditions.length) return null;
+  const whereIdent = conditions.length === 1 ? conditions[0] : `(${conditions.join(" OR ")})`;
+  let sql = `SELECT ${hasProv ? "TRIM(s.provincia::text)" : "NULL::text"} AS pv, ${hasCp ? "TRIM(s.codigo_postal::text)" : "NULL::text"} AS cp
+    FROM socios_catalogo s WHERE COALESCE(s.activo, TRUE) = TRUE AND ${whereIdent}`;
+  if (tenantCol) {
+    sql += ` AND (s.${tenantCol} IS NULL OR s.${tenantCol} = $${pIdx})`;
+    params.push(tid);
+  }
+  sql += ` ORDER BY s.id ASC LIMIT 1`;
+  try {
+    const r = await query(sql, params);
+    const row = r.rows?.[0];
+    if (!row) return null;
+    const provincia = row.pv && String(row.pv).trim() ? String(row.pv).trim() : null;
+    const codigo_postal = row.cp && String(row.cp).trim() ? String(row.cp).trim() : null;
+    if (!provincia && !codigo_postal) return null;
+    return { provincia, codigo_postal };
+  } catch (e) {
+    console.warn("[buscar-coords] obtenerProvinciaCp catálogo", e?.message || e);
+    return null;
+  }
+}
+
+/**
+ * @returns {Promise<boolean>} true si existe fila por identificador aunque lat/lon sean NULL o inválidos.
+ */
+export async function existeSocioCatalogoPorIdentificadorSinCoords(p) {
+  const tid = Number(p.tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return false;
+  const nisT = p.nis != null && String(p.nis).trim() ? String(p.nis).trim() : "";
+  const medT = p.medidor != null && String(p.medidor).trim() ? String(p.medidor).trim() : "";
+  const nmT = p.nisMedidor != null && String(p.nisMedidor).trim() ? String(p.nisMedidor).trim() : "";
+  if (!(await tableExists("socios_catalogo"))) return false;
+  const cols = await columnas("socios_catalogo");
+  const hasNis = cols.has("nis");
+  const hasMed = cols.has("medidor");
+  const hasNisMed = cols.has("nis_medidor");
+  const tenantCol = cols.has("cliente_id")
+    ? "cliente_id"
+    : cols.has("tenant_id")
+      ? "tenant_id"
+      : null;
+  if (!(nisT || medT || nmT) || (!hasNis && !hasMed && !hasNisMed)) return false;
+  const conditions = [];
+  const params = [];
+  let pIdx = 1;
+  if (nmT && hasNisMed) {
+    conditions.push(`UPPER(TRIM(COALESCE(s.nis_medidor,''))) = UPPER(TRIM($${pIdx}))`);
+    params.push(nmT);
+    pIdx++;
+  } else if (nisT && hasNis && medT && hasMed) {
+    conditions.push(
+      `(UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx})) AND UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx + 1})))`
+    );
+    params.push(nisT, medT);
+    pIdx += 2;
+  } else {
+    if (nisT && hasNis) {
+      conditions.push(`UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx}))`);
+      params.push(nisT);
+      pIdx++;
+    }
+    if (medT && hasMed) {
+      conditions.push(`UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx}))`);
+      params.push(medT);
+      pIdx++;
+    }
+  }
+  if (!conditions.length) return false;
+  const whereIdent = conditions.length === 1 ? conditions[0] : `(${conditions.join(" OR ")})`;
+  let sql = `SELECT 1 FROM socios_catalogo s WHERE COALESCE(s.activo, TRUE) = TRUE AND ${whereIdent}`;
+  if (tenantCol) {
+    sql += ` AND (s.${tenantCol} IS NULL OR s.${tenantCol} = $${pIdx})`;
+    params.push(tid);
+  }
+  sql += ` LIMIT 1`;
+  try {
+    const r = await query(sql, params);
+    return !!(r.rows && r.rows.length);
+  } catch (_) {
+    return false;
+  }
+}
+
 export async function buscarCoordenadasPorNisMedidor(p) {
+  const soloIdentificador = !!p.soloIdentificador;
   const tid = Number(p.tenantId);
   if (!Number.isFinite(tid) || tid < 1) {
     console.info("[buscar-coords] tenantId inválido:", tid);
@@ -118,6 +253,12 @@ export async function buscarCoordenadasPorNisMedidor(p) {
       conditions.push(`UPPER(TRIM(COALESCE(s.nis_medidor,''))) = UPPER(TRIM($${pIdx}))`);
       params.push(nmT);
       pIdx++;
+    } else if (nisT && hasNis && medT && hasMed) {
+      conditions.push(
+        `(UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx})) AND UPPER(TRIM(COALESCE(s.medidor,''))) = UPPER(TRIM($${pIdx + 1})))`
+      );
+      params.push(nisT, medT);
+      pIdx += 2;
     } else {
       if (nisT && hasNis) {
         conditions.push(`UPPER(TRIM(COALESCE(s.nis,''))) = UPPER(TRIM($${pIdx}))`);
@@ -131,11 +272,14 @@ export async function buscarCoordenadasPorNisMedidor(p) {
       }
     }
 
+    const whereIdent =
+      conditions.length === 0 ? "" : conditions.length === 1 ? conditions[0] : `(${conditions.join(" OR ")})`;
+
     if (conditions.length > 0) {
       let sql = `SELECT ${latX} AS la, ${lngX} AS lo${hasUbicManual ? ", COALESCE(s.ubicacion_manual, FALSE) AS manual" : ""}
         FROM socios_catalogo s
         WHERE COALESCE(s.activo, TRUE) = TRUE
-          AND (${conditions.join(" OR ")})
+          AND ${whereIdent}
           AND ${latX} IS NOT NULL AND ${lngX} IS NOT NULL
           AND ABS(${latX}) > 0.00001 AND ABS(${lngX}) > 0.00001`;
 
@@ -179,6 +323,11 @@ export async function buscarCoordenadasPorNisMedidor(p) {
         console.warn("[buscar-coords] Error en query NIS/Medidor:", e?.message || e);
       }
     }
+  }
+
+  if (soloIdentificador) {
+    console.info("[buscar-coords] soloIdentificador=true: omitiendo búsqueda por dirección+nombre");
+    return null;
   }
 
   const calleP = p.calle != null ? String(p.calle).trim() : "";
