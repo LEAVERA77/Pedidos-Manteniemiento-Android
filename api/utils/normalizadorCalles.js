@@ -22,6 +22,29 @@ export function normalizarTextoCalleComparacion(str) {
     .trim();
 }
 
+/** Quita tipo de vía al inicio (p. ej. "avenida") para comparar solo el nombre propio y evitar falsos positivos JW. */
+const RE_TIPO_VIA_INICIO =
+  /^(avenida|aven|av\.?|avda\.?|boulevard|boulevar|bulevar|bv\.?|bvar\.?|bvd\.?|blvd\.?|calle|pasaje|pje\.?|ruta|diag\.?|diagonal)\s+/gi;
+
+/**
+ * Núcleo del nombre de vía para similitud (sin prefijo de tipo).
+ * Si al quedar prefijos queda vacío o menos de 2 caracteres, devuelve el texto ya normalizado completo.
+ * @param {string} str
+ * @returns {string}
+ */
+export function nucleoNombreViaParaSimilitud(str) {
+  const full = normalizarTextoCalleComparacion(str);
+  if (!full || full.length < 2) return full;
+  let core = full;
+  for (let i = 0; i < 6; i++) {
+    const next = core.replace(RE_TIPO_VIA_INICIO, "").trim().replace(/\s+/g, " ");
+    if (!next || next === core) break;
+    core = next;
+  }
+  if (!core || core.length < 2) return full;
+  return core;
+}
+
 /**
  * Distancia de Levenshtein (edición mínima).
  */
@@ -120,8 +143,10 @@ export function jaroWinklerSimilarity(s1, s2, p = 0.1, maxPrefix = 4) {
 export function mejorCoincidenciaDiccionarioCalles(input, entradas, opts = {}) {
   const minScore = opts.minScore != null ? Number(opts.minScore) : UMBRAL_SIMILITUD_CALLE_JW;
   const usarLv = opts.usarLevenshteinRespaldo !== false;
-  const inp = normalizarTextoCalleComparacion(input);
-  if (inp.length < 2) return null;
+  const inpFull = normalizarTextoCalleComparacion(input);
+  if (inpFull.length < 2) return null;
+  const leftCore = nucleoNombreViaParaSimilitud(input);
+  const left = leftCore.length >= 2 ? leftCore : inpFull;
 
   let mejorOficial = null;
   let mejorScore = -1;
@@ -134,14 +159,17 @@ export function mejorCoincidenciaDiccionarioCalles(input, entradas, opts = {}) {
     for (const c of cands) {
       const raw = String(c || "").trim();
       if (raw.length < 2) continue;
-      const jw = jaroWinklerSimilarity(inp, raw);
+      const rawNorm = normalizarTextoCalleComparacion(raw);
+      const rightCore = nucleoNombreViaParaSimilitud(raw);
+      const right = rightCore.length >= 2 ? rightCore : rawNorm;
+      const jw = jaroWinklerSimilarity(left, right);
       if (jw > mejorScore) {
         mejorScore = jw;
         mejorOficial = oficial;
         metodo = "jaro_winkler";
       }
       if (usarLv) {
-        const lv = similitudLevenshtein(inp, raw);
+        const lv = similitudLevenshtein(left, right);
         if (lv > mejorScore) {
           mejorScore = lv;
           mejorOficial = oficial;

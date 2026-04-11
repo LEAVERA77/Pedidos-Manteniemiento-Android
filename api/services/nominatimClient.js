@@ -497,7 +497,8 @@ export async function geocodeAddressArgentina(query, opts = {}) {
 
 /**
  * Fallback Nominatim por consultas `q` completas (calle + número + localidad + provincia).
- * Usar cuando `geocodeCalleNumeroLocalidadArgentina` no devuelve punto (p. ej. "25 de Mayo" en Cerrito).
+ * Usar cuando `geocodeCalleNumeroLocalidadArgentina` no devuelve punto (p. ej. "25 de Mayo" / "9 de Julio" en Cerrito).
+ * Tras validación estricta (reverse+calle), un segundo pase acepta solo coincidencia de localidad (`linea_libre_relaxed`).
  *
  * @param {{ calle: string, numero?: string, localidad: string, provincia?: string, postalCode?: string }} dom
  * @param {{ tenantCentroid?: { lat: number, lng: number } }} [options]
@@ -568,6 +569,19 @@ export async function geocodeDomicilioLineaLibreArgentina(dom, options = {}) {
     }
   }
 
+  if (/9\s*de\s*julio/i.test(cal)) {
+    if (numPart && prov.length >= 2) {
+      pushQ(`9 de Julio ${numPart}, ${loc}, ${prov}, Argentina`);
+      pushQ(`Nueve de Julio ${numPart}, ${loc}, ${prov}, Argentina`);
+      pushQ(`9 Julio ${numPart}, ${loc}, ${prov}, Argentina`);
+    }
+    if (numPart) {
+      pushQ(`9 de Julio ${numPart}, ${loc}, Argentina`);
+      pushQ(`Nueve de Julio ${numPart}, ${loc}, Argentina`);
+      pushQ(`9 Julio ${numPart}, ${loc}, Argentina`);
+    }
+  }
+
   for (const q of qList) {
     const g = await geocodeAddressArgentina(q, {
       filterLocalidad: loc,
@@ -583,6 +597,24 @@ export async function geocodeDomicilioLineaLibreArgentina(dom, options = {}) {
     return {
       ...g,
       audit: { source: "linea_libre_q", q },
+    };
+  }
+
+  for (const q of qList) {
+    const g = await geocodeAddressArgentina(q, {
+      filterLocalidad: loc,
+      filterState: prov.length >= 2 ? prov : "",
+    });
+    if (!g || !Number.isFinite(g.lat) || !Number.isFinite(g.lng)) continue;
+    const la = g.lat;
+    const lo = g.lng;
+    if (bbox && !pointInBBox(la, lo, bbox)) continue;
+    if (anchor && !isGeocodePlausibleForLocalityAnchor(la, lo, anchor)) continue;
+    const rev = await reverseGeocodeArgentina(la, lo);
+    if (!rev || !reverseHitMatchesLocalidadSolo(rev, loc)) continue;
+    return {
+      ...g,
+      audit: { source: "linea_libre_relaxed", q },
     };
   }
   return null;
@@ -1258,6 +1290,15 @@ export function reverseHitMatchesCatalog(rev, localidad, calle) {
   return nominatimHitStrictLocalidad(hitLike, loc) && nominatimHitMatchesCalle(hitLike, cal);
 }
 
+/** Reverse encaja solo con la localidad del catálogo (sin exigir nombre de calle). Línea libre relajada. */
+export function reverseHitMatchesLocalidadSolo(rev, localidad) {
+  if (!rev || !rev.displayName) return false;
+  const loc = String(localidad || "").trim();
+  if (loc.length < 2) return true;
+  const hitLike = { display_name: rev.displayName, address: rev.address || null };
+  return nominatimHitStrictLocalidad(hitLike, loc);
+}
+
 /**
  * Reverse Nominatim y validación estricta para domicilio desde catálogo (evita pin en otra ciudad).
  */
@@ -1292,7 +1333,6 @@ const NOMINATIM_PROXY_SEARCH_ALLOW = new Set([
  * @returns {Promise<object[]>}
  */
 export async function nominatimProxySearch(clientParams = {}) {
-  await throttle();
   const p = nominatimBaseParams();
   const o = clientParams && typeof clientParams === "object" && !Array.isArray(clientParams) ? clientParams : {};
   for (const [k, v] of Object.entries(o)) {
@@ -1304,13 +1344,24 @@ export async function nominatimProxySearch(clientParams = {}) {
     p.set(lk, s);
   }
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`nominatim search ${res.status}: ${t.slice(0, 200)}`);
+  const delays = [1500, 3000];
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await throttle();
+    const res = await fetch(url, { headers: nominatimHeaders() });
+    if (res.status === 503 || res.status === 429) {
+      lastErr = new Error(`nominatim search ${res.status}`);
+      if (attempt < 2) await sleep(delays[attempt]);
+      continue;
+    }
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`nominatim search ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    return Array.isArray(j) ? j : [];
   }
-  const j = await res.json();
-  return Array.isArray(j) ? j : [];
+  throw lastErr || new Error("nominatim search failed after retries");
 }
 
 /**
@@ -1318,7 +1369,6 @@ export async function nominatimProxySearch(clientParams = {}) {
  * @param {object} body lat, lon|lng, zoom opcional
  */
 export async function nominatimProxyReverseRaw(body = {}) {
-  await throttle();
   const la = Number(body.lat);
   const lo = Number(body.lon ?? body.lng);
   if (!Number.isFinite(la) || !Number.isFinite(lo)) {
@@ -1336,10 +1386,21 @@ export async function nominatimProxyReverseRaw(body = {}) {
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
   const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`nominatim reverse ${res.status}: ${t.slice(0, 200)}`);
+  const delays = [1500, 3000];
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await throttle();
+    const res = await fetch(url, { headers: nominatimHeaders() });
+    if (res.status === 503 || res.status === 429) {
+      lastErr = new Error(`nominatim reverse ${res.status}`);
+      if (attempt < 2) await sleep(delays[attempt]);
+      continue;
+    }
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`nominatim reverse ${res.status}: ${t.slice(0, 200)}`);
+    }
+    return await res.json();
   }
-  return await res.json();
+  throw lastErr || new Error("nominatim reverse failed after retries");
 }

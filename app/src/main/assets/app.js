@@ -999,27 +999,36 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
     await new Promise((res) => setTimeout(res, 1100));
+    const delays = [800, 2000];
     try {
         if (modoOffline || typeof fetch !== 'function') return null;
         await asegurarJwtApiRest();
         const token = getApiToken();
         if (!token) return null;
-        const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ lat: la, lon: lo, zoom: 8 }),
-        });
-        if (!r.ok) return null;
-        const j = await r.json().catch(() => null);
-        const hit = j && j.result;
-        const a = hit && hit.address;
-        if (!a || typeof a !== 'object') return null;
-        const state = a.state || a.region || a['ISO3166-2-lvl4'];
-        const s = state != null ? String(state).trim() : '';
-        return s.length >= 2 ? s : null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ lat: la, lon: lo, zoom: 8 }),
+            });
+            if ((r.status === 503 || r.status === 429) && attempt < 2) {
+                console.warn('[geocode-proxy] reverse HTTP', r.status, 'reintento', attempt + 1, '/2');
+                await new Promise((res) => setTimeout(res, delays[attempt]));
+                continue;
+            }
+            if (!r.ok) return null;
+            const j = await r.json().catch(() => null);
+            const hit = j && j.result;
+            const a = hit && hit.address;
+            if (!a || typeof a !== 'object') return null;
+            const state = a.state || a.region || a['ISO3166-2-lvl4'];
+            const s = state != null ? String(state).trim() : '';
+            return s.length >= 2 ? s : null;
+        }
+        return null;
     } catch (_) {
         return null;
     }
@@ -2993,25 +3002,34 @@ function _filtrarNominatimPorLocalidad(results, locPedido) {
 /** Nominatim solo desde la API Node (GitHub Pages / navegador: CORS bloquea openstreetmap.org). */
 async function _nominatimFetchSearch(params) {
     const merged = params && typeof params === 'object' ? { ...params } : {};
+    const delays = [800, 2000];
     try {
         if (modoOffline || typeof fetch !== 'function') return [];
         await asegurarJwtApiRest();
         const token = getApiToken();
         if (!token) return [];
-        const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ params: merged }),
-        });
-        if (!r.ok) {
-            console.warn('[geocode-proxy] search HTTP', r.status);
-            return [];
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ params: merged }),
+            });
+            if ((r.status === 503 || r.status === 429) && attempt < 2) {
+                console.warn('[geocode-proxy] search HTTP', r.status, 'reintento', attempt + 1, '/2');
+                await new Promise((res) => setTimeout(res, delays[attempt]));
+                continue;
+            }
+            if (!r.ok) {
+                console.warn('[geocode-proxy] search HTTP', r.status);
+                return [];
+            }
+            const j = await r.json().catch(() => ({}));
+            return Array.isArray(j.results) ? j.results : [];
         }
-        const j = await r.json().catch(() => ({}));
-        return Array.isArray(j.results) ? j.results : [];
+        return [];
     } catch (e) {
         console.warn('[geocode-proxy] search', e && e.message ? e.message : e);
         return [];

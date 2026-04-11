@@ -1,5 +1,5 @@
 /**
- * Servicio de re-geocodificación de pedidos con el sistema inteligente de 5 capas
+ * Servicio de re-geocodificación de pedidos (catálogo + Nominatim + línea libre + interpolación + centro localidad)
  * Permite actualizar coordenadas de pedidos viejos con el algoritmo mejorado
  *
  * made by leavera77
@@ -14,6 +14,7 @@ import {
 import {
   geocodeCalleNumeroLocalidadArgentina,
   geocodeDomicilioLineaLibreArgentina,
+  geocodeLocalityViewboxArgentina,
   reverseGeocodeArgentina,
 } from "./nominatimClient.js";
 import { interpolarCoordenadaPorAltura } from "./interpolacionAlturas.js";
@@ -104,6 +105,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     const medT = pedido.medidor ? String(pedido.medidor).trim() : null;
     const nmT = pedido.nis_medidor ? String(pedido.nis_medidor).trim() : null;
     let calleT = pedido.cliente_calle ? String(pedido.cliente_calle).trim() : null;
+    const calleOriginalPedido = calleT ? String(calleT).trim() : null;
     const numT = pedido.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
     const locT = pedido.cliente_localidad ? String(pedido.cliente_localidad).trim() : null;
     const nombreT = pedido.cliente_nombre ? String(pedido.cliente_nombre).trim() : null;
@@ -140,6 +142,114 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       }
     } else {
       L(`  → Sin calle/localidad para normalizar`);
+    }
+
+    const mismoTextoCalle = (a, b) =>
+      String(a || "")
+        .trim()
+        .toLowerCase() ===
+      String(b || "")
+        .trim()
+        .toLowerCase();
+
+    /**
+     * PASO 3 + 3b + 4 con una calle concreta (sin repetir PASO 1 diccionario).
+     * @param {string | null} calleBusqueda
+     */
+    async function ejecutarNominatim3_3b_4(calleBusqueda) {
+      let la = null;
+      let lo = null;
+      let fu = null;
+      let npc = null;
+      if (!calleBusqueda || !locT) return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+
+      L(`\n🌍 PASO 3: Nominatim (calle + localidad + provincia/CP si hay) [calle busqueda: "${calleBusqueda}"]`);
+      try {
+        const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleBusqueda, numT || "", {
+          allowTenantCentroidFallback: false,
+          catalogStrict: false,
+          stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
+        });
+
+        if (geoResult && coordsValidasWgs84(geoResult.lat, geoResult.lng)) {
+          la = geoResult.lat;
+          lo = geoResult.lng;
+          fu = geoResult.audit?.source || "nominatim";
+          if (geoResult.postcode) {
+            npc = normCp(geoResult.postcode);
+            if (npc) L(`  📮 CP (Nominatim): ${npc}`);
+          }
+          L(`  ✓ Nominatim: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          L(`  ✓ Fuente: ${fu}`);
+        } else {
+          L(`  → Nominatim sin resultados`);
+        }
+      } catch (err) {
+        L(`  ⚠️  Error en Nominatim: ${err?.message || err}`);
+      }
+
+      if (!coordsValidasWgs84(la, lo)) {
+        L("\nPASO 3b: Nominatim linea libre (fallback q)");
+        try {
+          const ll = await geocodeDomicilioLineaLibreArgentina(
+            {
+              calle: calleBusqueda,
+              numero: numT || "",
+              localidad: locT,
+              provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+              postalCode: postalDigits.length >= 4 ? postalDigits : "",
+            },
+            {}
+          );
+          if (ll && coordsValidasWgs84(ll.lat, ll.lng)) {
+            la = ll.lat;
+            lo = ll.lng;
+            fu = ll.audit?.source || "nominatim_linea_libre";
+            if (ll.postcode) {
+              const n = normCp(ll.postcode);
+              if (n) {
+                npc = n;
+                L(`  CP (Nominatim linea libre): ${n}`);
+              }
+            }
+            L(`  Linea libre OK: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          } else {
+            L(`  Linea libre sin punto util`);
+          }
+        } catch (err) {
+          L(`  Error Nominatim linea libre: ${err?.message || err}`);
+        }
+      }
+
+      if (!coordsValidasWgs84(la, lo) && calleBusqueda && numT && locT) {
+        L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
+        try {
+          const interpol = await interpolarCoordenadaPorAltura({
+            calle: calleBusqueda,
+            numero: numT,
+            localidad: locT,
+            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
+          });
+
+          if (interpol && interpol.log) {
+            interpol.log.forEach((line) => L(`  ${line}`));
+          }
+
+          if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
+            la = interpol.lat;
+            lo = interpol.lng;
+            fu = "interpolacion";
+            L(`  ✓ Interpolación exitosa: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+          } else {
+            L(`  → Interpolación sin resultados válidos`);
+          }
+        } catch (err) {
+          L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
+        }
+      }
+
+      return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
     }
 
     L("\n📚 PASO 2: Catálogo (socios_catalogo)");
@@ -213,88 +323,52 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       L("  2b — Sin datos para búsqueda por dirección+nombre en catálogo");
     }
 
-    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
-      L("\n🌍 PASO 3: Nominatim (calle + localidad + provincia/CP si hay)");
+    if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      const r1 = await ejecutarNominatim3_3b_4(calleT);
+      if (coordsValidasWgs84(r1.lat, r1.lng)) {
+        latFinal = r1.lat;
+        lngFinal = r1.lng;
+        fuente = r1.fuente;
+        if (r1.nominatimPostcode) nominatimPostcode = r1.nominatimPostcode;
+      }
+    }
+
+    if (
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleOriginalPedido &&
+      calleT &&
+      !mismoTextoCalle(calleOriginalPedido, calleT)
+    ) {
+      L("\n↩ Reintento con calle original del pedido (sin volver a PASO 1 diccionario)…");
+      const r2 = await ejecutarNominatim3_3b_4(calleOriginalPedido);
+      if (coordsValidasWgs84(r2.lat, r2.lng)) {
+        latFinal = r2.lat;
+        lngFinal = r2.lng;
+        fuente = r2.fuente;
+        if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
+      }
+    }
+
+    if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
+      L("\n📍 PASO 5: Centro de localidad (OSM, pin aproximado)");
       try {
-        const geoResult = await geocodeCalleNumeroLocalidadArgentina(locT, calleT, numT || "", {
+        const vb = await geocodeLocalityViewboxArgentina(locT, null, {
           allowTenantCentroidFallback: false,
-          catalogStrict: false,
           stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
           postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
         });
-
-        if (geoResult && coordsValidasWgs84(geoResult.lat, geoResult.lng)) {
-          latFinal = geoResult.lat;
-          lngFinal = geoResult.lng;
-          fuente = geoResult.audit?.source || "nominatim";
-          if (geoResult.postcode) {
-            nominatimPostcode = normCp(geoResult.postcode);
-            if (nominatimPostcode) L(`  📮 CP (Nominatim): ${nominatimPostcode}`);
-          }
-          L(`  ✓ Nominatim: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-          L(`  ✓ Fuente: ${fuente}`);
+        const cLat = vb?.center != null ? Number(vb.center.lat) : NaN;
+        const cLng = vb?.center != null ? Number(vb.center.lng) : NaN;
+        if (coordsValidasWgs84(cLat, cLng)) {
+          latFinal = cLat;
+          lngFinal = cLng;
+          fuente = "centro_localidad_osm";
+          L(`  ✓ Pin aproximado en centro de "${locT}" (Nominatim)`);
         } else {
-          L(`  → Nominatim sin resultados`);
+          L(`  → Sin centro OSM útil para la localidad`);
         }
       } catch (err) {
-        L(`  ⚠️  Error en Nominatim: ${err?.message || err}`);
-      }
-    }
-
-    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
-      L("\nPASO 3b: Nominatim linea libre (fallback q)");
-      try {
-        const ll = await geocodeDomicilioLineaLibreArgentina(
-          {
-            calle: calleT,
-            numero: numT || "",
-            localidad: locT,
-            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
-            postalCode: postalDigits.length >= 4 ? postalDigits : "",
-          },
-          {}
-        );
-        if (ll && coordsValidasWgs84(ll.lat, ll.lng)) {
-          latFinal = ll.lat;
-          lngFinal = ll.lng;
-          fuente = ll.audit?.source || "nominatim_linea_libre";
-          if (ll.postcode) {
-            nominatimPostcode = normCp(ll.postcode);
-            if (nominatimPostcode) L(`  CP (Nominatim linea libre): ${nominatimPostcode}`);
-          }
-          L(`  Linea libre OK: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-        } else {
-          L(`  Linea libre sin punto util`);
-        }
-      } catch (err) {
-        L(`  Error Nominatim linea libre: ${err?.message || err}`);
-      }
-    }
-
-    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && numT && locT) {
-      L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
-      try {
-        const interpol = await interpolarCoordenadaPorAltura({
-          calle: calleT,
-          numero: numT,
-          localidad: locT,
-          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : undefined,
-        });
-
-        if (interpol && interpol.log) {
-          interpol.log.forEach((line) => L(`  ${line}`));
-        }
-
-        if (interpol && coordsValidasWgs84(interpol.lat, interpol.lng)) {
-          latFinal = interpol.lat;
-          lngFinal = interpol.lng;
-          fuente = "interpolacion";
-          L(`  ✓ Interpolación exitosa: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-        } else {
-          L(`  → Interpolación sin resultados válidos`);
-        }
-      } catch (err) {
-        L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
+        L(`  ⚠️  Error PASO 5 (centro localidad): ${err?.message || err}`);
       }
     }
 
