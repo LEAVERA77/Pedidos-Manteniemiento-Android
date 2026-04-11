@@ -53,6 +53,36 @@ export function nominatimHeaders() {
   };
 }
 
+/** Timeout por request HTTP a Nominatim (ms). Evita bloqueos largos en worker único. */
+export function nominatimFetchTimeoutMs() {
+  const n = Number(process.env.NOMINATIM_FETCH_TIMEOUT_MS ?? 12000);
+  return Number.isFinite(n) && n >= 3000 && n <= 120000 ? n : 12000;
+}
+
+/**
+ * fetch a api.openstreetmap.org/search|reverse con AbortSignal por timeout.
+ * @param {string} url
+ * @param {RequestInit} [init]
+ */
+export async function nominatimFetch(url, init = {}) {
+  const ms = nominatimFetchTimeoutMs();
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+  const headers = init.headers ?? nominatimHeaders();
+  try {
+    return await fetch(url, { ...init, headers, signal: ctrl.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const err = new Error(`Nominatim timeout ${ms}ms`);
+      err.code = "NOMINATIM_TIMEOUT";
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 function nominatimBaseParams() {
   return new URLSearchParams({
     format: "json",
@@ -311,7 +341,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     if (postal.length >= 4) p.set("postalcode", postal);
     p.set("limit", "10");
     const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-    const res = await fetch(url, { headers: nominatimHeaders() });
+    const res = await nominatimFetch(url);
     if (!res.ok) return [];
     const arr = await res.json();
     return Array.isArray(arr) ? arr : [];
@@ -324,7 +354,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     p.set("q", `${loc}, ${state}, Argentina`);
     p.set("limit", "10");
     const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-    const res = await fetch(url, { headers: nominatimHeaders() });
+    const res = await nominatimFetch(url);
     if (!res.ok) return [];
     const arr = await res.json();
     return Array.isArray(arr) ? arr : [];
@@ -401,7 +431,7 @@ async function nominatimSearch(params) {
     p.set(k, String(v));
   }
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
+  const res = await nominatimFetch(url);
   if (!res.ok) return [];
   const arr = await res.json();
   return Array.isArray(arr) ? arr : [];
@@ -495,7 +525,7 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   const limRaw = opts.nominatimLimit != null ? String(opts.nominatimLimit).trim() : "";
   if (limRaw && /^\d+$/.test(limRaw)) p.set("limit", limRaw);
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
+  const res = await nominatimFetch(url);
   if (!res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr) || !arr.length) return null;
@@ -1031,7 +1061,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         p.set("bounded", "1");
       }
       const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-      const res = await fetch(url, { headers: nominatimHeaders() });
+      const res = await nominatimFetch(url);
       if (!res.ok) continue;
       const arr = await res.json();
       if (!Array.isArray(arr)) continue;
@@ -1171,7 +1201,7 @@ export async function searchCalleLocalidadArgentina(
     p.set("bounded", "1");
   }
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
+  const res = await nominatimFetch(url);
   if (!res.ok) return { houseHits: [], streetCenter: null };
   const arr = await res.json();
   if (!Array.isArray(arr)) return { houseHits: [], streetCenter: null };
@@ -1393,7 +1423,7 @@ export async function reverseGeocodeArgentina(lat, lng) {
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
   const url = `https://nominatim.openstreetmap.org/reverse?${p.toString()}`;
-  const res = await fetch(url, { headers: nominatimHeaders() });
+  const res = await nominatimFetch(url);
   if (!res.ok) return null;
   const hit = await res.json();
   if (!hit || hit.error) return null;
@@ -1476,7 +1506,7 @@ export async function nominatimProxySearch(clientParams = {}) {
   const maxAttempts = 5;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await throttle();
-    const res = await fetch(url, { headers: nominatimHeaders() });
+    const res = await nominatimFetch(url);
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim search ${res.status}`);
       if (attempt < maxAttempts - 1) await sleep(backoff503[attempt]);
@@ -1519,7 +1549,7 @@ export async function nominatimProxyReverseRaw(body = {}) {
   const maxAttempts = 5;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await throttle();
-    const res = await fetch(url, { headers: nominatimHeaders() });
+    const res = await nominatimFetch(url);
     if (res.status === 503 || res.status === 429) {
       lastErr = new Error(`nominatim reverse ${res.status}`);
       if (attempt < maxAttempts - 1) await sleep(backoff503[attempt]);

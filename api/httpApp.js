@@ -20,6 +20,7 @@ import whatsappGeocodeRoutes from "./routes/whatsappGeocode.js";
 import geocodeNominatimRoutes from "./routes/geocodeNominatim.js";
 import callesNormalizadasRoutes from "./routes/callesNormalizadas.js";
 import adminRoutes from "./routes/admin.js";
+import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 
@@ -82,6 +83,7 @@ export function createHttpApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/admin/geocod-wa-operaciones", geocodWaOperacionesRoutes);
   app.use("/api/config", configUbicacionRoutes);
   app.use("/api/whatsapp", whatsappGeocodeRoutes);
   app.use("/api/geocode", geocodeNominatimRoutes);

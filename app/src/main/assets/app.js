@@ -3058,6 +3058,102 @@ let _gnGeocodeUiLogDepth = 0;
 let _gnGeocodeLogLines = [];
 let _gnGeocodeLogPersistTimer = null;
 let _gnGeocodeLogDockBound = false;
+/** Polling lista operaciones geocod WA (panel admin abierto). */
+let _gnWaGeoOpsPollTimer = null;
+
+function _gnEscWaHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** Admin: GET /api/admin/geocod-wa-operaciones (últimas N filas del tenant). */
+function gnWaGeoOpsRefresh() {
+    const wrap = document.getElementById('gn-wa-geo-ops-list');
+    if (!wrap) return;
+    if (typeof esAdmin !== 'function' || !esAdmin()) {
+        wrap.innerHTML = '';
+        return;
+    }
+    if (modoOffline) {
+        wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">No disponible en modo offline.</p>';
+        return;
+    }
+    const tok = getApiToken();
+    if (!tok) {
+        wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">Iniciá sesión para ver operaciones del servidor.</p>';
+        return;
+    }
+    (async () => {
+        try {
+            const r = await fetch(apiUrl('/api/admin/geocod-wa-operaciones?limit=15'), {
+                headers: { Authorization: `Bearer ${tok}` },
+            });
+            if (!r.ok) {
+                wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(`No se pudo cargar (${r.status}).`)}</p>`;
+                return;
+            }
+            const j = await r.json();
+            const items = j.items || [];
+            if (!items.length) {
+                wrap.innerHTML =
+                    '<p class="gn-wa-geo-ops-msg">Sin operaciones recientes (o migración <code>geocod_wa_operaciones</code> pendiente en la API).</p>';
+                return;
+            }
+            wrap.innerHTML = items
+                .map((row) => {
+                    const st = String(row.estado || '');
+                    const cid = String(row.correlation_id || '');
+                    const pasos = Array.isArray(row.pasos) ? row.pasos : [];
+                    const last = pasos.length ? pasos[pasos.length - 1] : null;
+                    const lastSlug = last && last.slug ? last.slug : '—';
+                    const phone = row.telefono_masked || '—';
+                    const t0 = row.started_at ? new Date(row.started_at).toLocaleString('es-AR') : '';
+                    let badge = 'En curso';
+                    let badgeClass = 'gn-wa-badge-run';
+                    if (st === 'ok') {
+                        badge = 'OK';
+                        badgeClass = 'gn-wa-badge-ok';
+                    } else if (st === 'error') {
+                        badge = 'Error';
+                        badgeClass = 'gn-wa-badge-err';
+                    }
+                    const fuente = row.fuente_final ? _gnEscWaHtml(String(row.fuente_final)) : '';
+                    const errBlock = row.mensaje_error
+                        ? `<p class="gn-wa-geo-op-err">${_gnEscWaHtml(String(row.mensaje_error).slice(0, 2000))}</p>`
+                        : '';
+                    const preLines = pasos
+                        .slice(-40)
+                        .map((p) => _gnEscWaHtml(JSON.stringify(p)))
+                        .join('\n');
+                    const ms = last && last.ms != null ? ` · ${last.ms} ms` : '';
+                    const pedidoLine =
+                        row.numero_pedido || row.pedido_id
+                            ? `<p class="gn-wa-geo-op-last">Pedido: ${_gnEscWaHtml(String(row.numero_pedido || row.pedido_id || ''))}</p>`
+                            : '';
+                    return `<details class="gn-wa-geo-op"><summary><span class="${badgeClass}">${_gnEscWaHtml(badge)}</span> · ${_gnEscWaHtml(phone)} · <code>${_gnEscWaHtml(cid)}</code> · ${_gnEscWaHtml(t0)}${fuente ? ` · ${fuente}` : ''}</summary><div class="gn-wa-geo-op-body"><p class="gn-wa-geo-op-last">Último paso: <code>${_gnEscWaHtml(String(lastSlug))}</code>${_gnEscWaHtml(ms)}</p>${pedidoLine}<pre class="gn-wa-geo-op-pre">${preLines}</pre>${errBlock}</div></details>`;
+                })
+                .join('');
+        } catch (e) {
+            wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(String(e && e.message ? e.message : e))}</p>`;
+        }
+    })();
+}
+
+function gnWaGeoOpsStartPoll() {
+    gnWaGeoOpsStopPoll();
+    gnWaGeoOpsRefresh();
+    _gnWaGeoOpsPollTimer = setInterval(gnWaGeoOpsRefresh, 2500);
+}
+
+function gnWaGeoOpsStopPoll() {
+    if (_gnWaGeoOpsPollTimer) {
+        clearInterval(_gnWaGeoOpsPollTimer);
+        _gnWaGeoOpsPollTimer = null;
+    }
+}
 
 function _gnGeocodeLogTs() {
     try {
@@ -3173,6 +3269,7 @@ function gnGeocodeAdminLogOpenPanel() {
     if (!panel || !fab) return;
     panel.hidden = false;
     fab.setAttribute('aria-expanded', 'true');
+    gnWaGeoOpsStartPoll();
 }
 
 function gnGeocodeAdminLogClosePanel() {
@@ -3181,6 +3278,7 @@ function gnGeocodeAdminLogClosePanel() {
     if (!panel || !fab) return;
     panel.hidden = true;
     fab.setAttribute('aria-expanded', 'false');
+    gnWaGeoOpsStopPoll();
 }
 
 function gnGeocodeAdminLogSyncDockVisibility() {
@@ -3211,6 +3309,7 @@ function gnGeocodeAdminLogBindDockOnce() {
         if (typeof toast === 'function') toast('Registro de geocodificación vaciado.', 'info');
     });
     document.getElementById('gn-geocode-log-copy')?.addEventListener('click', gnGeocodeUiLogCopyAll);
+    document.getElementById('gn-wa-geo-ops-refresh')?.addEventListener('click', () => gnWaGeoOpsRefresh());
     try {
         const raw = sessionStorage.getItem(GN_GEOCODE_LOG_STORAGE_KEY);
         const arr = raw ? JSON.parse(raw) : null;

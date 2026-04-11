@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { query } from "../db/neon.js";
 import {
   sendWhatsAppInteractiveListWithCredentials,
@@ -12,6 +13,11 @@ import {
   sendTenantWhatsAppText,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
+import {
+  geocodWaOperacionCreate,
+  geocodWaOperacionFinishErr,
+  enmascararTelefonoWhatsapp,
+} from "./geocodWaOperaciones.js";
 import {
   buscarIdentidadParaReclamoWhatsApp,
   soloDigitosIdentificadorReclamo,
@@ -981,8 +987,16 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     latN = null;
     lngN = null;
   }
+  let correlationId = null;
   try {
     const notaInt = sess.notaUbicacionInternaWhatsapp != null ? String(sess.notaUbicacionInternaWhatsapp).trim() : "";
+    correlationId = `wa_${sess.tenantId}_${Date.now()}_${randomBytes(5).toString("hex")}`;
+    await geocodWaOperacionCreate({
+      correlationId,
+      tenantId: Number(sess.tenantId),
+      telefonoMasked: enmascararTelefonoWhatsapp(phone),
+      meta: { flow: "finalize_pedido_session" },
+    });
     const pedido = await crearPedidoDesdeWhatsappBot({
       tenantId: sess.tenantId,
       tipoCliente: sess.tipoCliente,
@@ -1006,20 +1020,48 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       suministroFases: trimOrNullWhatsapp(sess.suministroFases),
       barrio: sess.barrio ?? null,
       notaUbicacionInterna: notaInt || null,
+      correlationId,
     });
     sessions.delete(sk);
     const notaSinMapa =
       sess._geocodeSinMapa && (latN == null || lngN == null)
         ? "\n\n_Si no enviaste ubicación GPS, el mapa se actualizará automáticamente con tu domicilio._"
         : "";
-    await reply(
-      phone,
-      `Su reclamo N° *${pedido.numero_pedido}* ha sido cargado con éxito.\n\nTipo: *${sess.tipo}*${notaSinMapa}\n\nGracias por contactarnos.`,
-      sess.tenantId,
-      sess.phoneNumberId
-    );
+    try {
+      await reply(
+        phone,
+        `Su reclamo N° *${pedido.numero_pedido}* ha sido cargado con éxito.\n\nTipo: *${sess.tipo}*${notaSinMapa}\n\nGracias por contactarnos.`,
+        sess.tenantId,
+        sess.phoneNumberId
+      );
+    } catch (re) {
+      try {
+        console.error(
+          JSON.stringify({
+            evt: "finalize_pedido_wa_reply_error",
+            correlationId,
+            tenantId: sess.tenantId,
+            err: String(re?.message || re),
+          })
+        );
+      } catch (_) {}
+    }
   } catch (e) {
     const m = String(e?.message || "");
+    if (correlationId) {
+      try {
+        console.error(
+          JSON.stringify({
+            evt: "finalize_pedido_wa_error",
+            correlationId,
+            tenantId: sess.tenantId,
+            err: m,
+            stack: e?.stack ? String(e.stack).slice(0, 2500) : undefined,
+          })
+        );
+      } catch (_) {}
+      await geocodWaOperacionFinishErr(correlationId, e, { detail: "finalizePedidoFromSession" });
+    }
     if (m === "OUTAGE_SECTOR_MULTI_RECLAMO") {
       sessions.delete(sk);
       const ctxOut = await loadTenantBotContext(sess.tenantId);

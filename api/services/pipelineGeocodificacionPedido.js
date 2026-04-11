@@ -30,6 +30,14 @@ import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/socio
 
 export { coordsValidasWgs84 };
 
+/** @param {{ recordPaso?: (p: object) => Promise<void> }} tele */
+async function teleRecord(tele, slug, extra = {}) {
+  if (!tele?.recordPaso) return;
+  try {
+    await tele.recordPaso({ slug, ...extra });
+  } catch (_) {}
+}
+
 function normCp(s) {
   if (s == null) return "";
   const d = String(s).replace(/\D/g, "");
@@ -56,6 +64,7 @@ function inferirModoUbicacion(fuenteStr) {
  *   preferSimpleQNominatim?: boolean,
  *   provinciaTenantPreloaded?: string|null,
  *   respetarGpsWhatsapp?: boolean,
+ *   telemetria?: { recordPaso?: (p: object) => Promise<void> },
  * }} [options]
  */
 export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, tenantId, options = {}) {
@@ -63,10 +72,20 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
   const L = (msg) => {
     log.push(msg);
   };
+  const tele = options.telemetria;
+  await teleRecord(tele, "pipeline_inicio", { tenantId: Number(tenantId) });
   const preferSimpleQOpt = !!options.preferSimpleQNominatim;
   let provinciaTenant = options.provinciaTenantPreloaded;
   if (provinciaTenant === undefined) {
-    provinciaTenant = await getTenantProvinciaNominatim(tenantId);
+    const t0 = Date.now();
+    await teleRecord(tele, "provincia_tenant_fetch_inicio");
+    try {
+      provinciaTenant = await getTenantProvinciaNominatim(tenantId);
+      await teleRecord(tele, "provincia_tenant_fetch", { ok: true, ms: Date.now() - t0 });
+    } catch (e) {
+      await teleRecord(tele, "provincia_tenant_fetch", { ok: false, ms: Date.now() - t0, err: String(e?.message || e) });
+      throw e;
+    }
   }
 
     /* pedido: parámetro */
@@ -149,8 +168,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     } else {
       L(`  → Sin calle/localidad para normalizar`);
     }
+    await teleRecord(tele, "paso1_normalizacion_ok");
 
-    
     if (options.respetarGpsWhatsapp === true && !coordsValidasWgs84(latFinal, lngFinal)) {
       const gla = pedido.lat != null ? Number(pedido.lat) : NaN;
       const glo = pedido.lng != null ? Number(pedido.lng) : NaN;
@@ -163,6 +182,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         fuente = "whatsapp_gps";
         L("\n📍 PASO 0: GPS WhatsApp — coordenadas del dispositivo (prioridad)");
         L(`  ✓ ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        await teleRecord(tele, "paso0_gps_whatsapp", { fuente: "whatsapp_gps" });
       }
     }
 
@@ -309,6 +329,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
+    await teleRecord(tele, "paso2_catalogo_inicio");
     L("\n📚 PASO 2: Catálogo (socios_catalogo)");
     const tieneIdentificador = !!(nisT || medT || nmT);
 
@@ -381,7 +402,14 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      await teleRecord(tele, "nominatim_calle_inicio", { modo: origenWa ? "simple_q_whatsapp" : "estructurado" });
+      const tNom = Date.now();
       const r1 = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: origenWa });
+      await teleRecord(tele, "nominatim_calle_fin", {
+        ms: Date.now() - tNom,
+        hit: coordsValidasWgs84(r1.lat, r1.lng),
+        fuente: r1.fuente || null,
+      });
       if (coordsValidasWgs84(r1.lat, r1.lng)) {
         latFinal = r1.lat;
         lngFinal = r1.lng;
@@ -454,6 +482,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
       L("\n📍 PASO 5: Centro de localidad (OSM + fallback oficina si aplica)");
+      const tP5 = Date.now();
+      await teleRecord(tele, "paso5_centro_localidad_osm_inicio");
       try {
         const vb = await geocodeLocalityViewboxArgentina(locT, tenantCentroidPaso5, {
           allowTenantCentroidFallback: true,
@@ -476,11 +506,21 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         }
       } catch (err) {
         L(`  ⚠️  Error PASO 5 (centro localidad): ${err?.message || err}`);
+        await teleRecord(tele, "paso5_centro_localidad_osm_error", {
+          ms: Date.now() - tP5,
+          err: String(err?.message || err).slice(0, 500),
+        });
       }
+      await teleRecord(tele, "paso5_centro_localidad_osm_fin", {
+        ms: Date.now() - tP5,
+        ok: coordsValidasWgs84(latFinal, lngFinal),
+      });
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
       L("\n📍 PASO 5b: Nominatim q — localidad + provincia (fallback)");
+      const t5b = Date.now();
+      await teleRecord(tele, "paso5b_q_localidad_inicio");
       try {
         const qLoc =
           provinciaEfectiva.length >= 2
@@ -501,7 +541,9 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         }
       } catch (err) {
         L(`  ⚠️  PASO 5b: ${err?.message || err}`);
+        await teleRecord(tele, "paso5b_error", { ms: Date.now() - t5b, err: String(err?.message || err).slice(0, 400) });
       }
+      await teleRecord(tele, "paso5b_fin", { ms: Date.now() - t5b, ok: coordsValidasWgs84(latFinal, lngFinal) });
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && tenantCentroidPaso5) {
@@ -532,6 +574,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
 
     if (!coordsValidasWgs84(latFinal, lngFinal) && locT) {
       L("\n📍 PASO 5f: Centro ciudad — último intento Nominatim (q sin filtros estrictos)");
+      const t5f = Date.now();
+      await teleRecord(tele, "paso5f_centro_ciudad_fallback_inicio");
       try {
         const qcc =
           provinciaEfectiva.length >= 2
@@ -548,10 +592,13 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         }
       } catch (err) {
         L(`  ⚠️ PASO 5f: ${err?.message || err}`);
+        await teleRecord(tele, "paso5f_error", { ms: Date.now() - t5f, err: String(err?.message || err).slice(0, 400) });
       }
+      await teleRecord(tele, "paso5f_fin", { ms: Date.now() - t5f, ok: coordsValidasWgs84(latFinal, lngFinal) });
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
+      await teleRecord(tele, "paso5g_fallback_argentina");
       latFinal = -34.6037;
       lngFinal = -58.3816;
       fuente = "fallback_argentina_aprox_obligatorio";
@@ -566,6 +613,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     let cpPersistStr = postalDigits.length >= 4 ? postalDigits : "";
     if (!cpPersistStr && nominatimPostcode) cpPersistStr = nominatimPostcode;
     if (!cpPersistStr && coordsValidasWgs84(latFinal, lngFinal)) {
+      const tRev = Date.now();
+      await teleRecord(tele, "reverse_nominatim_cp_inicio");
       try {
         const revCp = await reverseGeocodeArgentina(latFinal, lngFinal);
         const rcp = normCp(revCp?.address?.postcode);
@@ -573,7 +622,14 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           cpPersistStr = rcp;
           L(`  📮 CP inferido (reverse Nominatim): ${rcp}`);
         }
-      } catch (_) {}
+        await teleRecord(tele, "reverse_nominatim_cp_fin", { ms: Date.now() - tRev, ok: true });
+      } catch (e) {
+        await teleRecord(tele, "reverse_nominatim_cp_fin", {
+          ms: Date.now() - tRev,
+          ok: false,
+          err: String(e?.message || e).slice(0, 300),
+        });
+      }
     }
     const cpPersist = cpPersistStr.length >= 4 ? cpPersistStr : null;
 
@@ -609,8 +665,9 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
 
 /**
  * Resuelve coordenadas antes del INSERT de un pedido WhatsApp (misma tubería que re-geocodificación).
+ * @param {object} [opts] — `telemetria` para panel admin (pasos incrementales).
  */
-export async function resolverCoordenadasCandidatoWhatsapp(payload, tenantId) {
+export async function resolverCoordenadasCandidatoWhatsapp(payload, tenantId, opts = {}) {
   const pedidoLike = {
     id: null,
     cliente_calle: payload.cliente_calle ?? null,
@@ -631,6 +688,7 @@ export async function resolverCoordenadasCandidatoWhatsapp(payload, tenantId) {
     log,
     preferSimpleQNominatim: true,
     respetarGpsWhatsapp: true,
+    telemetria: opts.telemetria,
   });
   if (!res.ok) {
     return {

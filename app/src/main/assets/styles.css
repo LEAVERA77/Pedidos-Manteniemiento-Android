@@ -638,7 +638,7 @@ textarea{resize:vertical;min-height:80px}
 .gn-geocode-log-fab[aria-expanded="true"]{border-color:var(--bd,#2563eb);color:var(--bd,#1d4ed8)}
 .gn-geocode-log-fab-label{max-width:6rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gn-geocode-log-panel{
-  width:min(100vw - 1.5rem,22rem);max-height:min(42vh,320px);display:flex;flex-direction:column;
+  width:min(100vw - 1.5rem,24rem);max-height:min(62vh,520px);display:flex;flex-direction:column;
   background:var(--card-bg,#fff);color:var(--td,#0f172a);border:1px solid var(--bo,#e2e8f0);border-radius:.65rem;
   box-shadow:0 12px 40px rgba(15,23,42,.18);overflow:hidden
 }
@@ -660,5 +660,21 @@ textarea{resize:vertical;min-height:80px}
 .gn-geocode-log-line--info{color:#334155}
 .gn-geocode-log-line--warn{color:#b45309}
 .gn-geocode-log-line--error{color:#b91c1c;font-weight:600}
+.gn-geocode-log-subtitle{margin:0;padding:.45rem .55rem 0;font-size:.72rem;font-weight:700;color:var(--td,#0f172a);border-top:1px solid var(--bo,#e2e8f0);background:var(--bg2,#f8fafc)}
+.gn-wa-geo-ops-wrap{display:flex;flex-direction:column;gap:.35rem;border-top:1px solid var(--bo,#e2e8f0);background:var(--bg2,#f8fafc);min-height:0}
+.gn-wa-geo-ops-intro{margin:0;padding:0 .55rem;font-size:.62rem;line-height:1.35;color:var(--tm,#64748b)}
+.gn-wa-geo-ops-list{max-height:min(22vh,200px);overflow-y:auto;padding:0 .5rem .35rem;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.62rem;line-height:1.4}
+.gn-wa-geo-ops-actions{padding:0 .55rem .4rem;display:flex;flex-wrap:wrap;gap:.35rem}
+.gn-wa-geo-ops-msg{margin:0;padding:0 .1rem;font-size:.62rem;color:var(--tm,#64748b)}
+.gn-wa-geo-op{border:1px solid var(--bo,#e2e8f0);border-radius:.4rem;margin-bottom:.35rem;background:var(--card-bg,#fff)}
+.gn-wa-geo-op>summary{cursor:pointer;padding:.35rem .4rem;list-style-position:outside;font-size:.62rem;word-break:break-word}
+.gn-wa-geo-op-body{padding:0 .45rem .45rem}
+.gn-wa-geo-op-last{margin:0 0 .3rem;font-size:.6rem;color:var(--tm,#64748b)}
+.gn-wa-geo-op-pre{margin:0;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;font-size:.58rem;line-height:1.35;color:#0f172a}
+.gn-wa-geo-op-err{margin:.35rem 0 0;padding:.35rem;border-radius:.35rem;background:rgba(185,28,28,.08);color:#991b1b;font-size:.6rem;white-space:pre-wrap;word-break:break-word}
+.gn-wa-badge-run,.gn-wa-badge-ok,.gn-wa-badge-err{display:inline-block;padding:.1rem .28rem;border-radius:.25rem;font-size:.58rem;font-weight:700}
+.gn-wa-badge-run{background:#e0f2fe;color:#0369a1}
+.gn-wa-badge-ok{background:#dcfce7;color:#166534}
+.gn-wa-badge-err{background:#fee2e2;color:#991b1b}
 .gn-geocode-log-hint{margin:0;padding:.4rem .55rem .5rem;font-size:.62rem;line-height:1.35;color:var(--tm,#64748b);border-top:1px solid var(--bo,#e2e8f0);background:var(--bg2,#f8fafc)}
 .gn-pedido-sin-pin-banner{font-size:.76rem;line-height:1.4;margin:0 0 .45rem;padding:.45rem .55rem;border-radius:.45rem;border:1px solid #fbbf24;background:rgba(251,191,36,.12);color:#92400e}

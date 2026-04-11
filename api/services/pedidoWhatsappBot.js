@@ -17,6 +17,10 @@ import {
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { obtenerProvinciaCodigoPostalCatalogoPorIdentificador } from "./buscarCoordenadasPorNisMedidor.js";
 import { resolverCoordenadasCandidatoWhatsapp } from "./pipelineGeocodificacionPedido.js";
+import {
+  buildTelemetriaForCorrelation,
+  geocodWaOperacionFinishOk,
+} from "./geocodWaOperaciones.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -164,6 +168,7 @@ export async function crearPedidoDesdeWhatsappBot({
   suministroFases,
   barrio,
   notaUbicacionInterna,
+  correlationId,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   let de = String(descripcion || "").trim();
@@ -293,6 +298,14 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
+  const telemetria = correlationId ? buildTelemetriaForCorrelation(correlationId) : null;
+  if (telemetria?.recordPaso) {
+    await telemetria.recordPaso({
+      slug: "antes_resolver_pipeline",
+      t: new Date().toISOString(),
+      detail: "inicio geocodificación pre-INSERT",
+    });
+  }
   const geoRes = await resolverCoordenadasCandidatoWhatsapp(
     {
       cliente_calle: calleT,
@@ -307,7 +320,8 @@ export async function crearPedidoDesdeWhatsappBot({
       lat,
       lng,
     },
-    tenantId
+    tenantId,
+    { telemetria }
   );
   if (!geoRes.success || !coordsValidasWgs84(geoRes.lat, geoRes.lng)) {
     throw new Error("whatsapp_geocod_fallo");
@@ -488,6 +502,13 @@ export async function crearPedidoDesdeWhatsappBot({
     vals
   );
   const pedidoRow = insert.rows[0];
+  if (correlationId) {
+    await geocodWaOperacionFinishOk(correlationId, {
+      pedidoId: pedidoRow.id,
+      numeroPedido: pedidoRow.numero_pedido,
+      fuente: geoRes.fuente_final || geoRes.fuente,
+    });
+  }
   setImmediate(() => {
     notificarAdminsNuevoPedidoWhatsappSafe(Number(tenantId), pedidoRow).catch(() => {});
     if (coordsWhatsappParaCatalogo) {

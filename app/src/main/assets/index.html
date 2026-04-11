@@ -1196,6 +1196,14 @@
       </div>
     </header>
     <div id="gn-geocode-log-body" class="gn-geocode-log-body" role="log" aria-live="polite" aria-relevant="additions"></div>
+    <div class="gn-wa-geo-ops-wrap" id="gn-wa-geo-ops-section">
+      <h3 class="gn-geocode-log-subtitle">Operaciones WhatsApp (geocodificación en servidor)</h3>
+      <p class="gn-wa-geo-ops-intro">Pasos del pipeline (Nominatim, fallbacks) mientras corre el alta. Se actualiza cada ~2,5 s con el panel abierto.</p>
+      <div id="gn-wa-geo-ops-list" class="gn-wa-geo-ops-list" aria-live="polite"></div>
+      <div class="gn-wa-geo-ops-actions">
+        <button type="button" class="gn-geocode-log-btn" id="gn-wa-geo-ops-refresh">Actualizar ahora</button>
+      </div>
+    </div>
     <p class="gn-geocode-log-hint">Registro de esta pestaña. Si ves error 503 o “sin conexión”, reintentá en unos minutos o verificá que la API (Render) esté activa y que tu sesión tenga token válido.</p>
   </section>
 </div>
