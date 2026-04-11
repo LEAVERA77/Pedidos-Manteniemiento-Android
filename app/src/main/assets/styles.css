@@ -661,3 +661,4 @@ textarea{resize:vertical;min-height:80px}
 .gn-geocode-log-line--warn{color:#b45309}
 .gn-geocode-log-line--error{color:#b91c1c;font-weight:600}
 .gn-geocode-log-hint{margin:0;padding:.4rem .55rem .5rem;font-size:.62rem;line-height:1.35;color:var(--tm,#64748b);border-top:1px solid var(--bo,#e2e8f0);background:var(--bg2,#f8fafc)}
+.gn-pedido-sin-pin-banner{font-size:.76rem;line-height:1.4;margin:0 0 .45rem;padding:.45rem .55rem;border-radius:.45rem;border:1px solid #fbbf24;background:rgba(251,191,36,.12);color:#92400e}

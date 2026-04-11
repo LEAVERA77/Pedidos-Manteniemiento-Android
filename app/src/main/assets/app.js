@@ -2907,12 +2907,22 @@ const norm = p => ({
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
 
+/** WGS84 finito, no (0,0), dentro de rango — pin útil en mapa (no confundir con domicilio exacto). */
+function coordsSonPinValidasMapaWgs84(la, ln) {
+    const a = Number(la);
+    const b = Number(ln);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+    if (a === 0 && b === 0) return false;
+    if (a < -90 || a > 90 || b < -180 || b > 180) return false;
+    return true;
+}
+
 /** Coordenadas para mapa: GPS del pedido o geocodificación aproximada por domicilio. */
 function coordsEfectivasPedidoMapa(p) {
     if (!p) return { la: null, ln: null };
-    if (Number.isFinite(p.la) && Number.isFinite(p.ln)) return { la: p.la, ln: p.ln };
+    if (coordsSonPinValidasMapaWgs84(p.la, p.ln)) return { la: Number(p.la), ln: Number(p.ln) };
     const inf = window._pedidoCoordsInferidas && window._pedidoCoordsInferidas[String(p.id)];
-    if (inf && Number.isFinite(inf.la) && Number.isFinite(inf.ln)) return { la: inf.la, ln: inf.ln };
+    if (inf && coordsSonPinValidasMapaWgs84(inf.la, inf.ln)) return { la: Number(inf.la), ln: Number(inf.ln) };
     return { la: null, ln: null };
 }
 
@@ -2961,6 +2971,17 @@ function domicilioParaGeocodePedido(p) {
         };
     }
     return null;
+}
+
+/** URL de la UI pública de Nominatim (solo admin / diagnóstico; el proxy sigue siendo la API Node). */
+function nominatimUiSearchUrlFromTexto(texto) {
+    let q = String(texto || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const m = q.match(/^q="([^"]+)"/);
+    if (m) q = m[1];
+    if (q.length < 2) return '';
+    return `https://nominatim.openstreetmap.org/ui/search.html?q=${encodeURIComponent(q)}`;
 }
 
 function _normGeoTxt(s) {
@@ -3168,6 +3189,8 @@ if (typeof window !== 'undefined') {
     window.gnGeocodeAdminLogSyncDockVisibility = gnGeocodeAdminLogSyncDockVisibility;
     window.gnGeocodeAdminLogOpenPanel = gnGeocodeAdminLogOpenPanel;
     window.gnGeocodeAdminLogClosePanel = gnGeocodeAdminLogClosePanel;
+    window.coordsSonPinValidasMapaWgs84 = coordsSonPinValidasMapaWgs84;
+    window.nominatimUiSearchUrlFromTexto = nominatimUiSearchUrlFromTexto;
 }
 
 /** Campos de Nominatim donde suele aparecer la localidad declarada por el cliente. */
@@ -3423,6 +3446,16 @@ async function _nominatimViewboxLocalidad(loc) {
     return `${west},${north},${east},${south}`;
 }
 
+function _nominatimMetaFromHit(r) {
+    if (!r) return {};
+    const addr = r.address && typeof r.address === 'object' ? r.address : {};
+    return {
+        display_name: String(r.display_name || '').trim(),
+        type: r.type != null ? String(r.type) : '',
+        house_number: addr.house_number != null ? String(addr.house_number).trim() : '',
+    };
+}
+
 function _parseHouseNumberNominatim(addr) {
     const raw = addr && addr.house_number != null ? String(addr.house_number).trim() : '';
     if (!raw) return null;
@@ -3464,7 +3497,15 @@ function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
         const r0 = arr[0];
         const la = Number(r0.lat);
         const lo = Number(r0.lon);
-        return Number.isFinite(la) && Number.isFinite(lo) ? { lat: la, lng: lo, src: 'aprox' } : null;
+        return Number.isFinite(la) && Number.isFinite(lo)
+            ? {
+                  lat: la,
+                  lng: lo,
+                  src: 'aprox',
+                  nominatimMeta: _nominatimMetaFromHit(r0),
+                  nominatimClass: r0.class != null ? String(r0.class) : '',
+              }
+            : null;
     }
     rows.sort((a, b) => a.sortKey - b.sortKey);
     const best = rows[0];
@@ -3473,12 +3514,57 @@ function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
     else if (Number.isFinite(target) && best.hn != null) src = 'vecino';
     else if (_nominatimTipoRankPedido(best.r) === 0) src = 'casa';
     else if (!Number.isFinite(target)) src = 'calle';
-    return { lat: best.la, lng: best.lo, src };
+    return {
+        lat: best.la,
+        lng: best.lo,
+        src,
+        nominatimMeta: _nominatimMetaFromHit(best.r),
+        nominatimClass: best.r.class != null ? String(best.r.class) : '',
+    };
+}
+
+/** Línea final obligatoria del flujo de georreferenciación (sesión de log admin activa). */
+function _gnGeocodeRegistrarResultadoPinPedido(p, hit, motivoNoPin) {
+    if (typeof esAdmin !== 'function' || !esAdmin() || !gnGeocodeUiLogIsActive()) return;
+    const id = p && p.id != null ? `#${p.id}` : '(sin id)';
+    const lat = hit && hit.lat != null ? Number(hit.lat) : NaN;
+    const lng = hit && hit.lng != null ? Number(hit.lng) : NaN;
+    if (hit && coordsSonPinValidasMapaWgs84(lat, lng)) {
+        const m = hit.nominatimMeta || {};
+        const provIso = hit.src === 'ciudad_centro' ? ' · aprox. centro de localidad (no domicilio exacto en puerta)' : '';
+        gnGeocodeUiLogAppend(
+            'info',
+            `Resultado elegido: type=${m.type || '—'}, class=${hit.nominatimClass != null ? String(hit.nominatimClass) : '—'}, house_number(OSM)=${m.house_number || '—'}.`
+        );
+        if (m.display_name) {
+            const dn = m.display_name;
+            gnGeocodeUiLogAppend('info', `display_name: ${dn.length > 200 ? `${dn.slice(0, 197)}…` : dn}`);
+        }
+        if (hit.qUsed) {
+            const qu = String(hit.qUsed);
+            gnGeocodeUiLogAppend('info', `Consulta / params que orientaron el hit: ${qu.length > 200 ? `${qu.slice(0, 197)}…` : qu}`);
+        }
+        const linkQ = (hit.qNominatimUi != null && String(hit.qNominatimUi).trim()) || (hit.qUsed != null && String(hit.qUsed).trim()) || '';
+        const urlDemo = typeof nominatimUiSearchUrlFromTexto === 'function' ? nominatimUiSearchUrlFromTexto(linkQ) : '';
+        if (urlDemo) gnGeocodeUiLogAppend('info', `Abrir en Nominatim (referencia): ${urlDemo}`);
+        gnGeocodeUiLogAppend('info', `Pin: SÍ ${id} → (${lat.toFixed(6)}, ${lng.toFixed(6)}) [${hit.src || '—'}]${provIso}.`);
+    } else {
+        const mot = motivoNoPin || 'sin coordenadas válidas para el mapa';
+        gnGeocodeUiLogAppend('warn', `Pin: NO ${id} — ${mot}.`);
+    }
 }
 
 async function nominatimGeocodeDomicilioPedido(p) {
     const dom = domicilioParaGeocodePedido(p);
-    if (!dom) return null;
+    if (!dom) {
+        if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive()) {
+            gnGeocodeUiLogAppend(
+                'warn',
+                `Pin: NO pedido #${p && p.id != null ? p.id : '?'} — sin domicilio estructurado (calle + localidad o texto cdir con patrón reconocible).`
+            );
+        }
+        return null;
+    }
     const adminSess = typeof esAdmin === 'function' && esAdmin();
     const startOwnUiSession = adminSess && !gnGeocodeUiLogIsActive();
     if (startOwnUiSession) {
@@ -3487,123 +3573,200 @@ async function nominatimGeocodeDomicilioPedido(p) {
         );
     }
     try {
-    const calle = dom.calle;
-    const loc = dom.loc;
-    const num = (dom.num || '').trim();
-    const streetLine = num ? `${num} ${calle}` : calle;
-    let calleSinTilde = calle;
-    try {
-        calleSinTilde = String(calle)
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-    } catch (_) {}
+        const calle = dom.calle;
+        const loc = dom.loc;
+        const num = (dom.num || '').trim();
+        const streetLine = num ? `${num} ${calle}` : calle;
+        let calleSinTilde = calle;
+        try {
+            calleSinTilde = String(calle)
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+        } catch (_) {}
 
-    const intentar = async (lista) => {
-        const fil = _filtrarNominatimPorLocalidad(lista, loc);
-        return _elegirMejorResultadoNominatimPorPuerta(fil.length ? fil : [], num);
-    };
-
-    const baseSearch = { countrycodes: 'ar', limit: '25', addressdetails: '1' };
-    const qList = [];
-    const pushQ = (q) => {
-        const s = String(q || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        if (s.length >= 4 && !qList.includes(s)) qList.push(s);
-    };
-    if (num) {
-        pushQ(`${calle} ${num}, ${loc}`);
-        pushQ(`${calle} ${num}, ${loc}, Argentina`);
-        if (calleSinTilde !== calle) pushQ(`${calleSinTilde} ${num}, ${loc}, Argentina`);
-        pushQ(`${num} ${calle}, ${loc}, Argentina`);
-        pushQ(`${streetLine}, ${loc}, Argentina`);
-        pushQ(`${streetLine}, ${loc}`);
-    } else {
-        pushQ(`${calle}, ${loc}, Argentina`);
-        pushQ(`${calle}, ${loc}`);
-    }
-
-    for (const q of qList) {
-        const raw = await _nominatimFetchSearch({ ...baseSearch, q });
-        const hit = await intentar(raw);
-        if (hit) return hit;
-    }
-
-    let raw = await _nominatimFetchSearch({
-        street: streetLine,
-        city: loc,
-        country: 'Argentina',
-        ...baseSearch,
-        limit: '15',
-    });
-    let hit = await intentar(raw);
-    if (hit) return hit;
-
-    raw = await _nominatimFetchSearch({
-        street: calle,
-        city: loc,
-        country: 'Argentina',
-        ...baseSearch,
-        limit: '15',
-    });
-    hit = await intentar(raw);
-    if (hit) return hit;
-
-    const vb = await _nominatimViewboxLocalidad(loc);
-    if (vb) {
-        for (const q of qList) {
-            raw = await _nominatimFetchSearch({
-                ...baseSearch,
-                q,
-                viewbox: vb,
-                bounded: '1',
-            });
-            hit = await intentar(raw);
-            if (hit) return hit;
+        if (adminSess && gnGeocodeUiLogIsActive()) {
+            const prov = p && String(p.cpcia || '').trim() ? ` · provincia decl.="${String(p.cpcia).trim()}"` : '';
+            const cp = p && String(p.ccp || '').trim() ? ` · CP="${String(p.ccp).trim()}"` : '';
+            gnGeocodeUiLogAppend(
+                'info',
+                `Datos recibidos: calle="${calle}", número="${num || '—'}", localidad="${loc}"${prov}${cp}.`
+            );
+            gnGeocodeUiLogAppend(
+                'info',
+                'Estrategia: variantes con parámetro q (Nominatim “simple”), luego street+city+country, búsqueda con viewbox de la localidad, y último recurso centro de la localidad (aprox., no puerta exacta).'
+            );
         }
-    }
 
-    if (num) {
-        raw = await _nominatimFetchSearch({ ...baseSearch, q: `${calle}, ${loc}, Argentina` });
-        hit = await intentar(raw);
-        if (hit) return hit;
-    }
+        const intentar = async (lista, qUsedLabel, qNominatimUi) => {
+            const fil = _filtrarNominatimPorLocalidad(lista, loc);
+            const h = _elegirMejorResultadoNominatimPorPuerta(fil.length ? fil : [], num);
+            if (!h) return null;
+            const out = { ...h, qUsed: qUsedLabel };
+            if (qNominatimUi) out.qNominatimUi = qNominatimUi;
+            return out;
+        };
 
-    raw = await _nominatimFetchSearch({
-        q: `${loc}, Argentina`,
-        countrycodes: 'ar',
-        limit: '5',
-        addressdetails: '1',
-    });
-    if (raw && raw.length > 0) {
-        const locLow = loc.toLowerCase();
-        const cityHit =
-            raw.find((h) => {
-                const n = String(h.display_name || '').toLowerCase();
-                return n.includes(locLow) && n.includes('argentina');
-            }) || raw[0];
-        if (cityHit) {
-            const la = Number(cityHit.lat);
-            const lo = Number(cityHit.lon);
-            if (Number.isFinite(la) && Number.isFinite(lo)) {
-                if (adminSess) {
-                    gnGeocodeUiLogAppend(
-                        'info',
-                        `Se usó centro aproximado de localidad "${loc}" (sin puerta exacta en mapa).`
-                    );
-                }
-                return { lat: la, lng: lo, src: 'ciudad_centro' };
+        const baseSearch = { countrycodes: 'ar', limit: '25', addressdetails: '1' };
+        const qList = [];
+        const pushQ = (q) => {
+            const s = String(q || '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (s.length >= 4 && !qList.includes(s)) qList.push(s);
+        };
+        if (num) {
+            pushQ(`${calle} ${num}, ${loc}`);
+            pushQ(`${calle} ${num}, ${loc}, Argentina`);
+            if (calleSinTilde !== calle) pushQ(`${calleSinTilde} ${num}, ${loc}, Argentina`);
+            pushQ(`${num} ${calle}, ${loc}, Argentina`);
+            pushQ(`${streetLine}, ${loc}, Argentina`);
+            pushQ(`${streetLine}, ${loc}`);
+        } else {
+            pushQ(`${calle}, ${loc}, Argentina`);
+            pushQ(`${calle}, ${loc}`);
+        }
+
+        let qi = 0;
+        for (const q of qList) {
+            if (adminSess && gnGeocodeUiLogIsActive() && qi === 0) {
+                gnGeocodeUiLogAppend(
+                    'info',
+                    `Primera consulta (param q, coherente con “simple search”): ${q.length > 160 ? `${q.slice(0, 157)}…` : q}`
+                );
+            }
+            qi++;
+            const raw = await _nominatimFetchSearch({ ...baseSearch, q });
+            const hit = await intentar(raw, `q="${q}" (countrycodes=ar, limit)`, q);
+            if (hit) {
+                _gnGeocodeRegistrarResultadoPinPedido(p, hit, null);
+                return hit;
             }
         }
-    }
 
-    if (adminSess) {
-        gnGeocodeUiLogAppend(
-            'warn',
-            `Sin coordenadas útiles tras todas las variantes de búsqueda para pedido #${p && p.id != null ? p.id : '?'}.`
+        if (adminSess && gnGeocodeUiLogIsActive()) {
+            gnGeocodeUiLogAppend(
+                'info',
+                `Búsqueda estructurada: street="${streetLine}", city="${loc}", country=Argentina (limit 15).`
+            );
+        }
+        let raw = await _nominatimFetchSearch({
+            street: streetLine,
+            city: loc,
+            country: 'Argentina',
+            ...baseSearch,
+            limit: '15',
+        });
+        const qUiStruct = `${streetLine}, ${loc}, Argentina`;
+        let hit = await intentar(
+            raw,
+            `street=${JSON.stringify(streetLine)}, city=${JSON.stringify(loc)}, country=Argentina`,
+            qUiStruct
         );
-    }
-    return null;
+        if (hit) {
+            _gnGeocodeRegistrarResultadoPinPedido(p, hit, null);
+            return hit;
+        }
+
+        if (adminSess && gnGeocodeUiLogIsActive()) {
+            gnGeocodeUiLogAppend('info', `Reintento estructurado: street="${calle}" (sin n° en street), city="${loc}".`);
+        }
+        raw = await _nominatimFetchSearch({
+            street: calle,
+            city: loc,
+            country: 'Argentina',
+            ...baseSearch,
+            limit: '15',
+        });
+        const qUiStruct2 = `${calle}, ${loc}, Argentina`;
+        hit = await intentar(raw, `street=${JSON.stringify(calle)}, city=${JSON.stringify(loc)}`, qUiStruct2);
+        if (hit) {
+            _gnGeocodeRegistrarResultadoPinPedido(p, hit, null);
+            return hit;
+        }
+
+        const vb = await _nominatimViewboxLocalidad(loc);
+        if (vb) {
+            if (adminSess && gnGeocodeUiLogIsActive()) {
+                gnGeocodeUiLogAppend('info', 'Viewbox de la localidad obtenido; búsquedas q acotadas (bounded=1).');
+            }
+            for (const q of qList) {
+                raw = await _nominatimFetchSearch({
+                    ...baseSearch,
+                    q,
+                    viewbox: vb,
+                    bounded: '1',
+                });
+                const hitV = await intentar(raw, `q="${q}" + viewbox acotado + bounded=1`, q);
+                if (hitV) {
+                    _gnGeocodeRegistrarResultadoPinPedido(p, hitV, null);
+                    return hitV;
+                }
+            }
+        }
+
+        if (num) {
+            raw = await _nominatimFetchSearch({ ...baseSearch, q: `${calle}, ${loc}, Argentina` });
+            hit = await intentar(
+                raw,
+                `q="${calle}, ${loc}, Argentina" (sin n° en calle, sólo q)`,
+                `${calle}, ${loc}, Argentina`
+            );
+            if (hit) {
+                _gnGeocodeRegistrarResultadoPinPedido(p, hit, null);
+                return hit;
+            }
+        }
+
+        if (adminSess && gnGeocodeUiLogIsActive()) {
+            gnGeocodeUiLogAppend('info', `Último recurso: centro aproximado de localidad con q="${loc}, Argentina".`);
+        }
+        raw = await _nominatimFetchSearch({
+            q: `${loc}, Argentina`,
+            countrycodes: 'ar',
+            limit: '5',
+            addressdetails: '1',
+        });
+        if (raw && raw.length > 0) {
+            const locLow = loc.toLowerCase();
+            const cityHit =
+                raw.find((h) => {
+                    const n = String(h.display_name || '').toLowerCase();
+                    return n.includes(locLow) && n.includes('argentina');
+                }) || raw[0];
+            if (cityHit) {
+                const la = Number(cityHit.lat);
+                const lo = Number(cityHit.lon);
+                if (Number.isFinite(la) && Number.isFinite(lo)) {
+                    const hitCentro = {
+                        lat: la,
+                        lng: lo,
+                        src: 'ciudad_centro',
+                        qUsed: `q="${loc}, Argentina" (centro localidad, aprox.)`,
+                        qNominatimUi: `${loc}, Argentina`,
+                        nominatimMeta: _nominatimMetaFromHit(cityHit),
+                        nominatimClass: cityHit.class != null ? String(cityHit.class) : '',
+                    };
+                    if (adminSess && gnGeocodeUiLogIsActive()) {
+                        gnGeocodeUiLogAppend(
+                            'info',
+                            `Se usa centro aproximado de "${loc}" (Nominatim sin puerta exacta en mapa).`
+                        );
+                    }
+                    _gnGeocodeRegistrarResultadoPinPedido(p, hitCentro, null);
+                    return hitCentro;
+                }
+            }
+        }
+
+        const noTok = typeof getApiToken === 'function' && !getApiToken();
+        _gnGeocodeRegistrarResultadoPinPedido(
+            p,
+            null,
+            noTok
+                ? 'sin token JWT para el proxy de mapas (cerrá sesión y volvé a entrar como admin)'
+                : 'sin resultados tras variantes q + street/city + viewbox; Nominatim vacío o sin coincidencia con la localidad indicada'
+        );
+        return null;
     } finally {
         if (startOwnUiSession) gnGeocodeUiLogEndSession();
     }
@@ -3611,6 +3774,15 @@ async function nominatimGeocodeDomicilioPedido(p) {
 
 async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
     if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
+    if (!coordsSonPinValidasMapaWgs84(la, ln)) {
+        if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive()) {
+            gnGeocodeUiLogAppend(
+                'warn',
+                `Pin: NO pedido #${pedidoId} — coordenadas inválidas, (0,0) o fuera de WGS84; no se envían al servidor (coords-geocode-panel).`
+            );
+        }
+        return;
+    }
     await asegurarJwtApiRest();
     const token = getApiToken();
     if (!token) return;
@@ -3662,7 +3834,10 @@ async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
             refrescarDetalleSiAbiertoTrasSync();
         } catch (_) {}
         if (typeof esAdmin === 'function' && esAdmin()) {
-            gnGeocodeUiLogAppend('info', `Coordenadas guardadas en servidor para pedido #${pedidoId} (${nla.toFixed(5)}, ${nln.toFixed(5)}).`);
+            gnGeocodeUiLogAppend(
+                'info',
+                `Guardado en API (coords-geocode-panel): pedido #${pedidoId} → (${nla.toFixed(6)}, ${nln.toFixed(6)}); pin WGS84 válido para mapa/lista.`
+            );
         }
     } catch (e) {
         if (typeof esAdmin === 'function' && esAdmin()) {
@@ -3758,7 +3933,7 @@ async function enriquecerCoordsGeocodificadasPedidos() {
                 }
                 const hit = await nominatimGeocodeDomicilioPedido(p);
                 const id = String(p.id);
-                if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+                if (hit && coordsSonPinValidasMapaWgs84(hit.lat, hit.lng)) {
                     window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
                     if (esAdmin()) {
                         void persistirCoordsGeocodePedidoPanel(p.id, hit.lat, hit.lng);
@@ -3766,7 +3941,15 @@ async function enriquecerCoordsGeocodificadasPedidos() {
                     if (adminBatch) {
                         gnGeocodeUiLogAppend(
                             'info',
-                            `Pedido #${p.id}: coordenadas aproximadas (${hit.src || 'aprox'}).`
+                            `Pedido #${p.id}: coordenadas aproximadas (${hit.src || 'aprox'}); persistencia disparada si aplica.`
+                        );
+                    }
+                } else if (hit) {
+                    window._pedidoCoordsInferidas[id] = { skip: true };
+                    if (adminBatch) {
+                        gnGeocodeUiLogAppend(
+                            'warn',
+                            `Pedido #${p.id}: resultado con lat/lng no válidos para mapa (NaN, 0,0 o fuera de rango); no se persiste.`
                         );
                     }
                 } else {
@@ -9638,6 +9821,12 @@ async function detalle(p) {
     
     
     const { la: laM, ln: lnM } = coordsEfectivasPedidoMapa(p);
+    const pinMapaOk = coordsSonPinValidasMapaWgs84(laM, lnM);
+    const hayDomicilioGeo = !!domicilioParaGeocodePedido(p);
+    const bannerSinPinAdmin =
+        esAdmin() && hayDomicilioGeo && !pinMapaOk
+            ? '<p class="gn-pedido-sin-pin-banner" role="status">Sin ubicación válida en el mapa (WGS84). Revisá domicilio, usá <strong>Re-geocodificar</strong> o coordenadas manuales en admin. Esto no invalida por sí solo el texto del reclamo.</p>'
+            : '';
     const usadaInferida = (p.la == null || p.ln == null) && laM != null && lnM != null;
     const latFormateada = laM != null ? laM.toFixed(6).replace('.', ',') : '';
     const lngFormateada = lnM != null ? lnM.toFixed(6).replace('.', ',') : '';
@@ -9770,6 +9959,7 @@ async function detalle(p) {
         
         <div class="ds">
             <h4>📍 Ubicación</h4>
+            ${bannerSinPinAdmin}
             <div class="dr"><span class="dl">Provincia</span><span class="dv">${escDet(String(p.cpcia || '').trim() || '—')}</span></div>
             <div class="dr"><span class="dl">Código postal</span><span class="dv">${escDet(String(p.ccp || '').trim() || '—')}</span></div>
             ${usadaInferida ? '<p style="font-size:.76rem;color:#b45309;margin:0 0 .35rem;line-height:1.35">Ubicación aproximada por calle y número (el cliente no compartió GPS).</p>' : ''}

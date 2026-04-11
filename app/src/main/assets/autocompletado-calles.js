@@ -303,6 +303,10 @@ async function regeocodificarPedido(pedidoId) {
           `El servidor rechazó la re-geocodificación (${response.status}): ${String(det)}. Si es 401 o 403, cerrá sesión y volvé a entrar; si es 5xx, revisá la API en Render.`,
           { openPanel: true }
         );
+        window.gnGeocodeUiLogAppend(
+          'warn',
+          `Pin: NO pedido #${pedidoId} — HTTP ${response.status}: ${String(det).slice(0, 200)}`
+        );
       }
       throw new Error(result.error || result.detail || 'Error al re-geocodificar');
     }
@@ -311,12 +315,15 @@ async function regeocodificarPedido(pedidoId) {
     if (result.success === false) {
       const errorMsg = result.mensaje || result.error || 'No se pudieron obtener coordenadas válidas';
       if (typeof window.gnGeocodeUiLogAppend === 'function') {
-        window.gnGeocodeUiLogAppend('warn', `Re-geocodificación sin éxito: ${errorMsg}`);
         if (Array.isArray(result.log)) {
           for (const line of result.log) {
             window.gnGeocodeUiLogAppend('info', `[servidor] ${String(line)}`);
           }
         }
+        window.gnGeocodeUiLogAppend(
+          'warn',
+          `Pin: NO pedido #${pedidoId} — re-geocodificación sin coords (${String(errorMsg).slice(0, 220)})`
+        );
       }
       mostrarModalLogRegeocodificacion(
         `<div><strong style="color:#b45309">⚠️ ${escapeHtml(errorMsg)}</strong>${logHtml}</div>`,
@@ -328,8 +335,30 @@ async function regeocodificarPedido(pedidoId) {
     const latOk = result.coordenadas?.lat ?? result.lat;
     const lngOk = result.coordenadas?.lng ?? result.lng;
     if (latOk == null || lngOk == null || !Number.isFinite(Number(latOk)) || !Number.isFinite(Number(lngOk))) {
+      if (typeof window.gnGeocodeUiLogAppend === 'function') {
+        window.gnGeocodeUiLogAppend(
+          'warn',
+          `Pin: NO pedido #${pedidoId} — respuesta del servidor sin lat/lng finitas.`
+        );
+      }
       if (window.toast) {
         window.toast(`Respuesta incompleta del servidor (sin coordenadas).`, 'error', REGEO_MODAL_MS);
+      }
+      return;
+    }
+
+    const pinOk =
+      typeof window.coordsSonPinValidasMapaWgs84 === 'function' &&
+      window.coordsSonPinValidasMapaWgs84(latOk, lngOk);
+    if (!pinOk) {
+      if (typeof window.gnGeocodeUiLogAppend === 'function') {
+        window.gnGeocodeUiLogAppend(
+          'warn',
+          `Pin: NO pedido #${pedidoId} — coords fuera de WGS84, (0,0) o no finitas según validación del panel.`
+        );
+      }
+      if (window.toast) {
+        window.toast(`Coordenadas no válidas para el mapa (revisá respuesta del servidor).`, 'error', REGEO_MODAL_MS);
       }
       return;
     }
@@ -344,6 +373,18 @@ async function regeocodificarPedido(pedidoId) {
           window.gnGeocodeUiLogAppend('info', `[servidor] ${String(line)}`);
         }
       }
+      const qUi =
+        (result.domicilio_consulta && String(result.domicilio_consulta).trim()) ||
+        (result.query_nominatim && String(result.query_nominatim).trim()) ||
+        '';
+      if (qUi && typeof window.nominatimUiSearchUrlFromTexto === 'function') {
+        const u = window.nominatimUiSearchUrlFromTexto(qUi);
+        if (u) window.gnGeocodeUiLogAppend('info', `Abrir en Nominatim (referencia domicilio): ${u}`);
+      }
+      window.gnGeocodeUiLogAppend(
+        'info',
+        `Pin: SÍ pedido #${pedidoId} → (${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)}) [regeocodificar API · ${String(result.fuente || '—')}].`
+      );
     }
     const msgModal = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)}<br><span style="color:#6b7280">Fuente: ${escapeHtml(String(result.fuente || ''))}</span></p>${logHtml}</div>`;
     mostrarModalLogRegeocodificacion(msgModal, { durationMs: REGEO_MODAL_MS });
@@ -367,6 +408,10 @@ async function regeocodificarPedido(pedidoId) {
         'error',
         `Error al re-geocodificar: ${err && err.message ? err.message : err}. Comprobá conexión, token y que la API responda.`,
         { openPanel: true }
+      );
+      window.gnGeocodeUiLogAppend(
+        'warn',
+        `Pin: NO pedido #${pedidoId} — ${err && err.message ? String(err.message).slice(0, 200) : 'error de red o excepción'}`
       );
     }
     if (window.toast) {
