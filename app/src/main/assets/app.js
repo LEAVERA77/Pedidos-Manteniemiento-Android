@@ -13944,7 +13944,17 @@ function normalizarEncabezadoExcelSocios(k) {
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
     if (n === 'estado' || n === 'state') return 'provincia';
-    if (n === 'cp' || n === 'cpa' || n === 'codigo_postal' || n === 'postal' || n === 'zip' || n === 'cod_postal') {
+    if (
+        n === 'cp' ||
+        n === 'cpa' ||
+        n === 'codigo_postal' ||
+        n === 'codigopostal' ||
+        n === 'codpostal' ||
+        n === 'postal' ||
+        n === 'zip' ||
+        n === 'cod_postal' ||
+        n === 'cod_post'
+    ) {
         return 'codigo_postal';
     }
     return n;
@@ -13963,7 +13973,7 @@ function aliasEncabezadosProvinciaSocios(mapNormAOriginal) {
 
 function aliasEncabezadosCpSocios(mapNormAOriginal) {
     if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
-    const keys = ['cp', 'cpa', 'postal', 'zip', 'cod_postal'];
+    const keys = ['cp', 'cpa', 'postal', 'zip', 'cod_postal', 'codigopostal', 'codpostal', 'cod_post'];
     for (const k of keys) {
         if (mapNormAOriginal[k] && !mapNormAOriginal.codigo_postal) {
             mapNormAOriginal.codigo_postal = mapNormAOriginal[k];

@@ -16,6 +16,11 @@
  */
 
 import { query } from "../db/neon.js";
+import {
+  mejorCoincidenciaDiccionarioCalles,
+  normalizarTextoCalleComparacion,
+  UMBRAL_SIMILITUD_CALLE_JW,
+} from "./normalizadorCalles.js";
 
 export const DICCIONARIO_CALLES_FALLBACK = {
   "Cerrito": {
@@ -74,42 +79,8 @@ async function cargarDiccionarioDesdeDB(ciudad) {
   }
 }
 
-/**
- * Calcula la distancia de Levenshtein entre dos strings (similaridad)
- */
-function levenshtein(a, b) {
-  const an = a.length;
-  const bn = b.length;
-  const matrix = Array(bn + 1).fill(null).map(() => Array(an + 1).fill(0));
-
-  for (let i = 0; i <= an; i++) matrix[0][i] = i;
-  for (let j = 0; j <= bn; j++) matrix[j][0] = j;
-
-  for (let j = 1; j <= bn; j++) {
-    for (let i = 1; i <= an; i++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,
-        matrix[j - 1][i] + 1,
-        matrix[j - 1][i - 1] + cost
-      );
-    }
-  }
-
-  return matrix[bn][an];
-}
-
-/**
- * Normaliza un string para comparación: sin tildes, minúsculas, sin puntos
- */
 function normalizarParaComparacion(str) {
-  return String(str)
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[.,;:]/g, "")
-    .replace(/\s+/g, " ");
+  return normalizarTextoCalleComparacion(str);
 }
 
 /**
@@ -144,42 +115,24 @@ export async function normalizarNombreCalle(calleInput, ciudad) {
     }
   }
   
-  // 2. Búsqueda por similitud (Levenshtein)
-  let mejorMatch = null;
-  let mejorDistancia = Infinity;
-  
-  for (const [oficial, variantes] of Object.entries(dict)) {
-    // Comparar con nombre oficial
-    const distOficial = levenshtein(inputNorm, normalizarParaComparacion(oficial));
-    if (distOficial < mejorDistancia) {
-      mejorDistancia = distOficial;
-      mejorMatch = oficial;
-    }
-    
-    // Comparar con variantes
-    for (const variante of variantes) {
-      const dist = levenshtein(inputNorm, normalizarParaComparacion(variante));
-      if (dist < mejorDistancia) {
-        mejorDistancia = dist;
-        mejorMatch = oficial;
-      }
-    }
-  }
-  
-  // Solo retornar si la distancia es razonable (máximo 3 caracteres de diferencia)
-  const umbral = Math.min(3, Math.floor(inputNorm.length * 0.3));
-  if (mejorMatch && mejorDistancia <= umbral) {
-    const confianza = 1 - (mejorDistancia / inputNorm.length);
-    return { 
-      oficial: mejorMatch, 
-      confianza: Math.max(0.5, confianza),
-      metodo: "levenshtein",
-      distancia: mejorDistancia
+  // 2. Fuzzy: Jaro-Winkler (+ Levenshtein respaldo) vs. oficial y variantes (umbral ≥ 0,8)
+  const entradas = Object.entries(dict).map(([oficial, variantes]) => ({
+    oficial,
+    alias: Array.isArray(variantes) ? variantes : [],
+  }));
+  const fuzzy = mejorCoincidenciaDiccionarioCalles(calleInput, entradas, {
+    minScore: UMBRAL_SIMILITUD_CALLE_JW,
+    usarLevenshteinRespaldo: true,
+  });
+  if (fuzzy) {
+    return {
+      oficial: fuzzy.oficial,
+      confianza: fuzzy.confianza,
+      metodo: fuzzy.metodo,
     };
   }
-  
-  console.info("[normalize-calle] Sin match para '%s' en %s (mejor dist: %s)", 
-    calleInput, ciudadNorm, mejorDistancia);
+
+  console.info("[normalize-calle] Sin match fuzzy (≥%.2f) para '%s' en %s", UMBRAL_SIMILITUD_CALLE_JW, calleInput, ciudadNorm);
   return null;
 }
 
@@ -204,13 +157,15 @@ export async function normalizarDireccion({ calle, ciudad }) {
   
   const resultado = await normalizarNombreCalle(calleOriginal, ciudad);
   
-  if (resultado && resultado.confianza >= 0.6) {
+  if (resultado && resultado.confianza >= UMBRAL_SIMILITUD_CALLE_JW) {
+    const igual =
+      normalizarParaComparacion(calleOriginal) === normalizarParaComparacion(resultado.oficial);
     console.info("[normalize-direccion] '%s' → '%s' (confianza: %.2f, método: %s)", 
       calleOriginal, resultado.oficial, resultado.confianza, resultado.metodo);
     return {
       calleNormalizada: resultado.oficial,
       original: calleOriginal,
-      cambio: true,
+      cambio: !igual,
       confianza: resultado.confianza,
       metodo: resultado.metodo
     };

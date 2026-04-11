@@ -8,8 +8,23 @@
  * made by leavera77
  */
 
+import {
+  nominatimStateMatchesTenant,
+  stateFromNominatimHit,
+} from "./nominatimClient.js";
+import { iso3166ArgDesdeNombreProvincia } from "../utils/provinciaArgentinaIso.js";
+
 const OVERPASS_API = "https://overpass-api.de/api/interpreter";
 const NOMINATIM_API = "https://nominatim.openstreetmap.org";
+
+/** Elige el primer resultado Nominatim cuya provincia coincide con la esperada (evita homónimos entre jurisdicciones). */
+function pickHitProvincia(hits, provClean) {
+  if (!hits || !hits.length) return null;
+  const p = provClean ? String(provClean).trim() : "";
+  if (!p || p.length < 2) return hits[0];
+  const ok = hits.find((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), p));
+  return ok || null;
+}
 
 /** Valida lat/lng finitos y en rango WGS84 */
 function coordsOk(lat, lng) {
@@ -85,7 +100,9 @@ function normalizarParaBusqueda(str) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/\s+/g, " ");
+    .replace(/[^a-z0-9áéíóúüñ\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Overpass `name~` usa regex; escapa metacaracteres para que "Antártida" no rompa el patrón. */
@@ -101,22 +118,30 @@ function generarVariantesNombre(calle) {
   const base = normalizarParaBusqueda(raw);
   const variantes = new Set([base]);
 
-  const sinPrefijo = base.replace(/^(calle|avenida|av\.?|avda|pasaje|pje|boulevard|bv|bvd|blvd)\s+/i, "");
+  const sinPrefijo = base.replace(
+    /^(calle|avenida|av\.?|avda|pasaje|pje|boulevard|bulevar|bv|bvd|blvd)\s+/i,
+    ""
+  );
   if (sinPrefijo !== base && sinPrefijo.length >= 3) variantes.add(sinPrefijo);
 
-  if (base.length >= 5 && !/^(calle|avenida|av\.?|boulevard|bv|bvd|blvd)\s/i.test(base)) {
+  if (base.length >= 5 && !/^(calle|avenida|av\.?|boulevard|bulevar|bv|bvd|blvd)\s/i.test(base)) {
     variantes.add(`avenida ${base}`);
     variantes.add(`av ${base}`);
     variantes.add(`av. ${base}`);
     variantes.add(`boulevard ${base}`);
+    variantes.add(`bulevar ${base}`);
   }
 
-  if (/boulevard|bv|bvd|blvd/i.test(base)) {
-    const sinBoulevard = base.replace(/\b(boulevard|bv|bvd|blvd)\b/gi, "").replace(/\s+/g, " ").trim();
-    if (sinBoulevard.length >= 3) {
-      variantes.add(sinBoulevard);
-      variantes.add(`boulevard ${sinBoulevard}`);
-      variantes.add(`avenida ${sinBoulevard}`);
+  if (/boulevard|bulevar|bv|bvd|blvd/i.test(base)) {
+    const sinTipo = base
+      .replace(/\b(boulevard|bulevar|bv|bvd|blvd)\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (sinTipo.length >= 3) {
+      variantes.add(sinTipo);
+      variantes.add(`boulevard ${sinTipo}`);
+      variantes.add(`bulevar ${sinTipo}`);
+      variantes.add(`avenida ${sinTipo}`);
     }
   }
 
@@ -126,21 +151,30 @@ function generarVariantesNombre(calle) {
   const palabras = base.split(/\s+/).filter((w) => w.length >= 2);
   if (palabras.length >= 2) {
     variantes.add(palabras.join(" "));
+    const ult = palabras[palabras.length - 1];
+    if (ult.length >= 4) variantes.add(ult);
+    const prim = palabras[0];
+    if (prim.length >= 4 && palabras.length >= 2) variantes.add(prim);
   }
 
-  return [...variantes].filter((v) => v.length >= 3);
+  const out = [...variantes].filter((v) => v.length >= 3);
+  return out.slice(0, 48);
 }
 
 /**
  * Obtiene coordenadas aproximadas del centro de una localidad (fallback para query geográfica)
  */
-async function obtenerCoordsLocalidad(localidad) {
+async function obtenerCoordsLocalidad(localidad, provincia) {
   const locClean = String(localidad).trim();
+  const provClean = provincia ? String(provincia).trim() : "";
+  const q = provClean.length >= 2 ? `${locClean}, ${provClean}, Argentina` : `${locClean}, Argentina`;
   const url = `${NOMINATIM_API}/search?` +
     new URLSearchParams({
-      q: `${locClean}, Argentina`,
+      q,
       format: "json",
       limit: "1",
+      countrycodes: "ar",
+      "accept-language": "es",
     });
   
   try {
@@ -152,9 +186,25 @@ async function obtenerCoordsLocalidad(localidad) {
     
     const results = await response.json();
     if (!results || results.length === 0) return { lat: -31.3, lng: -60.5 };
-    
-    const lat = parseFloat(results[0].lat);
-    const lng = parseFloat(results[0].lon);
+
+    let hit = results[0];
+    if (provClean.length >= 2 && results.length > 1) {
+      const ok = results.find((r) =>
+        nominatimStateMatchesTenant(stateFromNominatimHit(r), provClean)
+      );
+      if (ok) hit = ok;
+    } else if (provClean.length >= 2) {
+      const st = stateFromNominatimHit(hit);
+      if (st && !nominatimStateMatchesTenant(st, provClean)) {
+        const ok = results.find((r) =>
+          nominatimStateMatchesTenant(stateFromNominatimHit(r), provClean)
+        );
+        if (ok) hit = ok;
+      }
+    }
+
+    const lat = parseFloat(hit.lat);
+    const lng = parseFloat(hit.lon);
     
     if (Number.isFinite(lat) && Number.isFinite(lng)) {
       return { lat, lng };
@@ -168,74 +218,114 @@ async function obtenerCoordsLocalidad(localidad) {
 }
 
 /**
+ * Construye bloques Overpass: localidad opcionalmente restringida a provincia (ISO o boundary).
+ */
+function bloquesAreaLocalidadProvincia(locEscaped, provClean) {
+  const provTrim = provClean ? String(provClean).trim() : "";
+  const p = provTrim.length >= 2 ? provTrim : "";
+  const iso = p ? iso3166ArgDesdeNombreProvincia(p) : null;
+  const provEsc = p ? escapeOverpassRegexLiteral(normalizarParaBusqueda(p)) : "";
+
+  if (iso) {
+    return `
+area["ISO3166-2"="${iso}"]->.prov;
+area[name~"${locEscaped}",i]["place"~"city|town|village"](area.prov)->.loc;
+`.trim();
+  }
+  if (p && provEsc.length >= 2) {
+    return `
+area[name~"${provEsc}",i]["admin_level"="4"]["boundary"="administrative"]->.prov;
+area[name~"${locEscaped}",i]["place"~"city|town|village"](area.prov)->.loc;
+`.trim();
+  }
+  return `
+area[name~"${locEscaped}",i]["place"~"city|town|village"]->.loc;
+`.trim();
+}
+
+/**
  * Obtiene la geometría de una calle desde Overpass API (tolerante a errores ortográficos)
  */
 async function obtenerGeometriaCalle(calle, localidad, provincia) {
   const calleClean = String(calle).trim();
   const locClean = String(localidad).trim();
+  const provClean = provincia ? String(provincia).trim() : "";
   const locNorm = normalizarParaBusqueda(locClean);
   const locEscaped = escapeOverpassRegexLiteral(locNorm.length >= 2 ? locNorm : locClean);
 
-  // Generar variantes de búsqueda para tolerar errores
   const variantes = generarVariantesNombre(calleClean);
   console.info("[interpolacion-alturas] Variantes de búsqueda para '%s': %s", calleClean, variantes.join(", "));
 
-  // Intentar búsqueda con cada variante
+  const iso = provClean.length >= 2 ? iso3166ArgDesdeNombreProvincia(provClean) : null;
+  if (provClean.length >= 2) {
+    console.info(
+      "[interpolacion-alturas] Filtro provincial: '%s' → ISO %s",
+      provClean,
+      iso || "(boundary name)"
+    );
+  }
+
+  const intentarQuery = async (query, label) => {
+    console.info("[interpolacion-alturas] Overpass (%s)", label);
+    const response = await fetch(OVERPASS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+    if (!response.ok) {
+      console.warn("[interpolacion-alturas] Overpass HTTP error:", response.status);
+      return null;
+    }
+    const data = await response.json();
+    const elements = data.elements || [];
+    if (elements.length > 0) {
+      const way = elements[0];
+      if (way.geometry && way.geometry.length >= 2) {
+        return way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+      }
+    }
+    return null;
+  };
+
   for (let i = 0; i < variantes.length; i++) {
     const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
-
-    // 1. Intentar búsqueda por área de la localidad
+    const areaBlock = bloquesAreaLocalidadProvincia(locEscaped, provClean);
     const query = `
 [out:json][timeout:25];
-area[name~"${locEscaped}",i]["place"~"city|town|village"]->.loc;
+${areaBlock}
 (
   way["highway"]["name"~"${varianteBusqueda}",i](area.loc);
 );
 out geom;
     `.trim();
 
-    console.info("[interpolacion-alturas] Query Overpass (variante %s/%s): buscando '%s'", i + 1, variantes.length, variantes[i]);
-    
     try {
-      const response = await fetch(OVERPASS_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-      
-      if (!response.ok) {
-        console.warn("[interpolacion-alturas] Overpass HTTP error:", response.status);
-        continue;
-      }
-      
-      const data = await response.json();
-      const elements = data.elements || [];
-      
-      console.info("[interpolacion-alturas] Overpass retornó %s elementos para variante '%s'", 
-        elements.length, varianteBusqueda);
-      
-      if (elements.length > 0) {
-        const way = elements[0];
-        if (way.geometry && way.geometry.length >= 2) {
-          const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
-          console.info("[interpolacion-alturas] ✓ Geometría obtenida: %s nodos para '%s' (variante: '%s')", 
-            coords.length, calleClean, varianteBusqueda);
-          return coords;
-        }
+      const coords = await intentarQuery(query, `variante ${i + 1}/${variantes.length} '${variantes[i]}'`);
+      if (coords && coords.length >= 2) {
+        console.info(
+          "[interpolacion-alturas] ✓ Geometría obtenida: %s nodos para '%s'",
+          coords.length,
+          calleClean
+        );
+        return coords;
       }
     } catch (e) {
-      console.warn("[interpolacion-alturas] Error en query con variante '%s': %s", 
-        varianteBusqueda, e?.message || e);
+      console.warn("[interpolacion-alturas] Error en query con variante '%s': %s", varianteBusqueda, e?.message || e);
     }
   }
-  
-  // 2. FALLBACK GEOGRÁFICO: buscar por radio desde el centro de la localidad
-  console.info("[interpolacion-alturas] No se encontró con variantes de área. Intentando fallback geográfico...");
-  const coordsLoc = await obtenerCoordsLocalidad(locClean);
-  
+
+  if (provClean.length >= 2) {
+    console.warn(
+      "[interpolacion-alturas] Sin geometría con provincia anclada; no se usa fallback 20 km (evita homónimos entre provincias)."
+    );
+    return null;
+  }
+
+  console.info("[interpolacion-alturas] No se encontró con variantes de área. Intentando fallback geográfico (sin provincia)...");
+  const coordsLoc = await obtenerCoordsLocalidad(locClean, "");
+
   for (let i = 0; i < variantes.length; i++) {
     const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
-
     const queryFallback = `
 [out:json][timeout:25];
 (
@@ -243,41 +333,22 @@ out geom;
 );
 out geom;
     `.trim();
-    
-    console.info("[interpolacion-alturas] Fallback geográfico (variante %s/%s, radio 20km desde %s, %s)", 
-      i + 1, variantes.length, coordsLoc.lat.toFixed(4), coordsLoc.lng.toFixed(4));
-    
+
     try {
-      const resp2 = await fetch(OVERPASS_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(queryFallback)}`,
-      });
-      
-      if (resp2.ok) {
-        const data2 = await resp2.json();
-        const elems2 = data2.elements || [];
-        console.info("[interpolacion-alturas] Fallback retornó %s elementos para variante '%s'", 
-          elems2.length, varianteBusqueda);
-        
-        if (elems2.length > 0) {
-          const way = elems2[0];
-          if (way.geometry && way.geometry.length >= 2) {
-            const coords = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
-            console.info("[interpolacion-alturas] ✓ Geometría obtenida (fallback): %s nodos para '%s' (variante: '%s')", 
-              coords.length, calleClean, varianteBusqueda);
-            return coords;
-          }
-        }
+      const coords = await intentarQuery(
+        queryFallback,
+        `fallback 20km variante ${i + 1}/${variantes.length}`
+      );
+      if (coords && coords.length >= 2) {
+        console.info("[interpolacion-alturas] ✓ Geometría obtenida (fallback): %s nodos para '%s'", coords.length, calleClean);
+        return coords;
       }
     } catch (e) {
-      console.warn("[interpolacion-alturas] Error en fallback con variante '%s': %s", 
-        varianteBusqueda, e?.message || e);
+      console.warn("[interpolacion-alturas] Error en fallback con variante '%s': %s", varianteBusqueda, e?.message || e);
     }
   }
-  
-  console.warn("[interpolacion-alturas] ✗ No se encontró geometría para '%s' en %s (probadas %s variantes)", 
-    calleClean, locClean, variantes.length);
+
+  console.warn("[interpolacion-alturas] ✗ No se encontró geometría para '%s' en %s (probadas %s variantes)", calleClean, locClean, variantes.length);
   return null;
 }
 
@@ -317,8 +388,8 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       if (respStruct.ok) {
         const resStruct = await respStruct.json();
         if (resStruct && resStruct.length > 0) {
-          const mejor = resStruct[0];
-          if (mejor.lat != null && mejor.lon != null && coordsOk(mejor.lat, mejor.lon)) {
+          const mejor = pickHitProvincia(resStruct, provClean);
+          if (mejor && mejor.lat != null && mejor.lon != null && coordsOk(mejor.lat, mejor.lon)) {
             console.info("[rango-numeracion] ✓ Nominatim (structured) número exacto: lat=%s, lon=%s", mejor.lat, mejor.lon);
             return {
               min: numeroInt - 50,
@@ -357,8 +428,8 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       if (respExacto.ok) {
         const resultsExacto = await respExacto.json();
         if (resultsExacto && resultsExacto.length > 0) {
-          const mejor = resultsExacto[0];
-          if (mejor.lat && mejor.lon) {
+          const mejor = pickHitProvincia(resultsExacto, provClean);
+          if (mejor && mejor.lat && mejor.lon) {
             console.info("[rango-numeracion] ✓ Nominatim encontró el número exacto: lat=%s, lon=%s", 
               mejor.lat, mejor.lon);
             
@@ -386,7 +457,9 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       q,
       format: "json",
       addressdetails: "1",
-      limit: "5",
+      limit: "8",
+      countrycodes: "ar",
+      "accept-language": "es",
     });
   
   try {
@@ -396,8 +469,14 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
     
     if (!response.ok) return { min: 100, max: 900, exacto: null };
     
-    const results = await response.json();
+    let results = await response.json();
     if (!results || results.length === 0) return { min: 100, max: 900, exacto: null };
+    if (provClean.length >= 2) {
+      const filtrados = results.filter((r) =>
+        nominatimStateMatchesTenant(stateFromNominatimHit(r), provClean)
+      );
+      if (filtrados.length) results = filtrados;
+    }
     
     // Intentar extraer house_number si viene en algún resultado
     const numeros = results

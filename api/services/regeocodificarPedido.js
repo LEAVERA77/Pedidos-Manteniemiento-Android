@@ -122,10 +122,12 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       try {
         const normResult = await normalizarDireccion({ calle: calleT, ciudad: locT });
         if (normResult && normResult.cambio) {
-          L(`  ✓ "${calleT}" → "${normResult.calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%)`);
+          L(
+            `  ✓ "${calleT}" → "${normResult.calleNormalizada}" (confianza: ${(normResult.confianza * 100).toFixed(0)}%, método: ${normResult.metodo || "similitud"})`
+          );
           calleT = normResult.calleNormalizada;
         } else {
-          L(`  ✓ Nombre de calle OK (sin cambios)`);
+          L(`  ✓ Nombre de calle OK (sin cambios o sin match fuzzy ≥ 0,8 en diccionario)`);
         }
       } catch (err) {
         L(`  ⚠️  Error en normalización: ${err?.message || err}`);
