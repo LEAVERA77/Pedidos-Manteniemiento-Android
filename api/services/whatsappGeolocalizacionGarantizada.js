@@ -104,6 +104,110 @@ export function applyFinalLatLngToPedidoVals(cols, vals, lat, lng) {
   return { ...e, lat: la, lng: lo };
 }
 
+/**
+ * Diagnóstico legible (sin PII) para logs/throws cuando coords no cumplen CHECK `pedidos_whatsapp_coords_wgs84_check`.
+ * @param {unknown} lat
+ * @param {unknown} lng
+ */
+export function diagnoseWhatsappCoordsForInsert(lat, lng) {
+  return {
+    latType: typeof lat,
+    lngType: typeof lng,
+    latFinite: Number.isFinite(Number(lat)),
+    lngFinite: Number.isFinite(Number(lng)),
+    laParsed: parseCoordLoose(lat),
+    loParsed: parseCoordLoose(lng),
+    parPasa: parLatLngPasaCheckWhatsappDb(lat, lng),
+    latStr: lat == null ? "(nullish)" : String(lat).slice(0, 48),
+    lngStr: lng == null ? "(nullish)" : String(lng).slice(0, 48),
+  };
+}
+
+/**
+ * Garantiza un par numérico que pasa el CHECK **antes** de tocar `vals` (evita llegar al INSERT incoherente).
+ * @returns {{ lat: number, lng: number }}
+ */
+export function assertPedidoWaCoordsReadyForInsert(latFinal, lngFinal) {
+  if (parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
+    const la = parseCoordLoose(latFinal);
+    const lo = parseCoordLoose(lngFinal);
+    if (Number.isFinite(la) && Number.isFinite(lo) && parLatLngPasaCheckWhatsappDb(la, lo)) {
+      return { lat: Number(la), lng: Number(lo) };
+    }
+  }
+  let e = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
+  if (!parLatLngPasaCheckWhatsappDb(e.lat, e.lng)) {
+    e = ensureWhatsappPedidoCoordsForDb(FALLBACK_WGS84_ARGENTINA.lat, FALLBACK_WGS84_ARGENTINA.lng);
+  }
+  if (!parLatLngPasaCheckWhatsappDb(e.lat, e.lng)) {
+    throw new Error(
+      `pedido_wa_pre_insert_coords_imposible: orig=${JSON.stringify(diagnoseWhatsappCoordsForInsert(latFinal, lngFinal))} after=${JSON.stringify(diagnoseWhatsappCoordsForInsert(e.lat, e.lng))}`
+    );
+  }
+  return { lat: Number(e.lat), lng: Number(e.lng) };
+}
+
+/**
+ * Tras `applyFinalLatLngToPedidoVals`: asegura que no hay `undefined` en `vals`, y que `lat`/`lng` son finitos y pasan el CHECK.
+ * Re-coerción desde los valores en array (fuente de verdad para `$n` en pg).
+ * @returns {{ latIdx: number, lngIdx: number, lat: number, lng: number }}
+ */
+export function assertPedidoWaValsBound(cols, vals) {
+  if (cols.length !== vals.length) {
+    throw new Error(`pedido_wa_vals_len cols=${cols.length} vals=${vals.length}`);
+  }
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i] === undefined) {
+      throw new Error(`pedido_wa_val_undefined idx=${i} col=${String(cols[i] ?? "?")}`);
+    }
+  }
+  const latIdx = cols.indexOf("lat");
+  const lngIdx = cols.indexOf("lng");
+  if (latIdx < 0 || lngIdx < 0) {
+    throw new Error(`pedido_wa_faltan_lat_lng latIdx=${latIdx} lngIdx=${lngIdx}`);
+  }
+  let e = ensureWhatsappPedidoCoordsForDb(vals[latIdx], vals[lngIdx]);
+  vals[latIdx] = Number(e.lat);
+  vals[lngIdx] = Number(e.lng);
+  if (!parLatLngPasaCheckWhatsappDb(vals[latIdx], vals[lngIdx])) {
+    e = ensureWhatsappPedidoCoordsForDb(FALLBACK_WGS84_ARGENTINA.lat, FALLBACK_WGS84_ARGENTINA.lng);
+    vals[latIdx] = Number(e.lat);
+    vals[lngIdx] = Number(e.lng);
+  }
+  if (!Number.isFinite(vals[latIdx]) || !Number.isFinite(vals[lngIdx])) {
+    throw new Error(
+      `pedido_wa_vals_latlng_nonfinite lat=${String(vals[latIdx])} lng=${String(vals[lngIdx])}`
+    );
+  }
+  if (!parLatLngPasaCheckWhatsappDb(vals[latIdx], vals[lngIdx])) {
+    throw new Error(
+      `pedido_wa_vals_check_imposible: ${JSON.stringify({
+        latV: vals[latIdx],
+        lngV: vals[lngIdx],
+        diag: diagnoseWhatsappCoordsForInsert(vals[latIdx], vals[lngIdx]),
+      })}`
+    );
+  }
+  return { latIdx, lngIdx, lat: vals[latIdx], lng: vals[lngIdx] };
+}
+
+/**
+ * Orquesta pre-INSERT WhatsApp: coerción si hace falta → escribe `vals` → valida placeholders y CHECK.
+ * @returns {{ latFinal: number, lngFinal: number, latIdx: number, lngIdx: number }}
+ */
+export function finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal) {
+  const ready = assertPedidoWaCoordsReadyForInsert(latFinal, lngFinal);
+  const ens = applyFinalLatLngToPedidoVals(cols, vals, ready.lat, ready.lng);
+  const bound = assertPedidoWaValsBound(cols, vals);
+  return {
+    latFinal: bound.lat,
+    lngFinal: bound.lng,
+    latIdx: bound.latIdx,
+    lngIdx: bound.lngIdx,
+    coercedFromEnsure: ens.coerced,
+  };
+}
+
 async function tableExists(name) {
   const r = await query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,

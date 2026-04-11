@@ -1,5 +1,7 @@
 -- Regla de producto: pedidos con origen_reclamo = 'whatsapp' deben tener lat/lng WGS84 válidos
 -- (no NULL, no (0,0), rangos coherentes). Alineado con coordsValidasWgs84 en API.
+-- Nota esquema: en `public.pedidos` las coords del pin son columnas `lat`/`lng` (no `latitud`/`longitud`;
+-- esas nombres existen p. ej. en `socios_catalogo`). Sin trigger en repo que reemplace `lat`/`lng` al INSERT.
 --
 -- Despliegue:
 -- 1) Backfill de filas históricas que violen la regla (re-geocodificación o centro ciudad) ANTES de VALIDATE.

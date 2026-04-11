@@ -14,7 +14,7 @@ import {
   coordsValidasWgs84,
   parLatLngPasaCheckWhatsappDb,
   ensureWhatsappPedidoCoordsForDb,
-  applyFinalLatLngToPedidoVals,
+  finalizePedidoWaInsertCoordinates,
 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
@@ -531,40 +531,60 @@ export async function crearPedidoDesdeWhatsappBot({
     throw new Error(`pedido_wa_cols_vals_mismatch cols=${cols.length} vals=${vals.length}`);
   }
 
-  const ensuredFinal = applyFinalLatLngToPedidoVals(cols, vals, latFinal, lngFinal);
-  latFinal = ensuredFinal.lat;
-  lngFinal = ensuredFinal.lng;
+  const finalized = finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal);
+  latFinal = finalized.latFinal;
+  lngFinal = finalized.lngFinal;
+  const latIdx = finalized.latIdx;
+  const lngIdx = finalized.lngIdx;
 
-  const latIdx = cols.indexOf("lat");
-  const lngIdx = cols.indexOf("lng");
   const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
   let insert;
   try {
     insert = await query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);
   } catch (insertErr) {
     try {
-      console.error(
-        JSON.stringify({
-          evt: "pedido_wa_insert_error",
-          tenantId: Number(tenantId),
-          origen_reclamo: hasOrigen ? "whatsapp" : "(sin columna)",
-          lat: latFinal,
-          lng: lngFinal,
-          latType: typeof latFinal,
-          lngType: typeof lngFinal,
-          latFinite: Number.isFinite(Number(latFinal)),
-          lngFinite: Number.isFinite(Number(lngFinal)),
-          latIdx,
-          lngIdx,
-          valsAtLat: latIdx >= 0 ? vals[latIdx] : null,
-          valsAtLng: lngIdx >= 0 ? vals[lngIdx] : null,
-          checkPasa: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
-          colsLen: cols.length,
-          cols: cols.slice(),
-          code: insertErr?.code,
-          message: String(insertErr?.message || insertErr).slice(0, 800),
-        })
-      );
+      const baseLog = {
+        evt: "pedido_wa_insert_error",
+        tenantId: Number(tenantId),
+        origen_reclamo: hasOrigen ? "whatsapp" : "(sin columna)",
+        lat: latFinal,
+        lng: lngFinal,
+        latType: typeof latFinal,
+        lngType: typeof lngFinal,
+        latFinite: Number.isFinite(Number(latFinal)),
+        lngFinite: Number.isFinite(Number(lngFinal)),
+        latIdx,
+        lngIdx,
+        valsAtLat: latIdx >= 0 ? vals[latIdx] : null,
+        valsAtLng: lngIdx >= 0 ? vals[lngIdx] : null,
+        valsAtLatType: latIdx >= 0 ? typeof vals[latIdx] : null,
+        valsAtLngType: lngIdx >= 0 ? typeof vals[lngIdx] : null,
+        checkPasa: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
+        colsLen: cols.length,
+        colNames: cols.slice(),
+        code: insertErr?.code,
+        message: String(insertErr?.message || insertErr).slice(0, 800),
+      };
+      console.error(JSON.stringify(baseLog));
+      if (process.env.DEBUG_WA_PEDIDO_INSERT === "1" || process.env.DEBUG_WA_PEDIDO_INSERT === "true") {
+        const undefIdx = [];
+        for (let i = 0; i < vals.length; i++) if (vals[i] === undefined) undefIdx.push(i);
+        console.error(
+          JSON.stringify({
+            evt: "pedido_wa_insert_error_debug",
+            tenantId: Number(tenantId),
+            colNames: cols.slice(),
+            latIdx,
+            lngIdx,
+            valsAtLat: latIdx >= 0 ? vals[latIdx] : null,
+            valsAtLng: lngIdx >= 0 ? vals[lngIdx] : null,
+            undefIndices: undefIdx,
+            valsLen: vals.length,
+            constraint: insertErr?.constraint,
+            detail: insertErr?.detail != null ? String(insertErr.detail).slice(0, 500) : null,
+          })
+        );
+      }
     } catch (_) {}
     throw insertErr;
   }
