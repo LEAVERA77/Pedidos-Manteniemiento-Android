@@ -8,6 +8,18 @@ const _autocompletadoCache = new Map();
 const _autocompletadoDebounce = new Map();
 
 /**
+ * Escapa caracteres HTML para prevenir XSS
+ * @param {string} text - Texto a escapar
+ * @returns {string} Texto escapado
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
+}
+
+/**
  * Busca sugerencias de calles en la BD
  * @param {string} query - Texto de búsqueda
  * @param {string} ciudad - Ciudad donde buscar
