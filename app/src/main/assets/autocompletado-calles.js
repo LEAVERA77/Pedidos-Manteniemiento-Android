@@ -212,7 +212,7 @@ async function regeocodificarPedido(pedidoId) {
     // Preparar logs para mostrar (siempre, incluso si falla)
     let logHtml = '';
     if (result.log && result.log.length > 0) {
-      logHtml = '<div style="background:#f3f4f6;padding:1rem;border-radius:0.5rem;margin-top:1rem;font-family:monospace;font-size:0.8rem;max-height:300px;overflow-y:auto">';
+      logHtml = '<div style="background:#f3f4f6;padding:0.75rem;border-radius:0.5rem;margin-top:0.5rem;font-family:monospace;font-size:0.75rem;max-height:250px;overflow-y:auto;line-height:1.4">';
       result.log.forEach(line => {
         const escaped = escapeHtml(line);
         let color = '#374151';
@@ -220,20 +220,30 @@ async function regeocodificarPedido(pedidoId) {
         else if (line.includes('⚠️') || line.includes('→')) color = '#d97706';
         else if (line.includes('❌')) color = '#dc2626';
         else if (line.includes('🔄') || line.includes('🔧') || line.includes('📚') || line.includes('🌍') || line.includes('📐')) color = '#2563eb';
-        logHtml += `<div style="margin-bottom:0.3rem;color:${color}">${escaped}</div>`;
+        logHtml += `<div style="margin-bottom:0.2rem;color:${color};font-size:0.7rem">${escaped}</div>`;
       });
       logHtml += '</div>';
     }
     
-    if (!response.ok || !result.success) {
-      // Mostrar error CON logs de diagnóstico
+    if (!response.ok) {
+      // 400 con logs es un caso especial (no pudo geocodificar pero no es error fatal)
+      if (response.status === 400 && result.log && result.log.length > 0) {
+        if (window.toast) {
+          const msg = `<div><strong>⚠️ ${escapeHtml(result.error || 'No se pudieron obtener coordenadas')}</strong>${logHtml}</div>`;
+          window.toast(msg, 'error');
+        }
+        return;
+      }
+      
+      // Otros errores (403, 404, 500)
+      throw new Error(result.error || 'Error al re-geocodificar');
+    }
+    
+    if (!result.success) {
       const errorMsg = result.mensaje || result.error || 'Error al re-geocodificar';
       if (window.toast) {
         window.toast(
-          `<div style="text-align:left">
-            <p style="margin:0 0 0.5rem"><strong>⚠️ ${escapeHtml(errorMsg)}</strong></p>
-            ${logHtml}
-          </div>`,
+          `<div><strong>⚠️ ${escapeHtml(errorMsg)}</strong>${logHtml}</div>`,
           'error'
         );
       }
@@ -242,15 +252,8 @@ async function regeocodificarPedido(pedidoId) {
     
     // Mostrar resultado exitoso con logs
     if (window.toast) {
-      window.toast(
-        `<div style="text-align:left">
-          <p style="margin:0 0 0.5rem"><strong>✓ Pedido re-geocodificado</strong></p>
-          <p style="margin:0;font-size:0.9rem">Coordenadas: ${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}</p>
-          <p style="margin:0.25rem 0 0;font-size:0.85rem;color:#6b7280">Fuente: ${result.fuente}</p>
-          ${logHtml}
-        </div>`,
-        'success'
-      );
+      const msg = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}<br><span style="color:#6b7280">Fuente: ${result.fuente}</span></p>${logHtml}</div>`;
+      window.toast(msg, 'success');
     }
     
     // Actualizar mapa si está visible

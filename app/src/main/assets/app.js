@@ -2727,7 +2727,14 @@ function toast(msg, tipo = 'info') {
     let s = gnDice(String(msg ?? ''));
     const maxLen = tipo === 'error' ? 400 : 2200;
     if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…';
-    el.textContent = s;
+    
+    // Usar innerHTML para renderizar HTML (el contenido ya viene sanitizado)
+    if (s.includes('<div') || s.includes('<p')) {
+        el.innerHTML = s;
+    } else {
+        el.textContent = s;
+    }
+    
     el.className = 'show ' + tipo + (s.length > 100 ? ' toast-multiline' : '');
     try {
         el.style.whiteSpace = s.length > 100 ? 'normal' : 'nowrap';
