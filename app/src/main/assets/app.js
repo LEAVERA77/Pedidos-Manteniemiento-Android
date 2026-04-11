@@ -2548,6 +2548,9 @@ document.getElementById('lf').addEventListener('submit', async e => {
         iniciarSyncCatalogos();
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
+        try {
+            gnGeocodeAdminLogSyncDockVisibility();
+        } catch (_) {}
         const btnRubro = document.getElementById('btn-admin-cambiar-rubro');
         if (btnRubro) btnRubro.style.display = esAdminSesionWebPublica() ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
@@ -2976,6 +2979,197 @@ function _normGeoTxt(s) {
     }
 }
 
+/* ——— Log visible admin: geocodificación / proxy Nominatim (GitHub Pages; no OSM directo) ——— */
+const GN_GEOCODE_LOG_STORAGE_KEY = 'gn_geocode_admin_ui_log_v1';
+const GN_GEOCODE_LOG_MAX_LINES = 380;
+let _gnGeocodeUiLogDepth = 0;
+let _gnGeocodeLogLines = [];
+let _gnGeocodeLogPersistTimer = null;
+let _gnGeocodeLogDockBound = false;
+
+function _gnGeocodeLogTs() {
+    try {
+        return new Date().toLocaleTimeString('es-AR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        });
+    } catch (_) {
+        return '';
+    }
+}
+
+function gnGeocodeUiLogIsActive() {
+    return _gnGeocodeUiLogDepth > 0;
+}
+
+function gnGeocodeUiLogStartSession(mensaje) {
+    if (typeof esAdmin !== 'function' || !esAdmin()) return;
+    _gnGeocodeUiLogDepth++;
+    if (_gnGeocodeUiLogDepth === 1) {
+        gnGeocodeUiLogAppend('info', mensaje || 'Sesión de geocodificación iniciada.');
+    }
+}
+
+function gnGeocodeUiLogEndSession() {
+    if (typeof esAdmin !== 'function' || !esAdmin()) return;
+    if (_gnGeocodeUiLogDepth > 0) _gnGeocodeUiLogDepth--;
+    if (_gnGeocodeUiLogDepth === 0) {
+        gnGeocodeUiLogAppend('info', 'Sesión de geocodificación finalizada.');
+    }
+}
+
+function _gnGeocodeLogPersistSoon() {
+    if (_gnGeocodeLogPersistTimer) clearTimeout(_gnGeocodeLogPersistTimer);
+    _gnGeocodeLogPersistTimer = setTimeout(() => {
+        _gnGeocodeLogPersistTimer = null;
+        try {
+            const tail = _gnGeocodeLogLines.slice(-120).map((x) => ({ ts: x.ts, level: x.level, text: x.text }));
+            sessionStorage.setItem(GN_GEOCODE_LOG_STORAGE_KEY, JSON.stringify(tail));
+        } catch (_) {}
+    }, 400);
+}
+
+function gnGeocodeUiLogAppend(level, message, opts) {
+    if (typeof esAdmin !== 'function' || !esAdmin()) return;
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const lv = level === 'warn' || level === 'error' || level === 'info' ? level : 'info';
+    const text = String(message || '').trim() || '—';
+    const line = { t: Date.now(), ts: _gnGeocodeLogTs(), level: lv, text };
+    _gnGeocodeLogLines.push(line);
+    if (_gnGeocodeLogLines.length > GN_GEOCODE_LOG_MAX_LINES) {
+        _gnGeocodeLogLines.splice(0, _gnGeocodeLogLines.length - GN_GEOCODE_LOG_MAX_LINES);
+    }
+    const body = document.getElementById('gn-geocode-log-body');
+    if (body) {
+        const row = document.createElement('div');
+        row.className = `gn-geocode-log-line gn-geocode-log-line--${lv}`;
+        row.setAttribute('role', 'listitem');
+        row.textContent = `[${line.ts}] [${lv.toUpperCase()}] ${text}`;
+        body.appendChild(row);
+        body.scrollTop = body.scrollHeight;
+    }
+    if (o.openPanel) gnGeocodeAdminLogOpenPanel();
+    if (lv === 'error' && typeof toast === 'function' && o.toast !== false) {
+        const short = text.length > 160 ? `${text.slice(0, 157)}…` : text;
+        toast(short, 'error', 9000);
+    }
+    if (lv === 'warn' && typeof toast === 'function' && o.toast === true) {
+        toast(text.length > 180 ? `${text.slice(0, 177)}…` : text, 'warning', 7000);
+    }
+    _gnGeocodeLogPersistSoon();
+}
+
+function gnGeocodeUiLogClear() {
+    _gnGeocodeLogLines = [];
+    const body = document.getElementById('gn-geocode-log-body');
+    if (body) body.innerHTML = '';
+    try {
+        sessionStorage.removeItem(GN_GEOCODE_LOG_STORAGE_KEY);
+    } catch (_) {}
+}
+
+function gnGeocodeUiLogCopyAll() {
+    const txt = _gnGeocodeLogLines.map((x) => `[${x.ts}] [${x.level}] ${x.text}`).join('\n');
+    if (!txt.trim()) {
+        if (typeof toast === 'function') toast('No hay líneas para copiar.', 'info');
+        return;
+    }
+    const run = () => {
+        if (typeof toast === 'function') toast('Registro copiado al portapapeles.', 'success');
+    };
+    if (window.AndroidDevice && typeof window.AndroidDevice.copyText === 'function') {
+        try {
+            window.AndroidDevice.copyText(txt);
+            run();
+            return;
+        } catch (_) {}
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(run).catch(() => {
+            if (typeof toast === 'function') toast('No se pudo copiar (permiso del navegador).', 'warning');
+        });
+        return;
+    }
+    if (typeof toast === 'function') toast('Copiar no disponible en este entorno.', 'warning');
+}
+
+function gnGeocodeAdminLogOpenPanel() {
+    const panel = document.getElementById('gn-geocode-log-panel');
+    const fab = document.getElementById('gn-geocode-log-fab');
+    if (!panel || !fab) return;
+    panel.hidden = false;
+    fab.setAttribute('aria-expanded', 'true');
+}
+
+function gnGeocodeAdminLogClosePanel() {
+    const panel = document.getElementById('gn-geocode-log-panel');
+    const fab = document.getElementById('gn-geocode-log-fab');
+    if (!panel || !fab) return;
+    panel.hidden = true;
+    fab.setAttribute('aria-expanded', 'false');
+}
+
+function gnGeocodeAdminLogSyncDockVisibility() {
+    const root = document.getElementById('gn-geocode-log-root');
+    if (!root) return;
+    const show = typeof esAdmin === 'function' && esAdmin() && !modoOffline;
+    if (show) {
+        root.hidden = false;
+        gnGeocodeAdminLogBindDockOnce();
+    } else {
+        root.hidden = true;
+        gnGeocodeAdminLogClosePanel();
+    }
+}
+
+function gnGeocodeAdminLogBindDockOnce() {
+    if (_gnGeocodeLogDockBound) return;
+    _gnGeocodeLogDockBound = true;
+    document.getElementById('gn-geocode-log-fab')?.addEventListener('click', () => {
+        const panel = document.getElementById('gn-geocode-log-panel');
+        if (!panel) return;
+        if (panel.hidden) gnGeocodeAdminLogOpenPanel();
+        else gnGeocodeAdminLogClosePanel();
+    });
+    document.getElementById('gn-geocode-log-collapse')?.addEventListener('click', gnGeocodeAdminLogClosePanel);
+    document.getElementById('gn-geocode-log-clear')?.addEventListener('click', () => {
+        gnGeocodeUiLogClear();
+        if (typeof toast === 'function') toast('Registro de geocodificación vaciado.', 'info');
+    });
+    document.getElementById('gn-geocode-log-copy')?.addEventListener('click', gnGeocodeUiLogCopyAll);
+    try {
+        const raw = sessionStorage.getItem(GN_GEOCODE_LOG_STORAGE_KEY);
+        const arr = raw ? JSON.parse(raw) : null;
+        const body = document.getElementById('gn-geocode-log-body');
+        if (Array.isArray(arr) && body && !body.childElementCount && arr.length) {
+            for (const row of arr) {
+                if (!row || !row.text) continue;
+                const lv = row.level === 'warn' || row.level === 'error' ? row.level : 'info';
+                const ts = row.ts != null ? String(row.ts) : _gnGeocodeLogTs();
+                _gnGeocodeLogLines.push({ t: Date.now(), ts, level: lv, text: String(row.text) });
+                const el = document.createElement('div');
+                el.className = `gn-geocode-log-line gn-geocode-log-line--${lv}`;
+                el.textContent = `[${ts}] [${lv.toUpperCase()}] ${String(row.text)}`;
+                body.appendChild(el);
+            }
+            body.scrollTop = body.scrollHeight;
+        }
+    } catch (_) {}
+}
+
+if (typeof window !== 'undefined') {
+    window.gnGeocodeUiLogAppend = gnGeocodeUiLogAppend;
+    window.gnGeocodeUiLogStartSession = gnGeocodeUiLogStartSession;
+    window.gnGeocodeUiLogEndSession = gnGeocodeUiLogEndSession;
+    window.gnGeocodeUiLogClear = gnGeocodeUiLogClear;
+    window.gnGeocodeUiLogCopyAll = gnGeocodeUiLogCopyAll;
+    window.gnGeocodeAdminLogSyncDockVisibility = gnGeocodeAdminLogSyncDockVisibility;
+    window.gnGeocodeAdminLogOpenPanel = gnGeocodeAdminLogOpenPanel;
+    window.gnGeocodeAdminLogClosePanel = gnGeocodeAdminLogClosePanel;
+}
+
 /** Campos de Nominatim donde suele aparecer la localidad declarada por el cliente. */
 function _nominatimCamposLocalidad(addr) {
     if (!addr || typeof addr !== 'object') return [];
@@ -3065,16 +3259,43 @@ async function _nominatimFetchSearch(params) {
         const now = Date.now();
         const mem = _nominatimClientSearchCache.get(cacheKey);
         if (mem && now - mem.at < _NOMINATIM_CLIENT_CACHE_MS && Array.isArray(mem.results)) {
+            if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive()) {
+                gnGeocodeUiLogAppend(
+                    'info',
+                    `Caché en memoria (~5 min): se reutilizan resultados sin nueva llamada al proxy. ${ctx.slice(0, 100)}${ctx.length > 100 ? '…' : ''}`
+                );
+            }
             return mem.results;
         }
         const backoffs = [1500, 4000, 9000, 16000, 22000];
         const maxAttempts = 5;
         try {
-            if (modoOffline || typeof fetch !== 'function') return [];
+            if (modoOffline || typeof fetch !== 'function') {
+                if (typeof esAdmin === 'function' && esAdmin()) {
+                    gnGeocodeUiLogAppend(
+                        'warn',
+                        'Sin conexión (modo offline o sin fetch): no se puede consultar el mapa. Activá Internet o desactivá modo offline.',
+                        { openPanel: gnGeocodeUiLogIsActive() }
+                    );
+                }
+                return [];
+            }
             await asegurarJwtApiRest();
             const token = getApiToken();
-            if (!token) return [];
+            if (!token) {
+                if (typeof esAdmin === 'function' && esAdmin()) {
+                    gnGeocodeUiLogAppend(
+                        'error',
+                        'Sin token de API para geocodificar. Cerrá sesión y volvé a entrar; si usás solo GitHub Pages, comprobá que el login haya obtenido JWT.',
+                        { openPanel: true }
+                    );
+                }
+                return [];
+            }
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive() && attempt === 0) {
+                    gnGeocodeUiLogAppend('info', `Consulta al proxy de mapas: ${ctx.slice(0, 140)}${ctx.length > 140 ? '…' : ''}`);
+                }
                 const r = await fetch(apiUrl('/api/geocode/nominatim/search'), {
                     method: 'POST',
                     headers: {
@@ -3088,6 +3309,25 @@ async function _nominatimFetchSearch(params) {
                     const j = await r.json().catch(() => ({}));
                     const out = Array.isArray(j.results) ? j.results : [];
                     _nominatimClientSearchCache.set(cacheKey, { at: Date.now(), results: out });
+                    if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive()) {
+                        if (out.length) {
+                            const top = out[0];
+                            const dn =
+                                top && top.display_name != null
+                                    ? String(top.display_name).slice(0, 140)
+                                    : '(sin nombre en resultado)';
+                            const fullDn = top && top.display_name != null ? String(top.display_name) : '';
+                            gnGeocodeUiLogAppend(
+                                'info',
+                                `Respuesta OK: ${out.length} resultado(s). Primer candidato: ${dn}${fullDn.length > 140 ? '…' : ''}`
+                            );
+                        } else {
+                            gnGeocodeUiLogAppend(
+                                'warn',
+                                'El servidor respondió bien pero sin coincidencias para esta búsqueda. Revisá calle, número y localidad en el pedido.'
+                            );
+                        }
+                    }
                     return out;
                 }
                 if (rateLimited && attempt < maxAttempts - 1) {
@@ -3103,19 +3343,67 @@ async function _nominatimFetchSearch(params) {
                         'ms',
                         ctx
                     );
+                    if (typeof esAdmin === 'function' && esAdmin() && gnGeocodeUiLogIsActive()) {
+                        gnGeocodeUiLogAppend(
+                            'info',
+                            `Servicio de mapas ocupado (código ${r.status}). Reintento ${attempt + 1}/${maxAttempts - 1} tras ${Math.round(
+                                backoffs[attempt] / 1000
+                            )} s (límite del proveedor OSM).`
+                        );
+                    }
                     await new Promise((res) => setTimeout(res, backoffs[attempt]));
                     continue;
                 }
                 if (rateLimited) {
                     console.warn('[geocode-proxy] search agotó reintentos (503/429) para:', ctx);
+                    if (typeof esAdmin === 'function' && esAdmin()) {
+                        gnGeocodeUiLogAppend(
+                            'error',
+                            'El mapa no respondió a tiempo (503 o 429 tras reintentos). Esperá unos minutos y reintentá; si sigue igual, verificá que la API en Render esté activa.',
+                            { openPanel: true }
+                        );
+                    }
                     return [];
                 }
                 console.warn('[geocode-proxy] search HTTP', r.status, '—', ctx);
+                if (typeof esAdmin === 'function' && esAdmin()) {
+                    if (r.status === 401 || r.status === 403) {
+                        gnGeocodeUiLogAppend(
+                            'error',
+                            `Acceso denegado (${r.status}) al proxy de mapas: sesión o permisos. Cerrá sesión y volvé a entrar con usuario administrador.`,
+                            { openPanel: true }
+                        );
+                    } else if (r.status >= 500) {
+                        gnGeocodeUiLogAppend(
+                            'error',
+                            `Error del servidor (${r.status}) al geocodificar. Revisá el estado de la API (Render) o los logs del backend.`,
+                            { openPanel: true }
+                        );
+                    } else {
+                        gnGeocodeUiLogAppend(
+                            'warn',
+                            `Respuesta HTTP ${r.status} al buscar en el mapa. Revisá datos del pedido o probá más tarde.`,
+                            { openPanel: gnGeocodeUiLogIsActive() }
+                        );
+                    }
+                }
                 return [];
             }
             return [];
         } catch (e) {
             console.warn('[geocode-proxy] search excepción', e && e.message ? e.message : e, ctx);
+            if (typeof esAdmin === 'function' && esAdmin()) {
+                const em = e && e.message ? String(e.message) : String(e);
+                const low = em.toLowerCase();
+                const isAbort = low.includes('abort') || (e && e.name === 'AbortError');
+                gnGeocodeUiLogAppend(
+                    'error',
+                    isAbort
+                        ? 'La búsqueda de mapa se cortó por tiempo o cancelación. Probá de nuevo con buena conexión.'
+                        : `No se pudo contactar a la API (red o navegador): ${em}. Comprobá conexión y URL de la API.`,
+                    { openPanel: true }
+                );
+            }
             return [];
         }
     });
@@ -3191,6 +3479,14 @@ function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
 async function nominatimGeocodeDomicilioPedido(p) {
     const dom = domicilioParaGeocodePedido(p);
     if (!dom) return null;
+    const adminSess = typeof esAdmin === 'function' && esAdmin();
+    const startOwnUiSession = adminSess && !gnGeocodeUiLogIsActive();
+    if (startOwnUiSession) {
+        gnGeocodeUiLogStartSession(
+            `Geocodificación Nominatim (domicilio) — pedido #${p && p.id != null ? p.id : '?'} · ${dom.calle || ''} / ${dom.loc || ''}`
+        );
+    }
+    try {
     const calle = dom.calle;
     const loc = dom.loc;
     const num = (dom.num || '').trim();
@@ -3290,12 +3586,27 @@ async function nominatimGeocodeDomicilioPedido(p) {
             const la = Number(cityHit.lat);
             const lo = Number(cityHit.lon);
             if (Number.isFinite(la) && Number.isFinite(lo)) {
+                if (adminSess) {
+                    gnGeocodeUiLogAppend(
+                        'info',
+                        `Se usó centro aproximado de localidad "${loc}" (sin puerta exacta en mapa).`
+                    );
+                }
                 return { lat: la, lng: lo, src: 'ciudad_centro' };
             }
         }
     }
 
+    if (adminSess) {
+        gnGeocodeUiLogAppend(
+            'warn',
+            `Sin coordenadas útiles tras todas las variantes de búsqueda para pedido #${p && p.id != null ? p.id : '?'}.`
+        );
+    }
     return null;
+    } finally {
+        if (startOwnUiSession) gnGeocodeUiLogEndSession();
+    }
 }
 
 async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
@@ -3315,7 +3626,23 @@ async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
                 body: JSON.stringify({ lat: la, lng: ln }),
             }
         );
-        if (!r.ok) return;
+        if (!r.ok) {
+            let detail = `HTTP ${r.status}`;
+            try {
+                const j = await r.json().catch(() => ({}));
+                if (j && (j.error || j.detail || j.mensaje)) {
+                    detail += `: ${String(j.error || j.detail || j.mensaje)}`;
+                }
+            } catch (_) {}
+            if (typeof esAdmin === 'function' && esAdmin()) {
+                gnGeocodeUiLogAppend(
+                    'error',
+                    `No se guardaron coordenadas en el servidor para el pedido #${pedidoId}. ${detail}. Si es 401/403, renová sesión; si es 5xx, revisá la API.`,
+                    { openPanel: true }
+                );
+            }
+            return;
+        }
         const row = await r.json().catch(() => null);
         if (!row || row.lat == null || row.lng == null) return;
         const nla = Number(row.lat);
@@ -3334,7 +3661,18 @@ async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
         try {
             refrescarDetalleSiAbiertoTrasSync();
         } catch (_) {}
-    } catch (_) {}
+        if (typeof esAdmin === 'function' && esAdmin()) {
+            gnGeocodeUiLogAppend('info', `Coordenadas guardadas en servidor para pedido #${pedidoId} (${nla.toFixed(5)}, ${nln.toFixed(5)}).`);
+        }
+    } catch (e) {
+        if (typeof esAdmin === 'function' && esAdmin()) {
+            gnGeocodeUiLogAppend(
+                'error',
+                `Error al guardar geocodificación del pedido #${pedidoId}: ${e && e.message ? e.message : e}`,
+                { openPanel: true }
+            );
+        }
+    }
 }
 
 /** Admin: corrección manual WGS84 (sobrescribe lat/lng en servidor). */
@@ -3406,24 +3744,52 @@ async function enriquecerCoordsGeocodificadasPedidos() {
         if (prev && (prev.skip || (Number.isFinite(prev.la) && Number.isFinite(prev.ln)))) return false;
         return !!domicilioParaGeocodePedido(p);
     });
-    for (const p of candidatos) {
-        try {
-            const hit = await nominatimGeocodeDomicilioPedido(p);
-            const id = String(p.id);
-            if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
-                window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
-                if (esAdmin()) {
-                    void persistirCoordsGeocodePedidoPanel(p.id, hit.lat, hit.lng);
-                }
-            } else {
-                window._pedidoCoordsInferidas[id] = { skip: true };
-            }
+    const adminBatch = typeof esAdmin === 'function' && esAdmin() && candidatos.length > 0;
+    if (adminBatch) {
+        gnGeocodeUiLogStartSession(
+            `Geocodificación automática en mapa: ${candidatos.length} pedido(s) sin coordenadas con domicilio cargado.`
+        );
+    }
+    try {
+        for (const p of candidatos) {
             try {
-                renderMk();
-            } catch (_) {}
-        } catch (e) {
-            console.warn('[geocode-pedido]', p.id, e && e.message ? e.message : e);
+                if (adminBatch) {
+                    gnGeocodeUiLogAppend('info', `Procesando pedido #${p.id}…`);
+                }
+                const hit = await nominatimGeocodeDomicilioPedido(p);
+                const id = String(p.id);
+                if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng)) {
+                    window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
+                    if (esAdmin()) {
+                        void persistirCoordsGeocodePedidoPanel(p.id, hit.lat, hit.lng);
+                    }
+                    if (adminBatch) {
+                        gnGeocodeUiLogAppend(
+                            'info',
+                            `Pedido #${p.id}: coordenadas aproximadas (${hit.src || 'aprox'}).`
+                        );
+                    }
+                } else {
+                    window._pedidoCoordsInferidas[id] = { skip: true };
+                    if (adminBatch) {
+                        gnGeocodeUiLogAppend('warn', `Pedido #${p.id}: sin resultado de mapa para el domicilio cargado.`);
+                    }
+                }
+                try {
+                    renderMk();
+                } catch (_) {}
+            } catch (e) {
+                console.warn('[geocode-pedido]', p.id, e && e.message ? e.message : e);
+                if (adminBatch) {
+                    gnGeocodeUiLogAppend(
+                        'error',
+                        `Pedido #${p.id}: error inesperado — ${e && e.message ? e.message : e}`
+                    );
+                }
+            }
         }
+    } finally {
+        if (adminBatch) gnGeocodeUiLogEndSession();
     }
 }
 
@@ -9976,6 +10342,9 @@ function ejecutarCerrarSesion() {
     _marcadoresTecnicosPrincipal = [];
     const btnAdm = document.getElementById('btn-admin');
     if (btnAdm) btnAdm.style.display = 'none';
+    try {
+        gnGeocodeAdminLogSyncDockVisibility();
+    } catch (_) {}
     const btnDg = document.getElementById('btn-dashboard-gerencia');
     if (btnDg) btnDg.style.display = 'none';
     const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
@@ -10658,6 +11027,9 @@ try {
         document.getElementById('un').textContent = app.u.nombre.split(' ')[0];
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
+        try {
+            gnGeocodeAdminLogSyncDockVisibility();
+        } catch (_) {}
         const btnDash2 = document.getElementById('btn-dashboard-gerencia');
         if (btnDash2) btnDash2.style.display = esAdmin() ? 'flex' : 'none';
         const btnDerivPend2 = document.getElementById('btn-derivaciones-pendientes');

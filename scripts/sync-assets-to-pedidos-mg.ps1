@@ -35,6 +35,7 @@ if (-not (Test-Path $PedidosMgRoot)) {
 
 $files = @(
     'index.html',
+    'autocompletado-calles.js',
     'gestornova-logo.png',
     'styles.css',
     'app.js',

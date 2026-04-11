@@ -237,6 +237,15 @@ async function regeocodificarPedido(pedidoId) {
   if (!confirm('¿Re-geocodificar este pedido con el sistema inteligente?\n\nEsto actualizará las coordenadas usando:\n1. Catálogo de socios\n2. Normalización de calles\n3. Nominatim\n4. Interpolación municipal')) {
     return;
   }
+
+  let uiLogStarted = false;
+  if (typeof window.gnGeocodeUiLogStartSession === 'function') {
+    window.gnGeocodeUiLogStartSession(`Re-geocodificación manual — pedido #${pedidoId}`);
+    uiLogStarted = true;
+  }
+  try {
+    window.gnGeocodeAdminLogOpenPanel?.();
+  } catch (_) {}
   
   // Mostrar indicador de carga
   const btnRegeo = document.getElementById('btn-regeocodificar');
@@ -248,10 +257,16 @@ async function regeocodificarPedido(pedidoId) {
   try {
     const token = window.getApiToken ? window.getApiToken() : null;
     if (!token) {
+      if (typeof window.gnGeocodeUiLogAppend === 'function') {
+        window.gnGeocodeUiLogAppend('error', 'No hay sesión con token de API. Iniciá sesión de nuevo como administrador.', { openPanel: true });
+      }
       throw new Error('No hay sesión activa. Por favor, inicia sesión.');
     }
     
     const apiUrl = window.apiUrl ? window.apiUrl(`/api/pedidos/${pedidoId}/regeocodificar`) : `/api/pedidos/${pedidoId}/regeocodificar`;
+    if (typeof window.gnGeocodeUiLogAppend === 'function') {
+      window.gnGeocodeUiLogAppend('info', 'Enviando pedido al servidor para re-geocodificación (catálogo + mapa)…');
+    }
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -262,7 +277,7 @@ async function regeocodificarPedido(pedidoId) {
       body: JSON.stringify({})
     });
     
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
     
     // Preparar logs para mostrar (siempre, incluso si falla)
     let logHtml = '';
@@ -281,12 +296,28 @@ async function regeocodificarPedido(pedidoId) {
     }
     
     if (!response.ok) {
+      const det = result.error || result.detail || result.mensaje || `código HTTP ${response.status}`;
+      if (typeof window.gnGeocodeUiLogAppend === 'function') {
+        window.gnGeocodeUiLogAppend(
+          'error',
+          `El servidor rechazó la re-geocodificación (${response.status}): ${String(det)}. Si es 401 o 403, cerrá sesión y volvé a entrar; si es 5xx, revisá la API en Render.`,
+          { openPanel: true }
+        );
+      }
       throw new Error(result.error || result.detail || 'Error al re-geocodificar');
     }
     
     // API devuelve 200 con success:false cuando no hubo coords (no usar HTTP 400 para eso)
     if (result.success === false) {
       const errorMsg = result.mensaje || result.error || 'No se pudieron obtener coordenadas válidas';
+      if (typeof window.gnGeocodeUiLogAppend === 'function') {
+        window.gnGeocodeUiLogAppend('warn', `Re-geocodificación sin éxito: ${errorMsg}`);
+        if (Array.isArray(result.log)) {
+          for (const line of result.log) {
+            window.gnGeocodeUiLogAppend('info', `[servidor] ${String(line)}`);
+          }
+        }
+      }
       mostrarModalLogRegeocodificacion(
         `<div><strong style="color:#b45309">⚠️ ${escapeHtml(errorMsg)}</strong>${logHtml}</div>`,
         { durationMs: REGEO_MODAL_MS }
@@ -303,6 +334,17 @@ async function regeocodificarPedido(pedidoId) {
       return;
     }
     
+    if (typeof window.gnGeocodeUiLogAppend === 'function') {
+      window.gnGeocodeUiLogAppend(
+        'info',
+        `Re-geocodificación OK: ${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)} — fuente ${String(result.fuente || '—')}`
+      );
+      if (Array.isArray(result.log)) {
+        for (const line of result.log) {
+          window.gnGeocodeUiLogAppend('info', `[servidor] ${String(line)}`);
+        }
+      }
+    }
     const msgModal = `<div><strong>✅ Re-geocodificado</strong><p style="margin:0.25rem 0;font-size:0.85rem">📍 ${Number(latOk).toFixed(6)}, ${Number(lngOk).toFixed(6)}<br><span style="color:#6b7280">Fuente: ${escapeHtml(String(result.fuente || ''))}</span></p>${logHtml}</div>`;
     mostrarModalLogRegeocodificacion(msgModal, { durationMs: REGEO_MODAL_MS });
     
@@ -320,10 +362,20 @@ async function regeocodificarPedido(pedidoId) {
     
   } catch (err) {
     console.error('[regeocodificar] Error:', err);
+    if (typeof window.gnGeocodeUiLogAppend === 'function') {
+      window.gnGeocodeUiLogAppend(
+        'error',
+        `Error al re-geocodificar: ${err && err.message ? err.message : err}. Comprobá conexión, token y que la API responda.`,
+        { openPanel: true }
+      );
+    }
     if (window.toast) {
       window.toast(`Error al re-geocodificar: ${err.message}`, 'error', REGEO_MODAL_MS);
     }
   } finally {
+    if (uiLogStarted && typeof window.gnGeocodeUiLogEndSession === 'function') {
+      window.gnGeocodeUiLogEndSession();
+    }
     if (btnRegeo) {
       btnRegeo.disabled = false;
       btnRegeo.innerHTML = '<i class="fas fa-map-marker-alt"></i> Re-geocodificar';
