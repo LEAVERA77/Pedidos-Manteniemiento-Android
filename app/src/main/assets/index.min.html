@@ -1181,6 +1181,20 @@
   </div>
 </div>
 
+<div id="modal-log-regeocodificar" class="mo" style="z-index:13000">
+  <div class="mc" style="max-width:min(92vw,560px);max-height:88vh;display:flex;flex-direction:column">
+    <div class="mh">
+      <h3 id="modal-log-regeocod-titulo"><i class="fas fa-map-marker-alt"></i> Log de re-geocodificación</h3>
+      <button type="button" class="cm" id="modal-log-regeocod-cerrar" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="mb" id="modal-log-regeocod-body" style="overflow:auto;flex:1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.72rem;line-height:1.45;min-height:120px"></div>
+    <div style="padding:.5rem .75rem .65rem;border-top:1px solid var(--bo);font-size:.74rem;color:var(--tm);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
+      <span>Se cierra solo en <strong id="modal-log-regeocod-countdown">60</strong> s</span>
+      <button type="button" class="sec" id="modal-log-regeocod-cerrar-btn">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
