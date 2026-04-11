@@ -54,6 +54,35 @@ export function coordsValidasWgs84(lat, lng) {
   return parLatLngPasaCheckWhatsappDb(lat, lng);
 }
 
+/**
+ * Última línea de defensa antes del INSERT en `pedidos` con `origen_reclamo = whatsapp`:
+ * devuelve siempre un par **number** finito que cumple `pedidos_whatsapp_coords_wgs84_check`
+ * (evita NaN/Infinity hacia Postgres, que rompen el BETWEEN del CHECK).
+ *
+ * @returns {{ lat: number, lng: number, coerced: boolean }}
+ */
+export function ensureWhatsappPedidoCoordsForDb(lat, lng) {
+  let la = parseCoordLoose(lat);
+  let lo = parseCoordLoose(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+    return {
+      lat: FALLBACK_WGS84_ARGENTINA.lat,
+      lng: FALLBACK_WGS84_ARGENTINA.lng,
+      coerced: true,
+    };
+  }
+  la = Math.max(-90, Math.min(90, la));
+  lo = Math.max(-180, Math.min(180, lo));
+  if (!parLatLngPasaCheckWhatsappDb(la, lo)) {
+    return {
+      lat: FALLBACK_WGS84_ARGENTINA.lat,
+      lng: FALLBACK_WGS84_ARGENTINA.lng,
+      coerced: true,
+    };
+  }
+  return { lat: la, lng: lo, coerced: false };
+}
+
 async function tableExists(name) {
   const r = await query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,

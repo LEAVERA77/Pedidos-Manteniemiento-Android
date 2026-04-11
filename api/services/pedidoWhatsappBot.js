@@ -12,9 +12,8 @@ import {
 import { parseDomicilioLibreArgentina, separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
 import {
   coordsValidasWgs84,
-  parseCoordLoose,
   parLatLngPasaCheckWhatsappDb,
-  FALLBACK_WGS84_ARGENTINA,
+  ensureWhatsappPedidoCoordsForDb,
 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
@@ -331,23 +330,20 @@ export async function crearPedidoDesdeWhatsappBot({
   if (!geoRes.success || !coordsValidasWgs84(geoRes.lat, geoRes.lng)) {
     throw new Error("whatsapp_geocod_fallo");
   }
-  let latFinal = parseCoordLoose(geoRes.lat);
-  let lngFinal = parseCoordLoose(geoRes.lng);
-  if (!parLatLngPasaCheckWhatsappDb(latFinal, lngFinal)) {
+  const ensuredGeo = ensureWhatsappPedidoCoordsForDb(geoRes.lat, geoRes.lng);
+  let latFinal = ensuredGeo.lat;
+  let lngFinal = ensuredGeo.lng;
+  if (ensuredGeo.coerced) {
     try {
       console.error(
         JSON.stringify({
-          evt: "whatsapp_pedido_coords_coercion_pre_insert",
+          evt: "whatsapp_pedido_coords_ensure_from_geo",
           tenantId: Number(tenantId),
           rawLat: geoRes.lat,
           rawLng: geoRes.lng,
-          parsedLat: latFinal,
-          parsedLng: lngFinal,
         })
       );
     } catch (_) {}
-    latFinal = FALLBACK_WGS84_ARGENTINA.lat;
-    lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
   }
 
   const provTMerge =
@@ -483,6 +479,25 @@ export async function crearPedidoDesdeWhatsappBot({
     vals.push(barrioT);
   }
 
+  const ensuredInsert = ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal);
+  latFinal = ensuredInsert.lat;
+  lngFinal = ensuredInsert.lng;
+  if (ensuredInsert.coerced && telemetria?.recordPaso) {
+    try {
+      await telemetria.recordPaso({
+        slug: "coords_ensure_antes_insert",
+        ok: true,
+        detail: "ultima_capa_anti_check",
+      });
+    } catch (_) {}
+  }
+  {
+    const li = cols.indexOf("lat");
+    const gi = cols.indexOf("lng");
+    if (li >= 0) vals[li] = latFinal;
+    if (gi >= 0) vals[gi] = lngFinal;
+  }
+
   if (pCols.has("geocoding_audit") && geoRes.geocoding_audit) {
     cols.push("geocoding_audit");
     vals.push(JSON.stringify(geoRes.geocoding_audit));
@@ -530,6 +545,10 @@ export async function crearPedidoDesdeWhatsappBot({
           origen_reclamo: hasOrigen ? "whatsapp" : "(sin columna)",
           lat: latFinal,
           lng: lngFinal,
+          latType: typeof latFinal,
+          lngType: typeof lngFinal,
+          latFinite: Number.isFinite(Number(latFinal)),
+          lngFinite: Number.isFinite(Number(lngFinal)),
           code: insertErr?.code,
           message: String(insertErr?.message || insertErr).slice(0, 800),
         })
