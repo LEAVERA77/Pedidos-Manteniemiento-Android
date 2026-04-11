@@ -106,6 +106,39 @@ export async function nominatimFetch(url, init = {}) {
 
 const DEBUG_NOMINATIM = process.env.DEBUG_NOMINATIM === "1" || process.env.DEBUG_NOMINATIM === "true";
 
+const RATE_LIMIT_BACKOFF_MS = [0, 1500, 4000, 9000, 16000];
+
+/**
+ * Reintenta ante 429/503 (cola OSM / rate limit). Config: NOMINATIM_RATE_LIMIT_RETRIES (default 4).
+ * @param {string} url
+ * @param {RequestInit} [init]
+ */
+export async function nominatimFetchRetryOnRateLimit(url, init = {}) {
+  const max = Math.min(
+    6,
+    Math.max(1, parseInt(String(process.env.NOMINATIM_RATE_LIMIT_RETRIES || "4"), 10) || 4)
+  );
+  let lastRes = null;
+  for (let attempt = 0; attempt < max; attempt++) {
+    if (attempt > 0) {
+      const wait = RATE_LIMIT_BACKOFF_MS[attempt] ?? 12000;
+      if (DEBUG_NOMINATIM) {
+        console.warn(`[nominatimClient] rate-limit retry espera ${wait}ms (intento ${attempt + 1}/${max})`);
+      }
+      await sleep(wait);
+    }
+    lastRes = await nominatimFetch(url, init);
+    if (lastRes.status === 429 || lastRes.status === 503) {
+      if (DEBUG_NOMINATIM) {
+        console.warn(`[nominatimClient] HTTP ${lastRes.status} ${String(url).slice(0, 160)}`);
+      }
+      continue;
+    }
+    return lastRes;
+  }
+  return lastRes;
+}
+
 /**
  * Búsqueda libre Nominatim (`q`), alineada a la UI web (sin parámetros street/city).
  * Por defecto puede omitir `countrycodes` (la UI pública no siempre lo envía; algunas queries largas fallan con él).
@@ -151,7 +184,7 @@ export async function nominatimSearchFreeForm(query, options = {}) {
     console.log(`[nominatimClient] nominatimSearchFreeForm: ${url.slice(0, 400)}`);
   }
   try {
-    const res = await nominatimFetch(url);
+    const res = await nominatimFetchRetryOnRateLimit(url);
     if (!res.ok) {
       if (DEBUG_NOMINATIM) console.warn(`[nominatimClient] nominatimSearchFreeForm HTTP ${res.status}`);
       return [];
@@ -665,7 +698,7 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   const limRaw = opts.nominatimLimit != null ? String(opts.nominatimLimit).trim() : "";
   if (limRaw && /^\d+$/.test(limRaw)) p.set("limit", limRaw);
   const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-  const res = await nominatimFetch(url);
+  const res = await nominatimFetchRetryOnRateLimit(url);
   if (!res.ok) return null;
   const arr = await res.json();
   if (!Array.isArray(arr) || !arr.length) return null;
@@ -887,6 +920,23 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
   const enableFb =
     process.env.NOMINATIM_ENABLE_FALLBACKS !== "0" && process.env.NOMINATIM_ENABLE_FALLBACKS !== "false";
 
+  if (DEBUG_NOMINATIM) {
+    console.log(
+      JSON.stringify({
+        evt: "geocodeDomicilioSimpleQArgentina_in",
+        calleCore,
+        calleFull: calleFull.slice(0, 120),
+        numPart,
+        loc,
+        state,
+        mode,
+        useFreeForm,
+        baseUrl: getNominatimBaseUrl(),
+        timeoutMs: nominatimFetchTimeoutMs(),
+      })
+    );
+  }
+
   const qList = [];
   const pushQ = (qx) => {
     const s = String(qx || "")
@@ -972,6 +1022,18 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
           addressdetails: true,
         });
         const hit = pickFreeFormHitForWhatsapp(hits, geoOptsBase);
+        if (DEBUG_NOMINATIM) {
+          console.log(
+            JSON.stringify({
+              evt: "geocodeDomicilioSimpleQArgentina_freeform_try",
+              q: qx.slice(0, 160),
+              omitCountryCodes,
+              tag,
+              hits: hits.length,
+              picked: !!hit,
+            })
+          );
+        }
         const g = hit ? hitToSimpleResult(hit, qx, { freeFormPass: tag }) : null;
         if (g) return g;
       }
@@ -1024,6 +1086,16 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
       ...gLoc,
       audit: { source: "nominatim_simple_q_ciudad", q: `${loc}, Argentina`, approximate: true },
     };
+  }
+  if (DEBUG_NOMINATIM) {
+    console.warn(
+      JSON.stringify({
+        evt: "geocodeDomicilioSimpleQArgentina_miss",
+        calleCore,
+        loc,
+        queriesTried: qListOrdered.length,
+      })
+    );
   }
   return null;
 }

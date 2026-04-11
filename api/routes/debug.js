@@ -2,6 +2,7 @@
  * Diagnóstico de despliegue (commit, heurísticas sobre código WA INSERT).
  * GET /api/debug/version — comparar con `git rev-parse HEAD` local / GitHub.
  * GET /api/debug/nominatim-test — probar geocodificación (desactivar con ALLOW_DEBUG_NOMINATIM=0).
+ * GET /api/debug/nominatim-raw — fetch directo a Nominatim (diagnóstico rate limit / política).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  * made by leavera77
@@ -148,6 +149,7 @@ router.get("/nominatim-test", async (req, res) => {
     geocodeDomicilioSimpleQArgentina,
     nominatimSearchFreeForm,
     geocodeAddressArgentina,
+    pickFreeFormHitForWhatsapp,
   } = await import("../services/nominatimClient.js");
 
   const t0 = Date.now();
@@ -156,14 +158,15 @@ router.get("/nominatim-test", async (req, res) => {
     let lat = null;
     let lng = null;
     let displayName = null;
+    /** @type {{ omit_cc?: number, with_cc?: number } | null} */
+    let qPathHits = null;
 
     if (qRaw.length >= 3) {
-      let hits = await nominatimSearchFreeForm(qRaw, { limit: 8, omitCountryCodes: true, addressdetails: true });
-      let hit = hits[0] || null;
-      if (!hit && qRaw.length >= 3) {
-        hits = await nominatimSearchFreeForm(qRaw, { limit: 8, omitCountryCodes: false, addressdetails: true });
-        hit = hits[0] || null;
-      }
+      const hitsOmit = await nominatimSearchFreeForm(qRaw, { limit: 8, omitCountryCodes: true, addressdetails: true });
+      const hitsCc = await nominatimSearchFreeForm(qRaw, { limit: 8, omitCountryCodes: false, addressdetails: true });
+      qPathHits = { omit_cc: hitsOmit.length, with_cc: hitsCc.length };
+      const tryPick = (arr) => (arr.length ? pickFreeFormHitForWhatsapp(arr, {}) || arr[0] : null);
+      let hit = tryPick(hitsOmit) || tryPick(hitsCc);
       if (hit) {
         lat = Number(hit.lat);
         lng = Number(hit.lon);
@@ -208,6 +211,13 @@ router.get("/nominatim-test", async (req, res) => {
       coordinates: hitOk ? { lat, lng } : null,
       display_name: displayName,
       audit,
+      nominatim_hits_counts: qPathHits,
+      hint:
+        !hitOk && qPathHits && qPathHits.omit_cc === 0 && qPathHits.with_cc === 0
+          ? "Nominatim devolvió 0 filas (429/rate limit, IP bloqueada o timeout). Probar GET /api/debug/nominatim-raw?q=… y NOMINATIM_BASE_URL propio."
+          : !hitOk
+            ? "Si nominatim-raw tiene resultados y esto no, revisar filtros pickFreeForm / pipeline."
+            : null,
       search_mode: process.env.NOMINATIM_WHATSAPP_SEARCH_MODE ?? null,
       debug_nominatim: process.env.DEBUG_NOMINATIM ?? null,
     });
@@ -217,6 +227,89 @@ router.get("/nominatim-test", async (req, res) => {
       ms: Date.now() - t0,
       error: String(err?.message || err),
       search_mode: process.env.NOMINATIM_WHATSAPP_SEARCH_MODE ?? null,
+    });
+  }
+});
+
+/**
+ * GET /api/debug/nominatim-raw?q=...&bare=1
+ * Llamada HTTP mínima a /search (sin pick ni pipeline). bare=1 → User-Agent mínimo (comparar política OSM).
+ */
+router.get("/nominatim-raw", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({ error: "nominatim_raw_disabled" });
+  }
+  const q = req.query.q != null ? String(req.query.q).trim() : "";
+  if (q.length < 1) {
+    return res.status(400).json({ error: "q_required", hint: "?q=Sarmiento+202+Cerrito" });
+  }
+  const bare = req.query.bare === "1";
+  const limit = req.query.limit != null ? String(req.query.limit) : "1";
+  const { getNominatimBaseUrl, nominatimHeaders, nominatimFetchTimeoutMs } = await import("../services/nominatimClient.js");
+  const base = getNominatimBaseUrl();
+  const p = new URLSearchParams({ q, format: "json", limit, "accept-language": "es" });
+  if (!bare) {
+    const email = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "";
+    if (email) p.set("email", email);
+  }
+  const url = `${base}/search?${p.toString()}`;
+  const t0 = Date.now();
+  try {
+    const headers = bare
+      ? {
+          Accept: "application/json",
+          "User-Agent":
+            "GestorNova-RawDiagnostic/1.0 (bare; +https://github.com/LEAVERA77/Pedidos-MG)",
+        }
+      : nominatimHeaders();
+    const msTimeout = nominatimFetchTimeoutMs();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), msTimeout);
+    let response;
+    try {
+      response = await fetch(url, { headers, signal: ctrl.signal });
+    } finally {
+      clearTimeout(tid);
+    }
+    const text = await response.text();
+    let data;
+    let parseOk = false;
+    try {
+      data = JSON.parse(text);
+      parseOk = true;
+    } catch {
+      data = { _raw_text: text.slice(0, 800) };
+    }
+    const arr = parseOk && Array.isArray(data) ? data : null;
+    return res.json({
+      ms: Date.now() - t0,
+      http_status: response.status,
+      retry_after: response.headers.get("retry-after") || null,
+      nominatim_base: base,
+      url_preview: url.length > 600 ? `${url.slice(0, 600)}…` : url,
+      url_length: url.length,
+      bare,
+      headers_mode: bare ? "bare_user_agent_only" : "nominatimHeaders_user_agent_from",
+      result_count: arr ? arr.length : null,
+      first_result:
+        arr && arr[0]
+          ? {
+              lat: arr[0].lat,
+              lon: arr[0].lon,
+              display_name: arr[0].display_name,
+              importance: arr[0].importance,
+            }
+          : null,
+      body_is_json_array: !!arr,
+      note:
+        "429 + Retry-After → rate limit OSM. 200 y result_count 0 → query o datos. Si raw tiene hits y nominatim-test no, fallo en pick/filtros.",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ms: Date.now() - t0,
+      error: String(err?.message || err),
+      code: err?.code || null,
+      url_preview: url.slice(0, 400),
     });
   }
 });
