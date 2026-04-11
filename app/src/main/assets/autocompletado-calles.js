@@ -197,25 +197,43 @@ async function regeocodificarPedido(pedidoId) {
     
     const result = await response.json();
     
-    if (!response.ok) {
-      throw new Error(result.error || 'Error al re-geocodificar');
-    }
-    
-    // Mostrar resultado
+    // Preparar logs para mostrar (siempre, incluso si falla)
     let logHtml = '';
     if (result.log && result.log.length > 0) {
       logHtml = '<div style="background:#f3f4f6;padding:1rem;border-radius:0.5rem;margin-top:1rem;font-family:monospace;font-size:0.8rem;max-height:300px;overflow-y:auto">';
       result.log.forEach(line => {
-        logHtml += `<div style="margin-bottom:0.3rem">${escapeHtml(line)}</div>`;
+        const escaped = escapeHtml(line);
+        let color = '#374151';
+        if (line.includes('✓') || line.includes('✅')) color = '#059669';
+        else if (line.includes('⚠️') || line.includes('→')) color = '#d97706';
+        else if (line.includes('❌')) color = '#dc2626';
+        else if (line.includes('🔄') || line.includes('🔧') || line.includes('📚') || line.includes('🌍') || line.includes('📐')) color = '#2563eb';
+        logHtml += `<div style="margin-bottom:0.3rem;color:${color}">${escaped}</div>`;
       });
       logHtml += '</div>';
     }
     
+    if (!response.ok || !result.success) {
+      // Mostrar error CON logs de diagnóstico
+      const errorMsg = result.mensaje || result.error || 'Error al re-geocodificar';
+      if (window.toast) {
+        window.toast(
+          `<div style="text-align:left">
+            <p style="margin:0 0 0.5rem"><strong>⚠️ ${escapeHtml(errorMsg)}</strong></p>
+            ${logHtml}
+          </div>`,
+          'error'
+        );
+      }
+      return;
+    }
+    
+    // Mostrar resultado exitoso con logs
     if (window.toast) {
       window.toast(
         `<div style="text-align:left">
           <p style="margin:0 0 0.5rem"><strong>✓ Pedido re-geocodificado</strong></p>
-          <p style="margin:0;font-size:0.9rem">Coordenadas: ${result.coordenadas.lat.toFixed(6)}, ${result.coordenadas.lng.toFixed(6)}</p>
+          <p style="margin:0;font-size:0.9rem">Coordenadas: ${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}</p>
           <p style="margin:0.25rem 0 0;font-size:0.85rem;color:#6b7280">Fuente: ${result.fuente}</p>
           ${logHtml}
         </div>`,
@@ -225,7 +243,7 @@ async function regeocodificarPedido(pedidoId) {
     
     // Actualizar mapa si está visible
     if (typeof actualizarPinEnMapa === 'function') {
-      actualizarPinEnMapa(pedidoId, result.coordenadas.lat, result.coordenadas.lng);
+      actualizarPinEnMapa(pedidoId, result.lat, result.lng);
     }
     
     // Recargar detalle
