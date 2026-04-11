@@ -14,6 +14,7 @@ import {
 import {
   geocodeCalleNumeroLocalidadArgentina,
   geocodeDomicilioLineaLibreArgentina,
+  geocodeDomicilioSimpleQArgentina,
   geocodeLocalityViewboxArgentina,
   reverseGeocodeArgentina,
 } from "./nominatimClient.js";
@@ -44,11 +45,12 @@ function normCp(s) {
  *
  * @param {number} pedidoId
  * @param {number} tenantId
- * @param {{ silent?: boolean }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp)
+ * @param {{ silent?: boolean, preferSimpleQNominatim?: boolean }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp). `preferSimpleQNominatim`: forzar pipeline solo `q` (WhatsApp).
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
 export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
   const silent = !!options.silent;
+  const preferSimpleQOpt = !!options.preferSimpleQNominatim;
   const log = [];
   const L = (msg) => {
     log.push(msg);
@@ -64,15 +66,30 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
   }
 
   try {
-    const pedidoResult = await query(
-      `SELECT 
+    let pedidoResult;
+    try {
+      pedidoResult = await query(
+        `SELECT 
+        id, nis, medidor, nis_medidor, 
+        cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
+        lat, lng, provincia, codigo_postal, origen_reclamo
+       FROM pedidos 
+       WHERE id = $1 AND tenant_id = $2`,
+        [pedidoId, tenantId]
+      );
+    } catch (e) {
+      const msg = String(e?.message || "");
+      if (!msg.includes("origen_reclamo")) throw e;
+      pedidoResult = await query(
+        `SELECT 
         id, nis, medidor, nis_medidor, 
         cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
         lat, lng, provincia, codigo_postal
        FROM pedidos 
        WHERE id = $1 AND tenant_id = $2`,
-      [pedidoId, tenantId]
-    );
+        [pedidoId, tenantId]
+      );
+    }
 
     if (!pedidoResult.rows || pedidoResult.rows.length === 0) {
       return {
@@ -83,6 +100,11 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     }
 
     const pedido = pedidoResult.rows[0];
+    const origenWa =
+      preferSimpleQOpt ||
+      String(pedido.origen_reclamo || "")
+        .trim()
+        .toLowerCase() === "whatsapp";
     const coordsActuales = coordsValidasWgs84(pedido.lat, pedido.lng);
 
     const provPed = pedido.provincia != null ? String(pedido.provincia).trim() : "";
@@ -156,12 +178,46 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
      * PASO 3 + 3b + 4 con una calle concreta (sin repetir PASO 1 diccionario).
      * @param {string | null} calleBusqueda
      */
-    async function ejecutarNominatim3_3b_4(calleBusqueda) {
+    async function ejecutarNominatim3_3b_4(calleBusqueda, opts = {}) {
+      const simpleQOnly = !!opts.simpleQOnly;
       let la = null;
       let lo = null;
       let fu = null;
       let npc = null;
       if (!calleBusqueda || !locT) return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+
+      if (simpleQOnly) {
+        L(
+          `\n🌍 PASO 3 (WhatsApp): Nominatim solo API Simple / q — segmentos calleSinPrefijos;número;ciudad (sin cascada estructurada ni interpolación) [calle: "${calleBusqueda}"]`
+        );
+        try {
+          const sq = await geocodeDomicilioSimpleQArgentina({
+            calle: calleBusqueda,
+            numero: numT || "",
+            localidad: locT,
+            stateOrProvince: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+            postalCode: postalDigits.length >= 4 ? postalDigits : "",
+          });
+          if (sq && coordsValidasWgs84(sq.lat, sq.lng)) {
+            la = sq.lat;
+            lo = sq.lng;
+            fu = sq.audit?.source || "nominatim_simple_q";
+            if (sq.postcode) {
+              const n = normCp(sq.postcode);
+              if (n) {
+                npc = n;
+                L(`  📮 CP (Nominatim q): ${n}`);
+              }
+            }
+            L(`  ✓ Simple/q: ${la.toFixed(6)}, ${lo.toFixed(6)} (${fu})`);
+          } else {
+            L(`  → Simple/q sin punto útil`);
+          }
+        } catch (err) {
+          L(`  ⚠️  Error Nominatim Simple/q: ${err?.message || err}`);
+        }
+        return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
+      }
 
       L(`\n🌍 PASO 3: Nominatim (calle + localidad + provincia/CP si hay) [calle busqueda: "${calleBusqueda}"]`);
       try {
@@ -324,7 +380,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     }
 
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
-      const r1 = await ejecutarNominatim3_3b_4(calleT);
+      const r1 = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: origenWa });
       if (coordsValidasWgs84(r1.lat, r1.lng)) {
         latFinal = r1.lat;
         lngFinal = r1.lng;
@@ -340,7 +396,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       !mismoTextoCalle(calleOriginalPedido, calleT)
     ) {
       L("\n↩ Reintento con calle original del pedido (sin volver a PASO 1 diccionario)…");
-      const r2 = await ejecutarNominatim3_3b_4(calleOriginalPedido);
+      const r2 = await ejecutarNominatim3_3b_4(calleOriginalPedido, { simpleQOnly: origenWa });
       if (coordsValidasWgs84(r2.lat, r2.lng)) {
         latFinal = r2.lat;
         lngFinal = r2.lng;

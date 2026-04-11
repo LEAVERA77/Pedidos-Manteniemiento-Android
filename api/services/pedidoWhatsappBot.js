@@ -406,7 +406,10 @@ export async function crearPedidoDesdeWhatsappBot({
         lng: coordsWhatsappParaCatalogo.lng,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
     }
-    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), { silent: true })
+    regeocodificarPedido(Number(pedidoRow.id), Number(tenantId), {
+      silent: true,
+      preferSimpleQNominatim: true,
+    })
       .then((res) =>
         notificarAdminsRegeoPedidoWhatsappSafe(Number(tenantId), pedidoRow, res, { silent: true })
       )

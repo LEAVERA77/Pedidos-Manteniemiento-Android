@@ -1,6 +1,6 @@
 /**
- * Geolocalización garantizada para pedidos WhatsApp sin depender de APIs externas.
- * Orden: padrón → vecinos (SQL) → promedio padrón por localidad → sede tenant → fallback AR.
+ * Utilidades WhatsApp: `coordsValidasWgs84` y (obsoleto) cascada local sin Nominatim.
+ * El pin del pedido **no** debe resolverse aquí: usar `regeocodificarPedido` + `geocodeDomicilioSimpleQArgentina`.
  * made by leavera77
  */
 import { query } from "../db/neon.js";
@@ -185,6 +185,7 @@ async function centroLocalidadDesdePadronSql(tenantId, localidad) {
  * @param {string|null} opts.excludeNisMedidor
  * @param {boolean} opts.identificadoPorPadron — NIS/medidor/nis_medidor presente
  * @returns {Promise<{ lat: number, lng: number, fuente: string, nota: string|null }>}
+ * @deprecated No usado por el bot; el pipeline de pin es `regeocodificarPedido` (Nominatim `q`). Se mantiene por compatibilidad si algún script la importa.
  */
 export async function resolverGeolocalizacionGarantizadaWhatsapp(opts) {
   const tid = Number(opts.tenantId);

@@ -915,6 +915,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
 /**
  * Guarda domicilio estructurado en sesión y cierra el pedido. La ubicación en mapa la resuelve
  * `regeocodificarPedido` en el servidor (mismo pipeline que el botón Re-geocodificar).
+ * Pedidos WhatsApp: solo estrategia API Simple / parámetro `q` (sin interpolación previa al INSERT).
  * Solo se usan coordenadas aquí si el usuario compartió GPS válido (`userSharedGps`).
  *
  * @param {{ origenCatalogo?: boolean, stateOrProvince?: string }} opts

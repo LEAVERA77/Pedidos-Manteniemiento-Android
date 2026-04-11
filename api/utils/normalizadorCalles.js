@@ -26,6 +26,26 @@ export function normalizarTextoCalleComparacion(str) {
 const RE_TIPO_VIA_INICIO =
   /^(avenida|aven|av\.?|avda\.?|boulevard|boulevar|bulevar|bv\.?|bvar\.?|bvd\.?|blvd\.?|calle|pasaje|pje\.?|ruta|diag\.?|diagonal)\s+/gi;
 
+/** Misma lista que `RE_TIPO_VIA_INICIO`, aplicada al texto original (insensible a mayúsculas) para armar `q` Nominatim. */
+const RE_TIPO_VIA_PREFIX_STRIP =
+  /^(?:avenida|aven|av\.?|avda\.?|boulevard|boulevar|bulevar|bv\.?|bvar\.?|bvd\.?|blvd\.?|calle|pasaje|pje\.?|ruta|diag\.?|diagonal)\s+/i;
+
+/**
+ * Calle sin prefijo de tipo de vía al inicio (p. ej. "Av. Mitre" → "Mitre") para búsqueda libre `q`.
+ * Representación lógica del producto: segmento 1 de `calleSinPrefijos;numero;ciudad`.
+ */
+export function calleSinPrefijoTipoViaParaQuery(str) {
+  let s = String(str || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  for (let i = 0; i < 6; i++) {
+    const t = s.replace(RE_TIPO_VIA_PREFIX_STRIP, "").trim().replace(/\s+/g, " ");
+    if (!t || t === s) break;
+    s = t;
+  }
+  return s.trim();
+}
+
 /**
  * Núcleo del nombre de vía para similitud (sin prefijo de tipo).
  * Si al quedar prefijos queda vacío o menos de 2 caracteres, devuelve el texto ya normalizado completo.

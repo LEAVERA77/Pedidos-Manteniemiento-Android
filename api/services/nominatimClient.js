@@ -12,6 +12,7 @@
  */
 
 import { lookupLocalAddressInIndex } from "./localAddressIndex.js";
+import { calleSinPrefijoTipoViaParaQuery } from "../utils/normalizadorCalles.js";
 
 const MIN_INTERVAL_MS = 1100;
 let _lastAt = 0;
@@ -475,8 +476,15 @@ function pickBestStructuredHit(hits, calle, localidad, bbox, wantHouse, anchorCe
 
 /**
  * @param {string} query
- * @param {{ filterLocalidad?: string, filterState?: string } | undefined} opts
- * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string } | null>}
+ * @param {{
+ *   filterLocalidad?: string,
+ *   filterState?: string,
+ *   preferredHouseNumber?: number | null,
+ *   filterCalle?: string,
+ *   filterCalleAlt?: string,
+ *   nominatimLimit?: string | number,
+ * } | undefined} opts
+ * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string } | null>}
  */
 export async function geocodeAddressArgentina(query, opts = {}) {
   const q = String(query || "").trim();
@@ -484,6 +492,8 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   await throttle();
   const p = nominatimBaseParams();
   p.set("q", q);
+  const limRaw = opts.nominatimLimit != null ? String(opts.nominatimLimit).trim() : "";
+  if (limRaw && /^\d+$/.test(limRaw)) p.set("limit", limRaw);
   const url = `https://nominatim.openstreetmap.org/search?${p.toString()}`;
   const res = await fetch(url, { headers: nominatimHeaders() });
   if (!res.ok) return null;
@@ -491,6 +501,12 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   if (!Array.isArray(arr) || !arr.length) return null;
   const filterLoc = opts.filterLocalidad != null ? String(opts.filterLocalidad).trim() : "";
   const filterSt = opts.filterState != null ? String(opts.filterState).trim() : "";
+  const fc = opts.filterCalle != null ? String(opts.filterCalle).trim() : "";
+  const fca = opts.filterCalleAlt != null ? String(opts.filterCalleAlt).trim() : "";
+  const wantParsed =
+    opts.preferredHouseNumber != null && Number.isFinite(Number(opts.preferredHouseNumber))
+      ? Number(opts.preferredHouseNumber)
+      : null;
   let candidates = arr;
   if (filterLoc.length >= 2) {
     candidates = candidates.filter((h) => nominatimHitStrictLocalidad(h, filterLoc));
@@ -498,8 +514,15 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   if (filterSt.length >= 2) {
     candidates = candidates.filter((h) => nominatimStateMatchesTenant(stateFromNominatimHit(h), filterSt));
   }
+  if (fc.length >= 2) {
+    candidates = candidates.filter(
+      (h) => nominatimHitMatchesCalle(h, fc) || (fca.length >= 2 && nominatimHitMatchesCalle(h, fca))
+    );
+  }
   if (candidates.length > 1) {
-    candidates = [...candidates].sort((a, b) => structuredHitSortKey(a, null) - structuredHitSortKey(b, null));
+    candidates = [...candidates].sort(
+      (a, b) => structuredHitSortKey(a, wantParsed) - structuredHitSortKey(b, wantParsed)
+    );
   }
   const hit = candidates.length ? candidates[0] : null;
   if (!hit) return null;
@@ -658,6 +681,87 @@ export function iterHouseNumbersSameParity(numeroStr, maxSteps) {
 export function hasMeaningfulHouseNumber(numeroStr) {
   const t = parseHouseNumberInt(String(numeroStr || ""));
   return t != null && t > 0;
+}
+
+/**
+ * Pipeline “tipo Nominatim Simple” para domicilio estructurado: solo `q` + JSON (throttle global del módulo).
+ * Segmentos lógicos: `calleSinPrefijoTipoViaParaQuery(calle)` + número + localidad → variantes de `q`.
+ * Sin búsqueda estructurada, sin interpolación, sin viewbox previo (menos llamadas; política OSM).
+ *
+ * @param {{ calle: string, numero?: string, localidad: string, stateOrProvince?: string, postalCode?: string }} o
+ * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string, audit?: object } | null>}
+ */
+export async function geocodeDomicilioSimpleQArgentina(o = {}) {
+  const loc = String(o.localidad || "").trim();
+  const calleFull = String(o.calle || "").trim();
+  if (loc.length < 2 || calleFull.length < 2) return null;
+  const calleCore = calleSinPrefijoTipoViaParaQuery(calleFull) || calleFull;
+  const nRaw = String(o.numero ?? "").trim();
+  const wantH = hasMeaningfulHouseNumber(nRaw) ? parseHouseNumberInt(nRaw) : null;
+  const numPart = wantH != null ? String(wantH) : "";
+
+  const state = String(o.stateOrProvince || "").trim();
+  const postal = String(o.postalCode || "")
+    .trim()
+    .replace(/\D/g, "");
+
+  const qList = [];
+  const pushQ = (qx) => {
+    const s = String(qx || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (s.length >= 4 && !qList.includes(s)) qList.push(s);
+  };
+
+  let calleSinTilde = calleCore;
+  try {
+    calleSinTilde = calleCore.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  } catch (_) {}
+
+  if (numPart) {
+    pushQ(`${calleCore} ${numPart}, ${loc}`);
+    pushQ(`${calleCore} ${numPart}, ${loc}, Argentina`);
+    if (state.length >= 2) pushQ(`${calleCore} ${numPart}, ${loc}, ${state}, Argentina`);
+    if (postal.length >= 4) pushQ(`${calleCore} ${numPart}, ${loc}, ${postal}, Argentina`);
+    if (calleSinTilde !== calleCore) pushQ(`${calleSinTilde} ${numPart}, ${loc}, Argentina`);
+    pushQ(`${numPart} ${calleCore}, ${loc}, Argentina`);
+    pushQ(`${numPart} ${calleCore}, ${loc}`);
+    if (calleFull.replace(/\s+/g, " ").trim().toLowerCase() !== calleCore.toLowerCase()) {
+      pushQ(`${calleFull} ${numPart}, ${loc}, Argentina`);
+    }
+  } else {
+    pushQ(`${calleCore}, ${loc}, Argentina`);
+    pushQ(`${calleCore}, ${loc}`);
+  }
+
+  const geoOptsBase = {
+    filterLocalidad: loc,
+    filterState: state,
+    filterCalle: calleCore,
+    filterCalleAlt: calleFull,
+    preferredHouseNumber: wantH,
+    nominatimLimit: 25,
+  };
+
+  for (const qx of qList) {
+    const g = await geocodeAddressArgentina(qx, geoOptsBase);
+    if (g && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
+      return { ...g, audit: { source: "nominatim_simple_q", q: qx, approximate: false } };
+    }
+  }
+
+  const gLoc = await geocodeAddressArgentina(`${loc}, Argentina`, {
+    filterLocalidad: loc,
+    filterState: state,
+    nominatimLimit: 8,
+  });
+  if (gLoc && Number.isFinite(gLoc.lat) && Number.isFinite(gLoc.lng)) {
+    return {
+      ...gLoc,
+      audit: { source: "nominatim_simple_q_ciudad", q: `${loc}, Argentina`, approximate: true },
+    };
+  }
+  return null;
 }
 
 /**

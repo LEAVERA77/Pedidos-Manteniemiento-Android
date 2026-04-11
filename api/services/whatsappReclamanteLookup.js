@@ -1,6 +1,6 @@
 import { query } from "../db/neon.js";
 import { buscarCoordenadasVecinosMismaCalle } from "./whatsappPadronVecinos.js";
-/** Al crear el pedido (pedidoWhatsappBot) se aplica la cascada completa en whatsappGeolocalizacionGarantizada.js (localidad + sede). */
+/** Tras INSERT, el pin lo resuelve `regeocodificarPedido` (Nominatim API Simple / `q` si origen WhatsApp). */
 
 async function columnasUsuarios() {
   const cols = await query(
