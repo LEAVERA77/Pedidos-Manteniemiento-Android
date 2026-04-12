@@ -24,9 +24,16 @@ import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
+import {
+  authLoginLimiter,
+  authVerifyPasswordLimiter,
+  generalApiLimiter,
+  geocodeRouteLimiter,
+} from "./middleware/rateLimits.js";
 
 export function createHttpApp() {
   const app = express();
+  app.set("trust proxy", Number(process.env.TRUST_PROXY_COUNT) || 1);
 
   app.use(requestContextMiddleware);
 
@@ -65,6 +72,12 @@ export function createHttpApp() {
 
   app.use(cors(corsOptionsDelegate));
   app.options("*", cors(corsOptionsDelegate));
+
+  app.use((req, res, next) => {
+    if (!req.path.startsWith("/api")) return next();
+    return generalApiLimiter(req, res, next);
+  });
+
   app.use("/api/webhooks/whatsapp/meta", webhooksMetaRoutes);
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -91,8 +104,24 @@ export function createHttpApp() {
     });
   });
 
+  /** Rutas debug que pegan a Nominatim: mismo bucket que /api/geocode. */
+  app.use("/api/debug/nominatim-test", geocodeRouteLimiter);
+  app.use("/api/debug/nominatim-raw", geocodeRouteLimiter);
+
   /** Diagnóstico despliegue: GET /api/debug/version (commit + heurísticas WA INSERT). */
   app.use("/api/debug", debugRoutes);
+
+  app.use("/api/geocode", geocodeRouteLimiter);
+  app.use("/api/whatsapp/geocode", geocodeRouteLimiter);
+
+  app.use("/api/auth/login", (req, res, next) => {
+    if (req.method !== "POST") return next();
+    return authLoginLimiter(req, res, next);
+  });
+  app.use("/api/auth/verify-password", (req, res, next) => {
+    if (req.method !== "POST") return next();
+    return authVerifyPasswordLimiter(req, res, next);
+  });
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);
