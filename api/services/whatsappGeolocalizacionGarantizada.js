@@ -216,6 +216,14 @@ export function assertPedidoWaValsBound(cols, vals) {
  * reescribe **todos** los índices lat/lng y no permite INSERT si el par no pasa el CHECK (tras fallback AR).
  * @returns {{ latIns: number, lngIns: number, latIdx: number, lngIdx: number }}
  */
+/** Bounding aproximado Argentina (WGS84) — evita INSERT con pin fuera del país por corrupción numérica. */
+function coordsEnArgentinaAprox(lat, lng) {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+  return la <= -21 && la >= -56 && lo >= -74 && lo <= -52;
+}
+
 export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFinal) {
   if (cols.length !== vals.length) {
     throw new Error(`pedido_wa_preinsert_len cols=${cols.length} vals=${vals.length}`);
@@ -224,6 +232,10 @@ export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFin
   let latIns = Number(e0.lat);
   let lngIns = Number(e0.lng);
   if (!Number.isFinite(latIns) || !Number.isFinite(lngIns)) {
+    latIns = FALLBACK_WGS84_ARGENTINA.lat;
+    lngIns = FALLBACK_WGS84_ARGENTINA.lng;
+  }
+  if (!coordsEnArgentinaAprox(latIns, lngIns)) {
     latIns = FALLBACK_WGS84_ARGENTINA.lat;
     lngIns = FALLBACK_WGS84_ARGENTINA.lng;
   }

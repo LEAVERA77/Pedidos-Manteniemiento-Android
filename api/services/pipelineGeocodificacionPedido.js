@@ -18,6 +18,7 @@ import {
   geocodeDomicilioLineaLibreArgentina,
   geocodeDomicilioSimpleQArgentina,
   geocodeLocalityViewboxArgentina,
+  getNominatimBaseUrl,
   reverseGeocodeArgentina,
 } from "./nominatimClient.js";
 import {
@@ -221,6 +222,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         L(
           `  ⚙️ NOMINATIM_WHATSAPP_SEARCH_MODE=${waMode} (si es "structured"/"legacy" no se usa la ruta free-form; default free-form)`
         );
+        L(`  🌐 NOMINATIM_BASE_URL efectivo: ${getNominatimBaseUrl()}`);
         try {
           const sq = await geocodeDomicilioSimpleQArgentina({
             calle: calleBusqueda,

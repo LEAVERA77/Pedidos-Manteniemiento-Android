@@ -13,6 +13,17 @@
 
 import { lookupLocalAddressInIndex } from "./localAddressIndex.js";
 import { calleSinPrefijoTipoViaParaQuery } from "../utils/normalizadorCalles.js";
+import {
+  nominatimMemoryCacheGet,
+  nominatimMemoryCacheSet,
+  nominatimMemoryCacheKeyFreeForm,
+} from "./nominatimMemoryCache.js";
+
+/** Instancia propia por defecto (VPS). Sobrescribir con NOMINATIM_BASE_URL. */
+export const NOMINATIM_DEFAULT_PRIVATE_BASE = "http://45.76.3.146:8080";
+export const NOMINATIM_PUBLIC_FALLBACK_BASE = "https://nominatim.openstreetmap.org";
+
+let _loggedDefaultNominatimBase = false;
 
 const MIN_INTERVAL_MS = 1100;
 let _lastAt = 0;
@@ -68,16 +79,57 @@ export function nominatimHeaders() {
  *   Comprobá en el navegador o curl que esa URL + `/search?format=json&q=test` responde JSON.
  *
  * Un repo GitHub del *software* Nominatim no es una URL: hay que desplegarlo y poner aquí el **origen HTTP** donde corre `nominatim serve`.
+ *
+ * Sin `NOMINATIM_BASE_URL` en env → instancia propia (`NOMINATIM_DEFAULT_PRIVATE_BASE`). Para usar solo OSM público: `NOMINATIM_BASE_URL=https://nominatim.openstreetmap.org`.
  */
 export function getNominatimBaseUrl() {
-  const raw = String(process.env.NOMINATIM_BASE_URL || "https://nominatim.openstreetmap.org").trim();
+  const fromEnv = process.env.NOMINATIM_BASE_URL;
+  if (!fromEnv && !_loggedDefaultNominatimBase) {
+    _loggedDefaultNominatimBase = true;
+    console.warn(
+      `[nominatimClient] NOMINATIM_BASE_URL no definido; usando instancia por defecto ${NOMINATIM_DEFAULT_PRIVATE_BASE} (sobrescribir con env o usar API pública explícita).`
+    );
+  }
+  const raw = String(fromEnv || NOMINATIM_DEFAULT_PRIVATE_BASE).trim();
   return raw.replace(/\/+$/, "");
 }
 
-/** Timeout por request HTTP a Nominatim (ms). Evita bloqueos largos en worker único. */
+/** URL de respaldo (API pública OSM) cuando la instancia propia falla o devuelve vacío. Desactivar: NOMINATIM_PUBLIC_FALLBACK=false */
+export function getNominatimPublicFallbackBaseUrl() {
+  return String(process.env.NOMINATIM_PUBLIC_FALLBACK_URL || NOMINATIM_PUBLIC_FALLBACK_BASE)
+    .trim()
+    .replace(/\/+$/, "");
+}
+
+export function shouldUsePublicFallback() {
+  if (process.env.NOMINATIM_PUBLIC_FALLBACK === "0" || process.env.NOMINATIM_PUBLIC_FALLBACK === "false") {
+    return false;
+  }
+  const primary = getNominatimBaseUrl();
+  const pub = getNominatimPublicFallbackBaseUrl();
+  return primary !== pub;
+}
+
+/**
+ * Reemplaza el origin de una URL /search|/reverse de Nominatim.
+ * @param {string} urlStr
+ * @param {string} newBase sin barra final
+ */
+export function nominatimUrlWithBase(urlStr, newBase) {
+  try {
+    const u = new URL(urlStr);
+    const nb = String(newBase || "").replace(/\/+$/, "");
+    const nu = new URL(nb.includes("://") ? nb : `https://${nb}`);
+    return `${nu.origin}${u.pathname}${u.search}`;
+  } catch {
+    return urlStr;
+  }
+}
+
+/** Timeout por request HTTP a Nominatim (ms). Default 15000 (instancia propia / red). */
 export function nominatimFetchTimeoutMs() {
-  const n = Number(process.env.NOMINATIM_FETCH_TIMEOUT_MS ?? 12000);
-  return Number.isFinite(n) && n >= 3000 && n <= 120000 ? n : 12000;
+  const n = Number(process.env.NOMINATIM_FETCH_TIMEOUT_MS ?? 15000);
+  return Number.isFinite(n) && n >= 3000 && n <= 120000 ? n : 15000;
 }
 
 /**
@@ -140,6 +192,78 @@ export async function nominatimFetchRetryOnRateLimit(url, init = {}) {
 }
 
 /**
+ * GET search → array JSON; si la instancia primaria falla o devuelve [], intenta OSM público (si aplica).
+ * @param {string} url URL completa /search?…
+ */
+export async function nominatimFetchSearchArrayWithPublicFallback(url) {
+  const tryOne = async (u) => {
+    const res = await nominatimFetchRetryOnRateLimit(u);
+    const status = res.status;
+    let arr = [];
+    try {
+      const j = await res.json();
+      arr = Array.isArray(j) ? j : [];
+    } catch {
+      arr = [];
+    }
+    return { ok: res.ok, status, arr, u };
+  };
+
+  let out = await tryOne(url);
+  if (out.ok && out.arr.length > 0) return out.arr;
+  if (!shouldUsePublicFallback()) return out.arr;
+
+  const alt = nominatimUrlWithBase(url, getNominatimPublicFallbackBaseUrl());
+  if (alt === url) return out.arr;
+
+  if (DEBUG_NOMINATIM) {
+    console.warn(
+      JSON.stringify({
+        evt: "nominatim_search_fallback_public",
+        reason: !out.ok ? `http_${out.status}` : "empty_results",
+        primary: url.slice(0, 220),
+      })
+    );
+  }
+  const second = await tryOne(alt);
+  return second.arr;
+}
+
+/**
+ * GET /reverse → objeto JSON; si la instancia primaria falla, intenta OSM público.
+ * @param {string} url URL completa /reverse?…
+ */
+export async function nominatimFetchReverseHitWithPublicFallback(url) {
+  const parse = async (u) => {
+    const res = await nominatimFetchRetryOnRateLimit(u);
+    let hit = null;
+    try {
+      hit = await res.json();
+    } catch {
+      hit = null;
+    }
+    return { ok: res.ok, hit };
+  };
+
+  let { ok, hit } = await parse(url);
+  if (ok && hit && !hit.error) return hit;
+  if (!shouldUsePublicFallback()) return hit && !hit.error ? hit : null;
+  const alt = nominatimUrlWithBase(url, getNominatimPublicFallbackBaseUrl());
+  if (alt === url) return hit && !hit.error ? hit : null;
+  if (DEBUG_NOMINATIM) {
+    console.warn(
+      JSON.stringify({
+        evt: "nominatim_reverse_fallback_public",
+        primary: url.slice(0, 200),
+      })
+    );
+  }
+  ({ ok, hit } = await parse(alt));
+  if (ok && hit && !hit.error) return hit;
+  return null;
+}
+
+/**
  * Búsqueda libre Nominatim (`q`), alineada a la UI web (sin parámetros street/city).
  * Por defecto puede omitir `countrycodes` (la UI pública no siempre lo envía; algunas queries largas fallan con él).
  *
@@ -157,6 +281,19 @@ export async function nominatimSearchFreeForm(query, options = {}) {
   const q = String(query || "").trim();
   if (q.length < 2) return [];
   await throttle();
+
+  const cacheKey = nominatimMemoryCacheKeyFreeForm(q, {
+    limit: options.limit,
+    omitCountryCodes: options.omitCountryCodes === true,
+  });
+  const cached = nominatimMemoryCacheGet(cacheKey);
+  if (cached) {
+    if (DEBUG_NOMINATIM) {
+      console.log(`[nominatimClient] nominatimSearchFreeForm cache HIT key=${cacheKey.slice(0, 80)}`);
+    }
+    return cached;
+  }
+
   const lim = Math.min(50, Math.max(1, Number(options.limit) || 8));
   const p = new URLSearchParams({
     format: "json",
@@ -184,18 +321,15 @@ export async function nominatimSearchFreeForm(query, options = {}) {
     console.log(`[nominatimClient] nominatimSearchFreeForm: ${url.slice(0, 400)}`);
   }
   try {
-    const res = await nominatimFetchRetryOnRateLimit(url);
-    if (!res.ok) {
-      if (DEBUG_NOMINATIM) console.warn(`[nominatimClient] nominatimSearchFreeForm HTTP ${res.status}`);
-      return [];
-    }
-    const arr = await res.json();
+    const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
     if (DEBUG_NOMINATIM) {
       const n = Array.isArray(arr) ? arr.length : 0;
       const sample = Array.isArray(arr) && arr[0] ? JSON.stringify(arr[0]).slice(0, 600) : "";
       console.log(`[nominatimClient] nominatimSearchFreeForm: ${n} hit(s) ${sample ? `ej: ${sample}` : ""}`);
     }
-    return Array.isArray(arr) ? arr : [];
+    const out = Array.isArray(arr) ? arr : [];
+    if (out.length) nominatimMemoryCacheSet(cacheKey, out);
+    return out;
   } catch (e) {
     console.error("[nominatimClient] nominatimSearchFreeForm:", e?.message || e);
     return [];
@@ -508,9 +642,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     if (postal.length >= 4) p.set("postalcode", postal);
     p.set("limit", "10");
     const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-    const res = await nominatimFetch(url);
-    if (!res.ok) return [];
-    const arr = await res.json();
+    const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
     return Array.isArray(arr) ? arr : [];
   }
 
@@ -521,9 +653,7 @@ export async function geocodeLocalityViewboxArgentina(localidad, tenantCentroid,
     p.set("q", `${loc}, ${state}, Argentina`);
     p.set("limit", "10");
     const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-    const res = await nominatimFetch(url);
-    if (!res.ok) return [];
-    const arr = await res.json();
+    const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
     return Array.isArray(arr) ? arr : [];
   }
 
@@ -598,9 +728,7 @@ async function nominatimSearch(params) {
     p.set(k, String(v));
   }
   const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-  const res = await nominatimFetch(url);
-  if (!res.ok) return [];
-  const arr = await res.json();
+  const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
   return Array.isArray(arr) ? arr : [];
 }
 
@@ -698,9 +826,7 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   const limRaw = opts.nominatimLimit != null ? String(opts.nominatimLimit).trim() : "";
   if (limRaw && /^\d+$/.test(limRaw)) p.set("limit", limRaw);
   const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-  const res = await nominatimFetchRetryOnRateLimit(url);
-  if (!res.ok) return null;
-  const arr = await res.json();
+  const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
   if (!Array.isArray(arr) || !arr.length) return null;
   const filterLoc = opts.filterLocalidad != null ? String(opts.filterLocalidad).trim() : "";
   const filterSt = opts.filterState != null ? String(opts.filterState).trim() : "";
@@ -1367,9 +1493,7 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
         p.set("bounded", "1");
       }
       const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-      const res = await nominatimFetch(url);
-      if (!res.ok) continue;
-      const arr = await res.json();
+      const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
       if (!Array.isArray(arr)) continue;
       for (const hit of arr) {
         if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
@@ -1507,10 +1631,9 @@ export async function searchCalleLocalidadArgentina(
     p.set("bounded", "1");
   }
   const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-  const res = await nominatimFetch(url);
-  if (!res.ok) return { houseHits: [], streetCenter: null };
-  const arr = await res.json();
-  if (!Array.isArray(arr)) return { houseHits: [], streetCenter: null };
+  const arrRaw = await nominatimFetchSearchArrayWithPublicFallback(url);
+  const arr = Array.isArray(arrRaw) ? arrRaw : [];
+  if (!arr.length) return { houseHits: [], streetCenter: null };
   const houseHits = [];
   const streetCandidates = [];
   for (const hit of arr) {
@@ -1729,9 +1852,7 @@ export async function reverseGeocodeArgentina(lat, lng) {
     email: process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "",
   });
   const url = `${getNominatimBaseUrl()}/reverse?${p.toString()}`;
-  const res = await nominatimFetch(url);
-  if (!res.ok) return null;
-  const hit = await res.json();
+  const hit = await nominatimFetchReverseHitWithPublicFallback(url);
   if (!hit || hit.error) return null;
   const dn = String(hit.display_name || "").trim();
   if (!dn) return null;

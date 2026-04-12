@@ -314,4 +314,65 @@ router.get("/nominatim-raw", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/debug/nominatim-health — ping mínimo a la instancia configurada (search?q=test).
+ */
+router.get("/nominatim-health", async (_req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({ error: "nominatim_health_disabled" });
+  }
+  const {
+    getNominatimBaseUrl,
+    getNominatimPublicFallbackBaseUrl,
+    nominatimHeaders,
+    nominatimFetchTimeoutMs,
+  } = await import("../services/nominatimClient.js");
+  const base = getNominatimBaseUrl();
+  const pub = getNominatimPublicFallbackBaseUrl();
+  const hp = new URLSearchParams({ q: "Rosario Argentina", format: "json", limit: "1", "accept-language": "es" });
+  const em = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "";
+  if (em) hp.set("email", em);
+  const url = `${base}/search?${hp.toString()}`;
+  const t0 = Date.now();
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), nominatimFetchTimeoutMs());
+    let response;
+    try {
+      response = await fetch(url, { headers: nominatimHeaders(), signal: ctrl.signal });
+    } finally {
+      clearTimeout(tid);
+    }
+    const ms = Date.now() - t0;
+    let resultCount = null;
+    if (response.ok) {
+      try {
+        const j = await response.json();
+        resultCount = Array.isArray(j) ? j.length : null;
+      } catch {
+        resultCount = null;
+      }
+    }
+    const healthy = response.ok && (resultCount == null || resultCount >= 0);
+    return res.json({
+      status: healthy ? "healthy" : "unhealthy",
+      ms,
+      http_status: response.status,
+      nominatim_base: base,
+      public_fallback_url: pub,
+      result_count: resultCount,
+      timeout_ms: nominatimFetchTimeoutMs(),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.json({
+      status: "error",
+      ms: Date.now() - t0,
+      error: String(err?.message || err),
+      nominatim_base: base,
+      public_fallback_url: pub,
+    });
+  }
+});
+
 export default router;
