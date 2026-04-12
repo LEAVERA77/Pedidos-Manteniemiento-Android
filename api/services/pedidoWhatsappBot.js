@@ -582,6 +582,30 @@ export async function crearPedidoDesdeWhatsappBot({
       );
     } catch (_) {}
   }
+
+  const waInsertVerbose =
+    process.env.WA_INSERT_DEBUG === "1" ||
+    process.env.WA_INSERT_DEBUG === "true" ||
+    process.env.DEBUG_WA_COORDS === "1";
+  if (waInsertVerbose) {
+    const latI = cols.indexOf("lat");
+    const lngI = cols.indexOf("lng");
+    const latitudI = cols.indexOf("latitud");
+    const longitudI = cols.indexOf("longitud");
+    try {
+      console.log("=== [WA_INSERT_DEBUG] ===");
+      console.log("cols:", JSON.stringify(cols));
+      console.log("vals:", JSON.stringify(vals));
+      console.log("lat index:", latI, "value:", latI !== -1 ? vals[latI] : "NO_ENCONTRADO");
+      console.log("lng index:", lngI, "value:", lngI !== -1 ? vals[lngI] : "NO_ENCONTRADO");
+      console.log("latitud index:", latitudI, "value:", latitudI !== -1 ? vals[latitudI] : "NO_ENCONTRADO");
+      console.log("longitud index:", longitudI, "value:", longitudI !== -1 ? vals[longitudI] : "NO_ENCONTRADO");
+      console.log("========================");
+    } catch (e) {
+      console.warn("[WA_INSERT_DEBUG] log_error", String(e?.message || e));
+    }
+  }
+
   let insert;
   try {
     insert = await query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);

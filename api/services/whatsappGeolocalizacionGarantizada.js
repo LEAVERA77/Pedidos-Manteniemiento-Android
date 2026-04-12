@@ -305,7 +305,22 @@ export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFin
  * @returns {{ latFinal: number, lngFinal: number, latIdx: number, lngIdx: number }}
  */
 export function finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal) {
-  if (process.env.DEBUG_WA_COORDS === "1") {
+  const verboseFinalize =
+    process.env.WA_INSERT_DEBUG === "1" ||
+    process.env.WA_INSERT_DEBUG === "true" ||
+    process.env.DEBUG_WA_COORDS === "1";
+  if (verboseFinalize) {
+    try {
+      console.log("[finalizeCoords] INPUT:", {
+        lat: latFinal,
+        lng: lngFinal,
+        typeLat: typeof latFinal,
+        typeLng: typeof lngFinal,
+        colsLen: cols?.length,
+        valsLen: vals?.length,
+      });
+    } catch (_) {}
+  } else if (process.env.DEBUG_WA_COORDS === "1") {
     try {
       console.log(
         JSON.stringify({
@@ -317,10 +332,26 @@ export function finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal
     } catch (_) {}
   }
   const ready = assertPedidoWaCoordsReadyForInsert(latFinal, lngFinal);
+  if (verboseFinalize) {
+    try {
+      console.log("[finalizeCoords] after assertPedidoWaCoordsReadyForInsert (ready):", ready);
+      console.log("[finalizeCoords] ensureWhatsappPedidoCoordsForDb(raw input):", ensureWhatsappPedidoCoordsForDb(latFinal, lngFinal));
+    } catch (_) {}
+  }
   const ens = applyFinalLatLngToPedidoVals(cols, vals, ready.lat, ready.lng);
   const bound = assertPedidoWaValsBound(cols, vals);
   const strict = preInsertWhatsappPedidoCoordsStrict(cols, vals, bound.lat, bound.lng);
-  if (process.env.DEBUG_WA_COORDS === "1") {
+  if (verboseFinalize) {
+    try {
+      console.log("[finalizeCoords] OUTPUT (strict latIns/lngIns):", {
+        latFinal: strict.latIns,
+        lngFinal: strict.lngIns,
+        latIdx: strict.latIdx,
+        lngIdx: strict.lngIdx,
+        coercedFromApply: ens?.coerced,
+      });
+    } catch (_) {}
+  } else if (process.env.DEBUG_WA_COORDS === "1") {
     try {
       console.log(
         JSON.stringify({

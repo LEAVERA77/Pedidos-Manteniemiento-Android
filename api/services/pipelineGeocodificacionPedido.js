@@ -834,6 +834,16 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       } catch (_) {}
     }
 
+    if (
+      process.env.WA_INSERT_DEBUG === "1" ||
+      process.env.WA_INSERT_DEBUG === "true" ||
+      process.env.DEBUG_WA_COORDS === "1"
+    ) {
+      try {
+        console.log("[pipeline] FINAL - latFinal:", latFinal, "lngFinal:", lngFinal, "source:", fuente);
+      } catch (_) {}
+    }
+
   return {
     ok: true,
     latFinal,

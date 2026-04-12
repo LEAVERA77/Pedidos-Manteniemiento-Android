@@ -4,6 +4,7 @@
  * GET /api/debug/nominatim-test — probar geocodificación (desactivar con ALLOW_DEBUG_NOMINATIM=0).
  * GET /api/debug/nominatim-raw — fetch directo a Nominatim (diagnóstico rate limit / política).
  * GET /api/debug/pedido-last-coords — últimos pedidos WhatsApp con lat/lng (Neon).
+ * GET /api/debug/pedido-last-raw — mismo + columnas opcionales latitud/longitud si existen (diagnóstico esquema).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  * made by leavera77
@@ -397,6 +398,52 @@ router.get("/pedido-last-coords", async (_req, res) => {
        LIMIT 5`
     );
     return res.json({ rows: r.rows || [], count: r.rowCount ?? (r.rows || []).length });
+  } catch (err) {
+    return res.status(500).json({
+      error: String(err?.message || err),
+      code: err?.code || null,
+    });
+  }
+});
+
+/**
+ * GET /api/debug/pedido-last-raw — últimos 5 pedidos WhatsApp; incluye `latitud`/`longitud` solo si existen en `pedidos`.
+ * Desactivar abuso: ALLOW_DEBUG_NOMINATIM=0
+ */
+router.get("/pedido-last-raw", async (_req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "pedido_last_raw_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  try {
+    const meta = await query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'pedidos'`
+    );
+    const cn = new Set((meta.rows || []).map((r) => r.column_name));
+    const fields = ["id", "numero_pedido", "lat", "lng"];
+    if (cn.has("latitud")) fields.push("latitud");
+    if (cn.has("longitud")) fields.push("longitud");
+    fields.push("origen_reclamo");
+    const orderCol = cn.has("fecha_creacion") ? "fecha_creacion" : cn.has("created_at") ? "created_at" : "id";
+    const sql = `SELECT ${fields.join(", ")} FROM pedidos
+       WHERE origen_reclamo = 'whatsapp'
+       ORDER BY ${orderCol} DESC NULLS LAST
+       LIMIT 5`;
+    const r = await query(sql);
+    return res.json({
+      rows: r.rows || [],
+      count: r.rowCount ?? (r.rows || []).length,
+      hint:
+        "Si lat/lng son NULL pero latitud/longitud tienen valores, puede haber desalineación de columnas o triggers.",
+      columns_detected: {
+        latitud: cn.has("latitud"),
+        longitud: cn.has("longitud"),
+        orden: orderCol,
+      },
+    });
   } catch (err) {
     return res.status(500).json({
       error: String(err?.message || err),
