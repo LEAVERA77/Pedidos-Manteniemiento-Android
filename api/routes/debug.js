@@ -8,6 +8,9 @@
  * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
+ *
+ * **Producción:** todo `/api/debug/*` responde 404 salvo `ALLOW_DEBUG_ENDPOINTS=true`.
+ * Los flags `ALLOW_DEBUG_NOMINATIM`, `ALLOW_DEBUG_VERSION`, etc. siguen acotando rutas puntuales cuando el router está habilitado.
  * made by leavera77
  */
 import express from "express";
@@ -34,6 +37,22 @@ function tryGit(cwd, cmd) {
     return null;
   }
 }
+
+function isDebugEndpointsEnabled() {
+  if (process.env.NODE_ENV === "production") {
+    return process.env.ALLOW_DEBUG_ENDPOINTS === "true";
+  }
+  return process.env.ALLOW_DEBUG_ENDPOINTS !== "false";
+}
+
+function requireDebugEndpointsEnabled(_req, res, next) {
+  if (!isDebugEndpointsEnabled()) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  next();
+}
+
+router.use(requireDebugEndpointsEnabled);
 
 router.get("/version", (_req, res) => {
   const envCommit =
