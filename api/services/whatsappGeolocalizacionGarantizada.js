@@ -225,6 +225,18 @@ function coordsEnArgentinaAprox(lat, lng) {
 }
 
 export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFinal) {
+  if (process.env.DEBUG_WA_COORDS === "1") {
+    try {
+      console.log(
+        JSON.stringify({
+          evt: "geoGarantizada_preInsert_strict_input",
+          lat: latFinal,
+          lng: lngFinal,
+          checkPass: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
+        })
+      );
+    } catch (_) {}
+  }
   if (cols.length !== vals.length) {
     throw new Error(`pedido_wa_preinsert_len cols=${cols.length} vals=${vals.length}`);
   }
@@ -273,6 +285,18 @@ export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFin
       `pedido_wa_pre_insert_coords_fatal: ${JSON.stringify(diagnoseWhatsappCoordsForInsert(latIns, lngIns))}`
     );
   }
+  if (process.env.DEBUG_WA_COORDS === "1") {
+    try {
+      console.log(
+        JSON.stringify({
+          evt: "geoGarantizada_preInsert_strict_output",
+          latIns,
+          lngIns,
+          checkPass: parLatLngPasaCheckWhatsappDb(latIns, lngIns),
+        })
+      );
+    } catch (_) {}
+  }
   return { latIns, lngIns, latIdx: latIdxs[0], lngIdx: lngIdxs[0] };
 }
 
@@ -281,10 +305,34 @@ export function preInsertWhatsappPedidoCoordsStrict(cols, vals, latFinal, lngFin
  * @returns {{ latFinal: number, lngFinal: number, latIdx: number, lngIdx: number }}
  */
 export function finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal) {
+  if (process.env.DEBUG_WA_COORDS === "1") {
+    try {
+      console.log(
+        JSON.stringify({
+          evt: "geoGarantizada_finalize_input",
+          lat: latFinal,
+          lng: lngFinal,
+        })
+      );
+    } catch (_) {}
+  }
   const ready = assertPedidoWaCoordsReadyForInsert(latFinal, lngFinal);
   const ens = applyFinalLatLngToPedidoVals(cols, vals, ready.lat, ready.lng);
   const bound = assertPedidoWaValsBound(cols, vals);
   const strict = preInsertWhatsappPedidoCoordsStrict(cols, vals, bound.lat, bound.lng);
+  if (process.env.DEBUG_WA_COORDS === "1") {
+    try {
+      console.log(
+        JSON.stringify({
+          evt: "geoGarantizada_finalize_done",
+          latFinal: strict.latIns,
+          lngFinal: strict.lngIns,
+          latIdx: strict.latIdx,
+          lngIdx: strict.lngIdx,
+        })
+      );
+    } catch (_) {}
+  }
   return {
     latFinal: strict.latIns,
     lngFinal: strict.lngIns,

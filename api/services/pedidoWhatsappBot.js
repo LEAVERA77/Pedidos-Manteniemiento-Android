@@ -531,6 +531,12 @@ export async function crearPedidoDesdeWhatsappBot({
     throw new Error(`pedido_wa_cols_vals_mismatch cols=${cols.length} vals=${vals.length}`);
   }
 
+  const latColIdxPre = cols.indexOf("lat");
+  const lngColIdxPre = cols.indexOf("lng");
+  if (latColIdxPre < 0 || lngColIdxPre < 0) {
+    throw new Error("pedido_wa_insert_sin_columnas_lat_lng");
+  }
+
   // `pedidos`: CHECK solo sobre columnas `lat`/`lng` (migración pedidos_whatsapp_coords_wgs84_check); no hay `latitud`/`longitud` en este INSERT.
   const finalized = finalizePedidoWaInsertCoordinates(cols, vals, latFinal, lngFinal);
   latFinal = finalized.latFinal;
@@ -538,19 +544,40 @@ export async function crearPedidoDesdeWhatsappBot({
   const latIdx = finalized.latIdx;
   const lngIdx = finalized.lngIdx;
 
+  const latParsed = Number(vals[latColIdxPre]);
+  const lngParsed = Number(vals[lngColIdxPre]);
+  if (!Number.isFinite(latParsed) || !Number.isFinite(lngParsed)) {
+    throw new Error(`pedido_wa_insert_coords_invalidas lat=${latParsed} lng=${lngParsed}`);
+  }
+  if (!parLatLngPasaCheckWhatsappDb(latParsed, lngParsed)) {
+    console.warn(
+      JSON.stringify({
+        evt: "pedido_wa_pre_insert_check_warn",
+        lat: latParsed,
+        lng: lngParsed,
+        note: "finalizePedidoWaInsertCoordinates debería haber aplicado fallback AR",
+      })
+    );
+  }
+
   const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
-  if (process.env.DEBUG_WA_PEDIDO_INSERT === "1" || process.env.DEBUG_WA_PEDIDO_INSERT === "true") {
+  const debugWaCoords =
+    process.env.DEBUG_WA_COORDS === "1" ||
+    process.env.DEBUG_WA_PEDIDO_INSERT === "1" ||
+    process.env.DEBUG_WA_PEDIDO_INSERT === "true";
+  if (debugWaCoords) {
     const li = cols.indexOf("lat");
     const gi = cols.indexOf("lng");
     try {
       console.log(
         JSON.stringify({
-          evt: "DEBUG_INSERT",
+          evt: "pedido_wa_pre_insert",
+          colsLen: cols.length,
           latIndex: li,
           lngIndex: gi,
           latValue: li >= 0 ? vals[li] : null,
           lngValue: gi >= 0 ? vals[gi] : null,
-          checkPasses: li >= 0 && gi >= 0 ? parLatLngPasaCheckWhatsappDb(vals[li], vals[gi]) : false,
+          checkPasses: li >= 0 && gi >= 0 ? parLatLngPasaCheckWhatsappDb(Number(vals[li]), Number(vals[gi])) : false,
         })
       );
     } catch (_) {}

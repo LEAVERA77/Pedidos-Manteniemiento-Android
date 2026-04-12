@@ -3,6 +3,7 @@
  * GET /api/debug/version — comparar con `git rev-parse HEAD` local / GitHub.
  * GET /api/debug/nominatim-test — probar geocodificación (desactivar con ALLOW_DEBUG_NOMINATIM=0).
  * GET /api/debug/nominatim-raw — fetch directo a Nominatim (diagnóstico rate limit / política).
+ * GET /api/debug/pedido-last-coords — últimos pedidos WhatsApp con lat/lng (Neon).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  * made by leavera77
@@ -12,6 +13,7 @@ import { readFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { query } from "../db/neon.js";
 
 const router = express.Router();
 
@@ -371,6 +373,34 @@ router.get("/nominatim-health", async (_req, res) => {
       error: String(err?.message || err),
       nominatim_base: base,
       public_fallback_url: pub,
+    });
+  }
+});
+
+/**
+ * GET /api/debug/pedido-last-coords — últimos 5 pedidos con origen WhatsApp (lat/lng en columnas canónicas).
+ * Desactivar abuso: ALLOW_DEBUG_NOMINATIM=0
+ */
+router.get("/pedido-last-coords", async (_req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "pedido_last_coords_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  try {
+    const r = await query(
+      `SELECT id, numero_pedido, lat, lng, origen_reclamo, fecha_creacion
+       FROM pedidos
+       WHERE origen_reclamo = 'whatsapp'
+       ORDER BY fecha_creacion DESC NULLS LAST
+       LIMIT 5`
+    );
+    return res.json({ rows: r.rows || [], count: r.rowCount ?? (r.rows || []).length });
+  } catch (err) {
+    return res.status(500).json({
+      error: String(err?.message || err),
+      code: err?.code || null,
     });
   }
 });

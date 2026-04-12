@@ -157,6 +157,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     let fuente = null;
     /** CP desde resultado directo de Nominatim (forward), si existe. */
     let nominatimPostcode = null;
+    /** WhatsApp: si ya corrimos Simple-q antes del catálogo, el segundo Nominatim usa pipeline completo. */
+    let waNominatimAntesCatalogo = false;
 
     L("\n🔤 PASO 1: Normalización de calle");
     if (calleT && locT) {
@@ -344,10 +346,52 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
     }
 
+    /** WhatsApp: Nominatim free-form / Simple-q ANTES del catálogo (no pisar con coords del padrón). */
+    if (
+      origenWa &&
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleT &&
+      locT
+    ) {
+      waNominatimAntesCatalogo = true;
+      L("\n🌍 WhatsApp — PASO 3 anticipado: Nominatim Simple-q / free-form antes del catálogo");
+      await teleRecord(tele, "nominatim_antes_catalogo_inicio", { modo: "simple_q_whatsapp" });
+      const tEarly = Date.now();
+      const rEarly = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: true });
+      await teleRecord(tele, "nominatim_antes_catalogo_fin", {
+        ms: Date.now() - tEarly,
+        hit: coordsValidasWgs84(rEarly.lat, rEarly.lng),
+        fuente: rEarly.fuente || null,
+      });
+      if (process.env.DEBUG_WA_COORDS === "1") {
+        try {
+          console.log(
+            JSON.stringify({
+              evt: "pipeline_nominatim_antes_catalogo",
+              lat: rEarly.lat,
+              lng: rEarly.lng,
+              fuente: rEarly.fuente,
+            })
+          );
+        } catch (_) {}
+      }
+      if (coordsValidasWgs84(rEarly.lat, rEarly.lng)) {
+        latFinal = rEarly.lat;
+        lngFinal = rEarly.lng;
+        fuente = rEarly.fuente;
+        if (rEarly.nominatimPostcode) nominatimPostcode = rEarly.nominatimPostcode;
+        L(
+          `  ✓ Coordenadas antes de catálogo: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)} (${String(fuente || "?")})`
+        );
+      } else {
+        L("  → Sin coordenadas en Simple-q anticipado; se sigue con catálogo");
+      }
+    }
+
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
-    await teleRecord(tele, "paso2_catalogo_inicio");
-    L("\n📚 PASO 2: Catálogo (socios_catalogo)");
-    const tieneIdentificador = !!(nisT || medT || nmT);
+      await teleRecord(tele, "paso2_catalogo_inicio");
+      L("\n📚 PASO 2: Catálogo (socios_catalogo)");
+      const tieneIdentificador = !!(nisT || medT || nmT);
 
     if (tieneIdentificador) {
       L("  2a — Prioridad NIS / Medidor / nis_medidor");
@@ -443,15 +487,37 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       L("  2b — Sin datos para búsqueda por dirección+nombre en catálogo");
     }
 
+    const nomSimpleQOnly = origenWa ? !waNominatimAntesCatalogo : false;
+
     if (!coordsValidasWgs84(latFinal, lngFinal)) {
-      await teleRecord(tele, "nominatim_calle_inicio", { modo: origenWa ? "simple_q_whatsapp" : "estructurado" });
+      await teleRecord(tele, "nominatim_calle_inicio", {
+        modo: origenWa
+          ? nomSimpleQOnly
+            ? "simple_q_whatsapp"
+            : "estructurado_post_catalogo_o_retry"
+          : "estructurado",
+        simpleQOnly: nomSimpleQOnly,
+      });
       const tNom = Date.now();
-      const r1 = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: origenWa });
+      const r1 = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: nomSimpleQOnly });
       await teleRecord(tele, "nominatim_calle_fin", {
         ms: Date.now() - tNom,
         hit: coordsValidasWgs84(r1.lat, r1.lng),
         fuente: r1.fuente || null,
       });
+      if (process.env.DEBUG_WA_COORDS === "1") {
+        try {
+          console.log(
+            JSON.stringify({
+              evt: "pipeline_nominatim_calle_principal",
+              simpleQOnly: nomSimpleQOnly,
+              lat: r1.lat,
+              lng: r1.lng,
+              fuente: r1.fuente,
+            })
+          );
+        } catch (_) {}
+      }
       if (coordsValidasWgs84(r1.lat, r1.lng)) {
         latFinal = r1.lat;
         lngFinal = r1.lng;
@@ -469,7 +535,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       L("\n↩ Reintento con calle original del pedido (sin volver a PASO 1 diccionario)…");
       const sepOrig = separarNumeroDuplicadoEnCalle(calleOriginalPedido, numT);
       const calleParaRetry = sepOrig.stripped ? sepOrig.calle : calleOriginalPedido;
-      const r2 = await ejecutarNominatim3_3b_4(calleParaRetry, { simpleQOnly: origenWa });
+      const r2 = await ejecutarNominatim3_3b_4(calleParaRetry, { simpleQOnly: nomSimpleQOnly });
       if (coordsValidasWgs84(r2.lat, r2.lng)) {
         latFinal = r2.lat;
         lngFinal = r2.lng;
@@ -751,6 +817,21 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       lngFinal = FALLBACK_WGS84_ARGENTINA.lng;
       fuente = fuente || "fallback_argentina_normalizado_fin_pipeline";
       L("\n⚠️ Normalización final: coords no válidas para CHECK WhatsApp → centro Argentina (auditable).");
+    }
+
+    if (process.env.DEBUG_WA_COORDS === "1") {
+      try {
+        console.log(
+          JSON.stringify({
+            evt: "pipeline_geocod_final",
+            latFinal,
+            lngFinal,
+            fuente,
+            waNominatimAntesCatalogo,
+            checkPasa: parLatLngPasaCheckWhatsappDb(latFinal, lngFinal),
+          })
+        );
+      } catch (_) {}
     }
 
   return {
