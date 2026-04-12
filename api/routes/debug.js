@@ -5,6 +5,7 @@
  * GET /api/debug/nominatim-raw — fetch directo a Nominatim (diagnóstico rate limit / política).
  * GET /api/debug/pedido-last-coords — últimos pedidos WhatsApp con lat/lng (Neon).
  * GET /api/debug/pedido-last-raw — mismo + columnas opcionales latitud/longitud si existen (diagnóstico esquema).
+ * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  * made by leavera77
@@ -15,6 +16,7 @@ import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { query } from "../db/neon.js";
+import { buscarCentroDeCalle } from "../services/nominatimClient.js";
 
 const router = express.Router();
 
@@ -449,6 +451,29 @@ router.get("/pedido-last-raw", async (_req, res) => {
       error: String(err?.message || err),
       code: err?.code || null,
     });
+  }
+});
+
+/**
+ * GET /api/debug/centro-calle-test?calle=…&localidad=…&provincia=… (provincia opcional)
+ */
+router.get("/centro-calle-test", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({ error: "centro_calle_test_disabled" });
+  }
+  const calle = req.query.calle != null ? String(req.query.calle).trim() : "";
+  const localidad = req.query.localidad != null ? String(req.query.localidad).trim() : "";
+  const provincia = req.query.provincia != null ? String(req.query.provincia).trim() : "";
+  if (calle.length < 2 || localidad.length < 2) {
+    return res.status(400).json({
+      error: "Faltan parámetros: calle, localidad (provincia opcional)",
+    });
+  }
+  try {
+    const result = await buscarCentroDeCalle(calle, localidad, provincia);
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 });
 

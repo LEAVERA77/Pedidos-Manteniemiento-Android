@@ -384,6 +384,72 @@ export function pickFreeFormHitForWhatsapp(hits, opts = {}) {
   return sorted[0] || null;
 }
 
+/**
+ * Habilita el fallback "centro de calle" (sin número) tras fallar geocodificación con puerta.
+ * Default: activo. Desactivar: NOMINATIM_FALLBACK_CENTRO_CALLE=0|false|off
+ */
+export function nominatimFallbackCentroCalleEnabled() {
+  const v = process.env.NOMINATIM_FALLBACK_CENTRO_CALLE;
+  if (v === undefined || v === null || String(v).trim() === "") return true;
+  const s = String(v).trim().toLowerCase();
+  return !(s === "0" || s === "false" || s === "no" || s === "off");
+}
+
+/**
+ * Aproximación: punto en la vía vía Nominatim sin número de puerta (útil si el número no existe en OSM).
+ * @param {string} calle
+ * @param {string} localidad
+ * @param {string} [provincia]
+ * @returns {Promise<{ hit: boolean, lat?: number, lng?: number, display_name?: string, source?: string, q_elegida?: string, omitCountryCodes?: boolean, reason?: string }>}
+ */
+export async function buscarCentroDeCalle(calle, localidad, provincia = "") {
+  const c = String(calle || "").trim();
+  const loc = String(localidad || "").trim();
+  if (c.length < 2 || loc.length < 2) {
+    return { hit: false, reason: "calle_o_localidad_corta" };
+  }
+
+  const prov = String(provincia || "").trim();
+  const geoOpts = {
+    filterLocalidad: loc,
+    filterState: prov.length >= 2 ? prov : "",
+    filterCalle: c,
+    filterCalleAlt: c,
+  };
+
+  const queries = [];
+  if (prov.length >= 2) {
+    queries.push(`${c}, ${loc}, ${prov}, Argentina`);
+    queries.push(`${c} ${loc} ${prov} Argentina`);
+  }
+  queries.push(`${c}, ${loc}, Argentina`);
+  queries.push(`${c} ${loc} Argentina`);
+
+  const uniqueQ = [...new Set(queries.map((q) => q.replace(/\s+/g, " ").trim()).filter((q) => q.length >= 4))];
+
+  for (const qx of uniqueQ) {
+    for (const omitCountryCodes of [false, true]) {
+      const hits = await nominatimSearchFreeForm(qx, { limit: 10, omitCountryCodes, addressdetails: true });
+      const pick = pickFreeFormHitForWhatsapp(hits, geoOpts);
+      const hitObj = pick || (Array.isArray(hits) && hits.length ? hits[0] : null);
+      if (!hitObj) continue;
+      const la = Number(hitObj.lat);
+      const lo = Number(hitObj.lon);
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+      return {
+        hit: true,
+        lat: la,
+        lng: lo,
+        display_name: String(hitObj.display_name || qx).trim(),
+        source: "centro_de_calle",
+        q_elegida: qx,
+        omitCountryCodes,
+      };
+    }
+  }
+  return { hit: false, reason: "sin_hits_nominatim" };
+}
+
 function nominatimBaseParams() {
   return new URLSearchParams({
     format: "json",

@@ -13,12 +13,14 @@ import {
   existeSocioCatalogoPorIdentificadorSinCoords,
 } from "./buscarCoordenadasPorNisMedidor.js";
 import {
+  buscarCentroDeCalle,
   geocodeAddressArgentina,
   geocodeCalleNumeroLocalidadArgentina,
   geocodeDomicilioLineaLibreArgentina,
   geocodeDomicilioSimpleQArgentina,
   geocodeLocalityViewboxArgentina,
   getNominatimBaseUrl,
+  nominatimFallbackCentroCalleEnabled,
   reverseGeocodeArgentina,
 } from "./nominatimClient.js";
 import {
@@ -541,6 +543,51 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         lngFinal = r2.lng;
         fuente = r2.fuente;
         if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
+      }
+    }
+
+    if (
+      nominatimFallbackCentroCalleEnabled() &&
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleT &&
+      locT
+    ) {
+      L("\n📍 PASO 3c: Fallback centro de calle (Nominatim sin número de puerta)");
+      await teleRecord(tele, "fallback_centro_calle_inicio", {
+        calle: String(calleT).slice(0, 120),
+        localidad: String(locT).slice(0, 120),
+      });
+      const tCc = Date.now();
+      let cc = { hit: false };
+      try {
+        cc = await buscarCentroDeCalle(
+          calleT,
+          locT,
+          provinciaEfectiva.length >= 2 ? provinciaEfectiva : ""
+        );
+      } catch (err) {
+        L(`  ⚠️ Centro de calle: ${err?.message || err}`);
+        await teleRecord(tele, "fallback_centro_calle_error", {
+          ms: Date.now() - tCc,
+          err: String(err?.message || err).slice(0, 300),
+        });
+      }
+      const okCc = cc && cc.hit === true && coordsValidasWgs84(cc.lat, cc.lng);
+      await teleRecord(tele, "fallback_centro_calle_fin", {
+        ms: Date.now() - tCc,
+        hit: okCc,
+        q: cc.q_elegida || null,
+        reason: cc.reason || null,
+      });
+      if (okCc) {
+        latFinal = cc.lat;
+        lngFinal = cc.lng;
+        fuente = "centro_de_calle_nominatim";
+        L(
+          `[pipeline] Centro de calle HIT: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)} — ${String(cc.display_name || "").slice(0, 140)}`
+        );
+      } else {
+        L("  → Centro de calle sin resultado útil (sigue pipeline: vecinos / localidad / …)");
       }
     }
 
