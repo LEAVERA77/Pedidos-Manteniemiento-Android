@@ -106,20 +106,128 @@ async function filasTenantLocalidades(tenantId) {
   }
 }
 
-/**
- * Si hay catálogo (tabla tenant_localidades y/o localidades en socios_catalogo), exige coincidencia o sugerencias.
- * @returns {Promise<{ ok: boolean, skipped?: boolean, nombreCanonico?: string, meta?: object, msg?: string }>}
- */
-export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre) {
-  const tid = Number(tenantId);
-  if (!Number.isFinite(tid) || tid < 1) {
-    return { ok: true, skipped: true, nombreCanonico: String(rawNombre || "").trim() };
+/** Georef usa a veces nombres más largos (p. ej. Tierra del Fuego…). */
+function coincideProvinciaGeoref(dbNorm, userNorm) {
+  if (!dbNorm || !userNorm) return false;
+  if (dbNorm === userNorm) return true;
+  if (dbNorm.startsWith(userNorm + ",")) return true;
+  if (dbNorm.startsWith(userNorm + " ")) return true;
+  return false;
+}
+
+async function tieneFilasLocalidadesArgentinas() {
+  if (!(await tableExists("localidades_argentinas"))) return false;
+  try {
+    const r = await query(`SELECT 1 FROM localidades_argentinas LIMIT 1`);
+    return r.rows.length > 0;
+  } catch (_) {
+    return false;
   }
-  const normIn = normalizarNombreLocalidad(rawNombre);
-  if (normIn.length < 2) {
-    return { ok: false, msg: "La *ciudad o localidad* es demasiado corta." };
+}
+
+async function validarEnArgentinaConProvincia(tenantId, normNombre, normProv, rawDisplay, provinciaNombreOpt) {
+  const q = await query(
+    `SELECT nombre, nombre_normalizado, provincia, provincia_normalizado, lat, lng, codigo_postal
+     FROM localidades_argentinas WHERE nombre_normalizado = $1`,
+    [normNombre]
+  );
+  const hit = (q.rows || []).find((r) => coincideProvinciaGeoref(String(r.provincia_normalizado || ""), normProv));
+  if (hit) {
+    return { ok: true, nombreCanonico: hit.nombre, meta: hit, fuente: "georef" };
   }
 
+  const filasT = await filasTenantLocalidades(Number(tenantId));
+  for (const row of filasT) {
+    const nn = String(row.nombre_normalizado || "").trim() || normalizarNombreLocalidad(String(row.nombre || ""));
+    if (nn !== normNombre) continue;
+    const pv = row.provincia != null ? normalizarNombreLocalidad(String(row.provincia)) : "";
+    if (pv && coincideProvinciaGeoref(pv, normProv)) {
+      return { ok: true, nombreCanonico: String(row.nombre || "").trim(), meta: row, fuente: "tenant" };
+    }
+  }
+
+  const len = normNombre.length;
+  const minL = Math.max(2, len - 3);
+  const maxL = len + 6;
+  const sug = await query(
+    `SELECT nombre, nombre_normalizado FROM localidades_argentinas
+     WHERE provincia_normalizado LIKE $1 || '%'
+       AND char_length(nombre_normalizado) BETWEEN $2 AND $3`,
+    [normProv, minL, maxL]
+  );
+  const scored = (sug.rows || []).map((r) => ({
+    r,
+    d: levenshtein(normNombre, String(r.nombre_normalizado || "")),
+  }));
+  scored.sort((a, b) => a.d - b.d);
+  const top = scored.slice(0, 6).filter((x) => x.d <= 4);
+  const nombres = top.map((x) => x.r.nombre).filter(Boolean);
+  const lista = nombres.length ? nombres.map((x) => `*${x}*`).join(", ") : "";
+  const provTitulo = String(provinciaNombreOpt || "").trim() || "esa provincia";
+  return {
+    ok: false,
+    msg:
+      `La localidad *"${String(rawDisplay || "").trim()}"* no figura en *${provTitulo}* según el padrón nacional.\n\n` +
+      (lista ? `¿Quisiste decir: ${lista}?\n\n` : "") +
+      `Revisá el nombre o tocá *atrás* y elegí otra provincia si corresponde.`,
+  };
+}
+
+async function validarEnArgentinaSinProvincia(normIn, rawDisplay) {
+  const ex = await query(
+    `SELECT nombre, nombre_normalizado, provincia FROM localidades_argentinas WHERE nombre_normalizado = $1 LIMIT 40`,
+    [normIn]
+  );
+  if (ex.rows?.length) {
+    const row = ex.rows[0];
+    return { ok: true, nombreCanonico: row.nombre, meta: row, fuente: "georef" };
+  }
+
+  const pref = await query(
+    `SELECT nombre, nombre_normalizado FROM localidades_argentinas
+     WHERE nombre_normalizado LIKE $1 || '%' ORDER BY char_length(nombre_normalizado) ASC LIMIT 20`,
+    [normIn]
+  );
+  if (pref.rows?.length === 1) {
+    const r = pref.rows[0];
+    return { ok: true, nombreCanonico: r.nombre, meta: r, fuente: "georef" };
+  }
+  if (pref.rows?.length > 1) {
+    const scored = pref.rows.map((r) => ({
+      r,
+      d: levenshtein(normIn, String(r.nombre_normalizado || "")),
+    }));
+    scored.sort((a, b) => a.d - b.d);
+    const best = scored[0];
+    const maxDist = normIn.length <= 8 ? 2 : 3;
+    if (best && best.d <= maxDist) {
+      return { ok: true, nombreCanonico: best.r.nombre, meta: best.r, fuente: "georef" };
+    }
+  }
+
+  const broad = await query(
+    `SELECT nombre, nombre_normalizado FROM localidades_argentinas
+     WHERE nombre_normalizado LIKE '%' || $1 || '%' LIMIT 25`,
+    [normIn.length >= 4 ? normIn.slice(0, 4) : normIn]
+  );
+  if (broad.rows?.length) {
+    const scored = broad.rows.map((r) => ({
+      r,
+      d: levenshtein(normIn, String(r.nombre_normalizado || "")),
+    }));
+    scored.sort((a, b) => a.d - b.d);
+    const best = scored[0];
+    const maxDist = normIn.length <= 8 ? 3 : 4;
+    if (best && best.d <= maxDist) {
+      return { ok: true, nombreCanonico: best.r.nombre, meta: best.r, fuente: "georef" };
+    }
+  }
+
+  return null;
+}
+
+async function validarEnTenantYSocios(tenantId, rawNombre, normIn) {
+  const tid = Number(tenantId);
   const [filasCat, desdeSocios] = await Promise.all([filasTenantLocalidades(tid), localidadesDistinctSociosCatalogo(tid)]);
 
   const candidatos = new Map();
@@ -140,7 +248,7 @@ export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre) {
 
   if (candidatos.has(normIn)) {
     const c = candidatos.get(normIn);
-    return { ok: true, nombreCanonico: c.nombre, meta: c.row };
+    return { ok: true, nombreCanonico: c.nombre, meta: c.row, fuente: "tenant" };
   }
 
   const prefijos = [];
@@ -149,7 +257,7 @@ export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre) {
   }
   if (prefijos.length === 1) {
     const c = prefijos[0];
-    return { ok: true, nombreCanonico: c.nombre, meta: c.row };
+    return { ok: true, nombreCanonico: c.nombre, meta: c.row, fuente: "tenant" };
   }
 
   const scored = [];
@@ -161,7 +269,7 @@ export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre) {
   const best = scored[0];
   const maxDist = normIn.length <= 8 ? 2 : 3;
   if (best && best.d <= maxDist) {
-    return { ok: true, nombreCanonico: best.c.nombre, meta: best.c.row };
+    return { ok: true, nombreCanonico: best.c.nombre, meta: best.c.row, fuente: "tenant" };
   }
 
   const sugeridas = scored
@@ -176,6 +284,49 @@ export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre) {
       `¿Quisiste decir alguna de estas?: ${lista}\n\n` +
       `Escribí de nuevo el nombre *completo* de la localidad o *atrás* para volver.`,
   };
+}
+
+/**
+ * 1) Catálogo nacional `localidades_argentinas` (Georef) si está poblado.
+ * 2) `tenant_localidades` + socios (cooperativa).
+ * @param {string|null|undefined} provinciaNombreOpt — si viene, filtra por provincia (paso posterior al nombre de ciudad).
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, nombreCanonico?: string, meta?: object, msg?: string, fuente?: string }>}
+ */
+export async function validarLocalidadParaChatWhatsapp(tenantId, rawNombre, provinciaNombreOpt = null) {
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) {
+    return { ok: true, skipped: true, nombreCanonico: String(rawNombre || "").trim() };
+  }
+  const normIn = normalizarNombreLocalidad(rawNombre);
+  if (normIn.length < 2) {
+    return { ok: false, msg: "La *ciudad o localidad* es demasiado corta." };
+  }
+
+  const hasAr = await tieneFilasLocalidadesArgentinas();
+  const normProv = provinciaNombreOpt != null ? normalizarNombreLocalidad(String(provinciaNombreOpt)) : null;
+
+  if (hasAr && normProv && normProv.length >= 2) {
+    return validarEnArgentinaConProvincia(tid, normIn, normProv, rawNombre, provinciaNombreOpt);
+  }
+
+  if (hasAr && !normProv) {
+    const ar = await validarEnArgentinaSinProvincia(normIn, rawNombre);
+    if (ar?.ok) return ar;
+
+    const tenantR = await validarEnTenantYSocios(tid, rawNombre, normIn);
+    if (tenantR.skipped) {
+      return {
+        ok: false,
+        msg:
+          `No encontré *"${String(rawNombre || "").trim()}*" en el padrón nacional de localidades.\n\n` +
+          `Escribí el nombre oficial (como en mapa o DNI) o *atrás* para volver.`,
+      };
+    }
+    if (tenantR.ok) return tenantR;
+    return tenantR;
+  }
+
+  return validarEnTenantYSocios(tid, rawNombre, normIn);
 }
 
 /**

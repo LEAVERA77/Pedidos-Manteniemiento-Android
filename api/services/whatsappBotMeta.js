@@ -2197,7 +2197,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, `Respondé con un *número del 1 al ${PROVINCIAS_ARG_BOT.length}* según la lista de provincias.`, tid, phoneNumberId);
       return;
     }
-    sess.addrProvincia = PROVINCIAS_ARG_BOT[n - 1];
+    const provNombre = PROVINCIAS_ARG_BOT[n - 1];
+    const vLocProv = await validarLocalidadParaChatWhatsapp(tid, sess.addrCiudad, provNombre);
+    if (!vLocProv.ok) {
+      await reply(phone, vLocProv.msg, tid, phoneNumberId);
+      return;
+    }
+    sess.addrCiudad = vLocProv.nombreCanonico || sess.addrCiudad;
+    sess.addrProvincia = provNombre;
     delete sess.addrCodigoPostal;
     sess.step = "awaiting_addr_calle";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
