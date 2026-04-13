@@ -1095,10 +1095,30 @@ export function hasMeaningfulHouseNumber(numeroStr) {
 }
 
 /**
- * Pipeline “tipo Nominatim Simple” para domicilio estructurado: solo `q` + JSON (throttle global del módulo).
- * Segmentos lógicos: `calleSinPrefijoTipoViaParaQuery(calle)` + número + localidad → variantes de `q`.
- * Modo WhatsApp (`NOMINATIM_WHATSAPP_SEARCH_MODE=free-form`, default): búsqueda libre tipo UI web + omisión opcional de countrycodes.
- * Sin búsqueda estructurada street/city en este paso, sin interpolación, sin viewbox previo (menos llamadas; política OSM).
+ * Misma idea que escribir en la caja de búsqueda de nominatim.openstreetmap.org: una sola línea `q`,
+ * minúsculas, sin comas ni signos, espacios simples (p. ej. "avenida argentina 1162 maria grande").
+ * @param {...string} segments
+ * @returns {string}
+ */
+export function normalizarQNominatimUiWeb(...segments) {
+  const s = segments
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return String(s)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Pipeline “tipo Nominatim Simple” para domicilio: solo parámetro `q` en /search (nunca street/city separados aquí).
+ * Prioridad 1: queries {@link normalizarQNominatimUiWeb} alineadas a la UI web; luego variantes con comas/Argentina.
+ * Segmentos auxiliares: `calleSinPrefijoTipoViaParaQuery(calle)` para coincidencias y filtros.
+ * Modo WhatsApp (`NOMINATIM_WHATSAPP_SEARCH_MODE=free-form`, default): `nominatimSearchFreeForm` + omisión opcional de countrycodes.
  *
  * @param {{ calle: string, numero?: string, localidad: string, stateOrProvince?: string, postalCode?: string }} o
  * @returns {Promise<{ lat: number, lng: number, displayName: string, barrio?: string, postcode?: string, audit?: object } | null>}
@@ -1149,7 +1169,32 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     if (s.length >= 4 && !qList.includes(s)) qList.push(s);
   };
 
-  /** Queries cortas primero (la UI web suele acertar; algunas queries largas “… Entre Ríos Argentina” devuelven []). */
+  /** Igual que la UI web: una sola cadena sin comas (prioridad máxima en qListOrdered). */
+  const webStyleQs = [];
+  if (numPart) {
+    const wFull = normalizarQNominatimUiWeb(calleFull, numPart, loc);
+    if (wFull.length >= 4) webStyleQs.push(wFull);
+    const wCore = normalizarQNominatimUiWeb(calleCore, numPart, loc);
+    if (wCore.length >= 4 && wCore !== wFull) webStyleQs.push(wCore);
+    if (state.length >= 2) {
+      const wSt = normalizarQNominatimUiWeb(calleFull, numPart, loc, state);
+      if (wSt.length >= 4 && wSt !== wFull) webStyleQs.push(wSt);
+      webStyleQs.push(normalizarQNominatimUiWeb(calleFull, numPart, loc, state, "argentina"));
+      const wCoreSt = normalizarQNominatimUiWeb(calleCore, numPart, loc, state, "argentina");
+      if (wCoreSt.length >= 4 && !webStyleQs.includes(wCoreSt)) webStyleQs.push(wCoreSt);
+    } else {
+      const wAr = normalizarQNominatimUiWeb(calleFull, numPart, loc, "argentina");
+      if (wAr.length >= 4 && wAr !== wFull) webStyleQs.push(wAr);
+    }
+  } else {
+    const w0 = normalizarQNominatimUiWeb(calleFull, loc);
+    if (w0.length >= 4) webStyleQs.push(w0);
+    const wAr = normalizarQNominatimUiWeb(calleFull, loc, "argentina");
+    if (wAr.length >= 4 && wAr !== w0) webStyleQs.push(wAr);
+  }
+  const webStyleUnique = [...new Set(webStyleQs)];
+
+  /** Queries cortas (algunas UI devuelven mejor sin “Argentina” al final). */
   const priorityMinimal = [];
   if (numPart) {
     priorityMinimal.push(`${calleCore} ${numPart} ${loc}`.replace(/\s+/g, " ").trim());
@@ -1177,7 +1222,9 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     pushQ(`${calleCore}, ${loc}`);
   }
 
-  const qListOrdered = [...new Set([...priorityMinimal.filter((x) => x.length >= 4), ...qList])];
+  const qListOrdered = [
+    ...new Set([...webStyleUnique, ...priorityMinimal.filter((x) => x.length >= 4), ...qList]),
+  ];
 
   const geoOptsBase = {
     filterLocalidad: loc,
@@ -1194,13 +1241,20 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     const barrio = barrioDesdeNominatimAddress(hit.address);
     const postcode = postcodeDesdeNominatimAddress(hit.address);
+    const qUiWeb = webStyleUnique.includes(String(qx || "").trim());
     return {
       lat,
       lng,
       displayName: String(hit.display_name || qx).trim(),
       ...(barrio ? { barrio } : {}),
       ...(postcode ? { postcode } : {}),
-      audit: { source: "nominatim_simple_q_freeform", q: qx, approximate: false, ...auditExtra },
+      audit: {
+        source: "nominatim_simple_q_freeform",
+        q: qx,
+        approximate: false,
+        ...(qUiWeb ? { q_format: "nominatim_ui_web" } : {}),
+        ...auditExtra,
+      },
     };
   };
 
