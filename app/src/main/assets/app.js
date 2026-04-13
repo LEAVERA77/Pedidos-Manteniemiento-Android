@@ -6537,6 +6537,16 @@ function buildMapViewCtx() {
     };
 }
 
+async function refreshMapAdminBaseMarkerIfReady() {
+    try {
+        if (!mapaInicializado || !app.map) return;
+        const mod = await loadMapViewModule();
+        if (typeof mod.gnRefreshMarcadorUbicacionBaseAdmin === 'function') {
+            await mod.gnRefreshMarcadorUbicacionBaseAdmin();
+        }
+    } catch (_) {}
+}
+
 async function initMap() {
     const mod = await loadMapViewModule();
     mod.setMapViewContext(buildMapViewCtx());
@@ -11744,6 +11754,7 @@ async function cargarConfigEmpresa() {
         try {
             syncDerivacionesTercerosWrap();
         } catch (_) {}
+        void refreshMapAdminBaseMarkerIfReady();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();

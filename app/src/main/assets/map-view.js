@@ -4,6 +4,11 @@
  */
 let ctx = null;
 
+/** Marcador fijo de la ubicación central del tenant (admin). */
+let _gnAdminBaseMarker = null;
+/** Control de coordenadas del cursor (esquina inferior derecha). */
+let _gnCursorCoordsControl = null;
+
 export function setMapViewContext(c) {
     ctx = c;
 }
@@ -99,6 +104,106 @@ function showMapCenterMissingMessage(onRetry) {
     el.appendChild(wrap);
 }
 
+function gnRemoveAdminBaseMarker(map) {
+    if (_gnAdminBaseMarker && map) {
+        try {
+            map.removeLayer(_gnAdminBaseMarker);
+        } catch (_) {}
+    }
+    _gnAdminBaseMarker = null;
+}
+
+function gnEnsurePaneAdminBase(map) {
+    if (!map.getPane('gnPaneAdminBase')) {
+        map.createPane('gnPaneAdminBase');
+        map.getPane('gnPaneAdminBase').style.zIndex = 640;
+    }
+}
+
+/**
+ * Punto de referencia fijo: misma fuente que el centro del mapa (API / Android / EMPRESA_CFG).
+ * No se muestra en la vista genérica web sin tenant (-34,-64).
+ */
+function gnDrawAdminBaseMarker(map, L, lat, lng, sourceTag) {
+    gnRemoveAdminBaseMarker(map);
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+    gnEnsurePaneAdminBase(map);
+    const icon = L.divIcon({
+        className: 'gn-admin-base-marker-wrap',
+        html: '<div class="gn-admin-base-marker-dot" style="width:14px;height:14px;background:#f4511e;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+    });
+    const tip =
+        'Base del administrador' +
+        (sourceTag ? ` (${sourceTag === 'api' ? 'API' : sourceTag === 'android' ? 'dispositivo' : sourceTag === 'empresa_cfg' ? 'config' : sourceTag})` : '');
+    _gnAdminBaseMarker = L.marker([la, lo], { icon, pane: 'gnPaneAdminBase', interactive: true })
+        .bindTooltip(tip, { direction: 'top' })
+        .addTo(map);
+}
+
+function gnRemoveCursorCoordsControl(map) {
+    if (_gnCursorCoordsControl && map) {
+        try {
+            map.removeControl(_gnCursorCoordsControl);
+        } catch (_) {}
+    }
+    _gnCursorCoordsControl = null;
+}
+
+function gnAttachCursorCoordsControl(L, map) {
+    gnRemoveCursorCoordsControl(map);
+    const CoordCtrl = L.Control.extend({
+        options: { position: 'bottomright' },
+        onAdd(m) {
+            const c = L.DomUtil.create('div', 'gn-map-cursor-coords leaflet-bar');
+            c.setAttribute('aria-hidden', 'true');
+            c.style.cssText =
+                'margin:8px!important;background:rgba(15,23,42,.88)!important;color:#f1f5f9!important;padding:6px 10px!important;border-radius:6px!important;font:12px/1.35 ui-monospace,monospace,system-ui!important;pointer-events:none!important;box-shadow:0 1px 6px rgba(0,0,0,.25)!important;min-width:15rem';
+            c.innerHTML =
+                '📍 <span class="gn-cc-lat">—</span>, <span class="gn-cc-lng">—</span>';
+            this._onMove = (e) => {
+                const elat = c.querySelector('.gn-cc-lat');
+                const elng = c.querySelector('.gn-cc-lng');
+                if (elat) elat.textContent = e.latlng.lat.toFixed(7);
+                if (elng) elng.textContent = e.latlng.lng.toFixed(7);
+            };
+            this._onOut = () => {
+                const elat = c.querySelector('.gn-cc-lat');
+                const elng = c.querySelector('.gn-cc-lng');
+                if (elat) elat.textContent = '—';
+                if (elng) elng.textContent = '—';
+            };
+            m.on('mousemove', this._onMove);
+            m.on('mouseout', this._onOut);
+            return c;
+        },
+        onRemove(m) {
+            m.off('mousemove', this._onMove);
+            m.off('mouseout', this._onOut);
+        }
+    });
+    _gnCursorCoordsControl = new CoordCtrl();
+    map.addControl(_gnCursorCoordsControl);
+}
+
+/**
+ * Vuelve a leer la ubicación central y redibuja el marcador (tras cambiar EMPRESA_CFG / API).
+ */
+export async function gnRefreshMarcadorUbicacionBaseAdmin() {
+    if (!ctx || !ctx.app || !ctx.app.map) return;
+    const L = ctx.L;
+    const map = ctx.app.map;
+    const center = await resolveMapCenterLatLngZoom();
+    if (center && Number.isFinite(center.lat) && Number.isFinite(center.lng)) {
+        gnDrawAdminBaseMarker(map, L, center.lat, center.lng, center.source || '');
+    } else {
+        gnRemoveAdminBaseMarker(map);
+    }
+}
+
 export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
@@ -162,6 +267,8 @@ export async function runInitMap() {
 
     if (ctx.app.map) {
         try {
+            _gnAdminBaseMarker = null;
+            _gnCursorCoordsControl = null;
             ctx.app.map.remove();
         } catch (_) {}
         ctx.app.map = null;
@@ -225,6 +332,10 @@ export async function runInitMap() {
     gnAttachBaseMapLayers(ctx.app.map);
 
     const map = ctx.app.map;
+    gnAttachCursorCoordsControl(L, map);
+    if (center && Number.isFinite(latBase) && Number.isFinite(lngBase)) {
+        gnDrawAdminBaseMarker(map, L, latBase, lngBase, center.source || '');
+    }
     try {
         if (ctx.esAndroidWebViewMapa() && map.scrollWheelZoom && typeof map.scrollWheelZoom.enable === 'function') {
             map.scrollWheelZoom.enable();
@@ -361,4 +472,8 @@ export async function runInitMap() {
     } else {
         ctx.solicitarUbicacion(true, false);
     }
+}
+
+if (typeof window !== 'undefined') {
+    window.gnRefreshMarcadorUbicacionBaseAdmin = gnRefreshMarcadorUbicacionBaseAdmin;
 }
