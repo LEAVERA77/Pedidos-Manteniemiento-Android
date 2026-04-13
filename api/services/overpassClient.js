@@ -9,41 +9,19 @@ import {
   escapeOverpassRegexLiteral,
   normalizarParaBusqueda,
 } from "./interpolacionAlturas.js";
+import { postOverpassInterpreter } from "./overpassHttp.js";
 
 export { obtenerGeometriaCalle } from "./interpolacionAlturas.js";
 
-function overpassInterpreterUrl() {
-  return String(process.env.OVERPASS_API_URL || "https://overpass-api.de/api/interpreter").replace(/\/+$/, "");
-}
-
-function overpassTimeoutMs() {
-  const v = parseInt(String(process.env.OVERPASS_TIMEOUT_MS || "10000"), 10);
-  return Number.isFinite(v) && v >= 3000 && v <= 120000 ? v : 10000;
-}
-
 /**
- * POST Overpass interpreter; timeout AbortSignal.
+ * POST Overpass interpreter; reintentos 429/502/503/504 vía overpassHttp.
  * @param {string} query
  * @returns {Promise<{ elements?: unknown[] } | null>}
  */
 export async function ejecutarConsultaOverpass(query) {
-  const url = overpassInterpreterUrl();
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), overpassTimeoutMs());
-  try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: ac.signal,
-    });
-    if (!r.ok) return null;
-    return await r.json().catch(() => null);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(t);
-  }
+  const result = await postOverpassInterpreter(query, { label: "addr:housenumber / vecinos" });
+  if (!result.ok || !result.data) return null;
+  return result.data;
 }
 
 /**

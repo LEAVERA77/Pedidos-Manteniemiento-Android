@@ -14,8 +14,11 @@ import {
   getNominatimBaseUrl,
 } from "./nominatimClient.js";
 import { iso3166ArgDesdeNombreProvincia } from "../utils/provinciaArgentinaIso.js";
-
-const OVERPASS_API = "https://overpass-api.de/api/interpreter";
+import {
+  postOverpassInterpreter,
+  sleep,
+  overpassGapBetweenQueriesMs,
+} from "./overpassHttp.js";
 
 /** Elige el primer resultado Nominatim cuya provincia coincide con la esperada (evita homónimos entre jurisdicciones). */
 function pickHitProvincia(hits, provClean) {
@@ -266,31 +269,41 @@ export async function obtenerGeometriaCalle(calle, localidad, provincia) {
     );
   }
 
-  const intentarQuery = async (query, label) => {
-    console.info("[interpolacion-alturas] Overpass (%s)", label);
-    const response = await fetch(OVERPASS_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    });
-    if (!response.ok) {
-      console.warn("[interpolacion-alturas] Overpass HTTP error:", response.status);
-      return null;
-    }
-    const data = await response.json();
-    const elements = data.elements || [];
-    if (elements.length > 0) {
-      const way = elements[0];
-      if (way.geometry && way.geometry.length >= 2) {
-        const geometry = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
-        const tags = way.tags && typeof way.tags === "object" ? way.tags : {};
-        return { geometry, tags };
-      }
-    }
-    return null;
+  const pickLongestWayGeometry = (elements) => {
+    const ways = (elements || []).filter((el) => el.type === "way" && el.geometry && el.geometry.length >= 2);
+    if (!ways.length) return null;
+    ways.sort((a, b) => (b.geometry?.length || 0) - (a.geometry?.length || 0));
+    const way = ways[0];
+    const geometry = way.geometry.map((node) => ({ lat: node.lat, lng: node.lon }));
+    const tags = way.tags && typeof way.tags === "object" ? way.tags : {};
+    return { geometry, tags };
   };
 
+  const intentarQuery = async (query, label) => {
+    console.info("[interpolacion-alturas] Overpass (%s)", label);
+    const result = await postOverpassInterpreter(query, { label });
+    if (!result.ok) {
+      if (result.status === 429) {
+        console.warn(
+          "[interpolacion-alturas] Overpass 429 (Too Many Requests) tras reintentos — %s. Aumentá OVERPASS_GAP_BETWEEN_QUERIES_MS o esperá unos minutos.",
+          label
+        );
+      } else if (result.status) {
+        console.warn("[interpolacion-alturas] Overpass HTTP error:", result.status);
+      }
+      return null;
+    }
+    const data = result.data || {};
+    const elements = data.elements || [];
+    return pickLongestWayGeometry(elements);
+  };
+
+  const gapMs = overpassGapBetweenQueriesMs();
+
   for (let i = 0; i < variantes.length; i++) {
+    if (i > 0 && gapMs > 0) {
+      await sleep(gapMs);
+    }
     const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
     const areaBlock = bloquesAreaLocalidadProvincia(locEscaped, provClean);
     const query = `
@@ -328,6 +341,9 @@ out geom;
   const coordsLoc = await obtenerCoordsLocalidad(locClean, "");
 
   for (let i = 0; i < variantes.length; i++) {
+    if (i > 0 && gapMs > 0) {
+      await sleep(gapMs);
+    }
     const varianteBusqueda = escapeOverpassRegexLiteral(variantes[i]);
     const queryFallback = `
 [out:json][timeout:25];
