@@ -161,6 +161,10 @@ function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
     if (sess && WHATSAPP_PASOS_CERO_ES_DATO.has(sess.step)) return false;
     return true;
   }
+  if (lower === "cancelar" || lower === "cancel") {
+    if (sess && sess.step === "human_chat") return false;
+    return true;
+  }
   return false;
 }
 
@@ -1698,8 +1702,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     pendOpinionActiva = await hasPendingClienteOpinion(tid, phone);
   } catch (_) {}
 
-  // En chat humano (Otros), "Hola" es mensaje del cliente, no reinicio del menú automático.
-  if (/\bhola\b/i.test(String(text || "").trim()) && sessions.get(sk)?.step !== "human_chat") {
+  // Saludo "Hola" → bienvenida solo si NO estamos en medio de un reclamo (ej. awaiting_desc: "Hola" es descripción).
+  const _sessHola = sessions.get(sk);
+  const _stepHola = _sessHola?.step;
+  const _enFlujoReclamoBot = _stepHola && _stepHola !== "idle" && _stepHola !== "human_chat";
+  if (/\bhola\b/i.test(String(text || "").trim()) && _stepHola !== "human_chat" && !_enFlujoReclamoBot) {
     let pendOpinionHola = false;
     try {
       pendOpinionHola = await hasPendingClienteOpinion(tid, phone);
@@ -2467,9 +2474,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
       return;
     }
-    const desc = text;
-    if (desc.length < 4) {
-      await reply(phone, "La descripción es muy corta. Contanos un poco más del problema.", tid, phoneNumberId);
+    const desc = String(text ?? "");
+    if (!desc.trim()) {
+      await reply(phone, "Escribí una *breve descripción* del problema (no puede quedar vacío).", tid, phoneNumberId);
       return;
     }
     const ramaFac = sess.factibilidadPostGpsRama;
