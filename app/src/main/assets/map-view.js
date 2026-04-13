@@ -156,33 +156,136 @@ function gnRemoveCursorCoordsControl(map) {
 function gnAttachCursorCoordsControl(L, map) {
     gnRemoveCursorCoordsControl(map);
     const CoordCtrl = L.Control.extend({
-        options: { position: 'bottomright' },
+        options: { position: 'bottomleft' },
         onAdd(m) {
             const c = L.DomUtil.create('div', 'gn-map-cursor-coords leaflet-bar');
-            c.setAttribute('aria-hidden', 'true');
-            c.style.cssText =
-                'margin:8px!important;background:rgba(15,23,42,.88)!important;color:#f1f5f9!important;padding:6px 10px!important;border-radius:6px!important;font:12px/1.35 ui-monospace,monospace,system-ui!important;pointer-events:none!important;box-shadow:0 1px 6px rgba(0,0,0,.25)!important;min-width:15rem';
-            c.innerHTML =
-                '📍 <span class="gn-cc-lat">—</span>, <span class="gn-cc-lng">—</span>';
-            this._onMove = (e) => {
+            c.setAttribute('role', 'region');
+            c.setAttribute('aria-label', 'Coordenadas del cursor en el mapa');
+            c.innerHTML = `
+<div class="gn-map-cursor-coords-panel" id="gn-map-cursor-coords-panel">
+  <div class="gn-map-cursor-coords-head" data-gn-cc-drag="1" title="Arrastrar">
+    <span class="gn-map-cursor-coords-title">Coordenadas</span>
+    <button type="button" class="gn-map-cursor-coords-toggle" id="gn-map-cursor-coords-toggle" aria-expanded="true" aria-label="Ocultar coordenadas">✕</button>
+  </div>
+  <div class="gn-map-cursor-coords-body">
+    📍 <span class="gn-cc-lat">—</span> · <span class="gn-cc-lng">—</span>
+  </div>
+</div>`;
+            const panel = c.querySelector('.gn-map-cursor-coords-panel');
+            const head = c.querySelector('.gn-map-cursor-coords-head');
+            const btn = c.querySelector('#gn-map-cursor-coords-toggle');
+            L.DomUtil.disableClickPropagation(c);
+            L.DomUtil.disableScrollPropagation(c);
+            this._translate = { x: 0, y: 0 };
+            this._dragging = false;
+            this._collapsed = false;
+            this._ptrId = null;
+            this._dragStart = null;
+            this._translateStart = null;
+            const applyTranslate = () => {
+                if (!panel) return;
+                const { x, y } = this._translate;
+                panel.style.transform = `translate3d(${x}px,${y}px,0)`;
+            };
+            const onMove = (e) => {
                 const elat = c.querySelector('.gn-cc-lat');
                 const elng = c.querySelector('.gn-cc-lng');
                 if (elat) elat.textContent = e.latlng.lat.toFixed(7);
                 if (elng) elng.textContent = e.latlng.lng.toFixed(7);
             };
-            this._onOut = () => {
+            const onOut = () => {
                 const elat = c.querySelector('.gn-cc-lat');
                 const elng = c.querySelector('.gn-cc-lng');
                 if (elat) elat.textContent = '—';
                 if (elng) elng.textContent = '—';
             };
-            m.on('mousemove', this._onMove);
-            m.on('mouseout', this._onOut);
+            this._onMove = onMove;
+            this._onOut = onOut;
+            m.on('mousemove', onMove);
+            m.on('mouseout', onOut);
+            const endDrag = () => {
+                if (!this._dragging) return;
+                const pid = this._ptrId;
+                if (pid != null && head && typeof head.releasePointerCapture === 'function') {
+                    try {
+                        head.releasePointerCapture(pid);
+                    } catch (_) {}
+                }
+                this._dragging = false;
+                if (panel) panel.classList.remove('gn-map-cursor-coords--dragging');
+                try {
+                    m.dragging.enable();
+                } catch (_) {}
+                this._ptrId = null;
+                this._dragStart = null;
+                this._translateStart = null;
+            };
+            const onPtrMove = (ev) => {
+                if (!this._dragging || ev.pointerId !== this._ptrId) return;
+                const dx = ev.clientX - this._dragStart.x;
+                const dy = ev.clientY - this._dragStart.y;
+                this._translate = {
+                    x: this._translateStart.x + dx,
+                    y: this._translateStart.y + dy
+                };
+                applyTranslate();
+            };
+            const onPtrUp = (ev) => {
+                if (ev.pointerId !== this._ptrId) return;
+                window.removeEventListener('pointermove', onPtrMove);
+                window.removeEventListener('pointerup', onPtrUp);
+                window.removeEventListener('pointercancel', onPtrUp);
+                endDrag();
+            };
+            if (head) {
+                head.addEventListener('pointerdown', (ev) => {
+                    if (ev.target.closest('.gn-map-cursor-coords-toggle')) return;
+                    ev.preventDefault();
+                    this._dragging = true;
+                    this._ptrId = ev.pointerId;
+                    this._dragStart = { x: ev.clientX, y: ev.clientY };
+                    this._translateStart = { ...this._translate };
+                    if (panel) panel.classList.add('gn-map-cursor-coords--dragging');
+                    try {
+                        m.dragging.disable();
+                    } catch (_) {}
+                    try {
+                        head.setPointerCapture(ev.pointerId);
+                    } catch (_) {}
+                    window.addEventListener('pointermove', onPtrMove);
+                    window.addEventListener('pointerup', onPtrUp);
+                    window.addEventListener('pointercancel', onPtrUp);
+                });
+            }
+            if (btn && panel) {
+                btn.addEventListener('click', (ev) => {
+                    if (L.DomEvent && typeof L.DomEvent.stop === 'function') L.DomEvent.stop(ev);
+                    else {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                    }
+                    this._collapsed = !this._collapsed;
+                    panel.classList.toggle('gn-map-cursor-coords--collapsed', this._collapsed);
+                    btn.setAttribute('aria-expanded', this._collapsed ? 'false' : 'true');
+                    btn.setAttribute('aria-label', this._collapsed ? 'Mostrar coordenadas' : 'Ocultar coordenadas');
+                    btn.textContent = this._collapsed ? '▼' : '✕';
+                });
+            }
+            this._endDrag = endDrag;
+            this._onPtrUp = onPtrUp;
+            this._onPtrMove = onPtrMove;
+            applyTranslate();
             return c;
         },
         onRemove(m) {
             m.off('mousemove', this._onMove);
             m.off('mouseout', this._onOut);
+            try {
+                window.removeEventListener('pointermove', this._onPtrMove);
+                window.removeEventListener('pointerup', this._onPtrUp);
+                window.removeEventListener('pointercancel', this._onPtrUp);
+            } catch (_) {}
+            if (typeof this._endDrag === 'function') this._endDrag();
         }
     });
     _gnCursorCoordsControl = new CoordCtrl();
