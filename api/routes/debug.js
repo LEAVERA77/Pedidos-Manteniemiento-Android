@@ -9,6 +9,8 @@
  * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
  * GET /api/debug/direccion-resolver-test — pipeline completo + Georef + corrección BD (?calle=&numero=&localidad=&provincia=&tenant_id=).
  * GET /api/debug/interpolacion-test — solo PASO 3e interpolación geometría Overpass (?calle=&localidad=&numero=&provincia=).
+ * GET /api/debug/catastral-test — PASO 3f cadena sobre geometría + offset paridad (?calle=&numero=&localidad=&provincia=).
+ * GET /api/debug/catastral-precarga — stub / mensaje de precarga masiva (usar script npm).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  *
@@ -697,6 +699,52 @@ router.get("/interpolacion-test", async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: String(err?.message || err) });
   }
+});
+
+/**
+ * GET /api/debug/catastral-test?calle=&numero=&localidad=&provincia=
+ */
+router.get("/catastral-test", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "catastral_test_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  const calle = req.query.calle != null ? String(req.query.calle).trim() : "";
+  const localidad = req.query.localidad != null ? String(req.query.localidad).trim() : "";
+  const numeroRaw = req.query.numero != null ? String(req.query.numero).trim() : "";
+  const provincia = req.query.provincia != null ? String(req.query.provincia).trim() : "";
+  if (calle.length < 2 || localidad.length < 2 || !numeroRaw) {
+    return res.status(400).json({
+      error: "calle_localidad_numero_requeridos",
+      ejemplo: "?calle=Avenida%20Argentina&localidad=Mar%C3%ADa%20Grande&numero=1162&provincia=Entre%20R%C3%ADos",
+    });
+  }
+  try {
+    const { geocodeByCatastral } = await import("../services/catastralGeocoding.js");
+    const resultado = await geocodeByCatastral(calle, numeroRaw, localidad, provincia);
+    return res.json({
+      direccion: `${calle} ${numeroRaw}, ${localidad}${provincia ? `, ${provincia}` : ""}`,
+      resultado,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * GET /api/debug/catastral-precarga — indica cómo ejecutar precarga (script CLI).
+ */
+router.get("/catastral-precarga", (_req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({ error: "catastral_precarga_disabled" });
+  }
+  return res.json({
+    message: "Usar script de precarga desde la carpeta api: npm run preload:street-geometries",
+    script: "scripts/preload-street-geometries.mjs",
+    env: ["DB_CONNECTION o DATABASE_URL", "OVERPASS_API_URL (opcional)"],
+  });
 });
 
 export default router;

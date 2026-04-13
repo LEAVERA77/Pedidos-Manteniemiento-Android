@@ -14,7 +14,8 @@
     "enriquecer:excel-padron": "node scripts/enriquecerPadronDesdeExcel.mjs",
     "exportar:padron-enriquecido": "node scripts/exportarPadronEnriquecidoExcel.mjs",
     "geocodificar:excel-socios": "node scripts/geocodificarExcelSocios.mjs",
-    "generar:demo-socios-nominatim-verificado": "node scripts/generarSociosDemo300Nominatim.mjs"
+    "generar:demo-socios-nominatim-verificado": "node scripts/generarSociosDemo300Nominatim.mjs",
+    "preload:street-geometries": "node scripts/preload-street-geometries.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

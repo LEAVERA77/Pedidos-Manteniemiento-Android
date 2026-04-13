@@ -40,6 +40,7 @@ import { evaluarIgnorarCoordenadasCatalogoPipeline } from "./sociosCatalogoPipel
 import { geocodeDireccionGeorefAr, georefArEnabled } from "./georefClient.js";
 import { buscarCorreccionDireccionEnBd } from "./correccionesDirecciones.js";
 import { interpolarPosicionEnCalle, streetGeometryInterpolationEnabled } from "./streetInterpolation.js";
+import { geocodeByCatastral, catastralGeocodingEnabled } from "./catastralGeocoding.js";
 
 export { coordsValidasWgs84 };
 
@@ -66,7 +67,7 @@ function inferirModoUbicacion(fuenteStr) {
   if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
   if (/georef_ar/i.test(s)) return "exacto_aprox";
   if (/correccion_manual_bd/i.test(s)) return "exacto_aprox";
-  if (/interpolacion_geometria|geometria_punto_medio/i.test(s)) return "interpolado_via";
+  if (/interpolacion_geometria|geometria_punto_medio|catastral_via_m/i.test(s)) return "interpolado_via";
   if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps|osm_vecino_paridad/i.test(s))
     return "exacto_aprox";
   return "aprox";
@@ -689,6 +690,46 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         lngFinal = r2.lng;
         fuente = r2.fuente;
         if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
+      }
+    }
+
+    if (
+      catastralGeocodingEnabled() &&
+      !coordsValidasWgs84(latFinal, lngFinal) &&
+      calleT &&
+      locT &&
+      numT
+    ) {
+      L("\n🌍 PASO 3f: Geolocalización catastral (cadena sobre geometría OSM + offset paridad)");
+      const t3f = Date.now();
+      try {
+        const cat = await geocodeByCatastral(
+          calleT,
+          numT,
+          locT,
+          provinciaEfectiva.length >= 2 ? provinciaEfectiva : ""
+        );
+        await teleRecord(tele, cat.hit ? "catastral_exito" : "catastral_fallo", {
+          ms: Date.now() - t3f,
+          hit: !!cat.hit,
+          razon: cat.razon || null,
+        });
+        if (cat.hit && coordsValidasWgs84(cat.lat, cat.lng)) {
+          latFinal = cat.lat;
+          lngFinal = cat.lng;
+          fuente = cat.source || "catastral_via_m";
+          L(
+            `  ✓ Catastral: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)} (${((cat.detalles?.proporcion ?? 0) * 100).toFixed(1)}% de ~${Math.round(cat.detalles?.longitud_total_metros || 0)} m)`
+          );
+        } else {
+          L(`  → Catastral sin resultado (${cat.razon || "sin_hit"})`);
+        }
+      } catch (err) {
+        await teleRecord(tele, "catastral_error", {
+          ms: Date.now() - t3f,
+          err: String(err?.message || err).slice(0, 400),
+        });
+        L(`  ⚠️ PASO 3f catastral: ${err?.message || err}`);
       }
     }
 
