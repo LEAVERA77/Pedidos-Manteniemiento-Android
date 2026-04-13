@@ -39,7 +39,7 @@ import {
   humanChatFindOpenSessionForPhone,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
-import { validarLocalidadParaChatWhatsapp } from "./tenantLocalidades.js";
+import { validarLocalidadParaChatWhatsapp, normalizarNombreLocalidad } from "./tenantLocalidades.js";
 
 const sessions = new Map();
 
@@ -85,6 +85,23 @@ const MSG_ADDR_PROVINCIA =
   PROVINCIAS_ARG_BOT.map((p, i) => `*${i + 1}.* ${p}`).join("\n") +
   "\n\nRespondé con el *número* del 1 al 24." +
   MSG_SALIR_ATRAS;
+
+/** Tras elegir provincia (1–24), pedimos la ciudad usando el catálogo nacional filtrado por esa provincia. */
+function msgCiudadLuegoDeProvincia(prov) {
+  return `Provincia elegida: *${prov}*.\n\n${MSG_ADDR_CIUDAD}`;
+}
+
+/** Mapea texto de provincia (Nominatim/OSM) al nombre de la lista del bot. */
+function provinciaBotDesdeTextoOsm(stateRaw) {
+  if (!stateRaw || typeof stateRaw !== "string") return null;
+  const s = normalizarNombreLocalidad(String(stateRaw).trim());
+  for (const p of PROVINCIAS_ARG_BOT) {
+    if (normalizarNombreLocalidad(p) === s) return p;
+  }
+  if (s.startsWith("tierra del fuego")) return "Tierra del Fuego";
+  if (s.includes("ciudad autonoma") && s.includes("buenos aires")) return "Ciudad Autónoma de Buenos Aires";
+  return null;
+}
 
 const MSG_ADDR_CALLE =
   "Ahora escribí el *nombre de la calle* (sin número), por ejemplo *Mitre* o *Sarmiento*.\n\n" +
@@ -854,12 +871,20 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   if (wpid) sess.phoneNumberId = wpid;
 
   if (stepAddr === "awaiting_addr_provincia" && rev?.address?.state) {
-    sess.addrProvincia = String(rev.address.state).trim();
-    sess.step = "awaiting_addr_calle";
+    const pBot = provinciaBotDesdeTextoOsm(String(rev.address.state).trim());
+    if (pBot) {
+      sess.addrProvincia = pBot;
+      sess.step = "awaiting_addr_ciudad";
+      sessions.set(sk, sess);
+      await reply(phone, msgCiudadLuegoDeProvincia(pBot), tid, wpid);
+      return;
+    }
+  }
+  if (stepAddr === "awaiting_addr_provincia") {
     sessions.set(sk, sess);
     await reply(
       phone,
-      `Desde el *GPS* tomamos la provincia: *${sess.addrProvincia}*.\n\n${MSG_ADDR_CALLE}`,
+      "Recibimos tu *ubicación GPS*. Elegí la *provincia* con un número del *1* al *24*:\n\n" + MSG_ADDR_PROVINCIA,
       tid,
       wpid
     );
@@ -935,9 +960,9 @@ async function intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, cont
   if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return false;
   const { lat, lng } = pin;
   delete sess.ubicacionGpsPin;
-  sess.step = "awaiting_addr_ciudad";
+  sess.step = "awaiting_addr_provincia";
   sessions.set(sk, sess);
-  await inferirDireccionDesdeGpsYGeocodificar(phone, sess, sk, contactName, ctx, wpid, lat, lng, "awaiting_addr_ciudad");
+  await inferirDireccionDesdeGpsYGeocodificar(phone, sess, sk, contactName, ctx, wpid, lat, lng, "awaiting_addr_provincia");
   return true;
 }
 
@@ -1910,9 +1935,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
       return;
     }
-    sess.step = "awaiting_addr_ciudad";
+    sess.step = "awaiting_addr_provincia";
     sessions.set(sk, sess);
-    await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
+    await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
     return;
   }
 
@@ -1949,7 +1974,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       if (esIdentificacionLibreRazonable(raw)) {
         const next = {
           ...sess,
-          step: "awaiting_addr_ciudad",
+          step: "awaiting_addr_provincia",
           addrOrigenPaso: "opcional",
           identificacionLibreTexto: raw,
           nisParaPedido: null,
@@ -1966,7 +1991,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         }
         await reply(
           phone,
-          "Listo. *Tomamos* tu *nombre o referencia* para este reclamo.\n\n" + MSG_ADDR_CIUDAD,
+          "Listo. *Tomamos* tu *nombre o referencia* para este reclamo.\n\n" + MSG_ADDR_PROVINCIA,
           tid,
           phoneNumberId
         );
@@ -2023,7 +2048,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
     const sessOpc = {
       ...sess,
-      step: "awaiting_addr_ciudad",
+      step: "awaiting_addr_provincia",
       addrOrigenPaso: "opcional",
       contactName: nuevoNombre || sess.contactName,
       nisParaPedido: res.nis ?? null,
@@ -2039,7 +2064,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     await reply(
       phone,
-      `Listo, registramos a *${nuevoNombre}*.\n\n` + MSG_ADDR_CIUDAD,
+      `Listo, registramos a *${nuevoNombre}*.\n\n` + MSG_ADDR_PROVINCIA,
       tid,
       phoneNumberId
     );
@@ -2110,7 +2135,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
 
-    sess.step = "awaiting_addr_ciudad";
+    sess.step = "awaiting_addr_provincia";
     sess.addrOrigenPaso = "nis_solo";
     sessions.set(sk, sess);
     if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
@@ -2118,20 +2143,22 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     await reply(
       phone,
-      `Registramos el *NIS*. Para ubicar el reclamo en el mapa, indicá la *ciudad o localidad*${nuevoNombre ? ` (titular: *${nuevoNombre}*)` : ""}.\n\n` + MSG_ADDR_CIUDAD,
+      `Registramos el *NIS*. Para ubicar el reclamo en el mapa, primero indicá la *provincia*${nuevoNombre ? ` (titular: *${nuevoNombre}*)` : ""}.\n\n` +
+        MSG_ADDR_PROVINCIA,
       tid,
       phoneNumberId
     );
     return;
   }
 
-  if (sess && sess.step === "awaiting_addr_ciudad") {
+  if (sess && sess.step === "awaiting_addr_provincia") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
       const orig = sess.addrOrigenPaso;
       if (orig === "nombre") {
         sess.step = "awaiting_nombre_persona";
         delete sess.addrOrigenPaso;
+        delete sess.addrProvincia;
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
         await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
@@ -2140,6 +2167,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       if (orig === "opcional") {
         sess.step = "awaiting_opcional_id";
         delete sess.addrOrigenPaso;
+        delete sess.addrProvincia;
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
         await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
@@ -2148,6 +2176,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       if (orig === "nis_solo") {
         sess.step = "awaiting_nis_whatsapp";
         delete sess.addrOrigenPaso;
+        delete sess.addrProvincia;
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
         await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
@@ -2155,41 +2184,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       }
       sess.step = "awaiting_identificacion_modo";
       delete sess.addrOrigenPaso;
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
-      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
-      return;
-    }
-    const vLoc = validarLocalidadWhatsApp(t);
-    if (!vLoc.ok) {
-      await reply(phone, vLoc.msg, tid, phoneNumberId);
-      return;
-    }
-    const vCat = await validarLocalidadParaChatWhatsapp(tid, vLoc.value);
-    if (!vCat.ok) {
-      await reply(phone, vCat.msg, tid, phoneNumberId);
-      return;
-    }
-    sess.addrCiudad = vCat.nombreCanonico || vLoc.value;
-    sess.addrCalle = null;
-    sess.addrNumero = null;
-    delete sess.addrProvincia;
-    delete sess.addrCodigoPostal;
-    sess.step = "awaiting_addr_provincia";
-    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-    sessions.set(sk, sess);
-    await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
-    return;
-  }
-
-  if (sess && sess.step === "awaiting_addr_provincia") {
-    const t = String(text || "").trim();
-    if (esComandoAtras(t)) {
-      sess.step = "awaiting_addr_ciudad";
       delete sess.addrProvincia;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_CIUDAD, tid, phoneNumberId);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
       return;
     }
     const n = parseInt(t, 10);
@@ -2198,13 +2196,52 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     const provNombre = PROVINCIAS_ARG_BOT[n - 1];
-    const vLocProv = await validarLocalidadParaChatWhatsapp(tid, sess.addrCiudad, provNombre);
-    if (!vLocProv.ok) {
-      await reply(phone, vLocProv.msg, tid, phoneNumberId);
+    sess.addrProvincia = provNombre;
+    delete sess.addrCodigoPostal;
+    sess.step = "awaiting_addr_ciudad";
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(phone, msgCiudadLuegoDeProvincia(provNombre), tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_addr_ciudad") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_addr_provincia";
+      delete sess.addrCiudad;
+      delete sess.addrProvincia;
+      delete sess.addrCodigoPostal;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
       return;
     }
-    sess.addrCiudad = vLocProv.nombreCanonico || sess.addrCiudad;
-    sess.addrProvincia = provNombre;
+    if (!sess.addrProvincia || !String(sess.addrProvincia).trim()) {
+      sess.step = "awaiting_addr_provincia";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Falta la *provincia*. Elegí un *número del 1 al 24* en la lista anterior.\n\n" + MSG_ADDR_PROVINCIA,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const vLoc = validarLocalidadWhatsApp(t);
+    if (!vLoc.ok) {
+      await reply(phone, vLoc.msg, tid, phoneNumberId);
+      return;
+    }
+    const vCat = await validarLocalidadParaChatWhatsapp(tid, vLoc.value, sess.addrProvincia);
+    if (!vCat.ok) {
+      await reply(phone, vCat.msg, tid, phoneNumberId);
+      return;
+    }
+    sess.addrCiudad = vCat.nombreCanonico || vLoc.value;
+    sess.addrCalle = null;
+    sess.addrNumero = null;
     delete sess.addrCodigoPostal;
     sess.step = "awaiting_addr_calle";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
@@ -2216,13 +2253,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   if (sess && sess.step === "awaiting_addr_calle") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
-      sess.step = "awaiting_addr_provincia";
+      sess.step = "awaiting_addr_ciudad";
       sess.addrCalle = null;
       sess.addrNumero = null;
       delete sess.addrNumeroSugerido;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
+      const prov = String(sess.addrProvincia || "").trim();
+      await reply(
+        phone,
+        prov ? msgCiudadLuegoDeProvincia(prov) : MSG_ADDR_CIUDAD,
+        tid,
+        phoneNumberId
+      );
       return;
     }
     const aCal = analizarEntradaCalleWhatsapp(t);
