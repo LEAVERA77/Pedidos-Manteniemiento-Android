@@ -39,6 +39,7 @@ import {
   humanChatFindOpenSessionForPhone,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
+import { validarLocalidadParaChatWhatsapp } from "./tenantLocalidades.js";
 
 const sessions = new Map();
 
@@ -2164,7 +2165,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, vLoc.msg, tid, phoneNumberId);
       return;
     }
-    sess.addrCiudad = vLoc.value;
+    const vCat = await validarLocalidadParaChatWhatsapp(tid, vLoc.value);
+    if (!vCat.ok) {
+      await reply(phone, vCat.msg, tid, phoneNumberId);
+      return;
+    }
+    sess.addrCiudad = vCat.nombreCanonico || vLoc.value;
     sess.addrCalle = null;
     sess.addrNumero = null;
     delete sess.addrProvincia;

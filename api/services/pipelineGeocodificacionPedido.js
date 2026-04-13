@@ -41,6 +41,7 @@ import { geocodeDireccionGeorefAr, georefArEnabled } from "./georefClient.js";
 import { buscarCorreccionDireccionEnBd } from "./correccionesDirecciones.js";
 import { interpolarPosicionEnCalle, streetGeometryInterpolationEnabled } from "./streetInterpolation.js";
 import { geocodeByCatastral, catastralGeocodingEnabled } from "./catastralGeocoding.js";
+import { coordenadasPlausiblesParaLocalidadTenant } from "./tenantLocalidades.js";
 
 export { coordsValidasWgs84 };
 
@@ -495,7 +496,39 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
     }
 
-    /** WhatsApp: Nominatim free-form / Simple-q ANTES del catálogo (no pisar con coords del padrón). */
+    /**
+     * Asigna coords desde Nominatim; en WhatsApp valida bbox/centroide de localidad para no fijar un pin
+     * incoherente (p. ej. Simple-q que acierta ciudad pero erra manzana) y permitir PASO 3 estructurado + paridad.
+     */
+    async function aplicarCoordsNominatimWA(label, r) {
+      if (!r || !coordsValidasWgs84(r.lat, r.lng)) return false;
+      if (origenWa && locT) {
+        try {
+          const pl = await coordenadasPlausiblesParaLocalidadTenant(
+            r.lat,
+            r.lng,
+            Number(tenantId),
+            locT,
+            provinciaEfectiva,
+            postalDigits
+          );
+          if (!pl) {
+            L(`  ⚠️ ${label}: coordenadas fuera del corse de la localidad (bbox/centroide) — se descartan`);
+            return false;
+          }
+        } catch (e) {
+          L(`  ⚠️ ${label}: validación localidad ${String(e?.message || e).slice(0, 160)}`);
+          return false;
+        }
+      }
+      latFinal = r.lat;
+      lngFinal = r.lng;
+      fuente = r.fuente;
+      if (r.nominatimPostcode) nominatimPostcode = r.nominatimPostcode;
+      return true;
+    }
+
+    /** WhatsApp: PASO 3 estructurado (paridad / viewbox) antes del catálogo — evita depender solo de free-form. */
     if (
       origenWa &&
       !coordsValidasWgs84(latFinal, lngFinal) &&
@@ -503,13 +536,14 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       locT
     ) {
       waNominatimAntesCatalogo = true;
-      L("\n🌍 WhatsApp — PASO 3 anticipado: Nominatim Simple-q / free-form antes del catálogo");
-      await teleRecord(tele, "nominatim_antes_catalogo_inicio", { modo: "simple_q_whatsapp" });
+      L("\n🌍 WhatsApp — PASO 3 anticipado: Nominatim estructurado (calle/localidad, misma tubería que PASO 3 web)");
+      await teleRecord(tele, "nominatim_antes_catalogo_inicio", { modo: "estructurado_whatsapp" });
       const tEarly = Date.now();
-      const rEarly = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: true });
+      const rEarly = await ejecutarNominatim3_3b_4(calleT, { simpleQOnly: false });
+      const hitEarly = await aplicarCoordsNominatimWA("WA anticipado (PASO 3)", rEarly);
       await teleRecord(tele, "nominatim_antes_catalogo_fin", {
         ms: Date.now() - tEarly,
-        hit: coordsValidasWgs84(rEarly.lat, rEarly.lng),
+        hit: hitEarly,
         fuente: rEarly.fuente || null,
       });
       if (process.env.DEBUG_WA_COORDS === "1") {
@@ -520,20 +554,17 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
               lat: rEarly.lat,
               lng: rEarly.lng,
               fuente: rEarly.fuente,
+              aceptadas: hitEarly,
             })
           );
         } catch (_) {}
       }
-      if (coordsValidasWgs84(rEarly.lat, rEarly.lng)) {
-        latFinal = rEarly.lat;
-        lngFinal = rEarly.lng;
-        fuente = rEarly.fuente;
-        if (rEarly.nominatimPostcode) nominatimPostcode = rEarly.nominatimPostcode;
+      if (hitEarly) {
         L(
           `  ✓ Coordenadas antes de catálogo: ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)} (${String(fuente || "?")})`
         );
       } else {
-        L("  → Sin coordenadas en Simple-q anticipado; se sigue con catálogo");
+        L("  → Sin coordenadas útiles en anticipado estructurado; se sigue con catálogo");
       }
     }
 
@@ -667,11 +698,8 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           );
         } catch (_) {}
       }
-      if (coordsValidasWgs84(r1.lat, r1.lng)) {
-        latFinal = r1.lat;
-        lngFinal = r1.lng;
-        fuente = r1.fuente;
-        if (r1.nominatimPostcode) nominatimPostcode = r1.nominatimPostcode;
+      if (await aplicarCoordsNominatimWA("Nominatim calle principal", r1)) {
+        /* ok */
       }
     }
 
@@ -685,12 +713,7 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       const sepOrig = separarNumeroDuplicadoEnCalle(calleOriginalPedido, numT);
       const calleParaRetry = sepOrig.stripped ? sepOrig.calle : calleOriginalPedido;
       const r2 = await ejecutarNominatim3_3b_4(calleParaRetry, { simpleQOnly: nomSimpleQOnly });
-      if (coordsValidasWgs84(r2.lat, r2.lng)) {
-        latFinal = r2.lat;
-        lngFinal = r2.lng;
-        fuente = r2.fuente;
-        if (r2.nominatimPostcode) nominatimPostcode = r2.nominatimPostcode;
-      }
+      await aplicarCoordsNominatimWA("Reintento calle original", r2);
     }
 
     if (
