@@ -1182,34 +1182,6 @@
   </div>
 </div>
 
-<!-- Admin web: registro visible de geocodificación / proxy Nominatim (no solo consola) -->
-<div id="gn-geocode-log-root" class="gn-geocode-log-root" hidden>
-  <button type="button" id="gn-geocode-log-fab" class="gn-geocode-log-fab" aria-expanded="false" aria-controls="gn-geocode-log-panel" title="Diagnóstico de mapa y geocodificación">
-    <i class="fas fa-clipboard-list" aria-hidden="true"></i><span class="gn-geocode-log-fab-label">Mapa</span>
-  </button>
-  <section id="gn-geocode-log-panel" class="gn-geocode-log-panel" aria-labelledby="gn-geocode-log-heading" role="region" hidden>
-    <header class="gn-geocode-log-head">
-      <h2 id="gn-geocode-log-heading" class="gn-geocode-log-title">Diagnóstico mapa / geocodificación</h2>
-      <div class="gn-geocode-log-actions">
-        <button type="button" class="gn-geocode-log-btn" id="gn-geocode-log-copy">Copiar</button>
-        <button type="button" class="gn-geocode-log-btn" id="gn-geocode-log-clear">Limpiar</button>
-        <button type="button" class="gn-geocode-log-btn gn-geocode-log-btn-close" id="gn-geocode-log-collapse" aria-label="Ocultar panel">✕</button>
-      </div>
-    </header>
-    <div id="gn-geocode-log-body" class="gn-geocode-log-body" role="log" aria-live="polite" aria-relevant="additions"></div>
-    <div class="gn-wa-geo-ops-wrap" id="gn-wa-geo-ops-section">
-      <h3 class="gn-geocode-log-subtitle">Operaciones WhatsApp (geocodificación en servidor)</h3>
-      <p class="gn-wa-geo-ops-intro">Pasos del pipeline (Nominatim, Overpass, fallbacks) mientras corre el alta. Auto-actualización cada ~2,5 s; se pausa si abrís un ítem o pulsás Pausar (así no se cierra el acordeón ni se pierde la selección).</p>
-      <div id="gn-wa-geo-ops-list" class="gn-wa-geo-ops-list" aria-live="polite"></div>
-      <div class="gn-wa-geo-ops-actions">
-        <button type="button" class="gn-geocode-log-btn" id="gn-wa-geo-ops-pause" aria-pressed="false" title="Pausar el refresco automático">Pausar auto</button>
-        <button type="button" class="gn-geocode-log-btn gn-geocode-log-btn-primary" id="gn-wa-geo-ops-refresh">Actualizar ahora</button>
-      </div>
-    </div>
-    <p class="gn-geocode-log-hint">Registro de esta pestaña. Si ves error 503 o “sin conexión”, reintentá en unos minutos o verificá que la API (Render) esté activa y que tu sesión tenga token válido.</p>
-  </section>
-</div>
-
 <div id="modal-log-regeocodificar" class="mo" style="z-index:13000">
   <div class="mc" style="max-width:min(92vw,560px);max-height:88vh;display:flex;flex-direction:column">
     <div class="mh">

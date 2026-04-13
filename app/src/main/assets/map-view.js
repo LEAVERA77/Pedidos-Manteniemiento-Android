@@ -6,7 +6,7 @@ let ctx = null;
 
 /** Marcador fijo de la ubicación central del tenant (admin). */
 let _gnAdminBaseMarker = null;
-/** Control de coordenadas del cursor (esquina inferior derecha). */
+/** Control de coordenadas del cursor (esquina inferior izquierda). */
 let _gnCursorCoordsControl = null;
 
 export function setMapViewContext(c) {
