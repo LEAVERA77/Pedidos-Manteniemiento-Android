@@ -4,6 +4,7 @@
  * GET /api/debug/nominatim-test — probar geocodificación (desactivar con ALLOW_DEBUG_NOMINATIM=0).
  * GET /api/debug/nominatim-raw — fetch directo a Nominatim (diagnóstico rate limit / política).
  * GET /api/debug/pedido-last-coords — últimos pedidos WhatsApp con lat/lng (Neon).
+ * GET /api/debug/pedido/:id/coords — una fila: lat/lng persistidos vs pin en geocode_log_whatsapp (diagnóstico mapa).
  * GET /api/debug/pedido-last-raw — mismo + columnas opcionales latitud/longitud si existen (diagnóstico esquema).
  * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
  *
@@ -20,6 +21,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { query } from "../db/neon.js";
 import { buscarCentroDeCalle } from "../services/nominatimClient.js";
+import { coordsValidasWgs84 } from "../services/whatsappGeolocalizacionGarantizada.js";
 
 const router = express.Router();
 
@@ -419,6 +421,102 @@ router.get("/pedido-last-coords", async (_req, res) => {
        LIMIT 5`
     );
     return res.json({ rows: r.rows || [], count: r.rowCount ?? (r.rows || []).length });
+  } catch (err) {
+    return res.status(500).json({
+      error: String(err?.message || err),
+      code: err?.code || null,
+    });
+  }
+});
+
+/**
+ * GET /api/debug/pedido/:id/coords — verificar persistencia de pin (lat/lng columnas vs log WA).
+ */
+router.get("/pedido/:id/coords", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "pedido_coords_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id < 1) {
+    return res.status(400).json({ error: "id_invalido" });
+  }
+  try {
+    const meta = await query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'pedidos'`
+    );
+    const cn = new Set((meta.rows || []).map((r) => r.column_name));
+    const fields = ["id", "numero_pedido", "lat", "lng", "origen_reclamo"];
+    const orderDate = cn.has("fecha_creacion") ? "fecha_creacion" : cn.has("created_at") ? "created_at" : null;
+    if (orderDate) fields.push(orderDate);
+    if (cn.has("latitud")) fields.push("latitud");
+    if (cn.has("longitud")) fields.push("longitud");
+    if (cn.has("geocode_log_whatsapp")) fields.push("geocode_log_whatsapp");
+    const r = await query(`SELECT ${fields.join(", ")} FROM pedidos WHERE id = $1 LIMIT 1`, [id]);
+    const row = r.rows?.[0];
+    if (!row) {
+      return res.status(404).json({ error: "pedido_no_encontrado" });
+    }
+    const numLat = (v) => {
+      if (v == null || v === "") return null;
+      const n = typeof v === "number" ? v : parseFloat(String(v).trim().replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    };
+    let la = numLat(row.lat);
+    let ln = numLat(row.lng);
+    if (la == null && row.latitud != null) la = numLat(row.latitud);
+    if (ln == null && row.longitud != null) ln = numLat(row.longitud);
+    let wLog = null;
+    let wLat = null;
+    let wLng = null;
+    if (row.geocode_log_whatsapp != null) {
+      try {
+        wLog =
+          typeof row.geocode_log_whatsapp === "object"
+            ? row.geocode_log_whatsapp
+            : JSON.parse(String(row.geocode_log_whatsapp));
+        wLat = numLat(wLog?.lat);
+        wLng = numLat(wLog?.lng);
+      } catch {
+        wLog = null;
+      }
+    }
+    const hasPinCols = coordsValidasWgs84(la, ln);
+    const hasPinWgeo =
+      wLog &&
+      (wLog.pin_ok === true || wLog.success === true) &&
+      coordsValidasWgs84(wLat, wLng);
+    return res.json({
+      pedido: {
+        id: row.id,
+        numero_pedido: row.numero_pedido,
+        origen_reclamo: row.origen_reclamo,
+        lat: la,
+        lng: ln,
+        latitud: row.latitud ?? null,
+        longitud: row.longitud ?? null,
+        fecha: orderDate ? row[orderDate] ?? null : null,
+      },
+      geocode_log_whatsapp: wLog
+        ? {
+            pin_ok: wLog.pin_ok,
+            success: wLog.success,
+            lat: wLat,
+            lng: wLng,
+            fuente: wLog.fuente_final ?? wLog.fuente ?? null,
+          }
+        : null,
+      has_pin_columnas: hasPinCols,
+      has_pin_desde_log: hasPinWgeo,
+      warning: hasPinCols
+        ? "OK: lat/lng en columnas del pedido (mapa puede usar GET /api/pedidos/:id)."
+        : hasPinWgeo
+          ? "Parcial: hay pin en geocode_log_whatsapp pero columnas lat/lng vacías o inválidas — revisá INSERT/triggers."
+          : "Sin pin útil: ni columnas ni log WA con coordenadas válidas.",
+    });
   } catch (err) {
     return res.status(500).json({
       error: String(err?.message || err),

@@ -83,6 +83,20 @@ export function ensureWhatsappPedidoCoordsForDb(lat, lng) {
   return { lat: la, lng: lo, coerced: false };
 }
 
+/**
+ * Par lat/lng listo para persistir (misma regla que CHECK WhatsApp + clamp).
+ * @returns {{ lat: number, lng: number, valid: boolean, coerced: boolean }}
+ */
+export function normalizarCoordsWhatsappInsert(lat, lng) {
+  const e = ensureWhatsappPedidoCoordsForDb(lat, lng);
+  return {
+    lat: e.lat,
+    lng: e.lng,
+    coerced: e.coerced,
+    valid: parLatLngPasaCheckWhatsappDb(e.lat, e.lng),
+  };
+}
+
 function collectLatLngIndices(cols) {
   const latIdxs = [];
   const lngIdxs = [];

@@ -2825,13 +2825,13 @@ const norm = p => ({
     es: p.estado || 'Pendiente',
     av: parseInt(p.avance) || 0,
     la: (() => {
-        const raw = p.lat;
+        const raw = p.lat != null && p.lat !== '' ? p.lat : p.latitud;
         if (raw == null || raw === '') return null;
         const v = parseFloat(String(raw).trim().replace(',', '.'));
         return Number.isFinite(v) ? v : null;
     })(),
     ln: (() => {
-        const raw = p.lng;
+        const raw = p.lng != null && p.lng !== '' ? p.lng : p.longitud;
         if (raw == null || raw === '') return null;
         const v = parseFloat(String(raw).trim().replace(',', '.'));
         return Number.isFinite(v) ? v : null;
@@ -2965,10 +2965,20 @@ function etiquetaModoUbicPedido(a) {
     return '';
 }
 
-/** Coordenadas para mapa: GPS del pedido o geocodificación aproximada por domicilio. */
+/** Coordenadas para mapa: columnas del pedido; si faltan, último log WA en servidor (`geocode_log_whatsapp`). */
 function coordsEfectivasPedidoMapa(p) {
     if (!p) return { la: null, ln: null };
     if (coordsSonPinValidasMapaWgs84(p.la, p.ln)) return { la: Number(p.la), ln: Number(p.ln) };
+    const w = p.wgeo;
+    if (w && typeof w === 'object') {
+        const wla = Number(w.lat);
+        const wln = Number(w.lng);
+        const pinOk =
+            w.pin_ok === true || (w.success === true && coordsSonPinValidasMapaWgs84(wla, wln));
+        if (pinOk && coordsSonPinValidasMapaWgs84(wla, wln)) {
+            return { la: wla, ln: wln };
+        }
+    }
     const inf = window._pedidoCoordsInferidas && window._pedidoCoordsInferidas[String(p.id)];
     if (inf && coordsSonPinValidasMapaWgs84(inf.la, inf.ln)) return { la: Number(inf.la), ln: Number(inf.ln) };
     return { la: null, ln: null };
@@ -3446,6 +3456,7 @@ if (typeof window !== 'undefined') {
     window.gnGeocodeAdminLogOpenPanel = gnGeocodeAdminLogOpenPanel;
     window.gnGeocodeAdminLogClosePanel = gnGeocodeAdminLogClosePanel;
     window.coordsSonPinValidasMapaWgs84 = coordsSonPinValidasMapaWgs84;
+    window.coordsEfectivasPedidoMapa = coordsEfectivasPedidoMapa;
     window.nominatimUiSearchUrlFromTexto = nominatimUiSearchUrlFromTexto;
 }
 

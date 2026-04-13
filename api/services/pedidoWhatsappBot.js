@@ -659,6 +659,25 @@ export async function crearPedidoDesdeWhatsappBot({
     throw insertErr;
   }
   const pedidoRow = insert.rows[0];
+  if (
+    pedidoRow &&
+    (process.env.WA_INSERT_DEBUG === "1" ||
+      process.env.WA_INSERT_DEBUG === "true" ||
+      process.env.DEBUG_WA_COORDS === "1")
+  ) {
+    try {
+      console.log(
+        "[WA_INSERT_DEBUG] INSERT OK id=",
+        pedidoRow.id,
+        "lat=",
+        pedidoRow.lat,
+        "lng=",
+        pedidoRow.lng,
+        "numero=",
+        pedidoRow.numero_pedido
+      );
+    } catch (_) {}
+  }
   if (correlationId) {
     await geocodWaOperacionFinishOk(correlationId, {
       pedidoId: pedidoRow.id,

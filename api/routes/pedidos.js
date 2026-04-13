@@ -86,6 +86,12 @@ function parseClienteConfigJson(raw) {
 function coercePedidoLatLng(row) {
   if (!row || typeof row !== "object") return row;
   const o = { ...row };
+  if ((o.lat == null || o.lat === "") && o.latitud != null && o.latitud !== "") {
+    o.lat = o.latitud;
+  }
+  if ((o.lng == null || o.lng === "") && o.longitud != null && o.longitud !== "") {
+    o.lng = o.longitud;
+  }
   for (const key of ["lat", "lng"]) {
     const v = o[key];
     if (v == null || v === "") {
