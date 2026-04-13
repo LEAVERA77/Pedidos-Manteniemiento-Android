@@ -39,6 +39,7 @@ import { buscarCoordenadasVecinoParidadOverpass } from "./overpassVecinosParidad
 import { evaluarIgnorarCoordenadasCatalogoPipeline } from "./sociosCatalogoPipelineFiltro.js";
 import { geocodeDireccionGeorefAr, georefArEnabled } from "./georefClient.js";
 import { buscarCorreccionDireccionEnBd } from "./correccionesDirecciones.js";
+import { interpolarPosicionEnCalle, streetGeometryInterpolationEnabled } from "./streetInterpolation.js";
 
 export { coordsValidasWgs84 };
 
@@ -65,6 +66,7 @@ function inferirModoUbicacion(fuenteStr) {
   if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
   if (/georef_ar/i.test(s)) return "exacto_aprox";
   if (/correccion_manual_bd/i.test(s)) return "exacto_aprox";
+  if (/interpolacion_geometria|geometria_punto_medio/i.test(s)) return "interpolado_via";
   if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps|osm_vecino_paridad/i.test(s))
     return "exacto_aprox";
   return "aprox";
@@ -395,6 +397,50 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           }
         } catch (err) {
           L(`  ⚠️ Georef: ${err?.message || err}`);
+        }
+      }
+
+      if (
+        !coordsValidasWgs84(la, lo) &&
+        streetGeometryInterpolationEnabled() &&
+        calleBusqueda &&
+        numT &&
+        locT
+      ) {
+        L("\n🧭 PASO 3e: Interpolación por geometría de calle (Overpass — refs addr:housenumber + vía)");
+        const t3e = Date.now();
+        try {
+          const ip = await interpolarPosicionEnCalle(
+            calleBusqueda,
+            locT,
+            numT,
+            provinciaEfectiva.length >= 2 ? provinciaEfectiva : ""
+          );
+          await teleRecord(tele, ip.hit ? "interpolacion_geometria_exito" : "interpolacion_geometria_fallo", {
+            ms: Date.now() - t3e,
+            hit: !!ip.hit,
+            source: ip.source || null,
+            razon: ip.razon || null,
+          });
+          if (ip.hit && coordsValidasWgs84(ip.lat, ip.lng)) {
+            la = ip.lat;
+            lo = ip.lng;
+            fu = ip.source || "interpolacion_geometria_calle";
+            L(`  ✓ ${fu}: ${la.toFixed(6)}, ${lo.toFixed(6)}`);
+            if (ip.detalles && typeof ip.detalles === "object") {
+              try {
+                L(`  📝 Detalle: ${JSON.stringify(ip.detalles).slice(0, 220)}`);
+              } catch (_) {}
+            }
+          } else {
+            L(`  → Sin interpolación 3e (${ip.razon || "sin_hit"})`);
+          }
+        } catch (err) {
+          await teleRecord(tele, "interpolacion_geometria_error", {
+            ms: Date.now() - t3e,
+            err: String(err?.message || err).slice(0, 400),
+          });
+          L(`  ⚠️ PASO 3e: ${err?.message || err}`);
         }
       }
 

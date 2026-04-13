@@ -8,6 +8,7 @@
  * GET /api/debug/pedido-last-raw — mismo + columnas opcionales latitud/longitud si existen (diagnóstico esquema).
  * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
  * GET /api/debug/direccion-resolver-test — pipeline completo + Georef + corrección BD (?calle=&numero=&localidad=&provincia=&tenant_id=).
+ * GET /api/debug/interpolacion-test — solo PASO 3e interpolación geometría Overpass (?calle=&localidad=&numero=&provincia=).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  *
@@ -660,6 +661,38 @@ router.get("/direccion-resolver-test", async (req, res) => {
       log_tail: (log || []).slice(-50),
       georef_directo: georef,
       correccion_bd_lookup: corr,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * GET /api/debug/interpolacion-test?calle=&localidad=&numero=&provincia=
+ */
+router.get("/interpolacion-test", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "interpolacion_test_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  const calle = req.query.calle != null ? String(req.query.calle).trim() : "";
+  const localidad = req.query.localidad != null ? String(req.query.localidad).trim() : "";
+  const numeroRaw = req.query.numero != null ? String(req.query.numero).trim() : "";
+  const provincia = req.query.provincia != null ? String(req.query.provincia).trim() : "";
+  if (calle.length < 2 || localidad.length < 2 || !numeroRaw) {
+    return res.status(400).json({
+      error: "calle_localidad_numero_requeridos",
+      ejemplo: "?calle=Avenida%20Argentina&localidad=Mar%C3%ADa%20Grande&numero=1162&provincia=Entre%20R%C3%ADos",
+    });
+  }
+  try {
+    const { interpolarPosicionEnCalle } = await import("../services/streetInterpolation.js");
+    const resultado = await interpolarPosicionEnCalle(calle, localidad, numeroRaw, provincia);
+    return res.json({
+      direccion: `${calle} ${numeroRaw}, ${localidad}${provincia ? `, ${provincia}` : ""}`,
+      resultado,
     });
   } catch (err) {
     return res.status(500).json({ error: String(err?.message || err) });
