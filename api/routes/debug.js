@@ -7,6 +7,7 @@
  * GET /api/debug/pedido/:id/coords — una fila: lat/lng persistidos vs pin en geocode_log_whatsapp (diagnóstico mapa).
  * GET /api/debug/pedido-last-raw — mismo + columnas opcionales latitud/longitud si existen (diagnóstico esquema).
  * GET /api/debug/centro-calle-test — probar buscarCentroDeCalle (?calle=&localidad=&provincia=).
+ * GET /api/debug/direccion-resolver-test — pipeline completo + Georef + corrección BD (?calle=&numero=&localidad=&provincia=&tenant_id=).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  *
@@ -589,6 +590,77 @@ router.get("/centro-calle-test", async (req, res) => {
   try {
     const result = await buscarCentroDeCalle(calle, localidad, provincia);
     return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * GET /api/debug/direccion-resolver-test?calle=&numero=&localidad=&provincia=&tenant_id=1
+ * Ejecuta el mismo pipeline que WhatsApp (Simple-q) y devuelve además Georef y fila de correcciones_direcciones.
+ */
+router.get("/direccion-resolver-test", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({
+      error: "direccion_resolver_test_disabled",
+      hint: "Quitar ALLOW_DEBUG_NOMINATIM=0 o no definirla para habilitar.",
+    });
+  }
+  const calle = req.query.calle != null ? String(req.query.calle).trim() : "";
+  const numero = req.query.numero != null ? String(req.query.numero).trim() : "";
+  const localidad = req.query.localidad != null ? String(req.query.localidad).trim() : "";
+  const provincia = req.query.provincia != null ? String(req.query.provincia).trim() : "";
+  const tenantId = Number(req.query.tenant_id ?? req.query.tenantId ?? "1");
+  if (calle.length < 2 || localidad.length < 2) {
+    return res.status(400).json({
+      error: "calle_y_localidad_requeridos",
+      ejemplo: "?calle=Avenida%20Argentina&numero=1162&localidad=Mar%C3%ADa%20Grande&provincia=Entre%20R%C3%ADos",
+    });
+  }
+  try {
+    const { ejecutarPipelineGeocodificacionDesdePedidoLike } = await import("../services/pipelineGeocodificacionPedido.js");
+    const { geocodeDireccionGeorefAr } = await import("../services/georefClient.js");
+    const { buscarCorreccionDireccionEnBd } = await import("../services/correccionesDirecciones.js");
+    const log = [];
+    const pedidoLike = {
+      id: null,
+      cliente_calle: calle,
+      cliente_numero_puerta: numero || null,
+      cliente_localidad: localidad,
+      provincia: provincia || null,
+      origen_reclamo: "whatsapp",
+      lat: null,
+      lng: null,
+    };
+    const [pipeline, georef, corr] = await Promise.all([
+      ejecutarPipelineGeocodificacionDesdePedidoLike(pedidoLike, Number.isFinite(tenantId) ? tenantId : 1, {
+        log,
+        preferSimpleQNominatim: true,
+      }),
+      geocodeDireccionGeorefAr({
+        calle,
+        numero,
+        localidad,
+        provincia: provincia || "",
+      }),
+      buscarCorreccionDireccionEnBd({
+        tenantId: Number.isFinite(tenantId) ? tenantId : 1,
+        calle,
+        numero,
+        localidad,
+        provincia: provincia || "",
+      }),
+    ]);
+    return res.json({
+      tenant_id: Number.isFinite(tenantId) ? tenantId : 1,
+      pipeline_ok: pipeline.ok,
+      lat: pipeline.ok ? pipeline.latFinal : null,
+      lng: pipeline.ok ? pipeline.lngFinal : null,
+      fuente: pipeline.ok ? pipeline.fuente : null,
+      log_tail: (log || []).slice(-50),
+      georef_directo: georef,
+      correccion_bd_lookup: corr,
+    });
   } catch (err) {
     return res.status(500).json({ error: String(err?.message || err) });
   }

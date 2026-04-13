@@ -37,6 +37,8 @@ import {
 import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { buscarCoordenadasVecinoParidadOverpass } from "./overpassVecinosParidad.js";
 import { evaluarIgnorarCoordenadasCatalogoPipeline } from "./sociosCatalogoPipelineFiltro.js";
+import { geocodeDireccionGeorefAr, georefArEnabled } from "./georefClient.js";
+import { buscarCorreccionDireccionEnBd } from "./correccionesDirecciones.js";
 
 export { coordsValidasWgs84 };
 
@@ -61,6 +63,8 @@ function inferirModoUbicacion(fuenteStr) {
   if (/region_provincia|fallback_argentina_aprox_obligatorio/i.test(s)) return "region";
   if (/centro_tenant|aprox_area_oficina_tenant|tenant_config/i.test(s)) return "tenant";
   if (/centro_localidad|nominatim_q_localidad/i.test(s)) return "localidad";
+  if (/georef_ar/i.test(s)) return "exacto_aprox";
+  if (/correccion_manual_bd/i.test(s)) return "exacto_aprox";
   if (/catalogo|nis|nominatim|interpolacion|simple_q|linea_libre|geocode|whatsapp_gps|osm_vecino_paridad/i.test(s))
     return "exacto_aprox";
   return "aprox";
@@ -370,6 +374,30 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         }
       }
 
+      if (!coordsValidasWgs84(la, lo) && georefArEnabled() && calleBusqueda && locT) {
+        L("\n🇦🇷 PASO 3d: Georef API (datos.gob.ar — respaldo nacional)");
+        try {
+          const gr = await geocodeDireccionGeorefAr({
+            calle: calleBusqueda,
+            numero: numT || "",
+            localidad: locT,
+            provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+          });
+          if (gr.hit && coordsValidasWgs84(gr.lat, gr.lng)) {
+            la = gr.lat;
+            lo = gr.lng;
+            fu = "georef_ar";
+            L(
+              `  ✓ Georef: ${la.toFixed(6)}, ${lo.toFixed(6)}${gr.precision ? ` (nivel: ${gr.precision})` : ""}`
+            );
+          } else {
+            L(`  → Georef sin dirección útil`);
+          }
+        } catch (err) {
+          L(`  ⚠️ Georef: ${err?.message || err}`);
+        }
+      }
+
       if (!coordsValidasWgs84(la, lo) && calleBusqueda && numT && locT) {
         L("\n📐 PASO 4: Interpolación municipal (Overpass + geometría de vía)");
         try {
@@ -395,6 +423,26 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         } catch (err) {
           L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
         }
+      }
+
+      try {
+        const corr = await buscarCorreccionDireccionEnBd({
+          tenantId: Number(tenantId),
+          calle: calleBusqueda,
+          numero: numT,
+          localidad: locT,
+          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+        });
+        if (corr.hit && coordsValidasWgs84(corr.lat, corr.lng)) {
+          L(
+            `\n📌 Corrección manual (BD)${corr.id != null ? ` #${corr.id}` : ""}: ${corr.lat.toFixed(6)}, ${corr.lng.toFixed(6)} (sobrescribe Nominatim/Georef si aplica)`
+          );
+          la = corr.lat;
+          lo = corr.lng;
+          fu = "correccion_manual_bd";
+        }
+      } catch (err) {
+        L(`  ⚠️ Corrección manual BD: ${err?.message || err}`);
       }
 
       return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };
