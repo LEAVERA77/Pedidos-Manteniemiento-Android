@@ -45,6 +45,7 @@ import {
 import { actualizarSociosCatalogoCoordsSiMatchPedido } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { regeocodificarPedido } from "../services/regeocodificarPedido.js";
 import { getTenantProvinciaNominatim } from "../services/tenantProvincia.js";
+import { upsertCorreccionOperadorDesdePedido } from "../services/correccionesDirecciones.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -1131,8 +1132,9 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
 /**
  * Admin: corrección manual WGS84 en mapa (sobrescribe lat/lng aunque ya existan).
  * No aplica a pedidos cerrados o derivados fuera (solo operativa abierta).
+ * Persiste también en `correcciones_direcciones` para reutilizar la ubicación en futuros reclamos con el mismo domicilio.
  */
-router.put("/:id/coords-manual", adminOnly, async (req, res) => {
+async function handleCoordsManualCorreccion(req, res) {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
@@ -1181,7 +1183,25 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     const updated = coercePedidoLatLng(r.rows[0]);
-    
+
+    let correccionDireccionGuardada = false;
+    let correccionDireccionInfo = null;
+    try {
+      correccionDireccionInfo = await upsertCorreccionOperadorDesdePedido({
+        tenantId: Number(req.tenantId),
+        calle: pedido.cliente_calle,
+        numero: pedido.cliente_numero_puerta,
+        localidad: pedido.cliente_localidad,
+        provincia: pedido.provincia,
+        lat: la,
+        lng: ln,
+        usuarioId: req.user?.id ?? null,
+      });
+      correccionDireccionGuardada = correccionDireccionInfo?.ok === true;
+    } catch (e) {
+      console.warn("[coords-manual] correcciones_direcciones:", e?.message || e);
+    }
+
     // Actualizar socios_catalogo de forma síncrona para asegurar persistencia inmediata
     let catalogoActualizado = false;
     let catalogoInfo = null;
@@ -1202,16 +1222,21 @@ router.put("/:id/coords-manual", adminOnly, async (req, res) => {
     } catch (e) {
       console.warn("[coords-manual] ✗ Error al actualizar catálogo:", e?.message || e);
     }
-    
+
     return res.json({
       ...updated,
       _catalogoActualizado: catalogoActualizado,
-      _catalogoInfo: catalogoInfo
+      _catalogoInfo: catalogoInfo,
+      _correccionDireccionGuardada: correccionDireccionGuardada,
+      _correccionDireccionInfo: correccionDireccionInfo,
     });
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar las coordenadas", detail: error.message });
   }
-});
+}
+
+router.put("/:id/coords-manual", adminOnly, handleCoordsManualCorreccion);
+router.post("/:id/corregir-posicion", adminOnly, handleCoordsManualCorreccion);
 
 /**
  * Admin: Re-geocodificar pedido con sistema inteligente de 5 capas

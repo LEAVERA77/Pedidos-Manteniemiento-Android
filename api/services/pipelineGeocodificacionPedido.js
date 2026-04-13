@@ -206,6 +206,34 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       }
     }
 
+    /** PASO 1b: corrección manual en BD — antes de catálogo y Nominatim (máxima prioridad operativa por domicilio). */
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
+      try {
+        await teleRecord(tele, "correccion_manual_bd_inicio");
+        const c0 = await buscarCorreccionDireccionEnBd({
+          tenantId: Number(tenantId),
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
+        });
+        if (c0.hit && coordsValidasWgs84(c0.lat, c0.lng)) {
+          latFinal = c0.lat;
+          lngFinal = c0.lng;
+          fuente = "correccion_manual_bd";
+          L(
+            `\n📌 PASO 1b: Corrección manual (BD)${c0.id != null ? ` #${c0.id}` : ""} → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`
+          );
+          await teleRecord(tele, "correccion_manual_bd_exito", { id: c0.id ?? null });
+        } else {
+          await teleRecord(tele, "correccion_manual_bd_sin_hit");
+        }
+      } catch (err) {
+        L(`  ⚠️ PASO 1b corrección BD: ${err?.message || err}`);
+        await teleRecord(tele, "correccion_manual_bd_error", { err: String(err?.message || err).slice(0, 200) });
+      }
+    }
+
     const mismoTextoCalle = (a, b) =>
       String(a || "")
         .trim()
@@ -471,26 +499,6 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
         } catch (err) {
           L(`  ⚠️  Error en interpolación: ${err?.message || err}`);
         }
-      }
-
-      try {
-        const corr = await buscarCorreccionDireccionEnBd({
-          tenantId: Number(tenantId),
-          calle: calleBusqueda,
-          numero: numT,
-          localidad: locT,
-          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
-        });
-        if (corr.hit && coordsValidasWgs84(corr.lat, corr.lng)) {
-          L(
-            `\n📌 Corrección manual (BD)${corr.id != null ? ` #${corr.id}` : ""}: ${corr.lat.toFixed(6)}, ${corr.lng.toFixed(6)} (sobrescribe Nominatim/Georef si aplica)`
-          );
-          la = corr.lat;
-          lo = corr.lng;
-          fu = "correccion_manual_bd";
-        }
-      } catch (err) {
-        L(`  ⚠️ Corrección manual BD: ${err?.message || err}`);
       }
 
       return { lat: la, lng: lo, fuente: fu, nominatimPostcode: npc };

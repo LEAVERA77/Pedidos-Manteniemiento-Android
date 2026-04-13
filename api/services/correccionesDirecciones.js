@@ -79,9 +79,84 @@ export async function buscarCorreccionDireccionEnBd(p) {
     const lat = Number(row.lat);
     const lng = Number(row.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { hit: false };
-    return { hit: true, lat, lng, id: row.id != null ? Number(row.id) : undefined };
+    const id = row.id != null ? Number(row.id) : null;
+    if (id != null) {
+      try {
+        await query(
+          `UPDATE correcciones_direcciones
+             SET veces_usado = COALESCE(veces_usado, 0) + 1,
+                 updated_at = NOW()
+           WHERE id = $1`,
+          [id]
+        );
+      } catch (e2) {
+        logTableMissingOnce(e2);
+      }
+    }
+    return { hit: true, lat, lng, id: id ?? undefined };
   } catch (e) {
     logTableMissingOnce(e);
     return { hit: false };
+  }
+}
+
+/**
+ * Guarda/actualiza coords marcadas por el operador en el mapa (por tenant + domicilio normalizado).
+ * @param {{ tenantId: number, calle?: string|null, numero?: string|null, localidad?: string|null, provincia?: string|null, lat: number, lng: number, usuarioId?: number|null }} p
+ * @returns {Promise<{ ok: boolean, id?: number, updated?: boolean, reason?: string }>}
+ */
+export async function upsertCorreccionOperadorDesdePedido(p) {
+  if (!correccionesDireccionesEnabled()) return { ok: false, reason: "disabled" };
+
+  const calleNorm = normalizarParteDireccion(p.calle);
+  const locNorm = normalizarParteDireccion(p.localidad);
+  if (calleNorm.length < 2 || locNorm.length < 2) return { ok: false, reason: "direccion_incompleta" };
+
+  const numNorm = normalizarNumeroPuerta(p.numero);
+  const provRaw = p.provincia != null && String(p.provincia).trim() ? String(p.provincia).trim() : "";
+  const provNorm = provRaw ? normalizarParteDireccion(provRaw) : "";
+
+  const lat = Number(p.lat);
+  const lng = Number(p.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { ok: false, reason: "coords" };
+
+  const tid = Number(p.tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return { ok: false, reason: "tenant" };
+
+  const uid = p.usuarioId != null && Number.isFinite(Number(p.usuarioId)) ? Number(p.usuarioId) : null;
+
+  try {
+    const up = await query(
+      `UPDATE correcciones_direcciones SET
+         lat = $1,
+         lng = $2,
+         corregido_por = $3,
+         corregido_en = NOW(),
+         updated_at = NOW()
+       WHERE tenant_id = $4
+         AND calle_norm = $5
+         AND numero_norm = $6
+         AND localidad_norm = $7
+         AND provincia_norm = $8
+       RETURNING id`,
+      [lat, lng, uid, tid, calleNorm, numNorm, locNorm, provNorm]
+    );
+    if (up.rows?.length) {
+      return { ok: true, id: Number(up.rows[0].id), updated: true };
+    }
+
+    const ins = await query(
+      `INSERT INTO correcciones_direcciones (
+         tenant_id, calle_norm, numero_norm, localidad_norm, provincia_norm,
+         lat, lng, corregido_por, corregido_en, updated_at, veces_usado
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), 0)
+       RETURNING id`,
+      [tid, calleNorm, numNorm, locNorm, provNorm, lat, lng, uid]
+    );
+    const nid = ins.rows?.[0]?.id;
+    return { ok: true, id: nid != null ? Number(nid) : undefined, updated: false };
+  } catch (e) {
+    logTableMissingOnce(e);
+    return { ok: false, reason: String(e?.message || e).slice(0, 240) };
   }
 }

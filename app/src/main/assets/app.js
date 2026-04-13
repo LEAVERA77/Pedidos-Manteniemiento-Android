@@ -4170,7 +4170,14 @@ async function persistirCoordsManualPedidoPanel(pedidoId, la, ln) {
         try {
             refrescarDetalleSiAbiertoTrasSync();
         } catch (_) {}
-        toast('Ubicación del pedido actualizada en el mapa.', 'success');
+        if (row._correccionDireccionGuardada) {
+            toast(
+                'Ubicación guardada. Los próximos reclamos en esta misma dirección usarán esta posición automáticamente.',
+                'success'
+            );
+        } else {
+            toast('Ubicación del pedido actualizada en el mapa.', 'success');
+        }
     } catch (e) {
         toastError('coords-manual', e);
     }
