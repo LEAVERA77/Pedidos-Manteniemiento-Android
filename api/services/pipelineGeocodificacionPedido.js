@@ -242,6 +242,32 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
             if (sq.audit?.q) {
               L(`  📝 Query audit: q="${String(sq.audit.q).slice(0, 120)}" source=${fu}`);
             }
+            const aSq = sq.audit;
+            if (
+              tele?.recordPaso &&
+              aSq &&
+              (aSq.approximate ||
+                (aSq.requestedHouseNumber != null &&
+                  aSq.usedHouseNumber != null &&
+                  aSq.usedHouseNumber !== aSq.requestedHouseNumber))
+            ) {
+              await teleRecord(tele, "nominatim_numero_cercano", {
+                solicitado: aSq.requestedHouseNumber ?? null,
+                usado: aSq.usedHouseNumber ?? null,
+                source: aSq.source || null,
+                q: aSq.q != null ? String(aSq.q).slice(0, 200) : undefined,
+              });
+            }
+            if (
+              aSq?.approximate ||
+              (aSq?.requestedHouseNumber != null &&
+                aSq?.usedHouseNumber != null &&
+                aSq.usedHouseNumber !== aSq.requestedHouseNumber)
+            ) {
+              L(
+                `  📌 Número de puerta aproximado: pedido ${aSq.requestedHouseNumber} → OSM/usado ${aSq.usedHouseNumber} (${aSq.source || fu})`
+              );
+            }
             if (sq.postcode) {
               const n = normCp(sq.postcode);
               if (n) {
@@ -272,6 +298,32 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
           la = geoResult.lat;
           lo = geoResult.lng;
           fu = geoResult.audit?.source || "nominatim";
+          const aGeo = geoResult.audit;
+          if (
+            tele?.recordPaso &&
+            aGeo &&
+            (aGeo.approximate ||
+              (aGeo.requestedHouseNumber != null &&
+                aGeo.usedHouseNumber != null &&
+                aGeo.usedHouseNumber !== aGeo.requestedHouseNumber))
+          ) {
+            await teleRecord(tele, "nominatim_numero_cercano", {
+              solicitado: aGeo.requestedHouseNumber ?? null,
+              usado: aGeo.usedHouseNumber ?? null,
+              source: aGeo.source || null,
+              q: aGeo.q != null ? String(aGeo.q).slice(0, 200) : undefined,
+            });
+          }
+          if (
+            aGeo?.approximate ||
+            (aGeo?.requestedHouseNumber != null &&
+              aGeo?.usedHouseNumber != null &&
+              aGeo.usedHouseNumber !== aGeo.requestedHouseNumber)
+          ) {
+            L(
+              `  📌 Número de puerta aproximado: pedido ${aGeo.requestedHouseNumber} → OSM/usado ${aGeo.usedHouseNumber} (${aGeo.source || fu})`
+            );
+          }
           if (geoResult.postcode) {
             npc = normCp(geoResult.postcode);
             if (npc) L(`  📮 CP (Nominatim): ${npc}`);

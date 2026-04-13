@@ -24,12 +24,15 @@ describe("geocodeCalleNumeroLocalidadArgentina (fetch mock)", () => {
 
   beforeEach(async () => {
     process.env.NOMINATIM_THROTTLE_MS_FOR_TESTS = "0";
+    /* Un solo fetch por URL en mocks; si no, [] + fallback consume 2 entradas y rompe el orden de cola. */
+    process.env.NOMINATIM_PUBLIC_FALLBACK = "false";
     vi.resetModules();
     ({ geocodeCalleNumeroLocalidadArgentina } = await import("../services/nominatimClient.js"));
   });
 
   afterEach(() => {
     delete process.env.NOMINATIM_THROTTLE_MS_FOR_TESTS;
+    delete process.env.NOMINATIM_PUBLIC_FALLBACK;
     delete process.env.NOMINATIM_HOUSE_PARITY_MAX_STEPS;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();

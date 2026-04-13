@@ -470,9 +470,21 @@ function tenantViewboxDeltaDeg() {
   return Number.isFinite(v) && v > 0 && v < 2 ? v : 0.11;
 }
 
+/** Desactivar: NOMINATIM_BUSCAR_NUMERO_CERCANO=0|false (solo número exacto en expansiones por calle). */
+export function nominatimBuscarNumeroCercanoEnabled() {
+  return process.env.NOMINATIM_BUSCAR_NUMERO_CERCANO !== "0" && process.env.NOMINATIM_BUSCAR_NUMERO_CERCANO !== "false";
+}
+
+/**
+ * Pasos de paridad ±2, ±4, … (ver `iterHouseNumbersSameParity`).
+ * Prioridad: NOMINATIM_MAX_DISTANCIA_NUMEROS → NOMINATIM_HOUSE_PARITY_MAX_STEPS → 8 (máx. 40).
+ */
 function houseParityMaxSteps() {
-  const v = parseInt(process.env.NOMINATIM_HOUSE_PARITY_MAX_STEPS || "8", 10);
-  return Number.isFinite(v) ? Math.min(20, Math.max(0, v)) : 8;
+  if (!nominatimBuscarNumeroCercanoEnabled()) return 0;
+  const raw =
+    process.env.NOMINATIM_MAX_DISTANCIA_NUMEROS ?? process.env.NOMINATIM_HOUSE_PARITY_MAX_STEPS ?? "8";
+  const v = parseInt(String(raw), 10);
+  return Number.isFinite(v) ? Math.min(40, Math.max(0, v)) : 8;
 }
 
 /** Radio máximo (m) entre punto geocodificado y centro de la localidad declarada (evita pins en otra ciudad). */
@@ -1249,6 +1261,40 @@ export async function geocodeDomicilioSimpleQArgentina(o = {}) {
         }
       }
     }
+
+    /* Tras fallar el número pedido: misma calle/localidad con números de la misma paridad (±2, ±4, …). */
+    if (numPart && nominatimBuscarNumeroCercanoEnabled()) {
+      const tHouse = parseHouseNumberInt(nRaw);
+      const neighbors = iterHouseNumbersSameParity(nRaw, houseParityMaxSteps()).filter((h) => h !== tHouse);
+      for (const hn of neighbors) {
+        const qn = `${calleCore} ${hn}, ${loc}`.replace(/\s+/g, " ").trim();
+        if (qn.length < 4) continue;
+        for (const { omitCountryCodes, tag } of passes) {
+          const hits = await nominatimSearchFreeForm(qn, {
+            limit: 12,
+            omitCountryCodes,
+            addressdetails: true,
+          });
+          const hit = pickFreeFormHitForWhatsapp(hits, geoOptsBase);
+          if (!hit) continue;
+          const g = hitToSimpleResult(hit, qn, {
+            freeFormPass: tag,
+            approximate: true,
+            source: "nominatim_simple_q_numero_cercano",
+            requestedHouseNumber: tHouse,
+            usedHouseNumber: hn,
+          });
+          if (g) {
+            console.info("[nominatimClient] geocodeDomicilioSimpleQArgentina numero_cercano_freeform", {
+              solicitado: tHouse,
+              usado: hn,
+              q: qn.slice(0, 160),
+            });
+            return g;
+          }
+        }
+      }
+    }
   }
 
   for (const qx of qListOrdered) {
@@ -1424,6 +1470,8 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
       const streetLine = `${hn} ${cal}`;
       const hit = await tryStructured(streetLine, hn);
       if (hit) {
+        const hitHn = parseHouseNumberInt(hit.address?.house_number);
+        if (hitHn !== hn) continue;
         const lat = Number(hit.lat);
         const lng = Number(hit.lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
@@ -1547,44 +1595,61 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
   }
 
   if (hasMeaningfulHouseNumber(nRaw)) {
-    const n = parseHouseNumberInt(nRaw);
-    const attempts = [`${n} ${cal}, ${c}, Argentina`, `${cal} ${n}, ${c}, Argentina`];
-    for (const q of attempts) {
-      await throttle();
-      const p = nominatimBaseParams();
-      p.set("q", q);
-      p.set("limit", "8");
-      if (vbMeta?.viewboxStr) {
-        p.set("viewbox", vbMeta.viewboxStr);
-        p.set("bounded", "1");
-      }
-      const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
-      const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
-      if (!Array.isArray(arr)) continue;
-      for (const hit of arr) {
-        if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
-        if (
-          stateOrProvince.length >= 2 &&
-          !nominatimStateMatchesTenant(stateFromNominatimHit(hit), stateOrProvince)
-        ) {
-          continue;
+    const target = parseHouseNumberInt(nRaw);
+    const candNums = iterHouseNumbersSameParity(nRaw, houseParityMaxSteps());
+    for (const hn of candNums) {
+      const attempts = [`${hn} ${cal}, ${c}, Argentina`, `${cal} ${hn}, ${c}, Argentina`];
+      for (const q of attempts) {
+        await throttle();
+        const p = nominatimBaseParams();
+        p.set("q", q);
+        p.set("limit", "8");
+        if (vbMeta?.viewboxStr) {
+          p.set("viewbox", vbMeta.viewboxStr);
+          p.set("bounded", "1");
         }
-        const lat = Number(hit.lat);
-        const lng = Number(hit.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        if (!passesLocalPlausibility(lat, lng)) continue;
-        audit.source = "final_q_filtered";
-        audit.usedHouseNumber = n;
-        const br = barrioDesdeNominatimAddress(hit.address);
-        const postcode = postcodeDesdeNominatimAddress(hit.address);
-        return {
-          lat,
-          lng,
-          displayName: String(hit.display_name || "").trim(),
-          ...(br ? { barrio: br } : {}),
-          ...(postcode ? { postcode } : {}),
-          audit,
-        };
+        const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
+        const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
+        if (!Array.isArray(arr)) continue;
+        for (const hit of arr) {
+          if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
+          const hitHnQ = parseHouseNumberInt(hit.address?.house_number);
+          if (hitHnQ !== hn) continue;
+          if (
+            stateOrProvince.length >= 2 &&
+            !nominatimStateMatchesTenant(stateFromNominatimHit(hit), stateOrProvince)
+          ) {
+            continue;
+          }
+          const lat = Number(hit.lat);
+          const lng = Number(hit.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (!passesLocalPlausibility(lat, lng)) continue;
+          const approx = hn !== target;
+          audit.source = approx ? "numero_cercano_q" : "final_q_filtered";
+          audit.usedHouseNumber = hn;
+          audit.requestedHouseNumber = target;
+          audit.approximate = approx;
+          if (approx) {
+            console.info("[nominatimClient] geocodeCalleNumeroLocalidadArgentina numero_cercano_q", {
+              calle: cal,
+              localidad: c,
+              solicitado: target,
+              usado: hn,
+              q: q.slice(0, 140),
+            });
+          }
+          const br = barrioDesdeNominatimAddress(hit.address);
+          const postcode = postcodeDesdeNominatimAddress(hit.address);
+          return {
+            lat,
+            lng,
+            displayName: String(hit.display_name || "").trim(),
+            ...(br ? { barrio: br } : {}),
+            ...(postcode ? { postcode } : {}),
+            audit,
+          };
+        }
       }
     }
   }
