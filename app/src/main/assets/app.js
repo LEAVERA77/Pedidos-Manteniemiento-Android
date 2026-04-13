@@ -2557,13 +2557,10 @@ document.getElementById('lf').addEventListener('submit', async e => {
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
         const mtBtn = document.getElementById('mt');
         if (mtBtn) {
-            if (esAdmin()) {
-                mtBtn.title = 'Dashboard tiempo real (mismas funciones que el botón superior derecho)';
-                mtBtn.innerHTML = '<i class="fas fa-tachometer-alt"></i>';
-            } else {
-                mtBtn.title = 'Panel de pedidos / asistente de marca';
-                mtBtn.innerHTML = '<i class="fas fa-list"></i>';
-            }
+            mtBtn.innerHTML = '<i class="fas fa-list"></i>';
+            mtBtn.title = esAdmin()
+                ? 'Marca, logo y ubicación base (solicita contraseña de administrador)'
+                : 'Panel de pedidos';
         }
         const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
         if (btnDerivPend) btnDerivPend.style.display = esAdmin() ? 'inline-flex' : 'none';
@@ -10630,11 +10627,8 @@ function togglePanel() {
 }
 
 /**
- * Menú esquina superior izquierda: administrador abre el wizard de marca/logo/ubicación;
- * otros roles siguen usando el mismo botón para el panel de pedidos.
- */
-/**
- * Listado (esquina): admin debe confirmar contraseña antes del setup SaaS.
+ * Listado (#mt, esquina): admin → modal de contraseña y wizard marca/logo/ubicación;
+ * otros roles → panel de pedidos (togglePanel).
  */
 async function abrirWizardMarcaEmpresaManual() {
     if (!esAdmin()) {
@@ -10734,10 +10728,6 @@ function switchTab(t) {
 
 
 document.getElementById('mt').addEventListener('click', () => {
-    if (typeof esAdmin === 'function' && esAdmin() && typeof abrirModalDashboardGerencia === 'function') {
-        abrirModalDashboardGerencia();
-        return;
-    }
     abrirWizardMarcaEmpresaManual().catch((e) => {
         console.warn('[wizard-marca-manual]', e?.message || e);
     });
