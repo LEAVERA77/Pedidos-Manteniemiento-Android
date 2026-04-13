@@ -6064,7 +6064,7 @@ let _circuloAcc      = null;
 let _mejorPrecision  = Infinity; 
 
 
-function mostrarMarcadorUbicacion(lat, lon, acc) {
+function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
     if (!app.map) return;
 
     
@@ -6076,6 +6076,35 @@ function mostrarMarcadorUbicacion(lat, lon, acc) {
     if (_circuloAcc) {
         try { app.map.removeLayer(_circuloAcc); } catch(_) {}
         _circuloAcc = null;
+    }
+
+    const esBaseOficina = opts && opts.tipo === 'base_oficina';
+    if (esBaseOficina) {
+        const precisionZoom = 15;
+        const svgIcon = L.divIcon({
+            className: '',
+            html: `<div style="
+            width:18px;height:18px;
+            background:#1d4ed8;
+            border:3px solid white;
+            border-radius:50%;
+            box-shadow:0 0 0 3px rgba(29,78,216,.35);
+            position:relative;
+        "></div>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+            popupAnchor: [0, -10]
+        });
+        const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
+        const mk = { icon: svgIcon, zIndexOffset: 220 };
+        if (paneGps) mk.pane = paneGps;
+        marcadorUbicacion = L.marker([lat, lon], mk)
+            .addTo(app.map)
+            .bindPopup(`<div style="font-family:system-ui;min-width:180px">
+                <b style="color:#1d4ed8">🏢 Ubicación base de oficina</b><br>
+                <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
+            </div>`);
+        return precisionZoom;
     }
 
     
@@ -6288,10 +6317,72 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     }
 }
 
+/** Lat/lng de oficina definidos por administrador (EMPRESA_CFG o columnas legadas). */
+function parseEmpresaCfgLatLngBase() {
+    const ec = window.EMPRESA_CFG || {};
+    const latRaw =
+        ec.lat_base != null && String(ec.lat_base).trim() !== ''
+            ? ec.lat_base
+            : ec.latitud != null && String(ec.latitud).trim() !== ''
+              ? ec.latitud
+              : null;
+    const lngRaw =
+        ec.lng_base != null && String(ec.lng_base).trim() !== ''
+            ? ec.lng_base
+            : ec.longitud != null && String(ec.longitud).trim() !== ''
+              ? ec.longitud
+              : null;
+    const lat = latRaw != null ? Number.parseFloat(String(latRaw).trim()) : Number.NaN;
+    const lng = lngRaw != null ? Number.parseFloat(String(lngRaw).trim()) : Number.NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (Math.abs(lat) < 1e-7 && Math.abs(lng) < 1e-7) return null;
+    return { lat, lng };
+}
+
+/**
+ * Ubicación central del tenant (manual / admin). Prioridad sobre GPS al usar «Ir a mi ubicación» en el mapa.
+ * Primero memoria (EMPRESA_CFG); si falta, GET público /api/config/ubicacion-central (p. ej. técnicos sin merge admin).
+ */
+async function resolverUbicacionCentralTenantParaMapa() {
+    const direct = parseEmpresaCfgLatLngBase();
+    if (direct) return { ...direct, source: 'empresa_cfg' };
+    const base = String(getApiBaseUrl() || '').trim();
+    if (!base || typeof fetch !== 'function') return null;
+    const tid = tenantIdActual();
+    if (!Number.isFinite(tid) || tid < 1) return null;
+    try {
+        const headers = { Accept: 'application/json' };
+        const tok = typeof getApiToken === 'function' ? getApiToken() : null;
+        if (tok) headers.Authorization = `Bearer ${tok}`;
+        const url = `${base.replace(/\/+$/, '')}/api/config/ubicacion-central?tenant_id=${encodeURIComponent(String(tid))}`;
+        const r = await fetch(url, { cache: 'no-store', headers });
+        if (!r.ok) return null;
+        const j = await r.json();
+        const lat = Number(j.lat);
+        const lng = Number(j.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { lat, lng, source: 'api' };
+    } catch (_) {
+        return null;
+    }
+}
+
 async function irAMiUbicacionEnMapa() {
     await ensureMapReady();
     if (!app.map) {
         toast('No se pudo cargar el mapa', 'error');
+        return;
+    }
+    const central = await resolverUbicacionCentralTenantParaMapa();
+    if (central && Number.isFinite(central.lat) && Number.isFinite(central.lng)) {
+        const z = mostrarMarcadorUbicacion(central.lat, central.lng, 0, { tipo: 'base_oficina' });
+        app.map.invalidateSize({ animate: false });
+        app.map.setView([central.lat, central.lng], Math.max(z || 15, 14), { animate: false });
+        try {
+            const zEl = document.getElementById('zoom-altura');
+            if (zEl) zEl.textContent = calcularEscalaReal(app.map.getZoom());
+        } catch (_) {}
+        toast('📍 Centro en ubicación base de oficina (configuración del administrador)', 'info');
         return;
     }
     if (ultimaUbicacion && Number.isFinite(ultimaUbicacion.lat) && Number.isFinite(ultimaUbicacion.lon)) {
