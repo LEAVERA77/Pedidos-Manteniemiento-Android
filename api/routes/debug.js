@@ -11,6 +11,7 @@
  * GET /api/debug/interpolacion-test — solo PASO 3e interpolación geometría Overpass (?calle=&localidad=&numero=&provincia=).
  * GET /api/debug/catastral-test — PASO 3f cadena sobre geometría + offset paridad (?calle=&numero=&localidad=&provincia=).
  * GET /api/debug/catastral-precarga — stub / mensaje de precarga masiva (usar script npm).
+ * GET /api/debug/nominatim-diagnostic — Nominatim crudo vs pickFreeFormHitForWhatsapp (?calle=&localidad=&numero=&provincia=).
  *
  * Snippet de código: puede desactivarse en producción con ALLOW_DEBUG_VERSION=0.
  *
@@ -745,6 +746,140 @@ router.get("/catastral-precarga", (_req, res) => {
     script: "scripts/preload-street-geometries.mjs",
     env: ["DB_CONNECTION o DATABASE_URL", "OVERPASS_API_URL (opcional)"],
   });
+});
+
+/**
+ * GET /api/debug/nominatim-diagnostic?calle=&localidad=&numero=&provincia=
+ * Resultados Nominatim (free-form) vs el mismo filtro que el pipeline WhatsApp.
+ */
+router.get("/nominatim-diagnostic", async (req, res) => {
+  if (process.env.ALLOW_DEBUG_NOMINATIM === "0") {
+    return res.status(403).json({ error: "nominatim_diagnostic_disabled", reason: "ALLOW_DEBUG_NOMINATIM=0" });
+  }
+  const calle = req.query.calle != null ? String(req.query.calle).trim() : "";
+  const localidad = req.query.localidad != null ? String(req.query.localidad).trim() : "";
+  const numeroRaw = req.query.numero != null ? String(req.query.numero).trim() : "";
+  const provincia = req.query.provincia != null ? String(req.query.provincia).trim() : "";
+  if (calle.length < 2 || localidad.length < 2) {
+    return res.status(400).json({
+      error: "calle_y_localidad_requeridos",
+      required: ["calle", "localidad"],
+      optional: ["numero", "provincia"],
+    });
+  }
+  try {
+    const { nominatimSearchFreeForm, pickFreeFormHitForWhatsapp, normalizarQNominatimUiWeb } = await import(
+      "../services/nominatimClient.js"
+    );
+    const { calleSinPrefijoTipoViaParaQuery } = await import("../utils/normalizadorCalles.js");
+
+    const nParsed = parseInt(String(numeroRaw || "").replace(/\D/g, ""), 10);
+    const wantH = Number.isFinite(nParsed) && nParsed > 0 ? nParsed : null;
+    const calleCore = calleSinPrefijoTipoViaParaQuery(calle) || calle;
+
+    const queries = [];
+    if (numeroRaw) {
+      queries.push(normalizarQNominatimUiWeb(calle, numeroRaw, localidad));
+      if (provincia.length >= 2) {
+        queries.push(normalizarQNominatimUiWeb(calle, numeroRaw, localidad, provincia));
+        queries.push(normalizarQNominatimUiWeb(calle, numeroRaw, localidad, provincia, "argentina"));
+      } else {
+        queries.push(normalizarQNominatimUiWeb(calle, numeroRaw, localidad, "argentina"));
+      }
+    } else {
+      queries.push(normalizarQNominatimUiWeb(calle, localidad));
+    }
+    const qPrimary = queries.find((x) => x && x.length >= 4) || queries[0] || "";
+
+    const geoOpts = {
+      filterLocalidad: localidad,
+      filterState: provincia,
+      filterCalle: calleCore,
+      filterCalleAlt: calle,
+      preferredHouseNumber: wantH,
+    };
+
+    const rawResults = await nominatimSearchFreeForm(qPrimary, { limit: 10, omitCountryCodes: true, addressdetails: true });
+    const rawCc =
+      rawResults.length > 0
+        ? rawResults
+        : await nominatimSearchFreeForm(qPrimary, { limit: 10, omitCountryCodes: false, addressdetails: true });
+
+    const filterDebug = [];
+    let filteredHit = null;
+    let rejectionReason = null;
+
+    const arr = Array.isArray(rawCc) ? rawCc : [];
+    if (arr.length > 0) {
+      for (let i = 0; i < arr.length; i++) {
+        const hit = arr[i];
+        const picked = pickFreeFormHitForWhatsapp([hit], geoOpts);
+        filterDebug.push({
+          index: i,
+          class: hit.class ?? null,
+          type: hit.type ?? null,
+          house_number: hit.address?.house_number ?? null,
+          road: hit.address?.road ?? null,
+          display_name: hit.display_name != null ? String(hit.display_name).slice(0, 140) : null,
+          accepted: !!picked,
+        });
+        if (picked && !filteredHit) filteredHit = hit;
+      }
+      if (!filteredHit) rejectionReason = "ningun_hit_supero_pickFreeFormHitForWhatsapp";
+    } else {
+      rejectionReason = "nominatim_sin_resultados";
+    }
+
+    const poolPick = pickFreeFormHitForWhatsapp(arr, geoOpts);
+
+    return res.json({
+      diagnostic: {
+        query_primary: qPrimary,
+        queries_tried: [...new Set(queries)].filter(Boolean),
+        timestamp: new Date().toISOString(),
+      },
+      raw_count: arr.length,
+      raw_results: arr.map((r) => ({
+        lat: r.lat,
+        lon: r.lon,
+        class: r.class,
+        type: r.type,
+        name: r.name ?? null,
+        house_number: r.address?.house_number ?? null,
+        road: r.address?.road ?? null,
+        display_name: r.display_name,
+      })),
+      filter_debug: filterDebug,
+      filtered_result: filteredHit
+        ? {
+            lat: filteredHit.lat,
+            lon: filteredHit.lon,
+            class: filteredHit.class,
+            type: filteredHit.type,
+            display_name: filteredHit.display_name,
+          }
+        : null,
+      pipeline_accepts: !!poolPick,
+      pick_from_pool: poolPick
+        ? {
+            lat: poolPick.lat,
+            lon: poolPick.lon,
+            class: poolPick.class,
+            type: poolPick.type,
+          }
+        : null,
+      rejection_reason: poolPick ? null : rejectionReason,
+      geo_opts: {
+        filterLocalidad: localidad,
+        filterState: provincia || null,
+        filterCalle: calleCore,
+        filterCalleAlt: calle,
+        preferredHouseNumber: wantH,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
+  }
 });
 
 export default router;

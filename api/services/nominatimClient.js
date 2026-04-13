@@ -337,13 +337,14 @@ export async function nominatimSearchFreeForm(query, options = {}) {
 }
 
 /**
- * Elige el mejor resultado de una búsqueda libre para WhatsApp: prioriza localidad + calle; la provincia en OSM a veces viene vacía.
+ * Elige el mejor resultado de una búsqueda libre para WhatsApp: localidad + calle; acepta POIs (amenity/school) con address.road + house_number.
  * @param {object[]} hits
  * @param {{
  *   filterLocalidad?: string,
  *   filterState?: string,
  *   filterCalle?: string,
  *   filterCalleAlt?: string,
+ *   preferredHouseNumber?: number | null,
  * }} [opts]
  */
 export function pickFreeFormHitForWhatsapp(hits, opts = {}) {
@@ -352,6 +353,10 @@ export function pickFreeFormHitForWhatsapp(hits, opts = {}) {
   const filterSt = opts.filterState != null ? String(opts.filterState).trim() : "";
   const fc = opts.filterCalle != null ? String(opts.filterCalle).trim() : "";
   const fca = opts.filterCalleAlt != null ? String(opts.filterCalleAlt).trim() : "";
+  const wantH =
+    opts.preferredHouseNumber != null && Number.isFinite(Number(opts.preferredHouseNumber))
+      ? Number(opts.preferredHouseNumber)
+      : null;
   const sorted = [...hits].sort((a, b) => (Number(b.importance) || 0) - (Number(a.importance) || 0));
 
   const calleOk = (h) =>
@@ -362,20 +367,44 @@ export function pickFreeFormHitForWhatsapp(hits, opts = {}) {
   const stateOk = (h) => {
     if (filterSt.length < 2) return true;
     const hs = stateFromNominatimHit(h);
-    if (hs == null || String(hs).trim().length < 2) return true;
-    return nominatimStateMatchesTenant(hs, filterSt);
+    if (hs != null && String(hs).trim().length >= 2) {
+      if (nominatimStateMatchesTenant(hs, filterSt)) return true;
+      if (filterLoc.length >= 2 && nominatimHitStrictLocalidad(h, filterLoc)) return true;
+      if (nominatimDisplayMentionsStateName(h, filterSt)) return true;
+      return false;
+    }
+    if (filterLoc.length >= 2 && nominatimHitStrictLocalidad(h, filterLoc)) return true;
+    return nominatimDisplayMentionsStateName(h, filterSt);
+  };
+
+  /** Escuela/POI: house_number pedido + road acorde a la calle (class/type irrelevantes). */
+  const poiRoadYNumero = (h) => {
+    if (wantH == null) return false;
+    const adr = h?.address;
+    if (!adr || typeof adr !== "object") return false;
+    const parsed = adr.house_number != null ? parseHouseNumberInt(String(adr.house_number)) : null;
+    if (parsed !== wantH) return false;
+    const road = adr.road != null ? String(adr.road).trim() : "";
+    if (road.length >= 3) {
+      if (fc.length >= 2 && nominatimDisplayMatchesCalle(road, fc)) return true;
+      if (fca.length >= 2 && nominatimDisplayMatchesCalle(road, fca)) return true;
+    }
+    return calleOk(h);
   };
 
   for (const h of sorted) {
     if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
     if (!stateOk(h)) continue;
-    if (!calleOk(h)) continue;
-    return h;
+    if (poiRoadYNumero(h)) return h;
   }
   for (const h of sorted) {
     if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
-    if (!calleOk(h)) continue;
-    return h;
+    if (!stateOk(h)) continue;
+    if (calleOk(h)) return h;
+  }
+  for (const h of sorted) {
+    if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
+    if (calleOk(h)) return h;
   }
   for (const h of sorted) {
     if (filterLoc.length >= 2 && !nominatimHitStrictLocalidad(h, filterLoc)) continue;
@@ -571,6 +600,20 @@ export function nominatimStateMatchesTenant(hitState, tenantState) {
   if (!a || !b) return false;
   if (a === b) return true;
   return a.includes(b) || b.includes(a);
+}
+
+/**
+ * POIs (escuelas, etc.) a veces no tienen `address.state`; la provincia igual aparece en display_name.
+ */
+function nominatimDisplayMentionsStateName(hit, stateTenant) {
+  const st = String(stateTenant || "").trim();
+  if (st.length < 2) return false;
+  const dn = normTxt(String(hit?.display_name || ""));
+  const stN = normTxt(st).replace(/\s+/g, " ").trim();
+  if (stN.length < 2) return false;
+  if (dn.includes(stN)) return true;
+  const words = stN.split(/\s+/).filter((w) => w.length >= 4);
+  return words.some((w) => dn.includes(w));
 }
 
 const LOCALITY_ADDRESS_KEYS = [
@@ -921,8 +964,13 @@ export async function geocodeAddressArgentina(query, opts = {}) {
   if (filterSt.length >= 2 && !opts.skipStateFilter) {
     candidates = candidates.filter((h) => {
       const hs = stateFromNominatimHit(h);
-      if (hs == null || String(hs).trim().length < 2) return true;
-      return nominatimStateMatchesTenant(hs, filterSt);
+      if (hs != null && String(hs).trim().length >= 2) {
+        if (nominatimStateMatchesTenant(hs, filterSt)) return true;
+        if (filterLoc.length >= 2 && nominatimHitStrictLocalidad(h, filterLoc)) return true;
+        return nominatimDisplayMentionsStateName(h, filterSt);
+      }
+      if (filterLoc.length >= 2 && nominatimHitStrictLocalidad(h, filterLoc)) return true;
+      return nominatimDisplayMentionsStateName(h, filterSt);
     });
   }
   if (fc.length >= 2) {
