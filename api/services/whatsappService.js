@@ -120,6 +120,7 @@ export async function sendBotWhatsAppText({
   const r = await sendWhatsAppTextWithCredentials(to, body, {
     accessToken,
     phoneNumberId: graphPhoneId,
+    purpose: logContext,
   });
   try {
     await logWhatsappMensajeEnviado(to, body, r.ok, null);
@@ -202,7 +203,11 @@ export async function sendTenantWhatsAppText({
     return { ok: false, error: "missing_meta_credentials", skipped: false };
   }
 
-  const r = await sendWhatsAppTextWithCredentials(to, body, { accessToken, phoneNumberId });
+  const r = await sendWhatsAppTextWithCredentials(to, body, {
+    accessToken,
+    phoneNumberId,
+    purpose: logContext,
+  });
   try {
     await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
   } catch (e) {

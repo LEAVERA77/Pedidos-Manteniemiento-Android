@@ -4,6 +4,7 @@ import {
   sendWhatsAppInteractiveListWithCredentials,
   decodeWhatsAppListRowId,
   normalizeWhatsAppRecipientForMeta,
+  maskWaDigitsForLog,
 } from "./metaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import {
@@ -721,6 +722,11 @@ async function tenantIdForWebhook(phoneNumberId) {
 }
 
 async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
+  const digitsCanon = String(phoneDigits || "").replace(/\D/g, "");
+  console.log("[BOT_RESPUESTA] toDigits del remitente (inbound, debe coincidir con [WEBHOOK] from procesado)", {
+    ...maskWaDigitsForLog(digitsCanon),
+    tenantId: tenantId != null && Number.isFinite(Number(tenantId)) ? Number(tenantId) : botTenantId(),
+  });
   const tid =
     tenantId != null && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1
       ? Number(tenantId)
@@ -1318,7 +1324,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
       sectionTitle: "Tipos de reclamo",
       tipos: ctx.tipos,
     },
-    { accessToken, phoneNumberId: graphPid }
+    { accessToken, phoneNumberId: graphPid, purpose: "whatsapp_bot_menu_tipos" }
   );
   const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
   try {
@@ -1347,6 +1353,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
       for (const msg of messages) {
         const from = String(msg?.from || "");
         if (!from) continue;
+        console.log("[WEBHOOK_BOT] msg.from (fromRaw hacia processInboundText):", from);
         const fromNorm = normalizeWhatsAppRecipientForMeta(from.replace(/\D/g, ""));
         const cMatch = contacts.find(
           (c) =>

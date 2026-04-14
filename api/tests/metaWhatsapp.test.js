@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { normalizeWhatsAppRecipientForMeta, decodeWhatsAppListRowId } from "../services/metaWhatsapp.js";
+import {
+  normalizeWhatsAppRecipientForMeta,
+  decodeWhatsAppListRowId,
+  maskWaDigitsForLog,
+} from "../services/metaWhatsapp.js";
 
 describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
   const originalEnv = { ...process.env };
@@ -48,6 +52,14 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
     const inDigits = "543436986848";
     const out = normalizeWhatsAppRecipientForMeta(inDigits, { mode: "outbound" });
     expect(out).toBe(inDigits);
+  });
+});
+
+describe("metaWhatsapp — maskWaDigitsForLog", () => {
+  it("muestra prefijo y últimos 4 (disambiguar 549343…)", () => {
+    const m = maskWaDigitsForLog("5493434540250");
+    expect(m.tail4).toBe("0250");
+    expect(String(m.mask)).toContain("0250");
   });
 });
 

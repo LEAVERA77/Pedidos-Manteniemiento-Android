@@ -78,7 +78,28 @@ export function normalizeWhatsAppRecipientForMeta(digits, opts = {}) {
   return out;
 }
 
-export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { accessToken, phoneNumberId }) {
+/**
+ * Máscara para logs (Render): varios números AR comparten los mismos 4–6 dígitos iniciales (ej. 549343…).
+ * Usar siempre `mask` o `tail4` para distinguir vecino vs tercero (ENERSA).
+ */
+export function maskWaDigitsForLog(digits) {
+  const d = String(digits || "").replace(/\D/g, "");
+  if (!d) return { len: 0, mask: "(vacío)" };
+  if (d.length <= 8) return { len: d.length, mask: d, tail4: d.slice(-4) };
+  return {
+    len: d.length,
+    mask: `${d.slice(0, 4)}…${d.slice(-4)}`,
+    tail4: d.slice(-4),
+    head6: d.slice(0, 6),
+  };
+}
+
+export async function sendWhatsAppTextWithCredentials(
+  toDigits,
+  bodyText,
+  { accessToken, phoneNumberId, purpose }
+) {
+  const purposeTag = String(purpose || "unspecified").slice(0, 96);
   const token = String(accessToken || "").trim();
   const pid = String(phoneNumberId || "").trim();
   if (!token || !pid) {
@@ -91,15 +112,19 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
     return { ok: false, error: "invalid_params" };
   }
   if (to.length < 8 || to.length > 16) {
-    console.error("[meta-whatsapp] destino descartado: longitud E.164 inusual", { toLen: to.length, rawLen: rawTo.length });
+    console.error("[meta-whatsapp] destino descartado: longitud E.164 inusual", {
+      purpose: purposeTag,
+      rawIn: maskWaDigitsForLog(rawTo),
+      toLen: to.length,
+      rawLen: rawTo.length,
+    });
     return { ok: false, error: "invalid_destination_length" };
   }
 
   console.log("[meta-whatsapp][outbound]", {
-    digitsInLen: rawTo.length,
-    digitsInPrefix4: rawTo.slice(0, 4),
-    toLen: to.length,
-    toPrefix4: to.slice(0, 4),
+    purpose: purposeTag,
+    rawIn: maskWaDigitsForLog(rawTo),
+    toOut: maskWaDigitsForLog(to),
     normalizedChanged: to !== rawTo,
   });
 
@@ -126,9 +151,10 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
       ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"}, subcode ${graph.error.error_subcode ?? "?"})`
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] Graph API error", {
+      purpose: purposeTag,
+      rawIn: maskWaDigitsForLog(rawTo),
+      toOut: maskWaDigitsForLog(to),
       status: resp.status,
-      toLen: String(to).length,
-      toPrefix6: String(to).slice(0, 6),
       detail: errPart,
     });
     if (graph?.error?.code === 190) {
@@ -143,7 +169,11 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
     console.error("[meta-whatsapp] Graph body error", graph.error);
     return { ok: false, status: resp.status || 502, graph, error: "graph_body_error" };
   }
-  console.log("[meta-whatsapp] mensaje enviado OK", { to: to.slice(0, 4) + "…", messageId: graph?.messages?.[0]?.id || "—" });
+  console.log("[meta-whatsapp] mensaje enviado OK", {
+    purpose: purposeTag,
+    toOut: maskWaDigitsForLog(to),
+    messageId: graph?.messages?.[0]?.id || "—",
+  });
   return { ok: true, graph };
 }
 
@@ -151,6 +181,7 @@ export async function sendWhatsAppText(toDigits, bodyText) {
   return sendWhatsAppTextWithCredentials(toDigits, bodyText, {
     accessToken: process.env.META_ACCESS_TOKEN || "",
     phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
+    purpose: "meta_sendWhatsAppText_env",
   });
 }
 
@@ -186,8 +217,9 @@ export function decodeWhatsAppListRowId(id) {
 export async function sendWhatsAppInteractiveListWithCredentials(
   toDigits,
   { bodyText, buttonText, sectionTitle, tipos },
-  { accessToken, phoneNumberId }
+  { accessToken, phoneNumberId, purpose }
 ) {
+  const purposeTag = String(purpose || "interactive_list").slice(0, 96);
   const token = String(accessToken || "").trim();
   const pid = String(phoneNumberId || "").trim();
   if (!token || !pid) {
@@ -202,11 +234,14 @@ export async function sendWhatsAppInteractiveListWithCredentials(
   }
   if (to.length < 8 || to.length > 16) {
     console.error("[meta-whatsapp] interactive list: destino descartado (longitud E.164)", {
+      purpose: purposeTag,
+      rawIn: maskWaDigitsForLog(rawTo),
       toLen: to.length,
       rawLen: rawTo.length,
     });
     return { ok: false, error: "invalid_destination_length" };
   }
+  console.log("[meta-whatsapp][outbound-interactive]", { purpose: purposeTag, rawIn: maskWaDigitsForLog(rawTo), toOut: maskWaDigitsForLog(to) });
   if (list.length > 10) {
     return { ok: false, error: "too_many_rows" };
   }
@@ -259,9 +294,10 @@ export async function sendWhatsAppInteractiveListWithCredentials(
       ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"}, subcode ${graph.error.error_subcode ?? "?"})`
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] interactive list error", {
+      purpose: purposeTag,
+      rawIn: maskWaDigitsForLog(rawTo),
+      toOut: maskWaDigitsForLog(to),
       status: resp.status,
-      toLen: String(to).length,
-      toPrefix6: String(to).slice(0, 6),
       detail: errPart,
     });
     if (graph?.error?.code === 190) {
@@ -283,5 +319,6 @@ export async function sendWhatsAppInteractiveList(toDigits, opts) {
   return sendWhatsAppInteractiveListWithCredentials(toDigits, opts, {
     accessToken: process.env.META_ACCESS_TOKEN || "",
     phoneNumberId: process.env.META_PHONE_NUMBER_ID || "",
+    purpose: "interactive_list_env",
   });
 }
