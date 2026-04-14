@@ -1,0 +1,399 @@
+/**
+ * GestorNova — capa visual SaaS (carga después de styles.css).
+ * No altera lógica JS; refuerza tokens, tipografía y componentes shell.
+ */
+
+:root {
+  --gn-page-bg: #f8fafc;
+  --gn-surface: #ffffff;
+  --gn-text: #0f172a;
+  --gn-text-muted: #475569;
+  --gn-border: #e2e8f0;
+  --gn-accent: #2563eb;
+  --gn-accent-hover: #1d4ed8;
+  --gn-radius-lg: 14px;
+  --gn-radius-md: 12px;
+  --gn-shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --gn-shadow-md: 0 4px 20px rgb(15 23 42 / 0.08);
+  --gn-transition: 0.15s ease;
+  /* Alineado con variables existentes del proyecto */
+  --bg: var(--gn-page-bg);
+  --td: var(--gn-text);
+  --tm: var(--gn-text-muted);
+  --bo: var(--gn-border);
+  --bd: #1e40af;
+  --bm: var(--gn-accent);
+  --bl: #3b82f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gn-page-bg: #0f172a;
+    --gn-surface: #1e293b;
+    --gn-text: #f8fafc;
+    --gn-text-muted: #94a3b8;
+    --gn-border: #334155;
+    --gn-accent: #3b82f6;
+    --gn-accent-hover: #2563eb;
+    --gn-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35);
+    --gn-shadow-md: 0 8px 32px rgb(0 0 0 / 0.35);
+    --bg: var(--gn-page-bg);
+    --td: var(--gn-text);
+    --tm: var(--gn-text-muted);
+    --bo: var(--gn-border);
+    --bd: #60a5fa;
+    --bm: var(--gn-accent);
+    --bl: #93c5fd;
+  }
+}
+
+html {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body,
+#app {
+  font-family: inherit;
+  background: var(--gn-page-bg) !important;
+  color: var(--gn-text);
+}
+
+/* ——— Barra principal ——— */
+#ms .hd {
+  background: var(--gn-surface);
+  border-bottom: 1px solid var(--gn-border);
+  box-shadow: var(--gn-shadow-sm);
+  padding: 0 1.25rem;
+  transition: box-shadow var(--gn-transition);
+}
+
+#ms .hd h2 {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--gn-text);
+}
+
+#ms .hd h2 i {
+  color: var(--gn-accent);
+  opacity: 0.92;
+}
+
+.un {
+  color: var(--gn-text-muted);
+  font-weight: 500;
+  max-width: 140px;
+}
+
+.ib {
+  border-radius: 10px;
+  transition: background var(--gn-transition), color var(--gn-transition), transform var(--gn-transition);
+}
+
+.ib:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--gn-accent);
+}
+
+.ib:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: 2px;
+}
+
+.bp {
+  transition: transform var(--gn-transition), box-shadow var(--gn-transition), filter var(--gn-transition);
+}
+
+.bp:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* ——— Mapa: contenedor con radio y sombra (Leaflet intacto dentro) ——— */
+#ms #mc {
+  margin: 8px 12px 12px;
+  width: auto;
+  height: calc(100dvh - var(--app-header-h, 58px) - 20px);
+  border-radius: var(--gn-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--gn-shadow-sm);
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+}
+
+#ms #mc .leaflet-container {
+  font-family: inherit;
+  border-radius: inherit;
+}
+
+/* ——— Pestañas laterales del mapa (panel oculto → botón visible) ——— */
+.map-slide-tabs-cluster {
+  gap: 0.5rem;
+}
+
+.map-slide-tab {
+  padding: 0.4rem 0.65rem !important;
+  font-size: 0.68rem !important;
+  font-weight: 600 !important;
+  border-radius: 0 10px 10px 0 !important;
+  border: 1px solid var(--gn-border) !important;
+  background: var(--gn-surface) !important;
+  color: var(--gn-accent) !important;
+  box-shadow: var(--gn-shadow-sm) !important;
+  transition: background var(--gn-transition), border-color var(--gn-transition), transform var(--gn-transition) !important;
+}
+
+.map-slide-tab.visible:hover {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  transform: translateX(2px);
+}
+
+.map-slide-tab:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: 2px;
+}
+
+/* ——— Tarjetas flotantes del mapa ——— */
+.moui-card {
+  border-radius: var(--gn-radius-md) !important;
+  background: var(--gn-surface) !important;
+  border: 1px solid var(--gn-border) !important;
+  box-shadow: var(--gn-shadow-md) !important;
+  font-size: 0.8rem !important;
+}
+
+.moui-hd {
+  font-weight: 600 !important;
+  padding: 0.55rem 0.65rem !important;
+  color: var(--gn-text) !important;
+  border-bottom-color: var(--gn-border) !important;
+}
+
+.ib-mini {
+  border-radius: 8px;
+  transition: background var(--gn-transition), border-color var(--gn-transition);
+}
+
+.ib-mini:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--gn-accent);
+}
+
+.ib-mini:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: 1px;
+}
+
+/* ——— Panel lista pedidos ——— */
+.bp2 {
+  background: var(--gn-surface);
+  border-radius: var(--gn-radius-lg) var(--gn-radius-lg) 0 0;
+  box-shadow: 0 -8px 32px rgb(15 23 42 / 0.1);
+  border: 1px solid var(--gn-border);
+  border-bottom: none;
+}
+
+.pi {
+  border-radius: var(--gn-radius-md);
+  transition: transform var(--gn-transition), box-shadow var(--gn-transition), background var(--gn-transition);
+}
+
+.pi:hover {
+  box-shadow: var(--gn-shadow-sm);
+  background: #f8fafc;
+}
+
+.tb {
+  transition: color var(--gn-transition), border-color var(--gn-transition);
+}
+
+.tb:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: -2px;
+}
+
+/* ——— Conversor coordenadas (barra superior web) ——— */
+.gn-web-coords-converter {
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 46vw;
+  padding: 0.25rem 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  box-shadow: var(--gn-shadow-sm);
+}
+
+.gn-web-coords-converter-mode,
+.gn-web-coords-converter-field {
+  height: 1.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-page-bg);
+  color: var(--gn-text);
+  font-size: 0.72rem;
+}
+
+.gn-web-coords-converter-field {
+  width: 5.85rem;
+  padding: 0 0.4rem;
+  font-feature-settings: "tnum" 1;
+}
+
+.gn-web-coords-converter-mode:focus,
+.gn-web-coords-converter-field:focus {
+  outline: none;
+  border-color: var(--gn-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
+#web-coords-converter-out {
+  font-size: 0.68rem;
+  color: var(--gn-text-muted);
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-feature-settings: "tnum" 1;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gn-web-coords-converter {
+    background: var(--gn-surface);
+  }
+  .gn-web-coords-converter-mode,
+  .gn-web-coords-converter-field {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-color: var(--gn-border);
+  }
+}
+
+/* ——— Coordenadas del cursor (solo web: tarjeta clara; Android conserva estilo oscuro en styles.css) ——— */
+html:not(.gn-android-webview) #gn-cursor-coords.gn-cursor-coords,
+html:not(.gn-android-webview) .gn-cursor-coords.leaflet-bar {
+  background: var(--gn-surface) !important;
+  border: 1px solid var(--gn-border) !important;
+  border-radius: var(--gn-radius-md) !important;
+  backdrop-filter: none !important;
+  box-shadow: var(--gn-shadow-md) !important;
+  font-family: "JetBrains Mono", ui-monospace, monospace !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-coords-header {
+  background: #f1f5f9 !important;
+  color: var(--gn-text) !important;
+  border-radius: calc(var(--gn-radius-md) - 1px) calc(var(--gn-radius-md) - 1px) 0 0 !important;
+  font-family: "Inter", system-ui, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-coords-header:hover {
+  background: var(--gn-page-bg) !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-coords-body {
+  background: var(--gn-surface) !important;
+  color: var(--gn-text) !important;
+  border-radius: 0 0 var(--gn-radius-md) var(--gn-radius-md) !important;
+  font-size: 12px !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-lat,
+html:not(.gn-android-webview) .gn-cursor-lng {
+  font-family: "JetBrains Mono", ui-monospace, monospace !important;
+  font-feature-settings: "tnum" 1;
+  font-weight: 500;
+  color: var(--gn-accent);
+}
+
+html:not(.gn-android-webview) .gn-coords-toggle {
+  color: var(--gn-text-muted) !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-goto-wrap input {
+  background: var(--gn-page-bg) !important;
+  color: var(--gn-text) !important;
+  border: 1px solid var(--gn-border) !important;
+  border-radius: 8px !important;
+  font-family: "JetBrains Mono", ui-monospace, monospace !important;
+  font-size: 11px !important;
+}
+
+html:not(.gn-android-webview) .gn-cursor-goto-wrap button {
+  background: var(--gn-accent) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  transition: filter var(--gn-transition);
+}
+
+html:not(.gn-android-webview) .gn-cursor-goto-wrap button:hover {
+  filter: brightness(0.92);
+}
+
+/* ——— FAB / botones mapa ——— */
+.fab-show-pedidos {
+  border-radius: 999px;
+  box-shadow: var(--gn-shadow-md);
+  transition: transform var(--gn-transition), filter var(--gn-transition);
+}
+
+.fab-show-pedidos:hover {
+  filter: brightness(0.95);
+}
+
+.btn-mapa-ir-gps,
+.btn-mapa-nuevo-gps {
+  transition: transform var(--gn-transition), box-shadow var(--gn-transition);
+}
+
+.user-menu-pop {
+  border-radius: var(--gn-radius-md);
+  box-shadow: var(--gn-shadow-md);
+}
+
+.user-menu-item:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: -2px;
+}
+
+/* ——— Modales shell ——— */
+.mc,
+.admin-box {
+  border-radius: var(--gn-radius-lg);
+}
+
+.mh {
+  font-weight: 600;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  transition: border-color var(--gn-transition), box-shadow var(--gn-transition);
+}
+
+@media (max-width: 700px) {
+  #ms #mc {
+    margin: 6px 8px 10px;
+    height: calc(100dvh - var(--app-header-h, 58px) - 16px);
+    border-radius: var(--gn-radius-md);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .map-slide-tab.visible:hover {
+    background: rgba(59, 130, 246, 0.18) !important;
+    border-color: #64748b !important;
+  }
+  .pi:hover {
+    background: #1e293b;
+  }
+  html:not(.gn-android-webview) .gn-cursor-coords-header {
+    background: #334155 !important;
+  }
+  html:not(.gn-android-webview) .gn-cursor-coords-header:hover {
+    background: #475569 !important;
+  }
+}

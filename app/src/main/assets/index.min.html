@@ -8,6 +8,9 @@
 <meta http-equiv="Pragma" content="no-cache">
 <title>GestorNova — Pedidos</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -15,6 +18,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="css/modern-dashboard.css"/>
 </head>
 <body>
 <div id="app">
@@ -94,6 +98,16 @@
     <div class="hr">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
+      <div id="web-coords-converter" class="gn-web-coords-converter" style="display:none">
+        <select id="web-coords-converter-mode" class="gn-web-coords-converter-mode">
+          <option value="dec_to_dms">Dec→GMS</option>
+          <option value="dms_to_dec">GMS→Dec</option>
+        </select>
+        <input id="web-coords-converter-a" class="gn-web-coords-converter-field" type="text" placeholder="Latitud"/>
+        <input id="web-coords-converter-b" class="gn-web-coords-converter-field" type="text" placeholder="Longitud"/>
+        <button id="web-coords-converter-run" type="button" class="ib-mini" title="Convertir"><i class="fas fa-exchange-alt"></i></button>
+      </div>
+      <span id="web-coords-converter-out" style="display:none"></span>
       <div id="user-menu-wrap" class="user-menu-wrap">
       <button id="ub" type="button" class="ib" title="Menú de usuario: cuenta o cerrar sesión"><i class="fas fa-user-circle"></i></button>
       <div id="user-menu-pop" class="user-menu-pop" role="menu" aria-hidden="true">
@@ -1180,6 +1194,34 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- Admin web: registro visible de geocodificación / proxy Nominatim (no solo consola) -->
+<div id="gn-geocode-log-root" class="gn-geocode-log-root" hidden>
+  <button type="button" id="gn-geocode-log-fab" class="gn-geocode-log-fab" aria-expanded="false" aria-controls="gn-geocode-log-panel" title="Diagnóstico de mapa y geocodificación">
+    <i class="fas fa-clipboard-list" aria-hidden="true"></i><span class="gn-geocode-log-fab-label">Mapa</span>
+  </button>
+  <section id="gn-geocode-log-panel" class="gn-geocode-log-panel" aria-labelledby="gn-geocode-log-heading" role="region" hidden>
+    <header class="gn-geocode-log-head">
+      <h2 id="gn-geocode-log-heading" class="gn-geocode-log-title">Diagnóstico mapa / geocodificación</h2>
+      <div class="gn-geocode-log-actions">
+        <button type="button" class="gn-geocode-log-btn" id="gn-geocode-log-copy">Copiar</button>
+        <button type="button" class="gn-geocode-log-btn" id="gn-geocode-log-clear">Limpiar</button>
+        <button type="button" class="gn-geocode-log-btn gn-geocode-log-btn-close" id="gn-geocode-log-collapse" aria-label="Ocultar panel">✕</button>
+      </div>
+    </header>
+    <div id="gn-geocode-log-body" class="gn-geocode-log-body" role="log" aria-live="polite" aria-relevant="additions"></div>
+    <div class="gn-wa-geo-ops-wrap" id="gn-wa-geo-ops-section">
+      <h3 class="gn-geocode-log-subtitle">Operaciones WhatsApp (geocodificación en servidor)</h3>
+      <p class="gn-wa-geo-ops-intro">Pasos del pipeline (Nominatim, Overpass, fallbacks) mientras corre el alta. Auto-actualización cada ~2,5 s; se pausa si abrís un ítem o pulsás Pausar (así no se cierra el acordeón ni se pierde la selección).</p>
+      <div id="gn-wa-geo-ops-list" class="gn-wa-geo-ops-list" aria-live="polite"></div>
+      <div class="gn-wa-geo-ops-actions">
+        <button type="button" class="gn-geocode-log-btn" id="gn-wa-geo-ops-pause" aria-pressed="false" title="Pausar el refresco automático">Pausar auto</button>
+        <button type="button" class="gn-geocode-log-btn gn-geocode-log-btn-primary" id="gn-wa-geo-ops-refresh">Actualizar ahora</button>
+      </div>
+    </div>
+    <p class="gn-geocode-log-hint">Registro de esta pestaña. Si ves error 503 o “sin conexión”, reintentá en unos minutos o verificá que la API (Render) esté activa y que tu sesión tenga token válido.</p>
+  </section>
 </div>
 
 <div id="modal-log-regeocodificar" class="mo" style="z-index:13000">
