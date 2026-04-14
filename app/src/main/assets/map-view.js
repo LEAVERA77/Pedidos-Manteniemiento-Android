@@ -154,6 +154,10 @@ function gnRemoveCursorCoordsControl(map) {
 }
 
 function gnAttachCursorCoordsControl(L, map) {
+    if (ctx && ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa()) {
+        gnRemoveCursorCoordsControl(map);
+        return;
+    }
     gnRemoveCursorCoordsControl(map);
     const CursorCoordsControl = L.Control.extend({
         options: { position: 'bottomleft' },
@@ -179,6 +183,31 @@ function gnAttachCursorCoordsControl(L, map) {
             body.appendChild(document.createTextNode(', '));
             body.appendChild(lngSpan);
 
+            const gotoWrap = L.DomUtil.create('div', 'gn-cursor-goto-wrap', body);
+            gotoWrap.style.display = 'flex';
+            gotoWrap.style.flexWrap = 'wrap';
+            gotoWrap.style.gap = '4px';
+            gotoWrap.style.marginTop = '6px';
+            gotoWrap.style.width = '100%';
+            const inLat = document.createElement('input');
+            inLat.type = 'text';
+            inLat.placeholder = 'Lat';
+            inLat.style.cssText =
+                'width:80px;background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font-size:11px';
+            const inLng = document.createElement('input');
+            inLng.type = 'text';
+            inLng.placeholder = 'Lng';
+            inLng.style.cssText =
+                'width:80px;background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font-size:11px';
+            const btnGo = document.createElement('button');
+            btnGo.type = 'button';
+            btnGo.textContent = 'Ir';
+            btnGo.style.cssText =
+                'background:#2563eb;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer';
+            gotoWrap.appendChild(inLat);
+            gotoWrap.appendChild(inLng);
+            gotoWrap.appendChild(btnGo);
+
             if (L.DomEvent && typeof L.DomEvent.disableClickPropagation === 'function') {
                 L.DomEvent.disableClickPropagation(container);
                 L.DomEvent.disableScrollPropagation(container);
@@ -200,6 +229,23 @@ function gnAttachCursorCoordsControl(L, map) {
             const onMapOut = () => {
                 latSpan.textContent = '---';
                 lngSpan.textContent = '---';
+            };
+            const onGoto = () => {
+                const lat = parseFloat(String(inLat.value || '').trim().replace(',', '.'));
+                const lng = parseFloat(String(inLng.value || '').trim().replace(',', '.'));
+                if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+                    try { ctx.toast('Coordenadas inválidas para centrar mapa.', 'warning'); } catch (_) {}
+                    return;
+                }
+                try {
+                    const z = typeof ctx.mostrarMarcadorUbicacion === 'function'
+                        ? ctx.mostrarMarcadorUbicacion(lat, lng, null)
+                        : 16;
+                    mapInstance.setView([lat, lng], Math.max(z || 16, 16), { animate: true });
+                    if (typeof ctx.window.abrirNuevoPedidoEnCoordenadas === 'function') {
+                        ctx.window.abrirNuevoPedidoEnCoordenadas(lat, lng, null);
+                    }
+                } catch (_) {}
             };
 
             const onWinMove = (e) => {
@@ -254,6 +300,9 @@ function gnAttachCursorCoordsControl(L, map) {
                     container.style.minWidth = isExpanded ? '' : 'auto';
                 });
             }
+            btnGo.addEventListener('click', onGoto);
+            inLat.addEventListener('keydown', (e) => { if (e.key === 'Enter') onGoto(); });
+            inLng.addEventListener('keydown', (e) => { if (e.key === 'Enter') onGoto(); });
 
             mapInstance.on('mousemove', onMapMove);
             mapInstance.on('mouseout', onMapOut);

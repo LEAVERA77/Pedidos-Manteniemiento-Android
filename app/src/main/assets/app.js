@@ -2520,6 +2520,81 @@ async function conectarNeon() {
 
 
 
+function resetPreferenciasPanelesInicioCerrados() {
+    try {
+        localStorage.setItem('pmg_slideoff_filtros', '1');
+        localStorage.setItem('pmg_slideoff_filtro_tipo', '1');
+        localStorage.setItem('pmg_slideoff_colores', '1');
+        localStorage.setItem('pmg_slideoff_dash', '1');
+        localStorage.setItem('pmg_bp2_hidden', '1');
+    } catch (_) {}
+}
+
+function decimalToDmsLite(decimal, isLat) {
+    const n = Number(decimal);
+    if (!Number.isFinite(n)) return '—';
+    const abs = Math.abs(n);
+    const deg = Math.floor(abs);
+    const minFloat = (abs - deg) * 60;
+    const min = Math.floor(minFloat);
+    const sec = ((minFloat - min) * 60).toFixed(1);
+    const hemi = isLat ? (n >= 0 ? 'N' : 'S') : (n >= 0 ? 'E' : 'O');
+    return `${deg}° ${min}' ${sec}" ${hemi}`;
+}
+
+function dmsToDecimalLite(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return Number.NaN;
+    if (!/[°º'′´"″]/.test(s)) return parseFloat(s.replace(',', '.'));
+    const m = s.match(/^\s*(\d+)[°º]\s*(\d+)['′´]\s*([\d.,]+)\s*["″]?\s*([NnSsEeOoWw])\s*$/);
+    if (!m) return Number.NaN;
+    const deg = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const sec = parseFloat(String(m[3]).replace(',', '.'));
+    const hemi = m[4].toUpperCase();
+    if (!Number.isFinite(deg) || !Number.isFinite(min) || !Number.isFinite(sec)) return Number.NaN;
+    let dec = deg + min / 60 + sec / 3600;
+    if (hemi === 'S' || hemi === 'W' || hemi === 'O') dec = -dec;
+    return dec;
+}
+
+function initWebCoordsConverterBar() {
+    const wrap = document.getElementById('web-coords-converter');
+    const mode = document.getElementById('web-coords-converter-mode');
+    const a = document.getElementById('web-coords-converter-a');
+    const b = document.getElementById('web-coords-converter-b');
+    const run = document.getElementById('web-coords-converter-run');
+    const out = document.getElementById('web-coords-converter-out');
+    if (!wrap || !mode || !a || !b || !run || !out) return;
+    const visible = !esAndroidWebViewMapa();
+    wrap.style.display = visible ? 'inline-flex' : 'none';
+    out.style.display = visible ? 'inline' : 'none';
+    if (!visible || run.dataset.bound === '1') return;
+    run.dataset.bound = '1';
+    const exec = () => {
+        if (mode.value === 'dec_to_dms') {
+            const lat = parseFloat(String(a.value || '').trim().replace(',', '.'));
+            const lng = parseFloat(String(b.value || '').trim().replace(',', '.'));
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                out.textContent = 'Ingresá lat/lng decimales válidos';
+                return;
+            }
+            out.textContent = `${decimalToDmsLite(lat, true)} · ${decimalToDmsLite(lng, false)}`;
+        } else {
+            const lat = dmsToDecimalLite(a.value);
+            const lng = dmsToDecimalLite(b.value);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                out.textContent = 'Ingresá lat/lng en formato GMS válido';
+                return;
+            }
+            out.textContent = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+        }
+    };
+    run.addEventListener('click', exec);
+    a.addEventListener('keydown', (e) => { if (e.key === 'Enter') exec(); });
+    b.addEventListener('keydown', (e) => { if (e.key === 'Enter') exec(); });
+}
+
 document.getElementById('lf').addEventListener('submit', async e => {
     e.preventDefault();
     
@@ -2541,7 +2616,9 @@ document.getElementById('lf').addEventListener('submit', async e => {
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
+        try { initWebCoordsConverterBar(); } catch (_) {}
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
@@ -4906,6 +4983,8 @@ function aplicarUIMapaPlataforma() {
             const sel = document.getElementById('sel-android-pedidos-scope');
             if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
         }
+        const cc = document.getElementById('gn-cursor-coords');
+        if (cc) cc.style.display = 'none';
     } else {
         try {
             document.documentElement.classList.remove('gn-android-webview');
@@ -4913,6 +4992,8 @@ function aplicarUIMapaPlataforma() {
         card.style.display = 'block';
         if (cardTipo) cardTipo.style.display = 'block';
         if (cardCol) cardCol.style.display = 'block';
+        const cc = document.getElementById('gn-cursor-coords');
+        if (cc) cc.style.display = '';
     }
     try {
         if (esAndroidWebViewMapa()) {
@@ -4929,6 +5010,7 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
     try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaFiltroTiposRebuild(); } catch (_) {}
+    try { initWebCoordsConverterBar(); } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
@@ -6389,6 +6471,19 @@ async function irAMiUbicacionEnMapa() {
     await ensureMapReady();
     if (!app.map) {
         toast('No se pudo cargar el mapa', 'error');
+        return;
+    }
+    if (esAndroidWebViewMapa()) {
+        if (ultimaUbicacion && Number.isFinite(ultimaUbicacion.lat) && Number.isFinite(ultimaUbicacion.lon)) {
+            const z = mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc || 0);
+            app.map.invalidateSize({ animate: false });
+            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], z, { animate: false });
+            try {
+                const zEl = document.getElementById('zoom-altura');
+                if (zEl) zEl.textContent = calcularEscalaReal(app.map.getZoom());
+            } catch (_) {}
+        }
+        solicitarUbicacion(true, false, { fastUserAction: true });
         return;
     }
     const central = await resolverUbicacionCentralTenantParaMapa();
@@ -11653,6 +11748,9 @@ try {
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        resetPreferenciasPanelesInicioCerrados();
+        try { aplicarUIMapaPlataforma(); } catch (_) {}
+        try { initWebCoordsConverterBar(); } catch (_) {}
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
