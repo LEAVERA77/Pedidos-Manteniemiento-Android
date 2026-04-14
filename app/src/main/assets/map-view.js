@@ -162,90 +162,134 @@ export function gnAttachCursorCoordsControl() {
         return;
     }
     
-    // Crear control personalizado en bottomleft
-    const CoordControl = L.Control.extend({
-        options: { position: 'bottomleft' },
+    console.log('[gnAttachCursorCoordsControl] Inicializando control de coordenadas...');
+    
+    // Definir la clase del control
+    const CursorCoordsControl = L.Control.extend({
+        options: {
+            position: 'bottomleft'
+        },
         
         onAdd: function(map) {
             // Crear contenedor principal
-            const container = L.DomUtil.create('div', 'gn-map-cursor-coords-container');
-            container.innerHTML = `
-                <div class="gn-map-cursor-coords-header" style="cursor: move; background: rgba(0,0,0,0.8); padding: 6px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="color: white; font-weight: bold;">📍 Coordenadas</span>
-                    <button class="gn-coords-toggle-btn" style="background: none; border: none; color: white; cursor: pointer; font-size: 14px;">✖</button>
-                </div>
-                <div class="gn-map-cursor-coords-body" style="background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 4px; font-family: monospace; color: white; font-size: 11px;">
-                    <span id="mouse-lat-display">---</span>, <span id="mouse-lng-display">---</span>
-                </div>
-            `;
+            const container = L.DomUtil.create('div', 'gn-cursor-coords');
+            container.id = 'gn-cursor-coords';
+            container.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+            container.style.borderRadius = '8px';
+            container.style.backdropFilter = 'blur(4px)';
+            container.style.fontFamily = 'monospace';
+            container.style.fontSize = '11px';
+            container.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+            container.style.minWidth = '180px';
+            container.style.userSelect = 'none';
             
-            // Deshabilitar propagación de eventos del mapa para este contenedor
+            // Cabecera (arrastrable)
+            const header = L.DomUtil.create('div', 'gn-cursor-coords-header', container);
+            header.style.background = 'rgba(0, 0, 0, 0.8)';
+            header.style.padding = '6px 12px';
+            header.style.borderRadius = '8px 8px 0 0';
+            header.style.display = 'flex';
+            header.style.justifyContent = 'space-between';
+            header.style.alignItems = 'center';
+            header.style.cursor = 'move';
+            header.style.fontWeight = 'bold';
+            header.style.color = 'white';
+            header.innerHTML = '<span>📍 Coordenadas</span><button class="gn-coords-toggle" style="background:none;border:none;color:white;cursor:pointer;font-size:14px;">✖</button>';
+            
+            // Cuerpo (muestra coordenadas)
+            const body = L.DomUtil.create('div', 'gn-cursor-coords-body', container);
+            body.style.background = 'rgba(0, 0, 0, 0.7)';
+            body.style.padding = '6px 12px';
+            body.style.borderRadius = '0 0 8px 8px';
+            body.style.color = 'white';
+            body.style.display = 'flex';
+            body.style.gap = '8px';
+            
+            // Spans para lat y lng
+            const latSpan = document.createElement('span');
+            latSpan.id = 'gn-cursor-lat';
+            latSpan.textContent = '---';
+            const lngSpan = document.createElement('span');
+            lngSpan.id = 'gn-cursor-lng';
+            lngSpan.textContent = '---';
+            body.appendChild(latSpan);
+            body.appendChild(document.createTextNode(', '));
+            body.appendChild(lngSpan);
+            
+            // Deshabilitar eventos del mapa en el contenedor
             L.DomEvent.disableClickPropagation(container);
             L.DomEvent.disableScrollPropagation(container);
             
-            // Hacer arrastrable desde el header
+            // --- Funcionalidad de arrastre ---
             let isDragging = false;
-            let offsetX, offsetY;
-            const header = container.querySelector('.gn-map-cursor-coords-header');
+            let startX, startY, startLeft, startTop;
             
-            header.addEventListener('mousedown', (e) => {
-                if (e.target.classList.contains('gn-coords-toggle-btn')) return;
+            header.addEventListener('mousedown', function(e) {
+                if (e.target.classList.contains('gn-coords-toggle')) return;
                 isDragging = true;
-                offsetX = e.clientX - container.offsetLeft;
-                offsetY = e.clientY - container.offsetTop;
+                startX = e.clientX;
+                startY = e.clientY;
+                startLeft = container.offsetLeft;
+                startTop = container.offsetTop;
                 container.style.position = 'absolute';
                 container.style.zIndex = 1000;
                 map.dragging.disable();
+                e.preventDefault();
             });
             
-            window.addEventListener('mousemove', (e) => {
+            window.addEventListener('mousemove', function(e) {
                 if (!isDragging) return;
-                container.style.left = (e.clientX - offsetX) + 'px';
-                container.style.top = (e.clientY - offsetY) + 'px';
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                container.style.left = (startLeft + dx) + 'px';
+                container.style.top = (startTop + dy) + 'px';
             });
             
-            window.addEventListener('mouseup', () => {
+            window.addEventListener('mouseup', function() {
+                if (!isDragging) return;
                 isDragging = false;
                 map.dragging.enable();
             });
             
-            // Minimizar/expandir
-            const body = container.querySelector('.gn-map-cursor-coords-body');
-            const toggleBtn = container.querySelector('.gn-coords-toggle-btn');
+            // --- Funcionalidad de minimizar/expandir ---
+            const toggleBtn = header.querySelector('.gn-coords-toggle');
             let isExpanded = true;
             
-            toggleBtn.addEventListener('click', () => {
+            toggleBtn.addEventListener('click', function() {
                 isExpanded = !isExpanded;
                 body.style.display = isExpanded ? 'flex' : 'none';
                 toggleBtn.textContent = isExpanded ? '✖' : '▼';
+                if (isExpanded) {
+                    container.style.minWidth = '180px';
+                } else {
+                    container.style.minWidth = '35px';
+                }
             });
             
-            // Actualizar coordenadas al mover el mouse
-            map.on('mousemove', (e) => {
+            // --- Actualizar coordenadas en tiempo real ---
+            map.on('mousemove', function(e) {
+                if (!isExpanded) return;
                 const lat = e.latlng.lat.toFixed(7);
                 const lng = e.latlng.lng.toFixed(7);
-                const latSpan = container.querySelector('#mouse-lat-display');
-                const lngSpan = container.querySelector('#mouse-lng-display');
-                if (latSpan) latSpan.textContent = lat;
-                if (lngSpan) lngSpan.textContent = lng;
+                latSpan.textContent = lat;
+                lngSpan.textContent = lng;
             });
             
-            map.on('mouseout', () => {
-                const latSpan = container.querySelector('#mouse-lat-display');
-                const lngSpan = container.querySelector('#mouse-lng-display');
-                if (latSpan) latSpan.textContent = '---';
-                if (lngSpan) lngSpan.textContent = '---';
+            map.on('mouseout', function() {
+                latSpan.textContent = '---';
+                lngSpan.textContent = '---';
             });
             
+            console.log('[gnAttachCursorCoordsControl] Control creado correctamente');
             return container;
         }
     });
     
-    const coordsControl = new CoordControl();
+    // Agregar el control al mapa
+    const coordsControl = new CursorCoordsControl();
     map.addControl(coordsControl);
-    console.log('[gnAttachCursorCoordsControl] Control de coordenadas agregado (bottomleft)');
+    console.log('[gnAttachCursorCoordsControl] Control agregado al mapa en posición bottomleft');
 }
-
 /**
  * Vuelve a leer la ubicación central y redibuja el marcador (tras cambiar EMPRESA_CFG / API).
  */
