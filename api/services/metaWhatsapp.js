@@ -162,6 +162,11 @@ export async function sendWhatsAppTextWithCredentials(
         "[meta-whatsapp] Token Meta expirado o inválido: renová el token en Meta y actualizá META_ACCESS_TOKEN o clientes.configuracion.meta_access_token."
       );
     }
+    if (graph?.error?.code === 131030) {
+      console.error(
+        "[meta-whatsapp] (#131030) Meta rechazó el envío: el número de destino no está en la lista de destinatarios de prueba (o la app no está en Live). El destino en logs (toOut.tail4) coincide con quien escribió; agregá ese WhatsApp en Meta for Developers → WhatsApp → API setup (Phone numbers / lista de prueba) o publicá la app."
+      );
+    }
     const summary = graph?.error?.message ? String(graph.error.message).slice(0, 520) : `http_${resp.status}`;
     return { ok: false, status: resp.status, graph, error: summary };
   }
