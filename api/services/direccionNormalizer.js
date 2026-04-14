@@ -1,9 +1,13 @@
 /**
- * Clave legible para logs/diagnóstico (la BD usa columnas normalizadas en correcciones_direcciones).
+ * Clave legible para logs/diagnóstico (misma lógica que columnas en `correcciones_direcciones`).
  * made by leavera77
  */
 
-import { normalizarNumeroPuerta, normalizarParteDireccion } from "./correccionesDirecciones.js";
+import {
+  normalizarCalleNormBd,
+  normalizarNumeroPuerta,
+  normalizarParteDireccion,
+} from "./correccionesDirecciones.js";
 
 /**
  * @param {string|null|undefined} calle
@@ -12,11 +16,11 @@ import { normalizarNumeroPuerta, normalizarParteDireccion } from "./correcciones
  * @param {string|null|undefined} provincia
  */
 export function normalizarDireccion(calle, numero, localidad, provincia) {
-  const cn = normalizarParteDireccion(calle);
+  const cn = normalizarCalleNormBd(calle);
   const nn = normalizarNumeroPuerta(numero);
   const ln = normalizarParteDireccion(localidad);
   const pn = provincia && String(provincia).trim() ? normalizarParteDireccion(provincia) : "";
   return `${cn}|${nn}|${ln}|${pn}`;
 }
 
-export { normalizarNumeroPuerta, normalizarParteDireccion };
+export { normalizarCalleNormBd, normalizarNumeroPuerta, normalizarParteDireccion };

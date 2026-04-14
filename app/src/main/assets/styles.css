@@ -642,6 +642,7 @@ textarea{resize:vertical;min-height:80px}
   padding:.35rem .45rem .35rem .55rem;font-size:.68rem;font-weight:700;
   background:rgba(30,41,59,.65);cursor:grab;border-bottom:1px solid rgba(148,163,184,.25);
 }
+.gn-map-cursor-coords-head:hover{background:rgba(30,41,59,.85)}
 .gn-map-cursor-coords-head:active{cursor:grabbing}
 .gn-map-cursor-coords-title{flex:1;min-width:0;letter-spacing:.02em;opacity:.95}
 .gn-map-cursor-coords-toggle{

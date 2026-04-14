@@ -5,6 +5,7 @@
  */
 
 import { query } from "../db/neon.js";
+import { separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
 
 let _tableMissingLogged = false;
 
@@ -31,9 +32,48 @@ export function normalizarParteDireccion(s) {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Calle para columna `calle_norm`: sin puntuación (solo letras/números como tokens),
+ * alineado con el pipeline antes del diccionario OSM y con el guardado desde coords-manual.
+ */
+export function normalizarCalleNormBd(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 export function normalizarNumeroPuerta(n) {
   const d = String(n || "").replace(/\D/g, "");
   return d || "";
+}
+
+/**
+ * Misma preparación que el inicio del pipeline (sin PASO 1 diccionario): separa nº duplicado en calle.
+ * @param {object} pedido — fila pedidos o similar con cliente_calle, cliente_numero_puerta, cliente_localidad, provincia
+ */
+export function extraerDomicilioCorreccion(pedido) {
+  let calle = pedido?.cliente_calle ? String(pedido.cliente_calle).trim() : null;
+  let num = pedido?.cliente_numero_puerta ? String(pedido.cliente_numero_puerta).trim() : null;
+  const loc = pedido?.cliente_localidad ? String(pedido.cliente_localidad).trim() : null;
+  const sep = separarNumeroDuplicadoEnCalle(calle, num);
+  if (sep.stripped) {
+    calle = sep.calle;
+    if (!num && sep.numero) num = String(sep.numero);
+  }
+  const prov = pedido?.provincia != null && String(pedido.provincia).trim() ? String(pedido.provincia).trim() : "";
+  return { calle, numero: num, localidad: loc, provincia: prov };
+}
+
+/** Clave estable para logs (mismos componentes que filas en BD). */
+export function claveDireccionCorreccionParaLog(calle, numero, localidad, provincia) {
+  return `${normalizarCalleNormBd(calle)}|${normalizarNumeroPuerta(numero)}|${normalizarParteDireccion(localidad)}|${
+    provincia && String(provincia).trim() ? normalizarParteDireccion(provincia) : ""
+  }`;
 }
 
 /**
@@ -43,7 +83,7 @@ export function normalizarNumeroPuerta(n) {
 export async function buscarCorreccionDireccionEnBd(p) {
   if (!correccionesDireccionesEnabled()) return { hit: false };
 
-  const calleNorm = normalizarParteDireccion(p.calle);
+  const calleNorm = normalizarCalleNormBd(p.calle);
   const locNorm = normalizarParteDireccion(p.localidad);
   if (calleNorm.length < 2 || locNorm.length < 2) return { hit: false };
 
@@ -55,7 +95,7 @@ export async function buscarCorreccionDireccionEnBd(p) {
   const tidArg = Number.isFinite(tid) && tid > 0 ? tid : 0;
 
   try {
-    const r = await query(
+    let r = await query(
       `SELECT id, lat, lng FROM correcciones_direcciones
        WHERE calle_norm = $1 AND localidad_norm = $2 AND numero_norm = $3
          AND (
@@ -74,7 +114,30 @@ export async function buscarCorreccionDireccionEnBd(p) {
        LIMIT 1`,
       [calleNorm, locNorm, numNorm, provNorm, tidArg]
     );
-    const row = r.rows?.[0];
+    let row = r.rows?.[0];
+    if (!row && calleNorm !== normalizarParteDireccion(p.calle)) {
+      const legacyCalle = normalizarParteDireccion(p.calle);
+      r = await query(
+        `SELECT id, lat, lng FROM correcciones_direcciones
+         WHERE calle_norm = $1 AND localidad_norm = $2 AND numero_norm = $3
+           AND (
+             COALESCE(provincia_norm, '') = ''
+             OR $4::text = ''
+             OR provincia_norm = $4
+           )
+           AND (tenant_id IS NULL OR ($5::int > 0 AND tenant_id = $5::int))
+         ORDER BY
+           CASE
+             WHEN $5::int > 0 AND tenant_id = $5::int THEN 0
+             WHEN tenant_id IS NULL THEN 1
+             ELSE 2
+           END,
+           id DESC
+         LIMIT 1`,
+        [legacyCalle, locNorm, numNorm, provNorm, tidArg]
+      );
+      row = r.rows?.[0];
+    }
     if (!row) return { hit: false };
     const lat = Number(row.lat);
     const lng = Number(row.lng);
@@ -102,19 +165,32 @@ export async function buscarCorreccionDireccionEnBd(p) {
 
 /**
  * Guarda/actualiza coords marcadas por el operador en el mapa (por tenant + domicilio normalizado).
- * @param {{ tenantId: number, calle?: string|null, numero?: string|null, localidad?: string|null, provincia?: string|null, lat: number, lng: number, usuarioId?: number|null }} p
+ * @param {{ tenantId: number, pedido?: object, calle?: string|null, numero?: string|null, localidad?: string|null, provincia?: string|null, lat: number, lng: number, usuarioId?: number|null }} p
  * @returns {Promise<{ ok: boolean, id?: number, updated?: boolean, reason?: string }>}
  */
 export async function upsertCorreccionOperadorDesdePedido(p) {
   if (!correccionesDireccionesEnabled()) return { ok: false, reason: "disabled" };
 
-  const calleNorm = normalizarParteDireccion(p.calle);
-  const locNorm = normalizarParteDireccion(p.localidad);
+  const dom =
+    p.pedido && typeof p.pedido === "object"
+      ? extraerDomicilioCorreccion(p.pedido)
+      : {
+          calle: p.calle,
+          numero: p.numero,
+          localidad: p.localidad,
+          provincia: p.provincia,
+        };
+
+  const calleNorm = normalizarCalleNormBd(dom.calle);
+  const locNorm = normalizarParteDireccion(dom.localidad);
   if (calleNorm.length < 2 || locNorm.length < 2) return { ok: false, reason: "direccion_incompleta" };
 
-  const numNorm = normalizarNumeroPuerta(p.numero);
-  const provRaw = p.provincia != null && String(p.provincia).trim() ? String(p.provincia).trim() : "";
+  const numNorm = normalizarNumeroPuerta(dom.numero);
+  const provRaw = dom.provincia != null && String(dom.provincia).trim() ? String(dom.provincia).trim() : "";
   const provNorm = provRaw ? normalizarParteDireccion(provRaw) : "";
+
+  const claveLog = claveDireccionCorreccionParaLog(dom.calle, dom.numero, dom.localidad, dom.provincia);
+  console.info(`[correcciones] Guardando corrección BD clave="${claveLog}" tenant=${p.tenantId}`);
 
   const lat = Number(p.lat);
   const lng = Number(p.lng);

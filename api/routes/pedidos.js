@@ -1189,10 +1189,7 @@ async function handleCoordsManualCorreccion(req, res) {
     try {
       correccionDireccionInfo = await upsertCorreccionOperadorDesdePedido({
         tenantId: Number(req.tenantId),
-        calle: pedido.cliente_calle,
-        numero: pedido.cliente_numero_puerta,
-        localidad: pedido.cliente_localidad,
-        provincia: pedido.provincia,
+        pedido,
         lat: la,
         lng: ln,
         usuarioId: req.user?.id ?? null,

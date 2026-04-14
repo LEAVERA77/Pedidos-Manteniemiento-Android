@@ -38,7 +38,10 @@ import { esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp } from "../utils/socio
 import { buscarCoordenadasVecinoParidadOverpass } from "./overpassVecinosParidad.js";
 import { evaluarIgnorarCoordenadasCatalogoPipeline } from "./sociosCatalogoPipelineFiltro.js";
 import { geocodeDireccionGeorefAr, georefArEnabled } from "./georefClient.js";
-import { buscarCorreccionDireccionEnBd } from "./correccionesDirecciones.js";
+import {
+  buscarCorreccionDireccionEnBd,
+  claveDireccionCorreccionParaLog,
+} from "./correccionesDirecciones.js";
 import { interpolarPosicionEnCalle, streetGeometryInterpolationEnabled } from "./streetInterpolation.js";
 import { geocodeByCatastral, catastralGeocodingEnabled } from "./catastralGeocoding.js";
 import { coordenadasPlausiblesParaLocalidadTenant } from "./tenantLocalidades.js";
@@ -170,6 +173,61 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
     /** WhatsApp: si ya corrimos Simple-q antes del catálogo, el segundo Nominatim usa pipeline completo. */
     let waNominatimAntesCatalogo = false;
 
+    if (options.respetarGpsWhatsapp === true && !coordsValidasWgs84(latFinal, lngFinal)) {
+      const gla = pedido.lat != null ? Number(pedido.lat) : NaN;
+      const glo = pedido.lng != null ? Number(pedido.lng) : NaN;
+      if (
+        coordsValidasWgs84(gla, glo) &&
+        !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(gla, glo)
+      ) {
+        latFinal = gla;
+        lngFinal = glo;
+        fuente = "whatsapp_gps";
+        L("\n📍 PASO 0: GPS WhatsApp — coordenadas del dispositivo (prioridad)");
+        L(`  ✓ ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
+        await teleRecord(tele, "paso0_gps_whatsapp", { fuente: "whatsapp_gps" });
+      }
+    }
+
+    /**
+     * PASO 1b: corrección manual en BD — misma preparación de calle/número que al guardar (coords-manual),
+     * y **antes** del PASO 1 diccionario (si no, la clave no coincide con la fila guardada).
+     */
+    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
+      try {
+        await teleRecord(tele, "correccion_manual_bd_inicio");
+        const provPaso1b = provinciaEfectiva.length >= 2 ? provinciaEfectiva : "";
+        const claveDbg = claveDireccionCorreccionParaLog(calleT, numT, locT, provPaso1b);
+        console.info(`[pipeline] 🔍 PASO 1b buscar corrección BD clave="${claveDbg}" tenant=${tenantId}`);
+        L(`  🔑 Clave corrección (pre-diccionario): ${claveDbg}`);
+        const c0 = await buscarCorreccionDireccionEnBd({
+          tenantId: Number(tenantId),
+          calle: calleT,
+          numero: numT,
+          localidad: locT,
+          provincia: provPaso1b,
+        });
+        if (c0.hit && coordsValidasWgs84(c0.lat, c0.lng)) {
+          latFinal = c0.lat;
+          lngFinal = c0.lng;
+          fuente = "correccion_manual_bd";
+          console.info(
+            `[pipeline] ✅ CORRECCIÓN ENCONTRADA id=${c0.id != null ? c0.id : "?"} → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`
+          );
+          L(
+            `\n📌 PASO 1b: Corrección manual (BD)${c0.id != null ? ` #${c0.id}` : ""} → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`
+          );
+          await teleRecord(tele, "correccion_manual_bd_exito", { id: c0.id ?? null });
+        } else {
+          console.info(`[pipeline] ❌ Sin corrección BD para clave="${claveDbg}"`);
+          await teleRecord(tele, "correccion_manual_bd_sin_hit");
+        }
+      } catch (err) {
+        L(`  ⚠️ PASO 1b corrección BD: ${err?.message || err}`);
+        await teleRecord(tele, "correccion_manual_bd_error", { err: String(err?.message || err).slice(0, 200) });
+      }
+    }
+
     L("\n🔤 PASO 1: Normalización de calle");
     if (calleT && locT) {
       try {
@@ -189,50 +247,6 @@ export async function ejecutarPipelineGeocodificacionDesdePedidoLike(pedido, ten
       L(`  → Sin calle/localidad para normalizar`);
     }
     await teleRecord(tele, "paso1_normalizacion_ok");
-
-    if (options.respetarGpsWhatsapp === true && !coordsValidasWgs84(latFinal, lngFinal)) {
-      const gla = pedido.lat != null ? Number(pedido.lat) : NaN;
-      const glo = pedido.lng != null ? Number(pedido.lng) : NaN;
-      if (
-        coordsValidasWgs84(gla, glo) &&
-        !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(gla, glo)
-      ) {
-        latFinal = gla;
-        lngFinal = glo;
-        fuente = "whatsapp_gps";
-        L("\n📍 PASO 0: GPS WhatsApp — coordenadas del dispositivo (prioridad)");
-        L(`  ✓ ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`);
-        await teleRecord(tele, "paso0_gps_whatsapp", { fuente: "whatsapp_gps" });
-      }
-    }
-
-    /** PASO 1b: corrección manual en BD — antes de catálogo y Nominatim (máxima prioridad operativa por domicilio). */
-    if (!coordsValidasWgs84(latFinal, lngFinal) && calleT && locT) {
-      try {
-        await teleRecord(tele, "correccion_manual_bd_inicio");
-        const c0 = await buscarCorreccionDireccionEnBd({
-          tenantId: Number(tenantId),
-          calle: calleT,
-          numero: numT,
-          localidad: locT,
-          provincia: provinciaEfectiva.length >= 2 ? provinciaEfectiva : "",
-        });
-        if (c0.hit && coordsValidasWgs84(c0.lat, c0.lng)) {
-          latFinal = c0.lat;
-          lngFinal = c0.lng;
-          fuente = "correccion_manual_bd";
-          L(
-            `\n📌 PASO 1b: Corrección manual (BD)${c0.id != null ? ` #${c0.id}` : ""} → ${latFinal.toFixed(6)}, ${lngFinal.toFixed(6)}`
-          );
-          await teleRecord(tele, "correccion_manual_bd_exito", { id: c0.id ?? null });
-        } else {
-          await teleRecord(tele, "correccion_manual_bd_sin_hit");
-        }
-      } catch (err) {
-        L(`  ⚠️ PASO 1b corrección BD: ${err?.message || err}`);
-        await teleRecord(tele, "correccion_manual_bd_error", { err: String(err?.message || err).slice(0, 200) });
-      }
-    }
 
     const mismoTextoCalle = (a, b) =>
       String(a || "")
