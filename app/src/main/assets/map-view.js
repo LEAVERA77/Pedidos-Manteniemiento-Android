@@ -153,142 +153,130 @@ function gnRemoveCursorCoordsControl(map) {
     _gnCursorCoordsControl = null;
 }
 
-// ============================================================
-// Control de coordenadas del cursor en tiempo real
-// ============================================================
-export function gnAttachCursorCoordsControl() {
-    if (!window.map) {
-        console.warn('[gnAttachCursorCoordsControl] mapa no disponible');
-        return;
-    }
-    
-    console.log('[gnAttachCursorCoordsControl] Inicializando control de coordenadas...');
-    
-    // Definir la clase del control
+function gnAttachCursorCoordsControl(L, map) {
+    gnRemoveCursorCoordsControl(map);
     const CursorCoordsControl = L.Control.extend({
-        options: {
-            position: 'bottomleft'
-        },
-        
-        onAdd: function(map) {
-            // Crear contenedor principal
-            const container = L.DomUtil.create('div', 'gn-cursor-coords');
+        options: { position: 'bottomleft' },
+        onAdd(mapInstance) {
+            const container = L.DomUtil.create('div', 'gn-cursor-coords leaflet-bar');
             container.id = 'gn-cursor-coords';
-            container.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
-            container.style.borderRadius = '8px';
-            container.style.backdropFilter = 'blur(4px)';
-            container.style.fontFamily = 'monospace';
-            container.style.fontSize = '11px';
-            container.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-            container.style.minWidth = '180px';
-            container.style.userSelect = 'none';
-            
-            // Cabecera (arrastrable)
+            container.setAttribute('role', 'region');
+            container.setAttribute('aria-label', 'Coordenadas del cursor en el mapa');
+
             const header = L.DomUtil.create('div', 'gn-cursor-coords-header', container);
-            header.style.background = 'rgba(0, 0, 0, 0.8)';
-            header.style.padding = '6px 12px';
-            header.style.borderRadius = '8px 8px 0 0';
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
-            header.style.cursor = 'move';
-            header.style.fontWeight = 'bold';
-            header.style.color = 'white';
-            header.innerHTML = '<span>📍 Coordenadas</span><button class="gn-coords-toggle" style="background:none;border:none;color:white;cursor:pointer;font-size:14px;">✖</button>';
-            
-            // Cuerpo (muestra coordenadas)
+            header.title = 'Arrastrar';
+            header.innerHTML =
+                '<span>📍 Coordenadas</span><button type="button" class="gn-coords-toggle" aria-expanded="true" aria-label="Ocultar coordenadas">✕</button>';
+
             const body = L.DomUtil.create('div', 'gn-cursor-coords-body', container);
-            body.style.background = 'rgba(0, 0, 0, 0.7)';
-            body.style.padding = '6px 12px';
-            body.style.borderRadius = '0 0 8px 8px';
-            body.style.color = 'white';
-            body.style.display = 'flex';
-            body.style.gap = '8px';
-            
-            // Spans para lat y lng
             const latSpan = document.createElement('span');
-            latSpan.id = 'gn-cursor-lat';
+            latSpan.className = 'gn-cursor-lat';
             latSpan.textContent = '---';
             const lngSpan = document.createElement('span');
-            lngSpan.id = 'gn-cursor-lng';
+            lngSpan.className = 'gn-cursor-lng';
             lngSpan.textContent = '---';
             body.appendChild(latSpan);
             body.appendChild(document.createTextNode(', '));
             body.appendChild(lngSpan);
-            
-            // Deshabilitar eventos del mapa en el contenedor
-            L.DomEvent.disableClickPropagation(container);
-            L.DomEvent.disableScrollPropagation(container);
-            
-            // --- Funcionalidad de arrastre ---
+
+            if (L.DomEvent && typeof L.DomEvent.disableClickPropagation === 'function') {
+                L.DomEvent.disableClickPropagation(container);
+                L.DomEvent.disableScrollPropagation(container);
+            }
+
+            const toggleBtn = header.querySelector('.gn-coords-toggle');
+            let isExpanded = true;
             let isDragging = false;
-            let startX, startY, startLeft, startTop;
-            
-            header.addEventListener('mousedown', function(e) {
-                if (e.target.classList.contains('gn-coords-toggle')) return;
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                startLeft = container.offsetLeft;
-                startTop = container.offsetTop;
-                container.style.position = 'absolute';
-                container.style.zIndex = 1000;
-                map.dragging.disable();
-                e.preventDefault();
-            });
-            
-            window.addEventListener('mousemove', function(e) {
+            let startX = 0;
+            let startY = 0;
+            let startLeft = 0;
+            let startTop = 0;
+
+            const onMapMove = (e) => {
+                if (!isExpanded) return;
+                latSpan.textContent = e.latlng.lat.toFixed(7);
+                lngSpan.textContent = e.latlng.lng.toFixed(7);
+            };
+            const onMapOut = () => {
+                latSpan.textContent = '---';
+                lngSpan.textContent = '---';
+            };
+
+            const onWinMove = (e) => {
                 if (!isDragging) return;
                 const dx = e.clientX - startX;
                 const dy = e.clientY - startY;
-                container.style.left = (startLeft + dx) + 'px';
-                container.style.top = (startTop + dy) + 'px';
-            });
-            
-            window.addEventListener('mouseup', function() {
+                container.style.left = `${startLeft + dx}px`;
+                container.style.top = `${startTop + dy}px`;
+            };
+            const onWinUp = () => {
                 if (!isDragging) return;
                 isDragging = false;
-                map.dragging.enable();
+                try {
+                    mapInstance.dragging.enable();
+                } catch (_) {}
+            };
+
+            header.addEventListener('mousedown', (e) => {
+                if (e.target && e.target.closest && e.target.closest('.gn-coords-toggle')) return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = container.getBoundingClientRect();
+                startLeft = rect.left;
+                startTop = rect.top;
+                container.style.position = 'fixed';
+                container.style.left = `${startLeft}px`;
+                container.style.top = `${startTop}px`;
+                container.style.zIndex = '10050';
+                container.style.margin = '0';
+                try {
+                    mapInstance.dragging.disable();
+                } catch (_) {}
+                e.preventDefault();
             });
-            
-            // --- Funcionalidad de minimizar/expandir ---
-            const toggleBtn = header.querySelector('.gn-coords-toggle');
-            let isExpanded = true;
-            
-            toggleBtn.addEventListener('click', function() {
-                isExpanded = !isExpanded;
-                body.style.display = isExpanded ? 'flex' : 'none';
-                toggleBtn.textContent = isExpanded ? '✖' : '▼';
-                if (isExpanded) {
-                    container.style.minWidth = '180px';
-                } else {
-                    container.style.minWidth = '35px';
-                }
-            });
-            
-            // --- Actualizar coordenadas en tiempo real ---
-            map.on('mousemove', function(e) {
-                if (!isExpanded) return;
-                const lat = e.latlng.lat.toFixed(7);
-                const lng = e.latlng.lng.toFixed(7);
-                latSpan.textContent = lat;
-                lngSpan.textContent = lng;
-            });
-            
-            map.on('mouseout', function() {
-                latSpan.textContent = '---';
-                lngSpan.textContent = '---';
-            });
-            
-            console.log('[gnAttachCursorCoordsControl] Control creado correctamente');
+
+            window.addEventListener('mousemove', onWinMove);
+            window.addEventListener('mouseup', onWinUp);
+
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', (e) => {
+                    if (L.DomEvent && typeof L.DomEvent.stop === 'function') L.DomEvent.stop(e);
+                    else {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    isExpanded = !isExpanded;
+                    body.style.display = isExpanded ? 'flex' : 'none';
+                    toggleBtn.textContent = isExpanded ? '✕' : '▼';
+                    toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                    toggleBtn.setAttribute('aria-label', isExpanded ? 'Ocultar coordenadas' : 'Mostrar coordenadas');
+                    container.style.minWidth = isExpanded ? '' : 'auto';
+                });
+            }
+
+            mapInstance.on('mousemove', onMapMove);
+            mapInstance.on('mouseout', onMapOut);
+
+            this._gnCcOnMapMove = onMapMove;
+            this._gnCcOnMapOut = onMapOut;
+            this._gnCcOnWinMove = onWinMove;
+            this._gnCcOnWinUp = onWinUp;
+
             return container;
+        },
+        onRemove(mapInstance) {
+            if (this._gnCcOnMapMove) mapInstance.off('mousemove', this._gnCcOnMapMove);
+            if (this._gnCcOnMapOut) mapInstance.off('mouseout', this._gnCcOnMapOut);
+            if (this._gnCcOnWinMove) window.removeEventListener('mousemove', this._gnCcOnWinMove);
+            if (this._gnCcOnWinUp) window.removeEventListener('mouseup', this._gnCcOnWinUp);
+            try {
+                mapInstance.dragging.enable();
+            } catch (_) {}
         }
     });
-    
-    // Agregar el control al mapa
-    const coordsControl = new CursorCoordsControl();
-    map.addControl(coordsControl);
-    console.log('[gnAttachCursorCoordsControl] Control agregado al mapa en posición bottomleft');
+    _gnCursorCoordsControl = new CursorCoordsControl();
+    map.addControl(_gnCursorCoordsControl);
 }
 /**
  * Vuelve a leer la ubicación central y redibuja el marcador (tras cambiar EMPRESA_CFG / API).

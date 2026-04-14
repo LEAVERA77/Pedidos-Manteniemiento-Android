@@ -628,34 +628,29 @@ textarea{resize:vertical;min-height:80px}
 .gn-soc-admin-table .gn-soc-lat,.gn-soc-admin-table .gn-soc-lon{vertical-align:middle}
 
 /* Mapa admin: coordenadas del cursor (esquina inferior izquierda, arrastrable / minimizable) */
-.gn-map-cursor-coords{margin:0!important;background:transparent!important;box-shadow:none!important;border:none!important}
-.gn-map-cursor-coords-panel{
-  min-width:12.5rem;max-width:min(92vw,22rem);
-  background:rgba(15,23,42,.88);backdrop-filter:blur(6px);color:#f1f5f9;
-  border:1px solid rgba(148,163,184,.35);border-radius:.5rem;
-  box-shadow:0 4px 18px rgba(0,0,0,.28);overflow:hidden;
-  transition:transform .12s ease,opacity .15s ease;user-select:none;
+#gn-cursor-coords.gn-cursor-coords,
+.gn-cursor-coords.leaflet-bar{
+  margin:0!important;background:rgba(0,0,0,.75)!important;border-radius:8px!important;
+  backdrop-filter:blur(4px);font-family:ui-monospace,'Courier New',monospace;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);min-width:180px;user-select:none;
+  transition:min-width .2s ease;
 }
-.gn-map-cursor-coords-panel.gn-map-cursor-coords--dragging{transition:none}
-.gn-map-cursor-coords-head{
-  display:flex;align-items:center;justify-content:space-between;gap:.35rem;
-  padding:.35rem .45rem .35rem .55rem;font-size:.68rem;font-weight:700;
-  background:rgba(30,41,59,.65);cursor:grab;border-bottom:1px solid rgba(148,163,184,.25);
+.gn-cursor-coords-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.35rem .65rem;background:rgba(0,0,0,.8);border-radius:8px 8px 0 0;
+  cursor:grab;font-weight:700;font-size:.72rem;color:#fff;
 }
-.gn-map-cursor-coords-head:hover{background:rgba(30,41,59,.85)}
-.gn-map-cursor-coords-head:active{cursor:grabbing}
-.gn-map-cursor-coords-title{flex:1;min-width:0;letter-spacing:.02em;opacity:.95}
-.gn-map-cursor-coords-toggle{
-  flex-shrink:0;width:1.5rem;height:1.5rem;padding:0;border:none;border-radius:.3rem;
-  background:rgba(255,255,255,.08);color:#e2e8f0;font-size:.85rem;line-height:1;cursor:pointer;
+.gn-cursor-coords-header:hover{background:rgba(0,0,0,.9)!important}
+.gn-cursor-coords-header:active{cursor:grabbing}
+.gn-cursor-coords-body{
+  display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;
+  padding:.4rem .65rem .5rem;background:rgba(0,0,0,.7);border-radius:0 0 8px 8px;
+  color:#fff;font-size:11px;letter-spacing:.02em;
 }
-.gn-map-cursor-coords-toggle:hover{background:rgba(255,255,255,.16)}
-.gn-map-cursor-coords-body{
-  padding:.4rem .55rem .5rem;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;
-  pointer-events:none;
+.gn-coords-toggle{
+  background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:0 .25rem;line-height:1;
 }
-.gn-map-cursor-coords-panel.gn-map-cursor-coords--collapsed .gn-map-cursor-coords-body{display:none}
-.gn-map-cursor-coords-panel.gn-map-cursor-coords--collapsed{min-width:auto}
+.gn-coords-toggle:hover{opacity:.7}
 .gn-pedido-sin-pin-banner{font-size:.76rem;line-height:1.4;margin:0 0 .45rem;padding:.45rem .55rem;border-radius:.45rem;border:1px solid #fbbf24;background:rgba(251,191,36,.12);color:#92400e}
 /* Control de coordenadas del cursor */
 .gn-cursor-coords {
