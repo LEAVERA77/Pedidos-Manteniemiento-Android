@@ -2,6 +2,7 @@ import crypto from "crypto";
 import express from "express";
 import { handleInboundMetaWhatsAppPayload } from "../services/whatsappBotMeta.js";
 import { logWhatsappMensajeRecibido } from "../services/whatsappNotificacionesLog.js";
+import { normalizeWhatsAppRecipientForMeta } from "../services/metaWhatsapp.js";
 
 const router = express.Router();
 
@@ -91,6 +92,16 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
             ? `[location] lat=${la} lng=${lo}`
             : "[location] (sin coords)";
         }
+        const fromDigits = waId.replace(/\D/g, "");
+        const fromProcesado = normalizeWhatsAppRecipientForMeta(fromDigits);
+        const toParaGraph = normalizeWhatsAppRecipientForMeta(fromDigits, { mode: "outbound" });
+        console.log("[WEBHOOK] mensaje recibido de:", waId);
+        console.log("[WEBHOOK] from original:", waId);
+        console.log("[WEBHOOK] from procesado (inbound):", fromProcesado);
+        console.log("[WEBHOOK] ¿pasa validación long. inbound?:", fromProcesado.length >= 8 && fromProcesado.length <= 16);
+        console.log("[WEBHOOK] destino outbound (Graph) ok longitud:", toParaGraph.length >= 8 && toParaGraph.length <= 16, {
+          toLen: toParaGraph.length,
+        });
         console.log("[webhook-meta] inbound", {
           object: payload?.object,
           wa_id: waId,

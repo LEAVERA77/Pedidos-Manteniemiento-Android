@@ -26,6 +26,29 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
     const out = normalizeWhatsAppRecipientForMeta(inDigits);
     expect(out).toBe(inDigits.replace(/\D/g, ""));
   });
+
+  it("543… en inbound default → no inserta 9 (identidad estable)", () => {
+    delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
+    delete process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
+    const out = normalizeWhatsAppRecipientForMeta("543436986848");
+    expect(out).toBe("543436986848");
+  });
+
+  it("543… en outbound → 549… cuando insert está activo por defecto", () => {
+    delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
+    delete process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
+    const out = normalizeWhatsAppRecipientForMeta("543436986848", { mode: "outbound" });
+    expect(out.startsWith("549")).toBe(true);
+    expect(out).toBe("5493436986848");
+  });
+
+  it("543… en outbound no inserta si META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false", () => {
+    process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 = "false";
+    process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9 = "false";
+    const inDigits = "543436986848";
+    const out = normalizeWhatsAppRecipientForMeta(inDigits, { mode: "outbound" });
+    expect(out).toBe(inDigits);
+  });
 });
 
 describe("metaWhatsapp — decodeWhatsAppListRowId", () => {

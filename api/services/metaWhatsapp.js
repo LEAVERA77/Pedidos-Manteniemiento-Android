@@ -15,13 +15,33 @@ function argentinaStripEnabledFromEnv() {
 }
 
 /**
+ * Insertar 9 móvil tras +54 cuando falta (543… → 549…). Por defecto ACTIVO en **outbound**:
+ * contactos guardados sin 9 y envíos a terceros (ENERSA) lo requieren.
+ * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
+ */
+function argentinaInsertMobileNineEnabledFromEnv() {
+  const v = process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
+  if (v == null || String(v).trim() === "") return true;
+  const s = String(v).trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(s)) return false;
+  return true;
+}
+
+/**
  * Graph API `to` (Argentina): el webhook manda 549 + área + abonado; la lista de prueba de Meta
  * suele registrar 54 + área + abonado (sin el 9) → 131030 si no normalizamos.
  *
  * Por defecto: quitar un 9 tras 54 (549… → 54…). Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
- * Si tu WABA exige 549 y el webhook manda 543…: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true (y strip=false).
+ *
+ * **Modos:**
+ * - `inbound` (default): solo strip; NO insertar 9. Identidad/sesión/webhook/`wa_id` (debe ser estable).
+ * - `outbound`: strip + inserción 543…→549… cuando aplica (derivación ENERSA, envíos Graph).
+ *
+ * @param {string} digits
+ * @param {{ mode?: 'inbound' | 'outbound' }} [opts]
  */
-export function normalizeWhatsAppRecipientForMeta(digits) {
+export function normalizeWhatsAppRecipientForMeta(digits, opts = {}) {
+  const mode = opts.mode === "outbound" ? "outbound" : "inbound";
   const d = String(digits || "").replace(/\D/g, "");
   const stripEnvRaw = process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
   const stripOn = argentinaStripEnabledFromEnv();
@@ -30,21 +50,25 @@ export function normalizeWhatsAppRecipientForMeta(digits) {
 
   if (stripOn && wouldStrip) {
     out = `54${d.slice(3)}`;
-  } else {
-    const insertOn = ["1", "true"].includes(String(process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 || "").toLowerCase());
-    if (insertOn && d.startsWith("54") && d.length >= 11 && d.charAt(2) !== "9") {
-      out = `549${d.slice(2)}`;
-    }
+  } else if (
+    mode === "outbound" &&
+    argentinaInsertMobileNineEnabledFromEnv() &&
+    d.startsWith("54") &&
+    d.length >= 11 &&
+    d.charAt(2) !== "9"
+  ) {
+    out = `549${d.slice(2)}`;
   }
 
-  // Depuración Render: ver por qué sigue yendo 549… al Graph (buscar esta línea en logs).
   if (wouldStrip || d.startsWith("54")) {
     console.log("[meta-whatsapp][ar-normalize]", {
+      mode,
       inLen: d.length,
       inPrefix3: d.slice(0, 3),
       stripEnvRaw: stripEnvRaw === undefined ? "(undefined)" : String(stripEnvRaw),
       stripOn,
       wouldStripPattern: wouldStrip,
+      insertMobile9Outbound: mode === "outbound" && argentinaInsertMobileNineEnabledFromEnv(),
       outLen: out.length,
       outPrefix3: out.slice(0, 3),
       changed: out !== d,
@@ -61,11 +85,23 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
     return { ok: false, error: "missing_meta_credentials" };
   }
   const rawTo = String(toDigits || "").replace(/\D/g, "");
-  const to = normalizeWhatsAppRecipientForMeta(rawTo);
+  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params" };
   }
+  if (to.length < 8 || to.length > 16) {
+    console.error("[meta-whatsapp] destino descartado: longitud E.164 inusual", { toLen: to.length, rawLen: rawTo.length });
+    return { ok: false, error: "invalid_destination_length" };
+  }
+
+  console.log("[meta-whatsapp][outbound]", {
+    digitsInLen: rawTo.length,
+    digitsInPrefix4: rawTo.slice(0, 4),
+    toLen: to.length,
+    toPrefix4: to.slice(0, 4),
+    normalizedChanged: to !== rawTo,
+  });
 
   const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${pid}/messages`;
   const payload = {
@@ -100,11 +136,12 @@ export async function sendWhatsAppTextWithCredentials(toDigits, bodyText, { acce
         "[meta-whatsapp] Token Meta expirado o inválido: renová el token en Meta y actualizá META_ACCESS_TOKEN o clientes.configuracion.meta_access_token."
       );
     }
-    return { ok: false, status: resp.status, graph };
+    const summary = graph?.error?.message ? String(graph.error.message).slice(0, 520) : `http_${resp.status}`;
+    return { ok: false, status: resp.status, graph, error: summary };
   }
   if (graph?.error) {
     console.error("[meta-whatsapp] Graph body error", graph.error);
-    return { ok: false, status: resp.status || 502, graph };
+    return { ok: false, status: resp.status || 502, graph, error: "graph_body_error" };
   }
   console.log("[meta-whatsapp] mensaje enviado OK", { to: to.slice(0, 4) + "…", messageId: graph?.messages?.[0]?.id || "—" });
   return { ok: true, graph };
@@ -158,10 +195,17 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     return { ok: false, error: "missing_meta_credentials" };
   }
   const rawTo = String(toDigits || "").replace(/\D/g, "");
-  const to = normalizeWhatsAppRecipientForMeta(rawTo);
+  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
   const list = Array.isArray(tipos) ? tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
   if (!to || !list.length) {
     return { ok: false, error: "invalid_params" };
+  }
+  if (to.length < 8 || to.length > 16) {
+    console.error("[meta-whatsapp] interactive list: destino descartado (longitud E.164)", {
+      toLen: to.length,
+      rawLen: rawTo.length,
+    });
+    return { ok: false, error: "invalid_destination_length" };
   }
   if (list.length > 10) {
     return { ok: false, error: "too_many_rows" };
