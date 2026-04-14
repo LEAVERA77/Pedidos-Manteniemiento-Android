@@ -88,16 +88,20 @@ export async function sendBotWhatsAppText({
   const pid = String(webhookPhoneNumberId || "").trim();
   let accessToken = "";
   let graphPhoneId = pid;
+  /** Origen del token usado en Graph (si es cliente_config, Render META_ACCESS_TOKEN puede estar ignorado). */
+  let tokenSource = "unset";
 
   if (pid) {
     const byWebhook = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
     accessToken = String(byWebhook.accessToken || "").trim();
+    tokenSource = String(byWebhook.source || "webhook_lookup");
   }
 
   if (!accessToken) {
     const t = await getWhatsAppCredentialsForTenant(tenantId);
     accessToken = String(t.accessToken || "").trim();
     if (!graphPhoneId) graphPhoneId = String(t.phoneNumberId || "").trim();
+    tokenSource = String(t.source || "tenant_fallback");
   }
 
   if (!graphPhoneId) {
@@ -116,6 +120,17 @@ export async function sendBotWhatsAppText({
     } catch (_) {}
     return { ok: false, error: "missing_meta_credentials", skipped: false };
   }
+
+  console.log("[whatsapp-service] bot Meta credentials", {
+    tenantId,
+    webhookPhoneNumberId: pid || null,
+    graphPhoneId,
+    tokenSource,
+    hint:
+      tokenSource === "cliente_config"
+        ? "token desde Neon clientes.configuracion (no desde Render env); 131030 puede ser token/WABA distinto a la lista de prueba"
+        : undefined,
+  });
 
   const r = await sendWhatsAppTextWithCredentials(to, body, {
     accessToken,
