@@ -39,17 +39,27 @@ function checkWebhookToken(req) {
 }
 
 /**
- * Whapi.cloud a veces envía POST con `Authorization: Bearer <WHAPI_API_KEY>` (token del canal)
- * y otras veces sin query `?token=`; solo validar WHATSAPP_WEBHOOK_TOKEN devuelve 401 intermitentes.
+ * Whapi: Bearer (case-insensitive), ?token=, X-Api-Key, o cuerpo con channel_id = WHAPI_CHANNEL_ID.
  */
 function checkWhapiWebhookToken(req) {
   const shared = String(process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
-  if (!shared) return true;
-  const hdr = String(req.get("authorization") || "").trim();
-  const q = req.query.token;
-  if (hdr === `Bearer ${shared}` || q === shared) return true;
   const apiKey = String(process.env.WHAPI_API_KEY || "").trim();
-  if (apiKey && hdr === `Bearer ${apiKey}`) return true;
+  const hdrRaw = String(req.get("authorization") || "").trim();
+  const q = req.query?.token;
+  const xApi = String(req.get("x-api-key") || "").trim();
+  const bearer = /^Bearer\s+(.+)$/i.exec(hdrRaw);
+  const bearerToken = bearer ? bearer[1].trim() : "";
+
+  if (!shared) return true;
+  if (bearerToken === shared || q === shared) return true;
+  if (apiKey && bearerToken === apiKey) return true;
+  if (apiKey && xApi === apiKey) return true;
+  if (shared && xApi === shared) return true;
+
+  const expectCh = String(process.env.WHAPI_CHANNEL_ID || "").trim();
+  const bodyCh = String(req.body?.channel_id || "").trim();
+  if (expectCh && bodyCh === expectCh) return true;
+
   return false;
 }
 
@@ -90,13 +100,20 @@ router.post("/waha", express.json({ limit: "2mb" }), async (req, res) => {
 
 router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
   try {
+    const body = req.body || {};
     if (!checkWhapiWebhookToken(req)) {
       return unauthorized(res);
     }
 
-    const body = req.body || {};
     const metaShaped = whapiWebhookToMetaShapedPayload(body);
     if (!metaShaped) {
+      const ev = body.event;
+      console.log("[webhook-whapi] skipped (no texto entrante)", {
+        hasMessages: Array.isArray(body.messages) ? body.messages.length : 0,
+        eventType: ev?.type,
+        eventEvent: ev?.event,
+        channel_id: body.channel_id,
+      });
       return res.json({ ok: true, skipped: true });
     }
 

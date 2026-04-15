@@ -32,6 +32,17 @@ function extractWhapiTextBody(msg) {
   return "";
 }
 
+/** Dígitos del remitente: `from` o, si falta, JID en `chat_id` (ej. 549...@s.whatsapp.net). */
+function senderDigitsFromWhapiMessage(m) {
+  let digits = String(m.from || "").replace(/\D/g, "");
+  if (digits.length >= 8) return digits;
+  const chat = String(m.chat_id || "");
+  const beforeAt = chat.split("@")[0] || "";
+  const fromChat = beforeAt.replace(/\D/g, "");
+  if (fromChat.length >= 8) return fromChat;
+  return "";
+}
+
 /**
  * @param {object} whapiBody Cuerpo JSON del POST de Whapi (messages, event, channel_id).
  * @returns {object | null} Payload estilo Meta, o null si no aplica.
@@ -60,10 +71,12 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
       continue;
     }
 
-    const digits = String(m.from || "")
-      .replace(/\D/g, "");
+    const digits = senderDigitsFromWhapiMessage(m);
     if (!digits || digits.length < 8) {
-      console.warn("[whapi-adapter] remitente inválido", String(m.from || "").slice(0, 20));
+      console.warn("[whapi-adapter] remitente inválido", {
+        from: String(m.from || "").slice(0, 24),
+        chat_id: String(m.chat_id || "").slice(0, 40),
+      });
       continue;
     }
 

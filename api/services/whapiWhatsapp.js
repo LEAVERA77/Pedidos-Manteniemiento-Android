@@ -1,6 +1,9 @@
 /**
  * WhatsApp vía Whapi.cloud (gate.whapi.cloud).
  * Envío: POST /messages/text — docs: https://whapi.readme.io/reference/sendmessagetext
+ *
+ * El bot usa la misma identidad que Meta (549…→543… en inbound). Graph espera 543…;
+ * la API de Whapi suele necesitar el móvil completo 549… para entregar al usuario.
  * made by leavera77
  */
 
@@ -18,12 +21,34 @@ function headers() {
 }
 
 /**
+ * Convierte dígitos internos (p. ej. 543… tras normalizar Meta) a formato que Whapi entrega bien a WA.
+ * @param {string} rawDigits
+ * @returns {string}
+ */
+export function digitsForWhapiSend(rawDigits) {
+  const d = String(rawDigits || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.startsWith("543") && d.length >= 11 && d.length <= 13) {
+    return `549${d.slice(3)}`;
+  }
+  if (
+    d.startsWith("54") &&
+    d.length >= 11 &&
+    d.length <= 13 &&
+    d.charAt(2) !== "9"
+  ) {
+    return `549${d.slice(2)}`;
+  }
+  return d;
+}
+
+/**
  * @param {string} toDigits Dígitos del destinatario (sin +), ej. 54911...
  * @param {string} text Cuerpo del mensaje
  * @returns {Promise<{ ok: boolean, data?: object, error?: unknown }>}
  */
 export async function sendText(toDigits, text) {
-  const to = String(toDigits || "").replace(/\D/g, "");
+  const to = digitsForWhapiSend(String(toDigits || "").replace(/\D/g, ""));
   const body = String(text || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params" };
