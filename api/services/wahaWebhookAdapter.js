@@ -6,24 +6,50 @@
  */
 
 /**
+ * Texto entrante: NOWEB a veces deja el texto solo en _data (protobuf).
+ */
+function extractWahaTextBody(payload) {
+  const p = payload;
+  if (!p || typeof p !== "object") return "";
+  let t = String(p.body ?? "").trim();
+  if (t) return t;
+  const d = p._data;
+  if (d?.message?.conversation) return String(d.message.conversation).trim();
+  if (d?.message?.extendedTextMessage?.text) return String(d.message.extendedTextMessage.text).trim();
+  if (d?.message?.imageMessage?.caption) return String(d.message.imageMessage.caption).trim();
+  return "";
+}
+
+/**
  * @param {object} wahaBody Cuerpo JSON del POST de WAHA (event + payload).
  * @returns {object | null} Payload estilo Meta, o null si no aplica.
  */
 export function wahaWebhookToMetaShapedPayload(wahaBody) {
   if (!wahaBody || typeof wahaBody !== "object") return null;
   const ev = String(wahaBody.event || "");
-  if (ev !== "message") return null;
+  /** `message` = entrantes; `message.any` incluye propios (filtramos con fromMe). */
+  if (ev !== "message" && ev !== "message.any") return null;
 
   const p = wahaBody.payload;
   if (!p || typeof p !== "object") return null;
   if (p.fromMe === true) return null;
 
   const fromJid = String(p.from || "").trim();
+  if (fromJid.endsWith("@g.us")) {
+    console.warn("[waha-adapter] ignorado (grupo)");
+    return null;
+  }
   const digits = fromJid.replace(/@.*$/, "").replace(/\D/g, "");
-  if (!digits || digits.length < 8) return null;
+  if (!digits || digits.length < 8) {
+    console.warn("[waha-adapter] no se pudieron obtener dígitos de:", fromJid.slice(0, 40));
+    return null;
+  }
 
-  const body = String(p.body ?? "").trim();
-  if (!body) return null;
+  const body = extractWahaTextBody(p);
+  if (!body) {
+    console.warn("[waha-adapter] mensaje sin texto útil (media sin caption u otro); event=", ev);
+    return null;
+  }
 
   /** Mismo phone_number_id que en .env para resolver tenant vía Meta helpers. */
   const phoneNumberId = String(

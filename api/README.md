@@ -248,4 +248,6 @@ El compose usa motor **`NOWEB`** (sin navegador embebido); suele comportarse mej
 
 6. Logs: `npm run waha:logs`. Reinicio con volúmenes limpios: `npm run waha:reset`.
 
-7. Probar: con la API en marcha (`npm start`), enviá **Hola** desde el celular al número vinculado a WAHA; en consola deberían verse logs `[webhook-waha]` / `[BOT_RESPUESTA]`.
+7. Probar: con la API en marcha (`npm start`), enviá **Hola** desde **otro número** al **WhatsApp que tiene vinculado WAHA** (Móvil → Dispositivos vinculados). Si escribís a un número distinto al de la cuenta enlazada con WAHA, el mensaje no pasa por tu sesión `default` y el bot no responde.
+
+8. Si el webhook da **200** pero no ves respuesta en el chat: mirá la consola de la API por `[whatsapp-bot-meta] hola detectado`, `[BOT_RESPUESTA]` y `[waha]`. Si aparece `[waha-adapter] mensaje sin texto`, NOWEB puede estar mandando solo media; probá solo texto **Hola**. Si `[waha] Error enviando mensaje`, revisá `WAHA_API_KEY` y que `WHATSAPP_PROVIDER=waha`.
