@@ -214,10 +214,12 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
    WHATSAPP_PROVIDER=waha
    WAHA_API_URL=http://localhost:3080
    WAHA_API_KEY=gestornova-waha-2026
-   WAHA_SESSION=gestornova
+   WAHA_SESSION=default
    ```
 
    La clave debe coincidir con `WAHA_API_KEY` del compose. Reiniciá la API (`npm start`).
+
+   **Sesión:** la imagen **WAHA Core** (`devlikeapro/waha`) solo permite la sesión **`default`**. Si necesitás otro nombre (p. ej. `gestornova`), usá [WAHA Plus](https://waha.devlike.pro/) y definí `WAHA_SESSION` en `.env`.
 
 4. Logs: `npm run waha:logs`. Reinicio con volúmenes limpios: `npm run waha:reset`.
 

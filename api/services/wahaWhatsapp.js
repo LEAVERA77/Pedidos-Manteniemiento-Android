@@ -1,6 +1,9 @@
 /**
  * Servicio de WhatsApp usando WAHA (WhatsApp HTTP API).
  * Docs: https://waha.devlike.pro/docs/how-to/send-messages/
+ *
+ * WAHA Core (imagen `devlikeapro/waha`) solo admite la sesión `default`.
+ * Otros nombres requieren WAHA Plus — ver https://waha.devlike.pro/
  * made by leavera77
  */
 
@@ -10,7 +13,8 @@ const WAHA_API_URL = String(process.env.WAHA_API_URL || "http://localhost:3080")
   .trim()
   .replace(/\/+$/, "");
 const WAHA_API_KEY = String(process.env.WAHA_API_KEY || "gestornova-waha-2026").trim();
-const WAHA_SESSION = String(process.env.WAHA_SESSION || "gestornova").trim();
+/** Core: solo `default`. Plus: podés fijar WAHA_SESSION a otro nombre. */
+const WAHA_SESSION = String(process.env.WAHA_SESSION || "default").trim();
 
 function getHeaders() {
   return {
