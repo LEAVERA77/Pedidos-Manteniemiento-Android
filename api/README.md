@@ -218,6 +218,7 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
 5. **Envío:** el bot normaliza números AR como Meta (543…); el código recompone **549…** al llamar a Whapi para que el mensaje llegue al móvil.
 6. Tras guardar env en Render: **Manual Deploy** o esperá el deploy automático; probá `GET https://<host>/health`.
 7. Local: reiniciá la API (`npm start`).
+8. **“En Render sale `sendText ok` pero no veo el mensaje”:** mirá en logs `responsePreview` (cuerpo JSON de Whapi). Revisá límites del plan **Sandbox** en el panel, el chat **archivados**, y que estés en la conversación con el **número del canal** (no en “Dispositivos vinculados” del teléfono que actúa como canal). Abrí el chat desde el otro celular con `https://wa.me/549…` al número público del canal.
 
 ---
 

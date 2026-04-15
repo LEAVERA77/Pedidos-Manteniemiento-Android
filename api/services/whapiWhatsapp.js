@@ -70,8 +70,20 @@ export async function sendText(toDigits, text) {
       console.error("[whapi] sendText HTTP", response.status, data);
       return { ok: false, error: data, data };
     }
+    const errInBody =
+      data &&
+      typeof data === "object" &&
+      (data.error != null ||
+        data.errors != null ||
+        data.sent === false ||
+        String(data.status || "").toLowerCase() === "error");
+    if (errInBody) {
+      console.error("[whapi] sendText: HTTP 200 pero cuerpo indica fallo", data);
+      return { ok: false, error: data, data };
+    }
     const tail = to.length >= 8 ? `${to.slice(0, 4)}…${to.slice(-4)}` : "(corto)";
-    console.log("[whapi] sendText ok", { to: tail, bodyLen: body.length });
+    const preview = JSON.stringify(data).slice(0, 320);
+    console.log("[whapi] sendText ok", { to: tail, bodyLen: body.length, responsePreview: preview });
     return { ok: true, data };
   } catch (e) {
     console.error("[whapi] sendText:", e?.message || e);

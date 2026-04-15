@@ -1739,7 +1739,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const _sessHola = sessions.get(sk);
   const _stepHola = _sessHola?.step;
   const _enFlujoReclamoBot = _stepHola && _stepHola !== "idle" && _stepHola !== "human_chat";
-  const _rawSaludo = String(text || "").trim();
+  const _rawSaludo = String(text || "")
+    .trim()
+    .replace(/^\*+|\*+$/g, "")
+    .trim();
   const _esSaludoInicial =
     /\bhola\b/i.test(_rawSaludo) ||
     /^(hi|hello|hey)(\b|[\s!.]|$)/i.test(_rawSaludo) ||
@@ -1799,9 +1802,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  const lower = text
-    .toLowerCase()
+  const lower = String(text || "")
     .trim()
+    .replace(/^\*+|\*+$/g, "")
+    .trim()
+    .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
