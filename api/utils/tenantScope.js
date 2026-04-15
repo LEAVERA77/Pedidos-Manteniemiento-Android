@@ -30,21 +30,26 @@ export async function sqlPedidosTenantAnd(alias, tenantId, params) {
 
 let _usuariosTenantCol;
 export async function usuariosTenantColumnName() {
-  if (_usuariosTenantCol !== undefined) return _usuariosTenantCol;
+  if (_usuariosTenantCol === "tenant_id" || _usuariosTenantCol === "cliente_id") return _usuariosTenantCol;
   const cols = await query(
     `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios'`
   );
   const names = new Set(cols.rows.map((r) => r.column_name));
-  if (names.has("tenant_id")) _usuariosTenantCol = "tenant_id";
-  else if (names.has("cliente_id")) _usuariosTenantCol = "cliente_id";
-  else _usuariosTenantCol = null;
-  return _usuariosTenantCol;
+  if (names.has("tenant_id")) {
+    _usuariosTenantCol = "tenant_id";
+    return "tenant_id";
+  }
+  if (names.has("cliente_id")) {
+    _usuariosTenantCol = "cliente_id";
+    return "cliente_id";
+  }
+  return null;
 }
 
 const _tableColCache = new Map();
 export async function tableHasColumn(tableName, columnName) {
   const k = `${tableName}.${columnName}`;
-  if (_tableColCache.has(k)) return _tableColCache.get(k);
+  if (_tableColCache.get(k) === true) return true;
   try {
     const c = await query(
       `SELECT 1 FROM information_schema.columns
@@ -52,10 +57,9 @@ export async function tableHasColumn(tableName, columnName) {
       [tableName, columnName]
     );
     const v = c.rows.length > 0;
-    _tableColCache.set(k, v);
+    if (v) _tableColCache.set(k, true);
     return v;
   } catch {
-    _tableColCache.set(k, false);
     return false;
   }
 }
