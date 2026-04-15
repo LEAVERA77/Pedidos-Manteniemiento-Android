@@ -156,6 +156,38 @@ export async function startSession() {
   }
 }
 
+/**
+ * Vinculación por número (alternativa al QR).
+ * POST /api/{session}/auth/request-code — phoneNumber en dígitos internacionales sin +.
+ * Docs: https://waha.devlike.pro/docs/how-to/sessions/#get-pairing-code
+ */
+export async function requestPairingCode(phoneDigits) {
+  const d = normalizeWhatsAppRecipientForMeta(String(phoneDigits || "").replace(/\D/g, ""), {
+    mode: "outbound",
+  });
+  if (!d || d.length < 8) {
+    return { ok: false, error: "invalid_phone" };
+  }
+
+  const url = `${WAHA_API_URL}/api/${encodeURIComponent(WAHA_SESSION)}/auth/request-code`;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ phoneNumber: d }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("[waha] request-code HTTP", response.status, data);
+      return { ok: false, error: data?.message || data?.error || data, status: response.status };
+    }
+    return { ok: true, data };
+  } catch (e) {
+    console.error("[waha] requestPairingCode:", e?.message || e);
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
 export async function stopSession() {
   const url = `${WAHA_API_URL}/api/sessions/${encodeURIComponent(WAHA_SESSION)}/stop`;
   try {

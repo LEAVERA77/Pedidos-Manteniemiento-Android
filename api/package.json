@@ -20,6 +20,7 @@
     "waha:logs": "docker logs waha --tail 50 -f",
     "waha:reset": "docker compose -f ../docker-compose.waha.yml down -v && docker compose -f ../docker-compose.waha.yml up -d",
     "waha:qr": "node scripts/waha-qr.js",
+    "waha:pair": "node scripts/waha-pair.js",
     "geocode:padron-lote": "node scripts/geocodificarPadronLote.mjs",
     "geocode:padron": "node scripts/geocodificarPadron.js",
     "enriquecer:excel-padron": "node scripts/enriquecerPadronDesdeExcel.mjs",

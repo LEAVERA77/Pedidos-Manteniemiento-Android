@@ -190,9 +190,20 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
 
 ---
 
-## WAHA (WhatsApp HTTP API) — alternativa ligera
+## WhatsApp: qué proveedor usar
 
-[WAHA](https://waha.devlike.pro/) expone una API REST unificada; el `docker-compose.waha.yml` solo levanta **un** contenedor (sin Redis/Postgres obligatorios). El **puerto publicado en el host es 3080** para no chocar con la API Node (`PORT=3000`).
+| Entorno | Recomendación |
+|--------|----------------|
+| **Producción (Render, clientes reales)** | **`WHATSAPP_PROVIDER=meta`** — [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api). Configurá `META_*` y el webhook `/api/webhooks/whatsapp/meta`. Es el canal **oficial** y estable. |
+| **Desarrollo local sin sandbox Meta** | **WAHA** (`WHATSAPP_PROVIDER=waha`) o emulador Graph (`META_GRAPH_URL`). WAHA **no** es producto oficial de Meta; usalo como puente de pruebas. |
+
+---
+
+## WAHA (WhatsApp HTTP API) — alternativa ligera (solo dev / pruebas)
+
+[WAHA](https://waha.devlike.pro/) expone una API REST; `docker-compose.waha.yml` levanta **un** contenedor. Puerto host **3080** (la API Node suele usar `PORT=3000`).
+
+El compose usa motor **`NOWEB`** (sin navegador embebido); suele comportarse mejor en Docker que **WEBJS**. Si cambiás de motor o ves sesiones rotas: `npm run waha:reset` y volvé a vincular.
 
 1. Levantar WAHA (desde `api/`):
 
@@ -200,13 +211,23 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
    npm run waha:up
    ```
 
-2. Crear/vincular sesión y ver estado/QR:
+2. **Vincular** (elegí uno):
 
-   ```bash
-   npm run waha:qr
-   ```
+   - **Por código de teléfono** (si el QR falla), con el **mismo número** que la cuenta WhatsApp:
 
-   También podés usar la UI/Swagger en `http://localhost:3080/` y el endpoint de QR documentado: `GET /api/{session}/auth/qr`.
+     ```bash
+     npm run waha:pair -- 549XXXXXXXXXX
+     ```
+
+     o `WAHA_PAIR_PHONE=549... npm run waha:pair`
+
+   - **Por QR / raw:**
+
+     ```bash
+     npm run waha:qr
+     ```
+
+   También: UI `http://localhost:3080/dashboard`, Swagger, o `GET /api/default/auth/qr` con header `X-Api-Key`.
 
 3. Activar en `api/.env`:
 
