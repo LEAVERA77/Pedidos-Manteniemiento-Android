@@ -5,6 +5,7 @@ import { query } from "./db/neon.js";
 import { requestContextMiddleware, logApiError } from "./middleware/requestContext.js";
 import authRoutes from "./routes/auth.js";
 import pedidosRoutes from "./routes/pedidos.js";
+import direccionesRoutes from "./routes/direcciones.js";
 import usuariosRoutes from "./routes/usuarios.js";
 import clientesRoutes from "./routes/clientes.js";
 import clientesFinalesRoutes from "./routes/clientesFinales.js";
@@ -131,6 +132,7 @@ export function createHttpApp() {
   app.use("/api/geocode", geocodeNominatimRoutes);
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);
+  app.use("/api/direcciones", direccionesRoutes);
   app.use("/api/tenant-operativa", tenantOperativaSettingsRoutes);
   app.use("/api/infra-afectados", infraAfectadosRoutes);
   app.use("/api/usuarios", usuariosRoutes);

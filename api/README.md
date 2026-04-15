@@ -7,6 +7,17 @@ Backend compartido entre el panel web y la app Android. Ver también la document
 - Node.js 18+ (recomendado **22+** si usás el emulador de WhatsApp).
 - Variables en `.env` (partir de `.env.example`).
 
+## Direcciones / coordenadas memorizadas (Neon)
+
+- Tabla: `correcciones_direcciones` (migración `api/db/migrations/correcciones_direcciones.sql`).
+- El pipeline de geocodificación consulta la tabla **antes** de Nominatim (`correccion_manual_bd`).
+- **Desde pedido:** `PUT /api/pedidos/:id/coords-manual` o `POST /api/pedidos/:id/corregir-posicion` (admin).
+- **Sin pedido (solo domicilio):** `POST /api/direcciones/corregir` con JSON `{ calle, numero?, ciudad | localidad, lat, lng, provincia? }`.
+
+## WhatsApp: Meta vs otros proveedores
+
+Ver **`api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`** (volver a Meta con `WHATSAPP_PROVIDER=meta` + webhook `/meta`).
+
 ## Instalación
 
 ```bash

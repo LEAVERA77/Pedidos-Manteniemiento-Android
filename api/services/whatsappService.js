@@ -1,8 +1,10 @@
 /**
- * WhatsApp Cloud API — envío genérico multitenant.
- * Credenciales por tenant: clientes.configuracion.meta_access_token + meta_phone_id
- * (Phone number ID de Meta, mismo que usás en el webhook).
- * Si no vienen en JSON, se usan META_ACCESS_TOKEN y META_PHONE_NUMBER_ID del entorno.
+ * Envío WhatsApp multitenant: **Meta (Cloud API)** por defecto cuando `WHATSAPP_PROVIDER=meta`.
+ * Ramas alternativas: `whapi`, `waha`, `evolution` (mismo archivo; Meta no se eliminó).
+ *
+ * Meta: credenciales por tenant en `clientes.configuracion` (`meta_access_token`, `meta_phone_id`)
+ * o variables `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID`. Webhook: `POST /api/webhooks/whatsapp/meta`.
+ * Guía para cambiar de proveedor: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
  */
 
 import { query } from "../db/neon.js";

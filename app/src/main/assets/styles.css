@@ -1,7 +1,25 @@
-/* ESTILOS COMPLETOS */
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
-:root{--bd:#1e3a8a;--bm:#2563eb;--bl:#3b82f6;--gr:#10b981;--re:#ef4444;--or:#f97316;--ye:#eab308;--bg:#f1f5f9;--bo:#e2e8f0;--td:#1e293b;--tm:#475569;--tl:#94a3b8;--app-header-h:58px}
-html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* ESTILOS COMPLETOS — paleta clara accesible + Inter */
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+:root{
+  --bd:#1e40af;
+  --bm:#2563eb;
+  --bm-hover:#1d4ed8;
+  --bl:#3b82f6;
+  --gr:#10b981;
+  --re:#ef4444;
+  --or:#f97316;
+  --ye:#f59e0b;
+  --bg:#f8fafc;
+  --bo:#e2e8f0;
+  --td:#0f172a;
+  --tm:#475569;
+  --tl:#64748b;
+  --card:#ffffff;
+  --app-header-h:58px;
+  --shadow-card:0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--td)}
 #app{height:100vh;height:100dvh;position:relative}
 .screen{display:none;height:100%;width:100%;position:absolute;inset:0}
 #ls{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#2563eb 100%)}
@@ -19,7 +37,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 #mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
 #mapa-overlay-ui .moui-card .moui-hd{cursor:grab}
 #mapa-overlay-ui .moui-card .moui-hd:active{cursor:grabbing}
-.moui-card{pointer-events:auto;position:absolute;background:#fff;border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
+.moui-card{pointer-events:auto;position:absolute;background:var(--card,#fff);border:1px solid var(--bo);border-radius:12px;box-shadow:var(--shadow-card),0 4px 18px rgba(15,23,42,.06);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
 .moui-drag-handle{cursor:grab;opacity:.5;padding:0 .15rem;margin-right:.1rem;flex-shrink:0;touch-action:none;-webkit-user-select:none;user-select:none}
 .moui-drag-handle:active{cursor:grabbing;opacity:.85}
 #mapa-card-filtro-tipo{top:6.75rem;left:.45rem;z-index:851}
@@ -127,7 +145,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .ig i{position:absolute;left:.9rem;top:50%;transform:translateY(-50%);color:var(--tl);pointer-events:none;font-size:.9rem}
 .ig input{width:100%;padding:.75rem .9rem .75rem 2.4rem;border:1.5px solid var(--bo);border-radius:.6rem;font-size:.95rem}
 .ig input:focus{outline:none;border-color:var(--bl);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
-.bp{width:100%;padding:.8rem;background:linear-gradient(135deg,var(--bd),var(--bm));color:white;border:none;border-radius:.6rem;font-size:1rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.25rem}
+.bp{width:100%;padding:.8rem;background:linear-gradient(135deg,var(--bm),var(--bm-hover));color:white;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.25rem;transition:filter .15s ease,transform .12s ease}
+.bp:hover,.bp:focus-visible{filter:brightness(1.02);outline:none}
+.bp:active{transform:translateY(1px)}
 .bp:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 15px rgba(30,58,138,.3)}
 .bp:disabled{opacity:.5;cursor:not-allowed}
 .bs{background:linear-gradient(135deg,#059669,var(--gr))!important}
@@ -180,17 +200,18 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
   cursor:pointer;padding:.15rem .35rem;border-radius:.35rem;
 }
 .admin-banner-x:hover{opacity:1;background:rgba(255,255,255,.12)}
-.hd{background:white;padding:0 1rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.08);position:relative;z-index:1000;height:58px;border-bottom:2px solid var(--bd)}
-.hd h2{font-size:1.05rem;color:var(--bd);font-weight:700;display:flex;align-items:center;gap:.4rem}
+.hd{background:var(--card,#fff);padding:0 1rem;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-card),0 2px 8px rgba(15,23,42,.06);position:relative;z-index:1000;height:58px;border-bottom:1px solid var(--bo)}
+.hd h2{font-size:1.05rem;color:var(--td);font-weight:600;display:flex;align-items:center;gap:.4rem}
 .hr{display:flex;align-items:center;gap:.4rem}
-.di{font-size:.85rem;padding:.3rem .5rem;border-radius:.4rem;display:flex;align-items:center;gap:.3rem}
+.di{font-size:.85rem;padding:.3rem .5rem;border-radius:8px;display:flex;align-items:center;gap:.3rem;font-feature-settings:"tnum"}
 .di.ok{color:#15803d}.di.er{color:#b91c1c}
 .di.ok i,.di.er i{opacity:.95}
 .un{font-size:.82rem;color:var(--tm);font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib{background:none;border:none;font-size:1.3rem;color:var(--tm);cursor:pointer;padding:.4rem;border-radius:.4rem}
 .ib:hover{background:var(--bg);color:var(--bd)}
 #mc{height:calc(100vh - 58px);height:calc(100dvh - 58px);width:100%;z-index:1;position:relative}
-.bp2{position:absolute;bottom:0;left:0;right:0;background:white;border-radius:1.25rem 1.25rem 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.12);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column}
+#mc .leaflet-container{border-radius:12px;border:1px solid var(--bo);box-shadow:var(--shadow-card);overflow:hidden}
+.bp2{position:absolute;bottom:0;left:0;right:0;background:var(--card,#fff);border:1px solid var(--bo);border-bottom:none;border-radius:12px 12px 0 0;box-shadow:var(--shadow-card),0 -4px 20px rgba(15,23,42,.08);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column;min-height:0}
 .bp2.col{transform:translateY(calc(100% - 4.5rem))}
 .ph{padding:.6rem 1rem .4rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;flex-shrink:0}
 .hb{width:44px;height:4px;background:#cbd5e1;border-radius:10px;margin-bottom:.2rem}
@@ -206,7 +227,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .bge{background:var(--bd);color:white;font-size:.62rem;padding:.12rem .42rem;border-radius:1rem;font-weight:700;line-height:1.15;flex-shrink:0;min-width:1.15rem;text-align:center}
 .eb{background:none;border:none;color:#16a34a;font-size:1.2rem;cursor:pointer;padding:.4rem .5rem;border-radius:.4rem;flex-shrink:0}
 .eb:hover{background:#dcfce7}
-.pl{overflow-y:auto;padding:.75rem;flex:1}
+.pl{overflow-y:auto;padding:.75rem;flex:1;min-height:0;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 .ll2{text-align:center;color:var(--tl);padding:2rem 1rem;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:.5rem}
 .pi{background:white;border-radius:.75rem;padding:.85rem 1rem;margin-bottom:.6rem;border:1px solid var(--bo);border-left:4px solid var(--bd);cursor:pointer;transition:transform .1s,box-shadow .15s}
 .pi:hover{transform:translateX(3px);box-shadow:0 3px 12px rgba(0,0,0,.1)}
@@ -243,9 +264,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg)}
 .ab{height:100%;background:linear-gradient(90deg,var(--bd),var(--bl));border-radius:2px;transition:width .4s}
 
 /* GPS: más abajo para no tapar panel Colores / filtros del mapa */
-.btn-mapa-ir-gps{position:absolute;bottom:6.72rem;left:1rem;width:2.9rem;height:2.9rem;border-radius:50%;background:#fff;color:var(--bd);border:1px solid var(--bo);box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
-.btn-mapa-ir-gps:hover{transform:scale(1.06)}
-.btn-mapa-nuevo-gps{position:absolute;bottom:9.95rem;left:1rem;width:2.65rem;height:2.65rem;border-radius:50%;background:linear-gradient(145deg,var(--bd),#2563eb);color:#fff;border:none;box-shadow:0 4px 14px rgba(30,58,138,.35);font-size:1.05rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto}
+.btn-mapa-ir-gps{position:absolute;bottom:6.72rem;left:1rem;width:2.9rem;height:2.9rem;min-width:2.9rem;min-height:2.9rem;box-sizing:border-box;border-radius:50%;background:var(--card,#fff);color:var(--bm);border:1px solid var(--bo);box-shadow:var(--shadow-card),0 4px 14px rgba(15,23,42,.1);font-size:1.15rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto;padding:0}
+.btn-mapa-ir-gps:hover{transform:scale(1.06);border-color:var(--bm)}
+.btn-mapa-nuevo-gps{position:absolute;bottom:9.95rem;left:1rem;width:2.65rem;height:2.65rem;min-width:2.65rem;min-height:2.65rem;box-sizing:border-box;border-radius:50%;background:linear-gradient(145deg,var(--bm),var(--bm-hover));color:#fff;border:none;box-shadow:var(--shadow-card),0 4px 14px rgba(37,99,235,.35);font-size:1.05rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto;padding:0}
 .btn-mapa-nuevo-gps:hover{transform:scale(1.06)}
 /* WebView Android: subir y acercar a la izquierda para no tapar barra de pedidos ni filtros */
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
@@ -646,6 +667,8 @@ textarea{resize:vertical;min-height:80px}
   display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;
   padding:.4rem .65rem .5rem;background:rgba(0,0,0,.7);border-radius:0 0 8px 8px;
   color:#fff;font-size:11px;letter-spacing:.02em;
+  font-feature-settings:"tnum";
+  font-variant-numeric:tabular-nums;
 }
 .gn-coords-toggle{
   background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:0 .25rem;line-height:1;
@@ -682,4 +705,14 @@ textarea{resize:vertical;min-height:80px}
 
 .gn-coords-toggle:hover {
     opacity: 0.7;
+}
+
+/* WebView Android: panel pedidos desplazable y FAB sin deformar por zoom de fuente */
+html.gn-android-webview #ms .pc {
+  min-height: 0;
+}
+html.gn-android-webview .fab-show-pedidos {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  align-items: center;
 }

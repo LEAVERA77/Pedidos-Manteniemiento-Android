@@ -1,6 +1,7 @@
 /**
  * Envío de mensajes de texto vía WhatsApp Cloud API (Meta).
  * Graph API v21 — recipient_type individual (recomendado en docs recientes).
+ * Activo con `WHATSAPP_PROVIDER=meta` (default). Cambiar proveedor: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
  */
 
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();

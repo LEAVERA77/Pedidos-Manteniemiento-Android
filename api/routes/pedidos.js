@@ -1133,6 +1133,7 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
  * Admin: corrección manual WGS84 en mapa (sobrescribe lat/lng aunque ya existan).
  * No aplica a pedidos cerrados o derivados fuera (solo operativa abierta).
  * Persiste también en `correcciones_direcciones` para reutilizar la ubicación en futuros reclamos con el mismo domicilio.
+ * Integraciones sin id de pedido: `POST /api/direcciones/corregir` (misma tabla, mismo upsert).
  */
 async function handleCoordsManualCorreccion(req, res) {
   try {

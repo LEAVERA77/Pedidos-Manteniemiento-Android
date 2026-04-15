@@ -173,6 +173,8 @@ public class MainActivity extends AppCompatActivity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
+        // Evita que el sistema escale texto dentro del WebView (botones redondos / barra).
+        s.setTextZoom(100);
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setAllowFileAccessFromFileURLs(true);
