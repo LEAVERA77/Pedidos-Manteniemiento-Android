@@ -21,7 +21,9 @@ function headers() {
 }
 
 /**
- * Convierte dígitos internos (p. ej. 543… tras normalizar Meta) a formato que Whapi entrega bien a WA.
+ * Convierte dígitos internos (p. ej. 543… tras normalizar Meta) a E.164 para Whapi.
+ * Meta inbound hace 549xxxxxxxx → 54 + slice(3) = 543…; la inversa es 549 + slice(2),
+ * no slice(3) (si no, se desplazan dígitos y el mensaje va a otro número).
  * @param {string} rawDigits
  * @returns {string}
  */
@@ -29,7 +31,7 @@ export function digitsForWhapiSend(rawDigits) {
   const d = String(rawDigits || "").replace(/\D/g, "");
   if (!d) return "";
   if (d.startsWith("543") && d.length >= 11 && d.length <= 13) {
-    return `549${d.slice(3)}`;
+    return `549${d.slice(2)}`;
   }
   if (
     d.startsWith("54") &&
