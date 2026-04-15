@@ -8,20 +8,36 @@ import {
   ensureSessionExists,
   getQR,
   getSessionStatus,
+  startSession,
 } from "../services/wahaWhatsapp.js";
 
 const base = String(process.env.WAHA_API_URL || "http://localhost:3080").replace(/\/+$/, "");
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 async function main() {
   console.log("Verificando WAHA…");
   await ensureSessionExists();
 
-  const status = await getSessionStatus();
+  let status = await getSessionStatus();
   console.log("Estado sesión:", status?.name || "(sin nombre)", status?.status || status?.error);
 
   if (status?.status === "WORKING") {
     console.log("La sesión ya está conectada a WhatsApp.");
     return;
+  }
+
+  if (status?.status === "STOPPED" || status?.status === "FAILED") {
+    console.log("Iniciando sesión (start)…");
+    await startSession();
+    for (let i = 0; i < 15; i++) {
+      await sleep(1000);
+      status = await getSessionStatus();
+      console.log("  →", status?.status || status?.error);
+      if (status?.status === "SCAN_QR_CODE" || status?.status === "WORKING") break;
+    }
   }
 
   console.log("\nObteniendo QR (raw)…\n");
