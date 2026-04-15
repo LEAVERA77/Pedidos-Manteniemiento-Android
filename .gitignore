@@ -22,6 +22,9 @@ local.properties
 # Credenciales Neon / EmailJS — copiá app/src/main/assets/config.example.json → config.json
 /app/src/main/assets/config.json
 
+# Evolution API (Docker): credenciales locales
+/.env.evolution
+
 # API Node.js
 /api/.env
 /api/node_modules

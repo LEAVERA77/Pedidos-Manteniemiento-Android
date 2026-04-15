@@ -94,7 +94,30 @@ Cambios hechos en código: `META_GRAPH_URL` se usa en `services/metaWhatsapp.js`
 
 En `docker-compose.evolution.yml`, `AUTHENTICATION_API_KEY` debe ser **el mismo** valor que `EVOLUTION_API_KEY` en `api/.env`.
 
-### 2. Levantar Evolution
+### 2. Base de datos PostgreSQL (Docker)
+
+El archivo `docker-compose.evolution.yml` incluye un servicio **`postgres:15-alpine`** para persistencia (Evolution v2 exige proveedor de BD válido; sin esto suele aparecer **Database provider invalid**).
+
+Credenciales por defecto (cambialas en producción; podés usar `.env.evolution`):
+
+| | |
+|--|--|
+| Usuario | `evolution` |
+| Contraseña | `evolution123` |
+| Base de datos | `evolution` |
+
+Variables de sustitución en el compose: `EVOLUTION_DB_USER`, `EVOLUTION_DB_PASSWORD`, `EVOLUTION_DB_NAME`, `EVOLUTION_API_KEY`. Copiá **`.env.evolution.example`** → **`.env.evolution`** en la raíz del repo y ajustá; luego:
+
+```bash
+# desde la raíz del repo
+docker compose --env-file .env.evolution -f docker-compose.evolution.yml up -d
+```
+
+Si no usás archivo de entorno, los valores por defecto del `docker-compose` aplican igual.
+
+**Reinicio limpio** (borra volúmenes, BD en blanco): `npm run evolution:reset` (desde `api/`).
+
+### 3. Levantar Evolution
 
 Desde la carpeta `api/` (el compose está en la raíz del repo):
 
@@ -103,7 +126,9 @@ npm run evolution:up
 npm run evolution:logs
 ```
 
-### 3. Crear instancia y QR (primera vez)
+Verificá con `docker ps` que **evolution-api** y **evolution-postgres** estén `Up`. Si cambiás usuario/contraseña de Postgres, actualizá también el `healthcheck` del servicio `postgres` en el compose (o mantené el usuario `evolution` para desarrollo).
+
+### 4. Crear instancia y QR (primera vez)
 
 La instancia `EVOLUTION_INSTANCE` (p. ej. `gestornova`) debe existir en Evolution (creación vía [documentación](https://doc.evolution-api.com/) o panel). Luego:
 
@@ -113,7 +138,7 @@ npm run evolution:qr
 
 Escaneá el código con WhatsApp (Dispositivos vinculados) o usá el pairing si la API lo muestra.
 
-### 4. Activar en la API
+### 5. Activar en la API
 
 En `api/.env` (solo local / VPS; **no** en Render si seguís con Meta allí):
 
@@ -128,7 +153,7 @@ Reiniciá `npm start`.
 
 Los envíos de **texto** del bot (`sendBotWhatsAppText`) y avisos al cliente (`sendTenantWhatsAppText`) usan Evolution. Las **listas interactivas** del menú de tipos siguen llamando a Graph (Meta) hasta integrar `sendList` de Evolution o forzar menú solo texto.
 
-### 5. Webhook entrante (fase 2)
+### 6. Webhook entrante (fase 2)
 
 Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la doc del proyecto; este repo puede añadir ruta dedicada en un siguiente paso.
 
