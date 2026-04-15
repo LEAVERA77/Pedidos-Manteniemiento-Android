@@ -14,6 +14,7 @@ import {
   sendText as sendTextWaha,
   startSession as startWahaSession,
 } from "./wahaWhatsapp.js";
+import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
@@ -133,6 +134,23 @@ export async function sendBotWhatsAppText({
       error: r.ok ? undefined : r.error,
       skipped: false,
       provider: "evolution",
+    };
+  }
+
+  if (whatsappProvider() === "whapi") {
+    console.log("[whatsapp-service] usando Whapi.cloud (bot)", { tenantId, logContext });
+    const r = await sendTextWhapi(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, null);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "whapi",
     };
   }
 
@@ -297,6 +315,23 @@ export async function sendTenantWhatsAppText({
       error: r.ok ? undefined : r.error,
       skipped: false,
       provider: "evolution",
+    };
+  }
+
+  if (whatsappProvider() === "whapi") {
+    console.log("[whatsapp-service] usando Whapi.cloud (tenant)", { tenantId, logContext });
+    const r = await sendTextWhapi(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "whapi",
     };
   }
 

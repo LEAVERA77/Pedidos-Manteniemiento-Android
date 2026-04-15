@@ -205,6 +205,16 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
 |--------|----------------|
 | **Producción (Render, clientes reales)** | **`WHATSAPP_PROVIDER=meta`** — [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api). Configurá `META_*` y el webhook `/api/webhooks/whatsapp/meta`. Es el canal **oficial** y estable. |
 | **Desarrollo local sin sandbox Meta** | **WAHA** (`WHATSAPP_PROVIDER=waha`) o emulador Graph (`META_GRAPH_URL`). WAHA **no** es producto oficial de Meta; usalo como puente de pruebas. |
+| **Pruebas con canal alojado (Whapi.cloud)** | **`WHATSAPP_PROVIDER=whapi`** — token en `WHAPI_API_KEY`, base `WHAPI_API_URL=https://gate.whapi.cloud`. Webhook entrante: `POST /api/webhooks/whatsapp/whapi` (debe ser **HTTPS** público; en local usá **ngrok** u otro túnel: `ngrok http <PORT>` → `https://….ngrok-free.app/api/webhooks/whatsapp/whapi?token=TU_WHATSAPP_WEBHOOK_TOKEN`). |
+
+---
+
+## Whapi.cloud (opcional, pruebas)
+
+1. En el panel Whapi, creá el canal y vinculá el número (QR o código).
+2. **Webhook URL:** `https://<host-público>/api/webhooks/whatsapp/whapi` (mismo `?token=` que `WHATSAPP_WEBHOOK_TOKEN` si lo definís). Activá **webhook persistente** si el panel lo ofrece.
+3. En `api/.env`: `WHATSAPP_PROVIDER=whapi`, `WHAPI_API_KEY=<token del panel>`, opcional `WHAPI_META_PHONE_NUMBER_ID` igual a tu `channel_id` de Whapi si querés fijar el tenant sin depender del JSON.
+4. Reiniciá la API (`npm start`).
 
 ---
 
