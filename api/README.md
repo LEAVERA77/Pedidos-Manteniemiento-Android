@@ -126,6 +126,14 @@ npm run evolution:up
 npm run evolution:logs
 ```
 
+Si tenés **`.env.evolution`** en la raíz (p. ej. `EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7`), usá explícitamente:
+
+```powershell
+docker compose --env-file ..\.env.evolution -f ..\docker-compose.evolution.yml up -d
+```
+
+Tras un `down -v`, si **`docker compose up`** falla con *container name already in use*, podés forzar: `docker rm -f evolution-api evolution-postgres evolution-redis` y volver a `up -d`.
+
 Verificá con `docker ps` que **evolution-api**, **evolution-postgres** y **evolution-redis** estén `Up`. Si cambiás usuario/contraseña de Postgres, actualizá también el `healthcheck` del servicio `postgres` en el compose (o mantené el usuario `evolution` para desarrollo).
 
 ### 4. Crear instancia y QR (primera vez)
