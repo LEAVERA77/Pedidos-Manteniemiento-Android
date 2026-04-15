@@ -1,4 +1,5 @@
 import { query } from "../db/neon.js";
+import { usuariosTenantColumnName } from "../utils/tenantScope.js";
 
 let _tableExists;
 
@@ -68,15 +69,85 @@ export function masterPhonesWhatsappBotFromEnv() {
     .filter(Boolean);
 }
 
+/** Comparación laxa entre números WA (549… vs 54…, etc.). */
+export function digitsWaPhoneLikelyEqual(aDigits, bDigits) {
+  const p = String(aDigits || "").replace(/\D/g, "");
+  const q = String(bDigits || "").replace(/\D/g, "");
+  if (!p || !q || p.length < 8 || q.length < 8) return false;
+  if (p === q) return true;
+  if (p.length >= 10 && q.length >= 10 && p.slice(-10) === q.slice(-10)) return true;
+  return p.endsWith(q) || q.endsWith(p);
+}
+
+/**
+ * Primera palabra del mensaje: activar / desactivar (mayúsculas, puntuación final).
+ */
+export function parseActivarDesactivarComando(text) {
+  const t = String(text || "")
+    .trim()
+    .replace(/^\*+|\*+$/g, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const parts = t.split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+  const w0 = parts[0].replace(/[!?.,;:…]+$/g, "");
+  if (w0 === "activar") return "activar";
+  if (w0 === "desactivar") return "desactivar";
+  return null;
+}
+
 export function isPhoneWhatsappBotMaster(phoneDigits) {
   const p = String(phoneDigits || "").replace(/\D/g, "");
   if (!p || p.length < 8) return false;
   const list = masterPhonesWhatsappBotFromEnv();
   if (!list.length) return false;
-  return list.some((m) => {
-    if (!m) return false;
-    if (p === m) return true;
-    if (p.length >= 10 && m.length >= 10 && p.slice(-10) === m.slice(-10)) return true;
-    return p.endsWith(m) || m.endsWith(p);
-  });
+  return list.some((m) => digitsWaPhoneLikelyEqual(p, m));
+}
+
+/**
+ * Si WHATSAPP_BOT_MASTER_PHONE(S) está definido: solo esos números.
+ * Si está vacío: cualquier usuario admin/administrador activo del tenant WHATSAPP_BOT_TENANT_ID
+ * cuyo telefono o whatsapp_notificaciones coincide (fallback para Whapi sin env extra).
+ */
+export async function isPhoneWhatsappBotMasterAsync(phoneDigits, tenantId) {
+  if (isPhoneWhatsappBotMaster(phoneDigits)) return true;
+  const envList = masterPhonesWhatsappBotFromEnv();
+  if (envList.length > 0) return false;
+
+  const tid = Number(tenantId ?? process.env.WHATSAPP_BOT_TENANT_ID ?? 1);
+  if (!Number.isFinite(tid) || tid < 1) return false;
+
+  const p = String(phoneDigits || "").replace(/\D/g, "");
+  if (!p || p.length < 8) return false;
+
+  const col = await usuariosTenantColumnName();
+  let rows;
+  try {
+    if (col) {
+      rows = await query(
+        `SELECT telefono, whatsapp_notificaciones FROM usuarios
+         WHERE ${col} = $1 AND activo = TRUE
+           AND LOWER(TRIM(COALESCE(rol, ''))) IN ('admin', 'administrador')`,
+        [tid]
+      );
+    } else {
+      rows = await query(
+        `SELECT telefono, whatsapp_notificaciones FROM usuarios
+         WHERE activo = TRUE
+           AND LOWER(TRIM(COALESCE(rol, ''))) IN ('admin', 'administrador')`
+      );
+    }
+  } catch (e) {
+    console.warn("[global-bot-state] master DB fallback", e?.message || e);
+    return false;
+  }
+
+  for (const row of rows.rows || []) {
+    if (digitsWaPhoneLikelyEqual(p, row.telefono) || digitsWaPhoneLikelyEqual(p, row.whatsapp_notificaciones)) {
+      return true;
+    }
+  }
+  return false;
 }

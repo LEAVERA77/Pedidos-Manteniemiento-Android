@@ -44,7 +44,8 @@ import { validarLocalidadParaChatWhatsapp, normalizarNombreLocalidad } from "./t
 import {
   whatsappBotEnvHardDisabled,
   isWhatsAppAutomatedBotDisabled,
-  isPhoneWhatsappBotMaster,
+  isPhoneWhatsappBotMasterAsync,
+  parseActivarDesactivarComando,
   setGlobalBotActiveDb,
 } from "./globalBotState.js";
 
@@ -1690,16 +1691,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
 
-  const cmdMaster = String(text || "")
-    .trim()
-    .replace(/^\*+|\*+$/g, "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  if ((cmdMaster === "activar" || cmdMaster === "desactivar") && isPhoneWhatsappBotMaster(phone)) {
+  const comandoMaster = parseActivarDesactivarComando(text);
+  if (comandoMaster && (await isPhoneWhatsappBotMasterAsync(phone, tid))) {
     const wpidM = phoneNumberId ? String(phoneNumberId).trim() : null;
-    if (whatsappBotEnvHardDisabled()) {
+    if (comandoMaster === "activar" && whatsappBotEnvHardDisabled()) {
       await reply(
         phone,
         "El servidor tiene WHATSAPP_BOT_ENABLED desactivado: no se puede encender el bot solo por WhatsApp. Contactá al administrador del sistema.",
@@ -1709,7 +1704,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     try {
-      await setGlobalBotActiveDb(cmdMaster === "activar", phone);
+      await setGlobalBotActiveDb(comandoMaster === "activar", phone);
     } catch (e) {
       console.error("[whatsapp-bot-meta] global bot toggle DB", e?.message || e);
       await reply(
@@ -1726,7 +1721,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     const msgOff =
       "⏸️ *Asistente automático de reclamos* desactivado a nivel global.\n\n" +
       "Para volver a activarlo, enviá la palabra *activar* desde este mismo número.";
-    await reply(phone, cmdMaster === "activar" ? msgOn : msgOff, tid, wpidM);
+    await reply(phone, comandoMaster === "activar" ? msgOn : msgOff, tid, wpidM);
     return;
   }
 
