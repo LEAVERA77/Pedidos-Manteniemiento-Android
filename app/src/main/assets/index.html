@@ -8,9 +8,6 @@
 <meta http-equiv="Pragma" content="no-cache">
 <title>GestorNova — Pedidos</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -18,7 +15,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="styles.css"/>
-<link rel="stylesheet" href="css/modern-dashboard.css"/>
 </head>
 <body>
 <div id="app">
@@ -98,16 +94,16 @@
     <div class="hr">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
-      <div id="web-coords-converter" class="gn-web-coords-converter" style="display:none">
-        <select id="web-coords-converter-mode" class="gn-web-coords-converter-mode">
+      <div id="web-coords-converter" style="display:none;align-items:center;gap:.25rem;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.35);border-radius:.45rem;padding:.2rem .3rem;max-width:46vw">
+        <select id="web-coords-converter-mode" style="height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.72rem">
           <option value="dec_to_dms">Dec→GMS</option>
           <option value="dms_to_dec">GMS→Dec</option>
         </select>
-        <input id="web-coords-converter-a" class="gn-web-coords-converter-field" type="text" placeholder="Latitud"/>
-        <input id="web-coords-converter-b" class="gn-web-coords-converter-field" type="text" placeholder="Longitud"/>
+        <input id="web-coords-converter-a" type="text" placeholder="Latitud" style="width:5.8rem;height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;padding:0 .35rem;font-size:.72rem"/>
+        <input id="web-coords-converter-b" type="text" placeholder="Longitud" style="width:5.8rem;height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;padding:0 .35rem;font-size:.72rem"/>
         <button id="web-coords-converter-run" type="button" class="ib-mini" title="Convertir"><i class="fas fa-exchange-alt"></i></button>
       </div>
-      <span id="web-coords-converter-out" style="display:none"></span>
+      <span id="web-coords-converter-out" style="display:none;font-size:.68rem;color:#e2e8f0;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
       <div id="user-menu-wrap" class="user-menu-wrap">
       <button id="ub" type="button" class="ib" title="Menú de usuario: cuenta o cerrar sesión"><i class="fas fa-user-circle"></i></button>
       <div id="user-menu-pop" class="user-menu-pop" role="menu" aria-hidden="true">
