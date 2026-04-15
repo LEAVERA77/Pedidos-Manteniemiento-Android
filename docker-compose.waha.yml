@@ -15,10 +15,9 @@ services:
       # NOWEB evita Chrome/Puppeteer (WEBJS); suele vincular mejor en Docker. Tras cambiar motor: npm run waha:reset
       - WHATSAPP_DEFAULT_ENGINE=NOWEB
       - WAHA_LOG_LEVEL=INFO
-      # Webhook → API Node en el host (probar bot). Ajustá host/puerto/token.
-      # Puerto = mismo que PORT en api/.env. Token = WHATSAPP_WEBHOOK_TOKEN
-      # - WHATSAPP_HOOK_URL=http://host.docker.internal:10000/api/webhooks/whatsapp/waha?token=REEMPLAZAR_TOKEN
-      # - WHATSAPP_HOOK_EVENTS=message
+      # Webhook → API (usar npm run waha:up que pasa --env-file ../compose.waha.env)
+      - WHATSAPP_HOOK_URL=http://host.docker.internal:${WAHA_HOOK_API_PORT}/api/webhooks/whatsapp/waha?token=${WHATSAPP_WEBHOOK_TOKEN}
+      - WHATSAPP_HOOK_EVENTS=message
     volumes:
       - waha_sessions:/app/.sessions
 
