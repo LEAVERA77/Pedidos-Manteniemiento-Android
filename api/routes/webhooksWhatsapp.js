@@ -26,6 +26,21 @@ import { whapiWebhookToMetaShapedPayload } from "../services/whapiWebhookAdapter
 
 const router = express.Router();
 
+/** Resumen sin PII masivo: tipos, from_me, orígenes y preview de texto (Whapi). */
+function summarizeWhapiMessagesForLog(body) {
+  const msgs = Array.isArray(body?.messages) ? body.messages : [];
+  return msgs.slice(0, 8).map((m) => ({
+    type: m?.type,
+    from_me: m?.from_me,
+    from: String(m?.from || "").replace(/\D/g, "").slice(0, 16),
+    chat_id: String(m?.chat_id || "").slice(0, 36),
+    text_preview:
+      m?.text && typeof m.text === "object" && m.text.body != null
+        ? String(m.text.body).slice(0, 72)
+        : null,
+  }));
+}
+
 function unauthorized(res) {
   return res.status(401).json({ ok: false, error: "unauthorized" });
 }
@@ -105,10 +120,29 @@ router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
       return unauthorized(res);
     }
 
+    const dbgFull = ["1", "true", "yes"].includes(String(process.env.WHATSAPP_WEBHOOK_DEBUG || "").trim().toLowerCase());
+    if (dbgFull) {
+      try {
+        const raw = JSON.stringify(body);
+        console.log("[webhook-whapi] DEBUG body (truncado)", raw.length > 14000 ? raw.slice(0, 14000) + "…" : raw);
+      } catch (e) {
+        console.log("[webhook-whapi] DEBUG body (no serializable)", e?.message || e);
+      }
+    }
+
     const metaShaped = whapiWebhookToMetaShapedPayload(body);
+    const ev = body.event;
+    console.log("[webhook-whapi] POST", {
+      event_type: ev?.type,
+      event_event: ev?.event,
+      channel_id: body.channel_id,
+      msg_count: Array.isArray(body.messages) ? body.messages.length : 0,
+      messages_preview: summarizeWhapiMessagesForLog(body),
+      adapted_to_bot: !!metaShaped,
+    });
+
     if (!metaShaped) {
-      const ev = body.event;
-      console.log("[webhook-whapi] skipped (no texto entrante)", {
+      console.log("[webhook-whapi] skipped (adapter devolvió null: sin texto entrante o solo from_me / grupos)", {
         hasMessages: Array.isArray(body.messages) ? body.messages.length : 0,
         eventType: ev?.type,
         eventEvent: ev?.event,
@@ -152,6 +186,7 @@ async function processWhapiInboundAsync(metaShaped, rawWhapi) {
       }
     }
     await handleInboundMetaWhatsAppPayload(metaShaped);
+    console.log("[webhook-whapi] handleInboundMetaWhatsAppPayload terminó OK");
   } catch (e) {
     console.error("[webhook-whapi] bot", e);
   }
