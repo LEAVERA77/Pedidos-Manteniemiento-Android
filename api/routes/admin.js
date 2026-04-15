@@ -28,6 +28,7 @@ router.get("/db/schema/socios_catalogo", adminOnly, async (req, res) => {
     const hasLatitud = columns.some(c => c.column_name === 'latitud');
     const hasLongitud = columns.some(c => c.column_name === 'longitud');
     const hasUbicacionManual = columns.some(c => c.column_name === 'ubicacion_manual');
+    const hasTenantId = columns.some(c => c.column_name === 'tenant_id');
     
     res.json({
       status: "ok",
@@ -42,7 +43,9 @@ router.get("/db/schema/socios_catalogo", adminOnly, async (req, res) => {
         latitud: hasLatitud ? "✅ existe" : "❌ falta",
         longitud: hasLongitud ? "✅ existe" : "❌ falta",
         ubicacion_manual: hasUbicacionManual ? "✅ existe" : "❌ falta",
-        needs_migration: !hasLatitud || !hasLongitud || !hasUbicacionManual
+        tenant_id: hasTenantId ? "\u2705 existe" : "\u274c falta (SQL: api/db/migrations/add_tenant_id_socios_catalogo.sql)",
+        needs_migration: !hasLatitud || !hasLongitud || !hasUbicacionManual,
+        needs_tenant_id_migration: !hasTenantId
       }
     });
   } catch (err) {

@@ -11612,9 +11612,11 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
     if (rubro !== 'cooperativa_electrica') return;
 
     try {
+        const hasSocTNis = await sociosCatalogoTieneTenantId();
+        const wfNis = hasSocTNis ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
         const r = await sqlSimple(
             `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio FROM socios_catalogo
-             WHERE activo = TRUE AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
+             WHERE activo = TRUE${wfNis} AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
              LIMIT 1`
         );
         const row = r.rows?.[0];
@@ -11989,6 +11991,23 @@ function tenantIdActual() {
     const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
     if (Number.isFinite(fromCfg)) return fromCfg;
     return 1;
+}
+
+/** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
+let _sociosCatalogoTieneTenantIdCache = null;
+async function sociosCatalogoTieneTenantId() {
+    if (_sociosCatalogoTieneTenantIdCache === true || _sociosCatalogoTieneTenantIdCache === false) {
+        return _sociosCatalogoTieneTenantIdCache;
+    }
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        _sociosCatalogoTieneTenantIdCache = !!(chk.rows?.length);
+    } catch (_) {
+        _sociosCatalogoTieneTenantIdCache = false;
+    }
+    return _sociosCatalogoTieneTenantIdCache;
 }
 
 let _pedidosTenantSqlCache = null;
@@ -15189,8 +15208,10 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const hasSocTList = await sociosCatalogoTieneTenantId();
+        const wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
         const r = await sqlSimpleSelectAllPages(
-            'SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo',
+            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo${wf}`,
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -15403,16 +15424,22 @@ const SOCIOS_BULK_CHUNK = 1000;
 
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
+    const hasT = await sociosCatalogoTieneTenantId();
+    const tidEsc = esc(tenantIdActual());
+    const colList = hasT
+        ? `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, tenant_id`
+        : `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
+    const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
     const vals = lote
-        .map(
-            (p) =>
-                `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})`
-        )
+        .map((p) => {
+            const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}`;
+            return hasT ? `${base}, ${tidEsc})` : `${base})`;
+        })
         .join(',');
     await sqlSimple(
-        `INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
+        `INSERT INTO socios_catalogo(${colList})
          VALUES ${vals}
-         ON CONFLICT (nis_medidor) DO UPDATE SET
+         ON CONFLICT ${onConf} DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
            nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
@@ -15680,7 +15707,9 @@ async function importarExcelSocios(event) {
         if (reemplazar) {
             actualizarOverlayImportacion('Vaciando catálogo (preservando coordenadas corregidas manualmente)…');
             // NO borrar filas con ubicacion_manual = TRUE (son correcciones del admin que deben persistir)
-            await sqlSimple(`DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE`);
+            const hasSocTDel = await sociosCatalogoTieneTenantId();
+            const tfDel = hasSocTDel ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
+            await sqlSimple(`DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE${tfDel}`);
             console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
         }
         const buf = await file.arrayBuffer();
@@ -15833,9 +15862,7 @@ async function importarExcelSocios(event) {
             } catch (e) {
                 for (const p of chunk) {
                     try {
-                        await sqlSimple(`INSERT INTO socios_catalogo(nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud)
-                    VALUES(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)})
-                    ON CONFLICT (nis_medidor) DO UPDATE SET nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis), medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor), nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases, latitud = CASE WHEN (socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud ELSE EXCLUDED.latitud END, longitud = CASE WHEN (socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8) OR COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud ELSE EXCLUDED.longitud END`);
+                        await ejecutarBulkInsertSociosCatalogo([p]);
                         ok++;
                     } catch (e2) {
                         fail++;
@@ -15872,9 +15899,12 @@ async function vaciarCoordenadasSociosCatalogo() {
         toast('Operación solo para administradores', 'error');
         return;
     }
+    const hasSocTVaciar = await sociosCatalogoTieneTenantId();
     const confirmar = confirm(
         '⚠️ ¿ELIMINAR TODOS LOS REGISTROS del catálogo de socios?\n\n' +
-        'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n' +
+        (hasSocTVaciar
+            ? 'Se borrarán todos los socios de ESTA empresa/sede (tenant actual) solamente.\n'
+            : 'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n') +
         'Esta acción NO se puede deshacer.\n\n' +
         '¿Continuar?'
     );
@@ -15882,16 +15912,21 @@ async function vaciarCoordenadasSociosCatalogo() {
     
     const confirmar2 = confirm(
         '⚠️⚠️ ÚLTIMA CONFIRMACIÓN ⚠️⚠️\n\n' +
-        'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
-        'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
-        '¿Estás SEGURO/A?'
+            (hasSocTVaciar
+                ? 'Vas a BORRAR el catálogo de socios de esta empresa/sede.\n\n¿Estás SEGURO/A?'
+                : 'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
+                  'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
+                  '¿Estás SEGURO/A?')
     );
     if (!confirmar2) return;
 
     try {
-        mostrarOverlayImportacion('Eliminando TODOS los registros del catálogo...');
-        
-        await sqlSimple(`DELETE FROM socios_catalogo`);
+        mostrarOverlayImportacion('Eliminando registros del catálogo...');
+        if (hasSocTVaciar) {
+            await sqlSimple(`DELETE FROM socios_catalogo WHERE tenant_id = ${esc(tenantIdActual())}`);
+        } else {
+            await sqlSimple(`DELETE FROM socios_catalogo`);
+        }
         
         ocultarOverlayImportacion();
         
@@ -15900,7 +15935,10 @@ async function vaciarCoordenadasSociosCatalogo() {
             await listarSociosAdmin();
         }
         
-        toast('✓ Tabla de socios eliminada completamente', 'success');
+        toast(
+            hasSocTVaciar ? '✓ Catálogo de socios vaciado para esta empresa' : '✓ Tabla de socios eliminada completamente',
+            'success'
+        );
     } catch (e) {
         ocultarOverlayImportacion();
         console.error('[vaciar-tabla-socios]', e);
@@ -17040,6 +17078,8 @@ async function cargarEstadisticas() {
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
                 FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
         const showConf = esCooperativaElectricaRubro();
+        const socTieneTStats = await sociosCatalogoTieneTenantId();
+        const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
             // Resumen general
@@ -17102,7 +17142,7 @@ async function cargarEstadisticas() {
                       'barT'
                   )
                 : Promise.resolve({ rows: [] }),
-            statSql(`SELECT COUNT(*)::int AS n FROM socios_catalogo WHERE COALESCE(activo, TRUE)`, 'nsocios'),
+            statSql(`SELECT COUNT(*)::int AS n FROM socios_catalogo WHERE COALESCE(activo, TRUE)${socTsqlStats}`, 'nsocios'),
             showConf
                 ? statSql(
                       `SELECT TO_CHAR(fecha_cierre,'YYYY-MM') AS mes,
