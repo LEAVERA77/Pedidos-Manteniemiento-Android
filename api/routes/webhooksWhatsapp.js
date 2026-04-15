@@ -7,7 +7,8 @@
  *   <PORT> = mismo que en api/.env (PORT). Token = WHATSAPP_WEBHOOK_TOKEN
  *
  * Whapi.cloud: POST → /api/webhooks/whatsapp/whapi
- *   URL pública (ngrok, etc.): https://<host>/api/webhooks/whatsapp/whapi?token=...
+ *   URL pública: https://<host>/api/webhooks/whatsapp/whapi (opcional ?token=WHATSAPP_WEBHOOK_TOKEN)
+ *   Auth: query token, Bearer WHATSAPP_WEBHOOK_TOKEN, o Bearer WHAPI_API_KEY (Whapi envía el token del canal).
  *
  * Variables sugeridas (.env):
  *   WHATSAPP_WEBHOOK_TOKEN=secreto-largo-compartido-con-evolution
@@ -37,13 +38,28 @@ function checkWebhookToken(req) {
   return hdr === `Bearer ${token}` || q === token;
 }
 
+/**
+ * Whapi.cloud a veces envía POST con `Authorization: Bearer <WHAPI_API_KEY>` (token del canal)
+ * y otras veces sin query `?token=`; solo validar WHATSAPP_WEBHOOK_TOKEN devuelve 401 intermitentes.
+ */
+function checkWhapiWebhookToken(req) {
+  const shared = String(process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
+  if (!shared) return true;
+  const hdr = String(req.get("authorization") || "").trim();
+  const q = req.query.token;
+  if (hdr === `Bearer ${shared}` || q === shared) return true;
+  const apiKey = String(process.env.WHAPI_API_KEY || "").trim();
+  if (apiKey && hdr === `Bearer ${apiKey}`) return true;
+  return false;
+}
+
 /** Whapi (y prueba en navegador): GET sin POST no recibe webhooks; responde 200 para verificar deploy. */
 router.get("/whapi", (req, res) => {
   res.json({
     ok: true,
     path: "POST /api/webhooks/whatsapp/whapi",
     hint:
-      "Whapi.cloud debe usar método POST. Si definiste WHATSAPP_WEBHOOK_TOKEN, la URL del panel incluye ?token=...",
+      "Whapi.cloud usa POST. Auth: ?token=, Bearer WHATSAPP_WEBHOOK_TOKEN o Bearer WHAPI_API_KEY.",
   });
 });
 
@@ -74,7 +90,7 @@ router.post("/waha", express.json({ limit: "2mb" }), async (req, res) => {
 
 router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
   try {
-    if (!checkWebhookToken(req)) {
+    if (!checkWhapiWebhookToken(req)) {
       return unauthorized(res);
     }
 
