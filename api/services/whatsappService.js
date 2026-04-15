@@ -7,8 +7,13 @@
 
 import { query } from "../db/neon.js";
 import { sendWhatsAppTextWithCredentials, normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
+import { sendText as sendEvolutionText } from "./evolutionWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
+
+function whatsappProvider() {
+  return String(process.env.WHATSAPP_PROVIDER || "meta").toLowerCase().trim();
+}
 
 function normCfg(cfg) {
   if (!cfg || typeof cfg !== "object") return {};
@@ -83,6 +88,23 @@ export async function sendBotWhatsAppText({
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "evolution") {
+    console.log("[whatsapp-service] usando Evolution API (bot)", { tenantId, logContext });
+    const r = await sendEvolutionText(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, null);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "evolution",
+    };
   }
 
   const pid = String(webhookPhoneNumberId || "").trim();
@@ -207,6 +229,23 @@ export async function sendTenantWhatsAppText({
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "evolution") {
+    console.log("[whatsapp-service] usando Evolution API (tenant)", { tenantId, logContext });
+    const r = await sendEvolutionText(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "evolution",
+    };
   }
 
   const { accessToken, phoneNumberId, source } = await getWhatsAppCredentialsForTenant(tenantId);

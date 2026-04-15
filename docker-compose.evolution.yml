@@ -1,0 +1,31 @@
+# Evolution API — solo desarrollo / VPS propio. No usar en Render tal cual.
+# Documentación: https://doc.evolution-api.com/
+# Reemplazá AUTHENTICATION_API_KEY por el mismo valor que EVOLUTION_API_KEY en api/.env
+#
+# Uso desde carpeta api/: npm run evolution:up
+
+services:
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: evolution-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    environment:
+      # Debe coincidir con EVOLUTION_API_KEY en api/.env (cambiá en ambos si hace falta)
+      - AUTHENTICATION_API_KEY=gestornova-evolution-2026
+      - AUTHENTICATION_TYPE=apikey
+      - LANGUAGE=es
+      - LOG_LEVEL=INFO
+      - DEL_INSTANCE=false
+    networks:
+      - evolution-network
+
+volumes:
+  evolution_instances:
+
+networks:
+  evolution-network:
+    driver: bridge

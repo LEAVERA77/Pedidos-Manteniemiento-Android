@@ -80,3 +80,56 @@ El emulador expone validación en `GET` según el paquete; la URL de callback de
 ---
 
 Cambios hechos en código: `META_GRAPH_URL` se usa en `services/metaWhatsapp.js` como base alternativa a `https://graph.facebook.com`.
+
+## Alternativa: Evolution API (sin Cloud API de Meta)
+
+[Evolution API](https://github.com/EvolutionAPI/evolution-api) conecta un número vía **WhatsApp Web** (Baileys). Evita el sandbox **131030** de Meta, pero **no está autorizado por los términos de WhatsApp**: riesgo de bloqueo del número; usá un número de prueba y/o VPS propio.
+
+### Requisitos
+
+- **Docker Desktop** (o motor Docker) en la máquina donde corre Evolution.
+- Node como arriba.
+
+### 1. Clave en Docker y en la API
+
+En `docker-compose.evolution.yml`, `AUTHENTICATION_API_KEY` debe ser **el mismo** valor que `EVOLUTION_API_KEY` en `api/.env`.
+
+### 2. Levantar Evolution
+
+Desde la carpeta `api/` (el compose está en la raíz del repo):
+
+```bash
+npm run evolution:up
+npm run evolution:logs
+```
+
+### 3. Crear instancia y QR (primera vez)
+
+La instancia `EVOLUTION_INSTANCE` (p. ej. `gestornova`) debe existir en Evolution (creación vía [documentación](https://doc.evolution-api.com/) o panel). Luego:
+
+```bash
+npm run evolution:qr
+```
+
+Escaneá el código con WhatsApp (Dispositivos vinculados) o usá el pairing si la API lo muestra.
+
+### 4. Activar en la API
+
+En `api/.env` (solo local / VPS; **no** en Render si seguís con Meta allí):
+
+```env
+WHATSAPP_PROVIDER=evolution
+EVOLUTION_API_URL=http://localhost:8080
+EVOLUTION_API_KEY=gestornova-evolution-2026
+EVOLUTION_INSTANCE=gestornova
+```
+
+Reiniciá `npm start`.
+
+Los envíos de **texto** del bot (`sendBotWhatsAppText`) y avisos al cliente (`sendTenantWhatsAppText`) usan Evolution. Las **listas interactivas** del menú de tipos siguen llamando a Graph (Meta) hasta integrar `sendList` de Evolution o forzar menú solo texto.
+
+### 5. Webhook entrante (fase 2)
+
+Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la doc del proyecto; este repo puede añadir ruta dedicada en un siguiente paso.
+
+**Advertencia:** no subas `WHATSAPP_PROVIDER=evolution` a Render si el contenedor Evolution no es alcanzable desde internet con la misma URL.
