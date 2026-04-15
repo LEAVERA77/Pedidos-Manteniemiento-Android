@@ -12826,6 +12826,8 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
+                // Setup inicial: si el rubro en servidor distinta del elegido, la API exige confirmación explícita.
+                purge_datos_cambio_rubro: true,
                 configuracion: { setup_wizard_completado: true, marca_publicada_admin: true, ...provExtra }
             })
         });
