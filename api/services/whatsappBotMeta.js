@@ -1735,11 +1735,17 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     pendOpinionActiva = await hasPendingClienteOpinion(tid, phone);
   } catch (_) {}
 
-  // Saludo "Hola" → bienvenida solo si NO estamos en medio de un reclamo (ej. awaiting_desc: "Hola" es descripción).
+  // Saludo inicial (es/en) → misma bienvenida que "Hola"; no aplica en medio de un reclamo.
   const _sessHola = sessions.get(sk);
   const _stepHola = _sessHola?.step;
   const _enFlujoReclamoBot = _stepHola && _stepHola !== "idle" && _stepHola !== "human_chat";
-  if (/\bhola\b/i.test(String(text || "").trim()) && _stepHola !== "human_chat" && !_enFlujoReclamoBot) {
+  const _rawSaludo = String(text || "").trim();
+  const _esSaludoInicial =
+    /\bhola\b/i.test(_rawSaludo) ||
+    /^(hi|hello|hey)(\b|[\s!.]|$)/i.test(_rawSaludo) ||
+    /^buenas(\b|[\s!.]|$)/i.test(_rawSaludo) ||
+    /^good\s*(morning|afternoon|evening)(\b|[\s!.]|$)/i.test(_rawSaludo);
+  if (_esSaludoInicial && _stepHola !== "human_chat" && !_enFlujoReclamoBot) {
     let pendOpinionHola = false;
     try {
       pendOpinionHola = await hasPendingClienteOpinion(tid, phone);

@@ -100,7 +100,17 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
     });
   }
 
-  if (metaMessages.length === 0) return null;
+  if (metaMessages.length === 0) {
+    const snap = rawMessages.slice(0, 5).map((m) => ({
+      type: m?.type,
+      from_me: m?.from_me,
+    }));
+    console.log("[whapi-adapter] sin texto entrante (eco propio, tipo no soportado o sin body)", {
+      n: rawMessages.length,
+      snap,
+    });
+    return null;
+  }
 
   const contacts = Array.from(contactMap.values());
 
