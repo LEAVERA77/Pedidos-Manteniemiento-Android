@@ -1,5 +1,6 @@
 import { query } from "../db/neon.js";
 import { usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 
 let _tableExists;
 
@@ -69,10 +70,20 @@ export function masterPhonesWhatsappBotFromEnv() {
     .filter(Boolean);
 }
 
-/** Comparación laxa entre números WA (549… vs 54…, etc.). */
+/** Solo dígitos con longitud mínima (evita MASTER=549 que bloqueaba fallback a BD). */
+export function masterPhonesValidFromEnv() {
+  return masterPhonesWhatsappBotFromEnv().filter((s) => String(s).replace(/\D/g, "").length >= 8);
+}
+
+/** Misma regla que el webhook (549… → 54… inbound) para comparar con telefono en Neon. */
+export function normalizePhoneForBotMasterMatch(digits) {
+  return normalizeWhatsAppRecipientForMeta(String(digits || "").replace(/\D/g, ""), { mode: "inbound" });
+}
+
+/** Comparación laxa entre identidades WA ya normalizadas (inbound AR). */
 export function digitsWaPhoneLikelyEqual(aDigits, bDigits) {
-  const p = String(aDigits || "").replace(/\D/g, "");
-  const q = String(bDigits || "").replace(/\D/g, "");
+  const p = normalizePhoneForBotMasterMatch(aDigits);
+  const q = normalizePhoneForBotMasterMatch(bDigits);
   if (!p || !q || p.length < 8 || q.length < 8) return false;
   if (p === q) return true;
   if (p.length >= 10 && q.length >= 10 && p.slice(-10) === q.slice(-10)) return true;
@@ -80,47 +91,38 @@ export function digitsWaPhoneLikelyEqual(aDigits, bDigits) {
 }
 
 /**
- * Primera palabra del mensaje: activar / desactivar (mayúsculas, puntuación final).
+ * Mensaje tipo *Desactivar*, signos, espacios raros de WhatsApp (ZWSP), etc.
  */
 export function parseActivarDesactivarComando(text) {
-  const t = String(text || "")
-    .trim()
-    .replace(/^\*+|\*+$/g, "")
-    .trim()
+  let s = String(text || "")
+    .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim();
+  s = s.replace(/^\*+/, "").replace(/\*+$/, "").trim();
+  s = s.replace(/^[\s¡¿"'`´.,_:;\-–—]+/g, "").trim();
+  const low = s
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  const parts = t.split(/\s+/).filter(Boolean);
-  if (!parts.length) return null;
-  const w0 = parts[0].replace(/[!?.,;:…]+$/g, "");
-  if (w0 === "activar") return "activar";
-  if (w0 === "desactivar") return "desactivar";
+  if (/^activar\b/.test(low)) return "activar";
+  if (/^desactivar\b/.test(low)) return "desactivar";
   return null;
 }
 
 export function isPhoneWhatsappBotMaster(phoneDigits) {
-  const p = String(phoneDigits || "").replace(/\D/g, "");
+  const p = normalizePhoneForBotMasterMatch(phoneDigits);
   if (!p || p.length < 8) return false;
-  const list = masterPhonesWhatsappBotFromEnv();
+  const list = masterPhonesValidFromEnv();
   if (!list.length) return false;
   return list.some((m) => digitsWaPhoneLikelyEqual(p, m));
 }
 
-/**
- * Si WHATSAPP_BOT_MASTER_PHONE(S) está definido: solo esos números.
- * Si está vacío: cualquier usuario admin/administrador activo del tenant WHATSAPP_BOT_TENANT_ID
- * cuyo telefono o whatsapp_notificaciones coincide (fallback para Whapi sin env extra).
- */
-export async function isPhoneWhatsappBotMasterAsync(phoneDigits, tenantId) {
-  if (isPhoneWhatsappBotMaster(phoneDigits)) return true;
-  const envList = masterPhonesWhatsappBotFromEnv();
-  if (envList.length > 0) return false;
+async function phoneMatchesTenantAdminDigits(phoneDigits, tenantId) {
+  const p = normalizePhoneForBotMasterMatch(phoneDigits);
+  if (!p || p.length < 8) return false;
 
   const tid = Number(tenantId ?? process.env.WHATSAPP_BOT_TENANT_ID ?? 1);
   if (!Number.isFinite(tid) || tid < 1) return false;
-
-  const p = String(phoneDigits || "").replace(/\D/g, "");
-  if (!p || p.length < 8) return false;
 
   const col = await usuariosTenantColumnName();
   let rows;
@@ -140,7 +142,7 @@ export async function isPhoneWhatsappBotMasterAsync(phoneDigits, tenantId) {
       );
     }
   } catch (e) {
-    console.warn("[global-bot-state] master DB fallback", e?.message || e);
+    console.warn("[global-bot-state] master DB lookup", e?.message || e);
     return false;
   }
 
@@ -150,4 +152,13 @@ export async function isPhoneWhatsappBotMasterAsync(phoneDigits, tenantId) {
     }
   }
   return false;
+}
+
+/**
+ * Autorizado si coincide WHATSAPP_BOT_MASTER_PHONE(S) válido (≥8 dígitos) **o**
+ * teléfono/whatsapp_notificaciones de un admin del tenant (misma normalización AR que el webhook).
+ */
+export async function isPhoneWhatsappBotMasterAsync(phoneDigits, tenantId) {
+  if (isPhoneWhatsappBotMaster(phoneDigits)) return true;
+  return phoneMatchesTenantAdminDigits(phoneDigits, tenantId);
 }

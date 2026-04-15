@@ -1692,7 +1692,23 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const sk = sessionKey(phone, tid);
 
   const comandoMaster = parseActivarDesactivarComando(text);
-  if (comandoMaster && (await isPhoneWhatsappBotMasterAsync(phone, tid))) {
+  if (comandoMaster) {
+    const okMaster = await isPhoneWhatsappBotMasterAsync(phone, tid);
+    if (!okMaster) {
+      console.warn("[whatsapp-bot-meta] comando maestro no autorizado", {
+        comando: comandoMaster,
+        tid,
+        phone: maskWaDigitsForLog(phone),
+      });
+      await reply(
+        phone,
+        `Recibí la orden *${comandoMaster}*, pero este número no está autorizado.\n\n` +
+          "Revisá en Neon que tu usuario *admin* tenga en *telefono* o *whatsapp_notificaciones* el mismo número que usás en WhatsApp (con o sin 9 móvil), o definí *WHATSAPP_BOT_MASTER_PHONE* en el servidor con los dígitos completos (ej. 5493434540250).",
+        tid,
+        phoneNumberId ? String(phoneNumberId).trim() : null
+      );
+      return;
+    }
     const wpidM = phoneNumberId ? String(phoneNumberId).trim() : null;
     if (comandoMaster === "activar" && whatsappBotEnvHardDisabled()) {
       await reply(
