@@ -187,3 +187,38 @@ Los envíos de **texto** del bot (`sendBotWhatsAppText`) y avisos al cliente (`s
 Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la doc del proyecto; este repo puede añadir ruta dedicada en un siguiente paso.
 
 **Advertencia:** no subas `WHATSAPP_PROVIDER=evolution` a Render si el contenedor Evolution no es alcanzable desde internet con la misma URL.
+
+---
+
+## WAHA (WhatsApp HTTP API) — alternativa ligera
+
+[WAHA](https://waha.devlike.pro/) expone una API REST unificada; el `docker-compose.waha.yml` solo levanta **un** contenedor (sin Redis/Postgres obligatorios). El **puerto publicado en el host es 3080** para no chocar con la API Node (`PORT=3000`).
+
+1. Levantar WAHA (desde `api/`):
+
+   ```bash
+   npm run waha:up
+   ```
+
+2. Crear/vincular sesión y ver estado/QR:
+
+   ```bash
+   npm run waha:qr
+   ```
+
+   También podés usar la UI/Swagger en `http://localhost:3080/` y el endpoint de QR documentado: `GET /api/{session}/auth/qr`.
+
+3. Activar en `api/.env`:
+
+   ```env
+   WHATSAPP_PROVIDER=waha
+   WAHA_API_URL=http://localhost:3080
+   WAHA_API_KEY=gestornova-waha-2026
+   WAHA_SESSION=gestornova
+   ```
+
+   La clave debe coincidir con `WAHA_API_KEY` del compose. Reiniciá la API (`npm start`).
+
+4. Logs: `npm run waha:logs`. Reinicio con volúmenes limpios: `npm run waha:reset`.
+
+**Nota:** Los webhooks entrantes hacia el bot pueden configurarse en WAHA por sesión; este repo puede ampliar rutas en una fase posterior (similar a Evolution).

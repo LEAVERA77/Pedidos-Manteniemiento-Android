@@ -1,0 +1,21 @@
+# WAHA — WhatsApp HTTP API (ligero, sin Postgres/Redis).
+# Puerto host 3080 → 3000 en el contenedor para no chocar con la API Node (PORT=3000).
+# Docs: https://waha.devlike.pro/
+version: "3.8"
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: waha
+    restart: unless-stopped
+    ports:
+      - "3080:3000"
+    environment:
+      - WAHA_API_KEY=gestornova-waha-2026
+      - WHATSAPP_DEFAULT_ENGINE=WEBJS
+      - WAHA_LOG_LEVEL=INFO
+    volumes:
+      - waha_sessions:/app/.sessions
+
+volumes:
+  waha_sessions:

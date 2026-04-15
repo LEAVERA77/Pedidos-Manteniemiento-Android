@@ -8,6 +8,12 @@
 import { query } from "../db/neon.js";
 import { sendWhatsAppTextWithCredentials, normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 import { sendText as sendEvolutionText } from "./evolutionWhatsapp.js";
+import {
+  ensureSessionExists,
+  getSessionStatus,
+  sendText as sendTextWaha,
+  startSession as startWahaSession,
+} from "./wahaWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
@@ -88,6 +94,29 @@ export async function sendBotWhatsAppText({
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "waha") {
+    console.log("[whatsapp-service] usando WAHA (bot)", { tenantId, logContext });
+    await ensureSessionExists();
+    const status = await getSessionStatus();
+    if (status?.status && status.status !== "WORKING") {
+      console.log("[whatsapp-service] sesión WAHA no lista:", status.status, "— start");
+      await startWahaSession();
+    }
+    const r = await sendTextWaha(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, null);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "waha",
+    };
   }
 
   if (whatsappProvider() === "evolution") {
@@ -229,6 +258,29 @@ export async function sendTenantWhatsAppText({
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "waha") {
+    console.log("[whatsapp-service] usando WAHA (tenant)", { tenantId, logContext });
+    await ensureSessionExists();
+    const status = await getSessionStatus();
+    if (status?.status && status.status !== "WORKING") {
+      console.log("[whatsapp-service] sesión WAHA no lista:", status.status, "— start");
+      await startWahaSession();
+    }
+    const r = await sendTextWaha(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "waha",
+    };
   }
 
   if (whatsappProvider() === "evolution") {
