@@ -6,6 +6,12 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
+/** Base Graph API (producción: https://graph.facebook.com). Emulador local: p. ej. http://localhost:4004 — sin barra final. */
+function metaGraphBaseUrl() {
+  const raw = String(process.env.META_GRAPH_URL || "https://graph.facebook.com").trim();
+  return raw.replace(/\/+$/, "");
+}
+
 function argentinaStripEnabledFromEnv() {
   const v = process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
   if (v == null || String(v).trim() === "") return true;
@@ -128,7 +134,7 @@ export async function sendWhatsAppTextWithCredentials(
     normalizedChanged: to !== rawTo,
   });
 
-  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${pid}/messages`;
+  const endpoint = `${metaGraphBaseUrl()}/${GRAPH_VERSION}/${pid}/messages`;
   const payload = {
     messaging_product: "whatsapp",
     to,
@@ -283,7 +289,7 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     },
   };
 
-  const endpoint = `https://graph.facebook.com/${GRAPH_VERSION}/${pid}/messages`;
+  const endpoint = `${metaGraphBaseUrl()}/${GRAPH_VERSION}/${pid}/messages`;
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: {
