@@ -81,6 +81,15 @@ El emulador expone validación en `GET` según el paquete; la URL de callback de
 
 Cambios hechos en código: `META_GRAPH_URL` se usa en `services/metaWhatsapp.js` como base alternativa a `https://graph.facebook.com`.
 
+### Volver a Meta Cloud API (desde WAHA o emulador)
+
+1. En `api/.env`: **`WHATSAPP_PROVIDER=meta`**.
+2. **Comentá o borrá** `META_GRAPH_URL`, `EMULATOR_WEBHOOK_API_BASE` y la línea extra de `META_GRAPH_API_VERSION` del emulador; dejá **`META_GRAPH_API_VERSION=v21.0`** (o la que indique Meta) y **`META_ALLOW_INVALID_SIGNATURE=false`** para validar la firma del webhook como en producción.
+3. **`META_PHONE_NUMBER_ID`** = *Phone number ID* en Meta → WhatsApp → Configuración de la API (ej. `1030098870192233`).
+4. **`META_ACCESS_TOKEN`**: pegá el token de acceso actual desde Developers (los temporales caducan; si ves error OAuth 190, generá uno nuevo).
+5. **Webhook** en Meta → Configuración → URL de devolución de llamada: `https://<tu-host>/api/webhooks/whatsapp/meta` y **Token de verificación** = `META_WEBHOOK_VERIFY_TOKEN`.
+6. Variables **WAHA** (`WAHA_API_URL`, etc.): comentalas si no usás Docker WAHA.
+
 ## Alternativa: Evolution API (sin Cloud API de Meta)
 
 [Evolution API](https://github.com/EvolutionAPI/evolution-api) conecta un número vía **WhatsApp Web** (Baileys). Evita el sandbox **131030** de Meta, pero **no está autorizado por los términos de WhatsApp**: riesgo de bloqueo del número; usá un número de prueba y/o VPS propio.
