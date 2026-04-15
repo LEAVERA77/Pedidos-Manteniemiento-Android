@@ -242,6 +242,17 @@ El compose usa motor **`NOWEB`** (sin navegador embebido); suele comportarse mej
 
    **Sesión:** la imagen **WAHA Core** (`devlikeapro/waha`) solo permite la sesión **`default`**. Si necesitás otro nombre (p. ej. `gestornova`), usá [WAHA Plus](https://waha.devlike.pro/) y definí `WAHA_SESSION` en `.env`.
 
-4. Logs: `npm run waha:logs`. Reinicio con volúmenes limpios: `npm run waha:reset`.
+4. **Webhook hacia el bot (obligatorio para recibir mensajes):** la API expone `POST /api/webhooks/whatsapp/waha`. WAHA (en Docker) debe poder **alcanzar** tu Node en el host. En `docker-compose.waha.yml` descomentá y ajustá (puerto = mismo `PORT` que en `api/.env`, token = `WHATSAPP_WEBHOOK_TOKEN`):
 
-**Nota:** Los webhooks entrantes hacia el bot pueden configurarse en WAHA por sesión; este repo puede ampliar rutas en una fase posterior (similar a Evolution).
+   ```env
+   WHATSAPP_HOOK_URL=http://host.docker.internal:10000/api/webhooks/whatsapp/waha?token=TU_TOKEN
+   WHATSAPP_HOOK_EVENTS=message
+   ```
+
+   En Windows/Mac con Docker Desktop, `host.docker.internal` apunta al PC. Reiniciá WAHA (`npm run waha:down` → `waha:up`). Sin esto, el bot **no** recibe lo que escribís por WhatsApp.
+
+5. **`META_PHONE_NUMBER_ID`** en `api/.env` debe seguir definido (el mismo que usás con Meta): el adaptador WAHA lo reutiliza para resolver el tenant del bot.
+
+6. Logs: `npm run waha:logs`. Reinicio con volúmenes limpios: `npm run waha:reset`.
+
+7. Probar: con la API en marcha (`npm start`), enviá **Hola** desde el celular al número vinculado a WAHA; en consola deberían verse logs `[webhook-waha]` / `[BOT_RESPUESTA]`.
