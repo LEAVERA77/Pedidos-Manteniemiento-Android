@@ -31,6 +31,9 @@ services:
 
       - SERVER_PORT=8080
       - SERVER_HOST=0.0.0.0
+
+      # Baileys / WhatsApp Web: v2.2.3+ suele requerir versión explícita para generar QR
+      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1023204200}
     depends_on:
       postgres:
         condition: service_healthy

@@ -138,6 +138,16 @@ npm run evolution:qr
 
 Escaneá el código con WhatsApp (Dispositivos vinculados) o usá el pairing si la API lo muestra.
 
+#### Solución de problemas: QR no se genera
+
+Si la instancia queda en `connecting` y `qrcode.count` es `0`, o los endpoints de QR devuelven error, en Evolution API **v2.2.3+** suele hacer falta fijar la versión del cliente de sesión. En `docker-compose.evolution.yml` ya está:
+
+```yaml
+- CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1023204200}
+```
+
+Podés ajustar el valor en **`.env.evolution`** (ver `.env.evolution.example`), recreá los contenedores y volvé a pedir el QR (p. ej. `npm run evolution:qr` o el manager en `http://localhost:8080/manager` si tu imagen lo expone).
+
 ### 5. Activar en la API
 
 En `api/.env` (solo local / VPS; **no** en Render si seguís con Meta allí):
