@@ -67,3 +67,4 @@ Cualquier origen desde el que cargue el front (dominio Pages, `file://` en debug
 
 - No commitear `config.json`, `.env`, keystores.
 - Si hubo filtración: rotar Neon, Meta y JWT; ver `SECURITY.md` en repos.
+- Checklist Semana 1 (alcance v1, secretos, hardening, backups, alertas, DR): **`docs/SEMANA1_PRODUCCION_CHECKLIST.md`**
