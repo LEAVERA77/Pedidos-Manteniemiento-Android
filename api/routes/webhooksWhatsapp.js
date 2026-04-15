@@ -37,6 +37,16 @@ function checkWebhookToken(req) {
   return hdr === `Bearer ${token}` || q === token;
 }
 
+/** Whapi (y prueba en navegador): GET sin POST no recibe webhooks; responde 200 para verificar deploy. */
+router.get("/whapi", (req, res) => {
+  res.json({
+    ok: true,
+    path: "POST /api/webhooks/whatsapp/whapi",
+    hint:
+      "Whapi.cloud debe usar método POST. Si definiste WHATSAPP_WEBHOOK_TOKEN, la URL del panel incluye ?token=...",
+  });
+});
+
 router.post("/waha", express.json({ limit: "2mb" }), async (req, res) => {
   try {
     if (!checkWebhookToken(req)) {
