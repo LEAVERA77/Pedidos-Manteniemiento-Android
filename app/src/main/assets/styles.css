@@ -798,8 +798,40 @@ textarea{resize:vertical;min-height:80px}
 html.gn-android-webview #ms .pc {
   min-height: 0;
 }
+html.gn-android-webview #ms .bp2 {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(0px, env(safe-area-inset-bottom, 0px));
+  z-index: 12020;
+  pointer-events: auto;
+  touch-action: pan-y;
+  transform: translateZ(0);
+}
+html.gn-android-webview #ms .bp2 .ph,
+html.gn-android-webview #ms .bp2 .pl {
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+html.gn-android-webview .btn-mapa-ir-gps,
+html.gn-android-webview .btn-mapa-nuevo-gps {
+  position: fixed;
+  z-index: 12030;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transform: translateZ(0);
+}
 html.gn-android-webview .fab-show-pedidos {
   box-sizing: border-box;
   min-height: 2.5rem;
   align-items: center;
+  z-index: 12035;
+  touch-action: manipulation;
+}
+html.gn-android-webview .gn-gps-fab {
+  width: 2.9rem;
+  height: 2.9rem;
+  min-width: 2.9rem;
+  min-height: 2.9rem;
+  box-sizing: border-box;
 }

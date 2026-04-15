@@ -2571,28 +2571,68 @@ function initWebCoordsConverterBar() {
     out.style.display = visible ? 'inline' : 'none';
     if (!visible || run.dataset.bound === '1') return;
     run.dataset.bound = '1';
-    const exec = () => {
+    let prevMode = mode.value;
+    const applyPlaceholders = () => {
         if (mode.value === 'dec_to_dms') {
+            a.placeholder = 'Latitud decimal';
+            b.placeholder = 'Longitud decimal';
+        } else {
+            a.placeholder = 'Latitud GMS';
+            b.placeholder = 'Longitud GMS';
+        }
+    };
+    const convertirInputs = (fromMode) => {
+        if (fromMode === 'dec_to_dms') {
             const lat = parseFloat(String(a.value || '').trim().replace(',', '.'));
             const lng = parseFloat(String(b.value || '').trim().replace(',', '.'));
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
                 out.textContent = 'Ingresá lat/lng decimales válidos';
-                return;
+                return false;
             }
-            out.textContent = `${decimalToDmsLite(lat, true)} · ${decimalToDmsLite(lng, false)}`;
-        } else {
-            const lat = dmsToDecimalLite(a.value);
-            const lng = dmsToDecimalLite(b.value);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-                out.textContent = 'Ingresá lat/lng en formato GMS válido';
-                return;
-            }
-            out.textContent = `${lat.toFixed(7)}, ${lng.toFixed(7)}`;
+            const latDms = decimalToDmsLite(lat, true);
+            const lngDms = decimalToDmsLite(lng, false);
+            a.value = latDms;
+            b.value = lngDms;
+            out.textContent = `${latDms} · ${lngDms}`;
+            return true;
         }
+        const lat = dmsToDecimalLite(a.value);
+        const lng = dmsToDecimalLite(b.value);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            out.textContent = 'Ingresá lat/lng en formato GMS válido';
+            return false;
+        }
+        const latDec = lat.toFixed(7);
+        const lngDec = lng.toFixed(7);
+        a.value = latDec;
+        b.value = lngDec;
+        out.textContent = `${latDec}, ${lngDec}`;
+        return true;
     };
-    run.addEventListener('click', exec);
-    a.addEventListener('keydown', (e) => { if (e.key === 'Enter') exec(); });
-    b.addEventListener('keydown', (e) => { if (e.key === 'Enter') exec(); });
+    const intercambiarConversion = () => {
+        const ok = convertirInputs(mode.value);
+        if (!ok) return;
+        mode.value = mode.value === 'dec_to_dms' ? 'dms_to_dec' : 'dec_to_dms';
+        prevMode = mode.value;
+        applyPlaceholders();
+    };
+    run.addEventListener('click', intercambiarConversion);
+    mode.addEventListener('change', () => {
+        if (mode.value === prevMode) return;
+        const hayDatos = String(a.value || '').trim() || String(b.value || '').trim();
+        if (hayDatos) {
+            const ok = convertirInputs(prevMode);
+            if (!ok) {
+                mode.value = prevMode;
+                return;
+            }
+        }
+        prevMode = mode.value;
+        applyPlaceholders();
+    });
+    a.addEventListener('keydown', (e) => { if (e.key === 'Enter') intercambiarConversion(); });
+    b.addEventListener('keydown', (e) => { if (e.key === 'Enter') intercambiarConversion(); });
+    applyPlaceholders();
 }
 
 document.getElementById('lf').addEventListener('submit', async e => {
