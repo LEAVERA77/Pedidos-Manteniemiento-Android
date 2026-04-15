@@ -211,10 +211,12 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
 
 ## Whapi.cloud (opcional, pruebas)
 
-1. En el panel Whapi, creá el canal y vinculá el número (QR o código).
-2. **Webhook URL:** `https://<host-público>/api/webhooks/whatsapp/whapi` (mismo `?token=` que `WHATSAPP_WEBHOOK_TOKEN` si lo definís). Activá **webhook persistente** si el panel lo ofrece.
-3. En `api/.env`: `WHATSAPP_PROVIDER=whapi`, `WHAPI_API_KEY=<token del panel>`, opcional `WHAPI_META_PHONE_NUMBER_ID` igual a tu `channel_id` de Whapi si querés fijar el tenant sin depender del JSON.
-4. Reiniciá la API (`npm start`).
+1. En el panel Whapi, creá el canal y vinculá el número (QR o código). Copiá el **Channel ID** (aparece en webhooks / proyecto) y el **API token**.
+2. **Webhook URL** (HTTPS): `https://<tu-api>/api/webhooks/whatsapp/whapi?token=<WHATSAPP_WEBHOOK_TOKEN>` — ejemplo Render: `https://nexxo-api-418k.onrender.com/api/webhooks/whatsapp/whapi?token=...`. Activá **webhook persistente** si el panel lo ofrece.
+3. **Variables** (local `api/.env` o **Render → Environment**): `WHATSAPP_PROVIDER=whapi`, `WHAPI_API_URL=https://gate.whapi.cloud`, `WHAPI_API_KEY=<token>`, `WHATSAPP_WEBHOOK_TOKEN=<mismo secreto que en la URL>`, `WHATSAPP_BOT_ENABLED=true`, `WHATSAPP_BOT_TENANT_ID=1`. Opcional: `WHAPI_CHANNEL_ID=<Channel ID del panel>` para resolver tenant sin reutilizar `META_PHONE_NUMBER_ID`.
+4. Si el admin (p. ej. GitHub Pages) llama a la API por el host de Render sin subdominio de tenant: `TENANT_HOST_FALLBACK_ALLOW_HOSTS=nexxo-api-418k.onrender.com` (ajustá a tu host).
+5. Tras guardar env en Render: **Manual Deploy** o esperá el deploy automático; probá `GET https://<host>/health`.
+6. Local: reiniciá la API (`npm start`).
 
 ---
 

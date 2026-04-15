@@ -26,6 +26,13 @@ export async function resolveTenantIdByMetaPhoneNumberId(phoneNumberId) {
   const fromDb = r.rows?.[0]?.id;
   if (fromDb != null) return Number(fromDb);
 
+  const prov = String(process.env.WHATSAPP_PROVIDER || "").toLowerCase().trim();
+  const whapiCh = String(process.env.WHAPI_CHANNEL_ID || "").trim();
+  if (prov === "whapi" && whapiCh && pid === whapiCh) {
+    const tid = Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+    return Number.isFinite(tid) ? tid : 1;
+  }
+
   const envPid = String(process.env.META_PHONE_NUMBER_ID || "").trim();
   if (envPid && pid === envPid) {
     const tid = Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
