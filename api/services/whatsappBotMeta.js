@@ -41,6 +41,12 @@ import {
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
 import { validarLocalidadParaChatWhatsapp, normalizarNombreLocalidad } from "./tenantLocalidades.js";
+import {
+  whatsappBotEnvHardDisabled,
+  isWhatsAppAutomatedBotDisabled,
+  isPhoneWhatsappBotMaster,
+  setGlobalBotActiveDb,
+} from "./globalBotState.js";
 
 const sessions = new Map();
 
@@ -1454,8 +1460,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
 
 async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contactName }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
-  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
-  if (botOff) return;
+  if (await isWhatsAppAutomatedBotDisabled()) return;
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
@@ -1587,8 +1592,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
 
 async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
-  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
-  if (botOff) return;
+  if (await isWhatsAppAutomatedBotDisabled()) return;
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
@@ -1681,11 +1685,52 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
 
 async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
-  const botOff = process.env.WHATSAPP_BOT_ENABLED === "0" || process.env.WHATSAPP_BOT_ENABLED === "false";
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
+
+  const cmdMaster = String(text || "")
+    .trim()
+    .replace(/^\*+|\*+$/g, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if ((cmdMaster === "activar" || cmdMaster === "desactivar") && isPhoneWhatsappBotMaster(phone)) {
+    const wpidM = phoneNumberId ? String(phoneNumberId).trim() : null;
+    if (whatsappBotEnvHardDisabled()) {
+      await reply(
+        phone,
+        "El servidor tiene WHATSAPP_BOT_ENABLED desactivado: no se puede encender el bot solo por WhatsApp. Contactá al administrador del sistema.",
+        tid,
+        wpidM
+      );
+      return;
+    }
+    try {
+      await setGlobalBotActiveDb(cmdMaster === "activar", phone);
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] global bot toggle DB", e?.message || e);
+      await reply(
+        phone,
+        "No se pudo guardar el estado en base de datos. Verificá la migración global_bot_state (api/db/migrations/global_bot_state.sql).",
+        tid,
+        wpidM
+      );
+      return;
+    }
+    const msgOn =
+      "✅ *Asistente automático de reclamos* activado a nivel global.\n\n" +
+      "Los vecinos pueden escribir *Hola* o *menú* para iniciar un reclamo.";
+    const msgOff =
+      "⏸️ *Asistente automático de reclamos* desactivado a nivel global.\n\n" +
+      "Para volver a activarlo, enviá la palabra *activar* desde este mismo número.";
+    await reply(phone, cmdMaster === "activar" ? msgOn : msgOff, tid, wpidM);
+    return;
+  }
+
+  const automatedBotOff = await isWhatsAppAutomatedBotDisabled();
   const ctx = await loadTenantBotContext(tid);
   const wpidBootstrap = phoneNumberId ? String(phoneNumberId).trim() : null;
   try {
@@ -1773,7 +1818,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     sessions.delete(sk);
     const nombre = ctx?.nombre || "GestorNova";
-    if (botOff) {
+    if (automatedBotOff) {
       await reply(
         phone,
         `Bienvenido al centro de atención de *${nombre}*. El asistente automático está desactivado.`,
@@ -1795,7 +1840,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  if (botOff) return;
+  if (automatedBotOff) return;
 
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);

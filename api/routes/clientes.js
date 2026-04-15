@@ -9,6 +9,7 @@ import {
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
+import { purgeSociosCatalogoAndNonAdminUsersForTenant } from "../services/rubroChangePurge.js";
 
 const router = express.Router();
 
@@ -67,6 +68,33 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
         });
       }
       tipoDb = norm;
+    }
+
+    const rTipoNow = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    if (!rTipoNow.rows.length) {
+      return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
+    }
+    const prevNorm = normalizarRubroCliente(rTipoNow.rows[0].tipo);
+    const purgeFlag =
+      body.purge_datos_cambio_rubro === true ||
+      body.purge_datos_cambio_rubro === 1 ||
+      String(body.purge_datos_cambio_rubro || "").toLowerCase() === "true";
+    if (tipoDb != null && prevNorm && tipoDb !== prevNorm) {
+      if (!purgeFlag) {
+        return res.status(400).json({
+          error:
+            "Cambiar el rubro en el servidor borra el catálogo de socios y los usuarios que no son administrador. Confirmá en el asistente y reintentá con purge_datos_cambio_rubro.",
+          code: "PURGE_DATOS_CAMBIO_RUBRO_REQUIRED",
+        });
+      }
+      try {
+        await purgeSociosCatalogoAndNonAdminUsersForTenant(tenantId);
+      } catch (e) {
+        return res.status(400).json({
+          error: e?.message || "No se pudo vaciar datos del tenant",
+          code: "PURGE_DATOS_CAMBIO_RUBRO_FAILED",
+        });
+      }
     }
 
     const Inc =

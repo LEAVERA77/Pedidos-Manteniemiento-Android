@@ -2147,6 +2147,9 @@ async function confirmarPasswordYAbrirRubroAdmin() {
         return;
     }
     document.getElementById('modal-admin-verify-pw-rubro')?.classList.remove('active');
+    try {
+        window.__PMG_RUBRO_REENTRY__ = true;
+    } catch (_) {}
     await promptAdminTipoNegocioWebIfNeeded(true);
 }
 window.confirmarPasswordYAbrirRubroAdmin = confirmarPasswordYAbrirRubroAdmin;
@@ -2172,13 +2175,61 @@ async function confirmarAdminTipoNegocioWeb() {
             persistir = false;
         } else {
             try {
+                let serverTipo = '';
+                try {
+                    const gr = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (gr.ok) {
+                        const jd = await gr.json().catch(() => ({}));
+                        serverTipo = String(jd?.cliente?.tipo || '').trim();
+                    }
+                } catch (_) {}
+
+                const cambiaRubroServidor =
+                    !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
+
+                if (cambiaRubroServidor) {
+                    const reentry = !!window.__PMG_RUBRO_REENTRY__;
+                    if (reentry) {
+                        if (
+                            !confirm(
+                                'Al cambiar el rubro en el servidor se borrarán todos los socios del catálogo y todos los usuarios salvo administradores.\n\n¿Continuar? (1/2)'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
+                        }
+                        if (
+                            !confirm(
+                                'Última confirmación (2/2): se eliminarán datos en la base del tenant (socios y usuarios no admin). ¿Confirmás?'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
+                        }
+                    } else {
+                        if (
+                            !confirm(
+                                'Al guardar un rubro distinto al del servidor se borrarán el catálogo de socios y los usuarios que no son administrador. ¿Continuar?'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
+                        }
+                    }
+                }
+
+                const bodyObj = { tipo };
+                if (cambiaRubroServidor) bodyObj.purge_datos_cambio_rubro = true;
+
                 const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${token}`
                     },
-                    body: JSON.stringify({ tipo })
+                    body: JSON.stringify(bodyObj)
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
@@ -2210,6 +2261,9 @@ async function confirmarAdminTipoNegocioWeb() {
         _resolveAdminTipoModal();
         _resolveAdminTipoModal = null;
     }
+    try {
+        window.__PMG_RUBRO_REENTRY__ = false;
+    } catch (_) {}
     toast(guardadoServidor ? 'Tipo guardado en servidor y en pantalla' : 'Tipo aplicado en esta sesión', 'success');
 }
 window.confirmarAdminTipoNegocioWeb = confirmarAdminTipoNegocioWeb;
@@ -15165,6 +15219,12 @@ function normalizarEncabezadoExcelSocios(k) {
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
     if (n === 'estado' || n === 'state') return 'provincia';
+    if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
+        return 'nis';
+    }
+    if (n === 'vecino' || n === 'n_vecino' || n === 'numero_vecino' || n === 'nro_vecino' || n === 'num_vecino') {
+        return 'nis';
+    }
     if (
         n === 'cp' ||
         n === 'cpa' ||
@@ -15855,6 +15915,7 @@ function mostrarFormatoExcelSocios() {
             'Columnas recomendadas:\n' +
             'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
             '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
+            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
             '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
             '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
             '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
