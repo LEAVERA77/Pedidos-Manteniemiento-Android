@@ -96,7 +96,7 @@ En `docker-compose.evolution.yml`, `AUTHENTICATION_API_KEY` debe ser **el mismo*
 
 ### 2. Base de datos PostgreSQL (Docker)
 
-El archivo `docker-compose.evolution.yml` incluye un servicio **`postgres:15-alpine`** para persistencia (Evolution v2 exige proveedor de BD válido; sin esto suele aparecer **Database provider invalid**).
+El archivo `docker-compose.evolution.yml` incluye **`postgres:15-alpine`** (BD) y **`redis:7-alpine`** (caché; Evolution suele asumir Redis y sin él el **QR puede no generarse**).
 
 Credenciales por defecto (cambialas en producción; podés usar `.env.evolution`):
 
@@ -126,7 +126,7 @@ npm run evolution:up
 npm run evolution:logs
 ```
 
-Verificá con `docker ps` que **evolution-api** y **evolution-postgres** estén `Up`. Si cambiás usuario/contraseña de Postgres, actualizá también el `healthcheck` del servicio `postgres` en el compose (o mantené el usuario `evolution` para desarrollo).
+Verificá con `docker ps` que **evolution-api**, **evolution-postgres** y **evolution-redis** estén `Up`. Si cambiás usuario/contraseña de Postgres, actualizá también el `healthcheck` del servicio `postgres` en el compose (o mantené el usuario `evolution` para desarrollo).
 
 ### 4. Crear instancia y QR (primera vez)
 
@@ -138,15 +138,26 @@ npm run evolution:qr
 
 Escaneá el código con WhatsApp (Dispositivos vinculados) o usá el pairing si la API lo muestra.
 
-#### Solución de problemas: QR no se genera
+#### Solución de problemas: QR no se genera (modal vacío / PowerShell sin código)
 
-Si la instancia queda en `connecting` y `qrcode.count` es `0`, o los endpoints de QR devuelven error, en Evolution API **v2.2.3+** suele hacer falta fijar la versión del cliente de sesión. En `docker-compose.evolution.yml` ya está:
+1. **Redis** — La API suele tener **`CACHE_REDIS_ENABLED=true`** por defecto; sin un Redis accesible el QR puede quedar en blanco. El `docker-compose.evolution.yml` del repo incluye el servicio **`redis`** y `CACHE_REDIS_URI=redis://redis:6379/6`. Tras actualizar: `npm run evolution:down` → `npm run evolution:up` (o `evolution:reset` si querés volúmenes limpios).
 
-```yaml
-- CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1023204200}
-```
+2. **`SERVER_URL`** — Debe coincidir con cómo abrís el manager (p. ej. `http://localhost:8080`). Está como `EVOLUTION_SERVER_URL` en el compose.
 
-Podés ajustar el valor en **`.env.evolution`** (ver `.env.evolution.example`), recreá los contenedores y volvé a pedir el QR (p. ej. `npm run evolution:qr` o el manager en `http://localhost:8080/manager` si tu imagen lo expone).
+3. **`NODE_OPTIONS`** — En algunos equipos/VPS ayuda evitar timeouts de red al generar el QR:
+   `NODE_OPTIONS=--network-family-autoselection-attempt-timeout=5000` (ya en el compose).
+
+4. **`CONFIG_SESSION_PHONE_VERSION`** — Debe ser cercana a la versión de **WhatsApp Web** (en el teléfono: *Ajustes → Ayuda*). Probar valores que reporta la comunidad si el default no funciona, vía `.env.evolution`.
+
+5. **Imagen Docker** — Si seguís con QR vacío tras lo anterior, probá la imagen mantenida **`evoapicloud/evolution-api`** (p. ej. `v2.3.7`), que incorpora correcciones de Baileys al conectar:
+   ```env
+   EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7
+   ```
+   (en `.env.evolution` junto al `docker compose --env-file ...`).
+
+6. **Logs** — `docker logs evolution-api --tail 200` y buscá `error`, `redis`, `qrcode`, `Baileys`.
+
+El aviso de accesibilidad del modal en el navegador (Radix “DialogTitle”) **no** explica un QR vacío; el fallo suele ser backend (cache, red o versión del cliente).
 
 ### 5. Activar en la API
 

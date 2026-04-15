@@ -1,14 +1,14 @@
-# Evolution API v2 + PostgreSQL (evita "Database provider invalid").
-# Documentación: https://doc.evolution-api.com/v2/en/env
-# Uso desde carpeta api/: npm run evolution:up
+# Evolution API v2 + PostgreSQL + Redis.
+# La imagen oficial suele asumir Redis (cache); sin él el QR puede no generarse.
+# Uso desde api/: npm run evolution:up
 #
-# Opcional: copiá .env.evolution.example → .env.evolution en la raíz del repo y ajustá credenciales.
-# Docker Compose carga variables desde el directorio de trabajo; con --env-file explícito:
+# Opcional: .env.evolution desde .env.evolution.example
 #   docker compose --env-file ../.env.evolution -f ../docker-compose.evolution.yml up -d
 
 services:
   evolution-api:
-    image: atendai/evolution-api:latest
+    # Oficial / mantenida: evoapicloud/evolution-api (ej. :v2.3.7). atendai suele ser alias antiguo.
+    image: ${EVOLUTION_IMAGE:-atendai/evolution-api:latest}
     container_name: evolution-api
     restart: unless-stopped
     ports:
@@ -16,27 +16,53 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
     environment:
-      # Autenticación (mismo valor que EVOLUTION_API_KEY en api/.env)
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-gestornova-evolution-2026}
       - AUTHENTICATION_TYPE=apikey
 
-      # Base de datos (oficial: DATABASE_CONNECTION_URI + DATABASE_ENABLED)
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://${EVOLUTION_DB_USER:-evolution}:${EVOLUTION_DB_PASSWORD:-evolution123}@postgres:5432/${EVOLUTION_DB_NAME:-evolution}?schema=public
+
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379/6
+      - CACHE_REDIS_PREFIX_KEY=evolution
 
       - LANGUAGE=es
       - LOG_LEVEL=INFO
       - DEL_INSTANCE=false
 
+      - SERVER_TYPE=http
       - SERVER_PORT=8080
-      - SERVER_HOST=0.0.0.0
+      - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
 
-      # Baileys / WhatsApp Web: v2.2.3+ suele requerir versión explícita para generar QR
-      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1023204200}
+      # Node: evita timeouts raros de red (IPv6/DNS) que dejan el QR en blanco (ver GitHub #2367)
+      - NODE_OPTIONS=--network-family-autoselection-attempt-timeout=5000
+
+      # Baileys: probá otras versiones si el QR sigue vacío (WhatsApp → Ayuda versión Web)
+      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION:-2.3000.1028450369}
+      - CONFIG_SESSION_PHONE_CLIENT=Evolution API
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - evolution-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: evolution-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - evolution-network
 
@@ -60,6 +86,7 @@ services:
 
 volumes:
   evolution_instances:
+  evolution_redis:
   postgres_data:
 
 networks:
