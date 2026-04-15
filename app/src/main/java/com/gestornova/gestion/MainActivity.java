@@ -185,6 +185,8 @@ public class MainActivity extends AppCompatActivity {
         // DEFAULT respeta Cache-Control de GitHub Pages; pull-to-refresh no está en WebView estándar.
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // En emulador suele consumir RAM/GPU extra; en dispositivo real ayuda al scroll.
@@ -195,6 +197,9 @@ public class MainActivity extends AppCompatActivity {
                         + " GestorNova/" + BuildConfig.VERSION_NAME
                         + " Nexxo/" + BuildConfig.VERSION_NAME
         );
+
+        webView.setVerticalScrollBarEnabled(true);
+        webView.setHorizontalScrollBarEnabled(false);
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");

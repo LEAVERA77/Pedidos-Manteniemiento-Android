@@ -41,7 +41,6 @@
 
 <!-- LOGIN SCREEN -->
 <div id="ls" class="screen active">
-  <button type="button" class="gn-btn-asistente-tl" onclick="abrirModalReabrirAsistenteAdmin()" title="Reabrir asistente (solo administrador)"><i class="fas fa-magic"></i></button>
   <div class="lc">
     <div class="ll"><img src="gestornova-logo.png" alt="" width="42" height="42" style="width:42px;height:42px;object-fit:contain;border-radius:6px"/></div>
     <h1 id="app-titulo">GestorNova</h1>
@@ -63,7 +62,10 @@
       <span style="font-size:.74rem;color:var(--tm);line-height:1.35;text-align:center">El usuario de ingreso es tu <strong>email</strong>. Recuperación de clave vía correo (EmailJS) para cuentas administrador; no hace falta API key en la app.</span>
     </div>
     <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
-    <div style="text-align:center;margin-top:.25rem"><button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button></div>
+    <div style="text-align:center;margin-top:.25rem;display:flex;flex-direction:column;align-items:center;gap:.2rem">
+      <button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button>
+      <button type="button" class="gn-login-asistente-link" onclick="abrirModalReabrirAsistenteAdmin()" title="Solo administrador">Asistente inicial…</button>
+    </div>
   </div>
 </div>
 
@@ -94,16 +96,16 @@
     <div class="hr">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
-      <div id="web-coords-converter" style="display:none;align-items:center;gap:.25rem;background:rgba(15,23,42,.78);border:1px solid rgba(148,163,184,.35);border-radius:.45rem;padding:.2rem .3rem;max-width:46vw">
-        <select id="web-coords-converter-mode" style="height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:.72rem">
+      <div id="web-coords-converter" class="web-coords-converter" style="display:none">
+        <select id="web-coords-converter-mode" title="Modo de conversión" aria-label="Modo de conversión de coordenadas">
           <option value="dec_to_dms">Dec→GMS</option>
           <option value="dms_to_dec">GMS→Dec</option>
         </select>
-        <input id="web-coords-converter-a" type="text" placeholder="Latitud" style="width:5.8rem;height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;padding:0 .35rem;font-size:.72rem"/>
-        <input id="web-coords-converter-b" type="text" placeholder="Longitud" style="width:5.8rem;height:1.7rem;border-radius:.35rem;border:1px solid #475569;background:#0f172a;color:#e2e8f0;padding:0 .35rem;font-size:.72rem"/>
-        <button id="web-coords-converter-run" type="button" class="ib-mini" title="Convertir"><i class="fas fa-exchange-alt"></i></button>
+        <input id="web-coords-converter-a" type="text" placeholder="Latitud" autocomplete="off"/>
+        <input id="web-coords-converter-b" type="text" placeholder="Longitud" autocomplete="off"/>
+        <button id="web-coords-converter-run" type="button" class="web-coords-converter-run ib-mini" title="Convertir"><i class="fas fa-exchange-alt"></i></button>
       </div>
-      <span id="web-coords-converter-out" style="display:none;font-size:.68rem;color:#e2e8f0;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <span id="web-coords-converter-out" class="web-coords-converter-out" style="display:none"></span>
       <div id="user-menu-wrap" class="user-menu-wrap">
       <button id="ub" type="button" class="ib" title="Menú de usuario: cuenta o cerrar sesión"><i class="fas fa-user-circle"></i></button>
       <div id="user-menu-pop" class="user-menu-pop" role="menu" aria-hidden="true">
@@ -189,10 +191,10 @@
     </div>
   </div>
   
-  <button type="button" id="btn-mapa-nuevo-gps" class="btn-mapa-nuevo-gps" title="Nuevo pedido en mi ubicación" aria-label="Nuevo pedido en mi ubicación">
+  <button type="button" id="btn-mapa-nuevo-gps" class="btn-mapa-nuevo-gps gn-gps-fab" title="Nuevo pedido en mi ubicación" aria-label="Nuevo pedido en mi ubicación">
     <i class="fas fa-plus"></i>
   </button>
-  <button type="button" id="btn-mapa-ir-gps" class="btn-mapa-ir-gps" title="Centrar mapa: primero ubicación base de oficina (si el admin la definió); si no, tu GPS" aria-label="Centrar mapa en ubicación base o en tu ubicación">
+  <button type="button" id="btn-mapa-ir-gps" class="btn-mapa-ir-gps gn-gps-fab" title="Centrar mapa: primero ubicación base de oficina (si el admin la definió); si no, tu GPS" aria-label="Centrar mapa en ubicación base o en tu ubicación">
     <i class="fas fa-location-arrow"></i>
   </button>
   
@@ -213,7 +215,7 @@
         <button id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>
         <span id="zoom-altura" class="zoom-indicator">1000 m</span>
       </div>
-      <div id="pl" class="pl"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div></div>
+      <div id="pl" class="pl pedidos-panel-scroll"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div></div>
     </div>
   </div>
   <span id="offline-badge" style="position:absolute;bottom:10rem;right:.5rem;z-index:1003;display:none;background:#f97316;color:white;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;align-items:center;justify-content:center;border:2px solid white;pointer-events:none"></span>

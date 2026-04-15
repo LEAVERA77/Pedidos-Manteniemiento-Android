@@ -184,26 +184,18 @@ function gnAttachCursorCoordsControl(L, map) {
             body.appendChild(lngSpan);
 
             const gotoWrap = L.DomUtil.create('div', 'gn-cursor-goto-wrap', body);
-            gotoWrap.style.display = 'flex';
-            gotoWrap.style.flexWrap = 'wrap';
-            gotoWrap.style.gap = '4px';
-            gotoWrap.style.marginTop = '6px';
-            gotoWrap.style.width = '100%';
             const inLat = document.createElement('input');
             inLat.type = 'text';
             inLat.placeholder = 'Lat';
-            inLat.style.cssText =
-                'width:80px;background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font-size:11px';
+            inLat.className = 'gn-cursor-goto-input';
             const inLng = document.createElement('input');
             inLng.type = 'text';
             inLng.placeholder = 'Lng';
-            inLng.style.cssText =
-                'width:80px;background:#0b1220;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:3px 6px;font-size:11px';
+            inLng.className = 'gn-cursor-goto-input';
             const btnGo = document.createElement('button');
             btnGo.type = 'button';
             btnGo.textContent = 'Ir';
-            btnGo.style.cssText =
-                'background:#2563eb;color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer';
+            btnGo.className = 'gn-cursor-goto-btn';
             gotoWrap.appendChild(inLat);
             gotoWrap.appendChild(inLng);
             gotoWrap.appendChild(btnGo);
