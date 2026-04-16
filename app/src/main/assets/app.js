@@ -15596,9 +15596,17 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
         const headExtra = armarHeadExtraProyeccionSociosHtml();
+        const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+        const id1Lbl =
+            rubroSoc === 'municipio'
+                ? 'N° Vecino'
+                : rubroSoc === 'cooperativa_agua'
+                  ? 'N° Abonado'
+                  : 'NIS';
+        const id2Lbl = rubroSoc === 'municipio' ? 'Ref.' : 'Medidor';
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th><th>Cód. postal</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${id1Lbl}</th><th align="left">${id2Lbl}</th><th>Nombre</th><th>Localidad</th><th>Provincia</th><th>Cód. postal</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
@@ -15614,10 +15622,28 @@ function normalizarEncabezadoExcelSocios(k) {
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
     if (n === 'estado' || n === 'state') return 'provincia';
-    if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
+    if (
+        n === 'abonado' ||
+        n === 'n_abonado' ||
+        n === 'numero_abonado' ||
+        n === 'nro_abonado' ||
+        n === 'num_abonado' ||
+        n === 'n_de_abonado' ||
+        n === 'numero_de_abonado' ||
+        n === 'nro_de_abonado'
+    ) {
         return 'nis';
     }
-    if (n === 'vecino' || n === 'n_vecino' || n === 'numero_vecino' || n === 'nro_vecino' || n === 'num_vecino') {
+    if (
+        n === 'vecino' ||
+        n === 'n_vecino' ||
+        n === 'numero_vecino' ||
+        n === 'nro_vecino' ||
+        n === 'num_vecino' ||
+        n === 'n_de_vecino' ||
+        n === 'numero_de_vecino' ||
+        n === 'nro_de_vecino'
+    ) {
         return 'nis';
     }
     if (
@@ -16107,9 +16133,21 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
+            const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
             const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
-            let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
+            let nisPart = valorIdentificadorTextoSocios(
+                row,
+                mapNormAOriginal,
+                'nis',
+                'id_usuario',
+                'id_vecino',
+                'numero_vecino',
+                'numero_abonado'
+            );
+            let medPart =
+                rubroSoc === 'municipio'
+                    ? valorIdentificadorTextoSocios(row, mapNormAOriginal, 'referencia', 'ref', 'observacion')
+                    : valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
             let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
             if (!nis_medidor) {
                 if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
@@ -16321,13 +16359,27 @@ async function vaciarCoordenadasSociosCatalogo() {
 window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
 
 function mostrarFormatoExcelSocios() {
+    const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    const id1Lbl =
+        rubroSoc === 'municipio'
+            ? 'numero_vecino'
+            : rubroSoc === 'cooperativa_agua'
+              ? 'numero_abonado'
+              : 'nis';
+    const id2Lbl = rubroSoc === 'municipio' ? 'referencia' : 'medidor';
+    const sin1 =
+        rubroSoc === 'municipio'
+            ? 'vecino, n_vecino, numero_vecino'
+            : rubroSoc === 'cooperativa_agua'
+              ? 'abonado, n_abonado, numero_abonado'
+              : 'nis';
     alert(
         'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
             'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
             'Columnas recomendadas:\n' +
-            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
-            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
-            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
+            `${id1Lbl} | ${id2Lbl} | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n` +
+            `• Identificador principal: ${id1Lbl}. Sinónimos detectados: ${sin1} (incluye variantes nro_/numero_/de_).\n` +
+            `• Campo secundario (${id2Lbl}) opcional${rubroSoc === 'municipio' ? ' para municipio' : ''}; alternativa columna única nis_medidor.\n` +
             '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
             '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
             '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
