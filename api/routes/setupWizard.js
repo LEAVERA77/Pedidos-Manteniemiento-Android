@@ -19,6 +19,11 @@ async function upsertTenantBusiness(tenantId, businessType) {
 }
 
 async function upsertActiveBusiness(tenantId, businessType) {
+  const prev = await query(
+    `SELECT active_business_type FROM tenant_active_business WHERE tenant_id = $1 LIMIT 1`,
+    [tenantId]
+  );
+  const previousBusinessType = String(prev.rows?.[0]?.active_business_type || "").trim() || null;
   await query(
     `INSERT INTO tenant_active_business(tenant_id, active_business_type, updated_at)
      VALUES($1,$2,NOW())
@@ -33,6 +38,14 @@ async function upsertActiveBusiness(tenantId, businessType) {
       businessType,
     ]);
   }
+  try {
+    await query(
+      `INSERT INTO tenant_business_audit(
+        tenant_id, previous_business_type, new_business_type, changed_by_user_id, source
+      ) VALUES($1,$2,$3,$4,'wizard')`,
+      [tenantId, previousBusinessType, businessType, null]
+    );
+  } catch (_) {}
 }
 
 async function ensureGlobalAdminForTenant({ tenantId, adminEmail, adminPassword, fallbackUserId }) {

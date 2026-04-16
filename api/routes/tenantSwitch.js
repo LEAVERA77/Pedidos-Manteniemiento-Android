@@ -6,6 +6,17 @@ import { normalizeBusinessTypeInput } from "../services/businessType.js";
 
 const router = express.Router();
 
+async function insertBusinessAudit({ tenantId, previousBusinessType, newBusinessType, changedByUserId, source }) {
+  try {
+    await query(
+      `INSERT INTO tenant_business_audit(
+        tenant_id, previous_business_type, new_business_type, changed_by_user_id, source
+      ) VALUES($1,$2,$3,$4,$5)`,
+      [tenantId, previousBusinessType || null, newBusinessType, changedByUserId ?? null, source || "switch"]
+    );
+  } catch (_) {}
+}
+
 router.get("/businesses", authWithTenantHost, adminOnly, async (req, res) => {
   try {
     const r = await query(
@@ -55,6 +66,14 @@ router.post("/switch-business", authWithTenantHost, adminOnly, async (req, res) 
         hint: "Ejecutá POST /api/setup/wizard para registrar esa combinación tenant+business_type",
       });
     }
+    const rPrev = await query(
+      `SELECT active_business_type
+       FROM tenant_active_business
+       WHERE tenant_id = $1
+       LIMIT 1`,
+      [req.tenantId]
+    );
+    const prev = String(rPrev.rows?.[0]?.active_business_type || "").trim() || null;
     await query(
       `INSERT INTO tenant_active_business(tenant_id, active_business_type, updated_at)
        VALUES($1,$2,NOW())
@@ -70,6 +89,13 @@ router.post("/switch-business", authWithTenantHost, adminOnly, async (req, res) 
       [req.tenantId, bt]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado" });
+    await insertBusinessAudit({
+      tenantId: req.tenantId,
+      previousBusinessType: prev,
+      newBusinessType: bt,
+      changedByUserId: req.user?.id ?? null,
+      source: "switch",
+    });
     return res.json({
       ok: true,
       tenant_id: req.tenantId,
