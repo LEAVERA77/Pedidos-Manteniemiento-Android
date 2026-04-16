@@ -6352,11 +6352,11 @@ async function cargarPedidos(opts) {
     try {
         await asegurarNombreUsuariosParaFiltros();
         const tsql = await pedidosFiltroTenantSql();
-        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
+        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion ASC`;
         if (esTecnicoOSupervisor()) {
             const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
             if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
+                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion ASC`;
             }
         }
         const prevSnapTecnico =

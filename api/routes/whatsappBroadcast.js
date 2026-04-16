@@ -23,6 +23,23 @@ function aplicarPlaceholders(texto, ctx) {
   return s;
 }
 
+function parseTextArray(v) {
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .slice(0, 40);
+  }
+  if (typeof v === "string" && v.trim()) {
+    return v
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 40);
+  }
+  return [];
+}
+
 async function telefonosPedidosTenantBusiness(tenantId, businessType) {
   const hasBt = await tableHasColumn("pedidos", "business_type");
   const params = [tenantId];
@@ -48,9 +65,10 @@ router.post("/community", async (req, res) => {
     if (req.body?.confirm !== true && String(req.body?.confirm).toLowerCase() !== "true") {
       return res.status(400).json({ error: "confirm: true requerido para envío masivo" });
     }
+    const tipoAviso = String(req.body?.tipo_aviso || "general").trim().toLowerCase();
     const titulo = String(req.body?.titulo || "").trim();
-    let mensaje = String(req.body?.mensaje || "").trim();
-    if (!mensaje) return res.status(400).json({ error: "mensaje requerido" });
+    let mensaje = String(req.body?.mensaje || req.body?.texto_libre || "").trim();
+    if (!mensaje) return res.status(400).json({ error: "mensaje/texto_libre requerido" });
 
     const bt = normalizeBusinessTypeInput(req.body?.business_type) || req.activeBusinessType || "electricidad";
     const now = new Date();
@@ -62,7 +80,21 @@ router.post("/community", async (req, res) => {
       telefono: String(req.body?.telefono_ctx || "").trim(),
     };
     mensaje = aplicarPlaceholders(mensaje, ctx);
-    const cuerpo = titulo ? `*${titulo}*\n\n${mensaje}` : mensaje;
+    const fenomeno = String(req.body?.fenomeno || "").trim();
+    const ciudad = String(req.body?.ciudad || req.body?.ciudad_ctx || "").trim();
+    const provincia = String(req.body?.provincia || "").trim();
+    const calles = parseTextArray(req.body?.calles);
+    const zonas = parseTextArray(req.body?.zonas);
+    const areas = parseTextArray(req.body?.areas);
+    const telefonos = parseTextArray(req.body?.telefonos);
+
+    const cabecera = [];
+    if (titulo) cabecera.push(`*${titulo}*`);
+    if (fenomeno) cabecera.push(`Fenómeno: ${fenomeno}`);
+    if (ciudad || provincia) cabecera.push(`Ubicación: ${[ciudad, provincia].filter(Boolean).join(", ")}`);
+    if (zonas.length) cabecera.push(`Zonas: ${zonas.join(", ")}`);
+    if (calles.length) cabecera.push(`Calles: ${calles.join(", ")}`);
+    const cuerpo = [...cabecera, "", mensaje].filter(Boolean).join("\n");
 
     const tels = await telefonosPedidosTenantBusiness(req.tenantId, bt);
     if (!tels.length) {
@@ -107,6 +139,31 @@ router.post("/community", async (req, res) => {
     } catch (_) {
       /* tabla opcional hasta migración */
     }
+
+    try {
+      await query(
+        `INSERT INTO avisos_comunitarios(
+          tenant_id, business_type, tipo_aviso, fenomeno, ciudad, provincia, calles, zonas,
+          texto_libre, areas, telefonos, corte_programado, enviado_por, destinatarios_count
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8::text[],$9,$10::text[],$11::text[],$12::jsonb,$13,$14)`,
+        [
+          req.tenantId,
+          bt,
+          tipoAviso || "general",
+          fenomeno || null,
+          ciudad || null,
+          provincia || null,
+          calles,
+          zonas,
+          mensaje,
+          areas,
+          telefonos,
+          null,
+          req.user?.id ?? null,
+          tels.length,
+        ]
+      );
+    } catch (_) {}
 
     return res.json({ ok: true, destinatarios: tels.length, enviados_ok: ok, enviados_error: err, business_type: bt });
   } catch (e) {
@@ -174,6 +231,38 @@ router.post("/corte-programado", async (req, res) => {
     } catch (_) {
       /* tabla opcional hasta migración */
     }
+
+    try {
+      await query(
+        `INSERT INTO avisos_comunitarios(
+          tenant_id, business_type, tipo_aviso, fenomeno, ciudad, provincia, calles, zonas,
+          texto_libre, areas, telefonos, corte_programado, enviado_por, destinatarios_count
+        ) VALUES ($1,$2,'corte_programado',$3,$4,$5,$6::text[],$7::text[],$8,$9::text[],$10::text[],$11::jsonb,$12,$13)`,
+        [
+          req.tenantId,
+          bt,
+          "Corte programado",
+          String(req.body?.ciudad || "").trim() || null,
+          String(req.body?.provincia || "").trim() || null,
+          parseTextArray(req.body?.calles),
+          parseTextArray(req.body?.zonas_afectadas || req.body?.zonas || zona),
+          extra || null,
+          parseTextArray(req.body?.areas),
+          parseTextArray(req.body?.telefonos),
+          JSON.stringify({
+            tipo_corte: String(req.body?.tipo_corte || "").trim() || "Programado",
+            zona_afectada: zona,
+            fecha_inicio: fi || null,
+            fecha_fin: ff || null,
+            servicio_afectado: String(req.body?.servicio_afectado || servicio).trim(),
+            motivo,
+            afecta_servicio: req.body?.afecta_servicio ?? true,
+          }),
+          req.user?.id ?? null,
+          tels.length,
+        ]
+      );
+    } catch (_) {}
 
     return res.json({ ok: true, destinatarios: tels.length, enviados_ok: ok, enviados_error: err });
   } catch (e) {

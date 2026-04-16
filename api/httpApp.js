@@ -21,6 +21,7 @@ import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 import configUbicacionRoutes from "./routes/configUbicacion.js";
 import whatsappGeocodeRoutes from "./routes/whatsappGeocode.js";
 import geocodeNominatimRoutes from "./routes/geocodeNominatim.js";
+import nominatimLookupRoutes from "./routes/nominatimLookup.js";
 import callesNormalizadasRoutes from "./routes/callesNormalizadas.js";
 import adminRoutes from "./routes/admin.js";
 import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
@@ -134,6 +135,7 @@ export function createHttpApp() {
   app.use("/api/whatsapp/broadcast", whatsappBroadcastRoutes);
   app.use("/api/tenant", tenantSwitchRoutes);
   app.use("/api/geocode", geocodeNominatimRoutes);
+  app.use("/api/nominatim", geocodeRouteLimiter, nominatimLookupRoutes);
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);
   app.use("/api/direcciones", direccionesRoutes);
