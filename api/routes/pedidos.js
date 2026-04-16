@@ -10,7 +10,6 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
-  normalizarRubroCliente,
   TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA,
 } from "../services/tiposReclamo.js";
 import {
