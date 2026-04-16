@@ -12,6 +12,7 @@ import {
   nominatimStateMatchesTenant,
   stateFromNominatimHit,
   getNominatimBaseUrl,
+  nominatimHeaders,
 } from "./nominatimClient.js";
 import { iso3166ArgDesdeNombreProvincia } from "../utils/provinciaArgentinaIso.js";
 import {
@@ -182,7 +183,7 @@ async function obtenerCoordsLocalidad(localidad, provincia) {
   
   try {
     const response = await fetch(url, {
-      headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+      headers: nominatimHeaders(),
     });
     
     if (!response.ok) return { lat: -31.3, lng: -60.5 }; // Fallback Santa Fe
@@ -387,7 +388,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
   // ESTRATEGIA 1: Buscar el número exacto primero
   const numeroInt = parseInt(String(numero).replace(/\D/g, ""), 10);
   if (Number.isFinite(numeroInt) && numeroInt > 0) {
-    const headersN = { "User-Agent": "GestorNova/1.0 (geocoding)" };
+    const headersN = nominatimHeaders();
 
     // 1a) Búsqueda estructurada (mejor para "Calle N + ciudad", p.ej. Sarmiento 102, Cerrito)
     try {
@@ -487,7 +488,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
   
   try {
     const response = await fetch(url, {
-      headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+      headers: nominatimHeaders(),
     });
     
     if (!response.ok) return { min: 100, max: 900, exacto: null };

@@ -288,7 +288,7 @@ router.get("/nominatim-raw", async (req, res) => {
   try {
     const headers = bare
       ? {
-          Accept: "application/json",
+          Accept: "application/json, */*",
           "User-Agent":
             "GestorNova-RawDiagnostic/1.0 (bare; +https://github.com/LEAVERA77/Pedidos-MG)",
         }

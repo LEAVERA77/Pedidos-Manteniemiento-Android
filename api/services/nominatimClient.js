@@ -57,11 +57,33 @@ export function nominatimHeaders() {
     process.env.NOMINATIM_USER_AGENT ||
     "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";
   const from = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "noreply@gestornova.local";
+  /** Algunos reverse proxy / Nominatim devuelven 406 si Accept solo es application/json (negociación estricta). */
+  const accept = String(process.env.NOMINATIM_ACCEPT || "application/json, */*").trim() || "application/json, */*";
   return {
     "User-Agent": ua,
     From: from,
-    Accept: "application/json",
+    Accept: accept,
   };
+}
+
+/**
+ * Combina cabeceras por defecto de Nominatim con las de la petición (sin perder User-Agent / Accept).
+ * @param {HeadersInit | undefined} extra
+ */
+export function mergeNominatimHeaders(extra) {
+  const base = nominatimHeaders();
+  if (extra == null) return base;
+  if (typeof Headers !== "undefined" && extra instanceof Headers) {
+    const out = { ...base };
+    extra.forEach((value, key) => {
+      out[key] = value;
+    });
+    return out;
+  }
+  if (typeof extra === "object" && !Array.isArray(extra)) {
+    return { ...base, ...extra };
+  }
+  return base;
 }
 
 /**
@@ -141,7 +163,7 @@ export async function nominatimFetch(url, init = {}) {
   const ms = nominatimFetchTimeoutMs();
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), ms);
-  const headers = init.headers ?? nominatimHeaders();
+  const headers = mergeNominatimHeaders(init.headers);
   try {
     return await fetch(url, { ...init, headers, signal: ctrl.signal });
   } catch (e) {
