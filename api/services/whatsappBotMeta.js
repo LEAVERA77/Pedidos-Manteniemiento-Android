@@ -649,7 +649,23 @@ function normalizeBotBusinessType(raw, fallbackTipo) {
   return "electricidad";
 }
 
+function normalizarIdentificadorReclamo(raw) {
+  const src = String(raw || "").trim();
+  const fold = src
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const onlyDigits = src.replace(/\D/g, "");
+  if (onlyDigits.length >= 4) {
+    return { tipo: "numeric", valor: onlyDigits, libre: fold };
+  }
+  return { tipo: "text", valor: fold, libre: fold };
+}
+
 async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, identificador) {
+  const ident = normalizarIdentificadorReclamo(identificador);
   const hasBt = await tableHasColumn("pedidos", "business_type");
   const params = [tenantId];
   let where = `tenant_id = $1 AND estado IN ('Pendiente','Asignado','En ejecución')`;
@@ -657,13 +673,22 @@ async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, 
     params.push(businessType);
     where += ` AND COALESCE(business_type,'electricidad') = $${params.length}`;
   }
-  params.push(identificador);
-  where +=
-    ` AND (` +
-    `COALESCE(identificador,'') ILIKE '%' || $${params.length} || '%' ` +
-    `OR COALESCE(cliente_nombre,'') ILIKE '%' || $${params.length} || '%' ` +
-    `OR COALESCE(nis_medidor,'') ILIKE '%' || $${params.length} || '%'` +
-    `)`;
+  if (ident.tipo === "numeric") {
+    params.push(ident.valor);
+    where +=
+      ` AND (` +
+      `REGEXP_REPLACE(COALESCE(identificador,''), '\\D', '', 'g') = $${params.length} ` +
+      `OR REGEXP_REPLACE(COALESCE(nis_medidor,''), '\\D', '', 'g') = $${params.length} ` +
+      `OR REGEXP_REPLACE(COALESCE(cliente_nombre,''), '\\D', '', 'g') = $${params.length}` +
+      `)`;
+  } else {
+    params.push(ident.valor);
+    where +=
+      ` AND (` +
+      `LOWER(COALESCE(identificador,'')) LIKE '%' || LOWER($${params.length}) || '%' ` +
+      `OR LOWER(COALESCE(cliente_nombre,'')) LIKE '%' || LOWER($${params.length}) || '%'` +
+      `)`;
+  }
   const r = await query(
     `SELECT id, numero_pedido, estado, direccion, fecha_creacion
      FROM pedidos
@@ -673,6 +698,25 @@ async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, 
     params
   );
   return r.rows || [];
+}
+
+async function puedeEnviarRecordatorioReclamo({ tenantId, pedidoId, telefonoUsuario, cooldownHoras = 6 }) {
+  try {
+    const r = await query(
+      `SELECT fecha_solicitud
+       FROM recordatorios_reclamos
+       WHERE tenant_id = $1
+         AND pedido_id = $2
+         AND telefono_usuario = $3
+         AND fecha_solicitud > NOW() - ($4::text || ' hours')::interval
+       ORDER BY fecha_solicitud DESC
+       LIMIT 1`,
+      [tenantId, pedidoId, telefonoUsuario, String(cooldownHoras)]
+    );
+    return !r.rows?.length;
+  } catch (_) {
+    return true;
+  }
 }
 
 function formatearDuracionPendiente(fechaCreacion) {
@@ -2634,6 +2678,24 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       const target = Array.isArray(sess.pendingLookupRows) && sess.pendingLookupRows.length
         ? sess.pendingLookupRows[0]
         : null;
+      const cooldownHoras = 6;
+      const permitido = target?.id
+        ? await puedeEnviarRecordatorioReclamo({
+            tenantId: tid,
+            pedidoId: target.id,
+            telefonoUsuario: phone,
+            cooldownHoras,
+          })
+        : true;
+      if (!permitido) {
+        await reply(
+          phone,
+          `⏳ Ya enviaste un recordatorio recientemente para este reclamo. Intentá de nuevo en ${cooldownHoras} horas.`,
+          tid,
+          phoneNumberId
+        );
+        return;
+      }
       const recId = await registrarRecordatorioReclamo({
         tenantId: tid,
         businessType: bt,

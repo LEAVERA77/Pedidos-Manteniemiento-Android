@@ -1100,10 +1100,32 @@ function initCommunityBroadcastFab() {
   <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
     <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
     <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
+    <label style="font-size:.78rem;font-weight:600">Tipo aviso</label>
+    <select id="gn-bc-tipo-aviso" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1">
+      <option value="general">General</option>
+      <option value="corte_programado">Corte programado</option>
+    </select>
+    <label style="font-size:.78rem;font-weight:600">Fenómeno/Contingencia</label>
+    <select id="gn-bc-fenomeno" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1">
+      <option value="">-- Seleccionar --</option>
+      <option>Inundaciones</option><option>Tormenta</option><option>Corte de calles</option><option>Incendio</option><option>Otro</option>
+    </select>
+    <label style="font-size:.78rem;font-weight:600">Ciudad</label>
+    <input id="gn-bc-ciudad" list="gn-bc-cities" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
+    <datalist id="gn-bc-cities"></datalist>
+    <label style="font-size:.78rem;font-weight:600">Provincia</label>
+    <input id="gn-bc-provincia" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
+    <label style="font-size:.78rem;font-weight:600">Calles afectadas (coma separadas)</label>
+    <input id="gn-bc-calles" list="gn-bc-streets" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
+    <datalist id="gn-bc-streets"></datalist>
     <label style="font-size:.78rem;font-weight:600">Título</label>
     <input id="gn-bc-titulo" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" />
     <label style="font-size:.78rem;font-weight:600">Mensaje <span style="color:#64748b">({ciudad} {fecha} {horario} {direccion} {telefono})</span></label>
     <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1"></textarea>
+    <label style="font-size:.78rem;font-weight:600">Áreas responsables (coma separadas)</label>
+    <input id="gn-bc-areas" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="Servicios Públicos, Defensa Civil" />
+    <label style="font-size:.78rem;font-weight:600">Teléfonos de contacto (coma separados)</label>
+    <input id="gn-bc-telefonos" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="3436..., 3435..." />
     <label style="font-size:.78rem;display:flex;align-items:center;gap:.35rem"><input type="checkbox" id="gn-bc-corte" /> Corte programado (solo electricidad/agua)</label>
     <div id="gn-bc-corte-fields" style="display:none;margin-top:.45rem;font-size:.78rem">
       <input id="gn-bc-zona" placeholder="Zona afectada" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
@@ -1150,13 +1172,75 @@ function initCommunityBroadcastFab() {
     modal.onclick = (e) => {
         if (e.target === modal) modal.style.display = 'none';
     };
+    const tipoAvisoSel = modal.querySelector('#gn-bc-tipo-aviso');
     const chkCorte = modal.querySelector('#gn-bc-corte');
     const corteFields = modal.querySelector('#gn-bc-corte-fields');
+    const cityInp = modal.querySelector('#gn-bc-ciudad');
+    const provInp = modal.querySelector('#gn-bc-provincia');
+    const callesInp = modal.querySelector('#gn-bc-calles');
+    const citiesDl = modal.querySelector('#gn-bc-cities');
+    const streetsDl = modal.querySelector('#gn-bc-streets');
+    const parseCsv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const debounce = (fn, ms = 350) => {
+        let t = 0;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn(...args), ms);
+        };
+    };
+    const fallbackCities = ['Cerrito', 'Paraná', 'Hasenkamp', 'María Grande', 'Viale'];
+    const fallbackStreets = ['San Martín', 'Belgrano', 'Sarmiento', '25 de Mayo', '9 de Julio'];
+    const setOptions = (el, arr) => {
+        el.innerHTML = '';
+        (arr || []).slice(0, 20).forEach((v) => {
+            const o = document.createElement('option');
+            o.value = typeof v === 'string' ? v : String(v?.ciudad || '');
+            el.appendChild(o);
+        });
+    };
+    const fetchCities = debounce(async () => {
+        const q = cityInp.value.trim();
+        if (q.length < 2) return;
+        try {
+            const r = await fetch(apiUrl(`/api/nominatim/search/cities?q=${encodeURIComponent(q)}&countrycode=ar`));
+            const d = await r.json().catch(() => []);
+            setOptions(citiesDl, Array.isArray(d) ? d.map((x) => x.ciudad) : fallbackCities);
+            const hit = Array.isArray(d) && d.find((x) => String(x.ciudad || '').toLowerCase() === q.toLowerCase());
+            if (hit && !provInp.value.trim()) provInp.value = hit.provincia || '';
+        } catch (_) {
+            setOptions(citiesDl, fallbackCities);
+        }
+    }, 380);
+    const fetchStreets = debounce(async () => {
+        const q = callesInp.value.trim().split(',').pop().trim();
+        const city = cityInp.value.trim();
+        if (q.length < 2 || city.length < 2) return;
+        try {
+            const r = await fetch(apiUrl(`/api/nominatim/search/streets?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`));
+            const d = await r.json().catch(() => []);
+            setOptions(streetsDl, Array.isArray(d) ? d : fallbackStreets);
+        } catch (_) {
+            setOptions(streetsDl, fallbackStreets);
+        }
+    }, 380);
+    cityInp.addEventListener('input', fetchCities);
+    callesInp.addEventListener('input', fetchStreets);
+    tipoAvisoSel.addEventListener('change', () => {
+        chkCorte.checked = tipoAvisoSel.value === 'corte_programado';
+        chkCorte.dispatchEvent(new Event('change'));
+    });
     chkCorte.addEventListener('change', () => {
         corteFields.style.display = chkCorte.checked ? 'block' : 'none';
     });
     modal.querySelector('#gn-bc-send').onclick = async () => {
         const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
+        let tipo_aviso = (tipoAvisoSel.value || 'general').trim();
+        const fenomeno = (modal.querySelector('#gn-bc-fenomeno').value || '').trim();
+        const ciudad = (cityInp.value || '').trim();
+        const provincia = (provInp.value || '').trim();
+        const calles = parseCsv(callesInp.value);
+        const areas = parseCsv((modal.querySelector('#gn-bc-areas').value || '').trim());
+        const telefonos = parseCsv((modal.querySelector('#gn-bc-telefonos').value || '').trim());
         const mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
         if (!mensaje) {
             toast('Completá el mensaje', 'warning');
@@ -1177,8 +1261,16 @@ function initCommunityBroadcastFab() {
                 : normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio'
                   ? 'municipio'
                   : 'electricidad');
+        if (business_type === 'municipio') {
+            tipoAvisoSel.querySelector('option[value="corte_programado"]')?.setAttribute('disabled', 'disabled');
+            if (tipoAvisoSel.value === 'corte_programado') tipoAvisoSel.value = 'general';
+            chkCorte.checked = false;
+            chkCorte.dispatchEvent(new Event('change'));
+            tipo_aviso = 'general';
+        }
         try {
-            if (chkCorte.checked) {
+            const corteElegido = chkCorte.checked || tipo_aviso === 'corte_programado';
+            if (corteElegido) {
                 const zona = (modal.querySelector('#gn-bc-zona').value || '').trim();
                 const motivo = (modal.querySelector('#gn-bc-mot').value || '').trim();
                 const fi = modal.querySelector('#gn-bc-fi').value;
@@ -1189,6 +1281,13 @@ function initCommunityBroadcastFab() {
                     body: JSON.stringify({
                         confirm: true,
                         business_type,
+                        tipo_aviso: 'corte_programado',
+                        fenomeno,
+                        ciudad,
+                        provincia,
+                        calles,
+                        areas,
+                        telefonos,
                         zona_afectada: zona,
                         motivo,
                         fecha_inicio: fi || null,
@@ -1203,7 +1302,19 @@ function initCommunityBroadcastFab() {
                 const r = await fetch(apiUrl('/api/whatsapp/broadcast/community'), {
                     method: 'POST',
                     headers,
-                    body: JSON.stringify({ confirm: true, titulo, mensaje, business_type }),
+                    body: JSON.stringify({
+                        confirm: true,
+                        tipo_aviso,
+                        titulo,
+                        fenomeno,
+                        ciudad,
+                        provincia,
+                        calles,
+                        areas,
+                        telefonos,
+                        mensaje,
+                        business_type,
+                    }),
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);

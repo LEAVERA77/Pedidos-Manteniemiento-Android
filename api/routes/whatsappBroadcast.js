@@ -2,8 +2,8 @@ import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
-import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
+import { enqueueBroadcastJob } from "../services/broadcastQueue.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -60,6 +60,44 @@ async function telefonosPedidosTenantBusiness(tenantId, businessType) {
   return [...out];
 }
 
+async function tryInsertComunicacionEnvio({
+  tenantId,
+  businessType,
+  titulo,
+  cuerpo,
+  imagenUrl = null,
+  botones = [],
+  destinatarios,
+  kind,
+  userId,
+}) {
+  try {
+    const ins = await query(
+      `INSERT INTO comunicaciones_envios(
+        tenant_id, business_type, canal, titulo, cuerpo, imagen_url, botones_json,
+        destinatarios_total, enviados_ok, enviados_error, meta, creado_por_usuario_id
+      ) VALUES ($1,$2,'whatsapp',$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11)
+      RETURNING id`,
+      [
+        tenantId,
+        businessType,
+        titulo || null,
+        cuerpo,
+        imagenUrl,
+        JSON.stringify(Array.isArray(botones) ? botones.slice(0, 3) : []),
+        destinatarios,
+        0,
+        0,
+        JSON.stringify({ kind }),
+        userId ?? null,
+      ]
+    );
+    return Number(ins.rows?.[0]?.id || 0) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 router.post("/community", async (req, res) => {
   try {
     if (req.body?.confirm !== true && String(req.body?.confirm).toLowerCase() !== "true") {
@@ -101,51 +139,26 @@ router.post("/community", async (req, res) => {
       return res.status(400).json({ error: "No hay teléfonos de contacto en pedidos para este tenant y línea de negocio" });
     }
 
-    let ok = 0;
-    let err = 0;
-    for (const to of tels) {
-      const rSend = await sendTenantWhatsAppText({
-        tenantId: req.tenantId,
-        toDigits: to,
-        bodyText: cuerpo,
-        pedidoId: null,
-        logContext: "broadcast_comunidad",
-      });
-      if (rSend.ok) ok += 1;
-      else err += 1;
-      await new Promise((r) => setTimeout(r, 110));
-    }
+    const comunicacionId = await tryInsertComunicacionEnvio({
+      tenantId: req.tenantId,
+      businessType: bt,
+      titulo,
+      cuerpo,
+      imagenUrl: req.body?.imagen_url || null,
+      botones: req.body?.botones || [],
+      destinatarios: tels.length,
+      kind: "community",
+      userId: req.user?.id ?? null,
+    });
 
+    let avisoId = null;
     try {
-      await query(
-        `INSERT INTO comunicaciones_envios(
-          tenant_id, business_type, canal, titulo, cuerpo, imagen_url, botones_json,
-          destinatarios_total, enviados_ok, enviados_error, meta, creado_por_usuario_id
-        ) VALUES ($1,$2,'whatsapp',$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11)`,
-        [
-          req.tenantId,
-          bt,
-          titulo || null,
-          cuerpo,
-          req.body?.imagen_url || null,
-          JSON.stringify(Array.isArray(req.body?.botones) ? req.body.botones.slice(0, 3) : []),
-          tels.length,
-          ok,
-          err,
-          JSON.stringify({ kind: "community" }),
-          req.user?.id ?? null,
-        ]
-      );
-    } catch (_) {
-      /* tabla opcional hasta migración */
-    }
-
-    try {
-      await query(
+      const insAviso = await query(
         `INSERT INTO avisos_comunitarios(
           tenant_id, business_type, tipo_aviso, fenomeno, ciudad, provincia, calles, zonas,
           texto_libre, areas, telefonos, corte_programado, enviado_por, destinatarios_count
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8::text[],$9,$10::text[],$11::text[],$12::jsonb,$13,$14)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8::text[],$9,$10::text[],$11::text[],$12::jsonb,$13,$14)
+        RETURNING id`,
         [
           req.tenantId,
           bt,
@@ -163,9 +176,28 @@ router.post("/community", async (req, res) => {
           tels.length,
         ]
       );
+      avisoId = Number(insAviso.rows?.[0]?.id || 0) || null;
     } catch (_) {}
 
-    return res.json({ ok: true, destinatarios: tels.length, enviados_ok: ok, enviados_error: err, business_type: bt });
+    const metrics = await enqueueBroadcastJob({
+      tenantId: req.tenantId,
+      telefonos: tels,
+      cuerpo,
+      logContext: "broadcast_comunidad",
+      comunicacionId,
+      avisoId,
+      maxRetries: 2,
+    });
+
+    return res.json({
+      ok: true,
+      destinatarios: tels.length,
+      enviados_ok: metrics.ok,
+      enviados_error: metrics.err,
+      reintentos_total: metrics.reintentosTotal,
+      duracion_ms: metrics.duracionMs,
+      business_type: bt,
+    });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo completar el envío masivo", detail: e.message });
   }
@@ -206,20 +238,15 @@ router.post("/corte-programado", async (req, res) => {
       return res.status(400).json({ error: "No hay teléfonos en pedidos para avisar" });
     }
 
-    let ok = 0;
-    let err = 0;
-    for (const to of tels) {
-      const rSend = await sendTenantWhatsAppText({
-        tenantId: req.tenantId,
-        toDigits: to,
-        bodyText: cuerpo,
-        pedidoId: null,
-        logContext: "broadcast_corte_programado",
-      });
-      if (rSend.ok) ok += 1;
-      else err += 1;
-      await new Promise((r) => setTimeout(r, 110));
-    }
+    const comunicacionId = await tryInsertComunicacionEnvio({
+      tenantId: req.tenantId,
+      businessType: bt,
+      titulo: "Corte programado",
+      cuerpo,
+      destinatarios: tels.length,
+      kind: "corte_programado",
+      userId: req.user?.id ?? null,
+    });
 
     try {
       await query(
@@ -228,16 +255,16 @@ router.post("/corte-programado", async (req, res) => {
         ) VALUES ($1,$2,$3,$4::timestamptz,$5::timestamptz,$6,TRUE,$7)`,
         [req.tenantId, bt, zona || null, fi || null, ff || null, motivo || null, cuerpo]
       );
-    } catch (_) {
-      /* tabla opcional hasta migración */
-    }
+    } catch (_) {}
 
+    let avisoId = null;
     try {
-      await query(
+      const insAviso = await query(
         `INSERT INTO avisos_comunitarios(
           tenant_id, business_type, tipo_aviso, fenomeno, ciudad, provincia, calles, zonas,
           texto_libre, areas, telefonos, corte_programado, enviado_por, destinatarios_count
-        ) VALUES ($1,$2,'corte_programado',$3,$4,$5,$6::text[],$7::text[],$8,$9::text[],$10::text[],$11::jsonb,$12,$13)`,
+        ) VALUES ($1,$2,'corte_programado',$3,$4,$5,$6::text[],$7::text[],$8,$9::text[],$10::text[],$11::jsonb,$12,$13)
+        RETURNING id`,
         [
           req.tenantId,
           bt,
@@ -262,9 +289,27 @@ router.post("/corte-programado", async (req, res) => {
           tels.length,
         ]
       );
+      avisoId = Number(insAviso.rows?.[0]?.id || 0) || null;
     } catch (_) {}
 
-    return res.json({ ok: true, destinatarios: tels.length, enviados_ok: ok, enviados_error: err });
+    const metrics = await enqueueBroadcastJob({
+      tenantId: req.tenantId,
+      telefonos: tels,
+      cuerpo,
+      logContext: "broadcast_corte_programado",
+      comunicacionId,
+      avisoId,
+      maxRetries: 2,
+    });
+
+    return res.json({
+      ok: true,
+      destinatarios: tels.length,
+      enviados_ok: metrics.ok,
+      enviados_error: metrics.err,
+      reintentos_total: metrics.reintentosTotal,
+      duracion_ms: metrics.duracionMs,
+    });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo registrar el corte programado", detail: e.message });
   }
