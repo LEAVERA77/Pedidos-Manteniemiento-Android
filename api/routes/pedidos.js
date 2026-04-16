@@ -1397,6 +1397,7 @@ router.put("/:id", async (req, res) => {
       cliente_calle,
       cliente_localidad,
       telefono_contacto,
+      checklist_seguridad,
     } = req.body;
 
     const fotosB64 = parseFotosBase64(req.body);
@@ -1433,6 +1434,7 @@ router.put("/:id", async (req, res) => {
       estadoAntes,
       cliente_calle ?? null,
       cliente_localidad ?? null,
+      checklist_seguridad ?? null,
     ];
     if (hasTUp) upParams.push(req.tenantId);
     const btUp = await pushPedidoBusinessFilter(req, upParams);
@@ -1463,8 +1465,9 @@ router.put("/:id", async (req, res) => {
          cliente_referencia = COALESCE($15, cliente_referencia),
          telefono_contacto = COALESCE($16, telefono_contacto),
          cliente_calle = COALESCE($18, cliente_calle),
-         cliente_localidad = COALESCE($19, cliente_localidad)
-       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}${btUp}
+         cliente_localidad = COALESCE($19, cliente_localidad),
+         checklist_seguridad = COALESCE($20, checklist_seguridad)
+       WHERE id = $1${hasTUp ? " AND tenant_id = $21" : ""}${btUp}
        RETURNING *`,
       upParams
     );

@@ -1752,20 +1752,20 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     const candNums = iterHouseNumbersSameParity(nRaw, houseParityMaxSteps());
     for (const hn of candNums) {
       const attempts = [`${hn} ${cal}, ${c}, Argentina`, `${cal} ${hn}, ${c}, Argentina`];
-      for (const q of attempts) {
-        await throttle();
-        const p = nominatimBaseParams();
-        p.set("q", q);
-        p.set("limit", "8");
-        if (vbMeta?.viewboxStr) {
-          p.set("viewbox", vbMeta.viewboxStr);
-          p.set("bounded", "1");
-        }
+    for (const q of attempts) {
+      await throttle();
+      const p = nominatimBaseParams();
+      p.set("q", q);
+      p.set("limit", "8");
+      if (vbMeta?.viewboxStr) {
+        p.set("viewbox", vbMeta.viewboxStr);
+        p.set("bounded", "1");
+      }
         const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
         const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
-        if (!Array.isArray(arr)) continue;
-        for (const hit of arr) {
-          if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
+      if (!Array.isArray(arr)) continue;
+      for (const hit of arr) {
+        if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
           const hitHnQ = parseHouseNumberInt(hit.address?.house_number);
           if (hitHnQ !== hn) continue;
           if (
@@ -1774,10 +1774,10 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
           ) {
             continue;
           }
-          const lat = Number(hit.lat);
-          const lng = Number(hit.lon);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          if (!passesLocalPlausibility(lat, lng)) continue;
+        const lat = Number(hit.lat);
+        const lng = Number(hit.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        if (!passesLocalPlausibility(lat, lng)) continue;
           const approx = hn !== target;
           audit.source = approx ? "numero_cercano_q" : "final_q_filtered";
           audit.usedHouseNumber = hn;
@@ -1794,14 +1794,14 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
           }
           const br = barrioDesdeNominatimAddress(hit.address);
           const postcode = postcodeDesdeNominatimAddress(hit.address);
-          return {
-            lat,
-            lng,
-            displayName: String(hit.display_name || "").trim(),
+        return {
+          lat,
+          lng,
+          displayName: String(hit.display_name || "").trim(),
             ...(br ? { barrio: br } : {}),
             ...(postcode ? { postcode } : {}),
-            audit,
-          };
+          audit,
+        };
         }
       }
     }

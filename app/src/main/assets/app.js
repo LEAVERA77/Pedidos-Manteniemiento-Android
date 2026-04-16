@@ -9099,12 +9099,15 @@ function sanitizarTextoDescripcionPedidoVista(s) {
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
-    if (p.es !== 'En ejecución') return false;
     if (tipoPedidoExcluyeMateriales(p.tt)) return false;
     if (p.sdpen && esTecnicoOSupervisor() && !esAdmin()) return false;
+    const es = String(p.es || '');
     const uid = String(app.u?.id ?? '');
+    if (esAdmin()) {
+        return ['Pendiente', 'Asignado', 'En ejecución'].includes(es);
+    }
+    if (es !== 'En ejecución') return false;
     return (
-        esAdmin() ||
         String(p.ui) === uid ||
         (esTecnicoOSupervisor() && p.tai != null && String(p.tai) === uid)
     );
@@ -10051,11 +10054,37 @@ document.getElementById('cc2').addEventListener('click', async () => {
             checklist_seguridad: checklistJson
         };
         if (telCierre) camposCierre.telefono_contacto = telCierre;
-        await updPedido(app.cid, camposCierre, app.u?.id);
+
+        let cerradoViaApi = false;
         if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) {
-                void notificarCierreWhatsappApi(pidNum, telCierre || undefined);
+                const apiBody = {
+                    estado: 'Cerrado',
+                    avance: 100,
+                    trabajo_realizado: tr,
+                    tecnico_cierre: camposCierre.tecnico_cierre,
+                    checklist_seguridad: checklistJson
+                };
+                if (telCierre) apiBody.telefono_contacto = telCierre;
+                if (firmaData) apiBody.firma_cliente = firmaData;
+                if (fotoCierreTemp) apiBody.foto_base64 = fotoCierreTemp;
+                const apiRow = await pedidoPutApi(app.cid, apiBody);
+                if (apiRow) {
+                    cerradoViaApi = true;
+                    const ix = app.p.findIndex((x) => String(x.id) === String(app.cid));
+                    if (ix !== -1) app.p[ix] = norm(apiRow);
+                    offlinePedidosSave(app.p);
+                }
+            }
+        }
+        if (!cerradoViaApi) {
+            await updPedido(app.cid, camposCierre, app.u?.id);
+            if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
+                const pidNum = parseInt(app.cid, 10);
+                if (Number.isFinite(pidNum) && pidNum > 0) {
+                    void notificarCierreWhatsappApi(pidNum, telCierre || undefined);
+                }
             }
         }
         fotoCierreTemp = null;
