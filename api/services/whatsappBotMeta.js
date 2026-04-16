@@ -48,9 +48,32 @@ import {
   isPhoneWhatsappBotMasterAsync,
   parseActivarDesactivarComando,
   setGlobalBotActiveDb,
+  digitsWaPhoneLikelyEqual,
 } from "./globalBotState.js";
 
 const sessions = new Map();
+
+/** Último `messages[].from` (dígitos) por sesión bot; Graph `to` debe alinear con wa_id / lista Meta (131030 si 543≠549). */
+const lastMetaInboundWaFromDigits = new Map();
+
+function touchLastMetaInboundFrom(phoneNormalized, tid, fromRaw) {
+  const rawDigits = String(fromRaw || "").replace(/\D/g, "");
+  if (!rawDigits || !phoneNormalized) return;
+  const t = tid != null && Number.isFinite(Number(tid)) && Number(tid) >= 1 ? Number(tid) : botTenantId();
+  lastMetaInboundWaFromDigits.set(sessionKey(phoneNormalized, t), rawDigits);
+}
+
+function graphRecipientOverrideForMetaReply(phoneDigits, tenantId) {
+  const tid =
+    tenantId != null && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1
+      ? Number(tenantId)
+      : botTenantId();
+  const canon = String(phoneDigits || "").replace(/\D/g, "");
+  const raw = lastMetaInboundWaFromDigits.get(sessionKey(canon, tid));
+  if (!raw) return null;
+  if (!digitsWaPhoneLikelyEqual(canon, raw)) return null;
+  return raw;
+}
 
 const MSG_SALIR_ATRAS =
   "\n\n_Escribí *menú* o *0* para salir · *atrás* para el paso anterior._";
@@ -887,6 +910,7 @@ async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
       ? Number(tenantId)
       : botTenantId();
   const wpid = webhookPhoneNumberId != null ? String(webhookPhoneNumberId).trim() : "";
+  const graphRecipientDigitsOverride = graphRecipientOverrideForMetaReply(digitsCanon, tid);
   const r = wpid
     ? await sendBotWhatsAppText({
         tenantId: tid,
@@ -894,6 +918,7 @@ async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
         toDigits: phoneDigits,
         bodyText: text,
         logContext: "whatsapp_bot_meta",
+        graphRecipientDigitsOverride: graphRecipientDigitsOverride || undefined,
       })
     : await sendTenantWhatsAppText({
         tenantId: tid,
@@ -1488,6 +1513,10 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
     );
     return { ok: true, skippedInteractive: true };
   }
+  const graphRecipientDigitsOverride = graphRecipientOverrideForMetaReply(
+    String(phoneDigits || "").replace(/\D/g, ""),
+    ctx.id
+  );
   const r = await sendWhatsAppInteractiveListWithCredentials(
     phoneDigits,
     {
@@ -1496,7 +1525,12 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
       sectionTitle: "Tipos de reclamo",
       tipos: ctx.tipos,
     },
-    { accessToken, phoneNumberId: graphPid, purpose: "whatsapp_bot_menu_tipos" }
+    {
+      accessToken,
+      phoneNumberId: graphPid,
+      purpose: "whatsapp_bot_menu_tipos",
+      graphRecipientDigitsOverride: graphRecipientDigitsOverride || undefined,
+    }
   );
   const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
   try {
@@ -1631,6 +1665,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
+  touchLastMetaInboundFrom(phone, tid, fromRaw);
   const sess = sessions.get(sk);
 
   if (sess && sess.step === "human_chat") {
@@ -1763,6 +1798,7 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
+  touchLastMetaInboundFrom(phone, tid, fromRaw);
   const ctx = await loadTenantBotContext(tid);
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
@@ -1855,6 +1891,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
+  touchLastMetaInboundFrom(phone, tid, fromRaw);
 
   const comandoMaster = parseActivarDesactivarComando(text);
   if (comandoMaster) {

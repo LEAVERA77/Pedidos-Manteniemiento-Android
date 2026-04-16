@@ -137,6 +137,7 @@ export async function getWhatsAppCredentialsByMetaPhoneNumberId(phoneNumberId, o
 
 /**
  * Envío del bot: prioriza token ligado al phone_number_id del webhook (Graph: /{phone_number_id}/messages).
+ * @param {string} [graphRecipientDigitsOverride] — mismo `messages[].from` (wa_id) que Meta; evita 131030 si el strip AR distorsiona el `to`.
  */
 export async function sendBotWhatsAppText({
   tenantId,
@@ -144,6 +145,7 @@ export async function sendBotWhatsAppText({
   toDigits,
   bodyText,
   logContext = "whatsapp_bot_meta",
+  graphRecipientDigitsOverride,
 }) {
   const to = String(toDigits || "").replace(/\D/g, "");
   const body = String(bodyText || "").trim();
@@ -268,6 +270,7 @@ export async function sendBotWhatsAppText({
     accessToken,
     phoneNumberId: graphPhoneId,
     purpose: logContext,
+    graphRecipientDigitsOverride,
   });
   try {
     await logWhatsappMensajeEnviado(to, body, r.ok, null);
