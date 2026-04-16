@@ -2241,8 +2241,6 @@ function aplicarMarcaVisualCompleta() {
     }
 }
 
-/** Primera vez en este navegador: modal de rubro. Luego: botón «Cambiar rubro» con contraseña. */
-const LS_ADMIN_WEB_TIPO_ACK = 'pmg_admin_web_tipo_ack_v1';
 /** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
 const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
 let _resolveAdminTipoModal = null;
@@ -2270,11 +2268,7 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
 
 async function promptAdminTipoNegocioWebIfNeeded(force = false) {
     if (!esAdminSesionWebPublica()) return;
-    if (!force) {
-        try {
-            if (localStorage.getItem(LS_ADMIN_WEB_TIPO_ACK) === '1') return;
-        } catch (_) {}
-    }
+    if (!force) return;
     const modal = document.getElementById('modal-admin-tipo-negocio');
     const sel = document.getElementById('admin-sesion-tipo');
     if (!modal || !sel) return;
@@ -2424,9 +2418,6 @@ async function confirmarAdminTipoNegocioWeb() {
     syncZonaPedidoFormLabels();
     syncEmpresaCfgNombreLogoDesdeMarca();
     aplicarMarcaVisualCompleta();
-    try {
-        localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
-    } catch (_) {}
     if (modal) modal.classList.remove('active');
     if (_resolveAdminTipoModal) {
         _resolveAdminTipoModal();
@@ -13077,8 +13068,6 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
-                // Setup inicial: si el rubro en servidor distinta del elegido, la API exige confirmación explícita.
-                purge_datos_cambio_rubro: true,
                 configuracion: { setup_wizard_completado: true, marca_publicada_admin: true, ...provExtra }
             })
         });
@@ -13128,9 +13117,6 @@ async function guardarConfiguracionInicialObligatoria() {
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
-            try {
-                localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
-            } catch (_) {}
             toast('Setup inicial completado', 'success');
             // El login ya había salido antes de completar el wizard (cfgLista === false),
             // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
