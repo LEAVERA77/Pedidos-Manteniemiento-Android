@@ -1673,19 +1673,25 @@ async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
     if (!tok) return;
     const pid = Number(pedidoId);
     if (!Number.isFinite(pid) || pid <= 0) return;
-    try {
-        const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
-        const resp = await fetch(apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        if (!resp.ok) {
+    const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
+    const url = apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`);
+    const headers = { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' };
+    for (let attempt = 0; attempt < 4; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 350 * attempt));
+        try {
+            const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+            if (resp.ok) return;
             const t = await resp.text();
+            const maybeRace =
+                resp.status === 400 &&
+                /Cerrado|cerrado/i.test(t) &&
+                /debe estar|must be|pedido/i.test(t);
+            if (maybeRace && attempt < 3) continue;
             console.warn('[wa-cierre] API', resp.status, t.slice(0, 200));
+            return;
+        } catch (e) {
+            if (attempt === 3) console.warn('[wa-cierre]', e && e.message);
         }
-    } catch (e) {
-        console.warn('[wa-cierre]', e && e.message);
     }
 }
 

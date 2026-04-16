@@ -122,6 +122,7 @@ export function maskWaDigitsForLog(digits) {
 /**
  * `to` en Graph: si pasamos el mismo `messages[].from` (wa_id) que Meta, evitamos 131030 cuando la lista
  * de prueba usa 549… y el strip AR dejó 543… (ver touchLastMetaInboundFrom en whatsappBotMeta).
+ * También: `telefono_contacto` guardado como 549… (alta WhatsApp) debe enviarse sin strip a Graph.
  */
 function resolveOutboundToForMeta(toDigits, graphRecipientDigitsOverride) {
   const ov = String(graphRecipientDigitsOverride || "").replace(/\D/g, "");
@@ -133,6 +134,10 @@ function resolveOutboundToForMeta(toDigits, graphRecipientDigitsOverride) {
     };
   }
   const rawTo = String(toDigits || "").replace(/\D/g, "");
+  // Mismo criterio que wa_id Meta: móvil AR 549 + área + abonado (12–13 dígitos totales).
+  if (/^549\d{9,10}$/.test(rawTo) && rawTo.length >= 12 && rawTo.length <= 13) {
+    return { to: rawTo, rawInForLog: rawTo, graphUsedWaIdOverride: true };
+  }
   const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
   return { to, rawInForLog: rawTo, graphUsedWaIdOverride: false };
 }

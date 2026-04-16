@@ -1469,7 +1469,8 @@ router.put("/:id", async (req, res) => {
       upParams
     );
     const updated = r.rows[0];
-    const becameCerrado = String(estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
+    const becameCerrado =
+      String(updated?.estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
     if (becameCerrado) {
       scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
       setImmediate(() => {
