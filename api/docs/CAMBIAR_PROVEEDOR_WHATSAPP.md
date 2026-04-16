@@ -3,7 +3,7 @@
 El envío y el bot usan **`WHATSAPP_PROVIDER`** (`whapi` | `meta` | `waha` | `evolution`).
 
 - **Nombre exacto de la variable:** `WHATSAPP_PROVIDER` (coincide con `process.env` en `api/services/whatsappService.js`). No uses variantes mal escritas o no tendrá efecto.
-- **Si no definís la variable en el servidor**, el código usa por defecto **`meta`** (`|| "meta"`). En **`api/.env.example`** la plantilla activa **`whapi`** para reflejar el despliegue habitual con Whapi.cloud en campo.
+- **Si no definís la variable en el servidor:** si hay **`WHAPI_API_KEY`**, se usa **`whapi`**; si no, **`meta`**. Para forzar uno u otro con ambas integraciones configuradas, definí siempre **`WHATSAPP_PROVIDER`**. En **`api/.env.example`** se documenta **`whapi`** para campo.
 
 ## Usar Whapi (Whapi.cloud) — plantilla actual
 

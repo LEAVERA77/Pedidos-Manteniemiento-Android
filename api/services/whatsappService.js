@@ -1,6 +1,6 @@
 /**
  * Envío WhatsApp multitenant. Variable de entorno: **`WHATSAPP_PROVIDER`** (`whapi` | `meta` | `waha` | `evolution`).
- * Si no está definida, el default en código es **`meta`**; `api/.env.example` plantea **`whapi`** para Whapi.cloud en campo.
+ * Si no está definida, se elige por heurística: con **`WHAPI_API_KEY`** se usa **`whapi`**; si no, **`meta`**.
  *
  * - **Whapi:** `WHAPI_*` + `POST /api/webhooks/whatsapp/whapi` — `api/services/whapiWhatsapp.js`
  * - **Meta:** credenciales globales o por tenant en `clientes.configuracion` + `POST /api/webhooks/whatsapp/meta` (`META_PHONE_NUMBER_ID`, `META_ACCESS_TOKEN`, opcional `META_WABA_ID` para logs/validación webhook)
@@ -25,7 +25,15 @@ import { logWhatsappMensajeEnviado, tieneNotificacionCierrePedidoReciente } from
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
 function whatsappProvider() {
-  return String(process.env.WHATSAPP_PROVIDER || "meta").toLowerCase().trim();
+  const v = String(process.env.WHATSAPP_PROVIDER || "").toLowerCase().trim();
+  if (v === "meta" || v === "whapi" || v === "waha" || v === "evolution") {
+    return v;
+  }
+  // Sin WHATSAPP_PROVIDER: muchos despliegues solo tienen Whapi.cloud (sin Meta en Render).
+  if (String(process.env.WHAPI_API_KEY || "").trim()) {
+    return "whapi";
+  }
+  return "meta";
 }
 
 function normCfg(cfg) {
