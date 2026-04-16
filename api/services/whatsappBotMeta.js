@@ -846,6 +846,21 @@ function esPedidoCargarReclamo(text) {
   return false;
 }
 
+function esComandoConsultaReclamosPendientes(text) {
+  const n = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  if (!n) return false;
+  if (n === "pendientes" || n === "mis pendientes" || n === "mis reclamos") return true;
+  if (/\bconsult(ar|a)\b/.test(n) && /\breclamo/.test(n)) return true;
+  if (/\bestado\b/.test(n) && /\breclamo/.test(n)) return true;
+  if (/\bmis\s+reclamos\s+pendientes\b/.test(n)) return true;
+  if (/\breclamos?\s+pendientes\b/.test(n)) return true;
+  return false;
+}
+
 /** Resuelve tenant para enviar con el mismo número/token que recibió el webhook (multitenant). */
 async function tenantIdForWebhook(phoneNumberId) {
   const resolved = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
@@ -2764,6 +2779,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
         return;
       }
       await replyListaTiposReclamo(phone, ctx, phoneNumberId);
+      return;
+    }
+    if (esComandoConsultaReclamosPendientes(text)) {
+      await iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx });
       return;
     }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
