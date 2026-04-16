@@ -1433,12 +1433,25 @@ async function geocodeStructuredAddressAndFinalizePedido(
 /** Cloud API: máximo 10 filas en una lista interactiva. */
 const MAX_WHATSAPP_LIST_ROWS = 10;
 
-async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
+/**
+ * @param {{ saludoMenuPrincipal?: boolean }} [opts]
+ * Si `saludoMenuPrincipal`, antepone bienvenida GestorNova (Hola / menú principal).
+ */
+async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, opts = {}) {
   if (ctx.whatsappBloqueoReclamos) {
     await reply(phoneDigits, ctx.whatsappBloqueoMensaje, ctx.id, phoneNumberIdWebhook);
     return { ok: true, blocked: true };
   }
+  const saludo =
+    opts.saludoMenuPrincipal === true
+      ? `Bienvenido al centro de atención de *${ctx.nombre || "GestorNova"}*.\n\n`
+      : "";
+  if (!ctx.tipos?.length) {
+    await reply(phoneDigits, textoBienvenidaYAyuda(ctx), ctx.id, phoneNumberIdWebhook);
+    return { ok: true, emptyTipos: true };
+  }
   const bodyText =
+    saludo +
     `Elegí el tipo que mejor describe tu reclamo:\n\n` +
     `_Para *salir* escribí *menú* o *0* en un mensaje de texto._`;
   const pid = String(phoneNumberIdWebhook || "").trim();
@@ -1455,7 +1468,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   }
   if (!accessToken || !graphPid) {
     console.error("[whatsapp-bot-meta] lista interactiva: sin credenciales Meta");
-    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
+    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, pid || null);
     return { ok: false, error: "missing_meta_credentials" };
   }
   if (ctx.tipos.length > MAX_WHATSAPP_LIST_ROWS) {
@@ -1465,10 +1478,11 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     });
     await reply(
       phoneDigits,
+      saludo +
         menuTextoNumerado(ctx) +
-          "\n\n_(Hay muchas opciones: escribí el número del 1 al " +
-          (ctx.tipos.length + 1) +
-          ".)_",
+        "\n\n_(Hay muchas opciones: escribí el número del 1 al " +
+        (ctx.tipos.length + 1) +
+        ".)_",
       ctx.id,
       pid || null
     );
@@ -1492,7 +1506,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   }
   if (!r.ok) {
     console.error("[whatsapp-bot-meta] lista interactiva falló, menú texto", r.graph || r.error);
-    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
+    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, pid || null);
   } else {
     console.log("[webhook-meta-whatsapp] outbound_list", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
   }
@@ -1998,7 +2012,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       );
       return;
     }
-    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
     return;
   }
 
@@ -2049,7 +2063,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       } catch (_) {}
     }
     sessions.delete(sk);
-    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
     return;
   }
 
