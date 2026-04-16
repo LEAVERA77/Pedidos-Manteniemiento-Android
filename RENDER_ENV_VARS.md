@@ -42,10 +42,13 @@ Si el tenant tiene **token y phone en configuración**, esas credenciales **gana
 `sendBotWhatsAppText` arma el envío así:
 
 1. **`graphPhoneId`**: primero el `phone_number_id` que vino en el **webhook** (`webhookPhoneNumberId`). Es el path correcto en Graph: `POST /{phone-number-id}/messages`.
-2. **Token** (`getWhatsAppCredentialsByMetaPhoneNumberId(pid)`):
-   - Si existe un **`clientes`** activo cuyo `configuracion->>'meta_phone_id'` o `'meta_phone_number_id'` **iguala** ese `pid` → token desde **`configuracion.meta_access_token`** (o clave `META_ACCESS_TOKEN` dentro del JSON). Log: `tokenSource: 'cliente_config'` (si hay token) o `'cliente_config_no_token'`.
-   - Si **no** hay fila en Neon pero **`META_PHONE_NUMBER_ID` (env) === `pid`** → token desde **`META_ACCESS_TOKEN`** y tenant desde **`WHATSAPP_BOT_TENANT_ID`**. Log: **`tokenSource: 'env_phone_match'`** (como en tus logs de Render).
+2. **Token** (`getWhatsAppCredentialsByMetaPhoneNumberId(pid, { forBot: true })`):
+   - Variable **`WHATSAPP_META_BOT_CREDENTIALS_ORDER`** (alias `META_WHATSAPP_BOT_CREDENTIALS_ORDER`): **`db_first`** (default) o **`env_first`**.
+   - Con **`db_first`**: si existe un **`clientes`** activo cuyo `configuracion->>'meta_phone_id'` o `'meta_phone_number_id'` **iguala** ese `pid` → token desde **`configuracion.meta_access_token`** (o `META_ACCESS_TOKEN` en el JSON). Log: `tokenSource: 'cliente_config'` o `'cliente_config_no_token'`. Si no hay fila o el token en JSON está vacío, entonces **`META_PHONE_NUMBER_ID` (env) === `pid`** → **`META_ACCESS_TOKEN`** (`tokenSource: 'env_phone_match'`).
+   - Con **`env_first`**: si **`META_PHONE_NUMBER_ID` (env) === `pid`** y **`META_ACCESS_TOKEN`** no está vacío, usa Render **antes** de consultar Neon (útil para ignorar un `meta_access_token` viejo en BD sin borrarlo todavía).
 3. Si aún no hay token, cae a **`getWhatsAppCredentialsForTenant(tenantId)`** (Neon + env mezclados como arriba).
+
+En logs, **`[whatsapp-service] bot Meta credentials`** incluye **`botCredentialOrder`**, **`neonClienteIdIfConfig`** (si ganó Neon) y **`metaAccessTokenEnvLen`** (longitud del token en env, sin exponer el secreto).
 
 ### Diagnóstico rápido (error 131030 “allowed list”)
 

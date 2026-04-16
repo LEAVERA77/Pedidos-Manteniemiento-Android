@@ -819,15 +819,24 @@ function menuTextoNumerado(ctx) {
 }
 
 async function iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx }) {
+  const bt = normalizeBotBusinessType(ctx?.activeBusinessType, ctx?.tipo);
+  const linea1 =
+    bt === "agua"
+      ? "1) N° de abonado o medidor"
+      : bt === "municipio"
+        ? "1) N° de vecino"
+        : "1) NIS o medidor";
+  const linea2 = "2) Nombre completo";
   sessions.set(sk, {
-    step: "awaiting_pending_lookup_identifier",
+    step: "awaiting_pending_lookup_mode",
     tenantId: tid,
     tipoCliente: ctx.tipo,
+    activeBusinessType: bt,
     phoneNumberId: wpid,
   });
   await reply(
     phone,
-    `🔍 CONSULTAR MIS RECLAMOS PENDIENTES\n\nPara buscar sus reclamos activos, necesito identificarle.\n\n🔹 Si es cliente de ELECTRICIDAD: ingrese su NIS, número de medidor o nombre completo\n🔹 Si es cliente de AGUA: ingrese su N° de Abonado o nombre completo\n🔹 Si es del MUNICIPIO: ingrese su N° de Vecino o nombre completo\n\nEjemplo: "123456" o "Juan Pérez"\n\n📝 Escriba su identificador:`,
+    `🔍 CONSULTAR MIS RECLAMOS PENDIENTES\n\nPara buscar sus reclamos activos de *${bt.toUpperCase()}*, elegí cómo querés identificarte:\n\n${linea1}\n${linea2}\n\nRespondé con *1* o *2*.`,
     tid,
     phoneNumberId
   );
@@ -1436,7 +1445,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   let accessToken = "";
   let graphPid = pid;
   if (pid) {
-    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid, { forBot: true });
     accessToken = String(byPid.accessToken || "").trim();
   }
   if (!accessToken || !graphPid) {
@@ -2671,7 +2680,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await reply(phone, "Escribí un identificador válido (mínimo 2 caracteres).", tid, phoneNumberId);
       return;
     }
-    const bt = normalizeBotBusinessType(ctx?.activeBusinessType, ctx?.tipo);
+    const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
     const rows = await buscarReclamosPendientesPorIdentificador(tid, bt, ident);
     sess.pendingLookupIdentificador = ident;
     sess.pendingLookupRows = rows;
@@ -2707,10 +2716,36 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
+  if (sess && sess.step === "awaiting_pending_lookup_mode") {
+    const t = String(text || "").trim().toLowerCase();
+    const modo =
+      t === "1" || t === "nis" || t === "medidor" || t === "abonado" || t === "vecino"
+        ? "servicio"
+        : t === "2" || t === "nombre"
+          ? "nombre"
+          : null;
+    if (!modo) {
+      await reply(phone, "Respondé con *1* o *2* para continuar.", tid, phoneNumberId);
+      return;
+    }
+    sess.pendingLookupMode = modo;
+    sess.step = "awaiting_pending_lookup_identifier";
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      modo === "nombre"
+        ? "📝 Escriba su *nombre completo*:"
+        : "📝 Escriba su identificador (NIS/medidor/abonado/vecino según su servicio):",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "awaiting_pending_lookup_reminder_confirm") {
     const ans = String(text || "").trim().toLowerCase();
     if (ans === "si" || ans === "sí") {
-      const bt = normalizeBotBusinessType(ctx?.activeBusinessType, ctx?.tipo);
+      const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
       const target = Array.isArray(sess.pendingLookupRows) && sess.pendingLookupRows.length
         ? sess.pendingLookupRows[0]
         : null;

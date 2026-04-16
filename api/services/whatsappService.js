@@ -37,13 +37,60 @@ function normCfg(cfg) {
 }
 
 /**
+ * Solo para el bot (webhook Meta): orden de resolución token/tenant.
+ * - `db_first` (default): Neon `clientes.configuracion` con ese `meta_phone_id` gana sobre `META_ACCESS_TOKEN` de Render.
+ * - `env_first`: si `META_PHONE_NUMBER_ID` coincide con el webhook y hay `META_ACCESS_TOKEN`, usa Render **antes** de Neon
+ *   (útil cuando hay token viejo en BD y querés probar solo con variables de entorno).
+ */
+function metaBotCredentialsOrder() {
+  const v = String(
+    process.env.WHATSAPP_META_BOT_CREDENTIALS_ORDER ||
+      process.env.META_WHATSAPP_BOT_CREDENTIALS_ORDER ||
+      "db_first"
+  )
+    .toLowerCase()
+    .trim();
+  return v === "env_first" ? "env_first" : "db_first";
+}
+
+function tryMetaEnvPhoneCredentials(phoneNumberId) {
+  const pid = String(phoneNumberId || "").trim();
+  const envPid = String(process.env.META_PHONE_NUMBER_ID || "").trim();
+  if (!envPid || pid !== envPid) {
+    return { accessToken: "", tenantId: null, matched: false };
+  }
+  return {
+    accessToken: String(process.env.META_ACCESS_TOKEN || "").trim(),
+    tenantId: Number(process.env.WHATSAPP_BOT_TENANT_ID || 1),
+    matched: true,
+  };
+}
+
+/**
  * Token (y tenant) asociados al número de Meta que recibió el webhook.
  * El path de Graph debe usar el mismo phone_number_id que envía Meta en metadata.
+ *
+ * @param {string} phoneNumberId
+ * @param {{ forBot?: boolean }} [opts] Si `forBot: true`, aplica `WHATSAPP_META_BOT_CREDENTIALS_ORDER` (env_first vs db_first).
  */
-export async function getWhatsAppCredentialsByMetaPhoneNumberId(phoneNumberId) {
+export async function getWhatsAppCredentialsByMetaPhoneNumberId(phoneNumberId, opts = {}) {
   const pid = String(phoneNumberId || "").trim();
   if (!pid) {
     return { accessToken: "", tenantId: null, source: "empty_phone_id" };
+  }
+
+  const forBot = Boolean(opts.forBot);
+  const order = forBot ? metaBotCredentialsOrder() : "db_first";
+
+  if (forBot && order === "env_first") {
+    const envTry = tryMetaEnvPhoneCredentials(pid);
+    if (envTry.matched && envTry.accessToken) {
+      return {
+        accessToken: envTry.accessToken,
+        tenantId: Number.isFinite(envTry.tenantId) ? envTry.tenantId : 1,
+        source: "env_phone_match",
+      };
+    }
   }
 
   try {
@@ -65,17 +112,18 @@ export async function getWhatsAppCredentialsByMetaPhoneNumberId(phoneNumberId) {
         accessToken,
         tenantId: Number(row.id),
         source: accessToken ? "cliente_config" : "cliente_config_no_token",
+        neonClienteId: Number(row.id),
       };
     }
   } catch (e) {
     console.warn("[whatsapp-service] getWhatsAppCredentialsByMetaPhoneNumberId", e.message);
   }
 
-  const envPid = String(process.env.META_PHONE_NUMBER_ID || "").trim();
-  if (envPid && pid === envPid) {
+  const envTry = tryMetaEnvPhoneCredentials(pid);
+  if (envTry.matched) {
     return {
-      accessToken: String(process.env.META_ACCESS_TOKEN || "").trim(),
-      tenantId: Number(process.env.WHATSAPP_BOT_TENANT_ID || 1),
+      accessToken: envTry.accessToken,
+      tenantId: Number.isFinite(envTry.tenantId) ? envTry.tenantId : 1,
       source: "env_phone_match",
     };
   }
@@ -162,8 +210,9 @@ export async function sendBotWhatsAppText({
   /** Origen del token usado en Graph (si es cliente_config, Render META_ACCESS_TOKEN puede estar ignorado). */
   let tokenSource = "unset";
 
+  let byWebhook = null;
   if (pid) {
-    const byWebhook = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    byWebhook = await getWhatsAppCredentialsByMetaPhoneNumberId(pid, { forBot: true });
     accessToken = String(byWebhook.accessToken || "").trim();
     tokenSource = String(byWebhook.source || "webhook_lookup");
   }
@@ -192,15 +241,21 @@ export async function sendBotWhatsAppText({
     return { ok: false, error: "missing_meta_credentials", skipped: false };
   }
 
+  const botCredentialOrder = metaBotCredentialsOrder();
   console.log("[whatsapp-service] bot Meta credentials", {
     tenantId,
     webhookPhoneNumberId: pid || null,
     graphPhoneId,
     tokenSource,
+    botCredentialOrder,
+    neonClienteIdIfConfig: byWebhook?.neonClienteId ?? null,
+    metaAccessTokenEnvLen: String(process.env.META_ACCESS_TOKEN || "").trim().length,
     hint:
       tokenSource === "cliente_config"
-        ? "token desde Neon clientes.configuracion (no desde Render env); 131030 puede ser token/WABA distinto a la lista de prueba"
-        : undefined,
+        ? "token desde Neon clientes.configuracion (no desde Render env); 131030 puede ser token/WABA distinto a la lista de prueba. Para forzar Render: WHATSAPP_META_BOT_CREDENTIALS_ORDER=env_first o borrá meta_access_token en Neon."
+        : tokenSource === "env_phone_match" && botCredentialOrder === "env_first"
+          ? "orden env_first: se usó META_ACCESS_TOKEN de Render antes de Neon para este phone_number_id."
+          : undefined,
   });
 
   const r = await sendWhatsAppTextWithCredentials(to, body, {
