@@ -2,6 +2,16 @@
 
 **Servicio típico:** `nexxo-api-418k.onrender.com` (ajustar si el nombre del servicio cambió).
 
+## WhatsApp — Whapi vs Meta
+
+| Variable | Uso |
+|----------|-----|
+| **`WHATSAPP_PROVIDER`** | Nombre **exacto** (sin typos). Valores: `whapi`, `meta`, `waha`, `evolution`. Si no está definida en Render, el código usa **`meta`** por defecto. |
+| **Whapi** | `WHATSAPP_PROVIDER=whapi` + `WHAPI_API_URL`, `WHAPI_API_KEY`, `WHATSAPP_WEBHOOK_TOKEN` (y opcional `WHAPI_CHANNEL_ID`). Webhook: `POST /api/webhooks/whatsapp/whapi`. |
+| **Meta** | `WHATSAPP_PROVIDER=meta` + `META_*` (token, phone id, app secret, verify token). Webhook: `POST /api/webhooks/whatsapp/meta`. |
+
+Plantilla local: `api/.env.example` (actualmente **`WHATSAPP_PROVIDER=whapi`**). Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
+
 ## Migración Nominatim (Vultr → Oracle)
 
 ### Cambio obligatorio

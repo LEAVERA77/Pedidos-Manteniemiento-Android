@@ -45,7 +45,7 @@ El documento legal público vive en el repo **Pedidos-MG** (`privacy/index.html`
 El backend vive en `api/`. Los secretos de Meta (**access token**, **app secret**, **verify token**, **phone number id**) se cargan como **variables de entorno** en el servicio (p. ej. Render), no en el repositorio.
 
 1. Copiá la plantilla: `api/.env.example` → `api/.env` (local; `api/.env` está en `.gitignore`).
-2. En Render, definí las mismas claves que en `api/.env.example` (`META_*`, `WHATSAPP_BOT_*`, etc.).
+2. En Render, definí las mismas claves que en `api/.env.example` (con **Whapi:** `WHAPI_*` y `WHATSAPP_PROVIDER=whapi`; con **Meta:** `META_*` y `WHATSAPP_PROVIDER=meta`; más `WHATSAPP_BOT_*`, etc.).
 3. En Meta Developers, webhook **Callback URL**: `https://<tu-api>/api/webhooks/whatsapp/meta` y el mismo **Verify token** que `META_WEBHOOK_VERIFY_TOKEN`.
 
 Si algún token o secret se expuso en un chat o commit, **revocalo y generá uno nuevo** en Meta.
