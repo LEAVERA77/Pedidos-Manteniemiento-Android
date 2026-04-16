@@ -2,7 +2,12 @@ import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
-import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
+import {
+  pushPedidoBusinessFilter,
+  pushPedidoBusinessFilterRelaxed,
+  rubroEfectivoParaTipos,
+  pedidosHasBusinessTypeColumn,
+} from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
 import { uploadManyBase64 } from "../services/cloudinary.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
@@ -225,12 +230,20 @@ async function getPedidoInTenant(id, req) {
   const tenantId = req.tenantId;
   if (await pedidosTableHasTenantIdColumn()) {
     const params = [id, tenantId];
-    const bt = await pushPedidoBusinessFilter(req, params);
-    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2${bt} LIMIT 1`, params);
-    return r.rows[0] || null;
+    const bt = await pushPedidoBusinessFilterRelaxed(req, params);
+    const r = await query(
+      `SELECT * FROM pedidos WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)${bt} LIMIT 1`,
+      params
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    if (row.tenant_id != null && Number(row.tenant_id) !== Number(tenantId)) {
+      return null;
+    }
+    return row;
   }
   const params = [id];
-  const bt = await pushPedidoBusinessFilter(req, params);
+  const bt = await pushPedidoBusinessFilterRelaxed(req, params);
   const r = await query(`SELECT * FROM pedidos WHERE id = $1${bt} LIMIT 1`, params);
   return r.rows[0] || null;
 }
@@ -1434,7 +1447,7 @@ router.put("/:id", async (req, res) => {
       checklist_seguridad ?? null,
     ];
     if (hasTUp) upParams.push(req.tenantId);
-    const btUp = await pushPedidoBusinessFilter(req, upParams);
+    const btUp = await pushPedidoBusinessFilterRelaxed(req, upParams);
     const r = await query(
       `UPDATE pedidos SET
          estado = COALESCE($2, estado),
@@ -1464,7 +1477,7 @@ router.put("/:id", async (req, res) => {
          cliente_calle = COALESCE($18, cliente_calle),
          cliente_localidad = COALESCE($19, cliente_localidad),
          checklist_seguridad = COALESCE($20, checklist_seguridad)
-       WHERE id = $1${hasTUp ? " AND tenant_id = $21" : ""}${btUp}
+       WHERE id = $1${hasTUp ? " AND (tenant_id = $21 OR tenant_id IS NULL)" : ""}${btUp}
        RETURNING *`,
       upParams
     );

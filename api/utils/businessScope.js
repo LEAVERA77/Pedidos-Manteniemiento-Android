@@ -49,6 +49,17 @@ export async function pushPedidoBusinessFilter(req, params) {
 }
 
 /**
+ * Misma intención que {@link pushPedidoBusinessFilter} pero incluye filas legacy con `business_type` NULL
+ * (pedidos creados antes del multitenant o sin rellenar), para que GET/PUT por id no devuelvan 404.
+ */
+export async function pushPedidoBusinessFilterRelaxed(req, params) {
+  if (!req?.businessTypeFilterEnabled || !req?.activeBusinessType) return "";
+  if (!(await pedidosHasBusinessTypeColumn())) return "";
+  params.push(req.activeBusinessType);
+  return ` AND (business_type IS NULL OR business_type = $${params.length})`;
+}
+
+/**
  * Carga `active_business_type` del tenant y habilita filtro si existen columnas en BD.
  */
 export async function loadTenantBusinessContext(tenantId) {
