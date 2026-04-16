@@ -2383,8 +2383,25 @@ async function promptAdminTipoNegocioWebIfNeeded(force = false) {
     const modal = document.getElementById('modal-admin-tipo-negocio');
     const sel = document.getElementById('admin-sesion-tipo');
     if (!modal || !sel) return;
+    let tipoDesdeServidor = '';
+    try {
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (tok) {
+            const rb = await fetch(apiUrl('/api/tenant/businesses'), {
+                headers: { Authorization: `Bearer ${tok}` }
+            });
+            if (rb.ok) {
+                const jd = await rb.json().catch(() => ({}));
+                const act = String(jd?.active_business_type || '').trim();
+                if (act === 'electricidad') tipoDesdeServidor = 'cooperativa_electrica';
+                else if (act === 'agua') tipoDesdeServidor = 'cooperativa_agua';
+                else if (act === 'municipio') tipoDesdeServidor = 'municipio';
+            }
+        }
+    } catch (_) {}
     const actual = String(window.EMPRESA_CFG?.tipo || '').trim();
-    sel.value = actual || '';
+    sel.value = actual || tipoDesdeServidor || '';
     return new Promise((resolve) => {
         _resolveAdminTipoModal = resolve;
         modal.classList.add('active');
@@ -2493,7 +2510,23 @@ async function confirmarAdminTipoNegocioWeb() {
                 });
                 if (!sw.ok) {
                     const er = await sw.json().catch(() => ({}));
-                    if (sw.status !== 404) {
+                    if (sw.status === 404) {
+                        const w = await fetch(apiUrl('/api/setup/wizard'), {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                                tenant_nombre: String(window.EMPRESA_CFG?.nombre || '').trim() || undefined,
+                                business_type: businessSel
+                            })
+                        });
+                        if (!w.ok) {
+                            const ew = await w.json().catch(() => ({}));
+                            throw new Error(ew.error || ew.detail || `wizard HTTP ${w.status}`);
+                        }
+                    } else {
                         throw new Error(er.error || er.detail || `switch-business HTTP ${sw.status}`);
                     }
                 }
