@@ -3,12 +3,16 @@
  * Si no está definida, el default en código es **`meta`**; `api/.env.example` plantea **`whapi`** para Whapi.cloud en campo.
  *
  * - **Whapi:** `WHAPI_*` + `POST /api/webhooks/whatsapp/whapi` — `api/services/whapiWhatsapp.js`
- * - **Meta:** credenciales globales o por tenant en `clientes.configuracion` + `POST /api/webhooks/whatsapp/meta`
+ * - **Meta:** credenciales globales o por tenant en `clientes.configuracion` + `POST /api/webhooks/whatsapp/meta` (`META_PHONE_NUMBER_ID`, `META_ACCESS_TOKEN`, opcional `META_WABA_ID` para logs/validación webhook)
  * Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`
  */
 
 import { query } from "../db/neon.js";
-import { sendWhatsAppTextWithCredentials, normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
+import {
+  getMetaWabaIdFromEnv,
+  sendWhatsAppTextWithCredentials,
+  normalizeWhatsAppRecipientForMeta,
+} from "./metaWhatsapp.js";
 import { sendText as sendEvolutionText } from "./evolutionWhatsapp.js";
 import {
   ensureSessionExists,
@@ -242,10 +246,12 @@ export async function sendBotWhatsAppText({
   }
 
   const botCredentialOrder = metaBotCredentialsOrder();
+  const wabaId = getMetaWabaIdFromEnv();
   console.log("[whatsapp-service] bot Meta credentials", {
     tenantId,
     webhookPhoneNumberId: pid || null,
     graphPhoneId,
+    ...(wabaId ? { wabaId } : {}),
     tokenSource,
     botCredentialOrder,
     neonClienteIdIfConfig: byWebhook?.neonClienteId ?? null,

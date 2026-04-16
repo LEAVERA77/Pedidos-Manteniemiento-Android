@@ -7,6 +7,20 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
+/**
+ * Identificador de la cuenta WhatsApp Business (WABA) en Business Manager.
+ * No sustituye a `META_PHONE_NUMBER_ID` en Graph (`/{phone-number-id}/messages`); sirve para logs y comprobar el webhook (`entry.id`).
+ */
+export function getMetaWabaIdFromEnv() {
+  const w = String(process.env.META_WABA_ID || "").trim();
+  return w || null;
+}
+
+function metaWabaLogFields() {
+  const wabaId = getMetaWabaIdFromEnv();
+  return wabaId ? { wabaId } : {};
+}
+
 /** Base Graph API (producción: https://graph.facebook.com). Emulador local: p. ej. http://localhost:4004 — sin barra final. */
 function metaGraphBaseUrl() {
   const raw = String(process.env.META_GRAPH_URL || "https://graph.facebook.com").trim();
@@ -134,6 +148,7 @@ export async function sendWhatsAppTextWithCredentials(
 
   console.log("[meta-whatsapp][outbound]", {
     purpose: purposeTag,
+    ...metaWabaLogFields(),
     rawIn: maskWaDigitsForLog(rawTo),
     toOut: maskWaDigitsForLog(to),
     normalizedChanged: to !== rawTo,
@@ -163,6 +178,7 @@ export async function sendWhatsAppTextWithCredentials(
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] Graph API error", {
       purpose: purposeTag,
+      ...metaWabaLogFields(),
       rawIn: maskWaDigitsForLog(rawTo),
       toOut: maskWaDigitsForLog(to),
       status: resp.status,
@@ -187,6 +203,7 @@ export async function sendWhatsAppTextWithCredentials(
   }
   console.log("[meta-whatsapp] mensaje enviado OK", {
     purpose: purposeTag,
+    ...metaWabaLogFields(),
     toOut: maskWaDigitsForLog(to),
     messageId: graph?.messages?.[0]?.id || "—",
   });
@@ -257,7 +274,12 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     });
     return { ok: false, error: "invalid_destination_length" };
   }
-  console.log("[meta-whatsapp][outbound-interactive]", { purpose: purposeTag, rawIn: maskWaDigitsForLog(rawTo), toOut: maskWaDigitsForLog(to) });
+  console.log("[meta-whatsapp][outbound-interactive]", {
+    purpose: purposeTag,
+    ...metaWabaLogFields(),
+    rawIn: maskWaDigitsForLog(rawTo),
+    toOut: maskWaDigitsForLog(to),
+  });
   if (list.length > 10) {
     return { ok: false, error: "too_many_rows" };
   }
@@ -311,6 +333,7 @@ export async function sendWhatsAppInteractiveListWithCredentials(
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] interactive list error", {
       purpose: purposeTag,
+      ...metaWabaLogFields(),
       rawIn: maskWaDigitsForLog(rawTo),
       toOut: maskWaDigitsForLog(to),
       status: resp.status,
@@ -327,7 +350,11 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     console.error("[meta-whatsapp] interactive list body error", graph.error);
     return { ok: false, status: resp.status || 502, graph };
   }
-  console.log("[meta-whatsapp] lista interactiva OK", { to: to.slice(0, 4) + "…", n: list.length });
+  console.log("[meta-whatsapp] lista interactiva OK", {
+    ...metaWabaLogFields(),
+    to: to.slice(0, 4) + "…",
+    n: list.length,
+  });
   return { ok: true, graph };
 }
 

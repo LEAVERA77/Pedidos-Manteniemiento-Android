@@ -2,7 +2,11 @@ import crypto from "crypto";
 import express from "express";
 import { handleInboundMetaWhatsAppPayload } from "../services/whatsappBotMeta.js";
 import { logWhatsappMensajeRecibido } from "../services/whatsappNotificacionesLog.js";
-import { normalizeWhatsAppRecipientForMeta, maskWaDigitsForLog } from "../services/metaWhatsapp.js";
+import {
+  getMetaWabaIdFromEnv,
+  normalizeWhatsAppRecipientForMeta,
+  maskWaDigitsForLog,
+} from "../services/metaWhatsapp.js";
 
 const router = express.Router();
 
@@ -70,7 +74,29 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
   }
 
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const wabaIdEnv = getMetaWabaIdFromEnv();
   for (const entry of entries) {
+    const entryWabaId = entry?.id != null ? String(entry.id).trim() : "";
+    if (entryWabaId) {
+      if (wabaIdEnv) {
+        if (entryWabaId !== wabaIdEnv) {
+          console.warn("[webhook-meta] entry.id (WABA del webhook) ≠ META_WABA_ID del entorno", {
+            entryId: entryWabaId,
+            metaWabaIdEnv: wabaIdEnv,
+          });
+        } else {
+          console.log("[webhook-meta] waba", {
+            entryId: entryWabaId,
+            metaWabaIdEnv: wabaIdEnv,
+            wabaIdMatch: true,
+          });
+        }
+      } else {
+        console.log("[webhook-meta] waba entry.id (opcional: META_WABA_ID en env para validar coincidencia)", {
+          entryId: entryWabaId,
+        });
+      }
+    }
     const changes = Array.isArray(entry?.changes) ? entry.changes : [];
     for (const change of changes) {
       const value = change?.value || {};

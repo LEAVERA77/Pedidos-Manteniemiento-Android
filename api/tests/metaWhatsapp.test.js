@@ -3,6 +3,7 @@ import {
   normalizeWhatsAppRecipientForMeta,
   decodeWhatsAppListRowId,
   maskWaDigitsForLog,
+  getMetaWabaIdFromEnv,
 } from "../services/metaWhatsapp.js";
 
 describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
@@ -15,6 +16,17 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
+  });
+
+  it("getMetaWabaIdFromEnv devuelve null si META_WABA_ID vacío", () => {
+    delete process.env.META_WABA_ID;
+    expect(getMetaWabaIdFromEnv()).toBeNull();
+  });
+
+  it("getMetaWabaIdFromEnv devuelve el id recortado", () => {
+    process.env.META_WABA_ID = "  1292885429569404  ";
+    expect(getMetaWabaIdFromEnv()).toBe("1292885429569404");
+    delete process.env.META_WABA_ID;
   });
 
   it("549 + móvil AR → 54… cuando strip está activo (default)", () => {
