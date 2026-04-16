@@ -1676,8 +1676,9 @@ async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
     const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
     const url = apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`);
     const headers = { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' };
+    await new Promise((r) => setTimeout(r, 500));
     for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 350 * attempt));
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 400 + 350 * attempt));
         try {
             const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
             if (resp.ok) return;
@@ -6943,6 +6944,10 @@ async function irAMiUbicacionEnMapa() {
 window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
 async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
+    if (typeof window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' && window.gnMapaDebeBloquearCargaPedidoDesdeMapa()) {
+        toast('Primero abrí el aviso de reclamo nuevo arriba.', 'info');
+        return;
+    }
     await ensureMapReady();
     if (!app.map) {
         toast('No se pudo cargar el mapa', 'error');
@@ -10042,6 +10047,7 @@ document.getElementById('cc2').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...';
     try {
+        await asegurarJwtApiRest();
         const telCierre = (document.getElementById('cierre-tel-contacto')?.value || '').trim();
         const camposCierre = {
             estado: 'Cerrado',
@@ -10056,7 +10062,7 @@ document.getElementById('cc2').addEventListener('click', async () => {
         if (telCierre) camposCierre.telefono_contacto = telCierre;
 
         let cerradoViaApi = false;
-        if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
+        if (getApiBaseUrl() && getApiToken() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) {
                 const apiBody = {
@@ -10080,11 +10086,18 @@ document.getElementById('cc2').addEventListener('click', async () => {
         }
         if (!cerradoViaApi) {
             await updPedido(app.cid, camposCierre, app.u?.id);
-            if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
-                const pidNum = parseInt(app.cid, 10);
-                if (Number.isFinite(pidNum) && pidNum > 0) {
-                    void notificarCierreWhatsappApi(pidNum, telCierre || undefined);
-                }
+        }
+        const pidCierre = parseInt(app.cid, 10);
+        if (
+            !modoOffline &&
+            getApiBaseUrl() &&
+            !String(app.cid).startsWith('off_') &&
+            Number.isFinite(pidCierre) &&
+            pidCierre > 0
+        ) {
+            await asegurarJwtApiRest();
+            if (getApiToken()) {
+                await notificarCierreWhatsappApi(pidCierre, telCierre || undefined);
             }
         }
         fotoCierreTemp = null;
@@ -11321,7 +11334,10 @@ function closeAll() {
         if (el) el.checked = false;
     });
     try { limpiarFirmaCierreCanvas(); } catch (_) {}
-    
+    if (_gnMapaBloqueoCargaPedidoBanner === 'detalle') {
+        _gnMapaBloqueoCargaPedidoBanner = null;
+    }
+
     fotoCierreTemp = null;
     const vpc = document.getElementById('vista-previa-foto-cierre');
     if (vpc) vpc.innerHTML = '';
@@ -12476,6 +12492,11 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
 let _pollBannerAdminInterval = null;
+/** null | 'banner' | 'detalle' — bloquea cargar pedido nuevo al tocar el mapa hasta gestionar el aviso superior. */
+let _gnMapaBloqueoCargaPedidoBanner = null;
+window.gnMapaDebeBloquearCargaPedidoDesdeMapa = function () {
+    return _gnMapaBloqueoCargaPedidoBanner != null;
+};
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
 
@@ -12530,7 +12551,8 @@ async function iniciarWatermarkBannerOpinionCliente() {
     }
 }
 
-function ocultarBannerReclamoCliente() {
+function ocultarBannerReclamoCliente(opts) {
+    const hastaDetalle = opts && opts.bloquearHastaCerrarDetalle === true;
     const box = document.getElementById('admin-banner-nuevo-cliente');
     if (box) {
         box.style.display = 'none';
@@ -12539,6 +12561,11 @@ function ocultarBannerReclamoCliente() {
     }
     clearTimeout(_adminBannerTimer);
     _adminBannerTimer = null;
+    if (hastaDetalle) {
+        _gnMapaBloqueoCargaPedidoBanner = 'detalle';
+    } else if (_gnMapaBloqueoCargaPedidoBanner === 'banner') {
+        _gnMapaBloqueoCargaPedidoBanner = null;
+    }
 }
 
 function _commitAdminBannerOpinionWatermark() {
@@ -12603,6 +12630,7 @@ async function pollBannerNuevoReclamoCliente() {
         box.style.display = 'flex';
         box.dataset.visible = '1';
         box.dataset.pedidoId = String(nid);
+        _gnMapaBloqueoCargaPedidoBanner = 'banner';
         clearTimeout(_adminBannerTimer);
         _adminBannerTimer = setTimeout(() => ocultarBannerReclamoCliente(), 30000);
     } catch (_) {}
@@ -12758,6 +12786,7 @@ function detenerPollBannerReclamoCliente() {
         _pollBannerAdminInterval = null;
     }
     ocultarBannerReclamoCliente();
+    _gnMapaBloqueoCargaPedidoBanner = null;
     ocultarBannerOpinionCliente();
 }
 
@@ -12779,7 +12808,7 @@ function iniciarPollBannerReclamoCliente() {
 async function adminBannerClickVerDetalle() {
     const box = document.getElementById('admin-banner-nuevo-cliente');
     const pid = box?.dataset?.pedidoId;
-    ocultarBannerReclamoCliente();
+    ocultarBannerReclamoCliente({ bloquearHastaCerrarDetalle: true });
     if (!pid) return;
     let p = app.p.find(x => String(x.id) === String(pid));
     if (!p && _sql && NEON_OK) {

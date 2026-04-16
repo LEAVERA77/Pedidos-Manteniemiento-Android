@@ -21,7 +21,7 @@ import {
   startSession as startWahaSession,
 } from "./wahaWhatsapp.js";
 import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
-import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
+import { logWhatsappMensajeEnviado, tieneNotificacionCierrePedidoReciente } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
 function whatsappProvider() {
@@ -442,6 +442,10 @@ export async function notifyPedidoCierreWhatsAppSafe({
       tenantId,
     });
     return { sent: false, skipped: true, reason: "no_phone" };
+  }
+
+  if (await tieneNotificacionCierrePedidoReciente(pedidoId, 3)) {
+    return { sent: false, skipped: true, reason: "dedup_recent_cierre" };
   }
 
   const np = String(numeroPedido || "").trim() || `#${pedidoId}`;

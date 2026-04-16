@@ -132,28 +132,25 @@ function scheduleNotifyAltaReclamoWhatsApp(row, userId) {
   });
 }
 
-function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
-  setImmediate(() => {
-    (async () => {
-      try {
-        const tenantId =
-          row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
-            ? Number(row.tenant_id)
-            : await getUserTenantId(userId);
-        const nombreEntidad = await loadNombreCliente(tenantId);
-        const phone = bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
-        await notifyPedidoCierreWhatsAppSafe({
-          tenantId,
-          numeroPedido: row.numero_pedido,
-          nombreEntidad,
-          telefonoContactoRaw: phone,
-          pedidoId: row.id,
-        });
-      } catch (e) {
-        console.error("[pedidos] notify cierre WA (no bloqueante)", e.message);
-      }
-    })();
-  });
+async function notifyCierreWhatsAppAfterPut(row, bodyTelefono, userId) {
+  try {
+    const tenantId =
+      row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
+        ? Number(row.tenant_id)
+        : await getUserTenantId(userId);
+    const nombreEntidad = await loadNombreCliente(tenantId);
+    const phone = bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
+    return await notifyPedidoCierreWhatsAppSafe({
+      tenantId,
+      numeroPedido: row.numero_pedido,
+      nombreEntidad,
+      telefonoContactoRaw: phone,
+      pedidoId: row.id,
+    });
+  } catch (e) {
+    console.error("[pedidos] notify cierre WA", e.message);
+    return { sent: false, skipped: false, error: e.message };
+  }
 }
 
 /** Avisar al cliente (tel. del pedido) cuando el técnico o admin pasa a ejecución o actualiza avance. */
@@ -1475,7 +1472,7 @@ router.put("/:id", async (req, res) => {
     const becameCerrado =
       String(updated?.estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
     if (becameCerrado) {
-      scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
+      await notifyCierreWhatsAppAfterPut(updated, telefono_contacto, req.user.id);
       setImmediate(() => {
         enqueueNotificacionPedidoCerradoParaTecnico({
           tecnicoUsuarioId: pedido.tecnico_asignado_id,

@@ -533,6 +533,16 @@ export async function runInitMap() {
             if (typeof until === 'number' && Date.now() < until) return;
         } catch (_) {}
 
+        try {
+            if (
+                typeof ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' &&
+                ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa()
+            ) {
+                ctx.toast('Primero abrí el aviso de reclamo nuevo arriba.', 'info');
+                return;
+            }
+        } catch (_) {}
+
         if (ctx._modoFijarUbicacionAdmin) {
             ctx._modoFijarUbicacionAdmin = false;
             ctx.document.body.classList.remove('modo-fijar-ubicacion');
