@@ -2867,12 +2867,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       );
       return;
     }
-    await reply(
-      phone,
-      `No reconocí el mensaje.\n\n` + textoBienvenidaYAyuda(ctx),
-      tid,
-      phoneNumberId
-    );
+    // Cualquier otro texto en idle: mismo menú interactivo que Hola/menú (facilita escribir al número de Meta sin palabra clave).
+    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
     return;
   }
 
