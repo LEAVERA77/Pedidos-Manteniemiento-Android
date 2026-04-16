@@ -22,27 +22,31 @@ function argentinaStripEnabledFromEnv() {
 }
 
 /**
- * Insertar 9 móvil tras +54 cuando falta (543… → 549…). Por defecto ACTIVO en **outbound**:
- * contactos guardados sin 9 y envíos a terceros (ENERSA) lo requieren.
- * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
+ * Insertar 9 móvil tras +54 cuando falta (543… → 549…) en **outbound**.
+ * Por defecto **desactivado** (alineado con `api/.env.example`): en Meta **Development/sandbox**
+ * la lista de destinatarios suele coincidir con el mismo dígito que tras strip (543…); si reinsertamos
+ * 549… Graph puede devolver **131030**. Activar solo si tu WABA/Graph exige 549 en producción (p. ej. ENERSA).
+ * Activar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true
  */
 function argentinaInsertMobileNineEnabledFromEnv() {
   const v = process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
-  if (v == null || String(v).trim() === "") return true;
+  if (v == null || String(v).trim() === "") return false;
   const s = String(v).trim().toLowerCase();
-  if (["0", "false", "no", "off"].includes(s)) return false;
-  return true;
+  if (["1", "true", "yes", "on"].includes(s)) return true;
+  return false;
 }
 
 /**
- * Graph API `to` (Argentina): el webhook manda 549 + área + abonado; la lista de prueba de Meta
- * suele registrar 54 + área + abonado (sin el 9) → 131030 si no normalizamos.
+ * Graph API `to` (Argentina): el webhook manda 549 + área + abonado. Tras strip queda 543…; en **sandbox**
+ * Meta suele validar el destino contra la lista en formato **sin** reinsertar el 9. Por defecto **no** reinsertamos
+ * 9 en outbound (`META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9` vacío = false). Activá insert solo si tu entorno
+ * productivo lo exige.
  *
- * Por defecto: quitar un 9 tras 54 (549… → 54…). Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
+ * Por defecto: quitar un 9 tras 54 (549… → 543…). Desactivar strip solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
  *
  * **Modos:**
  * - `inbound` (default): solo strip; NO insertar 9. Identidad/sesión/webhook/`wa_id` (debe ser estable).
- * - `outbound`: strip + inserción 543…→549… cuando aplica (derivación ENERSA, envíos Graph).
+ * - `outbound`: strip; inserción 543…→549… solo si `META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true`.
  *
  * @param {string} digits
  * @param {{ mode?: 'inbound' | 'outbound' }} [opts]
@@ -171,7 +175,7 @@ export async function sendWhatsAppTextWithCredentials(
     }
     if (graph?.error?.code === 131030) {
       console.error(
-        "[meta-whatsapp] (#131030) Meta rechazó el envío: el número de destino no está en la lista de destinatarios de prueba (o la app no está en Live). El destino en logs (toOut.tail4) coincide con quien escribió; agregá ese WhatsApp en Meta for Developers → WhatsApp → API setup (Phone numbers / lista de prueba) o publicá la app."
+        "[meta-whatsapp] (#131030) Meta rechazó el envío: lista de prueba / no Live, o formato `to` distinto al registrado (AR sandbox: suele coincidir 543… sin 9). Revisá API Setup → destinatarios; si el número está verificado y sigue fallando, mantené META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false (default) o probá explícitamente false; para Graph que exija 549… en prod: true."
       );
     }
     const summary = graph?.error?.message ? String(graph.error.message).slice(0, 520) : `http_${resp.status}`;
