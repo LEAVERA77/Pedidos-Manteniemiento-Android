@@ -5,7 +5,7 @@
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
 import {
-  nominatimHeaders,
+  nominatimFetch,
   nominatimProxySearch,
   nominatimProxyReverseRaw,
   throttleIntervalMs,
@@ -64,7 +64,7 @@ router.get("/health", async (_req, res) => {
   const url = `${baseUrl}/search?format=json&q=Rosario%20Argentina&limit=1`;
   const t0 = Date.now();
   try {
-    const r = await fetch(url, { headers: nominatimHeaders() });
+    const r = await nominatimFetch(url);
     const ms = Date.now() - t0;
     const ok = r.ok;
     let sampleCount = null;

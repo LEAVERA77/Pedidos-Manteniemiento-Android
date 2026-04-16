@@ -16,8 +16,9 @@
 
 - `NOMINATIM_WHATSAPP_SEARCH_MODE` — p. ej. `free-form` para el pipeline WhatsApp.
 - `NOMINATIM_FETCH_TIMEOUT_MS` — timeout de fetch hacia Nominatim.
-- `NOMINATIM_FROM_EMAIL` / `NOMINATIM_FROM` — si aplica política de uso de OSM/Nominatim.
-- `NOMINATIM_ACCEPT` — opcional; por defecto la API usa `application/json, */*` (evita **HTTP 406** en algunos proxy delante de Nominatim en Oracle).
+- `NOMINATIM_FROM_EMAIL` / `NOMINATIM_FROM` — **recomendado** en producción (contacto OSM). Si no están definidos, la API **no** envía `From` (un `From` con dominio `.local` u opcional mal validado delante del proxy puede causar **HTTP 406**).
+- `NOMINATIM_ACCEPT` — opcional; por defecto `*/*`.
+- `NOMINATIM_DISABLE_406_RETRY` — si `1`, no reintenta tras 406 con cabeceras mínimas (solo diagnóstico).
 - `DEBUG_NOMINATIM` — solo desarrollo; en producción suele ir vacío o `0`.
 - Resto de secretos Neon, Meta, JWT, etc. **no tocar** salvo checklist de migración.
 
