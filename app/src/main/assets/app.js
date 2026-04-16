@@ -1087,6 +1087,135 @@ async function actualizarProvinciaTenantDesdeCoords(lat, lng) {
     }
 }
 
+function initCommunityBroadcastFab() {
+    if (!esAdmin() || document.getElementById('gn-fab-community-root')) return;
+    const root = document.createElement('div');
+    root.id = 'gn-fab-community-root';
+    root.style.cssText =
+        'position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-family:system-ui,sans-serif';
+    root.innerHTML = `
+<button type="button" id="gn-fab-community-hide" title="Ocultar" style="font-size:.7rem;padding:2px 6px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569">−</button>
+<button type="button" id="gn-fab-community-btn" title="Aviso a la comunidad" style="width:52px;height:52px;border-radius:50%;border:none;background:#128C7E;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;font-size:1.35rem">📢</button>
+<div id="gn-fab-community-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9998;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+    <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
+    <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
+    <label style="font-size:.78rem;font-weight:600">Título</label>
+    <input id="gn-bc-titulo" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" />
+    <label style="font-size:.78rem;font-weight:600">Mensaje <span style="color:#64748b">({ciudad} {fecha} {horario} {direccion} {telefono})</span></label>
+    <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1"></textarea>
+    <label style="font-size:.78rem;display:flex;align-items:center;gap:.35rem"><input type="checkbox" id="gn-bc-corte" /> Corte programado (solo electricidad/agua)</label>
+    <div id="gn-bc-corte-fields" style="display:none;margin-top:.45rem;font-size:.78rem">
+      <input id="gn-bc-zona" placeholder="Zona afectada" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
+      <input id="gn-bc-fi" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
+      <input id="gn-bc-ff" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
+      <input id="gn-bc-mot" placeholder="Motivo" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.6rem">
+      <button type="button" id="gn-bc-cancel" class="ba2" style="background:#e2e8f0;border-color:#cbd5e1;color:#334155">Cancelar</button>
+      <button type="button" id="gn-bc-send" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E">Enviar</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(root);
+    let drag = false;
+    let dx = 0;
+    let dy = 0;
+    const btn = root.querySelector('#gn-fab-community-btn');
+    btn.addEventListener('mousedown', (e) => {
+        drag = true;
+        dx = e.clientX - root.offsetLeft;
+        dy = e.clientY - root.offsetTop;
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!drag) return;
+        root.style.left = `${e.clientX - dx}px`;
+        root.style.top = `${e.clientY - dy}px`;
+        root.style.right = 'auto';
+        root.style.bottom = 'auto';
+    });
+    window.addEventListener('mouseup', () => {
+        drag = false;
+    });
+    root.querySelector('#gn-fab-community-hide').onclick = () => {
+        root.style.display = 'none';
+    };
+    btn.onclick = () => {
+        document.getElementById('gn-fab-community-modal').style.display = 'flex';
+    };
+    const modal = root.querySelector('#gn-fab-community-modal');
+    modal.querySelector('#gn-bc-cancel').onclick = () => {
+        modal.style.display = 'none';
+    };
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.style.display = 'none';
+    };
+    const chkCorte = modal.querySelector('#gn-bc-corte');
+    const corteFields = modal.querySelector('#gn-bc-corte-fields');
+    chkCorte.addEventListener('change', () => {
+        corteFields.style.display = chkCorte.checked ? 'block' : 'none';
+    });
+    modal.querySelector('#gn-bc-send').onclick = async () => {
+        const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
+        const mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
+        if (!mensaje) {
+            toast('Completá el mensaje', 'warning');
+            return;
+        }
+        if (!confirm('¿Confirmás el envío masivo por WhatsApp a los contactos de pedidos?')) return;
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) {
+            toast('Sin sesión API', 'error');
+            return;
+        }
+        const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` };
+        const business_type =
+            String(window.EMPRESA_CFG?.active_business_type || '').trim() ||
+            (normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua'
+                ? 'agua'
+                : normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio'
+                  ? 'municipio'
+                  : 'electricidad');
+        try {
+            if (chkCorte.checked) {
+                const zona = (modal.querySelector('#gn-bc-zona').value || '').trim();
+                const motivo = (modal.querySelector('#gn-bc-mot').value || '').trim();
+                const fi = modal.querySelector('#gn-bc-fi').value;
+                const ff = modal.querySelector('#gn-bc-ff').value;
+                const r = await fetch(apiUrl('/api/whatsapp/broadcast/corte-programado'), {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        confirm: true,
+                        business_type,
+                        zona_afectada: zona,
+                        motivo,
+                        fecha_inicio: fi || null,
+                        fecha_fin: ff || null,
+                        mensaje,
+                    }),
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
+                toast('Corte programado enviado', 'success');
+            } else {
+                const r = await fetch(apiUrl('/api/whatsapp/broadcast/community'), {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ confirm: true, titulo, mensaje, business_type }),
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
+                toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
+            }
+            modal.style.display = 'none';
+        } catch (e) {
+            toast(String(e.message || e), 'error');
+        }
+    };
+}
+
 async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
     if (!esAdmin() || !getApiToken()) return;
     try {
@@ -1107,6 +1236,17 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             }
         }
         aplicarConfiguracionJsonClienteEnEmpresaCfg(conf && typeof conf === 'object' ? conf : {});
+        const cli = data?.cliente;
+        if (cli && typeof cli === 'object') {
+            window.EMPRESA_CFG = {
+                ...(window.EMPRESA_CFG || {}),
+                tipo: cli.tipo != null ? cli.tipo : window.EMPRESA_CFG?.tipo,
+                active_business_type: cli.active_business_type != null ? cli.active_business_type : window.EMPRESA_CFG?.active_business_type,
+            };
+        }
+        try {
+            initCommunityBroadcastFab();
+        } catch (_) {}
     } catch (_) {}
 }
 
@@ -1131,6 +1271,35 @@ function actualizarBotonesWhatsappDerivacionesUi() {
 }
 
 let _cfgDerivWaInputBound = false;
+(function bindPersistenciaTextosDerivacion() {
+    try {
+        document.addEventListener(
+            'input',
+            (ev) => {
+                const t = ev.target;
+                if (!t || !t.id) return;
+                if (t.id === 'admin-derivar-motivo') {
+                    const dm = document.getElementById('dm');
+                    const pid = dm?.dataset?.detallePedidoId;
+                    if (pid) {
+                        try {
+                            sessionStorage.setItem('gn-admin-deriv-motivo-' + pid, t.value);
+                        } catch (_) {}
+                    }
+                    return;
+                }
+                if (String(t.id).startsWith('tec-sol-deriv-motivo-')) {
+                    const pid = String(t.id).replace('tec-sol-deriv-motivo-', '');
+                    try {
+                        sessionStorage.setItem('gn-tec-deriv-motivo-' + pid, t.value);
+                    } catch (_) {}
+                }
+            },
+            true
+        );
+    } catch (_) {}
+})();
+
 function bindDerivacionesFormInputsOnce() {
     if (_cfgDerivWaInputBound) return;
     _cfgDerivWaInputBound = true;
@@ -1249,6 +1418,11 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
     if (p.tai == null || String(p.tai) !== uid) return '';
     const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    let borradorTec = '';
+    try {
+        borradorTec = sessionStorage.getItem('gn-tec-deriv-motivo-' + p.id) || '';
+    } catch (_) {}
+    const taIniTec = borradorTec ? escD(borradorTec) : '';
     if (p.sdpen) {
         const fxs = p.sdf ? fmtInformeFecha(p.sdf) : '—';
         return `<div class="ds" style="border-left:4px solid #f59e0b">
@@ -1262,7 +1436,7 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
         <h4>🛠 Solicitar derivación a terceros</h4>
         <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y arma el mismo texto que se envía por WhatsApp al contacto configurado.</p>
         <label style="font-size:.76rem;font-weight:600">Observaciones de campo <span style="color:var(--re)">*</span> <span style="font-weight:500;color:var(--tl)">(mín. 8 caracteres)</span></label>
-        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…)."></textarea>
+        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…).">${taIniTec}</textarea>
         <button type="button" class="ba2 p2" onclick="solicitarDerivacionTerceroDesdeTecnico('${pidEsc}')"><i class="fas fa-paper-plane"></i> Enviar solicitud al administrador</button>
     </div>`;
 }
@@ -2189,40 +2363,37 @@ async function confirmarAdminTipoNegocioWeb() {
                 const cambiaRubroServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
 
+                const mapTipoABusiness = (t) => {
+                    const n = normalizarRubroEmpresa(t);
+                    if (n === 'cooperativa_agua') return 'agua';
+                    if (n === 'municipio') return 'municipio';
+                    return 'electricidad';
+                };
+                const businessSel = mapTipoABusiness(tipo);
+
                 if (cambiaRubroServidor) {
-                    const reentry = !!window.__PMG_RUBRO_REENTRY__;
-                    if (reentry) {
-                        if (
-                            !confirm(
-                                'Al cambiar el rubro en el servidor se borrarán todos los socios del catálogo y todos los usuarios salvo administradores.\n\n¿Continuar? (1/2)'
-                            )
-                        ) {
-                            toast('Cambio cancelado', 'warning');
-                            return;
-                        }
-                        if (
-                            !confirm(
-                                'Última confirmación (2/2): se eliminarán datos en la base del tenant (socios y usuarios no admin). ¿Confirmás?'
-                            )
-                        ) {
-                            toast('Cambio cancelado', 'warning');
-                            return;
-                        }
-                    } else {
-                        if (
-                            !confirm(
-                                'Al guardar un rubro distinto al del servidor se borrarán el catálogo de socios y los usuarios que no son administrador. ¿Continuar?'
-                            )
-                        ) {
-                            toast('Cambio cancelado', 'warning');
-                            return;
-                        }
+                    if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
+                        toast('Cambio cancelado', 'warning');
+                        return;
                     }
                 }
 
-                const bodyObj = { tipo };
-                if (cambiaRubroServidor) bodyObj.purge_datos_cambio_rubro = true;
+                const sw = await fetch(apiUrl('/api/tenant/switch-business'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ business_type: businessSel })
+                });
+                if (!sw.ok) {
+                    const er = await sw.json().catch(() => ({}));
+                    if (sw.status !== 404) {
+                        throw new Error(er.error || er.detail || `switch-business HTTP ${sw.status}`);
+                    }
+                }
 
+                const bodyObj = { tipo, active_business_type: businessSel };
                 const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
                     method: 'PUT',
                     headers: {
@@ -9982,6 +10153,9 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
         offlinePedidosSave(app.p);
         render();
         cerrarModalDerivacionPreviewAdmin();
+        try {
+            sessionStorage.removeItem('gn-admin-deriv-motivo-' + pidNum);
+        } catch (_) {}
         if (waOk) {
             toast('Derivación registrada. El mensaje se envió al tercero por WhatsApp (servidor).', 'success');
         } else {
@@ -10045,6 +10219,9 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         offlinePedidosSave(app.p);
         render();
         toast('Solicitud enviada al administrador.', 'success');
+        try {
+            sessionStorage.removeItem('gn-tec-deriv-motivo-' + pidNum);
+        } catch (_) {}
         try {
             const dm = document.getElementById('dm');
             if (dm) {
@@ -10484,6 +10661,12 @@ async function detalle(p) {
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        let motivoAdminTa = p.sdm ? escDet(p.sdm) : '';
+        try {
+            const bk = 'gn-admin-deriv-motivo-' + p.id;
+            const sv = sessionStorage.getItem(bk);
+            if (sv != null && String(sv).length) motivoAdminTa = escDet(sv);
+        } catch (_) {}
         const sdmMot = String(p.sdm || '').trim();
         const bloqueMotivoTecnicoDer = sdmMot
             ? `<div style="font-size:.8rem;margin:0 0 .45rem;padding:.5rem;background:rgba(14,165,233,.08);border:1px solid var(--bo);border-radius:.45rem;white-space:pre-wrap;line-height:1.45"><strong>Motivo del técnico</strong> (referencia; editable debajo)<br>${escDet(sdmMot)}</div>`
@@ -10512,7 +10695,7 @@ async function detalle(p) {
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
             ${bloqueMotivoTecnicoDer}
-            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
+            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${motivoAdminTa}</textarea></div>
             <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y enviar (servidor)</button>
         </div>`;
     }

@@ -64,17 +64,35 @@ export async function tableHasColumn(tableName, columnName) {
   }
 }
 
-/** Pedido por id acotado al tenant cuando `pedidos.tenant_id` existe. */
-export async function getPedidoRowInTenant(pedidoId, tenantId) {
+/**
+ * Pedido por id acotado al tenant cuando `pedidos.tenant_id` existe.
+ * @param {import('express').Request} [req] — si viene, aplica filtro `business_type` activo.
+ */
+export async function getPedidoRowInTenant(pedidoId, tenantId, req = null) {
   const id = Number(pedidoId);
   const tid = Number(tenantId);
   if (!Number.isFinite(id) || id < 1) return null;
   if (await pedidosTableHasTenantIdColumn()) {
     if (!Number.isFinite(tid) || tid < 1) return null;
-    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [id, tid]);
+    const params = [id, tid];
+    let extra = "";
+    if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await tableHasColumn("pedidos", "business_type"))) {
+      params.push(req.activeBusinessType);
+      extra = ` AND business_type = $${params.length}`;
+    }
+    const r = await query(
+      `SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2${extra} LIMIT 1`,
+      params
+    );
     return r.rows[0] || null;
   }
-  const r = await query(`SELECT * FROM pedidos WHERE id = $1 LIMIT 1`, [id]);
+  const params = [id];
+  let extra = "";
+  if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await tableHasColumn("pedidos", "business_type"))) {
+    params.push(req.activeBusinessType);
+    extra = ` AND business_type = $${params.length}`;
+  }
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1${extra} LIMIT 1`, params);
   return r.rows[0] || null;
 }
 

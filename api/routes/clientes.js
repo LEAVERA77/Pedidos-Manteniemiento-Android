@@ -1,15 +1,17 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
+import { tableHasColumn } from "../utils/tenantScope.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
+import { normalizeBusinessTypeInput } from "../services/businessType.js";
+import { rubroEfectivoParaTipos } from "../utils/businessScope.js";
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
-import { purgeSociosCatalogoAndNonAdminUsersForTenant } from "../services/rubroChangePurge.js";
 
 const router = express.Router();
 
@@ -30,8 +32,10 @@ function parseConfiguracionDb(val) {
 router.get("/mi-configuracion", authWithTenantHost, async (req, res) => {
   try {
     const tenantId = req.tenantId;
+    const hasAbt = await tableHasColumn("clientes", "active_business_type");
     const r = await query(
       `SELECT id, nombre, tipo, plan, configuracion, activo, fecha_registro, fecha_actualizacion, barrio
+              ${hasAbt ? ", active_business_type" : ""}
        FROM clientes
        WHERE id = $1
        LIMIT 1`,
@@ -53,7 +57,8 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
 
     const tenantId = req.tenantId;
     const body = req.body || {};
-    const { nombre, tipo, latitud, longitud, configuracion: configuracionBody } = body;
+    const { nombre, tipo, latitud, longitud, configuracion: configuracionBody, active_business_type: activeBusinessBody } =
+      body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;
     const barrioIn = Object.prototype.hasOwnProperty.call(body, "barrio") ? body.barrio : undefined;
 
@@ -73,28 +78,6 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
     const rTipoNow = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
     if (!rTipoNow.rows.length) {
       return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
-    }
-    const prevNorm = normalizarRubroCliente(rTipoNow.rows[0].tipo);
-    const purgeFlag =
-      body.purge_datos_cambio_rubro === true ||
-      body.purge_datos_cambio_rubro === 1 ||
-      String(body.purge_datos_cambio_rubro || "").toLowerCase() === "true";
-    if (tipoDb != null && prevNorm && tipoDb !== prevNorm) {
-      if (!purgeFlag) {
-        return res.status(400).json({
-          error:
-            "Cambiar el rubro en el servidor borra el catálogo de socios y los usuarios que no son administrador. Confirmá en el asistente y reintentá con purge_datos_cambio_rubro.",
-          code: "PURGE_DATOS_CAMBIO_RUBRO_REQUIRED",
-        });
-      }
-      try {
-        await purgeSociosCatalogoAndNonAdminUsersForTenant(tenantId);
-      } catch (e) {
-        return res.status(400).json({
-          error: e?.message || "No se pudo vaciar datos del tenant",
-          code: "PURGE_DATOS_CAMBIO_RUBRO_FAILED",
-        });
-      }
     }
 
     const Inc =
@@ -142,7 +125,20 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       }
     }
 
+    let activeBtSql = "";
     const params = [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)];
+    if (
+      (await tableHasColumn("clientes", "active_business_type")) &&
+      activeBusinessBody !== undefined &&
+      activeBusinessBody !== null &&
+      String(activeBusinessBody).trim() !== ""
+    ) {
+      const ab = normalizeBusinessTypeInput(activeBusinessBody);
+      if (ab) {
+        params.push(ab);
+        activeBtSql = `, active_business_type = $${params.length}`;
+      }
+    }
     let sqlBarrio = "";
     if (barrioIn !== undefined) {
       const bv = barrioIn === null || barrioIn === "" ? null : String(barrioIn).trim();
@@ -155,6 +151,7 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
        SET nombre = COALESCE($2, nombre),
            tipo = COALESCE($3, tipo),
            configuracion = COALESCE(configuracion, '{}'::jsonb) || $4::jsonb
+           ${activeBtSql}
            ${sqlBarrio},
            fecha_actualizacion = NOW()
        WHERE id = $1
@@ -196,12 +193,11 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
 router.get("/tipos-reclamo", authWithTenantHost, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const r = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
-    const tipoCliente = r.rows?.[0]?.tipo ?? null;
+    const rubro = rubroEfectivoParaTipos(req);
     return res.json({
       tenant_id: tenantId,
-      tipo_cliente: tipoCliente,
-      tipos: tiposReclamoParaClienteTipo(tipoCliente),
+      tipo_cliente: rubro,
+      tipos: tiposReclamoParaClienteTipo(rubro),
       legacy_tipos: TIPOS_RECLAMO_LEGACY,
     });
   } catch (error) {

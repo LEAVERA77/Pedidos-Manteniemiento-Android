@@ -3,6 +3,7 @@ import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { parsePeriod } from "../utils/helpers.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
+import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -11,6 +12,8 @@ router.get("/resumen", async (req, res) => {
   try {
     const since = parsePeriod(req.query.periodo);
     const hasT = await pedidosTableHasTenantIdColumn();
+    const paramsR = hasT ? [req.tenantId] : [];
+    const btR = await pushPedidoBusinessFilter(req, paramsR);
     const r = hasT
       ? await query(
           `SELECT
@@ -23,8 +26,8 @@ router.get("/resumen", async (req, res) => {
         COUNT(*) FILTER (WHERE estado='Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy,
         AVG(EXTRACT(EPOCH FROM (fecha_cierre-fecha_creacion))/3600) FILTER (WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL) AS horas_prom_cierre
       FROM pedidos
-      WHERE fecha_creacion >= ${since} AND tenant_id = $1`,
-          [req.tenantId]
+      WHERE fecha_creacion >= ${since} AND tenant_id = $1${btR}`,
+          paramsR
         )
       : await query(
           `SELECT
@@ -37,7 +40,8 @@ router.get("/resumen", async (req, res) => {
         COUNT(*) FILTER (WHERE estado='Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy,
         AVG(EXTRACT(EPOCH FROM (fecha_cierre-fecha_creacion))/3600) FILTER (WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL) AS horas_prom_cierre
       FROM pedidos
-      WHERE fecha_creacion >= ${since}`
+      WHERE fecha_creacion >= ${since}${btR || ""}`,
+          paramsR
         );
     res.json(r.rows[0] || {});
   } catch (error) {
@@ -50,53 +54,55 @@ router.get("/graficos", async (req, res) => {
     const since = parsePeriod(req.query.periodo);
     const hasT = await pedidosTableHasTenantIdColumn();
     const tid = req.tenantId;
-    const tsql = hasT ? ` AND tenant_id = $1` : "";
     const p = hasT ? [tid] : [];
+    const btG = await pushPedidoBusinessFilter(req, p);
+    const tsql = hasT ? ` AND tenant_id = $1` : "";
+    const btP = btG ? btG.replace(/\bbusiness_type\b/g, "p.business_type") : "";
 
     const [porMes, porEstado, porPrioridad, porDistribuidor, porTipo, porTecnico, porUsuario] = await Promise.all([
       query(
         `SELECT TO_CHAR(fecha_creacion,'YYYY-MM') AS mes, COUNT(*)::INT AS total
          FROM pedidos
-         WHERE fecha_creacion >= ${since}${tsql}
+         WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY mes ORDER BY mes`,
-        p
+        [...p]
       ),
       query(
         `SELECT estado, COUNT(*)::INT AS total
-         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}
+         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY estado ORDER BY total DESC`,
-        p
+        [...p]
       ),
       query(
         `SELECT prioridad, COUNT(*)::INT AS total
-         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}
+         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY prioridad ORDER BY total DESC`,
-        p
+        [...p]
       ),
       query(
         `SELECT distribuidor, COUNT(*)::INT AS total
-         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}
+         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY distribuidor ORDER BY total DESC LIMIT 20`,
-        p
+        [...p]
       ),
       query(
         `SELECT tipo_trabajo, COUNT(*)::INT AS total
-         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}
+         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY tipo_trabajo ORDER BY total DESC LIMIT 20`,
-        p
+        [...p]
       ),
       query(
         `SELECT COALESCE(tecnico_cierre,'Sin dato') AS tecnico, COUNT(*)::INT AS total
-         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}
+         FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${btG}
          GROUP BY tecnico ORDER BY total DESC LIMIT 20`,
-        p
+        [...p]
       ),
       query(
         `SELECT COALESCE(u.nombre,'Sin dato') AS usuario, COUNT(*)::INT AS total
          FROM pedidos p LEFT JOIN usuarios u ON u.id = p.usuario_creador_id
-         WHERE p.fecha_creacion >= ${since}${hasT ? " AND p.tenant_id = $1" : ""}
+         WHERE p.fecha_creacion >= ${since}${hasT ? " AND p.tenant_id = $1" : ""}${btP}
          GROUP BY usuario ORDER BY total DESC LIMIT 20`,
-        p
+        [...p]
       ),
     ]);
     res.json({

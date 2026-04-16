@@ -26,7 +26,7 @@ async function assertWhatsAppRefsEnTenant(req, { destinatario_id, pedido_id }) {
     if (!Number.isFinite(pid) || pid < 1) {
       return { ok: false, status: 400, error: "pedido_id inválido" };
     }
-    const p = await getPedidoRowInTenant(pid, tid);
+    const p = await getPedidoRowInTenant(pid, tid, req);
     if (!p) {
       return { ok: false, status: 403, error: "Pedido no encontrado en este tenant" };
     }

@@ -4,6 +4,7 @@ import XLSX from "xlsx";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
+import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -60,14 +61,20 @@ router.get("/:id/historial", async (req, res) => {
   const hasT = await pedidosTableHasTenantIdColumn();
   if (hasT) {
     params.push(req.tenantId);
+    const tidIdx = params.length;
     const inner = where.join(" OR ");
+    const bt = await pushPedidoBusinessFilter(req, params);
     const r = await query(
-      `SELECT * FROM pedidos WHERE tenant_id = $${params.length} AND (${inner}) ORDER BY fecha_creacion DESC`,
+      `SELECT * FROM pedidos WHERE tenant_id = $${tidIdx} AND (${inner})${bt} ORDER BY fecha_creacion DESC`,
       params
     );
     return res.json(r.rows);
   }
-  const r = await query(`SELECT * FROM pedidos WHERE ${where.join(" OR ")} ORDER BY fecha_creacion DESC`, params);
+  const bt0 = await pushPedidoBusinessFilter(req, params);
+  const r = await query(
+    `SELECT * FROM pedidos WHERE (${where.join(" OR ")})${bt0} ORDER BY fecha_creacion DESC`,
+    params
+  );
   res.json(r.rows);
 });
 
