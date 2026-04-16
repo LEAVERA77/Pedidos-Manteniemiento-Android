@@ -789,18 +789,20 @@ function formatDerivacionBotMessage(ctx) {
 function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
+  const consultaNum = max + 1;
   return (
     `Bienvenido al centro de atención de *${n}*.\n\n` +
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
-    `*11)* 🔍 Consultar mis reclamos pendientes\n\n` +
+    `*${consultaNum})* 🔍 Consultar mis reclamos pendientes\n\n` +
     `Enviá *menú* o *0* para repetir este mensaje.`
   );
 }
 
 /** Menú solo texto (respaldo si la lista interactiva falla o clientes antiguos). */
 function menuTextoNumerado(ctx) {
+  const consultaNum = (ctx.tipos?.length || 0) + 1;
   const lineas = [
     `📋 *${ctx.nombre || "Pedidos"}*`,
     "",
@@ -810,9 +812,25 @@ function menuTextoNumerado(ctx) {
   ctx.tipos.forEach((t, i) => {
     lineas.push(`${i + 1}) ${t}`);
   });
+  lineas.push(`${consultaNum}) 🔍 Consultar mis reclamos pendientes`);
   lineas.push("");
   lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
+}
+
+async function iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx }) {
+  sessions.set(sk, {
+    step: "awaiting_pending_lookup_identifier",
+    tenantId: tid,
+    tipoCliente: ctx.tipo,
+    phoneNumberId: wpid,
+  });
+  await reply(
+    phone,
+    `🔍 CONSULTAR MIS RECLAMOS PENDIENTES\n\nPara buscar sus reclamos activos, necesito identificarle.\n\n🔹 Si es cliente de ELECTRICIDAD: ingrese su NIS, número de medidor o nombre completo\n🔹 Si es cliente de AGUA: ingrese su N° de Abonado o nombre completo\n🔹 Si es del MUNICIPIO: ingrese su N° de Vecino o nombre completo\n\nEjemplo: "123456" o "Juan Pérez"\n\n📝 Escriba su identificador:`,
+    tid,
+    phoneNumberId
+  );
 }
 
 function esPedidoCargarReclamo(text) {
@@ -1423,7 +1441,10 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     });
     await reply(
       phoneDigits,
-      menuTextoNumerado(ctx) + "\n\n_(Hay muchas opciones: escribí el número del 1 al " + ctx.tipos.length + ".)_",
+        menuTextoNumerado(ctx) +
+          "\n\n_(Hay muchas opciones: escribí el número del 1 al " +
+          (ctx.tipos.length + 1) +
+          ".)_",
       ctx.id,
       pid || null
     );
@@ -2746,19 +2767,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
-    if (n === 11) {
-      sessions.set(sk, {
-        step: "awaiting_pending_lookup_identifier",
-        tenantId: tid,
-        tipoCliente: ctx.tipo,
-        phoneNumberId: wpid,
-      });
-      await reply(
-        phone,
-        `🔍 CONSULTAR MIS RECLAMOS PENDIENTES\n\nPara buscar sus reclamos activos, necesito identificarle.\n\n🔹 Si es cliente de ELECTRICIDAD: ingrese su NIS, número de medidor o nombre completo\n🔹 Si es cliente de AGUA: ingrese su N° de Abonado o nombre completo\n🔹 Si es del MUNICIPIO: ingrese su N° de Vecino o nombre completo\n\nEjemplo: "123456" o "Juan Pérez"\n\n📝 Escriba su identificador:`,
-        tid,
-        phoneNumberId
-      );
+    const consultaNum = (ctx.tipos?.length || 0) + 1;
+    if (n === consultaNum) {
+      await iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx });
       return;
     }
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
