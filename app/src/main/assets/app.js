@@ -6143,13 +6143,36 @@ async function intentarAutoInicioEjecucionTecnico(lat, lng) {
     }
 }
 
+/** Filtro SQL por tenant cuando `usuarios` tiene tenant_id o cliente_id (misma lógica que la API). */
+async function sqlFiltroUsuariosPorTenant() {
+    try {
+        const r = await sqlSimple(
+            `SELECT column_name FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name IN ('tenant_id','cliente_id')`
+        );
+        const names = new Set((r.rows || []).map((x) => x.column_name));
+        const col = names.has('tenant_id') ? 'tenant_id' : names.has('cliente_id') ? 'cliente_id' : null;
+        if (!col) return '';
+        return ` AND ${col} = ${esc(tenantIdActual())}`;
+    } catch (_) {
+        return '';
+    }
+}
+
+/** Lista de usuarios para mapas / asignación / nombres — siempre acotada al tenant actual si la columna existe. */
+async function refrescarUsuariosCacheDesdeNeon() {
+    if (!NEON_OK || modoOffline || !_sql) return;
+    const wf = await sqlFiltroUsuariosPorTenant();
+    const ru = await sqlSimple(`SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
+        FROM usuarios WHERE activo = TRUE${wf} ORDER BY nombre`);
+    app.usuariosCache = (ru.rows || []).map((row) => ({ ...row, rol: normalizarRolStr(row.rol) }));
+}
+
 async function asegurarNombreUsuariosParaFiltros() {
     if (!NEON_OK || modoOffline || !app.u || !_sql) return;
     if (app.usuariosCache && app.usuariosCache.length) return;
     try {
-        const ru = await sqlSimple(`SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
-            FROM usuarios WHERE activo = TRUE ORDER BY nombre`);
-        app.usuariosCache = (ru.rows || []).map(row => ({ ...row, rol: normalizarRolStr(row.rol) }));
+        await refrescarUsuariosCacheDesdeNeon();
     } catch (_) {}
 }
 
@@ -7194,12 +7217,17 @@ function llenarSelectAssignTecnico() {
     }
 }
 
-window.abrirModalAsignarTecnico = function (pedidoId) {
+window.abrirModalAsignarTecnico = async function (pedidoId) {
     if (!esAdmin()) {
         toast('Solo administrador puede asignar', 'error');
         return;
     }
     _assignPedidoId = pedidoId;
+    try {
+        await refrescarUsuariosCacheDesdeNeon();
+    } catch (e) {
+        logErrorWeb('refresh-usuarios-cache-asignar', e);
+    }
     llenarSelectAssignTecnico();
     const sel = document.getElementById('assign-tecnico-select');
     const p = app.p.find(x => String(x.id) === String(pedidoId));
@@ -10576,6 +10604,27 @@ async function detalle(p) {
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
     });
+    void sincronizarMapaConPedidoEnDetalle(p);
+}
+
+/** Al abrir el detalle de un reclamo: asegura mapa + marcadores y centra en el pedido (admin / técnico con permiso). */
+async function sincronizarMapaConPedidoEnDetalle(p) {
+    if (!p || modoOffline || !NEON_OK) return;
+    try {
+        await ensureMapReady();
+        renderMk();
+        if (!app.map) return;
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
+        const zCur = app.map.getZoom && Number.isFinite(app.map.getZoom()) ? app.map.getZoom() : 14;
+        const z = Math.max(zCur, 15);
+        app.map.setView([la, ln], z, { animate: false });
+        setTimeout(() => {
+            try {
+                if (app.map && typeof app.map.invalidateSize === 'function') app.map.invalidateSize();
+            } catch (_) {}
+        }, 200);
+    } catch (_) {}
 }
 
 
@@ -14655,12 +14704,26 @@ async function crearUsuario() {
     if (!email || !nombre || !pw) { toast('Completá todos los campos', 'error'); return; }
     if (telefono && !esTelefonoWhatsappValido(telefono)) { toast('Teléfono inválido. Usá formato +543434540250', 'error'); return; }
     try {
-        await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password)
-            VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE)`);
+        const wfU = await sqlFiltroUsuariosPorTenant();
+        const colT = wfU.includes('tenant_id')
+            ? 'tenant_id'
+            : wfU.includes('cliente_id')
+              ? 'cliente_id'
+              : null;
+        if (colT) {
+            await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, ${colT})
+                VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE, ${esc(tenantIdActual())})`);
+        } else {
+            await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password)
+                VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE)`);
+        }
         toast('Usuario creado: ' + nombre, 'success');
         document.getElementById('form-usuario').style.display = 'none';
         ['nu-email','nu-nombre','nu-pw','nu-telefono'].forEach(id => document.getElementById(id).value = '');
         cargarListaUsuarios();
+        try {
+            await refrescarUsuariosCacheDesdeNeon();
+        } catch (_) {}
     } catch(e) {
         const low = String(e && e.message ? e.message : e).toLowerCase();
         if (low.includes('unique')) toast('Ese email ya está registrado.', 'error');
@@ -14686,8 +14749,7 @@ async function editarTelefonoWhatsappUsuario(id, telefonoActual, habilitadoActua
         toast('WhatsApp de usuario actualizado', 'success');
         await cargarListaUsuarios();
         try {
-            const ru = await sqlSimple('SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre');
-            app.usuariosCache = ru.rows || [];
+            await refrescarUsuariosCacheDesdeNeon();
         } catch (_) {}
     } catch (e) {
         toastError('usuario-whatsapp', e, 'No se pudo actualizar WhatsApp.');
@@ -14761,10 +14823,7 @@ async function adminGenerarClaveProvisionalUsuario(userId) {
         toast('Clave provisional generada.', 'success');
         await cargarListaUsuarios();
         try {
-            const ru = await sqlSimple(
-                'SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones FROM usuarios WHERE activo = TRUE ORDER BY nombre'
-            );
-            app.usuariosCache = ru.rows || [];
+            await refrescarUsuariosCacheDesdeNeon();
         } catch (_) {}
     } catch (e) {
         toastError('clave-provisoria', e);
