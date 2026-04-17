@@ -174,6 +174,17 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 }
 .admin-banner-opinion-cliente-ic{opacity:.95;font-size:1rem}
 .admin-banner-opinion-cliente-txt{flex:1;min-width:140px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
+.admin-banner-opinion-compact{
+  display:none;align-items:center;gap:.45rem;font-size:.78rem;font-weight:700;cursor:pointer;
+  user-select:none;padding:.15rem 0;
+}
+#admin-banner-opinion-cliente.admin-banner-opinion--min{
+  position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:12px;right:auto;top:auto;z-index:10050;
+  max-width:min(360px,94vw);flex-wrap:nowrap;cursor:pointer;
+  box-shadow:0 10px 32px rgba(15,23,42,.35);border-radius:.65rem;
+}
+#admin-banner-opinion-cliente.admin-banner-opinion--min .admin-banner-opinion-expanded{display:none!important}
+#admin-banner-opinion-cliente.admin-banner-opinion--min .admin-banner-opinion-compact{display:flex!important}
 .admin-banner-btn-opinion{background:#fff;color:#115e59!important}
 .admin-banner-btn-wa{background:#25d366!important;color:#fff!important}
 .user-menu-wrap{position:relative;display:inline-flex;align-items:center}
@@ -301,7 +312,11 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .gn-notificaciones-front-stack{position:fixed;top:4.65rem;left:.45rem;z-index:10280;display:flex;flex-direction:column;gap:.5rem;max-width:min(360px,calc(100vw - .9rem));pointer-events:none;align-items:stretch}
 #cierre-toast-host,#wa-human-chat-toast-host{display:flex;flex-direction:column;gap:.45rem;width:100%;position:relative;pointer-events:none}
 #cierre-toast-host .cierre-toast{pointer-events:auto;background:#0f172a;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #10b981;animation:gnToastSlideIzq .35s ease}
-#wa-human-chat-toast-host .wa-human-chat-toast{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #38bdf8;animation:gnToastSlideIzq .35s ease}
+#wa-human-chat-toast-host .wa-human-chat-toast{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #38bdf8;animation:gnToastSlideIzq .35s ease;position:relative;padding-right:1.75rem}
+#wa-human-chat-toast-host .wa-human-chat-toast .wa-hc-toast-close{
+  position:absolute;top:.25rem;right:.25rem;background:transparent;border:none;color:#94a3b8;font-size:1.1rem;line-height:1;cursor:pointer;padding:.15rem;border-radius:.3rem;
+}
+#wa-human-chat-toast-host .wa-human-chat-toast .wa-hc-toast-close:hover{color:#f8fafc;background:rgba(255,255,255,.1)}
 @keyframes gnToastSlideIzq{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
 #wa-human-chat-dock{position:fixed;left:.45rem;top:50%;transform:translateY(-50%);z-index:10055;display:flex;flex-direction:column;gap:.35rem;max-width:min(200px,42vw);pointer-events:none}
 #wa-human-chat-dock .wa-hc-dock-chip{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.4rem .5rem;border-radius:.5rem;font-size:.74rem;cursor:pointer;border-left:3px solid #38bdf8;box-shadow:0 4px 14px rgba(0,0,0,.22);line-height:1.25;word-break:break-word}

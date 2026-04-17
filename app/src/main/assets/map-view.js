@@ -538,7 +538,7 @@ export async function runInitMap() {
                 typeof ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' &&
                 ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa()
             ) {
-                ctx.toast('Primero abrí el aviso de reclamo nuevo arriba.', 'info');
+                ctx.toast('Esperá unos segundos: aviso de reclamo nuevo.', 'info');
                 return;
             }
         } catch (_) {}

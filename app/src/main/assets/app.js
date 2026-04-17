@@ -5863,13 +5863,18 @@ function mostrarToastWaHumanChatNuevo(s) {
     el.className = 'wa-human-chat-toast';
     const name = String(s.contact_name || '').trim() || 'Cliente';
     const ph = String(s.phone_canonical || '');
-    el.innerHTML = `<strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
-    el.onclick = () => {
+    el.innerHTML = `<button type="button" class="wa-hc-toast-close" aria-label="Cerrar aviso">&times;</button><strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
+    const go = () => {
         try { el.remove(); } catch (_) {}
         abrirModalWhatsappHumanChat(Number(s.id));
     };
+    el.onclick = (ev) => {
+        if (ev.target.closest('.wa-hc-toast-close')) return;
+        go();
+    };
+    const x = el.querySelector('.wa-hc-toast-close');
+    if (x) x.onclick = (ev) => { ev.stopPropagation(); try { el.remove(); } catch (_) {} };
     host.appendChild(el);
-    setTimeout(() => { try { if (el.parentElement) el.remove(); } catch (_) {} }, 45000);
 }
 
 function traerAlFrenteVentanaWaHc(floatEl) {
@@ -6945,7 +6950,7 @@ window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
 async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
     if (typeof window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' && window.gnMapaDebeBloquearCargaPedidoDesdeMapa()) {
-        toast('Primero abrí el aviso de reclamo nuevo arriba.', 'info');
+        toast('Esperá unos segundos: aviso de reclamo nuevo.', 'info');
         return;
     }
     await ensureMapReady();
@@ -11334,9 +11339,6 @@ function closeAll() {
         if (el) el.checked = false;
     });
     try { limpiarFirmaCierreCanvas(); } catch (_) {}
-    if (_gnMapaBloqueoCargaPedidoBanner === 'detalle') {
-        _gnMapaBloqueoCargaPedidoBanner = null;
-    }
 
     fotoCierreTemp = null;
     const vpc = document.getElementById('vista-previa-foto-cierre');
@@ -12492,10 +12494,11 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
 let _pollBannerAdminInterval = null;
-/** null | 'banner' | 'detalle' — bloquea cargar pedido nuevo al tocar el mapa hasta gestionar el aviso superior. */
-let _gnMapaBloqueoCargaPedidoBanner = null;
+/** Tras el aviso de nuevo reclamo WhatsApp, el mapa no abre #pm solo durante 5 s (no hasta hacer clic en el banner). */
+let _gnMapaBloqueoBannerHastaMs = 0;
+let _gnMapaBloqueoBannerTimer = null;
 window.gnMapaDebeBloquearCargaPedidoDesdeMapa = function () {
-    return _gnMapaBloqueoCargaPedidoBanner != null;
+    return Date.now() < (_gnMapaBloqueoBannerHastaMs || 0);
 };
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
@@ -12551,8 +12554,7 @@ async function iniciarWatermarkBannerOpinionCliente() {
     }
 }
 
-function ocultarBannerReclamoCliente(opts) {
-    const hastaDetalle = opts && opts.bloquearHastaCerrarDetalle === true;
+function ocultarBannerReclamoCliente() {
     const box = document.getElementById('admin-banner-nuevo-cliente');
     if (box) {
         box.style.display = 'none';
@@ -12561,11 +12563,6 @@ function ocultarBannerReclamoCliente(opts) {
     }
     clearTimeout(_adminBannerTimer);
     _adminBannerTimer = null;
-    if (hastaDetalle) {
-        _gnMapaBloqueoCargaPedidoBanner = 'detalle';
-    } else if (_gnMapaBloqueoCargaPedidoBanner === 'banner') {
-        _gnMapaBloqueoCargaPedidoBanner = null;
-    }
 }
 
 function _commitAdminBannerOpinionWatermark() {
@@ -12595,6 +12592,7 @@ function ocultarBannerOpinionCliente() {
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
         box.style.display = 'none';
+        box.classList.remove('admin-banner-opinion--min');
         delete box.dataset.visible;
         delete box.dataset.pedidoId;
         delete box.dataset.fechaOpinionIso;
@@ -12604,6 +12602,13 @@ function ocultarBannerOpinionCliente() {
     const btnHc = document.getElementById('admin-banner-opinion-hc');
     if (btnHc) btnHc.style.display = 'none';
 }
+
+function adminBannerOpinionToggleMinimize() {
+    const box = document.getElementById('admin-banner-opinion-cliente');
+    if (!box || box.style.display === 'none') return;
+    box.classList.toggle('admin-banner-opinion--min');
+}
+window.adminBannerOpinionToggleMinimize = adminBannerOpinionToggleMinimize;
 
 async function pollBannerNuevoReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
@@ -12630,7 +12635,12 @@ async function pollBannerNuevoReclamoCliente() {
         box.style.display = 'flex';
         box.dataset.visible = '1';
         box.dataset.pedidoId = String(nid);
-        _gnMapaBloqueoCargaPedidoBanner = 'banner';
+        clearTimeout(_gnMapaBloqueoBannerTimer);
+        _gnMapaBloqueoBannerHastaMs = Date.now() + 5000;
+        _gnMapaBloqueoBannerTimer = setTimeout(() => {
+            _gnMapaBloqueoBannerHastaMs = 0;
+            _gnMapaBloqueoBannerTimer = null;
+        }, 5000);
         clearTimeout(_adminBannerTimer);
         _adminBannerTimer = setTimeout(() => ocultarBannerReclamoCliente(), 30000);
     } catch (_) {}
@@ -12663,7 +12673,7 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas < 3
+                 AND opinion_cliente_estrellas <= 3
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -12675,19 +12685,14 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas < 3
+                 AND opinion_cliente_estrellas <= 3
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
         }
         const row = r.rows?.[0];
         if (!row) {
-            console.debug('[poll-banner-opinion] No hay pedidos con calificación baja');
-            if (box.dataset.visible === '1') {
-                box.style.display = 'none';
-                delete box.dataset.visible;
-                delete box.dataset.pedidoId;
-            }
+            console.debug('[poll-banner-opinion] No hay fila en esta pasada (el aviso visible no se oculta solo)');
             return;
         }
         const nid = Number(row.id);
@@ -12706,7 +12711,7 @@ async function pollBannerOpinionCliente() {
         const waOk = /^\+\d{8,22}$/.test(wTel);
         const btnHc = document.getElementById('admin-banner-opinion-hc');
         if (btnHc) {
-            const baja = tieneE && estrellas < 3;
+            const baja = tieneE && estrellas <= 3;
             const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
             btnHc.style.display = baja && apiOk && waOk ? 'inline-flex' : 'none';
         }
@@ -12718,7 +12723,7 @@ async function pollBannerOpinionCliente() {
             const tit = (row.tipo_trabajo || '').trim();
             const sfxStar = tieneE ? ` · ${estrellas}/5` : '';
             const avisoBaja =
-                tieneE && estrellas < 3
+                tieneE && estrellas <= 3
                     ? 'Calificación baja — conviene hablar con el cliente. '
                     : '';
             txt.textContent = `${avisoBaja}Observación del cliente${sfxStar} · #${np}${tit ? ` · ${tit}` : ''}${
@@ -12786,7 +12791,9 @@ function detenerPollBannerReclamoCliente() {
         _pollBannerAdminInterval = null;
     }
     ocultarBannerReclamoCliente();
-    _gnMapaBloqueoCargaPedidoBanner = null;
+    clearTimeout(_gnMapaBloqueoBannerTimer);
+    _gnMapaBloqueoBannerTimer = null;
+    _gnMapaBloqueoBannerHastaMs = 0;
     ocultarBannerOpinionCliente();
 }
 
@@ -12808,7 +12815,7 @@ function iniciarPollBannerReclamoCliente() {
 async function adminBannerClickVerDetalle() {
     const box = document.getElementById('admin-banner-nuevo-cliente');
     const pid = box?.dataset?.pedidoId;
-    ocultarBannerReclamoCliente({ bloquearHastaCerrarDetalle: true });
+    ocultarBannerReclamoCliente();
     if (!pid) return;
     let p = app.p.find(x => String(x.id) === String(pid));
     if (!p && _sql && NEON_OK) {

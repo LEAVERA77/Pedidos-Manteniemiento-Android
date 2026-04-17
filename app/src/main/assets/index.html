@@ -78,11 +78,17 @@
     <button type="button" class="admin-banner-x" onclick="adminBannerCerrarSinDetalle()" title="Cerrar">&times;</button>
   </div>
   <div id="admin-banner-opinion-cliente" class="admin-banner-opinion-cliente" style="display:none" role="status" aria-live="polite">
-    <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
-    <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
-    <button type="button" id="admin-banner-opinion-hc" class="admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="adminBannerOpinionAbrirChatOperador()" title="Abrir chat con el cliente (panel de mensajería)"><i class="fab fa-whatsapp"></i> Chat con cliente</button>
-    <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminBannerOpinionClickVerDetalle()">Ver pedido</button>
-    <button type="button" class="admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Cerrar">&times;</button>
+    <div id="admin-banner-opinion-compact" class="admin-banner-opinion-compact" style="display:none" role="button" tabindex="0" onclick="adminBannerOpinionToggleMinimize()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionToggleMinimize();}" title="Expandir aviso">
+      <i class="fas fa-comments" aria-hidden="true"></i>
+      <span>Calificación baja · Chat disponible</span>
+      <i class="fas fa-chevron-up" aria-hidden="true"></i>
+    </div>
+    <span class="admin-banner-opinion-expanded admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
+    <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-expanded admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
+    <button type="button" id="admin-banner-opinion-hc" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="event.stopPropagation();adminBannerOpinionAbrirChatOperador()" title="Abrir chat con el cliente (panel de mensajería)"><i class="fab fa-whatsapp"></i> Chat con cliente</button>
+    <button type="button" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion" onclick="event.stopPropagation();adminBannerOpinionClickVerDetalle()">Ver pedido</button>
+    <button type="button" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion" onclick="event.stopPropagation();adminBannerOpinionToggleMinimize()" title="Minimizar (seguís viendo la barra compacta abajo)">Minimizar</button>
+    <button type="button" class="admin-banner-opinion-expanded admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Descartar aviso">&times;</button>
   </div>
   <div id="admin-banner-derivacion-pendiente" class="admin-banner-opinion-cliente" style="display:none;background:linear-gradient(90deg,#1d4ed8,#2563eb)" role="status" aria-live="polite">
     <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-code-branch"></i></span>
