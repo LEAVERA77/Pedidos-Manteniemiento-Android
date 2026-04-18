@@ -120,13 +120,13 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .print-content.print-a4-tight .firma-print{max-height:70px;object-fit:contain}
 /* Alcance técnico (Android): primera fila dentro de «Filtros del mapa», mismo estilo que el resto del panel */
 #wrap-android-scope .moui-lbl{color:var(--tl);font-size:.72rem;min-width:4.25rem}
-#mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:854;max-width:min(18rem,calc(100vw - .9rem));max-height:min(52vh,420px);overflow-y:auto;font-size:.74rem;-webkit-overflow-scrolling:touch;touch-action:pan-y}
-#mapa-card-colores .moui-bd{padding:.4rem .45rem .45rem}
-#mapa-card-colores .ll-hd{font-weight:700;color:var(--bd);font-size:.78rem;margin:0 0 .25rem;line-height:1.25}
-#mapa-card-colores .ll-grid{display:grid;grid-template-columns:1fr;gap:.35rem .5rem;align-items:center}
-#mapa-card-colores .ll-row{display:flex;align-items:center;gap:.45rem;margin:0;min-height:2rem;min-width:0;cursor:pointer;line-height:1.25;padding:.08rem 0}
-#mapa-card-colores .ll-row input{flex-shrink:0;cursor:pointer;width:18px;height:18px;margin:0}
-#mapa-card-colores .ll-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.85)}
+#mapa-card-colores{bottom:5.25rem;left:.45rem;top:auto;z-index:854;max-width:min(12rem,calc(100vw - 1rem));max-height:min(26vh,220px);overflow-y:auto;font-size:.58rem}
+#mapa-card-colores .moui-bd{padding:.25rem .35rem .3rem}
+#mapa-card-colores .ll-hd{font-weight:700;color:var(--bd);font-size:.6rem;margin:0 0 .12rem;line-height:1.15}
+#mapa-card-colores .ll-grid{display:grid;grid-template-columns:1fr 1fr;gap:.06rem .3rem;align-items:center}
+#mapa-card-colores .ll-row{display:flex;align-items:center;gap:.22rem;margin:0;min-width:0;cursor:pointer;line-height:1.15}
+#mapa-card-colores .ll-row input{flex-shrink:0;cursor:pointer;width:12px;height:12px;margin:0}
+#mapa-card-colores .ll-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.85)}
 #mapa-card-colores .ll-txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #mapa-card-colores .ll-span2{grid-column:1/-1}
 #mapa-card-colores .ll-foot{margin-top:.2rem;font-size:.52rem;opacity:.88;line-height:1.25}
@@ -135,8 +135,6 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
 #lf{position:relative}
 .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
-#ls .ll{background:#fff!important;border:1px solid var(--bo);padding:4px;box-sizing:border-box}
-#ls .ll img{mix-blend-mode:normal!important;background:#fff!important}
 .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
 .lc .sub{text-align:center;color:var(--tm);font-size:.9rem;margin-bottom:1rem}
 .dbs{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.5rem 1rem;border-radius:2rem;font-size:.82rem;margin-bottom:1.25rem;transition:all .3s}
@@ -176,17 +174,6 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 }
 .admin-banner-opinion-cliente-ic{opacity:.95;font-size:1rem}
 .admin-banner-opinion-cliente-txt{flex:1;min-width:140px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
-.admin-banner-opinion-compact{
-  display:none;align-items:center;gap:.45rem;font-size:.78rem;font-weight:700;cursor:pointer;
-  user-select:none;padding:.15rem 0;
-}
-#admin-banner-opinion-cliente.admin-banner-opinion--min{
-  position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:12px;right:auto;top:auto;z-index:10050;
-  max-width:min(360px,94vw);flex-wrap:nowrap;cursor:pointer;
-  box-shadow:0 10px 32px rgba(15,23,42,.35);border-radius:.65rem;
-}
-#admin-banner-opinion-cliente.admin-banner-opinion--min .admin-banner-opinion-expanded{display:none!important}
-#admin-banner-opinion-cliente.admin-banner-opinion--min .admin-banner-opinion-compact{display:flex!important}
 .admin-banner-btn-opinion{background:#fff;color:#115e59!important}
 .admin-banner-btn-wa{background:#25d366!important;color:#fff!important}
 .user-menu-wrap{position:relative;display:inline-flex;align-items:center}
@@ -285,7 +272,6 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .ib:hover{background:var(--bg);color:var(--bd)}
 #mc{height:calc(100vh - 58px);height:calc(100dvh - 58px);width:100%;z-index:1;position:relative}
 #mc .leaflet-container{border-radius:12px;border:1px solid var(--bo);box-shadow:var(--shadow-card);overflow:hidden}
-html.gn-android-webview #mc .leaflet-container{overflow:visible!important}
 .bp2{position:absolute;bottom:0;left:0;right:0;background:var(--card,#fff);border:1px solid var(--bo);border-bottom:none;border-radius:12px 12px 0 0;box-shadow:var(--shadow-card),0 -4px 20px rgba(15,23,42,.08);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column;min-height:0}
 .bp2.col{transform:translateY(calc(100% - 4.5rem))}
 .ph{padding:.6rem 1rem .4rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;flex-shrink:0}
@@ -315,11 +301,7 @@ html.gn-android-webview #mc .leaflet-container{overflow:visible!important}
 .gn-notificaciones-front-stack{position:fixed;top:4.65rem;left:.45rem;z-index:10280;display:flex;flex-direction:column;gap:.5rem;max-width:min(360px,calc(100vw - .9rem));pointer-events:none;align-items:stretch}
 #cierre-toast-host,#wa-human-chat-toast-host{display:flex;flex-direction:column;gap:.45rem;width:100%;position:relative;pointer-events:none}
 #cierre-toast-host .cierre-toast{pointer-events:auto;background:#0f172a;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #10b981;animation:gnToastSlideIzq .35s ease}
-#wa-human-chat-toast-host .wa-human-chat-toast{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #38bdf8;animation:gnToastSlideIzq .35s ease;position:relative;padding-right:1.75rem}
-#wa-human-chat-toast-host .wa-human-chat-toast .wa-hc-toast-close{
-  position:absolute;top:.25rem;right:.25rem;background:transparent;border:none;color:#94a3b8;font-size:1.1rem;line-height:1;cursor:pointer;padding:.15rem;border-radius:.3rem;
-}
-#wa-human-chat-toast-host .wa-human-chat-toast .wa-hc-toast-close:hover{color:#f8fafc;background:rgba(255,255,255,.1)}
+#wa-human-chat-toast-host .wa-human-chat-toast{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.65rem .85rem;border-radius:.65rem;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:.82rem;cursor:pointer;border-left:4px solid #38bdf8;animation:gnToastSlideIzq .35s ease}
 @keyframes gnToastSlideIzq{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
 #wa-human-chat-dock{position:fixed;left:.45rem;top:50%;transform:translateY(-50%);z-index:10055;display:flex;flex-direction:column;gap:.35rem;max-width:min(200px,42vw);pointer-events:none}
 #wa-human-chat-dock .wa-hc-dock-chip{pointer-events:auto;background:#1e3a5f;color:#f8fafc;padding:.4rem .5rem;border-radius:.5rem;font-size:.74rem;cursor:pointer;border-left:3px solid #38bdf8;box-shadow:0 4px 14px rgba(0,0,0,.22);line-height:1.25;word-break:break-word}
@@ -727,46 +709,9 @@ textarea{resize:vertical;min-height:80px}
 .admin-derivacion-inline-error{font-size:.78rem;color:#b91c1c;line-height:1.4;padding:.4rem .5rem;background:#fef2f2;border:1px solid #fecaca;border-radius:.4rem}
 .admin-derivacion-pedido-hint{border-left:4px solid #f59e0b;background:linear-gradient(90deg,rgba(245,158,11,.08),transparent)}
 
-/* Catálogo socios (admin): tabla legible — bordes y separación para que coordenadas no se mezclen */
-.gn-soc-admin-table{border-collapse:separate;border-spacing:0;width:100%;table-layout:auto}
-.gn-soc-admin-table thead th,.gn-soc-admin-table tbody td{
-  border:1px solid var(--bo,#e2e8f0);
-  padding:.28rem .4rem;
-  vertical-align:middle;
-  word-break:break-word;
-}
-.gn-soc-admin-table thead th{background:#f1f5f9;font-weight:600;font-size:.72rem}
-.gn-soc-admin-table tbody tr.gn-vspad td{border:none;padding:0}
-.gn-soc-admin-table .gn-soc-coord{
-  white-space:nowrap;
-  min-width:7.5rem;
-  max-width:12rem;
-  font-variant-numeric:tabular-nums;
-  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-  font-size:.74rem;
-}
+/* Catálogo socios (admin): lat/lon en columnas propias, sin fundirse con Calle/Dist. */
+.gn-soc-admin-table .gn-soc-coord{white-space:nowrap;min-width:7.25rem;max-width:11rem;font-variant-numeric:tabular-nums}
 .gn-soc-admin-table .gn-soc-lat,.gn-soc-admin-table .gn-soc-lon{vertical-align:middle}
-
-/* WebView Android: panel Colores usable al expandir (scroll táctil, altura máxima clara) */
-@media (max-width:900px){
-  #mapa-card-colores.moui-card{
-    max-height:min(92vh,720px);
-    display:flex;
-    flex-direction:column;
-    overflow:hidden;
-    max-width:min(92vw,22rem);
-    font-size:.8rem;
-  }
-  #mapa-card-colores.moui-card .moui-bd{
-    flex:1;
-    min-height:0;
-    max-height:min(68vh,520px)!important;
-    overflow-y:auto!important;
-    -webkit-overflow-scrolling:touch;
-    touch-action:pan-y;
-  }
-  #mapa-card-colores .ll-grid{gap:.42rem}
-}
 
 /* Mapa: panel coordenadas cursor — claro, compacto (~280px), desplazado ~2cm a la derecha */
 .leaflet-bottom.leaflet-left .gn-cursor-coords.leaflet-bar{
@@ -889,123 +834,4 @@ html.gn-android-webview .gn-gps-fab {
   min-width: 2.9rem;
   min-height: 2.9rem;
   box-sizing: border-box;
-}
-
-/* Paneles Filtros / Tipo / Colores / Dash: mismo anclaje viewport que escritorio ancho (evita desalineación táctil vs capa Leaflet). */
-html.gn-android-webview #mapa-overlay-ui {
-  position: fixed !important;
-  top: var(--app-header-h, 58px);
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 10100;
-  pointer-events: none;
-}
-html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) {
-  position: fixed !important;
-  pointer-events: auto !important;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  z-index: 10112 !important;
-  max-height: min(72vh, calc(100dvh - var(--app-header-h, 58px) - 4.5rem)) !important;
-  min-width: min(300px, calc(100vw - 1.2rem));
-  box-sizing: border-box;
-}
-html.gn-android-webview #ms #mapa-overlay-ui .moui-card .moui-hd {
-  min-height: 2.65rem;
-  align-items: center;
-}
-html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-bd,
-html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-hd {
-  font-size: max(12px, 0.78rem);
-}
-html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtros:not(.moui-card-slideoff) {
-  top: calc(var(--app-header-h, 58px) + 0.45rem);
-  left: 0.45rem;
-  right: auto;
-}
-html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-card-slideoff) {
-  top: max(6.75rem, calc(var(--app-header-h, 58px) + 3.25rem));
-  left: 0.45rem;
-  right: auto;
-}
-html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-colores:not(.moui-card-slideoff) {
-  top: auto !important;
-  bottom: max(5.25rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
-  left: 0.45rem;
-  right: auto;
-}
-html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card-slideoff) {
-  top: calc(var(--app-header-h, 58px) + 0.45rem);
-  right: 0.45rem;
-  left: auto;
-}
-@media (max-width: 700px) {
-  html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card-slideoff) {
-    left: 0.45rem;
-    right: 0.45rem;
-    top: auto;
-    bottom: max(5.5rem, calc(4.75rem + env(safe-area-inset-bottom, 0px)));
-    max-height: 38vh;
-  }
-}
-html.gn-android-webview .map-slide-tabs-cluster {
-  z-index: 10150;
-}
-html.gn-android-webview .map-slide-tab.visible{
-  padding: .52rem .72rem!important;
-  font-size: max(12px,.82rem)!important;
-  font-weight: 700;
-  min-height: 2.35rem;
-  box-sizing: border-box;
-  border-radius: 0 .55rem .55rem 0!important;
-  box-shadow: 0 3px 12px rgba(15,23,42,.2);
-}
-
-/* Barra superior: íconos alineados (DB, carpeta, etc.) sin “desfasarse” por flex wrap */
-html.gn-android-webview #ms > .hd {
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.35rem;
-  padding-left: max(0.65rem, env(safe-area-inset-left, 0px));
-  padding-right: max(0.65rem, env(safe-area-inset-right, 0px));
-  box-sizing: border-box;
-}
-html.gn-android-webview #ms > .hd h2 {
-  flex: 1;
-  min-width: 0;
-  font-size: clamp(0.92rem, 3.5vw, 1.05rem);
-}
-html.gn-android-webview #ms > .hd .hr {
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.18rem;
-  flex-shrink: 0;
-}
-html.gn-android-webview #ms > .hd .hr .ib {
-  flex-shrink: 0;
-  width: 2.45rem;
-  height: 2.45rem;
-  min-width: 2.45rem;
-  min-height: 2.45rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.12rem;
-  line-height: 1;
-  box-sizing: border-box;
-}
-html.gn-android-webview #ms > .hd #mt.ib {
-  width: 2.55rem;
-  min-width: 2.55rem;
-}
-html.gn-android-webview #ms > .hd .di.ok,
-html.gn-android-webview #ms > .hd .di.er {
-  flex-shrink: 0;
-  padding: 0.28rem 0.42rem;
-  font-size: 0.82rem;
-}
-html.gn-android-webview #ms > .hd #un {
-  max-width: min(92px, 24vw);
 }
