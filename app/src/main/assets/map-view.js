@@ -338,7 +338,7 @@ export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
     const L = ctx.L;
-    const maxZ = ligero ? 17 : 19;
+    const maxZ = ligero ? 18 : 19;
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
@@ -420,7 +420,7 @@ export async function runInitMap() {
             .trim();
     } catch (_) {}
     const ligeroInit = ctx.gnMapaLigero();
-    const maxZoomMap = ligeroInit ? 17 : 19;
+    const maxZoomMap = ligeroInit ? 18 : 19;
     const center = await resolveMapCenterLatLngZoom();
     let latBase;
     let lngBase;

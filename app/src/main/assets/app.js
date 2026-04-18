@@ -5366,6 +5366,8 @@ function initMouiCardDraggable(cardId) {
     };
     applySaved();
     const dragHandle = hd.querySelector('.moui-drag-handle');
+    /** En WebView Android el «asa» es angosta: permitir arrastrar desde toda la cabecera (los botones siguen excluidos). */
+    const dragTarget = esAndroidWebViewMapa() ? hd : dragHandle || hd;
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
@@ -5427,7 +5429,6 @@ function initMouiCardDraggable(cardId) {
         document.addEventListener('touchend', onUp);
         document.addEventListener('touchcancel', onUp);
     };
-    const dragTarget = dragHandle || hd;
     dragTarget.addEventListener('mousedown', (e) => {
         if (!floatingMapMouiDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
@@ -7586,6 +7587,15 @@ window._zm = id => {
             } catch (_) {}
         };
 
+        const leerZoomMaxMapa = () => {
+            try {
+                const mz = app.map.getMaxZoom();
+                return Number.isFinite(mz) && mz > 0 ? mz : 18;
+            } catch (_) {
+                return 18;
+            }
+        };
+
         const runZoom = (withPopup) => {
             if (!app.map) return;
             try {
@@ -7594,9 +7604,15 @@ window._zm = id => {
             try {
                 renderMk();
             } catch (_) {}
-            const zMax = Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17);
-            app.map.setView([la, ln], zMax, { animate: !esAndroidWebViewMapa() });
-            if (withPopup) openPedidoPopup();
+            const z = leerZoomMaxMapa();
+            try {
+                app.map.setView([la, ln], z, { animate: !esAndroidWebViewMapa() });
+            } catch (_) {}
+            if (withPopup) {
+                openPedidoPopup();
+                requestAnimationFrame(() => openPedidoPopup());
+                setTimeout(openPedidoPopup, esAndroidWebViewMapa() ? 200 : 80);
+            }
             setTimeout(() => {
                 try {
                     document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
@@ -7604,6 +7620,7 @@ window._zm = id => {
             }, 320);
         };
 
+        const delay0 = esAndroidWebViewMapa() ? 220 : 120;
         setTimeout(() => {
             runZoom(true);
             if (esAndroidWebViewMapa()) {
@@ -7614,14 +7631,24 @@ window._zm = id => {
                     try {
                         renderMk();
                     } catch (_) {}
-                    const z = Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17);
+                    const z2 = leerZoomMaxMapa();
                     try {
-                        app.map.setView([la, ln], z, { animate: false });
+                        app.map.setView([la, ln], z2, { animate: false });
                     } catch (_) {}
                     openPedidoPopup();
-                }, 420);
+                    requestAnimationFrame(() => {
+                        try {
+                            app.map.invalidateSize({ animate: false });
+                        } catch (_) {}
+                        try {
+                            app.map.setView([la, ln], z2, { animate: false });
+                        } catch (_) {}
+                        openPedidoPopup();
+                    });
+                    setTimeout(openPedidoPopup, 180);
+                }, 380);
             }
-        }, esAndroidWebViewMapa() ? 220 : 120);
+        }, delay0);
     })();
 };
 

@@ -908,6 +908,12 @@ html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff)
   -webkit-tap-highlight-color: transparent;
   z-index: 10112 !important;
   max-height: min(72vh, calc(100dvh - var(--app-header-h, 58px) - 4.5rem)) !important;
+  min-width: min(300px, calc(100vw - 1.2rem));
+  box-sizing: border-box;
+}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card .moui-hd {
+  min-height: 2.65rem;
+  align-items: center;
 }
 html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-bd,
 html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-hd {
@@ -954,4 +960,52 @@ html.gn-android-webview .map-slide-tab.visible{
   box-sizing: border-box;
   border-radius: 0 .55rem .55rem 0!important;
   box-shadow: 0 3px 12px rgba(15,23,42,.2);
+}
+
+/* Barra superior: íconos alineados (DB, carpeta, etc.) sin “desfasarse” por flex wrap */
+html.gn-android-webview #ms > .hd {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding-left: max(0.65rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.65rem, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+}
+html.gn-android-webview #ms > .hd h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(0.92rem, 3.5vw, 1.05rem);
+}
+html.gn-android-webview #ms > .hd .hr {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.18rem;
+  flex-shrink: 0;
+}
+html.gn-android-webview #ms > .hd .hr .ib {
+  flex-shrink: 0;
+  width: 2.45rem;
+  height: 2.45rem;
+  min-width: 2.45rem;
+  min-height: 2.45rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.12rem;
+  line-height: 1;
+  box-sizing: border-box;
+}
+html.gn-android-webview #ms > .hd #mt.ib {
+  width: 2.55rem;
+  min-width: 2.55rem;
+}
+html.gn-android-webview #ms > .hd .di.ok,
+html.gn-android-webview #ms > .hd .di.er {
+  flex-shrink: 0;
+  padding: 0.28rem 0.42rem;
+  font-size: 0.82rem;
+}
+html.gn-android-webview #ms > .hd #un {
+  max-width: min(92px, 24vw);
 }
