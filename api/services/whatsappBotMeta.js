@@ -12,6 +12,7 @@ import {
   getWhatsAppCredentialsForTenant,
   sendBotWhatsAppText,
   sendTenantWhatsAppText,
+  whatsappProvider,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import {
@@ -1475,6 +1476,12 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
     await reply(phoneDigits, textoBienvenidaYAyuda(ctx), ctx.id, phoneNumberIdWebhook);
     return { ok: true, emptyTipos: true };
   }
+  /** Whapi.cloud: envío por gate API; listas interactivas son Graph Meta — usar menú numerado por texto. */
+  if (whatsappProvider() === "whapi") {
+    console.log("[whatsapp-bot-meta] menú principal por texto (proveedor whapi)", { tenantId: ctx.id });
+    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, phoneNumberIdWebhook);
+    return { ok: true, menuStyle: "whapi_text" };
+  }
   const bodyText =
     saludo +
     `Elegí el tipo que mejor describe tu reclamo:\n\n` +
@@ -1847,7 +1854,8 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (lower === "salir" || lower === "fin" || lower === "chau") {
+  const firstWord = lower.split(/\s+/)[0]?.replace(/[^a-záéíóúüñ0-9]/g, "") || "";
+  if (firstWord === "salir" || firstWord === "fin" || firstWord === "chau" || firstWord === "adios") {
     try {
       await humanChatCloseBySessionId(sess.humanChatSessionId);
     } catch (_) {}
@@ -2053,7 +2061,27 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  if (automatedBotOff) return;
+  if (automatedBotOff) {
+    const sOff = sessions.get(sk);
+    const stepOff = sOff?.step;
+    const idleOff = !sOff || stepOff === "idle" || stepOff === undefined;
+    if (idleOff) {
+      const nombreOff = ctx?.nombre || "GestorNova";
+      console.warn("[whatsapp-bot-meta] bot automático desactivado (env o BD); aviso al usuario idle", {
+        tid,
+        phone: maskWaDigitsForLog(phone),
+      });
+      await reply(
+        phone,
+        `El asistente automático de reclamos está *desactivado* por configuración.\n\n` +
+          `Cuando lo activen desde administración, escribí *Hola* o *menú*. ` +
+          `Para consultas: *${nombreOff}*.`,
+        tid,
+        phoneNumberId
+      );
+    }
+    return;
+  }
 
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);

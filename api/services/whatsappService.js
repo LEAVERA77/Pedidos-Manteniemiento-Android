@@ -24,7 +24,8 @@ import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
 import { logWhatsappMensajeEnviado, tieneNotificacionCierrePedidoReciente } from "./whatsappNotificacionesLog.js";
 import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 
-function whatsappProvider() {
+/** Proveedor activo (`meta` | `whapi` | `waha` | `evolution`). Exportado para el bot (menú Whapi sin Graph). */
+export function whatsappProvider() {
   const v = String(process.env.WHATSAPP_PROVIDER || "").toLowerCase().trim();
   if (v === "meta" || v === "whapi" || v === "waha" || v === "evolution") {
     return v;
