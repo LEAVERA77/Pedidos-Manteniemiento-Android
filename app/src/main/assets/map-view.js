@@ -622,6 +622,30 @@ export async function runInitMap() {
     ctx.aplicarUIMapaPlataforma();
     ctx.renderMk();
 
+    if (ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa()) {
+        const gnInv = () => {
+            try {
+                requestAnimationFrame(() => {
+                    try {
+                        map.invalidateSize({ animate: false });
+                    } catch (_) {}
+                });
+            } catch (_) {}
+        };
+        try {
+            map.on('zoomend', gnInv);
+        } catch (_) {}
+        try {
+            window.addEventListener('resize', gnInv);
+        } catch (_) {}
+        try {
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(() => gnInv());
+                ro.observe(el);
+            }
+        } catch (_) {}
+    }
+
     if (ctx.ultimaUbicacion && ctx.app.map) {
         const zInit = ctx.mostrarMarcadorUbicacion(ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon, ctx.ultimaUbicacion.acc);
         ctx.app.map.setView([ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon], zInit || 15);

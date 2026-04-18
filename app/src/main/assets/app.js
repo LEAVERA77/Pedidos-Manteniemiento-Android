@@ -2365,7 +2365,7 @@ function aplicarMarcaVisualCompleta() {
     const ll = document.querySelector('#ls .ll');
     if (ll) {
         const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
-        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
+        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px;background:#fff;display:block;mix-blend-mode:normal">`;
     }
 }
 
@@ -2373,10 +2373,18 @@ function aplicarMarcaVisualCompleta() {
 const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
 let _resolveAdminTipoModal = null;
 
-function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
+function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo, lineaNegocioAntes, lineaNegocioDespues) {
     const a = normalizarRubroEmpresa(tipoAnterior);
     const b = normalizarRubroEmpresa(tipoNuevo);
-    if (a === b) return;
+    const la = lineaNegocioAntes != null ? String(lineaNegocioAntes).trim() : '';
+    const ln = lineaNegocioDespues != null ? String(lineaNegocioDespues).trim() : '';
+    const tipoCambio = a !== b;
+    const lineaCambio = la !== '' && ln !== '' && la !== ln;
+    if (!tipoCambio && !lineaCambio) return;
+    invalidatePedidosTenantSqlCache();
+    try {
+        _sociosCatalogoTieneTenantIdCache = null;
+    } catch (_) {}
     try {
         DIST = [];
     } catch (_) {}
@@ -2391,6 +2399,26 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     } catch (_) {}
     try {
         renderMk();
+    } catch (_) {}
+    try {
+        window._sociosVirtualRows = null;
+        if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
+    } catch (_) {}
+    try {
+        if (document.getElementById('admin-estadisticas')?.classList.contains('active')) void cargarEstadisticas();
+    } catch (_) {}
+    try {
+        if (document.getElementById('admin-kpi')?.classList.contains('active')) void cargarKpiSnapshotsAdmin();
+    } catch (_) {}
+    try {
+        if (_mapaUsuariosAdmin && document.getElementById('admin-mapa-usuarios')?.classList.contains('active')) {
+            void cargarUbicacionesUsuarios();
+        }
+    } catch (_) {}
+    try {
+        if ((tipoCambio || lineaCambio) && app.u && NEON_OK && _sql && !modoOffline) {
+            void cargarPedidos({ silent: true });
+        }
     } catch (_) {}
 }
 
@@ -2510,6 +2538,14 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
     const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
+    const mapTipoABusiness = (t) => {
+        const n = normalizarRubroEmpresa(t);
+        if (n === 'cooperativa_agua') return 'agua';
+        if (n === 'municipio') return 'municipio';
+        return 'electricidad';
+    };
+    const businessSel = mapTipoABusiness(tipo);
+    const lineaNegAntes = lineaNegocioOperativaCodigo();
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
     /** Si el tipo elegido difería del guardado en cliente (servidor); dispara logout tras guardar. */
@@ -2536,14 +2572,6 @@ async function confirmarAdminTipoNegocioWeb() {
 
                 cambioRubroVsServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
-
-                const mapTipoABusiness = (t) => {
-                    const n = normalizarRubroEmpresa(t);
-                    if (n === 'cooperativa_agua') return 'agua';
-                    if (n === 'municipio') return 'municipio';
-                    return 'electricidad';
-                };
-                const businessSel = mapTipoABusiness(tipo);
 
                 if (cambioRubroVsServidor) {
                     if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
@@ -2612,12 +2640,12 @@ async function confirmarAdminTipoNegocioWeb() {
         ejecutarCerrarSesionTrasCambioNegocioAdmin();
         return;
     }
-    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo, active_business_type: businessSel };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     try {
         persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
     } catch (_) {}
-    invalidateCachesTrasCambioRubro(tipoAntes, tipo);
+    invalidateCachesTrasCambioRubro(tipoAntes, tipo, lineaNegAntes, lineaNegocioOperativaCodigo());
     aplicarEtiquetasPorTipo(tipo);
     poblarSelectTiposReclamo();
     syncZonaPedidoFormLabels();
@@ -3458,6 +3486,9 @@ const norm = p => ({
             return null;
         }
     })(),
+    pbt: String(p.business_type || '')
+        .trim()
+        .toLowerCase(),
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -4939,6 +4970,7 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
+        if (!pedidoVisibleSegunLineaNegocio(p)) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !adminMuestraPedidosDerivadosFuera()) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
@@ -5193,13 +5225,12 @@ function floatingPanelsDragEnabled() {
     }
 }
 
-/** Paneles moui sobre el mapa (Filtros/Tipo/Colores): solo arrastre en escritorio ancho.
- * En WebView Android el arrastre desde la barra captura touch y desalinea los toques respecto al layout. */
+/** Paneles moui sobre el mapa: arrastrar solo desde el ícono «grip» (.moui-drag-handle), así el resto del encabezado puede plegar sin robar el gesto (incl. Android). */
 function floatingMapMouiDragEnabled() {
     try {
-        return window.matchMedia('(min-width:1024px)').matches;
+        return window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa();
     } catch (_) {
-        return false;
+        return esAndroidWebViewMapa();
     }
 }
 
@@ -5334,6 +5365,7 @@ function initMouiCardDraggable(cardId) {
         } catch (_) {}
     };
     applySaved();
+    const dragHandle = hd.querySelector('.moui-drag-handle');
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
@@ -5395,13 +5427,14 @@ function initMouiCardDraggable(cardId) {
         document.addEventListener('touchend', onUp);
         document.addEventListener('touchcancel', onUp);
     };
-    hd.addEventListener('mousedown', (e) => {
+    const dragTarget = dragHandle || hd;
+    dragTarget.addEventListener('mousedown', (e) => {
         if (!floatingMapMouiDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
     });
-    hd.addEventListener(
+    dragTarget.addEventListener(
         'touchstart',
         (e) => {
             if (!floatingMapMouiDragEnabled()) return;
@@ -12701,22 +12734,31 @@ function invalidatePedidosTenantSqlCache() {
     _pedidosTenantSqlCache = null;
 }
 
-/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). */
+/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, filtra por línea operativa activa (relajado con NULL legacy). */
 async function pedidosFiltroTenantSql() {
     if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
+    let sql = '';
     try {
         const chk = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
         );
         if (chk.rows?.length) {
             const tid = tenantIdActual();
-            _pedidosTenantSqlCache = ` AND tenant_id = ${esc(tid)}`;
-        } else {
-            _pedidosTenantSqlCache = '';
+            sql += ` AND tenant_id = ${esc(tid)}`;
         }
-    } catch (_) {
-        _pedidosTenantSqlCache = '';
-    }
+    } catch (_) {}
+    try {
+        const chBt = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'business_type' LIMIT 1`
+        );
+        if (chBt.rows?.length) {
+            const line = lineaNegocioOperativaCodigo();
+            const lineQ = esc(line);
+            /* NULL legacy (pre multi-línea) se considera solo electricidad; evita ver pedidos de otro rubro al cambiar línea. */
+            sql += ` AND (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
+        }
+    } catch (_) {}
+    _pedidosTenantSqlCache = sql;
     return _pedidosTenantSqlCache;
 }
 
@@ -13174,6 +13216,15 @@ window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
 window.adminBannerOpinionClickVerDetalle = adminBannerOpinionClickVerDetalle;
 window.adminBannerOpinionCerrar = ocultarBannerOpinionCliente;
 
+/** Multi-línea en BD: excluye pedidos de otra línea activa (y NULL legacy solo en electricidad). */
+function pedidoVisibleSegunLineaNegocio(p) {
+    const line = lineaNegocioOperativaCodigo();
+    const bt = String(p?.pbt || '').trim().toLowerCase();
+    if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') return bt === line;
+    if (!bt) return line === 'electricidad';
+    return bt === line;
+}
+
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {
     const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
@@ -13192,6 +13243,7 @@ function pedidoVisibleSegunRubro(p) {
 function pedidosVisiblesEnUI() {
     const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
     return (app.p || []).filter((p) => {
+        if (!pedidoVisibleSegunLineaNegocio(p)) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
         return true;
@@ -14367,10 +14419,19 @@ async function cargarKpiSnapshotsAdmin() {
     } catch (_) {}
     host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     const tid = tenantIdActual();
+    let kpiLineSql = '';
+    try {
+        const chK = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kpi_snapshots' AND column_name = 'business_type' LIMIT 1`
+        );
+        if (chK.rows?.length) {
+            kpiLineSql = ` AND business_type = ${esc(lineaNegocioOperativaCodigo())}`;
+        }
+    } catch (_) {}
     try {
         const r = await sqlSimple(
             `SELECT id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_at::text AS created_at
-             FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}
+             FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}${kpiLineSql}
              ORDER BY periodo_inicio DESC NULLS LAST, metrica ASC LIMIT 200`
         );
         const rows = r.rows || [];
@@ -14558,13 +14619,26 @@ async function guardarKpiSnapshotAdmin() {
     const uid = app.u && app.u.id != null ? Number(app.u.id) : null;
     const uidSql = uid != null && Number.isFinite(uid) ? esc(uid) : 'NULL';
     const jsonStr = JSON.stringify(valorJson);
+    const lineBt = esc(lineaNegocioOperativaCodigo());
     try {
-        await sqlSimple(
-            `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
-             VALUES (${esc(tid)}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
-             ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
-             DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
+        const chKb = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kpi_snapshots' AND column_name = 'business_type' LIMIT 1`
         );
+        if (chKb.rows?.length) {
+            await sqlSimple(
+                `INSERT INTO kpi_snapshots (tenant_id, business_type, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
+                 VALUES (${esc(tid)}, ${lineBt}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
+                 ON CONFLICT (tenant_id, business_type, metrica, periodo_inicio, periodo_fin)
+                 DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
+            );
+        } else {
+            await sqlSimple(
+                `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
+                 VALUES (${esc(tid)}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
+                 ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
+                 DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
+            );
+        }
         toast('KPI guardado.', 'success');
         await cargarKpiSnapshotsAdmin();
     } catch (e) {
@@ -15965,7 +16039,18 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const hasSocTList = await sociosCatalogoTieneTenantId();
-        const wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
+        let wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
+        try {
+            const chSocBt = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
+            );
+            if (chSocBt.rows?.length) {
+                const line = lineaNegocioOperativaCodigo();
+                const lineQ = esc(line);
+                const socLine = ` (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
+                wf += wf ? ` AND${socLine}` : ` WHERE${socLine}`;
+            }
+        } catch (_) {}
         const r = await sqlSimpleSelectAllPages(
             `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo${wf}`,
             'ORDER BY nis_medidor'
@@ -17902,7 +17987,17 @@ async function cargarEstadisticas() {
                 FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
         const showConf = esCooperativaElectricaRubro();
         const socTieneTStats = await sociosCatalogoTieneTenantId();
-        const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
+        let socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
+        try {
+            const chSocBt = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
+            );
+            if (chSocBt.rows?.length) {
+                const line = lineaNegocioOperativaCodigo();
+                const lineQ = esc(line);
+                socTsqlStats += ` AND (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
+            }
+        } catch (_) {}
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
             // Resumen general

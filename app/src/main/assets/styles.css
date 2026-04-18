@@ -135,6 +135,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
 #lf{position:relative}
 .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
+#ls .ll{background:#fff!important;border:1px solid var(--bo);padding:4px;box-sizing:border-box}
+#ls .ll img{mix-blend-mode:normal!important;background:#fff!important}
 .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
 .lc .sub{text-align:center;color:var(--tm);font-size:.9rem;margin-bottom:1rem}
 .dbs{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.5rem 1rem;border-radius:2rem;font-size:.82rem;margin-bottom:1.25rem;transition:all .3s}
@@ -283,6 +285,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .ib:hover{background:var(--bg);color:var(--bd)}
 #mc{height:calc(100vh - 58px);height:calc(100dvh - 58px);width:100%;z-index:1;position:relative}
 #mc .leaflet-container{border-radius:12px;border:1px solid var(--bo);box-shadow:var(--shadow-card);overflow:hidden}
+html.gn-android-webview #mc .leaflet-container{overflow:visible!important}
 .bp2{position:absolute;bottom:0;left:0;right:0;background:var(--card,#fff);border:1px solid var(--bo);border-bottom:none;border-radius:12px 12px 0 0;box-shadow:var(--shadow-card),0 -4px 20px rgba(15,23,42,.08);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column;min-height:0}
 .bp2.col{transform:translateY(calc(100% - 4.5rem))}
 .ph{padding:.6rem 1rem .4rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;flex-shrink:0}
@@ -942,4 +945,13 @@ html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card
 }
 html.gn-android-webview .map-slide-tabs-cluster {
   z-index: 10150;
+}
+html.gn-android-webview .map-slide-tab.visible{
+  padding: .52rem .72rem!important;
+  font-size: max(12px,.82rem)!important;
+  font-weight: 700;
+  min-height: 2.35rem;
+  box-sizing: border-box;
+  border-radius: 0 .55rem .55rem 0!important;
+  box-shadow: 0 3px 12px rgba(15,23,42,.2);
 }
