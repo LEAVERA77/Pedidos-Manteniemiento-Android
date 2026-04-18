@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import XLSX from "xlsx";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query, withTransaction } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
@@ -9,6 +10,7 @@ import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 router.use(authWithTenantHost, adminOnly);
+router.use(tenantBusinessFilter);
 
 router.get("/", async (req, res) => {
   const limit = Number(req.query.limit || 300);

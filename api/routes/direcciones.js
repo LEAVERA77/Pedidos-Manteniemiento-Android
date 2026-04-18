@@ -6,10 +6,12 @@
 
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { upsertCorreccionOperadorDesdePedido } from "../services/correccionesDirecciones.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
+router.use(tenantBusinessFilter);
 
 /**
  * Body: { calle, numero?, ciudad | localidad, lat, lng, provincia? }

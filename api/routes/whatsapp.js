@@ -1,5 +1,6 @@
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query } from "../db/neon.js";
 import { normalizePhone } from "../utils/helpers.js";
 import { metaSendWhatsAppText } from "../services/metaWhatsapp.js";
@@ -13,6 +14,7 @@ import {
 
 const router = express.Router();
 router.use(authWithTenantHost);
+router.use(tenantBusinessFilter);
 
 async function whatsappNotifInsertCols() {
   const hasTenant = await tableHasColumn("whatsapp_notificaciones", "tenant_id");

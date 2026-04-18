@@ -1,5 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query } from "../db/neon.js";
 import { parsePeriod } from "../utils/helpers.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
@@ -7,6 +8,7 @@ import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
+router.use(tenantBusinessFilter);
 
 router.get("/resumen", async (req, res) => {
   try {

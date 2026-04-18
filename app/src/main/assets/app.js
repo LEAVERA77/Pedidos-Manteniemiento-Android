@@ -7478,9 +7478,45 @@ window._a = (a, id) => {
 };
 
 window._zm = id => {
-    const p = app.p.find(x => String(x.id) === String(id));
-    if (!p) return;
     void (async () => {
+        const pid = String(id ?? '').trim();
+        if (!pid) return;
+
+        let p = app.p.find((x) => String(x.id) === pid);
+        if (!p && !modoOffline && NEON_OK && _sql) {
+            try {
+                const pidNum = parseInt(pid, 10);
+                if (Number.isFinite(pidNum)) {
+                    const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(pidNum)} LIMIT 1`);
+                    const row = rr.rows?.[0];
+                    if (row) {
+                        p = norm(row);
+                        const idx = app.p.findIndex((x) => String(x.id) === String(p.id));
+                        if (idx >= 0) app.p[idx] = p;
+                        else app.p.unshift(p);
+                    }
+                }
+            } catch (_) {}
+        }
+        if (!p) {
+            toast('No se encontró el pedido para centrar el mapa.', 'warning');
+            return;
+        }
+
+        try {
+            document.getElementById('ls')?.classList.remove('active');
+            document.getElementById('ms')?.classList.add('active');
+            cerrarAdminPanel();
+            document.getElementById('gw')?.classList.remove('active');
+            const dm = document.getElementById('dm');
+            if (dm?.classList.contains('active')) {
+                dm.classList.remove('active');
+                try {
+                    delete dm.dataset.detallePedidoId;
+                } catch (_) {}
+            }
+        } catch (_) {}
+
         await ensureMapReady();
         if (!app.map) return;
         const { la, ln } = coordsEfectivasPedidoMapa(p);
@@ -7498,7 +7534,9 @@ window._zm = id => {
             } catch (_) {}
             app.map.setView([la, ln], Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17), { animate: true });
             try {
-                const layer = app.mk?.find((m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(id));
+                const layer = app.mk?.find(
+                    (m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(p.id)
+                );
                 if (layer && typeof layer.openPopup === 'function') layer.openPopup();
             } catch (_) {}
             setTimeout(() => {

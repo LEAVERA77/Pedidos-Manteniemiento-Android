@@ -2,11 +2,13 @@ import express from "express";
 import multer from "multer";
 import XLSX from "xlsx";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query, withTransaction } from "../db/neon.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 router.use(authWithTenantHost);
+router.use(tenantBusinessFilter);
 
 function badTable(error) {
   const m = String(error?.message || error || "");

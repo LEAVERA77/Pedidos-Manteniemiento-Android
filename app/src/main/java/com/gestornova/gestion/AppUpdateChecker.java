@@ -53,7 +53,7 @@ public final class AppUpdateChecker {
     private static void doCheckFromManifest(AppCompatActivity activity) {
         try {
             String manifestUrl = readManifestUrlFromAssets(activity);
-            if (manifestUrl == null || manifestUrl.isEmpty()) {
+            if (manifestUrl.isEmpty()) {
                 Log.d(TAG, "Sin manifestUrl en assets/" + ASSET_CONFIG);
                 return;
             }
@@ -98,7 +98,7 @@ public final class AppUpdateChecker {
                     : activity.getString(R.string.update_dialog_title);
             String msg = forceUpdate
                     ? activity.getString(R.string.update_dialog_message_forced, remoteName)
-                            + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
+                            + (!notes.isEmpty() ? "\n\n" + notes : "")
                     : buildMessage(activity, remoteName, notes);
 
             activity.runOnUiThread(() -> showDialog(activity, title, msg, apkUrl, forceUpdate));
@@ -135,7 +135,7 @@ public final class AppUpdateChecker {
 
     private static String buildMessage(AppCompatActivity activity, String remoteName, String notes) {
         String base = activity.getString(R.string.update_dialog_message, remoteName);
-        if (notes != null && !notes.isEmpty()) {
+        if (!notes.isEmpty()) {
             return base + "\n\n" + notes;
         }
         return base;

@@ -1,5 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
@@ -7,6 +8,7 @@ import { enqueueBroadcastJob } from "../services/broadcastQueue.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
+router.use(tenantBusinessFilter);
 
 function aplicarPlaceholders(texto, ctx) {
   let s = String(texto || "");

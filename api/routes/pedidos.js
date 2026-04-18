@@ -1,5 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName, tableHasColumn } from "../utils/tenantScope.js";
 import {
@@ -54,6 +55,7 @@ import { upsertCorreccionOperadorDesdePedido } from "../services/correccionesDir
 
 const router = express.Router();
 router.use(authWithTenantHost);
+router.use(tenantBusinessFilter);
 
 const MAX_OBSERVACIONES_DERIVACION_API = 2000;
 
