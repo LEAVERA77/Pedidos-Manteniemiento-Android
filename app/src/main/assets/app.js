@@ -935,11 +935,21 @@ function tiposReclamoSeleccionables() {
     return [...u];
 }
 
+/** Línea operativa activa: prioriza active_business_type sobre tipo legado de empresa. */
+function lineaNegocioOperativaCodigo() {
+    const abt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
+    if (abt === 'electricidad' || abt === 'agua' || abt === 'municipio') return abt;
+    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo || '');
+    if (r === 'cooperativa_agua') return 'agua';
+    if (r === 'municipio') return 'municipio';
+    return 'electricidad';
+}
+
 function esMunicipioRubro() {
-    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
+    return lineaNegocioOperativaCodigo() === 'municipio';
 }
 function esCooperativaAguaRubro() {
-    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua';
+    return lineaNegocioOperativaCodigo() === 'agua';
 }
 
 /** Cierre operativo (clientes afectados): no aplica a municipio ni coop. agua; u opción explícita en configuración. */
@@ -2384,6 +2394,39 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     } catch (_) {}
 }
 
+/** Borra claves locales típicas de la app (pmg*, ubicación). Las cookies HttpOnly no se pueden invalidar desde JS. */
+function limpiarAlmacenamientoClienteAmplioParaCambioNegocio() {
+    try {
+        const kill = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k) continue;
+            if (
+                k.startsWith('pmg') ||
+                k.startsWith('gestornova') ||
+                k.startsWith('GESTORNOVA') ||
+                k === 'ultima_ubicacion'
+            ) {
+                kill.push(k);
+            }
+        }
+        kill.forEach((k) => {
+            try {
+                localStorage.removeItem(k);
+            } catch (_) {}
+        });
+    } catch (_) {}
+}
+
+/** Tras confirmar cambio de rubro/línea en servidor: sessionStorage + caché local amplia + mismo teardown que logout. */
+function ejecutarCerrarSesionTrasCambioNegocioAdmin() {
+    try {
+        sessionStorage.clear();
+    } catch (_) {}
+    limpiarAlmacenamientoClienteAmplioParaCambioNegocio();
+    ejecutarCerrarSesion();
+}
+
 async function promptAdminTipoNegocioWebIfNeeded(force = false) {
     if (!esAdminSesionWebPublica()) return;
     if (!force) return;
@@ -2469,6 +2512,8 @@ async function confirmarAdminTipoNegocioWeb() {
     const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
+    /** Si el tipo elegido difería del guardado en cliente (servidor); dispara logout tras guardar. */
+    let cambioRubroVsServidor = false;
     if (persistir) {
         await asegurarJwtApiRest();
         if (!getApiToken()) await intentarRefrescarJwtDesdeCredencialesGuardadas();
@@ -2489,7 +2534,7 @@ async function confirmarAdminTipoNegocioWeb() {
                     }
                 } catch (_) {}
 
-                const cambiaRubroServidor =
+                cambioRubroVsServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
 
                 const mapTipoABusiness = (t) => {
@@ -2500,7 +2545,7 @@ async function confirmarAdminTipoNegocioWeb() {
                 };
                 const businessSel = mapTipoABusiness(tipo);
 
-                if (cambiaRubroServidor) {
+                if (cambioRubroVsServidor) {
                     if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
                         toast('Cambio cancelado', 'warning');
                         return;
@@ -2557,6 +2602,15 @@ async function confirmarAdminTipoNegocioWeb() {
                 persistir = false;
             }
         }
+    }
+    const tipoCambioUi = normalizarRubroEmpresa(tipoAntes) !== normalizarRubroEmpresa(tipo);
+    if (guardadoServidor && (tipoCambioUi || cambioRubroVsServidor)) {
+        toast(
+            'Línea de negocio actualizada en el servidor. Cerramos sesión para cargar datos del rubro activo; volvé a iniciar sesión.',
+            'info'
+        );
+        ejecutarCerrarSesionTrasCambioNegocioAdmin();
+        return;
     }
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
@@ -5478,9 +5532,20 @@ async function refrescarTecnicosMapaPrincipal() {
         return;
     }
     try {
+        const wf = await sqlFiltroUsuariosPorTenant();
+        let btSql = '';
+        try {
+            const rBt = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'business_type' LIMIT 1`
+            );
+            if (rBt.rows?.length) {
+                const line = esc(lineaNegocioOperativaCodigo());
+                btSql = ` AND (u.business_type IS NULL OR u.business_type = ${line})`;
+            }
+        } catch (_) {}
         const r = await sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
             FROM ubicaciones_usuarios uu
-            JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
+            JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE${wf}${btSql}
             WHERE uu.timestamp > NOW() - INTERVAL '2 hours'
             AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
             ORDER BY uu.usuario_id, uu.timestamp DESC`);
@@ -11865,7 +11930,7 @@ syncSuministroElectricoUI();
 try { syncZonaPedidoFormLabels(); } catch (_) {}
 
 function esCooperativaElectricaRubro() {
-    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
+    return lineaNegocioOperativaCodigo() === 'electricidad';
 }
 
 /**
@@ -12587,6 +12652,20 @@ function _commitAdminBannerOpinionWatermark() {
 
 function ocultarBannerOpinionCliente() {
     const boxPre = document.getElementById('admin-banner-opinion-cliente');
+    const pidBanner = boxPre?.dataset?.pedidoId;
+    if (pidBanner && typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos()) {
+        void (async () => {
+            try {
+                await asegurarJwtApiRest();
+                const tok = getApiToken();
+                if (!tok) return;
+                await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pidBanner))}/banner-calificacion-cerrado`), {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${tok}` },
+                });
+            } catch (_) {}
+        })();
+    }
     if (boxPre?.dataset?.pedidoId) _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
     _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
@@ -12665,6 +12744,13 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const tsql = await pedidosFiltroTenantSql();
+        let banSql = '';
+        try {
+            const bc = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'banner_calificacion_cerrado' LIMIT 1`
+            );
+            if (bc.rows?.length) banSql = ' AND COALESCE(banner_calificacion_cerrado, FALSE) = FALSE';
+        } catch (_) {}
         let r;
         try {
             r = await sqlSimple(
@@ -12673,7 +12759,8 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas <= 3
+                 AND opinion_cliente_estrellas <= 2
+                 ${banSql}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -12685,7 +12772,8 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas <= 3
+                 AND opinion_cliente_estrellas <= 2
+                 ${banSql}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -12711,7 +12799,7 @@ async function pollBannerOpinionCliente() {
         const waOk = /^\+\d{8,22}$/.test(wTel);
         const btnHc = document.getElementById('admin-banner-opinion-hc');
         if (btnHc) {
-            const baja = tieneE && estrellas <= 3;
+            const baja = tieneE && estrellas <= 2;
             const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
             btnHc.style.display = baja && apiOk && waOk ? 'inline-flex' : 'none';
         }
@@ -12723,7 +12811,7 @@ async function pollBannerOpinionCliente() {
             const tit = (row.tipo_trabajo || '').trim();
             const sfxStar = tieneE ? ` · ${estrellas}/5` : '';
             const avisoBaja =
-                tieneE && estrellas <= 3
+                tieneE && estrellas <= 2
                     ? 'Calificación baja — conviene hablar con el cliente. '
                     : '';
             txt.textContent = `${avisoBaja}Observación del cliente${sfxStar} · #${np}${tit ? ` · ${tit}` : ''}${
@@ -17547,7 +17635,22 @@ async function generarInformeMensualENRE() {
     });
 })();
 let _charts = {};
+
+/** Muestra ENRE/SAIFI solo en línea eléctrica; placeholders para agua / municipio. */
+function aplicarEstadisticasRubroEnPanel() {
+    try {
+        const ln = typeof lineaNegocioOperativaCodigo === 'function' ? lineaNegocioOperativaCodigo() : 'electricidad';
+        const ew = document.getElementById('estad-rubro-electrico-wrap');
+        const pa = document.getElementById('estad-rubro-agua-placeholder');
+        const pm = document.getElementById('estad-rubro-municipio-placeholder');
+        if (ew) ew.style.display = ln === 'electricidad' ? '' : 'none';
+        if (pa) pa.style.display = ln === 'agua' ? '' : 'none';
+        if (pm) pm.style.display = ln === 'municipio' ? '' : 'none';
+    } catch (_) {}
+}
+
 async function cargarEstadisticas() {
+    aplicarEstadisticasRubroEnPanel();
     const tsql = await pedidosFiltroTenantSql();
     const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
     const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
@@ -18090,7 +18193,18 @@ function iniciarMapaUsuariosAdmin() {
 async function cargarUbicacionesUsuarios() {
     const esActualizacion = _marcadoresUsuarios.length > 0 || _marcadoresPedidosAdmin.length > 0;
     try {
-        // ── Usuarios activos con ubicación reciente ───────────
+        const wf = await sqlFiltroUsuariosPorTenant();
+        let btSql = '';
+        try {
+            const rBt = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'business_type' LIMIT 1`
+            );
+            if (rBt.rows?.length) {
+                const line = esc(lineaNegocioOperativaCodigo());
+                btSql = ` AND (u.business_type IS NULL OR u.business_type = ${line})`;
+            }
+        } catch (_) {}
+        // ── Usuarios activos con ubicación reciente (tenant + línea de negocio) ───────────
         const [rUsr, rPed] = await Promise.all([
             sqlSimple(`
                 SELECT DISTINCT ON (uu.usuario_id)
@@ -18098,7 +18212,7 @@ async function cargarUbicacionesUsuarios() {
                     u.nombre, u.email
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id
-                WHERE u.activo = TRUE AND uu.timestamp > NOW() - INTERVAL '2 hours'
+                WHERE u.activo = TRUE${wf}${btSql} AND uu.timestamp > NOW() - INTERVAL '2 hours'
                 ORDER BY uu.usuario_id, uu.timestamp DESC
             `),
             // Pedidos pendientes y en ejecución con coordenadas

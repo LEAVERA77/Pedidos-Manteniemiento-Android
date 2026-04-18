@@ -717,10 +717,11 @@
           <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosCsvAdmin()"><i class="fas fa-file-csv"></i> Descargar CSV</button>
         </div>
       </div>
+      <div id="stats-cards" class="stat-grid"></div>
+      <div id="estad-rubro-electrico-wrap">
       <div id="enre-marco" style="font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45">
         <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
       </div>
-      <div id="stats-cards" class="stat-grid"></div>
       <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
           <h4 style="margin:0">Confiabilidad eléctrica (estimación interna)</h4>
@@ -739,6 +740,15 @@
           </div>
         </div>
         <div class="chart-legend-caption" id="chart-cap-confiabilidad"></div>
+      </div>
+      </div>
+      <div id="estad-rubro-agua-placeholder" class="chart-wrap" style="display:none;font-size:.85rem;color:var(--tm);padding:.75rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin:.5rem 0 .75rem;line-height:1.45">
+        <strong>Agua potable — indicadores</strong>
+        <p style="margin:.35rem 0 0;font-size:.78rem">Reclamos por pérdidas, presión y calidad según los pedidos de esta línea (<em>electricidad / agua / municipio</em> se eligen en el wizard). Podés completar KPI operativos (cortes de suministro, presión, calidad) cuando haya fuentes consolidadas.</p>
+      </div>
+      <div id="estad-rubro-municipio-placeholder" class="chart-wrap" style="display:none;font-size:.85rem;color:var(--tm);padding:.75rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin:.5rem 0 .75rem;line-height:1.45">
+        <strong>Servicios urbanos — indicadores</strong>
+        <p style="margin:.35rem 0 0;font-size:.78rem">Alumbrado, bacheo, recolección y similares según los tipos de trabajo cargados para <em>municipio</em>. Los gráficos generales de abajo ya filtran por la línea de negocio activa.</p>
       </div>
       <!-- Grilla 2 columnas en desktop, 1 en mobile -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem;margin-top:.5rem">

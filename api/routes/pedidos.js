@@ -1,7 +1,7 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
-import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName, tableHasColumn } from "../utils/tenantScope.js";
 import {
   pushPedidoBusinessFilter,
   pushPedidoBusinessFilterRelaxed,
@@ -1340,6 +1340,40 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
       error: "Error al re-geocodificar pedido",
       detail: error.message
     });
+  }
+});
+
+/** Admin: no volver a mostrar el banner de opinión baja para este pedido (persistente en BD). */
+router.post("/:id/banner-calificacion-cerrado", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    if (!(await tableHasColumn("pedidos", "banner_calificacion_cerrado"))) {
+      return res.status(503).json({
+        error: "Columna banner_calificacion_cerrado no existe",
+        hint: "Ejecutá api/db/migrations/pedidos_banner_calificacion_cerrado.sql en Neon",
+      });
+    }
+    const pedido = await getPedidoInTenant(id, req);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    const hasT = await pedidosTableHasTenantIdColumn();
+    if (hasT) {
+      await query(`UPDATE pedidos SET banner_calificacion_cerrado = TRUE WHERE id = $1 AND tenant_id = $2`, [
+        id,
+        req.tenantId,
+      ]);
+    } else {
+      await query(`UPDATE pedidos SET banner_calificacion_cerrado = TRUE WHERE id = $1`, [id]);
+    }
+    return res.json({ ok: true, id });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo actualizar el banner", detail: error.message });
   }
 });
 
