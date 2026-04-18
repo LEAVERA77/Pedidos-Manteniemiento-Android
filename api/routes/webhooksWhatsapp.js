@@ -142,12 +142,24 @@ router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
     });
 
     if (!metaShaped) {
-      console.log("[webhook-whapi] skipped (adapter devolvió null: sin texto entrante o solo from_me / grupos)", {
-        hasMessages: Array.isArray(body.messages) ? body.messages.length : 0,
-        eventType: ev?.type,
-        eventEvent: ev?.event,
-        channel_id: body.channel_id,
-      });
+      const msgLen = Array.isArray(body.messages) ? body.messages.length : 0;
+      if (msgLen === 0) {
+        console.log(
+          "[webhook-whapi] skipped (sin mensajes en el cuerpo; típico de event_type statuses u otros sin messages[])",
+          {
+            eventType: ev?.type,
+            eventEvent: ev?.event,
+            channel_id: body.channel_id,
+          }
+        );
+      } else {
+        console.log("[webhook-whapi] skipped (adapter devolvió null: sin texto entrante o solo from_me / grupos)", {
+          hasMessages: msgLen,
+          eventType: ev?.type,
+          eventEvent: ev?.event,
+          channel_id: body.channel_id,
+        });
+      }
       return res.json({ ok: true, skipped: true });
     }
 
