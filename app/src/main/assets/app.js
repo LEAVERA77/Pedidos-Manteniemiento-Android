@@ -7469,9 +7469,12 @@ window._a = (a, id) => {
         void iniciar(id);
         return;
     }
+    if (a === 'av') {
+        abrirAvance(id);
+        return;
+    }
     closeAll();
-    if (a === 'av') abrirAvance(id);
-    else void abrirCierre(id);
+    void abrirCierre(id);
 };
 
 window._zm = id => {
