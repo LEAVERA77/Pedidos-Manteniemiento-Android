@@ -5193,6 +5193,16 @@ function floatingPanelsDragEnabled() {
     }
 }
 
+/** Paneles moui sobre el mapa (Filtros/Tipo/Colores): solo arrastre en escritorio ancho.
+ * En WebView Android el arrastre desde la barra captura touch y desalinea los toques respecto al layout. */
+function floatingMapMouiDragEnabled() {
+    try {
+        return window.matchMedia('(min-width:1024px)').matches;
+    } catch (_) {
+        return false;
+    }
+}
+
 function aplicarPosicionBp2Guardada() {
     const bp2 = document.getElementById('bp2');
     if (!bp2 || !floatingPanelsDragEnabled()) return;
@@ -5301,7 +5311,7 @@ function initBp2PanelFlotanteDesktop() {
 
 let _mouiCardDragState = null;
 
-/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Escritorio ≥1024px o WebView Android. */
+/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Solo escritorio ancho (ver floatingMapMouiDragEnabled). */
 function initMouiCardDraggable(cardId) {
     const card = document.getElementById(cardId);
     if (!card) return;
@@ -5310,7 +5320,7 @@ function initMouiCardDraggable(cardId) {
     card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
-        if (!floatingPanelsDragEnabled()) return;
+        if (!floatingMapMouiDragEnabled()) return;
         try {
             const raw = localStorage.getItem(key);
             if (!raw) return;
@@ -5386,7 +5396,7 @@ function initMouiCardDraggable(cardId) {
         document.addEventListener('touchcancel', onUp);
     };
     hd.addEventListener('mousedown', (e) => {
-        if (!floatingPanelsDragEnabled()) return;
+        if (!floatingMapMouiDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
@@ -5394,7 +5404,7 @@ function initMouiCardDraggable(cardId) {
     hd.addEventListener(
         'touchstart',
         (e) => {
-            if (!floatingPanelsDragEnabled()) return;
+            if (!floatingMapMouiDragEnabled()) return;
             if (e.touches.length !== 1 || e.target.closest('button')) return;
             e.preventDefault();
             const t = e.touches[0];
@@ -5436,6 +5446,16 @@ function aplicarUIMapaPlataforma() {
     if (esAndroidWebViewMapa()) {
         try {
             document.documentElement.classList.add('gn-android-webview');
+        } catch (_) {}
+        try {
+            ['mapa-card-filtros', 'mapa-card-filtro-tipo', 'mapa-card-colores', 'mapa-card-dashboard'].forEach((cid) => {
+                const pan = document.getElementById(cid);
+                if (!pan) return;
+                pan.style.removeProperty('left');
+                pan.style.removeProperty('top');
+                pan.style.removeProperty('right');
+                pan.style.removeProperty('bottom');
+            });
         } catch (_) {}
         /* Mismas paletas que admin: paneles en DOM; mostrar/ocultar con pestañas + ojo (slideoff). */
         card.style.display = 'block';
@@ -7524,7 +7544,16 @@ window._zm = id => {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
         }
-        setTimeout(() => {
+        const openPedidoPopup = () => {
+            try {
+                const layer = app.mk?.find(
+                    (m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(p.id)
+                );
+                if (layer && typeof layer.openPopup === 'function') layer.openPopup();
+            } catch (_) {}
+        };
+
+        const runZoom = (withPopup) => {
             if (!app.map) return;
             try {
                 app.map.invalidateSize({ animate: false });
@@ -7532,19 +7561,34 @@ window._zm = id => {
             try {
                 renderMk();
             } catch (_) {}
-            app.map.setView([la, ln], Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17), { animate: true });
-            try {
-                const layer = app.mk?.find(
-                    (m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(p.id)
-                );
-                if (layer && typeof layer.openPopup === 'function') layer.openPopup();
-            } catch (_) {}
+            const zMax = Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17);
+            app.map.setView([la, ln], zMax, { animate: !esAndroidWebViewMapa() });
+            if (withPopup) openPedidoPopup();
             setTimeout(() => {
                 try {
                     document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
                 } catch (_) {}
             }, 320);
-        }, 120);
+        };
+
+        setTimeout(() => {
+            runZoom(true);
+            if (esAndroidWebViewMapa()) {
+                setTimeout(() => {
+                    try {
+                        app.map.invalidateSize({ animate: false });
+                    } catch (_) {}
+                    try {
+                        renderMk();
+                    } catch (_) {}
+                    const z = Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17);
+                    try {
+                        app.map.setView([la, ln], z, { animate: false });
+                    } catch (_) {}
+                    openPedidoPopup();
+                }, 420);
+            }
+        }, esAndroidWebViewMapa() ? 220 : 120);
     })();
 };
 

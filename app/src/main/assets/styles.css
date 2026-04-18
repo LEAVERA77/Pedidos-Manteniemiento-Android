@@ -887,3 +887,59 @@ html.gn-android-webview .gn-gps-fab {
   min-height: 2.9rem;
   box-sizing: border-box;
 }
+
+/* Paneles Filtros / Tipo / Colores / Dash: mismo anclaje viewport que escritorio ancho (evita desalineación táctil vs capa Leaflet). */
+html.gn-android-webview #mapa-overlay-ui {
+  position: fixed !important;
+  top: var(--app-header-h, 58px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10100;
+  pointer-events: none;
+}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) {
+  position: fixed !important;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 10112 !important;
+  max-height: min(72vh, calc(100dvh - var(--app-header-h, 58px) - 4.5rem)) !important;
+}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-bd,
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff) .moui-hd {
+  font-size: max(12px, 0.78rem);
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtros:not(.moui-card-slideoff) {
+  top: calc(var(--app-header-h, 58px) + 0.45rem);
+  left: 0.45rem;
+  right: auto;
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-card-slideoff) {
+  top: max(6.75rem, calc(var(--app-header-h, 58px) + 3.25rem));
+  left: 0.45rem;
+  right: auto;
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-colores:not(.moui-card-slideoff) {
+  top: auto !important;
+  bottom: max(5.25rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
+  left: 0.45rem;
+  right: auto;
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card-slideoff) {
+  top: calc(var(--app-header-h, 58px) + 0.45rem);
+  right: 0.45rem;
+  left: auto;
+}
+@media (max-width: 700px) {
+  html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-dashboard:not(.moui-card-slideoff) {
+    left: 0.45rem;
+    right: 0.45rem;
+    top: auto;
+    bottom: max(5.5rem, calc(4.75rem + env(safe-area-inset-bottom, 0px)));
+    max-height: 38vh;
+  }
+}
+html.gn-android-webview .map-slide-tabs-cluster {
+  z-index: 10150;
+}

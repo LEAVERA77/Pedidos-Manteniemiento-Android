@@ -590,7 +590,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     const bind = hasTa
       ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
       : [id, req.user.id, motivoStr || null, destinoSug];
-    const bt = await pushPedidoBusinessFilter(req, bind);
+    const bt = await pushPedidoBusinessFilterRelaxed(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = TRUE,
@@ -668,7 +668,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
 
     const hasTa = await pedidosTableHasTenantIdColumn();
     const bind = hasTa ? [id, nuevaNota ?? null, req.tenantId] : [id, nuevaNota ?? null];
-    const bt = await pushPedidoBusinessFilter(req, bind);
+    const bt = await pushPedidoBusinessFilterRelaxed(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = FALSE,
@@ -800,7 +800,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       snap,
     ];
     const bind = hasTa ? [...upParams, req.tenantId] : [...upParams];
-    const bt = await pushPedidoBusinessFilter(req, bind);
+    const bt = await pushPedidoBusinessFilterRelaxed(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           estado = $2,
