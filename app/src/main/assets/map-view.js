@@ -562,6 +562,27 @@ export async function runInitMap() {
         const hayModalAbierto = ctx.document.querySelector('.mo.active');
         if (hayModalAbierto) return;
 
+        try {
+            const latlng = e.latlng;
+            const mkList = ctx.app.mk || [];
+            for (let i = 0; i < mkList.length; i++) {
+                const m = mkList[i];
+                const pid = m && m._gnPedidoId != null ? String(m._gnPedidoId) : '';
+                if (!pid || !m.getLatLng) continue;
+                try {
+                    const d = latlng.distanceTo(m.getLatLng());
+                    if (d < 28) {
+                        if (typeof ctx.window.suppressNextMapClickFromPopup === 'function') {
+                            ctx.window.suppressNextMapClickFromPopup(620);
+                        }
+                        ctx.app.map.closePopup();
+                        if (typeof ctx.window._d === 'function') ctx.window._d(pid);
+                        return;
+                    }
+                } catch (_) {}
+            }
+        } catch (_) {}
+
         if (ctx.esAndroidWebViewMapa() && !ctx.mapTapUbicacionInicialHechaSesion() && !ctx._gpsRecibidoEstaSesion) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;

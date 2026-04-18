@@ -5124,6 +5124,20 @@ function toggleMapaCardSlideoff(cardId, hide) {
     } catch (_) {}
 }
 
+/** Android/WebView: al abrir detalle de pedido, ocultar paneles del mapa para que no tapen el modal. */
+function gnMinimizeMapPanelsParaDetallePedido() {
+    try {
+        if (!esAndroidWebViewMapa()) return;
+        ['mapa-card-filtros', 'mapa-card-filtro-tipo', 'mapa-card-colores', 'mapa-card-dashboard'].forEach((id) => {
+            toggleMapaCardSlideoff(id, true);
+        });
+        try {
+            setBp2PanelHidden(true);
+        } catch (_) {}
+    } catch (_) {}
+}
+window.gnMinimizeMapPanelsParaDetallePedido = gnMinimizeMapPanelsParaDetallePedido;
+
 function syncMapSlideTabsFromStorage() {
     const cf = document.getElementById('mapa-card-filtros');
     if (cf && localStorage.getItem('pmg_slideoff_filtros') === '1') toggleMapaCardSlideoff('mapa-card-filtros', true);
@@ -5887,6 +5901,38 @@ function iniciarPollWhatsappHumanChat() {
     _waHcPollInterval = setInterval(tick, 5000);
 }
 
+const SESS_KEY_WA_HC_BANNER_DISMISS = 'gn_sess_wa_hc_banner_dismiss_v1';
+
+function waHcBannerDismissIdSet() {
+    try {
+        const j = sessionStorage.getItem(SESS_KEY_WA_HC_BANNER_DISMISS);
+        const a = JSON.parse(j || '[]');
+        return new Set((Array.isArray(a) ? a : []).map(String));
+    } catch (_) {
+        return new Set();
+    }
+}
+
+function waHcMarcarBannerDescartado(sessionIdStr) {
+    const sid = String(sessionIdStr || '').trim();
+    if (!sid) return;
+    const s = waHcBannerDismissIdSet();
+    s.add(sid);
+    try {
+        sessionStorage.setItem(SESS_KEY_WA_HC_BANNER_DISMISS, JSON.stringify([...s]));
+    } catch (_) {}
+}
+
+function ocultarTodosToastsWaHumanChat() {
+    try {
+        document.querySelectorAll('#wa-human-chat-toast-host .wa-human-chat-toast').forEach((el) => {
+            try {
+                el.remove();
+            } catch (_) {}
+        });
+    } catch (_) {}
+}
+
 async function pollWhatsappHumanChatCola() {
     if (!app.u || !esAdmin() || modoOffline || !puedeEnviarApiRestPedidos()) return;
     try {
@@ -5903,11 +5949,13 @@ async function pollWhatsappHumanChatCola() {
         for (const k of [..._waHcKnownSessionIds]) {
             if (!idsNow.has(k)) _waHcKnownSessionIds.delete(k);
         }
+        const dismissed = waHcBannerDismissIdSet();
         if (!_waHcPollPrimed) {
             _waHcPollPrimed = true;
             for (const s of list) {
                 const id = String(s.id);
                 _waHcKnownSessionIds.add(id);
+                if (dismissed.has(id)) continue;
                 mostrarToastWaHumanChatNuevo(s);
             }
             return;
@@ -5916,12 +5964,15 @@ async function pollWhatsappHumanChatCola() {
             const id = String(s.id);
             if (_waHcKnownSessionIds.has(id)) continue;
             _waHcKnownSessionIds.add(id);
+            if (dismissed.has(id)) continue;
             mostrarToastWaHumanChatNuevo(s);
         }
     } catch (_) {}
 }
 
 function mostrarToastWaHumanChatNuevo(s) {
+    const sidStr = String(s?.id ?? '').trim();
+    if (sidStr && waHcBannerDismissIdSet().has(sidStr)) return;
     const host = document.getElementById('wa-human-chat-toast-host');
     if (!host) return;
     const el = document.createElement('div');
@@ -5930,7 +5981,11 @@ function mostrarToastWaHumanChatNuevo(s) {
     const ph = String(s.phone_canonical || '');
     el.innerHTML = `<button type="button" class="wa-hc-toast-close" aria-label="Cerrar aviso">&times;</button><strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
     const go = () => {
-        try { el.remove(); } catch (_) {}
+        waHcMarcarBannerDescartado(sidStr);
+        ocultarTodosToastsWaHumanChat();
+        try {
+            el.remove();
+        } catch (_) {}
         abrirModalWhatsappHumanChat(Number(s.id));
     };
     el.onclick = (ev) => {
@@ -6220,6 +6275,8 @@ async function desactivarChatWaHc(sidNum) {
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
         });
         if (!r.ok) throw new Error('close');
+        waHcMarcarBannerDescartado(sidStr);
+        ocultarTodosToastsWaHumanChat();
         _waHcKnownSessionIds.delete(sidStr);
         const st = _waHcWindows.get(sidStr);
         if (st) {
@@ -6241,6 +6298,10 @@ function cerrarModalWaHumanChat() {
 }
 
 async function abrirModalWhatsappHumanChat(prefSessionId) {
+    ocultarTodosToastsWaHumanChat();
+    if (prefSessionId != null && Number.isFinite(Number(prefSessionId))) {
+        waHcMarcarBannerDescartado(String(prefSessionId));
+    }
     if (!puedeEnviarApiRestPedidos()) {
         toast('Sin conexión a la API para el chat', 'warning');
         return;
@@ -7234,6 +7295,9 @@ function renderMk() {
             if (panePed) cmOpt.pane = panePed;
             m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
         }
+        try {
+            m._gnPedidoId = p.id;
+        } catch (_) {}
         m.bindPopup(`
             <div style="min-width:160px;font-family:system-ui">
                 <b style="color:#1e3a8a">#${p.np}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
@@ -7421,15 +7485,25 @@ window._zm = id => {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
         }
-        closeAll();
         setTimeout(() => {
             if (!app.map) return;
-            app.map.invalidateSize({ animate: false });
-            app.map.setView([la, ln], 17, { animate: true });
+            try {
+                app.map.invalidateSize({ animate: false });
+            } catch (_) {}
+            try {
+                renderMk();
+            } catch (_) {}
+            app.map.setView([la, ln], Math.min(app.map.getMaxZoom ? app.map.getMaxZoom() : 17, 17), { animate: true });
+            try {
+                const layer = app.mk?.find((m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(id));
+                if (layer && typeof layer.openPopup === 'function') layer.openPopup();
+            } catch (_) {}
             setTimeout(() => {
-                document.getElementById('zoom-altura').textContent = calcularEscalaReal(17);
-            }, 300);
-        }, 100);
+                try {
+                    document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
+                } catch (_) {}
+            }, 320);
+        }, 120);
     })();
 };
 
@@ -7683,6 +7757,13 @@ async function confirmarEnviarNotifPedido() {
         await enviarWhatsappMetaTecnico(uid, pidNum, `${titulo}: ${cuerpo}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
+        try {
+            const dm = document.getElementById('dm');
+            if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pidNum)) {
+                dm.classList.remove('active');
+                delete dm.dataset.detallePedidoId;
+            }
+        } catch (_) {}
         toast(oldTai && oldTai !== uid ? 'Reasignado y notificaciones enviadas' : 'Técnico asignado y notificación encolada', 'success');
         await cargarPedidos();
         render();
@@ -8908,6 +8989,7 @@ async function actualizarAvance(id, avance) {
             offlinePedidosSave(app.p);
             render();
             toast('Avance actualizado', 'success');
+            void refrescarDetalleAbiertoSiMismoPedido(id);
             return;
         }
 
@@ -8929,6 +9011,7 @@ async function actualizarAvance(id, avance) {
 
         render();
         toast('Avance actualizado', 'success');
+        void refrescarDetalleAbiertoSiMismoPedido(id);
     } catch(e) {
         console.error('Error actualizando avance:', e);
         toast('Error al actualizar avance', 'error');
@@ -9040,6 +9123,13 @@ async function updPedido(id, campos, usuarioId) {
     render();
 }
 
+async function refrescarDetalleAbiertoSiMismoPedido(id) {
+    const dm = document.getElementById('dm');
+    if (!dm?.classList.contains('active') || String(dm.dataset.detallePedidoId) !== String(id)) return;
+    const p = app.p.find((x) => String(x.id) === String(id));
+    if (p) void detalle(p);
+}
+
 async function iniciar(id) {
     try {
         const now = new Date().toISOString();
@@ -9050,7 +9140,7 @@ async function iniciar(id) {
             offlinePedidosSave(app.p);
             render();
             toast('Pedido iniciado. Si hay teléfono de contacto y WhatsApp configurado, se avisó al cliente.', 'success');
-            closeAll();
+            await refrescarDetalleAbiertoSiMismoPedido(id);
             return;
         }
         await updPedido(id, {
@@ -9063,7 +9153,7 @@ async function iniciar(id) {
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
         }
         toast('Pedido iniciado', 'info');
-        closeAll();
+        await refrescarDetalleAbiertoSiMismoPedido(id);
     } catch(e) {
         toastError('iniciar-pedido', e);
     }
@@ -9171,15 +9261,25 @@ function sanitizarTextoDescripcionPedidoVista(s) {
     return t.trim();
 }
 
+/** Sección materiales: solo en ejecución, con avance o ya cerrado (lectura en cerrado). */
+function estadoPermiteSeccionMateriales(p) {
+    if (!p || tipoPedidoExcluyeMateriales(p.tt)) return false;
+    const es = String(p.es || '');
+    if (es === 'En ejecución' || es === 'Cerrado') return true;
+    if (Number(p.av) > 0) return true;
+    return false;
+}
+
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
     if (tipoPedidoExcluyeMateriales(p.tt)) return false;
+    if (!estadoPermiteSeccionMateriales(p)) return false;
     if (p.sdpen && esTecnicoOSupervisor() && !esAdmin()) return false;
     const es = String(p.es || '');
     const uid = String(app.u?.id ?? '');
     if (esAdmin()) {
-        return ['Pendiente', 'Asignado', 'En ejecución'].includes(es);
+        return es === 'En ejecución' || (Number(p.av) > 0 && es !== 'Pendiente');
     }
     if (es !== 'En ejecución') return false;
     return (
@@ -9220,6 +9320,11 @@ async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
+    if (!estadoPermiteSeccionMateriales(p)) {
+        body.innerHTML =
+            '<p style="font-size:.8rem;color:var(--tl)">La carga de materiales se habilita cuando el pedido está <strong>en ejecución</strong>, tiene <strong>avance</strong> o al <strong>cerrarlo</strong>.</p>';
+        return;
+    }
     const pid = parseInt(p.id, 10);
     
     // GUARD MEJORADO: si el pedido está cerrado y ya hay materiales renderizados, NO recargar
@@ -10419,7 +10524,13 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
                 waErr ? 'warning' : 'info'
             );
         }
-        void detalle(idx !== -1 ? app.p[idx] : row);
+        try {
+            const dm = document.getElementById('dm');
+            if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pidNum)) {
+                dm.classList.remove('active');
+                delete dm.dataset.detallePedidoId;
+            }
+        } catch (_) {}
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
@@ -10447,8 +10558,8 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
     if (!Number.isFinite(pidNum)) return;
     const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
     const motivo = (ta?.value || '').trim();
-    if (motivo.length < 8) {
-        toast('Las observaciones de campo son obligatorias (mínimo 8 caracteres).', 'error');
+    if (motivo.length < 10) {
+        toast('Las observaciones de campo son obligatorias (mínimo 10 caracteres).', 'error');
         return;
     }
     await asegurarJwtApiRest();
@@ -10998,7 +11109,9 @@ async function detalle(p) {
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
 
-        ${esTipoPedidoFactibilidad(p.tt) ? '' : `
+        ${esTipoPedidoFactibilidad(p.tt) || !estadoPermiteSeccionMateriales(p)
+            ? ''
+            : `
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
             <h4>🔧 Materiales</h4>
             <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
@@ -11037,8 +11150,11 @@ async function detalle(p) {
     `;
     
     document.getElementById('dm').classList.add('active');
+    try {
+        if (typeof gnMinimizeMapPanelsParaDetallePedido === 'function') gnMinimizeMapPanelsParaDetallePedido();
+    } catch (_) {}
     requestAnimationFrame(() => {
-        if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
+        if (!esTipoPedidoFactibilidad(p.tt) && estadoPermiteSeccionMateriales(p)) refrescarMaterialesEnDetalle(p);
     });
     void sincronizarMapaConPedidoEnDetalle(p);
 }
@@ -12558,6 +12674,9 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
+let _adminBannerAutoOpenTimer = null;
+/** Evita abrir dos veces el mismo detalle por banner (clic + timer 5s). */
+let _adminBannerNuevoUltimoPidAbierto = null;
 let _pollBannerAdminInterval = null;
 /** Tras el aviso de nuevo reclamo WhatsApp, el mapa no abre #pm solo durante 5 s (no hasta hacer clic en el banner). */
 let _gnMapaBloqueoBannerHastaMs = 0;
@@ -12620,6 +12739,8 @@ async function iniciarWatermarkBannerOpinionCliente() {
 }
 
 function ocultarBannerReclamoCliente() {
+    clearTimeout(_adminBannerAutoOpenTimer);
+    _adminBannerAutoOpenTimer = null;
     const box = document.getElementById('admin-banner-nuevo-cliente');
     if (box) {
         box.style.display = 'none';
@@ -12719,6 +12840,11 @@ async function pollBannerNuevoReclamoCliente() {
         _gnMapaBloqueoBannerTimer = setTimeout(() => {
             _gnMapaBloqueoBannerHastaMs = 0;
             _gnMapaBloqueoBannerTimer = null;
+        }, 5000);
+        clearTimeout(_adminBannerAutoOpenTimer);
+        _adminBannerAutoOpenTimer = setTimeout(() => {
+            _adminBannerAutoOpenTimer = null;
+            void adminBannerAbrirPedidoNuevoUnaVez('auto5s');
         }, 5000);
         clearTimeout(_adminBannerTimer);
         _adminBannerTimer = setTimeout(() => ocultarBannerReclamoCliente(), 30000);
@@ -12900,26 +13026,40 @@ function iniciarPollBannerReclamoCliente() {
     })();
 }
 
-async function adminBannerClickVerDetalle() {
+async function adminBannerAbrirPedidoNuevoUnaVez(_origen) {
     const box = document.getElementById('admin-banner-nuevo-cliente');
     const pid = box?.dataset?.pedidoId;
+    if (!pid || box.dataset.visible !== '1') return;
+    if (_adminBannerNuevoUltimoPidAbierto != null && String(_adminBannerNuevoUltimoPidAbierto) === String(pid)) return;
+    const dm = document.getElementById('dm');
+    if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pid)) {
+        ocultarBannerReclamoCliente();
+        return;
+    }
     ocultarBannerReclamoCliente();
-    if (!pid) return;
-    let p = app.p.find(x => String(x.id) === String(pid));
+    _adminBannerNuevoUltimoPidAbierto = String(pid);
+    let p = app.p.find((x) => String(x.id) === String(pid));
     if (!p && _sql && NEON_OK) {
         try {
             const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
             const row = rr.rows?.[0];
             if (row) {
                 p = norm(row);
-                const ix = app.p.findIndex(x => String(x.id) === String(p.id));
+                const ix = app.p.findIndex((x) => String(x.id) === String(p.id));
                 if (ix >= 0) app.p[ix] = p;
                 else app.p.unshift(p);
             }
         } catch (_) {}
     }
     if (p) void detalle(p);
-    else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
+    else {
+        _adminBannerNuevoUltimoPidAbierto = null;
+        toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
+    }
+}
+
+async function adminBannerClickVerDetalle() {
+    await adminBannerAbrirPedidoNuevoUnaVez('click');
 }
 
 async function adminBannerOpinionClickVerDetalle() {

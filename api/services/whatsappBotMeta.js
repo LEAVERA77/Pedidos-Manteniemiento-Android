@@ -673,6 +673,14 @@ function normalizeBotBusinessType(raw, fallbackTipo) {
   return "electricidad";
 }
 
+/** Texto corto para prompts del bot según línea configurada en el cliente. */
+function etiquetaRubroConsultaBot(bt, tipoCliente) {
+  const b = normalizeBotBusinessType(bt, tipoCliente);
+  if (b === "agua") return "agua potable";
+  if (b === "municipio") return "servicios municipales";
+  return "electricidad";
+}
+
 function normalizarIdentificadorReclamo(raw) {
   const src = String(raw || "").trim();
   const fold = src
@@ -691,34 +699,41 @@ function normalizarIdentificadorReclamo(raw) {
 async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, identificador) {
   const ident = normalizarIdentificadorReclamo(identificador);
   const hasBt = await tableHasColumn("pedidos", "business_type");
+  const hasIdentCol = await tableHasColumn("pedidos", "identificador");
+  const hasNisMed = await tableHasColumn("pedidos", "nis_medidor");
   const params = [tenantId];
-  let where = `tenant_id = $1 AND estado IN ('Pendiente','Asignado','En ejecución')`;
+  // Incluye cerrados y derivados; mismo tenant (sin exigir coincidencia estricta de línea de negocio).
+  let where = `tenant_id = $1`;
   if (hasBt) {
     params.push(businessType);
-    where += ` AND COALESCE(business_type,'electricidad') = $${params.length}`;
+    where += ` AND (business_type IS NULL OR business_type = $${params.length})`;
   }
   if (ident.tipo === "numeric") {
     params.push(ident.valor);
-    where +=
-      ` AND (` +
-      `REGEXP_REPLACE(COALESCE(identificador,''), '\\D', '', 'g') = $${params.length} ` +
-      `OR REGEXP_REPLACE(COALESCE(nis_medidor,''), '\\D', '', 'g') = $${params.length} ` +
-      `OR REGEXP_REPLACE(COALESCE(cliente_nombre,''), '\\D', '', 'g') = $${params.length}` +
-      `)`;
+    const i = params.length;
+    const parts = [
+      `REGEXP_REPLACE(COALESCE(nis::text,''), '\\D', '', 'g') = $${i}`,
+      `REGEXP_REPLACE(COALESCE(medidor::text,''), '\\D', '', 'g') = $${i}`,
+    ];
+    if (hasIdentCol) parts.push(`REGEXP_REPLACE(COALESCE(identificador,''), '\\D', '', 'g') = $${i}`);
+    if (hasNisMed) parts.push(`REGEXP_REPLACE(COALESCE(nis_medidor,''), '\\D', '', 'g') = $${i}`);
+    parts.push(`REGEXP_REPLACE(COALESCE(cliente_nombre,''), '\\D', '', 'g') = $${i}`);
+    where += ` AND (${parts.join(" OR ")})`;
   } else {
     params.push(ident.valor);
-    where +=
-      ` AND (` +
-      `LOWER(COALESCE(identificador,'')) LIKE '%' || LOWER($${params.length}) || '%' ` +
-      `OR LOWER(COALESCE(cliente_nombre,'')) LIKE '%' || LOWER($${params.length}) || '%'` +
-      `)`;
+    const i = params.length;
+    const parts = [
+      `LOWER(COALESCE(cliente_nombre,'')) LIKE '%' || LOWER($${i}) || '%'`,
+    ];
+    if (hasIdentCol) parts.push(`LOWER(COALESCE(identificador,'')) LIKE '%' || LOWER($${i}) || '%'`);
+    where += ` AND (${parts.join(" OR ")})`;
   }
   const r = await query(
     `SELECT id, numero_pedido, estado, direccion, fecha_creacion
      FROM pedidos
      WHERE ${where}
-     ORDER BY fecha_creacion ASC
-     LIMIT 8`,
+     ORDER BY fecha_creacion DESC
+     LIMIT 12`,
     params
   );
   return r.rows || [];
@@ -819,7 +834,7 @@ function textoBienvenidaYAyuda(ctx) {
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
-    `*${consultaNum})* 🔍 Consultar mis reclamos pendientes\n\n` +
+    `*${consultaNum})* 🔍 Consultar mis reclamos\n\n` +
     `Enviá *menú* o *0* para repetir este mensaje.`
   );
 }
@@ -836,7 +851,7 @@ function menuTextoNumerado(ctx) {
   ctx.tipos.forEach((t, i) => {
     lineas.push(`${i + 1}) ${t}`);
   });
-  lineas.push(`${consultaNum}) 🔍 Consultar mis reclamos pendientes`);
+  lineas.push(`${consultaNum}) 🔍 Consultar mis reclamos`);
   lineas.push("");
   lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
@@ -844,6 +859,7 @@ function menuTextoNumerado(ctx) {
 
 async function iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx }) {
   const bt = normalizeBotBusinessType(ctx?.activeBusinessType, ctx?.tipo);
+  const rubroLbl = etiquetaRubroConsultaBot(bt, ctx?.tipo);
   const linea1 =
     bt === "agua"
       ? "1) N° de abonado o medidor"
@@ -860,7 +876,7 @@ async function iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNum
   });
   await reply(
     phone,
-    `🔍 CONSULTAR MIS RECLAMOS PENDIENTES\n\nPara buscar sus reclamos activos de *${bt.toUpperCase()}*, elegí cómo querés identificarte:\n\n${linea1}\n${linea2}\n\nRespondé con *1* o *2*.`,
+    `🔍 CONSULTAR MIS RECLAMOS\n\nServicio: *${rubroLbl}*.\nTe mostramos reclamos en *cualquier estado* (pendiente, en curso, cerrado, etc.). Elegí cómo identificarte:\n\n${linea1}\n${linea2}\n\nRespondé con *1* o *2*.`,
     tid,
     phoneNumberId
   );
@@ -2767,7 +2783,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       sessions.delete(sk);
       await reply(
         phone,
-        `✅ No encontramos reclamos activos asociados a "*${ident}*".\n\nSi necesitás hacer uno nuevo, escribí *NUEVO*.\nPara volver al menú principal, escribí *MENU*.`,
+        `✅ No encontramos reclamos asociados a "*${ident}*" en este servicio.\n\nSi necesitás hacer uno nuevo, escribí *NUEVO*.\nPara volver al menú principal, escribí *MENU*.`,
         tid,
         phoneNumberId
       );
@@ -2775,12 +2791,17 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     const bloques = rows.map((r) => {
       const fecha = r.fecha_creacion ? new Date(r.fecha_creacion).toLocaleString("es-AR") : "—";
+      const es = String(r.estado || "").trim();
+      const esAbierto = ["Pendiente", "Asignado", "En ejecución"].includes(es);
+      const lineaTiempo = esAbierto
+        ? `⏳ Tiempo desde el alta: ${formatearDuracionPendiente(r.fecha_creacion)}`
+        : `⏳ Alta del reclamo: ${formatearDuracionPendiente(r.fecha_creacion)}`;
       return [
         "━━━━━━━━━━━━━━━━━━━━",
         `📋 RECLAMO #${r.numero_pedido || r.id}`,
         `📍 ${String(r.direccion || "Sin dirección").trim()}`,
         `📅 Fecha: ${fecha}`,
-        `⏳ Tiempo transcurrido: ${formatearDuracionPendiente(r.fecha_creacion)}`,
+        lineaTiempo,
         `📌 Estado: ${r.estado}`,
       ].join("\n");
     });
@@ -2788,7 +2809,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sessions.set(sk, sess);
     await reply(
       phone,
-      `🔍 Encontramos ${rows.length} reclamo/s suyo/s en proceso:\n\n${bloques.join("\n")}\n━━━━━━━━━━━━━━━━━━━━\n\n¿Desea enviar un recordatorio a la entidad?\n▶️ Responda "SI" para enviar recordatorio\n▶️ Responda "MENU" para volver al inicio`,
+      `🔍 Encontramos ${rows.length} reclamo/s asociado/s:\n\n${bloques.join("\n")}\n━━━━━━━━━━━━━━━━━━━━\n\n¿Deseás enviar un *recordatorio* a la entidad? (solo si el reclamo sigue abierto)\n▶️ *SI* — enviar recordatorio\n▶️ *MENU* — volver al inicio`,
       tid,
       phoneNumberId
     );
@@ -2810,11 +2831,18 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     sess.pendingLookupMode = modo;
     sess.step = "awaiting_pending_lookup_identifier";
     sessions.set(sk, sess);
+    const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
+    const hintId =
+      bt === "agua"
+        ? "N° de abonado o medidor"
+        : bt === "municipio"
+          ? "N° de vecino o referencia"
+          : "NIS o medidor";
     await reply(
       phone,
       modo === "nombre"
-        ? "📝 Escriba su *nombre completo*:"
-        : "📝 Escriba su identificador (NIS/medidor/abonado/vecino según su servicio):",
+        ? "📝 Escribí tu *nombre completo* como figura en el servicio:"
+        : `📝 Escribí tu identificador (${hintId}):`,
       tid,
       phoneNumberId
     );

@@ -228,11 +228,12 @@ function scheduleNotifyClientePedidoWhatsapp({
 
 async function getPedidoInTenant(id, req) {
   const tenantId = req.tenantId;
+  // Acceso por id: solo aislamiento por tenant. El filtro por línea de negocio (business_type)
+  // aplica a listados; si no, PUT/derivar devuelven 404 cuando el pedido tiene otra línea que la activa en UI.
   if (await pedidosTableHasTenantIdColumn()) {
     const params = [id, tenantId];
-    const bt = await pushPedidoBusinessFilterRelaxed(req, params);
     const r = await query(
-      `SELECT * FROM pedidos WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)${bt} LIMIT 1`,
+      `SELECT * FROM pedidos WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL) LIMIT 1`,
       params
     );
     const row = r.rows[0];
@@ -243,8 +244,7 @@ async function getPedidoInTenant(id, req) {
     return row;
   }
   const params = [id];
-  const bt = await pushPedidoBusinessFilterRelaxed(req, params);
-  const r = await query(`SELECT * FROM pedidos WHERE id = $1${bt} LIMIT 1`, params);
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1 LIMIT 1`, params);
   return r.rows[0] || null;
 }
 

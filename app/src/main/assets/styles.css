@@ -724,9 +724,43 @@ textarea{resize:vertical;min-height:80px}
 .admin-derivacion-inline-error{font-size:.78rem;color:#b91c1c;line-height:1.4;padding:.4rem .5rem;background:#fef2f2;border:1px solid #fecaca;border-radius:.4rem}
 .admin-derivacion-pedido-hint{border-left:4px solid #f59e0b;background:linear-gradient(90deg,rgba(245,158,11,.08),transparent)}
 
-/* Catálogo socios (admin): lat/lon en columnas propias, sin fundirse con Calle/Dist. */
-.gn-soc-admin-table .gn-soc-coord{white-space:nowrap;min-width:7.25rem;max-width:11rem;font-variant-numeric:tabular-nums}
+/* Catálogo socios (admin): tabla legible — bordes y separación para que coordenadas no se mezclen */
+.gn-soc-admin-table{border-collapse:separate;border-spacing:0;width:100%;table-layout:auto}
+.gn-soc-admin-table thead th,.gn-soc-admin-table tbody td{
+  border:1px solid var(--bo,#e2e8f0);
+  padding:.28rem .4rem;
+  vertical-align:middle;
+  word-break:break-word;
+}
+.gn-soc-admin-table thead th{background:#f1f5f9;font-weight:600;font-size:.72rem}
+.gn-soc-admin-table tbody tr.gn-vspad td{border:none;padding:0}
+.gn-soc-admin-table .gn-soc-coord{
+  white-space:nowrap;
+  min-width:7.5rem;
+  max-width:12rem;
+  font-variant-numeric:tabular-nums;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:.74rem;
+}
 .gn-soc-admin-table .gn-soc-lat,.gn-soc-admin-table .gn-soc-lon{vertical-align:middle}
+
+/* WebView Android: panel Colores usable al expandir (scroll táctil, altura máxima clara) */
+@media (max-width:900px){
+  #mapa-card-colores.moui-card{
+    max-height:min(92vh,720px);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  #mapa-card-colores.moui-card .moui-bd{
+    flex:1;
+    min-height:0;
+    max-height:min(68vh,520px)!important;
+    overflow-y:auto!important;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-y;
+  }
+}
 
 /* Mapa: panel coordenadas cursor — claro, compacto (~280px), desplazado ~2cm a la derecha */
 .leaflet-bottom.leaflet-left .gn-cursor-coords.leaflet-bar{
