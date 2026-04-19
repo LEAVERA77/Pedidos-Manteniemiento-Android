@@ -2265,6 +2265,9 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     try {
         renderMk();
     } catch (_) {}
+    try {
+        resetAdminUiMultitenantDatosOperativos();
+    } catch (_) {}
 }
 
 async function promptAdminTipoNegocioWebIfNeeded(force = false) {
@@ -2413,7 +2416,7 @@ async function confirmarAdminTipoNegocioWeb() {
         guardadoServidor && normalizarRubroEmpresa(tipoAntes) !== normalizarRubroEmpresa(tipo);
     if (rubroCambioPersistido) {
         toast('Rubro actualizado en servidor. Se cierra la sesión para aplicar el cambio…', 'success');
-        logoutYLimpiarClienteTrasRubroPersistidoEnServidor();
+        await logoutYLimpiarClienteTrasRubroPersistidoEnServidor();
         return;
     }
 
@@ -11341,6 +11344,9 @@ function ejecutarCerrarSesion() {
     localStorage.removeItem('pmg_api_token');
     app.apiToken = null;
     app.u = null;
+    try {
+        localStorage.removeItem(PMG_BRANDING_LS_KEY);
+    } catch (_) {}
     hydrateBrandingForPublicScreen();
     try {
         aplicarMarcaVisualCompleta();
@@ -11388,15 +11394,24 @@ function ejecutarCerrarSesion() {
 }
 
 /**
- * Tras persistir en servidor un cambio de línea de negocio: cierra sesión, vacía storage y recarga.
+ * Tras persistir en servidor un cambio de línea de negocio: vacía catálogo socios del tenant (sin confirmaciones), cierra sesión, vacía storage y recarga.
  * Evita datos residuales (filtros mapa, listas en memoria). Borra también cola offline en localStorage.
  */
-function logoutYLimpiarClienteTrasRubroPersistidoEnServidor() {
+async function logoutYLimpiarClienteTrasRubroPersistidoEnServidor() {
     try {
         if (typeof offlineQueue === 'function' && offlineQueue().length > 0) {
             alert(
                 'Hay pedidos en cola offline sin sincronizar. Al cambiar el rubro se borrará el almacenamiento local de este navegador (incluida esa cola). Sincronizá antes si podés; se cerrará la sesión ahora.'
             );
+        }
+    } catch (_) {}
+    try {
+        if (NEON_OK && typeof sqlSimple === 'function' && esAdmin()) {
+            try {
+                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+            } catch (e) {
+                console.warn('[rubro-logout] vaciar socios_catalogo', e);
+            }
         }
     } catch (_) {}
     try {
@@ -16202,32 +16217,37 @@ async function importarExcelSocios(event) {
     event.target.value = '';
 }
 
-/** Borra filas en `socios_catalogo` en Neon para el tenant (con doble confirmación). No usar en cambio de sesión: para eso vale `invalidarCachesMultitenantSesionYOAdminUI` + recarga del listado filtrado, sin DELETE. */
-async function vaciarCoordenadasSociosCatalogo() {
+/** Borra filas en `socios_catalogo` en Neon para el tenant (con doble confirmación salvo `skipConfirm`). No usar en cambio de sesión liviana: para eso vale `invalidarCachesMultitenantSesionYOAdminUI` + listado filtrado, sin DELETE. */
+async function vaciarCoordenadasSociosCatalogo(opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const skipConfirm = !!o.skipConfirm;
+    const silent = !!o.silent;
     if (!esAdmin()) {
         toast('Operación solo para administradores', 'error');
         return;
     }
     const hasSocTVaciar = await sociosCatalogoTieneTenantId();
-    const confirmar = confirm(
-        '⚠️ ¿ELIMINAR TODOS LOS REGISTROS del catálogo de socios?\n\n' +
-        (hasSocTVaciar
-            ? 'Se borrarán todos los socios de ESTA empresa/sede (tenant actual) solamente.\n'
-            : 'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n') +
-        'Esta acción NO se puede deshacer.\n\n' +
-        '¿Continuar?'
-    );
-    if (!confirmar) return;
-    
-    const confirmar2 = confirm(
-        '⚠️⚠️ ÚLTIMA CONFIRMACIÓN ⚠️⚠️\n\n' +
-            (hasSocTVaciar
-                ? 'Vas a BORRAR el catálogo de socios de esta empresa/sede.\n\n¿Estás SEGURO/A?'
-                : 'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
-                  'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
-                  '¿Estás SEGURO/A?')
-    );
-    if (!confirmar2) return;
+    if (!skipConfirm) {
+        const confirmar = confirm(
+            '⚠️ ¿ELIMINAR TODOS LOS REGISTROS del catálogo de socios?\n\n' +
+                (hasSocTVaciar
+                    ? 'Se borrarán todos los socios de ESTA empresa/sede (tenant actual) solamente.\n'
+                    : 'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n') +
+                'Esta acción NO se puede deshacer.\n\n' +
+                '¿Continuar?'
+        );
+        if (!confirmar) return;
+
+        const confirmar2 = confirm(
+            '⚠️⚠️ ÚLTIMA CONFIRMACIÓN ⚠️⚠️\n\n' +
+                (hasSocTVaciar
+                    ? 'Vas a BORRAR el catálogo de socios de esta empresa/sede.\n\n¿Estás SEGURO/A?'
+                    : 'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
+                      'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
+                      '¿Estás SEGURO/A?')
+        );
+        if (!confirmar2) return;
+    }
 
     try {
         mostrarOverlayImportacion('Eliminando registros del catálogo...');
@@ -16236,22 +16256,25 @@ async function vaciarCoordenadasSociosCatalogo() {
         } else {
             await sqlSimple(`DELETE FROM socios_catalogo`);
         }
-        
+
         ocultarOverlayImportacion();
-        
+
         // Recargar lista
         if (typeof listarSociosAdmin === 'function') {
             await listarSociosAdmin();
         }
-        
-        toast(
-            hasSocTVaciar ? '✓ Catálogo de socios vaciado para esta empresa' : '✓ Tabla de socios eliminada completamente',
-            'success'
-        );
+
+        if (!silent) {
+            toast(
+                hasSocTVaciar ? '✓ Catálogo de socios vaciado para esta empresa' : '✓ Tabla de socios eliminada completamente',
+                'success'
+            );
+        }
     } catch (e) {
         ocultarOverlayImportacion();
         console.error('[vaciar-tabla-socios]', e);
-        toast('Error al vaciar tabla: ' + (e?.message || e), 'error');
+        if (!silent) toast('Error al vaciar tabla: ' + (e?.message || e), 'error');
+        throw e;
     }
 }
 // Exponer globalmente para onclick
@@ -17878,6 +17901,26 @@ let _marcadoresPedidosAdmin = [];
 let _genCargaUbicacionesAdmin = 0;
 window._marcadoresUsuarios = _marcadoresUsuarios;
 
+function limpiarMarcadoresMapaAdminYOArrays() {
+    try {
+        if (_mapaUsuariosAdmin) {
+            _marcadoresUsuarios.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+            _marcadoresPedidosAdmin.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+        }
+        _marcadoresUsuarios = [];
+        _marcadoresPedidosAdmin = [];
+        window._marcadoresUsuarios = _marcadoresUsuarios;
+    } catch (_) {}
+}
+
 function destruirChartsEstadisticasAdmin() {
     try {
         Object.keys(_charts).forEach((id) => {
@@ -17909,7 +17952,7 @@ function resetEstadisticasAdminVisualNeutro() {
         });
         const statsEl = document.getElementById('stats-cards');
         if (!statsEl) return;
-        const cardList = [
+        let cardList = [
             { val: 0, lbl: 'Total pedidos', cls: '' },
             { val: 0, lbl: 'Pendientes', cls: '' },
             { val: 0, lbl: 'Asignados', cls: '' },
@@ -17926,6 +17969,14 @@ function resetEstadisticasAdminVisualNeutro() {
             { val: '—', lbl: 'Cierre más rápido', cls: '' },
             { val: '0%', lbl: 'Avance prom. en ejec.', cls: '' }
         ];
+        try {
+            if (esCooperativaElectricaRubro()) {
+                cardList.push(
+                    { val: '—', lbl: 'SAIFI aprox. (int./usuario en período)', cls: '' },
+                    { val: '—', lbl: 'SAIDI aprox. (min acum./usuario)', cls: '' }
+                );
+            }
+        } catch (_) {}
         statsEl.innerHTML = cardList
             .map((s) => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
             .join('');
@@ -17993,6 +18044,35 @@ function pintarListaUsuariosAdminSoloSesionActual() {
   <td><span style="color:var(--tl);font-weight:600">…</span></td>
   <td style="color:var(--tl);font-size:.78rem">Esperando lista…</td>
 </tr></tbody></table>`;
+}
+
+/** Admin en sesión: datos operativos (stats, dashboard tacho, mapa ubicaciones) sin vaciar EMPRESA_CFG ni formulario empresa — p. ej. tras cambiar rubro en pantalla. */
+function resetAdminUiMultitenantDatosOperativos() {
+    try {
+        invalidatePedidosTenantSqlCache();
+    } catch (_) {}
+    try {
+        _genCargaUbicacionesAdmin++;
+    } catch (_) {}
+    try {
+        resetEstadisticasAdminVisualNeutro();
+    } catch (_) {}
+    try {
+        resetDashboardGerenciaPlaceholderNeutro();
+    } catch (_) {}
+    try {
+        limpiarMarcadoresMapaAdminYOArrays();
+    } catch (_) {}
+    try {
+        const cw = document.getElementById('chart-wrap-confiabilidad');
+        if (cw) cw.style.display = 'none';
+    } catch (_) {}
+    try {
+        void cargarUbicacionesUsuarios();
+    } catch (_) {}
+    try {
+        void cargarEstadisticas();
+    } catch (_) {}
 }
 
 /**
@@ -18119,23 +18199,7 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
                 '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando ubicaciones…</div>';
     } catch (_) {}
     resetEstadisticasAdminVisualNeutro();
-    try {
-        if (_mapaUsuariosAdmin) {
-            _marcadoresUsuarios.forEach((m) => {
-                try {
-                    _mapaUsuariosAdmin.removeLayer(m);
-                } catch (_) {}
-            });
-            _marcadoresPedidosAdmin.forEach((m) => {
-                try {
-                    _mapaUsuariosAdmin.removeLayer(m);
-                } catch (_) {}
-            });
-        }
-        _marcadoresUsuarios = [];
-        _marcadoresPedidosAdmin = [];
-        window._marcadoresUsuarios = _marcadoresUsuarios;
-    } catch (_) {}
+    limpiarMarcadoresMapaAdminYOArrays();
 }
 
 function iniciarMapaUsuariosAdmin() {
