@@ -2875,8 +2875,14 @@ document.getElementById('lf').addEventListener('submit', async e => {
     
     function entrarConUsuario(u, offline = false) {
         u.rol = normalizarRolStr(u.rol);
-        invalidatePedidosTenantSqlCache();
+        invalidarCachesMultitenantSesionYOAdminUI();
         app.u = u;
+        try {
+            app.p = [];
+        } catch (_) {}
+        try {
+            render();
+        } catch (_) {}
         localStorage.setItem('pmg', JSON.stringify(app.u));
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
@@ -11310,7 +11316,7 @@ document.getElementById('ub')?.addEventListener('click', (e) => {
 });
 
 function ejecutarCerrarSesion() {
-    invalidatePedidosTenantSqlCache();
+    invalidarCachesMultitenantSesionYOAdminUI();
     detenerKeepAlive();
     detenerTracking();
     detenerDashboardGerenciaPoll();
@@ -11341,6 +11347,9 @@ function ejecutarCerrarSesion() {
         app.map.remove();
         app.map = null;
     }
+    try {
+        app.p = [];
+    } catch (_) {}
     _marcadoresTecnicosPrincipal = [];
     const btnAdm = document.getElementById('btn-admin');
     if (btnAdm) btnAdm.style.display = 'none';
@@ -17845,6 +17854,58 @@ let _mapaUsuariosAdmin = null;
 let _marcadoresUsuarios = [];
 let _marcadoresPedidosAdmin = [];
 window._marcadoresUsuarios = _marcadoresUsuarios;
+
+function destruirChartsEstadisticasAdmin() {
+    try {
+        Object.keys(_charts).forEach((id) => {
+            try {
+                _charts[id]?.destroy();
+            } catch (_) {}
+            delete _charts[id];
+        });
+    } catch (_) {}
+}
+
+/** Login/logout/cambio de tenant: caches SQL en memoria + paneles admin (evita datos cruzados entre tenants/rubros). */
+function invalidarCachesMultitenantSesionYOAdminUI() {
+    invalidatePedidosTenantSqlCache();
+    try {
+        _sociosCatalogoTieneTenantIdCache = null;
+    } catch (_) {}
+    try {
+        window._sociosVirtualRows = null;
+    } catch (_) {}
+    try {
+        const ls = document.getElementById('lista-socios-admin');
+        if (ls) {
+            ls.innerHTML =
+                '<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando socios…</div>';
+        }
+        const listaUb = document.getElementById('lista-ubicaciones');
+        if (listaUb) listaUb.innerHTML = '';
+        const statsEl = document.getElementById('stats-cards');
+        if (statsEl) {
+            statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando…</div>';
+        }
+    } catch (_) {}
+    destruirChartsEstadisticasAdmin();
+    try {
+        if (_mapaUsuariosAdmin) {
+            _marcadoresUsuarios.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+            _marcadoresPedidosAdmin.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+        }
+        _marcadoresUsuarios = [];
+        _marcadoresPedidosAdmin = [];
+    } catch (_) {}
+}
 
 function iniciarMapaUsuariosAdmin() {
     const el = document.getElementById('mapa-usuarios-admin');
