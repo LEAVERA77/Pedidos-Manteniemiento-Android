@@ -803,7 +803,7 @@ html.gn-android-webview #ms .bp2 {
   left: 0;
   right: 0;
   bottom: max(0px, env(safe-area-inset-bottom, 0px));
-  z-index: 12020;
+  z-index: 12040;
   pointer-events: auto;
   touch-action: pan-y;
   transform: translateZ(0);
@@ -816,7 +816,7 @@ html.gn-android-webview #ms .bp2 .pl {
 html.gn-android-webview .btn-mapa-ir-gps,
 html.gn-android-webview .btn-mapa-nuevo-gps {
   position: fixed;
-  z-index: 12030;
+  z-index: 12600;
   pointer-events: auto;
   touch-action: manipulation;
   transform: translateZ(0);
@@ -825,7 +825,7 @@ html.gn-android-webview .fab-show-pedidos {
   box-sizing: border-box;
   min-height: 2.5rem;
   align-items: center;
-  z-index: 12035;
+  z-index: 12600;
   touch-action: manipulation;
 }
 html.gn-android-webview .gn-gps-fab {
@@ -837,14 +837,24 @@ html.gn-android-webview .gn-gps-fab {
 }
 
 /*
- * Overlay mapa (Android WebView): NO subir z-index por encima de la barra .hd (1000).
- * Las pestañas «Filtros/Tipo» usaban z-index ~9600 y tapaban iconos del encabezado.
+ * Android WebView: bp2 (lista Pedidos) estaba por encima del overlay (850) y tapaba filtros/tipo/colores.
+ * Subimos overlay sobre bp2 y la barra .hd sobre el overlay para que el header siga usable.
  */
+html.gn-android-webview #ms .hd {
+  position: relative;
+  z-index: 12550;
+}
+html.gn-android-webview #admin-banner-nuevo-cliente,
+html.gn-android-webview #admin-banner-opinion-cliente,
+html.gn-android-webview #admin-banner-derivacion-pendiente {
+  position: relative;
+  z-index: 12620;
+}
 html.gn-android-webview #mapa-overlay-ui {
-  z-index: 850;
+  z-index: 12100;
 }
 html.gn-android-webview .map-slide-tabs-cluster {
-  z-index: 930;
+  z-index: 12105;
 }
 
 /* Paneles tipo / filtros / dash: alto acotado; colores tiene reglas aparte (no aplastar al fondo). */
@@ -866,8 +876,10 @@ html.gn-android-webview #mapa-overlay-ui .moui-hd {
 html.gn-android-webview #mapa-overlay-ui .moui-hd > .ib-mini:last-child {
   margin-left: auto !important;
   flex: 0 0 auto;
-  min-width: 2.65rem;
-  min-height: 2.65rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -905,6 +917,16 @@ html.gn-android-webview #mapa-overlay-ui #mapa-card-filtro-tipo {
   right: 0.45rem;
   width: auto;
   max-width: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+html.gn-android-webview #mapa-overlay-ui #mapa-card-filtro-tipo .moui-hd {
+  flex-shrink: 0;
+}
+html.gn-android-webview .mapa-filtro-tipo-hint {
+  flex-shrink: 0;
+  margin-bottom: 0.5rem;
 }
 html.gn-android-webview #mapa-filtro-tipo-body.mapa-filtro-tipo-list {
   max-height: min(42vh, 260px) !important;
@@ -957,8 +979,10 @@ html.gn-android-webview #ms .hd label {
   }
   #mapa-overlay-ui .moui-hd > .ib-mini:last-child {
     margin-left: auto !important;
-    min-width: 2.65rem;
-    min-height: 2.65rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;

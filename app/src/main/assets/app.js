@@ -5129,6 +5129,9 @@ function onAndroidPedidosScopeChange() {
     } catch (_) {}
     const wt = document.getElementById('toggle-ver-todos-pedidos');
     if (wt) wt.checked = v === 'todos';
+    try {
+        invalidatePedidosTenantSqlCache();
+    } catch (_) {}
     cargarPedidos();
 }
 
@@ -5374,16 +5377,8 @@ function initMouiCardDraggable(cardId) {
     };
     applySaved();
     const dragHandle = hd.querySelector('.moui-drag-handle');
-    /**
-     * WebView Android: por defecto se arrastra desde toda la cabecera (asa angosta).
-     * Panel «Colores»: solo desde el grip — si no, el gesto compite con toques en el resto del encabezado.
-     */
-    const dragTarget =
-        esAndroidWebViewMapa() && cardId === 'mapa-card-colores'
-            ? dragHandle || hd
-            : esAndroidWebViewMapa()
-              ? hd
-              : dragHandle || hd;
+    /** WebView Android: cabecera completa como asa (botones excluidos). Misma lógica en todos los paneles. */
+    const dragTarget = esAndroidWebViewMapa() ? hd : dragHandle || hd;
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
@@ -9028,12 +9023,24 @@ document.getElementById('pf').addEventListener('submit', async e => {
             return;
         }
 
+        const icIns = await pedidosTablaColumnasInsertOpcional();
+        let extraInsertCols = '';
+        let extraInsertVals = '';
+        if (icIns.tenant_id) {
+            extraInsertCols += ', tenant_id';
+            extraInsertVals += `, ${esc(tenantIdActual())}`;
+        }
+        if (icIns.business_type) {
+            extraInsertCols += ', business_type';
+            extraInsertVals += `, ${esc(lineaNegocioOperativaCodigo())}`;
+        }
+
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
-            suministro_tipo_conexion, suministro_fases, barrio
+            suministro_tipo_conexion, suministro_fases, barrio${extraInsertCols}
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
@@ -9060,7 +9067,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(refUbicVal || null)},
             ${esc(sumConVal || null)},
             ${esc(sumFasVal || null)},
-            ${esc(barrioVal || null)}
+            ${esc(barrioVal || null)}${extraInsertVals}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -12037,6 +12044,9 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
     localStorage.setItem('pmg_tecnico_ver_todos', this.checked ? '1' : '0');
     const sel = document.getElementById('sel-android-pedidos-scope');
     if (sel) sel.value = this.checked ? 'todos' : 'asignados';
+    try {
+        invalidatePedidosTenantSqlCache();
+    } catch (_) {}
     if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) cargarPedidos();
 });
 
@@ -12792,20 +12802,49 @@ async function sociosCatalogoTieneBusinessType() {
 }
 
 let _pedidosTenantSqlCache = null;
+/** Clave `${tenantId}|${lineaNegocio}` para invalidar al cambiar línea operativa o tenant. */
+let _pedidosTenantSqlCacheKey = '';
+
 function invalidatePedidosTenantSqlCache() {
     _pedidosTenantSqlCache = null;
+    _pedidosTenantSqlCacheKey = '';
+}
+
+/** Columnas opcionales en INSERT desde el formulario (Neon directo). */
+let _pedidosInsertColsCache = null;
+async function pedidosTablaColumnasInsertOpcional() {
+    if (_pedidosInsertColsCache) return _pedidosInsertColsCache;
+    const o = { tenant_id: false, business_type: false };
+    try {
+        const [a, b] = await Promise.all([
+            sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+            ),
+            sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'business_type' LIMIT 1`
+            ),
+        ]);
+        o.tenant_id = !!(a.rows?.length);
+        o.business_type = !!(b.rows?.length);
+    } catch (_) {}
+    _pedidosInsertColsCache = o;
+    return o;
 }
 
 /** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, filtra por línea operativa activa (relajado con NULL legacy). */
 async function pedidosFiltroTenantSql() {
-    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
+    const tid = tenantIdActual();
+    const line = lineaNegocioOperativaCodigo();
+    const cacheKey = `${tid}|${line}`;
+    if (_pedidosTenantSqlCache !== null && _pedidosTenantSqlCacheKey === cacheKey) {
+        return _pedidosTenantSqlCache;
+    }
     let sql = '';
     try {
         const chk = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
         );
         if (chk.rows?.length) {
-            const tid = tenantIdActual();
             sql += ` AND tenant_id = ${esc(tid)}`;
         }
     } catch (_) {}
@@ -12814,13 +12853,13 @@ async function pedidosFiltroTenantSql() {
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'business_type' LIMIT 1`
         );
         if (chBt.rows?.length) {
-            const line = lineaNegocioOperativaCodigo();
             const lineQ = esc(line);
             /* NULL legacy (pre multi-línea) se considera solo electricidad; evita ver pedidos de otro rubro al cambiar línea. */
             sql += ` AND (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
         }
     } catch (_) {}
     _pedidosTenantSqlCache = sql;
+    _pedidosTenantSqlCacheKey = cacheKey;
     return _pedidosTenantSqlCache;
 }
 
