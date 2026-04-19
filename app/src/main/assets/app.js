@@ -4517,23 +4517,52 @@ async function intentarCoordsPedidoDesdeApiRegeocodificar(p) {
     }
 }
 
-/** WebView Android: tras mostrar el modal de detalle / zoom, Leaflet necesita varios invalidateSize. */
-function scheduleInvalidateLeafletParaModalDetalleAndroid() {
+/** Cancela reintentos de `forceInvalidateMapDetalleAndroid` (evita timers huérfanos al cerrar #dm). */
+function cancelForceInvalidateMapDetalle() {
+    try {
+        const arr = app._gnForceInvTimers;
+        if (arr && arr.length) arr.forEach((id) => clearTimeout(id));
+    } catch (_) {}
+    app._gnForceInvTimers = null;
+}
+
+/**
+ * WebView Android: invalidateSize sólo si #dm sigue abierto y #mc tiene tamaño visible; varios disparos escalonados.
+ */
+function forceInvalidateMapDetalleAndroid() {
     if (!esAndroidWebViewMapa() || !app.map || typeof app.map.invalidateSize !== 'function') return;
-    const inv = () => {
-        try {
-            if (app.map && typeof app.map.invalidateSize === 'function') {
-                app.map.invalidateSize({ animate: false });
-            }
-        } catch (_) {}
-    };
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            inv();
-            setTimeout(inv, 120);
-            setTimeout(inv, 280);
-        });
+    cancelForceInvalidateMapDetalle();
+    const delaysMs = [0, 48, 96, 160, 240, 320, 480, 640];
+    const timers = [];
+    app._gnForceInvTimers = timers;
+    delaysMs.forEach((ms) => {
+        timers.push(
+            setTimeout(() => {
+                try {
+                    const dm = document.getElementById('dm');
+                    if (!dm?.classList.contains('active')) {
+                        cancelForceInvalidateMapDetalle();
+                        return;
+                    }
+                    const el = document.getElementById('mc');
+                    if (!el || el.clientWidth < 4 || el.clientHeight < 4) return;
+                    app.map.invalidateSize({ animate: false });
+                    refreshMarcadorDetalleMapaSiModalAbierto();
+                    if (gnDebugMapAndroidEnabled()) {
+                        console.log('[gn-debug-map]', 'invalidate ok', {
+                            mc: el.clientWidth + '×' + el.clientHeight,
+                            zoom: app.map && app.map.getZoom && app.map.getZoom(),
+                        });
+                    }
+                } catch (_) {}
+            }, ms)
+        );
     });
+}
+
+/** Alias histórico: delega en invalidación con visibilidad + reintentos. */
+function scheduleInvalidateLeafletParaModalDetalleAndroid() {
+    forceInvalidateMapDetalleAndroid();
 }
 
 function gnDebugMapAndroidEnabled() {
@@ -4581,7 +4610,7 @@ function refreshMarcadorDetalleMapaSiModalAbierto() {
 function syncMarcadorDetalleMapaAndroid(p) {
     if (!esAndroidWebViewMapa() || !app.map || typeof L === 'undefined' || !p) return;
     const { la, ln } = coordsEfectivasPedidoMapa(p);
-    if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+    if (!coordsSonPinValidasMapaWgs84(la, ln)) {
         removeMarcadorDetalleMapaAndroid();
         return;
     }
@@ -11167,20 +11196,34 @@ async function sincronizarMapaConPedidoEnDetalle(p) {
         if (!app.map) return;
         if (esAndroidWebViewMapa()) ensureAndroidDetalleZoomInvalidateHook();
         const { la, ln } = coordsEfectivasPedidoMapa(p);
-        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
+        if (!coordsSonPinValidasMapaWgs84(la, ln)) {
+            try {
+                removeMarcadorDetalleMapaAndroid();
+            } catch (_) {}
+            if (esAndroidWebViewMapa()) {
+                try {
+                    toast('Este pedido no tiene ubicación válida para mostrar en el mapa.', 'warning');
+                } catch (_) {}
+            }
+            return;
+        }
         const zCur = app.map.getZoom && Number.isFinite(app.map.getZoom()) ? app.map.getZoom() : 14;
         const z = Math.max(zCur, 16);
         app.map.setView([la, ln], z, { animate: false });
+        if (gnDebugMapAndroidEnabled() && esAndroidWebViewMapa()) {
+            try {
+                console.log('[gn-debug-map]', 'post-setView centro', {
+                    pedidoId: p.id,
+                    centroMapa: [la, ln],
+                    zoom: z,
+                });
+            } catch (_) {}
+        }
         if (esAndroidWebViewMapa()) {
-            scheduleInvalidateLeafletParaModalDetalleAndroid();
             try {
                 syncMarcadorDetalleMapaAndroid(p);
             } catch (_) {}
-            setTimeout(() => {
-                try {
-                    refreshMarcadorDetalleMapaSiModalAbierto();
-                } catch (_) {}
-            }, 320);
+            forceInvalidateMapDetalleAndroid();
         } else {
             setTimeout(() => {
                 try {
@@ -11508,6 +11551,9 @@ function closeAll() {
         if (m === forzarPw && window._pendingAndroidPasswordChange) return;
         m.classList.remove('active');
     });
+    try {
+        cancelForceInvalidateMapDetalle();
+    } catch (_) {}
     try {
         removeMarcadorDetalleMapaAndroid();
     } catch (_) {}
