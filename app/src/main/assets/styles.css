@@ -835,3 +835,23 @@ html.gn-android-webview .gn-gps-fab {
   min-height: 2.9rem;
   box-sizing: border-box;
 }
+
+/* Overlay mapa: prioridad táctil sobre Leaflet y menos doble-toque-zoom accidental */
+html.gn-android-webview #mapa-overlay-ui {
+  z-index: 12040;
+}
+html.gn-android-webview #mapa-overlay-ui .moui-card {
+  touch-action: manipulation;
+  z-index: 12050;
+}
+html.gn-android-webview #mapa-overlay-ui .moui-drag-handle {
+  touch-action: none;
+}
+html.gn-android-webview #ms .hd button,
+html.gn-android-webview #ms .hd .ib,
+html.gn-android-webview #ms .hd select,
+html.gn-android-webview #ms .hd input[type="checkbox"],
+html.gn-android-webview #ms .hd input[type="radio"],
+html.gn-android-webview #ms .hd label {
+  touch-action: manipulation;
+}

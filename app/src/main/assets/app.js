@@ -5219,7 +5219,8 @@ function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
 /** Escritorio ancho o WebView Android: mismos paneles arrastrables (ratón, DeX, tablet). */
 function floatingPanelsDragEnabled() {
     try {
-        return window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa();
+        /* Ventanas < 1024px (laptop compacto / panel DevTools): siguen pudiendo mover paneles como el FAB Pedidos */
+        return window.matchMedia('(min-width:520px)').matches || esAndroidWebViewMapa();
     } catch (_) {
         return esAndroidWebViewMapa();
     }
@@ -5228,7 +5229,7 @@ function floatingPanelsDragEnabled() {
 /** Paneles moui sobre el mapa: arrastrar solo desde el ícono «grip» (.moui-drag-handle), así el resto del encabezado puede plegar sin robar el gesto (incl. Android). */
 function floatingMapMouiDragEnabled() {
     try {
-        return window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa();
+        return window.matchMedia('(min-width:520px)').matches || esAndroidWebViewMapa();
     } catch (_) {
         return esAndroidWebViewMapa();
     }
@@ -12188,6 +12189,8 @@ if (st) {
 }
 syncNisClienteReclamoConexionUI();
 syncSuministroElectricoUI();
+window.syncPrioridadConTipoReclamo = syncPrioridadConTipoReclamo;
+window.syncSuministroElectricoUI = syncSuministroElectricoUI;
 try { syncZonaPedidoFormLabels(); } catch (_) {}
 
 function esCooperativaElectricaRubro() {
@@ -12754,6 +12757,23 @@ async function sociosCatalogoTieneTenantId() {
         _sociosCatalogoTieneTenantIdCache = false;
     }
     return _sociosCatalogoTieneTenantIdCache;
+}
+
+/** Cache: existe columna socios_catalogo.business_type (línea operativa). */
+let _sociosCatalogoTieneBusinessTypeCache = null;
+async function sociosCatalogoTieneBusinessType() {
+    if (_sociosCatalogoTieneBusinessTypeCache === true || _sociosCatalogoTieneBusinessTypeCache === false) {
+        return _sociosCatalogoTieneBusinessTypeCache;
+    }
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
+        );
+        _sociosCatalogoTieneBusinessTypeCache = !!(chk.rows?.length);
+    } catch (_) {
+        _sociosCatalogoTieneBusinessTypeCache = false;
+    }
+    return _sociosCatalogoTieneBusinessTypeCache;
 }
 
 let _pedidosTenantSqlCache = null;
@@ -16319,24 +16339,32 @@ const SOCIOS_BULK_CHUNK = 1000;
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const hasT = await sociosCatalogoTieneTenantId();
+    const hasBt = await sociosCatalogoTieneBusinessType();
     const tidEsc = esc(tenantIdActual());
-    const colList = hasT
-        ? `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, tenant_id`
-        : `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
+    const btEsc = esc(lineaNegocioOperativaCodigo());
+    const colList = [
+        'nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud',
+    ];
+    if (hasT) colList.push('tenant_id');
+    if (hasBt) colList.push('business_type');
     const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
     const vals = lote
         .map((p) => {
             const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}`;
-            return hasT ? `${base}, ${tidEsc})` : `${base})`;
+            let tail = '';
+            if (hasT) tail += `, ${tidEsc}`;
+            if (hasBt) tail += `, ${btEsc}`;
+            return `${base}${tail})`;
         })
         .join(',');
+    const updBt = hasBt ? ', business_type = EXCLUDED.business_type' : '';
     await sqlSimple(
-        `INSERT INTO socios_catalogo(${colList})
+        `INSERT INTO socios_catalogo(${colList.join(', ')})
          VALUES ${vals}
          ON CONFLICT ${onConf} DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
-           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
+           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases${updBt},
            latitud = CASE 
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud
              WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud 
@@ -17989,7 +18017,11 @@ function aplicarEstadisticasRubroEnPanel() {
 async function cargarEstadisticas() {
     aplicarEstadisticasRubroEnPanel();
     const tsql = await pedidosFiltroTenantSql();
-    const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
+    const tsqlP = tsql
+        ? tsql
+              .replace(/\btenant_id\b/g, 'p.tenant_id')
+              .replace(/\bbusiness_type\b/g, 'p.business_type')
+        : '';
     const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
     const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
