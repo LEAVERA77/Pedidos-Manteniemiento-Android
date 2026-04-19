@@ -339,16 +339,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
 html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
 
-/* Leaflet en WebView Android: menos trabajo compositor / menos tiles “fantasma” al zoom */
+/* Leaflet WebView Android: sin tocar transform del .leaflet-container (Leaflet lo usa para tiles). */
 html.gn-android-webview .leaflet-tile {
   box-shadow: none !important;
-  transform: translateZ(0) !important;
-  will-change: auto !important;
-}
-html.gn-android-webview #mc,
-html.gn-android-webview .leaflet-container {
-  transform: none !important;
-  will-change: auto !important;
 }
 @media(min-width:1024px){
   html.gn-android-webview .btn-mapa-ir-gps{bottom:7.15rem;left:0.42rem}
@@ -852,12 +845,12 @@ html.gn-android-webview .gn-gps-fab {
   box-sizing: border-box;
 }
 
-/* WebView Android: ocultar filtros mapa Tipo / Colores (técnico de campo) */
-html.gn-android-webview #map-tab-filtro-tipo,
-html.gn-android-webview #map-tab-colores,
-html.gn-android-webview #mapa-card-filtro-tipo,
-html.gn-android-webview #mapa-card-colores {
-  display: none !important;
+/*
+ * Paneles del mapa (Filtros / Tipo / Colores / Dash): mismo comportamiento que Pedidos-MG.
+ * Por encima del panel de pedidos bp2 (z-index ~12020) para poder arrastrar y usar pestañas.
+ */
+html.gn-android-webview #mapa-overlay-ui {
+  z-index: 12045;
 }
 
 /* Catálogo admin socios (NIS): celdas legibles */
