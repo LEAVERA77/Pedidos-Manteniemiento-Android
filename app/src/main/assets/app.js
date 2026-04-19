@@ -4487,6 +4487,70 @@ async function nominatimGeocodeDomicilioPedido(p) {
     }
 }
 
+/** Re-geocodificación servidor (pipeline catálogo-first); sin diálogo. Solo admin + JWT. */
+async function intentarCoordsPedidoDesdeApiRegeocodificar(p) {
+    if (!esAdmin() || !puedeEnviarApiRestPedidos()) return null;
+    await asegurarJwtApiRest();
+    const token = getApiToken();
+    if (!token || p == null || p.id == null) return null;
+    try {
+        const r = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(p.id))}/regeocodificar`), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+        });
+        const result = await r.json().catch(() => ({}));
+        if (!r.ok || result.success === false) return null;
+        const latRaw = result.coordenadas?.lat ?? result.lat;
+        const lngRaw = result.coordenadas?.lng ?? result.lng;
+        const la = Number(latRaw);
+        const ln = Number(lngRaw);
+        if (!coordsSonPinValidasMapaWgs84(la, ln)) return null;
+        return { la, ln };
+    } catch (_) {
+        return null;
+    }
+}
+
+/** WebView Android: tras mostrar el modal de detalle / zoom, Leaflet necesita varios invalidateSize. */
+function scheduleInvalidateLeafletParaModalDetalleAndroid() {
+    if (!esAndroidWebViewMapa() || !app.map || typeof app.map.invalidateSize !== 'function') return;
+    const inv = () => {
+        try {
+            if (app.map && typeof app.map.invalidateSize === 'function') {
+                app.map.invalidateSize({ animate: false });
+            }
+        } catch (_) {}
+    };
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            inv();
+            setTimeout(inv, 120);
+            setTimeout(inv, 280);
+        });
+    });
+}
+
+function ensureAndroidDetalleZoomInvalidateHook() {
+    if (!esAndroidWebViewMapa() || app._gnAndroidDetalleZoomHook || !app.map || typeof app.map.on !== 'function') return;
+    app._gnAndroidDetalleZoomHook = true;
+    let t = null;
+    const run = () => {
+        try {
+            const dm = document.getElementById('dm');
+            if (!dm || !dm.classList.contains('active')) return;
+            scheduleInvalidateLeafletParaModalDetalleAndroid();
+        } catch (_) {}
+    };
+    app.map.on('zoomend', () => {
+        if (t) clearTimeout(t);
+        t = setTimeout(run, 80);
+    });
+}
+
 async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
     if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
     if (!coordsSonPinValidasMapaWgs84(la, ln)) {
@@ -4653,8 +4717,28 @@ async function enriquecerCoordsGeocodificadasPedidos() {
                 if (adminBatch) {
                     gnGeocodeUiLogAppend('info', `Procesando pedido #${p.id}…`);
                 }
-                const hit = await nominatimGeocodeDomicilioPedido(p);
                 const id = String(p.id);
+                const srv = await intentarCoordsPedidoDesdeApiRegeocodificar(p);
+                if (srv && coordsSonPinValidasMapaWgs84(srv.la, srv.ln)) {
+                    window._pedidoCoordsInferidas[id] = { la: srv.la, ln: srv.ln, src: 'regeo_api' };
+                    const idx = app.p.findIndex((x) => String(x.id) === id);
+                    if (idx >= 0) {
+                        app.p[idx].la = srv.la;
+                        app.p[idx].ln = srv.ln;
+                    }
+                    if (adminBatch) {
+                        gnGeocodeUiLogAppend(
+                            'info',
+                            `Pedido #${p.id}: coordenadas desde API re-geocodificar (catálogo / pipeline servidor).`
+                        );
+                    }
+                    try {
+                        renderMk();
+                        render();
+                    } catch (_) {}
+                    continue;
+                }
+                const hit = await nominatimGeocodeDomicilioPedido(p);
                 if (hit && coordsSonPinValidasMapaWgs84(hit.lat, hit.lng)) {
                     window._pedidoCoordsInferidas[id] = { la: hit.lat, ln: hit.lng, src: hit.src || 'aprox' };
                     if (esAdmin()) {
@@ -10956,6 +11040,11 @@ async function detalle(p) {
     `;
     
     document.getElementById('dm').classList.add('active');
+    if (esAndroidWebViewMapa()) {
+        try {
+            document.getElementById('bp2')?.classList.add('col');
+        } catch (_) {}
+    }
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
     });
@@ -10964,21 +11053,26 @@ async function detalle(p) {
 
 /** Al abrir el detalle de un reclamo: asegura mapa + marcadores y centra en el pedido (admin / técnico con permiso). */
 async function sincronizarMapaConPedidoEnDetalle(p) {
-    if (!p || modoOffline || !NEON_OK) return;
+    if (!p || modoOffline) return;
     try {
         await ensureMapReady();
         renderMk();
         if (!app.map) return;
+        if (esAndroidWebViewMapa()) ensureAndroidDetalleZoomInvalidateHook();
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
         const zCur = app.map.getZoom && Number.isFinite(app.map.getZoom()) ? app.map.getZoom() : 14;
         const z = Math.max(zCur, 16);
         app.map.setView([la, ln], z, { animate: false });
-        setTimeout(() => {
-            try {
-                if (app.map && typeof app.map.invalidateSize === 'function') app.map.invalidateSize();
-            } catch (_) {}
-        }, 200);
+        if (esAndroidWebViewMapa()) {
+            scheduleInvalidateLeafletParaModalDetalleAndroid();
+        } else {
+            setTimeout(() => {
+                try {
+                    if (app.map && typeof app.map.invalidateSize === 'function') app.map.invalidateSize({ animate: false });
+                } catch (_) {}
+            }, 200);
+        }
     } catch (_) {}
 }
 
