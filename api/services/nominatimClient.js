@@ -52,16 +52,57 @@ async function throttle() {
   return _chain;
 }
 
+/**
+ * Cabeceras HTTP para Nominatim.
+ * - **From** solo si definís `NOMINATIM_FROM_EMAIL` o `NOMINATIM_FROM`: el default viejo `noreply@gestornova.local`
+ *   en algunos proxy (p. ej. delante de Docker en Oracle) provoca **HTTP 406** al validar el correo.
+ * - **Accept** por defecto estilo curl (wildcard); podés fijar `NOMINATIM_ACCEPT`.
+ */
 export function nominatimHeaders() {
   const ua =
     process.env.NOMINATIM_USER_AGENT ||
     "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";
-  const from = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "noreply@gestornova.local";
+  const accept = String(process.env.NOMINATIM_ACCEPT || "*/*").trim() || "*/*";
+  const h = {
+    "User-Agent": ua,
+    Accept: accept,
+  };
+  const from = String(process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "").trim();
+  if (from) {
+    h.From = from;
+  }
+  return h;
+}
+
+/** Solo UA + Accept (sin From). Reintento ante 406 si el proxy rechaza cabeceras extra. */
+export function nominatimHeadersMinimal() {
+  const ua =
+    process.env.NOMINATIM_USER_AGENT ||
+    "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";
   return {
     "User-Agent": ua,
-    From: from,
-    Accept: "application/json",
+    Accept: "*/*",
   };
+}
+
+/**
+ * Combina cabeceras por defecto de Nominatim con las de la petición (sin perder User-Agent / Accept).
+ * @param {HeadersInit | undefined} extra
+ */
+export function mergeNominatimHeaders(extra) {
+  const base = nominatimHeaders();
+  if (extra == null) return base;
+  if (typeof Headers !== "undefined" && extra instanceof Headers) {
+    const out = { ...base };
+    extra.forEach((value, key) => {
+      out[key] = value;
+    });
+    return out;
+  }
+  if (typeof extra === "object" && !Array.isArray(extra)) {
+    return { ...base, ...extra };
+  }
+  return base;
 }
 
 /**
@@ -139,21 +180,31 @@ export function nominatimFetchTimeoutMs() {
  */
 export async function nominatimFetch(url, init = {}) {
   const ms = nominatimFetchTimeoutMs();
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), ms);
-  const headers = init.headers ?? nominatimHeaders();
-  try {
-    return await fetch(url, { ...init, headers, signal: ctrl.signal });
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      const err = new Error(`Nominatim timeout ${ms}ms`);
-      err.code = "NOMINATIM_TIMEOUT";
-      throw err;
+  const doFetch = async (headers) => {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await fetch(url, { ...init, headers, signal: ctrl.signal });
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        const err = new Error(`Nominatim timeout ${ms}ms`);
+        err.code = "NOMINATIM_TIMEOUT";
+        throw err;
+      }
+      throw e;
+    } finally {
+      clearTimeout(tid);
     }
-    throw e;
-  } finally {
-    clearTimeout(tid);
+  };
+  let res = await doFetch(mergeNominatimHeaders(init.headers));
+  if (
+    res.status === 406 &&
+    process.env.NOMINATIM_DISABLE_406_RETRY !== "1" &&
+    process.env.NOMINATIM_DISABLE_406_RETRY !== "true"
+  ) {
+    res = await doFetch(nominatimHeadersMinimal());
   }
+  return res;
 }
 
 const DEBUG_NOMINATIM = process.env.DEBUG_NOMINATIM === "1" || process.env.DEBUG_NOMINATIM === "true";

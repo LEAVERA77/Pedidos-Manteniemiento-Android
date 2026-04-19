@@ -1,10 +1,10 @@
 /**
- * Envío WhatsApp multitenant: **Meta (Cloud API)** por defecto cuando `WHATSAPP_PROVIDER=meta`.
- * Ramas alternativas: `whapi`, `waha`, `evolution` (mismo archivo; Meta no se eliminó).
+ * Envío WhatsApp multitenant. Variable de entorno: **`WHATSAPP_PROVIDER`** (`whapi` | `meta` | `waha` | `evolution`).
+ * Si no está definida, el default en código es **`meta`**; `api/.env.example` plantea **`whapi`** para Whapi.cloud en campo.
  *
- * Meta: credenciales por tenant en `clientes.configuracion` (`meta_access_token`, `meta_phone_id`)
- * o variables `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID`. Webhook: `POST /api/webhooks/whatsapp/meta`.
- * Guía para cambiar de proveedor: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
+ * - **Whapi:** `WHAPI_*` + `POST /api/webhooks/whatsapp/whapi` — `api/services/whapiWhatsapp.js`
+ * - **Meta:** credenciales globales o por tenant en `clientes.configuracion` + `POST /api/webhooks/whatsapp/meta`
+ * Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`
  */
 
 import { query } from "../db/neon.js";

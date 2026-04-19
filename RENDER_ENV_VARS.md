@@ -12,51 +12,6 @@
 
 Plantilla local: `api/.env.example` (actualmente **`WHATSAPP_PROVIDER=whapi`**). Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
 
-## Meta Cloud API — qué variable usa Render y cómo se elige el `phone_number_id`
-
-Si no definís `WHATSAPP_PROVIDER`, el código usa **`meta`** por defecto (`api/services/whatsappService.js` → `whatsappProvider()`).
-
-### Variables en Render (globales)
-
-| Variable | Uso |
-|----------|-----|
-| **`META_ACCESS_TOKEN`** | Token de acceso a Graph para enviar mensajes (`/{phone-number-id}/messages`). |
-| **`META_PHONE_NUMBER_ID`** | Identificador del número de WhatsApp Business en Meta; **debe ser el mismo** que envía Meta en el webhook como `metadata.phone_number_id` (en logs suele verse como `phone_number_id: '1030098870192233'`). |
-| **`META_APP_SECRET`** | Valida la firma `X-Hub-Signature-256` del webhook (`api/routes/webhooksMeta.js`). |
-| **`META_WEBHOOK_VERIFY_TOKEN`** | Token de verificación del GET de suscripción del webhook. |
-| **`WHATSAPP_BOT_TENANT_ID`** | Tenant por defecto (**default `1`**) cuando el `phone_number_id` del webhook **coincide** con `META_PHONE_NUMBER_ID` del entorno pero **no** hay fila en Neon que mapee ese ID (`api/services/metaTenantWhatsapp.js`). |
-| **`META_GRAPH_API_VERSION`** | Opcional (p. ej. `v21.0`). Ver `api/services/metaWhatsapp.js`. |
-| **`META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9`** / **`META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9`** | Normalización 549 ↔ 54… al hablar con Graph (Argentina). Ver `api/services/metaWhatsapp.js` y `api/.env.example`. |
-
-### Overrides por tenant en Neon (`clientes.configuracion`, JSON)
-
-El mismo archivo puede definir credenciales **por cliente** (multitenant). Claves que usa el código (`getWhatsAppCredentialsForTenant` / `getWhatsAppCredentialsByMetaPhoneNumberId` en `api/services/whatsappService.js`):
-
-- **Token:** `meta_access_token` o `META_ACCESS_TOKEN`
-- **Phone number ID:** `meta_phone_id` o `meta_phone_number_id` o `META_PHONE_NUMBER_ID`
-
-Si el tenant tiene **token y phone en configuración**, esas credenciales **ganan** sobre `META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID` de Render para envíos “de tenant” (p. ej. notificaciones de pedido).
-
-### Bot (respuesta al webhook de Meta): orden real
-
-`sendBotWhatsAppText` arma el envío así:
-
-1. **`graphPhoneId`**: primero el `phone_number_id` que vino en el **webhook** (`webhookPhoneNumberId`). Es el path correcto en Graph: `POST /{phone-number-id}/messages`.
-2. **Token** (`getWhatsAppCredentialsByMetaPhoneNumberId(pid, { forBot: true })`):
-   - Variable **`WHATSAPP_META_BOT_CREDENTIALS_ORDER`** (alias `META_WHATSAPP_BOT_CREDENTIALS_ORDER`): **`db_first`** (default) o **`env_first`**.
-   - Con **`db_first`**: si existe un **`clientes`** activo cuyo `configuracion->>'meta_phone_id'` o `'meta_phone_number_id'` **iguala** ese `pid` → token desde **`configuracion.meta_access_token`** (o `META_ACCESS_TOKEN` en el JSON). Log: `tokenSource: 'cliente_config'` o `'cliente_config_no_token'`. Si no hay fila o el token en JSON está vacío, entonces **`META_PHONE_NUMBER_ID` (env) === `pid`** → **`META_ACCESS_TOKEN`** (`tokenSource: 'env_phone_match'`).
-   - Con **`env_first`**: si **`META_PHONE_NUMBER_ID` (env) === `pid`** y **`META_ACCESS_TOKEN`** no está vacío, usa Render **antes** de consultar Neon (útil para ignorar un `meta_access_token` viejo en BD sin borrarlo todavía).
-3. Si aún no hay token, cae a **`getWhatsAppCredentialsForTenant(tenantId)`** (Neon + env mezclados como arriba).
-
-En logs, **`[whatsapp-service] bot Meta credentials`** incluye **`botCredentialOrder`**, **`neonClienteIdIfConfig`** (si ganó Neon) y **`metaAccessTokenEnvLen`** (longitud del token en env, sin exponer el secreto).
-
-### Diagnóstico rápido (error 131030 “allowed list”)
-
-- Si en logs ves **`tokenSource: 'cliente_config'`**: Render puede tener un `META_ACCESS_TOKEN` que **no se usa** para el bot; el token activo es el de **Neon**. La lista de destinatarios de prueba en Meta debe coincidir con **ese** token / WABA.
-- Si ves **`env_phone_match`**: el token es **`META_ACCESS_TOKEN`** de Render; el `phone_number_id` es el del webhook y coincide con **`META_PHONE_NUMBER_ID`** del entorno.
-
-Referencia de código: `api/services/whatsappService.js` (`getWhatsAppCredentialsByMetaPhoneNumberId`, `sendBotWhatsAppText`, `getWhatsAppCredentialsForTenant`) y `api/services/metaTenantWhatsapp.js` (`resolveTenantIdByMetaPhoneNumberId`).
-
 ## Migración Nominatim (Vultr → Oracle)
 
 ### Cambio obligatorio

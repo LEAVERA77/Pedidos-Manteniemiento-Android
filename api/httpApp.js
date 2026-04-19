@@ -13,6 +13,8 @@ import distribuidoresRoutes from "./routes/distribuidores.js";
 import estadisticasRoutes from "./routes/estadisticas.js";
 import notificacionesRoutes from "./routes/notificaciones.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import whatsappBroadcastRoutes from "./routes/whatsappBroadcast.js";
+import tenantSwitchRoutes from "./routes/tenantSwitch.js";
 import whatsappHumanChatRoutes from "./routes/whatsappHumanChat.js";
 import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
 import webhooksMetaRoutes from "./routes/webhooksMeta.js";
@@ -129,6 +131,8 @@ export function createHttpApp() {
   app.use("/api/admin/geocod-wa-operaciones", geocodWaOperacionesRoutes);
   app.use("/api/config", configUbicacionRoutes);
   app.use("/api/whatsapp", whatsappGeocodeRoutes);
+  app.use("/api/whatsapp/broadcast", whatsappBroadcastRoutes);
+  app.use("/api/tenant", tenantSwitchRoutes);
   app.use("/api/geocode", geocodeNominatimRoutes);
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);

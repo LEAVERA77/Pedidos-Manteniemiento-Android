@@ -48,7 +48,7 @@ function puedeVerPedido(user, pedido) {
 
 /**
  * @param {import('express').Router} router
- * @param {{ getPedidoInTenant: (id: number, tenantId: number) => Promise<object|null>, assertPedidoMismoTenant: (p: object, req: import('express').Request) => Promise<void> }} deps
+ * @param {{ getPedidoInTenant: (id: number, req: import('express').Request) => Promise<object|null>, assertPedidoMismoTenant: (p: object, req: import('express').Request) => Promise<void> }} deps
  */
 export function registerPedidoOperativaRoutes(router, deps) {
   const { getPedidoInTenant, assertPedidoMismoTenant } = deps;
@@ -62,7 +62,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
         return res.status(400).json({ error: "lat y lng numéricos requeridos" });
       }
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);
@@ -120,7 +120,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);
@@ -148,7 +148,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);
@@ -181,7 +181,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
       if (cuerpo.length < 1 || cuerpo.length > 4000) {
         return res.status(400).json({ error: "cuerpo: 1–4000 caracteres" });
       }
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);
@@ -225,7 +225,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);
@@ -254,7 +254,7 @@ export function registerPedidoOperativaRoutes(router, deps) {
       if (!["antes", "despues", "otro"].includes(tipo)) {
         return res.status(400).json({ error: "tipo debe ser antes, despues u otro" });
       }
-      const pedido = await getPedidoInTenant(id, req.tenantId);
+      const pedido = await getPedidoInTenant(id, req);
       if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
       try {
         await assertPedidoMismoTenant(pedido, req);

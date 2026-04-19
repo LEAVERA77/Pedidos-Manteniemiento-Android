@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { query } from "../db/neon.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tenantHostMiddleware } from "./tenantHost.js";
+import { businessContextMiddleware } from "./businessContext.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
 
@@ -54,4 +55,4 @@ export function adminOnly(req, res, next) {
 }
 
 /** Autenticación + (opcional) validación host vs JWT cuando ENFORCE_TENANT_HOST=true */
-export const authWithTenantHost = [authMiddleware, tenantHostMiddleware];
+export const authWithTenantHost = [authMiddleware, tenantHostMiddleware, businessContextMiddleware];

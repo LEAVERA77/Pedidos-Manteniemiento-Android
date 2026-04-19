@@ -2,6 +2,7 @@ import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
 import { uploadManyBase64 } from "../services/cloudinary.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
@@ -9,7 +10,6 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
-  normalizarRubroCliente,
   TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA,
 } from "../services/tiposReclamo.js";
 import {
@@ -224,12 +224,17 @@ function scheduleNotifyClientePedidoWhatsapp({
   });
 }
 
-async function getPedidoInTenant(id, tenantId) {
+async function getPedidoInTenant(id, req) {
+  const tenantId = req.tenantId;
   if (await pedidosTableHasTenantIdColumn()) {
-    const r = await query("SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1", [id, tenantId]);
+    const params = [id, tenantId];
+    const bt = await pushPedidoBusinessFilter(req, params);
+    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2${bt} LIMIT 1`, params);
     return r.rows[0] || null;
   }
-  const r = await query("SELECT * FROM pedidos WHERE id = $1 LIMIT 1", [id]);
+  const params = [id];
+  const bt = await pushPedidoBusinessFilter(req, params);
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1${bt} LIMIT 1`, params);
   return r.rows[0] || null;
 }
 
@@ -257,19 +262,18 @@ router.post("/", async (req, res) => {
     } = req.body;
 
     const tenantId = req.tenantId;
-    const cr = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
-    const tipoCliente = cr.rows?.[0]?.tipo ?? null;
-    const rubro = normalizarRubroCliente(tipoCliente);
+    await query(`SELECT 1 FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    const rubro = rubroEfectivoParaTipos(req);
     const barrioBody = String(barrioBodyRaw || "").trim() || null;
     const distribuidorBody = String(distribuidorBodyRaw || "").trim() || null;
     const tt = String(tipo_trabajo || "").trim();
     if (!tt) {
       return res.status(400).json({ error: "tipo_trabajo es requerido" });
     }
-    if (!tipoTrabajoPermitidoParaNuevoPedido(tt, tipoCliente)) {
+    if (!tipoTrabajoPermitidoParaNuevoPedido(tt, rubro)) {
       return res.status(400).json({
         error: "tipo_trabajo no permitido para el rubro del cliente",
-        tipos_permitidos: tiposReclamoParaClienteTipo(tipoCliente),
+        tipos_permitidos: tiposReclamoParaClienteTipo(rubro),
       });
     }
 
@@ -306,6 +310,8 @@ router.post("/", async (req, res) => {
         tenantId,
         distribuidor: distribuidorFinal,
         trafo: trafoFinal,
+        activeBusinessType: req.activeBusinessType,
+        businessTypeFilterEnabled: req.businessTypeFilterEnabled,
       });
       if (cnt >= 4) {
         return res.status(409).json({
@@ -342,6 +348,7 @@ router.post("/", async (req, res) => {
     const provinciaDefault = await getTenantProvinciaNominatim(tenantId);
 
     const hasTIns = await pedidosTableHasTenantIdColumn();
+    const hasBtIns = await pedidosHasBusinessTypeColumn();
     const insertParams = [
       numeroPedido,
       distribuidorFinal,
@@ -368,19 +375,20 @@ router.post("/", async (req, res) => {
       barrioFinal,
     ];
     if (hasTIns) insertParams.push(tenantId);
+    if (hasBtIns) insertParams.push(req.activeBusinessType || "electricidad");
     const insert = await query(
       `INSERT INTO pedidos (
         numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
         estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
         telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
         cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
-        suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}
+        suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}${hasBtIns ? ", business_type" : ""}
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         'Pendiente',0,$8,$9,$10,$10,NOW(),
         $11,$12,$13,$14,$15,
         $16,$17,$18,$19,$20,
-        $21,$22,$23${hasTIns ? ",$24" : ""}
+        $21,$22,$23${hasTIns ? ",$24" : ""}${hasBtIns ? `,$${hasTIns ? 25 : 24}` : ""}
       ) RETURNING *`,
       insertParams
     );
@@ -409,6 +417,10 @@ router.get("/", async (req, res) => {
       params.push(req.user.id);
       where.push(`(tecnico_asignado_id = $${params.length} OR usuario_id = $${params.length})`);
     }
+    {
+      const bt = await pushPedidoBusinessFilter(req, params);
+      if (bt) where.push(bt.replace(/^\s*AND\s+/i, "").trim());
+    }
     params.push(Number(limit));
     const sql = `
       SELECT * FROM pedidos
@@ -427,17 +439,19 @@ router.get("/", async (req, res) => {
 router.get("/mis-pedidos", async (req, res) => {
   try {
     const hasT = await pedidosTableHasTenantIdColumn();
+    const params = hasT ? [req.user.id, req.tenantId] : [req.user.id];
+    const bt = await pushPedidoBusinessFilter(req, params);
     const r = await query(
       hasT
         ? `SELECT * FROM pedidos
-       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1) AND tenant_id = $2
+       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1) AND tenant_id = $2${bt}
        ORDER BY fecha_creacion DESC
        LIMIT 500`
         : `SELECT * FROM pedidos
-       WHERE tecnico_asignado_id = $1 OR usuario_id = $1
+       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1)${bt}
        ORDER BY fecha_creacion DESC
        LIMIT 500`,
-      hasT ? [req.user.id, req.tenantId] : [req.user.id]
+      params
     );
     return res.json(r.rows.map((p) => ({ ...coercePedidoLatLng(p), fotos: splitUrls(p.foto_urls) })));
   } catch (error) {
@@ -468,6 +482,8 @@ router.get("/buscar", async (req, res) => {
       params.push(req.tenantId);
       sqlWhere = `tenant_id = $${params.length} AND (${sqlWhere})`;
     }
+    const bt = await pushPedidoBusinessFilter(req, params);
+    if (bt) sqlWhere = `(${sqlWhere})${bt}`;
     const r = await query(
       `SELECT * FROM pedidos WHERE ${sqlWhere} ORDER BY fecha_creacion DESC LIMIT 200`,
       params
@@ -483,11 +499,13 @@ router.get("/historial/nis/:nis", async (req, res) => {
     const nis = String(req.params.nis || "").trim();
     if (!nis) return res.status(400).json({ error: "NIS requerido" });
     const hasTh = await pedidosTableHasTenantIdColumn();
+    const hp = hasTh ? [nis, req.tenantId] : [nis];
+    const bt = await pushPedidoBusinessFilter(req, hp);
     const r = await query(
       hasTh
-        ? "SELECT * FROM pedidos WHERE nis = $1 AND tenant_id = $2 ORDER BY fecha_creacion DESC"
-        : "SELECT * FROM pedidos WHERE nis = $1 ORDER BY fecha_creacion DESC",
-      hasTh ? [nis, req.tenantId] : [nis]
+        ? `SELECT * FROM pedidos WHERE nis = $1 AND tenant_id = $2${bt} ORDER BY fecha_creacion DESC`
+        : `SELECT * FROM pedidos WHERE nis = $1${bt} ORDER BY fecha_creacion DESC`,
+      hp
     );
     return res.json(r.rows.map((row) => coercePedidoLatLng(row)));
   } catch (error) {
@@ -525,7 +543,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     const motivoStr = motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API) : "";
     const destinoSug = destinoSugRaw != null ? String(destinoSugRaw).trim().slice(0, 64) : "";
 
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -557,6 +575,10 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     }
 
     const hasTa = await pedidosTableHasTenantIdColumn();
+    const bind = hasTa
+      ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
+      : [id, req.user.id, motivoStr || null, destinoSug];
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = TRUE,
@@ -564,7 +586,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
           solicitud_derivacion_usuario_id = $2,
           solicitud_derivacion_motivo = $3,
           solicitud_derivacion_destino_sugerido = NULLIF($4,'')
-        WHERE id = $1 AND tenant_id = $5
+        WHERE id = $1 AND tenant_id = $5${bt}
         RETURNING *`
       : `UPDATE pedidos SET
           solicitud_derivacion_pendiente = TRUE,
@@ -572,11 +594,8 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
           solicitud_derivacion_usuario_id = $2,
           solicitud_derivacion_motivo = $3,
           solicitud_derivacion_destino_sugerido = NULLIF($4,'')
-        WHERE id = $1
+        WHERE id = $1${bt}
         RETURNING *`;
-    const bind = hasTa
-      ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
-      : [id, req.user.id, motivoStr || null, destinoSug];
     let r;
     try {
       r = await query(sql, bind);
@@ -617,7 +636,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
         ? String(req.body.nota_admin).trim().slice(0, 500)
         : "";
 
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -636,6 +655,8 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
       : pedido.derivacion_nota;
 
     const hasTa = await pedidosTableHasTenantIdColumn();
+    const bind = hasTa ? [id, nuevaNota ?? null, req.tenantId] : [id, nuevaNota ?? null];
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = FALSE,
@@ -644,7 +665,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
           solicitud_derivacion_motivo = NULL,
           solicitud_derivacion_destino_sugerido = NULL,
           derivacion_nota = $2
-        WHERE id = $1 AND tenant_id = $3 AND solicitud_derivacion_pendiente = TRUE
+        WHERE id = $1 AND tenant_id = $3 AND solicitud_derivacion_pendiente = TRUE${bt}
         RETURNING *`
       : `UPDATE pedidos SET
           solicitud_derivacion_pendiente = FALSE,
@@ -653,9 +674,8 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
           solicitud_derivacion_motivo = NULL,
           solicitud_derivacion_destino_sugerido = NULL,
           derivacion_nota = $2
-        WHERE id = $1 AND solicitud_derivacion_pendiente = TRUE
+        WHERE id = $1 AND solicitud_derivacion_pendiente = TRUE${bt}
         RETURNING *`;
-    const bind = hasTa ? [id, nuevaNota ?? null, req.tenantId] : [id, nuevaNota ?? null];
     let r;
     try {
       r = await query(sql, bind);
@@ -690,7 +710,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     const destinoStr = String(destino || "").trim();
     if (!destinoStr) return res.status(400).json({ error: "destino es obligatorio" });
 
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -767,6 +787,8 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       textoObservaciones.slice(0, MAX_OBSERVACIONES_DERIVACION_API),
       snap,
     ];
+    const bind = hasTa ? [...upParams, req.tenantId] : [...upParams];
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           estado = $2,
@@ -782,7 +804,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
           solicitud_derivacion_usuario_id = NULL,
           solicitud_derivacion_motivo = NULL,
           solicitud_derivacion_destino_sugerido = NULL
-        WHERE id = $1 AND tenant_id = $9
+        WHERE id = $1 AND tenant_id = $9${bt}
         RETURNING *`
       : `UPDATE pedidos SET
           estado = $2,
@@ -798,9 +820,8 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
           solicitud_derivacion_usuario_id = NULL,
           solicitud_derivacion_motivo = NULL,
           solicitud_derivacion_destino_sugerido = NULL
-        WHERE id = $1
+        WHERE id = $1${bt}
         RETURNING *`;
-    const bind = hasTa ? [...upParams, req.tenantId] : upParams;
 
     let r;
     try {
@@ -875,7 +896,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
-    const p = await getPedidoInTenant(req.params.id, req.tenantId);
+    const p = await getPedidoInTenant(req.params.id, req);
     if (!p) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(p, req);
@@ -904,7 +925,7 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     if (!["inicio", "avance"].includes(event)) {
       return res.status(400).json({ error: "event debe ser inicio o avance" });
     }
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -957,7 +978,7 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
 router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -997,7 +1018,7 @@ router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
 router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1030,7 +1051,7 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
 router.post("/:id/clientes-afectados", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1098,7 +1119,7 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "No se aceptan coordenadas 0,0" });
     }
 
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1112,15 +1133,17 @@ router.post("/:id/coords-geocode-panel", adminOnly, async (req, res) => {
     }
 
     const hasT = await pedidosTableHasTenantIdColumn();
+    const bindCg = hasT ? [id, la, ln, req.tenantId] : [id, la, ln];
+    const btcg = await pushPedidoBusinessFilter(req, bindCg);
     const r = await query(
       hasT
         ? `UPDATE pedidos SET lat = $2, lng = $3
-           WHERE id = $1 AND tenant_id = $4
+           WHERE id = $1 AND tenant_id = $4${btcg}
            RETURNING *`
         : `UPDATE pedidos SET lat = $2, lng = $3
-           WHERE id = $1
+           WHERE id = $1${btcg}
            RETURNING *`,
-      hasT ? [id, la, ln, req.tenantId] : [id, la, ln]
+      bindCg
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     return res.json(coercePedidoLatLng(r.rows[0]));
@@ -1151,7 +1174,7 @@ async function handleCoordsManualCorreccion(req, res) {
       return res.status(400).json({ error: "No se aceptan coordenadas 0,0" });
     }
 
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1172,15 +1195,17 @@ async function handleCoordsManualCorreccion(req, res) {
     const nuevaDesc = desc0.includes("corregida manualmente en el mapa") ? desc0 : `${desc0}${marcaUbic}`;
 
     const hasT = await pedidosTableHasTenantIdColumn();
+    const bindCm = hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc];
+    const btcm = await pushPedidoBusinessFilter(req, bindCm);
     const r = await query(
       hasT
         ? `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
-           WHERE id = $1 AND tenant_id = $5
+           WHERE id = $1 AND tenant_id = $5${btcm}
            RETURNING *`
         : `UPDATE pedidos SET lat = $2, lng = $3, descripcion = $4
-           WHERE id = $1
+           WHERE id = $1${btcm}
            RETURNING *`,
-      hasT ? [id, la, ln, nuevaDesc, req.tenantId] : [id, la, ln, nuevaDesc]
+      bindCm
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     const updated = coercePedidoLatLng(r.rows[0]);
@@ -1248,7 +1273,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "id inválido" });
     }
     
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) {
       return res.status(404).json({ error: "Pedido no encontrado" });
     }
@@ -1263,7 +1288,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
     }
     
     // Ejecutar re-geocodificación
-    const resultado = await regeocodificarPedido(id, req.tenantId);
+    const resultado = await regeocodificarPedido(id, req.tenantId, { req });
     
     // 200 + success:false: la petición es válida; el fallo es resultado de negocio (sin coords),
     // no "Bad Request". Evita confusión en DevTools y monitores (400 = request mal formado).
@@ -1313,7 +1338,7 @@ router.post("/:id/abrir-chat-calificacion-baja", adminOnly, async (req, res) => 
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1340,7 +1365,7 @@ router.post("/:id/abrir-chat-calificacion-baja", adminOnly, async (req, res) => 
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const pedido = await getPedidoInTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -1410,6 +1435,7 @@ router.put("/:id", async (req, res) => {
       cliente_localidad ?? null,
     ];
     if (hasTUp) upParams.push(req.tenantId);
+    const btUp = await pushPedidoBusinessFilter(req, upParams);
     const r = await query(
       `UPDATE pedidos SET
          estado = COALESCE($2, estado),
@@ -1438,7 +1464,7 @@ router.put("/:id", async (req, res) => {
          telefono_contacto = COALESCE($16, telefono_contacto),
          cliente_calle = COALESCE($18, cliente_calle),
          cliente_localidad = COALESCE($19, cliente_localidad)
-       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}
+       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}${btUp}
        RETURNING *`,
       upParams
     );
@@ -1484,17 +1510,19 @@ router.put("/:id/asignar", adminOnly, async (req, res) => {
     if (!ru.rows.length || !ru.rows[0].activo) return res.status(400).json({ error: "Técnico inválido o inactivo" });
 
     const hasTa = await pedidosTableHasTenantIdColumn();
+    const bindAs = hasTa ? [id, tecnicoAsignadoId, req.user.id, req.tenantId] : [id, tecnicoAsignadoId, req.user.id];
+    const bta = await pushPedidoBusinessFilter(req, bindAs);
     const r = await query(
       hasTa
         ? `UPDATE pedidos
        SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
-       WHERE id = $1 AND tenant_id = $4
+       WHERE id = $1 AND tenant_id = $4${bta}
        RETURNING *`
         : `UPDATE pedidos
        SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
-       WHERE id = $1
+       WHERE id = $1${bta}
        RETURNING *`,
-      hasTa ? [id, tecnicoAsignadoId, req.user.id, req.tenantId] : [id, tecnicoAsignadoId, req.user.id]
+      bindAs
     );
     if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
     return res.json(coercePedidoLatLng(r.rows[0]));
