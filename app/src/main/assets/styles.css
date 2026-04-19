@@ -835,3 +835,24 @@ html.gn-android-webview .gn-gps-fab {
   min-height: 2.9rem;
   box-sizing: border-box;
 }
+
+/* WebView Android: ocultar filtros mapa Tipo / Colores (técnico de campo) */
+html.gn-android-webview #map-tab-filtro-tipo,
+html.gn-android-webview #map-tab-colores,
+html.gn-android-webview #mapa-card-filtro-tipo,
+html.gn-android-webview #mapa-card-colores {
+  display: none !important;
+}
+
+/* Catálogo admin socios (NIS): celdas legibles */
+table.gn-soc-admin-table {
+  border-collapse: collapse;
+}
+table.gn-soc-admin-table th,
+table.gn-soc-admin-table td {
+  border: 1px solid var(--bo, #e2e8f0);
+  padding: 0.28rem 0.4rem;
+}
+table.gn-soc-admin-table thead th {
+  border-bottom: 1px solid var(--bo, #cbd5e1);
+}

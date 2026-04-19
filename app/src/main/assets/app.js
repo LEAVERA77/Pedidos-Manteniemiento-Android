@@ -2407,6 +2407,15 @@ async function confirmarAdminTipoNegocioWeb() {
             }
         }
     }
+
+    const rubroCambioPersistido =
+        guardadoServidor && normalizarRubroEmpresa(tipoAntes) !== normalizarRubroEmpresa(tipo);
+    if (rubroCambioPersistido) {
+        toast('Rubro actualizado en servidor. Se cierra la sesión para aplicar el cambio…', 'success');
+        logoutYLimpiarClienteTrasRubroPersistidoEnServidor();
+        return;
+    }
+
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     try {
@@ -6978,6 +6987,7 @@ function renderMk() {
 
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
+    const touchMapa = esAndroidWebViewMapa();
     pedidosParaMarcadoresMapa().forEach(p => {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
@@ -7000,10 +7010,10 @@ function renderMk() {
             m = L.marker([la, ln], mkOpt).addTo(app.map);
         } else {
             const cmOpt = {
-                radius: cer ? 6 : 9,
+                radius: touchMapa ? (cer ? 10 : 14) : cer ? 6 : 9,
                 fillColor: col,
                 color: '#fff',
-                weight: 2,
+                weight: touchMapa ? 3 : 2,
                 fillOpacity: cer ? 0.5 : 0.9
             };
             if (panePed) cmOpt.pane = panePed;
@@ -10791,7 +10801,7 @@ async function sincronizarMapaConPedidoEnDetalle(p) {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
         const zCur = app.map.getZoom && Number.isFinite(app.map.getZoom()) ? app.map.getZoom() : 14;
-        const z = Math.max(zCur, 15);
+        const z = Math.max(zCur, 16);
         app.map.setView([la, ln], z, { animate: false });
         setTimeout(() => {
             try {
@@ -11362,6 +11372,37 @@ function ejecutarCerrarSesion() {
         if (pwEl) pwEl.value = '';
     } catch (_) {}
     cerrarUserMenuPop();
+}
+
+/**
+ * Tras persistir en servidor un cambio de línea de negocio: cierra sesión, vacía storage y recarga.
+ * Evita datos residuales (filtros mapa, listas en memoria). Borra también cola offline en localStorage.
+ */
+function logoutYLimpiarClienteTrasRubroPersistidoEnServidor() {
+    try {
+        if (typeof offlineQueue === 'function' && offlineQueue().length > 0) {
+            alert(
+                'Hay pedidos en cola offline sin sincronizar. Al cambiar el rubro se borrará el almacenamiento local de este navegador (incluida esa cola). Sincronizá antes si podés; se cerrará la sesión ahora.'
+            );
+        }
+    } catch (_) {}
+    try {
+        ejecutarCerrarSesion();
+    } catch (_) {}
+    try {
+        sessionStorage.clear();
+    } catch (_) {}
+    try {
+        localStorage.clear();
+    } catch (_) {}
+    try {
+        const url = window.location.pathname + window.location.search;
+        window.location.href = url || '/';
+    } catch (_) {
+        try {
+            window.location.reload();
+        } catch (_) {}
+    }
 }
 
 function confirmarCerrarSesionDesdeMenu() {

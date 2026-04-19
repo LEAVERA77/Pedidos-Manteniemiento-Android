@@ -561,7 +561,7 @@ export async function runInitMap() {
                 localStorage.setItem('ultima_ubicacion', JSON.stringify(ctx.ultimaUbicacion));
             } catch (_) {}
             ctx.mostrarMarcadorUbicacion(lat, lng, null);
-            ctx.app.map.setView([lat, lng], 15, { animate: !ctx.gnMapaLigero() });
+            ctx.app.map.setView([lat, lng], 16, { animate: !ctx.gnMapaLigero() });
             actualizarEscala();
             ctx.marcarMapTapUbicacionInicialHecha();
             ctx.toast(
@@ -593,7 +593,8 @@ export async function runInitMap() {
 
     if (ctx.ultimaUbicacion && ctx.app.map) {
         const zInit = ctx.mostrarMarcadorUbicacion(ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon, ctx.ultimaUbicacion.acc);
-        ctx.app.map.setView([ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon], zInit || 15);
+        const z0 = Number.isFinite(zInit) && zInit > 0 ? zInit : 15;
+        ctx.app.map.setView([ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon], Math.max(z0, 16));
         setTimeout(() => {
             ctx.document.getElementById('zoom-altura').textContent = ctx.calcularEscalaReal(ctx.app.map.getZoom());
         }, 100);
