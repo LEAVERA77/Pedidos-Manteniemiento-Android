@@ -5374,8 +5374,16 @@ function initMouiCardDraggable(cardId) {
     };
     applySaved();
     const dragHandle = hd.querySelector('.moui-drag-handle');
-    /** En WebView Android el «asa» es angosta: permitir arrastrar desde toda la cabecera (los botones siguen excluidos). */
-    const dragTarget = esAndroidWebViewMapa() ? hd : dragHandle || hd;
+    /**
+     * WebView Android: por defecto se arrastra desde toda la cabecera (asa angosta).
+     * Panel «Colores»: solo desde el grip — si no, el gesto compite con toques en el resto del encabezado.
+     */
+    const dragTarget =
+        esAndroidWebViewMapa() && cardId === 'mapa-card-colores'
+            ? dragHandle || hd
+            : esAndroidWebViewMapa()
+              ? hd
+              : dragHandle || hd;
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
