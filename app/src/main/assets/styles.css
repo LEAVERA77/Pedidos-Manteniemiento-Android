@@ -135,6 +135,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
 #lf{position:relative}
 .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
+/* Logo / imagen en login (sin rectángulo azul detrás) */
+.ll.ll--logo,.ll:has(img){background:transparent;color:inherit;font-size:inherit}
+.ll.ll--logo img,#ls .ll img{vertical-align:middle}
 .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
 .lc .sub{text-align:center;color:var(--tm);font-size:.9rem;margin-bottom:1rem}
 .dbs{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.5rem 1rem;border-radius:2rem;font-size:.82rem;margin-bottom:1.25rem;transition:all .3s}

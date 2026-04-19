@@ -2237,6 +2237,7 @@ function aplicarMarcaVisualCompleta() {
     const ll = document.querySelector('#ls .ll');
     if (ll) {
         const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
+        ll.classList.add('ll--logo');
         ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
     }
 }
@@ -2875,8 +2876,8 @@ document.getElementById('lf').addEventListener('submit', async e => {
     
     function entrarConUsuario(u, offline = false) {
         u.rol = normalizarRolStr(u.rol);
-        invalidarCachesMultitenantSesionYOAdminUI();
         app.u = u;
+        invalidarCachesMultitenantSesionYOAdminUI();
         try {
             app.p = [];
         } catch (_) {}
@@ -13179,12 +13180,26 @@ async function guardarConfiguracionInicialObligatoria() {
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
-            toast('Setup inicial completado', 'success');
-            // El login ya había salido antes de completar el wizard (cfgLista === false),
-            // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
-            if (!modoOffline && NEON_OK && app.u && typeof cargarPedidos === 'function') {
-                try { await cargarPedidos(); } catch (_) {}
-            }
+            try {
+                alert(
+                    'Configuración inicial guardada en el servidor.\n\n' +
+                        'La página se va a recargar para aplicar el aislamiento por tenant, la marca visual y evitar datos mezclados en listas y mapas.'
+                );
+            } catch (_) {}
+            try {
+                sessionStorage.clear();
+            } catch (_) {}
+            try {
+                localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+            } catch (_) {}
+            try {
+                invalidatePedidosTenantSqlCache();
+                invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+            try {
+                window.location.reload();
+            } catch (_) {}
+            return;
         }
     } catch (e) {
         const m = String(e?.message || '');
@@ -16187,6 +16202,7 @@ async function importarExcelSocios(event) {
     event.target.value = '';
 }
 
+/** Borra filas en `socios_catalogo` en Neon para el tenant (con doble confirmación). No usar en cambio de sesión: para eso vale `invalidarCachesMultitenantSesionYOAdminUI` + recarga del listado filtrado, sin DELETE. */
 async function vaciarCoordenadasSociosCatalogo() {
     if (!esAdmin()) {
         toast('Operación solo para administradores', 'error');
@@ -17858,6 +17874,8 @@ async function cargarEstadisticas() {
 let _mapaUsuariosAdmin = null;
 let _marcadoresUsuarios = [];
 let _marcadoresPedidosAdmin = [];
+/** Se incrementa al invalidar sesión/tenant; `cargarUbicacionesUsuarios` ignora resultados obsoletos. */
+let _genCargaUbicacionesAdmin = 0;
 window._marcadoresUsuarios = _marcadoresUsuarios;
 
 function destruirChartsEstadisticasAdmin() {
@@ -17869,6 +17887,112 @@ function destruirChartsEstadisticasAdmin() {
             delete _charts[id];
         });
     } catch (_) {}
+}
+
+/** Cards y leyendas en cero hasta `cargarEstadisticas()` con SQL del tenant actual (evita números residuales). */
+function resetEstadisticasAdminVisualNeutro() {
+    destruirChartsEstadisticasAdmin();
+    try {
+        [
+            'chart-cap-confiabilidad',
+            'chart-cap-mensual',
+            'chart-cap-estados',
+            'chart-cap-prioridades',
+            'chart-cap-distribuidores',
+            'chart-cap-barrios-tiempo',
+            'chart-cap-tipos',
+            'chart-cap-usuarios',
+            'chart-cap-tecnicos'
+        ].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '';
+        });
+        const statsEl = document.getElementById('stats-cards');
+        if (!statsEl) return;
+        const cardList = [
+            { val: 0, lbl: 'Total pedidos', cls: '' },
+            { val: 0, lbl: 'Pendientes', cls: '' },
+            { val: 0, lbl: 'Asignados', cls: '' },
+            { val: 0, lbl: 'En ejecución', cls: '' },
+            { val: 0, lbl: 'Cerrados', cls: '' },
+            { val: 0, lbl: '🔴 Críticos activos', cls: '' },
+            { val: 0, lbl: '🟠 Altos activos', cls: '' },
+            { val: 0, lbl: 'Cerrados hoy', cls: '' },
+            { val: 0, lbl: 'Técnicos con pedido (asig./ejec.)', cls: '' },
+            { val: '—', lbl: 'Prom. tiempo hasta asignar', cls: '' },
+            { val: '0%', lbl: '% cerrados / total período', cls: '' },
+            { val: '—', lbl: '% críticos cerrados &lt;24h', cls: '' },
+            { val: '—', lbl: 'Prom. tiempo cierre', cls: '' },
+            { val: '—', lbl: 'Cierre más rápido', cls: '' },
+            { val: '0%', lbl: 'Avance prom. en ejec.', cls: '' }
+        ];
+        statsEl.innerHTML = cardList
+            .map((s) => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
+            .join('');
+    } catch (_) {}
+}
+
+/** KPIs en cero y listas vacías hasta `refrescarDashboardGerencia` con datos del tenant. */
+function resetDashboardGerenciaPlaceholderNeutro() {
+    try {
+        const cards = [
+            { val: 0, lbl: 'Pendiente', cls: 'orange', filter: 'pendientes' },
+            { val: 0, lbl: 'Asignados', cls: 'dash-kpi-blue', filter: 'asignados' },
+            { val: 0, lbl: 'En ejecución', cls: 'dash-kpi-blue', filter: 'en_ejecucion' },
+            { val: 0, lbl: 'Derivados (terceros)', cls: 'dash-kpi-slate', filter: 'derivados_terceros' },
+            { val: 0, lbl: 'Cerrados hoy', cls: 'green', filter: 'cerrados_hoy' },
+            { val: 0, lbl: 'Con posición &lt;20 min', cls: '', filter: 'tecnicos_gps' }
+        ];
+        const htmlKpi = cards
+            .map(
+                (s) =>
+                    `<div class="stat-card dash-kpi-click ${s.cls}" data-dash-filter="${s.filter}" tabindex="0" role="button"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`
+            )
+            .join('');
+        const htmlLt =
+            '<span style="color:var(--tl)">Cargando posiciones del tenant actual…</span>';
+        const htmlLc = '<span style="color:var(--tl)">—</span>';
+        ['dashboard-kpi-grid', 'mapa-main-dash-kpi'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = htmlKpi;
+        });
+        ['dashboard-lista-tecnicos', 'mapa-main-dash-tecnicos'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = htmlLt;
+        });
+        ['dashboard-lista-cierres', 'mapa-main-dash-cierres'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = htmlLc;
+        });
+        try {
+            bindDashboardKpiClicks(document.getElementById('dashboard-kpi-grid'), 'dashboard-filtro-lista-host');
+            bindDashboardKpiClicks(document.getElementById('mapa-main-dash-kpi'), 'mapa-main-dash-filtro-host');
+        } catch (_) {}
+    } catch (_) {}
+}
+
+/** Una sola fila con el usuario de sesión hasta que `cargarListaUsuarios()` traiga el listado filtrado por tenant. */
+function pintarListaUsuariosAdminSoloSesionActual() {
+    const cont = document.getElementById('lista-usuarios-admin');
+    if (!cont || !app?.u) return;
+    const u = app.u;
+    const tel = escHtmlPrint(String(u.telefono != null ? u.telefono : ''));
+    const waOn = u.whatsapp_notificaciones !== false;
+    cont.innerHTML = `<p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem;line-height:1.35">Mostrando solo tu usuario de sesión hasta cargar el listado completo del tenant (sin datos de otro negocio).</p>
+<table class="admin-table">
+<thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+<tbody><tr>
+  <td style="color:var(--tl)">${escHtmlPrint(String(u.id))}</td>
+  <td><b>${escHtmlPrint(String(u.email || ''))}</b></td>
+  <td>${escHtmlPrint(String(u.nombre || ''))}</td>
+  <td>
+    <div style="font-size:.8rem">${tel || '<span style="color:var(--tl)">Sin cargar</span>'}</div>
+    <div style="font-size:.74rem;color:${waOn ? '#166534' : '#b45309'}">${waOn ? 'Notificaciones ON' : 'Notificaciones OFF'}</div>
+  </td>
+  <td><span style="background:var(--bg);padding:.15rem .5rem;border-radius:.3rem;font-size:.78rem;font-weight:600">${escHtmlPrint(String(u.rol || ''))}</span></td>
+  <td><span style="color:var(--tl);font-weight:600">…</span></td>
+  <td style="color:var(--tl);font-size:.78rem">Esperando lista…</td>
+</tr></tbody></table>`;
 }
 
 /**
@@ -17947,20 +18071,7 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
         } catch (_) {}
     } catch (_) {}
     try {
-        const dashIds = [
-            'dashboard-kpi-grid',
-            'dashboard-lista-tecnicos',
-            'dashboard-lista-cierres',
-            'mapa-main-dash-kpi',
-            'mapa-main-dash-tecnicos',
-            'mapa-main-dash-cierres'
-        ];
-        dashIds.forEach((id) => {
-            const el = document.getElementById(id);
-            if (el)
-                el.innerHTML =
-                    '<div class="ll2" style="padding:.35rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i></div>';
-        });
+        resetDashboardGerenciaPlaceholderNeutro();
         const hostF = document.getElementById('dashboard-filtro-lista-host');
         const hostMap = document.getElementById('mapa-main-dash-filtro-host');
         if (hostF) {
@@ -17973,16 +18084,16 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
         }
     } catch (_) {}
     try {
-        const lu = document.getElementById('lista-usuarios-admin');
-        if (lu)
-            lu.innerHTML =
-                '<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando usuarios…</div>';
+        pintarListaUsuariosAdminSoloSesionActual();
     } catch (_) {}
 }
 
 /** Login/logout/cambio de tenant: caches SQL en memoria + paneles admin (evita datos cruzados entre tenants/rubros). */
 function invalidarCachesMultitenantSesionYOAdminUI() {
     invalidatePedidosTenantSqlCache();
+    try {
+        _genCargaUbicacionesAdmin++;
+    } catch (_) {}
     vaciarPanelesAdminPorCambioTenantSesion();
     try {
         _sociosCatalogoTieneTenantIdCache = null;
@@ -18000,18 +18111,14 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         const ls = document.getElementById('lista-socios-admin');
         if (ls) {
             ls.innerHTML =
-                '<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando socios…</div>';
+                '<div class="ll2" style="padding:.75rem;color:var(--tm)">Sin socios en pantalla hasta cargar el catálogo del tenant actual…</div>';
         }
         const listaUb = document.getElementById('lista-ubicaciones');
         if (listaUb)
             listaUb.innerHTML =
                 '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando ubicaciones…</div>';
-        const statsEl = document.getElementById('stats-cards');
-        if (statsEl) {
-            statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando…</div>';
-        }
     } catch (_) {}
-    destruirChartsEstadisticasAdmin();
+    resetEstadisticasAdminVisualNeutro();
     try {
         if (_mapaUsuariosAdmin) {
             _marcadoresUsuarios.forEach((m) => {
@@ -18058,7 +18165,28 @@ function iniciarMapaUsuariosAdmin() {
 
 async function cargarUbicacionesUsuarios() {
     const esActualizacion = _marcadoresUsuarios.length > 0 || _marcadoresPedidosAdmin.length > 0;
+    const myGen = _genCargaUbicacionesAdmin;
     try {
+        if (_mapaUsuariosAdmin) {
+            _marcadoresUsuarios.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+            _marcadoresPedidosAdmin.forEach((m) => {
+                try {
+                    _mapaUsuariosAdmin.removeLayer(m);
+                } catch (_) {}
+            });
+        }
+        _marcadoresUsuarios = [];
+        _marcadoresPedidosAdmin = [];
+        window._marcadoresUsuarios = _marcadoresUsuarios;
+        const listaSpin = document.getElementById('lista-ubicaciones');
+        if (listaSpin)
+            listaSpin.innerHTML =
+                '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando ubicaciones…</div>';
+
         const wfU = await sqlFiltroUsuariosPorTenant();
         // ── Usuarios activos con ubicación reciente ───────────
         const [rUsr, rPed] = await Promise.all([
@@ -18084,16 +18212,12 @@ async function cargarUbicacionesUsuarios() {
             })()
         ]);
 
+        if (myGen !== _genCargaUbicacionesAdmin) return;
+
         if (!_mapaUsuariosAdmin) {
             console.warn('[ubicaciones admin] mapa no inicializado');
             return;
         }
-
-        // ── Limpiar marcadores anteriores ────────────────────
-        _marcadoresUsuarios.forEach(m => { if (_mapaUsuariosAdmin) _mapaUsuariosAdmin.removeLayer(m); });
-        _marcadoresUsuarios = [];
-        _marcadoresPedidosAdmin.forEach(m => { if (_mapaUsuariosAdmin) _mapaUsuariosAdmin.removeLayer(m); });
-        _marcadoresPedidosAdmin = [];
 
         const lista = document.getElementById('lista-ubicaciones');
 
