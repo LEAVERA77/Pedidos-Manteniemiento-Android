@@ -11320,6 +11320,9 @@ function ejecutarCerrarSesion() {
     detenerKeepAlive();
     detenerTracking();
     detenerDashboardGerenciaPoll();
+    try {
+        cerrarModalDashboardGerencia();
+    } catch (_) {}
     detenerPollWhatsappHumanChat();
     destruirTodasVentanasWaHc();
     detenerTecnicosMapaPrincipalPoll();
@@ -14694,6 +14697,8 @@ async function cargarFormEmpresa() {
             const cur = String(ec.provincia || ec.provincia_nominatim || ec.state || '').trim();
             if (cur) provEl.value = cur;
         }
+        const ohRed = document.getElementById('cfg-ocultar-redes-help');
+        if (ohRed) ohRed.style.removeProperty('display');
     } catch(e) { console.warn(e); }
 }
 
@@ -17866,14 +17871,130 @@ function destruirChartsEstadisticasAdmin() {
     } catch (_) {}
 }
 
+/**
+ * Tras login distinto o invalidación de sesión: vacía formularios y listas del admin
+ * (empresa, derivaciones, KPI, dashboard, usuarios) y `EMPRESA_CFG` en memoria.
+ * No toca la base: los datos se vuelven a cargar con el `tenant_id` activo.
+ */
+function vaciarPanelesAdminPorCambioTenantSesion() {
+    try {
+        window.EMPRESA_CFG = {};
+    } catch (_) {}
+    try {
+        const emp = document.getElementById('admin-empresa');
+        if (emp) {
+            emp.querySelectorAll('input, select, textarea').forEach((el) => {
+                const id = el.id || '';
+                if (id === 'cfg-guardar-empresa' || el.type === 'button' || el.type === 'submit') return;
+                if (id === 'cfg-subtitulo') {
+                    el.value = typeof GN_SUBTITULO_FIJO !== 'undefined' ? GN_SUBTITULO_FIJO : '';
+                    return;
+                }
+                if (el.type === 'checkbox') {
+                    el.checked = false;
+                    return;
+                }
+                if (el.tagName === 'SELECT') {
+                    if (id === 'cfg-coord-familia') el.value = 'none';
+                    else if (id === 'cfg-coord-modo') el.value = 'punto';
+                    else el.selectedIndex = 0;
+                    return;
+                }
+                el.value = '';
+            });
+        }
+        const irr = document.getElementById('cfg-deriv-internet-rows');
+        const tvr = document.getElementById('cfg-deriv-tv-rows');
+        if (irr) irr.innerHTML = '';
+        if (tvr) tvr.innerHTML = '';
+        const oh = document.getElementById('cfg-ocultar-redes-help');
+        if (oh) oh.style.display = 'none';
+        try {
+            syncCoordModoVisibility();
+        } catch (_) {}
+        try {
+            setDerivacionesInlineError('');
+        } catch (_) {}
+    } catch (_) {}
+    try {
+        const wrapKpi = document.getElementById('kpi-snapshots-form-wrap');
+        if (wrapKpi) wrapKpi.style.display = 'none';
+        const sinTabla = document.getElementById('kpi-snapshots-sin-tabla');
+        if (sinTabla) {
+            sinTabla.style.display = 'none';
+            sinTabla.textContent = '';
+        }
+        const kpiLista = document.getElementById('kpi-snapshots-lista');
+        if (kpiLista) {
+            kpiLista.innerHTML =
+                '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando datos KPI…</div>';
+        }
+        const adminKpi = document.getElementById('admin-kpi');
+        if (adminKpi) {
+            adminKpi.querySelectorAll('input, textarea, select').forEach((el) => {
+                const id = el.id || '';
+                if (!id || id === 'kpi-btn-imprimir' || id === 'kpi-btn-refrescar') return;
+                if (el.tagName === 'SELECT') {
+                    el.selectedIndex = 0;
+                    return;
+                }
+                if (el.type === 'checkbox') el.checked = false;
+                else el.value = '';
+            });
+        }
+        try {
+            if (typeof aplicarKpiPresetAdmin === 'function') aplicarKpiPresetAdmin();
+        } catch (_) {}
+    } catch (_) {}
+    try {
+        const dashIds = [
+            'dashboard-kpi-grid',
+            'dashboard-lista-tecnicos',
+            'dashboard-lista-cierres',
+            'mapa-main-dash-kpi',
+            'mapa-main-dash-tecnicos',
+            'mapa-main-dash-cierres'
+        ];
+        dashIds.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el)
+                el.innerHTML =
+                    '<div class="ll2" style="padding:.35rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i></div>';
+        });
+        const hostF = document.getElementById('dashboard-filtro-lista-host');
+        const hostMap = document.getElementById('mapa-main-dash-filtro-host');
+        if (hostF) {
+            hostF.style.display = 'none';
+            hostF.innerHTML = '';
+        }
+        if (hostMap) {
+            hostMap.style.display = 'none';
+            hostMap.innerHTML = '';
+        }
+    } catch (_) {}
+    try {
+        const lu = document.getElementById('lista-usuarios-admin');
+        if (lu)
+            lu.innerHTML =
+                '<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando usuarios…</div>';
+    } catch (_) {}
+}
+
 /** Login/logout/cambio de tenant: caches SQL en memoria + paneles admin (evita datos cruzados entre tenants/rubros). */
 function invalidarCachesMultitenantSesionYOAdminUI() {
     invalidatePedidosTenantSqlCache();
+    vaciarPanelesAdminPorCambioTenantSesion();
     try {
         _sociosCatalogoTieneTenantIdCache = null;
     } catch (_) {}
     try {
         window._sociosVirtualRows = null;
+    } catch (_) {}
+    try {
+        if (_sociosVirtualScrollRaf) {
+            cancelAnimationFrame(_sociosVirtualScrollRaf);
+            _sociosVirtualScrollRaf = null;
+        }
     } catch (_) {}
     try {
         const ls = document.getElementById('lista-socios-admin');
@@ -17882,7 +18003,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
                 '<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando socios…</div>';
         }
         const listaUb = document.getElementById('lista-ubicaciones');
-        if (listaUb) listaUb.innerHTML = '';
+        if (listaUb)
+            listaUb.innerHTML =
+                '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando ubicaciones…</div>';
         const statsEl = document.getElementById('stats-cards');
         if (statsEl) {
             statsEl.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Calculando…</div>';
@@ -17904,6 +18027,7 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         }
         _marcadoresUsuarios = [];
         _marcadoresPedidosAdmin = [];
+        window._marcadoresUsuarios = _marcadoresUsuarios;
     } catch (_) {}
 }
 
