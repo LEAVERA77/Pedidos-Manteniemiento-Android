@@ -1,6 +1,5 @@
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
-import { tenantBusinessFilter } from "../middleware/tenantBusinessFilter.js";
 import { query } from "../db/neon.js";
 import { normalizePhone } from "../utils/helpers.js";
 import { metaSendWhatsAppText } from "../services/metaWhatsapp.js";
@@ -14,7 +13,6 @@ import {
 
 const router = express.Router();
 router.use(authWithTenantHost);
-router.use(tenantBusinessFilter);
 
 async function whatsappNotifInsertCols() {
   const hasTenant = await tableHasColumn("whatsapp_notificaciones", "tenant_id");
@@ -28,7 +26,7 @@ async function assertWhatsAppRefsEnTenant(req, { destinatario_id, pedido_id }) {
     if (!Number.isFinite(pid) || pid < 1) {
       return { ok: false, status: 400, error: "pedido_id inválido" };
     }
-    const p = await getPedidoRowInTenant(pid, tid, req);
+    const p = await getPedidoRowInTenant(pid, tid);
     if (!p) {
       return { ok: false, status: 403, error: "Pedido no encontrado en este tenant" };
     }

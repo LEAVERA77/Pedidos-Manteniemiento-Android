@@ -16,7 +16,7 @@ Backend compartido entre el panel web y la app Android. Ver también la document
 
 ## WhatsApp: Meta vs otros proveedores
 
-Ver **`api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`**. La plantilla **`api/.env.example`** usa **`WHATSAPP_PROVIDER=whapi`** (Whapi.cloud); para Cloud API oficial cambiá a **`WHATSAPP_PROVIDER=meta`** + webhook `/meta`.
+Ver **`api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`** (volver a Meta con `WHATSAPP_PROVIDER=meta` + webhook `/meta`).
 
 ## Instalación
 
@@ -214,13 +214,13 @@ Configurar en Evolution el webhook hacia tu API (`/api/webhooks/...`) según la 
 
 | Entorno | Recomendación |
 |--------|----------------|
-| **Producción con Whapi.cloud** | **`WHATSAPP_PROVIDER=whapi`** — `WHAPI_API_KEY`, `WHAPI_API_URL`, opcional `WHAPI_CHANNEL_ID`, webhook **`POST /api/webhooks/whatsapp/whapi`** (HTTPS en Render). Ver sección siguiente. |
-| **Producción con Meta (Cloud API)** | **`WHATSAPP_PROVIDER=meta`** — [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api). Configurá `META_*` y `/api/webhooks/whatsapp/meta`. Canal **oficial** de Meta. |
+| **Producción (Render, clientes reales)** | **`WHATSAPP_PROVIDER=meta`** — [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api). Configurá `META_*` y el webhook `/api/webhooks/whatsapp/meta`. Es el canal **oficial** y estable. |
 | **Desarrollo local sin sandbox Meta** | **WAHA** (`WHATSAPP_PROVIDER=waha`) o emulador Graph (`META_GRAPH_URL`). WAHA **no** es producto oficial de Meta; usalo como puente de pruebas. |
+| **Pruebas con canal alojado (Whapi.cloud)** | **`WHATSAPP_PROVIDER=whapi`** — token en `WHAPI_API_KEY`, base `WHAPI_API_URL=https://gate.whapi.cloud`. Webhook entrante: `POST /api/webhooks/whatsapp/whapi` (debe ser **HTTPS** público; en local usá **ngrok** u otro túnel: `ngrok http <PORT>` → `https://….ngrok-free.app/api/webhooks/whatsapp/whapi?token=TU_WHATSAPP_WEBHOOK_TOKEN`). |
 
 ---
 
-## Whapi.cloud
+## Whapi.cloud (opcional, pruebas)
 
 1. En el panel Whapi, creá el canal y vinculá el número (QR o código). Copiá el **Channel ID** (aparece en webhooks / proyecto) y el **API token**.
 2. **Webhook URL** (HTTPS): `https://<tu-api>/api/webhooks/whatsapp/whapi?token=<WHATSAPP_WEBHOOK_TOKEN>` — ejemplo Render: `https://nexxo-api-418k.onrender.com/api/webhooks/whatsapp/whapi?token=...`. Activá **webhook persistente** si el panel lo ofrece.

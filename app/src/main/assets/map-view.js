@@ -338,7 +338,7 @@ export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
     const L = ctx.L;
-    const maxZ = ligero ? 18 : 19;
+    const maxZ = ligero ? 17 : 19;
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
@@ -420,7 +420,7 @@ export async function runInitMap() {
             .trim();
     } catch (_) {}
     const ligeroInit = ctx.gnMapaLigero();
-    const maxZoomMap = ligeroInit ? 18 : 19;
+    const maxZoomMap = ligeroInit ? 17 : 19;
     const center = await resolveMapCenterLatLngZoom();
     let latBase;
     let lngBase;
@@ -533,16 +533,6 @@ export async function runInitMap() {
             if (typeof until === 'number' && Date.now() < until) return;
         } catch (_) {}
 
-        try {
-            if (
-                typeof ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' &&
-                ctx.window.gnMapaDebeBloquearCargaPedidoDesdeMapa()
-            ) {
-                ctx.toast('Esperá unos segundos: aviso de reclamo nuevo.', 'info');
-                return;
-            }
-        } catch (_) {}
-
         if (ctx._modoFijarUbicacionAdmin) {
             ctx._modoFijarUbicacionAdmin = false;
             ctx.document.body.classList.remove('modo-fijar-ubicacion');
@@ -561,27 +551,6 @@ export async function runInitMap() {
 
         const hayModalAbierto = ctx.document.querySelector('.mo.active');
         if (hayModalAbierto) return;
-
-        try {
-            const latlng = e.latlng;
-            const mkList = ctx.app.mk || [];
-            for (let i = 0; i < mkList.length; i++) {
-                const m = mkList[i];
-                const pid = m && m._gnPedidoId != null ? String(m._gnPedidoId) : '';
-                if (!pid || !m.getLatLng) continue;
-                try {
-                    const d = latlng.distanceTo(m.getLatLng());
-                    if (d < 28) {
-                        if (typeof ctx.window.suppressNextMapClickFromPopup === 'function') {
-                            ctx.window.suppressNextMapClickFromPopup(620);
-                        }
-                        ctx.app.map.closePopup();
-                        if (typeof ctx.window._d === 'function') ctx.window._d(pid);
-                        return;
-                    }
-                } catch (_) {}
-            }
-        } catch (_) {}
 
         if (ctx.esAndroidWebViewMapa() && !ctx.mapTapUbicacionInicialHechaSesion() && !ctx._gpsRecibidoEstaSesion) {
             const lat = e.latlng.lat;
@@ -621,30 +590,6 @@ export async function runInitMap() {
     ctx.mapaInicializado = true;
     ctx.aplicarUIMapaPlataforma();
     ctx.renderMk();
-
-    if (ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa()) {
-        const gnInv = () => {
-            try {
-                requestAnimationFrame(() => {
-                    try {
-                        map.invalidateSize({ animate: false });
-                    } catch (_) {}
-                });
-            } catch (_) {}
-        };
-        try {
-            map.on('zoomend', gnInv);
-        } catch (_) {}
-        try {
-            window.addEventListener('resize', gnInv);
-        } catch (_) {}
-        try {
-            if (typeof ResizeObserver !== 'undefined') {
-                const ro = new ResizeObserver(() => gnInv());
-                ro.observe(el);
-            }
-        } catch (_) {}
-    }
 
     if (ctx.ultimaUbicacion && ctx.app.map) {
         const zInit = ctx.mostrarMarcadorUbicacion(ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon, ctx.ultimaUbicacion.acc);

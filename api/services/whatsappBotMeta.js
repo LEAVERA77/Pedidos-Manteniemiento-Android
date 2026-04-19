@@ -12,7 +12,6 @@ import {
   getWhatsAppCredentialsForTenant,
   sendBotWhatsAppText,
   sendTenantWhatsAppText,
-  whatsappProvider,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
 import {
@@ -41,7 +40,6 @@ import {
   humanChatFindOpenSessionForPhone,
 } from "./whatsappHumanChat.js";
 import { derivacionReclamosDesdeConfig } from "../utils/derivacionReclamos.js";
-import { tableHasColumn } from "../utils/tenantScope.js";
 import { validarLocalidadParaChatWhatsapp, normalizarNombreLocalidad } from "./tenantLocalidades.js";
 import {
   whatsappBotEnvHardDisabled,
@@ -49,32 +47,9 @@ import {
   isPhoneWhatsappBotMasterAsync,
   parseActivarDesactivarComando,
   setGlobalBotActiveDb,
-  digitsWaPhoneLikelyEqual,
 } from "./globalBotState.js";
 
 const sessions = new Map();
-
-/** Último `messages[].from` (dígitos) por sesión bot; Graph `to` debe alinear con wa_id / lista Meta (131030 si 543≠549). */
-const lastMetaInboundWaFromDigits = new Map();
-
-function touchLastMetaInboundFrom(phoneNormalized, tid, fromRaw) {
-  const rawDigits = String(fromRaw || "").replace(/\D/g, "");
-  if (!rawDigits || !phoneNormalized) return;
-  const t = tid != null && Number.isFinite(Number(tid)) && Number(tid) >= 1 ? Number(tid) : botTenantId();
-  lastMetaInboundWaFromDigits.set(sessionKey(phoneNormalized, t), rawDigits);
-}
-
-function graphRecipientOverrideForMetaReply(phoneDigits, tenantId) {
-  const tid =
-    tenantId != null && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1
-      ? Number(tenantId)
-      : botTenantId();
-  const canon = String(phoneDigits || "").replace(/\D/g, "");
-  const raw = lastMetaInboundWaFromDigits.get(sessionKey(canon, tid));
-  if (!raw) return null;
-  if (!digitsWaPhoneLikelyEqual(canon, raw)) return null;
-  return raw;
-}
 
 const MSG_SALIR_ATRAS =
   "\n\n_Escribí *menú* o *0* para salir · *atrás* para el paso anterior._";
@@ -631,7 +606,7 @@ function normCfg(cfg) {
 
 async function loadTenantBotContext(tenantId) {
   const r = await query(
-    `SELECT id, nombre, tipo, active_business_type, configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
+    `SELECT id, nombre, tipo, configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
     [tenantId]
   );
   const row = r.rows?.[0];
@@ -653,7 +628,6 @@ async function loadTenantBotContext(tenantId) {
     id: row.id,
     nombre: row.nombre,
     tipo: row.tipo,
-    activeBusinessType: String(row.active_business_type || "").trim() || "electricidad",
     lat: c.lat_base != null ? Number(c.lat_base) : null,
     lng: c.lng_base != null ? Number(c.lng_base) : null,
     geocodeState,
@@ -662,129 +636,6 @@ async function loadTenantBotContext(tenantId) {
     whatsappBloqueoMensaje: bloqueo.mensaje,
     derivacionReclamos: derivacionReclamosDesdeConfig(c),
   };
-}
-
-function normalizeBotBusinessType(raw, fallbackTipo) {
-  const v = String(raw || "").trim().toLowerCase();
-  if (v === "electricidad" || v === "agua" || v === "municipio") return v;
-  const t = normalizarRubroCliente(fallbackTipo);
-  if (t === "cooperativa_agua") return "agua";
-  if (t === "municipio") return "municipio";
-  return "electricidad";
-}
-
-/** Texto corto para prompts del bot según línea configurada en el cliente. */
-function etiquetaRubroConsultaBot(bt, tipoCliente) {
-  const b = normalizeBotBusinessType(bt, tipoCliente);
-  if (b === "agua") return "agua potable";
-  if (b === "municipio") return "servicios municipales";
-  return "electricidad";
-}
-
-function normalizarIdentificadorReclamo(raw) {
-  const src = String(raw || "").trim();
-  const fold = src
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const onlyDigits = src.replace(/\D/g, "");
-  if (onlyDigits.length >= 4) {
-    return { tipo: "numeric", valor: onlyDigits, libre: fold };
-  }
-  return { tipo: "text", valor: fold, libre: fold };
-}
-
-async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, identificador) {
-  const ident = normalizarIdentificadorReclamo(identificador);
-  const hasBt = await tableHasColumn("pedidos", "business_type");
-  const hasIdentCol = await tableHasColumn("pedidos", "identificador");
-  const hasNisMed = await tableHasColumn("pedidos", "nis_medidor");
-  const params = [tenantId];
-  // Por defecto: mismo tenant + misma línea operativa (aislamiento estricto).
-  // WHATSAPP_BOT_LEGACY_NULL_BUSINESS=1 recupera el modo relajado (legacy sin business_type).
-  let where = `tenant_id = $1`;
-  if (hasBt) {
-    params.push(businessType);
-    const legacyNull =
-      String(process.env.WHATSAPP_BOT_LEGACY_NULL_BUSINESS || "").trim() === "1";
-    where += legacyNull
-      ? ` AND (business_type IS NULL OR business_type = $${params.length})`
-      : ` AND business_type = $${params.length}`;
-  }
-  if (ident.tipo === "numeric") {
-    params.push(ident.valor);
-    const i = params.length;
-    const parts = [
-      `REGEXP_REPLACE(COALESCE(nis::text,''), '\\D', '', 'g') = $${i}`,
-      `REGEXP_REPLACE(COALESCE(medidor::text,''), '\\D', '', 'g') = $${i}`,
-    ];
-    if (hasIdentCol) parts.push(`REGEXP_REPLACE(COALESCE(identificador,''), '\\D', '', 'g') = $${i}`);
-    if (hasNisMed) parts.push(`REGEXP_REPLACE(COALESCE(nis_medidor,''), '\\D', '', 'g') = $${i}`);
-    parts.push(`REGEXP_REPLACE(COALESCE(cliente_nombre,''), '\\D', '', 'g') = $${i}`);
-    where += ` AND (${parts.join(" OR ")})`;
-  } else {
-    params.push(ident.valor);
-    const i = params.length;
-    const parts = [
-      `LOWER(COALESCE(cliente_nombre,'')) LIKE '%' || LOWER($${i}) || '%'`,
-    ];
-    if (hasIdentCol) parts.push(`LOWER(COALESCE(identificador,'')) LIKE '%' || LOWER($${i}) || '%'`);
-    where += ` AND (${parts.join(" OR ")})`;
-  }
-  const r = await query(
-    `SELECT id, numero_pedido, estado, direccion, fecha_creacion
-     FROM pedidos
-     WHERE ${where}
-     ORDER BY fecha_creacion DESC
-     LIMIT 12`,
-    params
-  );
-  return r.rows || [];
-}
-
-async function puedeEnviarRecordatorioReclamo({ tenantId, pedidoId, telefonoUsuario, cooldownHoras = 6 }) {
-  try {
-    const r = await query(
-      `SELECT fecha_solicitud
-       FROM recordatorios_reclamos
-       WHERE tenant_id = $1
-         AND pedido_id = $2
-         AND telefono_usuario = $3
-         AND fecha_solicitud > NOW() - ($4::text || ' hours')::interval
-       ORDER BY fecha_solicitud DESC
-       LIMIT 1`,
-      [tenantId, pedidoId, telefonoUsuario, String(cooldownHoras)]
-    );
-    return !r.rows?.length;
-  } catch (_) {
-    return true;
-  }
-}
-
-function formatearDuracionPendiente(fechaCreacion) {
-  const d = new Date(fechaCreacion);
-  if (Number.isNaN(d.getTime())) return "tiempo no disponible";
-  const diffMs = Math.max(0, Date.now() - d.getTime());
-  const h = Math.floor(diffMs / 3600000);
-  const dias = Math.floor(h / 24);
-  const horas = h % 24;
-  return `${dias} días, ${horas} horas`;
-}
-
-async function registrarRecordatorioReclamo({ tenantId, businessType, pedidoId, telefonoUsuario, identificador }) {
-  try {
-    const ins = await query(
-      `INSERT INTO recordatorios_reclamos(
-        pedido_id, tenant_id, business_type, telefono_usuario, identificador, enviado, fecha_envio
-      ) VALUES ($1,$2,$3,$4,$5,TRUE,NOW()) RETURNING id`,
-      [pedidoId, tenantId, businessType, telefonoUsuario, identificador]
-    );
-    return Number(ins.rows?.[0]?.id || 0) || null;
-  } catch (_) {
-    return null;
-  }
 }
 
 /** Límite conservador (Meta Cloud API ~4096). */
@@ -833,20 +684,17 @@ function formatDerivacionBotMessage(ctx) {
 function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
-  const consultaNum = max + 1;
   return (
     `Bienvenido al centro de atención de *${n}*.\n\n` +
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
-    `*${consultaNum})* 🔍 Consultar mis reclamos\n\n` +
     `Enviá *menú* o *0* para repetir este mensaje.`
   );
 }
 
 /** Menú solo texto (respaldo si la lista interactiva falla o clientes antiguos). */
 function menuTextoNumerado(ctx) {
-  const consultaNum = (ctx.tipos?.length || 0) + 1;
   const lineas = [
     `📋 *${ctx.nombre || "Pedidos"}*`,
     "",
@@ -856,35 +704,9 @@ function menuTextoNumerado(ctx) {
   ctx.tipos.forEach((t, i) => {
     lineas.push(`${i + 1}) ${t}`);
   });
-  lineas.push(`${consultaNum}) 🔍 Consultar mis reclamos`);
   lineas.push("");
   lineas.push("Para *salir*: *menú* o *0*.");
   return lineas.join("\n");
-}
-
-async function iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx }) {
-  const bt = normalizeBotBusinessType(ctx?.activeBusinessType, ctx?.tipo);
-  const rubroLbl = etiquetaRubroConsultaBot(bt, ctx?.tipo);
-  const linea1 =
-    bt === "agua"
-      ? "1) N° de abonado o medidor"
-      : bt === "municipio"
-        ? "1) N° de vecino"
-        : "1) NIS o medidor";
-  const linea2 = "2) Nombre completo";
-  sessions.set(sk, {
-    step: "awaiting_pending_lookup_mode",
-    tenantId: tid,
-    tipoCliente: ctx.tipo,
-    activeBusinessType: bt,
-    phoneNumberId: wpid,
-  });
-  await reply(
-    phone,
-    `🔍 CONSULTAR MIS RECLAMOS\n\nServicio: *${rubroLbl}*.\nTe mostramos reclamos en *cualquier estado* (pendiente, en curso, cerrado, etc.). Elegí cómo identificarte:\n\n${linea1}\n${linea2}\n\nRespondé con *1* o *2*.`,
-    tid,
-    phoneNumberId
-  );
 }
 
 function esPedidoCargarReclamo(text) {
@@ -897,21 +719,6 @@ function esPedidoCargarReclamo(text) {
   if (/\bnuevo\s+reclamo\b/.test(n)) return true;
   if (/\bquiero\s+(hacer\s+)?(un\s+)?reclamo\b/.test(n)) return true;
   if (n === "reclamo" || n === "lista" || n === "tipos") return true;
-  return false;
-}
-
-function esComandoConsultaReclamosPendientes(text) {
-  const n = String(text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-  if (!n) return false;
-  if (n === "pendientes" || n === "mis pendientes" || n === "mis reclamos") return true;
-  if (/\bconsult(ar|a)\b/.test(n) && /\breclamo/.test(n)) return true;
-  if (/\bestado\b/.test(n) && /\breclamo/.test(n)) return true;
-  if (/\bmis\s+reclamos\s+pendientes\b/.test(n)) return true;
-  if (/\breclamos?\s+pendientes\b/.test(n)) return true;
   return false;
 }
 
@@ -932,7 +739,6 @@ async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
       ? Number(tenantId)
       : botTenantId();
   const wpid = webhookPhoneNumberId != null ? String(webhookPhoneNumberId).trim() : "";
-  const graphRecipientDigitsOverride = graphRecipientOverrideForMetaReply(digitsCanon, tid);
   const r = wpid
     ? await sendBotWhatsAppText({
         tenantId: tid,
@@ -940,7 +746,6 @@ async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
         toDigits: phoneDigits,
         bodyText: text,
         logContext: "whatsapp_bot_meta",
-        graphRecipientDigitsOverride: graphRecipientDigitsOverride || undefined,
       })
     : await sendTenantWhatsAppText({
         tenantId: tid,
@@ -1480,38 +1285,19 @@ async function geocodeStructuredAddressAndFinalizePedido(
 /** Cloud API: máximo 10 filas en una lista interactiva. */
 const MAX_WHATSAPP_LIST_ROWS = 10;
 
-/**
- * @param {{ saludoMenuPrincipal?: boolean }} [opts]
- * Si `saludoMenuPrincipal`, antepone bienvenida GestorNova (Hola / menú principal).
- */
-async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, opts = {}) {
+async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   if (ctx.whatsappBloqueoReclamos) {
     await reply(phoneDigits, ctx.whatsappBloqueoMensaje, ctx.id, phoneNumberIdWebhook);
     return { ok: true, blocked: true };
   }
-  const saludo =
-    opts.saludoMenuPrincipal === true
-      ? `Bienvenido al centro de atención de *${ctx.nombre || "GestorNova"}*.\n\n`
-      : "";
-  if (!ctx.tipos?.length) {
-    await reply(phoneDigits, textoBienvenidaYAyuda(ctx), ctx.id, phoneNumberIdWebhook);
-    return { ok: true, emptyTipos: true };
-  }
-  /** Whapi.cloud: envío por gate API; listas interactivas son Graph Meta — usar menú numerado por texto. */
-  if (whatsappProvider() === "whapi") {
-    console.log("[whatsapp-bot-meta] menú principal por texto (proveedor whapi)", { tenantId: ctx.id });
-    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, phoneNumberIdWebhook);
-    return { ok: true, menuStyle: "whapi_text" };
-  }
   const bodyText =
-    saludo +
     `Elegí el tipo que mejor describe tu reclamo:\n\n` +
     `_Para *salir* escribí *menú* o *0* en un mensaje de texto._`;
   const pid = String(phoneNumberIdWebhook || "").trim();
   let accessToken = "";
   let graphPid = pid;
   if (pid) {
-    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid, { forBot: true });
+    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
     accessToken = String(byPid.accessToken || "").trim();
   }
   if (!accessToken || !graphPid) {
@@ -1521,7 +1307,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
   }
   if (!accessToken || !graphPid) {
     console.error("[whatsapp-bot-meta] lista interactiva: sin credenciales Meta");
-    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, pid || null);
+    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
     return { ok: false, error: "missing_meta_credentials" };
   }
   if (ctx.tipos.length > MAX_WHATSAPP_LIST_ROWS) {
@@ -1531,20 +1317,12 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
     });
     await reply(
       phoneDigits,
-      saludo +
-        menuTextoNumerado(ctx) +
-        "\n\n_(Hay muchas opciones: escribí el número del 1 al " +
-        (ctx.tipos.length + 1) +
-        ".)_",
+      menuTextoNumerado(ctx) + "\n\n_(Hay muchas opciones: escribí el número del 1 al " + ctx.tipos.length + ".)_",
       ctx.id,
       pid || null
     );
     return { ok: true, skippedInteractive: true };
   }
-  const graphRecipientDigitsOverride = graphRecipientOverrideForMetaReply(
-    String(phoneDigits || "").replace(/\D/g, ""),
-    ctx.id
-  );
   const r = await sendWhatsAppInteractiveListWithCredentials(
     phoneDigits,
     {
@@ -1553,12 +1331,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
       sectionTitle: "Tipos de reclamo",
       tipos: ctx.tipos,
     },
-    {
-      accessToken,
-      phoneNumberId: graphPid,
-      purpose: "whatsapp_bot_menu_tipos",
-      graphRecipientDigitsOverride: graphRecipientDigitsOverride || undefined,
-    }
+    { accessToken, phoneNumberId: graphPid, purpose: "whatsapp_bot_menu_tipos" }
   );
   const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
   try {
@@ -1568,7 +1341,7 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook, op
   }
   if (!r.ok) {
     console.error("[whatsapp-bot-meta] lista interactiva falló, menú texto", r.graph || r.error);
-    await reply(phoneDigits, saludo + menuTextoNumerado(ctx), ctx.id, pid || null);
+    await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
   } else {
     console.log("[webhook-meta-whatsapp] outbound_list", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
   }
@@ -1693,7 +1466,6 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
-  touchLastMetaInboundFrom(phone, tid, fromRaw);
   const sess = sessions.get(sk);
 
   if (sess && sess.step === "human_chat") {
@@ -1826,7 +1598,6 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
-  touchLastMetaInboundFrom(phone, tid, fromRaw);
   const ctx = await loadTenantBotContext(tid);
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
@@ -1875,8 +1646,7 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  const firstWord = lower.split(/\s+/)[0]?.replace(/[^a-záéíóúüñ0-9]/g, "") || "";
-  if (firstWord === "salir" || firstWord === "fin" || firstWord === "chau" || firstWord === "adios") {
+  if (lower === "salir" || lower === "fin" || lower === "chau") {
     try {
       await humanChatCloseBySessionId(sess.humanChatSessionId);
     } catch (_) {}
@@ -1920,7 +1690,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
   const sk = sessionKey(phone, tid);
-  touchLastMetaInboundFrom(phone, tid, fromRaw);
 
   const comandoMaster = parseActivarDesactivarComando(text);
   if (comandoMaster) {
@@ -2078,31 +1847,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       );
       return;
     }
-    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
+    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
   }
 
-  if (automatedBotOff) {
-    const sOff = sessions.get(sk);
-    const stepOff = sOff?.step;
-    const idleOff = !sOff || stepOff === "idle" || stepOff === undefined;
-    if (idleOff) {
-      const nombreOff = ctx?.nombre || "GestorNova";
-      console.warn("[whatsapp-bot-meta] bot automático desactivado (env o BD); aviso al usuario idle", {
-        tid,
-        phone: maskWaDigitsForLog(phone),
-      });
-      await reply(
-        phone,
-        `El asistente automático de reclamos está *desactivado* por configuración.\n\n` +
-          `Cuando lo activen desde administración, escribí *Hola* o *menú*. ` +
-          `Para consultas: *${nombreOff}*.`,
-        tid,
-        phoneNumberId
-      );
-    }
-    return;
-  }
+  if (automatedBotOff) return;
 
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
@@ -2149,7 +1898,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       } catch (_) {}
     }
     sessions.delete(sk);
-    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
+    await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
     return;
   }
 
@@ -2774,136 +2523,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     return;
   }
 
-  if (sess && sess.step === "awaiting_pending_lookup_identifier") {
-    const ident = String(text || "").trim();
-    if (ident.length < 2) {
-      await reply(phone, "Escribí un identificador válido (mínimo 2 caracteres).", tid, phoneNumberId);
-      return;
-    }
-    const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
-    const rows = await buscarReclamosPendientesPorIdentificador(tid, bt, ident);
-    sess.pendingLookupIdentificador = ident;
-    sess.pendingLookupRows = rows;
-    if (!rows.length) {
-      sessions.delete(sk);
-      await reply(
-        phone,
-        `✅ No encontramos reclamos asociados a "*${ident}*" en este servicio.\n\nSi necesitás hacer uno nuevo, escribí *NUEVO*.\nPara volver al menú principal, escribí *MENU*.`,
-        tid,
-        phoneNumberId
-      );
-      return;
-    }
-    const bloques = rows.map((r) => {
-      const fecha = r.fecha_creacion ? new Date(r.fecha_creacion).toLocaleString("es-AR") : "—";
-      const es = String(r.estado || "").trim();
-      const esAbierto = ["Pendiente", "Asignado", "En ejecución"].includes(es);
-      const lineaTiempo = esAbierto
-        ? `⏳ Tiempo desde el alta: ${formatearDuracionPendiente(r.fecha_creacion)}`
-        : `⏳ Alta del reclamo: ${formatearDuracionPendiente(r.fecha_creacion)}`;
-      return [
-        "━━━━━━━━━━━━━━━━━━━━",
-        `📋 RECLAMO #${r.numero_pedido || r.id}`,
-        `📍 ${String(r.direccion || "Sin dirección").trim()}`,
-        `📅 Fecha: ${fecha}`,
-        lineaTiempo,
-        `📌 Estado: ${r.estado}`,
-      ].join("\n");
-    });
-    sess.step = "awaiting_pending_lookup_reminder_confirm";
-    sessions.set(sk, sess);
-    await reply(
-      phone,
-      `🔍 Encontramos ${rows.length} reclamo/s asociado/s:\n\n${bloques.join("\n")}\n━━━━━━━━━━━━━━━━━━━━\n\n¿Deseás enviar un *recordatorio* a la entidad? (solo si el reclamo sigue abierto)\n▶️ *SI* — enviar recordatorio\n▶️ *MENU* — volver al inicio`,
-      tid,
-      phoneNumberId
-    );
-    return;
-  }
-
-  if (sess && sess.step === "awaiting_pending_lookup_mode") {
-    const t = String(text || "").trim().toLowerCase();
-    const modo =
-      t === "1" || t === "nis" || t === "medidor" || t === "abonado" || t === "vecino"
-        ? "servicio"
-        : t === "2" || t === "nombre"
-          ? "nombre"
-          : null;
-    if (!modo) {
-      await reply(phone, "Respondé con *1* o *2* para continuar.", tid, phoneNumberId);
-      return;
-    }
-    sess.pendingLookupMode = modo;
-    sess.step = "awaiting_pending_lookup_identifier";
-    sessions.set(sk, sess);
-    const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
-    const hintId =
-      bt === "agua"
-        ? "N° de abonado o medidor"
-        : bt === "municipio"
-          ? "N° de vecino o referencia"
-          : "NIS o medidor";
-    await reply(
-      phone,
-      modo === "nombre"
-        ? "📝 Escribí tu *nombre completo* como figura en el servicio:"
-        : `📝 Escribí tu identificador (${hintId}):`,
-      tid,
-      phoneNumberId
-    );
-    return;
-  }
-
-  if (sess && sess.step === "awaiting_pending_lookup_reminder_confirm") {
-    const ans = String(text || "").trim().toLowerCase();
-    if (ans === "si" || ans === "sí") {
-      const bt = normalizeBotBusinessType(sess?.activeBusinessType || ctx?.activeBusinessType, ctx?.tipo);
-      const target = Array.isArray(sess.pendingLookupRows) && sess.pendingLookupRows.length
-        ? sess.pendingLookupRows[0]
-        : null;
-      const cooldownHoras = 6;
-      const permitido = target?.id
-        ? await puedeEnviarRecordatorioReclamo({
-            tenantId: tid,
-            pedidoId: target.id,
-            telefonoUsuario: phone,
-            cooldownHoras,
-          })
-        : true;
-      if (!permitido) {
-        await reply(
-          phone,
-          `⏳ Ya enviaste un recordatorio recientemente para este reclamo. Intentá de nuevo en ${cooldownHoras} horas.`,
-          tid,
-          phoneNumberId
-        );
-        return;
-      }
-      const recId = await registrarRecordatorioReclamo({
-        tenantId: tid,
-        businessType: bt,
-        pedidoId: target?.id || null,
-        telefonoUsuario: phone,
-        identificador: sess.pendingLookupIdentificador || null,
-      });
-      sessions.delete(sk);
-      await reply(
-        phone,
-        `✅ Recordatorio enviado correctamente${recId ? ` (ID ${recId})` : ""}. La entidad lo revisará a la brevedad.`,
-        tid,
-        phoneNumberId
-      );
-      return;
-    }
-    if (ans === "menu" || ans === "menú" || ans === "0") {
-      sessions.delete(sk);
-      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
-      return;
-    }
-    await reply(phone, `Respondé *SI* para enviar recordatorio o *MENU* para volver al inicio.`, tid, phoneNumberId);
-    return;
-  }
-
   if (!sess || sess.step === "idle") {
     if (pendOpinionActiva) {
       try {
@@ -2928,16 +2547,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       await replyListaTiposReclamo(phone, ctx, phoneNumberId);
       return;
     }
-    if (esComandoConsultaReclamosPendientes(text)) {
-      await iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx });
-      return;
-    }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
-    const consultaNum = (ctx.tipos?.length || 0) + 1;
-    if (n === consultaNum) {
-      await iniciarFlujoConsultaReclamosPendientes({ phone, tid, sk, phoneNumberId, wpid, ctx });
-      return;
-    }
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const tipoSel = ctx.tipos[n - 1];
       if (tipoSel === TIPO_RECLAMO_OTROS) {
@@ -2965,8 +2575,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       );
       return;
     }
-    // Cualquier otro texto en idle: mismo menú interactivo que Hola/menú (facilita escribir al número de Meta sin palabra clave).
-    await replyListaTiposReclamo(phone, ctx, phoneNumberId, { saludoMenuPrincipal: true });
+    await reply(
+      phone,
+      `No reconocí el mensaje.\n\n` + textoBienvenidaYAyuda(ctx),
+      tid,
+      phoneNumberId
+    );
     return;
   }
 

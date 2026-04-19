@@ -12,7 +12,6 @@ import {
   nominatimStateMatchesTenant,
   stateFromNominatimHit,
   getNominatimBaseUrl,
-  nominatimFetch,
 } from "./nominatimClient.js";
 import { iso3166ArgDesdeNombreProvincia } from "../utils/provinciaArgentinaIso.js";
 import {
@@ -182,7 +181,9 @@ async function obtenerCoordsLocalidad(localidad, provincia) {
     });
   
   try {
-    const response = await nominatimFetch(url);
+    const response = await fetch(url, {
+      headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+    });
     
     if (!response.ok) return { lat: -31.3, lng: -60.5 }; // Fallback Santa Fe
     
@@ -386,6 +387,8 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
   // ESTRATEGIA 1: Buscar el número exacto primero
   const numeroInt = parseInt(String(numero).replace(/\D/g, ""), 10);
   if (Number.isFinite(numeroInt) && numeroInt > 0) {
+    const headersN = { "User-Agent": "GestorNova/1.0 (geocoding)" };
+
     // 1a) Búsqueda estructurada (mejor para "Calle N + ciudad", p.ej. Sarmiento 102, Cerrito)
     try {
       const structured = new URLSearchParams({
@@ -404,7 +407,7 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
       const urlStruct = `${getNominatimBaseUrl()}/search?${structured}`;
       console.info("[rango-numeracion] Nominatim structured: street=%s, city=%s", `${calleClean} ${numeroInt}`, locClean);
 
-      const respStruct = await nominatimFetch(urlStruct);
+      const respStruct = await fetch(urlStruct, { headers: headersN });
       if (respStruct.ok) {
         const resStruct = await respStruct.json();
         if (resStruct && resStruct.length > 0) {
@@ -441,7 +444,9 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
     console.info("[rango-numeracion] Buscando número exacto (q): %s", qExacto);
     
     try {
-      const respExacto = await nominatimFetch(urlExacto);
+      const respExacto = await fetch(urlExacto, {
+        headers: headersN,
+      });
       
       if (respExacto.ok) {
         const resultsExacto = await respExacto.json();
@@ -481,7 +486,9 @@ async function buscarRangoNumeracion(calle, numero, localidad, provincia) {
     });
   
   try {
-    const response = await nominatimFetch(url);
+    const response = await fetch(url, {
+      headers: { "User-Agent": "GestorNova/1.0 (geocoding)" },
+    });
     
     if (!response.ok) return { min: 100, max: 900, exacto: null };
     

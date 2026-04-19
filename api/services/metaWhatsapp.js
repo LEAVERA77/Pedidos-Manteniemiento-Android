@@ -7,20 +7,6 @@
 const rawVer = String(process.env.META_GRAPH_API_VERSION || "v21.0").trim();
 const GRAPH_VERSION = (rawVer.startsWith("v") ? rawVer : `v${rawVer}`) || "v21.0";
 
-/**
- * Identificador de la cuenta WhatsApp Business (WABA) en Business Manager.
- * No sustituye a `META_PHONE_NUMBER_ID` en Graph (`/{phone-number-id}/messages`); sirve para logs y comprobar el webhook (`entry.id`).
- */
-export function getMetaWabaIdFromEnv() {
-  const w = String(process.env.META_WABA_ID || "").trim();
-  return w || null;
-}
-
-function metaWabaLogFields() {
-  const wabaId = getMetaWabaIdFromEnv();
-  return wabaId ? { wabaId } : {};
-}
-
 /** Base Graph API (producción: https://graph.facebook.com). Emulador local: p. ej. http://localhost:4004 — sin barra final. */
 function metaGraphBaseUrl() {
   const raw = String(process.env.META_GRAPH_URL || "https://graph.facebook.com").trim();
@@ -36,31 +22,27 @@ function argentinaStripEnabledFromEnv() {
 }
 
 /**
- * Insertar 9 móvil tras +54 cuando falta (543… → 549…) en **outbound**.
- * Por defecto **desactivado** (alineado con `api/.env.example`): en Meta **Development/sandbox**
- * la lista de destinatarios suele coincidir con el mismo dígito que tras strip (543…); si reinsertamos
- * 549… Graph puede devolver **131030**. Activar solo si tu WABA/Graph exige 549 en producción (p. ej. ENERSA).
- * Activar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true
+ * Insertar 9 móvil tras +54 cuando falta (543… → 549…). Por defecto ACTIVO en **outbound**:
+ * contactos guardados sin 9 y envíos a terceros (ENERSA) lo requieren.
+ * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
  */
 function argentinaInsertMobileNineEnabledFromEnv() {
   const v = process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
-  if (v == null || String(v).trim() === "") return false;
+  if (v == null || String(v).trim() === "") return true;
   const s = String(v).trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(s)) return true;
-  return false;
+  if (["0", "false", "no", "off"].includes(s)) return false;
+  return true;
 }
 
 /**
- * Graph API `to` (Argentina): el webhook manda 549 + área + abonado. Tras strip queda 543…; en **sandbox**
- * Meta suele validar el destino contra la lista en formato **sin** reinsertar el 9. Por defecto **no** reinsertamos
- * 9 en outbound (`META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9` vacío = false). Activá insert solo si tu entorno
- * productivo lo exige.
+ * Graph API `to` (Argentina): el webhook manda 549 + área + abonado; la lista de prueba de Meta
+ * suele registrar 54 + área + abonado (sin el 9) → 131030 si no normalizamos.
  *
- * Por defecto: quitar un 9 tras 54 (549… → 543…). Desactivar strip solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
+ * Por defecto: quitar un 9 tras 54 (549… → 54…). Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
  *
  * **Modos:**
  * - `inbound` (default): solo strip; NO insertar 9. Identidad/sesión/webhook/`wa_id` (debe ser estable).
- * - `outbound`: strip; inserción 543…→549… solo si `META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true`.
+ * - `outbound`: strip + inserción 543…→549… cuando aplica (derivación ENERSA, envíos Graph).
  *
  * @param {string} digits
  * @param {{ mode?: 'inbound' | 'outbound' }} [opts]
@@ -119,33 +101,10 @@ export function maskWaDigitsForLog(digits) {
   };
 }
 
-/**
- * `to` en Graph: si pasamos el mismo `messages[].from` (wa_id) que Meta, evitamos 131030 cuando la lista
- * de prueba usa 549… y el strip AR dejó 543… (ver touchLastMetaInboundFrom en whatsappBotMeta).
- * También: `telefono_contacto` guardado como 549… (alta WhatsApp) debe enviarse sin strip a Graph.
- */
-function resolveOutboundToForMeta(toDigits, graphRecipientDigitsOverride) {
-  const ov = String(graphRecipientDigitsOverride || "").replace(/\D/g, "");
-  if (ov.length >= 8 && ov.length <= 16) {
-    return {
-      to: ov,
-      rawInForLog: ov,
-      graphUsedWaIdOverride: true,
-    };
-  }
-  const rawTo = String(toDigits || "").replace(/\D/g, "");
-  // Mismo criterio que wa_id Meta: móvil AR 549 + área + abonado (12–13 dígitos totales).
-  if (/^549\d{9,10}$/.test(rawTo) && rawTo.length >= 12 && rawTo.length <= 13) {
-    return { to: rawTo, rawInForLog: rawTo, graphUsedWaIdOverride: true };
-  }
-  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
-  return { to, rawInForLog: rawTo, graphUsedWaIdOverride: false };
-}
-
 export async function sendWhatsAppTextWithCredentials(
   toDigits,
   bodyText,
-  { accessToken, phoneNumberId, purpose, graphRecipientDigitsOverride }
+  { accessToken, phoneNumberId, purpose }
 ) {
   const purposeTag = String(purpose || "unspecified").slice(0, 96);
   const token = String(accessToken || "").trim();
@@ -153,10 +112,8 @@ export async function sendWhatsAppTextWithCredentials(
   if (!token || !pid) {
     return { ok: false, error: "missing_meta_credentials" };
   }
-  const { to, rawInForLog, graphUsedWaIdOverride } = resolveOutboundToForMeta(
-    toDigits,
-    graphRecipientDigitsOverride
-  );
+  const rawTo = String(toDigits || "").replace(/\D/g, "");
+  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params" };
@@ -164,20 +121,18 @@ export async function sendWhatsAppTextWithCredentials(
   if (to.length < 8 || to.length > 16) {
     console.error("[meta-whatsapp] destino descartado: longitud E.164 inusual", {
       purpose: purposeTag,
-      rawIn: maskWaDigitsForLog(rawInForLog),
+      rawIn: maskWaDigitsForLog(rawTo),
       toLen: to.length,
-      rawLen: rawInForLog.length,
+      rawLen: rawTo.length,
     });
     return { ok: false, error: "invalid_destination_length" };
   }
 
   console.log("[meta-whatsapp][outbound]", {
     purpose: purposeTag,
-    ...metaWabaLogFields(),
-    graphUsedWaIdOverride,
-    rawIn: maskWaDigitsForLog(rawInForLog),
+    rawIn: maskWaDigitsForLog(rawTo),
     toOut: maskWaDigitsForLog(to),
-    normalizedChanged: !graphUsedWaIdOverride && to !== rawInForLog,
+    normalizedChanged: to !== rawTo,
   });
 
   const endpoint = `${metaGraphBaseUrl()}/${GRAPH_VERSION}/${pid}/messages`;
@@ -204,9 +159,7 @@ export async function sendWhatsAppTextWithCredentials(
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] Graph API error", {
       purpose: purposeTag,
-      ...metaWabaLogFields(),
-      graphUsedWaIdOverride,
-      rawIn: maskWaDigitsForLog(rawInForLog),
+      rawIn: maskWaDigitsForLog(rawTo),
       toOut: maskWaDigitsForLog(to),
       status: resp.status,
       detail: errPart,
@@ -218,7 +171,7 @@ export async function sendWhatsAppTextWithCredentials(
     }
     if (graph?.error?.code === 131030) {
       console.error(
-        "[meta-whatsapp] (#131030) Meta rechazó el envío: lista de prueba / no Live, o formato `to` distinto al registrado. El servidor usa el wa_id del webhook cuando coincide (549…); si sigue fallando: API Setup → destinatarios, o META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9, o app Live."
+        "[meta-whatsapp] (#131030) Meta rechazó el envío: el número de destino no está en la lista de destinatarios de prueba (o la app no está en Live). El destino en logs (toOut.tail4) coincide con quien escribió; agregá ese WhatsApp en Meta for Developers → WhatsApp → API setup (Phone numbers / lista de prueba) o publicá la app."
       );
     }
     const summary = graph?.error?.message ? String(graph.error.message).slice(0, 520) : `http_${resp.status}`;
@@ -230,7 +183,6 @@ export async function sendWhatsAppTextWithCredentials(
   }
   console.log("[meta-whatsapp] mensaje enviado OK", {
     purpose: purposeTag,
-    ...metaWabaLogFields(),
     toOut: maskWaDigitsForLog(to),
     messageId: graph?.messages?.[0]?.id || "—",
   });
@@ -277,7 +229,7 @@ export function decodeWhatsAppListRowId(id) {
 export async function sendWhatsAppInteractiveListWithCredentials(
   toDigits,
   { bodyText, buttonText, sectionTitle, tipos },
-  { accessToken, phoneNumberId, purpose, graphRecipientDigitsOverride }
+  { accessToken, phoneNumberId, purpose }
 ) {
   const purposeTag = String(purpose || "interactive_list").slice(0, 96);
   const token = String(accessToken || "").trim();
@@ -286,10 +238,8 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     console.error("[meta-whatsapp] interactive list: faltan token o phone_number_id");
     return { ok: false, error: "missing_meta_credentials" };
   }
-  const { to, rawInForLog, graphUsedWaIdOverride } = resolveOutboundToForMeta(
-    toDigits,
-    graphRecipientDigitsOverride
-  );
+  const rawTo = String(toDigits || "").replace(/\D/g, "");
+  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
   const list = Array.isArray(tipos) ? tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
   if (!to || !list.length) {
     return { ok: false, error: "invalid_params" };
@@ -297,19 +247,13 @@ export async function sendWhatsAppInteractiveListWithCredentials(
   if (to.length < 8 || to.length > 16) {
     console.error("[meta-whatsapp] interactive list: destino descartado (longitud E.164)", {
       purpose: purposeTag,
-      rawIn: maskWaDigitsForLog(rawInForLog),
+      rawIn: maskWaDigitsForLog(rawTo),
       toLen: to.length,
-      rawLen: rawInForLog.length,
+      rawLen: rawTo.length,
     });
     return { ok: false, error: "invalid_destination_length" };
   }
-  console.log("[meta-whatsapp][outbound-interactive]", {
-    purpose: purposeTag,
-    ...metaWabaLogFields(),
-    graphUsedWaIdOverride,
-    rawIn: maskWaDigitsForLog(rawInForLog),
-    toOut: maskWaDigitsForLog(to),
-  });
+  console.log("[meta-whatsapp][outbound-interactive]", { purpose: purposeTag, rawIn: maskWaDigitsForLog(rawTo), toOut: maskWaDigitsForLog(to) });
   if (list.length > 10) {
     return { ok: false, error: "too_many_rows" };
   }
@@ -363,9 +307,7 @@ export async function sendWhatsAppInteractiveListWithCredentials(
       : JSON.stringify(graph).slice(0, 400);
     console.error("[meta-whatsapp] interactive list error", {
       purpose: purposeTag,
-      ...metaWabaLogFields(),
-      graphUsedWaIdOverride,
-      rawIn: maskWaDigitsForLog(rawInForLog),
+      rawIn: maskWaDigitsForLog(rawTo),
       toOut: maskWaDigitsForLog(to),
       status: resp.status,
       detail: errPart,
@@ -381,11 +323,7 @@ export async function sendWhatsAppInteractiveListWithCredentials(
     console.error("[meta-whatsapp] interactive list body error", graph.error);
     return { ok: false, status: resp.status || 502, graph };
   }
-  console.log("[meta-whatsapp] lista interactiva OK", {
-    ...metaWabaLogFields(),
-    to: to.slice(0, 4) + "…",
-    n: list.length,
-  });
+  console.log("[meta-whatsapp] lista interactiva OK", { to: to.slice(0, 4) + "…", n: list.length });
   return { ok: true, graph };
 }
 

@@ -5,7 +5,7 @@
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
 import {
-  nominatimFetch,
+  nominatimHeaders,
   nominatimProxySearch,
   nominatimProxyReverseRaw,
   throttleIntervalMs,
@@ -20,20 +20,6 @@ import {
 } from "../services/geocodeNominatimCache.js";
 
 const router = express.Router();
-
-/** Detalle de fallo de `fetch` (Node/undici suele envolver el errno en `cause`). */
-function fetchFailureDetail(e) {
-  const err = e && typeof e === "object" ? e : {};
-  const c = err.cause && typeof err.cause === "object" ? err.cause : null;
-  return {
-    message: String(err.message || e),
-    code: err.code || c?.code || null,
-    syscall: c?.syscall || null,
-    errno: typeof c?.errno === "number" ? c.errno : null,
-    address: c?.address || null,
-    port: c?.port != null ? c.port : null,
-  };
-}
 
 /**
  * Salud del geocode (sin auth): DISABLE_NOMINATIM + ping directo a OSM Nominatim.
@@ -60,11 +46,10 @@ router.get("/health", async (_req, res) => {
       nominatim_status: "skipped",
     });
   }
-  const baseUrl = getNominatimBaseUrl();
-  const url = `${baseUrl}/search?format=json&q=Rosario%20Argentina&limit=1`;
+  const url = `${getNominatimBaseUrl()}/search?format=json&q=Rosario%20Argentina&limit=1`;
   const t0 = Date.now();
   try {
-    const r = await nominatimFetch(url);
+    const r = await fetch(url, { headers: nominatimHeaders() });
     const ms = Date.now() - t0;
     const ok = r.ok;
     let sampleCount = null;
@@ -78,21 +63,17 @@ router.get("/health", async (_req, res) => {
     }
     return res.json({
       ...base,
-      nominatim_effective_base: baseUrl,
       nominatim_reachable: ok,
       nominatim_http_status: r.status,
       nominatim_latency_ms: ms,
       nominatim_sample_results: sampleCount,
     });
   } catch (e) {
-    const detail = fetchFailureDetail(e);
     return res.json({
       ...base,
       ok: false,
-      nominatim_effective_base: baseUrl,
       nominatim_reachable: false,
       nominatim_error: String(e?.message || e),
-      nominatim_fetch_detail: detail,
     });
   }
 });

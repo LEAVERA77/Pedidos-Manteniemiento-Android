@@ -61,7 +61,7 @@ export async function lookupDistribuidorTrafoPorNisMedidor(nisMedidorStr) {
  * Cuenta pedidos abiertos del tenant en ventana reciente con el mismo distribuidor o trafo.
  * A partir del 5.º reclamo: count existentes >= 4 antes de insertar el nuevo.
  */
-export async function contarPedidosAbiertosMismaZona({ tenantId, distribuidor, trafo, activeBusinessType, businessTypeFilterEnabled }) {
+export async function contarPedidosAbiertosMismaZona({ tenantId, distribuidor, trafo }) {
   const dis = distribuidor != null ? String(distribuidor).trim() : "";
   const tr = trafo != null ? String(trafo).trim() : "";
   if (!dis && !tr) return 0;
@@ -90,14 +90,6 @@ export async function contarPedidosAbiertosMismaZona({ tenantId, distribuidor, t
   if (pCols.has("tenant_id") && tenantId != null && Number.isFinite(Number(tenantId))) {
     params.push(Number(tenantId));
     wh.push(`tenant_id = $${params.length}`);
-  }
-  if (
-    businessTypeFilterEnabled &&
-    activeBusinessType &&
-    pCols.has("business_type")
-  ) {
-    params.push(String(activeBusinessType));
-    wh.push(`business_type = $${params.length}`);
   }
 
   const sql = `SELECT COUNT(*)::int AS c FROM pedidos WHERE ${wh.join(" AND ")}`;

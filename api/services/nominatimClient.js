@@ -52,57 +52,16 @@ async function throttle() {
   return _chain;
 }
 
-/**
- * Cabeceras HTTP para Nominatim.
- * - **From** solo si definís `NOMINATIM_FROM_EMAIL` o `NOMINATIM_FROM`: el default viejo `noreply@gestornova.local`
- *   en algunos proxy (p. ej. delante de Docker en Oracle) provoca **HTTP 406** al validar el correo.
- * - **Accept** por defecto estilo curl (wildcard); podés fijar `NOMINATIM_ACCEPT`.
- */
 export function nominatimHeaders() {
   const ua =
     process.env.NOMINATIM_USER_AGENT ||
     "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";
-  const accept = String(process.env.NOMINATIM_ACCEPT || "*/*").trim() || "*/*";
-  const h = {
-    "User-Agent": ua,
-    Accept: accept,
-  };
-  const from = String(process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "").trim();
-  if (from) {
-    h.From = from;
-  }
-  return h;
-}
-
-/** Solo UA + Accept (sin From). Reintento ante 406 si el proxy rechaza cabeceras extra. */
-export function nominatimHeadersMinimal() {
-  const ua =
-    process.env.NOMINATIM_USER_AGENT ||
-    "GestorNova-SaaS/1.0 (cooperativa electrica; +https://github.com/LEAVERA77/Pedidos-MG)";
+  const from = process.env.NOMINATIM_FROM_EMAIL || process.env.NOMINATIM_FROM || "noreply@gestornova.local";
   return {
     "User-Agent": ua,
-    Accept: "*/*",
+    From: from,
+    Accept: "application/json",
   };
-}
-
-/**
- * Combina cabeceras por defecto de Nominatim con las de la petición (sin perder User-Agent / Accept).
- * @param {HeadersInit | undefined} extra
- */
-export function mergeNominatimHeaders(extra) {
-  const base = nominatimHeaders();
-  if (extra == null) return base;
-  if (typeof Headers !== "undefined" && extra instanceof Headers) {
-    const out = { ...base };
-    extra.forEach((value, key) => {
-      out[key] = value;
-    });
-    return out;
-  }
-  if (typeof extra === "object" && !Array.isArray(extra)) {
-    return { ...base, ...extra };
-  }
-  return base;
 }
 
 /**
@@ -180,31 +139,21 @@ export function nominatimFetchTimeoutMs() {
  */
 export async function nominatimFetch(url, init = {}) {
   const ms = nominatimFetchTimeoutMs();
-  const doFetch = async (headers) => {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), ms);
-    try {
-      return await fetch(url, { ...init, headers, signal: ctrl.signal });
-    } catch (e) {
-      if (e?.name === "AbortError") {
-        const err = new Error(`Nominatim timeout ${ms}ms`);
-        err.code = "NOMINATIM_TIMEOUT";
-        throw err;
-      }
-      throw e;
-    } finally {
-      clearTimeout(tid);
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+  const headers = init.headers ?? nominatimHeaders();
+  try {
+    return await fetch(url, { ...init, headers, signal: ctrl.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      const err = new Error(`Nominatim timeout ${ms}ms`);
+      err.code = "NOMINATIM_TIMEOUT";
+      throw err;
     }
-  };
-  let res = await doFetch(mergeNominatimHeaders(init.headers));
-  if (
-    res.status === 406 &&
-    process.env.NOMINATIM_DISABLE_406_RETRY !== "1" &&
-    process.env.NOMINATIM_DISABLE_406_RETRY !== "true"
-  ) {
-    res = await doFetch(nominatimHeadersMinimal());
+    throw e;
+  } finally {
+    clearTimeout(tid);
   }
-  return res;
 }
 
 const DEBUG_NOMINATIM = process.env.DEBUG_NOMINATIM === "1" || process.env.DEBUG_NOMINATIM === "true";
@@ -1752,20 +1701,20 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
     const candNums = iterHouseNumbersSameParity(nRaw, houseParityMaxSteps());
     for (const hn of candNums) {
       const attempts = [`${hn} ${cal}, ${c}, Argentina`, `${cal} ${hn}, ${c}, Argentina`];
-    for (const q of attempts) {
-      await throttle();
-      const p = nominatimBaseParams();
-      p.set("q", q);
-      p.set("limit", "8");
-      if (vbMeta?.viewboxStr) {
-        p.set("viewbox", vbMeta.viewboxStr);
-        p.set("bounded", "1");
-      }
+      for (const q of attempts) {
+        await throttle();
+        const p = nominatimBaseParams();
+        p.set("q", q);
+        p.set("limit", "8");
+        if (vbMeta?.viewboxStr) {
+          p.set("viewbox", vbMeta.viewboxStr);
+          p.set("bounded", "1");
+        }
         const url = `${getNominatimBaseUrl()}/search?${p.toString()}`;
         const arr = await nominatimFetchSearchArrayWithPublicFallback(url);
-      if (!Array.isArray(arr)) continue;
-      for (const hit of arr) {
-        if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
+        if (!Array.isArray(arr)) continue;
+        for (const hit of arr) {
+          if (!nominatimHitStrictLocalidad(hit, c) || !nominatimHitMatchesCalle(hit, cal)) continue;
           const hitHnQ = parseHouseNumberInt(hit.address?.house_number);
           if (hitHnQ !== hn) continue;
           if (
@@ -1774,10 +1723,10 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
           ) {
             continue;
           }
-        const lat = Number(hit.lat);
-        const lng = Number(hit.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-        if (!passesLocalPlausibility(lat, lng)) continue;
+          const lat = Number(hit.lat);
+          const lng = Number(hit.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (!passesLocalPlausibility(lat, lng)) continue;
           const approx = hn !== target;
           audit.source = approx ? "numero_cercano_q" : "final_q_filtered";
           audit.usedHouseNumber = hn;
@@ -1794,14 +1743,14 @@ export async function geocodeCalleNumeroLocalidadArgentina(ciudad, calle, numero
           }
           const br = barrioDesdeNominatimAddress(hit.address);
           const postcode = postcodeDesdeNominatimAddress(hit.address);
-        return {
-          lat,
-          lng,
-          displayName: String(hit.display_name || "").trim(),
+          return {
+            lat,
+            lng,
+            displayName: String(hit.display_name || "").trim(),
             ...(br ? { barrio: br } : {}),
             ...(postcode ? { postcode } : {}),
-          audit,
-        };
+            audit,
+          };
         }
       }
     }

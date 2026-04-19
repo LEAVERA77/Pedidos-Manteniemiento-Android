@@ -34,13 +34,12 @@ async function pedidosColumnExists(columnName) {
  *
  * @param {number} pedidoId
  * @param {number} tenantId
- * @param {{ silent?: boolean, preferSimpleQNominatim?: boolean, req?: import('express').Request }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp). `preferSimpleQNominatim`: forzar pipeline solo `q` (WhatsApp). `req`: filtro multi-negocio (`business_type`).
+ * @param {{ silent?: boolean, preferSimpleQNominatim?: boolean }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp). `preferSimpleQNominatim`: forzar pipeline solo `q` (WhatsApp).
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
 export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
   const silent = !!options.silent;
   const preferSimpleQOpt = !!options.preferSimpleQNominatim;
-  const req = options.req || null;
   const log = [];
   const L = (msg) => {
     log.push(msg);
@@ -57,12 +56,6 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
 
   try {
     let pedidoResult;
-    const selParams = [pedidoId, tenantId];
-    let btExtra = "";
-    if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await pedidosColumnExists("business_type"))) {
-      selParams.push(req.activeBusinessType);
-      btExtra = ` AND business_type = $${selParams.length}`;
-    }
     try {
       pedidoResult = await query(
         `SELECT 
@@ -70,8 +63,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
         lat, lng, provincia, codigo_postal, origen_reclamo
        FROM pedidos 
-       WHERE id = $1 AND tenant_id = $2${btExtra}`,
-        selParams
+       WHERE id = $1 AND tenant_id = $2`,
+        [pedidoId, tenantId]
       );
     } catch (e) {
       const msg = String(e?.message || "");
@@ -82,8 +75,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad,
         lat, lng, provincia, codigo_postal
        FROM pedidos 
-       WHERE id = $1 AND tenant_id = $2${btExtra}`,
-        selParams
+       WHERE id = $1 AND tenant_id = $2`,
+        [pedidoId, tenantId]
       );
     }
 
@@ -128,40 +121,24 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
 
       const { latFinal, lngFinal, fuente, provPersist, cpPersist, geocodingAudit } = pipelineRes;
 
-      const hasBtUp =
-        !!(req?.businessTypeFilterEnabled && req?.activeBusinessType) && (await pedidosColumnExists("business_type"));
-      const upBtGeo = hasBtUp ? " AND business_type = $8" : "";
-      const upBtNo = hasBtUp ? " AND business_type = $7" : "";
       if (await pedidosColumnExists("geocoding_audit")) {
-        const bindGeo = [
-          latFinal,
-          lngFinal,
-          pedidoId,
-          tenantId,
-          provPersist,
-          cpPersist,
-          JSON.stringify(geocodingAudit),
-        ];
-        if (hasBtUp) bindGeo.push(req.activeBusinessType);
         await query(
           `UPDATE pedidos 
          SET lat = $1, lng = $2,
              provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
              codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END,
              geocoding_audit = $7::jsonb
-         WHERE id = $3 AND tenant_id = $4${upBtGeo}`,
-          bindGeo
+         WHERE id = $3 AND tenant_id = $4`,
+          [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist, JSON.stringify(geocodingAudit)]
         );
       } else {
-        const bindNo = [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist];
-        if (hasBtUp) bindNo.push(req.activeBusinessType);
         await query(
           `UPDATE pedidos 
          SET lat = $1, lng = $2,
              provincia = CASE WHEN $5::text IS NOT NULL AND BTRIM($5::text) <> '' THEN BTRIM($5::text) ELSE provincia END,
              codigo_postal = CASE WHEN $6::text IS NOT NULL AND BTRIM($6::text) <> '' THEN BTRIM($6::text) ELSE codigo_postal END
-         WHERE id = $3 AND tenant_id = $4${upBtNo}`,
-          bindNo
+         WHERE id = $3 AND tenant_id = $4`,
+          [latFinal, lngFinal, pedidoId, tenantId, provPersist, cpPersist]
         );
       }
 

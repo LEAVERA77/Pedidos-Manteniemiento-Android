@@ -803,7 +803,7 @@ html.gn-android-webview #ms .bp2 {
   left: 0;
   right: 0;
   bottom: max(0px, env(safe-area-inset-bottom, 0px));
-  z-index: 12040;
+  z-index: 12020;
   pointer-events: auto;
   touch-action: pan-y;
   transform: translateZ(0);
@@ -816,7 +816,7 @@ html.gn-android-webview #ms .bp2 .pl {
 html.gn-android-webview .btn-mapa-ir-gps,
 html.gn-android-webview .btn-mapa-nuevo-gps {
   position: fixed;
-  z-index: 12600;
+  z-index: 12030;
   pointer-events: auto;
   touch-action: manipulation;
   transform: translateZ(0);
@@ -825,7 +825,7 @@ html.gn-android-webview .fab-show-pedidos {
   box-sizing: border-box;
   min-height: 2.5rem;
   align-items: center;
-  z-index: 12600;
+  z-index: 12035;
   touch-action: manipulation;
 }
 html.gn-android-webview .gn-gps-fab {
@@ -834,166 +834,4 @@ html.gn-android-webview .gn-gps-fab {
   min-width: 2.9rem;
   min-height: 2.9rem;
   box-sizing: border-box;
-}
-
-/*
- * Android WebView: bp2 (lista Pedidos) estaba por encima del overlay (850) y tapaba filtros/tipo/colores.
- * Subimos overlay sobre bp2 y la barra .hd sobre el overlay para que el header siga usable.
- */
-html.gn-android-webview #ms .hd {
-  position: relative;
-  z-index: 12550;
-}
-html.gn-android-webview #admin-banner-nuevo-cliente,
-html.gn-android-webview #admin-banner-opinion-cliente,
-html.gn-android-webview #admin-banner-derivacion-pendiente {
-  position: relative;
-  z-index: 12620;
-}
-html.gn-android-webview #mapa-overlay-ui {
-  z-index: 12100;
-}
-html.gn-android-webview .map-slide-tabs-cluster {
-  z-index: 12105;
-}
-
-/* Paneles tipo / filtros / dash: alto acotado; colores tiene reglas aparte (no aplastar al fondo). */
-html.gn-android-webview #mapa-overlay-ui #mapa-card-filtros,
-html.gn-android-webview #mapa-overlay-ui #mapa-card-filtro-tipo,
-html.gn-android-webview #mapa-overlay-ui #mapa-card-dashboard {
-  touch-action: manipulation;
-  max-height: min(68vh, calc(100dvh - var(--app-header-h, 58px) - 6.5rem));
-}
-
-/* Cabeceras en móvil: texto y botón cerrar legibles (no todo en una línea aplastada). */
-html.gn-android-webview #mapa-overlay-ui .moui-hd {
-  flex-wrap: wrap;
-  gap: 0.35rem 0.45rem;
-  align-items: center;
-  padding: 0.42rem 0.5rem;
-  row-gap: 0.35rem;
-}
-html.gn-android-webview #mapa-overlay-ui .moui-hd > .ib-mini:last-child {
-  margin-left: auto !important;
-  flex: 0 0 auto;
-  width: 2.75rem;
-  height: 2.75rem;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  touch-action: manipulation;
-  border-radius: 0.42rem;
-}
-/* Colores (prioridad): ya no desde bottom — evita solape con FAB Pedidos / GPS / bp2 */
-html.gn-android-webview #mapa-card-colores {
-  top: calc(var(--app-header-h, 58px) + 11rem) !important;
-  bottom: auto !important;
-  left: 0.45rem !important;
-  right: auto !important;
-  width: calc(100vw - 0.9rem);
-  max-width: min(22rem, calc(100vw - 0.9rem));
-  max-height: min(42vh, 260px);
-  min-height: 10.5rem;
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-  z-index: 856;
-  touch-action: manipulation;
-}
-html.gn-android-webview #mapa-card-colores .moui-bd {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  max-height: none !important;
-}
-
-html.gn-android-webview #mapa-overlay-ui #mapa-card-filtro-tipo {
-  left: 0.45rem;
-  right: 0.45rem;
-  width: auto;
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-html.gn-android-webview #mapa-overlay-ui #mapa-card-filtro-tipo .moui-hd {
-  flex-shrink: 0;
-}
-html.gn-android-webview .mapa-filtro-tipo-hint {
-  flex-shrink: 0;
-  margin-bottom: 0.5rem;
-}
-html.gn-android-webview #mapa-filtro-tipo-body.mapa-filtro-tipo-list {
-  max-height: min(42vh, 260px) !important;
-}
-
-html.gn-android-webview #mapa-overlay-ui .moui-bd {
-  -webkit-overflow-scrolling: touch;
-}
-html.gn-android-webview #mapa-overlay-ui .moui-drag-handle {
-  touch-action: none;
-}
-html.gn-android-webview #ms .hd button,
-html.gn-android-webview #ms .hd .ib,
-html.gn-android-webview #ms .hd select,
-html.gn-android-webview #ms .hd input[type="checkbox"],
-html.gn-android-webview #ms .hd input[type="radio"],
-html.gn-android-webview #ms .hd label {
-  touch-action: manipulation;
-}
-
-/* Responsive (navegador estrecho sin WebView): mismos saneamientos sin depender de gn-android */
-@media (max-width: 900px) {
-  #mapa-card-colores {
-    bottom: auto !important;
-    top: calc(var(--app-header-h, 58px) + 11rem);
-    left: 0.45rem !important;
-    width: calc(100vw - 0.9rem);
-    max-width: min(22rem, calc(100vw - 0.9rem));
-    max-height: min(42vh, 260px);
-    min-height: 10.5rem;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-  #mapa-card-colores .moui-bd {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-  }
-  #mapa-overlay-ui #mapa-card-filtro-tipo {
-    left: 0.45rem;
-    right: 0.45rem;
-    width: auto;
-    max-width: none;
-  }
-  #mapa-overlay-ui .moui-hd {
-    flex-wrap: wrap;
-    gap: 0.35rem 0.45rem;
-    padding: 0.42rem 0.5rem;
-  }
-  #mapa-overlay-ui .moui-hd > .ib-mini:last-child {
-    margin-left: auto !important;
-    width: 2.75rem;
-    height: 2.75rem;
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.42rem;
-  }
-}
-
-/* Teclado IME: mejorar repaint del texto en inputs (WebView/Chromium). */
-html.gn-android-webview input,
-html.gn-android-webview textarea,
-html.gn-android-webview select {
-  -webkit-user-select: text;
-  user-select: text;
 }

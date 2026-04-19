@@ -276,9 +276,7 @@ router.get("/nominatim-raw", async (req, res) => {
   }
   const bare = req.query.bare === "1";
   const limit = req.query.limit != null ? String(req.query.limit) : "1";
-  const { getNominatimBaseUrl, nominatimHeaders, nominatimFetchTimeoutMs, nominatimFetch } = await import(
-    "../services/nominatimClient.js"
-  );
+  const { getNominatimBaseUrl, nominatimHeaders, nominatimFetchTimeoutMs } = await import("../services/nominatimClient.js");
   const base = getNominatimBaseUrl();
   const p = new URLSearchParams({ q, format: "json", limit, "accept-language": "es" });
   if (!bare) {
@@ -288,22 +286,21 @@ router.get("/nominatim-raw", async (req, res) => {
   const url = `${base}/search?${p.toString()}`;
   const t0 = Date.now();
   try {
+    const headers = bare
+      ? {
+          Accept: "application/json",
+          "User-Agent":
+            "GestorNova-RawDiagnostic/1.0 (bare; +https://github.com/LEAVERA77/Pedidos-MG)",
+        }
+      : nominatimHeaders();
+    const msTimeout = nominatimFetchTimeoutMs();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), msTimeout);
     let response;
-    if (bare) {
-      const headers = {
-        Accept: "*/*",
-        "User-Agent": "GestorNova-RawDiagnostic/1.0 (bare; +https://github.com/LEAVERA77/Pedidos-MG)",
-      };
-      const msTimeout = nominatimFetchTimeoutMs();
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), msTimeout);
-      try {
-        response = await fetch(url, { headers, signal: ctrl.signal });
-      } finally {
-        clearTimeout(tid);
-      }
-    } else {
-      response = await nominatimFetch(url);
+    try {
+      response = await fetch(url, { headers, signal: ctrl.signal });
+    } finally {
+      clearTimeout(tid);
     }
     const text = await response.text();
     let data;
@@ -358,7 +355,7 @@ router.get("/nominatim-health", async (_req, res) => {
   const {
     getNominatimBaseUrl,
     getNominatimPublicFallbackBaseUrl,
-    nominatimFetch,
+    nominatimHeaders,
     nominatimFetchTimeoutMs,
   } = await import("../services/nominatimClient.js");
   const base = getNominatimBaseUrl();
@@ -369,7 +366,14 @@ router.get("/nominatim-health", async (_req, res) => {
   const url = `${base}/search?${hp.toString()}`;
   const t0 = Date.now();
   try {
-    const response = await nominatimFetch(url);
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), nominatimFetchTimeoutMs());
+    let response;
+    try {
+      response = await fetch(url, { headers: nominatimHeaders(), signal: ctrl.signal });
+    } finally {
+      clearTimeout(tid);
+    }
     const ms = Date.now() - t0;
     let resultCount = null;
     if (response.ok) {

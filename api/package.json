@@ -27,7 +27,6 @@
     "exportar:padron-enriquecido": "node scripts/exportarPadronEnriquecidoExcel.mjs",
     "geocodificar:excel-socios": "node scripts/geocodificarExcelSocios.mjs",
     "generar:demo-socios-nominatim-verificado": "node scripts/generarSociosDemo300Nominatim.mjs",
-    "generar:excel-cerrito-300": "node scripts/generarSociosCerrito300Nominatim.mjs",
     "preload:street-geometries": "node scripts/preload-street-geometries.mjs",
     "generar:localidades-ar": "node scripts/generate-localidades-argentinas-sql.mjs"
   },

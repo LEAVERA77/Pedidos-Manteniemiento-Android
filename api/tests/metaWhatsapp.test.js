@@ -3,7 +3,6 @@ import {
   normalizeWhatsAppRecipientForMeta,
   decodeWhatsAppListRowId,
   maskWaDigitsForLog,
-  getMetaWabaIdFromEnv,
 } from "../services/metaWhatsapp.js";
 
 describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
@@ -16,17 +15,6 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
-  });
-
-  it("getMetaWabaIdFromEnv devuelve null si META_WABA_ID vacío", () => {
-    delete process.env.META_WABA_ID;
-    expect(getMetaWabaIdFromEnv()).toBeNull();
-  });
-
-  it("getMetaWabaIdFromEnv devuelve el id recortado", () => {
-    process.env.META_WABA_ID = "  1292885429569404  ";
-    expect(getMetaWabaIdFromEnv()).toBe("1292885429569404");
-    delete process.env.META_WABA_ID;
   });
 
   it("549 + móvil AR → 54… cuando strip está activo (default)", () => {
@@ -50,16 +38,9 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
     expect(out).toBe("543436986848");
   });
 
-  it("543… en outbound → se mantiene 543… si insert no está activo (default alineado a sandbox Meta)", () => {
+  it("543… en outbound → 549… cuando insert está activo por defecto", () => {
     delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
     delete process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
-    const out = normalizeWhatsAppRecipientForMeta("543436986848", { mode: "outbound" });
-    expect(out).toBe("543436986848");
-  });
-
-  it("543… en outbound → 549… cuando META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=true", () => {
-    process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9 = "true";
-    delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
     const out = normalizeWhatsAppRecipientForMeta("543436986848", { mode: "outbound" });
     expect(out.startsWith("549")).toBe(true);
     expect(out).toBe("5493436986848");

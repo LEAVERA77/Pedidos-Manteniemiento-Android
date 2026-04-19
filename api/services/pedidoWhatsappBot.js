@@ -26,7 +26,6 @@ import {
   buildTelemetriaForCorrelation,
   geocodWaOperacionFinishOk,
 } from "./geocodWaOperaciones.js";
-import { loadTenantBusinessContext } from "../utils/businessScope.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -526,13 +525,6 @@ export async function crearPedidoDesdeWhatsappBot({
   if (hasOrigen) {
     cols.push("origen_reclamo");
     vals.push("whatsapp");
-  }
-
-  if (pCols.has("business_type")) {
-    const btCtx = await loadTenantBusinessContext(Number(tenantId));
-    const btVal = String(btCtx.activeBusinessType || "electricidad").trim() || "electricidad";
-    cols.push("business_type");
-    vals.push(btVal);
   }
 
   if (cols.length !== vals.length) {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <title>GestorNova — Pedidos</title>
@@ -78,17 +78,11 @@
     <button type="button" class="admin-banner-x" onclick="adminBannerCerrarSinDetalle()" title="Cerrar">&times;</button>
   </div>
   <div id="admin-banner-opinion-cliente" class="admin-banner-opinion-cliente" style="display:none" role="status" aria-live="polite">
-    <div id="admin-banner-opinion-compact" class="admin-banner-opinion-compact" style="display:none" role="button" tabindex="0" onclick="adminBannerOpinionToggleMinimize()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionToggleMinimize();}" title="Expandir aviso">
-      <i class="fas fa-comments" aria-hidden="true"></i>
-      <span>Calificación baja · Chat disponible</span>
-      <i class="fas fa-chevron-up" aria-hidden="true"></i>
-    </div>
-    <span class="admin-banner-opinion-expanded admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
-    <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-expanded admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
-    <button type="button" id="admin-banner-opinion-hc" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="event.stopPropagation();adminBannerOpinionAbrirChatOperador()" title="Abrir chat con el cliente (panel de mensajería)"><i class="fab fa-whatsapp"></i> Chat con cliente</button>
-    <button type="button" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion" onclick="event.stopPropagation();adminBannerOpinionClickVerDetalle()">Ver pedido</button>
-    <button type="button" class="admin-banner-opinion-expanded admin-banner-btn admin-banner-btn-opinion" onclick="event.stopPropagation();adminBannerOpinionToggleMinimize()" title="Minimizar (seguís viendo la barra compacta abajo)">Minimizar</button>
-    <button type="button" class="admin-banner-opinion-expanded admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Descartar aviso">&times;</button>
+    <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-comment-dots"></i></span>
+    <span id="admin-banner-opinion-cliente-txt" class="admin-banner-opinion-cliente-txt admin-banner-clickable-txt" role="button" tabindex="0" onclick="adminBannerOpinionClickVerDetalle()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();adminBannerOpinionClickVerDetalle();}"></span>
+    <button type="button" id="admin-banner-opinion-hc" class="admin-banner-btn admin-banner-btn-opinion admin-banner-btn-wa" style="display:none" onclick="adminBannerOpinionAbrirChatOperador()" title="Abrir chat con el cliente (panel de mensajería)"><i class="fab fa-whatsapp"></i> Chat con cliente</button>
+    <button type="button" class="admin-banner-btn admin-banner-btn-opinion" onclick="adminBannerOpinionClickVerDetalle()">Ver pedido</button>
+    <button type="button" class="admin-banner-x" onclick="adminBannerOpinionCerrar()" title="Cerrar">&times;</button>
   </div>
   <div id="admin-banner-derivacion-pendiente" class="admin-banner-opinion-cliente" style="display:none;background:linear-gradient(90deg,#1d4ed8,#2563eb)" role="status" aria-live="polite">
     <span class="admin-banner-opinion-cliente-ic" aria-hidden="true"><i class="fas fa-code-branch"></i></span>
@@ -717,11 +711,10 @@
           <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosCsvAdmin()"><i class="fas fa-file-csv"></i> Descargar CSV</button>
         </div>
       </div>
-      <div id="stats-cards" class="stat-grid"></div>
-      <div id="estad-rubro-electrico-wrap">
       <div id="enre-marco" style="font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45">
         <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
       </div>
+      <div id="stats-cards" class="stat-grid"></div>
       <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
           <h4 style="margin:0">Confiabilidad eléctrica (estimación interna)</h4>
@@ -740,15 +733,6 @@
           </div>
         </div>
         <div class="chart-legend-caption" id="chart-cap-confiabilidad"></div>
-      </div>
-      </div>
-      <div id="estad-rubro-agua-placeholder" class="chart-wrap" style="display:none;font-size:.85rem;color:var(--tm);padding:.75rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin:.5rem 0 .75rem;line-height:1.45">
-        <strong>Agua potable — indicadores</strong>
-        <p style="margin:.35rem 0 0;font-size:.78rem">Reclamos por pérdidas, presión y calidad según los pedidos de esta línea (<em>electricidad / agua / municipio</em> se eligen en el wizard). Podés completar KPI operativos (cortes de suministro, presión, calidad) cuando haya fuentes consolidadas.</p>
-      </div>
-      <div id="estad-rubro-municipio-placeholder" class="chart-wrap" style="display:none;font-size:.85rem;color:var(--tm);padding:.75rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin:.5rem 0 .75rem;line-height:1.45">
-        <strong>Servicios urbanos — indicadores</strong>
-        <p style="margin:.35rem 0 0;font-size:.78rem">Alumbrado, bacheo, recolección y similares según los tipos de trabajo cargados para <em>municipio</em>. Los gráficos generales de abajo ya filtran por la línea de negocio activa.</p>
       </div>
       <!-- Grilla 2 columnas en desktop, 1 en mobile -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem;margin-top:.5rem">

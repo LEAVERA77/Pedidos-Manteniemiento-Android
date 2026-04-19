@@ -678,15 +678,8 @@ document.addEventListener('visibilitychange', () => {
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
         window.pollNotificacionesMovil();
-        if (!modoOffline && NEON_OK && _sql && typeof cargarPedidos === 'function') {
-            if (!esAdmin() && esTecnicoOSupervisor()) {
-                void cargarPedidos({ silent: true });
-            } else if (esAdmin() && typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
-                try {
-                    invalidatePedidosTenantSqlCache();
-                } catch (_) {}
-                void cargarPedidos({ silent: true });
-            }
+        if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
+            void cargarPedidos({ silent: true });
         }
     }
 });
@@ -942,21 +935,11 @@ function tiposReclamoSeleccionables() {
     return [...u];
 }
 
-/** Línea operativa activa: prioriza active_business_type sobre tipo legado de empresa. */
-function lineaNegocioOperativaCodigo() {
-    const abt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
-    if (abt === 'electricidad' || abt === 'agua' || abt === 'municipio') return abt;
-    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo || '');
-    if (r === 'cooperativa_agua') return 'agua';
-    if (r === 'municipio') return 'municipio';
-    return 'electricidad';
-}
-
 function esMunicipioRubro() {
-    return lineaNegocioOperativaCodigo() === 'municipio';
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
 }
 function esCooperativaAguaRubro() {
-    return lineaNegocioOperativaCodigo() === 'agua';
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua';
 }
 
 /** Cierre operativo (clientes afectados): no aplica a municipio ni coop. agua; u opción explícita en configuración. */
@@ -1104,246 +1087,6 @@ async function actualizarProvinciaTenantDesdeCoords(lat, lng) {
     }
 }
 
-function initCommunityBroadcastFab() {
-    if (!esAdmin() || document.getElementById('gn-fab-community-root')) return;
-    const root = document.createElement('div');
-    root.id = 'gn-fab-community-root';
-    root.style.cssText =
-        'position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-family:system-ui,sans-serif';
-    root.innerHTML = `
-<button type="button" id="gn-fab-community-hide" title="Ocultar" style="font-size:.7rem;padding:2px 6px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569">−</button>
-<button type="button" id="gn-fab-community-btn" title="Aviso a la comunidad" style="width:52px;height:52px;border-radius:50%;border:none;background:#128C7E;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;font-size:1.35rem">📢</button>
-<div id="gn-fab-community-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9998;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
-    <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
-    <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
-    <label style="font-size:.78rem;font-weight:600">Tipo aviso</label>
-    <select id="gn-bc-tipo-aviso" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1">
-      <option value="general">General</option>
-      <option value="corte_programado">Corte programado</option>
-    </select>
-    <label style="font-size:.78rem;font-weight:600">Fenómeno/Contingencia</label>
-    <select id="gn-bc-fenomeno" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1">
-      <option value="">-- Seleccionar --</option>
-      <option>Inundaciones</option><option>Tormenta</option><option>Corte de calles</option><option>Incendio</option><option>Otro</option>
-    </select>
-    <label style="font-size:.78rem;font-weight:600">Ciudad</label>
-    <input id="gn-bc-ciudad" list="gn-bc-cities" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
-    <datalist id="gn-bc-cities"></datalist>
-    <label style="font-size:.78rem;font-weight:600">Provincia</label>
-    <input id="gn-bc-provincia" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
-    <label style="font-size:.78rem;font-weight:600">Calles afectadas (coma separadas)</label>
-    <input id="gn-bc-calles" list="gn-bc-streets" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" />
-    <datalist id="gn-bc-streets"></datalist>
-    <label style="font-size:.78rem;font-weight:600">Título</label>
-    <input id="gn-bc-titulo" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" />
-    <label style="font-size:.78rem;font-weight:600">Mensaje <span style="color:#64748b">({ciudad} {fecha} {horario} {direccion} {telefono})</span></label>
-    <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1"></textarea>
-    <label style="font-size:.78rem;font-weight:600">Áreas responsables (coma separadas)</label>
-    <input id="gn-bc-areas" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="Servicios Públicos, Defensa Civil" />
-    <label style="font-size:.78rem;font-weight:600">Teléfonos de contacto (coma separados)</label>
-    <input id="gn-bc-telefonos" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="3436..., 3435..." />
-    <label style="font-size:.78rem;display:flex;align-items:center;gap:.35rem"><input type="checkbox" id="gn-bc-corte" /> Corte programado (solo electricidad/agua)</label>
-    <div id="gn-bc-corte-fields" style="display:none;margin-top:.45rem;font-size:.78rem">
-      <input id="gn-bc-zona" placeholder="Zona afectada" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
-      <input id="gn-bc-fi" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
-      <input id="gn-bc-ff" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
-      <input id="gn-bc-mot" placeholder="Motivo" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
-    </div>
-    <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.6rem">
-      <button type="button" id="gn-bc-cancel" class="ba2" style="background:#e2e8f0;border-color:#cbd5e1;color:#334155">Cancelar</button>
-      <button type="button" id="gn-bc-send" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E">Enviar</button>
-    </div>
-  </div>
-</div>`;
-    document.body.appendChild(root);
-    let drag = false;
-    let dx = 0;
-    let dy = 0;
-    const btn = root.querySelector('#gn-fab-community-btn');
-    btn.addEventListener('mousedown', (e) => {
-        drag = true;
-        dx = e.clientX - root.offsetLeft;
-        dy = e.clientY - root.offsetTop;
-    });
-    window.addEventListener('mousemove', (e) => {
-        if (!drag) return;
-        root.style.left = `${e.clientX - dx}px`;
-        root.style.top = `${e.clientY - dy}px`;
-        root.style.right = 'auto';
-        root.style.bottom = 'auto';
-    });
-    window.addEventListener('mouseup', () => {
-        drag = false;
-    });
-    root.querySelector('#gn-fab-community-hide').onclick = () => {
-        root.style.display = 'none';
-    };
-    btn.onclick = () => {
-        document.getElementById('gn-fab-community-modal').style.display = 'flex';
-    };
-    const modal = root.querySelector('#gn-fab-community-modal');
-    modal.querySelector('#gn-bc-cancel').onclick = () => {
-        modal.style.display = 'none';
-    };
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.style.display = 'none';
-    };
-    const tipoAvisoSel = modal.querySelector('#gn-bc-tipo-aviso');
-    const chkCorte = modal.querySelector('#gn-bc-corte');
-    const corteFields = modal.querySelector('#gn-bc-corte-fields');
-    const cityInp = modal.querySelector('#gn-bc-ciudad');
-    const provInp = modal.querySelector('#gn-bc-provincia');
-    const callesInp = modal.querySelector('#gn-bc-calles');
-    const citiesDl = modal.querySelector('#gn-bc-cities');
-    const streetsDl = modal.querySelector('#gn-bc-streets');
-    const parseCsv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
-    const debounce = (fn, ms = 350) => {
-        let t = 0;
-        return (...args) => {
-            clearTimeout(t);
-            t = setTimeout(() => fn(...args), ms);
-        };
-    };
-    const fallbackCities = ['Cerrito', 'Paraná', 'Hasenkamp', 'María Grande', 'Viale'];
-    const fallbackStreets = ['San Martín', 'Belgrano', 'Sarmiento', '25 de Mayo', '9 de Julio'];
-    const setOptions = (el, arr) => {
-        el.innerHTML = '';
-        (arr || []).slice(0, 20).forEach((v) => {
-            const o = document.createElement('option');
-            o.value = typeof v === 'string' ? v : String(v?.ciudad || '');
-            el.appendChild(o);
-        });
-    };
-    const fetchCities = debounce(async () => {
-        const q = cityInp.value.trim();
-        if (q.length < 2) return;
-        try {
-            const r = await fetch(apiUrl(`/api/nominatim/search/cities?q=${encodeURIComponent(q)}&countrycode=ar`));
-            const d = await r.json().catch(() => []);
-            setOptions(citiesDl, Array.isArray(d) ? d.map((x) => x.ciudad) : fallbackCities);
-            const hit = Array.isArray(d) && d.find((x) => String(x.ciudad || '').toLowerCase() === q.toLowerCase());
-            if (hit && !provInp.value.trim()) provInp.value = hit.provincia || '';
-        } catch (_) {
-            setOptions(citiesDl, fallbackCities);
-        }
-    }, 380);
-    const fetchStreets = debounce(async () => {
-        const q = callesInp.value.trim().split(',').pop().trim();
-        const city = cityInp.value.trim();
-        if (q.length < 2 || city.length < 2) return;
-        try {
-            const r = await fetch(apiUrl(`/api/nominatim/search/streets?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`));
-            const d = await r.json().catch(() => []);
-            setOptions(streetsDl, Array.isArray(d) ? d : fallbackStreets);
-        } catch (_) {
-            setOptions(streetsDl, fallbackStreets);
-        }
-    }, 380);
-    cityInp.addEventListener('input', fetchCities);
-    callesInp.addEventListener('input', fetchStreets);
-    tipoAvisoSel.addEventListener('change', () => {
-        chkCorte.checked = tipoAvisoSel.value === 'corte_programado';
-        chkCorte.dispatchEvent(new Event('change'));
-    });
-    chkCorte.addEventListener('change', () => {
-        corteFields.style.display = chkCorte.checked ? 'block' : 'none';
-    });
-    modal.querySelector('#gn-bc-send').onclick = async () => {
-        const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
-        let tipo_aviso = (tipoAvisoSel.value || 'general').trim();
-        const fenomeno = (modal.querySelector('#gn-bc-fenomeno').value || '').trim();
-        const ciudad = (cityInp.value || '').trim();
-        const provincia = (provInp.value || '').trim();
-        const calles = parseCsv(callesInp.value);
-        const areas = parseCsv((modal.querySelector('#gn-bc-areas').value || '').trim());
-        const telefonos = parseCsv((modal.querySelector('#gn-bc-telefonos').value || '').trim());
-        const mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
-        if (!mensaje) {
-            toast('Completá el mensaje', 'warning');
-            return;
-        }
-        if (!confirm('¿Confirmás el envío masivo por WhatsApp a los contactos de pedidos?')) return;
-        await asegurarJwtApiRest();
-        const tok = getApiToken();
-        if (!tok) {
-            toast('Sin sesión API', 'error');
-            return;
-        }
-        const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` };
-        const business_type =
-            String(window.EMPRESA_CFG?.active_business_type || '').trim() ||
-            (normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_agua'
-                ? 'agua'
-                : normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio'
-                  ? 'municipio'
-                  : 'electricidad');
-        if (business_type === 'municipio') {
-            tipoAvisoSel.querySelector('option[value="corte_programado"]')?.setAttribute('disabled', 'disabled');
-            if (tipoAvisoSel.value === 'corte_programado') tipoAvisoSel.value = 'general';
-            chkCorte.checked = false;
-            chkCorte.dispatchEvent(new Event('change'));
-            tipo_aviso = 'general';
-        }
-        try {
-            const corteElegido = chkCorte.checked || tipo_aviso === 'corte_programado';
-            if (corteElegido) {
-                const zona = (modal.querySelector('#gn-bc-zona').value || '').trim();
-                const motivo = (modal.querySelector('#gn-bc-mot').value || '').trim();
-                const fi = modal.querySelector('#gn-bc-fi').value;
-                const ff = modal.querySelector('#gn-bc-ff').value;
-                const r = await fetch(apiUrl('/api/whatsapp/broadcast/corte-programado'), {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        confirm: true,
-                        business_type,
-                        tipo_aviso: 'corte_programado',
-                        fenomeno,
-                        ciudad,
-                        provincia,
-                        calles,
-                        areas,
-                        telefonos,
-                        zona_afectada: zona,
-                        motivo,
-                        fecha_inicio: fi || null,
-                        fecha_fin: ff || null,
-                        mensaje,
-                    }),
-                });
-                const d = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
-                toast('Corte programado enviado', 'success');
-            } else {
-                const r = await fetch(apiUrl('/api/whatsapp/broadcast/community'), {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        confirm: true,
-                        tipo_aviso,
-                        titulo,
-                        fenomeno,
-                        ciudad,
-                        provincia,
-                        calles,
-                        areas,
-                        telefonos,
-                        mensaje,
-                        business_type,
-                    }),
-                });
-                const d = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
-                toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
-            }
-            modal.style.display = 'none';
-        } catch (e) {
-            toast(String(e.message || e), 'error');
-        }
-    };
-}
-
 async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
     if (!esAdmin() || !getApiToken()) return;
     try {
@@ -1364,17 +1107,6 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             }
         }
         aplicarConfiguracionJsonClienteEnEmpresaCfg(conf && typeof conf === 'object' ? conf : {});
-        const cli = data?.cliente;
-        if (cli && typeof cli === 'object') {
-            window.EMPRESA_CFG = {
-                ...(window.EMPRESA_CFG || {}),
-                tipo: cli.tipo != null ? cli.tipo : window.EMPRESA_CFG?.tipo,
-                active_business_type: cli.active_business_type != null ? cli.active_business_type : window.EMPRESA_CFG?.active_business_type,
-            };
-        }
-        try {
-            initCommunityBroadcastFab();
-        } catch (_) {}
     } catch (_) {}
 }
 
@@ -1399,35 +1131,6 @@ function actualizarBotonesWhatsappDerivacionesUi() {
 }
 
 let _cfgDerivWaInputBound = false;
-(function bindPersistenciaTextosDerivacion() {
-    try {
-        document.addEventListener(
-            'input',
-            (ev) => {
-                const t = ev.target;
-                if (!t || !t.id) return;
-                if (t.id === 'admin-derivar-motivo') {
-                    const dm = document.getElementById('dm');
-                    const pid = dm?.dataset?.detallePedidoId;
-                    if (pid) {
-                        try {
-                            sessionStorage.setItem('gn-admin-deriv-motivo-' + pid, t.value);
-                        } catch (_) {}
-                    }
-                    return;
-                }
-                if (String(t.id).startsWith('tec-sol-deriv-motivo-')) {
-                    const pid = String(t.id).replace('tec-sol-deriv-motivo-', '');
-                    try {
-                        sessionStorage.setItem('gn-tec-deriv-motivo-' + pid, t.value);
-                    } catch (_) {}
-                }
-            },
-            true
-        );
-    } catch (_) {}
-})();
-
 function bindDerivacionesFormInputsOnce() {
     if (_cfgDerivWaInputBound) return;
     _cfgDerivWaInputBound = true;
@@ -1546,11 +1249,6 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
     if (p.tai == null || String(p.tai) !== uid) return '';
     const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    let borradorTec = '';
-    try {
-        borradorTec = sessionStorage.getItem('gn-tec-deriv-motivo-' + p.id) || '';
-    } catch (_) {}
-    const taIniTec = borradorTec ? escD(borradorTec) : '';
     if (p.sdpen) {
         const fxs = p.sdf ? fmtInformeFecha(p.sdf) : '—';
         return `<div class="ds" style="border-left:4px solid #f59e0b">
@@ -1564,7 +1262,7 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
         <h4>🛠 Solicitar derivación a terceros</h4>
         <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y arma el mismo texto que se envía por WhatsApp al contacto configurado.</p>
         <label style="font-size:.76rem;font-weight:600">Observaciones de campo <span style="color:var(--re)">*</span> <span style="font-weight:500;color:var(--tl)">(mín. 8 caracteres)</span></label>
-        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…).">${taIniTec}</textarea>
+        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…)."></textarea>
         <button type="button" class="ba2 p2" onclick="solicitarDerivacionTerceroDesdeTecnico('${pidEsc}')"><i class="fas fa-paper-plane"></i> Enviar solicitud al administrador</button>
     </div>`;
 }
@@ -1690,26 +1388,19 @@ async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
     if (!tok) return;
     const pid = Number(pedidoId);
     if (!Number.isFinite(pid) || pid <= 0) return;
-    const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
-    const url = apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`);
-    const headers = { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' };
-    await new Promise((r) => setTimeout(r, 500));
-    for (let attempt = 0; attempt < 4; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 400 + 350 * attempt));
-        try {
-            const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-            if (resp.ok) return;
+    try {
+        const body = telefonoOverride ? { telefono_contacto: telefonoOverride } : {};
+        const resp = await fetch(apiUrl(`/api/pedidos/${pid}/notify-cierre-whatsapp`), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!resp.ok) {
             const t = await resp.text();
-            const maybeRace =
-                resp.status === 400 &&
-                /Cerrado|cerrado/i.test(t) &&
-                /debe estar|must be|pedido/i.test(t);
-            if (maybeRace && attempt < 3) continue;
             console.warn('[wa-cierre] API', resp.status, t.slice(0, 200));
-            return;
-        } catch (e) {
-            if (attempt === 3) console.warn('[wa-cierre]', e && e.message);
         }
+    } catch (e) {
+        console.warn('[wa-cierre]', e && e.message);
     }
 }
 
@@ -2372,26 +2063,20 @@ function aplicarMarcaVisualCompleta() {
     const ll = document.querySelector('#ls .ll');
     if (ll) {
         const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
-        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px;background:#fff;display:block;mix-blend-mode:normal">`;
+        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
     }
 }
 
+/** Primera vez en este navegador: modal de rubro. Luego: botón «Cambiar rubro» con contraseña. */
+const LS_ADMIN_WEB_TIPO_ACK = 'pmg_admin_web_tipo_ack_v1';
 /** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
 const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
 let _resolveAdminTipoModal = null;
 
-function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo, lineaNegocioAntes, lineaNegocioDespues) {
+function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     const a = normalizarRubroEmpresa(tipoAnterior);
     const b = normalizarRubroEmpresa(tipoNuevo);
-    const la = lineaNegocioAntes != null ? String(lineaNegocioAntes).trim() : '';
-    const ln = lineaNegocioDespues != null ? String(lineaNegocioDespues).trim() : '';
-    const tipoCambio = a !== b;
-    const lineaCambio = la !== '' && ln !== '' && la !== ln;
-    if (!tipoCambio && !lineaCambio) return;
-    invalidatePedidosTenantSqlCache();
-    try {
-        _sociosCatalogoTieneTenantIdCache = null;
-    } catch (_) {}
+    if (a === b) return;
     try {
         DIST = [];
     } catch (_) {}
@@ -2407,86 +2092,20 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo, lineaNegocioAn
     try {
         renderMk();
     } catch (_) {}
-    try {
-        window._sociosVirtualRows = null;
-        if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
-    } catch (_) {}
-    try {
-        if (document.getElementById('admin-estadisticas')?.classList.contains('active')) void cargarEstadisticas();
-    } catch (_) {}
-    try {
-        if (document.getElementById('admin-kpi')?.classList.contains('active')) void cargarKpiSnapshotsAdmin();
-    } catch (_) {}
-    try {
-        if (_mapaUsuariosAdmin && document.getElementById('admin-mapa-usuarios')?.classList.contains('active')) {
-            void cargarUbicacionesUsuarios();
-        }
-    } catch (_) {}
-    try {
-        if ((tipoCambio || lineaCambio) && app.u && NEON_OK && _sql && !modoOffline) {
-            void cargarPedidos({ silent: true });
-        }
-    } catch (_) {}
-}
-
-/** Borra claves locales típicas de la app (pmg*, ubicación). Las cookies HttpOnly no se pueden invalidar desde JS. */
-function limpiarAlmacenamientoClienteAmplioParaCambioNegocio() {
-    try {
-        const kill = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (!k) continue;
-            if (
-                k.startsWith('pmg') ||
-                k.startsWith('gestornova') ||
-                k.startsWith('GESTORNOVA') ||
-                k === 'ultima_ubicacion'
-            ) {
-                kill.push(k);
-            }
-        }
-        kill.forEach((k) => {
-            try {
-                localStorage.removeItem(k);
-            } catch (_) {}
-        });
-    } catch (_) {}
-}
-
-/** Tras confirmar cambio de rubro/línea en servidor: sessionStorage + caché local amplia + mismo teardown que logout. */
-function ejecutarCerrarSesionTrasCambioNegocioAdmin() {
-    try {
-        sessionStorage.clear();
-    } catch (_) {}
-    limpiarAlmacenamientoClienteAmplioParaCambioNegocio();
-    ejecutarCerrarSesion();
 }
 
 async function promptAdminTipoNegocioWebIfNeeded(force = false) {
     if (!esAdminSesionWebPublica()) return;
-    if (!force) return;
+    if (!force) {
+        try {
+            if (localStorage.getItem(LS_ADMIN_WEB_TIPO_ACK) === '1') return;
+        } catch (_) {}
+    }
     const modal = document.getElementById('modal-admin-tipo-negocio');
     const sel = document.getElementById('admin-sesion-tipo');
     if (!modal || !sel) return;
-    let tipoDesdeServidor = '';
-    try {
-        await asegurarJwtApiRest();
-        const tok = getApiToken();
-        if (tok) {
-            const rb = await fetch(apiUrl('/api/tenant/businesses'), {
-                headers: { Authorization: `Bearer ${tok}` }
-            });
-            if (rb.ok) {
-                const jd = await rb.json().catch(() => ({}));
-                const act = String(jd?.active_business_type || '').trim();
-                if (act === 'electricidad') tipoDesdeServidor = 'cooperativa_electrica';
-                else if (act === 'agua') tipoDesdeServidor = 'cooperativa_agua';
-                else if (act === 'municipio') tipoDesdeServidor = 'municipio';
-            }
-        }
-    } catch (_) {}
     const actual = String(window.EMPRESA_CFG?.tipo || '').trim();
-    sel.value = actual || tipoDesdeServidor || '';
+    sel.value = actual || '';
     return new Promise((resolve) => {
         _resolveAdminTipoModal = resolve;
         modal.classList.add('active');
@@ -2545,18 +2164,8 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
     const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
-    const mapTipoABusiness = (t) => {
-        const n = normalizarRubroEmpresa(t);
-        if (n === 'cooperativa_agua') return 'agua';
-        if (n === 'municipio') return 'municipio';
-        return 'electricidad';
-    };
-    const businessSel = mapTipoABusiness(tipo);
-    const lineaNegAntes = lineaNegocioOperativaCodigo();
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
-    /** Si el tipo elegido difería del guardado en cliente (servidor); dispara logout tras guardar. */
-    let cambioRubroVsServidor = false;
     if (persistir) {
         await asegurarJwtApiRest();
         if (!getApiToken()) await intentarRefrescarJwtDesdeCredencialesGuardadas();
@@ -2577,48 +2186,43 @@ async function confirmarAdminTipoNegocioWeb() {
                     }
                 } catch (_) {}
 
-                cambioRubroVsServidor =
+                const cambiaRubroServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
 
-                if (cambioRubroVsServidor) {
-                    if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
-                        toast('Cambio cancelado', 'warning');
-                        return;
-                    }
-                }
-
-                const sw = await fetch(apiUrl('/api/tenant/switch-business'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ business_type: businessSel })
-                });
-                if (!sw.ok) {
-                    const er = await sw.json().catch(() => ({}));
-                    if (sw.status === 404) {
-                        const w = await fetch(apiUrl('/api/setup/wizard'), {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${token}`
-                            },
-                            body: JSON.stringify({
-                                tenant_nombre: String(window.EMPRESA_CFG?.nombre || '').trim() || undefined,
-                                business_type: businessSel
-                            })
-                        });
-                        if (!w.ok) {
-                            const ew = await w.json().catch(() => ({}));
-                            throw new Error(ew.error || ew.detail || `wizard HTTP ${w.status}`);
+                if (cambiaRubroServidor) {
+                    const reentry = !!window.__PMG_RUBRO_REENTRY__;
+                    if (reentry) {
+                        if (
+                            !confirm(
+                                'Al cambiar el rubro en el servidor se borrarán todos los socios del catálogo y todos los usuarios salvo administradores.\n\n¿Continuar? (1/2)'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
+                        }
+                        if (
+                            !confirm(
+                                'Última confirmación (2/2): se eliminarán datos en la base del tenant (socios y usuarios no admin). ¿Confirmás?'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
                         }
                     } else {
-                        throw new Error(er.error || er.detail || `switch-business HTTP ${sw.status}`);
+                        if (
+                            !confirm(
+                                'Al guardar un rubro distinto al del servidor se borrarán el catálogo de socios y los usuarios que no son administrador. ¿Continuar?'
+                            )
+                        ) {
+                            toast('Cambio cancelado', 'warning');
+                            return;
+                        }
                     }
                 }
 
-                const bodyObj = { tipo, active_business_type: businessSel };
+                const bodyObj = { tipo };
+                if (cambiaRubroServidor) bodyObj.purge_datos_cambio_rubro = true;
+
                 const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
                     method: 'PUT',
                     headers: {
@@ -2638,26 +2242,20 @@ async function confirmarAdminTipoNegocioWeb() {
             }
         }
     }
-    const tipoCambioUi = normalizarRubroEmpresa(tipoAntes) !== normalizarRubroEmpresa(tipo);
-    if (guardadoServidor && (tipoCambioUi || cambioRubroVsServidor)) {
-        toast(
-            'Línea de negocio actualizada en el servidor. Cerramos sesión para cargar datos del rubro activo; volvé a iniciar sesión.',
-            'info'
-        );
-        ejecutarCerrarSesionTrasCambioNegocioAdmin();
-        return;
-    }
-    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo, active_business_type: businessSel };
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     try {
         persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
     } catch (_) {}
-    invalidateCachesTrasCambioRubro(tipoAntes, tipo, lineaNegAntes, lineaNegocioOperativaCodigo());
+    invalidateCachesTrasCambioRubro(tipoAntes, tipo);
     aplicarEtiquetasPorTipo(tipo);
     poblarSelectTiposReclamo();
     syncZonaPedidoFormLabels();
     syncEmpresaCfgNombreLogoDesdeMarca();
     aplicarMarcaVisualCompleta();
+    try {
+        localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
+    } catch (_) {}
     if (modal) modal.classList.remove('active');
     if (_resolveAdminTipoModal) {
         _resolveAdminTipoModal();
@@ -3493,9 +3091,6 @@ const norm = p => ({
             return null;
         }
     })(),
-    pbt: String(p.business_type || '')
-        .trim()
-        .toLowerCase(),
 });
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
@@ -4977,7 +4572,6 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
-        if (!pedidoVisibleSegunLineaNegocio(p)) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !adminMuestraPedidosDerivadosFuera()) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
@@ -5129,9 +4723,6 @@ function onAndroidPedidosScopeChange() {
     } catch (_) {}
     const wt = document.getElementById('toggle-ver-todos-pedidos');
     if (wt) wt.checked = v === 'todos';
-    try {
-        invalidatePedidosTenantSqlCache();
-    } catch (_) {}
     cargarPedidos();
 }
 
@@ -5165,20 +4756,6 @@ function toggleMapaCardSlideoff(cardId, hide) {
         if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
     } catch (_) {}
 }
-
-/** Android/WebView: al abrir detalle de pedido, ocultar paneles del mapa para que no tapen el modal. */
-function gnMinimizeMapPanelsParaDetallePedido() {
-    try {
-        if (!esAndroidWebViewMapa()) return;
-        ['mapa-card-filtros', 'mapa-card-filtro-tipo', 'mapa-card-colores', 'mapa-card-dashboard'].forEach((id) => {
-            toggleMapaCardSlideoff(id, true);
-        });
-        try {
-            setBp2PanelHidden(true);
-        } catch (_) {}
-    } catch (_) {}
-}
-window.gnMinimizeMapPanelsParaDetallePedido = gnMinimizeMapPanelsParaDetallePedido;
 
 function syncMapSlideTabsFromStorage() {
     const cf = document.getElementById('mapa-card-filtros');
@@ -5229,17 +4806,7 @@ function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
 /** Escritorio ancho o WebView Android: mismos paneles arrastrables (ratón, DeX, tablet). */
 function floatingPanelsDragEnabled() {
     try {
-        /* Ventanas < 1024px (laptop compacto / panel DevTools): siguen pudiendo mover paneles como el FAB Pedidos */
-        return window.matchMedia('(min-width:520px)').matches || esAndroidWebViewMapa();
-    } catch (_) {
-        return esAndroidWebViewMapa();
-    }
-}
-
-/** Paneles moui sobre el mapa: arrastrar solo desde el ícono «grip» (.moui-drag-handle), así el resto del encabezado puede plegar sin robar el gesto (incl. Android). */
-function floatingMapMouiDragEnabled() {
-    try {
-        return window.matchMedia('(min-width:520px)').matches || esAndroidWebViewMapa();
+        return window.matchMedia('(min-width:1024px)').matches || esAndroidWebViewMapa();
     } catch (_) {
         return esAndroidWebViewMapa();
     }
@@ -5353,7 +4920,7 @@ function initBp2PanelFlotanteDesktop() {
 
 let _mouiCardDragState = null;
 
-/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Solo escritorio ancho (ver floatingMapMouiDragEnabled). */
+/** Misma lógica que el panel de pedidos (bp2): umbral 5px, clamp al viewport, flag anti-clic al soltar. Escritorio ≥1024px o WebView Android. */
 function initMouiCardDraggable(cardId) {
     const card = document.getElementById(cardId);
     if (!card) return;
@@ -5362,7 +4929,7 @@ function initMouiCardDraggable(cardId) {
     card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
-        if (!floatingMapMouiDragEnabled()) return;
+        if (!floatingPanelsDragEnabled()) return;
         try {
             const raw = localStorage.getItem(key);
             if (!raw) return;
@@ -5376,9 +4943,6 @@ function initMouiCardDraggable(cardId) {
         } catch (_) {}
     };
     applySaved();
-    const dragHandle = hd.querySelector('.moui-drag-handle');
-    /** WebView Android: cabecera completa como asa (botones excluidos). Misma lógica en todos los paneles. */
-    const dragTarget = esAndroidWebViewMapa() ? hd : dragHandle || hd;
     const startDrag = (clientX, clientY) => {
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
@@ -5440,16 +5004,16 @@ function initMouiCardDraggable(cardId) {
         document.addEventListener('touchend', onUp);
         document.addEventListener('touchcancel', onUp);
     };
-    dragTarget.addEventListener('mousedown', (e) => {
-        if (!floatingMapMouiDragEnabled()) return;
+    hd.addEventListener('mousedown', (e) => {
+        if (!floatingPanelsDragEnabled()) return;
         if (e.button !== 0 || e.target.closest('button')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
     });
-    dragTarget.addEventListener(
+    hd.addEventListener(
         'touchstart',
         (e) => {
-            if (!floatingMapMouiDragEnabled()) return;
+            if (!floatingPanelsDragEnabled()) return;
             if (e.touches.length !== 1 || e.target.closest('button')) return;
             e.preventDefault();
             const t = e.touches[0];
@@ -5491,16 +5055,6 @@ function aplicarUIMapaPlataforma() {
     if (esAndroidWebViewMapa()) {
         try {
             document.documentElement.classList.add('gn-android-webview');
-        } catch (_) {}
-        try {
-            ['mapa-card-filtros', 'mapa-card-filtro-tipo', 'mapa-card-colores', 'mapa-card-dashboard'].forEach((cid) => {
-                const pan = document.getElementById(cid);
-                if (!pan) return;
-                pan.style.removeProperty('left');
-                pan.style.removeProperty('top');
-                pan.style.removeProperty('right');
-                pan.style.removeProperty('bottom');
-            });
         } catch (_) {}
         /* Mismas paletas que admin: paneles en DOM; mostrar/ocultar con pestañas + ojo (slideoff). */
         card.style.display = 'block';
@@ -5611,20 +5165,9 @@ async function refrescarTecnicosMapaPrincipal() {
         return;
     }
     try {
-        const wf = await sqlFiltroUsuariosPorTenant();
-        let btSql = '';
-        try {
-            const rBt = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'business_type' LIMIT 1`
-            );
-            if (rBt.rows?.length) {
-                const line = esc(lineaNegocioOperativaCodigo());
-                btSql = ` AND (u.business_type IS NULL OR u.business_type = ${line})`;
-            }
-        } catch (_) {}
         const r = await sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
             FROM ubicaciones_usuarios uu
-            JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE${wf}${btSql}
+            JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
             WHERE uu.timestamp > NOW() - INTERVAL '2 hours'
             AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
             ORDER BY uu.usuario_id, uu.timestamp DESC`);
@@ -5966,38 +5509,6 @@ function iniciarPollWhatsappHumanChat() {
     _waHcPollInterval = setInterval(tick, 5000);
 }
 
-const SESS_KEY_WA_HC_BANNER_DISMISS = 'gn_sess_wa_hc_banner_dismiss_v1';
-
-function waHcBannerDismissIdSet() {
-    try {
-        const j = sessionStorage.getItem(SESS_KEY_WA_HC_BANNER_DISMISS);
-        const a = JSON.parse(j || '[]');
-        return new Set((Array.isArray(a) ? a : []).map(String));
-    } catch (_) {
-        return new Set();
-    }
-}
-
-function waHcMarcarBannerDescartado(sessionIdStr) {
-    const sid = String(sessionIdStr || '').trim();
-    if (!sid) return;
-    const s = waHcBannerDismissIdSet();
-    s.add(sid);
-    try {
-        sessionStorage.setItem(SESS_KEY_WA_HC_BANNER_DISMISS, JSON.stringify([...s]));
-    } catch (_) {}
-}
-
-function ocultarTodosToastsWaHumanChat() {
-    try {
-        document.querySelectorAll('#wa-human-chat-toast-host .wa-human-chat-toast').forEach((el) => {
-            try {
-                el.remove();
-            } catch (_) {}
-        });
-    } catch (_) {}
-}
-
 async function pollWhatsappHumanChatCola() {
     if (!app.u || !esAdmin() || modoOffline || !puedeEnviarApiRestPedidos()) return;
     try {
@@ -6014,13 +5525,11 @@ async function pollWhatsappHumanChatCola() {
         for (const k of [..._waHcKnownSessionIds]) {
             if (!idsNow.has(k)) _waHcKnownSessionIds.delete(k);
         }
-        const dismissed = waHcBannerDismissIdSet();
         if (!_waHcPollPrimed) {
             _waHcPollPrimed = true;
             for (const s of list) {
                 const id = String(s.id);
                 _waHcKnownSessionIds.add(id);
-                if (dismissed.has(id)) continue;
                 mostrarToastWaHumanChatNuevo(s);
             }
             return;
@@ -6029,37 +5538,25 @@ async function pollWhatsappHumanChatCola() {
             const id = String(s.id);
             if (_waHcKnownSessionIds.has(id)) continue;
             _waHcKnownSessionIds.add(id);
-            if (dismissed.has(id)) continue;
             mostrarToastWaHumanChatNuevo(s);
         }
     } catch (_) {}
 }
 
 function mostrarToastWaHumanChatNuevo(s) {
-    const sidStr = String(s?.id ?? '').trim();
-    if (sidStr && waHcBannerDismissIdSet().has(sidStr)) return;
     const host = document.getElementById('wa-human-chat-toast-host');
     if (!host) return;
     const el = document.createElement('div');
     el.className = 'wa-human-chat-toast';
     const name = String(s.contact_name || '').trim() || 'Cliente';
     const ph = String(s.phone_canonical || '');
-    el.innerHTML = `<button type="button" class="wa-hc-toast-close" aria-label="Cerrar aviso">&times;</button><strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
-    const go = () => {
-        waHcMarcarBannerDescartado(sidStr);
-        ocultarTodosToastsWaHumanChat();
-        try {
-            el.remove();
-        } catch (_) {}
+    el.innerHTML = `<strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
+    el.onclick = () => {
+        try { el.remove(); } catch (_) {}
         abrirModalWhatsappHumanChat(Number(s.id));
     };
-    el.onclick = (ev) => {
-        if (ev.target.closest('.wa-hc-toast-close')) return;
-        go();
-    };
-    const x = el.querySelector('.wa-hc-toast-close');
-    if (x) x.onclick = (ev) => { ev.stopPropagation(); try { el.remove(); } catch (_) {} };
     host.appendChild(el);
+    setTimeout(() => { try { if (el.parentElement) el.remove(); } catch (_) {} }, 45000);
 }
 
 function traerAlFrenteVentanaWaHc(floatEl) {
@@ -6340,8 +5837,6 @@ async function desactivarChatWaHc(sidNum) {
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
         });
         if (!r.ok) throw new Error('close');
-        waHcMarcarBannerDescartado(sidStr);
-        ocultarTodosToastsWaHumanChat();
         _waHcKnownSessionIds.delete(sidStr);
         const st = _waHcWindows.get(sidStr);
         if (st) {
@@ -6363,10 +5858,6 @@ function cerrarModalWaHumanChat() {
 }
 
 async function abrirModalWhatsappHumanChat(prefSessionId) {
-    ocultarTodosToastsWaHumanChat();
-    if (prefSessionId != null && Number.isFinite(Number(prefSessionId))) {
-        waHcMarcarBannerDescartado(String(prefSessionId));
-    }
     if (!puedeEnviarApiRestPedidos()) {
         toast('Sin conexión a la API para el chat', 'warning');
         return;
@@ -6699,11 +6190,11 @@ async function cargarPedidos(opts) {
     try {
         await asegurarNombreUsuariosParaFiltros();
         const tsql = await pedidosFiltroTenantSql();
-        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion ASC`;
+        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
         if (esTecnicoOSupervisor()) {
             const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
             if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion ASC`;
+                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
         }
         const prevSnapTecnico =
@@ -7140,10 +6631,6 @@ async function irAMiUbicacionEnMapa() {
 window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
 async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
-    if (typeof window.gnMapaDebeBloquearCargaPedidoDesdeMapa === 'function' && window.gnMapaDebeBloquearCargaPedidoDesdeMapa()) {
-        toast('Esperá unos segundos: aviso de reclamo nuevo.', 'info');
-        return;
-    }
     await ensureMapReady();
     if (!app.map) {
         toast('No se pudo cargar el mapa', 'error');
@@ -7360,9 +6847,6 @@ function renderMk() {
             if (panePed) cmOpt.pane = panePed;
             m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
         }
-        try {
-            m._gnPedidoId = p.id;
-        } catch (_) {}
         m.bindPopup(`
             <div style="min-width:160px;font-family:system-ui">
                 <b style="color:#1e3a8a">#${p.np}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
@@ -7534,54 +7018,15 @@ window._a = (a, id) => {
         void iniciar(id);
         return;
     }
-    if (a === 'av') {
-        abrirAvance(id);
-        return;
-    }
     closeAll();
-    void abrirCierre(id);
+    if (a === 'av') abrirAvance(id);
+    else void abrirCierre(id);
 };
 
 window._zm = id => {
+    const p = app.p.find(x => String(x.id) === String(id));
+    if (!p) return;
     void (async () => {
-        const pid = String(id ?? '').trim();
-        if (!pid) return;
-
-        let p = app.p.find((x) => String(x.id) === pid);
-        if (!p && !modoOffline && NEON_OK && _sql) {
-            try {
-                const pidNum = parseInt(pid, 10);
-                if (Number.isFinite(pidNum)) {
-                    const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(pidNum)} LIMIT 1`);
-                    const row = rr.rows?.[0];
-                    if (row) {
-                        p = norm(row);
-                        const idx = app.p.findIndex((x) => String(x.id) === String(p.id));
-                        if (idx >= 0) app.p[idx] = p;
-                        else app.p.unshift(p);
-                    }
-                }
-            } catch (_) {}
-        }
-        if (!p) {
-            toast('No se encontró el pedido para centrar el mapa.', 'warning');
-            return;
-        }
-
-        try {
-            document.getElementById('ls')?.classList.remove('active');
-            document.getElementById('ms')?.classList.add('active');
-            cerrarAdminPanel();
-            document.getElementById('gw')?.classList.remove('active');
-            const dm = document.getElementById('dm');
-            if (dm?.classList.contains('active')) {
-                dm.classList.remove('active');
-                try {
-                    delete dm.dataset.detallePedidoId;
-                } catch (_) {}
-            }
-        } catch (_) {}
-
         await ensureMapReady();
         if (!app.map) return;
         const { la, ln } = coordsEfectivasPedidoMapa(p);
@@ -7589,77 +7034,15 @@ window._zm = id => {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
         }
-        const openPedidoPopup = () => {
-            try {
-                const layer = app.mk?.find(
-                    (m) => m && m._gnPedidoId != null && String(m._gnPedidoId) === String(p.id)
-                );
-                if (layer && typeof layer.openPopup === 'function') layer.openPopup();
-            } catch (_) {}
-        };
-
-        const leerZoomMaxMapa = () => {
-            try {
-                const mz = app.map.getMaxZoom();
-                return Number.isFinite(mz) && mz > 0 ? mz : 18;
-            } catch (_) {
-                return 18;
-            }
-        };
-
-        const runZoom = (withPopup) => {
-            if (!app.map) return;
-            try {
-                app.map.invalidateSize({ animate: false });
-            } catch (_) {}
-            try {
-                renderMk();
-            } catch (_) {}
-            const z = leerZoomMaxMapa();
-            try {
-                app.map.setView([la, ln], z, { animate: !esAndroidWebViewMapa() });
-            } catch (_) {}
-            if (withPopup) {
-                openPedidoPopup();
-                requestAnimationFrame(() => openPedidoPopup());
-                setTimeout(openPedidoPopup, esAndroidWebViewMapa() ? 200 : 80);
-            }
-            setTimeout(() => {
-                try {
-                    document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
-                } catch (_) {}
-            }, 320);
-        };
-
-        const delay0 = esAndroidWebViewMapa() ? 220 : 120;
+        closeAll();
         setTimeout(() => {
-            runZoom(true);
-            if (esAndroidWebViewMapa()) {
-                setTimeout(() => {
-                    try {
-                        app.map.invalidateSize({ animate: false });
-                    } catch (_) {}
-                    try {
-                        renderMk();
-                    } catch (_) {}
-                    const z2 = leerZoomMaxMapa();
-                    try {
-                        app.map.setView([la, ln], z2, { animate: false });
-                    } catch (_) {}
-                    openPedidoPopup();
-                    requestAnimationFrame(() => {
-                        try {
-                            app.map.invalidateSize({ animate: false });
-                        } catch (_) {}
-                        try {
-                            app.map.setView([la, ln], z2, { animate: false });
-                        } catch (_) {}
-                        openPedidoPopup();
-                    });
-                    setTimeout(openPedidoPopup, 180);
-                }, 380);
-            }
-        }, delay0);
+            if (!app.map) return;
+            app.map.invalidateSize({ animate: false });
+            app.map.setView([la, ln], 17, { animate: true });
+            setTimeout(() => {
+                document.getElementById('zoom-altura').textContent = calcularEscalaReal(17);
+            }, 300);
+        }, 100);
     })();
 };
 
@@ -7913,13 +7296,6 @@ async function confirmarEnviarNotifPedido() {
         await enviarWhatsappMetaTecnico(uid, pidNum, `${titulo}: ${cuerpo}`);
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
-        try {
-            const dm = document.getElementById('dm');
-            if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pidNum)) {
-                dm.classList.remove('active');
-                delete dm.dataset.detallePedidoId;
-            }
-        } catch (_) {}
         toast(oldTai && oldTai !== uid ? 'Reasignado y notificaciones enviadas' : 'Técnico asignado y notificación encolada', 'success');
         await cargarPedidos();
         render();
@@ -9023,24 +8399,12 @@ document.getElementById('pf').addEventListener('submit', async e => {
             return;
         }
 
-        const icIns = await pedidosTablaColumnasInsertOpcional();
-        let extraInsertCols = '';
-        let extraInsertVals = '';
-        if (icIns.tenant_id) {
-            extraInsertCols += ', tenant_id';
-            extraInsertVals += `, ${esc(tenantIdActual())}`;
-        }
-        if (icIns.business_type) {
-            extraInsertCols += ', business_type';
-            extraInsertVals += `, ${esc(lineaNegocioOperativaCodigo())}`;
-        }
-
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
-            suministro_tipo_conexion, suministro_fases, barrio${extraInsertCols}
+            suministro_tipo_conexion, suministro_fases, barrio
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
@@ -9067,7 +8431,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(refUbicVal || null)},
             ${esc(sumConVal || null)},
             ${esc(sumFasVal || null)},
-            ${esc(barrioVal || null)}${extraInsertVals}
+            ${esc(barrioVal || null)}
         )`;
 
         if (modoOffline || !NEON_OK) {
@@ -9157,7 +8521,6 @@ async function actualizarAvance(id, avance) {
             offlinePedidosSave(app.p);
             render();
             toast('Avance actualizado', 'success');
-            void refrescarDetalleAbiertoSiMismoPedido(id);
             return;
         }
 
@@ -9179,7 +8542,6 @@ async function actualizarAvance(id, avance) {
 
         render();
         toast('Avance actualizado', 'success');
-        void refrescarDetalleAbiertoSiMismoPedido(id);
     } catch(e) {
         console.error('Error actualizando avance:', e);
         toast('Error al actualizar avance', 'error');
@@ -9291,13 +8653,6 @@ async function updPedido(id, campos, usuarioId) {
     render();
 }
 
-async function refrescarDetalleAbiertoSiMismoPedido(id) {
-    const dm = document.getElementById('dm');
-    if (!dm?.classList.contains('active') || String(dm.dataset.detallePedidoId) !== String(id)) return;
-    const p = app.p.find((x) => String(x.id) === String(id));
-    if (p) void detalle(p);
-}
-
 async function iniciar(id) {
     try {
         const now = new Date().toISOString();
@@ -9308,7 +8663,7 @@ async function iniciar(id) {
             offlinePedidosSave(app.p);
             render();
             toast('Pedido iniciado. Si hay teléfono de contacto y WhatsApp configurado, se avisó al cliente.', 'success');
-            await refrescarDetalleAbiertoSiMismoPedido(id);
+            closeAll();
             return;
         }
         await updPedido(id, {
@@ -9321,7 +8676,7 @@ async function iniciar(id) {
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
         }
         toast('Pedido iniciado', 'info');
-        await refrescarDetalleAbiertoSiMismoPedido(id);
+        closeAll();
     } catch(e) {
         toastError('iniciar-pedido', e);
     }
@@ -9429,28 +8784,15 @@ function sanitizarTextoDescripcionPedidoVista(s) {
     return t.trim();
 }
 
-/** Sección materiales: solo en ejecución, con avance o ya cerrado (lectura en cerrado). */
-function estadoPermiteSeccionMateriales(p) {
-    if (!p || tipoPedidoExcluyeMateriales(p.tt)) return false;
-    const es = String(p.es || '');
-    if (es === 'En ejecución' || es === 'Cerrado') return true;
-    if (Number(p.av) > 0) return true;
-    return false;
-}
-
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
+    if (p.es !== 'En ejecución') return false;
     if (tipoPedidoExcluyeMateriales(p.tt)) return false;
-    if (!estadoPermiteSeccionMateriales(p)) return false;
     if (p.sdpen && esTecnicoOSupervisor() && !esAdmin()) return false;
-    const es = String(p.es || '');
     const uid = String(app.u?.id ?? '');
-    if (esAdmin()) {
-        return es === 'En ejecución' || (Number(p.av) > 0 && es !== 'Pendiente');
-    }
-    if (es !== 'En ejecución') return false;
     return (
+        esAdmin() ||
         String(p.ui) === uid ||
         (esTecnicoOSupervisor() && p.tai != null && String(p.tai) === uid)
     );
@@ -9488,11 +8830,6 @@ async function refrescarMaterialesEnDetalle(p) {
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
-    if (!estadoPermiteSeccionMateriales(p)) {
-        body.innerHTML =
-            '<p style="font-size:.8rem;color:var(--tl)">La carga de materiales se habilita cuando el pedido está <strong>en ejecución</strong>, tiene <strong>avance</strong> o al <strong>cerrarlo</strong>.</p>';
-        return;
-    }
     const pid = parseInt(p.id, 10);
     
     // GUARD MEJORADO: si el pedido está cerrado y ya hay materiales renderizados, NO recargar
@@ -10390,7 +9727,6 @@ document.getElementById('cc2').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...';
     try {
-        await asegurarJwtApiRest();
         const telCierre = (document.getElementById('cierre-tel-contacto')?.value || '').trim();
         const camposCierre = {
             estado: 'Cerrado',
@@ -10403,44 +9739,11 @@ document.getElementById('cc2').addEventListener('click', async () => {
             checklist_seguridad: checklistJson
         };
         if (telCierre) camposCierre.telefono_contacto = telCierre;
-
-        let cerradoViaApi = false;
-        if (getApiBaseUrl() && getApiToken() && !String(app.cid).startsWith('off_')) {
+        await updPedido(app.cid, camposCierre, app.u?.id);
+        if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) {
-                const apiBody = {
-                    estado: 'Cerrado',
-                    avance: 100,
-                    trabajo_realizado: tr,
-                    tecnico_cierre: camposCierre.tecnico_cierre,
-                    checklist_seguridad: checklistJson
-                };
-                if (telCierre) apiBody.telefono_contacto = telCierre;
-                if (firmaData) apiBody.firma_cliente = firmaData;
-                if (fotoCierreTemp) apiBody.foto_base64 = fotoCierreTemp;
-                const apiRow = await pedidoPutApi(app.cid, apiBody);
-                if (apiRow) {
-                    cerradoViaApi = true;
-                    const ix = app.p.findIndex((x) => String(x.id) === String(app.cid));
-                    if (ix !== -1) app.p[ix] = norm(apiRow);
-                    offlinePedidosSave(app.p);
-                }
-            }
-        }
-        if (!cerradoViaApi) {
-            await updPedido(app.cid, camposCierre, app.u?.id);
-        }
-        const pidCierre = parseInt(app.cid, 10);
-        if (
-            !modoOffline &&
-            getApiBaseUrl() &&
-            !String(app.cid).startsWith('off_') &&
-            Number.isFinite(pidCierre) &&
-            pidCierre > 0
-        ) {
-            await asegurarJwtApiRest();
-            if (getApiToken()) {
-                await notificarCierreWhatsappApi(pidCierre, telCierre || undefined);
+                void notificarCierreWhatsappApi(pidNum, telCierre || undefined);
             }
         }
         fotoCierreTemp = null;
@@ -10679,9 +9982,6 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
         offlinePedidosSave(app.p);
         render();
         cerrarModalDerivacionPreviewAdmin();
-        try {
-            sessionStorage.removeItem('gn-admin-deriv-motivo-' + pidNum);
-        } catch (_) {}
         if (waOk) {
             toast('Derivación registrada. El mensaje se envió al tercero por WhatsApp (servidor).', 'success');
         } else {
@@ -10692,13 +9992,7 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
                 waErr ? 'warning' : 'info'
             );
         }
-        try {
-            const dm = document.getElementById('dm');
-            if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pidNum)) {
-                dm.classList.remove('active');
-                delete dm.dataset.detallePedidoId;
-            }
-        } catch (_) {}
+        void detalle(idx !== -1 ? app.p[idx] : row);
     } catch (e) {
         toast(String(e?.message || e), 'error');
     }
@@ -10726,8 +10020,8 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
     if (!Number.isFinite(pidNum)) return;
     const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
     const motivo = (ta?.value || '').trim();
-    if (motivo.length < 10) {
-        toast('Las observaciones de campo son obligatorias (mínimo 10 caracteres).', 'error');
+    if (motivo.length < 8) {
+        toast('Las observaciones de campo son obligatorias (mínimo 8 caracteres).', 'error');
         return;
     }
     await asegurarJwtApiRest();
@@ -10751,9 +10045,6 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         offlinePedidosSave(app.p);
         render();
         toast('Solicitud enviada al administrador.', 'success');
-        try {
-            sessionStorage.removeItem('gn-tec-deriv-motivo-' + pidNum);
-        } catch (_) {}
         try {
             const dm = document.getElementById('dm');
             if (dm) {
@@ -11193,12 +10484,6 @@ async function detalle(p) {
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        let motivoAdminTa = p.sdm ? escDet(p.sdm) : '';
-        try {
-            const bk = 'gn-admin-deriv-motivo-' + p.id;
-            const sv = sessionStorage.getItem(bk);
-            if (sv != null && String(sv).length) motivoAdminTa = escDet(sv);
-        } catch (_) {}
         const sdmMot = String(p.sdm || '').trim();
         const bloqueMotivoTecnicoDer = sdmMot
             ? `<div style="font-size:.8rem;margin:0 0 .45rem;padding:.5rem;background:rgba(14,165,233,.08);border:1px solid var(--bo);border-radius:.45rem;white-space:pre-wrap;line-height:1.45"><strong>Motivo del técnico</strong> (referencia; editable debajo)<br>${escDet(sdmMot)}</div>`
@@ -11227,7 +10512,7 @@ async function detalle(p) {
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
             ${bloqueMotivoTecnicoDer}
-            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${motivoAdminTa}</textarea></div>
+            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${p.sdm ? escDet(p.sdm) : ''}</textarea></div>
             <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y enviar (servidor)</button>
         </div>`;
     }
@@ -11277,9 +10562,7 @@ async function detalle(p) {
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
 
-        ${esTipoPedidoFactibilidad(p.tt) || !estadoPermiteSeccionMateriales(p)
-            ? ''
-            : `
+        ${esTipoPedidoFactibilidad(p.tt) ? '' : `
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
             <h4>🔧 Materiales</h4>
             <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
@@ -11318,11 +10601,8 @@ async function detalle(p) {
     `;
     
     document.getElementById('dm').classList.add('active');
-    try {
-        if (typeof gnMinimizeMapPanelsParaDetallePedido === 'function') gnMinimizeMapPanelsParaDetallePedido();
-    } catch (_) {}
     requestAnimationFrame(() => {
-        if (!esTipoPedidoFactibilidad(p.tt) && estadoPermiteSeccionMateriales(p)) refrescarMaterialesEnDetalle(p);
+        if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
     });
     void sincronizarMapaConPedidoEnDetalle(p);
 }
@@ -11688,7 +10968,7 @@ function closeAll() {
         if (el) el.checked = false;
     });
     try { limpiarFirmaCierreCanvas(); } catch (_) {}
-
+    
     fotoCierreTemp = null;
     const vpc = document.getElementById('vista-previa-foto-cierre');
     if (vpc) vpc.innerHTML = '';
@@ -12044,9 +11324,6 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
     localStorage.setItem('pmg_tecnico_ver_todos', this.checked ? '1' : '0');
     const sel = document.getElementById('sel-android-pedidos-scope');
     if (sel) sel.value = this.checked ? 'todos' : 'asignados';
-    try {
-        invalidatePedidosTenantSqlCache();
-    } catch (_) {}
     if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) cargarPedidos();
 });
 
@@ -12214,12 +11491,10 @@ if (st) {
 }
 syncNisClienteReclamoConexionUI();
 syncSuministroElectricoUI();
-window.syncPrioridadConTipoReclamo = syncPrioridadConTipoReclamo;
-window.syncSuministroElectricoUI = syncSuministroElectricoUI;
 try { syncZonaPedidoFormLabels(); } catch (_) {}
 
 function esCooperativaElectricaRubro() {
-    return lineaNegocioOperativaCodigo() === 'electricidad';
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
 }
 
 /**
@@ -12784,82 +12059,27 @@ async function sociosCatalogoTieneTenantId() {
     return _sociosCatalogoTieneTenantIdCache;
 }
 
-/** Cache: existe columna socios_catalogo.business_type (línea operativa). */
-let _sociosCatalogoTieneBusinessTypeCache = null;
-async function sociosCatalogoTieneBusinessType() {
-    if (_sociosCatalogoTieneBusinessTypeCache === true || _sociosCatalogoTieneBusinessTypeCache === false) {
-        return _sociosCatalogoTieneBusinessTypeCache;
-    }
-    try {
-        const chk = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
-        );
-        _sociosCatalogoTieneBusinessTypeCache = !!(chk.rows?.length);
-    } catch (_) {
-        _sociosCatalogoTieneBusinessTypeCache = false;
-    }
-    return _sociosCatalogoTieneBusinessTypeCache;
-}
-
 let _pedidosTenantSqlCache = null;
-/** Clave `${tenantId}|${lineaNegocio}` para invalidar al cambiar línea operativa o tenant. */
-let _pedidosTenantSqlCacheKey = '';
-
 function invalidatePedidosTenantSqlCache() {
     _pedidosTenantSqlCache = null;
-    _pedidosTenantSqlCacheKey = '';
 }
 
-/** Columnas opcionales en INSERT desde el formulario (Neon directo). */
-let _pedidosInsertColsCache = null;
-async function pedidosTablaColumnasInsertOpcional() {
-    if (_pedidosInsertColsCache) return _pedidosInsertColsCache;
-    const o = { tenant_id: false, business_type: false };
-    try {
-        const [a, b] = await Promise.all([
-            sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
-            ),
-            sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'business_type' LIMIT 1`
-            ),
-        ]);
-        o.tenant_id = !!(a.rows?.length);
-        o.business_type = !!(b.rows?.length);
-    } catch (_) {}
-    _pedidosInsertColsCache = o;
-    return o;
-}
-
-/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, filtra por línea operativa activa (relajado con NULL legacy). */
+/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). */
 async function pedidosFiltroTenantSql() {
-    const tid = tenantIdActual();
-    const line = lineaNegocioOperativaCodigo();
-    const cacheKey = `${tid}|${line}`;
-    if (_pedidosTenantSqlCache !== null && _pedidosTenantSqlCacheKey === cacheKey) {
-        return _pedidosTenantSqlCache;
-    }
-    let sql = '';
+    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
     try {
         const chk = await sqlSimple(
             `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
         );
         if (chk.rows?.length) {
-            sql += ` AND tenant_id = ${esc(tid)}`;
+            const tid = tenantIdActual();
+            _pedidosTenantSqlCache = ` AND tenant_id = ${esc(tid)}`;
+        } else {
+            _pedidosTenantSqlCache = '';
         }
-    } catch (_) {}
-    try {
-        const chBt = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'business_type' LIMIT 1`
-        );
-        if (chBt.rows?.length) {
-            const lineQ = esc(line);
-            /* NULL legacy (pre multi-línea) se considera solo electricidad; evita ver pedidos de otro rubro al cambiar línea. */
-            sql += ` AND (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
-        }
-    } catch (_) {}
-    _pedidosTenantSqlCache = sql;
-    _pedidosTenantSqlCacheKey = cacheKey;
+    } catch (_) {
+        _pedidosTenantSqlCache = '';
+    }
     return _pedidosTenantSqlCache;
 }
 
@@ -12902,16 +12122,7 @@ async function contarPedidosCorteZonaNeon(disVal, trafoVal) {
 
 let _adminBannerWatermarkId = 0;
 let _adminBannerTimer = null;
-let _adminBannerAutoOpenTimer = null;
-/** Evita abrir dos veces el mismo detalle por banner (clic + timer 5s). */
-let _adminBannerNuevoUltimoPidAbierto = null;
 let _pollBannerAdminInterval = null;
-/** Tras el aviso de nuevo reclamo WhatsApp, el mapa no abre #pm solo durante 5 s (no hasta hacer clic en el banner). */
-let _gnMapaBloqueoBannerHastaMs = 0;
-let _gnMapaBloqueoBannerTimer = null;
-window.gnMapaDebeBloquearCargaPedidoDesdeMapa = function () {
-    return Date.now() < (_gnMapaBloqueoBannerHastaMs || 0);
-};
 /** ISO: última fecha_opinion_cliente ya notificada en banner (solo admin). */
 let _adminBannerOpinionWatermarkIso = null;
 
@@ -12967,8 +12178,6 @@ async function iniciarWatermarkBannerOpinionCliente() {
 }
 
 function ocultarBannerReclamoCliente() {
-    clearTimeout(_adminBannerAutoOpenTimer);
-    _adminBannerAutoOpenTimer = null;
     const box = document.getElementById('admin-banner-nuevo-cliente');
     if (box) {
         box.style.display = 'none';
@@ -13001,26 +12210,11 @@ function _commitAdminBannerOpinionWatermark() {
 
 function ocultarBannerOpinionCliente() {
     const boxPre = document.getElementById('admin-banner-opinion-cliente');
-    const pidBanner = boxPre?.dataset?.pedidoId;
-    if (pidBanner && typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos()) {
-        void (async () => {
-            try {
-                await asegurarJwtApiRest();
-                const tok = getApiToken();
-                if (!tok) return;
-                await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pidBanner))}/banner-calificacion-cerrado`), {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${tok}` },
-                });
-            } catch (_) {}
-        })();
-    }
     if (boxPre?.dataset?.pedidoId) _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
     _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
         box.style.display = 'none';
-        box.classList.remove('admin-banner-opinion--min');
         delete box.dataset.visible;
         delete box.dataset.pedidoId;
         delete box.dataset.fechaOpinionIso;
@@ -13030,13 +12224,6 @@ function ocultarBannerOpinionCliente() {
     const btnHc = document.getElementById('admin-banner-opinion-hc');
     if (btnHc) btnHc.style.display = 'none';
 }
-
-function adminBannerOpinionToggleMinimize() {
-    const box = document.getElementById('admin-banner-opinion-cliente');
-    if (!box || box.style.display === 'none') return;
-    box.classList.toggle('admin-banner-opinion--min');
-}
-window.adminBannerOpinionToggleMinimize = adminBannerOpinionToggleMinimize;
 
 async function pollBannerNuevoReclamoCliente() {
     if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
@@ -13063,17 +12250,6 @@ async function pollBannerNuevoReclamoCliente() {
         box.style.display = 'flex';
         box.dataset.visible = '1';
         box.dataset.pedidoId = String(nid);
-        clearTimeout(_gnMapaBloqueoBannerTimer);
-        _gnMapaBloqueoBannerHastaMs = Date.now() + 5000;
-        _gnMapaBloqueoBannerTimer = setTimeout(() => {
-            _gnMapaBloqueoBannerHastaMs = 0;
-            _gnMapaBloqueoBannerTimer = null;
-        }, 5000);
-        clearTimeout(_adminBannerAutoOpenTimer);
-        _adminBannerAutoOpenTimer = setTimeout(() => {
-            _adminBannerAutoOpenTimer = null;
-            void adminBannerAbrirPedidoNuevoUnaVez('auto5s');
-        }, 5000);
         clearTimeout(_adminBannerTimer);
         _adminBannerTimer = setTimeout(() => ocultarBannerReclamoCliente(), 30000);
     } catch (_) {}
@@ -13098,13 +12274,6 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const tsql = await pedidosFiltroTenantSql();
-        let banSql = '';
-        try {
-            const bc = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'banner_calificacion_cerrado' LIMIT 1`
-            );
-            if (bc.rows?.length) banSql = ' AND COALESCE(banner_calificacion_cerrado, FALSE) = FALSE';
-        } catch (_) {}
         let r;
         try {
             r = await sqlSimple(
@@ -13113,8 +12282,7 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas <= 2
-                 ${banSql}
+                 AND opinion_cliente_estrellas < 3
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -13126,15 +12294,19 @@ async function pollBannerOpinionCliente() {
                  FROM pedidos
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas <= 2
-                 ${banSql}
+                 AND opinion_cliente_estrellas < 3
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
         }
         const row = r.rows?.[0];
         if (!row) {
-            console.debug('[poll-banner-opinion] No hay fila en esta pasada (el aviso visible no se oculta solo)');
+            console.debug('[poll-banner-opinion] No hay pedidos con calificación baja');
+            if (box.dataset.visible === '1') {
+                box.style.display = 'none';
+                delete box.dataset.visible;
+                delete box.dataset.pedidoId;
+            }
             return;
         }
         const nid = Number(row.id);
@@ -13153,7 +12325,7 @@ async function pollBannerOpinionCliente() {
         const waOk = /^\+\d{8,22}$/.test(wTel);
         const btnHc = document.getElementById('admin-banner-opinion-hc');
         if (btnHc) {
-            const baja = tieneE && estrellas <= 2;
+            const baja = tieneE && estrellas < 3;
             const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
             btnHc.style.display = baja && apiOk && waOk ? 'inline-flex' : 'none';
         }
@@ -13165,7 +12337,7 @@ async function pollBannerOpinionCliente() {
             const tit = (row.tipo_trabajo || '').trim();
             const sfxStar = tieneE ? ` · ${estrellas}/5` : '';
             const avisoBaja =
-                tieneE && estrellas <= 2
+                tieneE && estrellas < 3
                     ? 'Calificación baja — conviene hablar con el cliente. '
                     : '';
             txt.textContent = `${avisoBaja}Observación del cliente${sfxStar} · #${np}${tit ? ` · ${tit}` : ''}${
@@ -13233,9 +12405,6 @@ function detenerPollBannerReclamoCliente() {
         _pollBannerAdminInterval = null;
     }
     ocultarBannerReclamoCliente();
-    clearTimeout(_gnMapaBloqueoBannerTimer);
-    _gnMapaBloqueoBannerTimer = null;
-    _gnMapaBloqueoBannerHastaMs = 0;
     ocultarBannerOpinionCliente();
 }
 
@@ -13254,40 +12423,26 @@ function iniciarPollBannerReclamoCliente() {
     })();
 }
 
-async function adminBannerAbrirPedidoNuevoUnaVez(_origen) {
+async function adminBannerClickVerDetalle() {
     const box = document.getElementById('admin-banner-nuevo-cliente');
     const pid = box?.dataset?.pedidoId;
-    if (!pid || box.dataset.visible !== '1') return;
-    if (_adminBannerNuevoUltimoPidAbierto != null && String(_adminBannerNuevoUltimoPidAbierto) === String(pid)) return;
-    const dm = document.getElementById('dm');
-    if (dm?.classList.contains('active') && String(dm.dataset.detallePedidoId) === String(pid)) {
-        ocultarBannerReclamoCliente();
-        return;
-    }
     ocultarBannerReclamoCliente();
-    _adminBannerNuevoUltimoPidAbierto = String(pid);
-    let p = app.p.find((x) => String(x.id) === String(pid));
+    if (!pid) return;
+    let p = app.p.find(x => String(x.id) === String(pid));
     if (!p && _sql && NEON_OK) {
         try {
             const rr = await sqlSimple(`SELECT * FROM pedidos WHERE id = ${esc(parseInt(pid, 10))} LIMIT 1`);
             const row = rr.rows?.[0];
             if (row) {
                 p = norm(row);
-                const ix = app.p.findIndex((x) => String(x.id) === String(p.id));
+                const ix = app.p.findIndex(x => String(x.id) === String(p.id));
                 if (ix >= 0) app.p[ix] = p;
                 else app.p.unshift(p);
             }
         } catch (_) {}
     }
     if (p) void detalle(p);
-    else {
-        _adminBannerNuevoUltimoPidAbierto = null;
-        toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
-    }
-}
-
-async function adminBannerClickVerDetalle() {
-    await adminBannerAbrirPedidoNuevoUnaVez('click');
+    else toast('No se encontró el pedido. Probá actualizar la lista.', 'warning');
 }
 
 async function adminBannerOpinionClickVerDetalle() {
@@ -13317,15 +12472,6 @@ window.adminBannerCerrarSinDetalle = ocultarBannerReclamoCliente;
 window.adminBannerOpinionClickVerDetalle = adminBannerOpinionClickVerDetalle;
 window.adminBannerOpinionCerrar = ocultarBannerOpinionCliente;
 
-/** Multi-línea en BD: excluye pedidos de otra línea activa (y NULL legacy solo en electricidad). */
-function pedidoVisibleSegunLineaNegocio(p) {
-    const line = lineaNegocioOperativaCodigo();
-    const bt = String(p?.pbt || '').trim().toLowerCase();
-    if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') return bt === line;
-    if (!bt) return line === 'electricidad';
-    return bt === line;
-}
-
 /** Mapa: oculta pedidos cuyo tipo pertenece claramente a otro rubro (catálogo distinto). */
 function pedidoVisibleSegunRubro(p) {
     const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
@@ -13344,7 +12490,6 @@ function pedidoVisibleSegunRubro(p) {
 function pedidosVisiblesEnUI() {
     const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
     return (app.p || []).filter((p) => {
-        if (!pedidoVisibleSegunLineaNegocio(p)) return false;
         if (!pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
         return true;
@@ -13749,6 +12894,8 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
+                // Setup inicial: si el rubro en servidor distinta del elegido, la API exige confirmación explícita.
+                purge_datos_cambio_rubro: true,
                 configuracion: { setup_wizard_completado: true, marca_publicada_admin: true, ...provExtra }
             })
         });
@@ -13798,6 +12945,9 @@ async function guardarConfiguracionInicialObligatoria() {
         await cargarConfigEmpresa();
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
+            try {
+                localStorage.setItem(LS_ADMIN_WEB_TIPO_ACK, '1');
+            } catch (_) {}
             toast('Setup inicial completado', 'success');
             // El login ya había salido antes de completar el wizard (cfgLista === false),
             // así que nunca se llegó a cargarPedidos() en entrarConUsuario.
@@ -14520,19 +13670,10 @@ async function cargarKpiSnapshotsAdmin() {
     } catch (_) {}
     host.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     const tid = tenantIdActual();
-    let kpiLineSql = '';
-    try {
-        const chK = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kpi_snapshots' AND column_name = 'business_type' LIMIT 1`
-        );
-        if (chK.rows?.length) {
-            kpiLineSql = ` AND business_type = ${esc(lineaNegocioOperativaCodigo())}`;
-        }
-    } catch (_) {}
     try {
         const r = await sqlSimple(
             `SELECT id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_at::text AS created_at
-             FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}${kpiLineSql}
+             FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}
              ORDER BY periodo_inicio DESC NULLS LAST, metrica ASC LIMIT 200`
         );
         const rows = r.rows || [];
@@ -14720,26 +13861,13 @@ async function guardarKpiSnapshotAdmin() {
     const uid = app.u && app.u.id != null ? Number(app.u.id) : null;
     const uidSql = uid != null && Number.isFinite(uid) ? esc(uid) : 'NULL';
     const jsonStr = JSON.stringify(valorJson);
-    const lineBt = esc(lineaNegocioOperativaCodigo());
     try {
-        const chKb = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'kpi_snapshots' AND column_name = 'business_type' LIMIT 1`
+        await sqlSimple(
+            `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
+             VALUES (${esc(tid)}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
+             ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
+             DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
         );
-        if (chKb.rows?.length) {
-            await sqlSimple(
-                `INSERT INTO kpi_snapshots (tenant_id, business_type, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
-                 VALUES (${esc(tid)}, ${lineBt}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
-                 ON CONFLICT (tenant_id, business_type, metrica, periodo_inicio, periodo_fin)
-                 DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
-            );
-        } else {
-            await sqlSimple(
-                `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
-                 VALUES (${esc(tid)}, ${esc(metrica)}, ${esc(desde)}::date, ${esc(hasta)}::date, ${valorNumSql}, ${esc(jsonStr)}::jsonb, ${unidadSql}, ${esc(fuente)}, ${notasSql}, ${uidSql})
-                 ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
-                 DO UPDATE SET valor_numero = EXCLUDED.valor_numero, valor_json = EXCLUDED.valor_json, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
-            );
-        }
         toast('KPI guardado.', 'success');
         await cargarKpiSnapshotsAdmin();
     } catch (e) {
@@ -16140,18 +15268,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const hasSocTList = await sociosCatalogoTieneTenantId();
-        let wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
-        try {
-            const chSocBt = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
-            );
-            if (chSocBt.rows?.length) {
-                const line = lineaNegocioOperativaCodigo();
-                const lineQ = esc(line);
-                const socLine = ` (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
-                wf += wf ? ` AND${socLine}` : ` WHERE${socLine}`;
-            }
-        } catch (_) {}
+        const wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
         const r = await sqlSimpleSelectAllPages(
             `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo${wf}`,
             'ORDER BY nis_medidor'
@@ -16166,17 +15283,9 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
         const headExtra = armarHeadExtraProyeccionSociosHtml();
-        const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-        const id1Lbl =
-            rubroSoc === 'municipio'
-                ? 'N° Vecino'
-                : rubroSoc === 'cooperativa_agua'
-                  ? 'N° Abonado'
-                  : 'NIS';
-        const id2Lbl = rubroSoc === 'municipio' ? 'Ref.' : 'Medidor';
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${id1Lbl}</th><th align="left">${id2Lbl}</th><th>Nombre</th><th>Localidad</th><th>Provincia</th><th>Cód. postal</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th><th>Cód. postal</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th><th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
@@ -16192,28 +15301,10 @@ function normalizarEncabezadoExcelSocios(k) {
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
     if (n === 'estado' || n === 'state') return 'provincia';
-    if (
-        n === 'abonado' ||
-        n === 'n_abonado' ||
-        n === 'numero_abonado' ||
-        n === 'nro_abonado' ||
-        n === 'num_abonado' ||
-        n === 'n_de_abonado' ||
-        n === 'numero_de_abonado' ||
-        n === 'nro_de_abonado'
-    ) {
+    if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
         return 'nis';
     }
-    if (
-        n === 'vecino' ||
-        n === 'n_vecino' ||
-        n === 'numero_vecino' ||
-        n === 'nro_vecino' ||
-        n === 'num_vecino' ||
-        n === 'n_de_vecino' ||
-        n === 'numero_de_vecino' ||
-        n === 'nro_de_vecino'
-    ) {
+    if (n === 'vecino' || n === 'n_vecino' || n === 'numero_vecino' || n === 'nro_vecino' || n === 'num_vecino') {
         return 'nis';
     }
     if (
@@ -16393,32 +15484,24 @@ const SOCIOS_BULK_CHUNK = 1000;
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const hasT = await sociosCatalogoTieneTenantId();
-    const hasBt = await sociosCatalogoTieneBusinessType();
     const tidEsc = esc(tenantIdActual());
-    const btEsc = esc(lineaNegocioOperativaCodigo());
-    const colList = [
-        'nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud',
-    ];
-    if (hasT) colList.push('tenant_id');
-    if (hasBt) colList.push('business_type');
+    const colList = hasT
+        ? `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, tenant_id`
+        : `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
     const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
     const vals = lote
         .map((p) => {
             const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}`;
-            let tail = '';
-            if (hasT) tail += `, ${tidEsc}`;
-            if (hasBt) tail += `, ${btEsc}`;
-            return `${base}${tail})`;
+            return hasT ? `${base}, ${tidEsc})` : `${base})`;
         })
         .join(',');
-    const updBt = hasBt ? ', business_type = EXCLUDED.business_type' : '';
     await sqlSimple(
-        `INSERT INTO socios_catalogo(${colList.join(', ')})
+        `INSERT INTO socios_catalogo(${colList})
          VALUES ${vals}
          ON CONFLICT ${onConf} DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
-           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases${updBt},
+           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
            latitud = CASE 
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud
              WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud 
@@ -16711,21 +15794,9 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
             const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            let nisPart = valorIdentificadorTextoSocios(
-                row,
-                mapNormAOriginal,
-                'nis',
-                'id_usuario',
-                'id_vecino',
-                'numero_vecino',
-                'numero_abonado'
-            );
-            let medPart =
-                rubroSoc === 'municipio'
-                    ? valorIdentificadorTextoSocios(row, mapNormAOriginal, 'referencia', 'ref', 'observacion')
-                    : valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
+            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
+            let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
             let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
             if (!nis_medidor) {
                 if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
@@ -16937,27 +16008,13 @@ async function vaciarCoordenadasSociosCatalogo() {
 window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
 
 function mostrarFormatoExcelSocios() {
-    const rubroSoc = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    const id1Lbl =
-        rubroSoc === 'municipio'
-            ? 'numero_vecino'
-            : rubroSoc === 'cooperativa_agua'
-              ? 'numero_abonado'
-              : 'nis';
-    const id2Lbl = rubroSoc === 'municipio' ? 'referencia' : 'medidor';
-    const sin1 =
-        rubroSoc === 'municipio'
-            ? 'vecino, n_vecino, numero_vecino'
-            : rubroSoc === 'cooperativa_agua'
-              ? 'abonado, n_abonado, numero_abonado'
-              : 'nis';
     alert(
         'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
             'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
             'Columnas recomendadas:\n' +
-            `${id1Lbl} | ${id2Lbl} | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n` +
-            `• Identificador principal: ${id1Lbl}. Sinónimos detectados: ${sin1} (incluye variantes nro_/numero_/de_).\n` +
-            `• Campo secundario (${id2Lbl}) opcional${rubroSoc === 'municipio' ? ' para municipio' : ''}; alternativa columna única nis_medidor.\n` +
+            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
+            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
+            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
             '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
             '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
             '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
@@ -18054,28 +17111,9 @@ async function generarInformeMensualENRE() {
     });
 })();
 let _charts = {};
-
-/** Muestra ENRE/SAIFI solo en línea eléctrica; placeholders para agua / municipio. */
-function aplicarEstadisticasRubroEnPanel() {
-    try {
-        const ln = typeof lineaNegocioOperativaCodigo === 'function' ? lineaNegocioOperativaCodigo() : 'electricidad';
-        const ew = document.getElementById('estad-rubro-electrico-wrap');
-        const pa = document.getElementById('estad-rubro-agua-placeholder');
-        const pm = document.getElementById('estad-rubro-municipio-placeholder');
-        if (ew) ew.style.display = ln === 'electricidad' ? '' : 'none';
-        if (pa) pa.style.display = ln === 'agua' ? '' : 'none';
-        if (pm) pm.style.display = ln === 'municipio' ? '' : 'none';
-    } catch (_) {}
-}
-
 async function cargarEstadisticas() {
-    aplicarEstadisticasRubroEnPanel();
     const tsql = await pedidosFiltroTenantSql();
-    const tsqlP = tsql
-        ? tsql
-              .replace(/\btenant_id\b/g, 'p.tenant_id')
-              .replace(/\bbusiness_type\b/g, 'p.business_type')
-        : '';
+    const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
     const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
     const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
@@ -18100,17 +17138,7 @@ async function cargarEstadisticas() {
                 FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
         const showConf = esCooperativaElectricaRubro();
         const socTieneTStats = await sociosCatalogoTieneTenantId();
-        let socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
-        try {
-            const chSocBt = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
-            );
-            if (chSocBt.rows?.length) {
-                const line = lineaNegocioOperativaCodigo();
-                const lineQ = esc(line);
-                socTsqlStats += ` AND (business_type = ${lineQ} OR (business_type IS NULL AND ${lineQ} = 'electricidad'))`;
-            }
-        } catch (_) {}
+        const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
             // Resumen general
@@ -18626,18 +17654,7 @@ function iniciarMapaUsuariosAdmin() {
 async function cargarUbicacionesUsuarios() {
     const esActualizacion = _marcadoresUsuarios.length > 0 || _marcadoresPedidosAdmin.length > 0;
     try {
-        const wf = await sqlFiltroUsuariosPorTenant();
-        let btSql = '';
-        try {
-            const rBt = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'business_type' LIMIT 1`
-            );
-            if (rBt.rows?.length) {
-                const line = esc(lineaNegocioOperativaCodigo());
-                btSql = ` AND (u.business_type IS NULL OR u.business_type = ${line})`;
-            }
-        } catch (_) {}
-        // ── Usuarios activos con ubicación reciente (tenant + línea de negocio) ───────────
+        // ── Usuarios activos con ubicación reciente ───────────
         const [rUsr, rPed] = await Promise.all([
             sqlSimple(`
                 SELECT DISTINCT ON (uu.usuario_id)
@@ -18645,7 +17662,7 @@ async function cargarUbicacionesUsuarios() {
                     u.nombre, u.email
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id
-                WHERE u.activo = TRUE${wf}${btSql} AND uu.timestamp > NOW() - INTERVAL '2 hours'
+                WHERE u.activo = TRUE AND uu.timestamp > NOW() - INTERVAL '2 hours'
                 ORDER BY uu.usuario_id, uu.timestamp DESC
             `),
             // Pedidos pendientes y en ejecución con coordenadas
