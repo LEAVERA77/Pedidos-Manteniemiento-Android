@@ -525,7 +525,40 @@ export async function runInitMap() {
 
     setTimeout(actualizarEscala, 200);
 
+    /** Tras pan/drag del mapa Leaflet suele dispararse igual un `click` → alta de pedido nuevo; inhibir ese click. */
+    let suppressMapClickAfterPan = false;
+    map.on('dragend', () => {
+        suppressMapClickAfterPan = true;
+    });
+    const mcPan = ctx.document.getElementById('mc');
+    if (mcPan) {
+        const TAP_MOVE_THRESH_PX = 10;
+        let panDown = null;
+        const onPanDown = (ev) => {
+            const p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+            panDown = { x: p.clientX, y: p.clientY };
+        };
+        const onPanMove = (ev) => {
+            if (!panDown) return;
+            const p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+            const dx = p.clientX - panDown.x;
+            const dy = p.clientY - panDown.y;
+            if (dx * dx + dy * dy > TAP_MOVE_THRESH_PX * TAP_MOVE_THRESH_PX) suppressMapClickAfterPan = true;
+        };
+        const onPanEnd = () => {
+            panDown = null;
+        };
+        mcPan.addEventListener('pointerdown', onPanDown, { passive: true });
+        mcPan.addEventListener('pointermove', onPanMove, { passive: true });
+        mcPan.addEventListener('pointerup', onPanEnd, { passive: true });
+        mcPan.addEventListener('pointercancel', onPanEnd, { passive: true });
+    }
+
     ctx.app.map.on('click', (e) => {
+        if (suppressMapClickAfterPan) {
+            suppressMapClickAfterPan = false;
+            return;
+        }
         /* Android/WebView: el toque en un botón del popup puede cerrar el popup y disparar este click en el mapa → abre #pm. */
         try {
             const w = ctx.window;

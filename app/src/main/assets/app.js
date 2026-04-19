@@ -12220,6 +12220,7 @@ async function cargarConfigEmpresa() {
             syncDerivacionesTercerosWrap();
         } catch (_) {}
         void refreshMapAdminBaseMarkerIfReady();
+        invalidatePedidosTenantSqlCache();
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();
@@ -12279,19 +12280,27 @@ function invalidatePedidosTenantSqlCache() {
     _pedidosTenantSqlCache = null;
 }
 
-/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). */
+/** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, acota a la línea activa. */
 async function pedidosFiltroTenantSql() {
     if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
     try {
         const chk = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+            `SELECT column_name FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'pedidos'
+             AND column_name IN ('tenant_id','business_type')`
         );
-        if (chk.rows?.length) {
-            const tid = tenantIdActual();
-            _pedidosTenantSqlCache = ` AND tenant_id = ${esc(tid)}`;
-        } else {
-            _pedidosTenantSqlCache = '';
+        const names = new Set((chk.rows || []).map((x) => x.column_name));
+        const parts = [];
+        if (names.has('tenant_id')) {
+            parts.push(`tenant_id = ${esc(tenantIdActual())}`);
         }
+        if (names.has('business_type')) {
+            const bt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
+            if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') {
+                parts.push(`business_type = ${esc(bt)}`);
+            }
+        }
+        _pedidosTenantSqlCache = parts.length ? ` AND ${parts.join(' AND ')}` : '';
     } catch (_) {
         _pedidosTenantSqlCache = '';
     }
@@ -14868,11 +14877,12 @@ async function cargarListaUsuarios() {
     const cont = document.getElementById('lista-usuarios-admin');
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const wf = await sqlFiltroUsuariosPorTenant();
         const r = await sqlSimple(`SELECT id, email, nombre, rol,
             COALESCE(activo, true) AS activo,
             telefono,
             COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
-            FROM usuarios ORDER BY id`);
+            FROM usuarios WHERE 1=1${wf} ORDER BY id`);
         if (!r.rows.length) { cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin usuarios</p>'; return; }
         cont.innerHTML = `<table class="admin-table">
             <thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
@@ -17864,6 +17874,7 @@ function iniciarMapaUsuariosAdmin() {
 async function cargarUbicacionesUsuarios() {
     const esActualizacion = _marcadoresUsuarios.length > 0 || _marcadoresPedidosAdmin.length > 0;
     try {
+        const wfU = await sqlFiltroUsuariosPorTenant();
         // ── Usuarios activos con ubicación reciente ───────────
         const [rUsr, rPed] = await Promise.all([
             sqlSimple(`
@@ -17872,7 +17883,7 @@ async function cargarUbicacionesUsuarios() {
                     u.nombre, u.email
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id
-                WHERE u.activo = TRUE AND uu.timestamp > NOW() - INTERVAL '2 hours'
+                WHERE u.activo = TRUE AND uu.timestamp > NOW() - INTERVAL '2 hours'${wfU}
                 ORDER BY uu.usuario_id, uu.timestamp DESC
             `),
             // Pedidos pendientes y en ejecución con coordenadas
