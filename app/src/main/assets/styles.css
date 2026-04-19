@@ -836,13 +836,22 @@ html.gn-android-webview .gn-gps-fab {
   box-sizing: border-box;
 }
 
-/* Overlay mapa: prioridad táctil sobre Leaflet y menos doble-toque-zoom accidental */
+/*
+ * Overlay mapa (Android WebView): NO subir z-index por encima de la barra .hd (1000).
+ * Las pestañas «Filtros/Tipo» usaban z-index ~9600 y tapaban iconos del encabezado.
+ */
 html.gn-android-webview #mapa-overlay-ui {
-  z-index: 12040;
+  z-index: 850;
+}
+html.gn-android-webview .map-slide-tabs-cluster {
+  z-index: 930;
 }
 html.gn-android-webview #mapa-overlay-ui .moui-card {
   touch-action: manipulation;
-  z-index: 12050;
+  max-height: min(68vh, calc(100dvh - var(--app-header-h, 58px) - 6.5rem));
+}
+html.gn-android-webview #mapa-overlay-ui .moui-bd {
+  -webkit-overflow-scrolling: touch;
 }
 html.gn-android-webview #mapa-overlay-ui .moui-drag-handle {
   touch-action: none;
@@ -854,4 +863,11 @@ html.gn-android-webview #ms .hd input[type="checkbox"],
 html.gn-android-webview #ms .hd input[type="radio"],
 html.gn-android-webview #ms .hd label {
   touch-action: manipulation;
+}
+/* Teclado IME: mejorar repaint del texto en inputs (WebView/Chromium). */
+html.gn-android-webview input,
+html.gn-android-webview textarea,
+html.gn-android-webview select {
+  -webkit-user-select: text;
+  user-select: text;
 }

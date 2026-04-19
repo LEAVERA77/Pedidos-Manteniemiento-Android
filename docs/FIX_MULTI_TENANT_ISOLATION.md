@@ -19,6 +19,12 @@ Sin borrar datos en Neon, cada vista operativa (**electricidad**, **agua**, **mu
 - **ReferenceError en `onchange` del modal Nuevo pedido**: con `app.js` como módulo ES, las funciones usadas en atributos HTML deben exponerse en `window` (p. ej. `syncPrioridadConTipoReclamo`, `syncSuministroElectricoUI`).
 - **Reclamos vía bot sin `business_type`**: inserción dinámica en `api/services/pedidoWhatsappBot.js` ahora agrega `business_type` si la columna existe.
 
+## Bot WhatsApp — búsqueda por identificador (`buscarReclamosPendientesPorIdentificador`)
+
+- Por defecto el servidor usa **filtro estricto**: solo pedidos con `business_type` igual al negocio actual del webhook.
+- Si necesitás el comportamiento anterior (filas legacy con `business_type` NULL tratadas como visibles para el bot), definí en Render:  
+  `WHATSAPP_BOT_LEGACY_NULL_BUSINESS=1`.
+
 ## No destructivo
 
 - No se eliminan filas al cambiar de negocio.

@@ -678,8 +678,15 @@ document.addEventListener('visibilitychange', () => {
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
         window.pollNotificacionesMovil();
-        if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
-            void cargarPedidos({ silent: true });
+        if (!modoOffline && NEON_OK && _sql && typeof cargarPedidos === 'function') {
+            if (!esAdmin() && esTecnicoOSupervisor()) {
+                void cargarPedidos({ silent: true });
+            } else if (esAdmin() && typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
+                try {
+                    invalidatePedidosTenantSqlCache();
+                } catch (_) {}
+                void cargarPedidos({ silent: true });
+            }
         }
     }
 });

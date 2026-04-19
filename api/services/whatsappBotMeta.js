@@ -702,11 +702,16 @@ async function buscarReclamosPendientesPorIdentificador(tenantId, businessType, 
   const hasIdentCol = await tableHasColumn("pedidos", "identificador");
   const hasNisMed = await tableHasColumn("pedidos", "nis_medidor");
   const params = [tenantId];
-  // Incluye cerrados y derivados; mismo tenant (sin exigir coincidencia estricta de línea de negocio).
+  // Por defecto: mismo tenant + misma línea operativa (aislamiento estricto).
+  // WHATSAPP_BOT_LEGACY_NULL_BUSINESS=1 recupera el modo relajado (legacy sin business_type).
   let where = `tenant_id = $1`;
   if (hasBt) {
     params.push(businessType);
-    where += ` AND (business_type IS NULL OR business_type = $${params.length})`;
+    const legacyNull =
+      String(process.env.WHATSAPP_BOT_LEGACY_NULL_BUSINESS || "").trim() === "1";
+    where += legacyNull
+      ? ` AND (business_type IS NULL OR business_type = $${params.length})`
+      : ` AND business_type = $${params.length}`;
   }
   if (ident.tipo === "numeric") {
     params.push(ident.valor);
