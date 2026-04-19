@@ -42,7 +42,7 @@
 <!-- LOGIN SCREEN -->
 <div id="ls" class="screen active">
   <div class="lc">
-    <div class="ll ll--logo"><img src="gestornova-logo.png" alt="" width="42" height="42" style="width:42px;height:42px;object-fit:contain;border-radius:6px"/></div>
+    <div class="ll ll--logo"><img src="gestornova-logo.png" alt="" class="gn-header-logo-img" width="62" height="62"/></div>
     <h1 id="app-titulo">GestorNova</h1>
     <p class="sub" id="app-subtitulo">Sistema de gestión de pedidos y reclamos</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
@@ -710,9 +710,7 @@
           <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosCsvAdmin()"><i class="fas fa-file-csv"></i> Descargar CSV</button>
         </div>
       </div>
-      <div id="enre-marco" style="font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45">
-        <strong>Referencia ENRE</strong> — Calidad del producto, técnica (p. ej. SAIDI/SAIFI) y comercial (plazos de reclamos). Este tablero muestra gestión de órdenes y tiempos internos; los indicadores de red deben cruzarse con el sistema de interrupciones. Más info: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.
-      </div>
+      <div id="enre-marco" class="gn-enre-marco" role="note" aria-live="polite"></div>
       <div id="stats-cards" class="stat-grid"></div>
       <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
@@ -925,7 +923,7 @@
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <button class="btn-sm primary" onclick="cargarUbicacionesUsuarios()"><i class="fas fa-sync"></i> Actualizar</button>
           <button type="button" class="btn-sm" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e" onclick="activarModoFijarUbicacionAdmin()" title="Si la PC no tiene GPS, fijá tu posición con un clic en el mapa principal"><i class="fas fa-map-pin"></i> Fijar mi ubicación (mapa)</button>
-          <button class="btn-sm" onclick="if(window._mapaUsuariosAdmin){var bs=[];window._marcadoresUsuarios&&window._marcadoresUsuarios.forEach(function(m){bs.push(m.getLatLng());});if(bs.length)window._mapaUsuariosAdmin.fitBounds(bs,{padding:[40,40]});}" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-expand"></i> Centrar</button>
+          <button type="button" class="btn-sm" onclick="void centrarMapaAdminUbicacionesEnMapa()" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-expand"></i> Centrar</button>
         </div>
       </div>
       <div id="mapa-usuarios-admin" style="height:390px;border-radius:.75rem;overflow:hidden;border:1px solid var(--bo)"></div>

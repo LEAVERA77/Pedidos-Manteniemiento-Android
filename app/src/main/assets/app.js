@@ -1054,6 +1054,38 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
 }
 
 /**
+ * Persiste lat/lng base de oficina en la API (p. ej. admin en web sin Neon): complementa INSERT en `ubicaciones_usuarios`.
+ */
+async function persistirUbicacionBaseAdministradorApi(lat, lng) {
+    if (!esAdmin() || modoOffline || typeof fetch !== 'function') return false;
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+    try {
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (!token) return false;
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ latitud: la, longitud: lo }),
+        });
+        if (!resp.ok) return false;
+        const ec = window.EMPRESA_CFG || {};
+        window.EMPRESA_CFG = {
+            ...ec,
+            latitud: String(la),
+            longitud: String(lo),
+            lat_base: String(la),
+            lng_base: String(lo),
+        };
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
  * Guarda provincia/state en clientes.configuracion (API) según lat/lng de la oficina.
  * No pisa el campo del formulario si el admin ya escribió una provincia.
  */
@@ -2067,6 +2099,33 @@ const GN_VERSION_WEB = '2.0';
 /** Persiste nombre/logo/subtítulo entre sesiones (incl. tras cerrar sesión en la web pública). */
 const PMG_BRANDING_LS_KEY = 'pmg_tenant_branding_v1';
 
+/**
+ * Firma de identidad `nombre|rubro` (normalizado) en localStorage para comparar antes de guardar.
+ * Se sincroniza desde `EMPRESA_CFG`/formulario admin al cargar config (cargarConfigEmpresa / cargarFormEmpresa)
+ * y al guardar con éxito; si cambia respecto del valor persistido se vacían socios/derivaciones (sin confirm).
+ */
+const PMG_TENANT_IDENTITY_SIG_LS = 'pmg_tenant_identity_sig_v1';
+
+function firmaIdentidadTenant(nombre, tipo) {
+    const n = String(nombre || '').trim().toLowerCase();
+    const t = normalizarRubroEmpresa(String(tipo || '').trim());
+    return `${n}|${t}`;
+}
+
+function leerFirmaIdentidadAlmacenada() {
+    try {
+        return String(localStorage.getItem(PMG_TENANT_IDENTITY_SIG_LS) || '');
+    } catch (_) {
+        return '';
+    }
+}
+
+function sincronizarFirmaIdentidadTenantDesdeValores(nombre, tipo) {
+    try {
+        localStorage.setItem(PMG_TENANT_IDENTITY_SIG_LS, firmaIdentidadTenant(nombre, tipo));
+    } catch (_) {}
+}
+
 /** Logo por defecto embebido (evita 404 de branding/*.png en GitHub Pages). */
 const BRANDING_DEFAULT_LOGO_DATA_URL =
     'data:image/svg+xml,' +
@@ -2214,6 +2273,38 @@ function resetBrandingSesionNoAutenticada() {
     syncEmpresaCfgNombreLogoDesdeMarca();
 }
 
+/** Banner informativo sobre estadísticas admin (#enre-marco): texto según rubro (no solo ENRE eléctrico). */
+function actualizarMarcoReferenciaEstadisticasAdmin() {
+    const el = document.getElementById('enre-marco');
+    if (!el) return;
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    let bg = '#eff6ff';
+    let bd = '#bfdbfe';
+    let html = '';
+    if (rubro === 'cooperativa_electrica') {
+        html =
+            '<strong>Referencia sector eléctrico (Argentina)</strong> — Para la calidad técnica y comercial del servicio eléctrico existen marcos regulatorios y métricas de continuidad (p. ej. SAIDI/SAIFI). Este tablero muestra gestión interna de órdenes y tiempos; contrastá con los datos oficiales de tu distribuidor y del organismo aplicable. Más información: <a href="https://www.argentina.gob.ar/enre/calidad-del-servicio" target="_blank" rel="noopener">argentina.gob.ar/enre/calidad-del-servicio</a>.';
+    } else if (rubro === 'cooperativa_agua') {
+        bg = '#ecfeff';
+        bd = '#a5f3fc';
+        html =
+            '<strong>Servicios de agua y saneamiento</strong> — Los organismos provinciales y nacionales publican orientaciones sobre continuidad, presión y calidad del agua. Este panel ayuda a gestionar reclamos y tiempos internos; verificá requisitos locales con tu autoridad de aplicación.';
+    } else if (rubro === 'municipio') {
+        bg = '#f5f3ff';
+        bd = '#ddd6fe';
+        html =
+            '<strong>Gestión municipal</strong> — Coordiná indicadores con las normativas locales (espacio público, alumbrado, saneamiento urbano). Este tablero resume pedidos internos del municipio.';
+    } else {
+        bg = '#f8fafc';
+        bd = '#e2e8f0';
+        html =
+            '<strong>Referencia orientativa</strong> — Adaptá estos indicadores a tu sector y a las obligaciones vigentes donde operás. Este tablero muestra órdenes internas de trabajo; documentá evidencia y seguimiento según tu proceso.';
+    }
+    el.style.background = bg;
+    el.style.border = `1px solid ${bd}`;
+    el.innerHTML = html;
+}
+
 function aplicarMarcaVisualCompleta() {
     const m = resolveMarcaTenantUI();
     document.title = m.nombre + ' — Pedidos';
@@ -2232,14 +2323,19 @@ function aplicarMarcaVisualCompleta() {
         const ic = document.createElement('i');
         ic.className = 'fas fa-network-wired';
         h2.appendChild(ic);
-        h2.appendChild(document.createTextNode(' ' + m.nombre));
+        const b = window.__PMG_TENANT_BRANDING__ || {};
+        const tituloHd = b.setup_wizard_completado ? m.nombre : BRAND_DEFAULT_NAME;
+        h2.appendChild(document.createTextNode(' ' + tituloHd));
     }
     const ll = document.querySelector('#ls .ll');
     if (ll) {
         const u = String(m.logo_url || '').replace(/"/g, '&quot;').replace(/</g, '');
         ll.classList.add('ll--logo');
-        ll.innerHTML = `<img src="${u}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px">`;
+        ll.innerHTML = `<img src="${u}" alt="" class="gn-header-logo-img">`;
     }
+    try {
+        actualizarMarcoReferenciaEstadisticasAdmin();
+    } catch (_) {}
 }
 
 /** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
@@ -5392,22 +5488,49 @@ async function refrescarTecnicosMapaPrincipal() {
     }
 }
 
-function activarModoFijarUbicacionAdmin() {
+async function activarModoFijarUbicacionAdmin() {
     if (!app.u || !esAdmin()) return;
     document.getElementById('admin-panel')?.classList.remove('active');
+    try {
+        await ensureMapReady();
+        try {
+            app.map?.invalidateSize?.({ animate: false });
+        } catch (_) {}
+        document.getElementById('mc')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+            try {
+                app.map?.invalidateSize?.({ animate: false });
+            } catch (_) {}
+        }, 380);
+    } catch (_) {}
     _modoFijarUbicacionAdmin = true;
     document.body.classList.add('modo-fijar-ubicacion');
     toast('Tocá el mapa principal para fijar tu ubicación (oficina)', 'info');
 }
 
 async function registrarUbicacionManualAdmin(lat, lng) {
-    if (!app.u || !esAdmin() || modoOffline || !NEON_OK) return;
+    if (!app.u || !esAdmin() || modoOffline) return;
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
     try {
-        await sqlSimple(`INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp)
-            VALUES(${esc(app.u.id)}, ${esc(lat)}, ${esc(lng)}, ${esc(80)}, NOW())`);
-        await sqlSimple(`DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`);
+        window.__PMG_ADMIN_MANUAL_FIX_LL = { lat: la, lng: lo };
+        let okNeon = false;
+        if (NEON_OK && _sql) {
+            await sqlSimple(`INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp)
+                VALUES(${esc(app.u.id)}, ${esc(la)}, ${esc(lo)}, ${esc(80)}, NOW())`);
+            await sqlSimple(
+                `DELETE FROM ubicaciones_usuarios WHERE usuario_id = ${esc(app.u.id)} AND timestamp < NOW() - INTERVAL '2 hours'`
+            );
+            okNeon = true;
+        }
+        const okApi = await persistirUbicacionBaseAdministradorApi(la, lo);
+        if (!okNeon && !okApi) {
+            toast('No se pudo guardar la ubicación (API/sesión o base local). Revisá conexión y token.', 'error');
+            return;
+        }
         toast('Ubicación de oficina registrada', 'success');
-        void actualizarProvinciaTenantDesdeCoords(lat, lng);
+        void actualizarProvinciaTenantDesdeCoords(la, lo);
     } catch (e) {
         toastError('ubicacion-oficina-admin', e, 'No se pudo guardar la ubicación.');
     }
@@ -6763,6 +6886,44 @@ async function resolverUbicacionCentralTenantParaMapa() {
     } catch (_) {
         return null;
     }
+}
+
+/** Botón «Centrar» mapa usuarios admin: GPS admin → punto fijado manual → base oficina/API → marcadores usuarios. */
+async function centrarMapaAdminUbicacionesEnMapa() {
+    const map = window._mapaUsuariosAdmin;
+    if (!map) return;
+    try {
+        map.invalidateSize({ animate: false });
+    } catch (_) {}
+    const ul = typeof ultimaUbicacion !== 'undefined' ? ultimaUbicacion : null;
+    if (ul && Number.isFinite(ul.lat) && Number.isFinite(ul.lon)) {
+        map.setView([ul.lat, ul.lon], Math.max(14, map.getZoom() || 14), { animate: false });
+        return;
+    }
+    const manual = window.__PMG_ADMIN_MANUAL_FIX_LL;
+    if (manual && Number.isFinite(manual.lat) && Number.isFinite(manual.lng)) {
+        map.setView([manual.lat, manual.lng], Math.max(14, map.getZoom() || 14), { animate: false });
+        return;
+    }
+    const baseCfg = parseEmpresaCfgLatLngBase();
+    if (baseCfg) {
+        map.setView([baseCfg.lat, baseCfg.lng], Math.max(14, map.getZoom() || 14), { animate: false });
+        return;
+    }
+    const central = await resolverUbicacionCentralTenantParaMapa();
+    if (central && Number.isFinite(central.lat) && Number.isFinite(central.lng)) {
+        map.setView([central.lat, central.lng], Math.max(14, map.getZoom() || 14), { animate: false });
+        return;
+    }
+    const bs = [];
+    try {
+        window._marcadoresUsuarios?.forEach((m) => {
+            try {
+                bs.push(m.getLatLng());
+            } catch (_) {}
+        });
+    } catch (_) {}
+    if (bs.length) map.fitBounds(bs, { padding: [40, 40] });
 }
 
 async function irAMiUbicacionEnMapa() {
@@ -11777,6 +11938,30 @@ function syncDerivacionesTercerosWrap() {
     w.style.display = '';
 }
 
+/** Vacía checkboxes/inputs del bloque derivaciones (mismo alcance que reset por cambio de tenant). */
+function vaciarDerivacionesTercerosFormularioAdmin() {
+    try {
+        const wrap = document.getElementById('admin-derivacion-terceros-wrap');
+        if (!wrap) return;
+        wrap.querySelectorAll('input:not([type="button"]):not([type="submit"]), textarea').forEach((el) => {
+            const id = el.id || '';
+            if (!id.startsWith('cfg-deriv-') && id !== 'cfg-ocultar-modulos-redes') return;
+            if (el.type === 'checkbox') el.checked = false;
+            else el.value = '';
+        });
+        const irr = document.getElementById('cfg-deriv-internet-rows');
+        const tvr = document.getElementById('cfg-deriv-tv-rows');
+        if (irr) irr.innerHTML = '';
+        if (tvr) tvr.innerHTML = '';
+        try {
+            setDerivacionesInlineError('');
+        } catch (_) {}
+        try {
+            actualizarBotonesWhatsappDerivacionesUi();
+        } catch (_) {}
+    } catch (_) {}
+}
+
 /**
  * Arma `configuracion.derivacion_reclamos` desde el formulario admin (cfg-deriv-*).
  * @throws {Error} mensaje para toast / inline
@@ -12231,6 +12416,9 @@ async function cargarConfigEmpresa() {
         refrescarLineaUbicacionModalNuevoPedido();
         aplicarMarcaVisualCompleta();
         const cfg = window.EMPRESA_CFG || {};
+        try {
+            sincronizarFirmaIdentidadTenantDesdeValores(cfg.nombre, cfg.tipo);
+        } catch (_) {}
         aplicarEtiquetasPorTipo(cfg.tipo || '');
         poblarSelectTiposReclamo();
         try {
@@ -13123,6 +13311,18 @@ async function guardarConfiguracionInicialObligatoria() {
     const logoUrl = _setupLogoDataUrl || logoUrlInput || '';
     if (!nombre || !tipo) return toast('Completá nombre y tipo', 'error');
     if (_setupLat == null || _setupLng == null) return toast('Marcá la ubicación base en el mapa', 'error');
+    const firmaWiz = firmaIdentidadTenant(nombre, tipo);
+    const firmaAnt = leerFirmaIdentidadAlmacenada();
+    if (firmaWiz !== firmaAnt && esAdmin()) {
+        if (NEON_OK && typeof sqlSimple === 'function') {
+            try {
+                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+            } catch (e) {
+                console.warn('[wizard] vaciar socios_catalogo', e);
+            }
+        }
+        vaciarDerivacionesTercerosFormularioAdmin();
+    }
     try {
         const token = getApiToken();
         if (!token) {
@@ -13153,6 +13353,7 @@ async function guardarConfiguracionInicialObligatoria() {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.error || `HTTP ${resp.status}`);
         }
+        sincronizarFirmaIdentidadTenantDesdeValores(nombre, tipo);
         window.__PMG_TENANT_BRANDING__ = {
             setup_wizard_completado: true,
             marca_publicada_admin: true,
@@ -14729,6 +14930,10 @@ async function cargarFormEmpresa() {
         }
         const ohRed = document.getElementById('cfg-ocultar-redes-help');
         if (ohRed) ohRed.style.removeProperty('display');
+        try {
+            const ec = window.EMPRESA_CFG || {};
+            sincronizarFirmaIdentidadTenantDesdeValores(ec.nombre || cfg.nombre, ec.tipo || cfg.tipo);
+        } catch (_) {}
     } catch(e) { console.warn(e); }
 }
 
@@ -14753,6 +14958,18 @@ async function guardarConfigEmpresa() {
         coord_proy_familia: famVal,
         coord_proy_modo: famVal === 'none' ? 'punto' : modoVal
     };
+    const firmaNueva = firmaIdentidadTenant(campos.nombre, campos.tipo);
+    const firmaGuardada = leerFirmaIdentidadAlmacenada();
+    if (firmaNueva !== firmaGuardada && esAdmin()) {
+        if (NEON_OK && typeof sqlSimple === 'function') {
+            try {
+                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+            } catch (e) {
+                console.warn('[empresa] vaciar socios_catalogo tras cambio identidad', e);
+            }
+        }
+        vaciarDerivacionesTercerosFormularioAdmin();
+    }
     let derivacionReclamosPayload = null;
     if (document.getElementById('admin-derivacion-terceros-wrap')) {
         try {
@@ -14888,6 +15105,9 @@ async function guardarConfigEmpresa() {
         await verificarConfiguracionInicialObligatoria();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
+        try {
+            sincronizarFirmaIdentidadTenantDesdeValores(campos.nombre, campos.tipo);
+        } catch (_) {}
         if (apiSaveFailed) {
             /* error ya mostrado arriba */
         } else if (marcaApiOk) {
@@ -17385,6 +17605,9 @@ async function generarInformeMensualENRE() {
 })();
 let _charts = {};
 async function cargarEstadisticas() {
+    try {
+        actualizarMarcoReferenciaEstadisticasAdmin();
+    } catch (_) {}
     const tsql = await pedidosFiltroTenantSql();
     const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
     const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
@@ -18698,6 +18921,7 @@ if (typeof generarPdfEstadisticasMultipaginaENRE !== "undefined") window.generar
 if (typeof abrirModalDashboardGerencia !== "undefined") window.abrirModalDashboardGerencia = abrirModalDashboardGerencia;
 if (typeof refrescarDashboardGerencia !== "undefined") window.refrescarDashboardGerencia = refrescarDashboardGerencia;
 if (typeof activarModoFijarUbicacionAdmin !== "undefined") window.activarModoFijarUbicacionAdmin = activarModoFijarUbicacionAdmin;
+if (typeof centrarMapaAdminUbicacionesEnMapa !== "undefined") window.centrarMapaAdminUbicacionesEnMapa = centrarMapaAdminUbicacionesEnMapa;
 if (typeof onMapaFiltroChange !== "undefined") window.onMapaFiltroChange = onMapaFiltroChange;
 if (typeof resetMapaFiltros !== "undefined") window.resetMapaFiltros = resetMapaFiltros;
 if (typeof toggleMapaFiltrosBody !== "undefined") window.toggleMapaFiltrosBody = toggleMapaFiltrosBody;
