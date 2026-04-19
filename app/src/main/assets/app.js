@@ -1561,8 +1561,6 @@ const app = {
     p: [],
     map: null,
     mk: [],
-    /** WebView Android: pin estable del pedido abierto en detalle (circleMarker propio; no va en app.mk). */
-    mkDetalle: null,
     sel: null,
     tab: 'p',
     cid: null,
@@ -4517,165 +4515,6 @@ async function intentarCoordsPedidoDesdeApiRegeocodificar(p) {
     }
 }
 
-/** Cancela reintentos de `forceInvalidateMapDetalleAndroid` (evita timers huérfanos al cerrar #dm). */
-function cancelForceInvalidateMapDetalle() {
-    try {
-        const arr = app._gnForceInvTimers;
-        if (arr && arr.length) arr.forEach((id) => clearTimeout(id));
-    } catch (_) {}
-    app._gnForceInvTimers = null;
-}
-
-/**
- * WebView Android: invalidateSize sólo si #dm sigue abierto y #mc tiene tamaño visible; varios disparos escalonados.
- */
-function forceInvalidateMapDetalleAndroid() {
-    if (!esAndroidWebViewMapa() || !app.map || typeof app.map.invalidateSize !== 'function') return;
-    cancelForceInvalidateMapDetalle();
-    const delaysMs = [0, 48, 96, 160, 240, 320, 480, 640];
-    const timers = [];
-    app._gnForceInvTimers = timers;
-    delaysMs.forEach((ms) => {
-        timers.push(
-            setTimeout(() => {
-                try {
-                    const dm = document.getElementById('dm');
-                    if (!dm?.classList.contains('active')) {
-                        cancelForceInvalidateMapDetalle();
-                        return;
-                    }
-                    const el = document.getElementById('mc');
-                    if (!el || el.clientWidth < 4 || el.clientHeight < 4) return;
-                    app.map.invalidateSize({ animate: false });
-                    refreshMarcadorDetalleMapaSiModalAbierto();
-                    if (gnDebugMapAndroidEnabled()) {
-                        console.log('[gn-debug-map]', 'invalidate ok', {
-                            mc: el.clientWidth + '×' + el.clientHeight,
-                            zoom: app.map && app.map.getZoom && app.map.getZoom(),
-                        });
-                    }
-                } catch (_) {}
-            }, ms)
-        );
-    });
-}
-
-/** Alias histórico: delega en invalidación con visibilidad + reintentos. */
-function scheduleInvalidateLeafletParaModalDetalleAndroid() {
-    forceInvalidateMapDetalleAndroid();
-}
-
-function gnDebugMapAndroidEnabled() {
-    try {
-        return typeof URLSearchParams !== 'undefined' && new URLSearchParams(location.search).get('gn_debug_map') === '1';
-    } catch (_) {
-        return false;
-    }
-}
-
-/** Quita el marcador dedicado del pedido en detalle (Android); el pin vuelve con renderMk(). */
-function removeMarcadorDetalleMapaAndroid() {
-    try {
-        if (app.mkDetalle && app.map) {
-            app.mkDetalle.remove();
-        }
-    } catch (_) {}
-    app.mkDetalle = null;
-}
-
-/** Refresca posición del circleMarker de detalle sin recrear el mapa ni el array app.mk. */
-function refreshMarcadorDetalleMapaSiModalAbierto() {
-    if (!esAndroidWebViewMapa() || !app.map || typeof L === 'undefined') return;
-    const dm = document.getElementById('dm');
-    if (!dm || !dm.classList.contains('active')) {
-        removeMarcadorDetalleMapaAndroid();
-        return;
-    }
-    const pid = dm.dataset?.detallePedidoId;
-    if (!pid) {
-        removeMarcadorDetalleMapaAndroid();
-        return;
-    }
-    const p = app.p.find((x) => String(x.id) === String(pid));
-    if (!p) {
-        removeMarcadorDetalleMapaAndroid();
-        return;
-    }
-    syncMarcadorDetalleMapaAndroid(p);
-}
-
-/**
- * Marcador estable para el reclamo abierto en #dm: capa SVG/canvas vectorial (circleMarker), no divIcon.
- */
-function syncMarcadorDetalleMapaAndroid(p) {
-    if (!esAndroidWebViewMapa() || !app.map || typeof L === 'undefined' || !p) return;
-    const { la, ln } = coordsEfectivasPedidoMapa(p);
-    if (!coordsSonPinValidasMapaWgs84(la, ln)) {
-        removeMarcadorDetalleMapaAndroid();
-        return;
-    }
-    try {
-        if (!app.map.getPane || !app.map.getPane('gnPaneDetalleHighlight')) {
-            app.map.createPane('gnPaneDetalleHighlight');
-            app.map.getPane('gnPaneDetalleHighlight').style.zIndex = '710';
-        }
-    } catch (_) {}
-    const pane = app.map.getPane && app.map.getPane('gnPaneDetalleHighlight') ? 'gnPaneDetalleHighlight' : undefined;
-    const opts = {
-        radius: 13,
-        fillColor: '#dc2626',
-        color: '#fff',
-        weight: 3,
-        fillOpacity: 0.92,
-        pane,
-        interactive: false,
-        bubblingMouseEvents: false,
-    };
-    if (app.mkDetalle) {
-        app.mkDetalle.setLatLng([la, ln]);
-        try {
-            app.mkDetalle.setStyle({ fillColor: opts.fillColor });
-        } catch (_) {}
-    } else {
-        app.mkDetalle = L.circleMarker([la, ln], opts).addTo(app.map);
-    }
-    if (gnDebugMapAndroidEnabled()) {
-        try {
-            const ll = app.mkDetalle.getLatLng();
-            console.log('[gn-debug-map]', {
-                pedidoId: p.id,
-                esperado: [la, ln],
-                marcador: [ll.lat, ll.lng],
-                dLat: Math.abs(ll.lat - la),
-                dLng: Math.abs(ll.lng - ln),
-                zoom: app.map.getZoom(),
-            });
-        } catch (_) {}
-    }
-}
-
-function ensureAndroidDetalleZoomInvalidateHook() {
-    if (!esAndroidWebViewMapa() || app._gnAndroidDetalleZoomHook || !app.map || typeof app.map.on !== 'function') return;
-    app._gnAndroidDetalleZoomHook = true;
-    let t = null;
-    const run = () => {
-        try {
-            const dm = document.getElementById('dm');
-            if (!dm || !dm.classList.contains('active')) return;
-            scheduleInvalidateLeafletParaModalDetalleAndroid();
-            setTimeout(() => {
-                try {
-                    refreshMarcadorDetalleMapaSiModalAbierto();
-                } catch (_) {}
-            }, 100);
-        } catch (_) {}
-    };
-    app.map.on('zoomend', () => {
-        if (t) clearTimeout(t);
-        t = setTimeout(run, 80);
-    });
-}
-
 async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
     if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
     if (!coordsSonPinValidasMapaWgs84(la, ln)) {
@@ -7367,16 +7206,7 @@ function renderMk() {
 
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
-    const touchMapa = esAndroidWebViewMapa();
-    let skipDetalleId = null;
-    try {
-        const dm = document.getElementById('dm');
-        if (touchMapa && dm?.classList.contains('active') && dm.dataset?.detallePedidoId) {
-            skipDetalleId = String(dm.dataset.detallePedidoId);
-        }
-    } catch (_) {}
     pedidosParaMarcadoresMapa().forEach(p => {
-        if (skipDetalleId && String(p.id) === skipDetalleId) return;
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
         const cer = p.es === 'Cerrado' || p.es === 'Derivado externo';
@@ -7398,10 +7228,10 @@ function renderMk() {
             m = L.marker([la, ln], mkOpt).addTo(app.map);
         } else {
             const cmOpt = {
-                radius: touchMapa ? (cer ? 10 : 14) : cer ? 6 : 9,
+                radius: cer ? 6 : 9,
                 fillColor: col,
                 color: '#fff',
-                weight: touchMapa ? 3 : 2,
+                weight: 2,
                 fillOpacity: cer ? 0.5 : 0.9
             };
             if (panePed) cmOpt.pane = panePed;
@@ -7423,9 +7253,6 @@ function renderMk() {
         
         app.mk.push(m);
     });
-    try {
-        refreshMarcadorDetalleMapaSiModalAbierto();
-    } catch (_) {}
 }
 
 /** Tras tocar un botón del popup de Leaflet, el mismo gesto puede generar un click en el mapa (p. ej. WebView Android). */
@@ -11184,54 +11011,6 @@ async function detalle(p) {
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
     });
-    void sincronizarMapaConPedidoEnDetalle(p);
-}
-
-/** Al abrir el detalle de un reclamo: asegura mapa + marcadores y centra en el pedido (admin / técnico con permiso). */
-async function sincronizarMapaConPedidoEnDetalle(p) {
-    if (!p || modoOffline) return;
-    try {
-        await ensureMapReady();
-        renderMk();
-        if (!app.map) return;
-        if (esAndroidWebViewMapa()) ensureAndroidDetalleZoomInvalidateHook();
-        const { la, ln } = coordsEfectivasPedidoMapa(p);
-        if (!coordsSonPinValidasMapaWgs84(la, ln)) {
-            try {
-                removeMarcadorDetalleMapaAndroid();
-            } catch (_) {}
-            if (esAndroidWebViewMapa()) {
-                try {
-                    toast('Este pedido no tiene ubicación válida para mostrar en el mapa.', 'warning');
-                } catch (_) {}
-            }
-            return;
-        }
-        const zCur = app.map.getZoom && Number.isFinite(app.map.getZoom()) ? app.map.getZoom() : 14;
-        const z = Math.max(zCur, 16);
-        app.map.setView([la, ln], z, { animate: false });
-        if (gnDebugMapAndroidEnabled() && esAndroidWebViewMapa()) {
-            try {
-                console.log('[gn-debug-map]', 'post-setView centro', {
-                    pedidoId: p.id,
-                    centroMapa: [la, ln],
-                    zoom: z,
-                });
-            } catch (_) {}
-        }
-        if (esAndroidWebViewMapa()) {
-            try {
-                syncMarcadorDetalleMapaAndroid(p);
-            } catch (_) {}
-            forceInvalidateMapDetalleAndroid();
-        } else {
-            setTimeout(() => {
-                try {
-                    if (app.map && typeof app.map.invalidateSize === 'function') app.map.invalidateSize({ animate: false });
-                } catch (_) {}
-            }, 200);
-        }
-    } catch (_) {}
 }
 
 
@@ -11551,12 +11330,6 @@ function closeAll() {
         if (m === forzarPw && window._pendingAndroidPasswordChange) return;
         m.classList.remove('active');
     });
-    try {
-        cancelForceInvalidateMapDetalle();
-    } catch (_) {}
-    try {
-        removeMarcadorDetalleMapaAndroid();
-    } catch (_) {}
     app.cid = null;
     try {
         const dm = document.getElementById('dm');
@@ -11590,9 +11363,6 @@ function closeAll() {
         ui.innerHTML = '<i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar';
         ui.className = 'ud';
     }
-    try {
-        if (app.map) renderMk();
-    } catch (_) {}
 }
 
 function togglePanel() {

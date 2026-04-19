@@ -345,8 +345,6 @@ html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
 /* FAB mapa: nuevo pedido desde ubicación */
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
-/* WebView Android: backdrop-filter en overlay + mapa Leaflet detrás → desfase/parpadeo de marcadores; sin blur, fondo un poco más opaco. */
-html.gn-android-webview .mo{background:rgba(15,23,42,.75);backdrop-filter:none}
 #modal-asignar-tecnico{z-index:6001}
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}

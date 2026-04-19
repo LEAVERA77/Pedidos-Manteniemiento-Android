@@ -399,12 +399,6 @@ export async function runInitMap() {
         try {
             _gnAdminBaseMarker = null;
             _gnCursorCoordsControl = null;
-            if (ctx.app.mkDetalle) {
-                try {
-                    ctx.app.mkDetalle.remove();
-                } catch (_) {}
-                ctx.app.mkDetalle = null;
-            }
             ctx.app.map.remove();
         } catch (_) {}
         ctx.app.map = null;
@@ -451,14 +445,12 @@ export async function runInitMap() {
         } catch (_) {}
     }
 
-    /* WebView Android: preferCanvas en tiles + marcadores HTML (divIcon) suele desincronizar posición/tamaño al zoom. */
-    const preferCanvasTiles = !ligeroInit && !(ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa());
     ctx.app.map = L.map('mc', {
         zoomControl: false,
         attributionControl: true,
         maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: preferCanvasTiles,
+        preferCanvas: !ligeroInit,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,
@@ -514,10 +506,6 @@ export async function runInitMap() {
     if (!map.getPane('gnPanePedidos')) {
         map.createPane('gnPanePedidos');
         map.getPane('gnPanePedidos').style.zIndex = 650;
-    }
-    if (!map.getPane('gnPaneDetalleHighlight')) {
-        map.createPane('gnPaneDetalleHighlight');
-        map.getPane('gnPaneDetalleHighlight').style.zIndex = 710;
     }
     if (!map.getPane('gnPaneGpsUser')) {
         map.createPane('gnPaneGpsUser');
