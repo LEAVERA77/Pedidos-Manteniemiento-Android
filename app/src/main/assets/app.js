@@ -1561,6 +1561,8 @@ const app = {
     p: [],
     map: null,
     mk: [],
+    /** WebView Android: pin estable del pedido abierto en detalle (circleMarker propio; no va en app.mk). */
+    mkDetalle: null,
     sel: null,
     tab: 'p',
     cid: null,
@@ -4534,6 +4536,95 @@ function scheduleInvalidateLeafletParaModalDetalleAndroid() {
     });
 }
 
+function gnDebugMapAndroidEnabled() {
+    try {
+        return typeof URLSearchParams !== 'undefined' && new URLSearchParams(location.search).get('gn_debug_map') === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+/** Quita el marcador dedicado del pedido en detalle (Android); el pin vuelve con renderMk(). */
+function removeMarcadorDetalleMapaAndroid() {
+    try {
+        if (app.mkDetalle && app.map) {
+            app.mkDetalle.remove();
+        }
+    } catch (_) {}
+    app.mkDetalle = null;
+}
+
+/** Refresca posición del circleMarker de detalle sin recrear el mapa ni el array app.mk. */
+function refreshMarcadorDetalleMapaSiModalAbierto() {
+    if (!esAndroidWebViewMapa() || !app.map || typeof L === 'undefined') return;
+    const dm = document.getElementById('dm');
+    if (!dm || !dm.classList.contains('active')) {
+        removeMarcadorDetalleMapaAndroid();
+        return;
+    }
+    const pid = dm.dataset?.detallePedidoId;
+    if (!pid) {
+        removeMarcadorDetalleMapaAndroid();
+        return;
+    }
+    const p = app.p.find((x) => String(x.id) === String(pid));
+    if (!p) {
+        removeMarcadorDetalleMapaAndroid();
+        return;
+    }
+    syncMarcadorDetalleMapaAndroid(p);
+}
+
+/**
+ * Marcador estable para el reclamo abierto en #dm: capa SVG/canvas vectorial (circleMarker), no divIcon.
+ */
+function syncMarcadorDetalleMapaAndroid(p) {
+    if (!esAndroidWebViewMapa() || !app.map || typeof L === 'undefined' || !p) return;
+    const { la, ln } = coordsEfectivasPedidoMapa(p);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+        removeMarcadorDetalleMapaAndroid();
+        return;
+    }
+    try {
+        if (!app.map.getPane || !app.map.getPane('gnPaneDetalleHighlight')) {
+            app.map.createPane('gnPaneDetalleHighlight');
+            app.map.getPane('gnPaneDetalleHighlight').style.zIndex = '710';
+        }
+    } catch (_) {}
+    const pane = app.map.getPane && app.map.getPane('gnPaneDetalleHighlight') ? 'gnPaneDetalleHighlight' : undefined;
+    const opts = {
+        radius: 13,
+        fillColor: '#dc2626',
+        color: '#fff',
+        weight: 3,
+        fillOpacity: 0.92,
+        pane,
+        interactive: false,
+        bubblingMouseEvents: false,
+    };
+    if (app.mkDetalle) {
+        app.mkDetalle.setLatLng([la, ln]);
+        try {
+            app.mkDetalle.setStyle({ fillColor: opts.fillColor });
+        } catch (_) {}
+    } else {
+        app.mkDetalle = L.circleMarker([la, ln], opts).addTo(app.map);
+    }
+    if (gnDebugMapAndroidEnabled()) {
+        try {
+            const ll = app.mkDetalle.getLatLng();
+            console.log('[gn-debug-map]', {
+                pedidoId: p.id,
+                esperado: [la, ln],
+                marcador: [ll.lat, ll.lng],
+                dLat: Math.abs(ll.lat - la),
+                dLng: Math.abs(ll.lng - ln),
+                zoom: app.map.getZoom(),
+            });
+        } catch (_) {}
+    }
+}
+
 function ensureAndroidDetalleZoomInvalidateHook() {
     if (!esAndroidWebViewMapa() || app._gnAndroidDetalleZoomHook || !app.map || typeof app.map.on !== 'function') return;
     app._gnAndroidDetalleZoomHook = true;
@@ -4543,6 +4634,11 @@ function ensureAndroidDetalleZoomInvalidateHook() {
             const dm = document.getElementById('dm');
             if (!dm || !dm.classList.contains('active')) return;
             scheduleInvalidateLeafletParaModalDetalleAndroid();
+            setTimeout(() => {
+                try {
+                    refreshMarcadorDetalleMapaSiModalAbierto();
+                } catch (_) {}
+            }, 100);
         } catch (_) {}
     };
     app.map.on('zoomend', () => {
@@ -7243,7 +7339,15 @@ function renderMk() {
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
     const touchMapa = esAndroidWebViewMapa();
+    let skipDetalleId = null;
+    try {
+        const dm = document.getElementById('dm');
+        if (touchMapa && dm?.classList.contains('active') && dm.dataset?.detallePedidoId) {
+            skipDetalleId = String(dm.dataset.detallePedidoId);
+        }
+    } catch (_) {}
     pedidosParaMarcadoresMapa().forEach(p => {
+        if (skipDetalleId && String(p.id) === skipDetalleId) return;
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
         const cer = p.es === 'Cerrado' || p.es === 'Derivado externo';
@@ -7290,6 +7394,9 @@ function renderMk() {
         
         app.mk.push(m);
     });
+    try {
+        refreshMarcadorDetalleMapaSiModalAbierto();
+    } catch (_) {}
 }
 
 /** Tras tocar un botón del popup de Leaflet, el mismo gesto puede generar un click en el mapa (p. ej. WebView Android). */
@@ -11066,6 +11173,14 @@ async function sincronizarMapaConPedidoEnDetalle(p) {
         app.map.setView([la, ln], z, { animate: false });
         if (esAndroidWebViewMapa()) {
             scheduleInvalidateLeafletParaModalDetalleAndroid();
+            try {
+                syncMarcadorDetalleMapaAndroid(p);
+            } catch (_) {}
+            setTimeout(() => {
+                try {
+                    refreshMarcadorDetalleMapaSiModalAbierto();
+                } catch (_) {}
+            }, 320);
         } else {
             setTimeout(() => {
                 try {
@@ -11393,6 +11508,9 @@ function closeAll() {
         if (m === forzarPw && window._pendingAndroidPasswordChange) return;
         m.classList.remove('active');
     });
+    try {
+        removeMarcadorDetalleMapaAndroid();
+    } catch (_) {}
     app.cid = null;
     try {
         const dm = document.getElementById('dm');
@@ -11426,6 +11544,9 @@ function closeAll() {
         ui.innerHTML = '<i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar';
         ui.className = 'ud';
     }
+    try {
+        if (app.map) renderMk();
+    } catch (_) {}
 }
 
 function togglePanel() {
