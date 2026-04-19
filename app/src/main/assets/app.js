@@ -3417,6 +3417,9 @@ function etiquetaModoUbicPedido(a) {
 function coordsEfectivasPedidoMapa(p) {
     if (!p) return { la: null, ln: null };
     if (coordsSonPinValidasMapaWgs84(p.la, p.ln)) return { la: Number(p.la), ln: Number(p.ln) };
+    const altLa = Number(p.latitud ?? p.lat ?? p.coords_lat);
+    const altLn = Number(p.longitud ?? p.lng ?? p.coords_lng);
+    if (coordsSonPinValidasMapaWgs84(altLa, altLn)) return { la: altLa, ln: altLn };
     const w = p.wgeo;
     if (w && typeof w === 'object') {
         const wla = Number(w.lat);
@@ -7186,6 +7189,40 @@ async function ensureMapReady() {
 }
 window.ensureMapReady = ensureMapReady;
 
+/** Libera tiles/capas Leaflet en WebView Android (memoria GPU) antes de reinit. */
+function destruirYLiberarMapaLeafletAndroid() {
+    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
+    mapaInicializado = false;
+    try {
+        app.mk.forEach((m) => {
+            try {
+                m.remove();
+            } catch (_) {}
+        });
+    } catch (_) {}
+    app.mk = [];
+    if (app.map) {
+        try {
+            app.map.remove();
+        } catch (_) {}
+        app.map = null;
+    }
+    const el = document.getElementById('mc');
+    if (el) {
+        try {
+            if (el._leaflet_id != null) delete el._leaflet_id;
+        } catch (_) {}
+        try {
+            el.innerHTML = '';
+            el.className = String(el.className || '')
+                .replace(/\bleaflet-container\b/g, '')
+                .replace(/\bleaflet-touch\b/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        } catch (_) {}
+    }
+}
+
 const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 const btnMapaNuevoGps = document.getElementById('btn-mapa-nuevo-gps');
@@ -7206,6 +7243,8 @@ function renderMk() {
 
     const chkNp = document.getElementById('mapa-chk-label-np');
     const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
+    const pinsLigerosAndroid =
+        typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa();
     pedidosParaMarcadoresMapa().forEach(p => {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
@@ -7213,7 +7252,7 @@ function renderMk() {
         const col = cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6');
         const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         let m;
-        if (showNp) {
+        if (showNp && !pinsLigerosAndroid) {
             const icon = L.divIcon({
                 className: '',
                 html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
@@ -11007,6 +11046,26 @@ async function detalle(p) {
         try {
             document.getElementById('bp2')?.classList.add('col');
         } catch (_) {}
+        void (async () => {
+            try {
+                destruirYLiberarMapaLeafletAndroid();
+                await ensureMapReady();
+                renderMk();
+                if (app.map && pinMapaOk && Number.isFinite(laM) && Number.isFinite(lnM)) {
+                    const z = Math.min(17, app.map.getMaxZoom());
+                    app.map.setView([laM, lnM], z, { animate: false });
+                    requestAnimationFrame(() => {
+                        try {
+                            app.map.invalidateSize({ animate: false });
+                        } catch (_) {}
+                    });
+                }
+            } catch (e) {
+                try {
+                    console.warn('[mapa Android]', e);
+                } catch (_) {}
+            }
+        })();
     }
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
@@ -11323,6 +11382,11 @@ function limpiarFotosYPreviewNuevoPedido() {
 }
 
 function closeAll() {
+    const dmAntes = document.getElementById('dm');
+    const reciclarMapaAndroidDetalle =
+        typeof esAndroidWebViewMapa === 'function' &&
+        esAndroidWebViewMapa() &&
+        dmAntes?.classList.contains('active');
     const forzarPw = document.getElementById('modal-forzar-cambio-pw');
     document.getElementById('modal-dashboard-gerencia')?.classList.remove('modal-dash--maximized');
     syncDashboardModalMaxButtons();
@@ -11362,6 +11426,17 @@ function closeAll() {
     if (ui) {
         ui.innerHTML = '<i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar';
         ui.className = 'ud';
+    }
+    if (reciclarMapaAndroidDetalle) {
+        void (async () => {
+            try {
+                destruirYLiberarMapaLeafletAndroid();
+                await ensureMapReady();
+                try {
+                    renderMk();
+                } catch (_) {}
+            } catch (_) {}
+        })();
     }
 }
 

@@ -337,8 +337,11 @@ export async function gnRefreshMarcadorUbicacionBaseAdmin() {
 export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
+    const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
     const L = ctx.L;
-    const maxZ = ligero ? 17 : 19;
+    const maxZ = androidWv ? (ligero ? 17 : 18) : ligero ? 17 : 19;
+    const keepBuf = androidWv ? 1 : ligero ? 0 : 1;
+    const zoomWhile = androidWv ? false : !ligero;
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
@@ -349,8 +352,8 @@ export function gnAttachBaseMapLayers(mapa) {
             tileSize: 256,
             crossOrigin: true,
             updateWhenIdle: true,
-            updateWhenZooming: !ligero,
-            keepBuffer: ligero ? 0 : 1
+            updateWhenZooming: zoomWhile,
+            keepBuffer: keepBuf
         }
     );
     const capaCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -362,8 +365,8 @@ export function gnAttachBaseMapLayers(mapa) {
         detectRetina: false,
         crossOrigin: true,
         updateWhenIdle: true,
-        updateWhenZooming: !ligero,
-        keepBuffer: ligero ? 0 : 1
+        updateWhenZooming: zoomWhile,
+        keepBuffer: keepBuf
     });
     let nErr = 0;
     capaCarto.on('tileerror', () => {
@@ -420,7 +423,8 @@ export async function runInitMap() {
             .trim();
     } catch (_) {}
     const ligeroInit = ctx.gnMapaLigero();
-    const maxZoomMap = ligeroInit ? 17 : 19;
+    const androidMap = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
+    const maxZoomMap = androidMap ? (ligeroInit ? 17 : 18) : ligeroInit ? 17 : 19;
     const center = await resolveMapCenterLatLngZoom();
     let latBase;
     let lngBase;
@@ -450,7 +454,7 @@ export async function runInitMap() {
         attributionControl: true,
         maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: !ligeroInit,
+        preferCanvas: !ligeroInit && !androidMap,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,

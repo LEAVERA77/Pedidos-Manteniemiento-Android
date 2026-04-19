@@ -338,6 +338,18 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 /* WebView Android: subir y acercar a la izquierda para no tapar barra de pedidos ni filtros */
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
 html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
+
+/* Leaflet en WebView Android: menos trabajo compositor / menos tiles “fantasma” al zoom */
+html.gn-android-webview .leaflet-tile {
+  box-shadow: none !important;
+  transform: translateZ(0) !important;
+  will-change: auto !important;
+}
+html.gn-android-webview #mc,
+html.gn-android-webview .leaflet-container {
+  transform: none !important;
+  will-change: auto !important;
+}
 @media(min-width:1024px){
   html.gn-android-webview .btn-mapa-ir-gps{bottom:7.15rem;left:0.42rem}
   html.gn-android-webview .btn-mapa-nuevo-gps{bottom:10.35rem;left:0.42rem}
