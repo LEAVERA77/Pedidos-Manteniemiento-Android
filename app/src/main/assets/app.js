@@ -2506,6 +2506,13 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
     const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
+    const mapTipoABusiness = (t) => {
+        const n = normalizarRubroEmpresa(t);
+        if (n === 'cooperativa_agua') return 'agua';
+        if (n === 'municipio') return 'municipio';
+        return 'electricidad';
+    };
+    const businessSel = mapTipoABusiness(tipo);
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
     if (persistir) {
@@ -2530,14 +2537,6 @@ async function confirmarAdminTipoNegocioWeb() {
 
                 const cambiaRubroServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
-
-                const mapTipoABusiness = (t) => {
-                    const n = normalizarRubroEmpresa(t);
-                    if (n === 'cooperativa_agua') return 'agua';
-                    if (n === 'municipio') return 'municipio';
-                    return 'electricidad';
-                };
-                const businessSel = mapTipoABusiness(tipo);
 
                 if (cambiaRubroServidor) {
                     if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
@@ -2590,7 +2589,7 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
 
-    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo, active_business_type: businessSel };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     try {
         persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
@@ -11849,6 +11848,9 @@ document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change
     try {
         render();
         renderMk();
+        if (esAdmin() && !modoOffline && NEON_OK && typeof cargarPedidos === 'function') {
+            void cargarPedidos();
+        }
     } catch (_) {}
 });
 
@@ -13516,14 +13518,14 @@ async function guardarConfiguracionInicialObligatoria() {
                 sessionStorage.clear();
             } catch (_) {}
             try {
-                localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+                localStorage.clear();
             } catch (_) {}
             try {
                 invalidatePedidosTenantSqlCache();
                 invalidarCachesMultitenantSesionYOAdminUI();
             } catch (_) {}
             try {
-                window.location.reload();
+                window.location.href = window.location.origin + window.location.pathname;
             } catch (_) {}
             return;
         }

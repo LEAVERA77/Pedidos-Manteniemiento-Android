@@ -1,4 +1,10 @@
 {
     "python.globalModuleInstallation": true,
-    "terminal.integrated.tabs.defaultColor": null
+    "terminal.integrated.tabs.defaultColor": null,
+    "workbench.editor.restoreViewState": true,
+    "workbench.editor.restoreEditors": "all",
+    "window.restoreWindows": "all",
+    "window.restoreFullscreen": true,
+    "files.hotExit": "onExitAndWindowClose",
+    "chat.agent.maxRequests": 1000
 }
