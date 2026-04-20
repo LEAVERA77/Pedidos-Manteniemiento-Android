@@ -578,6 +578,12 @@ export async function runInitMap() {
         }
 
         try {
+            if (typeof ctx.aplicarReverseMapaAdminDesdeClicInicio === 'function' && ctx.aplicarReverseMapaAdminDesdeClicInicio(e)) {
+                return;
+            }
+        } catch (_) {}
+
+        try {
             if (typeof ctx.window.__gnEsReubicarPedidoMapa === 'function' && ctx.window.__gnEsReubicarPedidoMapa()) return;
         } catch (_) {}
 

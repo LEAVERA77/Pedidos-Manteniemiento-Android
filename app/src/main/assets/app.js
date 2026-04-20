@@ -822,14 +822,13 @@ const TIPOS_RECLAMO_POR_RUBRO = {
         'Señalización/Semáforos',
         'Limpieza de Zanjas',
         'Recolección (otros)',
-        'Cloacas',
+        'Obstrucción de Cloaca',
         'Otros'
     ],
     cooperativa_agua: [
         'Pérdida en Vereda/Calle',
         'Falta de Presión',
         'Calidad del Agua',
-        'Obstrucción de Cloaca',
         'Consumo elevado',
         'Conexión Nueva',
         'Otros'
@@ -872,12 +871,11 @@ const PRIORIDAD_RECLAMO_POR_TIPO = {
     'Señalización/Semáforos': 'Alta',
     'Limpieza de Zanjas': 'Media',
     'Recolección (otros)': 'Media',
-    'Cloacas': 'Alta',
+    'Obstrucción de Cloaca': 'Alta',
     'Otros': 'Media',
     'Pérdida en Vereda/Calle': 'Alta',
     'Falta de Presión': 'Media',
     'Calidad del Agua': 'Alta',
-    'Obstrucción de Cloaca': 'Alta',
     'Consumo elevado': 'Baja',
     'Conexión Nueva': 'Baja',
     'Corte de Energía': 'Alta',
@@ -1050,6 +1048,82 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
         return null;
     } catch (_) {
         return null;
+    }
+}
+
+/**
+ * Admin: clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
+ * Shift+clic mantiene el comportamiento anterior (abrir ubicación para nuevo pedido).
+ */
+function aplicarReverseMapaAdminDesdeClicInicio(e) {
+    try {
+        if (!esAdmin() || modoOffline || typeof fetch !== 'function') return false;
+        if (e?.originalEvent?.shiftKey) return false;
+        const latlng = e?.latlng;
+        if (!latlng || typeof latlng.lat !== 'number' || typeof latlng.lng !== 'number') return false;
+        const lat = latlng.lat;
+        const lng = latlng.lng;
+        void (async () => {
+            try {
+                await asegurarJwtApiRest();
+                const token = getApiToken();
+                if (!token) {
+                    toast('Sesión requerida para geocodificación inversa.', 'error');
+                    return;
+                }
+                const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ lat, lon: lng, zoom: 18 }),
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok || !j.ok || !j.result) {
+                    toast(
+                        'No se obtuvo dirección para ese punto. Probá otro clic o revisá la conexión/API.',
+                        'warning'
+                    );
+                    return;
+                }
+                const addr = j.result.address || {};
+                const nomVia =
+                    addr.road || addr.pedestrian || addr.path || addr.residential || addr.neighbourhood || '';
+                const num = addr.house_number || '';
+                const loc =
+                    addr.city ||
+                    addr.town ||
+                    addr.village ||
+                    addr.municipality ||
+                    addr.county ||
+                    addr.state_district ||
+                    '';
+                const prov = addr.state || '';
+                const cp = addr.postcode || '';
+                const refParts = [];
+                if (prov) refParts.push(prov);
+                if (cp) refParts.push(`CP ${cp}`);
+                const refExtra = refParts.length ? refParts.join(' · ') : '';
+                const dc = document.getElementById('ped-cli-calle');
+                const dn = document.getElementById('ped-cli-num');
+                const dl = document.getElementById('ped-cli-loc');
+                const dr = document.getElementById('ped-cli-ref');
+                if (dc) dc.value = nomVia ? String(nomVia).trim() : '';
+                if (dn) dn.value = num ? String(num).trim() : '';
+                if (dl) dl.value = loc ? String(loc).trim() : '';
+                if (dr && refExtra) {
+                    const prev = String(dr.value || '').trim();
+                    dr.value = prev ? `${prev} (${refExtra})` : refExtra;
+                }
+                toast('Dirección cargada desde el mapa (revisá los campos y guardá el pedido).', 'success');
+            } catch (_) {
+                toast('No se pudo consultar la dirección en ese punto.', 'error');
+            }
+        })();
+        return true;
+    } catch (_) {
+        return false;
     }
 }
 
@@ -7145,6 +7219,7 @@ function buildMapViewCtx() {
         set ultimaUbicacion(v) { ultimaUbicacion = v; },
         calcularEscalaReal,
         mostrarMarcadorUbicacion,
+        aplicarReverseMapaAdminDesdeClicInicio,
         scheduleMapRetry: () => { void initMap(); }
     };
 }
@@ -11945,7 +12020,6 @@ const TIPOS_TRABAJO_DERIVACION_SOLO_AGUA = new Set([
     'Pérdida en Vereda/Calle',
     'Falta de Presión',
     'Calidad del Agua',
-    'Obstrucción de Cloaca',
 ]);
 const TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO = new Set([
     'Bacheo y Pavimento',
@@ -11954,7 +12028,7 @@ const TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO = new Set([
     'Señalización/Semáforos',
     'Limpieza de Zanjas',
     'Recolección (otros)',
-    'Cloacas',
+    'Obstrucción de Cloaca',
 ]);
 
 function pedidoSugiereDerivacionAguaOMunicipioEnElectrica(tt) {

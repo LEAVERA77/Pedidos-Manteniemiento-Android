@@ -62,6 +62,19 @@ async function assertPedidoMismoTenant(pedido, req) {
   }
 }
 
+/** Pedido por id + tenant sin filtro `business_type` (admin multi-rubro). */
+async function getPedidoPorIdEnTenant(id, tenantId) {
+  const pid = Number(id);
+  const tid = Number(tenantId);
+  if (!Number.isFinite(pid) || pid < 1 || !Number.isFinite(tid) || tid < 1) return null;
+  if (await pedidosTableHasTenantIdColumn()) {
+    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [pid, tid]);
+    return r.rows[0] || null;
+  }
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1 LIMIT 1`, [pid]);
+  return r.rows[0] || null;
+}
+
 async function loadNombreCliente(tenantId) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid)) return "GestorNova";
@@ -1362,7 +1375,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "id inválido" });
     }
     
-    const pedido = await getPedidoInTenant(id, req);
+    const pedido = await getPedidoPorIdEnTenant(id, req.tenantId);
     if (!pedido) {
       return res.status(404).json({ error: "Pedido no encontrado" });
     }
@@ -1377,7 +1390,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
     }
     
     // Ejecutar re-geocodificación
-    const resultado = await regeocodificarPedido(id, req.tenantId, { req });
+    const resultado = await regeocodificarPedido(id, req.tenantId, { req, ignoreBusinessTypeFilter: true });
     
     // 200 + success:false: la petición es válida; el fallo es resultado de negocio (sin coords),
     // no "Bad Request". Evita confusión en DevTools y monitores (400 = request mal formado).
