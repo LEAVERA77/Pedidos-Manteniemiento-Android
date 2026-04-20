@@ -12171,7 +12171,13 @@ async function rellenarPedidoDesdeClientesFinalesPorIdentificador(raw) {
     if (cl && nom) cl.value = nom;
     if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
     if (numEl) numEl.value = row.numero_puerta != null ? String(row.numero_puerta).trim() : '';
-    if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+    if (locEl) {
+        let lVal = row.localidad != null ? String(row.localidad).trim() : '';
+        if (lVal.toLowerCase().includes('municipio de ')) {
+            lVal = lVal.replace(/municipio de /gi, '').trim();
+        }
+        locEl.value = lVal;
+    }
     if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
     if (tel) tel.value = '';
 }
@@ -12235,10 +12241,18 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
         if (cl && row.nombre != null && String(row.nombre).trim()) {
             cl.value = String(row.nombre).trim();
         }
-        if (tel) tel.value = '';
+        if (tel) {
+            tel.value = row.telefono != null ? String(row.telefono).trim() : '';
+        }
         if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
         if (numEl) numEl.value = row.numero != null ? String(row.numero).trim() : '';
-        if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+        if (locEl) {
+            let lVal = row.localidad != null ? String(row.localidad).trim() : '';
+            if (lVal.toLowerCase().includes('municipio de ')) {
+                lVal = lVal.replace(/municipio de /gi, '').trim();
+            }
+            locEl.value = lVal;
+        }
         if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
         const di2 = document.getElementById('di2');
         if (di2 && row.distribuidor_codigo != null && String(row.distribuidor_codigo).trim()) {
@@ -16455,6 +16469,7 @@ async function importarExcelSocios(event) {
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            const localidadLimpia = loc != null ? String(loc).replace(/municipio de /gi, '').trim() : null;
             const provinciaSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'provincia');
             let codigoPostalSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'codigo_postal');
             if (codigoPostalSoc) {
@@ -16518,7 +16533,7 @@ async function importarExcelSocios(event) {
                 barrioSoc,
                 telefono,
                 dist,
-                loc,
+                loc: localidadLimpia,
                 provincia: provinciaSoc || null,
                 codigo_postal: codigoPostalSoc || null,
                 tar,
