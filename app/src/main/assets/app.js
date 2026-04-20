@@ -1121,7 +1121,7 @@ function aplicarReverseMapaAdminDesdeClicInicio(e) {
                 toast('No se pudo consultar la dirección en ese punto.', 'error');
             }
         })();
-        return true;
+        return false;
     } catch (_) {
         return false;
     }
