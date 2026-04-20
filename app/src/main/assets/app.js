@@ -1,4 +1,27 @@
 import {
+  app,
+  ultimaUbicacion, setUltimaUbicacion,
+  mapaInicializado, setMapaInicializado,
+  marcadorUbicacion, setMarcadorUbicacion,
+  _gpsRecibidoEstaSesion, setGpsRecibidoEstaSesion,
+  gnMapaLigero,
+  esAndroidWebViewMapa,
+  toast,
+  logErrorWeb,
+  toastError,
+  esAdmin,
+  marcarGpsRecibidoEstaSesion
+} from './js/core.js';
+
+import {
+  solicitarUbicacion,
+  mostrarMarcadorUbicacion,
+  calcularEscalaReal
+} from './js/geo.js';
+
+import { renderMk } from './js/map-layers.js';
+
+import {
   OU_KEY,
   offlineQueue,
   offlineSave,
@@ -25,6 +48,20 @@ import {
   etiquetaFamiliaProyeccionCorta,
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
+
+import {
+  norm,
+  cargarPedidos,
+  updPedido,
+  pedidosFiltroTenantSql,
+  tenantIdActual,
+  invalidatePedidosTenantSqlCache
+} from './js/pedidos.js';
+
+import {
+  initLocalAddressIndex,
+  lookupLocalAddress
+} from './js/local-geocoder.js';
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
 (function installCanvas2DWillReadFrequently() {
@@ -129,18 +166,10 @@ function syncCoordModoVisibility() {
 }
 window.syncCoordModoVisibility = syncCoordModoVisibility;
 
-let NEON_OK = false;
-let _sql = null;
-let mapaInicializado = false;
 let fotosTemporales = [];
-let fotoCierreTemp = null;    
-let ultimaUbicacion = null;
-let marcadorUbicacion = null;
-/** En la app Android: hasta que llegue el primer fix GPS, el primer toque en el mapa fija posición (una vez por sesión). */
-let _gpsRecibidoEstaSesion = false;
+let fotoCierreTemp = null;
 const MAP_SEED_SESSION_KEY = 'pmg_map_seed_done';
 let pedidoActualParaAvance = null;
-let modoOffline = false;      
 
 
 
@@ -1629,18 +1658,6 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot',
     'solicitud_derivacion_pendiente','solicitud_derivacion_fecha','solicitud_derivacion_usuario_id','solicitud_derivacion_motivo','solicitud_derivacion_destino_sugerido']);
 
-const app = {
-    u: null,
-    apiToken: null,
-    p: [],
-    map: null,
-    mk: [],
-    sel: null,
-    tab: 'p',
-    cid: null,
-    ok: false
-};
-
 function normalizarRolStr(r) {
     const x = String(r == null ? '' : r).trim().toLowerCase();
     if (x === 'administrador') return 'admin';
@@ -2146,14 +2163,6 @@ function esTecnicoOSupervisor() {
     const r = rolApp();
     return r === 'tecnico' || r === 'supervisor';
 }
-function esAndroidWebViewMapa() {
-    try {
-        return /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
-    } catch (_) {
-        return false;
-    }
-}
-
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
 function esAdminSesionWebPublica() {
     try {
@@ -3330,118 +3339,7 @@ window.toast = toast;
     window.__gnAlertWrapped = true;
 })();
 
-const norm = p => ({
-    id: p.id,
-    np: p.numero_pedido,
-    f: p.fecha_creacion || p.fecha || new Date().toISOString(),
-    fc: p.fecha_cierre || null,
-    fa: p.fecha_avance || null,
-    dis: p.distribuidor || '',
-    br: String(p.barrio || '').trim(),
-    trf: String(p.trafo || p.setd || '').trim(),
-    cl: p.cliente || '',
-    tt: p.tipo_trabajo || '',
-    de: p.descripcion || '',
-    pr: p.prioridad || 'Media',
-    es: p.estado || 'Pendiente',
-    av: parseInt(p.avance) || 0,
-    la: (() => {
-        const raw = p.lat != null && p.lat !== '' ? p.lat : p.latitud;
-        if (raw == null || raw === '') return null;
-        const v = parseFloat(String(raw).trim().replace(',', '.'));
-        return Number.isFinite(v) ? v : null;
-    })(),
-    ln: (() => {
-        const raw = p.lng != null && p.lng !== '' ? p.lng : p.longitud;
-        if (raw == null || raw === '') return null;
-        const v = parseFloat(String(raw).trim().replace(',', '.'));
-        return Number.isFinite(v) ? v : null;
-    })(),
-    ui: p.usuario_id,
-    tr: p.trabajo_realizado || null,
-    tc: p.tecnico_cierre || null,
-    fotos: p.foto_base64 ? p.foto_base64.split('||') : [],
-    foto_cierre: p.foto_cierre || null,
-    uc: p.usuario_creador_id,
-    ui2: p.usuario_inicio_id,
-    uav: p.usuario_avance_id,
-    uci: p.usuario_cierre_id,
-    x_inchauspe: p.x_inchauspe,
-    y_inchauspe: p.y_inchauspe,
-    nis: (p.nis || '').trim(),
-    med: (p.medidor || '').trim(),
-    nis_med: (p.nis_medidor || '').trim(),
-    cdir: (p.cliente_direccion || '').trim(),
-    cnom: (p.cliente_nombre || p.cliente || '').trim(),
-    ccal: (p.cliente_calle || '').trim(),
-    cnum: (p.cliente_numero_puerta || '').trim(),
-    cloc: (p.cliente_localidad || '').trim(),
-    cpcia: (p.provincia || '').trim(),
-    ccp: (p.codigo_postal || '').trim(),
-    stc: (p.suministro_tipo_conexion || '').trim(),
-    sfs: (p.suministro_fases || '').trim(),
-    tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
-    fasi: p.fecha_asignacion || null,
-    firma: p.firma_cliente || null,
-    chkl: p.checklist_seguridad || null,
-    tel: (p.telefono_contacto || '').trim(),
-    opin: (() => {
-        const v = p.opinion_cliente;
-        if (v == null || v === '') return null;
-        const s = String(v).trim();
-        return s || null;
-    })(),
-    fopin: p.fecha_opinion_cliente || null,
-    oes: (() => {
-        const n = parseInt(p.opinion_cliente_estrellas, 10);
-        return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
-    })(),
-    orc: String(p.origen_reclamo || '').trim().toLowerCase(),
-    dex: !!(
-        p.derivado_externo === true ||
-        p.derivado_externo === 't' ||
-        p.derivado_externo === 1 ||
-        String(p.estado || '') === 'Derivado externo'
-    ),
-    dda: String(p.derivado_a || '').trim(),
-    ddn: String(p.derivado_destino_nombre || '').trim(),
-    fder: p.fecha_derivacion || null,
-    uider: p.usuario_derivacion_id != null ? parseInt(p.usuario_derivacion_id, 10) : null,
-    dnota: String(p.derivacion_nota || '').trim(),
-    dsnap: String(p.derivacion_mensaje_snapshot || '').trim(),
-    sdpen: !!(
-        p.solicitud_derivacion_pendiente === true ||
-        p.solicitud_derivacion_pendiente === 't' ||
-        p.solicitud_derivacion_pendiente === 1
-    ),
-    sdm: String(p.solicitud_derivacion_motivo || '').trim(),
-    sdf: p.solicitud_derivacion_fecha || null,
-    sduid:
-        p.solicitud_derivacion_usuario_id != null
-            ? parseInt(p.solicitud_derivacion_usuario_id, 10)
-            : null,
-    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
-    wgeo: (() => {
-        const g = p.geocode_log_whatsapp;
-        if (g == null || g === '') return null;
-        if (typeof g === 'object' && !Array.isArray(g)) return g;
-        try {
-            return JSON.parse(String(g));
-        } catch (_) {
-            return null;
-        }
-    })(),
-    gaudit: (() => {
-        const g = p.geocoding_audit;
-        if (g == null || g === '') return null;
-        if (typeof g === 'object' && !Array.isArray(g)) return g;
-        try {
-            return JSON.parse(String(g));
-        } catch (_) {
-            return null;
-        }
-    })(),
-});
+const norm = window.norm;
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
 
@@ -4758,6 +4656,29 @@ async function enriquecerCoordsGeocodificadasPedidos() {
                     gnGeocodeUiLogAppend('info', `Procesando pedido #${p.id}…`);
                 }
                 const id = String(p.id);
+                const dom = domicilioParaGeocodePedido(p);
+
+                // 1. Intento por índice local (Offline-first / Fast-path)
+                if (dom && typeof window.lookupLocalAddress === 'function') {
+                    const localHit = window.lookupLocalAddress(dom.loc, dom.calle, dom.num);
+                    if (localHit) {
+                        window._pedidoCoordsInferidas[id] = { la: localHit.lat, ln: localHit.lng, src: 'local_index' };
+                        const idx = app.p.findIndex((x) => String(x.id) === id);
+                        if (idx >= 0) {
+                            app.p[idx].la = localHit.lat;
+                            app.p[idx].ln = localHit.lng;
+                        }
+                        if (adminBatch) {
+                            gnGeocodeUiLogAppend('info', `Pedido #${p.id}: coordenadas encontradas en índice local.`);
+                        }
+                        try {
+                            renderMk();
+                            render();
+                        } catch (_) {}
+                        continue;
+                    }
+                }
+
                 const srv = await intentarCoordsPedidoDesdeApiRegeocodificar(p);
                 if (srv && coordsSonPinValidasMapaWgs84(srv.la, srv.ln)) {
                     window._pedidoCoordsInferidas[id] = { la: srv.la, ln: srv.ln, src: 'regeo_api' };
@@ -6604,74 +6525,18 @@ async function asegurarNombreUsuariosParaFiltros() {
     } catch (_) {}
 }
 
+// Cargar índice local de direcciones si está configurado
+const localIndexPath = window.APP_CONFIG?.local_address_index_path;
+if (localIndexPath) {
+    void initLocalAddressIndex(localIndexPath);
+}
+
 async function cargarPedidos(opts) {
-    const silent = !!(opts && opts.silent);
-    if (!silent) {
-        document.getElementById('pl').innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div>';
-    }
-    if (modoOffline) {
-        
-        app.p = offlinePedidos();
-        render();
-        return;
-    }
-    try {
-        await asegurarNombreUsuariosParaFiltros();
-        const tsql = await pedidosFiltroTenantSql();
-        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
-        if (esTecnicoOSupervisor()) {
-            const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
-            if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
-            }
-        }
-        const prevSnapTecnico =
-            !esAdmin() && esTecnicoOSupervisor() && (app.p || []).length
-                ? new Map((app.p || []).map(p => [String(p.id), { es: p.es, np: p.np, tai: p.tai }]))
-                : null;
-        const r = await ejecutarSQLConReintentos(qPed);
-        const prevIds = new Set((app.p || []).map(p => p.id));
-        app.p = (r.rows || []).map(norm);
-        if (prevSnapTecnico) notificarCambiosPedidoTecnico(prevSnapTecnico);
-        if (esAdmin() && app.p.length) {
-            const mx = app.p.reduce((a, p) => Math.max(a, Number(p.id) || 0), 0);
-            if (Number.isFinite(mx) && mx > 0) app._lastMaxPedidoIdSynced = mx;
-        }
-        // Nuevos pedidos: aviso al admin (lista + dashboard a veces se desincronizaban)
-        if (esAdmin() && prevIds.size > 0) {
-            const dosMinutosAtras = Date.now() - 2 * 60 * 1000;
-            const nuevos = app.p.filter(p => !prevIds.has(p.id));
-            nuevos.forEach(p => {
-                const urgente = ['Crítica', 'Alta'].includes(p.pr) && p.es === 'Pendiente' &&
-                    new Date(p.f).getTime() > dosMinutosAtras;
-                if (urgente) {
-                    mostrarAlertaPedidoUrgente(p);
-                } else {
-                    const tit = (p.tt || p.de || '').toString().trim().slice(0, 52);
-                    toast(`Nuevo reclamo #${p.np || p.id}${tit ? ' — ' + tit : ''}`, 'info');
-                }
-            });
-        }
-        
-        offlinePedidosSave(app.p);
-    } catch(e) {
-        console.warn('cargarPedidos: error, usando cache', e.message);
-        setModoOffline(true);
-        app.p = offlinePedidos();
-        toast('Sin conexión — mostrando pedidos en caché', 'info');
-    }
-    render();
-    try {
-        refrescarDetalleSiAbiertoTrasSync();
-    } catch (_) {}
-    void enriquecerCoordsGeocodificadasPedidos();
+    return window.cargarPedidos(opts);
 }
 
 /** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
-window.gnSincronizarPedidosDesdeAndroid = function gnSincronizarPedidosDesdeAndroid() {
-    if (!app.u || modoOffline || !NEON_OK || !_sql) return;
-    void cargarPedidos({ silent: true });
-};
+window.gnSincronizarPedidosDesdeAndroid = window.gnSincronizarPedidosDesdeAndroid;
 
 
 
@@ -6703,275 +6568,6 @@ function calcularEscalaReal(zoom) {
 
 
 
-
-let _watchId         = null;  
-let _circuloAcc      = null;  
-let _mejorPrecision  = Infinity; 
-
-
-function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
-    if (!app.map) return;
-
-    
-    if (marcadorUbicacion) {
-        try { app.map.removeLayer(marcadorUbicacion); } catch(_) {}
-        marcadorUbicacion = null;
-    }
-    
-    if (_circuloAcc) {
-        try { app.map.removeLayer(_circuloAcc); } catch(_) {}
-        _circuloAcc = null;
-    }
-
-    const esBaseOficina = opts && opts.tipo === 'base_oficina';
-    if (esBaseOficina) {
-        const precisionZoom = 15;
-        const svgIcon = L.divIcon({
-            className: '',
-            html: `<div style="
-            width:18px;height:18px;
-            background:#1d4ed8;
-            border:3px solid white;
-            border-radius:50%;
-            box-shadow:0 0 0 3px rgba(29,78,216,.35);
-            position:relative;
-        "></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-            popupAnchor: [0, -10]
-        });
-        const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
-        const mk = { icon: svgIcon, zIndexOffset: 220 };
-        if (paneGps) mk.pane = paneGps;
-        marcadorUbicacion = L.marker([lat, lon], mk)
-            .addTo(app.map)
-            .bindPopup(`<div style="font-family:system-ui;min-width:180px">
-                <b style="color:#1d4ed8">🏢 Ubicación base de oficina</b><br>
-                <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
-            </div>`);
-        return precisionZoom;
-    }
-
-    
-    
-    
-    
-    
-    const precisionZoom = !acc ? 15
-        : acc < 50   ? 17
-        : acc < 500  ? 15
-        : acc < 5000 ? 13
-        : 11;
-
-    
-    const svgIcon = L.divIcon({
-        className: '',
-        html: `<div style="
-            width:16px;height:16px;
-            background:#10b981;
-            border:3px solid white;
-            border-radius:50%;
-            box-shadow:0 0 0 3px rgba(16,185,129,.4);
-            ${gnMapaLigero() ? '' : 'animation:pulse-gps 2s infinite;'}
-            position:relative;
-        "></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-        popupAnchor: [0, -10]
-    });
-
-    const accTexto = acc
-        ? (acc < 1000 ? `±${Math.round(acc)} m` : `±${(acc/1000).toFixed(1)} km`)
-        : 'precisión desconocida';
-
-    const tipoGps = !acc ? 'GPS'
-        : acc < 100  ? '🛰️ GPS'
-        : acc < 2000 ? '📶 WiFi/Red celular'
-        : '🌐 Geolocalización por IP';
-
-    const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
-    const mkGps = { icon: svgIcon, zIndexOffset: 200 };
-    if (paneGps) mkGps.pane = paneGps;
-    marcadorUbicacion = L.marker([lat, lon], mkGps)
-        .addTo(app.map)
-        .bindPopup(`
-            <div style="font-family:system-ui;min-width:160px">
-                <b style="color:#059669">📍 Tu ubicación</b><br>
-                <span style="font-size:11px;color:#475569">${tipoGps} — ${accTexto}</span><br>
-                <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
-            </div>
-        `);
-
-    
-    if (acc && acc > 50 && !gnMapaLigero()) {
-        const radioVisual = Math.min(Math.max(acc * 0.12, 10), 38);
-        const cOpt = {
-            radius: radioVisual,
-            color: '#10b981',
-            fillColor: '#10b981',
-            fillOpacity: 0.07,
-            weight: 1,
-            dashArray: '4,6',
-            interactive: false,
-            bubblingMouseEvents: true
-        };
-        if (paneGps) cOpt.pane = paneGps;
-        _circuloAcc = L.circle([lat, lon], cOpt).addTo(app.map);
-    }
-
-    return precisionZoom;
-}
-
-
-
-
-
-
-async function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
-    if (!navigator.geolocation) {
-        if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
-        return;
-    }
-
-    // Si es silencioso (auto-run), verificamos si tenemos permiso antes de disparar el prompt que causa [Violation]
-    if (modoSilencioso && typeof navigator.permissions !== 'undefined') {
-        try {
-            const status = await navigator.permissions.query({ name: 'geolocation' });
-            if (status.state === 'prompt') {
-                console.log('[gps] modo silencioso cancelado: requiere gesto del usuario');
-                return;
-            }
-        } catch(e) {}
-    }
-
-    const fastUserAction = !!(opts && opts.fastUserAction);
-    let intentos = 0;
-    const MAX_INTENTOS = gnMapaLigero() ? 2 : 3;
-    let centroInicialAplicado = false;
-
-    function procesarPosicion(position, esWatchUpdate = false) {
-        const { latitude, longitude, accuracy } = position.coords;
-        const acc = Math.round(accuracy);
-        registrarFajaInstalacionSiFalta(longitude);
-        marcarGpsRecibidoEstaSesion();
-
-        
-        if (esWatchUpdate && acc >= _mejorPrecision && acc > 200) return;
-        _mejorPrecision = Math.min(_mejorPrecision, acc);
-
-        ultimaUbicacion = { lat: latitude, lon: longitude, acc };
-        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-
-        if (app.map) {
-            const zoomSugerido = mostrarMarcadorUbicacion(latitude, longitude, acc);
-            if (centrarMapa && !centroInicialAplicado) {
-                app.map.invalidateSize({ animate: false });
-                
-                const actualCenter = app.map.getCenter();
-                const distLat = Math.abs(actualCenter.lat - latitude);
-                const distLon = Math.abs(actualCenter.lng - longitude);
-                const estaLejos = distLat > 0.05 || distLon > 0.05;
-                if (estaLejos || !esWatchUpdate) {
-                    const doAnimate = !fastUserAction && !gnMapaLigero();
-                    app.map.setView([latitude, longitude], zoomSugerido, { animate: doAnimate });
-                }
-                centroInicialAplicado = true;
-                setTimeout(() => {
-                    document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
-                }, 300);
-            }
-        }
-
-        
-        if (!modoSilencioso && !esWatchUpdate) {
-            const msg = acc < 100
-                ? `📍 GPS: ±${acc}m`
-                : acc < 2000
-                ? `📶 WiFi/Red: ±${acc}m`
-                : `🌐 IP: ±${(acc/1000).toFixed(0)}km — precisión baja`;
-            toast(msg, acc < 2000 ? 'success' : 'info');
-        }
-    }
-
-    function manejarError(error) {
-        const msgs = {
-            1: 'Permiso de ubicación denegado — activalo en Configuración',
-            2: 'GPS no disponible',
-            3: 'Tiempo de espera agotado'
-        };
-        if (!modoSilencioso) {
-            toast(msgs[error.code] || 'Error de GPS', 'error');
-        }
-        
-        if (ultimaUbicacion && app.map && centrarMapa) {
-            app.map.invalidateSize({ animate: false });
-            mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
-            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], 14, { animate: !fastUserAction && !gnMapaLigero() });
-            if (!modoSilencioso) toast('📍 Mostrando última ubicación conocida', 'info');
-        }
-    }
-
-    const geoOptsPrincipal = fastUserAction
-        ? { enableHighAccuracy: false, timeout: 6000, maximumAge: 120000 }
-        : { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 };
-
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            procesarPosicion(pos, false);
-
-            if (!fastUserAction && pos.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
-                const intentarMejorar = () => {
-                    if (intentos >= MAX_INTENTOS) return;
-                    intentos++;
-                    navigator.geolocation.getCurrentPosition(
-                        p2 => {
-                            procesarPosicion(p2, false);
-
-                            if (p2.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
-                                setTimeout(intentarMejorar, 2000);
-                            }
-                        },
-                        () => {},
-                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                    );
-                };
-                setTimeout(intentarMejorar, 1500);
-            }
-        },
-        manejarError,
-        geoOptsPrincipal
-    );
-
-    
-    
-    
-    
-    if (!_watchId) {
-        _watchId = navigator.geolocation.watchPosition(
-            pos => {
-                
-                const { latitude, longitude, accuracy } = pos.coords;
-                const acc = Math.round(accuracy);
-                registrarFajaInstalacionSiFalta(longitude);
-                ultimaUbicacion = { lat: latitude, lon: longitude, acc };
-                try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-                
-                if (!app.map) return;
-                marcarGpsRecibidoEstaSesion();
-                if (gnMapaLigero()) {
-                    const now = Date.now();
-                    if (now - _gnLastWatchUbicacionMs < 45000) return;
-                    _gnLastWatchUbicacionMs = now;
-                }
-                mostrarMarcadorUbicacion(latitude, longitude, acc);
-            },
-            err => console.warn('[GPS watch]', err.message),
-            gnMapaLigero()
-                ? { enableHighAccuracy: false, maximumAge: 20000, timeout: 20000 }
-                : { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-        );
-    }
-}
 
 /** Lat/lng de oficina definidos por administrador (EMPRESA_CFG o columnas legadas). */
 function parseEmpresaCfgLatLngBase() {
@@ -7187,51 +6783,8 @@ window.nuevoPedidoDesdeUbicacionActual = nuevoPedidoDesdeUbicacionActual;
 
 let mapViewImportPromise = null;
 function loadMapViewModule() {
-    if (!mapViewImportPromise) mapViewImportPromise = import('./map-view.js');
+    if (!mapViewImportPromise) mapViewImportPromise = import('./js/map-view.js');
     return mapViewImportPromise;
-}
-
-function buildMapViewCtx() {
-    return {
-        app,
-        getApiBaseUrl,
-        tenantIdActual,
-        get L() { return window.L; },
-        document,
-        window,
-        toast,
-        gnMapaLigero,
-        aplicarUIMapaPlataforma,
-        renderMk,
-        registrarFajaInstalacionSiFalta,
-        htmlLineaUbicacionFormulario,
-        syncWrapCoordsDisplayNuevoPedido,
-        poblarSelectTiposReclamo,
-        syncNisClienteReclamoConexionUI,
-        limpiarFotosYPreviewNuevoPedido,
-        esAndroidWebViewMapa,
-        mapTapUbicacionInicialHechaSesion,
-        get _gpsRecibidoEstaSesion() { return _gpsRecibidoEstaSesion; },
-        marcarMapTapUbicacionInicialHecha,
-        solicitarUbicacion,
-        registrarUbicacionManualAdmin,
-        get _modoFijarUbicacionAdmin() { return _modoFijarUbicacionAdmin; },
-        set _modoFijarUbicacionAdmin(v) { _modoFijarUbicacionAdmin = v; },
-        get mapaInicializado() { return mapaInicializado; },
-        set mapaInicializado(v) { mapaInicializado = v; },
-        get marcadorUbicacion() { return marcadorUbicacion; },
-        set marcadorUbicacion(v) { marcadorUbicacion = v; },
-        get _circuloAcc() { return _circuloAcc; },
-        set _circuloAcc(v) { _circuloAcc = v; },
-        get _mapEscalaDebounceTimer() { return _mapEscalaDebounceTimer; },
-        set _mapEscalaDebounceTimer(v) { _mapEscalaDebounceTimer = v; },
-        get ultimaUbicacion() { return ultimaUbicacion; },
-        set ultimaUbicacion(v) { ultimaUbicacion = v; },
-        calcularEscalaReal,
-        mostrarMarcadorUbicacion,
-        aplicarReverseMapaAdminDesdeClicInicio,
-        scheduleMapRetry: () => { void initMap(); }
-    };
 }
 
 async function refreshMapAdminBaseMarkerIfReady() {
@@ -7246,7 +6799,6 @@ async function refreshMapAdminBaseMarkerIfReady() {
 
 async function initMap() {
     const mod = await loadMapViewModule();
-    mod.setMapViewContext(buildMapViewCtx());
     await mod.runInitMap();
 }
 
@@ -7278,72 +6830,6 @@ const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 const btnMapaNuevoGps = document.getElementById('btn-mapa-nuevo-gps');
 if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoPedidoDesdeUbicacionActual());
-
-function renderMk() {
-    if (!app.map) return;
-    app.mk.forEach(m => m.remove());
-    app.mk = [];
-    
-    const fill = {
-        'Crítica': '#ef4444',
-        'Alta': '#f97316',
-        'Media': '#eab308',
-        'Baja': '#3b82f6'
-    };
-    const panePed = app.map.getPane && app.map.getPane('gnPanePedidos') ? 'gnPanePedidos' : undefined;
-
-    const chkNp = document.getElementById('mapa-chk-label-np');
-    const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
-    const pinsLigerosAndroid =
-        typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa();
-    pedidosParaMarcadoresMapa().forEach(p => {
-        const { la, ln } = coordsEfectivasPedidoMapa(p);
-        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
-        const cer = p.es === 'Cerrado' || p.es === 'Derivado externo';
-        const col = cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6');
-        const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        let m;
-        if (showNp && !pinsLigerosAndroid) {
-            const icon = L.divIcon({
-                className: '',
-                html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
-                    <div style="margin-bottom:2px;background:${col};color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.85)">#${npEsc}</div>
-                    <div style="width:13px;height:13px;background:${col};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>
-                </div>`,
-                iconSize: [100, 36],
-                iconAnchor: [50, 36]
-            });
-            const mkOpt = { icon, zIndexOffset: cer ? 200 : 500 };
-            if (panePed) mkOpt.pane = panePed;
-            m = L.marker([la, ln], mkOpt).addTo(app.map);
-        } else {
-            const cmOpt = {
-                radius: cer ? 6 : 9,
-                fillColor: col,
-                color: '#fff',
-                weight: 2,
-                fillOpacity: cer ? 0.5 : 0.9
-            };
-            if (panePed) cmOpt.pane = panePed;
-            m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
-        }
-        m.bindPopup(`
-            <div style="min-width:160px;font-family:system-ui">
-                <b style="color:#1e3a8a">#${p.np}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
-                <span style="font-size:11px;color:#334155">${p.tt}</span><br>
-                <span style="font-size:11px;font-weight:600;color:#0f172a">${p.es}</span>${p.es !== 'Cerrado' ? ` · Av. ${p.av}%` : ''}<br>
-                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
-                    <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
-                    <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
-                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
-                    ${esAdmin() && puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !pedidoEsDerivadoFuera(p) ? `<button style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
-                </div>
-            </div>`, { maxWidth: 260 });
-        
-        app.mk.push(m);
-    });
-}
 
 /** Tras tocar un botón del popup de Leaflet, el mismo gesto puede generar un click en el mapa (p. ej. WebView Android). */
 function suppressNextMapClickFromPopup(ms = 520) {
@@ -9029,59 +8515,9 @@ async function actualizarAvance(id, avance) {
 }
 
 async function updPedido(id, campos, usuarioId) {
-    const idxPre = app.p.findIndex(p => String(p.id) === String(id));
-    const prevRow = idxPre !== -1 ? app.p[idxPre] : null;
-    const estadoAntesUpd = prevRow ? String(prevRow.es || '') : '';
-    const taiAsignado = prevRow != null && prevRow.tai != null ? prevRow.tai : null;
+    return window.updPedido(id, campos, usuarioId);
+}
 
-    // Agregar auditoría si corresponde
-    if (usuarioId && app.u) {
-        if (campos.estado === 'En ejecución') campos.usuario_inicio_id = app.u.id;
-        if (campos.estado === 'Cerrado')      campos.usuario_cierre_id = app.u.id;
-        if (campos.avance !== undefined && campos.estado === undefined) campos.usuario_avance_id = app.u.id;
-    }
-    const cv = {};
-    for (const [k, v] of Object.entries(campos)) {
-        if (CN.has(k)) cv[k] = v;
-    }
-    if (!Object.keys(cv).length) return;
-    
-    const s = [];
-    for (const [k, val] of Object.entries(cv)) s.push(`${k}=${esc(val)}`);
-    const queryUpdate = `UPDATE pedidos SET ${s.join(',')} WHERE id=${esc(parseInt(id))}`;
-
-    if (modoOffline || !NEON_OK || String(id).startsWith('off_')) {
-        
-        if (!String(id).startsWith('off_')) {
-            enqueueOffline({ tipo: 'UPDATE', query: queryUpdate });
-        }
-        
-    } else {
-        await ejecutarSQLConReintentos(queryUpdate);
-        const cierreCentral =
-            cv.estado === 'Cerrado' &&
-            estadoAntesUpd !== 'Cerrado' &&
-            taiAsignado != null &&
-            String(taiAsignado) !== String(app.u?.id || '');
-        if (cierreCentral && _sql) {
-            try {
-                const pidNum = parseInt(id, 10);
-                const np = prevRow && prevRow.np ? String(prevRow.np) : '';
-                const titulo = 'Pedido cerrado';
-                const cuerpo = `El reclamo ${np || '#' + id} fue cerrado desde la central.`;
-                await sqlSimple(
-                    `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(
-                        parseInt(taiAsignado, 10)
-                    )}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)}, FALSE)`
-                );
-            } catch (e) {
-                if (!String(e.message || e).includes('notificaciones_movil')) {
-                    console.warn('[notif-cierre-tecnico]', e.message || e);
-                }
-            }
-        }
-    }
-    
     const idx = app.p.findIndex(p => String(p.id) === String(id));
     if (idx !== -1) {
         const pm = {
@@ -12614,15 +12050,7 @@ let _setupLat = null;
 let _setupLng = null;
 let _setupGeoIntentado = false;
 function tenantIdActual() {
-    const u = app?.u;
-    if (u && (u.tenant_id != null || u.tenantId != null)) {
-        const n = Number(u.tenant_id ?? u.tenantId);
-        if (Number.isFinite(n)) return n;
-    }
-    const cfg = window.APP_CONFIG || {};
-    const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
-    if (Number.isFinite(fromCfg)) return fromCfg;
-    return 1;
+    return window.tenantIdActual();
 }
 
 /** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
@@ -12649,29 +12077,7 @@ function invalidatePedidosTenantSqlCache() {
 
 /** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, acota a la línea activa. */
 async function pedidosFiltroTenantSql() {
-    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
-    try {
-        const chk = await sqlSimple(
-            `SELECT column_name FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'pedidos'
-             AND column_name IN ('tenant_id','business_type')`
-        );
-        const names = new Set((chk.rows || []).map((x) => x.column_name));
-        const parts = [];
-        if (names.has('tenant_id')) {
-            parts.push(`tenant_id = ${esc(tenantIdActual())}`);
-        }
-        if (names.has('business_type')) {
-            const bt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
-            if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') {
-                parts.push(`business_type = ${esc(bt)}`);
-            }
-        }
-        _pedidosTenantSqlCache = parts.length ? ` AND ${parts.join(' AND ')}` : '';
-    } catch (_) {
-        _pedidosTenantSqlCache = '';
-    }
-    return _pedidosTenantSqlCache;
+    return window.pedidosFiltroTenantSql();
 }
 
 function urlWhatsappAtencionDesdeCfg() {

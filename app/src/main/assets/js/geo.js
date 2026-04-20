@@ -6,12 +6,17 @@ import {
     gnMapaLigero, toast,
     setGpsRecibidoEstaSesion
 } from './core.js';
-import { registrarFajaInstalacionSiFalta } from './map.js';
 
 let _watchId = null;
 let _circuloAcc = null;
 let _mejorPrecision = Infinity;
 let _gnLastWatchUbicacionMs = 0;
+
+function registrarFajaInstalacionSiFalta(lng) {
+    if (typeof window.registrarFajaInstalacionSiFalta === 'function') {
+        window.registrarFajaInstalacionSiFalta(lng);
+    }
+}
 
 export function setWatchId(id) { _watchId = id; }
 export function getWatchId() { return _watchId; }

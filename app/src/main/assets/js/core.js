@@ -16,6 +16,32 @@ export let NEON_OK = false;
 export let _sql = null;
 export let modoOffline = false;
 
+export let ultimaUbicacion = null;
+export let mapaInicializado = false;
+export let marcadorUbicacion = null;
+export let _gpsRecibidoEstaSesion = false;
+
+export function setUltimaUbicacion(val) { ultimaUbicacion = val; }
+export function setMapaInicializado(val) { mapaInicializado = val; }
+export function setMarcadorUbicacion(val) { marcadorUbicacion = val; }
+export function setGpsRecibidoEstaSesion(val) { _gpsRecibidoEstaSesion = val; }
+
+export function esAndroidWebViewMapa() {
+    try {
+        const ua = navigator.userAgent || '';
+        return (
+            ua.indexOf('Android') > -1 &&
+            (ua.indexOf('wv') > -1 || ua.indexOf('Version/') > -1)
+        );
+    } catch (_) {
+        return false;
+    }
+}
+
+export function gnMapaLigero() {
+    return esAndroidWebViewMapa();
+}
+
 export function setNeonOk(val) { NEON_OK = val; }
 export function setSql(val) { _sql = val; }
 export function setModoOffline(val) { modoOffline = val; }

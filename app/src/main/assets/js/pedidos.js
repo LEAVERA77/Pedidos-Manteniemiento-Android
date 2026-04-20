@@ -4,9 +4,6 @@
 
 import { app, modoOffline, NEON_OK, _sql, esc, sqlSimple, ejecutarSQLConReintentos, toast, render } from './core.js';
 import { offlinePedidos, offlinePedidosSave, enqueueOffline } from '../offline.js';
-// Nota: Estas funciones se asumen disponibles globalmente o se inyectarán/importarán según sea necesario
-// Si se migran a módulos, se deben importar aquí.
-// import { notificarCambiosPedidoTecnico, mostrarAlertaPedidoUrgente, refrescarDetalleSiAbiertoTrasSync, enriquecerCoordsGeocodificadasPedidos } from './ui-utils.js';
 
 const CN = new Set([
     'estado', 'fecha_avance', 'avance', 'usuario_inicio_id', 'usuario_cierre_id', 'usuario_avance_id',
@@ -28,7 +25,7 @@ export const norm = p => ({
     tt: p.tipo_trabajo || '',
     de: p.descripcion || '',
     pr: p.prioridad || 'Media',
-    es: p.estado || 'Pendiente',
+    es: p.estado || 'Pending',
     av: parseInt(p.avance) || 0,
     la: (() => {
         const raw = p.lat != null && p.lat !== '' ? p.lat : p.latitud;
@@ -88,6 +85,44 @@ export const norm = p => ({
         p.derivado_externo === 1 ||
         String(p.estado || '') === 'Derivado externo'
     ),
+    dda: String(p.derivado_a || '').trim(),
+    ddn: String(p.derivado_destino_nombre || '').trim(),
+    fder: p.fecha_derivacion || null,
+    uider: p.usuario_derivacion_id != null ? parseInt(p.usuario_derivacion_id, 10) : null,
+    dnota: String(p.derivacion_nota || '').trim(),
+    dsnap: String(p.derivacion_mensaje_snapshot || '').trim(),
+    sdpen: !!(
+        p.solicitud_derivacion_pendiente === true ||
+        p.solicitud_derivacion_pendiente === 't' ||
+        p.solicitud_derivacion_pendiente === 1
+    ),
+    sdm: String(p.solicitud_derivacion_motivo || '').trim(),
+    sdf: p.solicitud_derivacion_fecha || null,
+    sduid:
+        p.solicitud_derivacion_usuario_id != null
+            ? parseInt(p.solicitud_derivacion_usuario_id, 10)
+            : null,
+    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
+    wgeo: (() => {
+        const g = p.geocode_log_whatsapp;
+        if (g == null || g === '') return null;
+        if (typeof g === 'object' && !Array.isArray(g)) return g;
+        try {
+            return JSON.parse(String(g));
+        } catch (_) {
+            return null;
+        }
+    })(),
+    gaudit: (() => {
+        const g = p.geocoding_audit;
+        if (g == null || g === '') return null;
+        if (typeof g === 'object' && !Array.isArray(g)) return g;
+        try {
+            return JSON.parse(String(g));
+        } catch (_) {
+            return null;
+        }
+    })(),
 });
 
 let _pedidosTenantSqlCache = null;
@@ -274,6 +309,7 @@ export async function updPedido(id, campos, usuarioId) {
 }
 
 // Exportar al objeto global para compatibilidad con el puente Android
+window.norm = norm;
 window.cargarPedidos = cargarPedidos;
 window.updPedido = updPedido;
 window.pedidosFiltroTenantSql = pedidosFiltroTenantSql;
