@@ -3060,11 +3060,11 @@ document.getElementById('lf').addEventListener('submit', async e => {
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
-        resetPreferenciasPanelesInicioCerrados();
-        try { aplicarUIMapaPlataforma(); } catch (_) {}
-        try { initWebCoordsConverterBar(); } catch (_) {}
-        iniciarKeepAlive();
+
+        // Ejecutar inmediatamente lo que requiere gesto de usuario (GPS) antes de que expire
         iniciarTracking();
+
+        resetPreferenciasPanelesInicioCerrados();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
         const btnAdm = document.getElementById('btn-admin');
@@ -3122,26 +3122,26 @@ document.getElementById('lf').addEventListener('submit', async e => {
             iniciarPollSincroPedidosTecnico();
             detenerPollBannerReclamoCliente();
         }
-        setTimeout(async () => {
+        // Ejecutar inmediatamente SIN setTimeout para preservar el gesto del usuario
+        solicitarPermisos().then(r => {
+            if (!r.gps) console.log('GPS no solicitado o denegado por falta de gesto');
+            if (ultimaUbicacion) {
+                const enviarAl_SW = () => {
+                    if (navigator.serviceWorker?.controller) {
+                        navigator.serviceWorker.controller.postMessage({
+                            tipo: 'CACHEAR_ZONA',
+                            lat: ultimaUbicacion.lat,
+                            lng: ultimaUbicacion.lon,
+                            radioKm: 150
+                        });
+                    }
+                };
+                if (navigator.serviceWorker?.controller) enviarAl_SW();
+                else setTimeout(enviarAl_SW, 4000);
+            }
+        });
 
-            solicitarPermisos().then(r => {
-                if (!r.gps) toast('GPS no disponible — ubicación manual', 'info');
-                if (ultimaUbicacion) {
-                    const enviarAl_SW = () => {
-                        if (navigator.serviceWorker?.controller) {
-                            navigator.serviceWorker.controller.postMessage({
-                                tipo: 'CACHEAR_ZONA',
-                                lat: ultimaUbicacion.lat,
-                                lng: ultimaUbicacion.lon,
-                                radioKm: 150
-                            });
-                        }
-                    };
-                    // Esperar a que el SW esté activo
-                    if (navigator.serviceWorker?.controller) enviarAl_SW();
-                    else setTimeout(enviarAl_SW, 4000);
-                }
-            });
+        setTimeout(async () => {
             setupMapLazyWhenVisibleOnce();
             if (!offline) {
                 await asegurarJwtApiRest();
@@ -6827,10 +6827,21 @@ function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
 
 
 
-function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
+async function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     if (!navigator.geolocation) {
         if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
         return;
+    }
+
+    // Si es silencioso (auto-run), verificamos si tenemos permiso antes de disparar el prompt que causa [Violation]
+    if (modoSilencioso && typeof navigator.permissions !== 'undefined') {
+        try {
+            const status = await navigator.permissions.query({ name: 'geolocation' });
+            if (status.state === 'prompt') {
+                console.log('[gps] modo silencioso cancelado: requiere gesto del usuario');
+                return;
+            }
+        } catch(e) {}
     }
 
     const fastUserAction = !!(opts && opts.fastUserAction);
@@ -12323,6 +12334,16 @@ async function iniciarTracking() {
     if (_trackingInterval) return; // ya está corriendo
     const enviarUbicacion = async () => {
         if (!app.u || !navigator.geolocation || modoOffline || !NEON_OK) return;
+
+        // Si estamos en un navegador (no WebView) y no hay permiso concedido,
+        // no disparamos el prompt automáticamente para evitar [Violation]
+        if (!esAndroidWebViewMapa() && typeof navigator.permissions !== 'undefined') {
+            try {
+                const status = await navigator.permissions.query({ name: 'geolocation' });
+                if (status.state === 'prompt') return;
+            } catch(e) {}
+        }
+
         navigator.geolocation.getCurrentPosition(async pos => {
                 try {
                 const { latitude, longitude, accuracy } = pos.coords;
@@ -12336,7 +12357,11 @@ async function iniciarTracking() {
         }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
     };
     const intervaloMs = esAndroidWebViewMapa() ? 120000 : 15 * 60 * 1000;
-    enviarUbicacion();
+    // No llamar a enviarUbicacion() inmediatamente aquí para evitar [Violation] si el gesto del usuario expiró.
+    // El setInterval se encargará de la primera ejecución tras el intervalo, o podemos llamarlo solo si es Android.
+    if (esAndroidWebViewMapa()) {
+        enviarUbicacion();
+    }
     _trackingInterval = setInterval(enviarUbicacion, intervaloMs);
     console.log('[tracking] iniciado');
 }
@@ -12433,11 +12458,11 @@ try {
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
-        resetPreferenciasPanelesInicioCerrados();
-        try { aplicarUIMapaPlataforma(); } catch (_) {}
-        try { initWebCoordsConverterBar(); } catch (_) {}
-        iniciarKeepAlive();
+
+        // Ejecutar inmediatamente lo que requiere gesto de usuario (GPS) antes de que expire
         iniciarTracking();
+
+        resetPreferenciasPanelesInicioCerrados();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
         actualizarBadgeOffline();
