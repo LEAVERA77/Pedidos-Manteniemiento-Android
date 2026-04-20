@@ -14986,6 +14986,9 @@ function abrirAdmin() {
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
     } catch (_) {}
+    try {
+        actualizarUiPorTipoEmpresa();
+    } catch (_) {}
     adminTab('empresa');
     cargarFormEmpresa();
 }
@@ -16429,8 +16432,8 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
+            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor', 'id', 'identificador');
+            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis', 'abonado', 'numero_vecino', 'vecino', 'cliente', 'numero_cliente', 'nro_cliente');
             let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
             let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
             if (!nis_medidor) {
@@ -16649,23 +16652,49 @@ async function vaciarCoordenadasSociosCatalogo(opts) {
         throw e;
     }
 }
-// Exponer globalmente para onclick
-window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
+function actualizarUiPorTipoEmpresa() {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    const tit = document.getElementById('admin-socios-catalogo-titulo');
+    const msgCols = document.getElementById('socios-import-cols-code');
+
+    if (rubro === 'cooperativa_agua') {
+        if (tit) tit.textContent = 'Catálogo de abonados (agua)';
+        if (msgCols) msgCols.textContent = 'abonado | medidor | nombre | calle | numero | localidad';
+    } else if (rubro === 'municipio') {
+        if (tit) tit.textContent = 'Padrón de vecinos (municipio)';
+        if (msgCols) msgCols.textContent = 'numero_vecino | nombre | calle | numero | localidad';
+    } else {
+        if (tit) tit.textContent = 'Catálogo de socios (NIS / medidor)';
+        if (msgCols) msgCols.textContent = 'nis | medidor | nombre | calle | numero | localidad';
+    }
+}
+window.actualizarUiPorTipoEmpresa = actualizarUiPorTipoEmpresa;
 
 function mostrarFormatoExcelSocios() {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    let cols = 'nis | medidor | nombre | calle | numero | localidad';
+    let idLabel = 'nis';
+    if (rubro === 'cooperativa_agua') {
+        cols = 'abonado | medidor | nombre | calle | numero | localidad';
+        idLabel = 'abonado';
+    } else if (rubro === 'municipio') {
+        cols = 'numero_vecino | nombre | calle | numero | localidad';
+        idLabel = 'numero_vecino';
+    }
+
     alert(
-        'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
+        'GestorNova — Excel de socios / usuarios (fila 1 = encabezados; el orden no importa).\n\n' +
             'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
             'Columnas recomendadas:\n' +
-            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
-            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
-            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
+            cols + ' | (latitud | longitud) o (este | norte)\n\n' +
+            '• ' + idLabel + ' (y medidor si aplica): clave unificada nis_medidor.\n' +
+            '• Sinónimos de ID en encabezados: abonado, vecino, cliente, nis (y variantes nro_/numero_).\n' +
             '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
             '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
             '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
             '• Medidor: preferí texto en Excel para no perder ceros.\n\n' +
-            'Opcionales: provincia (también pcia, estado) · codigo_postal (cp, zip, postal) · telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
-            'Importación en lotes. Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
+            'Opcionales: provincia · codigo_postal · telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
+            'Importación en lotes. Sin «vaciar», se fusiona por identificador; con «vaciar», se borra el catálogo antes.'
     );
 }
 
