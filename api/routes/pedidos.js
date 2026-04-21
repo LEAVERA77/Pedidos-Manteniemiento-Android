@@ -226,7 +226,7 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
         // Notificar si:
         // 1. Es un pedido de WhatsApp cliente, O
         // 2. Hay un teléfono válido (para clientes en socios_catalogo)
-        const tieneOrigen WA = pedidoOrigenWhatsappCliente(row);
+        const tieneOrigenWA = pedidoOrigenWhatsappCliente(row);
         const telefono = String(phoneRaw || "").replace(/\D/g, "");
         const tieneTeléfono = telefono && telefono.length >= 8;
 
