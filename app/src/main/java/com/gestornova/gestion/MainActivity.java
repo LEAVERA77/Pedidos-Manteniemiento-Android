@@ -142,6 +142,13 @@ public class MainActivity extends AppCompatActivity {
             UbicacionPollingScheduler.schedule(this);
             AppUpdateChecker.checkAsync(this);
         }, 800);
+        
+        // Reintentar inyección de token después de 3 segundos
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (webView != null) {
+                injectTokenToWebView();
+            }
+        }, 3000);
     }
 
     private void crearCanalNotificacionesPedidos() {
@@ -168,6 +175,34 @@ public class MainActivity extends AppCompatActivity {
                 || prod.contains("emulator")
                 || hw.contains("goldfish")
                 || hw.contains("ranchu");
+    }
+
+    private void injectTokenToWebView() {
+        if (webView == null) return;
+        
+        SharedPreferences prefs = getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE);
+        String token = prefs.getString("api_token", "");
+        int userId = prefs.getInt(UbicacionWorker.KEY_USER_ID, -1);
+        String rol = prefs.getString(UbicacionWorker.KEY_ROL, "");
+        
+        if (token.isEmpty() || userId == -1) {
+            Log.d(TAG, "⚠️ No hay token para inyectar aún");
+            return;
+        }
+        
+        String js = String.format(Locale.US,
+            "try{" +
+            "  if(window.AndroidSession && window.AndroidSession.setUser){" +
+            "    window.AndroidSession.setUser(JSON.stringify({id:%d, rol:'%s', api_token:'%s'}));" +
+            "    console.log('✅ Token inyectado desde Android');" +
+            "  } else {" +
+            "    console.log('❌ AndroidSession no disponible');" +
+            "  }" +
+            "}catch(e){console.error('Error inyectando token:', e);}",
+            userId, rol, token);
+        
+        webView.evaluateJavascript(js, null);
+        Log.d(TAG, "📤 Token inyectado - Usuario: " + userId + ", Rol: " + rol);
     }
 
     private void configurarWebView() {
@@ -293,6 +328,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
+                injectTokenToWebView();  // Inyectar token cuando la página termina de cargar
             }
         });
 
@@ -481,6 +517,7 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);
             dispatchPendingPedidoIdToWeb();
+            injectTokenToWebView();
         }
     }
 
