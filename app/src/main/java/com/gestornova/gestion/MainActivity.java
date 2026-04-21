@@ -193,14 +193,17 @@ public class MainActivity extends AppCompatActivity {
         
         String js = String.format(Locale.US,
             "try{" +
+            "  localStorage.setItem('pmg_api_token', '%s');" +
+            "  if(window.app){" +
+            "    window.app.apiToken = '%s';" +
+            "    window.app.u = { id: %d, rol: '%s' };" +
+            "    console.log('✅ Estado de app actualizado desde Android');" +
+            "  }" +
             "  if(window.AndroidSession && window.AndroidSession.setUser){" +
             "    window.AndroidSession.setUser(JSON.stringify({id:%d, rol:'%s', api_token:'%s'}));" +
-            "    console.log('✅ Token inyectado desde Android');" +
-            "  } else {" +
-            "    console.log('❌ AndroidSession no disponible');" +
             "  }" +
             "}catch(e){console.error('Error inyectando token:', e);}",
-            userId, rol, token);
+            token, token, userId, rol, userId, rol, token);
         
         webView.evaluateJavascript(js, null);
         Log.d(TAG, "📤 Token inyectado - Usuario: " + userId + ", Rol: " + rol);
