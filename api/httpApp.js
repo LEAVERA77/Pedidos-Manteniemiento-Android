@@ -134,6 +134,7 @@ export function createHttpApp() {
   app.use("/api/config", configUbicacionRoutes);
   app.use("/api/whatsapp", whatsappGeocodeRoutes);
   app.use("/api/whatsapp/broadcast", whatsappBroadcastRoutes);
+  app.use("/api/sql", sqlRoutes);
   app.use("/api/tenant", tenantSwitchRoutes);
   app.use("/api/geocode", geocodeNominatimRoutes);
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
