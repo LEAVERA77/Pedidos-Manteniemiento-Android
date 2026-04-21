@@ -27,6 +27,7 @@ import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
+import sqlRoutes from "./routes/sql.js";  // ← AGREGAR ESTA LÍNEA
 import {
   authLoginLimiter,
   authVerifyPasswordLimiter,
@@ -116,6 +117,7 @@ export function createHttpApp() {
 
   app.use("/api/geocode", geocodeRouteLimiter);
   app.use("/api/whatsapp/geocode", geocodeRouteLimiter);
+  app.use("/api/sql", sqlRoutes);
 
   app.use("/api/auth/login", (req, res, next) => {
     if (req.method !== "POST") return next();
