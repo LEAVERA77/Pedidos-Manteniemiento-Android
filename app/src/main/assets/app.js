@@ -498,10 +498,35 @@ async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
 
 
 async function sqlSimple(query, params = []) {
-    if (!_sql) throw new Error('Neon no inicializado');
     let q = query;
     for (let i = 0; i < params.length; i++)
         q = q.replace(new RegExp('\\{' + i + '\\}', 'g'), esc(params[i]));
+
+    const esWebViewLocal = typeof window.AndroidConfig !== 'undefined';
+    if (esWebViewLocal) {
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (tok) {
+            try {
+                const r = await fetch(apiUrl('/api/auth/sql-proxy'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${tok}`
+                    },
+                    body: JSON.stringify({ query: q })
+                });
+                if (r.ok) {
+                    const data = await r.json();
+                    return data;
+                }
+            } catch (e) {
+                console.warn('[sql-proxy] fallo, intentando SDK directo', e);
+            }
+        }
+    }
+
+    if (!_sql) throw new Error('Neon no inicializado');
     return _sql(q);
 }
 
@@ -3108,7 +3133,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
+                AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''), String(app.apiToken || ''));
             }
         } catch (_) {}
         if (esAdmin()) {
@@ -12414,7 +12439,7 @@ try {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''));
+                AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''), String(app.apiToken || ''));
             }
         } catch (_) {}
         if (esAdmin()) {

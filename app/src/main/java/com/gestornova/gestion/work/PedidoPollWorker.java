@@ -19,12 +19,20 @@ import androidx.work.WorkerParameters;
 import com.gestornova.gestion.MainActivity;
 import com.gestornova.gestion.R;
 
-import java.sql.Connection;
-import java.sql.SQLException;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 /**
- * Consulta periódica a la tabla {@code pedidos} en Neon y muestra una notificación local
- * si hay filas con {@code id} mayor al último visto (marca de agua en SharedPreferences).
+ * Consulta periódica a la tabla {@code pedidos} vía API REST (sql-proxy) y muestra una notificación local
+ * si hay filas con {@code id} mayor al último visto.
  */
 public class PedidoPollWorker extends Worker {
 
@@ -44,44 +52,73 @@ public class PedidoPollWorker extends Worker {
     @Override
     public Result doWork() {
         Context ctx = getApplicationContext();
-        String cs = NeonConfigReader.readConnectionString(ctx);
-        if (cs == null) {
-            Log.d(TAG, "Sin connectionString: omitiendo (añadí assets/config.json)");
+        SharedPreferences session = ctx.getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE);
+        String token = session.getString("api_token", "");
+        if (token.isEmpty()) {
+            Log.d(TAG, "Sin token: omitiendo");
             return Result.success();
         }
 
         SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long stored = prefs.getLong(KEY_LAST_MAX_ID, -1L);
 
-        try (Connection conn = NeonJdbc.open(cs)) {
-            long maxId = NeonJdbc.queryMaxPedidoId(conn);
-            if (maxId < 0) {
-                Log.w(TAG, "MAX(id) inválido");
-                return Result.retry();
-            }
+        try {
+            // 1. Obtener MAX(id)
+            JSONObject respMax = callProxy(token, "SELECT COALESCE(MAX(id), 0) as max_id FROM pedidos");
+            JSONArray rowsMax = respMax.optJSONArray("rows");
+            if (rowsMax == null || rowsMax.length() == 0) return Result.success();
+            long maxId = rowsMax.getJSONObject(0).optLong("max_id", 0);
 
             if (stored < 0) {
                 prefs.edit().putLong(KEY_LAST_MAX_ID, maxId).apply();
-                Log.i(TAG, "Bootstrap marca de agua pedidos maxId=" + maxId);
                 return Result.success();
             }
 
             if (maxId > stored) {
-                int nuevos = NeonJdbc.countPedidosNewerThan(conn, stored);
-                String ultimoNp = NeonJdbc.queryNumeroPedido(conn, maxId);
+                // 2. Contar nuevos
+                JSONObject respCount = callProxy(token, "SELECT COUNT(*)::int as nuevos FROM pedidos WHERE id > " + stored);
+                int nuevos = respCount.optJSONArray("rows").getJSONObject(0).optInt("nuevos", 0);
+
+                // 3. Obtener último número
+                JSONObject respNum = callProxy(token, "SELECT numero_pedido FROM pedidos WHERE id = " + maxId);
+                String ultimoNp = respNum.optJSONArray("rows").getJSONObject(0).optString("numero_pedido", "");
+
                 mostrarNotificacion(ctx, nuevos, ultimoNp);
                 prefs.edit().putLong(KEY_LAST_MAX_ID, maxId).apply();
-                Log.i(TAG, "Nuevos pedidos: " + nuevos + " (maxId " + stored + " -> " + maxId + ")");
             }
 
             return Result.success();
-        } catch (SQLException e) {
-            // Emulador sin Neon válido / red: evita reintentos infinitos y ruido en logcat.
-            Log.w(TAG, "Neon no disponible (config.json / red). Notif. pedidos desactivada: " + e.getMessage());
-            return Result.success();
         } catch (Exception e) {
-            Log.e(TAG, "Error consultando Neon", e);
+            Log.e(TAG, "Error consultando API", e);
             return Result.retry();
+        }
+    }
+
+    private JSONObject callProxy(String token, String query) throws Exception {
+        URL url = new URL("https://nexxo-api-418k.onrender.com/api/auth/sql-proxy");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setDoOutput(true);
+
+        JSONObject body = new JSONObject();
+        body.put("query", query);
+
+        try (OutputStream os = new BufferedOutputStream(conn.getOutputStream())) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = conn.getResponseCode();
+        if (code != 200) throw new Exception("HTTP " + code);
+
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
+            return new JSONObject(sb.toString());
+        } finally {
+            conn.disconnect();
         }
     }
 

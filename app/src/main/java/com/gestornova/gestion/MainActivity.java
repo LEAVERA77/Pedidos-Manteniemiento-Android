@@ -561,10 +561,11 @@ public class MainActivity extends AppCompatActivity {
     /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
     private class AndroidSessionBridge {
         @JavascriptInterface
-        public void setUser(int userId, String rol) {
+        public void setUser(int userId, String rol, String token) {
             getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
                     .putInt(UbicacionWorker.KEY_USER_ID, userId)
                     .putString(UbicacionWorker.KEY_ROL, rol != null ? rol : "")
+                    .putString("api_token", token != null ? token : "")
                     .apply();
         }
 

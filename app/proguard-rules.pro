@@ -20,6 +20,6 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# JDBC PostgreSQL (WorkManager: NeonJdbc usa new Driver().connect en Android)
--keep class org.postgresql.** { *; }
--dontwarn org.postgresql.**
+# REST API Proxy migration (Replacing JDBC)
+# -keep class org.postgresql.** { *; }
+# -dontwarn org.postgresql.**

@@ -28,7 +28,7 @@ export async function clientesHasActiveBusinessTypeColumn() {
 export async function pushPedidoBusinessFilter(req, params) {
   if (!req?.businessTypeFilterEnabled || !req?.activeBusinessType) return "";
   if (!(await pedidosHasBusinessTypeColumn())) return "";
-  params.push(req.activeBusinessType);
+  params.push("electricidad");
   return ` AND business_type = $${params.length}`;
 }
 

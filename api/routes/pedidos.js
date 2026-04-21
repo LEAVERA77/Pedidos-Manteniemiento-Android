@@ -214,7 +214,6 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
   setImmediate(() => {
     (async () => {
       try {
-        if (!pedidoOrigenWhatsappCliente(row)) return;
         const tenantId =
           row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
             ? Number(row.tenant_id)
@@ -223,6 +222,18 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
         let phoneRaw =
           bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
         phoneRaw = await resolverTelefonoContactoParaNotificacionCliente({ ...row, telefono_contacto: phoneRaw }, tenantId);
+
+        // Notificar si:
+        // 1. Es un pedido de WhatsApp cliente, O
+        // 2. Hay un teléfono válido (para clientes en socios_catalogo)
+        const tieneOrigen WA = pedidoOrigenWhatsappCliente(row);
+        const telefono = String(phoneRaw || "").replace(/\D/g, "");
+        const tieneTeléfono = telefono && telefono.length >= 8;
+
+        if (!tieneOrigenWA && !tieneTeléfono) {
+          return;
+        }
+
         await notifyPedidoCierreWhatsAppSafe({
           tenantId,
           numeroPedido: row.numero_pedido,
@@ -257,7 +268,10 @@ function scheduleNotifyClientePedidoWhatsapp({
   setImmediate(() => {
     (async () => {
       try {
-        if (!pedidoOrigenWhatsappCliente(pedidoAntes) && !pedidoOrigenWhatsappCliente(pedidoDespues)) return;
+        // Notificar si:
+        // 1. El pedido origen WhatsApp cliente, O
+        // 2. Hay un teléfono válido para contacto (desde socios_catalogo o del pedido directo)
+        const tieneOrigenWA = pedidoOrigenWhatsappCliente(pedidoAntes) || pedidoOrigenWhatsappCliente(pedidoDespues);
 
         const tenantId =
           pedidoAntes.tenant_id != null && Number.isFinite(Number(pedidoAntes.tenant_id))
@@ -273,11 +287,21 @@ function scheduleNotifyClientePedidoWhatsapp({
           tenantId
         );
         const phone = String(phoneRawMerged || "").replace(/\D/g, "");
-        if (!phone || phone.length < 8) return;
+
+        // Si no hay teléfono válido, no continuar
+        if (!phone || phone.length < 8) {
+          if (tieneOrigenWA) {
+            console.debug("[pedidos] No hay teléfono válido para notificar cliente", {
+              pedidoId: pedidoDespues.id,
+              telefonoRaw: phoneRawMerged,
+            });
+          }
+          return;
+        }
 
         const nombreEntidad = await loadNombreCliente(tenantId);
 
-        if (becameEjecucion) {
+        if (becameEjecucion && (tieneOrigenWA || phoneRawMerged)) {
           await notifyPedidoClienteActualizacionWhatsAppSafe({
             tenantId,
             numeroPedido: pedidoDespues.numero_pedido,
@@ -287,7 +311,7 @@ function scheduleNotifyClientePedidoWhatsapp({
             tipo: "en_ejecucion",
           });
         }
-        if (avanceChanged && estadoPermiteAvance) {
+        if (avanceChanged && estadoPermiteAvance && (tieneOrigenWA || phoneRawMerged)) {
           const snippet =
             pedidoDespues.trabajo_realizado != null
               ? String(pedidoDespues.trabajo_realizado)
@@ -312,6 +336,7 @@ function scheduleNotifyClientePedidoWhatsapp({
   });
 }
 
+// Revisar la función getPedidoInTenant para asegurar que está recuperando el pedido correctamente
 async function getPedidoInTenant(id, req) {
   const tenantId = req.tenantId;
   if (await pedidosTableHasTenantIdColumn()) {
@@ -877,6 +902,8 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     ];
     const bind = hasTa ? [...upParams, req.tenantId] : [...upParams];
     const bt = await pushPedidoBusinessFilter(req, bind);
+    // Después del business filter, la posición del tenant_id puede estar desplazada
+    // Pero siempre es en posición 9 si hasTa es true (antes del business filter)
     const sql = hasTa
       ? `UPDATE pedidos SET
           estado = $2,
