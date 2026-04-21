@@ -95,8 +95,8 @@ public class PedidoPollWorker extends Worker {
     }
 
     private JSONObject callProxy(String token, String query) throws Exception {
-        // ✅ CAMBIADO: nuevo endpoint
-        URL url = new URL("https://nexxo-api-418k.onrender.com/api/sql/query");
+        // Usa el proxy de autenticación que sí está desplegado
+        URL url = new URL("https://nexxo-api-418k.onrender.com/api/auth/sql-proxy");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Authorization", "Bearer " + token);

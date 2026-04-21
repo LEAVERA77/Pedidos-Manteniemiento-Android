@@ -135,11 +135,20 @@ router.post("/sql-proxy", authMiddleware, async (req, res) => {
     const q = String(req.body?.query || "").trim();
     if (!q) return res.status(400).json({ error: "Query requerida" });
 
-    // Restricción de seguridad: solo permitimos SELECT en el proxy si no es admin.
+    // Restricción de seguridad: solo permitimos SELECT en el proxy si no es admin,
+    // EXCEPTO para las tablas de ubicaciones y marcado de notificaciones leídas (Workers).
     const rol = String(req.user.rol || "").toLowerCase();
     const esAdmin = rol === "admin" || rol === "administrador";
-    if (!esAdmin && !q.toLowerCase().startsWith("select")) {
-      return res.status(403).json({ error: "Solo se permiten consultas de lectura a través del proxy" });
+    const qLower = q.toLowerCase();
+
+    if (!esAdmin) {
+      const isSelect = qLower.startsWith("select");
+      const isUbicacion = qLower.includes("ubicaciones_usuarios");
+      const isNotifUpdate = qLower.startsWith("update notificaciones_movil") && qLower.includes("leida = true");
+
+      if (!isSelect && !isUbicacion && !isNotifUpdate) {
+        return res.status(403).json({ error: "Solo se permiten consultas de lectura o actualizaciones de estado autorizadas" });
+      }
     }
 
     const result = await query(q);
