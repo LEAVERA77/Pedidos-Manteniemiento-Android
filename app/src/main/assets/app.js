@@ -3133,7 +3133,11 @@ document.getElementById('lf').addEventListener('submit', async e => {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''), String(app.apiToken || ''));
+                AndroidSession.setUser(JSON.stringify({
+                    id: parseInt(u.id, 10) || 0,
+                    rol: String(u.rol || ''),
+                    api_token: String(app.apiToken || '')
+                }));
             }
         } catch (_) {}
         if (esAdmin()) {
@@ -12439,7 +12443,11 @@ try {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''), String(app.apiToken || ''));
+                AndroidSession.setUser(JSON.stringify({
+                    id: parseInt(app.u.id, 10) || 0,
+                    rol: String(app.u.rol || ''),
+                    api_token: String(app.apiToken || '')
+                }));
             }
         } catch (_) {}
         if (esAdmin()) {
