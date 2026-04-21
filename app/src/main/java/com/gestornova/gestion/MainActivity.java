@@ -558,22 +558,34 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
-    private class AndroidSessionBridge {
-        @JavascriptInterface
-        public void setUser(int userId, String rol, String token) {
+   /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
+private class AndroidSessionBridge {
+    @JavascriptInterface
+    public void setUser(String userDataJson) {
+        try {
+            org.json.JSONObject user = new org.json.JSONObject(userDataJson);
+            int userId = user.optInt("id", -1);
+            String rol = user.optString("rol", "");
+            String token = user.optString("api_token", "");
+            
             getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
                     .putInt(UbicacionWorker.KEY_USER_ID, userId)
                     .putString(UbicacionWorker.KEY_ROL, rol != null ? rol : "")
                     .putString("api_token", token != null ? token : "")
                     .apply();
-        }
-
-        @JavascriptInterface
-        public void clearUser() {
-            getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit().clear().apply();
+            
+            Log.d(TAG, "✅ Sesión guardada - Usuario ID: " + userId + ", Rol: " + rol);
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error en setUser: " + userDataJson, e);
         }
     }
+
+    @JavascriptInterface
+    public void clearUser() {
+        getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit().clear().apply();
+        Log.d(TAG, "Sesión eliminada");
+    }
+}
 
     /** Expone lectura de assets/config.json y versión de la app a JavaScript (HTML remoto o file://). */
     private class AndroidConfigBridge {
