@@ -108,7 +108,8 @@ public class UbicacionWorker extends Worker {
     }
 
     private JSONObject callProxy(String token, String query) throws Exception {
-        URL url = new URL("https://nexxo-api-418k.onrender.com/api/auth/sql-proxy");
+        // ✅ CAMBIADO: nuevo endpoint
+        URL url = new URL("https://nexxo-api-418k.onrender.com/api/sql/query");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Authorization", "Bearer " + token);
