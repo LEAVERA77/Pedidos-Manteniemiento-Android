@@ -692,6 +692,19 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
       ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
       : [id, req.user.id, motivoStr || null, destinoSug];
     const bt = await pushPedidoBusinessFilter(req, bind);
+
+    // Si el pedido está 'Asignado', lo pasamos a 'En ejecución' automáticamente al solicitar derivación
+    if (String(pedido.estado) === "Asignado") {
+      try {
+        await query(
+          `UPDATE pedidos SET estado = 'En ejecución', fecha_inicio = NOW(), usuario_inicio_id = $1 WHERE id = $2`,
+          [req.user.id, id]
+        );
+      } catch (e) {
+        console.error("Error actualizando estado a En ejecución:", e);
+      }
+    }
+
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = TRUE,
