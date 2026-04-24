@@ -10518,6 +10518,7 @@ async function confirmarEnvioDerivacionPreviewAdmin() {
 window.confirmarEnvioDerivacionPreviewAdmin = confirmarEnvioDerivacionPreviewAdmin;
 
 async function solicitarDerivacionTerceroDesdeTecnico(pid) {
+    console.log('solicitarDerivacionTerceroDesdeTecnico - pid:', pid);
     const pidNum = parseInt(pid, 10);
     if (!Number.isFinite(pidNum)) return;
     const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
