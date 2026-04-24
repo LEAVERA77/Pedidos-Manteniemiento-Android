@@ -10534,13 +10534,19 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         return;
     }
     try {
+        console.log(`📞 Solicitando derivación para pedido: ${pidNum}`);
         const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/solicitar-derivacion-tercero`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ motivo: motivo || undefined }),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
+        if (!resp.ok) {
+            const errorMsg = data.error || data.detail || `HTTP ${resp.status}`;
+            console.error(`❌ Error al derivar pedido ${pidNum}:`, errorMsg);
+            throw new Error(errorMsg);
+        }
+        console.log(`✅ Derivación solicitada para pedido ${pidNum}`);
         const row = norm(data);
         const ix = app.p.findIndex((x) => String(x.id) === String(pid));
         if (ix !== -1) app.p[ix] = row;
