@@ -10992,7 +10992,8 @@ async function detalle(p) {
         esAdmin() &&
         puedeEnviarApiRestPedidos() &&
         (p.es === 'Asignado' || p.es === 'En ejecución') &&
-        !pedidoEsDerivadoFuera(p)
+        !pedidoEsDerivadoFuera(p) &&
+        tipoPermiteSolicitudDerivacionTercero(p.tt)
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
