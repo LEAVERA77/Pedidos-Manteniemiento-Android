@@ -1526,15 +1526,21 @@ function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
 }
 
 const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
-    'Cables Caídos/Peligro',
-    'Poste Inclinado/Dañado',
-    'Alumbrado Público (Mantenimiento)',
-    'Riesgo en la vía pública',
-    'Corrimiento de poste/columna',
+    'cables caídos/peligro',
+    'poste inclinado/dañado',
+    'alumbrado público',
+    'alumbrado público (mantenimiento)',
+    'riesgo en la vía pública',
+    'riesgo vía pública',
+    'corrimiento de poste/columna',
 ]);
 
 function tipoPermiteSolicitudDerivacionTercero(tt) {
-    return TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO.has(String(tt || '').trim());
+    const t = String(tt || '').trim().toLowerCase();
+    for (const allowed of TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO) {
+        if (t === allowed || t.includes(allowed) || allowed.includes(t)) return true;
+    }
+    return false;
 }
 
 /** Cooperativa eléctrica: técnico asignado puede pedir al admin que derive a un tercero (cola de aprobación). */
