@@ -29,7 +29,7 @@ async function telefonosPedidosTenantBusiness(tenantId, businessType) {
   let wh = "tenant_id = $1 AND telefono_contacto IS NOT NULL AND TRIM(telefono_contacto::text) <> ''";
   if (hasBt && businessType) {
     params.push(businessType);
-    wh += ` AND business_type = $${params.length}`;
+    wh += ` AND (business_type = $${params.length} OR business_type IS NULL)`;
   }
   const r = await query(
     `SELECT DISTINCT telefono_contacto FROM pedidos WHERE ${wh}`,

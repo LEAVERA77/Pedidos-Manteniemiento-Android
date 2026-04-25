@@ -67,7 +67,7 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       (await pedidosColumnExists("business_type"))
     ) {
       selParams.push(req.activeBusinessType);
-      btExtra = ` AND business_type = $${selParams.length}`;
+      btExtra = ` AND (business_type = $${selParams.length} OR business_type IS NULL)`;
     }
     try {
       pedidoResult = await query(
@@ -138,8 +138,8 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
         !ignoreBt &&
         !!(req?.businessTypeFilterEnabled && req?.activeBusinessType) &&
         (await pedidosColumnExists("business_type"));
-      const upBtGeo = hasBtUp ? " AND business_type = $8" : "";
-      const upBtNo = hasBtUp ? " AND business_type = $7" : "";
+      const upBtGeo = hasBtUp ? " AND (business_type = $8 OR business_type IS NULL)" : "";
+      const upBtNo = hasBtUp ? " AND (business_type = $7 OR business_type IS NULL)" : "";
       if (await pedidosColumnExists("geocoding_audit")) {
         const bindGeo = [
           latFinal,
