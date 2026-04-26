@@ -57,8 +57,7 @@ const MSG_SALIR_ATRAS =
 const MSG_ADDR_CIUDAD =
   "¿En qué *ciudad o localidad* está el reclamo? (ej: *Hasenkamp*, *Rosario*).\n\n" +
   "Lo más preciso es *ubicación GPS*: *Adjuntar* (📎) → *Ubicación*. " +
-  "Si no podés, escribí bien la *localidad* y luego *calle y número*.\n\n" +
-  "_Al enviar ubicación GPS, aceptás que se use únicamente para ubicar el reclamo en el mapa._" +
+  "Si no podés, escribí bien la *localidad* y luego *calle y número*." +
   MSG_SALIR_ATRAS;
 
 /** 24 jurisdicciones (Nominatim / Argentina). */
@@ -636,7 +635,6 @@ async function loadTenantBotContext(tenantId) {
     whatsappBloqueoReclamos: bloqueo.active,
     whatsappBloqueoMensaje: bloqueo.mensaje,
     derivacionReclamos: derivacionReclamosDesdeConfig(c),
-    bienvenida: String(c.whatsapp_bienvenida || "").trim() || null,
   };
 }
 
@@ -686,9 +684,8 @@ function formatDerivacionBotMessage(ctx) {
 function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
-  const bienvenida = ctx.bienvenida ? `\n\n${ctx.bienvenida}\n` : "";
   return (
-    `Bienvenido al centro de atención de *${n}*.${bienvenida}\n\n` +
+    `Bienvenido al centro de atención de *${n}*.\n\n` +
     (max
       ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
@@ -1616,7 +1613,7 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     return;
   }
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
-  if (tipo === TIPO_RECLAMO_OTROS || tipo === "Pérdida en Vereda/Calle") {
+  if (tipo === TIPO_RECLAMO_OTROS) {
     await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
     return;
   }
@@ -2553,7 +2550,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const tipoSel = ctx.tipos[n - 1];
-      if (tipoSel === TIPO_RECLAMO_OTROS || tipoSel === "Pérdida en Vereda/Calle") {
+      if (tipoSel === TIPO_RECLAMO_OTROS) {
         await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
         return;
       }

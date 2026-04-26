@@ -1,9 +1,5 @@
 package com.gestornova.gestion.work;
 
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -30,16 +26,17 @@ public final class NeonJdbc {
     private NeonJdbc() {}
 
     public static Connection open(String connectionString) throws SQLException {
-        ParsedConn parsed = parseAndCanonicalizeConnectionString(connectionString);
-        String url = parsed.jdbcUrl;
-        Properties p = buildConnectProps(parsed);
+        String url = sanitizeNeonJdbcUrl(normalizeJdbcUrl(connectionString));
+        Properties p = buildConnectProps(url);
         org.postgresql.Driver driver = new org.postgresql.Driver();
 
         Connection c = driver.connect(url, p);
         if (c != null) return c;
 
         // Sin duplicar sslmode en Properties si la URL ya lo trae (evita que connect() devuelva null en algunos runtimes).
-        Properties minimal = minimalFallbackProps(p);
+        Properties minimal = new Properties();
+        minimal.setProperty("connectTimeout", "20");
+        minimal.setProperty("socketTimeout", "25");
         c = driver.connect(url, minimal);
         if (c != null) return c;
 
@@ -68,119 +65,6 @@ public final class NeonJdbc {
                 last);
     }
 
-    /** Resultado de {@link #parseAndCanonicalizeConnectionString(String)}: URL sin user:pass en la autoridad (exigido por pgjdbc 42.2 en Android). */
-    private static final class ParsedConn {
-        /** {@code jdbc:postgresql://host[:port]/db} (consulta opcional sin credenciales en la URL). */
-        final String jdbcUrl;
-        /** user, password, parámetros de consulta originales (sslmode, etc.). */
-        final Properties queryAndAuthProps;
-
-        ParsedConn(String jdbcUrl, Properties queryAndAuthProps) {
-            this.jdbcUrl = jdbcUrl;
-            this.queryAndAuthProps = queryAndAuthProps;
-        }
-    }
-
-    /**
-     * Convierte cadenas estilo Neon {@code postgresql://user:pass@host/db?...} en URL JDBC que pgjdbc 42.x
-     * acepta siempre: credenciales y parámetros en {@link Properties}, no en userinfo del host.
-     */
-    private static ParsedConn parseAndCanonicalizeConnectionString(String connectionString) throws SQLException {
-        String raw = connectionString == null ? "" : connectionString.trim();
-        if (!raw.isEmpty() && raw.charAt(0) == '\uFEFF') {
-            raw = raw.substring(1).trim();
-        }
-        raw = sanitizeNeonJdbcUrl(raw);
-
-        String forUri = raw;
-        if (forUri.startsWith("jdbc:")) {
-            forUri = forUri.substring("jdbc:".length());
-        }
-        if (!forUri.startsWith("postgresql://")) {
-            forUri = "postgresql://" + forUri;
-        }
-
-        final URI uri;
-        try {
-            uri = new URI(forUri);
-        } catch (URISyntaxException e) {
-            throw new SQLException("connectionString Neon con formato inválido", e);
-        }
-
-        String host = uri.getHost();
-        if (host == null || host.isEmpty()) {
-            throw new SQLException("connectionString Neon sin host (revisá user:pass@host en la URL)");
-        }
-
-        String path = uri.getPath();
-        if (path == null || path.isEmpty() || "/".equals(path)) {
-            throw new SQLException("connectionString Neon sin nombre de base /ruta");
-        }
-        String database = path.startsWith("/") ? path.substring(1) : path;
-        int port = uri.getPort();
-
-        Properties qprops = new Properties();
-        String query = uri.getRawQuery();
-        if (query != null && !query.isEmpty()) {
-            for (String pair : query.split("&")) {
-                if (pair.isEmpty()) continue;
-                int eq = pair.indexOf('=');
-                if (eq <= 0) continue;
-                String k = urlDecode(pair.substring(0, eq));
-                String v = urlDecode(pair.substring(eq + 1));
-                if (!k.isEmpty()) {
-                    qprops.setProperty(k, v);
-                }
-            }
-        }
-
-        String rawUserInfo = uri.getRawUserInfo();
-        if (rawUserInfo != null && !rawUserInfo.isEmpty()) {
-            int colon = rawUserInfo.indexOf(':');
-            if (colon >= 0) {
-                qprops.setProperty("user", urlDecode(rawUserInfo.substring(0, colon)));
-                qprops.setProperty("password", urlDecode(rawUserInfo.substring(colon + 1)));
-            } else {
-                qprops.setProperty("user", urlDecode(rawUserInfo));
-            }
-        }
-
-        StringBuilder jdbc = new StringBuilder();
-        jdbc.append("jdbc:postgresql://").append(host);
-        if (port > 0) {
-            jdbc.append(":").append(port);
-        }
-        jdbc.append("/").append(database);
-
-        return new ParsedConn(jdbc.toString(), qprops);
-    }
-
-    /** Segundo intento de conexión: timeouts + credenciales, sin el resto de props (sslmode va en URL implícita vía props anteriores — aquí copiamos sslmode si existía). */
-    private static Properties minimalFallbackProps(Properties full) {
-        Properties minimal = new Properties();
-        minimal.setProperty("connectTimeout", "20");
-        minimal.setProperty("socketTimeout", "25");
-        copyPropIfPresent(full, minimal, "user");
-        copyPropIfPresent(full, minimal, "password");
-        copyPropIfPresent(full, minimal, "sslmode");
-        return minimal;
-    }
-
-    private static void copyPropIfPresent(Properties src, Properties dst, String key) {
-        String v = src.getProperty(key);
-        if (v != null) {
-            dst.setProperty(key, v);
-        }
-    }
-
-    private static String urlDecode(String s) {
-        try {
-            return URLDecoder.decode(s, StandardCharsets.UTF_8.name());
-        } catch (Exception e) {
-            return s;
-        }
-    }
-
     /** Neon suele añadir channel_binding=require; pgjdbc 42.2 en Android suele hacer que {@code Driver#connect} devuelva null. */
     private static String sanitizeNeonJdbcUrl(String url) {
         if (url == null) return null;
@@ -204,17 +88,24 @@ public final class NeonJdbc {
         return u;
     }
 
-    private static Properties buildConnectProps(ParsedConn parsed) {
+    private static Properties buildConnectProps(String jdbcUrl) {
         Properties p = new Properties();
-        for (String name : parsed.queryAndAuthProps.stringPropertyNames()) {
-            p.setProperty(name, parsed.queryAndAuthProps.getProperty(name));
-        }
-        if (!p.containsKey("sslmode") && !parsed.jdbcUrl.contains("sslmode=")) {
+        if (!jdbcUrl.contains("sslmode=")) {
             p.setProperty("sslmode", "require");
         }
         p.setProperty("connectTimeout", "20");
         p.setProperty("socketTimeout", "25");
         return p;
+    }
+
+    private static String normalizeJdbcUrl(String connectionString) {
+        String url = connectionString.trim();
+        if (url.startsWith("postgresql://")) {
+            url = "jdbc:postgresql://" + url.substring("postgresql://".length());
+        } else if (!url.startsWith("jdbc:postgresql://")) {
+            url = "jdbc:postgresql://" + url;
+        }
+        return url;
     }
 
     public static long queryMaxPedidoId(Connection c) throws SQLException {

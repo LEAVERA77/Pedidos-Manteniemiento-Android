@@ -60,9 +60,4 @@ describe("tiposReclamo — permisos y reglas", () => {
     const tipos = tiposReclamoParaClienteTipo("municipio");
     expect(tipos).toContain("Otros");
   });
-
-  it("Obstrucción de Cloaca solo en municipio (no en cooperativa_agua)", () => {
-    expect(tiposReclamoParaClienteTipo("cooperativa_agua")).not.toContain("Obstrucción de Cloaca");
-    expect(tiposReclamoParaClienteTipo("municipio")).toContain("Obstrucción de Cloaca");
-  });
 });

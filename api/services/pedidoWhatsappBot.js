@@ -18,7 +18,6 @@ import {
 } from "./whatsappGeolocalizacionGarantizada.js";
 import {
   enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp,
-  upsertTelefonoSociosCatalogoDesdePedidoWa,
   esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp,
 } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { obtenerProvinciaCodigoPostalCatalogoPorIdentificador } from "./buscarCoordenadasPorNisMedidor.js";
@@ -688,10 +687,6 @@ export async function crearPedidoDesdeWhatsappBot({
   }
   setImmediate(() => {
     notificarAdminsNuevoPedidoWhatsappSafe(Number(tenantId), pedidoRow).catch(() => {});
-    upsertTelefonoSociosCatalogoDesdePedidoWa({
-      pedido: pedidoRow,
-      tenantId: Number(tenantId),
-    }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo tel WA", e?.message || e));
     if (coordsWhatsappParaCatalogo) {
       enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp({
         pedido: pedidoRow,
