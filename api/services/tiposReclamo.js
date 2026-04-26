@@ -214,3 +214,34 @@ export const TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA = [
   "Riesgo en la vía pública",
   "Corrimiento de poste/columna",
 ];
+
+/** Normaliza tipo_trabajo para comparar sin depender de mayúsculas ni acentos exactos. */
+function normalizarTextoTipoTrabajoDerivacion(tt) {
+  return String(tt || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s*\/\s*/g, "/")
+    .trim();
+}
+
+/**
+ * Cooperativa eléctrica: tipos que admiten solicitud/derivación a terceros (API + paridad con app.js).
+ * Coincidencia flexible: catálogo canónico, subcadenas y palabras clave (evita fallos por variantes de texto).
+ */
+export function tipoPermiteSolicitudDerivacionTerceroCoopElectrica(tt) {
+  const n = normalizarTextoTipoTrabajoDerivacion(tt);
+  if (!n) return false;
+  for (const canon of TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA) {
+    const c = normalizarTextoTipoTrabajoDerivacion(canon);
+    if (!c) continue;
+    if (n === c || n.includes(c) || c.includes(n)) return true;
+  }
+  if (/\bcables?\b/.test(n) && (/\bca[iy]d\w*\b/.test(n) || /\bpeligro\b/.test(n))) return true;
+  if (/\bposte\b/.test(n) && (/\binclinad\w*\b/.test(n) || /\bdan\w*\b/.test(n))) return true;
+  if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
+  if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
+  if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
+  return false;
+}

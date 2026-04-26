@@ -1535,11 +1535,30 @@ const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
     'corrimiento de poste/columna',
 ]);
 
+function _gnNormTipoDerivacion(tt) {
+    return String(tt || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\/\s*/g, '/')
+        .trim();
+}
+
+/** Tipos eléctricos que admiten derivación operativa (admin) / solicitud técnico: coincide con API `tipoPermiteSolicitudDerivacionTerceroCoopElectrica`. */
 function tipoPermiteSolicitudDerivacionTercero(tt) {
-    const t = String(tt || '').trim().toLowerCase();
+    const n = _gnNormTipoDerivacion(tt);
+    if (!n) return false;
     for (const allowed of TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO) {
-        if (t === allowed || t.includes(allowed) || allowed.includes(t)) return true;
+        const a = _gnNormTipoDerivacion(allowed);
+        if (!a) continue;
+        if (n === a || n.includes(a) || a.includes(n)) return true;
     }
+    if (/\bcables?\b/.test(n) && (/\bca[iy]d\w*\b/.test(n) || /\bpeligro\b/.test(n))) return true;
+    if (/\bposte\b/.test(n) && (/\binclinad\w*\b/.test(n) || /\bdan\w*\b/.test(n))) return true;
+    if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
+    if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
+    if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
     return false;
 }
 
