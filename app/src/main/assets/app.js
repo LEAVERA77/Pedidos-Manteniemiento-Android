@@ -1562,11 +1562,31 @@ function tipoPermiteSolicitudDerivacionTercero(tt) {
     return false;
 }
 
-/** Cooperativa eléctrica: técnico asignado puede pedir al admin que derive a un tercero (cola de aprobación). */
+/** `norm` expone `tt`; algunos flujos de detalle pueden tener solo `tipo_trabajo`. */
+function _gnTipoTrabajoPedidoDerivacion(p) {
+    if (!p) return '';
+    const a = p.tt != null && String(p.tt).trim() !== '' ? String(p.tt).trim() : '';
+    if (a) return a;
+    return String(p.tipo_trabajo || '').trim();
+}
+
+/**
+ * Si el detalle/modal del pedido debe ofrecer derivación operativa (admin) o solicitud del técnico.
+ * Acepta el objeto pedido (`p.tt` / `p.tipo_trabajo`) o un string de tipo. Misma regla en todos los rubros/tenants.
+ */
+function debeMostrarBotonDerivacion(pOrTipo) {
+    const tt =
+        pOrTipo != null && typeof pOrTipo === 'object'
+            ? _gnTipoTrabajoPedidoDerivacion(pOrTipo)
+            : String(pOrTipo || '').trim();
+    return tipoPermiteSolicitudDerivacionTercero(tt);
+}
+window.debeMostrarBotonDerivacion = debeMostrarBotonDerivacion;
+
+/** Técnico/supervisor asignado (cualquier tenant): puede pedir al admin que derive a un tercero (cola de aprobación). */
 function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
-    if (!esCooperativaElectricaRubro()) return '';
     if (!esTecnicoOSupervisor() || esAdmin()) return '';
-    if (!tipoPermiteSolicitudDerivacionTercero(p.tt)) return '';
+    if (!debeMostrarBotonDerivacion(p)) return '';
     if (pedidoEsDerivadoFuera(p)) return '';
     const esOk = p.es === 'Asignado' || p.es === 'En ejecución';
     if (!esOk) return '';
@@ -10856,7 +10876,7 @@ async function detalle(p) {
     if (
         esCooperativaElectricaRubro() &&
         (esAdmin() || esTecnicoOSupervisor()) &&
-        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)
+        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(_gnTipoTrabajoPedidoDerivacion(p))
     ) {
         const dr = (window.EMPRESA_CFG || {}).derivacion_reclamos;
         const agua = dr?.cooperativa_agua;
@@ -10869,7 +10889,7 @@ async function detalle(p) {
         const labEn = escDet(energia?.nombre || 'Empresa de energía');
         const bits = [
             `<p style="font-size:.82rem;margin:0 0 .55rem;line-height:1.45">El tipo <strong>${escDet(
-                p.tt
+                _gnTipoTrabajoPedidoDerivacion(p)
             )}</strong> suele corresponder a <strong>agua potable</strong> u <strong>servicios municipales</strong>. Esta entidad atiende electricidad; podés orientar al vecino:</p>`,
         ];
         if (waAgua) {
@@ -11018,7 +11038,7 @@ async function detalle(p) {
         puedeEnviarApiRestPedidos() &&
         (p.es === 'Asignado' || p.es === 'En ejecución') &&
         !pedidoEsDerivadoFuera(p) &&
-        tipoPermiteSolicitudDerivacionTercero(p.tt)
+        debeMostrarBotonDerivacion(p)
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");

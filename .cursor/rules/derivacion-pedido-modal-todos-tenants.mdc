@@ -1,0 +1,20 @@
+---
+description: Derivación operativa en modal de pedido — debeMostrarBotonDerivacion, todos los rubros/tenants, paridad API.
+alwaysApply: true
+---
+
+# Derivación a terceros / operativa en detalle del pedido (siempre)
+
+## Visibilidad en el modal (`detalle` → `#dm` / `#dmc`)
+
+- Para decidir si el pedido admite **derivación operativa (admin)** o **solicitud del técnico**, usá **`debeMostrarBotonDerivacion(p)`** (objeto pedido) o **`debeMostrarBotonDerivacion(tipoString)`**. Expuesta también como **`window.debeMostrarBotonDerivacion`** para pruebas en consola.
+- Esa función delega en **`tipoPermiteSolicitudDerivacionTercero`** + **`_gnTipoTrabajoPedidoDerivacion(p)`** (`tt` o `tipo_trabajo`). No dupliques listas de tipos en otro sitio salvo que sea paridad explícita con la API.
+
+## Todos los tenants / rubros
+
+- El bloque de **solicitud del técnico** debe mostrarse en **cualquier rubro** (cooperativa eléctrica, municipio, agua, etc.) cuando `debeMostrarBotonDerivacion(p)` sea verdadero. **No** volver a condicionar ese bloque solo a `esCooperativaElectricaRubro()`.
+- La API valida el tipo con **`tipoPermiteSolicitudDerivacionTerceroCoopElectrica`** (nombre histórico; aplica a cualquier tenant por `tipo_trabajo`). Mantener alineación con el front al cambiar reglas.
+
+## Paridad de repos
+
+- Tras tocar **`app/src/main/assets/app.js`** (o `api/**`), sincronizar y commitear también **Pedidos-MG** cuando corresponda (script `scripts/sync-assets-to-pedidos-mg.ps1` para assets). Ver regla **commit-push-nexxo-y-pedidos-mg**.
