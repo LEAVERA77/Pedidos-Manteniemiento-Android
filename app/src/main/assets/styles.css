@@ -135,6 +135,10 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
 #lf{position:relative}
 .ll{width:56px;height:56px;background:linear-gradient(135deg,var(--bd),var(--bl));border-radius:1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.6rem;color:white}
+/* Logo / imagen en login (sin rectángulo azul detrás) */
+.ll.ll--logo,.ll:has(img){background:transparent;color:inherit;font-size:inherit}
+.ll.ll--logo img,#ls .ll img,.gn-header-logo-img{vertical-align:middle;width:62px;height:62px;min-width:62px;min-height:62px;max-width:100%;box-sizing:border-box;object-fit:contain;border-radius:6px}
+.gn-enre-marco{font-size:.78rem;color:var(--tm);padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:.5rem;margin-bottom:.75rem;line-height:1.45}
 .lc h1{font-size:1.4rem;color:var(--td);text-align:center;font-weight:700;margin-bottom:.2rem}
 .lc .sub{text-align:center;color:var(--tm);font-size:.9rem;margin-bottom:1rem}
 .dbs{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.5rem 1rem;border-radius:2rem;font-size:.82rem;margin-bottom:1.25rem;transition:all .3s}
@@ -334,6 +338,11 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 /* WebView Android: subir y acercar a la izquierda para no tapar barra de pedidos ni filtros */
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
 html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
+
+/* Leaflet WebView Android: sin tocar transform del .leaflet-container (Leaflet lo usa para tiles). */
+html.gn-android-webview .leaflet-tile {
+  box-shadow: none !important;
+}
 @media(min-width:1024px){
   html.gn-android-webview .btn-mapa-ir-gps{bottom:7.15rem;left:0.42rem}
   html.gn-android-webview .btn-mapa-nuevo-gps{bottom:10.35rem;left:0.42rem}
@@ -834,4 +843,25 @@ html.gn-android-webview .gn-gps-fab {
   min-width: 2.9rem;
   min-height: 2.9rem;
   box-sizing: border-box;
+}
+
+/*
+ * Paneles del mapa (Filtros / Tipo / Colores / Dash): mismo comportamiento que Pedidos-MG.
+ * Por encima del panel de pedidos bp2 (z-index ~12020) para poder arrastrar y usar pestañas.
+ */
+html.gn-android-webview #mapa-overlay-ui {
+  z-index: 12045;
+}
+
+/* Catálogo admin socios (NIS): celdas legibles */
+table.gn-soc-admin-table {
+  border-collapse: collapse;
+}
+table.gn-soc-admin-table th,
+table.gn-soc-admin-table td {
+  border: 1px solid var(--bo, #e2e8f0);
+  padding: 0.28rem 0.4rem;
+}
+table.gn-soc-admin-table thead th {
+  border-bottom: 1px solid var(--bo, #cbd5e1);
 }

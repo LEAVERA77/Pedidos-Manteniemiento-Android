@@ -40,6 +40,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
@@ -121,6 +122,7 @@ public class MainActivity extends AppCompatActivity {
         crearCanalNotificacionesPedidos();
 
         webView = findViewById(R.id.webview);
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         // Render por software en emulador ralentiza mucho el mapa; usar composición por defecto (GPU).
         // Si un AVD concreto cierra el WebView por GLES, descomenta temporalmente:
         // if (isProbablyEmulator()) webView.setLayerType(WebView.LAYER_TYPE_SOFTWARE, null);
@@ -189,8 +191,8 @@ public class MainActivity extends AppCompatActivity {
         s.setDisplayZoomControls(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // En emulador suele consumir RAM/GPU extra; en dispositivo real ayuda al scroll.
-            s.setOffscreenPreRaster(!isProbablyEmulator());
+            // Menos presión de memoria raster previa al viewport (mapa Leaflet / tiles).
+            s.setOffscreenPreRaster(false);
         }
         s.setUserAgentString(
                 s.getUserAgentString().replace("wv", "")

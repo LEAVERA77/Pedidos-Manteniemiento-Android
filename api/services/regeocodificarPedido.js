@@ -34,12 +34,13 @@ async function pedidosColumnExists(columnName) {
  *
  * @param {number} pedidoId
  * @param {number} tenantId
- * @param {{ silent?: boolean, preferSimpleQNominatim?: boolean, req?: import('express').Request }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp). `preferSimpleQNominatim`: forzar pipeline solo `q` (WhatsApp). `req`: filtro multi-negocio (`business_type`).
+ * @param {{ silent?: boolean, preferSimpleQNominatim?: boolean, ignoreBusinessTypeFilter?: boolean, req?: import('express').Request }} [options] — si `silent`, la respuesta devuelve `log: []` (p. ej. regeo automático WhatsApp). `preferSimpleQNominatim`: forzar pipeline solo `q` (WhatsApp). `ignoreBusinessTypeFilter`: omitir filtro `business_type` en SELECT/UPDATE (re-geocodificar admin). `req`: filtro multi-negocio (`business_type`).
  * @returns {Promise<{success: boolean, lat: number, lng: number, fuente: string, log: string[], mensaje: string}>}
  */
 export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
   const silent = !!options.silent;
   const preferSimpleQOpt = !!options.preferSimpleQNominatim;
+  const ignoreBt = !!options.ignoreBusinessTypeFilter;
   const req = options.req || null;
   const log = [];
   const L = (msg) => {
@@ -59,7 +60,12 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
     let pedidoResult;
     const selParams = [pedidoId, tenantId];
     let btExtra = "";
-    if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await pedidosColumnExists("business_type"))) {
+    if (
+      !ignoreBt &&
+      req?.businessTypeFilterEnabled &&
+      req?.activeBusinessType &&
+      (await pedidosColumnExists("business_type"))
+    ) {
       selParams.push(req.activeBusinessType);
       btExtra = ` AND business_type = $${selParams.length}`;
     }
@@ -129,7 +135,9 @@ export async function regeocodificarPedido(pedidoId, tenantId, options = {}) {
       const { latFinal, lngFinal, fuente, provPersist, cpPersist, geocodingAudit } = pipelineRes;
 
       const hasBtUp =
-        !!(req?.businessTypeFilterEnabled && req?.activeBusinessType) && (await pedidosColumnExists("business_type"));
+        !ignoreBt &&
+        !!(req?.businessTypeFilterEnabled && req?.activeBusinessType) &&
+        (await pedidosColumnExists("business_type"));
       const upBtGeo = hasBtUp ? " AND business_type = $8" : "";
       const upBtNo = hasBtUp ? " AND business_type = $7" : "";
       if (await pedidosColumnExists("geocoding_audit")) {

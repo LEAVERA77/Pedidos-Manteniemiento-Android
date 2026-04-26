@@ -337,8 +337,11 @@ export async function gnRefreshMarcadorUbicacionBaseAdmin() {
 export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
+    const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
     const L = ctx.L;
-    const maxZ = ligero ? 17 : 19;
+    const maxZ = androidWv ? (ligero ? 17 : 18) : ligero ? 17 : 19;
+    const keepBuf = androidWv ? 1 : ligero ? 0 : 1;
+    const zoomWhile = androidWv ? false : !ligero;
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
@@ -349,8 +352,8 @@ export function gnAttachBaseMapLayers(mapa) {
             tileSize: 256,
             crossOrigin: true,
             updateWhenIdle: true,
-            updateWhenZooming: !ligero,
-            keepBuffer: ligero ? 0 : 1
+            updateWhenZooming: zoomWhile,
+            keepBuffer: keepBuf
         }
     );
     const capaCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -362,8 +365,8 @@ export function gnAttachBaseMapLayers(mapa) {
         detectRetina: false,
         crossOrigin: true,
         updateWhenIdle: true,
-        updateWhenZooming: !ligero,
-        keepBuffer: ligero ? 0 : 1
+        updateWhenZooming: zoomWhile,
+        keepBuffer: keepBuf
     });
     let nErr = 0;
     capaCarto.on('tileerror', () => {
@@ -420,7 +423,8 @@ export async function runInitMap() {
             .trim();
     } catch (_) {}
     const ligeroInit = ctx.gnMapaLigero();
-    const maxZoomMap = ligeroInit ? 17 : 19;
+    const androidMap = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
+    const maxZoomMap = androidMap ? (ligeroInit ? 17 : 18) : ligeroInit ? 17 : 19;
     const center = await resolveMapCenterLatLngZoom();
     let latBase;
     let lngBase;
@@ -450,7 +454,7 @@ export async function runInitMap() {
         attributionControl: true,
         maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: !ligeroInit,
+        preferCanvas: !ligeroInit && !androidMap,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,
@@ -525,7 +529,40 @@ export async function runInitMap() {
 
     setTimeout(actualizarEscala, 200);
 
+    /** Tras pan/drag del mapa Leaflet suele dispararse igual un `click` → alta de pedido nuevo; inhibir ese click. */
+    let suppressMapClickAfterPan = false;
+    map.on('dragend', () => {
+        suppressMapClickAfterPan = true;
+    });
+    const mcPan = ctx.document.getElementById('mc');
+    if (mcPan) {
+        const TAP_MOVE_THRESH_PX = 10;
+        let panDown = null;
+        const onPanDown = (ev) => {
+            const p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+            panDown = { x: p.clientX, y: p.clientY };
+        };
+        const onPanMove = (ev) => {
+            if (!panDown) return;
+            const p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+            const dx = p.clientX - panDown.x;
+            const dy = p.clientY - panDown.y;
+            if (dx * dx + dy * dy > TAP_MOVE_THRESH_PX * TAP_MOVE_THRESH_PX) suppressMapClickAfterPan = true;
+        };
+        const onPanEnd = () => {
+            panDown = null;
+        };
+        mcPan.addEventListener('pointerdown', onPanDown, { passive: true });
+        mcPan.addEventListener('pointermove', onPanMove, { passive: true });
+        mcPan.addEventListener('pointerup', onPanEnd, { passive: true });
+        mcPan.addEventListener('pointercancel', onPanEnd, { passive: true });
+    }
+
     ctx.app.map.on('click', (e) => {
+        if (suppressMapClickAfterPan) {
+            suppressMapClickAfterPan = false;
+            return;
+        }
         /* Android/WebView: el toque en un botón del popup puede cerrar el popup y disparar este click en el mapa → abre #pm. */
         try {
             const w = ctx.window;
@@ -539,6 +576,12 @@ export async function runInitMap() {
             ctx.registrarUbicacionManualAdmin(e.latlng.lat, e.latlng.lng);
             return;
         }
+
+        try {
+            if (typeof ctx.aplicarReverseMapaAdminDesdeClicInicio === 'function' && ctx.aplicarReverseMapaAdminDesdeClicInicio(e)) {
+                return;
+            }
+        } catch (_) {}
 
         try {
             if (typeof ctx.window.__gnEsReubicarPedidoMapa === 'function' && ctx.window.__gnEsReubicarPedidoMapa()) return;
@@ -561,7 +604,7 @@ export async function runInitMap() {
                 localStorage.setItem('ultima_ubicacion', JSON.stringify(ctx.ultimaUbicacion));
             } catch (_) {}
             ctx.mostrarMarcadorUbicacion(lat, lng, null);
-            ctx.app.map.setView([lat, lng], 15, { animate: !ctx.gnMapaLigero() });
+            ctx.app.map.setView([lat, lng], 16, { animate: !ctx.gnMapaLigero() });
             actualizarEscala();
             ctx.marcarMapTapUbicacionInicialHecha();
             ctx.toast(
@@ -593,7 +636,8 @@ export async function runInitMap() {
 
     if (ctx.ultimaUbicacion && ctx.app.map) {
         const zInit = ctx.mostrarMarcadorUbicacion(ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon, ctx.ultimaUbicacion.acc);
-        ctx.app.map.setView([ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon], zInit || 15);
+        const z0 = Number.isFinite(zInit) && zInit > 0 ? zInit : 15;
+        ctx.app.map.setView([ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon], Math.max(z0, 16));
         setTimeout(() => {
             ctx.document.getElementById('zoom-altura').textContent = ctx.calcularEscalaReal(ctx.app.map.getZoom());
         }, 100);

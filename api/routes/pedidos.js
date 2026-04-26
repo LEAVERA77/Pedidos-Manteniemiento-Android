@@ -62,11 +62,86 @@ async function assertPedidoMismoTenant(pedido, req) {
   }
 }
 
+/** Pedido por id + tenant sin filtro `business_type` (admin multi-rubro). */
+async function getPedidoPorIdEnTenant(id, tenantId) {
+  const pid = Number(id);
+  const tid = Number(tenantId);
+  if (!Number.isFinite(pid) || pid < 1 || !Number.isFinite(tid) || tid < 1) return null;
+  if (await pedidosTableHasTenantIdColumn()) {
+    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [pid, tid]);
+    return r.rows[0] || null;
+  }
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1 LIMIT 1`, [pid]);
+  return r.rows[0] || null;
+}
+
 async function loadNombreCliente(tenantId) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid)) return "GestorNova";
   const r = await query(`SELECT nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
   return String(r.rows?.[0]?.nombre || "GestorNova").trim() || "GestorNova";
+}
+
+/** Avisos al vecino (PUT / transiciones): solo si el reclamo vino por el bot / canal WhatsApp. */
+function pedidoOrigenWhatsappCliente(row) {
+  return String(row?.origen_reclamo || "")
+    .trim()
+    .toLowerCase() === "whatsapp";
+}
+
+/**
+ * Si `telefono_contacto` del pedido está vacío, intenta el teléfono en `socios_catalogo` por nis/medidor/nis_medidor.
+ * Misma idea operativa que en electricidad: el catálogo puede tener el WA aunque el campo del pedido no se haya copiado.
+ */
+async function resolverTelefonoContactoParaNotificacionCliente(row, tenantId) {
+  const rawFirst = row?.telefono_contacto;
+  const d0 = String(rawFirst || "").replace(/\D/g, "");
+  if (d0.length >= 8) return rawFirst;
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return rawFirst || "";
+  const nis = String(row?.nis || "").trim();
+  const med = String(row?.medidor || "").trim();
+  const nm = String(row?.nis_medidor || "").trim();
+  if (!nm && !nis && !med) return rawFirst || "";
+  try {
+    const tc = await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'tenant_id' LIMIT 1`
+    );
+    const hasTenant = !!tc.rows?.length;
+    const parts = [];
+    const params = [];
+    let i = 1;
+    if (hasTenant) {
+      parts.push(`tenant_id = $${i++}`);
+      params.push(tid);
+    }
+    const ors = [];
+    if (nm) {
+      ors.push(`UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($${i++}))`);
+      params.push(nm);
+    }
+    if (nis) {
+      ors.push(`UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM($${i++}))`);
+      params.push(nis);
+    }
+    if (med) {
+      ors.push(`UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM($${i++}))`);
+      params.push(med);
+    }
+    if (!ors.length) return rawFirst || "";
+    const sql = `SELECT telefono FROM socios_catalogo WHERE (${ors.join(" OR ")})
+      ${parts.length ? `AND ${parts[0]}` : ""}
+      AND COALESCE(NULLIF(TRIM(telefono), ''), '') <> ''
+      ORDER BY CASE WHEN COALESCE(activo, TRUE) THEN 0 ELSE 1 END
+      LIMIT 1`;
+    const r = await query(sql, params);
+    const tel = r.rows?.[0]?.telefono;
+    if (tel != null && String(tel).trim()) return String(tel).trim();
+  } catch (e) {
+    console.warn("[pedidos] resolverTelefonoContactoParaNotificacionCliente", e?.message || e);
+  }
+  return rawFirst || "";
 }
 
 function parseClienteConfigJson(raw) {
@@ -106,21 +181,24 @@ function coercePedidoLatLng(row) {
 }
 
 function scheduleNotifyAltaReclamoWhatsApp(row, userId) {
-  const phone = String(row.telefono_contacto || "").replace(/\D/g, "");
-  if (!phone || phone.length < 8) return;
   setImmediate(() => {
     (async () => {
       try {
+        if (!pedidoOrigenWhatsappCliente(row)) return;
         const tenantId =
           row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
             ? Number(row.tenant_id)
             : await getUserTenantId(userId);
+        let telRaw = row.telefono_contacto;
+        telRaw = await resolverTelefonoContactoParaNotificacionCliente(row, tenantId);
+        const phone = String(telRaw || "").replace(/\D/g, "");
+        if (!phone || phone.length < 8) return;
         const nombreEntidad = await loadNombreCliente(tenantId);
         await notifyPedidoAltaClienteWhatsAppSafe({
           tenantId,
           numeroPedido: row.numero_pedido,
           nombreEntidad,
-          telefonoContactoRaw: row.telefono_contacto,
+          telefonoContactoRaw: telRaw,
           pedidoId: row.id,
           descripcion: row.descripcion,
           tipoTrabajo: row.tipo_trabajo,
@@ -136,17 +214,20 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
   setImmediate(() => {
     (async () => {
       try {
+        if (!pedidoOrigenWhatsappCliente(row)) return;
         const tenantId =
           row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
             ? Number(row.tenant_id)
             : await getUserTenantId(userId);
         const nombreEntidad = await loadNombreCliente(tenantId);
-        const phone = bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
+        let phoneRaw =
+          bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
+        phoneRaw = await resolverTelefonoContactoParaNotificacionCliente({ ...row, telefono_contacto: phoneRaw }, tenantId);
         await notifyPedidoCierreWhatsAppSafe({
           tenantId,
           numeroPedido: row.numero_pedido,
           nombreEntidad,
-          telefonoContactoRaw: phone,
+          telefonoContactoRaw: phoneRaw,
           pedidoId: row.id,
         });
       } catch (e) {
@@ -164,13 +245,6 @@ function scheduleNotifyClientePedidoWhatsapp({
   userId,
   estadoAntes,
 }) {
-  const phoneRaw =
-    pedidoDespues.telefono_contacto != null && pedidoDespues.telefono_contacto !== ""
-      ? pedidoDespues.telefono_contacto
-      : pedidoAntes.telefono_contacto;
-  const phone = String(phoneRaw || "").replace(/\D/g, "");
-  if (!phone || phone.length < 8) return;
-
   const estadoNuevo = String(pedidoDespues.estado || "");
   const becameEjecucion = estadoNuevo === "En ejecución" && estadoAntes !== "En ejecución";
 
@@ -183,10 +257,24 @@ function scheduleNotifyClientePedidoWhatsapp({
   setImmediate(() => {
     (async () => {
       try {
+        if (!pedidoOrigenWhatsappCliente(pedidoAntes) && !pedidoOrigenWhatsappCliente(pedidoDespues)) return;
+
         const tenantId =
           pedidoAntes.tenant_id != null && Number.isFinite(Number(pedidoAntes.tenant_id))
             ? Number(pedidoAntes.tenant_id)
             : await getUserTenantId(userId);
+
+        let phoneRawMerged =
+          pedidoDespues.telefono_contacto != null && pedidoDespues.telefono_contacto !== ""
+            ? pedidoDespues.telefono_contacto
+            : pedidoAntes.telefono_contacto;
+        phoneRawMerged = await resolverTelefonoContactoParaNotificacionCliente(
+          { ...pedidoDespues, telefono_contacto: phoneRawMerged },
+          tenantId
+        );
+        const phone = String(phoneRawMerged || "").replace(/\D/g, "");
+        if (!phone || phone.length < 8) return;
+
         const nombreEntidad = await loadNombreCliente(tenantId);
 
         if (becameEjecucion) {
@@ -194,7 +282,7 @@ function scheduleNotifyClientePedidoWhatsapp({
             tenantId,
             numeroPedido: pedidoDespues.numero_pedido,
             nombreEntidad,
-            telefonoContactoRaw: phoneRaw,
+            telefonoContactoRaw: phoneRawMerged,
             pedidoId: pedidoDespues.id,
             tipo: "en_ejecucion",
           });
@@ -210,7 +298,7 @@ function scheduleNotifyClientePedidoWhatsapp({
             tenantId,
             numeroPedido: pedidoDespues.numero_pedido,
             nombreEntidad,
-            telefonoContactoRaw: phoneRaw,
+            telefonoContactoRaw: phoneRawMerged,
             pedidoId: pedidoDespues.id,
             tipo: "avance",
             avancePct: pedidoDespues.avance,
@@ -940,8 +1028,12 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    if (!pedidoOrigenWhatsappCliente(pedido)) {
+      return res.status(400).json({ error: "Solo reclamos con origen WhatsApp reciben este aviso al cliente" });
+    }
     const nombreEntidad = await loadNombreCliente(tenantId);
-    const phoneRaw = pedido.telefono_contacto;
+    let phoneRaw = pedido.telefono_contacto;
+    phoneRaw = await resolverTelefonoContactoParaNotificacionCliente(pedido, tenantId);
 
     if (event === "inicio") {
       if (String(pedido.estado || "") !== "En ejecución") {
@@ -999,12 +1091,17 @@ router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
     const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    if (!pedidoOrigenWhatsappCliente(pedido)) {
+      return res.status(400).json({ error: "Solo reclamos con origen WhatsApp reciben aviso de alta al cliente" });
+    }
     const nombreEntidad = await loadNombreCliente(tenantId);
+    let telAlta = pedido.telefono_contacto;
+    telAlta = await resolverTelefonoContactoParaNotificacionCliente(pedido, tenantId);
     const r = await notifyPedidoAltaClienteWhatsAppSafe({
       tenantId,
       numeroPedido: pedido.numero_pedido,
       nombreEntidad,
-      telefonoContactoRaw: pedido.telefono_contacto,
+      telefonoContactoRaw: telAlta,
       pedidoId: pedido.id,
       descripcion: pedido.descripcion,
       tipoTrabajo: pedido.tipo_trabajo,
@@ -1032,13 +1129,18 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
     const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
+    if (!pedidoOrigenWhatsappCliente(pedido)) {
+      return res.status(400).json({ error: "Solo reclamos con origen WhatsApp reciben aviso de cierre al cliente" });
+    }
     const nombreEntidad = await loadNombreCliente(tenantId);
     const phoneOverride = req.body?.telefono_contacto;
+    let telCierre = phoneOverride !== undefined ? phoneOverride : pedido.telefono_contacto;
+    telCierre = await resolverTelefonoContactoParaNotificacionCliente({ ...pedido, telefono_contacto: telCierre }, tenantId);
     const r = await notifyPedidoCierreWhatsAppSafe({
       tenantId,
       numeroPedido: pedido.numero_pedido,
       nombreEntidad,
-      telefonoContactoRaw: phoneOverride !== undefined ? phoneOverride : pedido.telefono_contacto,
+      telefonoContactoRaw: telCierre,
       pedidoId: pedido.id,
     });
     return res.json({ ok: true, ...r });
@@ -1273,7 +1375,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "id inválido" });
     }
     
-    const pedido = await getPedidoInTenant(id, req);
+    const pedido = await getPedidoPorIdEnTenant(id, req.tenantId);
     if (!pedido) {
       return res.status(404).json({ error: "Pedido no encontrado" });
     }
@@ -1288,7 +1390,7 @@ router.post("/:id/regeocodificar", adminOnly, async (req, res) => {
     }
     
     // Ejecutar re-geocodificación
-    const resultado = await regeocodificarPedido(id, req.tenantId, { req });
+    const resultado = await regeocodificarPedido(id, req.tenantId, { req, ignoreBusinessTypeFilter: true });
     
     // 200 + success:false: la petición es válida; el fallo es resultado de negocio (sin coords),
     // no "Bad Request". Evita confusión en DevTools y monitores (400 = request mal formado).

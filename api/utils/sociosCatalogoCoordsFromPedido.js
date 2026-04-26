@@ -574,3 +574,248 @@ export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
     return { ok: false, reason: "error", detail: String(e?.message || e) };
   }
 }
+
+function latLngPedidoMinimasParaCatalogo(la, ln) {
+  const a = Number(la);
+  const b = Number(ln);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (Math.abs(a) > 90 || Math.abs(b) > 180) return null;
+  if (Math.abs(a) < 1e-6 && Math.abs(b) < 1e-6) return null;
+  if (esPlaceholderBACoords(a, b)) return null;
+  return { la: a, ln: b };
+}
+
+/**
+ * Tras INSERT de pedido WhatsApp: refleja el teléfono en `socios_catalogo` (mismo criterio de match que coords WA).
+ * Si no hay fila: INSERT con `nis_medidor` sintético `WA-{solo_dígitos}` y ON CONFLICT alineado al panel (tenant + nis_medidor o solo nis_medidor).
+ * No lanza: errores → `console.warn` con tenant y pedido.
+ *
+ * @param {{ pedido: object, tenantId: number }} opts
+ */
+export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
+  const pedido = opts.pedido;
+  const tenantId = Number(opts.tenantId);
+  if (!pedido || !Number.isFinite(tenantId) || tenantId < 1) return { ok: false, reason: "parametros" };
+
+  const raw = pedido.telefono_contacto != null ? String(pedido.telefono_contacto) : "";
+  const phoneDigits = raw.replace(/\D/g, "");
+  if (phoneDigits.length < 8) return { ok: false, reason: "sin_telefono" };
+  const telefonoVal = phoneDigits;
+
+  try {
+    if (!(await tablaExiste("socios_catalogo"))) return { ok: false, reason: "sin_tabla" };
+    const cols = await columnasSociosCatalogo();
+    if (!cols.has("telefono") || !cols.has("nis_medidor")) return { ok: false, reason: "sin_columnas" };
+
+    const hasTenant = cols.has("tenant_id");
+    const hasNm = cols.has("nis_medidor");
+    const hasNis = cols.has("nis");
+    const hasMed = cols.has("medidor");
+    const hasNombre = cols.has("nombre");
+    const latLng = pickLatLngColumns(cols);
+
+    const nmRaw = pedido.nis_medidor != null ? String(pedido.nis_medidor).trim() : "";
+    const nisP = pedido.nis != null ? String(pedido.nis).trim() : "";
+    const medP = pedido.medidor != null ? String(pedido.medidor).trim() : "";
+
+    /** @type {{ sql: string, params: any[] } | null} */
+    let findSql = null;
+
+    if (hasNm && nmRaw) {
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      }
+      params.push(nmRaw);
+      const iNm = params.length;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($${iNm}))
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    } else if (hasNis && hasMed && nisP && medP) {
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      }
+      params.push(nisP, medP);
+      const iMed = params.length;
+      const iNis = params.length - 1;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND TRIM(COALESCE(nis::text,'')) = TRIM($${iNis})
+          AND TRIM(COALESCE(medidor::text,'')) = TRIM($${iMed})
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    } else if (hasNm && nisP && medP) {
+      const composed = `${nisP}-${medP}`;
+      const params = [];
+      let t = "";
+      if (hasTenant && Number.isFinite(tenantId)) {
+        params.push(tenantId);
+        t = ` AND tenant_id = $${params.length}`;
+      }
+      params.push(composed);
+      const iC = params.length;
+      findSql = {
+        sql: `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+          AND UPPER(TRIM(COALESCE(nis_medidor::text,''))) = UPPER(TRIM($${iC}))
+          ORDER BY id ASC LIMIT 3`,
+        params,
+      };
+    }
+
+    let ids = [];
+    if (findSql) {
+      const rFind = await query(findSql.sql, findSql.params);
+      ids = (rFind.rows || []).map((x) => x.id);
+    }
+
+    if (ids.length > 1) {
+      console.warn("[wa→socios telefono] match ambiguo; omitido", { tenant_id: tenantId, pedido_id: pedido.id, ids });
+      return { ok: false, reason: "ambiguo_nis", ids };
+    }
+
+    if (ids.length === 0 && hasNombre) {
+      const nom = nombreTitularPedidoParaMatchCatalogo(pedido.cliente_nombre);
+      if (nom) {
+        const params = [];
+        let t = "";
+        if (hasTenant && Number.isFinite(tenantId)) {
+          params.push(tenantId);
+          t = ` AND tenant_id = $${params.length}`;
+        }
+        params.push(nom);
+        const iN = params.length;
+        const rN = await query(
+          `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE${t}
+           AND LOWER(TRIM(COALESCE(nombre::text,''))) = LOWER(TRIM($${iN}))
+           ORDER BY id ASC LIMIT 4`,
+          params
+        );
+        const idn = (rN.rows || []).map((x) => x.id);
+        if (idn.length === 1) ids = idn;
+        else if (idn.length > 1) {
+          console.warn("[wa→socios telefono] nombre ambiguo", { tenant_id: tenantId, pedido_id: pedido.id, ids: idn });
+          return { ok: false, reason: "ambiguo_nombre", ids: idn };
+        }
+      }
+    }
+
+    if (ids.length === 1) {
+      await query(`UPDATE socios_catalogo SET telefono = $1 WHERE id = $2`, [telefonoVal, ids[0]]);
+      console.info("[wa→socios telefono] actualizado socio id=%s (pedido %s)", ids[0], pedido.id);
+      return { ok: true, sociosId: ids[0], accion: "update" };
+    }
+
+    const nisMedidorKey =
+      (nmRaw && nmRaw.length >= 1 && nmRaw) ||
+      (nisP && medP ? `${nisP}-${medP}` : "") ||
+      `WA-${phoneDigits}`;
+    if (String(nisMedidorKey).trim().length < 2) {
+      console.warn("[wa→socios telefono] sin clave nis_medidor", { tenant_id: tenantId, pedido_id: pedido.id });
+      return { ok: false, reason: "sin_clave" };
+    }
+
+    const nombre = String(pedido.cliente_nombre || "").trim() || "Contacto WhatsApp";
+    const calle = String(pedido.cliente_calle || "").trim() || null;
+    const num = String(pedido.cliente_numero_puerta || "").trim() || null;
+    const loc = String(pedido.cliente_localidad || "").trim() || null;
+    const prov = String(pedido.provincia || "").trim() || null;
+    const cp = digitsCp(pedido.codigo_postal) || null;
+    const xy = latLng ? latLngPedidoMinimasParaCatalogo(pedido.lat, pedido.lng) : null;
+
+    try {
+      if (hasTenant && latLng && xy) {
+        await query(
+          `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal,
+            telefono, ${latLng.la}, ${latLng.ln}, tenant_id, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE)
+          ON CONFLICT (tenant_id, nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre),
+            calle = COALESCE(NULLIF(TRIM(EXCLUDED.calle), ''), socios_catalogo.calle),
+            numero = COALESCE(NULLIF(TRIM(EXCLUDED.numero), ''), socios_catalogo.numero),
+            localidad = COALESCE(NULLIF(TRIM(EXCLUDED.localidad), ''), socios_catalogo.localidad)`,
+          [
+            nisMedidorKey,
+            nisP || null,
+            medP || null,
+            nombre,
+            calle,
+            num,
+            loc,
+            prov,
+            cp,
+            telefonoVal,
+            xy.la,
+            xy.ln,
+            tenantId,
+          ]
+        );
+      } else if (hasTenant) {
+        await query(
+          `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, tenant_id, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
+          ON CONFLICT (tenant_id, nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
+          [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, tenantId]
+        );
+      } else if (latLng && xy) {
+        await query(
+          `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, ${latLng.la}, ${latLng.ln}, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)
+          ON CONFLICT (nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
+          [
+            nisMedidorKey,
+            nisP || null,
+            medP || null,
+            nombre,
+            calle,
+            num,
+            loc,
+            prov,
+            cp,
+            telefonoVal,
+            xy.la,
+            xy.ln,
+          ]
+        );
+      } else {
+        await query(
+          `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
+          ON CONFLICT (nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
+          [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal]
+        );
+      }
+      console.info("[wa→socios telefono] upsert nis_medidor=%s pedido=%s tenant=%s", nisMedidorKey, pedido.id, tenantId);
+      return { ok: true, accion: "upsert", nis_medidor: nisMedidorKey };
+    } catch (insErr) {
+      console.warn("[wa→socios telefono] INSERT falló (no bloquea pedido)", {
+        tenant_id: tenantId,
+        pedido_id: pedido.id,
+        detail: String(insErr?.message || insErr),
+      });
+      return { ok: false, reason: "insert_error", detail: String(insErr?.message || insErr) };
+    }
+  } catch (e) {
+    console.warn("[wa→socios telefono]", { tenant_id: tenantId, pedido_id: pedido?.id, detail: String(e?.message || e) });
+    return { ok: false, reason: "error", detail: String(e?.message || e) };
+  }
+}
