@@ -5,11 +5,5 @@
       "path": "."
     }
   ],
-  "settings": {
-    "workbench.editor.restoreViewState": true,
-    "workbench.editor.restoreEditors": "all",
-    "window.restoreWindows": "all",
-    "window.restoreFullscreen": true,
-    "files.hotExit": "onExitAndWindowClose"
-  }
+  "settings": {}
 }

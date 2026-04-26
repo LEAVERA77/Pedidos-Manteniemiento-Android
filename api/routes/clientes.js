@@ -75,15 +75,10 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       tipoDb = norm;
     }
 
-    const rTipoNow = await query(`SELECT nombre, tipo, configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    const rTipoNow = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
     if (!rTipoNow.rows.length) {
       return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
     }
-
-    const currentNombre = String(rTipoNow.rows[0]?.nombre || "").trim();
-    const currentCfg = parseConfiguracionDb(rTipoNow.rows[0]?.configuracion);
-    const nombreCandidato = nombre != null ? String(nombre).trim() : currentNombre;
-    const nombreCambio = nombre != null && nombreCandidato !== currentNombre;
 
     const Inc =
       typeof configuracionBody === "object" && configuracionBody !== null ? { ...configuracionBody } : {};
@@ -109,14 +104,10 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
     }
 
     const cfgJson = {
-      ...currentCfg,
       ...Inc,
       ...(latitud != null ? { lat_base: latitud } : {}),
       ...(longitud != null ? { lng_base: longitud } : {}),
     };
-    if (nombreCambio) {
-      cfgJson.pedido_numero_reset_desde = new Date().toISOString();
-    }
     if (Object.prototype.hasOwnProperty.call(body, "logo_url")) {
       const v = logo_url;
       cfgJson.logo_url = v === "" || v == null ? null : String(v);

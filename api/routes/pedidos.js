@@ -1,6 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
-import { query, withTransaction } from "../db/neon.js";
+import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
@@ -156,44 +156,6 @@ function parseClienteConfigJson(raw) {
     }
   }
   return {};
-}
-
-function parseFechaResetPedidoConfig(config) {
-  if (!config || typeof config !== "object") return null;
-  const raw = config.pedido_numero_reset_desde;
-  if (!raw) return null;
-  const d = new Date(String(raw));
-  return Number.isFinite(d.getTime()) ? d : null;
-}
-
-async function obtenerFechaResetDesdeCliente(tenantId) {
-  try {
-    const r = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
-    if (!r.rows.length) return null;
-    const cfg = parseClienteConfigJson(r.rows[0]?.configuracion);
-    return parseFechaResetPedidoConfig(cfg);
-  } catch (_) {
-    return null;
-  }
-}
-
-async function obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client) {
-  const anioActual = new Date().getFullYear();
-  const tid = Number(tenantId);
-  await client.query(`SELECT pg_advisory_xact_lock($1, $2)`, [tid, anioActual]);
-  const params = [`${anioActual}-%`];
-  let sql = `SELECT COALESCE(MAX(CAST(SPLIT_PART(numero_pedido, '-', 2) AS INTEGER)), 0) AS ultimo_numero FROM pedidos WHERE numero_pedido LIKE $1`;
-  if (await pedidosTableHasTenantIdColumn()) {
-    params.push(tid);
-    sql += ` AND tenant_id = $${params.length}`;
-  }
-  if (resetDesde instanceof Date) {
-    params.push(resetDesde.toISOString());
-    sql += ` AND fecha_creacion >= $${params.length}`;
-  }
-  const r = await client.query(sql, params);
-  const last = Number(r.rows?.[0]?.ultimo_numero || 0);
-  return `${anioActual}-${String(last + 1).padStart(4, "0")}`;
 }
 
 /** Neon puede devolver NUMERIC como string; la app Android (Gson) espera números JSON para lat/lng. */
@@ -453,7 +415,21 @@ router.post("/", async (req, res) => {
     let fotoUrls = [];
     if (fotosB64.length) fotoUrls = await uploadManyBase64(fotosB64);
 
-    const resetDesde = await obtenerFechaResetDesdeCliente(tenantId);
+    const rYear = await query(
+      `INSERT INTO pedido_contador(anio, ultimo_numero)
+       VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
+       ON CONFLICT (anio) DO NOTHING
+       RETURNING anio`
+    );
+    void rYear;
+    const rCont = await query(
+      `UPDATE pedido_contador
+       SET ultimo_numero = ultimo_numero + 1
+       WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
+       RETURNING anio, ultimo_numero`
+    );
+    const numeroPedido = `${rCont.rows[0].anio}-${String(rCont.rows[0].ultimo_numero).padStart(4, "0")}`;
+
     const stc = String(suministro_tipo_conexion || "").trim() || null;
     const sfa = String(suministro_fases || "").trim() || null;
 
@@ -461,7 +437,8 @@ router.post("/", async (req, res) => {
 
     const hasTIns = await pedidosTableHasTenantIdColumn();
     const hasBtIns = await pedidosHasBusinessTypeColumn();
-    const baseInsertParams = [
+    const insertParams = [
+      numeroPedido,
       distribuidorFinal,
       trafoFinal,
       cliente || null,
@@ -485,30 +462,25 @@ router.post("/", async (req, res) => {
       sfa,
       barrioFinal,
     ];
-    if (hasTIns) baseInsertParams.push(tenantId);
-    if (hasBtIns) baseInsertParams.push(req.activeBusinessType || "electricidad");
-
-    const created = await withTransaction(async (client) => {
-      const numeroPedido = await obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client);
-      const insertParams = [numeroPedido, ...baseInsertParams];
-      const insert = await client.query(
-        `INSERT INTO pedidos (
-          numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
-          estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
-          telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
-          cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
-          suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}${hasBtIns ? ", business_type" : ""}
-        ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,
-          'Pendiente',0,$8,$9,$10,$10,NOW(),
-          $11,$12,$13,$14,$15,
-          $16,$17,$18,$19,$20,
-          $21,$22,$23${hasTIns ? ",$24" : ""}${hasBtIns ? `,$${hasTIns ? 25 : 24}` : ""}
-        ) RETURNING *`,
-        insertParams
-      );
-      return insert.rows[0];
-    });
+    if (hasTIns) insertParams.push(tenantId);
+    if (hasBtIns) insertParams.push(req.activeBusinessType || "electricidad");
+    const insert = await query(
+      `INSERT INTO pedidos (
+        numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
+        estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
+        telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
+        cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
+        suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}${hasBtIns ? ", business_type" : ""}
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,
+        'Pendiente',0,$8,$9,$10,$10,NOW(),
+        $11,$12,$13,$14,$15,
+        $16,$17,$18,$19,$20,
+        $21,$22,$23${hasTIns ? ",$24" : ""}${hasBtIns ? `,$${hasTIns ? 25 : 24}` : ""}
+      ) RETURNING *`,
+      insertParams
+    );
+    const created = insert.rows[0];
     scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
     return res.status(201).json(coercePedidoLatLng(created));
   } catch (error) {

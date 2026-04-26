@@ -657,7 +657,7 @@
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-        <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios / usuarios</h3>
+        <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
           <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
@@ -667,7 +667,7 @@
           </label>
         </div>
       </div>
-      <p id="socios-import-columnas-msg" style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code id="socios-import-cols-code" style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según «Coordenadas en el Excel»: <code style="font-size:.72rem">latitud | longitud</code> (WGS84, se guardan en Neon) o <code style="font-size:.72rem">este | norte</code> (metros; familia según Empresa; convierte a WGS84 con proj4). La sección verde solo agrega columnas X/Y de otras proyecciones en pantalla. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según «Coordenadas en el Excel»: <code style="font-size:.72rem">latitud | longitud</code> (WGS84, se guardan en Neon) o <code style="font-size:.72rem">este | norte</code> (metros; familia según Empresa; convierte a WGS84 con proj4). La sección verde solo agrega columnas X/Y de otras proyecciones en pantalla. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">

@@ -56,14 +56,6 @@ foreach ($f in $files) {
     Write-Host "OK $f"
 }
 
-$jsSrc = Join-Path $assets 'js'
-$jsDst = Join-Path $PedidosMgRoot 'js'
-if (Test-Path $jsSrc) {
-    New-Item -ItemType Directory -Force -Path $jsDst | Out-Null
-    Copy-Item -Path (Join-Path $jsSrc '*') -Destination $jsDst -Recurse -Force
-    Write-Host 'OK js/*'
-}
-
 $brandSrc = Join-Path $assets 'branding'
 $brandDst = Join-Path $PedidosMgRoot 'branding'
 if (Test-Path $brandSrc) {
