@@ -12,7 +12,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.ContentValues;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -143,13 +142,6 @@ public class MainActivity extends AppCompatActivity {
             UbicacionPollingScheduler.schedule(this);
             AppUpdateChecker.checkAsync(this);
         }, 800);
-        
-        // Reintentar inyección de token después de 3 segundos
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (webView != null) {
-                injectTokenToWebView();
-            }
-        }, 3000);
     }
 
     private void crearCanalNotificacionesPedidos() {
@@ -176,37 +168,6 @@ public class MainActivity extends AppCompatActivity {
                 || prod.contains("emulator")
                 || hw.contains("goldfish")
                 || hw.contains("ranchu");
-    }
-
-    private void injectTokenToWebView() {
-        if (webView == null) return;
-        
-        SharedPreferences prefs = getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE);
-        String token = prefs.getString("api_token", "");
-        int userId = prefs.getInt(UbicacionWorker.KEY_USER_ID, -1);
-        String rol = prefs.getString(UbicacionWorker.KEY_ROL, "");
-        
-        if (token.isEmpty() || userId == -1) {
-            Log.d(TAG, "⚠️ No hay token para inyectar aún");
-            return;
-        }
-        
-        String js = String.format(Locale.US,
-            "try{" +
-            "  localStorage.setItem('pmg_api_token', '%s');" +
-            "  if(window.app){" +
-            "    window.app.apiToken = '%s';" +
-            "    window.app.u = { id: %d, rol: '%s' };" +
-            "    console.log('✅ Estado de app actualizado desde Android');" +
-            "  }" +
-            "  if(window.AndroidSession && window.AndroidSession.setUser){" +
-            "    window.AndroidSession.setUser(JSON.stringify({id:%d, rol:'%s', api_token:'%s'}));" +
-            "  }" +
-            "}catch(e){console.error('Error inyectando token:', e);}",
-            token, token, userId, rol, userId, rol, token);
-        
-        webView.evaluateJavascript(js, null);
-        Log.d(TAG, "📤 Token inyectado - Usuario: " + userId + ", Rol: " + rol);
     }
 
     private void configurarWebView() {
@@ -332,7 +293,6 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
-                injectTokenToWebView();  // Inyectar token cuando la página termina de cargar
             }
         });
 
@@ -521,7 +481,6 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);
             dispatchPendingPedidoIdToWeb();
-            injectTokenToWebView();
         }
     }
 
@@ -599,34 +558,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-   /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
-private class AndroidSessionBridge {
-    @JavascriptInterface
-    public void setUser(String userDataJson) {
-        try {
-            org.json.JSONObject user = new org.json.JSONObject(userDataJson);
-            int userId = user.optInt("id", -1);
-            String rol = user.optString("rol", "");
-            String token = user.optString("api_token", "");
-            
+    /** Guarda id de usuario y rol para WorkManager (ubicación técnico en Neon). */
+    private class AndroidSessionBridge {
+        @JavascriptInterface
+        public void setUser(int userId, String rol) {
             getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
                     .putInt(UbicacionWorker.KEY_USER_ID, userId)
                     .putString(UbicacionWorker.KEY_ROL, rol != null ? rol : "")
-                    .putString("api_token", token != null ? token : "")
                     .apply();
-            
-            Log.d(TAG, "✅ Sesión guardada - Usuario ID: " + userId + ", Rol: " + rol);
-        } catch (Exception e) {
-            Log.e(TAG, "❌ Error en setUser: " + userDataJson, e);
+        }
+
+        @JavascriptInterface
+        public void clearUser() {
+            getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit().clear().apply();
         }
     }
-
-    @JavascriptInterface
-    public void clearUser() {
-        getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit().clear().apply();
-        Log.d(TAG, "Sesión eliminada");
-    }
-}
 
     /** Expone lectura de assets/config.json y versión de la app a JavaScript (HTML remoto o file://). */
     private class AndroidConfigBridge {

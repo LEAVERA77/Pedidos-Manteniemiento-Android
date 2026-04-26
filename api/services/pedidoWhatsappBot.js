@@ -1,4 +1,4 @@
-import { query } from "../db/neon.js";
+import { query, withTransaction } from "../db/neon.js";
 import {
   tipoTrabajoPermitidoParaNuevoPedido,
   prioridadPredeterminadaPorTipoTrabajo,
@@ -43,6 +43,56 @@ async function columnasPedidos() {
   );
   _pedidosColsCache = new Set((cols.rows || []).map((c) => c.column_name));
   return _pedidosColsCache;
+}
+
+function parseClienteConfigJson(raw) {
+  if (raw == null) return {};
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
+    try {
+      const p = JSON.parse(raw);
+      return p && typeof p === "object" ? p : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function parseFechaResetPedidoConfig(config) {
+  if (!config || typeof config !== "object") return null;
+  const raw = config.pedido_numero_reset_desde;
+  if (!raw) return null;
+  const d = new Date(String(raw));
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+async function obtenerFechaResetDesdeCliente(tenantId) {
+  try {
+    const r = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    if (!r.rows.length) return null;
+    const cfg = parseClienteConfigJson(r.rows[0]?.configuracion);
+    return parseFechaResetPedidoConfig(cfg);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client) {
+  const anioActual = new Date().getFullYear();
+  const tid = Number(tenantId);
+  await client.query(`SELECT pg_advisory_xact_lock($1, $2)`, [tid, anioActual]);
+  const params = [`${anioActual}-%`];
+  let sql = `SELECT COALESCE(MAX(CAST(SPLIT_PART(numero_pedido, '-', 2) AS INTEGER)), 0) AS ultimo_numero FROM pedidos WHERE numero_pedido LIKE $1`;
+  params.push(tid);
+  sql += ` AND tenant_id = $${params.length}`;
+  if (resetDesde instanceof Date) {
+    params.push(resetDesde.toISOString());
+    sql += ` AND fecha_creacion >= $${params.length}`;
+  }
+  const r = await client.query(sql, params);
+  const last = Number(r.rows?.[0]?.ultimo_numero || 0);
+  return `${anioActual}-${String(last + 1).padStart(4, "0")}`;
 }
 
 /** Persiste en BD el log de regeo automático (WhatsApp) para el panel admin; no falla si la columna no existe aún. */
@@ -251,20 +301,7 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
-  await query(
-    `INSERT INTO pedido_contador(anio, ultimo_numero)
-     VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
-     ON CONFLICT (anio) DO NOTHING`
-  );
-  const rCont = await query(
-    `UPDATE pedido_contador
-     SET ultimo_numero = ultimo_numero + 1
-     WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
-     RETURNING anio, ultimo_numero`
-  );
-  const row = rCont.rows?.[0];
-  if (!row) throw new Error("contador_pedido");
-  const numeroPedido = `${row.anio}-${String(row.ultimo_numero).padStart(4, "0")}`;
+  const resetDesde = await obtenerFechaResetDesdeCliente(tenantId);
 
   const cn = String(contactName || "").trim();
   const clienteNombre =
@@ -609,7 +646,11 @@ export async function crearPedidoDesdeWhatsappBot({
 
   let insert;
   try {
-    insert = await query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);
+    insert = await withTransaction(async (client) => {
+      const numeroPedido = await obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client);
+      vals[0] = numeroPedido;
+      return await client.query(`INSERT INTO pedidos (${cols.join(", ")}) VALUES (${ph}) RETURNING *`, vals);
+    });
   } catch (insertErr) {
     try {
       const baseLog = {

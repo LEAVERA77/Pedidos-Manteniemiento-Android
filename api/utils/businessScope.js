@@ -29,7 +29,7 @@ export async function pushPedidoBusinessFilter(req, params) {
   if (!req?.businessTypeFilterEnabled || !req?.activeBusinessType) return "";
   if (!(await pedidosHasBusinessTypeColumn())) return "";
   params.push(req.activeBusinessType);
-  return ` AND (business_type = $${params.length} OR business_type IS NULL)`;
+  return ` AND business_type = $${params.length}`;
 }
 
 /**

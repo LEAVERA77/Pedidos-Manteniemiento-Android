@@ -78,7 +78,7 @@ export async function getPedidoRowInTenant(pedidoId, tenantId, req = null) {
     let extra = "";
     if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await tableHasColumn("pedidos", "business_type"))) {
       params.push(req.activeBusinessType);
-      extra = ` AND (business_type = $${params.length} OR business_type IS NULL)`;
+      extra = ` AND business_type = $${params.length}`;
     }
     const r = await query(
       `SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2${extra} LIMIT 1`,
@@ -90,7 +90,7 @@ export async function getPedidoRowInTenant(pedidoId, tenantId, req = null) {
   let extra = "";
   if (req?.businessTypeFilterEnabled && req?.activeBusinessType && (await tableHasColumn("pedidos", "business_type"))) {
     params.push(req.activeBusinessType);
-    extra = ` AND (business_type = $${params.length} OR business_type IS NULL)`;
+    extra = ` AND business_type = $${params.length}`;
   }
   const r = await query(`SELECT * FROM pedidos WHERE id = $1${extra} LIMIT 1`, params);
   return r.rows[0] || null;

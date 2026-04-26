@@ -13,15 +13,7 @@ import androidx.core.content.ContextCompat;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
-import org.json.JSONObject;
-
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
 
 /**
  * Cada ~15 min envía la última ubicación conocida del técnico a Neon (tabla {@code ubicaciones_usuarios}),
@@ -52,15 +44,14 @@ public class UbicacionWorker extends Worker {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS_SESSION, Context.MODE_PRIVATE);
         int uid = sp.getInt(KEY_USER_ID, -1);
         String rol = sp.getString(KEY_ROL, "").trim().toLowerCase();
-        String token = sp.getString("api_token", "");
-
-        if (uid <= 0 || token.isEmpty()) {
-            Log.d(TAG, "Sin sesión o token");
+        if (uid <= 0 || (!"tecnico".equals(rol) && !"supervisor".equals(rol))) {
+            Log.d(TAG, "No hay sesión de técnico/supervisor activa");
             return Result.success();
         }
 
-        if (!"tecnico".equals(rol) && !"supervisor".equals(rol)) {
-            Log.d(TAG, "Rol no autorizado para tracking: " + rol);
+        String cs = NeonConfigReader.readConnectionString(ctx);
+        if (cs == null) {
+            Log.d(TAG, "Sin connection string");
             return Result.success();
         }
 
@@ -89,50 +80,13 @@ public class UbicacionWorker extends Worker {
         }
 
         int prec = loc.hasAccuracy() ? Math.round(loc.getAccuracy()) : 0;
-        try {
-            String ins = "INSERT INTO ubicaciones_usuarios(usuario_id, lat, lng, precision_m, timestamp) "
-                    + "VALUES (" + uid + ", " + loc.getLatitude() + ", " + loc.getLongitude() + ", "
-                    + (prec > 0 ? prec : "NULL") + ", NOW())";
-            callProxy(token, ins);
-
-            String del = "DELETE FROM ubicaciones_usuarios WHERE usuario_id = " + uid
-                    + " AND timestamp < NOW() - INTERVAL '2 hours'";
-            callProxy(token, del);
-
+        try (Connection conn = NeonJdbc.open(cs)) {
+            NeonJdbc.insertUbicacionUsuario(conn, uid, loc.getLatitude(), loc.getLongitude(), prec);
             Log.i(TAG, "Ubicación registrada uid=" + uid);
             return Result.success();
         } catch (Exception e) {
             Log.e(TAG, "Error al enviar ubicación", e);
             return Result.retry();
-        }
-    }
-
-    private JSONObject callProxy(String token, String query) throws Exception {
-        // Usa el proxy de autenticación que sí está desplegado
-        URL url = new URL("https://nexxo-api-418k.onrender.com/api/auth/sql-proxy");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Authorization", "Bearer " + token);
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setDoOutput(true);
-
-        JSONObject body = new JSONObject();
-        body.put("query", query);
-
-        try (OutputStream os = new BufferedOutputStream(conn.getOutputStream())) {
-            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-        }
-
-        int code = conn.getResponseCode();
-        if (code != 200) throw new Exception("HTTP " + code);
-
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null) sb.append(line);
-            return new JSONObject(sb.toString());
-        } finally {
-            conn.disconnect();
         }
     }
 }

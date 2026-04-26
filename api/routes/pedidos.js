@@ -1,6 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
-import { query } from "../db/neon.js";
+import { query, withTransaction } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
@@ -10,7 +10,7 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
-  tipoPermiteSolicitudDerivacionTerceroCoopElectrica,
+  TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA,
 } from "../services/tiposReclamo.js";
 import {
   notifyPedidoCierreWhatsAppSafe,
@@ -158,6 +158,44 @@ function parseClienteConfigJson(raw) {
   return {};
 }
 
+function parseFechaResetPedidoConfig(config) {
+  if (!config || typeof config !== "object") return null;
+  const raw = config.pedido_numero_reset_desde;
+  if (!raw) return null;
+  const d = new Date(String(raw));
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+async function obtenerFechaResetDesdeCliente(tenantId) {
+  try {
+    const r = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    if (!r.rows.length) return null;
+    const cfg = parseClienteConfigJson(r.rows[0]?.configuracion);
+    return parseFechaResetPedidoConfig(cfg);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client) {
+  const anioActual = new Date().getFullYear();
+  const tid = Number(tenantId);
+  await client.query(`SELECT pg_advisory_xact_lock($1, $2)`, [tid, anioActual]);
+  const params = [`${anioActual}-%`];
+  let sql = `SELECT COALESCE(MAX(CAST(SPLIT_PART(numero_pedido, '-', 2) AS INTEGER)), 0) AS ultimo_numero FROM pedidos WHERE numero_pedido LIKE $1`;
+  if (await pedidosTableHasTenantIdColumn()) {
+    params.push(tid);
+    sql += ` AND tenant_id = $${params.length}`;
+  }
+  if (resetDesde instanceof Date) {
+    params.push(resetDesde.toISOString());
+    sql += ` AND fecha_creacion >= $${params.length}`;
+  }
+  const r = await client.query(sql, params);
+  const last = Number(r.rows?.[0]?.ultimo_numero || 0);
+  return `${anioActual}-${String(last + 1).padStart(4, "0")}`;
+}
+
 /** Neon puede devolver NUMERIC como string; la app Android (Gson) espera números JSON para lat/lng. */
 function coercePedidoLatLng(row) {
   if (!row || typeof row !== "object") return row;
@@ -214,6 +252,7 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
   setImmediate(() => {
     (async () => {
       try {
+        if (!pedidoOrigenWhatsappCliente(row)) return;
         const tenantId =
           row.tenant_id != null && Number.isFinite(Number(row.tenant_id))
             ? Number(row.tenant_id)
@@ -222,18 +261,6 @@ function scheduleNotifyCierreWhatsApp(row, bodyTelefono, userId) {
         let phoneRaw =
           bodyTelefono !== undefined && bodyTelefono !== null ? bodyTelefono : row.telefono_contacto;
         phoneRaw = await resolverTelefonoContactoParaNotificacionCliente({ ...row, telefono_contacto: phoneRaw }, tenantId);
-
-        // Notificar si:
-        // 1. Es un pedido de WhatsApp cliente, O
-        // 2. Hay un teléfono válido (para clientes en socios_catalogo)
-        const tieneOrigenWA = pedidoOrigenWhatsappCliente(row);
-        const telefono = String(phoneRaw || "").replace(/\D/g, "");
-        const tieneTeléfono = telefono && telefono.length >= 8;
-
-        if (!tieneOrigenWA && !tieneTeléfono) {
-          return;
-        }
-
         await notifyPedidoCierreWhatsAppSafe({
           tenantId,
           numeroPedido: row.numero_pedido,
@@ -268,10 +295,7 @@ function scheduleNotifyClientePedidoWhatsapp({
   setImmediate(() => {
     (async () => {
       try {
-        // Notificar si:
-        // 1. El pedido origen WhatsApp cliente, O
-        // 2. Hay un teléfono válido para contacto (desde socios_catalogo o del pedido directo)
-        const tieneOrigenWA = pedidoOrigenWhatsappCliente(pedidoAntes) || pedidoOrigenWhatsappCliente(pedidoDespues);
+        if (!pedidoOrigenWhatsappCliente(pedidoAntes) && !pedidoOrigenWhatsappCliente(pedidoDespues)) return;
 
         const tenantId =
           pedidoAntes.tenant_id != null && Number.isFinite(Number(pedidoAntes.tenant_id))
@@ -287,21 +311,11 @@ function scheduleNotifyClientePedidoWhatsapp({
           tenantId
         );
         const phone = String(phoneRawMerged || "").replace(/\D/g, "");
-
-        // Si no hay teléfono válido, no continuar
-        if (!phone || phone.length < 8) {
-          if (tieneOrigenWA) {
-            console.debug("[pedidos] No hay teléfono válido para notificar cliente", {
-              pedidoId: pedidoDespues.id,
-              telefonoRaw: phoneRawMerged,
-            });
-          }
-          return;
-        }
+        if (!phone || phone.length < 8) return;
 
         const nombreEntidad = await loadNombreCliente(tenantId);
 
-        if (becameEjecucion && (tieneOrigenWA || phoneRawMerged)) {
+        if (becameEjecucion) {
           await notifyPedidoClienteActualizacionWhatsAppSafe({
             tenantId,
             numeroPedido: pedidoDespues.numero_pedido,
@@ -311,7 +325,7 @@ function scheduleNotifyClientePedidoWhatsapp({
             tipo: "en_ejecucion",
           });
         }
-        if (avanceChanged && estadoPermiteAvance && (tieneOrigenWA || phoneRawMerged)) {
+        if (avanceChanged && estadoPermiteAvance) {
           const snippet =
             pedidoDespues.trabajo_realizado != null
               ? String(pedidoDespues.trabajo_realizado)
@@ -336,7 +350,6 @@ function scheduleNotifyClientePedidoWhatsapp({
   });
 }
 
-// Revisar la función getPedidoInTenant para asegurar que está recuperando el pedido correctamente
 async function getPedidoInTenant(id, req) {
   const tenantId = req.tenantId;
   if (await pedidosTableHasTenantIdColumn()) {
@@ -440,21 +453,7 @@ router.post("/", async (req, res) => {
     let fotoUrls = [];
     if (fotosB64.length) fotoUrls = await uploadManyBase64(fotosB64);
 
-    const rYear = await query(
-      `INSERT INTO pedido_contador(anio, ultimo_numero)
-       VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
-       ON CONFLICT (anio) DO NOTHING
-       RETURNING anio`
-    );
-    void rYear;
-    const rCont = await query(
-      `UPDATE pedido_contador
-       SET ultimo_numero = ultimo_numero + 1
-       WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
-       RETURNING anio, ultimo_numero`
-    );
-    const numeroPedido = `${rCont.rows[0].anio}-${String(rCont.rows[0].ultimo_numero).padStart(4, "0")}`;
-
+    const resetDesde = await obtenerFechaResetDesdeCliente(tenantId);
     const stc = String(suministro_tipo_conexion || "").trim() || null;
     const sfa = String(suministro_fases || "").trim() || null;
 
@@ -462,8 +461,7 @@ router.post("/", async (req, res) => {
 
     const hasTIns = await pedidosTableHasTenantIdColumn();
     const hasBtIns = await pedidosHasBusinessTypeColumn();
-    const insertParams = [
-      numeroPedido,
+    const baseInsertParams = [
       distribuidorFinal,
       trafoFinal,
       cliente || null,
@@ -487,25 +485,30 @@ router.post("/", async (req, res) => {
       sfa,
       barrioFinal,
     ];
-    if (hasTIns) insertParams.push(tenantId);
-    if (hasBtIns) insertParams.push(req.activeBusinessType || "electricidad");
-    const insert = await query(
-      `INSERT INTO pedidos (
-        numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
-        estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
-        telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
-        cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
-        suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}${hasBtIns ? ", business_type" : ""}
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,
-        'Pendiente',0,$8,$9,$10,$10,NOW(),
-        $11,$12,$13,$14,$15,
-        $16,$17,$18,$19,$20,
-        $21,$22,$23${hasTIns ? ",$24" : ""}${hasBtIns ? `,$${hasTIns ? 25 : 24}` : ""}
-      ) RETURNING *`,
-      insertParams
-    );
-    const created = insert.rows[0];
+    if (hasTIns) baseInsertParams.push(tenantId);
+    if (hasBtIns) baseInsertParams.push(req.activeBusinessType || "electricidad");
+
+    const created = await withTransaction(async (client) => {
+      const numeroPedido = await obtenerNumeroPedidoSiguiente(tenantId, resetDesde, client);
+      const insertParams = [numeroPedido, ...baseInsertParams];
+      const insert = await client.query(
+        `INSERT INTO pedidos (
+          numero_pedido, distribuidor, trafo, cliente, tipo_trabajo, descripcion, prioridad,
+          estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion,
+          telefono_contacto, cliente_nombre, foto_urls, nis, medidor,
+          cliente_calle, cliente_localidad, provincia, cliente_numero_puerta, cliente_direccion,
+          suministro_tipo_conexion, suministro_fases, barrio${hasTIns ? ", tenant_id" : ""}${hasBtIns ? ", business_type" : ""}
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,
+          'Pendiente',0,$8,$9,$10,$10,NOW(),
+          $11,$12,$13,$14,$15,
+          $16,$17,$18,$19,$20,
+          $21,$22,$23${hasTIns ? ",$24" : ""}${hasBtIns ? `,$${hasTIns ? 25 : 24}` : ""}
+        ) RETURNING *`,
+        insertParams
+      );
+      return insert.rows[0];
+    });
     scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
     return res.status(201).json(coercePedidoLatLng(created));
   } catch (error) {
@@ -628,6 +631,13 @@ router.get("/historial/nis/:nis", async (req, res) => {
 
 registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
 
+/** Tipos de reclamo (catálogo eléctrico) para los que el técnico puede pedir derivación a terceros. */
+const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set(TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA);
+
+function pedidoTipoPermiteSolicitudDerivacion(tt) {
+  return TIPOS_SOLICITUD_DERIVACION_TERCERO.has(String(tt || "").trim());
+}
+
 function esRolTecnicoOSupervisorAuth(rol) {
   const r = String(rol || "").toLowerCase();
   return r === "tecnico" || r === "supervisor";
@@ -649,7 +659,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     const motivoStr = motivo != null && String(motivo).trim() ? String(motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API) : "";
     const destinoSug = destinoSugRaw != null ? String(destinoSugRaw).trim().slice(0, 64) : "";
 
-    const pedido = await getPedidoPorIdEnTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -667,7 +677,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     if (pedido.derivado_externo === true || String(pedido.estado || "") === "Derivado externo") {
       return res.status(400).json({ error: "El pedido ya está derivado" });
     }
-    if (!tipoPermiteSolicitudDerivacionTerceroCoopElectrica(pedido.tipo_trabajo)) {
+    if (!pedidoTipoPermiteSolicitudDerivacion(pedido.tipo_trabajo)) {
       return res.status(400).json({ error: "Este tipo de reclamo no admite solicitud de derivación desde el técnico" });
     }
     if (pedido.solicitud_derivacion_pendiente === true) {
@@ -684,21 +694,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     const bind = hasTa
       ? [id, req.user.id, motivoStr || null, destinoSug, req.tenantId]
       : [id, req.user.id, motivoStr || null, destinoSug];
-    /** Sin filtro business_type: ya validamos tenant; evita 0 filas con filas legacy o desalineadas. */
-    const bt = "";
-
-    // Si el pedido está 'Asignado', lo pasamos a 'En ejecución' automáticamente al solicitar derivación
-    if (String(pedido.estado) === "Asignado") {
-      try {
-        await query(
-          `UPDATE pedidos SET estado = 'En ejecución', fecha_inicio = NOW(), usuario_inicio_id = $1 WHERE id = $2`,
-          [req.user.id, id]
-        );
-      } catch (e) {
-        console.error("Error actualizando estado a En ejecución:", e);
-      }
-    }
-
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = TRUE,
@@ -756,7 +752,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
         ? String(req.body.nota_admin).trim().slice(0, 500)
         : "";
 
-    const pedido = await getPedidoPorIdEnTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -776,7 +772,7 @@ router.post("/:id/rechazar-solicitud-derivacion-tercero", adminOnly, async (req,
 
     const hasTa = await pedidosTableHasTenantIdColumn();
     const bind = hasTa ? [id, nuevaNota ?? null, req.tenantId] : [id, nuevaNota ?? null];
-    const bt = "";
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           solicitud_derivacion_pendiente = FALSE,
@@ -830,7 +826,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     const destinoStr = String(destino || "").trim();
     if (!destinoStr) return res.status(400).json({ error: "destino es obligatorio" });
 
-    const pedido = await getPedidoPorIdEnTenant(id, req.tenantId);
+    const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -908,10 +904,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       snap,
     ];
     const bind = hasTa ? [...upParams, req.tenantId] : [...upParams];
-    /** Sin filtro business_type en derivación admin (misma razón que solicitar/rechazar). */
-    const bt = "";
-    // Después del business filter, la posición del tenant_id puede estar desplazada
-    // Pero siempre es en posición 9 si hasTa es true (antes del business filter)
+    const bt = await pushPedidoBusinessFilter(req, bind);
     const sql = hasTa
       ? `UPDATE pedidos SET
           estado = $2,

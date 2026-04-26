@@ -97,7 +97,30 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 }
 .dash-kpi-click{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .dash-kpi-click:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(30,58,138,.12)}
-.dash-kpi-click.active-ring{outline:2px solid var(--bm);outline-offset:2px}
+/* Tabla de socios con bordes */
+#admin-socios table {
+    border-collapse: collapse;
+    width: 100%;
+}
+#admin-socios th,
+#admin-socios td {
+    border: 1px solid #ddd !important;
+    padding: 8px;
+}
+#admin-socios th {
+    background-color: var(--bg);
+    position: sticky;
+    top: 0;
+}
+
+/* Ocultar paneles en Android WebView */
+html.gn-android-webview #mapa-card-filtro-tipo,
+html.gn-android-webview #mapa-card-colores,
+html.gn-android-webview #map-tab-filtro-tipo,
+html.gn-android-webview #map-tab-colores {
+    display: none !important;
+}
+
 .dash-kpi-click.dash-kpi-blue{background:linear-gradient(180deg,#eff6ff,#fff);border:1px solid rgba(37,99,235,.22)}
 .dash-kpi-click.dash-kpi-blue .val{color:#1d4ed8}
 .dash-kpi-click.dash-kpi-slate{background:linear-gradient(180deg,#f1f5f9,#fff);border:1px solid rgba(71,85,105,.28)}

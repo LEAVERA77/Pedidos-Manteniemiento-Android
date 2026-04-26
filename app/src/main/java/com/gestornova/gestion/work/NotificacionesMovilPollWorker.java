@@ -18,17 +18,7 @@ import androidx.work.WorkerParameters;
 import com.gestornova.gestion.MainActivity;
 import com.gestornova.gestion.R;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.sql.Connection;
 import java.util.List;
 
 /**
@@ -53,78 +43,40 @@ public class NotificacionesMovilPollWorker extends Worker {
         Context ctx = getApplicationContext();
         SharedPreferences sp = ctx.getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE);
         int uid = sp.getInt(UbicacionWorker.KEY_USER_ID, -1);
-        String token = sp.getString("api_token", "");
-
-        if (uid <= 0 || token.isEmpty()) {
-            Log.d(TAG, "Sin sesión o token");
+        if (uid <= 0) {
+            Log.d(TAG, "Sin sesión");
             return Result.success();
         }
 
-        try {
-            // 1. Fetch unread notifications
-            String fetchSql = "SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil "
-                    + "WHERE usuario_id = " + uid + " AND leida = FALSE ORDER BY id ASC LIMIT 15";
+        String cs = NeonConfigReader.readConnectionString(ctx);
+        if (cs == null) {
+            Log.d(TAG, "Sin connectionString");
+            return Result.success();
+        }
 
-            JSONObject resp = callProxy(token, fetchSql);
-            JSONArray rows = resp.optJSONArray("rows");
-
-            if (rows == null || rows.length() == 0) {
+        try (Connection conn = NeonJdbc.open(cs)) {
+            if (!NeonJdbc.hasNotificacionesMovilTable(conn)) {
+                Log.d(TAG, "Tabla notificaciones_movil ausente");
                 return Result.success();
             }
-
+            List<NeonJdbc.NotificacionMovilRow> rows = NeonJdbc.fetchUnreadNotificacionesMovil(conn, uid, 15);
             ensureChannel(ctx);
-            for (int i = 0; i < rows.length(); i++) {
-                JSONObject row = rows.getJSONObject(i);
-                long id = row.getLong("id");
-                String titulo = row.optString("titulo", "");
-                String cuerpo = row.optString("cuerpo", "");
-                String pedidoId = row.isNull("pedido_id") ? null : row.getString("pedido_id");
-
-                mostrarNotificacion(ctx, id, titulo, cuerpo, pedidoId);
-
-                // 2. Mark as read
-                callProxy(token, "UPDATE notificaciones_movil SET leida = TRUE WHERE id = " + id);
+            for (NeonJdbc.NotificacionMovilRow row : rows) {
+                mostrarNotificacion(ctx, row);
+                NeonJdbc.markNotificacionMovilLeida(conn, row.id);
             }
-
-            Log.i(TAG, "Procesadas " + rows.length() + " filas de notificaciones_movil");
+            if (!rows.isEmpty()) {
+                Log.i(TAG, "Procesadas " + rows.size() + " filas de notificaciones_movil");
+            }
             return Result.success();
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
-            if (msg.contains("notificaciones_movil") || msg.contains("does not exist")) {
+            if (msg.contains("notificaciones_movil") || msg.contains("does not exist") || msg.contains("42P01")) {
                 Log.d(TAG, "Cola no disponible: " + msg);
                 return Result.success();
             }
-            Log.e(TAG, "Error REST notificaciones_movil", e);
+            Log.e(TAG, "Error JDBC notificaciones_movil", e);
             return Result.retry();
-        }
-    }
-
-    private JSONObject callProxy(String token, String query) throws Exception {
-        // Usa el proxy de autenticación que sí está desplegado
-        URL url = new URL("https://nexxo-api-418k.onrender.com/api/auth/sql-proxy");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Authorization", "Bearer " + token);
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setDoOutput(true);
-
-        JSONObject body = new JSONObject();
-        body.put("query", query);
-
-        try (OutputStream os = new BufferedOutputStream(conn.getOutputStream())) {
-            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-        }
-
-        int code = conn.getResponseCode();
-        if (code != 200) throw new Exception("HTTP " + code);
-
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null) sb.append(line);
-            return new JSONObject(sb.toString());
-        } finally {
-            conn.disconnect();
         }
     }
 
@@ -139,16 +91,16 @@ public class NotificacionesMovilPollWorker extends Worker {
         if (nm != null) nm.createNotificationChannel(ch);
     }
 
-    private static void mostrarNotificacion(Context ctx, long id, String titulo, String cuerpo, String pedidoId) {
-        String title = (titulo == null || titulo.isEmpty()) ? "GestorNova" : titulo;
-        String body = cuerpo != null ? cuerpo : "";
-        String pId = pedidoId != null ? pedidoId : "";
+    private static void mostrarNotificacion(Context ctx, NeonJdbc.NotificacionMovilRow row) {
+        String title = row.titulo.isEmpty() ? "GestorNova" : row.titulo;
+        String body = row.cuerpo;
+        String pedidoId = row.pedidoId != null ? row.pedidoId : "";
 
         Intent open = new Intent(ctx, MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        open.putExtra("pedidoId", pId);
+        open.putExtra("pedidoId", pedidoId);
 
-        int req = (int) (id % Integer.MAX_VALUE);
+        int req = (int) (row.id % Integer.MAX_VALUE);
         PendingIntent pi = PendingIntent.getActivity(
                 ctx,
                 req,

@@ -80,7 +80,7 @@ async function contarDatos(tenantId, businessType) {
     let where = "tenant_id = $1";
     if (hasBt && t !== "usuarios") {
       params.push(businessType);
-      where += ` AND (business_type = $${params.length} OR business_type IS NULL)`;
+      where += ` AND business_type = $${params.length}`;
     } else if (hasBt && t === "usuarios") {
       params.push(businessType);
       where += ` AND (business_type = $${params.length} OR rol = 'admin' OR business_type IS NULL)`;

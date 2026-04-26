@@ -53,3 +53,13 @@ export function verificarUsuarioOffline(em, pw) {
         return lista.find(u => u.email === em && u._pw === pw) || null;
     } catch(_) { return null; }
 }
+
+// Inyectar en el objeto global para acceso desde otros scripts no-ESM si es necesario
+window.offlineQueue = offlineQueue;
+window.offlineSave = offlineSave;
+window.offlinePedidos = offlinePedidos;
+window.offlinePedidosSave = offlinePedidosSave;
+window.enqueueOffline = enqueueOffline;
+window.actualizarBadgeOffline = actualizarBadgeOffline;
+window.guardarUsuarioOffline = guardarUsuarioOffline;
+window.verificarUsuarioOffline = verificarUsuarioOffline;

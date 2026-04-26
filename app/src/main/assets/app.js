@@ -1,4 +1,23 @@
 import {
+  app,
+  ultimaUbicacion, setUltimaUbicacion,
+  mapaInicializado, setMapaInicializado,
+  marcadorUbicacion, setMarcadorUbicacion,
+  _gpsRecibidoEstaSesion, setGpsRecibidoEstaSesion,
+  esAndroidWebViewMapa,
+  normalizarRolStr,
+  getApiBaseUrl,
+  apiUrl
+} from './js/core.js';
+
+import {
+  solicitarUbicacion,
+  mostrarMarcadorUbicacion
+} from './js/geo.js';
+
+import { renderMk } from './js/map-layers.js';
+
+import {
   OU_KEY,
   offlineQueue,
   offlineSave,
@@ -26,6 +45,46 @@ import {
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
 
+import {
+  initLocalAddressIndex,
+  lookupLocalAddress
+} from './js/local-geocoder.js';
+
+import {
+  stripGestornovaDicePrefix,
+  gnDice,
+  fmtInformeFecha,
+  fmtTelWaMeta,
+  escHtmlPrint,
+  _gnEscWaHtml,
+  _gnWaGeoOpsListHasOpenDetails,
+  _gnWaGeoOpsShouldSkipAutoRefresh,
+  tipoPermiteSolicitudDerivacionTercero,
+  normalizarWhatsappInternacionalDesdeInput,
+  prioridadPredeterminadaPorTipoTrabajoUI,
+  _escOpt,
+  htmlOptsUnidadMaterial,
+  sanitizarTextoDescripcionPedidoVista,
+  etiquetaFirmaPersona,
+  etiquetaCampoClientePedido,
+  distanciaKm,
+  coordsSonPinValidasMapaWgs84,
+  etiquetaModoUbicPedido,
+  decimalToDmsLite,
+  dmsToDecimalLite,
+  _gnGeocodeLogTs,
+  parseDomicilioLibreArgentinaFront,
+  nominatimUiSearchUrlFromTexto,
+  _normGeoTxt,
+  _nominatimCamposLocalidad,
+  _nominatimResultadoCoincideLocalidad,
+  _filtrarNominatimPorLocalidad,
+  _nominatimSearchCacheKey,
+  _nominatimMetaFromHit,
+  _parseHouseNumberNominatim,
+  _nominatimTipoRankPedido,
+} from './js/ui.js';
+
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
 (function installCanvas2DWillReadFrequently() {
   if (typeof HTMLCanvasElement === 'undefined') return;
@@ -44,23 +103,6 @@ import {
   };
   proto.__gestornovaWillReadPatch = true;
 })();
-
-/** Quita prefijos históricos «GestorNova Dice:» en toasts / alert / confirm (mensaje limpio). */
-function stripGestornovaDicePrefix(s) {
-    return String(s ?? '')
-        .replace(/^\s*GestorNova\s+Dice\s*:\s*/i, '')
-        .replace(/^\s*Gestornova\s+dice\s*:\s*/i, '')
-        .trim();
-}
-function gnDice(msg) {
-    return stripGestornovaDicePrefix(String(msg ?? ''));
-}
-
-
-
-
-
-
 
 /** Una sola línea para el formulario de pedido: WGS84 o planas según preferencia y empresa_config. */
 function htmlLineaUbicacionFormulario(lat, lng, acc, modoForzado) {
@@ -129,18 +171,10 @@ function syncCoordModoVisibility() {
 }
 window.syncCoordModoVisibility = syncCoordModoVisibility;
 
-let NEON_OK = false;
-let _sql = null;
-let mapaInicializado = false;
 let fotosTemporales = [];
-let fotoCierreTemp = null;    
-let ultimaUbicacion = null;
-let marcadorUbicacion = null;
-/** En la app Android: hasta que llegue el primer fix GPS, el primer toque en el mapa fija posición (una vez por sesión). */
-let _gpsRecibidoEstaSesion = false;
+let fotoCierreTemp = null;
 const MAP_SEED_SESSION_KEY = 'pmg_map_seed_done';
 let pedidoActualParaAvance = null;
-let modoOffline = false;      
 
 
 
@@ -379,7 +413,7 @@ try {
     }
 } catch(_) {}
 
-function esc(v) {
+window.esc = function(v) {
     if (v === null || v === undefined) return 'NULL';
     if (typeof v === 'number') return isFinite(v) ? String(v) : 'NULL';
     if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
@@ -387,7 +421,7 @@ function esc(v) {
 }
 
 /** Registro en consola con contexto (diagnóstico sin mostrar stack al usuario). */
-function logErrorWeb(tag, err, extra) {
+window.logErrorWeb = function(tag, err, extra) {
     const msg = err != null && err !== '' ? err.message || String(err) : String(err);
     const det = extra != null ? extra : '';
     if (err && err.stack) console.error(`[GestorNova:${tag}]`, msg, det, err.stack);
@@ -398,7 +432,7 @@ function logErrorWeb(tag, err, extra) {
  * Convierte errores de red, Neon, HTTP o SQL en texto entendible para el operador.
  * No incluye stacks ni detalles técnicos largos.
  */
-function mensajeErrorUsuario(err) {
+window.mensajeErrorUsuario = function(err) {
     if (err == null) return 'Ocurrió un error. Probá de nuevo.';
     const raw = String(err.message != null ? err.message : err).trim() || 'Error desconocido';
     const m = raw.toLowerCase();
@@ -438,7 +472,7 @@ function mensajeErrorUsuario(err) {
  * @param {*} err - Error o valor lanzado
  * @param {string} [prefijo] - texto opcional antes del mensaje amigable (ej. "No se pudo guardar.")
  */
-function toastError(tag, err, prefijo) {
+window.toastError = function(tag, err, prefijo) {
     logErrorWeb(tag, err);
     const cuerpo = mensajeErrorUsuario(err);
     let msg = prefijo ? `${String(prefijo).trim()} ${cuerpo}` : cuerpo;
@@ -498,35 +532,10 @@ async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
 
 
 async function sqlSimple(query, params = []) {
+    if (!_sql) throw new Error('Neon no inicializado');
     let q = query;
     for (let i = 0; i < params.length; i++)
         q = q.replace(new RegExp('\\{' + i + '\\}', 'g'), esc(params[i]));
-
-    const esWebViewLocal = typeof window.AndroidConfig !== 'undefined';
-    if (esWebViewLocal) {
-        await asegurarJwtApiRest();
-        const tok = getApiToken();
-        if (tok) {
-            try {
-                const r = await fetch(apiUrl('/api/auth/sql-proxy'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${tok}`
-                    },
-                    body: JSON.stringify({ query: q })
-                });
-                if (r.ok) {
-                    const data = await r.json();
-                    return data;
-                }
-            } catch (e) {
-                console.warn('[sql-proxy] fallo, intentando SDK directo', e);
-            }
-        }
-    }
-
-    if (!_sql) throw new Error('Neon no inicializado');
     return _sql(q);
 }
 
@@ -887,52 +896,6 @@ const TIPOS_RECLAMO_LEGACY = [
     'Emergencia',
     'Otros'
 ];
-
-const PRIORIDAD_RECLAMO_POR_TIPO = {
-    'Alumbrado Público': 'Media',
-    'Bacheo y Pavimento': 'Media',
-    'Recolección/Poda': 'Baja',
-    'Espacios Verdes': 'Baja',
-    'Señalización/Semáforos': 'Alta',
-    'Limpieza de Zanjas': 'Media',
-    'Recolección (otros)': 'Media',
-    'Obstrucción de Cloaca': 'Alta',
-    'Otros': 'Media',
-    'Pérdida en Vereda/Calle': 'Alta',
-    'Falta de Presión': 'Media',
-    'Calidad del Agua': 'Alta',
-    'Consumo elevado': 'Baja',
-    'Conexión Nueva': 'Baja',
-    'Corte de Energía': 'Alta',
-    'Cables Caídos/Peligro': 'Crítica',
-    'Problemas de Tensión': 'Alta',
-    'Poste Inclinado/Dañado': 'Crítica',
-    'Cambio de Medidor': 'Baja',
-    'Alumbrado Público (Mantenimiento)': 'Baja',
-    'Riesgo en la vía pública': 'Crítica',
-    'Corrimiento de poste/columna': 'Crítica',
-    'Pedido de factibilidad (nuevo servicio)': 'Baja',
-    'Riesgo vía pública': 'Crítica',
-    'Mantenimiento preventivo': 'Baja',
-    'Material averiado': 'Media',
-    'Poda de árboles': 'Baja',
-    'Nidos': 'Baja',
-    'Falla de Línea': 'Alta',
-    'Inspección Termográfica': 'Baja',
-    'Avería en Transformador': 'Alta',
-    'Reclamo de Cliente': 'Media',
-    'Corte Programado': 'Baja',
-    'Emergencia': 'Crítica'
-};
-const _PRIORIDADES_VALIDAS_UI = new Set(['Baja', 'Media', 'Alta', 'Crítica']);
-
-function prioridadPredeterminadaPorTipoTrabajoUI(tipoTrabajo) {
-    const t = String(tipoTrabajo || '').trim();
-    if (!t) return 'Media';
-    const p = PRIORIDAD_RECLAMO_POR_TIPO[t];
-    if (p && _PRIORIDADES_VALIDAS_UI.has(p)) return p;
-    return 'Media';
-}
 
 function syncPrioridadConTipoReclamo() {
     const tt = document.getElementById('tt');
@@ -1381,14 +1344,6 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
     } catch (_) {}
 }
 
-function normalizarWhatsappInternacionalDesdeInput(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return '';
-    const digits = s.replace(/\D/g, '');
-    if (!digits) return '';
-    return `+${digits}`;
-}
-
 function actualizarBotonesWhatsappDerivacionesUi() {
     ['energia', 'agua'].forEach((slot) => {
         const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
@@ -1525,68 +1480,11 @@ function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
     return dg ? `https://wa.me/${dg}` : '';
 }
 
-const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
-    'cables caídos/peligro',
-    'poste inclinado/dañado',
-    'alumbrado público',
-    'alumbrado público (mantenimiento)',
-    'riesgo en la vía pública',
-    'riesgo vía pública',
-    'corrimiento de poste/columna',
-]);
-
-function _gnNormTipoDerivacion(tt) {
-    return String(tt || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .replace(/\s*\/\s*/g, '/')
-        .trim();
-}
-
-/** Tipos eléctricos que admiten derivación operativa (admin) / solicitud técnico: coincide con API `tipoPermiteSolicitudDerivacionTerceroCoopElectrica`. */
-function tipoPermiteSolicitudDerivacionTercero(tt) {
-    const n = _gnNormTipoDerivacion(tt);
-    if (!n) return false;
-    for (const allowed of TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO) {
-        const a = _gnNormTipoDerivacion(allowed);
-        if (!a) continue;
-        if (n === a || n.includes(a) || a.includes(n)) return true;
-    }
-    if (/\bcables?\b/.test(n) && (/\bca[iy]d\w*\b/.test(n) || /\bpeligro\b/.test(n))) return true;
-    if (/\bposte\b/.test(n) && (/\binclinad\w*\b/.test(n) || /\bdan\w*\b/.test(n))) return true;
-    if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
-    if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
-    if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
-    return false;
-}
-
-/** `norm` expone `tt`; algunos flujos de detalle pueden tener solo `tipo_trabajo`. */
-function _gnTipoTrabajoPedidoDerivacion(p) {
-    if (!p) return '';
-    const a = p.tt != null && String(p.tt).trim() !== '' ? String(p.tt).trim() : '';
-    if (a) return a;
-    return String(p.tipo_trabajo || '').trim();
-}
-
-/**
- * Si el detalle/modal del pedido debe ofrecer derivación operativa (admin) o solicitud del técnico.
- * Acepta el objeto pedido (`p.tt` / `p.tipo_trabajo`) o un string de tipo. Misma regla en todos los rubros/tenants.
- */
-function debeMostrarBotonDerivacion(pOrTipo) {
-    const tt =
-        pOrTipo != null && typeof pOrTipo === 'object'
-            ? _gnTipoTrabajoPedidoDerivacion(pOrTipo)
-            : String(pOrTipo || '').trim();
-    return tipoPermiteSolicitudDerivacionTercero(tt);
-}
-window.debeMostrarBotonDerivacion = debeMostrarBotonDerivacion;
-
-/** Técnico/supervisor asignado (cualquier tenant): puede pedir al admin que derive a un tercero (cola de aprobación). */
+/** Cooperativa eléctrica: técnico asignado puede pedir al admin que derive a un tercero (cola de aprobación). */
 function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
+    if (!esCooperativaElectricaRubro()) return '';
     if (!esTecnicoOSupervisor() || esAdmin()) return '';
-    if (!debeMostrarBotonDerivacion(p)) return '';
+    if (!tipoPermiteSolicitudDerivacionTercero(p.tt)) return '';
     if (pedidoEsDerivadoFuera(p)) return '';
     const esOk = p.es === 'Asignado' || p.es === 'En ejecución';
     if (!esOk) return '';
@@ -1660,14 +1558,6 @@ function valorZonaPedidoUI(p) {
     return dis || br || '';
 }
 
-/** Municipio → vecino; cooperativas → socio (etiquetas UI / impresión). */
-function etiquetaFirmaPersona() {
-    return String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio' ? 'vecino' : 'socio';
-}
-function etiquetaCampoClientePedido() {
-    return String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio' ? 'Vecino' : 'Cliente';
-}
-
 function poblarSelectTiposReclamo() {
     const st = document.getElementById('tt');
     if (!st) return;
@@ -1699,34 +1589,6 @@ const CN = new Set(['numero_pedido','fecha_creacion','fecha_cierre','distribuido
     'derivado_externo','derivado_a','derivado_destino_nombre','fecha_derivacion','usuario_derivacion_id','derivacion_nota','derivacion_mensaje_snapshot',
     'solicitud_derivacion_pendiente','solicitud_derivacion_fecha','solicitud_derivacion_usuario_id','solicitud_derivacion_motivo','solicitud_derivacion_destino_sugerido']);
 
-const app = {
-    u: null,
-    apiToken: null,
-    p: [],
-    map: null,
-    mk: [],
-    sel: null,
-    tab: 'p',
-    cid: null,
-    ok: false
-};
-
-function normalizarRolStr(r) {
-    const x = String(r == null ? '' : r).trim().toLowerCase();
-    if (x === 'administrador') return 'admin';
-    return x || 'tecnico';
-}
-function getApiBaseUrl() {
-    const fromCfg = String(window.APP_CONFIG?.api?.baseUrl || '').trim();
-    if (!fromCfg) return '';
-    return fromCfg.replace(/\/+$/, '');
-}
-function apiUrl(path) {
-    const p = String(path || '');
-    const base = getApiBaseUrl();
-    if (!base) return p;
-    return base + (p.startsWith('/') ? p : '/' + p);
-}
 window.apiUrl = apiUrl;
 /** Tras cerrar por SQL directo (Neon), dispara el aviso WA en la API sin bloquear la UI. */
 async function notificarCierreWhatsappApi(pedidoId, telefonoOverride) {
@@ -2216,14 +2078,6 @@ function esTecnicoOSupervisor() {
     const r = rolApp();
     return r === 'tecnico' || r === 'supervisor';
 }
-function esAndroidWebViewMapa() {
-    try {
-        return /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
-    } catch (_) {
-        return false;
-    }
-}
-
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
 function esAdminSesionWebPublica() {
     try {
@@ -2576,6 +2430,13 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
     const tipoAntes = String(window.EMPRESA_CFG?.tipo || '').trim();
+    const mapTipoABusiness = (t) => {
+        const n = normalizarRubroEmpresa(t);
+        if (n === 'cooperativa_agua') return 'agua';
+        if (n === 'municipio') return 'municipio';
+        return 'electricidad';
+    };
+    const businessSel = mapTipoABusiness(tipo);
     let persistir = !!(chk && chk.checked);
     let guardadoServidor = false;
     if (persistir) {
@@ -2600,14 +2461,6 @@ async function confirmarAdminTipoNegocioWeb() {
 
                 const cambiaRubroServidor =
                     !!tipo && !!serverTipo && String(tipo).trim() !== String(serverTipo).trim();
-
-                const mapTipoABusiness = (t) => {
-                    const n = normalizarRubroEmpresa(t);
-                    if (n === 'cooperativa_agua') return 'agua';
-                    if (n === 'municipio') return 'municipio';
-                    return 'electricidad';
-                };
-                const businessSel = mapTipoABusiness(tipo);
 
                 if (cambiaRubroServidor) {
                     if (!confirm('¿Cambiar la vista activa del negocio en el servidor? Los datos existentes no se borran; solo cambia qué reclamos y socios ves según la línea (electricidad / agua / municipio).')) {
@@ -2660,7 +2513,7 @@ async function confirmarAdminTipoNegocioWeb() {
         return;
     }
 
-    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo };
+    window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), tipo, active_business_type: businessSel };
     window.__PMG_TENANT_BRANDING__ = { ...(window.__PMG_TENANT_BRANDING__ || {}), tipo };
     try {
         persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
@@ -2999,34 +2852,6 @@ function resetPreferenciasPanelesInicioCerrados() {
     } catch (_) {}
 }
 
-function decimalToDmsLite(decimal, isLat) {
-    const n = Number(decimal);
-    if (!Number.isFinite(n)) return '—';
-    const abs = Math.abs(n);
-    const deg = Math.floor(abs);
-    const minFloat = (abs - deg) * 60;
-    const min = Math.floor(minFloat);
-    const sec = ((minFloat - min) * 60).toFixed(1);
-    const hemi = isLat ? (n >= 0 ? 'N' : 'S') : (n >= 0 ? 'E' : 'O');
-    return `${deg}° ${min}' ${sec}" ${hemi}`;
-}
-
-function dmsToDecimalLite(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return Number.NaN;
-    if (!/[°º'′´"″]/.test(s)) return parseFloat(s.replace(',', '.'));
-    const m = s.match(/^\s*(\d+)[°º]\s*(\d+)['′´]\s*([\d.,]+)\s*["″]?\s*([NnSsEeOoWw])\s*$/);
-    if (!m) return Number.NaN;
-    const deg = parseInt(m[1], 10);
-    const min = parseInt(m[2], 10);
-    const sec = parseFloat(String(m[3]).replace(',', '.'));
-    const hemi = m[4].toUpperCase();
-    if (!Number.isFinite(deg) || !Number.isFinite(min) || !Number.isFinite(sec)) return Number.NaN;
-    let dec = deg + min / 60 + sec / 3600;
-    if (hemi === 'S' || hemi === 'W' || hemi === 'O') dec = -dec;
-    return dec;
-}
-
 function initWebCoordsConverterBar() {
     const wrap = document.getElementById('web-coords-converter');
     const mode = document.getElementById('web-coords-converter-mode');
@@ -3131,11 +2956,11 @@ document.getElementById('lf').addEventListener('submit', async e => {
         document.getElementById('un').textContent = u.nombre.split(' ')[0];
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
-        resetPreferenciasPanelesInicioCerrados();
-        try { aplicarUIMapaPlataforma(); } catch (_) {}
-        try { initWebCoordsConverterBar(); } catch (_) {}
-        iniciarKeepAlive();
+
+        // Ejecutar inmediatamente lo que requiere gesto de usuario (GPS) antes de que expire
         iniciarTracking();
+
+        resetPreferenciasPanelesInicioCerrados();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
         const btnAdm = document.getElementById('btn-admin');
@@ -3178,11 +3003,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(JSON.stringify({
-                    id: parseInt(u.id, 10) || 0,
-                    rol: String(u.rol || ''),
-                    api_token: String(app.apiToken || '')
-                }));
+                AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
             }
         } catch (_) {}
         if (esAdmin()) {
@@ -3197,26 +3018,26 @@ document.getElementById('lf').addEventListener('submit', async e => {
             iniciarPollSincroPedidosTecnico();
             detenerPollBannerReclamoCliente();
         }
-        setTimeout(async () => {
+        // Ejecutar inmediatamente SIN setTimeout para preservar el gesto del usuario
+        solicitarPermisos().then(r => {
+            if (!r.gps) console.log('GPS no solicitado o denegado por falta de gesto');
+            if (ultimaUbicacion) {
+                const enviarAl_SW = () => {
+                    if (navigator.serviceWorker?.controller) {
+                        navigator.serviceWorker.controller.postMessage({
+                            tipo: 'CACHEAR_ZONA',
+                            lat: ultimaUbicacion.lat,
+                            lng: ultimaUbicacion.lon,
+                            radioKm: 150
+                        });
+                    }
+                };
+                if (navigator.serviceWorker?.controller) enviarAl_SW();
+                else setTimeout(enviarAl_SW, 4000);
+            }
+        });
 
-            solicitarPermisos().then(r => {
-                if (!r.gps) toast('GPS no disponible — ubicación manual', 'info');
-                if (ultimaUbicacion) {
-                    const enviarAl_SW = () => {
-                        if (navigator.serviceWorker?.controller) {
-                            navigator.serviceWorker.controller.postMessage({
-                                tipo: 'CACHEAR_ZONA',
-                                lat: ultimaUbicacion.lat,
-                                lng: ultimaUbicacion.lon,
-                                radioKm: 150
-                            });
-                        }
-                    };
-                    // Esperar a que el SW esté activo
-                    if (navigator.serviceWorker?.controller) enviarAl_SW();
-                    else setTimeout(enviarAl_SW, 4000);
-                }
-            });
+        setTimeout(async () => {
             setupMapLazyWhenVisibleOnce();
             if (!offline) {
                 await asegurarJwtApiRest();
@@ -3405,161 +3226,9 @@ window.toast = toast;
     window.__gnAlertWrapped = true;
 })();
 
-const norm = p => ({
-    id: p.id,
-    np: p.numero_pedido,
-    f: p.fecha_creacion || p.fecha || new Date().toISOString(),
-    fc: p.fecha_cierre || null,
-    fa: p.fecha_avance || null,
-    dis: p.distribuidor || '',
-    br: String(p.barrio || '').trim(),
-    trf: String(p.trafo || p.setd || '').trim(),
-    cl: p.cliente || '',
-    tt: p.tipo_trabajo || '',
-    de: p.descripcion || '',
-    pr: p.prioridad || 'Media',
-    es: p.estado || 'Pendiente',
-    av: parseInt(p.avance) || 0,
-    la: (() => {
-        const raw = p.lat != null && p.lat !== '' ? p.lat : p.latitud;
-        if (raw == null || raw === '') return null;
-        const v = parseFloat(String(raw).trim().replace(',', '.'));
-        return Number.isFinite(v) ? v : null;
-    })(),
-    ln: (() => {
-        const raw = p.lng != null && p.lng !== '' ? p.lng : p.longitud;
-        if (raw == null || raw === '') return null;
-        const v = parseFloat(String(raw).trim().replace(',', '.'));
-        return Number.isFinite(v) ? v : null;
-    })(),
-    ui: p.usuario_id,
-    tr: p.trabajo_realizado || null,
-    tc: p.tecnico_cierre || null,
-    fotos: p.foto_base64 ? p.foto_base64.split('||') : [],
-    foto_cierre: p.foto_cierre || null,
-    uc: p.usuario_creador_id,
-    ui2: p.usuario_inicio_id,
-    uav: p.usuario_avance_id,
-    uci: p.usuario_cierre_id,
-    x_inchauspe: p.x_inchauspe,
-    y_inchauspe: p.y_inchauspe,
-    nis: (p.nis || '').trim(),
-    med: (p.medidor || '').trim(),
-    nis_med: (p.nis_medidor || '').trim(),
-    cdir: (p.cliente_direccion || '').trim(),
-    cnom: (p.cliente_nombre || p.cliente || '').trim(),
-    ccal: (p.cliente_calle || '').trim(),
-    cnum: (p.cliente_numero_puerta || '').trim(),
-    cloc: (p.cliente_localidad || '').trim(),
-    cpcia: (p.provincia || '').trim(),
-    ccp: (p.codigo_postal || '').trim(),
-    stc: (p.suministro_tipo_conexion || '').trim(),
-    sfs: (p.suministro_fases || '').trim(),
-    tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
-    fasi: p.fecha_asignacion || null,
-    firma: p.firma_cliente || null,
-    chkl: p.checklist_seguridad || null,
-    tel: (p.telefono_contacto || '').trim(),
-    opin: (() => {
-        const v = p.opinion_cliente;
-        if (v == null || v === '') return null;
-        const s = String(v).trim();
-        return s || null;
-    })(),
-    fopin: p.fecha_opinion_cliente || null,
-    oes: (() => {
-        const n = parseInt(p.opinion_cliente_estrellas, 10);
-        return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
-    })(),
-    orc: String(p.origen_reclamo || '').trim().toLowerCase(),
-    dex: !!(
-        p.derivado_externo === true ||
-        p.derivado_externo === 't' ||
-        p.derivado_externo === 1 ||
-        String(p.estado || '') === 'Derivado externo'
-    ),
-    dda: String(p.derivado_a || '').trim(),
-    ddn: String(p.derivado_destino_nombre || '').trim(),
-    fder: p.fecha_derivacion || null,
-    uider: p.usuario_derivacion_id != null ? parseInt(p.usuario_derivacion_id, 10) : null,
-    dnota: String(p.derivacion_nota || '').trim(),
-    dsnap: String(p.derivacion_mensaje_snapshot || '').trim(),
-    sdpen: !!(
-        p.solicitud_derivacion_pendiente === true ||
-        p.solicitud_derivacion_pendiente === 't' ||
-        p.solicitud_derivacion_pendiente === 1
-    ),
-    sdm: String(p.solicitud_derivacion_motivo || '').trim(),
-    sdf: p.solicitud_derivacion_fecha || null,
-    sduid:
-        p.solicitud_derivacion_usuario_id != null
-            ? parseInt(p.solicitud_derivacion_usuario_id, 10)
-            : null,
-    sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
-    wgeo: (() => {
-        const g = p.geocode_log_whatsapp;
-        if (g == null || g === '') return null;
-        if (typeof g === 'object' && !Array.isArray(g)) return g;
-        try {
-            return JSON.parse(String(g));
-        } catch (_) {
-            return null;
-        }
-    })(),
-    gaudit: (() => {
-        const g = p.geocoding_audit;
-        if (g == null || g === '') return null;
-        if (typeof g === 'object' && !Array.isArray(g)) return g;
-        try {
-            return JSON.parse(String(g));
-        } catch (_) {
-            return null;
-        }
-    })(),
-});
+const norm = window.norm;
 
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
-
-/** WGS84 finito, no (0,0), dentro de rango — pin útil en mapa (no confundir con domicilio exacto). */
-function coordsSonPinValidasMapaWgs84(la, ln) {
-    const a = Number(la);
-    const b = Number(ln);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-    if (a === 0 && b === 0) return false;
-    if (a < -90 || a > 90 || b < -180 || b > 180) return false;
-    return true;
-}
-
-/** Texto admin: cómo se obtuvo el pin (política A / re-geocodificación). */
-function etiquetaModoUbicPedido(a) {
-    if (!a || typeof a !== 'object') return '';
-    const ma = String(a.metodo_ancla || '').trim();
-    const anclaEtq = {
-        nominatim_inicio_num1: 'Ancla Nominatim (n°1 como inicio aprox.)',
-        overpass_addr_min: 'Ancla Overpass (menor addr:housenumber en la zona)',
-        overpass_geom_first_node: 'Ancla Overpass (primer nodo, vía más larga)',
-    };
-    const preAncla = ma ? `${anclaEtq[ma] || `Ancla: ${ma}`}. ` : '';
-    const m = String(a.modo || '').trim();
-    if (m === 'interpolado_via') {
-        return `${preAncla}Aproximada — interpolación sobre vía OSM y vereda por paridad (heurística; no es medición catastral).`;
-    }
-    if (m === 'localidad') {
-        return `${preAncla}Aproximada — centro o búsqueda por localidad / ciudad.`;
-    }
-    if (m === 'tenant') {
-        return `${preAncla}Aproximada — sede o área de referencia del tenant.`;
-    }
-    if (m === 'region') {
-        return `${preAncla}Muy aproximada — región o respaldo geográfico (último recurso).`;
-    }
-    if (m === 'exacto_aprox') {
-        return `${preAncla}Según mapas / catálogo; puede no coincidir con la puerta exacta.`;
-    }
-    if (m === 'aprox') return `${preAncla}Aproximada (ver fuente en auditoría).`;
-    if (preAncla) return preAncla.trim();
-    return '';
-}
 
 /** Coordenadas para mapa: columnas del pedido; si faltan, último log WA en servidor (`geocode_log_whatsapp`). */
 function coordsEfectivasPedidoMapa(p) {
@@ -3583,35 +3252,6 @@ function coordsEfectivasPedidoMapa(p) {
     return { la: null, ln: null };
 }
 
-/** Igual que api/utils/parseDomicilioArg.js — texto libre tipo "Doctor Haedo 365, Hasenkamp". */
-function parseDomicilioLibreArgentinaFront(cdir, localidadFallback) {
-    const raw = String(cdir || '')
-        .replace(/\s+/g, ' ')
-        .replace(/^[\s,.;-]+|[\s,.;-]+$/g, '')
-        .trim();
-    if (!raw) return null;
-    const fb =
-        localidadFallback != null && String(localidadFallback).trim() ? String(localidadFallback).trim() : null;
-    const mComa = raw.match(/^(.+?)\s+(\d{1,6})\s*[,;]\s*(.+)$/i);
-    if (mComa) {
-        return { calle: mComa[1].trim(), numero: mComa[2].trim(), localidad: mComa[3].trim() };
-    }
-    const soloNum = raw.match(/^(.+?)\s+(\d{1,6})$/);
-    if (soloNum && fb) {
-        return { calle: soloNum[1].trim(), numero: soloNum[2].trim(), localidad: fb };
-    }
-    const triple = raw.match(
-        /^(.+?)\s+(\d{1,6})\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s\-.]{2,79})$/u
-    );
-    if (triple) {
-        const locCand = triple[3].trim();
-        if (!/^\d+$/.test(locCand) && locCand.length >= 3) {
-            return { calle: triple[1].trim(), numero: triple[2].trim(), localidad: locCand };
-        }
-    }
-    return null;
-}
-
 function domicilioParaGeocodePedido(p) {
     if (!p) return null;
     let calle = (p.ccal || '').trim();
@@ -3630,33 +3270,6 @@ function domicilioParaGeocodePedido(p) {
     return null;
 }
 
-/** URL de la UI pública de Nominatim (solo admin / diagnóstico; el proxy sigue siendo la API Node). */
-function nominatimUiSearchUrlFromTexto(texto) {
-    let q = String(texto || '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const m = q.match(/^q="([^"]+)"/);
-    if (m) q = m[1];
-    if (q.length < 2) return '';
-    return `https://nominatim.openstreetmap.org/ui/search.html?q=${encodeURIComponent(q)}`;
-}
-
-function _normGeoTxt(s) {
-    try {
-        return String(s || '')
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, ' ')
-            .trim();
-    } catch (_) {
-        return String(s || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, ' ')
-            .trim();
-    }
-}
-
 /* ——— Log visible admin: geocodificación / proxy Nominatim (GitHub Pages; no OSM directo) ——— */
 const GN_GEOCODE_LOG_STORAGE_KEY = 'gn_geocode_admin_ui_log_v1';
 const GN_GEOCODE_LOG_MAX_LINES = 380;
@@ -3669,19 +3282,6 @@ let _gnWaGeoOpsPollTimer = null;
 /** Usuario pausó explícitamente el auto-refresh. */
 let _gnWaGeoOpsUserPaused = false;
 
-function _gnWaGeoOpsListHasOpenDetails(listEl) {
-    if (!listEl) return false;
-    try {
-        return !!listEl.querySelector('details.gn-wa-geo-op[open]');
-    } catch (_) {
-        return false;
-    }
-}
-
-function _gnWaGeoOpsShouldSkipAutoRefresh(listEl) {
-    return _gnWaGeoOpsUserPaused || _gnWaGeoOpsListHasOpenDetails(listEl);
-}
-
 function _gnWaGeoOpsSyncPauseButtonUi() {
     const btn = document.getElementById('gn-wa-geo-ops-pause');
     if (!btn) return;
@@ -3689,14 +3289,6 @@ function _gnWaGeoOpsSyncPauseButtonUi() {
     btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
     btn.textContent = paused ? 'Reanudar auto' : 'Pausar auto';
     btn.title = paused ? 'Reanudar actualización automática cada ~2,5 s' : 'Pausar el refresco automático (podés seguir leyendo o copiando)';
-}
-
-function _gnEscWaHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
 }
 
 /**
@@ -3719,7 +3311,7 @@ function gnWaGeoOpsRefresh(force) {
         wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">Iniciá sesión para ver operaciones del servidor.</p>';
         return;
     }
-    if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) {
+    if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(_gnWaGeoOpsUserPaused, wrap)) {
         return;
     }
     (async () => {
@@ -3728,19 +3320,19 @@ function gnWaGeoOpsRefresh(force) {
                 headers: { Authorization: `Bearer ${tok}` },
             });
             if (!r.ok) {
-                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
+                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(_gnWaGeoOpsUserPaused, wrap)) return;
                 wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(`No se pudo cargar (${r.status}).`)}</p>`;
                 return;
             }
             const j = await r.json();
             const items = j.items || [];
             if (!items.length) {
-                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
+                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(_gnWaGeoOpsUserPaused, wrap)) return;
                 wrap.innerHTML =
                     '<p class="gn-wa-geo-ops-msg">Sin operaciones recientes (o migración <code>geocod_wa_operaciones</code> pendiente en la API).</p>';
                 return;
             }
-            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
+            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(_gnWaGeoOpsUserPaused, wrap)) return;
             wrap.innerHTML = items
                 .map((row) => {
                     const st = String(row.estado || '');
@@ -3776,7 +3368,7 @@ function gnWaGeoOpsRefresh(force) {
                 })
                 .join('');
         } catch (e) {
-            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
+            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(_gnWaGeoOpsUserPaused, wrap)) return;
             wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(String(e && e.message ? e.message : e))}</p>`;
         }
     })();
@@ -3792,19 +3384,6 @@ function gnWaGeoOpsStopPoll() {
     if (_gnWaGeoOpsPollTimer) {
         clearInterval(_gnWaGeoOpsPollTimer);
         _gnWaGeoOpsPollTimer = null;
-    }
-}
-
-function _gnGeocodeLogTs() {
-    try {
-        return new Date().toLocaleTimeString('es-AR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-        });
-    } catch (_) {
-        return '';
     }
 }
 
@@ -4059,48 +3638,6 @@ if (typeof window !== 'undefined') {
     window.nominatimUiSearchUrlFromTexto = nominatimUiSearchUrlFromTexto;
 }
 
-/** Campos de Nominatim donde suele aparecer la localidad declarada por el cliente. */
-function _nominatimCamposLocalidad(addr) {
-    if (!addr || typeof addr !== 'object') return [];
-    const keys = [
-        'city',
-        'town',
-        'village',
-        'hamlet',
-        'municipality',
-        'city_district',
-        'suburb',
-        'neighbourhood',
-        'county',
-    ];
-    const out = [];
-    for (const k of keys) {
-        const v = addr[k];
-        if (v != null && String(v).trim()) out.push(String(v).trim());
-    }
-    return out;
-}
-
-function _nominatimResultadoCoincideLocalidad(r, locPedido) {
-    const want = _normGeoTxt(locPedido);
-    if (!want) return true;
-    const dn = _normGeoTxt(r.display_name || '');
-    if (dn.includes(want)) return true;
-    const addr = r && r.address ? r.address : {};
-    const fields = _nominatimCamposLocalidad(addr);
-    for (const f of fields) {
-        const nf = _normGeoTxt(f);
-        if (!nf) continue;
-        if (nf === want || nf.includes(want) || want.includes(nf)) return true;
-    }
-    return false;
-}
-
-function _filtrarNominatimPorLocalidad(results, locPedido) {
-    const arr = Array.isArray(results) ? results : [];
-    return arr.filter((r) => _nominatimResultadoCoincideLocalidad(r, locPedido));
-}
-
 /** Cola global: una búsqueda proxy a la vez + pausa entre fin de una y la siguiente (política OSM ~1 req/s). */
 const _NOMINATIM_PROXY_MIN_GAP_MS = 1800;
 let _nominatimSearchQueue = Promise.resolve();
@@ -4109,20 +3646,6 @@ let _nominatimSearchLastEnd = 0;
 /** Caché en memoria: misma consulta no golpea el proxy durante 5 min tras un OK. */
 const _NOMINATIM_CLIENT_CACHE_MS = 5 * 60 * 1000;
 const _nominatimClientSearchCache = new Map();
-
-function _nominatimSearchCacheKey(merged) {
-    const o = merged && typeof merged === 'object' ? merged : {};
-    const keys = Object.keys(o).sort();
-    const norm = {};
-    for (const k of keys) {
-        const v = o[k];
-        if (v == null) continue;
-        const s = String(v).trim();
-        if (!s) continue;
-        norm[String(k).toLowerCase()] = s;
-    }
-    return JSON.stringify(norm);
-}
 
 function _nominatimSearchEnqueue(run) {
     _nominatimSearchQueue = _nominatimSearchQueue.then(async () => {
@@ -4310,30 +3833,6 @@ async function _nominatimViewboxLocalidad(loc) {
     const [south, north, west, east] = hit.boundingbox.map((x) => Number(x));
     if (![south, north, west, east].every((n) => Number.isFinite(n))) return null;
     return `${west},${north},${east},${south}`;
-}
-
-function _nominatimMetaFromHit(r) {
-    if (!r) return {};
-    const addr = r.address && typeof r.address === 'object' ? r.address : {};
-    return {
-        display_name: String(r.display_name || '').trim(),
-        type: r.type != null ? String(r.type) : '',
-        house_number: addr.house_number != null ? String(addr.house_number).trim() : '',
-    };
-}
-
-function _parseHouseNumberNominatim(addr) {
-    const raw = addr && addr.house_number != null ? String(addr.house_number).trim() : '';
-    if (!raw) return null;
-    const n = parseInt(raw.replace(/\D/g, ''), 10);
-    return Number.isFinite(n) ? n : null;
-}
-
-function _nominatimTipoRankPedido(r) {
-    const t = String((r && r.type) || '').toLowerCase();
-    if (t === 'house') return 0;
-    if (t === 'building' || t === 'apartments' || t === 'residential') return 1;
-    return 2;
 }
 
 function _elegirMejorResultadoNominatimPorPuerta(results, numeroPuertaStr) {
@@ -4833,6 +4332,29 @@ async function enriquecerCoordsGeocodificadasPedidos() {
                     gnGeocodeUiLogAppend('info', `Procesando pedido #${p.id}…`);
                 }
                 const id = String(p.id);
+                const dom = domicilioParaGeocodePedido(p);
+
+                // 1. Intento por índice local (Offline-first / Fast-path)
+                if (dom && typeof window.lookupLocalAddress === 'function') {
+                    const localHit = window.lookupLocalAddress(dom.loc, dom.calle, dom.num);
+                    if (localHit) {
+                        window._pedidoCoordsInferidas[id] = { la: localHit.lat, ln: localHit.lng, src: 'local_index' };
+                        const idx = app.p.findIndex((x) => String(x.id) === id);
+                        if (idx >= 0) {
+                            app.p[idx].la = localHit.lat;
+                            app.p[idx].ln = localHit.lng;
+                        }
+                        if (adminBatch) {
+                            gnGeocodeUiLogAppend('info', `Pedido #${p.id}: coordenadas encontradas en índice local.`);
+                        }
+                        try {
+                            renderMk();
+                            render();
+                        } catch (_) {}
+                        continue;
+                    }
+                }
+
                 const srv = await intentarCoordsPedidoDesdeApiRegeocodificar(p);
                 if (srv && coordsSonPinValidasMapaWgs84(srv.la, srv.ln)) {
                     window._pedidoCoordsInferidas[id] = { la: srv.la, ln: srv.ln, src: 'regeo_api' };
@@ -4897,38 +4419,9 @@ async function enriquecerCoordsGeocodificadasPedidos() {
     }
 }
 
-function distanciaKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const toR = x => x * Math.PI / 180;
-    const dLat = toR(lat2 - lat1);
-    const dLon = toR(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Fechas en informes / tablas sin texto tipo GMT-0300 */
-function fmtInformeFecha(v) {
-    if (v == null || v === '') return '';
-    const d = v instanceof Date ? v : new Date(v);
-    if (isNaN(d.getTime())) return String(v);
-    try {
-        return new Intl.DateTimeFormat('es-AR', {
-            timeZone: 'America/Argentina/Buenos_Aires',
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', hour12: false
-        }).format(d);
-    } catch (_) {
-        const pad = n => String(n).padStart(2, '0');
-        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-}
 
 let _modoFijarUbicacionAdmin = false;
 let _marcadoresTecnicosPrincipal = [];
-
-function _escOpt(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
 
 const WEB_MAP_FILTRO_TIPOS_KEY = 'pmg_map_filtro_tipos_json';
 
@@ -6261,13 +5754,6 @@ function crearVentanaFlotanteWaHc(sidNum) {
     return st;
 }
 
-/** Etiqueta legible para teléfonos guardados como dígitos (WhatsApp / Meta). */
-function fmtTelWaMeta(digits) {
-    const d = String(digits || '').replace(/\D/g, '');
-    if (!d) return '—';
-    if (d.startsWith('54')) return '+' + d;
-    return '+' + d;
-}
 
 async function refrescarMensajesWaHcVentana(sidNum) {
     const sidStr = String(sidNum);
@@ -6679,74 +6165,21 @@ async function asegurarNombreUsuariosParaFiltros() {
     } catch (_) {}
 }
 
+// Cargar índice local de direcciones si está configurado
+const localIndexPath = window.APP_CONFIG?.local_address_index_path;
+if (localIndexPath) {
+    void initLocalAddressIndex(localIndexPath);
+}
+
 async function cargarPedidos(opts) {
-    const silent = !!(opts && opts.silent);
-    if (!silent) {
-        document.getElementById('pl').innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando...</div>';
-    }
-    if (modoOffline) {
-        
-        app.p = offlinePedidos();
-        render();
-        return;
-    }
-    try {
-        await asegurarNombreUsuariosParaFiltros();
-        const tsql = await pedidosFiltroTenantSql();
-        let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
-        if (esTecnicoOSupervisor()) {
-            const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
-            if (!verTodos) {
-                qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
-            }
-        }
-        const prevSnapTecnico =
-            !esAdmin() && esTecnicoOSupervisor() && (app.p || []).length
-                ? new Map((app.p || []).map(p => [String(p.id), { es: p.es, np: p.np, tai: p.tai }]))
-                : null;
-        const r = await ejecutarSQLConReintentos(qPed);
-        const prevIds = new Set((app.p || []).map(p => p.id));
-        app.p = (r.rows || []).map(norm);
-        if (prevSnapTecnico) notificarCambiosPedidoTecnico(prevSnapTecnico);
-        if (esAdmin() && app.p.length) {
-            const mx = app.p.reduce((a, p) => Math.max(a, Number(p.id) || 0), 0);
-            if (Number.isFinite(mx) && mx > 0) app._lastMaxPedidoIdSynced = mx;
-        }
-        // Nuevos pedidos: aviso al admin (lista + dashboard a veces se desincronizaban)
-        if (esAdmin() && prevIds.size > 0) {
-            const dosMinutosAtras = Date.now() - 2 * 60 * 1000;
-            const nuevos = app.p.filter(p => !prevIds.has(p.id));
-            nuevos.forEach(p => {
-                const urgente = ['Crítica', 'Alta'].includes(p.pr) && p.es === 'Pendiente' &&
-                    new Date(p.f).getTime() > dosMinutosAtras;
-                if (urgente) {
-                    mostrarAlertaPedidoUrgente(p);
-                } else {
-                    const tit = (p.tt || p.de || '').toString().trim().slice(0, 52);
-                    toast(`Nuevo reclamo #${p.np || p.id}${tit ? ' — ' + tit : ''}`, 'info');
-                }
-            });
-        }
-        
-        offlinePedidosSave(app.p);
-    } catch(e) {
-        console.warn('cargarPedidos: error, usando cache', e.message);
-        setModoOffline(true);
-        app.p = offlinePedidos();
-        toast('Sin conexión — mostrando pedidos en caché', 'info');
-    }
-    render();
-    try {
-        refrescarDetalleSiAbiertoTrasSync();
-    } catch (_) {}
-    void enriquecerCoordsGeocodificadasPedidos();
+    const tenantId = window.tenantIdActual?.() || 1;
+    const businessType = window.lineaNegocioOperativaCodigo?.() || 'electricidad';
+    // Se asegura el contexto antes de llamar a la implementación modular o local
+    return window.cargarPedidos(opts);
 }
 
 /** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
-window.gnSincronizarPedidosDesdeAndroid = function gnSincronizarPedidosDesdeAndroid() {
-    if (!app.u || modoOffline || !NEON_OK || !_sql) return;
-    void cargarPedidos({ silent: true });
-};
+window.gnSincronizarPedidosDesdeAndroid = window.gnSincronizarPedidosDesdeAndroid;
 
 
 
@@ -6778,264 +6211,6 @@ function calcularEscalaReal(zoom) {
 
 
 
-
-let _watchId         = null;  
-let _circuloAcc      = null;  
-let _mejorPrecision  = Infinity; 
-
-
-function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
-    if (!app.map) return;
-
-    
-    if (marcadorUbicacion) {
-        try { app.map.removeLayer(marcadorUbicacion); } catch(_) {}
-        marcadorUbicacion = null;
-    }
-    
-    if (_circuloAcc) {
-        try { app.map.removeLayer(_circuloAcc); } catch(_) {}
-        _circuloAcc = null;
-    }
-
-    const esBaseOficina = opts && opts.tipo === 'base_oficina';
-    if (esBaseOficina) {
-        const precisionZoom = 15;
-        const svgIcon = L.divIcon({
-            className: '',
-            html: `<div style="
-            width:18px;height:18px;
-            background:#1d4ed8;
-            border:3px solid white;
-            border-radius:50%;
-            box-shadow:0 0 0 3px rgba(29,78,216,.35);
-            position:relative;
-        "></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-            popupAnchor: [0, -10]
-        });
-        const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
-        const mk = { icon: svgIcon, zIndexOffset: 220 };
-        if (paneGps) mk.pane = paneGps;
-        marcadorUbicacion = L.marker([lat, lon], mk)
-            .addTo(app.map)
-            .bindPopup(`<div style="font-family:system-ui;min-width:180px">
-                <b style="color:#1d4ed8">🏢 Ubicación base de oficina</b><br>
-                <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
-            </div>`);
-        return precisionZoom;
-    }
-
-    
-    
-    
-    
-    
-    const precisionZoom = !acc ? 15
-        : acc < 50   ? 17
-        : acc < 500  ? 15
-        : acc < 5000 ? 13
-        : 11;
-
-    
-    const svgIcon = L.divIcon({
-        className: '',
-        html: `<div style="
-            width:16px;height:16px;
-            background:#10b981;
-            border:3px solid white;
-            border-radius:50%;
-            box-shadow:0 0 0 3px rgba(16,185,129,.4);
-            ${gnMapaLigero() ? '' : 'animation:pulse-gps 2s infinite;'}
-            position:relative;
-        "></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-        popupAnchor: [0, -10]
-    });
-
-    const accTexto = acc
-        ? (acc < 1000 ? `±${Math.round(acc)} m` : `±${(acc/1000).toFixed(1)} km`)
-        : 'precisión desconocida';
-
-    const tipoGps = !acc ? 'GPS'
-        : acc < 100  ? '🛰️ GPS'
-        : acc < 2000 ? '📶 WiFi/Red celular'
-        : '🌐 Geolocalización por IP';
-
-    const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
-    const mkGps = { icon: svgIcon, zIndexOffset: 200 };
-    if (paneGps) mkGps.pane = paneGps;
-    marcadorUbicacion = L.marker([lat, lon], mkGps)
-        .addTo(app.map)
-        .bindPopup(`
-            <div style="font-family:system-ui;min-width:160px">
-                <b style="color:#059669">📍 Tu ubicación</b><br>
-                <span style="font-size:11px;color:#475569">${tipoGps} — ${accTexto}</span><br>
-                <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
-            </div>
-        `);
-
-    
-    if (acc && acc > 50 && !gnMapaLigero()) {
-        const radioVisual = Math.min(Math.max(acc * 0.12, 10), 38);
-        const cOpt = {
-            radius: radioVisual,
-            color: '#10b981',
-            fillColor: '#10b981',
-            fillOpacity: 0.07,
-            weight: 1,
-            dashArray: '4,6',
-            interactive: false,
-            bubblingMouseEvents: true
-        };
-        if (paneGps) cOpt.pane = paneGps;
-        _circuloAcc = L.circle([lat, lon], cOpt).addTo(app.map);
-    }
-
-    return precisionZoom;
-}
-
-
-
-
-
-
-function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
-    if (!navigator.geolocation) {
-        if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
-        return;
-    }
-
-    const fastUserAction = !!(opts && opts.fastUserAction);
-    let intentos = 0;
-    const MAX_INTENTOS = gnMapaLigero() ? 2 : 3;
-    let centroInicialAplicado = false;
-
-    function procesarPosicion(position, esWatchUpdate = false) {
-        const { latitude, longitude, accuracy } = position.coords;
-        const acc = Math.round(accuracy);
-        registrarFajaInstalacionSiFalta(longitude);
-        marcarGpsRecibidoEstaSesion();
-
-        
-        if (esWatchUpdate && acc >= _mejorPrecision && acc > 200) return;
-        _mejorPrecision = Math.min(_mejorPrecision, acc);
-
-        ultimaUbicacion = { lat: latitude, lon: longitude, acc };
-        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-
-        if (app.map) {
-            const zoomSugerido = mostrarMarcadorUbicacion(latitude, longitude, acc);
-            if (centrarMapa && !centroInicialAplicado) {
-                app.map.invalidateSize({ animate: false });
-                
-                const actualCenter = app.map.getCenter();
-                const distLat = Math.abs(actualCenter.lat - latitude);
-                const distLon = Math.abs(actualCenter.lng - longitude);
-                const estaLejos = distLat > 0.05 || distLon > 0.05;
-                if (estaLejos || !esWatchUpdate) {
-                    const doAnimate = !fastUserAction && !gnMapaLigero();
-                    app.map.setView([latitude, longitude], zoomSugerido, { animate: doAnimate });
-                }
-                centroInicialAplicado = true;
-                setTimeout(() => {
-                    document.getElementById('zoom-altura').textContent = calcularEscalaReal(app.map.getZoom());
-                }, 300);
-            }
-        }
-
-        
-        if (!modoSilencioso && !esWatchUpdate) {
-            const msg = acc < 100
-                ? `📍 GPS: ±${acc}m`
-                : acc < 2000
-                ? `📶 WiFi/Red: ±${acc}m`
-                : `🌐 IP: ±${(acc/1000).toFixed(0)}km — precisión baja`;
-            toast(msg, acc < 2000 ? 'success' : 'info');
-        }
-    }
-
-    function manejarError(error) {
-        const msgs = {
-            1: 'Permiso de ubicación denegado — activalo en Configuración',
-            2: 'GPS no disponible',
-            3: 'Tiempo de espera agotado'
-        };
-        if (!modoSilencioso) {
-            toast(msgs[error.code] || 'Error de GPS', 'error');
-        }
-        
-        if (ultimaUbicacion && app.map && centrarMapa) {
-            app.map.invalidateSize({ animate: false });
-            mostrarMarcadorUbicacion(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
-            app.map.setView([ultimaUbicacion.lat, ultimaUbicacion.lon], 14, { animate: !fastUserAction && !gnMapaLigero() });
-            if (!modoSilencioso) toast('📍 Mostrando última ubicación conocida', 'info');
-        }
-    }
-
-    const geoOptsPrincipal = fastUserAction
-        ? { enableHighAccuracy: false, timeout: 6000, maximumAge: 120000 }
-        : { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 };
-
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            procesarPosicion(pos, false);
-
-            if (!fastUserAction && pos.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
-                const intentarMejorar = () => {
-                    if (intentos >= MAX_INTENTOS) return;
-                    intentos++;
-                    navigator.geolocation.getCurrentPosition(
-                        p2 => {
-                            procesarPosicion(p2, false);
-
-                            if (p2.coords.accuracy > 100 && intentos < MAX_INTENTOS) {
-                                setTimeout(intentarMejorar, 2000);
-                            }
-                        },
-                        () => {},
-                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                    );
-                };
-                setTimeout(intentarMejorar, 1500);
-            }
-        },
-        manejarError,
-        geoOptsPrincipal
-    );
-
-    
-    
-    
-    
-    if (!_watchId) {
-        _watchId = navigator.geolocation.watchPosition(
-            pos => {
-                
-                const { latitude, longitude, accuracy } = pos.coords;
-                const acc = Math.round(accuracy);
-                registrarFajaInstalacionSiFalta(longitude);
-                ultimaUbicacion = { lat: latitude, lon: longitude, acc };
-                try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
-                
-                if (!app.map) return;
-                marcarGpsRecibidoEstaSesion();
-                if (gnMapaLigero()) {
-                    const now = Date.now();
-                    if (now - _gnLastWatchUbicacionMs < 45000) return;
-                    _gnLastWatchUbicacionMs = now;
-                }
-                mostrarMarcadorUbicacion(latitude, longitude, acc);
-            },
-            err => console.warn('[GPS watch]', err.message),
-            gnMapaLigero()
-                ? { enableHighAccuracy: false, maximumAge: 20000, timeout: 20000 }
-                : { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
-        );
-    }
-}
 
 /** Lat/lng de oficina definidos por administrador (EMPRESA_CFG o columnas legadas). */
 function parseEmpresaCfgLatLngBase() {
@@ -7251,51 +6426,8 @@ window.nuevoPedidoDesdeUbicacionActual = nuevoPedidoDesdeUbicacionActual;
 
 let mapViewImportPromise = null;
 function loadMapViewModule() {
-    if (!mapViewImportPromise) mapViewImportPromise = import('./map-view.js');
+    if (!mapViewImportPromise) mapViewImportPromise = import('./js/map-view.js');
     return mapViewImportPromise;
-}
-
-function buildMapViewCtx() {
-    return {
-        app,
-        getApiBaseUrl,
-        tenantIdActual,
-        get L() { return window.L; },
-        document,
-        window,
-        toast,
-        gnMapaLigero,
-        aplicarUIMapaPlataforma,
-        renderMk,
-        registrarFajaInstalacionSiFalta,
-        htmlLineaUbicacionFormulario,
-        syncWrapCoordsDisplayNuevoPedido,
-        poblarSelectTiposReclamo,
-        syncNisClienteReclamoConexionUI,
-        limpiarFotosYPreviewNuevoPedido,
-        esAndroidWebViewMapa,
-        mapTapUbicacionInicialHechaSesion,
-        get _gpsRecibidoEstaSesion() { return _gpsRecibidoEstaSesion; },
-        marcarMapTapUbicacionInicialHecha,
-        solicitarUbicacion,
-        registrarUbicacionManualAdmin,
-        get _modoFijarUbicacionAdmin() { return _modoFijarUbicacionAdmin; },
-        set _modoFijarUbicacionAdmin(v) { _modoFijarUbicacionAdmin = v; },
-        get mapaInicializado() { return mapaInicializado; },
-        set mapaInicializado(v) { mapaInicializado = v; },
-        get marcadorUbicacion() { return marcadorUbicacion; },
-        set marcadorUbicacion(v) { marcadorUbicacion = v; },
-        get _circuloAcc() { return _circuloAcc; },
-        set _circuloAcc(v) { _circuloAcc = v; },
-        get _mapEscalaDebounceTimer() { return _mapEscalaDebounceTimer; },
-        set _mapEscalaDebounceTimer(v) { _mapEscalaDebounceTimer = v; },
-        get ultimaUbicacion() { return ultimaUbicacion; },
-        set ultimaUbicacion(v) { ultimaUbicacion = v; },
-        calcularEscalaReal,
-        mostrarMarcadorUbicacion,
-        aplicarReverseMapaAdminDesdeClicInicio,
-        scheduleMapRetry: () => { void initMap(); }
-    };
 }
 
 async function refreshMapAdminBaseMarkerIfReady() {
@@ -7310,7 +6442,6 @@ async function refreshMapAdminBaseMarkerIfReady() {
 
 async function initMap() {
     const mod = await loadMapViewModule();
-    mod.setMapViewContext(buildMapViewCtx());
     await mod.runInitMap();
 }
 
@@ -7342,72 +6473,6 @@ const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 const btnMapaNuevoGps = document.getElementById('btn-mapa-nuevo-gps');
 if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoPedidoDesdeUbicacionActual());
-
-function renderMk() {
-    if (!app.map) return;
-    app.mk.forEach(m => m.remove());
-    app.mk = [];
-    
-    const fill = {
-        'Crítica': '#ef4444',
-        'Alta': '#f97316',
-        'Media': '#eab308',
-        'Baja': '#3b82f6'
-    };
-    const panePed = app.map.getPane && app.map.getPane('gnPanePedidos') ? 'gnPanePedidos' : undefined;
-
-    const chkNp = document.getElementById('mapa-chk-label-np');
-    const showNp = chkNp ? chkNp.checked : (localStorage.getItem('pmg_map_labels_np') === '1');
-    const pinsLigerosAndroid =
-        typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa();
-    pedidosParaMarcadoresMapa().forEach(p => {
-        const { la, ln } = coordsEfectivasPedidoMapa(p);
-        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
-        const cer = p.es === 'Cerrado' || p.es === 'Derivado externo';
-        const col = cer ? '#94a3b8' : (fill[p.pr] || '#3b82f6');
-        const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        let m;
-        if (showNp && !pinsLigerosAndroid) {
-            const icon = L.divIcon({
-                className: '',
-                html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
-                    <div style="margin-bottom:2px;background:${col};color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.85)">#${npEsc}</div>
-                    <div style="width:13px;height:13px;background:${col};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>
-                </div>`,
-                iconSize: [100, 36],
-                iconAnchor: [50, 36]
-            });
-            const mkOpt = { icon, zIndexOffset: cer ? 200 : 500 };
-            if (panePed) mkOpt.pane = panePed;
-            m = L.marker([la, ln], mkOpt).addTo(app.map);
-        } else {
-            const cmOpt = {
-                radius: cer ? 6 : 9,
-                fillColor: col,
-                color: '#fff',
-                weight: 2,
-                fillOpacity: cer ? 0.5 : 0.9
-            };
-            if (panePed) cmOpt.pane = panePed;
-            m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
-        }
-        m.bindPopup(`
-            <div style="min-width:160px;font-family:system-ui">
-                <b style="color:#1e3a8a">#${p.np}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
-                <span style="font-size:11px;color:#334155">${p.tt}</span><br>
-                <span style="font-size:11px;font-weight:600;color:#0f172a">${p.es}</span>${p.es !== 'Cerrado' ? ` · Av. ${p.av}%` : ''}<br>
-                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
-                    <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
-                    <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
-                    ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
-                    ${esAdmin() && puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !pedidoEsDerivadoFuera(p) ? `<button style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
-                </div>
-            </div>`, { maxWidth: 260 });
-        
-        app.mk.push(m);
-    });
-}
 
 /** Tras tocar un botón del popup de Leaflet, el mismo gesto puede generar un click en el mapa (p. ej. WebView Android). */
 function suppressNextMapClickFromPopup(ms = 520) {
@@ -9093,108 +8158,7 @@ async function actualizarAvance(id, avance) {
 }
 
 async function updPedido(id, campos, usuarioId) {
-    const idxPre = app.p.findIndex(p => String(p.id) === String(id));
-    const prevRow = idxPre !== -1 ? app.p[idxPre] : null;
-    const estadoAntesUpd = prevRow ? String(prevRow.es || '') : '';
-    const taiAsignado = prevRow != null && prevRow.tai != null ? prevRow.tai : null;
-
-    // Agregar auditoría si corresponde
-    if (usuarioId && app.u) {
-        if (campos.estado === 'En ejecución') campos.usuario_inicio_id = app.u.id;
-        if (campos.estado === 'Cerrado')      campos.usuario_cierre_id = app.u.id;
-        if (campos.avance !== undefined && campos.estado === undefined) campos.usuario_avance_id = app.u.id;
-    }
-    const cv = {};
-    for (const [k, v] of Object.entries(campos)) {
-        if (CN.has(k)) cv[k] = v;
-    }
-    if (!Object.keys(cv).length) return;
-    
-    const s = [];
-    for (const [k, val] of Object.entries(cv)) s.push(`${k}=${esc(val)}`);
-    const queryUpdate = `UPDATE pedidos SET ${s.join(',')} WHERE id=${esc(parseInt(id))}`;
-
-    if (modoOffline || !NEON_OK || String(id).startsWith('off_')) {
-        
-        if (!String(id).startsWith('off_')) {
-            enqueueOffline({ tipo: 'UPDATE', query: queryUpdate });
-        }
-        
-    } else {
-        await ejecutarSQLConReintentos(queryUpdate);
-        const cierreCentral =
-            cv.estado === 'Cerrado' &&
-            estadoAntesUpd !== 'Cerrado' &&
-            taiAsignado != null &&
-            String(taiAsignado) !== String(app.u?.id || '');
-        if (cierreCentral && _sql) {
-            try {
-                const pidNum = parseInt(id, 10);
-                const np = prevRow && prevRow.np ? String(prevRow.np) : '';
-                const titulo = 'Pedido cerrado';
-                const cuerpo = `El reclamo ${np || '#' + id} fue cerrado desde la central.`;
-                await sqlSimple(
-                    `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(
-                        parseInt(taiAsignado, 10)
-                    )}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)}, FALSE)`
-                );
-            } catch (e) {
-                if (!String(e.message || e).includes('notificaciones_movil')) {
-                    console.warn('[notif-cierre-tecnico]', e.message || e);
-                }
-            }
-        }
-    }
-    
-    const idx = app.p.findIndex(p => String(p.id) === String(id));
-    if (idx !== -1) {
-        const pm = {
-            estado: 'es',
-            avance: 'av',
-            trabajo_realizado: 'tr',
-            tecnico_cierre: 'tc',
-            fecha_cierre: 'fc',
-            fecha_avance: 'fa',
-            foto_cierre: 'foto_cierre',
-            nis_medidor: 'nis',
-            tecnico_asignado_id: 'tai',
-            fecha_asignacion: 'fasi',
-            firma_cliente: 'firma',
-            checklist_seguridad: 'chkl',
-            telefono_contacto: 'tel',
-            cliente_nombre: 'cnom',
-            cliente_direccion: 'cdir',
-            cliente_calle: 'ccal',
-            cliente_numero_puerta: 'cnum',
-            cliente_localidad: 'cloc',
-            provincia: 'cpcia',
-            codigo_postal: 'ccp',
-            suministro_tipo_conexion: 'stc',
-            suministro_fases: 'sfs',
-            trafo: 'trf',
-            usuario_inicio_id: 'ui2',
-            usuario_cierre_id: 'uci',
-            usuario_avance_id: 'uav',
-            derivado_externo: 'dex',
-            derivado_a: 'dda',
-            derivado_destino_nombre: 'ddn',
-            fecha_derivacion: 'fder',
-            usuario_derivacion_id: 'uider',
-            derivacion_nota: 'dnota',
-            derivacion_mensaje_snapshot: 'dsnap'
-        };
-        for (const [k, v2] of Object.entries(campos)) {
-            if (pm[k]) app.p[idx][pm[k]] = v2;
-        }
-        if (campos.foto_base64) {
-            app.p[idx].fotos = campos.foto_base64.split('||');
-        }
-        if (campos.x_inchauspe) app.p[idx].x_inchauspe = campos.x_inchauspe;
-        if (campos.y_inchauspe) app.p[idx].y_inchauspe = campos.y_inchauspe;
-    }
-    
-    offlinePedidosSave(app.p);
-    render();
+    return window.updPedido(id, campos, usuarioId);
 }
 
 async function iniciar(id) {
@@ -9301,31 +8265,6 @@ function firmaCierreCanvasVacio() {
         if (d[i] < 248 || d[i + 1] < 248 || d[i + 2] < 248) return false;
     }
     return true;
-}
-
-function htmlOptsUnidadMaterial(val) {
-    const u0 = String(val ?? '').trim().toUpperCase();
-    let html = MATERIAL_UNIDADES.map(u => `<option value="${u}"${u === u0 ? ' selected' : ''}>${u}</option>`).join('');
-    if (u0 && MATERIAL_UNIDADES.indexOf(u0) < 0)
-        html = `<option value="${u0.replace(/"/g, '&quot;')}" selected>${u0}</option>` + html;
-    return html;
-}
-
-function escHtmlPrint(s) {
-    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/** Oculta en pantalla ruido técnico ([Sistema]…, caché, sugerencias GPS) ya persistido en descripción. */
-function sanitizarTextoDescripcionPedidoVista(s) {
-    if (s == null || s === '') return '';
-    let t = String(s).replace(/\r\n/g, '\n');
-    t = t.replace(/\n\nSi podés, enviá[\s\S]*?precisión\./gi, '');
-    t = t.replace(/\n\n\[Sistema\][^\n]*/g, '');
-    t = t.replace(/\n\[Sistema\][^\n]*/g, '');
-    t = t.replace(/\[Sistema\][^\n]*/g, '');
-    t = t.replace(/geocodificacion_cache[^\n]*/gi, '');
-    t = t.replace(/\n{3,}/g, '\n\n');
-    return t.trim();
 }
 
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
@@ -9437,7 +8376,7 @@ async function refrescarMaterialesEnDetalle(p) {
             let celUn = '';
             let celCant = '';
             if (puedeEditarMat) {
-                celUn = `<select class="mat-sel-un" onchange="actualizarCampoMaterial(${mid},${pid},'unidad',this.value)">${htmlOptsUnidadMaterial(row.unidad)}</select>`;
+                celUn = `<select class="mat-sel-un" onchange="actualizarCampoMaterial(${mid},${pid},'unidad',this.value)">${htmlOptsUnidadMaterial(row.unidad, MATERIAL_UNIDADES)}</select>`;
                 const qc = row.cantidad != null && row.cantidad !== '' ? String(row.cantidad) : '';
                 celCant = `<input type="number" class="mat-inp-cant" step="any" value="${qc.replace(/"/g, '&quot;')}" onblur="actualizarCampoMaterial(${mid},${pid},'cantidad',this.value)">`;
             } else {
@@ -9455,7 +8394,7 @@ async function refrescarMaterialesEnDetalle(p) {
         if (puedeAgregar) {
             html += `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;align-items:flex-end">
                 <input type="text" id="mat-desc-${pid}" placeholder="Descripción" style="flex:2;min-width:120px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
-                <select id="mat-un-${pid}" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem">${htmlOptsUnidadMaterial('PZA')}</select>
+                <select id="mat-un-${pid}" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem">${htmlOptsUnidadMaterial('PZA', MATERIAL_UNIDADES)}</select>
                 <input type="number" id="mat-cant-${pid}" placeholder="Cant." step="any" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
                 <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeDetalle(${pid})">+ Agregar</button>
             </div>`;
@@ -9508,7 +8447,7 @@ async function refrescarMaterialesEnModalCierre(p) {
             let celUn = '';
             let celCant = '';
             if (puedeEditarMat) {
-                celUn = `<select class="mat-sel-un" onchange="actualizarCampoMaterial(${mid},${pid},'unidad',this.value)">${htmlOptsUnidadMaterial(row.unidad)}</select>`;
+                celUn = `<select class="mat-sel-un" onchange="actualizarCampoMaterial(${mid},${pid},'unidad',this.value)">${htmlOptsUnidadMaterial(row.unidad, MATERIAL_UNIDADES)}</select>`;
                 const qc = row.cantidad != null && row.cantidad !== '' ? String(row.cantidad) : '';
                 celCant = `<input type="number" class="mat-inp-cant" step="any" value="${qc.replace(/"/g, '&quot;')}" onblur="actualizarCampoMaterial(${mid},${pid},'cantidad',this.value)">`;
             } else {
@@ -9525,7 +8464,7 @@ async function refrescarMaterialesEnModalCierre(p) {
         if (puedeEditarMat) {
             html += `<div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;align-items:flex-end">
                 <input type="text" id="cierre-mat-desc-${pid}" placeholder="Descripción" style="flex:2;min-width:120px;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
-                <select id="cierre-mat-un-${pid}" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem">${htmlOptsUnidadMaterial('PZA')}</select>
+                <select id="cierre-mat-un-${pid}" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.8rem">${htmlOptsUnidadMaterial('PZA', MATERIAL_UNIDADES)}</select>
                 <input type="number" id="cierre-mat-cant-${pid}" placeholder="Cant." step="any" style="width:5.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
                 <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeCierreModal(${pid})">+ Agregar</button>
             </div>`;
@@ -10563,7 +9502,6 @@ async function confirmarEnvioDerivacionPreviewAdmin() {
 window.confirmarEnvioDerivacionPreviewAdmin = confirmarEnvioDerivacionPreviewAdmin;
 
 async function solicitarDerivacionTerceroDesdeTecnico(pid) {
-    console.log('solicitarDerivacionTerceroDesdeTecnico - pid:', pid);
     const pidNum = parseInt(pid, 10);
     if (!Number.isFinite(pidNum)) return;
     const ta = document.getElementById(`tec-sol-deriv-motivo-${pidNum}`);
@@ -10579,19 +9517,13 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
         return;
     }
     try {
-        console.log(`📞 Solicitando derivación para pedido: ${pidNum}`);
         const resp = await fetch(apiUrl(`/api/pedidos/${pidNum}/solicitar-derivacion-tercero`), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ motivo: motivo || undefined }),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-            const errorMsg = data.error || data.detail || `HTTP ${resp.status}`;
-            console.error(`❌ Error al derivar pedido ${pidNum}:`, errorMsg);
-            throw new Error(errorMsg);
-        }
-        console.log(`✅ Derivación solicitada para pedido ${pidNum}`);
+        if (!resp.ok) throw new Error(data.error || data.detail || `HTTP ${resp.status}`);
         const row = norm(data);
         const ix = app.p.findIndex((x) => String(x.id) === String(pid));
         if (ix !== -1) app.p[ix] = row;
@@ -10876,7 +9808,7 @@ async function detalle(p) {
     if (
         esCooperativaElectricaRubro() &&
         (esAdmin() || esTecnicoOSupervisor()) &&
-        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(_gnTipoTrabajoPedidoDerivacion(p))
+        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)
     ) {
         const dr = (window.EMPRESA_CFG || {}).derivacion_reclamos;
         const agua = dr?.cooperativa_agua;
@@ -10889,7 +9821,7 @@ async function detalle(p) {
         const labEn = escDet(energia?.nombre || 'Empresa de energía');
         const bits = [
             `<p style="font-size:.82rem;margin:0 0 .55rem;line-height:1.45">El tipo <strong>${escDet(
-                _gnTipoTrabajoPedidoDerivacion(p)
+                p.tt
             )}</strong> suele corresponder a <strong>agua potable</strong> u <strong>servicios municipales</strong>. Esta entidad atiende electricidad; podés orientar al vecino:</p>`,
         ];
         if (waAgua) {
@@ -11037,8 +9969,7 @@ async function detalle(p) {
         esAdmin() &&
         puedeEnviarApiRestPedidos() &&
         (p.es === 'Asignado' || p.es === 'En ejecución') &&
-        !pedidoEsDerivadoFuera(p) &&
-        debeMostrarBotonDerivacion(p)
+        !pedidoEsDerivadoFuera(p)
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -11931,6 +10862,9 @@ document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change
     try {
         render();
         renderMk();
+        if (esAdmin() && !modoOffline && NEON_OK && typeof cargarPedidos === 'function') {
+            void cargarPedidos();
+        }
     } catch (_) {}
 });
 
@@ -12240,7 +11174,13 @@ async function rellenarPedidoDesdeClientesFinalesPorIdentificador(raw) {
     if (cl && nom) cl.value = nom;
     if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
     if (numEl) numEl.value = row.numero_puerta != null ? String(row.numero_puerta).trim() : '';
-    if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+    if (locEl) {
+        let lVal = row.localidad != null ? String(row.localidad).trim() : '';
+        if (lVal.toLowerCase().includes('municipio de ')) {
+            lVal = lVal.replace(/municipio de /gi, '').trim();
+        }
+        locEl.value = lVal;
+    }
     if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
     if (tel) tel.value = '';
 }
@@ -12304,10 +11244,18 @@ async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
         if (cl && row.nombre != null && String(row.nombre).trim()) {
             cl.value = String(row.nombre).trim();
         }
-        if (tel) tel.value = '';
+        if (tel) {
+            tel.value = row.telefono != null ? String(row.telefono).trim() : '';
+        }
         if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
         if (numEl) numEl.value = row.numero != null ? String(row.numero).trim() : '';
-        if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
+        if (locEl) {
+            let lVal = row.localidad != null ? String(row.localidad).trim() : '';
+            if (lVal.toLowerCase().includes('municipio de ')) {
+                lVal = lVal.replace(/municipio de /gi, '').trim();
+            }
+            locEl.value = lVal;
+        }
         if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
         const di2 = document.getElementById('di2');
         if (di2 && row.distribuidor_codigo != null && String(row.distribuidor_codigo).trim()) {
@@ -12403,6 +11351,16 @@ async function iniciarTracking() {
     if (_trackingInterval) return; // ya está corriendo
     const enviarUbicacion = async () => {
         if (!app.u || !navigator.geolocation || modoOffline || !NEON_OK) return;
+
+        // Si estamos en un navegador (no WebView) y no hay permiso concedido,
+        // no disparamos el prompt automáticamente para evitar [Violation]
+        if (!esAndroidWebViewMapa() && typeof navigator.permissions !== 'undefined') {
+            try {
+                const status = await navigator.permissions.query({ name: 'geolocation' });
+                if (status.state === 'prompt') return;
+            } catch(e) {}
+        }
+
         navigator.geolocation.getCurrentPosition(async pos => {
                 try {
                 const { latitude, longitude, accuracy } = pos.coords;
@@ -12416,7 +11374,11 @@ async function iniciarTracking() {
         }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
     };
     const intervaloMs = esAndroidWebViewMapa() ? 120000 : 15 * 60 * 1000;
-    enviarUbicacion();
+    // No llamar a enviarUbicacion() inmediatamente aquí para evitar [Violation] si el gesto del usuario expiró.
+    // El setInterval se encargará de la primera ejecución tras el intervalo, o podemos llamarlo solo si es Android.
+    if (esAndroidWebViewMapa()) {
+        enviarUbicacion();
+    }
     _trackingInterval = setInterval(enviarUbicacion, intervaloMs);
     console.log('[tracking] iniciado');
 }
@@ -12496,11 +11458,7 @@ try {
         }
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
-                AndroidSession.setUser(JSON.stringify({
-                    id: parseInt(app.u.id, 10) || 0,
-                    rol: String(app.u.rol || ''),
-                    api_token: String(app.apiToken || '')
-                }));
+                AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''));
             }
         } catch (_) {}
         if (esAdmin()) {
@@ -12517,11 +11475,11 @@ try {
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
-        resetPreferenciasPanelesInicioCerrados();
-        try { aplicarUIMapaPlataforma(); } catch (_) {}
-        try { initWebCoordsConverterBar(); } catch (_) {}
-        iniciarKeepAlive();
+
+        // Ejecutar inmediatamente lo que requiere gesto de usuario (GPS) antes de que expire
         iniciarTracking();
+
+        resetPreferenciasPanelesInicioCerrados();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
         actualizarBadgeOffline();
@@ -12659,16 +11617,14 @@ let _setupLat = null;
 let _setupLng = null;
 let _setupGeoIntentado = false;
 function tenantIdActual() {
-    const u = app?.u;
-    if (u && (u.tenant_id != null || u.tenantId != null)) {
-        const n = Number(u.tenant_id ?? u.tenantId);
-        if (Number.isFinite(n)) return n;
-    }
-    const cfg = window.APP_CONFIG || {};
-    const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
-    if (Number.isFinite(fromCfg)) return fromCfg;
-    return 1;
+    return window.EMPRESA_CFG?.id || parseInt(localStorage.getItem('tenant_id')) || 1;
 }
+window.tenantIdActual = tenantIdActual;
+
+function lineaNegocioOperativaCodigo() {
+    return window.EMPRESA_CFG?.active_business_type || localStorage.getItem('active_business_type') || 'electricidad';
+}
+window.lineaNegocioOperativaCodigo = lineaNegocioOperativaCodigo;
 
 /** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
 let _sociosCatalogoTieneTenantIdCache = null;
@@ -12694,29 +11650,7 @@ function invalidatePedidosTenantSqlCache() {
 
 /** Si existe pedidos.tenant_id, filtra por el tenant del usuario (multicliente). Si existe business_type, acota a la línea activa. */
 async function pedidosFiltroTenantSql() {
-    if (_pedidosTenantSqlCache !== null) return _pedidosTenantSqlCache;
-    try {
-        const chk = await sqlSimple(
-            `SELECT column_name FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'pedidos'
-             AND column_name IN ('tenant_id','business_type')`
-        );
-        const names = new Set((chk.rows || []).map((x) => x.column_name));
-        const parts = [];
-        if (names.has('tenant_id')) {
-            parts.push(`tenant_id = ${esc(tenantIdActual())}`);
-        }
-        if (names.has('business_type')) {
-            const bt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
-            if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') {
-                parts.push(`business_type = ${esc(bt)}`);
-            }
-        }
-        _pedidosTenantSqlCache = parts.length ? ` AND ${parts.join(' AND ')}` : '';
-    } catch (_) {
-        _pedidosTenantSqlCache = '';
-    }
-    return _pedidosTenantSqlCache;
+    return window.pedidosFiltroTenantSql();
 }
 
 function urlWhatsappAtencionDesdeCfg() {
@@ -13125,7 +12059,16 @@ function pedidoVisibleSegunRubro(p) {
 
 function pedidosVisiblesEnUI() {
     const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
+    const tid = tenantIdActual();
+    const bt = lineaNegocioOperativaCodigo();
+
     return (app.p || []).filter((p) => {
+        // Aislamiento Multi-tenant
+        if (p.tenant_id != null && p.tenant_id !== tid) return false;
+
+        // Aislamiento por Línea de Negocio
+        if (p.business_type != null && p.business_type !== bt) return false;
+
         if (!pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
         return true;
@@ -13602,14 +12545,14 @@ async function guardarConfiguracionInicialObligatoria() {
                 sessionStorage.clear();
             } catch (_) {}
             try {
-                localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+                localStorage.clear();
             } catch (_) {}
             try {
                 invalidatePedidosTenantSqlCache();
                 invalidarCachesMultitenantSesionYOAdminUI();
             } catch (_) {}
             try {
-                window.location.reload();
+                window.location.href = window.location.origin + window.location.pathname;
             } catch (_) {}
             return;
         }
@@ -15030,6 +13973,9 @@ function abrirAdmin() {
     p.classList.add('active');
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
+    } catch (_) {}
+    try {
+        actualizarUiPorTipoEmpresa();
     } catch (_) {}
     adminTab('empresa');
     cargarFormEmpresa();
@@ -16474,8 +15420,8 @@ async function importarExcelSocios(event) {
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
+            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor', 'id', 'identificador');
+            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis', 'abonado', 'numero_vecino', 'vecino', 'cliente', 'numero_cliente', 'nro_cliente');
             let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
             let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
             if (!nis_medidor) {
@@ -16514,6 +15460,7 @@ async function importarExcelSocios(event) {
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            const localidadLimpia = loc != null ? String(loc).replace(/municipio de /gi, '').trim() : null;
             const provinciaSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'provincia');
             let codigoPostalSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'codigo_postal');
             if (codigoPostalSoc) {
@@ -16577,7 +15524,7 @@ async function importarExcelSocios(event) {
                 barrioSoc,
                 telefono,
                 dist,
-                loc,
+                loc: localidadLimpia,
                 provincia: provinciaSoc || null,
                 codigo_postal: codigoPostalSoc || null,
                 tar,
@@ -16693,24 +15640,37 @@ async function vaciarCoordenadasSociosCatalogo(opts) {
         throw e;
     }
 }
-// Exponer globalmente para onclick
-window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
+function actualizarUiPorTipoEmpresa() {
+    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+    const tit = document.getElementById('admin-socios-catalogo-titulo');
+    const msgCols = document.getElementById('socios-import-cols-code');
+
+    if (rubro === 'cooperativa_agua') {
+        if (tit) tit.textContent = 'Catálogo de abonados (agua)';
+        if (msgCols) msgCols.textContent = 'abonado | medidor | nombre | calle | numero | localidad';
+    } else if (rubro === 'municipio') {
+        if (tit) tit.textContent = 'Padrón de vecinos (municipio)';
+        if (msgCols) msgCols.textContent = 'numero_vecino | nombre | calle | numero | localidad';
+    } else {
+        if (tit) tit.textContent = 'Catálogo de socios (NIS / medidor)';
+        if (msgCols) msgCols.textContent = 'nis | medidor | nombre | calle | numero | localidad';
+    }
+}
+window.actualizarUiPorTipoEmpresa = actualizarUiPorTipoEmpresa;
 
 function mostrarFormatoExcelSocios() {
-    alert(
-        'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
-            'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
-            'Columnas recomendadas:\n' +
-            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
-            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
-            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
-            '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
-            '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
-            '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
-            '• Medidor: preferí texto en Excel para no perder ceros.\n\n' +
-            'Opcionales: provincia (también pcia, estado) · codigo_postal (cp, zip, postal) · telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
-            'Importación en lotes. Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
-    );
+    const businessType = window.lineaNegocioOperativaCodigo?.() || 'electricidad';
+    let columnas = '';
+
+    if (businessType === 'electricidad') {
+        columnas = 'NIS | Medidor | nombre | Calle | Numero | telefono | distribuidor_codigo | localidad | codigo_postal | provincia | tipo_tarifa | Tipo Conexión | Fases | urbano_rural | transformador | latitud | longitud';
+    } else if (businessType === 'agua') {
+        columnas = 'abonado | medidor | nombre | calle | numero | localidad | latitud | longitud';
+    } else if (businessType === 'municipio') {
+        columnas = 'numero_vecino | nombre | calle | numero | localidad | latitud | longitud';
+    }
+
+    alert(`Formato Excel para ${businessType}:\n\n${columnas}\n\nNota: El orden de las columnas no importa, se asocian por el nombre del encabezado.`);
 }
 
 async function buscarHistorialPorNIS() {

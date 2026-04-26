@@ -1,17 +1,11 @@
 ---
-description: Siempre decir al usuario qué hacer en Android Studio para ver los cambios (Sync, Run, Clean).
+description: Qué hacer siempre en Android Studio tras cambios (Sync, Run, Clean) según tipo de archivo.
 alwaysApply: true
 ---
 
 # Android Studio — qué hacer siempre
 
-## Norma obligatoria para el agente
-
-- **Siempre** que cierres una tarea con cambios en **esta app** (`app/`, sobre todo `app/src/main/assets/`, Kotlin/Java, recursos, Gradle), el mensaje final al usuario debe incluir **pasos concretos en Android Studio** para ver esos cambios (según la tabla o la decisión rápida de abajo). No dar por hecho que el usuario ya sabe qué pulsar.
-- Formato recomendado al final del resumen: un bloque o líneas que empiecen con **«En Android Studio:»** (por ejemplo: *Run ▶*, *Sync Project with Gradle Files*, *Clean Project* luego *Run*).
-- Si **no** tocaste nada de la app (solo `api/`, solo `.cursor/rules`, solo docs), indicá explícitamente **«En Android Studio: no hace falta nada»** (o equivalente breve).
-
-Usá el resto de esta guía **después de cambiar código en el proyecto** (o cuando el agente cierre una tarea que tocó la app). No hace falta Sync en cada guardado: solo cuando corresponda.
+Usá esta guía **después de cambiar código en el proyecto** (o cuando el agente cierre una tarea que tocó la app). No hace falta Sync en cada guardado: solo cuando corresponda.
 
 ## Decisión rápida
 
@@ -32,7 +26,7 @@ Usá el resto de esta guía **después de cambiar código en el proyecto** (o cu
 
 | Dónde se cambió | Qué hacer en Android Studio |
 |-----------------|----------------------------|
-| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `sw.js`, etc.) | **Run** ▶. Si no se ven cambios: **Build → Clean Project** → **Run** ▶. Si la WebView sigue mostrando lo viejo: desinstalar la app del emulador/dispositivo o **Ajustes de la app → Borrar datos**, luego **Run** ▶. |
+| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `sw.js`, etc.) | **Run** ▶. Si no se ven cambios: **Clean Project** y luego **Run** ▶. |
 | **`app/src/main/java/`** (Kotlin/Java: notificaciones, GPS, cámara, WebView bridge, etc.) | **Run** ▶. |
 | **`build.gradle`**, `settings.gradle`, nuevas dependencias o plugins | **Sync** (elefante) → luego **Run** ▶. |
 | **`api/`** (Node, Render, WhatsApp, Neon desde el servidor) | **Nada** en Android Studio. |
@@ -41,9 +35,9 @@ Usá el resto de esta guía **después de cambiar código en el proyecto** (o cu
 
 ## Para el agente (respuesta al usuario)
 
-- Al cerrar una tarea que haya modificado la app, **obligatorio** indicar **qué hacer en Android Studio** según la tabla o la decisión rápida (véase «Norma obligatoria» arriba).
+- Al cerrar una tarea que haya modificado la app, indicar **qué hacer en Android Studio** según la tabla o la decisión rápida.
 - Si se tocaron **varias áreas**, listar el paso por cada una (ej.: assets → Run; si además Gradle → Sync + Run).
-- En el resumen final, **siempre** incluir al menos una línea **«En Android Studio: …»** cuando haya tocado `app/`; si no tocó la app, **«En Android Studio: no hace falta nada»** (o similar).
+- En el resumen final (“En pocas palabras”), cuando aplique, una línea **“En Android Studio: …”**.
 
 ## Catálogo de socios / NIS y Medidor (dato operativo)
 
