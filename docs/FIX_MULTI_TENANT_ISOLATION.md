@@ -40,5 +40,9 @@ Sin borrar datos en Neon, cada vista operativa (**electricidad**, **agua**, **mu
 
 Si el admin **ya completó** el setup inicial y en el asistente cambia **nombre de empresa** y/o **tipo de negocio** (`business_type`) de forma que el par normalizado ya no coincide con el tenant actual, el backend crea **otro** `clientes` y reasigna al admin (ver `docs/MULTI_TENANT_BUSINESS_ISOLATION.md`). La web llama a `POST /api/setup/wizard` antes de `PUT /api/clientes/mi-configuracion`, aplica el JWT devuelto y fuerza recarga dura (`location.replace` con query `_gnreload`). No confundir con el listado filtrado por `switch-business`.
 
+## Pedidos y tablas operativas “huérfanas” de otro `clientes.id`
+
+Si los reclamos o usuarios siguen con el **`tenant_id` viejo** (mismo nombre en wizard pero otro `id` en `clientes`), la app no los mostrará en el tenant nuevo. No hace falta duplicar nombre de empresa en cada tabla: reasigná **`tenant_id`** con el script operativo **`docs/NEON_ops_reasignar_tenant_datos.sql`** (parámetros en tabla temporal + diagnóstico + transacción `UPDATE` / fusión de `pedido_contador`).
+
 ---
 *Documento operativo del proyecto GestorNova / Pedidos-MG.*
