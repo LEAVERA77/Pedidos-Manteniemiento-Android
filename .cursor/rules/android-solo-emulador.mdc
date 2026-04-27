@@ -1,0 +1,10 @@
+---
+description: Android — el usuario prueba solo con el emulador de Android Studio.
+alwaysApply: true
+---
+
+# Android: solo emulador (Android Studio)
+
+- Para **Android / Nexxo**, el usuario **solo usa el emulador de Android Studio** (no dispositivo físico para pruebas habituales).
+- Al orientar sobre **Run, depuración, WebView, assets, APK**: asumí **AVD / emulador** salvo que el usuario indique lo contrario.
+- No dar por sentado pruebas en teléfono real ni pasos extra para hardware (USB, permisos de fabricante, etc.) **a menos** que el usuario lo pida explícitamente.
