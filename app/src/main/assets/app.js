@@ -5034,6 +5034,7 @@ function onMapaFiltroTipoTrabajoChange(allMode) {
 window.onMapaFiltroTipoTrabajoChange = onMapaFiltroTipoTrabajoChange;
 
 function pedidosParaMarcadoresMapa() {
+    const relaxRubroMapa = esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
     const chk = (id) => {
         const el = document.getElementById(id);
         return !el || el.checked;
@@ -5075,7 +5076,7 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
-        if (!pedidoVisibleSegunRubro(p)) return false;
+        if (!relaxRubroMapa && !pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !adminMuestraPedidosDerivadosFuera()) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
         return true;
@@ -5577,8 +5578,18 @@ function aplicarUIMapaPlataforma() {
         const wrap = document.getElementById('wrap-android-scope');
         if (wrap) {
             wrap.style.display = 'flex';
+            if (esTecnicoOSupervisor()) {
+                try {
+                    if (localStorage.getItem('pmg_tecnico_ver_todos') === null) {
+                        localStorage.setItem('pmg_tecnico_ver_todos', '1');
+                    }
+                } catch (_) {}
+            }
             const sel = document.getElementById('sel-android-pedidos-scope');
-            if (sel) sel.value = localStorage.getItem('pmg_tecnico_ver_todos') === '1' ? 'todos' : 'asignados';
+            const vt = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
+            if (sel) sel.value = vt ? 'todos' : 'asignados';
+            const chkTodos = document.getElementById('toggle-ver-todos-pedidos');
+            if (chkTodos) chkTodos.checked = vt;
         }
         const cc = document.getElementById('gn-cursor-coords');
         if (cc) cc.style.display = 'none';
@@ -6721,10 +6732,10 @@ async function cargarPedidos(opts) {
     try {
         await asegurarNombreUsuariosParaFiltros();
         const tsql = await pedidosFiltroTenantSql();
+        const verTodosTec = esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
         let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
         if (esTecnicoOSupervisor()) {
-            const verTodos = leerVerTodosPedidosTecnico();
-            if (!verTodos) {
+            if (!verTodosTec) {
                 qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
         }
@@ -6732,7 +6743,15 @@ async function cargarPedidos(opts) {
             !esAdmin() && esTecnicoOSupervisor() && (app.p || []).length
                 ? new Map((app.p || []).map(p => [String(p.id), { es: p.es, np: p.np, tai: p.tai }]))
                 : null;
-        const r = await ejecutarSQLConReintentos(qPed);
+        let r;
+        if (verTodosTec) {
+            r = await sqlSimpleSelectAllPages(
+                `SELECT * FROM pedidos WHERE 1=1${tsql}`,
+                'ORDER BY fecha_creacion DESC'
+            );
+        } else {
+            r = await ejecutarSQLConReintentos(qPed);
+        }
         const prevIds = new Set((app.p || []).map(p => p.id));
         app.p = (r.rows || []).map(norm);
         if (prevSnapTecnico) notificarCambiosPedidoTecnico(prevSnapTecnico);
@@ -13290,8 +13309,10 @@ function pedidoVisibleSegunRubro(p) {
 
 function pedidosVisiblesEnUI() {
     const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
+    const relaxRubroLista =
+        esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
     return (app.p || []).filter((p) => {
-        if (!pedidoVisibleSegunRubro(p)) return false;
+        if (!relaxRubroLista && !pedidoVisibleSegunRubro(p)) return false;
         if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
         return true;
     });
