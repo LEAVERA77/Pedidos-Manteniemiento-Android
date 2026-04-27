@@ -56,6 +56,17 @@ foreach ($f in $files) {
     Write-Host "OK $f"
 }
 
+# Módulos ES compartidos (p. ej. app.js → import './js/utils.js'). Sin esta carpeta, GitHub Pages falla al cargar el bundle.
+$jsSrc = Join-Path $assets 'js'
+$jsDst = Join-Path $PedidosMgRoot 'js'
+if (Test-Path $jsSrc) {
+    New-Item -ItemType Directory -Force -Path $jsDst | Out-Null
+    Copy-Item -Path (Join-Path $jsSrc '*') -Destination $jsDst -Force
+    Write-Host 'OK js/*'
+} else {
+    Write-Warning "Omitido (no existe carpeta js): $jsSrc"
+}
+
 $brandSrc = Join-Path $assets 'branding'
 $brandDst = Join-Path $PedidosMgRoot 'branding'
 if (Test-Path $brandSrc) {
