@@ -127,6 +127,32 @@ dependencies {
 }
 
 /**
+ * `config.json` con credenciales no va al repo (.gitignore). Sin archivo, la WebView falla al arrancar.
+ * Si falta, se genera una copia desde [config.example.json] (placeholders); editá Neon/API en local antes de producción.
+ */
+tasks.register("ensureConfigJson") {
+    group = "build"
+    description = "Crea app/src/main/assets/config.json desde config.example.json solo si no existe."
+    doLast {
+        val assetsDir = layout.projectDirectory.dir("src/main/assets").asFile
+        val dst = assetsDir.resolve("config.json")
+        val src = assetsDir.resolve("config.example.json")
+        if (dst.exists()) return@doLast
+        if (!src.exists()) {
+            throw GradleException("Falta ${src.name} en ${assetsDir.path}")
+        }
+        src.copyTo(dst, overwrite = false)
+        logger.lifecycle(
+            "GestorNova: creado assets/config.json desde config.example.json — completá neon.connectionString y demás en local."
+        )
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("ensureConfigJson")
+}
+
+/**
  * Carpeta destino de la tarea [renameReleaseApk].
  * Por defecto: [rootProject]/release-export/ (disco local; compatible con Gradle 9).
  * Opcional: variable de entorno `GESTORNOVA_RELEASE_COPY_DIR` = ruta absoluta (ej. carpeta en Google Drive).
