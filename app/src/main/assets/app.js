@@ -26,8 +26,6 @@ import {
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
 
-import './js/utils.js';
-
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
 (function installCanvas2DWillReadFrequently() {
   if (typeof HTMLCanvasElement === 'undefined') return;
@@ -765,7 +763,13 @@ async function initNeon() {
     // WebView Android: a veces hayInternet() falla con HTML remoto o file:// aunque Neon sea alcanzable.
     const esWebViewLocal = typeof window.AndroidConfig !== 'undefined';
     const tieneRed = await hayInternet();
-    if (!tieneRed && !esWebViewLocal) {
+    // En HTTPS (p. ej. GitHub Pages) los HEAD no-cors a CDNs de prueba pueden fallar por firewall/DNS
+    // aunque Neon y config.json respondan; no bloquear el SDK aquí.
+    const navegadorHttps =
+        typeof window !== 'undefined' &&
+        window.location?.protocol === 'https:' &&
+        !esWebViewLocal;
+    if (!tieneRed && !esWebViewLocal && !navegadorHttps) {
         console.log('[neon] sin red real — modo offline');
         NEON_OK = false;
         return false;
@@ -2760,8 +2764,7 @@ aplicarCapaOnboardingVsLoginInicial();
 const dbs = document.getElementById('dbs');
 const lb  = document.getElementById('lb');
 
-
-lb.disabled = false;
+if (lb) lb.disabled = false;
 actualizarBadgeOffline();
 (function limpiarLoginSinPersistenciaUsuario() {
     try {
@@ -2863,8 +2866,10 @@ actualizarBadgeOffline();
     });
     document.getElementById('form-reabrir-asistente')?.addEventListener('submit', confirmarReabrirAsistenteConCredenciales);
 })();
-dbs.className = 'dbs c';
-dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
+if (dbs) {
+    dbs.className = 'dbs c';
+    dbs.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando red...';
+}
 
 
 async function conectarNeon() {
@@ -2964,8 +2969,10 @@ async function conectarNeon() {
             } catch (_) {}
             app.ok = true;
             NEON_OK = true;
-            dbs.className = 'dbs ok';
-            dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
+            if (dbs) {
+                dbs.className = 'dbs ok';
+                dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
+            }
             setModoOffline(false);
             await notificarNeonConectadoParaUpdateCheck();
             if (app.u && offlineQueue().length > 0) setTimeout(sincronizarOffline, 1500);
@@ -2980,10 +2987,12 @@ async function conectarNeon() {
         const tieneCache = (() => {
             try { return JSON.parse(localStorage.getItem('pmg_offline_user') || '[]').length > 0; } catch(_) { return false; }
         })();
-        dbs.className = 'dbs er';
-        dbs.innerHTML = tieneCache
-            ? '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline'
-            : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
+        if (dbs) {
+            dbs.className = 'dbs er';
+            dbs.innerHTML = tieneCache
+                ? '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline'
+                : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
+        }
         setModoOffline(true);
     }
 }
@@ -3106,17 +3115,20 @@ function initWebCoordsConverterBar() {
     applyPlaceholders();
 }
 
-document.getElementById('lf').addEventListener('submit', async e => {
+document.getElementById('lf')?.addEventListener('submit', async e => {
     e.preventDefault();
-    
-    const em = document.getElementById('em').value.trim();
-    const pw = document.getElementById('pw').value;
+    const emEl = document.getElementById('em');
+    const pwEl = document.getElementById('pw');
     const le = document.getElementById('le');
     const lb = document.getElementById('lb');
-    
+    if (!emEl || !pwEl || !lb) return;
+
+    const em = emEl.value.trim();
+    const pw = pwEl.value;
+
     lb.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando...';
     lb.disabled = true;
-    le.textContent = '';
+    if (le) le.textContent = '';
     
     
     function entrarConUsuario(u, offline = false) {
@@ -3263,7 +3275,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
         }
         if (modoOffline || !NEON_OK || !_sql) {
             if (!intentarOffline()) {
-                le.textContent = 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.';
+                if (le) le.textContent = 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.';
             }
             return;
         }
@@ -3297,7 +3309,7 @@ document.getElementById('lf').addEventListener('submit', async e => {
             console.warn('Login: red caída, usando cache:', netErr.message);
             setModoOffline(true);
             if (!intentarOffline()) {
-                le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
+                if (le) le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
             }
             return;
         }
@@ -3333,13 +3345,12 @@ document.getElementById('lf').addEventListener('submit', async e => {
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
         } else {
-            
-            le.textContent = 'Email o contraseña incorrectos.';
+            if (le) le.textContent = 'Email o contraseña incorrectos.';
         }
     } catch (error) {
         console.error('Error inesperado en login:', error);
         if (!intentarOffline()) {
-            le.textContent = 'Error inesperado. Intentá de nuevo.';
+            if (le) le.textContent = 'Error inesperado. Intentá de nuevo.';
         }
     } finally {
         lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
@@ -14053,7 +14064,18 @@ async function cargarAppConfig() {
     let ultimoError = '';
     for (const ruta of rutas) {
         try {
-            const resp = await fetch(ruta, { cache: 'no-store' });
+            const ctl = new AbortController();
+            const tid = setTimeout(() => {
+                try {
+                    ctl.abort();
+                } catch (_) {}
+            }, 15000);
+            let resp;
+            try {
+                resp = await fetch(ruta, { cache: 'no-store', signal: ctl.signal });
+            } finally {
+                clearTimeout(tid);
+            }
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             APP_CONFIG = await resp.json();
             window.APP_CONFIG = APP_CONFIG;
