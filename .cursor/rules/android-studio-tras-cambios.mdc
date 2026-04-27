@@ -35,9 +35,14 @@ Usá esta guía **después de cambiar código en el proyecto** (o cuando el agen
 
 ## Para el agente (respuesta al usuario)
 
-- Al cerrar una tarea que haya modificado la app, indicar **qué hacer en Android Studio** según la tabla o la decisión rápida.
-- Si se tocaron **varias áreas**, listar el paso por cada una (ej.: assets → Run; si además Gradle → Sync + Run).
-- En el resumen final (“En pocas palabras”), cuando aplique, una línea **“En Android Studio: …”**.
+- **Obligatorio:** al cerrar una tarea que haya tocado código en este proyecto, decirle al usuario **qué tiene que hacer él**, en función **de las rutas donde se guardaron los cambios** (no solo “listo”).
+- Usar la **tabla** y la **decisión rápida** de arriba; si hubo **varias áreas**, un bloque corto por área (ej.: *Gradle* → Sync + Run; *solo Kotlin* → Run; *solo assets* → Run y, si aplica web, ver abajo).
+- En el resumen final, cuando corresponda, una línea explícita: **“En Android Studio: …”**.
+
+### Si además cambió el front compartido (`app/src/main/assets/`)
+
+- Indicar si el agente ya **sincronizó y pusheó** Pedidos-MG o si el usuario debe ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` y `git push` en su clon de **Pedidos-MG** (ver `pedidos-mg-web-repo` y `commit-push-nexxo-y-pedidos-mg`).
+- **Sitio web (GitHub Pages):** tras un deploy, conviene **recarga fuerte** o comprobar actualización del service worker si no se ven los cambios.
 
 ## Catálogo de socios / NIS y Medidor (dato operativo)
 

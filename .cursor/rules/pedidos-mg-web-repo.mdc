@@ -11,7 +11,7 @@ alwaysApply: true
 ## Fuente de verdad en este proyecto (Android / GestorNova)
 
 - `app/src/main/assets/index.html` — mismo shell HTML que en la raíz de **Pedidos-MG** (`index.html`).
-- `app/src/main/assets/styles.css`, `app.js`, `map.js`, `map-view.js` (mapa Leaflet vía `import()`), `offline.js` — mismos nombres en la raíz de **Pedidos-MG** (el navegador los cachea aparte).
+- `app/src/main/assets/styles.css`, `app.js`, `map.js`, `map-view.js` (mapa Leaflet vía `import()`), `offline.js` — mismos nombres en la raíz de **Pedidos-MG** (el navegador los cachea aparte). Carpeta **`js/`** también se sincroniza; ver regla **`assets-app-js-no-crecer`** (no inflar `app.js`).
 - PWA / tiles: `app/src/main/assets/sw.js` → raíz de **Pedidos-MG** como `sw.js`.
 
 ## Qué hacer cuando el usuario pida “subir el front” o “sincronizar con GitHub Pages”

@@ -1,0 +1,27 @@
+---
+description: No aumentar el tamaño de app.js en Nexxo ni Pedidos-MG; nuevas funciones en módulos bajo js/ o archivos hermanos.
+alwaysApply: true
+---
+
+# `app.js` — no agrandar el archivo (Nexxo + Pedidos-MG)
+
+Aplica al **`app.js`** de **`app/src/main/assets/app.js`** (Nexxo) y a la copia en la **raíz de Pedidos-MG** (misma ruta relativa en Pages). Objetivo: **no seguir inflando** ese archivo; mantener paridad entre ambos repos **sin romper** carga en WebView ni en GitHub Pages.
+
+## Regla para el agente
+
+1. **No añadir** bloques grandes de lógica nueva dentro de `app.js` si se puede evitar.
+2. **Nueva funcionalidad:** extraer a **módulos ES** bajo **`app/src/main/assets/js/`** (p. ej. `js/mi-feature.js`) o reutilizar **archivos hermanos ya existentes** (`offline.js`, `map.js`, `map-view.js`, etc.), e importar desde `app.js` solo el **pegamento mínimo** (unas líneas).
+3. **Correcciones pequeñas** en `app.js` (bugs, null checks, mensajes) están bien si son **pocas líneas** o si el **balance neto** reduce tamaño (refactor que mueve código fuera).
+4. Al crear archivos bajo **`js/`**, asegurar que **`scripts/sync-assets-to-pedidos-mg.ps1`** siga copiando la carpeta **`js/`** al clon de Pedidos-MG (ya copia `js/*`; no hace falta duplicar lógica en la raíz salvo un entry nuevo explícito en el script si se añade algo **fuera** de `js/`).
+5. **Imports:** rutas relativas válidas en **HTTPS** (mismo origen que `app.js`). No asumir rutas que el sync no publica.
+6. Si una tarea **solo** puede hacerse creciendo mucho `app.js`, preferir **dividir en 2+ PRs/tareas**: primero extraer un módulo, luego el feature.
+
+## Qué evitar
+
+- Copiar/pegar helpers largos al final de `app.js` “por rapidez”.
+- Duplicar en `app.js` lógica que ya vive en `js/core.js` u otros módulos.
+
+## Relación con otras reglas
+
+- Paridad de repos y sync: **`pedidos-mg-web-repo`**, **`commit-push-nexxo-y-pedidos-mg`**, **`repos-pedidos-mg-y-android-donde-editar`**.
+- Tras cambios en assets: **`android-studio-tras-cambios`** (qué hacer en el IDE).
