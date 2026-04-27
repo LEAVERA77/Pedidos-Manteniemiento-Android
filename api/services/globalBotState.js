@@ -117,6 +117,29 @@ export function isPhoneWhatsappBotMaster(phoneDigits) {
   return list.some((m) => digitsWaPhoneLikelyEqual(p, m));
 }
 
+/**
+ * Línea(s) que pueden abrir *chat humano* (Otros) sin pasar por menú interactivo.
+ * Variable: `WHATSAPP_HUMAN_CHAT_DIRECT_PHONES` (dígitos, coma/ espacio; vacío o `0|false|off` = desactivar).
+ * Si la variable no está definida, se usa 5493436986848 (tercero / Whapi en producción).
+ */
+export function humanChatDirectPhonesList() {
+  const e = process.env.WHATSAPP_HUMAN_CHAT_DIRECT_PHONES;
+  if (e === "" || e === "false" || e === "0" || e === "off" || e === "no") return [];
+  const raw = (e == null || e === "" ? "5493436986848" : String(e).trim().replace(/\s+/g, "")).split(/[,;]+/);
+  const fromEnv = raw
+    .map((s) => String(s).replace(/\D/g, ""))
+    .filter((s) => s.length >= 8);
+  return fromEnv;
+}
+
+export function isPhoneWhatsappHumanChatDirect(phoneDigits) {
+  const list = humanChatDirectPhonesList();
+  if (!list.length) return false;
+  const p = normalizePhoneForBotMasterMatch(phoneDigits);
+  if (!p || p.length < 8) return false;
+  return list.some((m) => digitsWaPhoneLikelyEqual(p, m));
+}
+
 async function phoneMatchesTenantAdminDigits(phoneDigits, tenantId) {
   const p = normalizePhoneForBotMasterMatch(phoneDigits);
   if (!p || p.length < 8) return false;

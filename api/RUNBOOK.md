@@ -69,3 +69,7 @@ Base: `/api/whatsapp/human-chat`
 - Con **`whatsapp_bloqueo_reclamos`** activo, el bot **sigue permitiendo** elegir **Otros** → chat humano (no cuenta como alta de pedido). El resto de tipos siguen bloqueados como antes.
 - En **chat humano**, la palabra *Hola* se trata como mensaje del cliente (se guarda en el hilo), **no** como reinicio del menú automático (eso solo aplica fuera de ese modo).
 - **POST …/activate** desde el admin: si la sesión estaba **cerrada**, pasa a **queued** y luego a **active** para poder seguir el hilo y enviar respuestas.
+
+### Línea tercero / Whapi (sin menú «Otros»)
+
+- Variable **`WHATSAPP_HUMAN_CHAT_DIRECT_PHONES`**: teléfonos (solo dígitos; varios separados por coma o `;`, misma normalización que *activar* / *desactivar*). Esos remitentes abren el chat humano con el **primer mensaje** de texto (no hace falta *menú* → *Otros*). *Menú* / *0* / *inicio* / *ayuda* siguen yendo al resumen de bienvenida. Vacío, `0`, `false` u `off` desactiva la lista. Si no definís la variable, por defecto se usa `5493436986848`; en otra instancia, definí la lista o dejá el env vacío y agregá solo los que correspondan.

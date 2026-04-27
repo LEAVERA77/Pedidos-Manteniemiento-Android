@@ -47,6 +47,7 @@ import {
   isPhoneWhatsappBotMasterAsync,
   parseActivarDesactivarComando,
   setGlobalBotActiveDb,
+  isPhoneWhatsappHumanChatDirect,
 } from "./globalBotState.js";
 
 const sessions = new Map();
@@ -1786,6 +1787,38 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
   } catch (e) {
     console.error("[whatsapp-bot-meta] human_chat inbound (early)", e?.message || e);
+  }
+
+  /** Tercero / Whapi: chat humano sin menú "Otros" (WHATSAPP_HUMAN_CHAT_DIRECT_PHONES; tras opinión; antes de Hola). */
+  if (ctx) {
+    try {
+      if (isPhoneWhatsappHumanChatDirect(phone)) {
+        let pendOpinBoot = false;
+        try {
+          pendOpinBoot = await hasPendingClienteOpinion(tid, phone);
+        } catch (_) {}
+        if (!pendOpinBoot) {
+          const s0 = sessions.get(sk);
+          if (s0?.step !== "human_chat" && !s0) {
+            const trimmed0 = String(text || "").trim();
+            const lower0 = trimmed0
+              .replace(/^\*+|\*+$/g, "")
+              .trim()
+              .toLowerCase()
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "");
+            if (trimmed0 && !debeSalirAlMenuPrincipalWhatsApp(lower0, s0)) {
+              await iniciarFlujoOtrosHumano(phone, tid, wpidBootstrap, contactName, ctx);
+              if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
+                return;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] direct human_chat bootstrap", e?.message || e);
+    }
   }
 
   /** Tras cierre por WA: ventana de opinión abierta (evita confundir "5" o "10" con menú / reinicio). */
