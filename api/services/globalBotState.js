@@ -119,17 +119,18 @@ export function isPhoneWhatsappBotMaster(phoneDigits) {
 
 /**
  * Línea(s) que pueden abrir *chat humano* (Otros) sin pasar por menú interactivo.
- * Variable: `WHATSAPP_HUMAN_CHAT_DIRECT_PHONES` (dígitos, coma/ espacio; vacío o `0|false|off` = desactivar).
- * Si la variable no está definida, se usa 5493436986848 (tercero / Whapi en producción).
+ * Variable: `WHATSAPP_HUMAN_CHAT_DIRECT_PHONES` (dígitos, separados por coma o `;`).
+ * Sin variable o vacío: lista vacía (sin atajo; hay que opt-in explícito en Render).
+ * `0` / `false` / `off` / `no`: desactiva la lista.
+ * No usar el número *maestro* (activar/desactivar) ni el de un admin: en whatsappBotMeta se excluyen con `isPhoneWhatsappBotMasterAsync`.
  */
 export function humanChatDirectPhonesList() {
   const e = process.env.WHATSAPP_HUMAN_CHAT_DIRECT_PHONES;
-  if (e === "" || e === "false" || e === "0" || e === "off" || e === "no") return [];
-  const raw = (e == null || e === "" ? "5493436986848" : String(e).trim().replace(/\s+/g, "")).split(/[,;]+/);
-  const fromEnv = raw
+  if (e == null || e === "" || e === "false" || e === "0" || e === "off" || e === "no") return [];
+  const raw = String(e).trim().replace(/\s+/g, "").split(/[,;]+/);
+  return raw
     .map((s) => String(s).replace(/\D/g, ""))
     .filter((s) => s.length >= 8);
-  return fromEnv;
 }
 
 export function isPhoneWhatsappHumanChatDirect(phoneDigits) {

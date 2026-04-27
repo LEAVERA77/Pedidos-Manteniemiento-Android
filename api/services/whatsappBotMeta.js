@@ -1789,10 +1789,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     console.error("[whatsapp-bot-meta] human_chat inbound (early)", e?.message || e);
   }
 
-  /** Tercero / Whapi: chat humano sin menú "Otros" (WHATSAPP_HUMAN_CHAT_DIRECT_PHONES; tras opinión; antes de Hola). */
+  /**
+   * Tercero: chat humano sin menú (WHATSAPP_HUMAN_CHAT_DIRECT_PHONES). No aplica a maestro ni admin
+   * (mismo criterio que *activar*), para no forzar "Otros" al probar el bot ni reenviar el intro
+   * en cada request sin sesión en memoria. Si ya hay sesión abierta en BD, rehidratar y guardar, sin
+   * llamar a iniciarFlujoOtrosHumano otra vez (evita toasts y spam de bienvenida).
+   */
   if (ctx) {
     try {
-      if (isPhoneWhatsappHumanChatDirect(phone)) {
+      if (isPhoneWhatsappHumanChatDirect(phone) && !(await isPhoneWhatsappBotMasterAsync(phone, tid))) {
         let pendOpinBoot = false;
         try {
           pendOpinBoot = await hasPendingClienteOpinion(tid, phone);
@@ -1808,9 +1813,25 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
               .normalize("NFD")
               .replace(/[\u0300-\u036f]/g, "");
             if (trimmed0 && !debeSalirAlMenuPrincipalWhatsApp(lower0, s0)) {
-              await iniciarFlujoOtrosHumano(phone, tid, wpidBootstrap, contactName, ctx);
-              if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
-                return;
+              const hcDirect = await humanChatFindOpenSessionForPhone(tid, phone);
+              if (hcDirect?.id) {
+                sessions.set(sk, {
+                  step: "human_chat",
+                  humanChatSessionId: Number(hcDirect.id),
+                  tenantId: tid,
+                  tipoCliente: ctx?.tipo ?? null,
+                  contactName: contactName || null,
+                  phoneNumberId: wpidBootstrap,
+                  humanChatFirstAcked: true,
+                });
+                if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
+                  return;
+                }
+              } else {
+                await iniciarFlujoOtrosHumano(phone, tid, wpidBootstrap, contactName, ctx);
+                if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
+                  return;
+                }
               }
             }
           }
