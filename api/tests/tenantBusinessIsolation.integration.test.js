@@ -2,12 +2,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import jwt from "jsonwebtoken";
 
-vi.mock("../db/neon.js", () => ({
-  query: vi.fn(),
-}));
+vi.mock("../db/neon.js", () => {
+  const query = vi.fn();
+  return {
+    query,
+    pool: {},
+    withTransaction: async (fn) => {
+      const client = {
+        query: (sql, p) => query(sql, p),
+      };
+      return fn(client);
+    },
+  };
+});
 
+const TEST_USER_TENANT = { 1: 1, 2: 2 };
 vi.mock("../utils/tenantUser.js", () => ({
-  getUserTenantId: vi.fn(async (userId) => (Number(userId) === 1 ? 1 : 2)),
+  getUserTenantId: vi.fn(async (userId) => TEST_USER_TENANT[Number(userId)] ?? 1),
 }));
 
 import { query } from "../db/neon.js";
@@ -19,14 +30,30 @@ function tokenForUser(userId, tenantId) {
 
 describe("Integración — aislamiento tenant/business", () => {
   beforeEach(() => {
+    TEST_USER_TENANT[1] = 1;
+    TEST_USER_TENANT[2] = 2;
     const st = {
       users: {
         1: { id: 1, email: "a1@test.com", nombre: "A1", rol: "admin", activo: true, tenant_id: 1 },
         2: { id: 2, email: "a2@test.com", nombre: "A2", rol: "admin", activo: true, tenant_id: 2 },
       },
       clients: {
-        1: { id: 1, tipo: "cooperativa_electrica", active_business_type: "electricidad", activo: true },
-        2: { id: 2, tipo: "cooperativa_electrica", active_business_type: "electricidad", activo: true },
+        1: {
+          id: 1,
+          nombre: "Tenant 1",
+          tipo: "cooperativa_electrica",
+          active_business_type: "electricidad",
+          activo: true,
+          configuracion: { setup_wizard_completado: true },
+        },
+        2: {
+          id: 2,
+          nombre: "Tenant 2",
+          tipo: "cooperativa_electrica",
+          active_business_type: "electricidad",
+          activo: true,
+          configuracion: {},
+        },
       },
       tenantBusinesses: [
         { tenant_id: 1, business_type: "electricidad", active: true },
@@ -46,6 +73,26 @@ describe("Integración — aislamiento tenant/business", () => {
 
     vi.mocked(query).mockImplementation(async (sql, params = []) => {
       const q = String(sql);
+      if (q.includes("information_schema.tables") && q.includes("table_name = $1")) {
+        const name = String(params[0] || "");
+        const known = new Set(["tenant_businesses", "tenant_active_business", "tenant_business_audit"]);
+        return { rows: known.has(name) ? [{ ok: 1 }] : [] };
+      }
+      if (q.includes("information_schema.columns") && q.includes("table_name = $1") && q.includes("column_name = $2")) {
+        const t = String(params[0] || "");
+        const c = String(params[1] || "");
+        const hits = new Set([
+          "clientes.active_business_type",
+          "usuarios.business_type",
+          "tenant_businesses.business_type",
+          "tenant_active_business.active_business_type",
+          "pedidos.business_type",
+          "pedidos.tenant_id",
+          "socios_catalogo.tenant_id",
+          "socios_catalogo.business_type",
+        ]);
+        return { rows: hits.has(`${t}.${c}`) ? [{ ok: 1 }] : [] };
+      }
       if (q.includes("information_schema.columns")) {
         const t = String(params?.[0] || "");
         const c = String(params?.[1] || "");
@@ -69,6 +116,14 @@ describe("Integración — aislamiento tenant/business", () => {
       if (q.includes("FROM usuarios WHERE id = $1 AND activo = TRUE LIMIT 1")) {
         const u = st.users[Number(params[0])];
         return { rows: u && u.activo ? [u] : [] };
+      }
+      if (q.includes("SELECT nombre, configuracion FROM clientes WHERE id = $1 LIMIT 1")) {
+        const c = st.clients[Number(params[0])];
+        return { rows: c ? [{ nombre: c.nombre, configuracion: c.configuracion }] : [] };
+      }
+      if (q.includes("SELECT active_business_type FROM tenant_active_business WHERE tenant_id = $1 LIMIT 1")) {
+        const bt = st.tenantActive[Number(params[0])];
+        return { rows: bt ? [{ active_business_type: bt }] : [] };
       }
       if (q.includes("SELECT tipo, active_business_type FROM clientes WHERE id = $1 LIMIT 1")) {
         const c = st.clients[Number(params[0])];
@@ -108,7 +163,33 @@ describe("Integración — aislamiento tenant/business", () => {
       }
       if (q.includes("SELECT id, nombre FROM clientes WHERE id = $1 LIMIT 1")) {
         const c = st.clients[Number(params[0])];
-        return { rows: c ? [{ id: c.id, nombre: `Tenant ${c.id}` }] : [] };
+        return { rows: c ? [{ id: c.id, nombre: c.nombre || `Tenant ${c.id}` }] : [] };
+      }
+      if (q.trimStart().startsWith("INSERT INTO clientes") && q.includes("RETURNING id")) {
+        const nextId = Math.max(0, ...Object.keys(st.clients).map(Number)) + 1;
+        const nombreIns = String(params[0] ?? "");
+        const tipoRubro = String(params[1] ?? "");
+        const abt = params.length >= 3 && params[2] != null ? String(params[2]) : "electricidad";
+        st.clients[nextId] = {
+          id: nextId,
+          nombre: nombreIns,
+          tipo: tipoRubro,
+          active_business_type: abt,
+          activo: true,
+          configuracion: { setup_wizard_completado: true },
+        };
+        st.tenantActive[nextId] = abt;
+        return { rows: [{ id: nextId }] };
+      }
+      if (q.includes("UPDATE usuarios SET tenant_id = $1") && q.includes("RETURNING id")) {
+        const newT = Number(params[0]);
+        const uid = Number(params[1]);
+        const oldT = Number(params[2]);
+        if (st.users[uid] && st.users[uid].tenant_id === oldT) {
+          st.users[uid].tenant_id = newT;
+          return { rows: [{ id: uid }] };
+        }
+        return { rows: [] };
       }
       if (q.includes("SELECT id FROM tenant_businesses WHERE tenant_id = $1 AND business_type = $2 LIMIT 1")) {
         const ok = st.tenantBusinesses.some((x) => x.tenant_id === Number(params[0]) && x.business_type === String(params[1]));
@@ -172,5 +253,6 @@ describe("Integración — aislamiento tenant/business", () => {
       .expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.business_type).toBe("agua");
+    expect(res.body.nueva_instancia).toBe(false);
   });
 });

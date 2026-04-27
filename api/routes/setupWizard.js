@@ -36,6 +36,19 @@ function isMissingRelationError(e) {
   return m.includes("does not exist") && (m.includes("relation") || m.includes("table"));
 }
 
+/**
+ * ¿Existe la relación en public? (Fuera de transacción: dentro de BEGIN un fallo aborta el bloque
+ * aunque se capture en Node — hay que no ejecutar SQL que pueda fallar por tabla ausente.)
+ */
+async function tableExistsInPublic(tableName) {
+  const r = await query(
+    `SELECT 1 FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
+    [String(tableName)]
+  );
+  return r.rows.length > 0;
+}
+
 async function loadActiveBusinessTypeForTenant(tenantId) {
   try {
     const t = await query(`SELECT active_business_type FROM tenant_active_business WHERE tenant_id = $1 LIMIT 1`, [
@@ -69,25 +82,23 @@ async function pairKeyForTenant(tenantId) {
   return { pairKey: tenantIdentityPairKey(nombre, bt), setupDone: !!cfg.setup_wizard_completado, nombre, businessType: bt };
 }
 
-async function upsertTenantBusiness(client, tenantId, businessType) {
-  try {
-    await client.query(
-      `INSERT INTO tenant_businesses(tenant_id, business_type, active)
-       VALUES($1,$2,TRUE)
-       ON CONFLICT (tenant_id, business_type)
-       DO UPDATE SET active = TRUE`,
-      [tenantId, businessType]
-    );
-  } catch (e) {
-    if (!isMissingRelationError(e)) throw e;
-    console.warn("[setup/wizard] tenant_businesses omitido (sin tabla o error de relación):", e.message);
+async function upsertTenantBusiness(client, tenantId, businessType, hasTable) {
+  if (!hasTable) {
+    console.warn("[setup/wizard] tenant_businesses: tabla ausente, se omite INSERT");
+    return;
   }
+  await client.query(
+    `INSERT INTO tenant_businesses(tenant_id, business_type, active)
+     VALUES($1,$2,TRUE)
+     ON CONFLICT (tenant_id, business_type)
+     DO UPDATE SET active = TRUE`,
+    [tenantId, businessType]
+  );
 }
 
-async function upsertActiveBusiness(client, tenantId, businessType, hasClientesAbt) {
-  let tenantActiveOk = false;
+async function upsertActiveBusiness(client, tenantId, businessType, hasClientesAbt, hasTenantActiveTbl, hasAuditTbl) {
   let previousBusinessType = null;
-  try {
+  if (hasTenantActiveTbl) {
     const prev = await client.query(
       `SELECT active_business_type FROM tenant_active_business WHERE tenant_id = $1 LIMIT 1`,
       [tenantId]
@@ -101,28 +112,20 @@ async function upsertActiveBusiness(client, tenantId, businessType, hasClientesA
                      updated_at = NOW()`,
       [tenantId, businessType]
     );
-    tenantActiveOk = true;
-  } catch (e) {
-    if (!isMissingRelationError(e)) throw e;
-    console.warn("[setup/wizard] tenant_active_business omitido (sin tabla):", e.message);
-  }
-  if (hasClientesAbt) {
-    await client.query(`UPDATE clientes SET active_business_type = $2, fecha_actualizacion = NOW() WHERE id = $1`, [
-      tenantId,
-      businessType,
-    ]);
-  }
-  if (tenantActiveOk) {
-    try {
+    if (hasAuditTbl) {
       await client.query(
         `INSERT INTO tenant_business_audit(
         tenant_id, previous_business_type, new_business_type, changed_by_user_id, source
       ) VALUES($1,$2,$3,$4,'wizard')`,
         [tenantId, previousBusinessType, businessType, null]
       );
-    } catch (e) {
-      if (!isMissingRelationError(e)) throw e;
     }
+  }
+  if (hasClientesAbt) {
+    await client.query(`UPDATE clientes SET active_business_type = $2, fecha_actualizacion = NOW() WHERE id = $1`, [
+      tenantId,
+      businessType,
+    ]);
   }
 }
 
@@ -188,22 +191,30 @@ router.post("/wizard", async (req, res) => {
     const debeNuevaInstancia = state.setupDone && pairNew !== pairOld;
 
     const hasClientesAbt = await tableHasColumn("clientes", "active_business_type");
+    const hasTenantBusinessesTbl = await tableExistsInPublic("tenant_businesses");
+    const hasTenantActiveTbl = await tableExistsInPublic("tenant_active_business");
+    const hasTenantAuditTbl = await tableExistsInPublic("tenant_business_audit");
 
     if (!debeNuevaInstancia) {
       let datosExistentes = false;
-      try {
+      if (hasTenantBusinessesTbl) {
         const rb = await query(
           `SELECT id FROM tenant_businesses WHERE tenant_id = $1 AND business_type = $2 LIMIT 1`,
           [tenantIdOld, businessType]
         );
         datosExistentes = !!rb.rows.length;
-      } catch (e) {
-        if (!isMissingRelationError(e)) throw e;
       }
 
       await withTransaction(async (client) => {
-        await upsertTenantBusiness(client, tenantIdOld, businessType);
-        await upsertActiveBusiness(client, tenantIdOld, businessType, hasClientesAbt);
+        await upsertTenantBusiness(client, tenantIdOld, businessType, hasTenantBusinessesTbl);
+        await upsertActiveBusiness(
+          client,
+          tenantIdOld,
+          businessType,
+          hasClientesAbt,
+          hasTenantActiveTbl,
+          hasTenantAuditTbl
+        );
       });
 
       await ensureGlobalAdminForTenant({
@@ -247,8 +258,8 @@ router.post("/wizard", async (req, res) => {
       const newId = Number(rIns.rows[0].id);
       if (!Number.isFinite(newId)) throw new Error("insert_cliente");
 
-      await upsertTenantBusiness(client, newId, businessType);
-      await upsertActiveBusiness(client, newId, businessType, hasClientesAbt);
+      await upsertTenantBusiness(client, newId, businessType, hasTenantBusinessesTbl);
+      await upsertActiveBusiness(client, newId, businessType, hasClientesAbt, hasTenantActiveTbl, hasTenantAuditTbl);
 
       const uid = Number(req.user.id);
       const rUp = await client.query(
