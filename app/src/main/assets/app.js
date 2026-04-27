@@ -5077,7 +5077,7 @@ function pedidosParaMarcadoresMapa() {
         })();
         if (!prioOk) return false;
         if (!relaxRubroMapa && !pedidoVisibleSegunRubro(p)) return false;
-        if (pedidoEsDerivadoFuera(p) && !adminMuestraPedidosDerivadosFuera()) return false;
+        if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
         return true;
     });
@@ -10362,6 +10362,26 @@ function adminMuestraPedidosDerivadosFuera() {
     }
 }
 
+/**
+ * Listas + mapa: pedidos «Derivado externo» / `dex`.
+ * - Admin: solo si `LS_MOSTRAR_DERIVADOS_FUERA` (comportamiento actual).
+ * - Técnico / supervisor: siempre los que **participó** — `tecnico_asignado_id` (`tai`) o creador (`uc` / `ui`), sin depender del LS del admin.
+ */
+function mostrarPedidoDerivadoFueraEnListasYMapa(p) {
+    if (!pedidoEsDerivadoFuera(p)) return true;
+    if (esAdmin()) return adminMuestraPedidosDerivadosFuera();
+    if (esTecnicoOSupervisor()) {
+        const uid = parseInt(app.u && app.u.id, 10);
+        if (!Number.isFinite(uid) || uid < 1) return false;
+        const tai = p.tai != null ? parseInt(p.tai, 10) : NaN;
+        if (Number.isFinite(tai) && tai === uid) return true;
+        const creador = p.uc != null ? parseInt(p.uc, 10) : p.ui != null ? parseInt(p.ui, 10) : NaN;
+        if (Number.isFinite(creador) && creador === uid) return true;
+        return false;
+    }
+    return false;
+}
+
 function construirOpcionesDerivacionAdminHtml(escFn) {
     const dr = window.EMPRESA_CFG?.derivacion_reclamos;
     if (!dr || typeof dr !== 'object') {
@@ -13308,12 +13328,11 @@ function pedidoVisibleSegunRubro(p) {
 }
 
 function pedidosVisiblesEnUI() {
-    const mostrarDeriv = adminMuestraPedidosDerivadosFuera();
     const relaxRubroLista =
         esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
     return (app.p || []).filter((p) => {
         if (!relaxRubroLista && !pedidoVisibleSegunRubro(p)) return false;
-        if (pedidoEsDerivadoFuera(p) && !mostrarDeriv) return false;
+        if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
         return true;
     });
 }
