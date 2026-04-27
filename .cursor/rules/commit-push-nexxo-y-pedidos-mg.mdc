@@ -7,6 +7,14 @@ alwaysApply: true
 
 Tras **implementar cambios reales**, el agente debe dejar el trabajo **commiteado y pusheado** en el remoto correcto, salvo que el usuario pida explícitamente lo contrario.
 
+## Norma fija — web admin (Pedidos-MG)
+
+Los **commit y push** de la **versión web del administrador** (GitHub Pages / PWA / `api/` en ese repo) van **siempre** al repositorio:
+
+**https://github.com/LEAVERA77/Pedidos-MG** — rama típica **`main`**, remoto **`origin`**.
+
+No mezclar ese trabajo con el remoto de Android; el clon local suele llamarse `Pedidos-MG` (junto a Nexxo o ruta pasada a `sync-assets-to-pedidos-mg.ps1`).
+
 ## URLs canónicas (remoto `origin`, rama `main`)
 
 | Rol | Versión | Repositorio |
