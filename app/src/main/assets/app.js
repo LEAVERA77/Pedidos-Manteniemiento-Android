@@ -1562,7 +1562,8 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
     if (!esTecnicoOSupervisor() || esAdmin()) return '';
     if (!debeMostrarBotonDerivacion(p)) return '';
     if (pedidoEsDerivadoFuera(p)) return '';
-    const esOk = p.es === 'Asignado' || p.es === 'En ejecución';
+    const esN = normalizarEstadoPedidoUi(p?.es);
+    const esOk = esN === 'Asignado' || esN === 'En ejecución';
     if (!esOk) return '';
     const uid = String(app.u?.id ?? '');
     if (p.tai == null || String(p.tai) !== uid) return '';
@@ -3242,9 +3243,10 @@ document.getElementById('lf').addEventListener('submit', async e => {
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
         // tenantIdActual() (p. ej. 1 desde config) y el listado queda vacío aunque el login sea válido.
+        // Primero `tenant_id`: muchas BDs no tienen `cliente_id` y la 1ª variante fallaba en consola Android.
         const loginSqlAttempts = [
-            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`,
             `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`,
             `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
         ];
         try {
@@ -3374,6 +3376,35 @@ window.toast = toast;
     window.__gnAlertWrapped = true;
 })();
 
+/**
+ * Unifica valores legacy o anglosajones (`EnProgreso`, `en_progreso`, sin tilde) con los estados del panel.
+ * Canónicos: Pendiente | Asignado | En ejecución | Cerrado | Derivado externo
+ */
+function normalizarEstadoPedidoUi(raw) {
+    const s0 = raw == null || raw === '' ? 'Pendiente' : String(raw).trim();
+    if (!s0) return 'Pendiente';
+    const low = s0.toLowerCase().replace(/\s+/g, ' ');
+    const compact = low.replace(/[\s_-]/g, '');
+    if (low === 'derivado externo' || compact === 'derivadoexterno') return 'Derivado externo';
+    if (low === 'cerrado') return 'Cerrado';
+    if (low === 'pendiente') return 'Pendiente';
+    if (low === 'asignado') return 'Asignado';
+    if (
+        low === 'en ejecución' ||
+        low === 'en ejecucion' ||
+        compact === 'enejecución' ||
+        compact === 'enejecucion' ||
+        compact === 'enprogreso' ||
+        low === 'en progreso' ||
+        compact === 'inprogress' ||
+        compact === 'encurso' ||
+        low === 'en curso'
+    ) {
+        return 'En ejecución';
+    }
+    return s0;
+}
+
 const norm = p => ({
     id: p.id,
     np: p.numero_pedido,
@@ -3387,7 +3418,7 @@ const norm = p => ({
     tt: p.tipo_trabajo || '',
     de: p.descripcion || '',
     pr: p.prioridad || 'Media',
-    es: p.estado || 'Pendiente',
+    es: normalizarEstadoPedidoUi(p.estado),
     av: parseInt(p.avance) || 0,
     la: (() => {
         const raw = p.lat != null && p.lat !== '' ? p.lat : p.latitud;
@@ -3445,7 +3476,7 @@ const norm = p => ({
         p.derivado_externo === true ||
         p.derivado_externo === 't' ||
         p.derivado_externo === 1 ||
-        String(p.estado || '') === 'Derivado externo'
+        normalizarEstadoPedidoUi(p.estado) === 'Derivado externo'
     ),
     dda: String(p.derivado_a || '').trim(),
     ddn: String(p.derivado_destino_nombre || '').trim(),
@@ -4997,7 +5028,7 @@ function pedidosParaMarcadoresMapa() {
     return app.p.filter(p => {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return false;
-        if (!allowEstado(p.es || '')) return false;
+        if (!allowEstado(normalizarEstadoPedidoUi(p.es || ''))) return false;
         if (uidF) {
             const cre = p.uc != null ? String(p.uc) : (p.ui != null ? String(p.ui) : '');
             if (cre !== uidF) return false;
@@ -5745,7 +5776,8 @@ function refrescarDetalleSiAbiertoTrasSync() {
     if (!pidKey || pidKey === '') return;
     const fresh = app.p.find(x => String(x.id) === pidKey);
     if (fresh) {
-        if (fresh.es === 'Cerrado' || fresh.es === 'Derivado externo') {
+        const esF = normalizarEstadoPedidoUi(fresh.es);
+        if (esF === 'Cerrado' || esF === 'Derivado externo') {
             return;
         }
         try {
@@ -5766,9 +5798,9 @@ function notificarCambiosPedidoTecnico(prevSnap) {
     for (const p of app.p) {
         const prev = prevSnap.get(String(p.id));
         if (!prev) continue;
-        if (prev.es === p.es) continue;
-        const eraAbierto = ['Pendiente', 'Asignado', 'En ejecución'].includes(prev.es);
-        const ahoraCerrado = p.es === 'Cerrado';
+        if (normalizarEstadoPedidoUi(prev.es) === normalizarEstadoPedidoUi(p.es)) continue;
+        const eraAbierto = ['Pendiente', 'Asignado', 'En ejecución'].includes(normalizarEstadoPedidoUi(prev.es));
+        const ahoraCerrado = normalizarEstadoPedidoUi(p.es) === 'Cerrado';
         if (eraAbierto && ahoraCerrado && p.tai != null && String(p.tai) === uid) {
             const quien = (p.tc || '').trim() || 'Administración';
             toast(`Pedido #${p.np || p.id}: cerrado desde la central (${quien}). Revisá «Cerrados».`, 'success');
@@ -9153,7 +9185,8 @@ async function updPedido(id, campos, usuarioId) {
             derivacion_mensaje_snapshot: 'dsnap'
         };
         for (const [k, v2] of Object.entries(campos)) {
-            if (pm[k]) app.p[idx][pm[k]] = v2;
+            if (!pm[k]) continue;
+            app.p[idx][pm[k]] = k === 'estado' ? normalizarEstadoPedidoUi(v2) : v2;
         }
         if (campos.foto_base64) {
             app.p[idx].fotos = campos.foto_base64.split('||');
@@ -11325,8 +11358,9 @@ window._xl = id => {
 
 
 function tabPedidoListaPorEstado(es) {
-    if (es === 'Cerrado' || es === 'Derivado externo') return 'c';
-    if (es === 'Asignado' || es === 'En ejecución') return 'a';
+    const n = normalizarEstadoPedidoUi(es);
+    if (n === 'Cerrado' || n === 'Derivado externo') return 'c';
+    if (n === 'Asignado' || n === 'En ejecución') return 'a';
     return 'p';
 }
 

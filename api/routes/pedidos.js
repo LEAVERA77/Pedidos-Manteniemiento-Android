@@ -158,6 +158,44 @@ function parseClienteConfigJson(raw) {
   return {};
 }
 
+/**
+ * Alinea estados legacy (`EnProgreso`, `en_progreso`, sin tilde) con los del panel y la API.
+ * Canónicos: Pendiente | Asignado | En ejecución | Cerrado | Derivado externo
+ */
+function normalizarEstadoPedidoOperativo(raw) {
+  const s0 = raw == null || raw === "" ? "Pendiente" : String(raw).trim();
+  if (!s0) return "Pendiente";
+  const low = s0.toLowerCase().replace(/\s+/g, " ");
+  const compact = low.replace(/[\s_-]/g, "");
+  if (low === "derivado externo" || compact === "derivadoexterno") return "Derivado externo";
+  if (low === "cerrado") return "Cerrado";
+  if (low === "pendiente") return "Pendiente";
+  if (low === "asignado") return "Asignado";
+  if (
+    low === "en ejecución" ||
+    low === "en ejecucion" ||
+    compact === "enejecución" ||
+    compact === "enejecucion" ||
+    compact === "enprogreso" ||
+    low === "en progreso" ||
+    compact === "inprogress" ||
+    compact === "encurso" ||
+    low === "en curso"
+  ) {
+    return "En ejecución";
+  }
+  return s0;
+}
+
+function pedidoEstadoPermiteDerivacionApi(estado) {
+  const n = normalizarEstadoPedidoOperativo(estado);
+  return n === "Asignado" || n === "En ejecución";
+}
+
+function pedidoEstadoEsEnEjecucionApi(estado) {
+  return normalizarEstadoPedidoOperativo(estado) === "En ejecución";
+}
+
 /** Neon puede devolver NUMERIC como string; la app Android (Gson) espera números JSON para lat/lng. */
 function coercePedidoLatLng(row) {
   if (!row || typeof row !== "object") return row;
@@ -176,6 +214,9 @@ function coercePedidoLatLng(row) {
     }
     const n = typeof v === "number" ? v : parseFloat(String(v).trim().replace(",", "."));
     o[key] = Number.isFinite(n) ? n : null;
+  }
+  if (o.estado != null && String(o.estado).trim() !== "") {
+    o.estado = normalizarEstadoPedidoOperativo(o.estado);
   }
   return o;
 }
@@ -245,8 +286,9 @@ function scheduleNotifyClientePedidoWhatsapp({
   userId,
   estadoAntes,
 }) {
-  const estadoNuevo = String(pedidoDespues.estado || "");
-  const becameEjecucion = estadoNuevo === "En ejecución" && estadoAntes !== "En ejecución";
+  const estadoNuevo = normalizarEstadoPedidoOperativo(String(pedidoDespues.estado || ""));
+  const estadoAntesNorm = normalizarEstadoPedidoOperativo(String(estadoAntes || ""));
+  const becameEjecucion = estadoNuevo === "En ejecución" && estadoAntesNorm !== "En ejecución";
 
   const avanceExplicit = body?.avance !== undefined && body?.avance !== null;
   const avAnt = Number(pedidoAntes.avance ?? 0);
@@ -642,11 +684,10 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     if (Number(pedido.tecnico_asignado_id) !== Number(req.user.id)) {
       return res.status(403).json({ error: "Solo el técnico asignado puede solicitar la derivación" });
     }
-    const es = String(pedido.estado || "");
-    if (es !== "Asignado" && es !== "En ejecución") {
+    if (!pedidoEstadoPermiteDerivacionApi(pedido.estado)) {
       return res.status(400).json({ error: "Solo con asignación o en ejecución" });
     }
-    if (pedido.derivado_externo === true || String(pedido.estado || "") === "Derivado externo") {
+    if (pedido.derivado_externo === true || normalizarEstadoPedidoOperativo(pedido.estado) === "Derivado externo") {
       return res.status(400).json({ error: "El pedido ya está derivado" });
     }
     if (!pedidoTipoPermiteSolicitudDerivacion(pedido.tipo_trabajo)) {
@@ -807,8 +848,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       throw e;
     }
 
-    const es = String(pedido.estado || "");
-    if (es !== "Asignado" && es !== "En ejecución") {
+    if (!pedidoEstadoPermiteDerivacionApi(pedido.estado)) {
       return res.status(400).json({ error: "Solo se puede derivar un pedido asignado o en ejecución" });
     }
     if (pedido.derivado_externo === true) {
@@ -1036,7 +1076,7 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     phoneRaw = await resolverTelefonoContactoParaNotificacionCliente(pedido, tenantId);
 
     if (event === "inicio") {
-      if (String(pedido.estado || "") !== "En ejecución") {
+      if (!pedidoEstadoEsEnEjecucionApi(pedido.estado)) {
         return res.status(400).json({ error: "El pedido debe estar en estado En ejecución" });
       }
       const r = await notifyPedidoClienteActualizacionWhatsAppSafe({
@@ -1078,7 +1118,7 @@ router.post("/:id/notify-alta-cliente-whatsapp", async (req, res) => {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
     }
-    if (String(pedido.estado || "") !== "Pendiente") {
+    if (normalizarEstadoPedidoOperativo(pedido.estado) !== "Pendiente") {
       return res.status(400).json({ error: "Solo se notifica en reclamos pendientes (recién cargados)" });
     }
     const uid = Number(req.user.id);
@@ -1123,7 +1163,7 @@ router.post("/:id/notify-cierre-whatsapp", async (req, res) => {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
     }
-    if (String(pedido.estado || "") !== "Cerrado") {
+    if (normalizarEstadoPedidoOperativo(pedido.estado) !== "Cerrado") {
       return res.status(400).json({ error: "El pedido debe estar en estado Cerrado" });
     }
     const ut = req.tenantId;
@@ -1168,7 +1208,7 @@ router.post("/:id/clientes-afectados", async (req, res) => {
     ) {
       return res.status(403).json({ error: "Sin permiso para este pedido" });
     }
-    if (String(pedido.estado || "") !== "Cerrado") {
+    if (normalizarEstadoPedidoOperativo(pedido.estado) !== "Cerrado") {
       return res.status(400).json({ error: "El pedido debe estar cerrado antes de registrar clientes afectados" });
     }
 
@@ -1285,7 +1325,7 @@ async function handleCoordsManualCorreccion(req, res) {
       throw e;
     }
 
-    const es = String(pedido.estado || "");
+    const es = normalizarEstadoPedidoOperativo(pedido.estado);
     if (es === "Cerrado" || es === "Derivado externo" || pedido.derivado_externo === true) {
       return res.status(400).json({ error: "No se puede mover la ubicación de un pedido cerrado o derivado" });
     }
@@ -1508,16 +1548,22 @@ router.put("/:id", async (req, res) => {
       mergedUrls = [...mergedUrls, ...newUrls];
     }
 
-    const estadoAntes = String(pedido.estado || "");
-    const estadoNuevo = estado !== undefined && estado !== null ? String(estado) : null;
+    const estadoAntesRaw = String(pedido.estado || "");
+    const estadoAntesNorm = normalizarEstadoPedidoOperativo(estadoAntesRaw);
+    const estadoBodyRaw =
+      estado !== undefined && estado !== null ? String(estado).trim() : null;
+    const estadoParam =
+      estadoBodyRaw === null || estadoBodyRaw === ""
+        ? null
+        : normalizarEstadoPedidoOperativo(estadoBodyRaw);
     const cerrandoOperativo =
-      estadoNuevo === "Cerrado" && estadoAntes !== "Cerrado";
+      estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     let avanceParam = avance ?? null;
     if (cerrandoOperativo) avanceParam = 100;
     const hasTUp = await pedidosTableHasTenantIdColumn();
     const upParams = [
       id,
-      estado ?? null,
+      estadoParam,
       avanceParam,
       trabajo_realizado ?? null,
       tecnico_cierre ?? null,
@@ -1532,7 +1578,7 @@ router.put("/:id", async (req, res) => {
       cliente_numero_puerta ?? null,
       cliente_referencia ?? null,
       telefono_contacto ?? null,
-      estadoAntes,
+      estadoAntesRaw,
       cliente_calle ?? null,
       cliente_localidad ?? null,
     ];
@@ -1571,7 +1617,7 @@ router.put("/:id", async (req, res) => {
       upParams
     );
     const updated = r.rows[0];
-    const becameCerrado = String(estado || "") === "Cerrado" && estadoAntes !== "Cerrado";
+    const becameCerrado = estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     if (becameCerrado) {
       scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
       setImmediate(() => {
@@ -1588,7 +1634,7 @@ router.put("/:id", async (req, res) => {
       pedidoDespues: updated,
       body: req.body,
       userId: req.user.id,
-      estadoAntes,
+      estadoAntes: estadoAntesRaw,
     });
     return res.json(coercePedidoLatLng(updated));
   } catch (error) {
