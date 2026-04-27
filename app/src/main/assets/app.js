@@ -1685,7 +1685,11 @@ const app = {
 };
 
 function normalizarRolStr(r) {
-    const x = String(r == null ? '' : r).trim().toLowerCase();
+    const x = String(r == null ? '' : r)
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
     if (x === 'administrador') return 'admin';
     return x || 'tecnico';
 }
@@ -2189,14 +2193,28 @@ function esTecnicoOSupervisor() {
     const r = rolApp();
     return r === 'tecnico' || r === 'supervisor';
 }
-/** Técnico/supervisor con «Todos» (checkbox o selector Android): listado del panel = toda la empresa, todos los estados. */
-function tecnicoPideVerTodosPedidosEmpresa() {
+/**
+ * Técnico/supervisor con «Todos»: fuente de verdad = checkbox y select Android (evita WebView/localStorage desfasados),
+ * luego localStorage.
+ */
+function leerVerTodosPedidosTecnico() {
     if (!esTecnicoOSupervisor()) return false;
+    try {
+        const chk = document.getElementById('toggle-ver-todos-pedidos');
+        if (chk && chk.checked) return true;
+        const sel = document.getElementById('sel-android-pedidos-scope');
+        if (sel && sel.value === 'todos') return true;
+    } catch (_) {}
     try {
         return localStorage.getItem('pmg_tecnico_ver_todos') === '1';
     } catch (_) {
         return false;
     }
+}
+
+/** Alias semántico para el panel (misma lógica que la consulta SQL en cargarPedidos). */
+function tecnicoPideVerTodosPedidosEmpresa() {
+    return leerVerTodosPedidosTecnico();
 }
 function esAndroidWebViewMapa() {
     try {
@@ -5208,7 +5226,7 @@ function onAndroidPedidosScopeChange() {
     } catch (_) {}
     const wt = document.getElementById('toggle-ver-todos-pedidos');
     if (wt) wt.checked = v === 'todos';
-    cargarPedidos();
+    void cargarPedidos();
 }
 
 function setBp2PanelHidden(hidden) {
@@ -6705,7 +6723,7 @@ async function cargarPedidos(opts) {
         const tsql = await pedidosFiltroTenantSql();
         let qPed = `SELECT * FROM pedidos WHERE 1=1${tsql} ORDER BY fecha_creacion DESC`;
         if (esTecnicoOSupervisor()) {
-            const verTodos = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
+            const verTodos = leerVerTodosPedidosTecnico();
             if (!verTodos) {
                 qPed = `SELECT * FROM pedidos WHERE tecnico_asignado_id = ${esc(parseInt(app.u.id, 10))}${tsql} ORDER BY fecha_creacion DESC`;
             }
@@ -12018,10 +12036,12 @@ document.querySelectorAll('.tb').forEach(b => {
 });
 
 document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', function () {
-    localStorage.setItem('pmg_tecnico_ver_todos', this.checked ? '1' : '0');
+    try {
+        localStorage.setItem('pmg_tecnico_ver_todos', this.checked ? '1' : '0');
+    } catch (_) {}
     const sel = document.getElementById('sel-android-pedidos-scope');
     if (sel) sel.value = this.checked ? 'todos' : 'asignados';
-    if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) cargarPedidos();
+    if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) void cargarPedidos();
 });
 
 document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change', function () {
