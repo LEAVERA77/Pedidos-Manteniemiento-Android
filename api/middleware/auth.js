@@ -48,7 +48,8 @@ export async function authMiddleware(req, res, next) {
 }
 
 export function adminOnly(req, res, next) {
-  if (!req.user || req.user.rol !== "admin") {
+  const rol = String(req.user?.rol || "").toLowerCase();
+  if (!req.user || (rol !== "admin" && rol !== "administrador")) {
     return res.status(403).json({ error: "Requiere rol administrador" });
   }
   return next();

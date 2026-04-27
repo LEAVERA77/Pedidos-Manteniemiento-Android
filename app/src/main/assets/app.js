@@ -8970,24 +8970,15 @@ document.getElementById('pf').addEventListener('submit', async e => {
         const anioActual = new Date().getFullYear();
         let numPedido;
         if (modoOffline || !NEON_OK) {
-            
-            const keyContador = 'pmg_contador_' + anioActual;
+            const tidOff = tenantIdActual();
+            const keyContador = 'pmg_contador_tenant_' + tidOff + '_' + anioActual;
             const contadorLocal = parseInt(localStorage.getItem(keyContador) || '0') + 1;
             localStorage.setItem(keyContador, String(contadorLocal));
             numPedido = 'PM-' + anioActual + '-' + String(contadorLocal).padStart(4, '0');
         } else {
-            
             try {
-                await sqlSimple(`INSERT INTO pedido_contador(anio, ultimo_numero)
-                    VALUES(${esc(anioActual)}, 1)
-                    ON CONFLICT(anio) DO UPDATE SET ultimo_numero = pedido_contador.ultimo_numero + 1`);
-                const r = await sqlSimple(`SELECT ultimo_numero FROM pedido_contador WHERE anio = ${esc(anioActual)}`);
-                const num = r.rows[0]?.ultimo_numero || 1;
-                numPedido = 'PM-' + anioActual + '-' + String(num).padStart(4, '0');
-                
-                localStorage.setItem('pmg_contador_' + anioActual, String(num));
-            } catch(_) {
-                
+                numPedido = await bumpPedidoContadorSqlNeon();
+            } catch (_) {
                 const fallback = Date.now().toString().slice(-5);
                 numPedido = 'PM-' + anioActual + '-' + fallback;
             }
@@ -13002,6 +12993,72 @@ async function sociosCatalogoTieneTenantId() {
     return _sociosCatalogoTieneTenantIdCache;
 }
 
+/** True si `pedido_contador` tiene PK (tenant_id, anio) — migración `api/db/migrations/pedido_contador_tenant_id.sql`. */
+let _pedidoContadorNeonTenantCache = null;
+async function pedidoContadorNeonUsaTenantId() {
+    if (_pedidoContadorNeonTenantCache === true || _pedidoContadorNeonTenantCache === false) {
+        return _pedidoContadorNeonTenantCache;
+    }
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'pedido_contador' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        _pedidoContadorNeonTenantCache = !!(chk.rows?.length);
+    } catch (_) {
+        _pedidoContadorNeonTenantCache = false;
+    }
+    return _pedidoContadorNeonTenantCache;
+}
+
+function limpiarLocalStorageContadoresPedido() {
+    try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && (k.startsWith('pmg_contador_') || k.startsWith('pmg_contador_tenant_'))) keys.push(k);
+        }
+        keys.forEach((k) => {
+            try {
+                localStorage.removeItem(k);
+            } catch (_) {}
+        });
+    } catch (_) {}
+}
+
+/**
+ * Siguiente número para `numero_pedido` (Neon directo desde el front).
+ * Usa contador por tenant si la migración está aplicada; si no, esquema legacy por año.
+ */
+async function bumpPedidoContadorSqlNeon() {
+    const anioActual = new Date().getFullYear();
+    const tid = tenantIdActual();
+    if (await pedidoContadorNeonUsaTenantId()) {
+        const r = await sqlSimple(
+            `INSERT INTO pedido_contador(tenant_id, anio, ultimo_numero)
+             VALUES(${esc(tid)}, ${esc(anioActual)}, 1)
+             ON CONFLICT (tenant_id, anio) DO UPDATE SET ultimo_numero = pedido_contador.ultimo_numero + 1
+             RETURNING ultimo_numero`
+        );
+        const num = r.rows[0]?.ultimo_numero || 1;
+        try {
+            localStorage.setItem('pmg_contador_tenant_' + tid + '_' + anioActual, String(num));
+        } catch (_) {}
+        return 'PM-' + anioActual + '-' + String(num).padStart(4, '0');
+    }
+    const r = await sqlSimple(
+        `INSERT INTO pedido_contador(anio, ultimo_numero)
+         VALUES(${esc(anioActual)}, 1)
+         ON CONFLICT(anio) DO UPDATE SET ultimo_numero = pedido_contador.ultimo_numero + 1
+         RETURNING ultimo_numero`
+    );
+    const num = r.rows[0]?.ultimo_numero || 1;
+    try {
+        localStorage.setItem('pmg_contador_' + anioActual, String(num));
+    } catch (_) {}
+    return 'PM-' + anioActual + '-' + String(num).padStart(4, '0');
+}
+
 let _pedidosTenantSqlCache = null;
 function invalidatePedidosTenantSqlCache() {
     _pedidosTenantSqlCache = null;
@@ -13873,11 +13930,44 @@ async function guardarConfiguracionInicialObligatoria() {
             const pv = await nominatimReverseProvinciaArgentina(_setupLat, _setupLng);
             if (pv) provExtra = { provincia: pv, state: pv, provincia_nominatim: pv };
         } catch (_) {}
+        const rubWiz = normalizarRubroEmpresa(tipo);
+        const abtWiz =
+            rubWiz === 'cooperativa_agua' ? 'agua' : rubWiz === 'municipio' ? 'municipio' : 'electricidad';
+        let authToken = token;
+        const wizResp = await fetch(apiUrl('/api/setup/wizard'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+            body: JSON.stringify({ tenant_nombre: nombre, business_type: abtWiz }),
+        });
+        if (!wizResp.ok) {
+            const err = await wizResp.json().catch(() => ({}));
+            const det = [err.detail, err.error].filter(Boolean).join(' — ');
+            throw new Error(det || `wizard HTTP ${wizResp.status}`);
+        }
+        const wiz = await wizResp.json();
+        if (wiz.nueva_instancia && wiz.token) {
+            authToken = String(wiz.token);
+            app.apiToken = authToken;
+            try {
+                localStorage.setItem('pmg_api_token', authToken);
+            } catch (_) {}
+            if (app.u) {
+                app.u.tenant_id = Number(wiz.tenant_id);
+                try {
+                    delete app.u.tenantId;
+                } catch (_) {}
+            }
+            limpiarLocalStorageContadoresPedido();
+            try {
+                invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+            toast('Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.', 'info');
+        }
         const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${authToken}`
             },
             body: JSON.stringify({
                 nombre,
@@ -13902,9 +13992,6 @@ async function guardarConfiguracionInicialObligatoria() {
             from_local_cache: false
         };
         // Reflejo local en caliente para no reiniciar.
-        const rubWiz = normalizarRubroEmpresa(tipo);
-        const abtWiz =
-            rubWiz === 'cooperativa_agua' ? 'agua' : rubWiz === 'municipio' ? 'municipio' : 'electricidad';
         window.EMPRESA_CFG = {
             ...(window.EMPRESA_CFG || {}),
             nombre,
@@ -13946,8 +14033,11 @@ async function guardarConfiguracionInicialObligatoria() {
         if (ok) {
             try {
                 alert(
-                    'Configuración inicial guardada en el servidor.\n\n' +
-                        'La página se va a recargar para aplicar el aislamiento por tenant, la marca visual y evitar datos mezclados en listas y mapas.'
+                    (wiz && wiz.nueva_instancia
+                        ? 'Se creó una nueva instancia (nuevo tenant). Cerrá otras pestañas si las tenías abiertas.\n\n'
+                        : '') +
+                        'Configuración inicial guardada en el servidor.\n\n' +
+                        'La página se va a recargar por completo para aplicar aislamiento, marca y evitar datos mezclados.'
                 );
             } catch (_) {}
             try {
@@ -13957,12 +14047,19 @@ async function guardarConfiguracionInicialObligatoria() {
                 localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
             } catch (_) {}
             try {
+                limpiarLocalStorageContadoresPedido();
+            } catch (_) {}
+            try {
                 invalidatePedidosTenantSqlCache();
                 invalidarCachesMultitenantSesionYOAdminUI();
             } catch (_) {}
             try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('_gnreload', String(Date.now()));
+                window.location.replace(u.toString());
+            } catch (_) {
                 window.location.reload();
-            } catch (_) {}
+            }
             return;
         }
     } catch (e) {
@@ -18979,6 +19076,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
     vaciarPanelesAdminPorCambioTenantSesion();
     try {
         _sociosCatalogoTieneTenantIdCache = null;
+    } catch (_) {}
+    try {
+        _pedidoContadorNeonTenantCache = null;
     } catch (_) {}
     try {
         window._sociosVirtualRows = null;
