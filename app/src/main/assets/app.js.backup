@@ -26,8 +26,6 @@ import {
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
 
-import './js/utils.js';
-
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
 (function installCanvas2DWillReadFrequently() {
   if (typeof HTMLCanvasElement === 'undefined') return;

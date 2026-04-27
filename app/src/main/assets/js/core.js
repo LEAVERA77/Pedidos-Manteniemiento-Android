@@ -63,13 +63,8 @@ export function lineaNegocioOperativaCodigo() {
     return window.EMPRESA_CFG?.active_business_type || null;
 }
 
-export function normalizarTelefono(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return '';
-    const digits = s.replace(/\D/g, '');
-    if (!digits) return '';
-    return digits;
-}
+// MOVED to js/utils.js (implementación); se reexporta aquí para no romper imports desde core.js
+export { normalizarTelefono } from './utils.js';
 
 export function toast(msg, tipo = 'info', durationMs = 3500) {
     console.log(`[TOAST] [${tipo.toUpperCase()}] ${msg}`);

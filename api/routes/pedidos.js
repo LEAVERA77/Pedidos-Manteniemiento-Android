@@ -1,7 +1,7 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
-import { pedidosTableHasTenantIdColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { pedidosTableHasTenantIdColumn, tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
 import { uploadManyBase64 } from "../services/cloudinary.js";
@@ -196,6 +196,46 @@ function pedidoEstadoPermiteDerivacionApi(estado) {
 
 function pedidoEstadoEsEnEjecucionApi(estado) {
   return normalizarEstadoPedidoOperativo(estado) === "En ejecución";
+}
+
+/** Neon / drivers pueden devolver boolean, 't'/'f', 0/1. */
+function pedidoFlagDerivadoExternoApi(p) {
+  if (!p || p.derivado_externo == null) return false;
+  const v = p.derivado_externo;
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "t" || s === "true" || s === "1";
+}
+
+function pedidoEstaDerivadoExternoApi(p) {
+  if (!p) return false;
+  if (pedidoFlagDerivadoExternoApi(p)) return true;
+  return normalizarEstadoPedidoOperativo(p.estado) === "Derivado externo";
+}
+
+let _pedidosHasDerivadoExternoCol;
+async function pedidosTableHasDerivadoExternoColumn() {
+  if (_pedidosHasDerivadoExternoCol === undefined) {
+    _pedidosHasDerivadoExternoCol = await tableHasColumn("pedidos", "derivado_externo");
+  }
+  return _pedidosHasDerivadoExternoCol;
+}
+
+/**
+ * Listados API (solo admin): excluye derivados fuera del tenant **solo** si piden
+ * `?excluir_derivados_externos=1|true|yes`. Por defecto el listado no cambia (compatibilidad con integraciones).
+ * Alineado en espíritu con la UI (checkbox «mostrar derivados»); ver NEON_pedidos_derivacion_externa.sql.
+ */
+async function appendWhereExcluirDerivadosExternosOpcional(req, where) {
+  if (String(req.user?.rol || "").toLowerCase() !== "admin") return;
+  const ex = String(req.query?.excluir_derivados_externos ?? "").trim().toLowerCase();
+  if (!(ex === "1" || ex === "true" || ex === "yes")) return;
+  if (!(await pedidosTableHasDerivadoExternoColumn())) return;
+  where.push(`(
+    COALESCE(derivado_externo, FALSE) IS NOT TRUE
+    AND LOWER(regexp_replace(trim(COALESCE(estado::text, '')), '\\s+', ' ', 'g')) <> 'derivado externo'
+  )`);
 }
 
 /** Neon puede devolver NUMERIC como string; la app Android (Gson) espera números JSON para lat/lng. */
@@ -549,6 +589,7 @@ router.get("/", async (req, res) => {
       params.push(req.user.id);
       where.push(`(tecnico_asignado_id = $${params.length} OR usuario_id = $${params.length})`);
     }
+    await appendWhereExcluirDerivadosExternosOpcional(req, where);
     {
       const bt = await pushPedidoBusinessFilter(req, params);
       if (bt) where.push(bt.replace(/^\s*AND\s+/i, "").trim());
@@ -572,15 +613,18 @@ router.get("/mis-pedidos", async (req, res) => {
   try {
     const hasT = await pedidosTableHasTenantIdColumn();
     const params = hasT ? [req.user.id, req.tenantId] : [req.user.id];
+    const dexWhere = [];
+    await appendWhereExcluirDerivadosExternosOpcional(req, dexWhere);
+    const dexSql = dexWhere.length ? ` AND ${dexWhere[0]}` : "";
     const bt = await pushPedidoBusinessFilter(req, params);
     const r = await query(
       hasT
         ? `SELECT * FROM pedidos
-       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1) AND tenant_id = $2${bt}
+       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1) AND tenant_id = $2${dexSql}${bt}
        ORDER BY fecha_creacion DESC
        LIMIT 500`
         : `SELECT * FROM pedidos
-       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1)${bt}
+       WHERE (tecnico_asignado_id = $1 OR usuario_id = $1)${dexSql}${bt}
        ORDER BY fecha_creacion DESC
        LIMIT 500`,
       params
@@ -686,7 +730,7 @@ router.post("/:id/solicitar-derivacion-tercero", async (req, res) => {
     if (!pedidoEstadoPermiteDerivacionApi(pedido.estado)) {
       return res.status(400).json({ error: "Solo con asignación o en ejecución" });
     }
-    if (pedido.derivado_externo === true || normalizarEstadoPedidoOperativo(pedido.estado) === "Derivado externo") {
+    if (pedidoEstaDerivadoExternoApi(pedido)) {
       return res.status(400).json({ error: "El pedido ya está derivado" });
     }
     if (!pedidoTipoPermiteSolicitudDerivacion(pedido.tipo_trabajo)) {
@@ -850,7 +894,7 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     if (!pedidoEstadoPermiteDerivacionApi(pedido.estado)) {
       return res.status(400).json({ error: "Solo se puede derivar un pedido asignado o en ejecución" });
     }
-    if (pedido.derivado_externo === true) {
+    if (pedidoEstaDerivadoExternoApi(pedido)) {
       return res.status(400).json({ error: "El pedido ya fue derivado fuera del tenant" });
     }
 
@@ -1349,7 +1393,7 @@ async function handleCoordsManualCorreccion(req, res) {
     }
 
     const es = normalizarEstadoPedidoOperativo(pedido.estado);
-    if (es === "Cerrado" || es === "Derivado externo" || pedido.derivado_externo === true) {
+    if (es === "Cerrado" || es === "Derivado externo" || pedidoEstaDerivadoExternoApi(pedido)) {
       return res.status(400).json({ error: "No se puede mover la ubicación de un pedido cerrado o derivado" });
     }
 
