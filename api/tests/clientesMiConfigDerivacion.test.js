@@ -15,6 +15,64 @@ vi.mock("../utils/tenantUser.js", () => ({
 describe("PUT /api/clientes/mi-configuracion — derivacion_reclamos", () => {
   beforeEach(() => {
     vi.mocked(query).mockReset();
+    vi.mocked(query).mockImplementation(async (sql, params = []) => {
+      const q = String(sql || "");
+
+      if (q.includes("information_schema.columns")) {
+        const table = String(params?.[0] || "");
+        const col = String(params?.[1] || "");
+        const known = [
+          ["clientes", "active_business_type"],
+          ["pedidos", "business_type"],
+          ["tenant_businesses", "business_type"],
+          ["tenant_active_business", "active_business_type"],
+        ];
+        const ok = known.some(([t, c]) => t === table && c === col);
+        return { rows: ok ? [{ ok: 1 }] : [] };
+      }
+      if (q.includes("CREATE TABLE IF NOT EXISTS configuracion")) {
+        return { rows: [] };
+      }
+      if (q.includes("FROM usuarios WHERE id = $1 LIMIT 1")) {
+        return { rows: [{ id: 42, email: "a@b.c", nombre: "Admin", rol: "admin", activo: true }] };
+      }
+      if (q.includes("SELECT tipo") && q.includes("FROM clientes WHERE id = $1")) {
+        return {
+          rows: [{ tipo: "cooperativa_electrica", active_business_type: "electricidad" }],
+        };
+      }
+      if (q.includes("SELECT tipo FROM clientes WHERE id = $1 LIMIT 1")) {
+        return { rows: [{ tipo: "cooperativa_electrica" }] };
+      }
+      if (q.includes("SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1")) {
+        return {
+          rows: [
+            {
+              configuracion: {
+                marca_publicada_admin: true,
+                derivacion_reclamos: {
+                  cooperativa_agua: { nombre: "Agua", whatsapp: "+543411223344" },
+                },
+              },
+            },
+          ],
+        };
+      }
+      if (q.includes("UPDATE clientes") && q.includes("configuracion")) {
+        const cfg = JSON.parse(params[3]);
+        return {
+          rows: [
+            {
+              id: 1,
+              nombre: "Coop",
+              tipo: "cooperativa_electrica",
+              configuracion: cfg,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
   });
 
   function adminBearer() {
@@ -22,9 +80,6 @@ describe("PUT /api/clientes/mi-configuracion — derivacion_reclamos", () => {
   }
 
   it("400 si whatsapp inválido", async () => {
-    vi.mocked(query).mockResolvedValueOnce({
-      rows: [{ id: 42, email: "a@b.c", nombre: "Admin", rol: "admin", activo: true }],
-    });
     const app = createHttpApp();
     const res = await request(app)
       .put("/api/clientes/mi-configuracion")
@@ -39,25 +94,6 @@ describe("PUT /api/clientes/mi-configuracion — derivacion_reclamos", () => {
   });
 
   it("200 envía JSON validado al UPDATE", async () => {
-    vi.mocked(query)
-      .mockResolvedValueOnce({
-        rows: [{ id: 42, email: "a@b.c", nombre: "Admin", rol: "admin", activo: true }],
-      })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: 1,
-            nombre: "Coop",
-            tipo: "cooperativa_electrica",
-            configuracion: {
-              marca_publicada_admin: true,
-              derivacion_reclamos: {
-                cooperativa_agua: { nombre: "Agua", whatsapp: "+543411223344" },
-              },
-            },
-          },
-        ],
-      });
     const app = createHttpApp();
     const res = await request(app)
       .put("/api/clientes/mi-configuracion")
