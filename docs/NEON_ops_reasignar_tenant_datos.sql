@@ -131,10 +131,11 @@ DO $$
 DECLARE o INTEGER; n INTEGER;
 BEGIN
     SELECT old_id, new_id INTO o, n FROM _gn_reassign_tenant_params LIMIT 1;
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'distribuidores' AND column_name = 'tenant_id'
-    ) THEN
+    IF to_regclass('public.distribuidores') IS NOT NULL
+       AND EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'distribuidores' AND column_name = 'tenant_id'
+       ) THEN
         UPDATE distribuidores d SET tenant_id = n WHERE d.tenant_id = o;
     END IF;
 END $$;
