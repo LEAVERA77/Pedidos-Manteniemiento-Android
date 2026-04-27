@@ -10344,8 +10344,9 @@ function construirOpcionesDerivacionAdminHtml(escFn) {
         });
     });
     if (!out.length) {
-        return `<option value="">${escFn('Sin WhatsApp válido en derivaciones')}</option>`;
+        return `<option value="otro::">${escFn('Otro — WhatsApp manual (+internacional)')}</option>`;
     }
+    out.push(`<option value="otro::">${escFn('Otro — WhatsApp manual (+internacional)')}</option>`);
     return out.join('');
 }
 
@@ -10431,6 +10432,15 @@ function buildPreviewMensajeDerivacionAdmin(p, destinoNombre, obs) {
 
 function cerrarModalDerivacionPreviewAdmin() {
     document.getElementById('modal-derivacion-preview-admin')?.classList.remove('active');
+    try {
+        const w = document.getElementById('deriv-prev-otro-wrap');
+        if (w) w.style.display = 'none';
+        const telEl = document.getElementById('deriv-prev-telefono');
+        if (telEl) {
+            telEl.setAttribute('readonly', 'readonly');
+            telEl.placeholder = '';
+        }
+    } catch (_) {}
 }
 window.cerrarModalDerivacionPreviewAdmin = cerrarModalDerivacionPreviewAdmin;
 
@@ -10446,7 +10456,7 @@ function abrirModalRevisionDerivacionAdmin(pid) {
     const ta = document.getElementById('admin-derivar-motivo');
     const v = (sel?.value || '').trim();
     if (!v || !v.includes('::')) {
-        toast('Elegí un destino con WhatsApp configurado.', 'warning');
+        toast('Elegí un destino.', 'warning');
         return;
     }
     const pRow = app.p.find((x) => String(x.id) === String(pid));
@@ -10465,15 +10475,57 @@ function abrirModalRevisionDerivacionAdmin(pid) {
         toast('Destino inválido.', 'error');
         return;
     }
-    const destinoNombre = String(sel?.selectedOptions?.[0]?.textContent || '').trim() || destinoSel.destino;
-    const tel = obtenerTelefonoDerivacionDesdeEmpresaCfg(v);
-    const msg = buildPreviewMensajeDerivacionAdmin(pRow, destinoNombre, obsTa || obsTec);
+    const esOtroDest = destinoSel.destino === 'otro' || destinoSel.destino === 'otro_personalizado';
+    if (!esOtroDest) {
+        const telPre = obtenerTelefonoDerivacionDesdeEmpresaCfg(v);
+        if (!telPre || !/^\+\d{8,22}$/.test(String(telPre).trim())) {
+            toast('Elegí un destino con WhatsApp configurado.', 'warning');
+            return;
+        }
+    }
+    const destinoNombre =
+        String(sel?.selectedOptions?.[0]?.textContent || '').trim() || destinoSel.destino;
+    const tel = esOtroDest ? '' : obtenerTelefonoDerivacionDesdeEmpresaCfg(v);
+    const nomOtroEl = document.getElementById('deriv-prev-nombre-otro');
+    const nomOtroVal = (nomOtroEl?.value || '').trim();
+    const destinoParaMsg =
+        esOtroDest && nomOtroVal ? nomOtroVal : esOtroDest ? 'Tercero' : destinoNombre;
+    const msg = buildPreviewMensajeDerivacionAdmin(pRow, destinoParaMsg, obsTa || obsTec);
     const mp = document.getElementById('modal-derivacion-preview-admin');
     document.getElementById('deriv-prev-pid').value = String(pid);
     const dstEl = document.getElementById('deriv-prev-destino');
     if (dstEl) dstEl.innerHTML = `<option value="${v.replace(/"/g, '&quot;')}">${destinoNombre.replace(/</g, '&lt;')}</option>`;
     const telEl = document.getElementById('deriv-prev-telefono');
-    if (telEl) telEl.value = tel || '';
+    const otroWrap = document.getElementById('deriv-prev-otro-wrap');
+    if (esOtroDest) {
+        if (otroWrap) otroWrap.style.display = '';
+        if (telEl) {
+            telEl.removeAttribute('readonly');
+            telEl.value = '';
+            telEl.placeholder = '+5491123456789';
+        }
+        try {
+            const syncPrev = () => {
+                const n = (document.getElementById('deriv-prev-nombre-otro')?.value || '').trim();
+                const msgEl = document.getElementById('deriv-prev-mensaje');
+                if (!msgEl) return;
+                msgEl.value = buildPreviewMensajeDerivacionAdmin(pRow, n || 'Tercero', obsTa || obsTec);
+            };
+            nomOtroEl?.removeEventListener('input', nomOtroEl._gnDerivOtroSync);
+            nomOtroEl._gnDerivOtroSync = syncPrev;
+            nomOtroEl?.addEventListener('input', syncPrev);
+        } catch (_) {}
+    } else {
+        if (otroWrap) otroWrap.style.display = 'none';
+        if (telEl) {
+            telEl.setAttribute('readonly', 'readonly');
+            telEl.placeholder = '';
+        }
+        try {
+            nomOtroEl?.removeEventListener('input', nomOtroEl._gnDerivOtroSync);
+        } catch (_) {}
+    }
+    if (telEl && !esOtroDest) telEl.value = tel || '';
     const msgEl = document.getElementById('deriv-prev-mensaje');
     if (msgEl) msgEl.value = msg;
     mp?.classList.add('active');
@@ -10505,6 +10557,17 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
     try {
         const body = { destino: destinoSel.destino, motivo: motivo || undefined, mensaje_final: mensajeFinal || undefined };
         if (destinoSel.idxStr !== '') body.fila_index = destinoSel.fila_index;
+        const esOtroApi = destinoSel.destino === 'otro' || destinoSel.destino === 'otro_personalizado';
+        if (esOtroApi) {
+            const wt = String(dataModal.whatsapp_tercero || '').trim();
+            const nt = String(dataModal.nombre_tercero || '').trim();
+            if (!wt) {
+                toast('Completá el WhatsApp del tercero (+internacional) en el paso anterior.', 'warning');
+                return;
+            }
+            body.whatsapp_tercero = wt;
+            if (nt) body.nombre_tercero = nt;
+        }
         const pRow = app.p.find((x) => String(x.id) === String(pidNum));
         if (pRow) {
             const { la: laEf, ln: lnEf } = coordsEfectivasPedidoMapa(pRow);
@@ -10563,10 +10626,22 @@ async function confirmarEnvioDerivacionPreviewAdmin() {
     const pRow = app.p.find((x) => String(x.id) === String(pid));
     const motivo = String(detTa?.value || pRow?.sdm || '').trim();
     if (!pid) return;
+    const destinoParsed = normalizarDestinoDerivacionSeleccion(destinoValue);
+    const esOtro =
+        destinoParsed?.destino === 'otro' || destinoParsed?.destino === 'otro_personalizado';
+    const telPreview = String(document.getElementById('deriv-prev-telefono')?.value || '').trim();
+    if (esOtro && (!telPreview || !/^\+\d{8,22}$/.test(telPreview))) {
+        toast('Completá el WhatsApp del tercero en formato internacional (ej. +5491123456789).', 'warning');
+        return;
+    }
     await ejecutarDerivacionExternaAdmin(pid, {
         destinoValue,
         motivo,
         mensajeFinal,
+        whatsapp_tercero: esOtro ? telPreview : undefined,
+        nombre_tercero: esOtro
+            ? String(document.getElementById('deriv-prev-nombre-otro')?.value || '').trim()
+            : undefined,
     });
 }
 window.confirmarEnvioDerivacionPreviewAdmin = confirmarEnvioDerivacionPreviewAdmin;

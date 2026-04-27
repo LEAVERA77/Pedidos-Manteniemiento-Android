@@ -318,6 +318,8 @@ export const ETIQUETA_DESTINO_DERIVACION = {
   empresa_tv_cable: "Empresa de televisión por cable",
   empresa_internet: "Empresa de internet",
   empresa_telefonia: "Empresa de telefonía",
+  otro: "Otro (contacto manual)",
+  otro_personalizado: "Otro (contacto manual)",
 };
 
 export function etiquetaDestinoDerivacion(key) {

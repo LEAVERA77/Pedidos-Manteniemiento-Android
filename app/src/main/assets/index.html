@@ -1178,9 +1178,10 @@
   <div class="mc" style="max-width:680px">
     <div class="mh"><h3><i class="fas fa-whatsapp"></i> Revisar derivación antes de enviar</h3><button type="button" class="cm" onclick="cerrarModalDerivacionPreviewAdmin()"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.82rem;color:var(--tm);margin-bottom:.75rem">Revisá destino, teléfono y mensaje final. Recién al confirmar se abre WhatsApp con el texto editable ya preparado.</p>
+      <p style="font-size:.82rem;color:var(--tm);margin-bottom:.75rem">Revisá destino, teléfono y mensaje. Si elegís <strong>Otro</strong>, completá nombre y WhatsApp (+internacional). Al confirmar, el servidor envía el mensaje al tercero (Meta).</p>
       <input type="hidden" id="deriv-prev-pid">
       <div class="fg" style="padding:0"><label>Destino</label><select id="deriv-prev-destino"></select></div>
+      <div class="fg" id="deriv-prev-otro-wrap" style="display:none;padding:0;margin-top:.5rem"><label>Nombre del tercero (solo «Otro»)</label><input id="deriv-prev-nombre-otro" type="text" maxlength="120" placeholder="Ej. Distribuidora de gas" style="width:100%;margin-top:.25rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Teléfono destino (WhatsApp)</label><input id="deriv-prev-telefono" type="text" readonly></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Mensaje final (editable)</label><textarea id="deriv-prev-mensaje" rows="11" style="width:100%;margin-top:.25rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical"></textarea></div>
       <div style="display:flex;gap:.65rem;flex-wrap:wrap;margin-top:.9rem">

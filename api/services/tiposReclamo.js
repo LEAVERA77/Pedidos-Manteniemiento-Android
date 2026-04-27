@@ -214,3 +214,32 @@ export const TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA = [
   "Riesgo en la vía pública",
   "Corrimiento de poste/columna",
 ];
+
+function normTipoDerivacionApi(tt) {
+  return String(tt || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s*\/\s*/g, "/")
+    .trim();
+}
+
+/**
+ * Paridad con `tipoPermiteSolicitudDerivacionTercero` / `debeMostrarBotonDerivacion` en app.js (variantes y keywords).
+ */
+export function tipoPermiteSolicitudDerivacionTerceroCoopElectrica(tt) {
+  const n = normTipoDerivacionApi(tt);
+  if (!n) return false;
+  for (const allowed of TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA) {
+    const a = normTipoDerivacionApi(allowed);
+    if (!a) continue;
+    if (n === a || n.includes(a) || a.includes(n)) return true;
+  }
+  if (/\bcables?\b/.test(n) && (/\bca[iy]d\w*\b/.test(n) || /\bpeligro\b/.test(n))) return true;
+  if (/\bposte\b/.test(n) && (/\binclinad\w*\b/.test(n) || /\bdan\w*\b/.test(n))) return true;
+  if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
+  if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
+  if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
+  return false;
+}

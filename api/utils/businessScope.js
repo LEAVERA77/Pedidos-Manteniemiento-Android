@@ -28,8 +28,14 @@ export async function clientesHasActiveBusinessTypeColumn() {
 export async function pushPedidoBusinessFilter(req, params) {
   if (!req?.businessTypeFilterEnabled || !req?.activeBusinessType) return "";
   if (!(await pedidosHasBusinessTypeColumn())) return "";
-  params.push(req.activeBusinessType);
-  return ` AND business_type = $${params.length}`;
+  const bt = String(req.activeBusinessType || "")
+    .trim()
+    .toLowerCase();
+  if (!["electricidad", "agua", "municipio"].includes(bt)) return "";
+  params.push(bt);
+  const i = params.length;
+  // Paridad con app.js `pedidosFiltroTenantSql`: pedidos legacy sin `business_type` siguen visibles/actualizables.
+  return ` AND (business_type = $${i} OR business_type IS NULL OR TRIM(COALESCE(business_type::text, '')) = '')`;
 }
 
 /**

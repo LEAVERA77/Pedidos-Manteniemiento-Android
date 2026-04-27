@@ -10,7 +10,7 @@ import {
   tipoTrabajoPermitidoParaNuevoPedido,
   tiposReclamoParaClienteTipo,
   normalizarPrioridadPedido,
-  TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA,
+  tipoPermiteSolicitudDerivacionTerceroCoopElectrica,
 } from "../services/tiposReclamo.js";
 import {
   notifyPedidoCierreWhatsAppSafe,
@@ -36,6 +36,8 @@ import {
   resolverContactoDerivacion,
   buildDerivacionExternaMensaje,
   etiquetaDestinoDerivacion,
+  isValidWhatsappInternational,
+  trimNombreDerivacion,
 } from "../utils/derivacionReclamos.js";
 import {
   humanChatOpenOrGetSession,
@@ -645,11 +647,8 @@ router.get("/historial/nis/:nis", async (req, res) => {
 
 registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
 
-/** Tipos de reclamo (catálogo eléctrico) para los que el técnico puede pedir derivación a terceros. */
-const TIPOS_SOLICITUD_DERIVACION_TERCERO = new Set(TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA);
-
 function pedidoTipoPermiteSolicitudDerivacion(tt) {
-  return TIPOS_SOLICITUD_DERIVACION_TERCERO.has(String(tt || "").trim());
+  return tipoPermiteSolicitudDerivacionTerceroCoopElectrica(tt);
 }
 
 function esRolTecnicoOSupervisorAuth(rol) {
@@ -861,9 +860,33 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     const cfg = parseClienteConfigJson(rowC?.configuracion);
     const dr = derivacionReclamosDesdeConfig(cfg) || {};
 
-    const rContact = resolverContactoDerivacion(dr, destinoStr, filaIndexRaw);
-    if (rContact.error) {
-      return res.status(400).json({ error: rContact.error });
+    let rContact;
+    const destinoLower = destinoStr.toLowerCase();
+    if (destinoLower === "otro" || destinoLower === "otro_personalizado") {
+      const waOv = String(
+        req.body?.whatsapp_tercero ?? req.body?.telefono_tercero ?? req.body?.telefono ?? ""
+      ).trim();
+      const nomRaw = String(
+        req.body?.nombre_tercero ?? req.body?.destino_nombre ?? req.body?.nombre_destino ?? ""
+      ).trim();
+      const nomOv = trimNombreDerivacion(nomRaw) || "Tercero";
+      if (!waOv) {
+        return res.status(400).json({
+          error:
+            "Para destino «Otro», enviá whatsapp_tercero (formato internacional, ej. +543434123456).",
+        });
+      }
+      if (!isValidWhatsappInternational(waOv) || !/^\+\d{8,22}$/.test(waOv)) {
+        return res.status(400).json({
+          error: "whatsapp_tercero inválido: debe ser + seguido de 8 a 22 dígitos.",
+        });
+      }
+      rContact = { whatsapp: waOv, nombre: nomOv, filaIndex: null };
+    } else {
+      rContact = resolverContactoDerivacion(dr, destinoStr, filaIndexRaw);
+      if (rContact.error) {
+        return res.status(400).json({ error: rContact.error });
+      }
     }
 
     const adminObs =
