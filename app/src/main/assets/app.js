@@ -2189,6 +2189,15 @@ function esTecnicoOSupervisor() {
     const r = rolApp();
     return r === 'tecnico' || r === 'supervisor';
 }
+/** Técnico/supervisor con «Todos» (checkbox o selector Android): listado del panel = toda la empresa, todos los estados. */
+function tecnicoPideVerTodosPedidosEmpresa() {
+    if (!esTecnicoOSupervisor()) return false;
+    try {
+        return localStorage.getItem('pmg_tecnico_ver_todos') === '1';
+    } catch (_) {
+        return false;
+    }
+}
 function esAndroidWebViewMapa() {
     try {
         return /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:';
@@ -11494,11 +11503,17 @@ function render() {
     if (acEl) acEl.textContent = asg;
     if (ccEl) ccEl.textContent = cer;
 
-    const fl = vis.filter(p => {
-        if (app.tab === 'p') return p.es === 'Pendiente';
-        if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-        return p.es === 'Cerrado' || p.es === 'Derivado externo';
-    });
+    const fl = tecnicoPideVerTodosPedidosEmpresa()
+        ? [...vis].sort((a, b) => {
+              const ta = a.f ? new Date(a.f).getTime() : 0;
+              const tb = b.f ? new Date(b.f).getTime() : 0;
+              return tb - ta;
+          })
+        : vis.filter(p => {
+              if (app.tab === 'p') return p.es === 'Pendiente';
+              if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
+              return p.es === 'Cerrado' || p.es === 'Derivado externo';
+          });
     const c = document.getElementById('pl');
     c.innerHTML = '';
     
