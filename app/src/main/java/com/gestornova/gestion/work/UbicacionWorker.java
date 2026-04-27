@@ -84,9 +84,12 @@ public class UbicacionWorker extends Worker {
             NeonJdbc.insertUbicacionUsuario(conn, uid, loc.getLatitude(), loc.getLongitude(), prec);
             Log.i(TAG, "Ubicación registrada uid=" + uid);
             return Result.success();
+        } catch (NoClassDefFoundError e) {
+            Log.w(TAG, "JDBC no usable (ubicación omitida): " + e.getMessage());
+            return Result.success();
         } catch (Exception e) {
-            Log.e(TAG, "Error al enviar ubicación", e);
-            return Result.retry();
+            Log.w(TAG, "Error al enviar ubicación: " + e.getMessage());
+            return Result.success();
         }
     }
 }

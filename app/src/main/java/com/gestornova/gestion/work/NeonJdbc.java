@@ -20,6 +20,14 @@ import java.util.Properties;
 public final class NeonJdbc {
 
     static {
+        /*
+         * Refuerzo antes de cargar el driver: en algunos runtimes Android el parser de maxResultBuffer
+         * sigue consultando ManagementFactory si no hay hint global.
+         */
+        try {
+            System.setProperty("pgjdbc.config.maxResultBuffer", "0");
+        } catch (Exception ignored) {
+        }
         try {
             Class.forName("org.postgresql.Driver");
         } catch (ClassNotFoundException e) {
@@ -151,8 +159,11 @@ public final class NeonJdbc {
             jdbc.append(":").append(port);
         }
         jdbc.append("/").append(database);
-
-        return new ParsedConn(jdbc.toString(), qprops);
+        String jdbcStr = jdbc.toString();
+        if (!jdbcStr.contains("maxResultBuffer")) {
+            jdbcStr = jdbcStr + "?maxResultBuffer=0";
+        }
+        return new ParsedConn(jdbcStr, qprops);
     }
 
     /** Segundo intento de conexión: timeouts + credenciales, sin el resto de props (sslmode va en URL implícita vía props anteriores — aquí copiamos sslmode si existía). */

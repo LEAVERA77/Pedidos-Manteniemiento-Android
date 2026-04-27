@@ -1504,22 +1504,63 @@ function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
 }
 
 const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
-    'Cables Caídos/Peligro',
-    'Poste Inclinado/Dañado',
-    'Alumbrado Público (Mantenimiento)',
-    'Riesgo en la vía pública',
-    'Corrimiento de poste/columna',
+    'cables caídos/peligro',
+    'poste inclinado/dañado',
+    'alumbrado público',
+    'alumbrado público (mantenimiento)',
+    'riesgo en la vía pública',
+    'riesgo vía pública',
+    'corrimiento de poste/columna',
 ]);
 
-function tipoPermiteSolicitudDerivacionTercero(tt) {
-    return TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO.has(String(tt || '').trim());
+function _gnNormTipoDerivacion(tt) {
+    return String(tt || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\/\s*/g, '/')
+        .trim();
 }
 
-/** Cooperativa eléctrica: técnico asignado puede pedir al admin que derive a un tercero (cola de aprobación). */
+/** Coincide con API `tipoPermiteSolicitudDerivacionTerceroCoopElectrica` (variantes de texto en Neon). */
+function tipoPermiteSolicitudDerivacionTercero(tt) {
+    const n = _gnNormTipoDerivacion(tt);
+    if (!n) return false;
+    for (const allowed of TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO) {
+        const a = _gnNormTipoDerivacion(allowed);
+        if (!a) continue;
+        if (n === a || n.includes(a) || a.includes(n)) return true;
+    }
+    if (/\bcables?\b/.test(n) && (/\bca[iy]d\w*\b/.test(n) || /\bpeligro\b/.test(n))) return true;
+    if (/\bposte\b/.test(n) && (/\binclinad\w*\b/.test(n) || /\bdan\w*\b/.test(n))) return true;
+    if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
+    if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
+    if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
+    return false;
+}
+
+/** `norm` usa `tt`; detalle puede traer solo `tipo_trabajo`. */
+function _gnTipoTrabajoPedidoDerivacion(p) {
+    if (!p) return '';
+    const a = p.tt != null && String(p.tt).trim() !== '' ? String(p.tt).trim() : '';
+    if (a) return a;
+    return String(p.tipo_trabajo || '').trim();
+}
+
+function debeMostrarBotonDerivacion(pOrTipo) {
+    const tt =
+        pOrTipo != null && typeof pOrTipo === 'object'
+            ? _gnTipoTrabajoPedidoDerivacion(pOrTipo)
+            : String(pOrTipo || '').trim();
+    return tipoPermiteSolicitudDerivacionTercero(tt);
+}
+window.debeMostrarBotonDerivacion = debeMostrarBotonDerivacion;
+
+/** Técnico/supervisor asignado: solicitud de derivación (todos los rubros cuando el tipo encaja). */
 function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
-    if (!esCooperativaElectricaRubro()) return '';
     if (!esTecnicoOSupervisor() || esAdmin()) return '';
-    if (!tipoPermiteSolicitudDerivacionTercero(p.tt)) return '';
+    if (!debeMostrarBotonDerivacion(p)) return '';
     if (pedidoEsDerivadoFuera(p)) return '';
     const esOk = p.es === 'Asignado' || p.es === 'En ejecución';
     if (!esOk) return '';
@@ -10361,6 +10402,13 @@ function cerrarModalDerivacionPreviewAdmin() {
 window.cerrarModalDerivacionPreviewAdmin = cerrarModalDerivacionPreviewAdmin;
 
 function abrirModalRevisionDerivacionAdmin(pid) {
+    if (!puedeEnviarApiRestPedidos()) {
+        toast(
+            'Para confirmar la derivación por servidor hace falta la API (api.baseUrl en config) y sesión con JWT. Usá los botones «Contactar…» en este pedido o completá el login hasta que aparezca el aviso verde de API.',
+            'info'
+        );
+        return;
+    }
     const sel = document.getElementById('admin-derivar-destino');
     const ta = document.getElementById('admin-derivar-motivo');
     const v = (sel?.value || '').trim();
@@ -10797,7 +10845,7 @@ async function detalle(p) {
     if (
         esCooperativaElectricaRubro() &&
         (esAdmin() || esTecnicoOSupervisor()) &&
-        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(p.tt)
+        pedidoSugiereDerivacionAguaOMunicipioEnElectrica(_gnTipoTrabajoPedidoDerivacion(p))
     ) {
         const dr = (window.EMPRESA_CFG || {}).derivacion_reclamos;
         const agua = dr?.cooperativa_agua;
@@ -10810,7 +10858,7 @@ async function detalle(p) {
         const labEn = escDet(energia?.nombre || 'Empresa de energía');
         const bits = [
             `<p style="font-size:.82rem;margin:0 0 .55rem;line-height:1.45">El tipo <strong>${escDet(
-                p.tt
+                _gnTipoTrabajoPedidoDerivacion(p)
             )}</strong> suele corresponder a <strong>agua potable</strong> u <strong>servicios municipales</strong>. Esta entidad atiende electricidad; podés orientar al vecino:</p>`,
         ];
         if (waAgua) {
@@ -10956,9 +11004,12 @@ async function detalle(p) {
         </div>`;
     } else if (
         esAdmin() &&
-        puedeEnviarApiRestPedidos() &&
+        !modoOffline &&
+        NEON_OK &&
+        _sql &&
         (p.es === 'Asignado' || p.es === 'En ejecución') &&
-        !pedidoEsDerivadoFuera(p)
+        !pedidoEsDerivadoFuera(p) &&
+        debeMostrarBotonDerivacion(p)
     ) {
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -10989,8 +11040,13 @@ async function detalle(p) {
             </div>
         </div>`;
         }
+        const avisoApiDeriv =
+            !puedeEnviarApiRestPedidos()
+                ? `<p style="font-size:.74rem;color:#b45309;margin:0 0 .55rem;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem;line-height:1.45"><strong>Sin API REST o sesión JWT</strong> (revisá <code style="font-size:.68rem">config.json</code> → <code style="font-size:.68rem">api.baseUrl</code> e iniciá sesión). Podés usar los enlaces <strong>Contactar…</strong> de arriba por WhatsApp; la confirmación por <strong>servidor</strong> requiere API.</p>`
+                : '';
         htmlDerivacionAdminExterna = `${pendienteSolicitudHtml}<div class="ds" ${p.sdpen ? '' : 'id="gn-focus-derivacion-pedido"'} style="border-left:4px solid #0ea5e9">
             <h4>📲 Derivación operativa (admin)</h4>
+            ${avisoApiDeriv}
             <p style="font-size:.76rem;color:var(--tm);margin:0 0 .55rem;line-height:1.4">Registrá la derivación al contacto configurado en <strong>Admin → Empresa</strong>. El <strong>mensaje final</strong> queda en auditoría y se envía al tercero por <strong>WhatsApp desde el servidor</strong> (Meta Cloud API); no se abre pestaña del navegador. Incluye enlace a Google Maps cuando hay coordenadas del pedido.</p>
             <div style="margin-bottom:.5rem"><label for="admin-derivar-destino" style="font-size:.78rem;font-weight:600">Destino</label>
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
@@ -12672,7 +12728,9 @@ async function pedidosFiltroTenantSql() {
         if (names.has('business_type')) {
             const bt = String(window.EMPRESA_CFG?.active_business_type || '').trim().toLowerCase();
             if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') {
-                parts.push(`business_type = ${esc(bt)}`);
+                parts.push(
+                    `(business_type = ${esc(bt)} OR business_type IS NULL OR TRIM(COALESCE(business_type::text, '')) = '')`
+                );
             }
         }
         _pedidosTenantSqlCache = parts.length ? ` AND ${parts.join(' AND ')}` : '';

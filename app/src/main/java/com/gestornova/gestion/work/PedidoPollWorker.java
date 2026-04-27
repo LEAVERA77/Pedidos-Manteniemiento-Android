@@ -79,9 +79,13 @@ public class PedidoPollWorker extends Worker {
             // Emulador sin Neon válido / red: evita reintentos infinitos y ruido en logcat.
             Log.w(TAG, "Neon no disponible (config.json / red). Notif. pedidos desactivada: " + e.getMessage());
             return Result.success();
+        } catch (NoClassDefFoundError e) {
+            // p.ej. pgjdbc + ManagementFactory en Android: no reintentar en bucle.
+            Log.w(TAG, "JDBC no usable en este dispositivo (notif. pedidos omitida): " + e.getMessage());
+            return Result.success();
         } catch (Exception e) {
             Log.e(TAG, "Error consultando Neon", e);
-            return Result.retry();
+            return Result.success();
         }
     }
 
