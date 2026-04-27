@@ -31,6 +31,7 @@ import {
 } from "../services/pedidoZonaOutage.js";
 import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
 import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
+import { allocarSiguienteNumeroPedido } from "../services/pedidoContador.js";
 import {
   derivacionReclamosDesdeConfig,
   resolverContactoDerivacion,
@@ -499,20 +500,7 @@ router.post("/", async (req, res) => {
     let fotoUrls = [];
     if (fotosB64.length) fotoUrls = await uploadManyBase64(fotosB64);
 
-    const rYear = await query(
-      `INSERT INTO pedido_contador(anio, ultimo_numero)
-       VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
-       ON CONFLICT (anio) DO NOTHING
-       RETURNING anio`
-    );
-    void rYear;
-    const rCont = await query(
-      `UPDATE pedido_contador
-       SET ultimo_numero = ultimo_numero + 1
-       WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
-       RETURNING anio, ultimo_numero`
-    );
-    const numeroPedido = `${rCont.rows[0].anio}-${String(rCont.rows[0].ultimo_numero).padStart(4, "0")}`;
+    const numeroPedido = await allocarSiguienteNumeroPedido(tenantId);
 
     const stc = String(suministro_tipo_conexion || "").trim() || null;
     const sfa = String(suministro_fases || "").trim() || null;

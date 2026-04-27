@@ -25,15 +25,19 @@ Sin borrar datos en Neon, cada vista operativa (**electricidad**, **agua**, **mu
 - Si necesitás el comportamiento anterior (filas legacy con `business_type` NULL tratadas como visibles para el bot), definí en Render:  
   `WHATSAPP_BOT_LEGACY_NULL_BUSINESS=1`.
 
-## No destructivo
+## No destructivo (switch-business)
 
-- No se eliminan filas al cambiar de negocio.
+- No se eliminan filas al cambiar de negocio con **`POST /api/tenant/switch-business`**.
 - Filas “legacy” con `business_type` NULL en `pedidos` se tratan como eléctricas en el filtro relajado del front; las **nuevas** altas siempre deberían traer valor explícito.
 
 ## Despliegue
 
 - Cambios en `api/`: commit en **Nexxo** y copia a **Pedidos-MG** `api/`, luego push (Render suele desplegar desde Pedidos-MG).
 - Cambios en `app/src/main/assets/`: `.\scripts\sync-assets-to-pedidos-mg.ps1` y commit en Pedidos-MG.
+
+## Wizard: nueva instancia vs solo filtro
+
+Si el admin **ya completó** el setup inicial y en el asistente cambia **nombre de empresa** y/o **tipo de negocio** (`business_type`) de forma que el par normalizado ya no coincide con el tenant actual, el backend crea **otro** `clientes` y reasigna al admin (ver `docs/MULTI_TENANT_BUSINESS_ISOLATION.md`). La web llama a `POST /api/setup/wizard` antes de `PUT /api/clientes/mi-configuracion`, aplica el JWT devuelto y fuerza recarga dura (`location.replace` con query `_gnreload`). No confundir con el listado filtrado por `switch-business`.
 
 ---
 *Documento operativo del proyecto GestorNova / Pedidos-MG.*

@@ -27,6 +27,7 @@ import {
   buildTelemetriaForCorrelation,
   geocodWaOperacionFinishOk,
 } from "./geocodWaOperaciones.js";
+import { allocarSiguienteNumeroPedido } from "./pedidoContador.js";
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -251,20 +252,7 @@ export async function crearPedidoDesdeWhatsappBot({
     }
   }
 
-  await query(
-    `INSERT INTO pedido_contador(anio, ultimo_numero)
-     VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
-     ON CONFLICT (anio) DO NOTHING`
-  );
-  const rCont = await query(
-    `UPDATE pedido_contador
-     SET ultimo_numero = ultimo_numero + 1
-     WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
-     RETURNING anio, ultimo_numero`
-  );
-  const row = rCont.rows?.[0];
-  if (!row) throw new Error("contador_pedido");
-  const numeroPedido = `${row.anio}-${String(row.ultimo_numero).padStart(4, "0")}`;
+  const numeroPedido = await allocarSiguienteNumeroPedido(Number(tenantId));
 
   const cn = String(contactName || "").trim();
   const clienteNombre =
