@@ -69,14 +69,17 @@ public class NotificacionesMovilPollWorker extends Worker {
                 Log.i(TAG, "Procesadas " + rows.size() + " filas de notificaciones_movil");
             }
             return Result.success();
+        } catch (NoClassDefFoundError e) {
+            Log.w(TAG, "JDBC no usable (notif. omitidas): " + e.getMessage());
+            return Result.success();
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : "";
             if (msg.contains("notificaciones_movil") || msg.contains("does not exist") || msg.contains("42P01")) {
                 Log.d(TAG, "Cola no disponible: " + msg);
                 return Result.success();
             }
-            Log.e(TAG, "Error JDBC notificaciones_movil", e);
-            return Result.retry();
+            Log.w(TAG, "Error JDBC notificaciones_movil: " + msg);
+            return Result.success();
         }
     }
 

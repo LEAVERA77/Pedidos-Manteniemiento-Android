@@ -100,7 +100,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
 
     implementation("androidx.work:work-runtime:2.9.1")
-    // 42.7+ provoca mergeExtDex: MethodHandle.invoke solo con minSdk 26+; 42.2.x dexifica en API 24.
+    // minSdk 24: 42.7.x falla en D8 (MethodHandle / min-api 26). 42.2.x + NeonJdbc (maxResultBuffer=0) evita ManagementFactory.
     implementation("org.postgresql:postgresql:42.2.29")
 
     // MVP técnico nativo (Compose + Retrofit)

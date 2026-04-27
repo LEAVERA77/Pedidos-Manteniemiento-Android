@@ -1594,8 +1594,6 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
 /** Bloque en detalle de pedido: enlaces wa.me a terceros (municipio, agua, eléctrica); admin y supervisor. */
 function htmlDerivacionTercerosPedidoDetalle() {
     if (!(esAdmin() || esTecnicoOSupervisor())) return '';
-    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    if (!rubro) return '';
     const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const slots = [
         { key: 'energia', def: 'Empresa de energía' },
@@ -1611,6 +1609,7 @@ function htmlDerivacionTercerosPedidoDetalle() {
             `<a class="ba2" style="display:inline-block;margin:.25rem .5rem .25rem 0;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${href}"><i class="fab fa-whatsapp"></i> Contactar ${escD(nom)}</a>`
         );
     }
+    // No exigir rubro normalizado: si `tipo` en BD quedó legacy tras el wizard, igual mostramos contactos configurados.
     if (!links.length) return '';
     const labPer = escD(etiquetaFirmaPersona());
     return `<div class="ds gn-deriv-terceros-pedido">
@@ -3241,11 +3240,12 @@ document.getElementById('lf').addEventListener('submit', async e => {
         let resultado = null;
         const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
-        // Primero la consulta mínima (evita 400 en Neon si no existen tenant_id / cliente_id).
+        // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
+        // tenantIdActual() (p. ej. 1 desde config) y el listado queda vacío aunque el login sea válido.
         const loginSqlAttempts = [
-            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`,
             `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}`,
-            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`
+            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
         ];
         try {
             let lastErr = null;
@@ -13580,6 +13580,9 @@ async function guardarConfiguracionInicialObligatoria() {
             from_local_cache: false
         };
         // Reflejo local en caliente para no reiniciar.
+        const rubWiz = normalizarRubroEmpresa(tipo);
+        const abtWiz =
+            rubWiz === 'cooperativa_agua' ? 'agua' : rubWiz === 'municipio' ? 'municipio' : 'electricidad';
         window.EMPRESA_CFG = {
             ...(window.EMPRESA_CFG || {}),
             nombre,
@@ -13588,8 +13591,12 @@ async function guardarConfiguracionInicialObligatoria() {
             logo_url: logoUrl,
             lat_base: String(_setupLat),
             lng_base: String(_setupLng),
-            ...(provExtra.provincia ? { ...provExtra } : {})
+            active_business_type: String(window.EMPRESA_CFG?.active_business_type || '').trim() || abtWiz,
+            ...(provExtra.provincia ? { ...provExtra } : {}),
         };
+        try {
+            invalidatePedidosTenantSqlCache();
+        } catch (_) {}
         if (NEON_OK && _sql) {
             try {
                 const pairs = [
@@ -13598,6 +13605,8 @@ async function guardarConfiguracionInicialObligatoria() {
                     ['empresa_identidad_bloqueada', '1'],
                 ];
                 pairs.push(['subtitulo', GN_SUBTITULO_FIJO]);
+                const abtNeon = String(window.EMPRESA_CFG?.active_business_type || '').trim() || abtWiz;
+                pairs.push(['active_business_type', abtNeon]);
                 for (const [k, v] of pairs) {
                     await sqlSimple(`INSERT INTO empresa_config(clave, valor) VALUES(${esc(k)}, ${esc(v)})
                         ON CONFLICT(clave) DO UPDATE SET valor = ${esc(v)}, actualizado = NOW()`);
