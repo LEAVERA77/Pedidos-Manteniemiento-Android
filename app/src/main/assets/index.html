@@ -94,9 +94,11 @@
     <button type="button" class="admin-banner-x" onclick="ocultarBannerDerivacionPendiente()" title="Cerrar">&times;</button>
   </div>
   <div class="hd">
-    <button type="button" id="mt" class="ib" title="Marca, logo y ubicación (admin: pide contraseña). Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
-    <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
-    <div class="hr">
+    <div class="hd-slot-left">
+      <button type="button" id="mt" class="ib" title="Marca, logo y ubicación (admin: pide contraseña). Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
+      <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
+    </div>
+    <div class="hd-slot-mid">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
       <div id="web-coords-converter" class="web-coords-converter" style="display:none">
@@ -112,6 +114,8 @@
         </div>
       </div>
       <span id="web-coords-converter-out" class="web-coords-converter-out" style="display:none" aria-live="polite"></span>
+    </div>
+    <div class="hd-slot-right">
       <div id="user-menu-wrap" class="user-menu-wrap">
       <button id="ub" type="button" class="ib" title="Menú de usuario: cuenta o cerrar sesión"><i class="fas fa-user-circle"></i></button>
       <div id="user-menu-pop" class="user-menu-pop" role="menu" aria-hidden="true">

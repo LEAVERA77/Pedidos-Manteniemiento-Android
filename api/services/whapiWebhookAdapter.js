@@ -32,6 +32,29 @@ function extractWhapiTextBody(msg) {
   return "";
 }
 
+/**
+ * Whapi `location` / `live_location` → coordenadas Meta Cloud API (`latitude` / `longitude`).
+ * @returns {{ latitude: number, longitude: number } | null}
+ */
+function extractWhapiLocationForMeta(msg) {
+  if (!msg || typeof msg !== "object") return null;
+  const t = String(msg.type || "").toLowerCase();
+  let la;
+  let lo;
+  if (t === "location" && msg.location && typeof msg.location === "object") {
+    la = Number(msg.location.latitude);
+    lo = Number(msg.location.longitude);
+  } else if (t === "live_location" && msg.live_location && typeof msg.live_location === "object") {
+    la = Number(msg.live_location.latitude);
+    lo = Number(msg.live_location.longitude);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+  return { latitude: la, longitude: lo };
+}
+
 /** Dígitos del remitente: `from` o, si falta, JID en `chat_id` (ej. 549...@s.whatsapp.net). */
 function senderDigitsFromWhapiMessage(m) {
   let digits = String(m.from || "").replace(/\D/g, "");
@@ -81,8 +104,9 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
     }
 
     const body = extractWhapiTextBody(m);
-    if (!body) {
-      console.warn("[whapi-adapter] mensaje sin texto útil, type=", m.type);
+    const loc = extractWhapiLocationForMeta(m);
+    if (!body && !loc) {
+      console.warn("[whapi-adapter] mensaje sin texto ni ubicación útil, type=", m.type);
       continue;
     }
 
@@ -91,13 +115,28 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
       contactMap.set(digits, { profile: { name }, wa_id: digits });
     }
 
-    metaMessages.push({
+    const base = {
       from: digits,
       id: String(m.id || `whapi_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`),
       timestamp: String(Math.floor(Number(m.timestamp) || Date.now() / 1000)),
-      type: "text",
-      text: { body },
-    });
+    };
+
+    if (body) {
+      metaMessages.push({
+        ...base,
+        type: "text",
+        text: { body },
+      });
+    } else {
+      metaMessages.push({
+        ...base,
+        type: "location",
+        location: {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+        },
+      });
+    }
   }
 
   if (metaMessages.length === 0) {
@@ -105,7 +144,7 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
       type: m?.type,
       from_me: m?.from_me,
     }));
-    console.log("[whapi-adapter] sin texto entrante (eco propio, tipo no soportado o sin body)", {
+    console.log("[whapi-adapter] sin texto ni ubicación entrante (eco propio o tipo no soportado)", {
       n: rawMessages.length,
       snap,
     });
