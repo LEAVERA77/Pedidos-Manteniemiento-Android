@@ -10,6 +10,9 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.5/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -97,15 +100,18 @@
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
       <span id="un" class="un"></span>
       <div id="web-coords-converter" class="web-coords-converter" style="display:none">
+        <label class="web-coords-converter-lbl" for="web-coords-converter-mode">Conversión</label>
         <select id="web-coords-converter-mode" title="Modo de conversión" aria-label="Modo de conversión de coordenadas">
-          <option value="dec_to_dms">Dec→GMS</option>
-          <option value="dms_to_dec">GMS→Dec</option>
+          <option value="dec_to_dms">Decimal → GMS</option>
+          <option value="dms_to_dec">GMS → Decimal</option>
         </select>
-        <input id="web-coords-converter-a" type="text" placeholder="Latitud" autocomplete="off"/>
-        <input id="web-coords-converter-b" type="text" placeholder="Longitud" autocomplete="off"/>
-        <button id="web-coords-converter-run" type="button" class="web-coords-converter-run ib-mini" title="Convertir"><i class="fas fa-exchange-alt"></i></button>
+        <div class="web-coords-converter-fields">
+          <input id="web-coords-converter-a" type="text" placeholder="Latitud" autocomplete="off" spellcheck="false"/>
+          <button id="web-coords-converter-run" type="button" class="web-coords-converter-run" title="Convertir intercambiando modo"><i class="fas fa-exchange-alt"></i></button>
+          <input id="web-coords-converter-b" type="text" placeholder="Longitud" autocomplete="off" spellcheck="false"/>
+        </div>
       </div>
-      <span id="web-coords-converter-out" class="web-coords-converter-out" style="display:none"></span>
+      <span id="web-coords-converter-out" class="web-coords-converter-out" style="display:none" aria-live="polite"></span>
       <div id="user-menu-wrap" class="user-menu-wrap">
       <button id="ub" type="button" class="ib" title="Menú de usuario: cuenta o cerrar sesión"><i class="fas fa-user-circle"></i></button>
       <div id="user-menu-pop" class="user-menu-pop" role="menu" aria-hidden="true">

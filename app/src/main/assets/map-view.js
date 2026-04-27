@@ -387,6 +387,19 @@ export async function runInitMap() {
     if (!ctx) return;
     if (ctx.mapaInicializado && ctx.app.map) {
         ctx.app.map.invalidateSize();
+        try {
+            ctx.app.map.dragging.enable();
+        } catch (_) {}
+        requestAnimationFrame(() => {
+            try {
+                ctx.app.map.invalidateSize({ animate: false });
+            } catch (_) {}
+        });
+        setTimeout(() => {
+            try {
+                ctx.app.map.invalidateSize({ animate: false });
+            } catch (_) {}
+        }, 200);
         ctx.aplicarUIMapaPlataforma();
         ctx.renderMk();
         return;
@@ -633,6 +646,24 @@ export async function runInitMap() {
     ctx.mapaInicializado = true;
     ctx.aplicarUIMapaPlataforma();
     ctx.renderMk();
+
+    const gnBumpMapLayout = () => {
+        try {
+            if (!ctx.app.map) return;
+            ctx.app.map.invalidateSize({ animate: false });
+            try {
+                ctx.app.map.dragging.enable();
+            } catch (_) {}
+        } catch (_) {}
+    };
+    gnBumpMapLayout();
+    requestAnimationFrame(() => {
+        gnBumpMapLayout();
+        requestAnimationFrame(gnBumpMapLayout);
+    });
+    setTimeout(gnBumpMapLayout, 80);
+    setTimeout(gnBumpMapLayout, 350);
+    setTimeout(gnBumpMapLayout, 900);
 
     if (ctx.ultimaUbicacion && ctx.app.map) {
         const zInit = ctx.mostrarMarcadorUbicacion(ctx.ultimaUbicacion.lat, ctx.ultimaUbicacion.lon, ctx.ultimaUbicacion.acc);
