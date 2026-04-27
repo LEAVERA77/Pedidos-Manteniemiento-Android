@@ -163,6 +163,10 @@ public final class NeonJdbc {
         copyPropIfPresent(full, minimal, "user");
         copyPropIfPresent(full, minimal, "password");
         copyPropIfPresent(full, minimal, "sslmode");
+        copyPropIfPresent(full, minimal, "maxResultBuffer");
+        if (!minimal.containsKey("maxResultBuffer")) {
+            minimal.setProperty("maxResultBuffer", "0");
+        }
         return minimal;
     }
 
@@ -214,6 +218,14 @@ public final class NeonJdbc {
         }
         p.setProperty("connectTimeout", "20");
         p.setProperty("socketTimeout", "25");
+        /*
+         * Android no incluye java.lang.management.ManagementFactory en el classpath del app process.
+         * pgjdbc 42.x usa ManagementFactory al ajustar el buffer de resultados si maxResultBuffer queda
+         * implícito. Forzar un valor fijo evita PGPropertyMaxResultBufferParser.adjustResultSize → NoClassDefFoundError.
+         */
+        if (!p.containsKey("maxResultBuffer") && !parsed.jdbcUrl.contains("maxResultBuffer")) {
+            p.setProperty("maxResultBuffer", "0");
+        }
         return p;
     }
 

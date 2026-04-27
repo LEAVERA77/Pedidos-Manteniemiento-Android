@@ -989,6 +989,9 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     try {
         aplicarVisibilidadTabsAdminRedElectrica();
     } catch (_) {}
+    try {
+        syncDerivacionesTercerosWrap();
+    } catch (_) {}
 }
 
 /** Provincia / estado para Nominatim (Argentina) desde coordenadas de la oficina. */
@@ -1547,12 +1550,11 @@ function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
     </div>`;
 }
 
-/** Bloque en detalle de pedido: municipio / coop. agua; admin y supervisor. */
+/** Bloque en detalle de pedido: enlaces wa.me a terceros (municipio, agua, eléctrica); admin y supervisor. */
 function htmlDerivacionTercerosPedidoDetalle() {
     if (!(esAdmin() || esTecnicoOSupervisor())) return '';
-    if (esCooperativaElectricaRubro()) return '';
     const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    if (rubro !== 'municipio' && rubro !== 'cooperativa_agua') return '';
+    if (!rubro) return '';
     const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const slots = [
         { key: 'energia', def: 'Empresa de energía' },
@@ -12043,9 +12045,56 @@ function normalizarWhatsappInternacionalWaMeUrl(raw) {
 }
 
 function syncDerivacionesTercerosWrap() {
-    const w = document.getElementById('admin-derivacion-terceros-wrap');
-    if (!w) return;
-    w.style.display = '';
+    const apply = () => {
+        const w = document.getElementById('admin-derivacion-terceros-wrap');
+        if (!w) return;
+        w.style.removeProperty('display');
+        w.style.display = '';
+        w.style.removeProperty('visibility');
+    };
+    apply();
+    try {
+        queueMicrotask(apply);
+        setTimeout(apply, 0);
+    } catch (_) {}
+}
+
+/**
+ * Tras cambio de nombre/tipo de emisor (misma sesión WebView), evita mezclar datos de otro rubro/tenant.
+ * No borra todo sessionStorage: solo claves de borradores de derivación y caches de mapa/socios en memoria.
+ */
+function invalidarCachesTrasCambioIdentidadTenant() {
+    try {
+        if (window._pedidoCoordsInferidas && typeof window._pedidoCoordsInferidas === 'object') {
+            for (const k of Object.keys(window._pedidoCoordsInferidas)) {
+                try {
+                    delete window._pedidoCoordsInferidas[k];
+                } catch (_) {}
+            }
+        }
+    } catch (_) {}
+    try {
+        window._sociosVirtualRows = null;
+    } catch (_) {}
+    try {
+        localStorage.removeItem(WEB_MAP_FILTRO_TIPOS_KEY);
+    } catch (_) {}
+    try {
+        const toDel = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i);
+            if (!k) continue;
+            if (k.indexOf('gn-admin-deriv-motivo-') === 0 || k.indexOf('gn-tec-deriv-motivo-') === 0) toDel.push(k);
+        }
+        toDel.forEach((k) => {
+            try {
+                sessionStorage.removeItem(k);
+            } catch (_) {}
+        });
+    } catch (_) {}
+    try {
+        invalidatePedidosTenantSqlCache();
+    } catch (_) {}
 }
 
 /** Vacía checkboxes/inputs del bloque derivaciones (mismo alcance que reset por cambio de tenant). */
@@ -14855,7 +14904,12 @@ function adminTab(tab) {
             });
         }
     }
-    if (tab === 'empresa') cargarFormEmpresa();
+    if (tab === 'empresa') {
+        void cargarFormEmpresa();
+        try {
+            syncDerivacionesTercerosWrap();
+        } catch (_) {}
+    }
     if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
 }
 
@@ -15079,6 +15133,9 @@ async function guardarConfigEmpresa() {
             }
         }
         vaciarDerivacionesTercerosFormularioAdmin();
+        try {
+            invalidarCachesTrasCambioIdentidadTenant();
+        } catch (_) {}
     }
     let derivacionReclamosPayload = null;
     if (document.getElementById('admin-derivacion-terceros-wrap')) {
