@@ -578,6 +578,16 @@ public class MainActivity extends AppCompatActivity {
     private class AndroidConfigBridge {
         @JavascriptInterface
         public String getConfigJson() {
+            try {
+                if (webView != null) {
+                    String current = webView.getUrl();
+                    // Con HTTPS (ej. GitHub Pages) el config válido está en el sitio; assets suelen ser plantilla.
+                    if (current != null && !current.startsWith("file:")) {
+                        return "";
+                    }
+                }
+            } catch (Exception ignored) {
+            }
             try (InputStream in = getAssets().open("config.json")) {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 byte[] buffer = new byte[4096];

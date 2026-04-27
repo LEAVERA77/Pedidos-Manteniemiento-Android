@@ -13934,8 +13934,18 @@ function mostrarAlertaPedidoUrgente(pedido) {
 // ── Carga de config.json desde GitHub ────────────────────────
 let APP_CONFIG = null;
 async function cargarAppConfig() {
-    const esAndroidApp = window.location.protocol === 'file:' || /GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent);
-    if (esAndroidApp && window.AndroidConfig && typeof window.AndroidConfig.getConfigJson === 'function') {
+    const uaGestorNova =
+        typeof navigator !== 'undefined' &&
+        (/GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent));
+    const desdeAssetsFile = window.location.protocol === 'file:';
+    // Solo leer config desde el APK cuando la UI va por file://. Con HTTPS (ej. GitHub Pages en WebView)
+    // hay que usar el config.json del sitio — igual que en el navegador — o Neon falla con credenciales del ejemplo.
+    if (
+        desdeAssetsFile &&
+        uaGestorNova &&
+        window.AndroidConfig &&
+        typeof window.AndroidConfig.getConfigJson === 'function'
+    ) {
         try {
             const raw = window.AndroidConfig.getConfigJson();
             if (raw && raw.trim()) {
@@ -13948,9 +13958,11 @@ async function cargarAppConfig() {
             console.warn('[config] fallo bridge AndroidConfig:', e && e.message ? e.message : e);
         }
     }
-    const rutas = esAndroidApp
-        ? ['./config.json', 'config.json', 'file:///android_asset/config.json']
-        : ['./config.json?' + Date.now()];
+    const esAndroidApp = desdeAssetsFile || uaGestorNova;
+    const rutas =
+        desdeAssetsFile && uaGestorNova
+            ? ['./config.json', 'config.json', 'file:///android_asset/config.json']
+            : ['./config.json?' + Date.now()];
     let ultimoError = '';
     for (const ruta of rutas) {
         try {
