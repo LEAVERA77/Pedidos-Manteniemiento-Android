@@ -2,6 +2,19 @@ export const OQ_KEY = 'pmg_offline_queue';
 export const OP_KEY = 'pmg_offline_pedidos';
 export const OU_KEY = 'pmg_offline_user';
 
+/** Evita mezclar pedidos offline entre tenants (clave por tenant_id en `pmg`). */
+function offlinePedidosStorageKey() {
+    try {
+        const raw = localStorage.getItem('pmg');
+        if (raw) {
+            const u = JSON.parse(raw);
+            const n = Number(u?.tenant_id ?? u?.tenantId);
+            if (Number.isFinite(n) && n > 0) return `pmg_offline_pedidos_t${n}`;
+        }
+    } catch (_) {}
+    return OP_KEY;
+}
+
 export function offlineQueue() {
     try { return JSON.parse(localStorage.getItem(OQ_KEY) || '[]'); }
     catch(_) { return []; }
@@ -10,11 +23,16 @@ export function offlineSave(queue) {
     try { localStorage.setItem(OQ_KEY, JSON.stringify(queue)); } catch(_) {}
 }
 export function offlinePedidos() {
-    try { return JSON.parse(localStorage.getItem(OP_KEY) || '[]'); }
-    catch(_) { return []; }
+    try {
+        return JSON.parse(localStorage.getItem(offlinePedidosStorageKey()) || '[]');
+    } catch (_) {
+        return [];
+    }
 }
 export function offlinePedidosSave(pedidos) {
-    try { localStorage.setItem(OP_KEY, JSON.stringify(pedidos)); } catch(_) {}
+    try {
+        localStorage.setItem(offlinePedidosStorageKey(), JSON.stringify(pedidos));
+    } catch (_) {}
 }
 
 

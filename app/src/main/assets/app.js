@@ -1857,7 +1857,26 @@ async function loginApiJwt(email, password) {
         const data = await resp.json();
         if (!data?.token) return null;
         app.apiToken = String(data.token);
-        try { localStorage.setItem('pmg_api_token', app.apiToken); } catch(_) {}
+        try {
+            localStorage.setItem('pmg_api_token', app.apiToken);
+        } catch (_) {}
+        try {
+            const du = data.user;
+            if (du && app?.u && String(app.u.email || '').toLowerCase() === String(du.email || '').toLowerCase()) {
+                if (du.tenant_id != null) {
+                    const n = Number(du.tenant_id);
+                    if (Number.isFinite(n)) {
+                        app.u.tenant_id = n;
+                        try {
+                            delete app.u.tenantId;
+                        } catch (_) {}
+                        try {
+                            localStorage.setItem('pmg', JSON.stringify(app.u));
+                        } catch (_) {}
+                    }
+                }
+            }
+        } catch (_) {}
         return data;
     } catch (e) {
         if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
@@ -2504,6 +2523,12 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     } catch (_) {}
     try {
         void cargarDistribuidores();
+    } catch (_) {}
+    try {
+        void cargarListaDistribuidoresAdmin();
+    } catch (_) {}
+    try {
+        void cargarPedidos({ silent: true });
     } catch (_) {}
     try {
         render();
@@ -3232,6 +3257,9 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
             setupMapLazyWhenVisibleOnce();
             if (!offline) {
                 await asegurarJwtApiRest();
+                try {
+                    aplicarTenantDesdeJwtSiHaceFalta();
+                } catch (_) {}
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
@@ -5757,11 +5785,12 @@ async function refrescarTecnicosMapaPrincipal() {
         return;
     }
     try {
+        const wfUGps = await sqlFiltroUsuariosPorTenantAliased('u');
         const r = await sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
             FROM ubicaciones_usuarios uu
             JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
             WHERE uu.timestamp > NOW() - INTERVAL '2 hours'
-            AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
+            AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')${wfUGps}
             ORDER BY uu.usuario_id, uu.timestamp DESC`);
         _marcadoresTecnicosPrincipal.forEach(m => { try { app.map.removeLayer(m); } catch (_) {} });
         _marcadoresTecnicosPrincipal = [];
@@ -6665,6 +6694,7 @@ async function refrescarDashboardGerencia(silent) {
     if (!silent && kpiM) kpiM.innerHTML = '<div class="ll2" style="padding:.5rem"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const tsql = await pedidosFiltroTenantSql();
+        const wfUGps = await sqlFiltroUsuariosPorTenantAliased('u');
         const [rAct, rTec, rCi] = await Promise.all([
             sqlSimple(`SELECT
                 COUNT(*) FILTER (WHERE estado = 'Asignado') AS asignados,
@@ -6677,7 +6707,7 @@ async function refrescarDashboardGerencia(silent) {
                 FROM ubicaciones_usuarios uu
                 JOIN usuarios u ON u.id = uu.usuario_id AND u.activo = TRUE
                 WHERE uu.timestamp > NOW() - INTERVAL '20 minutes'
-                AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')
+                AND LOWER(COALESCE(u.rol,'')) IN ('tecnico','supervisor')${wfUGps}
                 ORDER BY uu.usuario_id, uu.timestamp DESC`),
             sqlSimple(`SELECT id, numero_pedido, fecha_cierre, tecnico_cierre, nis_medidor FROM pedidos
                 WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL${tsql} ORDER BY fecha_cierre DESC LIMIT 12`)
@@ -6774,6 +6804,48 @@ async function sqlFiltroUsuariosPorTenant() {
         const col = names.has('tenant_id') ? 'tenant_id' : names.has('cliente_id') ? 'cliente_id' : null;
         if (!col) return '';
         return ` AND ${col} = ${esc(tenantIdActual())}`;
+    } catch (_) {
+        return '';
+    }
+}
+
+/** Misma condición que `sqlFiltroUsuariosPorTenant` pero con prefijo de tabla (p. ej. JOIN `u`). */
+async function sqlFiltroUsuariosPorTenantAliased(alias) {
+    const base = await sqlFiltroUsuariosPorTenant();
+    if (!base) return '';
+    const a = String(alias || 'u').replace(/[^a-zA-Z0-9_]/g, '');
+    if (!a) return base;
+    return base.replace(/\btenant_id\b/g, `${a}.tenant_id`).replace(/\bcliente_id\b/g, `${a}.cliente_id`);
+}
+
+/** Filtro SQL por tenant cuando `distribuidores.tenant_id` existe (misma idea que la API Node). */
+async function sqlFiltroDistribuidoresPorTenant() {
+    try {
+        const r = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'distribuidores' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        if (r.rows?.length) return ` AND tenant_id = ${esc(tenantIdActual())}`;
+    } catch (_) {}
+    return '';
+}
+
+/**
+ * Listados de distribuidores: `distribuidores.tenant_id` si existe; si no, solo códigos que figuran en
+ * `pedidos.distribuidor` del tenant (evita ver el catálogo global al cambiar de empresa sin migrar Neon).
+ * Usar siempre con alias de tabla `d` (FROM distribuidores d …).
+ */
+async function sqlWhereDistribuidoresPorTenantOUsadosEnPedidos() {
+    const wfT = await sqlFiltroDistribuidoresPorTenant();
+    if (wfT) return wfT;
+    try {
+        const tsql = await pedidosFiltroTenantSql();
+        if (!String(tsql || '').trim()) return '';
+        return ` AND EXISTS (
+            SELECT 1 FROM pedidos p
+            WHERE 1=1${tsql}
+            AND TRIM(UPPER(COALESCE(p.distribuidor::text, ''))) = TRIM(UPPER(COALESCE(d.codigo::text, '')))
+        )`;
     } catch (_) {
         return '';
     }
@@ -12771,7 +12843,12 @@ try {
     if (s) {
         app.u = JSON.parse(s);
         app.u.rol = normalizarRolStr(app.u.rol);
-        try { localStorage.setItem('pmg', JSON.stringify(app.u)); } catch (_) {}
+        try {
+            localStorage.setItem('pmg', JSON.stringify(app.u));
+        } catch (_) {}
+        try {
+            aplicarTenantDesdeJwtSiHaceFalta();
+        } catch (_) {}
         document.getElementById('un').textContent = app.u.nombre.split(' ')[0];
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
@@ -12836,6 +12913,9 @@ try {
             solicitarPermisos();
             setupMapLazyWhenVisibleOnce();
             await asegurarJwtApiRest();
+            try {
+                aplicarTenantDesdeJwtSiHaceFalta();
+            } catch (_) {}
             if (!modoOffline) {
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
                 if (!cfgLista) return;
@@ -12861,9 +12941,10 @@ document.head.appendChild(xscript);
 
 async function cargarDistribuidores() {
     try {
+        const wf = await sqlWhereDistribuidoresPorTenantOUsadosEnPedidos();
         const r = await sqlSimpleSelectAllPages(
-            'SELECT codigo, nombre, tension FROM distribuidores WHERE activo = TRUE',
-            'ORDER BY codigo'
+            `SELECT d.codigo, d.nombre, d.tension FROM distribuidores d WHERE d.activo = TRUE${wf}`,
+            'ORDER BY d.codigo'
         );
         DIST = (r.rows || []).map(d => ({ v: d.codigo, l: d.codigo + ' - ' + d.nombre, g: d.tension || '' }));
         // Repoblar el select de distribuidores
@@ -12974,6 +13055,48 @@ function tenantIdActual() {
     const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
     if (Number.isFinite(fromCfg)) return fromCfg;
     return 1;
+}
+
+function parseJwtPayloadLoose(tok) {
+    try {
+        const parts = String(tok || '').split('.');
+        if (parts.length < 2) return null;
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+        const json = atob(b64 + pad);
+        return JSON.parse(json);
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Si el JWT (`pmg_api_token`) declara otro `tenant_id` que `app.u` / `pmg`, alinea sesión y caches.
+ * Cubre el wizard de nueva instancia: el token se renueva antes del reload pero `pmg` podía quedar viejo.
+ */
+function aplicarTenantDesdeJwtSiHaceFalta() {
+    try {
+        if (!app?.u) return false;
+        const tok = typeof getApiToken === 'function' ? getApiToken() : '';
+        const pl = parseJwtPayloadLoose(tok);
+        const tid = pl != null && pl.tenant_id != null ? Number(pl.tenant_id) : NaN;
+        if (!Number.isFinite(tid) || tid <= 0) return false;
+        const cur = Number(app.u.tenant_id ?? app.u.tenantId);
+        if (Number.isFinite(cur) && cur === tid) return false;
+        app.u.tenant_id = tid;
+        try {
+            delete app.u.tenantId;
+        } catch (_) {}
+        try {
+            localStorage.setItem('pmg', JSON.stringify(app.u));
+        } catch (_) {}
+        try {
+            invalidarCachesMultitenantSesionYOAdminUI();
+        } catch (_) {}
+        return true;
+    } catch (_) {
+        return false;
+    }
 }
 
 /** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
@@ -13955,6 +14078,9 @@ async function guardarConfiguracionInicialObligatoria() {
                 app.u.tenant_id = Number(wiz.tenant_id);
                 try {
                     delete app.u.tenantId;
+                } catch (_) {}
+                try {
+                    localStorage.setItem('pmg', JSON.stringify(app.u));
                 } catch (_) {}
             }
             limpiarLocalStorageContadoresPedido();
@@ -16054,11 +16180,12 @@ async function cargarListaDistribuidoresAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const hasLoc = await sqlDistribuidoresTieneLocalidad();
+        const wf = await sqlWhereDistribuidoresPorTenantOUsadosEnPedidos();
         const r = await sqlSimpleSelectAllPages(
             hasLoc
-                ? 'SELECT id, codigo, nombre, tension, localidad, activo FROM distribuidores'
-                : 'SELECT id, codigo, nombre, tension, activo FROM distribuidores',
-            'ORDER BY codigo'
+                ? `SELECT d.id, d.codigo, d.nombre, d.tension, d.localidad, d.activo FROM distribuidores d WHERE 1=1${wf}`
+                : `SELECT d.id, d.codigo, d.nombre, d.tension, d.activo FROM distribuidores d WHERE 1=1${wf}`,
+            'ORDER BY d.codigo'
         );
         if (!r.rows.length) {
             cont.innerHTML = `<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin ${zonaP}. Cargalos manualmente o importá un Excel.</p>`;
@@ -16100,7 +16227,42 @@ async function crearDistribuidor() {
     const locRaw = document.getElementById('nd-localidad')?.value?.trim() || '';
     if (!codigo || !nombre) { toast('Código y nombre son obligatorios', 'error'); return; }
     try {
-        if (await sqlDistribuidoresTieneLocalidad()) {
+        const wfD = await sqlFiltroDistribuidoresPorTenant();
+        const tid = tenantIdActual();
+        if (wfD) {
+            const hasLoc = await sqlDistribuidoresTieneLocalidad();
+            const ex = await sqlSimple(
+                `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(${esc(codigo)}))${wfD} LIMIT 1`
+            );
+            const rowId = ex.rows?.[0]?.id;
+            if (rowId != null) {
+                if (hasLoc) {
+                    await sqlSimple(
+                        `UPDATE distribuidores SET nombre = ${esc(nombre)}, tension = ${esc(
+                            tension || null
+                        )}, localidad = ${esc(locRaw || null)}, activo = TRUE WHERE id = ${esc(rowId)}${wfD}`
+                    );
+                } else {
+                    await sqlSimple(
+                        `UPDATE distribuidores SET nombre = ${esc(nombre)}, tension = ${esc(
+                            tension || null
+                        )}, activo = TRUE WHERE id = ${esc(rowId)}${wfD}`
+                    );
+                }
+            } else if (hasLoc) {
+                await sqlSimple(
+                    `INSERT INTO distribuidores(codigo, nombre, tension, localidad, activo, tenant_id) VALUES(${esc(
+                        codigo
+                    )}, ${esc(nombre)}, ${esc(tension || null)}, ${esc(locRaw || null)}, TRUE, ${esc(tid)})`
+                );
+            } else {
+                await sqlSimple(
+                    `INSERT INTO distribuidores(codigo, nombre, tension, activo, tenant_id) VALUES(${esc(
+                        codigo
+                    )}, ${esc(nombre)}, ${esc(tension || null)}, TRUE, ${esc(tid)})`
+                );
+            }
+        } else if (await sqlDistribuidoresTieneLocalidad()) {
             await sqlSimple(
                 `INSERT INTO distribuidores(codigo, nombre, tension, localidad) VALUES(${esc(codigo)}, ${esc(nombre)}, ${esc(
                     tension || null
@@ -16129,7 +16291,8 @@ async function crearDistribuidor() {
 async function eliminarDistribuidor(id) {
     if (!confirm(`¿Eliminar este ${etiquetaZonaPedido().toLowerCase()}?`)) return;
     try {
-        await sqlSimple(`DELETE FROM distribuidores WHERE id = ${esc(id)}`);
+        const wfD = await sqlFiltroDistribuidoresPorTenant();
+        await sqlSimple(`DELETE FROM distribuidores WHERE id = ${esc(id)}${wfD}`);
         toast('Eliminado', 'success');
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
@@ -16139,7 +16302,7 @@ async function eliminarDistribuidor(id) {
 function mostrarFormatoExcel() {
     const ent = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
     alert(
-        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — opcional\nColumna D: localidad — opcional (requiere columna en Neon: docs/NEON_distribuidores_localidad.sql)\n\nEncabezados fila 1: codigo | nombre | tension | localidad\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar todos los registros y volver a cargar desde cero (afecta toda la base).`
+        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — opcional\nColumna D: localidad — opcional (requiere columna en Neon: docs/NEON_distribuidores_localidad.sql)\n\nEncabezados fila 1: codigo | nombre | tension | localidad\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar los registros del tenant actual y volver a cargar desde cero (si la base es multitenant, no borra otros negocios).`
     );
 }
 
@@ -16154,7 +16317,8 @@ async function importarExcelDistribuidores(event) {
         const reemplazar = document.getElementById('distribuidores-import-reemplazar')?.checked;
         if (reemplazar) {
             actualizarOverlayImportacion('Vaciando tabla…');
-            await sqlSimple('DELETE FROM distribuidores');
+            const wfDel = await sqlFiltroDistribuidoresPorTenant();
+            await sqlSimple(wfDel ? `DELETE FROM distribuidores WHERE 1=1${wfDel}` : 'DELETE FROM distribuidores');
         }
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
@@ -16175,6 +16339,8 @@ async function importarExcelDistribuidores(event) {
         let ok = 0;
         let fail = 0;
         let idx = 0;
+        const wfDImp = await sqlFiltroDistribuidoresPorTenant();
+        const tidImp = tenantIdActual();
         for (const row of rows) {
             idx++;
             if (!row.codigo || !row.nombre) continue;
@@ -16185,17 +16351,48 @@ async function importarExcelDistribuidores(event) {
                     hasLoc && row.localidad != null && String(row.localidad).trim() !== ''
                         ? String(row.localidad).trim()
                         : null;
-                if (hasLoc) {
+                const codU = String(row.codigo).trim().toUpperCase();
+                const nomU = String(row.nombre).trim();
+                const tenU = row.tension ? String(row.tension).trim() : null;
+                if (wfDImp) {
+                    const ex = await sqlSimple(
+                        `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(${esc(codU)}))${wfDImp} LIMIT 1`
+                    );
+                    const rid = ex.rows?.[0]?.id;
+                    if (rid != null) {
+                        if (hasLoc) {
+                            await sqlSimple(
+                                `UPDATE distribuidores SET nombre = ${esc(nomU)}, tension = ${esc(
+                                    tenU || null
+                                )}, localidad = ${esc(locIns)}, activo = TRUE WHERE id = ${esc(rid)}${wfDImp}`
+                            );
+                        } else {
+                            await sqlSimple(
+                                `UPDATE distribuidores SET nombre = ${esc(nomU)}, tension = ${esc(
+                                    tenU || null
+                                )}, activo = TRUE WHERE id = ${esc(rid)}${wfDImp}`
+                            );
+                        }
+                    } else if (hasLoc) {
+                        await sqlSimple(
+                            `INSERT INTO distribuidores(codigo, nombre, tension, localidad, activo, tenant_id) VALUES(${esc(
+                                codU
+                            )}, ${esc(nomU)}, ${esc(tenU || null)}, ${esc(locIns)}, TRUE, ${esc(tidImp)})`
+                        );
+                    } else {
+                        await sqlSimple(
+                            `INSERT INTO distribuidores(codigo, nombre, tension, activo, tenant_id) VALUES(${esc(
+                                codU
+                            )}, ${esc(nomU)}, ${esc(tenU || null)}, TRUE, ${esc(tidImp)})`
+                        );
+                    }
+                } else if (hasLoc) {
                     await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension, localidad)
-                    VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(
-                        row.tension ? String(row.tension).trim() : null
-                    )}, ${esc(locIns)})
+                    VALUES(${esc(codU)}, ${esc(nomU)}, ${esc(tenU || null)}, ${esc(locIns)})
                     ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension, localidad = EXCLUDED.localidad`);
                 } else {
                     await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
-                    VALUES(${esc(String(row.codigo).trim().toUpperCase())}, ${esc(String(row.nombre).trim())}, ${esc(
-                        row.tension ? String(row.tension).trim() : null
-                    )})
+                    VALUES(${esc(codU)}, ${esc(nomU)}, ${esc(tenU || null)})
                     ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension`);
                 }
                 ok++;
@@ -18922,6 +19119,54 @@ function resetDashboardGerenciaPlaceholderNeutro() {
 }
 
 /** Una sola fila con el usuario de sesión hasta que `cargarListaUsuarios()` traiga el listado filtrado por tenant. */
+let _refrescoMultitenantTimer = null;
+
+/** Tras JWT/tenant distinto: recarga pedidos, catálogos y paneles admin para “volver” a una empresa sin datos viejos en pantalla. */
+function scheduleRefrescoDatosTrasCambioTenantMultitenant() {
+    try {
+        if (_refrescoMultitenantTimer) clearTimeout(_refrescoMultitenantTimer);
+    } catch (_) {}
+    _refrescoMultitenantTimer = setTimeout(() => {
+        _refrescoMultitenantTimer = null;
+        void ejecutarRefrescoDatosTrasCambioTenantMultitenant();
+    }, 80);
+}
+
+async function ejecutarRefrescoDatosTrasCambioTenantMultitenant() {
+    if (!app?.u || modoOffline) return;
+    try {
+        if (NEON_OK && _sql) {
+            await cargarPedidos({ silent: true });
+            await cargarDistribuidores();
+            if (esAdmin()) {
+                try {
+                    await cargarListaDistribuidoresAdmin();
+                } catch (_) {}
+                try {
+                    await cargarListaUsuarios();
+                } catch (_) {}
+                try {
+                    await refrescarDashboardGerencia(true);
+                } catch (_) {}
+                try {
+                    await cargarEstadisticas();
+                } catch (_) {}
+            }
+            try {
+                await refrescarUsuariosCacheDesdeNeon();
+            } catch (_) {}
+        }
+    } catch (e) {
+        console.warn('[refresco-multitenant]', e && e.message ? e.message : e);
+    }
+    try {
+        render();
+    } catch (_) {}
+    try {
+        renderMk();
+    } catch (_) {}
+}
+
 function pintarListaUsuariosAdminSoloSesionActual() {
     const cont = document.getElementById('lista-usuarios-admin');
     if (!cont || !app?.u) return;
@@ -18971,6 +19216,12 @@ function resetAdminUiMultitenantDatosOperativos() {
     } catch (_) {}
     try {
         void cargarEstadisticas();
+    } catch (_) {}
+    try {
+        void cargarListaDistribuidoresAdmin();
+    } catch (_) {}
+    try {
+        void cargarListaUsuarios();
     } catch (_) {}
 }
 
@@ -19063,6 +19314,13 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
         }
     } catch (_) {}
     try {
+        const listaDist = document.getElementById('lista-distribuidores-admin');
+        if (listaDist) {
+            listaDist.innerHTML =
+                '<div class="ll2" style="color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando distribuidores del tenant…</div>';
+        }
+    } catch (_) {}
+    try {
         pintarListaUsuariosAdminSoloSesionActual();
     } catch (_) {}
 }
@@ -19070,6 +19328,9 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
 /** Login/logout/cambio de tenant: caches SQL en memoria + paneles admin (evita datos cruzados entre tenants/rubros). */
 function invalidarCachesMultitenantSesionYOAdminUI() {
     invalidatePedidosTenantSqlCache();
+    try {
+        localStorage.removeItem('pmg_offline_pedidos');
+    } catch (_) {}
     try {
         _genCargaUbicacionesAdmin++;
     } catch (_) {}
@@ -19102,6 +19363,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
     } catch (_) {}
     resetEstadisticasAdminVisualNeutro();
     limpiarMarcadoresMapaAdminYOArrays();
+    try {
+        scheduleRefrescoDatosTrasCambioTenantMultitenant();
+    } catch (_) {}
 }
 
 function iniciarMapaUsuariosAdmin() {

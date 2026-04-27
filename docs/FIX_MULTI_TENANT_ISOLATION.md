@@ -12,6 +12,7 @@ Sin borrar datos en Neon, cada vista operativa (**electricidad**, **agua**, **mu
 | `socios_catalogo.business_type` | El import Excel desde la web rellena la columna cuando existe (bulk insert en `app.js`). |
 | Consultas SQL en front (Neon directo) | `pedidosFiltroTenantSql()` añade filtro por tenant + línea activa (`lineaNegocioOperativaCodigo()`). |
 | Consultas API | Middleware `tenantBusinessFilter` + `pushPedidoBusinessFilter` en rutas de pedidos/estadísticas. |
+| **`distribuidores.tenant_id`** | Sin esta columna, el admin “Distribuidores” y `GET /api/distribuidores` ven **toda** la tabla. Ejecutar en Neon: `api/db/migrations/distribuidores_tenant_id.sql` (backfill al `clientes.id` mínimo; revisar si compartías Neon entre tenants). |
 
 ## Errores corregidos (referencia)
 
