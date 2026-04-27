@@ -54,12 +54,9 @@ android {
 
     buildTypes {
         debug {
-            // Android Studio / emulador: UI desde app/src/main/assets/index.html (Nexxo).
-            buildConfigField(
-                "String",
-                "WEB_APP_URL",
-                "\"file:///android_asset/index.html\""
-            )
+            // No sobreescribir WEB_APP_URL: defaultConfig ya apunta a GitHub Pages (HTTPS).
+            // file:///android_asset/index.html hace que el Neon serverless (@neondatabase/serverless) falle
+            // en WebView con "Failed to fetch" al conectar (misma app que en navegador sí funciona).
         }
         release {
             isMinifyEnabled = false
