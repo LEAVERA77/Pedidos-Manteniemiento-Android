@@ -1,0 +1,38 @@
+---
+description: Qué hacer en el PC con Nexxo (Android) cuando el agente subió cambios a GitHub o tocó varios repos (Nexxo vs Pedidos-MG).
+alwaysApply: true
+---
+
+# Nexxo en `AndroidStudioProjects\Nexxo` y repos en GitHub
+
+El proyecto que abrís en **Android Studio** es la carpeta local:
+
+**`C:\Users\leave\AndroidStudioProjects\Nexxo`**
+
+Ese repo enlaza con GitHub como **`Pedidos-Manteniemiento-Android`** (`origin`). La **versión web** del admin vive en otro repo: **`Pedidos-MG`** (GitHub Pages + API en `api/`).
+
+## Si el agente (o vos) hicieron `git push` en GitHub y querés esos cambios en el PC
+
+1. En **Android Studio**: menú **Git → Pull** (o **VCS → Update Project**), o en terminal desde la carpeta **Nexxo**:
+   - `git pull origin main`
+2. Si Android Studio no refresca solo: **File → Sync Project with Gradle Files** solo si tocaste **Gradle**; si no, alcanza con **Run** ▶ para probar.
+
+Así la carpeta **Nexxo** del disco queda alineada con lo último del remoto; no hace falta clonar de nuevo salvo que borres el proyecto.
+
+## Si los cambios fueron en assets / web compartidos (`app/src/main/assets/`)
+
+- La **fuente** suele ser **Nexxo** `app/src/main/assets/`; el agente puede haber sincronizado y pusheado también **Pedidos-MG**.
+- En tu PC: **pull en Nexxo** (arriba). Si también trabajás con un clon de **Pedidos-MG**, hacé **pull** allí antes de desplegar Pages o la API.
+
+## Resumen rápido
+
+| Dónde quedó el cambio en GitHub | Qué hacer en tu PC |
+|--------------------------------|--------------------|
+| Solo **Pedidos-Manteniemiento-Android** (Kotlin, Gradle, assets en Nexxo) | `git pull` en **`Nexxo`** → **Run** ▶ (o **Clean** + **Run** si la WebView no muestra assets nuevos). |
+| Solo **Pedidos-MG** (Pages / `api/`) | Pull en el clon de **Pedidos-MG** si lo usás; la app Android **no** necesita pull de ese repo para compilar, salvo que copies assets a mano. |
+| **Ambos** | Pull en **Nexxo** y, si aplica, pull en **Pedidos-MG**. |
+
+## Relación con otras reglas
+
+- Pasos en el IDE según tipo de archivo: **`android-studio-tras-cambios`**.
+- Commit/push en uno o dos repos: **`commit-push-nexxo-y-pedidos-mg`**.

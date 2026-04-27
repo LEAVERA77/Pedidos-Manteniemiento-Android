@@ -44,6 +44,10 @@ Usá esta guía **después de cambiar código en el proyecto** (o cuando el agen
 - Indicar si el agente ya **sincronizó y pusheó** Pedidos-MG o si el usuario debe ejecutar `.\scripts\sync-assets-to-pedidos-mg.ps1` y `git push` en su clon de **Pedidos-MG** (ver `pedidos-mg-web-repo` y `commit-push-nexxo-y-pedidos-mg`).
 - **Sitio web (GitHub Pages):** tras un deploy, conviene **recarga fuerte** o comprobar actualización del service worker si no se ven los cambios.
 
+### Si el agente subió cambios a GitHub y trabajás en `AndroidStudioProjects\Nexxo`
+
+- Indicar **pull** en esa carpeta (`git pull origin main` o Git → Pull) para traer lo último del remoto; ver regla **`android-nexxo-git-y-paridad-repos`**.
+
 ## Catálogo de socios / NIS y Medidor (dato operativo)
 
 Si el usuario ya tenía datos importados **antes** de separar NIS y Medidor en BD/UI, puede que filas viejas tengan el medidor solo dentro de texto unificado. Tras cambios en **import o columnas** de socios: en la app, **Socios / NIS**, conviene **volver a importar el Excel** con la lógica nueva para rellenar `medidor` (y NIS) en la base.

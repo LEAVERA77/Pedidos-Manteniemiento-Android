@@ -5274,6 +5274,29 @@ function _gnOcultarPanelPedidosParaDetalleAndroid() {
     });
 }
 
+/** Una vez: al tocar el modal de detalle (#dm), ocultar el panel de lista de pedidos (bp2) en Android. */
+let _gnDetalleTapHideBp2Bound = false;
+function _gnBindDetalleModalOcultarBp2AndroidUnaVez() {
+    if (_gnDetalleTapHideBp2Bound) return;
+    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
+    const dm = document.getElementById('dm');
+    if (!dm) return;
+    _gnDetalleTapHideBp2Bound = true;
+    dm.addEventListener(
+        'pointerdown',
+        () => {
+            if (!dm.classList.contains('active')) return;
+            setBp2PanelHidden(true);
+            requestAnimationFrame(() => {
+                try {
+                    if (app.map) app.map.invalidateSize({ animate: false });
+                } catch (_) {}
+            });
+        },
+        { capture: true }
+    );
+}
+
 function _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid() {
     if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) {
         _gnBp2SnapAntesDetalleAndroid = null;
@@ -9445,6 +9468,21 @@ function sanitizarTextoDescripcionPedidoVista(s) {
     return t.trim();
 }
 
+/**
+ * WebView Android (técnico/supervisor no admin): no insertar el bloque «Materiales» en el detalle
+ * mientras el pedido siga Pendiente o Asignado (antes de Iniciar / avance / cierre). Evita Cargando…
+ * y parpadeos. Admin y navegador web siguen viendo el bloque como antes.
+ */
+function incluirBloqueMaterialesEnDetallePedido(p) {
+    if (!p || esTipoPedidoFactibilidad(p.tt)) return false;
+    if (!esAndroidWebViewMapa()) return true;
+    if (esAdmin()) return true;
+    if (!esTecnicoOSupervisor()) return true;
+    const es = String(p.es || '').trim();
+    if (es === 'Pendiente' || es === 'Asignado') return false;
+    return true;
+}
+
 /** Misma lógica que los botones «Iniciar» / «Cerrar» en detalle: admin, creador del pedido o técnico asignado. */
 function puedeEditarMaterialesEnPedido(p) {
     if (!p || p.es === 'Cerrado') return false;
@@ -9488,6 +9526,7 @@ function _materialesCierreModalSigueSiendoPedidoActual(p) {
 }
 
 async function refrescarMaterialesEnDetalle(p) {
+    if (!incluirBloqueMaterialesEnDetallePedido(p)) return;
     const body = document.getElementById('materiales-detalle-body');
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
@@ -9671,7 +9710,7 @@ window.refrescarMaterialesCierrePorPid = function (pid) {
 
 function sincronizarVistaMaterialesPedido(p) {
     if (!p) return;
-    void refrescarMaterialesEnDetalle(p);
+    if (incluirBloqueMaterialesEnDetallePedido(p)) void refrescarMaterialesEnDetalle(p);
     const cm2 = document.getElementById('cm2');
     if (cm2?.classList.contains('active') && String(app.cid) === String(p.id)) {
         void refrescarMaterialesEnModalCierre(p);
@@ -11345,7 +11384,7 @@ async function detalle(p) {
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
 
-        ${esTipoPedidoFactibilidad(p.tt) ? '' : `
+        ${esTipoPedidoFactibilidad(p.tt) || !incluirBloqueMaterialesEnDetallePedido(p) ? '' : `
         <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
             <h4>🔧 Materiales</h4>
             <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
@@ -11385,8 +11424,9 @@ async function detalle(p) {
     
     document.getElementById('dm').classList.add('active');
     _gnOcultarPanelPedidosParaDetalleAndroid();
+    _gnBindDetalleModalOcultarBp2AndroidUnaVez();
     requestAnimationFrame(() => {
-        if (!esTipoPedidoFactibilidad(p.tt)) refrescarMaterialesEnDetalle(p);
+        if (!esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p)) refrescarMaterialesEnDetalle(p);
     });
 }
 
