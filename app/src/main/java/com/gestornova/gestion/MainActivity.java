@@ -259,7 +259,11 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handleWebViewUrl(request.getUrl());
+                // Solo el documento principal: si se devuelve true para tiles/XHR, el mapa queda gris (release WebView).
+                if (request != null && !request.isForMainFrame()) {
+                    return false;
+                }
+                return handleWebViewUrl(request != null ? request.getUrl() : null);
             }
 
             @Override
@@ -305,7 +309,9 @@ public class MainActivity extends AppCompatActivity {
      * Debug con {@code file:///android_asset/...}: toda navegación bajo {@code /android_asset/} queda en el WebView.
      */
     private boolean handleWebViewUrl(Uri uri) {
-        if (uri == null) return false;
+        if (uri == null) {
+            return false;
+        }
         String scheme = uri.getScheme();
         if (scheme == null) return false;
         if ("javascript".equalsIgnoreCase(scheme)) return false;

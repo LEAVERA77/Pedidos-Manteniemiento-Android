@@ -5384,7 +5384,14 @@ function setBp2PanelHidden(hidden) {
     const bp2 = document.getElementById('bp2');
     const fab = document.getElementById('fab-show-pedidos');
     if (bp2) bp2.classList.toggle('bp2-fullhide', !!hidden);
-    if (fab) fab.classList.toggle('visible', !!hidden);
+    if (fab) {
+        fab.classList.toggle('visible', !!hidden);
+        try {
+            fab.style.removeProperty('display');
+            fab.style.removeProperty('visibility');
+            fab.style.removeProperty('opacity');
+        } catch (_) {}
+    }
     try { localStorage.setItem('pmg_bp2_hidden', hidden ? '1' : '0'); } catch (_) {}
     if (hidden) queueLazyInitMap();
 }
