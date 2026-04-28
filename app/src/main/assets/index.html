@@ -967,12 +967,15 @@
       <div id="lista-ubicaciones" style="margin-top:.75rem;font-size:.82rem"></div>
     </div>
     <div id="admin-contrasena" class="admin-section">
-      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Cambiar contraseña</h3>
+      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Cuenta y contraseña</h3>
       <div style="max-width:360px">
-        <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password"></div>
-        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password"></div>
-        <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password"></div>
-        <button class="bp" style="max-width:200px" onclick="cambiarContrasena()"><i class="fas fa-save"></i> Cambiar</button>
+        <div style="margin-bottom:.75rem"><label>Email de inicio de sesión</label><input id="pw-email-nuevo" type="email" autocomplete="username"></div>
+        <div style="margin-bottom:.75rem"><label>Nombre visible</label><input id="pw-nombre-nuevo" type="text" maxlength="120" autocomplete="name"></div>
+        <p style="font-size:.72rem;color:var(--tl);margin:-.25rem 0 .75rem;line-height:1.35">Requiere <strong>contraseña actual</strong> y sesión con el servidor (token API) para guardar email o nombre.</p>
+        <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password" autocomplete="current-password"></div>
+        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás email o nombre"></div>
+        <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password" autocomplete="new-password"></div>
+        <button class="bp" style="max-width:200px" onclick="cambiarContrasena()"><i class="fas fa-save"></i> Guardar</button>
         <div id="pw-msg" style="margin-top:.5rem;font-size:.85rem"></div>
       </div>
     </div>

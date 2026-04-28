@@ -2864,6 +2864,12 @@ aplicarCapaOnboardingVsLoginInicial();
     else run();
 })();
 
+(function instalarEscapeFijarUbicacionAlCargar() {
+    try {
+        instalarEscapeCancelarFijarUbicacionAdmin();
+    } catch (_) {}
+})();
+
 const dbs = document.getElementById('dbs');
 const lb  = document.getElementById('lb');
 
@@ -5073,6 +5079,27 @@ function fmtInformeFecha(v) {
     }
 }
 
+/** Si existe `pedidos.tenant_id`, `empresa_config` es global en Neon y no corresponde al tenant del JWT: no rellenar email/tel desde SQL. */
+let _neonPedidosTenantIdColumnCache = null;
+async function neonPedidosTieneColumnaTenantId() {
+    if (_neonPedidosTenantIdColumnCache === true || _neonPedidosTenantIdColumnCache === false) {
+        return _neonPedidosTenantIdColumnCache;
+    }
+    if (!NEON_OK || typeof sqlSimple !== 'function') {
+        _neonPedidosTenantIdColumnCache = false;
+        return false;
+    }
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'tenant_id' LIMIT 1`
+        );
+        _neonPedidosTenantIdColumnCache = !!(chk.rows && chk.rows.length);
+    } catch (_) {
+        _neonPedidosTenantIdColumnCache = false;
+    }
+    return _neonPedidosTenantIdColumnCache;
+}
+
 let _modoFijarUbicacionAdmin = false;
 let _marcadoresTecnicosPrincipal = [];
 
@@ -6018,7 +6045,38 @@ async function activarModoFijarUbicacionAdmin() {
     } catch (_) {}
     _modoFijarUbicacionAdmin = true;
     document.body.classList.add('modo-fijar-ubicacion');
-    toast('Tocá el mapa principal para fijar tu ubicación (oficina)', 'info');
+    try {
+        instalarEscapeCancelarFijarUbicacionAdmin();
+    } catch (_) {}
+    toast('Tocá el mapa principal para fijar tu ubicación (oficina). Escape cancela.', 'info');
+}
+
+function cancelarModoFijarUbicacionAdmin() {
+    if (!_modoFijarUbicacionAdmin) return;
+    _modoFijarUbicacionAdmin = false;
+    try {
+        document.body.classList.remove('modo-fijar-ubicacion');
+    } catch (_) {}
+    try {
+        document.getElementById('admin-panel')?.classList.add('active');
+    } catch (_) {}
+    toast('Fijar ubicación cancelado', 'info');
+}
+
+function instalarEscapeCancelarFijarUbicacionAdmin() {
+    if (window.__PMG_ESC_FIJAR_UBICACION__) return;
+    window.__PMG_ESC_FIJAR_UBICACION__ = true;
+    document.addEventListener(
+        'keydown',
+        (ev) => {
+            if (ev.key !== 'Escape') return;
+            if (!_modoFijarUbicacionAdmin) return;
+            ev.preventDefault();
+            ev.stopPropagation();
+            cancelarModoFijarUbicacionAdmin();
+        },
+        true
+    );
 }
 
 async function registrarUbicacionManualAdmin(lat, lng) {
@@ -7726,7 +7784,6 @@ if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoP
 
 function renderMk() {
     if (!app.map) return;
-    if (typeof L === 'undefined' || !L || typeof L.marker !== 'function') return;
     app.mk.forEach(m => m.remove());
     app.mk = [];
     
@@ -13469,8 +13526,6 @@ let _adminBannerOpinionWatermarkIso = null;
 const SESS_KEY_BANNER_OPINION_DISMISS = 'pmg_sess_banner_opinion_dismiss_v1';
 /** Cierre explícito del banner de calificación baja: persiste entre sesiones (por tenant + pedido). */
 const LS_KEY_BANNER_OPINION_DISMISS = 'pmg_ls_banner_opinion_dismiss_v1';
-/** null = sin comprobar; si existe `pedidos.opinion_banner_admin_descartado`, el banner no depende solo de localStorage. */
-let _opinionBannerAdminDismissColExists = null;
 
 function _persistedOpinionBannerDismissedKeys() {
     try {
@@ -13490,28 +13545,6 @@ function _persistDismissOpinionBannerPedido(pid) {
     s.add(key);
     try {
         localStorage.setItem(LS_KEY_BANNER_OPINION_DISMISS, JSON.stringify([...s]));
-    } catch (_) {}
-    void _neonMarcarOpinionBannerAdminDescartado(pid);
-}
-
-/** Persiste el cierre del banner en Neon (sobrevive a borrar caché / localStorage). Requiere migración `opinion_banner_admin_descartado`. */
-async function _neonMarcarOpinionBannerAdminDescartado(pid) {
-    if (pid == null || pid === '' || !NEON_OK || !_sql) return;
-    try {
-        if (_opinionBannerAdminDismissColExists === false) return;
-        if (_opinionBannerAdminDismissColExists === null) {
-            const chk = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'opinion_banner_admin_descartado' LIMIT 1`
-            );
-            _opinionBannerAdminDismissColExists = !!chk.rows?.length;
-            if (!_opinionBannerAdminDismissColExists) return;
-        }
-        const tsql = await pedidosFiltroTenantSql();
-        const idn = Number(pid);
-        if (!Number.isFinite(idn) || idn < 1) return;
-        await sqlSimple(
-            `UPDATE pedidos SET opinion_banner_admin_descartado = TRUE WHERE id = ${esc(idn)}${tsql}`
-        );
     } catch (_) {}
 }
 
@@ -13684,16 +13717,6 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const tsql = await pedidosFiltroTenantSql();
-        if (_opinionBannerAdminDismissColExists === null) {
-            const chkD = await sqlSimple(
-                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'opinion_banner_admin_descartado' LIMIT 1`
-            );
-            _opinionBannerAdminDismissColExists = !!chkD.rows?.length;
-        }
-        const sqlNoDescartado =
-            _opinionBannerAdminDismissColExists === true
-                ? ' AND COALESCE(opinion_banner_admin_descartado, FALSE) IS NOT TRUE'
-                : '';
         let r;
         try {
             r = await sqlSimple(
@@ -13703,7 +13726,6 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
-                 ${sqlNoDescartado}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -13716,7 +13738,6 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
-                 ${sqlNoDescartado}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -13734,11 +13755,14 @@ async function pollBannerOpinionCliente() {
         const nid = Number(row.id);
         const dismissKey = `${tenantIdActual()}:${nid}`;
         if (_persistedOpinionBannerDismissedKeys().has(dismissKey)) {
+            console.debug('[poll-banner-opinion] Pedido %s descartado permanentemente (localStorage)', nid);
             return;
         }
         if (_sessionOpinionBannerDismissedIds().has(String(nid))) {
+            console.debug('[poll-banner-opinion] Pedido %s ya fue descartado en esta sesión', nid);
             return;
         }
+        console.info('[poll-banner-opinion] ✓ Mostrando banner para pedido %s (estrellas: %s)', nid, row.opinion_cliente_estrellas);
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
@@ -15832,6 +15856,11 @@ function adminTab(tab) {
         } catch (_) {}
     }
     if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
+    if (tab === 'contrasena') {
+        try {
+            sincronizarFormularioAdminContrasenaDesdeSesion();
+        } catch (_) {}
+    }
 }
 
 function cerrarAdminPanel() {
@@ -15951,12 +15980,20 @@ async function cargarFormEmpresa() {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const cfg = {};
         (r.rows || []).forEach(row => { cfg[row.clave] = row.valor; });
+        const cfgMultitenantNeon =
+            NEON_OK && typeof sqlSimple === 'function' ? await neonPedidosTieneColumnaTenantId() : false;
         document.getElementById('cfg-nombre').value    = cfg.nombre || '';
         document.getElementById('cfg-tipo').value      = cfg.tipo || '';
         const subIn = document.getElementById('cfg-subtitulo');
         if (subIn) subIn.value = GN_SUBTITULO_FIJO;
-        document.getElementById('cfg-email').value     = cfg.email_contacto || '';
-        document.getElementById('cfg-telefono').value  = cfg.telefono || '';
+        const mailEl = document.getElementById('cfg-email');
+        const telEl = document.getElementById('cfg-telefono');
+        if (mailEl) mailEl.value = cfgMultitenantNeon ? '' : (cfg.email_contacto || '');
+        if (telEl) telEl.value = cfgMultitenantNeon ? '' : (cfg.telefono || '');
+        if (cfgMultitenantNeon) {
+            const pe = document.getElementById('cfg-provincia-nominatim');
+            if (pe) pe.value = '';
+        }
         const fam = document.getElementById('cfg-coord-familia');
         const modo = document.getElementById('cfg-coord-modo');
         if (fam) {
@@ -19580,6 +19617,17 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
         } catch (_) {}
     } catch (_) {}
     try {
+        ['pw-actual', 'pw-nueva', 'pw-confirmar', 'pw-email-nuevo', 'pw-nombre-nuevo'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const pm = document.getElementById('pw-msg');
+        if (pm) {
+            pm.textContent = '';
+            pm.style.color = '';
+        }
+    } catch (_) {}
+    try {
         const wrapKpi = document.getElementById('kpi-snapshots-form-wrap');
         if (wrapKpi) wrapKpi.style.display = 'none';
         const sinTabla = document.getElementById('kpi-snapshots-sin-tabla');
@@ -19846,26 +19894,135 @@ async function cargarUbicacionesUsuarios() {
 }
 
 // ── Cambio de contraseña ──────────────────────────────────────
-async function cambiarContrasena() {
-    const actual    = document.getElementById('pw-actual').value;
-    const nueva     = document.getElementById('pw-nueva').value;
-    const confirmar = document.getElementById('pw-confirmar').value;
-    const msg       = document.getElementById('pw-msg');
+function sincronizarFormularioAdminContrasenaDesdeSesion() {
+    if (!app.u) return;
+    const em = document.getElementById('pw-email-nuevo');
+    const nm = document.getElementById('pw-nombre-nuevo');
+    if (em) em.value = String(app.u.email || '').trim();
+    if (nm) nm.value = String(app.u.nombre || '').trim();
+}
 
-    if (!actual || !nueva || !confirmar) { msg.textContent = 'Completá todos los campos'; return; }
-    if (nueva !== confirmar) { msg.textContent = 'Las contraseñas nuevas no coinciden'; return; }
-    if (nueva.length < 4) { msg.textContent = 'La contraseña debe tener al menos 4 caracteres'; return; }
+async function cambiarContrasena() {
+    const actual = (document.getElementById('pw-actual')?.value || '').trim();
+    const nueva = (document.getElementById('pw-nueva')?.value || '').trim();
+    const confirmar = (document.getElementById('pw-confirmar')?.value || '').trim();
+    const emailNuevo = (document.getElementById('pw-email-nuevo')?.value || '').trim().toLowerCase();
+    const nombreNuevo = (document.getElementById('pw-nombre-nuevo')?.value || '').trim();
+    const msg = document.getElementById('pw-msg');
+    if (!msg) return;
+
+    const setErr = (t) => {
+        msg.style.color = 'var(--re)';
+        msg.textContent = t;
+    };
+    const setOk = (t) => {
+        msg.style.color = '#166534';
+        msg.textContent = t;
+    };
+
+    const emailActual = String(app.u?.email || '').trim().toLowerCase();
+    const nombreActual = String(app.u?.nombre || '').trim();
+    const cambiaPw = !!(nueva || confirmar);
+    const cambiaEmail = emailNuevo !== emailActual;
+    const cambiaNombre = nombreNuevo !== nombreActual;
+
+    if (!actual) {
+        setErr('Ingresá la contraseña actual');
+        return;
+    }
+    if (cambiaPw) {
+        if (!nueva || !confirmar) {
+            setErr('Completá nueva contraseña y confirmación, o dejá ambas vacías si solo cambiás email o nombre');
+            return;
+        }
+        if (nueva !== confirmar) {
+            setErr('Las contraseñas nuevas no coinciden');
+            return;
+        }
+        if (nueva.length < 4) {
+            setErr('La contraseña debe tener al menos 4 caracteres');
+            return;
+        }
+    }
+    if (!cambiaPw && !cambiaEmail && !cambiaNombre) {
+        setErr('No hay cambios: indicá nueva contraseña o modificá email o nombre');
+        return;
+    }
+    if (cambiaEmail) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNuevo)) {
+            setErr('El email no es válido');
+            return;
+        }
+    }
+    if ((cambiaEmail || cambiaNombre) && (modoOffline || typeof getApiToken !== 'function' || !getApiToken())) {
+        setErr('Cambiar email o nombre requiere sesión con el servidor (token API). Usá «Mi cuenta» del menú o iniciá sesión de nuevo.');
+        return;
+    }
+
+    const tok = typeof getApiToken === 'function' ? getApiToken() : '';
+    if (tok && typeof apiUrl === 'function' && !modoOffline) {
+        try {
+            const body = {
+                password_actual: actual,
+                email: cambiaEmail ? emailNuevo : emailActual,
+                nombre: nombreNuevo,
+            };
+            if (cambiaPw) body.password_nueva = nueva;
+            const resp = await fetch(apiUrl('/api/auth/me'), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+                body: JSON.stringify(body),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                setErr(data.error || data.detail || 'No se pudo actualizar');
+                return;
+            }
+            if (data.user) {
+                app.u.nombre = data.user.nombre || app.u.nombre;
+                app.u.email = data.user.email || app.u.email;
+                try {
+                    localStorage.setItem('pmg', JSON.stringify(app.u));
+                } catch (_) {}
+                const un = document.getElementById('un');
+                if (un && app.u.nombre) un.textContent = app.u.nombre.split(' ')[0];
+            }
+            setOk('✓ Datos actualizados correctamente');
+            ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            sincronizarFormularioAdminContrasenaDesdeSesion();
+        } catch (e) {
+            logErrorWeb('cambiar-contrasena-api', e);
+            setErr(mensajeErrorUsuario(e));
+        }
+        return;
+    }
+
+    if (cambiaEmail || cambiaNombre) {
+        setErr('Sin token de API no se puede cambiar email o nombre desde aquí.');
+        return;
+    }
 
     try {
-        const r = await sqlSimple(`SELECT id FROM usuarios WHERE id = ${esc(app.u.id)} AND password_hash = ${esc(actual)}`);
-        if (!r.rows.length) { msg.textContent = 'La contraseña actual es incorrecta'; return; }
-        await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(nueva)} WHERE id = ${esc(app.u.id)}`);
-        msg.style.color = '#166534';
-        msg.textContent = '✓ Contraseña actualizada correctamente';
-        ['pw-actual','pw-nueva','pw-confirmar'].forEach(id => document.getElementById(id).value = '');
-    } catch(e) {
+        const wf = await sqlFiltroUsuariosPorTenant();
+        const r = await sqlSimple(
+            `SELECT id FROM usuarios WHERE id = ${esc(app.u.id)} AND password_hash = ${esc(actual)}` + wf
+        );
+        if (!r.rows.length) {
+            setErr('La contraseña actual es incorrecta');
+            return;
+        }
+        await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(nueva)} WHERE id = ${esc(app.u.id)}` + wf);
+        setOk('✓ Contraseña actualizada correctamente');
+        ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    } catch (e) {
         logErrorWeb('cambiar-contrasena', e);
-        msg.textContent = mensajeErrorUsuario(e);
+        setErr(mensajeErrorUsuario(e));
     }
 }
 
@@ -20253,6 +20410,7 @@ if (typeof generarPdfEstadisticasMultipaginaENRE !== "undefined") window.generar
 if (typeof abrirModalDashboardGerencia !== "undefined") window.abrirModalDashboardGerencia = abrirModalDashboardGerencia;
 if (typeof refrescarDashboardGerencia !== "undefined") window.refrescarDashboardGerencia = refrescarDashboardGerencia;
 if (typeof activarModoFijarUbicacionAdmin !== "undefined") window.activarModoFijarUbicacionAdmin = activarModoFijarUbicacionAdmin;
+if (typeof cancelarModoFijarUbicacionAdmin !== "undefined") window.cancelarModoFijarUbicacionAdmin = cancelarModoFijarUbicacionAdmin;
 if (typeof centrarMapaAdminUbicacionesEnMapa !== "undefined") window.centrarMapaAdminUbicacionesEnMapa = centrarMapaAdminUbicacionesEnMapa;
 if (typeof onMapaFiltroChange !== "undefined") window.onMapaFiltroChange = onMapaFiltroChange;
 if (typeof resetMapaFiltros !== "undefined") window.resetMapaFiltros = resetMapaFiltros;
