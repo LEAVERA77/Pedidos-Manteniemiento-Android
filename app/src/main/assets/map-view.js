@@ -356,6 +356,10 @@ const GN_OSM_OVERLAY_LAYERS = [
             maxZoom: 19,
             maxNativeZoom: 19,
             opacity: 0.5,
+            /** Carga más fluida: pedir tiles mientras se mueve el mapa, más colchón y fade-in en CSS (.gn-osm-tile-fluid). */
+            updateWhenIdle: false,
+            keepBuffer: 6,
+            className: 'gn-osm-tile-hot gn-osm-tile-fluid',
             attribution:
                 'Ejidos y lugares (estilo HOT): © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.hotosm.org/" rel="noopener noreferrer">HOT</a>',
         },
@@ -404,14 +408,14 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
         'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     for (const def of GN_OSM_OVERLAY_LAYERS) {
         const layer = L.tileLayer(def.url, {
-            ...def.opts,
             pane: 'gnPaneOsmOverlays',
             tileSize: 256,
             crossOrigin: true,
-            updateWhenIdle: true,
             updateWhenZooming: true,
+            updateWhenIdle: true,
             keepBuffer: 3,
             errorTileUrl: errTile,
+            ...def.opts,
         });
         out[def.id] = layer;
     }
