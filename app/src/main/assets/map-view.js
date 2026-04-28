@@ -430,10 +430,6 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
     return out;
 }
 
-/**
- * Lee preferencias `pmg_overlay_osm_<id>` y añade/quita capas (solo admin web).
- * @param {import('leaflet').Map | null | undefined} map
- */
 /** Quita del mapa las capas tile OSM de admin (p. ej. mapas secundarios que no deben heredar el panel de capas). */
 export function gnClearAdminOsmOverlaysFromMap(map) {
     if (!map) return;
@@ -449,6 +445,31 @@ export function gnClearAdminOsmOverlaysFromMap(map) {
     } catch (_) {}
 }
 
+/**
+ * Mapa base raster (CARTO o fallback Esri) según `localStorage` `pmg_base_map_visible` (default visible).
+ * @param {import('leaflet').Map | null | undefined} map
+ */
+export function gnApplyBaseMapVisibilityFromStorage(map) {
+    if (!map || !ctx) return;
+    const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
+    if (androidWv) return;
+    if (!ctx.esAdmin || typeof ctx.esAdmin !== 'function' || !ctx.esAdmin()) return;
+    let on = true;
+    try {
+        on = localStorage.getItem('pmg_base_map_visible') !== '0';
+    } catch (_) {}
+    const lyr = map._gnBaseRasterLayer;
+    if (!lyr) return;
+    try {
+        if (on && !map.hasLayer(lyr)) lyr.addTo(map);
+        if (!on && map.hasLayer(lyr)) map.removeLayer(lyr);
+    } catch (_) {}
+}
+
+/**
+ * Lee preferencias `pmg_overlay_osm_<id>` y añade/quita capas (solo admin web).
+ * @param {import('leaflet').Map | null | undefined} map
+ */
 export function gnApplyAdminOsmOverlaysFromStorage(map) {
     if (!map || !ctx) return;
     const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
@@ -513,6 +534,9 @@ export function gnAttachBaseMapLayers(mapa, opts) {
         updateWhenZooming: zoomWhile,
         keepBuffer: keepBuf
     });
+    mapa._gnCapaCartoBase = capaCarto;
+    mapa._gnCapaEsriBase = capaEsri;
+    mapa._gnBaseRasterLayer = capaCarto;
     let nErr = 0;
     capaCarto.on('tileerror', () => {
         nErr++;
@@ -521,13 +545,21 @@ export function gnAttachBaseMapLayers(mapa, opts) {
             try {
                 mapa.removeLayer(capaCarto);
             } catch (_) {}
-            capaEsri.addTo(mapa);
+            try {
+                capaEsri.addTo(mapa);
+                mapa._gnBaseRasterLayer = capaEsri;
+                if (applyOsm) gnApplyBaseMapVisibilityFromStorage(mapa);
+            } catch (_) {}
             ctx.toast('Mapa: capa CARTO inestable — usando mapa base alternativo', 'info');
         }
     });
     capaCarto.addTo(mapa);
-    if (applyOsm) gnApplyAdminOsmOverlaysFromStorage(mapa);
-    else gnClearAdminOsmOverlaysFromMap(mapa);
+    if (applyOsm) {
+        gnApplyAdminOsmOverlaysFromStorage(mapa);
+        gnApplyBaseMapVisibilityFromStorage(mapa);
+    } else {
+        gnClearAdminOsmOverlaysFromMap(mapa);
+    }
 }
 
 /**
@@ -568,6 +600,7 @@ export async function runInitMap() {
         ctx.renderMk();
         try {
             gnApplyAdminOsmOverlaysFromStorage(ctx.app.map);
+            gnApplyBaseMapVisibilityFromStorage(ctx.app.map);
         } catch (_) {}
         return;
     }

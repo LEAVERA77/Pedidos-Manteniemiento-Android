@@ -5770,6 +5770,14 @@ function bindMouiCardHeaderToggles() {
 function syncMapaCapasOsmCheckboxesFromStorage() {
     const card = document.getElementById('mapa-card-capas-osm');
     if (!card || card.style.display === 'none') return;
+    const baseCb = document.getElementById('mapa-base-carto-visible');
+    if (baseCb) {
+        let baseOn = true;
+        try {
+            baseOn = localStorage.getItem('pmg_base_map_visible') !== '0';
+        } catch (_) {}
+        baseCb.checked = baseOn;
+    }
     card.querySelectorAll('input[type="checkbox"][data-osm-layer]').forEach((inp) => {
         const id = inp.getAttribute('data-osm-layer');
         if (!id) return;
@@ -5795,6 +5803,21 @@ async function onMapaAdminOsmCapaCheckboxChange(inp) {
     } catch (_) {}
 }
 
+async function onMapaBaseCartoVisibleChange(inp) {
+    if (!inp) return;
+    try {
+        localStorage.setItem('pmg_base_map_visible', inp.checked ? '1' : '0');
+    } catch (_) {}
+    await ensureMapReady();
+    if (!app.map) return;
+    try {
+        const mod = await loadMapViewModule();
+        if (typeof mod.gnApplyBaseMapVisibilityFromStorage === 'function') {
+            mod.gnApplyBaseMapVisibilityFromStorage(app.map);
+        }
+    } catch (_) {}
+}
+
 function initAdminOsmCapasPanelBindings() {
     const card = document.getElementById('mapa-card-capas-osm');
     if (!card || card.dataset.osmCapasBound === '1') return;
@@ -5804,6 +5827,10 @@ function initAdminOsmCapasPanelBindings() {
     card.addEventListener('change', (ev) => {
         const t = ev.target;
         if (!t || t.type !== 'checkbox') return;
+        if (t.id === 'mapa-base-carto-visible') {
+            void onMapaBaseCartoVisibleChange(t);
+            return;
+        }
         if (!t.getAttribute('data-osm-layer')) return;
         void onMapaAdminOsmCapaCheckboxChange(t);
     });
@@ -5910,6 +5937,9 @@ function aplicarUIMapaPlataforma() {
         try {
             const mod = await loadMapViewModule();
             if (typeof mod.gnApplyAdminOsmOverlaysFromStorage === 'function') mod.gnApplyAdminOsmOverlaysFromStorage(app.map);
+            if (typeof mod.gnApplyBaseMapVisibilityFromStorage === 'function') {
+                mod.gnApplyBaseMapVisibilityFromStorage(app.map);
+            }
         } catch (_) {}
     })();
 }
