@@ -251,10 +251,17 @@ public class MainActivity extends AppCompatActivity {
         });
 
         webView.setWebViewClient(new WebViewClient() {
+            /**
+             * Deprecado: en algunos WebView de dispositivos físicos (p. ej. Samsung) este callback se dispara
+             * también para teselas del mapa, scripts CDN, etc. Si llamamos a {@link #handleWebViewUrl} aquí,
+             * esos hosts no coinciden con GitHub Pages y se abre el navegador externo → mapa gris y sin API.
+             * minSdk es 24: siempre existe {@link #shouldOverrideUrlLoading(WebView, WebResourceRequest)} con
+             * {@code isForMainFrame} para distinguir documento principal vs subrecursos.
+             */
             @Override
             @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return handleWebViewUrl(Uri.parse(url));
+                return false;
             }
 
             @Override
