@@ -16,7 +16,7 @@ vi.mock("../db/neon.js", () => {
   };
 });
 
-const TEST_USER_TENANT = { 1: 1, 2: 2 };
+const TEST_USER_TENANT = { 1: 1, 2: 2, 3: 3 };
 vi.mock("../utils/tenantUser.js", () => ({
   getUserTenantId: vi.fn(async (userId) => TEST_USER_TENANT[Number(userId)] ?? 1),
 }));
@@ -32,10 +32,12 @@ describe("Integración — aislamiento tenant/business", () => {
   beforeEach(() => {
     TEST_USER_TENANT[1] = 1;
     TEST_USER_TENANT[2] = 2;
+    TEST_USER_TENANT[3] = 3;
     const st = {
       users: {
         1: { id: 1, email: "a1@test.com", nombre: "A1", rol: "admin", activo: true, tenant_id: 1 },
         2: { id: 2, email: "a2@test.com", nombre: "A2", rol: "admin", activo: true, tenant_id: 2 },
+        3: { id: 3, email: "a3@test.com", nombre: "A3", rol: "admin", activo: true, tenant_id: 3 },
       },
       clients: {
         1: {
@@ -54,15 +56,25 @@ describe("Integración — aislamiento tenant/business", () => {
           activo: true,
           configuracion: {},
         },
+        3: {
+          id: 3,
+          nombre: "Tenant 3",
+          tipo: "cooperativa_electrica",
+          active_business_type: "electricidad",
+          activo: true,
+          configuracion: { setup_wizard_completado: true },
+        },
       },
       tenantBusinesses: [
         { tenant_id: 1, business_type: "electricidad", active: true },
         { tenant_id: 1, business_type: "agua", active: true },
         { tenant_id: 2, business_type: "electricidad", active: true },
+        { tenant_id: 3, business_type: "electricidad", active: true },
       ],
       tenantActive: {
         1: "electricidad",
         2: "electricidad",
+        3: "electricidad",
       },
       pedidos: [
         { id: 11, tenant_id: 1, business_type: "electricidad" },
@@ -120,6 +132,19 @@ describe("Integración — aislamiento tenant/business", () => {
       if (q.includes("SELECT nombre, configuracion FROM clientes WHERE id = $1 LIMIT 1")) {
         const c = st.clients[Number(params[0])];
         return { rows: c ? [{ nombre: c.nombre, configuracion: c.configuracion }] : [] };
+      }
+      if (q.includes("SELECT id FROM clientes") && q.includes("ORDER BY id ASC")) {
+        return {
+          rows: Object.keys(st.clients)
+            .map((k) => ({ id: Number(k) }))
+            .sort((a, b) => a.id - b.id),
+        };
+      }
+      if (q.includes("UPDATE clientes SET configuracion = $2::jsonb WHERE id = $1")) {
+        return { rows: [] };
+      }
+      if (q.includes("UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb)")) {
+        return { rows: [] };
       }
       if (q.includes("SELECT active_business_type FROM tenant_active_business WHERE tenant_id = $1 LIMIT 1")) {
         const bt = st.tenantActive[Number(params[0])];
@@ -254,5 +279,21 @@ describe("Integración — aislamiento tenant/business", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.business_type).toBe("agua");
     expect(res.body.nueva_instancia).toBe(false);
+  });
+
+  it("wizard reutiliza tenant existente si nombre + business_type coinciden (no inserta cliente)", async () => {
+    const app = createHttpApp();
+    const res = await request(app)
+      .post("/api/setup/wizard")
+      .set("Authorization", `Bearer ${tokenForUser(3, 3)}`)
+      .send({ business_type: "electricidad", tenant_nombre: "Tenant 1" })
+      .expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.tenant_id).toBe(1);
+    expect(res.body.tenant_recuperado).toBe(true);
+    expect(res.body.nueva_instancia).toBe(false);
+    expect(res.body.token).toBeTruthy();
+    const decoded = jwt.verify(res.body.token, process.env.JWT_SECRET || "dev_secret");
+    expect(Number(decoded.tenant_id)).toBe(1);
   });
 });

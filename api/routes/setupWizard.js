@@ -95,6 +95,32 @@ async function pairKeyForTenant(tenantId) {
   return { pairKey: tenantIdentityPairKey(nombre, bt), setupDone: !!cfg.setup_wizard_completado, nombre, businessType: bt };
 }
 
+/**
+ * Si ya existe otro `clientes` con el mismo par (nombre normalizado + negocio activo), devuelve su id
+ * (el menor id que coincida) para no crear un duplicado al rehacer el wizard.
+ */
+async function findExistingTenantIdForIdentityPair(pairTarget, excludeTenantId) {
+  const ex = Number(excludeTenantId);
+  let r;
+  try {
+    r = await query(`SELECT id FROM clientes WHERE COALESCE(activo, TRUE) ORDER BY id ASC`);
+  } catch {
+    r = await query(`SELECT id FROM clientes ORDER BY id ASC`);
+  }
+  for (const row of r.rows || []) {
+    const tid = Number(row.id);
+    if (!Number.isFinite(tid) || tid === ex) continue;
+    let st;
+    try {
+      st = await pairKeyForTenant(tid);
+    } catch {
+      continue;
+    }
+    if (st && st.pairKey === pairTarget) return tid;
+  }
+  return null;
+}
+
 async function upsertTenantBusiness(client, tenantId, businessType, hasTable) {
   if (!hasTable) {
     console.warn("[setup/wizard] tenant_businesses: tabla ausente, se omite INSERT");
@@ -256,6 +282,71 @@ router.post("/wizard", async (req, res) => {
 
     const rOldCfg = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantIdOld]);
     const metaWaPatch = extractMetaWhatsappConfigPatch(rOldCfg.rows?.[0]?.configuracion);
+
+    const existingTargetId = await findExistingTenantIdForIdentityPair(pairNew, tenantIdOld);
+    if (existingTargetId != null && existingTargetId !== tenantIdOld) {
+      await withTransaction(async (client) => {
+        if (Object.keys(metaWaPatch).length) {
+          await client.query(`UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || $2::jsonb WHERE id = $1`, [
+            existingTargetId,
+            JSON.stringify(metaWaPatch),
+          ]);
+          const oldCfgAfter = { ...parseConfiguracionDb(rOldCfg.rows?.[0]?.configuracion) };
+          for (const k of Object.keys(metaWaPatch)) delete oldCfgAfter[k];
+          await client.query(`UPDATE clientes SET configuracion = $2::jsonb WHERE id = $1`, [tenantIdOld, JSON.stringify(oldCfgAfter)]);
+        }
+
+        await upsertTenantBusiness(client, existingTargetId, businessType, hasTenantBusinessesTbl);
+        await upsertActiveBusiness(
+          client,
+          existingTargetId,
+          businessType,
+          hasClientesAbt,
+          hasTenantActiveTbl,
+          hasTenantAuditTbl
+        );
+
+        const uid = Number(req.user.id);
+        const rUp = await client.query(
+          `UPDATE usuarios SET tenant_id = $1
+           WHERE id = $2 AND tenant_id = $3
+             AND (lower(rol) = 'admin' OR lower(rol) = 'administrador')
+           RETURNING id`,
+          [existingTargetId, uid, tenantIdOld]
+        );
+        if (!rUp.rows.length) {
+          throw new Error("solo_admin_puede_crear_instancia");
+        }
+      });
+
+      await ensureGlobalAdminForTenant({
+        tenantId: existingTargetId,
+        adminEmail: String(req.body?.admin_email || "").trim() || null,
+        adminPassword: String(req.body?.admin_password || "").trim() || null,
+        fallbackUserId: req.user?.id ?? null,
+      });
+
+      const token = signToken({
+        userId: req.user.id,
+        rol: req.user.rol,
+        tenant_id: existingTargetId,
+      });
+
+      const total = await contarDatos(existingTargetId, businessType);
+      return res.json({
+        ok: true,
+        tenant_id: existingTargetId,
+        tenant_id_anterior: tenantIdOld,
+        tenant_recuperado: true,
+        business_type: businessType,
+        datos_existentes: total > 0,
+        total_registros: total,
+        nueva_instancia: false,
+        require_logout_reload: true,
+        token,
+        message: `Ya existía un tenant con el mismo nombre y tipo de negocio (id ${existingTargetId}). Se reutilizó ese registro en lugar de crear uno nuevo. El cliente id ${tenantIdOld} puede quedar huérfano: revisá usuarios y borrálo en Neon si no lo necesitás.`,
+      });
+    }
 
     const result = await withTransaction(async (client) => {
       const rIns = hasClientesAbt

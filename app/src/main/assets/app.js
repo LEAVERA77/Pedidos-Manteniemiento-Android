@@ -14373,7 +14373,7 @@ async function guardarConfiguracionInicialObligatoria() {
             throw new Error(det || `wizard HTTP ${wizResp.status}`);
         }
         const wiz = await wizResp.json();
-        if (wiz.nueva_instancia && wiz.token) {
+        if (wiz.token && (wiz.nueva_instancia || wiz.tenant_recuperado)) {
             authToken = String(wiz.token);
             app.apiToken = authToken;
             try {
@@ -14392,7 +14392,15 @@ async function guardarConfiguracionInicialObligatoria() {
             try {
                 invalidarCachesMultitenantSesionYOAdminUI();
             } catch (_) {}
-            toast('Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.', 'info');
+            if (wiz.tenant_recuperado) {
+                toast(
+                    wiz.message ||
+                        'Ya existía un tenant con el mismo nombre y tipo de negocio: se recuperó ese registro y tu sesión pasó a ese id.',
+                    'success'
+                );
+            } else {
+                toast('Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.', 'info');
+            }
         }
         const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
             method: 'PUT',
