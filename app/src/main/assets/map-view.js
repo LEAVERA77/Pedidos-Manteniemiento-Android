@@ -357,9 +357,9 @@ const GN_OSM_OVERLAY_LAYERS = [
             /** z19 nativo suele devolver 404 en bordes o zonas poco mapeadas; z18 escalado evita “huecos”. */
             maxNativeZoom: 18,
             opacity: 0.5,
-            /** Colchón + fade CSS; sin updateWhenIdle false (menos 429 por ráfagas). */
             keepBuffer: 6,
-            className: 'gn-osm-tile-hot gn-osm-tile-fluid',
+            /** Sin crossOrigin: algunos CDNs OSM fallan o tardan con `crossOrigin=anonymous` en `<img>`. */
+            crossOrigin: false,
             attribution:
                 'Ejidos y lugares (estilo HOT): © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.hotosm.org/" rel="noopener noreferrer">HOT</a>',
         },
@@ -379,7 +379,7 @@ const GN_OSM_OVERLAY_LAYERS = [
 ];
 
 /** Subir si cambian URLs/opciones de overlays: fuerza nuevas instancias Leaflet en mapas ya abiertos. */
-const GN_OSM_OVERLAY_INSTANCES_REV = 3;
+const GN_OSM_OVERLAY_INSTANCES_REV = 5;
 
 /**
  * Reintentos ante fallos de red o 429 del tile CDN (HOT); sin esto Leaflet deja el tile en errorTileUrl o vacío.
@@ -451,9 +451,7 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
             keepBuffer: 3,
             ...def.opts,
         };
-        if (def.id !== 'hot') {
-            tileOpts.errorTileUrl = errTile;
-        }
+        tileOpts.errorTileUrl = errTile;
         const layer = L.tileLayer(def.url, tileOpts);
         if (def.id === 'hot') {
             gnAttachHotOsmTileRetry(layer, map);
