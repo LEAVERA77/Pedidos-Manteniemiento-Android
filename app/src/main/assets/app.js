@@ -5351,6 +5351,7 @@ function mapTabIdForCard(cardId) {
     if (cardId === 'mapa-card-filtros') return 'map-tab-filtros';
     if (cardId === 'mapa-card-filtro-tipo') return 'map-tab-filtro-tipo';
     if (cardId === 'mapa-card-colores') return 'map-tab-colores';
+    if (cardId === 'mapa-card-capas-osm') return 'map-tab-capas-osm';
     return 'map-tab-dash';
 }
 
@@ -5366,6 +5367,7 @@ function toggleMapaCardSlideoff(cardId, hide) {
         if (cardId === 'mapa-card-filtro-tipo') localStorage.setItem('pmg_slideoff_filtro_tipo', hide ? '1' : '0');
         if (cardId === 'mapa-card-colores') localStorage.setItem('pmg_slideoff_colores', hide ? '1' : '0');
         if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
+        if (cardId === 'mapa-card-capas-osm') localStorage.setItem('pmg_slideoff_capas_osm', hide ? '1' : '0');
     } catch (_) {}
 }
 
@@ -5378,6 +5380,8 @@ function syncMapSlideTabsFromStorage() {
     if (cc && cc.style.display !== 'none' && localStorage.getItem('pmg_slideoff_colores') === '1') toggleMapaCardSlideoff('mapa-card-colores', true);
     const cd = document.getElementById('mapa-card-dashboard');
     if (cd && cd.style.display !== 'none' && localStorage.getItem('pmg_slideoff_dash') === '1') toggleMapaCardSlideoff('mapa-card-dashboard', true);
+    const cOsm = document.getElementById('mapa-card-capas-osm');
+    if (cOsm && cOsm.style.display !== 'none' && localStorage.getItem('pmg_slideoff_capas_osm') === '1') toggleMapaCardSlideoff('mapa-card-capas-osm', true);
 }
 
 let _bp2DragState = null;
@@ -5641,6 +5645,7 @@ function bindMouiCardHeaderToggles() {
         ['mapa-card-filtros', toggleMapaFiltrosBody],
         ['mapa-card-filtro-tipo', toggleMapaFiltroTipoBody],
         ['mapa-card-colores', toggleMapaColoresBody],
+        ['mapa-card-capas-osm', toggleMapaCapasOsmBody],
         ['mapa-card-dashboard', toggleMapaDashBody]
     ];
     for (const [id, fn] of pairs) {
@@ -5657,12 +5662,56 @@ function bindMouiCardHeaderToggles() {
     }
 }
 
+function syncMapaCapasOsmCheckboxesFromStorage() {
+    const card = document.getElementById('mapa-card-capas-osm');
+    if (!card || card.style.display === 'none') return;
+    card.querySelectorAll('input[type="checkbox"][data-osm-layer]').forEach((inp) => {
+        const id = inp.getAttribute('data-osm-layer');
+        if (!id) return;
+        let on = false;
+        try {
+            on = localStorage.getItem(`pmg_overlay_osm_${id}`) === '1';
+        } catch (_) {}
+        inp.checked = on;
+    });
+}
+
+async function onMapaAdminOsmCapaCheckboxChange(inp) {
+    const id = inp?.getAttribute('data-osm-layer');
+    if (!id) return;
+    try {
+        localStorage.setItem(`pmg_overlay_osm_${id}`, inp.checked ? '1' : '0');
+    } catch (_) {}
+    await ensureMapReady();
+    if (!app.map) return;
+    try {
+        const mod = await loadMapViewModule();
+        if (typeof mod.gnApplyAdminOsmOverlaysFromStorage === 'function') mod.gnApplyAdminOsmOverlaysFromStorage(app.map);
+    } catch (_) {}
+}
+
+function initAdminOsmCapasPanelBindings() {
+    const card = document.getElementById('mapa-card-capas-osm');
+    if (!card || card.dataset.osmCapasBound === '1') return;
+    if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) return;
+    if (!esAdmin()) return;
+    card.dataset.osmCapasBound = '1';
+    card.addEventListener('change', (ev) => {
+        const t = ev.target;
+        if (!t || t.type !== 'checkbox') return;
+        if (!t.getAttribute('data-osm-layer')) return;
+        void onMapaAdminOsmCapaCheckboxChange(t);
+    });
+}
+
 function aplicarUIMapaPlataforma() {
     syncMapaLabelsNpCheckbox();
     syncMapaPrioFiltrosFromStorage();
     const card = document.getElementById('mapa-card-filtros');
     const cardTipo = document.getElementById('mapa-card-filtro-tipo');
     const cardCol = document.getElementById('mapa-card-colores');
+    const cardCapasOsm = document.getElementById('mapa-card-capas-osm');
+    const tabCapasOsm = document.getElementById('map-tab-capas-osm');
     if (!card) return;
     if (esAndroidWebViewMapa()) {
         try {
@@ -5672,6 +5721,14 @@ function aplicarUIMapaPlataforma() {
         card.style.display = 'block';
         if (cardTipo) cardTipo.style.display = 'block';
         if (cardCol) cardCol.style.display = 'block';
+        if (cardCapasOsm) {
+            cardCapasOsm.style.display = 'none';
+            cardCapasOsm.classList.remove('moui-card-slideoff');
+        }
+        if (tabCapasOsm) {
+            tabCapasOsm.classList.remove('visible');
+            tabCapasOsm.style.setProperty('display', 'none', 'important');
+        }
         const mapDash = document.getElementById('mapa-card-dashboard');
         if (mapDash) mapDash.style.display = esAdmin() ? 'block' : 'none';
         const tabDash = document.getElementById('map-tab-dash');
@@ -5708,6 +5765,19 @@ function aplicarUIMapaPlataforma() {
         card.style.display = 'block';
         if (cardTipo) cardTipo.style.display = 'block';
         if (cardCol) cardCol.style.display = 'block';
+        const mostrarCapasOsm = esAdmin();
+        if (cardCapasOsm) {
+            cardCapasOsm.style.display = mostrarCapasOsm ? 'block' : 'none';
+            if (!mostrarCapasOsm) cardCapasOsm.classList.remove('moui-card-slideoff');
+        }
+        if (tabCapasOsm) {
+            if (!mostrarCapasOsm) {
+                tabCapasOsm.classList.remove('visible');
+                tabCapasOsm.style.setProperty('display', 'none', 'important');
+            } else {
+                tabCapasOsm.style.removeProperty('display');
+            }
+        }
         const cc = document.getElementById('gn-cursor-coords');
         if (cc) cc.style.display = '';
     }
@@ -5723,10 +5793,20 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-filtros'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-filtro-tipo'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-colores'); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-capas-osm'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
     try { bindMouiCardHeaderToggles(); } catch (_) {}
+    try { syncMapaCapasOsmCheckboxesFromStorage(); } catch (_) {}
+    try { initAdminOsmCapasPanelBindings(); } catch (_) {}
     try { syncMapaFiltroTiposRebuild(); } catch (_) {}
     try { initWebCoordsConverterBar(); } catch (_) {}
+    void (async () => {
+        if (!esAdmin() || (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) || !app.map) return;
+        try {
+            const mod = await loadMapViewModule();
+            if (typeof mod.gnApplyAdminOsmOverlaysFromStorage === 'function') mod.gnApplyAdminOsmOverlaysFromStorage(app.map);
+        } catch (_) {}
+    })();
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
@@ -5764,6 +5844,15 @@ function toggleMapaColoresBody() {
     if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
 }
 window.toggleMapaColoresBody = toggleMapaColoresBody;
+
+function toggleMapaCapasOsmBody() {
+    const b = document.getElementById('mapa-capas-osm-body');
+    const ch = document.getElementById('mapa-capas-osm-chevron');
+    if (!b) return;
+    b.classList.toggle('collapsed');
+    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
+}
+window.toggleMapaCapasOsmBody = toggleMapaCapasOsmBody;
 
 function iniciarTecnicosMapaPrincipalPoll() {
     detenerTecnicosMapaPrincipalPoll();
@@ -7473,6 +7562,7 @@ function buildMapViewCtx() {
         syncNisClienteReclamoConexionUI,
         limpiarFotosYPreviewNuevoPedido,
         esAndroidWebViewMapa,
+        esAdmin,
         mapTapUbicacionInicialHechaSesion,
         get _gpsRecibidoEstaSesion() { return _gpsRecibidoEstaSesion; },
         marcarMapTapUbicacionInicialHecha,

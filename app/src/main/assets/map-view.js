@@ -334,6 +334,122 @@ export async function gnRefreshMarcadorUbicacionBaseAdmin() {
     }
 }
 
+/** Capas raster de terceros (OSM / derivados) solo para admin en navegador web — superpuestas sobre la base. */
+const GN_OSM_OVERLAY_LAYERS = [
+    {
+        id: 'power',
+        url: 'https://tiles-{s}.openinframap.org/power/{z}/{x}/{y}.png',
+        opts: {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            maxNativeZoom: 18,
+            opacity: 0.88,
+            attribution:
+                'Infraestructura eléctrica: <a href="https://openinframap.org" rel="noopener noreferrer">OpenInfraMap</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        },
+    },
+    {
+        id: 'topo',
+        url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        opts: {
+            subdomains: 'abc',
+            maxZoom: 19,
+            maxNativeZoom: 17,
+            opacity: 0.55,
+            attribution:
+                'Relieve: <a href="https://opentopomap.org" rel="noopener noreferrer">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>) · © OpenStreetMap',
+        },
+    },
+    {
+        id: 'hot',
+        url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+        opts: {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            maxNativeZoom: 19,
+            opacity: 0.5,
+            attribution: 'Estilo humanitario: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · HOT',
+        },
+    },
+    {
+        id: 'rail',
+        url: 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+        opts: {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            maxNativeZoom: 18,
+            opacity: 0.75,
+            attribution:
+                'Vías férreas: <a href="https://www.openrailwaymap.org" rel="noopener noreferrer">OpenRailwayMap</a> · © OpenStreetMap',
+        },
+    },
+    {
+        id: 'hillshade',
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+        opts: {
+            maxZoom: 19,
+            maxNativeZoom: 15,
+            opacity: 0.42,
+            attribution: 'Sombreado: Esri, USGS, NOAA',
+        },
+    },
+];
+
+function gnEnsureOsmOverlayPane(map) {
+    if (!map || !map.createPane) return;
+    if (!map.getPane('gnPaneOsmOverlays')) {
+        map.createPane('gnPaneOsmOverlays');
+        const p = map.getPane('gnPaneOsmOverlays');
+        p.style.zIndex = '240';
+    }
+}
+
+function gnEnsureAdminOsmOverlayLayerInstances(map) {
+    if (!map || !ctx || !ctx.L) return null;
+    if (map._gnOsmOverlayInstances) return map._gnOsmOverlayInstances;
+    gnEnsureOsmOverlayPane(map);
+    const L = ctx.L;
+    const out = {};
+    for (const def of GN_OSM_OVERLAY_LAYERS) {
+        const layer = L.tileLayer(def.url, {
+            ...def.opts,
+            pane: 'gnPaneOsmOverlays',
+            tileSize: 256,
+            crossOrigin: true,
+            updateWhenIdle: true,
+        });
+        out[def.id] = layer;
+    }
+    map._gnOsmOverlayInstances = out;
+    return out;
+}
+
+/**
+ * Lee preferencias `pmg_overlay_osm_<id>` y añade/quita capas (solo admin web).
+ * @param {import('leaflet').Map | null | undefined} map
+ */
+export function gnApplyAdminOsmOverlaysFromStorage(map) {
+    if (!map || !ctx) return;
+    const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
+    if (androidWv) return;
+    if (!ctx.esAdmin || typeof ctx.esAdmin !== 'function' || !ctx.esAdmin()) return;
+    const layers = gnEnsureAdminOsmOverlayLayerInstances(map);
+    if (!layers) return;
+    for (const def of GN_OSM_OVERLAY_LAYERS) {
+        const id = def.id;
+        let on = false;
+        try {
+            on = localStorage.getItem(`pmg_overlay_osm_${id}`) === '1';
+        } catch (_) {}
+        const layer = layers[id];
+        if (!layer) continue;
+        try {
+            if (on && !map.hasLayer(layer)) layer.addTo(map);
+            if (!on && map.hasLayer(layer)) map.removeLayer(layer);
+        } catch (_) {}
+    }
+}
+
 export function gnAttachBaseMapLayers(mapa) {
     if (!mapa || !ctx) return;
     const ligero = ctx.gnMapaLigero();
@@ -381,6 +497,7 @@ export function gnAttachBaseMapLayers(mapa) {
         }
     });
     capaCarto.addTo(mapa);
+    gnApplyAdminOsmOverlaysFromStorage(mapa);
 }
 
 export async function runInitMap() {
@@ -402,6 +519,9 @@ export async function runInitMap() {
         }, 200);
         ctx.aplicarUIMapaPlataforma();
         ctx.renderMk();
+        try {
+            gnApplyAdminOsmOverlaysFromStorage(ctx.app.map);
+        } catch (_) {}
         return;
     }
 

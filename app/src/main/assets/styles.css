@@ -42,6 +42,7 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .moui-drag-handle:active{cursor:grabbing;opacity:.85}
 #mapa-card-filtro-tipo{top:6.75rem;left:.45rem;z-index:851}
 #mapa-card-filtros{top:.45rem;left:.45rem;z-index:852}
+#mapa-card-capas-osm{top:12.25rem;left:.45rem;z-index:851;max-width:min(320px,calc(100vw - 1rem))}
 #mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw);z-index:853}
 @media (max-width:700px){#mapa-card-dashboard{right:.45rem;left:.45rem;max-width:none;top:auto;bottom:5.5rem;max-height:38vh}}
 .moui-hd{font-weight:700;color:var(--bd);padding:.45rem .6rem;border-bottom:1px solid var(--bo);display:flex;align-items:center;gap:.35rem;cursor:pointer;user-select:none;font-size:.8rem}
@@ -66,11 +67,13 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 #mapa-filtros-body.collapsed{display:none}
 #mapa-filtro-tipo-body.collapsed{display:none}
 #mapa-colores-body.collapsed{display:none}
+#mapa-capas-osm-body.collapsed{display:none}
 /* Paneles del mapa: ocultar deslizando hacia la derecha (fuera de pantalla) */
 #mapa-card-filtros.moui-card-slideoff,
 #mapa-card-filtro-tipo.moui-card-slideoff,
 #mapa-card-colores.moui-card-slideoff,
-#mapa-card-dashboard.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
+#mapa-card-dashboard.moui-card-slideoff,
+#mapa-card-capas-osm.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
 .map-slide-tab{position:fixed;top:120px;left:0;z-index:9600;display:none;padding:.28rem .45rem;background:var(--bd);color:#fff;font-size:.65rem;font-weight:700;border-radius:0 .4rem .4rem 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);pointer-events:auto}
 .map-slide-tab.visible{display:block!important}
 /* Pestañas Filtros / Tipo / Colores / Dash: columna fija con separación uniforme */
@@ -130,6 +133,11 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 #mapa-card-colores .ll-txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #mapa-card-colores .ll-span2{grid-column:1/-1}
 #mapa-card-colores .ll-foot{margin-top:.2rem;font-size:.52rem;opacity:.88;line-height:1.25}
+.gn-capas-osm-hint{font-size:.65rem;color:var(--tm);line-height:1.35;margin:0 0 .4rem}
+.gn-capas-osm-foot{font-size:.58rem;color:var(--tl);line-height:1.35;margin:.45rem 0 0;opacity:.92}
+#mapa-card-capas-osm .gn-capas-osm-row{display:flex;align-items:flex-start;gap:.35rem;margin:.2rem 0;width:100%;cursor:pointer;line-height:1.3}
+#mapa-card-capas-osm .gn-capas-osm-row input{flex-shrink:0;margin-top:.12rem;width:14px;height:14px}
+#mapa-card-capas-osm #mapa-capas-osm-body{max-height:min(48vh,320px)}
 .chart-legend-caption{margin-top:.4rem;padding:.5rem .65rem;background:var(--bg);border-radius:.45rem;font-size:.78rem;line-height:1.42;color:var(--tm);border:1px solid var(--bo);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;overflow:visible;word-break:break-word}
 .chart-legend-caption strong{color:var(--bd);font-size:.8rem;font-weight:700}
 .lc{background:white;padding:2rem 2rem 1.5rem;border-radius:1.25rem;width:92%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.4);max-height:95vh;overflow-y:auto}
@@ -619,6 +627,10 @@ textarea{resize:vertical;min-height:80px}
   }
   #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-card-slideoff){
     top:max(6.75rem, calc(var(--app-header-h, 58px) + 0.45rem));
+    left:0.45rem;
+  }
+  #ms #mapa-overlay-ui #mapa-card-capas-osm:not(.moui-card-slideoff){
+    top:max(12.25rem, calc(var(--app-header-h, 58px) + 6.5rem));
     left:0.45rem;
   }
   /* left/top/right/bottom sin !important: el arrastre usa estilos inline */
