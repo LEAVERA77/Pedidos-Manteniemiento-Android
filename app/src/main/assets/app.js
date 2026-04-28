@@ -1133,11 +1133,15 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
 }
 
 /**
- * Admin: clic en mapa con reverse Nominatim (no shift). Acepta lat/lng numéricos o string (WebView/Leaflet).
+ * Clic en mapa → reverse Nominatim al formulario nuevo pedido (no shift).
+ * Cualquier usuario con sesión + API base (JWT en el fetch); no solo admin — la ruta `/api/geocode` ya exige auth.
+ * Acepta lat/lng numéricos o string (WebView/Leaflet).
  */
 function debeReverseNominatimAdminMapTap(e) {
     try {
-        if (!esAdmin() || modoOffline || typeof fetch !== 'function') return false;
+        if (modoOffline || typeof fetch !== 'function') return false;
+        if (!getApiBaseUrl()) return false;
+        if (!app?.u?.id) return false;
         if (e?.originalEvent?.shiftKey) return false;
         const ll = e?.latlng;
         if (!ll) return false;
@@ -1213,21 +1217,22 @@ async function reverseNominatimNuevoPedidoCore(lat, lng) {
 }
 
 /**
- * Diferir reverse hasta después del handler del mapa (modal #pm ya abierto); evita carreras en WebView Android.
+ * Diferir reverse hasta después del handler del mapa (modal #pm ya abierto).
+ * `setTimeout(0)` es más fiable que `queueMicrotask` en algunos WebView Android tras eventos táctiles.
  */
 function programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng) {
     const la = Number(lat);
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
-    queueMicrotask(() => {
+    setTimeout(() => {
         void reverseNominatimNuevoPedidoCore(la, lo);
-    });
+    }, 0);
 }
 
 /**
- * Admin: clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
+ * Clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
  * Shift+clic mantiene el comportamiento anterior (abrir ubicación para nuevo pedido).
- * Siempre devuelve false (no corta el flujo del mapa); el reverse se programa en microtarea.
+ * Siempre devuelve false (no corta el flujo del mapa); el reverse se programa en el siguiente tick.
  */
 function aplicarReverseMapaAdminDesdeClicInicio(e) {
     try {
