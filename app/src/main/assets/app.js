@@ -19746,6 +19746,16 @@ async function cambiarContrasena() {
 let _resetPaso = 1;
 let _resetTokenActual = null;
 let _resetUsuarioAdmin = false;
+/** Usuario que recibió `reset_token` en el paso 1 (evita fallar el paso 2 si el email del formulario es el de empresa y no coincide con `usuarios.email`). */
+let _resetTargetUserId = null;
+
+/** Quita espacios y, si hay exactamente 6 dígitos, usa solo esos (p. ej. mail con «Código: 123 456»). */
+function _normalizarCodigoResetPw(raw) {
+    const t = String(raw || '').trim();
+    const digits = t.replace(/\D/g, '');
+    if (digits.length === 6) return digits;
+    return t.replace(/\s+/g, '');
+}
 
 function _errMsg(e) {
     if (!e) return 'Error desconocido';
@@ -19760,6 +19770,7 @@ function reiniciarModalResetPwUi() {
     _resetPaso = 1;
     _resetTokenActual = null;
     _resetUsuarioAdmin = false;
+    _resetTargetUserId = null;
     try {
         const m = document.getElementById('reset-msg');
         if (m) {
@@ -19824,6 +19835,8 @@ async function pasoResetPw() {
             }
             if (!r.rows[0]) { msg.textContent = 'Cuenta no encontrada o inactiva'; return; }
             const usuario = r.rows[0];
+            _resetTargetUserId = Number(usuario.id);
+            if (!Number.isFinite(_resetTargetUserId) || _resetTargetUserId <= 0) _resetTargetUserId = null;
             const rolRaw = String(usuario.rol || '').toLowerCase();
             if (rolRaw !== 'admin' && rolRaw !== 'administrador') {
                 msg.textContent =
@@ -19908,25 +19921,40 @@ async function pasoResetPw() {
         }
     } else {
         const email  = document.getElementById('reset-email').value.trim();
-        const codigo = document.getElementById('reset-codigo').value.trim();
+        const codigo = _normalizarCodigoResetPw(document.getElementById('reset-codigo').value);
         const nuevaPw = document.getElementById('reset-nueva-pw').value;
         if (!codigo || !nuevaPw) { msg.textContent = 'Completá el código y la nueva contraseña'; return; }
         try {
             const emailLc = email.toLowerCase();
             const wf = await sqlFiltroUsuariosPorTenant();
+            const tokSql = `trim(both from coalesce(reset_token::text, '')) = ${esc(codigo)}`;
+            const matchById = (wfExtra) => `SELECT id
+                FROM usuarios
+                WHERE id = ${esc(Number(_resetTargetUserId))}
+                  AND ${tokSql}
+                  AND reset_expiry > NOW()
+                ${wfExtra || ''}
+                LIMIT 1`;
             const matchUpd = (wfExtra) => `SELECT id
                 FROM usuarios
                 WHERE (
                         lower(coalesce(email,'')) = ${esc(emailLc)}
                      OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
                       )
-                  AND reset_token = ${esc(codigo)}
+                  AND ${tokSql}
                   AND reset_expiry > NOW()
                 ${wfExtra || ''}
                 LIMIT 1`;
-            let r = await sqlSimple(matchUpd(wf));
-            if (!r.rows[0] && wf) {
-                r = await sqlSimple(matchUpd(''));
+            let r = { rows: [] };
+            if (_resetTargetUserId != null && Number.isFinite(Number(_resetTargetUserId))) {
+                r = await sqlSimple(matchById(wf));
+                if (!r.rows[0] && wf) r = await sqlSimple(matchById(''));
+            }
+            if (!r.rows[0]) {
+                r = await sqlSimple(matchUpd(wf));
+                if (!r.rows[0] && wf) {
+                    r = await sqlSimple(matchUpd(''));
+                }
             }
             if (!r.rows[0]) { msg.textContent = 'Código incorrecto o expirado'; return; }
             await sqlSimple(
