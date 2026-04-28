@@ -734,7 +734,9 @@ export async function runInitMap() {
         attributionControl: true,
         maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: !ligeroInit && !androidMap,
+        // WebView Android (p. ej. Samsung / API 36): SVG + teselas IMG a veces se desalinean al zoom (pines “flotan”).
+        // Canvas para vectores (CircleMarker de pedidos) compone estable con el transform del mapa.
+        preferCanvas: androidMap ? true : !ligeroInit,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,

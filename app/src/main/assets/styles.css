@@ -439,6 +439,10 @@ html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
 html.gn-android-webview .leaflet-tile {
   box-shadow: none !important;
 }
+/* overflow:hidden + border-radius en el contenedor puede desincronizar capa SVG/canvas vs teselas al zoom (GPU Samsung). */
+html.gn-android-webview #mc .leaflet-container {
+  overflow: visible;
+}
 @media(min-width:1024px){
   html.gn-android-webview .btn-mapa-ir-gps{bottom:7.15rem;left:0.42rem}
   html.gn-android-webview .btn-mapa-nuevo-gps{bottom:10.35rem;left:0.42rem}

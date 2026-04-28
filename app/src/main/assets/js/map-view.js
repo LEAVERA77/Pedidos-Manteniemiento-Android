@@ -462,7 +462,7 @@ export async function runInitMap() {
         attributionControl: true,
         maxZoom: maxZoomMap,
         zoom: zoomInit,
-        preferCanvas: !ligeroInit && !androidMap,
+        preferCanvas: androidMap ? true : !ligeroInit,
         zoomAnimation: false,
         fadeAnimation: false,
         markerZoomAnimation: false,
