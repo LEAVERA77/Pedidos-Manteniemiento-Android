@@ -7726,6 +7726,7 @@ if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoP
 
 function renderMk() {
     if (!app.map) return;
+    if (typeof L === 'undefined' || !L || typeof L.marker !== 'function') return;
     app.mk.forEach(m => m.remove());
     app.mk = [];
     
@@ -13468,6 +13469,8 @@ let _adminBannerOpinionWatermarkIso = null;
 const SESS_KEY_BANNER_OPINION_DISMISS = 'pmg_sess_banner_opinion_dismiss_v1';
 /** Cierre explícito del banner de calificación baja: persiste entre sesiones (por tenant + pedido). */
 const LS_KEY_BANNER_OPINION_DISMISS = 'pmg_ls_banner_opinion_dismiss_v1';
+/** null = sin comprobar; si existe `pedidos.opinion_banner_admin_descartado`, el banner no depende solo de localStorage. */
+let _opinionBannerAdminDismissColExists = null;
 
 function _persistedOpinionBannerDismissedKeys() {
     try {
@@ -13487,6 +13490,28 @@ function _persistDismissOpinionBannerPedido(pid) {
     s.add(key);
     try {
         localStorage.setItem(LS_KEY_BANNER_OPINION_DISMISS, JSON.stringify([...s]));
+    } catch (_) {}
+    void _neonMarcarOpinionBannerAdminDescartado(pid);
+}
+
+/** Persiste el cierre del banner en Neon (sobrevive a borrar caché / localStorage). Requiere migración `opinion_banner_admin_descartado`. */
+async function _neonMarcarOpinionBannerAdminDescartado(pid) {
+    if (pid == null || pid === '' || !NEON_OK || !_sql) return;
+    try {
+        if (_opinionBannerAdminDismissColExists === false) return;
+        if (_opinionBannerAdminDismissColExists === null) {
+            const chk = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'opinion_banner_admin_descartado' LIMIT 1`
+            );
+            _opinionBannerAdminDismissColExists = !!chk.rows?.length;
+            if (!_opinionBannerAdminDismissColExists) return;
+        }
+        const tsql = await pedidosFiltroTenantSql();
+        const idn = Number(pid);
+        if (!Number.isFinite(idn) || idn < 1) return;
+        await sqlSimple(
+            `UPDATE pedidos SET opinion_banner_admin_descartado = TRUE WHERE id = ${esc(idn)}${tsql}`
+        );
     } catch (_) {}
 }
 
@@ -13659,6 +13684,16 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const tsql = await pedidosFiltroTenantSql();
+        if (_opinionBannerAdminDismissColExists === null) {
+            const chkD = await sqlSimple(
+                `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'opinion_banner_admin_descartado' LIMIT 1`
+            );
+            _opinionBannerAdminDismissColExists = !!chkD.rows?.length;
+        }
+        const sqlNoDescartado =
+            _opinionBannerAdminDismissColExists === true
+                ? ' AND COALESCE(opinion_banner_admin_descartado, FALSE) IS NOT TRUE'
+                : '';
         let r;
         try {
             r = await sqlSimple(
@@ -13668,6 +13703,7 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
+                 ${sqlNoDescartado}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -13680,6 +13716,7 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
+                 ${sqlNoDescartado}
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -13697,14 +13734,11 @@ async function pollBannerOpinionCliente() {
         const nid = Number(row.id);
         const dismissKey = `${tenantIdActual()}:${nid}`;
         if (_persistedOpinionBannerDismissedKeys().has(dismissKey)) {
-            console.debug('[poll-banner-opinion] Pedido %s descartado permanentemente (localStorage)', nid);
             return;
         }
         if (_sessionOpinionBannerDismissedIds().has(String(nid))) {
-            console.debug('[poll-banner-opinion] Pedido %s ya fue descartado en esta sesión', nid);
             return;
         }
-        console.info('[poll-banner-opinion] ✓ Mostrando banner para pedido %s (estrellas: %s)', nid, row.opinion_cliente_estrellas);
         const fop = row.fecha_opinion_cliente;
         const opin = String(row.opinion_cliente || '').trim();
         const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;

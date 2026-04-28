@@ -509,6 +509,23 @@ export function gnAttachBaseMapLayers(mapa) {
     gnApplyAdminOsmOverlaysFromStorage(mapa);
 }
 
+/**
+ * Leaflet se carga con <script src=leaflet.js> antes del bundle; en WebView o red lenta puede no estar listo al primer initMap.
+ * @param {Window} win
+ * @param {number} maxMs
+ * @returns {Promise<typeof import('leaflet') | null>}
+ */
+async function waitForLeafletOnWindow(win, maxMs = 20000) {
+    const w = win || (typeof window !== 'undefined' ? window : null);
+    const t0 = Date.now();
+    while (true) {
+        const L = w && w.L;
+        if (L && typeof L.map === 'function') return L;
+        if (Date.now() - t0 >= maxMs) return null;
+        await new Promise((r) => setTimeout(r, 40));
+    }
+}
+
 export async function runInitMap() {
     if (!ctx) return;
     if (ctx.mapaInicializado && ctx.app.map) {
@@ -549,7 +566,20 @@ export async function runInitMap() {
         ctx.app.map = null;
     }
 
-    const L = ctx.L;
+    let L = ctx.L && typeof ctx.L.map === 'function' ? ctx.L : null;
+    if (!L) {
+        L = await waitForLeafletOnWindow(ctx.window, 20000);
+    }
+    if (!L || typeof L.map !== 'function') {
+        try {
+            ctx.toast(
+                'No se pudo cargar el motor del mapa (Leaflet). Revisá la conexión o que el script de leaflet.js esté disponible.',
+                'error'
+            );
+        } catch (_) {}
+        setTimeout(() => ctx.scheduleMapRetry(), 600);
+        return;
+    }
     /* Evita "Map container is already initialized" si quedó _leaflet_id sin instancia en app.map. */
     try {
         if (el._leaflet_id != null) {
