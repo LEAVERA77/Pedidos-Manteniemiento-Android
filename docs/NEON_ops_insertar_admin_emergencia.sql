@@ -1,24 +1,19 @@
 -- =============================================================================
 -- Neon — recrear usuario administrador cuando se borró de `usuarios`
 --
--- El login (POST /api/auth/login) compara por columna **email** (texto exacto).
--- El placeholder del panel dice "Email (usuario)": lo que escribís ahí debe
--- coincidir con `usuarios.email` en la base.
+-- El login del panel (GitHub Pages con Neon en el navegador) ejecuta SQL del tipo:
+--   WHERE email = '<lo que escribís>' AND password_hash = '<contraseña>'
+-- es decir, compara la contraseña en **texto plano** con la columna password_hash.
+-- Por eso, para poder entrar con admin / admin en ese modo, password_hash debe
+-- ser literalmente la cadena "admin" (solo recuperación / pruebas).
 --
--- Este script inserta un admin en tenant_id = 1 con:
---   email:    admin
---   password: admin   (bcrypt $2a$10$… generado con bcryptjs cost 10)
+-- La API Node (POST /api/auth/login) acepta también texto plano si el hash no
+-- empieza por $2a$ / $2b$ / $2y$ (ver api/routes/auth.js).
 --
 -- Cambiá tenant_id si tu único `clientes.id` no es 1.
--- Tras INSERT: ingresá email "admin" y contraseña "admin", luego cambiá la clave.
 --
 -- made by leavera77
 -- =============================================================================
-
--- Contraseña en texto plano: admin
--- (hash bcrypt; no lo reutilices en producción real)
--- Si preferís email tipo admin@cooperativa.org, cambiá la columna email abajo
--- y usá ese valor en el login.
 
 DELETE FROM usuarios WHERE lower(trim(email)) = lower(trim('admin'));
 
@@ -27,13 +22,10 @@ VALUES (
     1,
     'admin',
     'Administrador',
-    '$2a$10$jRuwUecLwquqt3YW5sJOrurLb5ZOx2galnxxWcj/FdMNIiMutjCYO',
+    'admin',
     'admin',
     TRUE
 );
-
--- Si tu tabla tiene business_type NOT NULL sin default, descomentá y ajustá:
--- UPDATE usuarios SET business_type = NULL WHERE email = 'admin';
 
 SELECT setval(
     pg_get_serial_sequence('usuarios', 'id'),
@@ -42,15 +34,15 @@ SELECT setval(
 
 SELECT id, tenant_id, email, nombre, rol, activo FROM usuarios ORDER BY id;
 
--- Si ya habías ejecutado una versión vieja de este script y el login falla,
--- corregí solo el hash (contraseña sigue siendo admin):
--- UPDATE usuarios SET password_hash = '$2a$10$jRuwUecLwquqt3YW5sJOrurLb5ZOx2galnxxWcj/FdMNIiMutjCYO'
--- WHERE lower(trim(email)) = lower(trim('admin'));
+-- Si el usuario ya existía con hash bcrypt y solo usás API (sin Neon en browser),
+-- podés poner hash bcrypt con Node; para el login **Neon en navegador** seguí
+-- usando texto plano en password_hash o ajustá app.js (futuro).
 
 
 -- =============================================================================
--- Alternativa (recomendada en producción): email válido + contraseña fuerte
+-- Producción: contraseña fuerte + hash bcrypt (API Node)
 -- =============================================================================
--- INSERT ... email 'admin@tu-dominio.org' y generá hash con Node:
 --   node -e "require('bcryptjs').hash('TuClaveSegura',10).then(console.log)"
+-- Pegá el resultado en password_hash y entrá por API; el login SQL directo
+-- en browser no validará bcrypt hasta que el código lo soporte.
 -- =============================================================================

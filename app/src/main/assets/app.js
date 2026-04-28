@@ -3310,6 +3310,8 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
 
         
         let resultado = null;
+        // Login directo Neon: igualdad literal password_hash = contraseña (no bcrypt en SQL).
+        // Recuperación: ver docs/NEON_ops_insertar_admin_emergencia.sql (texto plano solo pruebas).
         const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
