@@ -93,6 +93,19 @@ function pedidoOrigenWhatsappCliente(row) {
 }
 
 /**
+ * Avisos automáticos al teléfono del pedido (ejecución, avance, actividad en campo):
+ * WhatsApp bot + cargas web/API típicas; sigue exigiendo teléfono válido en el flujo del caller.
+ */
+function pedidoClienteRecibeAvisosAutomaticosOperacion(row) {
+  const o = String(row?.origen_reclamo || "")
+    .trim()
+    .toLowerCase();
+  if (o === "whatsapp") return true;
+  if (!o || o === "web" || o === "api" || o === "gestornova") return true;
+  return false;
+}
+
+/**
  * Si `telefono_contacto` del pedido está vacío, intenta el teléfono en `socios_catalogo` por nis/medidor/nis_medidor.
  * Misma idea operativa que en electricidad: el catálogo puede tener el WA aunque el campo del pedido no se haya copiado.
  */
@@ -339,10 +352,20 @@ function scheduleNotifyClientePedidoWhatsapp({
   const avanceChanged = avanceExplicit && avAnt !== avNue;
   const estadoPermiteAvance = estadoNuevo === "En ejecución" || estadoNuevo === "Asignado";
 
+  const trabajoExplicit =
+    body?.trabajo_realizado !== undefined && body?.trabajo_realizado !== null;
+  const trabajoAnt = String(pedidoAntes.trabajo_realizado ?? "").trim();
+  const trabajoNue = String(pedidoDespues.trabajo_realizado ?? "").trim();
+  const trabajoChanged = trabajoExplicit && trabajoAnt !== trabajoNue;
+
   setImmediate(() => {
     (async () => {
       try {
-        if (!pedidoOrigenWhatsappCliente(pedidoAntes) && !pedidoOrigenWhatsappCliente(pedidoDespues)) return;
+        if (
+          !pedidoClienteRecibeAvisosAutomaticosOperacion(pedidoAntes) &&
+          !pedidoClienteRecibeAvisosAutomaticosOperacion(pedidoDespues)
+        )
+          return;
 
         const tenantId =
           pedidoAntes.tenant_id != null && Number.isFinite(Number(pedidoAntes.tenant_id))
@@ -389,12 +412,56 @@ function scheduleNotifyClientePedidoWhatsapp({
             avancePct: pedidoDespues.avance,
             trabajoRealizadoSnippet: snippet,
           });
+        } else if (
+          trabajoChanged &&
+          estadoNuevo === "En ejecución" &&
+          !avanceChanged
+        ) {
+          await notifyPedidoClienteActualizacionWhatsAppSafe({
+            tenantId,
+            numeroPedido: pedidoDespues.numero_pedido,
+            nombreEntidad,
+            telefonoContactoRaw: phoneRawMerged,
+            pedidoId: pedidoDespues.id,
+            tipo: "avance",
+            avancePct: pedidoDespues.avance,
+            trabajoRealizadoSnippet: trabajoNue || null,
+          });
         }
       } catch (e) {
         console.error("[pedidos] notify cliente WA pedido (no bloqueante)", e.message);
       }
     })();
   });
+}
+
+/** Fotos u otra operativa: aviso genérico al cliente si hay teléfono y el pedido aplica. */
+async function notifyClientePedidoActividadOperativa(pedido, tenantId, detalleTexto) {
+  try {
+    if (!pedidoClienteRecibeAvisosAutomaticosOperacion(pedido)) return;
+    if (normalizarEstadoPedidoOperativo(pedido.estado) !== "En ejecución") return;
+    const tid =
+      pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id))
+        ? Number(pedido.tenant_id)
+        : Number(tenantId);
+    if (!Number.isFinite(tid) || tid < 1) return;
+    let phoneRawMerged = pedido.telefono_contacto;
+    phoneRawMerged = await resolverTelefonoContactoParaNotificacionCliente(pedido, tid);
+    const phone = String(phoneRawMerged || "").replace(/\D/g, "");
+    if (!phone || phone.length < 8) return;
+    const nombreEntidad = await loadNombreCliente(tid);
+    await notifyPedidoClienteActualizacionWhatsAppSafe({
+      tenantId: tid,
+      numeroPedido: pedido.numero_pedido,
+      nombreEntidad,
+      telefonoContactoRaw: phoneRawMerged,
+      pedidoId: pedido.id,
+      tipo: "actividad",
+      actividadDetalle: detalleTexto,
+    });
+  } catch (e) {
+    console.error("[pedidos] notify cliente actividad operativa (no bloqueante)", e.message);
+  }
 }
 
 async function getPedidoInTenant(id, req) {
@@ -677,7 +744,11 @@ router.get("/historial/nis/:nis", async (req, res) => {
   }
 });
 
-registerPedidoOperativaRoutes(router, { getPedidoInTenant, assertPedidoMismoTenant });
+registerPedidoOperativaRoutes(router, {
+  getPedidoInTenant,
+  assertPedidoMismoTenant,
+  notifyClientePedidoActividad: notifyClientePedidoActividadOperativa,
+});
 
 function pedidoTipoPermiteSolicitudDerivacion(tt) {
   return tipoPermiteSolicitudDerivacionTerceroCoopElectrica(tt);
@@ -1123,8 +1194,11 @@ router.post("/:id/whatsapp-aviso-cliente", async (req, res) => {
     const ut = req.tenantId;
     const tenantId =
       pedido.tenant_id != null && Number.isFinite(Number(pedido.tenant_id)) ? Number(pedido.tenant_id) : ut;
-    if (!pedidoOrigenWhatsappCliente(pedido)) {
-      return res.status(400).json({ error: "Solo reclamos con origen WhatsApp reciben este aviso al cliente" });
+    if (!pedidoClienteRecibeAvisosAutomaticosOperacion(pedido)) {
+      return res.status(400).json({
+        error:
+          "Este reclamo no está habilitado para avisos automáticos al cliente (origen no reconocido o sin canal configurado)",
+      });
     }
     const nombreEntidad = await loadNombreCliente(tenantId);
     let phoneRaw = pedido.telefono_contacto;

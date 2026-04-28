@@ -479,6 +479,7 @@ export async function notifyPedidoClienteActualizacionWhatsAppSafe({
   tipo,
   avancePct = null,
   trabajoRealizadoSnippet = null,
+  actividadDetalle = null,
 }) {
   const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
   if (!phone || phone.length < 8) {
@@ -498,6 +499,11 @@ export async function notifyPedidoClienteActualizacionWhatsAppSafe({
       ? `\n\n${String(trabajoRealizadoSnippet).trim().slice(0, 280)}`
       : "";
     body = `*${ent}* — Actualización de su reclamo *#${np}*:${pct}${extra}`;
+  } else if (tipo === "actividad") {
+    const det = String(actividadDetalle || "").trim().slice(0, 220);
+    body = det
+      ? `*${ent}* — Su reclamo *#${np}*: ${det}`
+      : `*${ent}* — Su reclamo *#${np}* registró actividad en campo por parte del equipo técnico.`;
   } else {
     return { sent: false, skipped: true, reason: "unknown_tipo" };
   }

@@ -48,10 +48,14 @@ function puedeVerPedido(user, pedido) {
 
 /**
  * @param {import('express').Router} router
- * @param {{ getPedidoInTenant: (id: number, req: import('express').Request) => Promise<object|null>, assertPedidoMismoTenant: (p: object, req: import('express').Request) => Promise<void> }} deps
+ * @param {{
+ *   getPedidoInTenant: (id: number, req: import('express').Request) => Promise<object|null>,
+ *   assertPedidoMismoTenant: (p: object, req: import('express').Request) => Promise<void>,
+ *   notifyClientePedidoActividad?: (pedido: object, tenantId: number, detalleTexto: string) => Promise<void>,
+ * }} deps
  */
 export function registerPedidoOperativaRoutes(router, deps) {
-  const { getPedidoInTenant, assertPedidoMismoTenant } = deps;
+  const { getPedidoInTenant, assertPedidoMismoTenant, notifyClientePedidoActividad } = deps;
 
   router.post("/:id/geocerca/verificar", async (req, res) => {
     try {
@@ -289,6 +293,15 @@ export function registerPedidoOperativaRoutes(router, deps) {
         );
         inserted.push(ins.rows[0]);
         orden += 1;
+      }
+      if (notifyClientePedidoActividad && inserted.length && tipo === "despues") {
+        setImmediate(() => {
+          void notifyClientePedidoActividad(
+            pedido,
+            tenantId,
+            "Se cargó material fotográfico «después» del trabajo en su reclamo."
+          );
+        });
       }
       return res.status(201).json({ ok: true, fotos: inserted });
     } catch (error) {

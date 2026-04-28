@@ -11233,6 +11233,9 @@ async function detalle(p) {
                   hour12: false,
               })}</span></div>`
             : '',
+        p.ui2 && (p.es === 'En ejecución' || p.es === 'Cerrado')
+            ? `<div class="dr"><span class="dl">En ejecución</span><span class="dv">Equipo en sitio (registrado en el sistema)</span></div>`
+            : '',
         p.es === 'Cerrado' && fc ? `<div class="dr"><span class="dl">Cierre</span><span class="dv">${fc}</span></div>` : '',
         pedidoEsDerivadoFuera(p) && p.fder
             ? `<div class="dr"><span class="dl">Derivación a tercero</span><span class="dv">${new Date(p.fder).toLocaleString('es-AR', {
@@ -11405,6 +11408,7 @@ async function detalle(p) {
     }
     
     document.getElementById('dmc').innerHTML = `
+        <div class="gn-dm-detail-scroll">
         <div class="ds">
             <h4>📋 Información General</h4>
             <div class="dr"><span class="dl">N° Pedido</span><span class="dv" style="font-weight:700;color:#1e3a8a">#${p.np}</span></div>
@@ -11476,14 +11480,16 @@ async function detalle(p) {
             <h4>📸 Fotos del trabajo</h4>
             ${fotosHtml}
         </div>` : ''}
-        
+        </div>
+        <div class="gn-dm-actions-bar">
         <div class="da">
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
-            ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button class="ba2 p2" onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Iniciar en sitio</button><button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
-            ${ed && p.es === 'En ejecución' ? `<button class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
-            <button class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
-            <button class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>
+            ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 p2" title="Marca el pedido como En ejecución. Con teléfono válido y WhatsApp del tenant, el servidor puede avisar al cliente." onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Poner en ejecución</button><button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
+            ${ed && p.es === 'En ejecución' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button type="button" class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
+            <button type="button" class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
+            <button type="button" class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>
+        </div>
         </div>
     `;
     

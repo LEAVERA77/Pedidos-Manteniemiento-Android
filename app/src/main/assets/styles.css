@@ -439,6 +439,12 @@ html.gn-android-webview .leaflet-tile {
 #modal-asignar-tecnico{z-index:6001}
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}
+/* Detalle pedido: contenido con scroll y barra de acciones siempre visible (técnico Android / web). */
+#dm .mc{display:flex;flex-direction:column;max-height:min(92vh,900px);overflow:hidden;padding-bottom:0}
+#dm #dmc{flex:1;min-height:0;display:flex;flex-direction:column;padding:0}
+#dm .gn-dm-detail-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:1rem 1.25rem .75rem}
+#dm .gn-dm-actions-bar{flex-shrink:0;padding:.65rem 1.25rem 1.1rem;border-top:1px solid var(--bo);background:linear-gradient(180deg,rgba(255,255,255,.98),#fff);box-shadow:0 -4px 14px rgba(15,23,42,.06)}
+#dm .gn-dm-actions-bar .da{margin-top:0}
 @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .mh{padding:1rem 1.25rem;border-bottom:1px solid var(--bo);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:white;z-index:10;border-radius:1rem 1rem 0 0}
 .mh h3{color:var(--bd);font-size:1rem;display:flex;align-items:center;gap:.4rem}
