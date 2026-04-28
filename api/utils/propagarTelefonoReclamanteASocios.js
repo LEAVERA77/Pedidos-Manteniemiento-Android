@@ -4,30 +4,12 @@
  */
 import { query } from "../db/neon.js";
 import {
-  digitsOnly,
-  normalizeArgentinaMobileWhatsappDigits,
-} from "./argentinaMobilePhone.js";
-
-export async function getTenantWhatsappArDefaultAreaDigits(tenantId) {
-  const tid = Number(tenantId);
-  if (!Number.isFinite(tid) || tid < 1) return "";
-  try {
-    const r = await query(
-      `SELECT configuracion->>'whatsapp_ar_default_area' AS wa,
-              configuracion->>'ar_default_area' AS ar
-       FROM clientes WHERE id = $1`,
-      [tid]
-    );
-    const row = r.rows?.[0];
-    const raw = row?.wa || row?.ar || "";
-    return digitsOnly(String(raw)).slice(0, 4);
-  } catch {
-    return "";
-  }
-}
+  getTenantConfiguracionForWhatsappAreas,
+  normalizeArgentinaMobileWithTenantAreaConfig,
+} from "./whatsappArAreaConfig.js";
 
 /**
- * @param {Record<string, unknown>} pedido fila pedidos (telefono_contacto, nis, medidor, nis_medidor)
+ * @param {Record<string, unknown>} pedido fila pedidos (telefono_contacto, cliente_localidad, nis, medidor, nis_medidor)
  * @param {number} tenantId
  * @returns {Promise<{ updated: number, reason?: string }>}
  */
@@ -35,10 +17,12 @@ export async function propagarTelefonoReclamanteASociosCatalogoIfEmpty(pedido, t
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) return { updated: 0, reason: "bad_tenant" };
 
-  const defaultArea = await getTenantWhatsappArDefaultAreaDigits(tid);
-  const canon = normalizeArgentinaMobileWhatsappDigits(pedido?.telefono_contacto, {
-    defaultAreaDigits: defaultArea,
-  });
+  const cfg = await getTenantConfiguracionForWhatsappAreas(tid);
+  const canon = normalizeArgentinaMobileWithTenantAreaConfig(
+    pedido?.telefono_contacto,
+    cfg,
+    pedido?.cliente_localidad
+  );
   if (!canon) return { updated: 0, reason: "not_mobile" };
 
   const nis = String(pedido?.nis || "").trim();

@@ -470,6 +470,20 @@
           <input id="cfg-provincia-nominatim" type="text" placeholder="Ej. Entre Ríos — se completa al guardar la ubicación base del asistente o al fijar oficina en el mapa">
           <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0;line-height:1.35">Debe coincidir con el nombre que usa OpenStreetMap para desambiguar localidades. En municipios muy extensos, el operador del servidor puede subir <code style="font-size:.68rem">NOMINATIM_LOCALITY_MAX_DISTANCE_METERS</code> (p. ej. 35000).</p>
         </div>
+        <div class="full" style="margin-top:.5rem;padding-top:.85rem;border-top:1px dashed var(--bo)">
+          <h4 style="color:var(--tm);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 .5rem">WhatsApp masivo — característica por localidad (Argentina)</h4>
+          <p style="font-size:.72rem;color:var(--tl);margin:0 0 .65rem;line-height:1.4">El prefijo internacional <strong>549</strong> es el mismo en todo el país; acá cargás solo el <strong>código de área</strong> sin 0 (ej. <code style="font-size:.68rem">343</code> para Paraná y zona, <code style="font-size:.68rem">3438</code> para La Paz de Entre Ríos). Se usa al normalizar teléfonos en avisos masivos y datos de pedidos / padrón de socios.</p>
+          <div><label for="cfg-wa-ar-default-area">Característica de respaldo</label><input id="cfg-wa-ar-default-area" type="text" inputmode="numeric" maxlength="6" placeholder="343" autocomplete="off">
+            <p style="font-size:.7rem;color:var(--tl);margin:.25rem 0 0">Si no hay coincidencia por localidad, se usa para completar números guardados solo como 15…</p>
+          </div>
+          <div class="full" style="margin-top:.65rem"><label for="cfg-wa-ar-area-prefixes">Prefijos a probar (opcional)</label><input id="cfg-wa-ar-area-prefixes" type="text" placeholder="3438, 343" autocomplete="off">
+            <p style="font-size:.7rem;color:var(--tl);margin:.25rem 0 0">Separados por coma; conviene listar primero los más largos (3438 antes que 343). Se prueban si falta localidad o el número sigue sin normalizar.</p>
+          </div>
+          <div class="full" style="margin-top:.65rem"><label for="cfg-wa-ar-areas-por-localidad">Mapa localidad → característica</label>
+            <textarea id="cfg-wa-ar-areas-por-localidad" rows="6" spellcheck="false" autocomplete="off" placeholder="Paraná	343&#10;Cerrito	343&#10;La Paz	3438"></textarea>
+            <p style="font-size:.7rem;color:var(--tl);margin:.25rem 0 0">Una fila por localidad: <strong>tabulador o |</strong> entre nombre y código. Debe coincidir (o estar contenido) con <code style="font-size:.68rem">cliente_localidad</code> en pedidos o <code style="font-size:.68rem">localidad</code> en socios.</p>
+          </div>
+        </div>
         <div class="full"><label>Coordenadas en detalle de pedido (además de WGS84)</label>
           <select id="cfg-coord-familia" onchange="syncCoordModoVisibility()">
             <option value="none">Solo WGS84</option>

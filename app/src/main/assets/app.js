@@ -968,6 +968,70 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     if (d) d.style.display = hideDist ? 'none' : '';
 }
 
+/** Mapa localidad → característica (solo dígitos de área) para normalizar móviles AR en difusiones. */
+function parseWhatsappArAreasPorLocalidadTextarea(text) {
+    const out = {};
+    for (const line0 of String(text || '').split(/\r?\n/)) {
+        const line = line0.trim();
+        if (!line || line.startsWith('#')) continue;
+        let loc = '';
+        let area = '';
+        const tab = line.indexOf('\t');
+        if (tab !== -1) {
+            loc = line.slice(0, tab).trim();
+            area = (line.slice(tab + 1).trim().match(/^\d+/) || [''])[0];
+        } else if (line.includes('|')) {
+            const pipe = line.indexOf('|');
+            loc = line.slice(0, pipe).trim();
+            area = (line.slice(pipe + 1).trim().match(/^\d+/) || [''])[0];
+        } else {
+            const m = line.match(/^(.+?)[\s,]+(\d{2,6})\s*$/);
+            if (m) {
+                loc = m[1].trim();
+                area = m[2];
+            }
+        }
+        if (loc && area) out[loc] = area;
+    }
+    return out;
+}
+
+function serializeWhatsappArAreasPorLocalidadTextarea(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
+    return Object.entries(obj)
+        .map(([k, v]) => `${String(k).trim()}\t${String(v).trim().replace(/\D/g, '')}`)
+        .filter((row) => row.length > 1)
+        .join('\n');
+}
+
+function parseWhatsappArAreaPrefixesInput(text) {
+    return String(text || '')
+        .split(/[,;\s]+/)
+        .map((s) => s.replace(/\D/g, ''))
+        .filter((s) => s.length >= 2);
+}
+
+function sincronizarCamposWhatsappArAreaDesdeEmpresaCfg() {
+    const ec = window.EMPRESA_CFG || {};
+    const d = document.getElementById('cfg-wa-ar-default-area');
+    if (d) {
+        const v = ec.whatsapp_ar_default_area != null ? ec.whatsapp_ar_default_area : ec.ar_default_area;
+        d.value = String(v != null ? v : '')
+            .replace(/\D/g, '')
+            .slice(0, 6);
+    }
+    const p = document.getElementById('cfg-wa-ar-area-prefixes');
+    if (p) {
+        const raw = ec.whatsapp_ar_area_prefixes;
+        p.value = Array.isArray(raw) ? raw.join(', ') : typeof raw === 'string' ? raw : '';
+    }
+    const ta = document.getElementById('cfg-wa-ar-areas-por-localidad');
+    if (ta) {
+        const m = ec.whatsapp_ar_areas_por_localidad;
+        ta.value = m && typeof m === 'object' && !Array.isArray(m) ? serializeWhatsappArAreasPorLocalidadTextarea(m) : '';
+    }
+}
+
 function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     if (!conf || typeof conf !== 'object') return;
     const next = { ...(window.EMPRESA_CFG || {}) };
@@ -990,6 +1054,11 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
             next[k] = conf[k];
         }
     }
+    for (const k of ['whatsapp_ar_default_area', 'whatsapp_ar_area_prefixes', 'whatsapp_ar_areas_por_localidad']) {
+        if (Object.prototype.hasOwnProperty.call(conf, k)) {
+            next[k] = conf[k];
+        }
+    }
     next.subtitulo = GN_SUBTITULO_FIJO;
     window.EMPRESA_CFG = next;
     try {
@@ -997,6 +1066,9 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     } catch (_) {}
     try {
         syncDerivacionesTercerosWrap();
+    } catch (_) {}
+    try {
+        sincronizarCamposWhatsappArAreaDesdeEmpresaCfg();
     } catch (_) {}
 }
 
@@ -15901,6 +15973,7 @@ async function cargarFormEmpresa() {
         }
         bindDerivacionesFormInputsOnce();
         poblarFormDerivacionesDesdeEmpresaCfg();
+        sincronizarCamposWhatsappArAreaDesdeEmpresaCfg();
         const provEl = document.getElementById('cfg-provincia-nominatim');
         if (provEl) {
             const ec = window.EMPRESA_CFG || {};
@@ -15993,6 +16066,18 @@ async function guardarConfigEmpresa() {
                     if (derivacionReclamosPayload !== null) {
                         body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
                     }
+                    {
+                        const waDef = (document.getElementById('cfg-wa-ar-default-area')?.value || '').trim();
+                        const waDigits = waDef.replace(/\D/g, '').slice(0, 6);
+                        body.configuracion.whatsapp_ar_default_area = waDigits || null;
+                        const waPr = parseWhatsappArAreaPrefixesInput(
+                            document.getElementById('cfg-wa-ar-area-prefixes')?.value || ''
+                        );
+                        body.configuracion.whatsapp_ar_area_prefixes = waPr.length ? waPr : null;
+                        body.configuracion.whatsapp_ar_areas_por_localidad = parseWhatsappArAreasPorLocalidadTextarea(
+                            document.getElementById('cfg-wa-ar-areas-por-localidad')?.value || ''
+                        );
+                    }
                     if (campos.nombre) body.nombre = campos.nombre;
                     if (campos.tipo) body.tipo = campos.tipo;
                     const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
@@ -16036,7 +16121,15 @@ async function guardarConfigEmpresa() {
                             if (Object.prototype.hasOwnProperty.call(cfg, 'ocultar_modulos_redes')) {
                                 next.ocultar_modulos_redes = !!cfg.ocultar_modulos_redes;
                             }
+                            for (const k of [
+                                'whatsapp_ar_default_area',
+                                'whatsapp_ar_area_prefixes',
+                                'whatsapp_ar_areas_por_localidad',
+                            ]) {
+                                if (Object.prototype.hasOwnProperty.call(cfg, k)) next[k] = cfg[k];
+                            }
                             window.EMPRESA_CFG = next;
+                            sincronizarCamposWhatsappArAreaDesdeEmpresaCfg();
                         }
                     }
                     try {

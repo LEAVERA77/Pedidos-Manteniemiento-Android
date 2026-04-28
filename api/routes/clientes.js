@@ -12,6 +12,7 @@ import { rubroEfectivoParaTipos } from "../utils/businessScope.js";
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
+import { sanitizeWhatsappArAreaConfigIncrement } from "../utils/whatsappArAreaConfig.js";
 
 const router = express.Router();
 
@@ -108,6 +109,7 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       ...(latitud != null ? { lat_base: latitud } : {}),
       ...(longitud != null ? { lng_base: longitud } : {}),
     };
+    sanitizeWhatsappArAreaConfigIncrement(cfgJson);
     if (Object.prototype.hasOwnProperty.call(body, "logo_url")) {
       const v = logo_url;
       cfgJson.logo_url = v === "" || v == null ? null : String(v);

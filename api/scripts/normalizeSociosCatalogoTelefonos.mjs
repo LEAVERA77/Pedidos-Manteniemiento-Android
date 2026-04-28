@@ -6,18 +6,18 @@
  *   node scripts/normalizeSociosCatalogoTelefonos.mjs --tenant-id=1 [--dry-run]
  *   node scripts/normalizeSociosCatalogoTelefonos.mjs --tenant-id=1 --apply
  *
- * La característica por defecto para números "15…" incompletos se toma de
- * `clientes.configuracion->>'whatsapp_ar_default_area'` por tenant.
+ * Usa `clientes.configuracion`: mapa por localidad, prefijos y respaldo
+ * (`whatsapp_ar_areas_por_localidad`, `whatsapp_ar_area_prefixes`, `whatsapp_ar_default_area`).
  *
  * made by leavera77
  */
 import "dotenv/config";
 import { query } from "../db/neon.js";
+import { digitsOnly } from "../utils/argentinaMobilePhone.js";
 import {
-  digitsOnly,
-  normalizeArgentinaMobileWhatsappDigits,
-} from "../utils/argentinaMobilePhone.js";
-import { getTenantWhatsappArDefaultAreaDigits } from "../utils/propagarTelefonoReclamanteASocios.js";
+  getTenantConfiguracionForWhatsappAreas,
+  normalizeArgentinaMobileWithTenantAreaConfig,
+} from "../utils/whatsappArAreaConfig.js";
 
 function parseArgs() {
   const out = { tenantId: null, dryRun: true, limit: 50000 };
@@ -37,19 +37,31 @@ async function main() {
     process.exit(1);
   }
 
-  const defaultArea = await getTenantWhatsappArDefaultAreaDigits(tenantId);
-  const opts = { defaultAreaDigits: defaultArea };
-  console.log(
-    JSON.stringify({ tenantId, dryRun, limit, defaultArea: defaultArea || "(ninguna)" }, null, 0)
-  );
+  const cfg = await getTenantConfiguracionForWhatsappAreas(tenantId);
+  console.log(JSON.stringify({ tenantId, dryRun, limit, configKeys: Object.keys(cfg).filter((k) => k.startsWith("whatsapp_ar_")) }, null, 0));
 
+  const cr = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'socios_catalogo'`
+  );
+  const cset = new Set((cr.rows || []).map((x) => x.column_name));
+  const hasLoc = cset.has("localidad");
   const r = await query(
-    `SELECT id, telefono FROM socios_catalogo
-     WHERE tenant_id = $1
-       AND telefono IS NOT NULL
-       AND TRIM(telefono::text) <> ''
-     ORDER BY id
-     LIMIT $2`,
+    hasLoc
+      ? `SELECT id, telefono, NULLIF(TRIM(COALESCE(localidad::text, '')), '') AS loc
+         FROM socios_catalogo
+         WHERE tenant_id = $1
+           AND telefono IS NOT NULL
+           AND TRIM(telefono::text) <> ''
+         ORDER BY id
+         LIMIT $2`
+      : `SELECT id, telefono, NULL::text AS loc
+         FROM socios_catalogo
+         WHERE tenant_id = $1
+           AND telefono IS NOT NULL
+           AND TRIM(telefono::text) <> ''
+         ORDER BY id
+         LIMIT $2`,
     [tenantId, limit]
   );
 
@@ -57,7 +69,7 @@ async function main() {
   let skipped = 0;
   for (const row of r.rows || []) {
     const raw = row.telefono;
-    const canon = normalizeArgentinaMobileWhatsappDigits(raw, opts);
+    const canon = normalizeArgentinaMobileWithTenantAreaConfig(raw, cfg, row.loc);
     if (!canon) {
       skipped += 1;
       continue;

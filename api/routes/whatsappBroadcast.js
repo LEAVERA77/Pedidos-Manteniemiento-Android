@@ -4,8 +4,10 @@ import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
-import { normalizeArgentinaMobileWhatsappDigits } from "../utils/argentinaMobilePhone.js";
-import { getTenantWhatsappArDefaultAreaDigits } from "../utils/propagarTelefonoReclamanteASocios.js";
+import {
+  getTenantConfiguracionForWhatsappAreas,
+  normalizeArgentinaMobileWithTenantAreaConfig,
+} from "../utils/whatsappArAreaConfig.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -31,8 +33,7 @@ function aplicarPlaceholders(texto, ctx) {
  */
 async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType) {
   const hasBtP = await tableHasColumn("pedidos", "business_type");
-  const defaultArea = await getTenantWhatsappArDefaultAreaDigits(tenantId);
-  const opts = { defaultAreaDigits: defaultArea };
+  const cfg = await getTenantConfiguracionForWhatsappAreas(tenantId);
 
   const paramsP = [tenantId];
   let whP = "tenant_id = $1 AND telefono_contacto IS NOT NULL AND TRIM(telefono_contacto::text) <> ''";
@@ -40,12 +41,22 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
     paramsP.push(businessType);
     whP += ` AND business_type = $${paramsP.length}`;
   }
-  const rP = await query(`SELECT DISTINCT telefono_contacto AS raw FROM pedidos WHERE ${whP}`, paramsP);
+  const hasLocP = await tableHasColumn("pedidos", "cliente_localidad");
+  const rP = await query(
+    hasLocP
+      ? `SELECT TRIM(telefono_contacto::text) AS raw,
+                NULLIF(TRIM(COALESCE(cliente_localidad::text, '')), '') AS loc
+         FROM pedidos WHERE ${whP}
+         GROUP BY TRIM(telefono_contacto::text), NULLIF(TRIM(COALESCE(cliente_localidad::text, '')), '')`
+      : `SELECT DISTINCT TRIM(telefono_contacto::text) AS raw, NULL::text AS loc FROM pedidos WHERE ${whP}`,
+    paramsP
+  );
 
   let rS = { rows: [] };
   try {
     const hasTS = await tableHasColumn("socios_catalogo", "tenant_id");
     const hasBtS = await tableHasColumn("socios_catalogo", "business_type");
+    const hasLocS = await tableHasColumn("socios_catalogo", "localidad");
     if (hasTS) {
       const paramsS = [tenantId];
       let whS = `tenant_id = $1 AND COALESCE(activo, TRUE) AND telefono IS NOT NULL AND TRIM(telefono::text) <> ''`;
@@ -53,7 +64,15 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
         paramsS.push(businessType);
         whS += ` AND business_type = $${paramsS.length}`;
       }
-      rS = await query(`SELECT DISTINCT telefono AS raw FROM socios_catalogo WHERE ${whS}`, paramsS);
+      rS = await query(
+        hasLocS
+          ? `SELECT TRIM(telefono::text) AS raw,
+                    NULLIF(TRIM(COALESCE(localidad::text, '')), '') AS loc
+             FROM socios_catalogo WHERE ${whS}
+             GROUP BY TRIM(telefono::text), NULLIF(TRIM(COALESCE(localidad::text, '')), '')`
+          : `SELECT DISTINCT TRIM(telefono::text) AS raw, NULL::text AS loc FROM socios_catalogo WHERE ${whS}`,
+        paramsS
+      );
     }
   } catch (e) {
     console.warn("[whatsappBroadcast] socios_catalogo", e?.message || e);
@@ -61,7 +80,7 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
 
   const out = new Set();
   for (const row of [...(rP.rows || []), ...(rS.rows || [])]) {
-    const norm = normalizeArgentinaMobileWhatsappDigits(row.raw, opts);
+    const norm = normalizeArgentinaMobileWithTenantAreaConfig(row.raw, cfg, row.loc);
     if (norm && norm.length >= 12) out.add(norm);
   }
   return [...out];
@@ -92,7 +111,7 @@ router.post("/community", async (req, res) => {
     if (!tels.length) {
       return res.status(400).json({
         error:
-          "No hay teléfonos móviles válidos en pedidos ni en el catálogo de socios (se excluyen fijos y números mal cargados). Opcional: en configuración de empresa, clave whatsapp_ar_default_area (p. ej. 343) para números guardados solo como 15… sin característica.",
+          "No hay teléfonos móviles válidos en pedidos ni en el catálogo de socios (se excluyen fijos y números mal cargados). En Empresa podés cargar característica por localidad (343 vs 3438, etc.) y un respaldo para números 15… incompletos.",
       });
     }
 
@@ -175,7 +194,7 @@ router.post("/corte-programado", async (req, res) => {
     if (!tels.length) {
       return res.status(400).json({
         error:
-          "No hay teléfonos móviles en pedidos ni en socios para avisar (WhatsApp solo a celulares; los fijos se omiten). Revisá `telefono_contacto` en reclamos y `telefono` en el padrón, o la clave `whatsapp_ar_default_area` en configuración de empresa.",
+          "No hay teléfonos móviles en pedidos ni en socios para avisar (WhatsApp solo a celulares; los fijos se omiten). Revisá teléfonos en reclamos y padrón, y en Empresa la característica por localidad o la lista de prefijos (3438,343,…).",
       });
     }
 
