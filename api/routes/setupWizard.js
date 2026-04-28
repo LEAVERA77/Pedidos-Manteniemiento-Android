@@ -28,6 +28,19 @@ function parseConfiguracionDb(val) {
   return {};
 }
 
+/** Claves en `clientes.configuracion` que enlazan el webhook Meta / envíos al tenant (ver metaTenantWhatsapp.js). */
+const META_WA_CFG_KEYS = ["meta_phone_id", "meta_phone_number_id", "meta_access_token", "META_ACCESS_TOKEN"];
+
+function extractMetaWhatsappConfigPatch(cfgRaw) {
+  const o = parseConfiguracionDb(cfgRaw);
+  const patch = {};
+  for (const k of META_WA_CFG_KEYS) {
+    const v = o[k];
+    if (v != null && String(v).trim()) patch[k] = String(v).trim();
+  }
+  return patch;
+}
+
 /** Tabla o vista inexistente (Neon sin migración multitenant). */
 function isMissingRelationError(e) {
   const c = String(e?.code || "");
@@ -241,6 +254,9 @@ router.post("/wizard", async (req, res) => {
     const rubroNuevo = businessTypeToRubroParaTipos(businessType);
     const nombreInsert = normalizeCompanyNameKey(nombreWizard) ? nombreWizard : `Organización ${Date.now()}`;
 
+    const rOldCfg = await query(`SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1`, [tenantIdOld]);
+    const metaWaPatch = extractMetaWhatsappConfigPatch(rOldCfg.rows?.[0]?.configuracion);
+
     const result = await withTransaction(async (client) => {
       const rIns = hasClientesAbt
         ? await client.query(
@@ -257,6 +273,16 @@ router.post("/wizard", async (req, res) => {
           );
       const newId = Number(rIns.rows[0].id);
       if (!Number.isFinite(newId)) throw new Error("insert_cliente");
+
+      if (Object.keys(metaWaPatch).length) {
+        await client.query(`UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || $2::jsonb WHERE id = $1`, [
+          newId,
+          JSON.stringify(metaWaPatch),
+        ]);
+        const oldCfgAfter = { ...parseConfiguracionDb(rOldCfg.rows?.[0]?.configuracion) };
+        for (const k of Object.keys(metaWaPatch)) delete oldCfgAfter[k];
+        await client.query(`UPDATE clientes SET configuracion = $2::jsonb WHERE id = $1`, [tenantIdOld, JSON.stringify(oldCfgAfter)]);
+      }
 
       await upsertTenantBusiness(client, newId, businessType, hasTenantBusinessesTbl);
       await upsertActiveBusiness(client, newId, businessType, hasClientesAbt, hasTenantActiveTbl, hasTenantAuditTbl);
