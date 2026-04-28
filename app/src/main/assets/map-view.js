@@ -350,18 +350,16 @@ const GN_OSM_OVERLAY_LAYERS = [
     },
     {
         id: 'hot',
-        url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+        /** Un solo host evita que Leaflet fije un subdominio “malo” para toda la sesión. */
+        url: 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
         opts: {
-            subdomains: 'abcd',
             maxZoom: 19,
-            /** z19 nativo suele devolver 404 en bordes o zonas poco mapeadas; z18 escalado evita “huecos”. */
-            maxNativeZoom: 18,
+            /** Tiles nativos altos suelen 404 en el CDN; z17→19 escala y cubre mejor el mapa. */
+            maxNativeZoom: 17,
             opacity: 0.5,
             keepBuffer: 6,
-            /** Sin crossOrigin: algunos CDNs OSM fallan o tardan con `crossOrigin=anonymous` en `<img>`. */
-            crossOrigin: false,
             attribution:
-                'Ejidos y lugares (estilo HOT): © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.hotosm.org/" rel="noopener noreferrer">HOT</a>',
+                'Ejidos y lugares (estilo HOT / respaldo OSM): © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.hotosm.org/" rel="noopener noreferrer">HOT</a>',
         },
     },
     {
@@ -379,10 +377,31 @@ const GN_OSM_OVERLAY_LAYERS = [
 ];
 
 /** Subir si cambian URLs/opciones de overlays: fuerza nuevas instancias Leaflet en mapas ya abiertos. */
-const GN_OSM_OVERLAY_INSTANCES_REV = 5;
+const GN_OSM_OVERLAY_INSTANCES_REV = 6;
+
+const GN_HOT_TILE_SUBS = ['a', 'b', 'c', 'd'];
 
 /**
- * Reintentos ante fallos de red o 429 del tile CDN (HOT); sin esto Leaflet deja el tile en errorTileUrl o vacío.
+ * URL de respaldo por intento: `getTileUrl` repetía el mismo host; aquí se rota a–d y luego Mapnik.
+ * @param {{ z: number, x: number, y: number }} coords
+ * @param {number} attempt 1-based (tras primer fallo)
+ */
+function gnHotRetryTileUrl(coords, attempt) {
+    const z = coords.z;
+    const x = coords.x;
+    const y = coords.y;
+    if (attempt <= 4) {
+        const s = GN_HOT_TILE_SUBS[attempt % GN_HOT_TILE_SUBS.length];
+        return `https://${s}.tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`;
+    }
+    if (attempt === 5) {
+        return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+    }
+    return null;
+}
+
+/**
+ * Reintentos ante fallos del CDN HOT (rotación real de hosts + Mapnik).
  * @param {import('leaflet').TileLayer} layer
  * @param {import('leaflet').Map} map
  */
@@ -398,13 +417,14 @@ function gnAttachHotOsmTileRetry(layer, map) {
             tile._gnHotRetryDead = true;
             return;
         }
-        const delay = Math.min(8000, 220 * 2 ** (n - 1) + Math.floor(Math.random() * 160));
+        const delay = Math.min(7000, 180 * 2 ** (n - 1) + Math.floor(Math.random() * 200));
         window.setTimeout(() => {
             try {
                 if (!map.hasLayer(layer)) return;
-                const url = layer.getTileUrl(coords);
+                const url = gnHotRetryTileUrl(coords, n);
+                if (!url) return;
                 const sep = url.includes('?') ? '&' : '?';
-                tile.src = `${url}${sep}_gnhot=${n}&t=${Date.now()}`;
+                tile.src = `${url}${sep}_gnh=${n}&t=${Date.now()}`;
             } catch (_) {}
         }, delay);
     });
