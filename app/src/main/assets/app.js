@@ -1197,7 +1197,7 @@ function aplicarReverseMapaAdminDesdeClicInicio(e) {
                     const prev = String(dr.value || '').trim();
                     dr.value = prev ? `${prev} (${refExtra})` : refExtra;
                 }
-                toast('Dirección cargada desde el mapa (revisá los campos y guardá el pedido).', 'success');
+                toast('Dirección cargada desde el mapa (revisá los campos y guardá el pedido).', 'info');
             } catch (_) {
                 toast('No se pudo consultar la dirección en ese punto.', 'error');
             }
@@ -4900,8 +4900,11 @@ async function persistirCoordsGeocodePedidoPanel(pedidoId, la, ln) {
     }
 }
 
-/** Admin: corrección manual WGS84 (sobrescribe lat/lng en servidor). */
-async function persistirCoordsManualPedidoPanel(pedidoId, la, ln) {
+/**
+ * Admin: corrección manual WGS84 (sobrescribe lat/lng en servidor).
+ * @param {{ silentSuccessToast?: boolean }} [opts] — si true, no muestra toast verde al guardar (p. ej. «Corregir posición» desde el mapa).
+ */
+async function persistirCoordsManualPedidoPanel(pedidoId, la, ln, opts) {
     if (!esAdmin() || !puedeEnviarApiRestPedidos()) return;
     await asegurarJwtApiRest();
     const token = getApiToken();
@@ -4953,13 +4956,15 @@ async function persistirCoordsManualPedidoPanel(pedidoId, la, ln) {
         try {
             refrescarDetalleSiAbiertoTrasSync();
         } catch (_) {}
-        if (row._correccionDireccionGuardada) {
-            toast(
-                'Ubicación guardada. Los próximos reclamos en esta misma dirección usarán esta posición automáticamente.',
-                'success'
-            );
-        } else {
-            toast('Ubicación del pedido actualizada en el mapa.', 'success');
+        if (!opts || !opts.silentSuccessToast) {
+            if (row._correccionDireccionGuardada) {
+                toast(
+                    'Ubicación guardada. Los próximos reclamos en esta misma dirección usarán esta posición automáticamente.',
+                    'success'
+                );
+            } else {
+                toast('Ubicación del pedido actualizada en el mapa.', 'success');
+            }
         }
     } catch (e) {
         toastError('coords-manual', e);
@@ -7971,7 +7976,7 @@ async function confirmarMoverUbicacionMapa() {
     }
     const pid = _moverUbicMapaState.pedidoId;
     cancelarMoverUbicacionMapa();
-    await persistirCoordsManualPedidoPanel(pid, la, ln);
+    await persistirCoordsManualPedidoPanel(pid, la, ln, { silentSuccessToast: true });
 }
 
 window._moverUbicMapa = function (pedidoId) {

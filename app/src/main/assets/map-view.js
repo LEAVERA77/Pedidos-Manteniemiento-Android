@@ -875,7 +875,15 @@ export async function runInitMap() {
         const hayModalAbierto = ctx.document.querySelector('.mo.active');
         if (hayModalAbierto) return;
 
-        if (ctx.esAndroidWebViewMapa() && !ctx.mapTapUbicacionInicialHechaSesion() && !ctx._gpsRecibidoEstaSesion) {
+        const esAdm =
+            typeof ctx.esAdmin === 'function' &&
+            ctx.esAdmin();
+        if (
+            ctx.esAndroidWebViewMapa() &&
+            !esAdm &&
+            !ctx.mapTapUbicacionInicialHechaSesion() &&
+            !ctx._gpsRecibidoEstaSesion
+        ) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
             ctx.registrarFajaInstalacionSiFalta(lng);
