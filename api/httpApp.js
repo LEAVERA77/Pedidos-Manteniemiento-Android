@@ -56,7 +56,14 @@ export function createHttpApp() {
     const corsOptions = {
       origin: false,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Hub-Signature-256", "X-Request-Id"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Hub-Signature-256",
+        "X-Request-Id",
+        "X-GestorNova-Technician-Key",
+      ],
       optionsSuccessStatus: 204,
       maxAge: 86400,
     };
