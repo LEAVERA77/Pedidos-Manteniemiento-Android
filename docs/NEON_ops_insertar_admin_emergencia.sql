@@ -27,7 +27,7 @@ VALUES (
     1,
     'admin',
     'Administrador',
-    '$2a$10$R8LRAEbxv.gi6NxDSs/GpuI6Y.8ZELIFpdcgvsF1MdTIYJz3p3lhm',
+    '$2a$10$jRuwUecLwquqt3YW5sJOrurLb5ZOx2galnxxWcj/FdMNIiMutjCYO',
     'admin',
     TRUE
 );
@@ -41,6 +41,11 @@ SELECT setval(
 );
 
 SELECT id, tenant_id, email, nombre, rol, activo FROM usuarios ORDER BY id;
+
+-- Si ya habías ejecutado una versión vieja de este script y el login falla,
+-- corregí solo el hash (contraseña sigue siendo admin):
+-- UPDATE usuarios SET password_hash = '$2a$10$jRuwUecLwquqt3YW5sJOrurLb5ZOx2galnxxWcj/FdMNIiMutjCYO'
+-- WHERE lower(trim(email)) = lower(trim('admin'));
 
 
 -- =============================================================================
