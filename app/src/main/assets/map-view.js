@@ -354,10 +354,10 @@ const GN_OSM_OVERLAY_LAYERS = [
         opts: {
             subdomains: 'abcd',
             maxZoom: 19,
-            maxNativeZoom: 19,
+            /** z19 nativo suele devolver 404 en bordes o zonas poco mapeadas; z18 escalado evita “huecos”. */
+            maxNativeZoom: 18,
             opacity: 0.5,
-            /** Carga más fluida: pedir tiles mientras se mueve el mapa, más colchón y fade-in en CSS (.gn-osm-tile-fluid). */
-            updateWhenIdle: false,
+            /** Colchón + fade CSS; sin updateWhenIdle false (menos 429 por ráfagas). */
             keepBuffer: 6,
             className: 'gn-osm-tile-hot gn-osm-tile-fluid',
             attribution:
@@ -378,6 +378,38 @@ const GN_OSM_OVERLAY_LAYERS = [
     },
 ];
 
+/** Subir si cambian URLs/opciones de overlays: fuerza nuevas instancias Leaflet en mapas ya abiertos. */
+const GN_OSM_OVERLAY_INSTANCES_REV = 3;
+
+/**
+ * Reintentos ante fallos de red o 429 del tile CDN (HOT); sin esto Leaflet deja el tile en errorTileUrl o vacío.
+ * @param {import('leaflet').TileLayer} layer
+ * @param {import('leaflet').Map} map
+ */
+function gnAttachHotOsmTileRetry(layer, map) {
+    if (!layer || !map || typeof layer.on !== 'function') return;
+    layer.on('tileerror', (ev) => {
+        const tile = ev.tile;
+        const coords = ev.coords;
+        if (!tile || !coords || tile.tagName !== 'IMG') return;
+        if (tile._gnHotRetryDead) return;
+        const n = (tile._gnHotRetries = (tile._gnHotRetries || 0) + 1);
+        if (n > 5) {
+            tile._gnHotRetryDead = true;
+            return;
+        }
+        const delay = Math.min(8000, 220 * 2 ** (n - 1) + Math.floor(Math.random() * 160));
+        window.setTimeout(() => {
+            try {
+                if (!map.hasLayer(layer)) return;
+                const url = layer.getTileUrl(coords);
+                const sep = url.includes('?') ? '&' : '?';
+                tile.src = `${url}${sep}_gnhot=${n}&t=${Date.now()}`;
+            } catch (_) {}
+        }, delay);
+    });
+}
+
 function gnEnsureOsmOverlayPane(map) {
     if (!map || !map.createPane) return;
     if (!map.getPane('gnPaneOsmOverlays')) {
@@ -392,7 +424,10 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
     const idsOk = new Set(GN_OSM_OVERLAY_LAYERS.map((d) => d.id));
     if (map._gnOsmOverlayInstances) {
         const keys = Object.keys(map._gnOsmOverlayInstances);
-        const stale = keys.length !== idsOk.size || keys.some((k) => !idsOk.has(k));
+        const stale =
+            keys.length !== idsOk.size ||
+            keys.some((k) => !idsOk.has(k)) ||
+            map._gnOsmOverlayInstancesRev !== GN_OSM_OVERLAY_INSTANCES_REV;
         if (!stale) return map._gnOsmOverlayInstances;
         for (const lyr of Object.values(map._gnOsmOverlayInstances)) {
             try {
@@ -407,18 +442,25 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
     const errTile =
         'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     for (const def of GN_OSM_OVERLAY_LAYERS) {
-        const layer = L.tileLayer(def.url, {
+        const tileOpts = {
             pane: 'gnPaneOsmOverlays',
             tileSize: 256,
             crossOrigin: true,
             updateWhenZooming: true,
             updateWhenIdle: true,
             keepBuffer: 3,
-            errorTileUrl: errTile,
             ...def.opts,
-        });
+        };
+        if (def.id !== 'hot') {
+            tileOpts.errorTileUrl = errTile;
+        }
+        const layer = L.tileLayer(def.url, tileOpts);
+        if (def.id === 'hot') {
+            gnAttachHotOsmTileRetry(layer, map);
+        }
         out[def.id] = layer;
     }
+    map._gnOsmOverlayInstancesRev = GN_OSM_OVERLAY_INSTANCES_REV;
     map._gnOsmOverlayInstances = out;
     return out;
 }
