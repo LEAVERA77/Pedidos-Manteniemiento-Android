@@ -587,12 +587,6 @@ export async function runInitMap() {
         }
 
         try {
-            if (typeof window.aplicarReverseMapaAdminDesdeClicInicio === 'function' && window.aplicarReverseMapaAdminDesdeClicInicio(e)) {
-                return;
-            }
-        } catch (_) {}
-
-        try {
             if (typeof window.__gnEsReubicarPedidoMapa === 'function' && window.__gnEsReubicarPedidoMapa()) return;
         } catch (_) {}
 
@@ -604,7 +598,13 @@ export async function runInitMap() {
         const hayModalAbierto = document.querySelector('.mo.active');
         if (hayModalAbierto) return;
 
-        if (esAndroidWebViewMapa() && (typeof window.mapTapUbicacionInicialHechaSesion !== 'function' || !window.mapTapUbicacionInicialHechaSesion()) && !_gpsRecibidoEstaSesion) {
+        const esAdm = typeof window.esAdmin === 'function' && window.esAdmin();
+        if (
+            esAndroidWebViewMapa() &&
+            !esAdm &&
+            (typeof window.mapTapUbicacionInicialHechaSesion !== 'function' || !window.mapTapUbicacionInicialHechaSesion()) &&
+            !_gpsRecibidoEstaSesion
+        ) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
             if (typeof window.registrarFajaInstalacionSiFalta === 'function') window.registrarFajaInstalacionSiFalta(lng);
@@ -643,6 +643,19 @@ export async function runInitMap() {
             if (typeof window.syncNisClienteReclamoConexionUI === 'function') window.syncNisClienteReclamoConexionUI();
         } catch (_) {}
         document.getElementById('pm').classList.add('active');
+        try {
+            if (
+                typeof window.debeReverseNominatimAdminMapTap === 'function' &&
+                typeof window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function' &&
+                window.debeReverseNominatimAdminMapTap(e)
+            ) {
+                const la = Number(e.latlng?.lat);
+                const ln = Number(e.latlng?.lng);
+                if (Number.isFinite(la) && Number.isFinite(ln)) {
+                    window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(la, ln);
+                }
+            }
+        } catch (_) {}
     });
 
     setMapaInicializado(true);

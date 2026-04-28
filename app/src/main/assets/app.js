@@ -1133,79 +1133,118 @@ async function nominatimReverseProvinciaArgentina(lat, lng) {
 }
 
 /**
- * Admin: clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
- * Shift+clic mantiene el comportamiento anterior (abrir ubicación para nuevo pedido).
+ * Admin: clic en mapa con reverse Nominatim (no shift). Acepta lat/lng numéricos o string (WebView/Leaflet).
  */
-function aplicarReverseMapaAdminDesdeClicInicio(e) {
+function debeReverseNominatimAdminMapTap(e) {
     try {
         if (!esAdmin() || modoOffline || typeof fetch !== 'function') return false;
         if (e?.originalEvent?.shiftKey) return false;
-        const latlng = e?.latlng;
-        if (!latlng || typeof latlng.lat !== 'number' || typeof latlng.lng !== 'number') return false;
-        const lat = latlng.lat;
-        const lng = latlng.lng;
-        void (async () => {
-            try {
-                await asegurarJwtApiRest();
-                const token = getApiToken();
-                if (!token) {
-                    toast('Sesión requerida para geocodificación inversa.', 'error');
-                    return;
-                }
-                const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ lat, lon: lng, zoom: 18 }),
-                });
-                const j = await r.json().catch(() => ({}));
-                if (!r.ok || !j.ok || !j.result) {
-                    toast(
-                        'No se obtuvo dirección para ese punto. Probá otro clic o revisá la conexión/API.',
-                        'warning'
-                    );
-                    return;
-                }
-                const addr = j.result.address || {};
-                const nomVia =
-                    addr.road || addr.pedestrian || addr.path || addr.residential || addr.neighbourhood || '';
-                const num = addr.house_number || '';
-                const loc =
-                    addr.city ||
-                    addr.town ||
-                    addr.village ||
-                    addr.municipality ||
-                    addr.county ||
-                    addr.state_district ||
-                    '';
-                const prov = addr.state || '';
-                const cp = addr.postcode || '';
-                const refParts = [];
-                if (prov) refParts.push(prov);
-                if (cp) refParts.push(`CP ${cp}`);
-                const refExtra = refParts.length ? refParts.join(' · ') : '';
-                const dc = document.getElementById('ped-cli-calle');
-                const dn = document.getElementById('ped-cli-num');
-                const dl = document.getElementById('ped-cli-loc');
-                const dr = document.getElementById('ped-cli-ref');
-                if (dc) dc.value = nomVia ? String(nomVia).trim() : '';
-                if (dn) dn.value = num ? String(num).trim() : '';
-                if (dl) dl.value = loc ? String(loc).trim() : '';
-                if (dr && refExtra) {
-                    const prev = String(dr.value || '').trim();
-                    dr.value = prev ? `${prev} (${refExtra})` : refExtra;
-                }
-                toast('Dirección cargada desde el mapa (revisá los campos y guardá el pedido).', 'info');
-            } catch (_) {
-                toast('No se pudo consultar la dirección en ese punto.', 'error');
-            }
-        })();
+        const ll = e?.latlng;
+        if (!ll) return false;
+        const lat = Number(ll.lat);
+        const lng = Number(ll.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function reverseNominatimNuevoPedidoCore(lat, lng) {
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+    try {
+        await asegurarJwtApiRest();
+        const token = getApiToken();
+        if (!token) {
+            toast('Sesión requerida para geocodificación inversa.', 'error');
+            return;
+        }
+        const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ lat: la, lon: lo, zoom: 18 }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok || !j.result) {
+            toast(
+                'No se obtuvo dirección para ese punto. Probá otro clic o revisá la conexión/API.',
+                'warning'
+            );
+            return;
+        }
+        const addr = j.result.address || {};
+        const nomVia =
+            addr.road || addr.pedestrian || addr.path || addr.residential || addr.neighbourhood || '';
+        const num = addr.house_number || '';
+        const loc =
+            addr.city ||
+            addr.town ||
+            addr.village ||
+            addr.municipality ||
+            addr.county ||
+            addr.state_district ||
+            '';
+        const prov = addr.state || '';
+        const cp = addr.postcode || '';
+        const refParts = [];
+        if (prov) refParts.push(prov);
+        if (cp) refParts.push(`CP ${cp}`);
+        const refExtra = refParts.length ? refParts.join(' · ') : '';
+        const dc = document.getElementById('ped-cli-calle');
+        const dn = document.getElementById('ped-cli-num');
+        const dl = document.getElementById('ped-cli-loc');
+        const dr = document.getElementById('ped-cli-ref');
+        if (dc) dc.value = nomVia ? String(nomVia).trim() : '';
+        if (dn) dn.value = num ? String(num).trim() : '';
+        if (dl) dl.value = loc ? String(loc).trim() : '';
+        if (dr && refExtra) {
+            const prev = String(dr.value || '').trim();
+            dr.value = prev ? `${prev} (${refExtra})` : refExtra;
+        }
+    } catch (_) {
+        toast('No se pudo consultar la dirección en ese punto.', 'error');
+    }
+}
+
+/**
+ * Diferir reverse hasta después del handler del mapa (modal #pm ya abierto); evita carreras en WebView Android.
+ */
+function programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng) {
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+    queueMicrotask(() => {
+        void reverseNominatimNuevoPedidoCore(la, lo);
+    });
+}
+
+/**
+ * Admin: clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
+ * Shift+clic mantiene el comportamiento anterior (abrir ubicación para nuevo pedido).
+ * Siempre devuelve false (no corta el flujo del mapa); el reverse se programa en microtarea.
+ */
+function aplicarReverseMapaAdminDesdeClicInicio(e) {
+    try {
+        if (!debeReverseNominatimAdminMapTap(e)) return false;
+        const ll = e.latlng;
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa(Number(ll.lat), Number(ll.lng));
         return false;
     } catch (_) {
         return false;
     }
+}
+
+if (typeof window !== 'undefined') {
+    window.aplicarReverseMapaAdminDesdeClicInicio = aplicarReverseMapaAdminDesdeClicInicio;
+    window.debeReverseNominatimAdminMapTap = debeReverseNominatimAdminMapTap;
+    window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa =
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa;
 }
 
 /**
@@ -2320,6 +2359,8 @@ function esAndroidWebViewMapa() {
         return false;
     }
 }
+
+if (typeof window !== 'undefined') window.esAdmin = esAdmin;
 
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
 function esAdminSesionWebPublica() {
@@ -7761,6 +7802,8 @@ function buildMapViewCtx() {
         calcularEscalaReal,
         mostrarMarcadorUbicacion,
         aplicarReverseMapaAdminDesdeClicInicio,
+        debeReverseNominatimAdminMapTap,
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa,
         scheduleMapRetry: () => { void initMap(); }
     };
 }

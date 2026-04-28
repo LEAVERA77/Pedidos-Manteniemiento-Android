@@ -858,12 +858,6 @@ export async function runInitMap() {
         }
 
         try {
-            if (typeof ctx.aplicarReverseMapaAdminDesdeClicInicio === 'function' && ctx.aplicarReverseMapaAdminDesdeClicInicio(e)) {
-                return;
-            }
-        } catch (_) {}
-
-        try {
             if (typeof ctx.window.__gnEsReubicarPedidoMapa === 'function' && ctx.window.__gnEsReubicarPedidoMapa()) return;
         } catch (_) {}
 
@@ -916,6 +910,19 @@ export async function runInitMap() {
             ctx.syncNisClienteReclamoConexionUI();
         } catch (_) {}
         ctx.document.getElementById('pm').classList.add('active');
+        try {
+            if (
+                typeof ctx.debeReverseNominatimAdminMapTap === 'function' &&
+                typeof ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function' &&
+                ctx.debeReverseNominatimAdminMapTap(e)
+            ) {
+                const la = Number(e.latlng?.lat);
+                const ln = Number(e.latlng?.lng);
+                if (Number.isFinite(la) && Number.isFinite(ln)) {
+                    ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(la, ln);
+                }
+            }
+        } catch (_) {}
     });
 
     ctx.mapaInicializado = true;
