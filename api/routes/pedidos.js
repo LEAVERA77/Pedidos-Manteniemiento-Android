@@ -40,6 +40,7 @@ import {
   isValidWhatsappInternational,
   trimNombreDerivacion,
 } from "../utils/derivacionReclamos.js";
+import { propagarTelefonoReclamanteASociosCatalogoIfEmpty } from "../utils/propagarTelefonoReclamanteASocios.js";
 import {
   humanChatOpenOrGetSession,
   humanChatAppendOutbound,
@@ -620,6 +621,9 @@ router.post("/", async (req, res) => {
       insertParams
     );
     const created = insert.rows[0];
+    setImmediate(() => {
+      propagarTelefonoReclamanteASociosCatalogoIfEmpty(created, tenantId).catch(() => {});
+    });
     scheduleNotifyAltaReclamoWhatsApp(created, req.user.id);
     return res.status(201).json(coercePedidoLatLng(created));
   } catch (error) {
@@ -1746,6 +1750,11 @@ router.put("/:id", async (req, res) => {
       upParams
     );
     const updated = r.rows[0];
+    if (String(updated.telefono_contacto || "").trim()) {
+      setImmediate(() => {
+        propagarTelefonoReclamanteASociosCatalogoIfEmpty(updated, req.tenantId).catch(() => {});
+      });
+    }
     const becameCerrado = estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     if (becameCerrado) {
       scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);

@@ -4,6 +4,8 @@ import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
+import { normalizeArgentinaMobileWhatsappDigits } from "../utils/argentinaMobilePhone.js";
+import { getTenantWhatsappArDefaultAreaDigits } from "../utils/propagarTelefonoReclamanteASocios.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -23,22 +25,44 @@ function aplicarPlaceholders(texto, ctx) {
   return s;
 }
 
-async function telefonosPedidosTenantBusiness(tenantId, businessType) {
-  const hasBt = await tableHasColumn("pedidos", "business_type");
-  const params = [tenantId];
-  let wh = "tenant_id = $1 AND telefono_contacto IS NOT NULL AND TRIM(telefono_contacto::text) <> ''";
-  if (hasBt && businessType) {
-    params.push(businessType);
-    wh += ` AND business_type = $${params.length}`;
+/**
+ * Destinatarios masivos: **solo móviles** AR (549…). Excluye fijos (54 sin 9).
+ * Une `pedidos.telefono_contacto` y `socios_catalogo.telefono` del tenant (y rubro si existe la columna).
+ */
+async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType) {
+  const hasBtP = await tableHasColumn("pedidos", "business_type");
+  const defaultArea = await getTenantWhatsappArDefaultAreaDigits(tenantId);
+  const opts = { defaultAreaDigits: defaultArea };
+
+  const paramsP = [tenantId];
+  let whP = "tenant_id = $1 AND telefono_contacto IS NOT NULL AND TRIM(telefono_contacto::text) <> ''";
+  if (hasBtP && businessType) {
+    paramsP.push(businessType);
+    whP += ` AND business_type = $${paramsP.length}`;
   }
-  const r = await query(
-    `SELECT DISTINCT telefono_contacto FROM pedidos WHERE ${wh}`,
-    params
-  );
+  const rP = await query(`SELECT DISTINCT telefono_contacto AS raw FROM pedidos WHERE ${whP}`, paramsP);
+
+  let rS = { rows: [] };
+  try {
+    const hasTS = await tableHasColumn("socios_catalogo", "tenant_id");
+    const hasBtS = await tableHasColumn("socios_catalogo", "business_type");
+    if (hasTS) {
+      const paramsS = [tenantId];
+      let whS = `tenant_id = $1 AND COALESCE(activo, TRUE) AND telefono IS NOT NULL AND TRIM(telefono::text) <> ''`;
+      if (hasBtS && businessType) {
+        paramsS.push(businessType);
+        whS += ` AND business_type = $${paramsS.length}`;
+      }
+      rS = await query(`SELECT DISTINCT telefono AS raw FROM socios_catalogo WHERE ${whS}`, paramsS);
+    }
+  } catch (e) {
+    console.warn("[whatsappBroadcast] socios_catalogo", e?.message || e);
+  }
+
   const out = new Set();
-  for (const row of r.rows || []) {
-    const d = String(row.telefono_contacto || "").replace(/\D/g, "");
-    if (d.length >= 8) out.add(d);
+  for (const row of [...(rP.rows || []), ...(rS.rows || [])]) {
+    const norm = normalizeArgentinaMobileWhatsappDigits(row.raw, opts);
+    if (norm && norm.length >= 12) out.add(norm);
   }
   return [...out];
 }
@@ -64,9 +88,12 @@ router.post("/community", async (req, res) => {
     mensaje = aplicarPlaceholders(mensaje, ctx);
     const cuerpo = titulo ? `*${titulo}*\n\n${mensaje}` : mensaje;
 
-    const tels = await telefonosPedidosTenantBusiness(req.tenantId, bt);
+    const tels = await telefonosMovilesPedidosYSociosTenantBusiness(req.tenantId, bt);
     if (!tels.length) {
-      return res.status(400).json({ error: "No hay teléfonos de contacto en pedidos para este tenant y línea de negocio" });
+      return res.status(400).json({
+        error:
+          "No hay teléfonos móviles válidos en pedidos ni en el catálogo de socios (se excluyen fijos y números mal cargados). Opcional: en configuración de empresa, clave whatsapp_ar_default_area (p. ej. 343) para números guardados solo como 15… sin característica.",
+      });
     }
 
     let ok = 0;
@@ -144,9 +171,12 @@ router.post("/corte-programado", async (req, res) => {
       .filter(Boolean)
       .join("\n");
 
-    const tels = await telefonosPedidosTenantBusiness(req.tenantId, bt);
+    const tels = await telefonosMovilesPedidosYSociosTenantBusiness(req.tenantId, bt);
     if (!tels.length) {
-      return res.status(400).json({ error: "No hay teléfonos en pedidos para avisar" });
+      return res.status(400).json({
+        error:
+          "No hay teléfonos móviles en pedidos ni en socios para avisar (WhatsApp solo a celulares; los fijos se omiten). Revisá `telefono_contacto` en reclamos y `telefono` en el padrón, o la clave `whatsapp_ar_default_area` en configuración de empresa.",
+      });
     }
 
     let ok = 0;

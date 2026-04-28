@@ -29,7 +29,8 @@
     "generar:demo-socios-nominatim-verificado": "node scripts/generarSociosDemo300Nominatim.mjs",
     "generar:excel-cerrito-300": "node scripts/generarSociosCerrito300Nominatim.mjs",
     "preload:street-geometries": "node scripts/preload-street-geometries.mjs",
-    "generar:localidades-ar": "node scripts/generate-localidades-argentinas-sql.mjs"
+    "generar:localidades-ar": "node scripts/generate-localidades-argentinas-sql.mjs",
+    "normalize:socios-telefonos": "node scripts/normalizeSociosCatalogoTelefonos.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
