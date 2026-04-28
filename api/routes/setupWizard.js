@@ -274,6 +274,14 @@ router.post("/wizard", async (req, res) => {
       const newId = Number(rIns.rows[0].id);
       if (!Number.isFinite(newId)) throw new Error("insert_cliente");
 
+      try {
+        await client.query(
+          `SELECT setval(pg_get_serial_sequence('clientes', 'id'), (SELECT COALESCE(MAX(id), 1) FROM clientes))`
+        );
+      } catch (e) {
+        console.warn("[setup/wizard] setval clientes_id_seq omitido", e?.message || e);
+      }
+
       if (Object.keys(metaWaPatch).length) {
         await client.query(`UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || $2::jsonb WHERE id = $1`, [
           newId,

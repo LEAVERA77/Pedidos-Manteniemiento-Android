@@ -13672,6 +13672,9 @@ function setupWizardCompletadoEnApi(extra) {
 function debeMostrarSetupInicial(cfg, extra) {
     const completado = setupWizardCompletadoEnApi(extra);
     const incompleto = configInicialIncompleta(cfg);
+    // Neon: configuracion.abrir_wizard_recuperacion = true obliga al admin a pasar el wizard otra vez
+    // (p. ej. tras limpiar clientes de prueba y dejar solo id=1).
+    if (esAdmin() && extra && extra.abrir_wizard_recuperacion === true) return true;
     if (completado && !incompleto) return false;
     if (incompleto) return true;
     if (esAdmin() && !completado) return true;
@@ -13840,8 +13843,13 @@ function mostrarModalConfigInicial() {
     document.getElementById('cfgi-tenant').textContent = 'tenant_id: ' + tenantIdActual();
     const msg = document.getElementById('cfgi-msg');
     msg.style.display = 'block';
+    const snap = window.__PMG_LAST_MI_CLIENTE || null;
+    const snapLine =
+        snap && snap.id != null
+            ? ` Registro en servidor: id ${snap.id} — ${String(snap.nombre || '').trim() || '—'} · ${String(snap.tipo || '').trim() || '—'}. Los campos coinciden con la tabla; confirmá con Finalizar.`
+            : '';
     msg.textContent = esAdm
-        ? 'Setup inicial (una vez): elegí tipo de negocio, nombre y ubicación base; al final tocá Finalizar. Si ya estaban cargados, revisalos y confirmá.'
+        ? 'Setup inicial (una vez): elegí tipo de negocio, nombre y ubicación base; al final tocá Finalizar. Si ya estaban cargados, revisalos y confirmá.' + snapLine
         : 'Este tenant no está configurado. Pedí a un administrador completar el setup.';
     ['cfgi-nombre','cfgi-tipo','cfgi-logo-url','cfgi-logo-file'].forEach(id => {
         const el = document.getElementById(id); if (el) el.disabled = !esAdm;
@@ -13920,6 +13928,11 @@ async function verificarConfiguracionInicialObligatoria() {
                     ...(extraParsed.logo_url ? { logo_url: extraParsed.logo_url } : {}),
                     lat_base: lbApi || (ec.lat_base != null && String(ec.lat_base).trim() !== '' ? String(ec.lat_base).trim() : ''),
                     lng_base: lbgApi || (ec.lng_base != null && String(ec.lng_base).trim() !== '' ? String(ec.lng_base).trim() : '')
+                };
+                window.__PMG_LAST_MI_CLIENTE = {
+                    id: Number(data?.tenant_id ?? cli?.id) || null,
+                    nombre: nombreTrim,
+                    tipo: String(cli.tipo ?? '').trim(),
                 };
                 window.__PMG_TENANT_BRANDING__ = {
                     setup_wizard_completado: !!extraParsed.setup_wizard_completado,
@@ -14101,7 +14114,12 @@ async function guardarConfiguracionInicialObligatoria() {
                 logo_url: logoUrl,
                 latitud: _setupLat,
                 longitud: _setupLng,
-                configuracion: { setup_wizard_completado: true, marca_publicada_admin: true, ...provExtra }
+                configuracion: {
+                    setup_wizard_completado: true,
+                    marca_publicada_admin: true,
+                    abrir_wizard_recuperacion: false,
+                    ...provExtra,
+                }
             })
         });
         if (!resp.ok) {
