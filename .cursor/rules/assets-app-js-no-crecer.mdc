@@ -10,7 +10,7 @@ Aplica al **`app.js`** de **`app/src/main/assets/app.js`** (Nexxo) y a la copia 
 ## Regla para el agente
 
 1. **No añadir** bloques grandes de lógica nueva dentro de `app.js` si se puede evitar.
-2. **Nueva funcionalidad:** extraer a **módulos ES** bajo **`app/src/main/assets/js/`** (p. ej. `js/mi-feature.js`) o reutilizar **archivos hermanos ya existentes** (`offline.js`, `map.js`, `map-view.js`, etc.), e importar desde `app.js` solo el **pegamento mínimo** (unas líneas).
+2. **Nueva funcionalidad:** extraer a **módulos ES** bajo **`app/src/main/assets/js/`** (p. ej. `js/mi-feature.js`) o reutilizar **archivos hermanos ya existentes** (`offline.js`, `map.js`, `map-view.js`, **`admin-web-responsive.css`** para layout admin móvil/tablet sin inflar JS, etc.), e importar desde `app.js` solo el **pegamento mínimo** (unas líneas).
 3. **Correcciones pequeñas** en `app.js` (bugs, null checks, mensajes) están bien si son **pocas líneas** o si el **balance neto** reduce tamaño (refactor que mueve código fuera).
 4. Al crear archivos bajo **`js/`**, asegurar que **`scripts/sync-assets-to-pedidos-mg.ps1`** siga copiando la carpeta **`js/`** al clon de Pedidos-MG (ya copia `js/*`; no hace falta duplicar lógica en la raíz salvo un entry nuevo explícito en el script si se añade algo **fuera** de `js/`).
 5. **Imports:** rutas relativas válidas en **HTTPS** (mismo origen que `app.js`). No asumir rutas que el sync no publica.

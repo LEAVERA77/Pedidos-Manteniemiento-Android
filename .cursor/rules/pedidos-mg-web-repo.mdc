@@ -11,12 +11,12 @@ alwaysApply: true
 ## Fuente de verdad en este proyecto (Android / GestorNova)
 
 - `app/src/main/assets/index.html` — mismo shell HTML que en la raíz de **Pedidos-MG** (`index.html`).
-- `app/src/main/assets/styles.css`, `app.js`, `map.js`, `map-view.js` (mapa Leaflet vía `import()`), `offline.js` — mismos nombres en la raíz de **Pedidos-MG** (el navegador los cachea aparte). Carpeta **`js/`** también se sincroniza; ver regla **`assets-app-js-no-crecer`** (no inflar `app.js`).
+- `app/src/main/assets/styles.css`, **`admin-web-responsive.css`** (admin en tablet/móvil; media queries), `app.js`, `map.js`, `map-view.js` (mapa Leaflet vía `import()`), `offline.js` — mismos nombres en la raíz de **Pedidos-MG** (el navegador los cachea aparte). Carpeta **`js/`** también se sincroniza; ver regla **`assets-app-js-no-crecer`** (no inflar `app.js`).
 - PWA / tiles: `app/src/main/assets/sw.js` → raíz de **Pedidos-MG** como `sw.js`.
 
 ## Qué hacer cuando el usuario pida “subir el front” o “sincronizar con GitHub Pages”
 
-1. Los cambios se hacen primero en `app/src/main/assets/` (`index.html`, `styles.css`, `app.js`, `map.js`, `map-view.js`, `offline.js`, y `sw.js` si aplica).
+1. Los cambios se hacen primero en `app/src/main/assets/` (`index.html`, `styles.css`, `admin-web-responsive.css`, `app.js`, `map.js`, `map-view.js`, `offline.js`, y `sw.js` si aplica).
 2. **Copia automática (recomendado):** desde la raíz del repo Nexxo ejecutá en PowerShell:  
    `.\scripts\sync-assets-to-pedidos-mg.ps1`  
    (Opcional: `-PedidosMgRoot 'R:\al\Pedidos-MG'` si el clon no es hermano de Nexxo.)

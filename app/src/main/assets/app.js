@@ -11573,6 +11573,7 @@ async function detalle(p) {
         </div>
         <div class="gn-dm-actions-bar">
         <div class="da">
+            ${ed && p.es === 'En ejecución' ? `<div class="gn-dm-estado-ejecucion" role="status"><i class="fas fa-play-circle"></i> Pedido en ejecución — usá Cargar avance o Cerrar cuando corresponda.</div>` : ''}
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
             ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 p2" title="Marca el pedido como En ejecución. Con teléfono válido y WhatsApp del tenant, el servidor puede avisar al cliente." onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> Poner en ejecución</button><button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
@@ -18598,7 +18599,9 @@ async function cargarEstadisticas() {
         actualizarMarcoReferenciaEstadisticasAdmin();
     } catch (_) {}
     const tsql = await pedidosFiltroTenantSql();
-    const tsqlP = tsql ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id') : '';
+    const tsqlP = tsql
+        ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id').replace(/\bbusiness_type\b/g, 'p.business_type')
+        : '';
     const { condFecha, fechaDesde, periodo } = await resolveCondicionFechaPedidosStats(tsql);
     const filtro    = `WHERE ${condFecha}${tsql}`;
     const andFecha  = `AND ${condFecha}`;
@@ -19689,6 +19692,32 @@ function _errMsg(e) {
     try { return JSON.stringify(e); } catch (_) { return String(e); }
 }
 
+/** Al abrir el modal de recuperación: evita quedar en paso 2 sin UI coherente. */
+function reiniciarModalResetPwUi() {
+    _resetPaso = 1;
+    _resetTokenActual = null;
+    _resetUsuarioAdmin = false;
+    try {
+        const m = document.getElementById('reset-msg');
+        if (m) {
+            m.textContent = '';
+            m.style.color = '';
+        }
+        const w = document.getElementById('reset-codigo-wrap');
+        if (w) w.style.display = 'none';
+        const c = document.getElementById('reset-codigo');
+        const n = document.getElementById('reset-nueva-pw');
+        if (c) c.value = '';
+        if (n) n.value = '';
+        const btn = document.getElementById('btn-reset-pw');
+        if (btn) {
+            btn.style.display = '';
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar código';
+        }
+    } catch (_) {}
+}
+window.reiniciarModalResetPwUi = reiniciarModalResetPwUi;
+
 async function pasoResetPw() {
     const cfg = window.APP_CONFIG?.emailjs;
 
@@ -19701,15 +19730,21 @@ async function pasoResetPw() {
         _resetUsuarioAdmin = false;
         try {
             const emailLc = email.toLowerCase();
-            const r = await sqlSimple(`SELECT id, email, nombre, rol
+            const matchSql = (wfExtra) => `SELECT id, email, nombre, rol
                 FROM usuarios
                 WHERE activo = TRUE
                   AND (
                     lower(coalesce(email,'')) = ${esc(emailLc)}
                     OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
                   )
+                ${wfExtra || ''}
                 ORDER BY CASE WHEN lower(coalesce(email,'')) = ${esc(emailLc)} THEN 0 ELSE 1 END
-                LIMIT 1`);
+                LIMIT 1`;
+            const wf = await sqlFiltroUsuariosPorTenant();
+            let r = await sqlSimple(matchSql(wf));
+            if (!r.rows[0] && wf) {
+                r = await sqlSimple(matchSql(''));
+            }
             if (!r.rows[0]) { msg.textContent = 'Cuenta no encontrada o inactiva'; return; }
             const usuario = r.rows[0];
             const rolRaw = String(usuario.rol || '').toLowerCase();
@@ -19801,7 +19836,8 @@ async function pasoResetPw() {
         if (!codigo || !nuevaPw) { msg.textContent = 'Completá el código y la nueva contraseña'; return; }
         try {
             const emailLc = email.toLowerCase();
-            const r = await sqlSimple(`SELECT id
+            const wf = await sqlFiltroUsuariosPorTenant();
+            const matchUpd = (wfExtra) => `SELECT id
                 FROM usuarios
                 WHERE (
                         lower(coalesce(email,'')) = ${esc(emailLc)}
@@ -19809,7 +19845,12 @@ async function pasoResetPw() {
                       )
                   AND reset_token = ${esc(codigo)}
                   AND reset_expiry > NOW()
-                LIMIT 1`);
+                ${wfExtra || ''}
+                LIMIT 1`;
+            let r = await sqlSimple(matchUpd(wf));
+            if (!r.rows[0] && wf) {
+                r = await sqlSimple(matchUpd(''));
+            }
             if (!r.rows[0]) { msg.textContent = 'Código incorrecto o expirado'; return; }
             await sqlSimple(
                 `UPDATE usuarios SET password_hash = ${esc(nuevaPw)}, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE WHERE id = ${esc(r.rows[0].id)}`

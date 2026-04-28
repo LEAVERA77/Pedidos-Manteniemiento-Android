@@ -26,7 +26,7 @@ Usá esta guía **después de cambiar código en el proyecto** (o cuando el agen
 
 | Dónde se cambió | Qué hacer en Android Studio |
 |-----------------|----------------------------|
-| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `sw.js`, etc.) | **Run** ▶. Si no se ven cambios: **Clean Project** y luego **Run** ▶. |
+| **`app/src/main/assets/`** (web embebida: `app.js`, `index.html`, `styles.css`, `admin-web-responsive.css`, `sw.js`, etc.) | **Run** ▶. Si no se ven cambios: **Clean Project** y luego **Run** ▶. Tras **pull** del remoto, comprobar que existan los mismos archivos que en el repo (p. ej. el `<link>` a `admin-web-responsive.css`). |
 | **`app/src/main/java/`** (Kotlin/Java: notificaciones, GPS, cámara, WebView bridge, etc.) | **Run** ▶. |
 | **`build.gradle`**, `settings.gradle`, nuevas dependencias o plugins | **Sync** (elefante) → luego **Run** ▶. |
 | **`api/`** (Node, Render, WhatsApp, Neon desde el servidor) | **Nada** en Android Studio. |

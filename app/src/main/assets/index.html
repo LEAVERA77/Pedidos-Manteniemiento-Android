@@ -18,6 +18,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="admin-web-responsive.css"/>
 </head>
 <body>
 <div id="app">
@@ -61,7 +62,7 @@
     </form>
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem;display:flex;flex-direction:column;align-items:center;gap:.35rem;max-width:24rem;margin-left:auto;margin-right:auto">
-      <button type="button" onclick="document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu usuario o contraseña?</button>
+      <button type="button" onclick="if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu usuario o contraseña?</button>
       <span style="font-size:.74rem;color:var(--tm);line-height:1.35;text-align:center">El usuario de ingreso es tu <strong>email</strong>. Recuperación de clave vía correo (EmailJS) para cuentas administrador; no hace falta API key en la app.</span>
     </div>
     <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
@@ -1144,7 +1145,7 @@
 </div>
 <div id="modal-reset-pw" class="mo">
   <div class="mc" style="max-width:420px">
-    <div class="mh"><h3><i class="fas fa-key"></i> Recuperar acceso (admin)</h3><button type="button" class="cm" onclick="document.getElementById('modal-reset-pw').classList.remove('active')"><i class="fas fa-times"></i></button></div>
+    <div class="mh"><h3><i class="fas fa-key"></i> Recuperar acceso (admin)</h3><button type="button" class="cm" onclick="document.getElementById('modal-reset-pw').classList.remove('active');if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();"><i class="fas fa-times"></i></button></div>
     <div class="mb">
       <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo cuentas <strong>administrador</strong>. Si no recordás el <strong>email</strong> con el que te registraron, consultá con quien gestiona el sistema o la bandeja de bienvenida. Para la <strong>contraseña</strong>, recibirás un código de 6 dígitos (válido ~30 min) en el correo que indiques abajo o en el email de contacto de la empresa (servicio EmailJS, sin secretos en la app).</p>
       <div class="fg" style="padding:0"><label>Email de tu cuenta admin</label><input id="reset-email" type="text" placeholder="admin@cooperativa.org" autocomplete="username"></div>
@@ -1155,7 +1156,7 @@
       </div>
       <div id="reset-msg" style="font-size:.85rem;margin-top:.5rem"></div>
       <div style="display:flex;gap:.75rem;margin-top:1rem">
-        <button class="sec" onclick="document.getElementById('modal-reset-pw').classList.remove('active')">Cancelar</button>
+        <button class="sec" onclick="document.getElementById('modal-reset-pw').classList.remove('active');if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();">Cancelar</button>
         <button id="btn-reset-pw" class="bp" onclick="pasoResetPw()"><i class="fas fa-paper-plane"></i> Enviar código</button>
       </div>
     </div>

@@ -1,0 +1,115 @@
+/**
+ * Panel admin GestorNova / Pedidos-MG — layout cómodo en tablet y móvil.
+ * Cargar después de styles.css; no duplicar reglas grandes aquí.
+ */
+
+/* Detalle pedido (WebView / web): estado visible cuando ya está en ejecución */
+#dm .gn-dm-estado-ejecucion {
+  width: 100%;
+  flex-basis: 100%;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--bl, #1d4ed8);
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.35rem;
+}
+#dm .gn-dm-estado-ejecucion i {
+  margin-right: 0.35rem;
+}
+
+@media (max-width: 1024px) {
+  #ms .hd {
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    padding: 0.5rem 0.65rem;
+    align-items: flex-start;
+  }
+  #ms .hd h2 {
+    font-size: 1rem;
+  }
+  #ms .hd-slot-left,
+  #ms .hd-slot-mid,
+  #ms .hd-slot-right {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  #ms .hd-slot-mid {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  #ms .bp2 {
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+  #ms .bp2 .ph {
+    padding: 0.5rem 0.65rem 0.35rem;
+    font-size: 0.78rem;
+  }
+  #admin-panel .admin-section {
+    padding: 0.65rem 0.75rem 1rem;
+  }
+  .mo .mc {
+    max-width: min(520px, calc(100vw - 1rem));
+    margin: 0.5rem;
+    max-height: calc(100vh - 1rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 640px) {
+  #ms .hd-slot-left h2 {
+    font-size: 0.92rem;
+  }
+  #ms .hd-slot-left h2 .fa-network-wired {
+    display: none;
+  }
+  #ms .un {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #ms .bp2 {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    justify-content: flex-start;
+  }
+  #ms .bp2 .ph {
+    flex-shrink: 0;
+    min-height: 44px;
+    justify-content: center;
+  }
+  #admin-panel .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #admin-panel table,
+  #admin-panel .admin-table-wrap {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #dm .gn-dm-actions-bar .da {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #dm .gn-dm-actions-bar .da .ba2 {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .user-menu-wrap .user-menu-dropdown,
+  #user-menu-wrap .user-menu {
+    right: 0;
+    left: auto;
+    max-width: calc(100vw - 1rem);
+  }
+}
