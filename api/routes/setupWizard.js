@@ -12,6 +12,93 @@ import { tableHasColumn } from "../utils/tenantScope.js";
 import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantIdentity.js";
 
 const router = express.Router();
+
+/** Clave en env + header `X-GestorNova-Technician-Key` (solo personal técnico; no va en el repo). */
+function technicianTenantKeyOk(req) {
+  const expected = String(process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY || "").trim();
+  const got = String(req.headers["x-gestornova-technician-key"] || "").trim();
+  return Boolean(expected && got === expected);
+}
+
+function requireTechnicianTenantKey(req, res, next) {
+  if (!technicianTenantKeyOk(req)) {
+    return res.status(403).json({ error: "Operación no permitida" });
+  }
+  return next();
+}
+
+router.get("/technician/tenants", ...authWithTenantHost, adminOnly, requireTechnicianTenantKey, async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT id, nombre, tipo, COALESCE(activo, TRUE) AS activo
+       FROM clientes
+       ORDER BY id ASC
+       LIMIT 500`
+    );
+    return res.json({ ok: true, clientes: r.rows || [] });
+  } catch (e) {
+    console.error("[setup/technician/tenants]", e);
+    return res.status(500).json({ error: "No se pudo listar clientes", detail: e.message });
+  }
+});
+
+router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requireTechnicianTenantKey, async (req, res) => {
+  try {
+    const tid = Number(req.body?.tenant_id);
+    if (!Number.isFinite(tid) || tid < 1) {
+      return res.status(400).json({ error: "tenant_id inválido" });
+    }
+    const rC = await query(`SELECT id, nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
+    if (!rC.rows.length) {
+      return res.status(404).json({ error: "Cliente / tenant no encontrado" });
+    }
+    const uid = Number(req.user.id);
+    const rEmail = await query(`SELECT lower(trim(coalesce(email,''))) AS e FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
+    const em = String(rEmail.rows?.[0]?.e || "");
+    if (!em) {
+      return res.status(400).json({ error: "Tu usuario no tiene email; no se puede comprobar duplicados" });
+    }
+    const dup = await query(
+      `SELECT id FROM usuarios
+       WHERE tenant_id = $1 AND id <> $2 AND lower(trim(coalesce(email,''))) = $3
+       LIMIT 1`,
+      [tid, uid, em]
+    );
+    if (dup.rows.length) {
+      return res.status(409).json({
+        error: "Ya existe otro usuario con el mismo email en ese tenant",
+        hint: "Cambiá el email de una de las cuentas o desactivá la duplicada en Neon.",
+      });
+    }
+    const rUpd = await query(
+      `UPDATE usuarios
+       SET tenant_id = $1
+       WHERE id = $2
+         AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
+       RETURNING id, tenant_id`,
+      [tid, uid]
+    );
+    if (!rUpd.rows.length) {
+      return res.status(403).json({ error: "No se actualizó el tenant (¿rol administrador?)" });
+    }
+    const token = signToken({
+      userId: uid,
+      rol: req.user.rol,
+      tenant_id: tid,
+    });
+    return res.json({
+      ok: true,
+      tenant_id: tid,
+      cliente: rC.rows[0],
+      token,
+      message: `Usuario vinculado al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión si hace falta.`,
+    });
+  } catch (e) {
+    console.error("[setup/technician/attach-tenant]", e);
+    return res.status(500).json({ error: "No se pudo vincular el tenant", detail: e.message });
+  }
+});
+
 router.use(authWithTenantHost, adminOnly);
 
 function parseConfiguracionDb(val) {

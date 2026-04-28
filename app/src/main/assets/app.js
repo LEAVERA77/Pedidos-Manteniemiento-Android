@@ -14123,6 +14123,119 @@ function syncZonaPedidoFormLabels() {
 }
 window.syncZonaPedidoFormLabels = syncZonaPedidoFormLabels;
 
+function _wizardTecnicoSetMsg(texto, esError) {
+    const m = document.getElementById('cfgi-tech-msg');
+    if (!m) return;
+    if (!texto) {
+        m.style.display = 'none';
+        m.textContent = '';
+        return;
+    }
+    m.style.display = 'block';
+    m.style.color = esError ? 'var(--re)' : 'var(--tm)';
+    m.textContent = texto;
+}
+
+async function wizardTecnicoCargarTenantsNeon() {
+    const k = (document.getElementById('cfgi-tech-key')?.value || '').trim();
+    if (!k) {
+        _wizardTecnicoSetMsg('Ingresá la clave de técnico.', true);
+        return;
+    }
+    const token = getApiToken();
+    if (!token) {
+        _wizardTecnicoSetMsg('Sin sesión API. Reiniciá sesión.', true);
+        return;
+    }
+    _wizardTecnicoSetMsg('Cargando…', false);
+    try {
+        const r = await fetch(apiUrl('/api/setup/technician/tenants'), {
+            headers: { Authorization: `Bearer ${token}`, 'X-GestorNova-Technician-Key': k },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
+        }
+        const sel = document.getElementById('cfgi-tech-tenant-sel');
+        if (sel) {
+            sel.innerHTML = '';
+            (j.clientes || []).forEach((c) => {
+                const o = document.createElement('option');
+                o.value = String(c.id);
+                const nom = String(c.nombre || '').trim() || '—';
+                const tip = String(c.tipo || '').trim() || '—';
+                o.textContent = `${c.id} — ${nom} (${tip})`;
+                sel.appendChild(o);
+            });
+        }
+        _wizardTecnicoSetMsg(`Listo: ${(j.clientes || []).length} fila(s) en clientes. Elegí tenant y tocá Vincular.`, false);
+    } catch (e) {
+        _wizardTecnicoSetMsg(e.message || 'Error', true);
+    }
+}
+
+async function wizardTecnicoVincularTenantSeleccionado() {
+    const k = (document.getElementById('cfgi-tech-key')?.value || '').trim();
+    const sel = document.getElementById('cfgi-tech-tenant-sel');
+    const tid = Number(sel?.value);
+    if (!k) {
+        _wizardTecnicoSetMsg('Ingresá la clave de técnico.', true);
+        return;
+    }
+    if (!Number.isFinite(tid) || tid < 1) {
+        _wizardTecnicoSetMsg('Primero listá tenants y elegí un id.', true);
+        return;
+    }
+    const token = getApiToken();
+    if (!token) {
+        _wizardTecnicoSetMsg('Sin sesión API.', true);
+        return;
+    }
+    _wizardTecnicoSetMsg('Vinculando…', false);
+    try {
+        const r = await fetch(apiUrl('/api/setup/technician/attach-tenant'), {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'X-GestorNova-Technician-Key': k,
+            },
+            body: JSON.stringify({ tenant_id: tid }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            throw new Error([j.error, j.detail, j.hint].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
+        }
+        if (j.token) {
+            app.apiToken = String(j.token);
+            try {
+                localStorage.setItem('pmg_api_token', app.apiToken);
+            } catch (_) {}
+            if (app.u) {
+                app.u.tenant_id = tid;
+                try {
+                    delete app.u.tenantId;
+                } catch (_) {}
+                try {
+                    localStorage.setItem('pmg', JSON.stringify(app.u));
+                } catch (_) {}
+            }
+            try {
+                limpiarLocalStorageContadoresPedido();
+            } catch (_) {}
+            try {
+                invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+        }
+        const tEl = document.getElementById('cfgi-tenant');
+        if (tEl) tEl.textContent = 'tenant_id: ' + tid;
+        _wizardTecnicoSetMsg(j.message || 'Vinculado. Podés seguir el wizard o recargar la página.', false);
+        toast(j.message || 'Tenant vinculado correctamente.', 'success');
+    } catch (e) {
+        _wizardTecnicoSetMsg(e.message || 'Error', true);
+    }
+}
+
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');
     if (!modal) return;
@@ -14133,6 +14246,11 @@ function mostrarModalConfigInicial() {
     document.getElementById('cfgi-tipo').value = cfg.tipo || '';
     document.getElementById('cfgi-logo-url').value = cfg.logo_url || '';
     document.getElementById('cfgi-tenant').textContent = 'tenant_id: ' + tenantIdActual();
+    try {
+        const tw = document.getElementById('cfgi-tech-wrap');
+        if (tw) tw.style.display = esAdm ? '' : 'none';
+        _wizardTecnicoSetMsg('', false);
+    } catch (_) {}
     const msg = document.getElementById('cfgi-msg');
     msg.style.display = 'block';
     const snap = window.__PMG_LAST_MI_CLIENTE || null;
@@ -14519,6 +14637,10 @@ async function guardarConfiguracionInicialObligatoria() {
 window.guardarConfiguracionInicialObligatoria = guardarConfiguracionInicialObligatoria;
 window.setupWizardNext = setupWizardNext;
 window.setupWizardPrev = setupWizardPrev;
+if (typeof wizardTecnicoCargarTenantsNeon !== 'undefined') window.wizardTecnicoCargarTenantsNeon = wizardTecnicoCargarTenantsNeon;
+if (typeof wizardTecnicoVincularTenantSeleccionado !== 'undefined') {
+    window.wizardTecnicoVincularTenantSeleccionado = wizardTecnicoVincularTenantSeleccionado;
+}
 window.usarUbicacionAutomaticaSetupWizard = usarUbicacionAutomaticaSetupWizard;
 
 // ── ALARMA PEDIDOS URGENTES ──────────────────────────────────

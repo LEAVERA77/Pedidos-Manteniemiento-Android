@@ -1023,6 +1023,23 @@
             </select>
           </div>
         </div>
+        <details id="cfgi-tech-wrap" style="margin-top:.85rem;padding:.65rem .7rem;background:#f8fafc;border:1px solid var(--bo);border-radius:.5rem">
+          <summary style="cursor:pointer;font-size:.8rem;color:var(--tm);font-weight:600">Herramienta interna (técnico): elegir tenant en el servidor</summary>
+          <p style="font-size:.72rem;color:var(--tl);margin:.45rem 0 .5rem;line-height:1.4">Requiere que en el API (Render, etc.) esté definida la variable <code style="font-size:.68rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code>. La clave no se guarda en el navegador. Se listan filas de <code style="font-size:.68rem">clientes</code> (Neon) y se reasigna <strong>tu usuario administrador</strong> al tenant elegido; recibís un JWT nuevo.</p>
+          <div class="form-grid" style="margin-top:.35rem">
+            <div class="full"><label for="cfgi-tech-key">Clave de técnico</label>
+              <input id="cfgi-tech-key" type="password" autocomplete="off" placeholder="Mismo valor que GESTORNOVA_TECHNICIAN_TENANT_KEY en el servidor"></div>
+            <div class="full" style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:flex-end">
+              <button type="button" class="btn-sm" style="background:var(--bg);border:1px solid var(--bo)" onclick="wizardTecnicoCargarTenantsNeon()"><i class="fas fa-database"></i> Listar tenants</button>
+            </div>
+            <div class="full"><label for="cfgi-tech-tenant-sel">Tenant (<code style="font-size:.68rem">clientes.id</code>)</label>
+              <select id="cfgi-tech-tenant-sel" style="width:100%;max-width:420px"></select></div>
+            <div class="full">
+              <button type="button" class="btn-sm primary" onclick="wizardTecnicoVincularTenantSeleccionado()"><i class="fas fa-link"></i> Vincular mi sesión a este tenant</button>
+            </div>
+          </div>
+          <p id="cfgi-tech-msg" style="display:none;margin:.5rem 0 0;font-size:.8rem" role="status"></p>
+        </details>
       </div>
       <div id="sw-paso-2" class="sw-step">
         <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Branding</h4>

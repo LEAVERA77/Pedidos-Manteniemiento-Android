@@ -8,6 +8,10 @@
 --
 -- Tras ejecutar: cerrá sesión en el panel y volvé a entrar para alinear el JWT.
 --
+-- Alternativa sin SQL: en el asistente de setup (admin), sección «Herramienta interna
+-- (técnico)» requiere `GESTORNOVA_TECHNICIAN_TENANT_KEY` en el API y el mismo valor
+-- como clave en el formulario; listá `clientes` y vinculá la sesión al tenant elegido.
+--
 -- made by leavera77
 -- =============================================================================
 
