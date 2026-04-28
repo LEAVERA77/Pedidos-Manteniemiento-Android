@@ -434,6 +434,21 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
  * Lee preferencias `pmg_overlay_osm_<id>` y añade/quita capas (solo admin web).
  * @param {import('leaflet').Map | null | undefined} map
  */
+/** Quita del mapa las capas tile OSM de admin (p. ej. mapas secundarios que no deben heredar el panel de capas). */
+export function gnClearAdminOsmOverlaysFromMap(map) {
+    if (!map) return;
+    try {
+        const layers = map._gnOsmOverlayInstances;
+        if (layers) {
+            for (const lyr of Object.values(layers)) {
+                try {
+                    if (map.hasLayer(lyr)) map.removeLayer(lyr);
+                } catch (_) {}
+            }
+        }
+    } catch (_) {}
+}
+
 export function gnApplyAdminOsmOverlaysFromStorage(map) {
     if (!map || !ctx) return;
     const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
@@ -459,8 +474,13 @@ export function gnApplyAdminOsmOverlaysFromStorage(map) {
     }
 }
 
-export function gnAttachBaseMapLayers(mapa) {
+/**
+ * @param {import('leaflet').Map} mapa
+ * @param {{ applyAdminOsmOverlays?: boolean }} [opts] Si `applyAdminOsmOverlays === false`, no aplica las superposiciones del panel (solo mapa base).
+ */
+export function gnAttachBaseMapLayers(mapa, opts) {
     if (!mapa || !ctx) return;
+    const applyOsm = !opts || opts.applyAdminOsmOverlays !== false;
     const ligero = ctx.gnMapaLigero();
     const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
     const L = ctx.L;
@@ -506,7 +526,8 @@ export function gnAttachBaseMapLayers(mapa) {
         }
     });
     capaCarto.addTo(mapa);
-    gnApplyAdminOsmOverlaysFromStorage(mapa);
+    if (applyOsm) gnApplyAdminOsmOverlaysFromStorage(mapa);
+    else gnClearAdminOsmOverlaysFromMap(mapa);
 }
 
 /**

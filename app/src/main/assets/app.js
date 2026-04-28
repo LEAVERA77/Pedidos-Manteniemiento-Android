@@ -19870,10 +19870,15 @@ function iniciarMapaUsuariosAdmin() {
                 markerZoomAnimation: false,
                 inertia: false
             }).setView([-31.5, -60.0], 10);
-            mod.gnAttachBaseMapLayers(_mapaUsuariosAdmin);
+            mod.gnAttachBaseMapLayers(_mapaUsuariosAdmin, { applyAdminOsmOverlays: false });
             window._mapaUsuariosAdmin = _mapaUsuariosAdmin;
         } else {
             _mapaUsuariosAdmin.invalidateSize();
+            try {
+                if (typeof mod.gnClearAdminOsmOverlaysFromMap === 'function') {
+                    mod.gnClearAdminOsmOverlaysFromMap(_mapaUsuariosAdmin);
+                }
+            } catch (_) {}
             window._mapaUsuariosAdmin = _mapaUsuariosAdmin;
         }
         cargarUbicacionesUsuarios();
