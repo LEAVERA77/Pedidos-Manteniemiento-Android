@@ -337,18 +337,6 @@ export async function gnRefreshMarcadorUbicacionBaseAdmin() {
 /** Capas raster de terceros (OSM / derivados) solo para admin en navegador web — superpuestas sobre la base. */
 const GN_OSM_OVERLAY_LAYERS = [
     {
-        id: 'power',
-        url: 'https://tiles-{s}.openinframap.org/power/{z}/{x}/{y}.png',
-        opts: {
-            subdomains: 'abcd',
-            maxZoom: 19,
-            maxNativeZoom: 18,
-            opacity: 0.88,
-            attribution:
-                'Infraestructura eléctrica: <a href="https://openinframap.org" rel="noopener noreferrer">OpenInfraMap</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        },
-    },
-    {
         id: 'topo',
         url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
         opts: {
@@ -368,7 +356,8 @@ const GN_OSM_OVERLAY_LAYERS = [
             maxZoom: 19,
             maxNativeZoom: 19,
             opacity: 0.5,
-            attribution: 'Estilo humanitario: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · HOT',
+            attribution:
+                'Ejidos y lugares (estilo HOT): © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.hotosm.org/" rel="noopener noreferrer">HOT</a>',
         },
     },
     {
@@ -477,6 +466,7 @@ export function gnApplyAdminOsmOverlaysFromStorage(map) {
     if (!ctx.esAdmin || typeof ctx.esAdmin !== 'function' || !ctx.esAdmin()) return;
     try {
         localStorage.removeItem('pmg_overlay_osm_hillshade');
+        localStorage.removeItem('pmg_overlay_osm_power');
     } catch (_) {}
     const layers = gnEnsureAdminOsmOverlayLayerInstances(map);
     if (!layers) return;
