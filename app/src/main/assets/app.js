@@ -2539,6 +2539,12 @@ function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
     try {
         resetAdminUiMultitenantDatosOperativos();
     } catch (_) {}
+    try {
+        void cargarConfigEmpresa();
+    } catch (_) {}
+    try {
+        void cargarFormEmpresa();
+    } catch (_) {}
 }
 
 async function promptAdminTipoNegocioWebIfNeeded(force = false) {
@@ -5304,18 +5310,16 @@ function _gnOcultarPanelPedidosParaDetalleAndroid() {
     });
 }
 
-/** Una vez: al tocar el modal de detalle (#dm), ocultar el panel de lista de pedidos (bp2) en Android. */
+/** Una vez: en Android, cualquier interacción con un modal (.mo) oculta el panel de lista de pedidos (bp2). */
 let _gnDetalleTapHideBp2Bound = false;
 function _gnBindDetalleModalOcultarBp2AndroidUnaVez() {
     if (_gnDetalleTapHideBp2Bound) return;
     if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
-    const dm = document.getElementById('dm');
-    if (!dm) return;
     _gnDetalleTapHideBp2Bound = true;
-    dm.addEventListener(
+    document.addEventListener(
         'pointerdown',
-        () => {
-            if (!dm.classList.contains('active')) return;
+        (e) => {
+            if (!e.target || !e.target.closest || !e.target.closest('.mo.active')) return;
             setBp2PanelHidden(true);
             requestAnimationFrame(() => {
                 try {
@@ -5542,6 +5546,7 @@ function initMouiCardDraggable(cardId) {
     if (!card) return;
     const hd = card.querySelector('.moui-hd');
     if (!hd || card.dataset.mouiCardDragInit === '1') return;
+    if (!card.isConnected || !hd.isConnected) return;
     card.dataset.mouiCardDragInit = '1';
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
@@ -5560,6 +5565,7 @@ function initMouiCardDraggable(cardId) {
     };
     applySaved();
     const startDrag = (clientX, clientY) => {
+        if (!card.isConnected || !hd.isConnected) return;
         const r = card.getBoundingClientRect();
         _mouiCardDragState = {
             sx: clientX,
@@ -8141,6 +8147,16 @@ async function confirmarEnviarNotifPedido() {
         }
         await sqlSimple(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES (${esc(uid)}, ${esc(pidNum)}, ${esc(titulo)}, ${esc(cuerpo)}, FALSE)`);
         await enviarWhatsappMetaTecnico(uid, pidNum, `${titulo}: ${cuerpo}`);
+        if (puedeEnviarApiRestPedidos()) {
+            const apiRow = await pedidoPutApi(_assignPedidoId, { estado: 'Asignado' });
+            if (apiRow) {
+                const ix = app.p.findIndex((x) => String(x.id) === String(_assignPedidoId));
+                if (ix !== -1) {
+                    app.p[ix] = norm(apiRow);
+                    offlinePedidosSave(app.p);
+                }
+            }
+        }
         document.getElementById('modal-asignar-tecnico')?.classList.remove('active');
         _assignPedidoId = null;
         toast(oldTai && oldTai !== uid ? 'Reasignado y notificaciones enviadas' : 'Técnico asignado y notificación encolada', 'success');
@@ -11919,7 +11935,20 @@ function closeAll() {
     });
     if (dmAntes) {
         try {
-            _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
+            // Android: el panel de pedidos debe quedar oculto tras acciones en el modal (Cerrar, avance, etc.).
+            if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
+                _gnBp2SnapAntesDetalleAndroid = null;
+                try {
+                    setBp2PanelHidden(true);
+                } catch (_) {}
+                requestAnimationFrame(() => {
+                    try {
+                        if (app.map) app.map.invalidateSize({ animate: false });
+                    } catch (_) {}
+                });
+            } else {
+                _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
+            }
         } catch (_) {}
     }
     app.cid = null;
@@ -13362,6 +13391,29 @@ const BANNER_NUEVO_MS = 10000;
 let _adminBannerOpinionWatermarkIso = null;
 
 const SESS_KEY_BANNER_OPINION_DISMISS = 'pmg_sess_banner_opinion_dismiss_v1';
+/** Cierre explícito del banner de calificación baja: persiste entre sesiones (por tenant + pedido). */
+const LS_KEY_BANNER_OPINION_DISMISS = 'pmg_ls_banner_opinion_dismiss_v1';
+
+function _persistedOpinionBannerDismissedKeys() {
+    try {
+        const j = localStorage.getItem(LS_KEY_BANNER_OPINION_DISMISS);
+        const a = JSON.parse(j || '[]');
+        return new Set((Array.isArray(a) ? a : []).map(String));
+    } catch (_) {
+        return new Set();
+    }
+}
+
+function _persistDismissOpinionBannerPedido(pid) {
+    if (pid == null || pid === '') return;
+    const tid = String(tenantIdActual());
+    const key = `${tid}:${String(pid)}`;
+    const s = _persistedOpinionBannerDismissedKeys();
+    s.add(key);
+    try {
+        localStorage.setItem(LS_KEY_BANNER_OPINION_DISMISS, JSON.stringify([...s]));
+    } catch (_) {}
+}
 
 function _sessionOpinionBannerDismissedIds() {
     try {
@@ -13452,7 +13504,10 @@ function _commitAdminBannerOpinionWatermark() {
 
 function ocultarBannerOpinionCliente() {
     const boxPre = document.getElementById('admin-banner-opinion-cliente');
-    if (boxPre?.dataset?.pedidoId) _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
+    if (boxPre?.dataset?.pedidoId) {
+        _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
+        _persistDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
+    }
     _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
@@ -13565,6 +13620,11 @@ async function pollBannerOpinionCliente() {
             return;
         }
         const nid = Number(row.id);
+        const dismissKey = `${tenantIdActual()}:${nid}`;
+        if (_persistedOpinionBannerDismissedKeys().has(dismissKey)) {
+            console.debug('[poll-banner-opinion] Pedido %s descartado permanentemente (localStorage)', nid);
+            return;
+        }
         if (_sessionOpinionBannerDismissedIds().has(String(nid))) {
             console.debug('[poll-banner-opinion] Pedido %s ya fue descartado en esta sesión', nid);
             return;
@@ -19744,6 +19804,20 @@ async function pasoResetPw() {
             let r = await sqlSimple(matchSql(wf));
             if (!r.rows[0] && wf) {
                 r = await sqlSimple(matchSql(''));
+            }
+            if (!r.rows[0]) {
+                const emEmpresa = (await leerEmailContactoEmpresaNeon()).trim().toLowerCase();
+                if (emEmpresa && emailLc === emEmpresa) {
+                    const pickAdmin = (wfExtra) => `SELECT id, email, nombre, rol
+                        FROM usuarios
+                        WHERE activo = TRUE
+                          AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
+                        ${wfExtra || ''}
+                        ORDER BY id ASC
+                        LIMIT 1`;
+                    r = await sqlSimple(pickAdmin(wf));
+                    if (!r.rows[0] && wf) r = await sqlSimple(pickAdmin(''));
+                }
             }
             if (!r.rows[0]) { msg.textContent = 'Cuenta no encontrada o inactiva'; return; }
             const usuario = r.rows[0];

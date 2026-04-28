@@ -383,16 +383,6 @@ const GN_OSM_OVERLAY_LAYERS = [
                 'Vías férreas: <a href="https://www.openrailwaymap.org" rel="noopener noreferrer">OpenRailwayMap</a> · © OpenStreetMap',
         },
     },
-    {
-        id: 'hillshade',
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
-        opts: {
-            maxZoom: 19,
-            maxNativeZoom: 15,
-            opacity: 0.42,
-            attribution: 'Sombreado: Esri, USGS, NOAA',
-        },
-    },
 ];
 
 function gnEnsureOsmOverlayPane(map) {
@@ -406,10 +396,23 @@ function gnEnsureOsmOverlayPane(map) {
 
 function gnEnsureAdminOsmOverlayLayerInstances(map) {
     if (!map || !ctx || !ctx.L) return null;
-    if (map._gnOsmOverlayInstances) return map._gnOsmOverlayInstances;
+    const idsOk = new Set(GN_OSM_OVERLAY_LAYERS.map((d) => d.id));
+    if (map._gnOsmOverlayInstances) {
+        const keys = Object.keys(map._gnOsmOverlayInstances);
+        const stale = keys.length !== idsOk.size || keys.some((k) => !idsOk.has(k));
+        if (!stale) return map._gnOsmOverlayInstances;
+        for (const lyr of Object.values(map._gnOsmOverlayInstances)) {
+            try {
+                if (map.hasLayer(lyr)) map.removeLayer(lyr);
+            } catch (_) {}
+        }
+        map._gnOsmOverlayInstances = null;
+    }
     gnEnsureOsmOverlayPane(map);
     const L = ctx.L;
     const out = {};
+    const errTile =
+        'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     for (const def of GN_OSM_OVERLAY_LAYERS) {
         const layer = L.tileLayer(def.url, {
             ...def.opts,
@@ -417,6 +420,9 @@ function gnEnsureAdminOsmOverlayLayerInstances(map) {
             tileSize: 256,
             crossOrigin: true,
             updateWhenIdle: true,
+            updateWhenZooming: true,
+            keepBuffer: 3,
+            errorTileUrl: errTile,
         });
         out[def.id] = layer;
     }
@@ -433,6 +439,9 @@ export function gnApplyAdminOsmOverlaysFromStorage(map) {
     const androidWv = ctx.esAndroidWebViewMapa && ctx.esAndroidWebViewMapa();
     if (androidWv) return;
     if (!ctx.esAdmin || typeof ctx.esAdmin !== 'function' || !ctx.esAdmin()) return;
+    try {
+        localStorage.removeItem('pmg_overlay_osm_hillshade');
+    } catch (_) {}
     const layers = gnEnsureAdminOsmOverlayLayerInstances(map);
     if (!layers) return;
     for (const def of GN_OSM_OVERLAY_LAYERS) {
