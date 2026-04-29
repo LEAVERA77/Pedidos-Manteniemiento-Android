@@ -149,7 +149,7 @@
     </div>
     <div id="mapa-card-filtro-tipo" class="moui-card">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tags"></i> Tipo de reclamo <span id="mapa-filtro-tipo-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtro-tipo',true)"><i class="fas fa-eye-slash"></i></button></div>
-      <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll mapa-filtro-tipo-list" style="max-height:min(52vh,320px)"></div>
+      <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll mapa-filtro-tipo-list"></div>
     </div>
     <div id="mapa-card-filtros" class="moui-card">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
@@ -703,7 +703,7 @@
         <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-socios" accept=".xlsx,.xls" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
-          <button type="button" class="btn-sm" onclick="mostrarFormatoExcelSocios()" style="background:#fef9c3;border:1px solid #eab308;color:#854d0e"><i class="fas fa-table"></i> Formato</button>
+          <button type="button" class="btn-sm warning" onclick="mostrarFormatoExcelSocios()"><i class="fas fa-question-circle"></i> Formato</button>
           <button type="button" class="btn-sm" onclick="vaciarCoordenadasSociosCatalogo()" style="background:#dc2626;color:#fff;border:none" title="Elimina TODOS los registros de la tabla (100%)"><i class="fas fa-trash-alt"></i> Vaciar tabla</button>
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
             <input type="checkbox" id="socios-import-reemplazar"> Vaciar catálogo antes de importar

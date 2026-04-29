@@ -16,6 +16,7 @@
 
 import { query } from "../db/neon.js";
 import { validarCoordenadasParaPersistirCatalogo } from "../services/sociosCatalogoCoordsValidacion.js";
+import { reverseGeocodeArgentina } from "../services/nominatimClient.js";
 
 function digitsCp(s) {
   if (s == null) return "";
@@ -510,6 +511,24 @@ export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
       ids = (rFind.rows || []).map((x) => x.id);
     }
 
+    if (ids.length === 0 && hasTenant && cols.has("telefono") && Number.isFinite(tenantId)) {
+      const rawPh = pedido.telefono_contacto != null ? String(pedido.telefono_contacto) : "";
+      const dig = rawPh.replace(/\D/g, "");
+      if (dig.length >= 8) {
+        const rPh = await query(
+          `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE AND tenant_id = $1
+           AND regexp_replace(COALESCE(telefono::text,''), '\\D', '', 'g') = $2
+           ORDER BY id ASC LIMIT 4`,
+          [tenantId, dig]
+        );
+        const idp = (rPh.rows || []).map((x) => x.id);
+        if (idp.length === 1) ids = idp;
+        else if (idp.length > 1) {
+          return { ok: false, reason: "ambiguo_telefono", ids: idp };
+        }
+      }
+    }
+
     if (ids.length > 1) {
       return { ok: false, reason: "ambiguo_nis", ids };
     }
@@ -567,6 +586,24 @@ export async function enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp(opts) {
     if (ok) {
       const marcaEnriq = hasUbicManual ? " (enriquecimiento automático)" : "";
       console.info("[wa→socios_catalogo] coords actualizadas socio id=%s (pedido %s)%s", sid, pedido.id, marcaEnriq);
+      if (cols.has("numero")) {
+        try {
+          const curNum = await query(
+            `SELECT COALESCE(TRIM(numero::text), '') AS n FROM socios_catalogo WHERE id = $1 LIMIT 1`,
+            [sid]
+          );
+          const ex = String(curNum.rows?.[0]?.n || "").trim();
+          if (!ex) {
+            const rev = await reverseGeocodeArgentina(newLa, newLn);
+            const hn = rev?.address?.house_number != null ? String(rev.address.house_number).trim() : "";
+            if (hn) {
+              await query(`UPDATE socios_catalogo SET numero = $1 WHERE id = $2`, [hn, sid]);
+            }
+          }
+        } catch (e) {
+          console.warn("[wa→socios_catalogo] reverse nº puerta", e?.message || e);
+        }
+      }
     }
     return { ok, sociosId: sid, reason: ok ? undefined : "update_failed" };
   } catch (e) {
@@ -613,6 +650,11 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
     const hasMed = cols.has("medidor");
     const hasNombre = cols.has("nombre");
     const latLng = pickLatLngColumns(cols);
+    const hasDatosExtra = cols.has("datos_extra");
+    const datosExtraPendienteJson = JSON.stringify({
+      estado_padron: "pendiente_completar",
+      origen: "whatsapp",
+    });
 
     const nmRaw = pedido.nis_medidor != null ? String(pedido.nis_medidor).trim() : "";
     const nisP = pedido.nis != null ? String(pedido.nis).trim() : "";
@@ -677,6 +719,21 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
       ids = (rFind.rows || []).map((x) => x.id);
     }
 
+    if (ids.length === 0 && hasTenant && cols.has("telefono") && telefonoVal.length >= 8) {
+      const rPh = await query(
+        `SELECT id FROM socios_catalogo WHERE COALESCE(activo, TRUE) = TRUE AND tenant_id = $1
+         AND regexp_replace(COALESCE(telefono::text,''), '\\D', '', 'g') = $2
+         ORDER BY id ASC LIMIT 4`,
+        [tenantId, telefonoVal]
+      );
+      const idp = (rPh.rows || []).map((x) => x.id);
+      if (idp.length === 1) ids = idp;
+      else if (idp.length > 1) {
+        console.warn("[wa→socios telefono] teléfono ambiguo", { tenant_id: tenantId, pedido_id: pedido.id, ids: idp });
+        return { ok: false, reason: "ambiguo_telefono", ids: idp };
+      }
+    }
+
     if (ids.length > 1) {
       console.warn("[wa→socios telefono] match ambiguo; omitido", { tenant_id: tenantId, pedido_id: pedido.id, ids });
       return { ok: false, reason: "ambiguo_nis", ids };
@@ -731,10 +788,24 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
     const cp = digitsCp(pedido.codigo_postal) || null;
     const xy = latLng ? latLngPedidoMinimasParaCatalogo(pedido.lat, pedido.lng) : null;
 
+    const deUp = hasDatosExtra
+      ? ", datos_extra = COALESCE(socios_catalogo.datos_extra, '{}'::jsonb) || COALESCE(EXCLUDED.datos_extra, '{}'::jsonb)"
+      : "";
+
     try {
       if (hasTenant && latLng && xy) {
-        await query(
-          `INSERT INTO socios_catalogo (
+        const sqlIns = hasDatosExtra
+          ? `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal,
+            telefono, ${latLng.la}, ${latLng.ln}, tenant_id, datos_extra, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, TRUE)
+          ON CONFLICT (tenant_id, nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre),
+            calle = COALESCE(NULLIF(TRIM(EXCLUDED.calle), ''), socios_catalogo.calle),
+            numero = COALESCE(NULLIF(TRIM(EXCLUDED.numero), ''), socios_catalogo.numero),
+            localidad = COALESCE(NULLIF(TRIM(EXCLUDED.localidad), ''), socios_catalogo.localidad)${deUp}`
+          : `INSERT INTO socios_catalogo (
             nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal,
             telefono, ${latLng.la}, ${latLng.ln}, tenant_id, activo
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE)
@@ -743,66 +814,108 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
             nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre),
             calle = COALESCE(NULLIF(TRIM(EXCLUDED.calle), ''), socios_catalogo.calle),
             numero = COALESCE(NULLIF(TRIM(EXCLUDED.numero), ''), socios_catalogo.numero),
-            localidad = COALESCE(NULLIF(TRIM(EXCLUDED.localidad), ''), socios_catalogo.localidad)`,
-          [
-            nisMedidorKey,
-            nisP || null,
-            medP || null,
-            nombre,
-            calle,
-            num,
-            loc,
-            prov,
-            cp,
-            telefonoVal,
-            xy.la,
-            xy.ln,
-            tenantId,
-          ]
-        );
+            localidad = COALESCE(NULLIF(TRIM(EXCLUDED.localidad), ''), socios_catalogo.localidad)`;
+        const paramsIns = hasDatosExtra
+          ? [
+              nisMedidorKey,
+              nisP || null,
+              medP || null,
+              nombre,
+              calle,
+              num,
+              loc,
+              prov,
+              cp,
+              telefonoVal,
+              xy.la,
+              xy.ln,
+              tenantId,
+              datosExtraPendienteJson,
+            ]
+          : [
+              nisMedidorKey,
+              nisP || null,
+              medP || null,
+              nombre,
+              calle,
+              num,
+              loc,
+              prov,
+              cp,
+              telefonoVal,
+              xy.la,
+              xy.ln,
+              tenantId,
+            ];
+        await query(sqlIns, paramsIns);
       } else if (hasTenant) {
-        await query(
-          `INSERT INTO socios_catalogo (
+        const sqlIns = hasDatosExtra
+          ? `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, tenant_id, datos_extra, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, TRUE)
+          ON CONFLICT (tenant_id, nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)${deUp}`
+          : `INSERT INTO socios_catalogo (
             nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, tenant_id, activo
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
           ON CONFLICT (tenant_id, nis_medidor) DO UPDATE SET
             telefono = EXCLUDED.telefono,
-            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
-          [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, tenantId]
-        );
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`;
+        const paramsIns = hasDatosExtra
+          ? [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, tenantId, datosExtraPendienteJson]
+          : [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, tenantId];
+        await query(sqlIns, paramsIns);
       } else if (latLng && xy) {
-        await query(
-          `INSERT INTO socios_catalogo (
+        const sqlIns = hasDatosExtra
+          ? `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, ${latLng.la}, ${latLng.ln}, datos_extra, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, TRUE)
+          ON CONFLICT (nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)${deUp}`
+          : `INSERT INTO socios_catalogo (
             nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, ${latLng.la}, ${latLng.ln}, activo
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)
           ON CONFLICT (nis_medidor) DO UPDATE SET
             telefono = EXCLUDED.telefono,
-            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
-          [
-            nisMedidorKey,
-            nisP || null,
-            medP || null,
-            nombre,
-            calle,
-            num,
-            loc,
-            prov,
-            cp,
-            telefonoVal,
-            xy.la,
-            xy.ln,
-          ]
-        );
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`;
+        const paramsIns = hasDatosExtra
+          ? [
+              nisMedidorKey,
+              nisP || null,
+              medP || null,
+              nombre,
+              calle,
+              num,
+              loc,
+              prov,
+              cp,
+              telefonoVal,
+              xy.la,
+              xy.ln,
+              datosExtraPendienteJson,
+            ]
+          : [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, xy.la, xy.ln];
+        await query(sqlIns, paramsIns);
       } else {
-        await query(
-          `INSERT INTO socios_catalogo (
+        const sqlIns = hasDatosExtra
+          ? `INSERT INTO socios_catalogo (
+            nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, datos_extra, activo
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, TRUE)
+          ON CONFLICT (nis_medidor) DO UPDATE SET
+            telefono = EXCLUDED.telefono,
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)${deUp}`
+          : `INSERT INTO socios_catalogo (
             nis_medidor, nis, medidor, nombre, calle, numero, localidad, provincia, codigo_postal, telefono, activo
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
           ON CONFLICT (nis_medidor) DO UPDATE SET
             telefono = EXCLUDED.telefono,
-            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`,
-          [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal]
-        );
+            nombre = COALESCE(NULLIF(TRIM(EXCLUDED.nombre), ''), socios_catalogo.nombre)`;
+        const paramsIns = hasDatosExtra
+          ? [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, datosExtraPendienteJson]
+          : [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal];
+        await query(sqlIns, paramsIns);
       }
       console.info("[wa→socios telefono] upsert nis_medidor=%s pedido=%s tenant=%s", nisMedidorKey, pedido.id, tenantId);
       return { ok: true, accion: "upsert", nis_medidor: nisMedidorKey };

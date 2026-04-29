@@ -13658,6 +13658,22 @@ function aplicarTenantDesdeJwtSiHaceFalta() {
 
 /** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
 let _sociosCatalogoTieneTenantIdCache = null;
+/** Cache: existe columna datos_extra en socios_catalogo (migración add_datos_extra_socios_catalogo.sql). */
+let _sociosCatalogoTieneDatosExtraCache = null;
+async function sociosCatalogoTieneDatosExtra() {
+    if (_sociosCatalogoTieneDatosExtraCache === true || _sociosCatalogoTieneDatosExtraCache === false) {
+        return _sociosCatalogoTieneDatosExtraCache;
+    }
+    try {
+        const chk = await sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'datos_extra' LIMIT 1`
+        );
+        _sociosCatalogoTieneDatosExtraCache = !!(chk.rows && chk.rows.length);
+    } catch (_) {
+        _sociosCatalogoTieneDatosExtraCache = false;
+    }
+    return _sociosCatalogoTieneDatosExtraCache;
+}
 async function sociosCatalogoTieneTenantId() {
     if (_sociosCatalogoTieneTenantIdCache === true || _sociosCatalogoTieneTenantIdCache === false) {
         return _sociosCatalogoTieneTenantIdCache;
@@ -14375,25 +14391,24 @@ function usarUbicacionAutomaticaSetupWizard() {
 }
 function aplicarEtiquetasPorTipo(tipo) {
     const esMunicipio = String(tipo || '').toLowerCase() === 'municipio';
-    const etiqueta = esMunicipio ? 'Vecinos / NIS' : 'Socios / NIS';
+    const etiqueta = esMunicipio ? 'Vecinos' : 'Socios / NIS';
     document.querySelectorAll('.admin-tab').forEach(tab => {
         if (tab?.getAttribute('onclick') === "adminTab('socios')") {
             tab.innerHTML = `<i class="fas fa-address-book"></i> ${etiqueta}`;
         }
         if (tab?.getAttribute('onclick') === "adminTab('distribuidores')") {
-            const lbl = esMunicipio ? 'Barrios' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
-            tab.innerHTML = `<i class="fas fa-network-wired"></i> ${lbl}`;
+            const lbl = esMunicipio ? 'Barrios / Zonas' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
+            const ico = esMunicipio ? 'fa-map-marked-alt' : 'fa-network-wired';
+            tab.innerHTML = `<i class="fas ${ico}"></i> ${lbl}`;
         }
     });
     const h3cat = document.getElementById('admin-socios-catalogo-titulo');
     if (h3cat) {
-        h3cat.textContent = esMunicipio
-            ? 'Catálogo de vecinos (NIS / medidor)'
-            : 'Catálogo de socios (NIS / medidor)';
+        h3cat.textContent = esMunicipio ? 'Catálogo de vecinos' : 'Catálogo de socios (NIS / medidor)';
     }
     const hZona = document.getElementById('admin-zona-catalogo-titulo');
     if (hZona) {
-        hZona.textContent = esMunicipio ? 'Barrios' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
+        hZona.textContent = esMunicipio ? 'Barrios / Zonas' : String(tipo || '').toLowerCase() === 'cooperativa_agua' ? 'Ramales' : 'Distribuidores';
     }
     const firma = document.getElementById('lbl-firma-cierre');
     if (firma) {
@@ -17434,8 +17449,17 @@ function normalizarEncabezadoExcelSocios(k) {
     if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
         return 'nis';
     }
+    if (n === 'nis_id' || n === 'nis_suministro' || n === 'id_suministro') {
+        return 'nis';
+    }
     if (n === 'vecino' || n === 'n_vecino' || n === 'numero_vecino' || n === 'nro_vecino' || n === 'num_vecino') {
         return 'nis';
+    }
+    if (n === 'apellidos' || n === 'apellido_socio' || n === 'apellido_titular' || n === 'apellido_del_titular') {
+        return 'apellido';
+    }
+    if (n === 'primer_nombre' || n === 'nombre_social') {
+        return 'nombres';
     }
     if (
         n === 'cp' ||
@@ -17472,6 +17496,141 @@ function aliasEncabezadosCpSocios(mapNormAOriginal) {
             mapNormAOriginal.codigo_postal = mapNormAOriginal[k];
         }
     }
+}
+
+/** Encabezados normalizados que mapean a columnas fijas del catálogo (el resto va a `datos_extra`). */
+const SOCIOS_EXCEL_CLAVES_RESERVADAS = new Set([
+    'nis',
+    'medidor',
+    'nis_medidor',
+    'nombre',
+    'nombres',
+    'apellido',
+    'calle',
+    'calle_nombre',
+    'via',
+    'numero',
+    'nro',
+    'num',
+    'altura',
+    'numero_calle',
+    'n',
+    'direccion',
+    'domicilio',
+    'telefono',
+    'tel',
+    'celular',
+    'distribuidor_codigo',
+    'distribuidor',
+    'codigo_distribuidor',
+    'localidad',
+    'ciudad',
+    'municipio',
+    'provincia',
+    'pcia',
+    'estado',
+    'state',
+    'codigo_postal',
+    'barrio',
+    'vecindario',
+    'zona',
+    'tipo_tarifa',
+    'tarifa',
+    'urbano_rural',
+    'transformador',
+    'trafo',
+    'tipo_conexion',
+    'fases',
+    'latitud',
+    'lat',
+    'latitude',
+    'lat_gps',
+    'longitud',
+    'lng',
+    'lon',
+    'longitude',
+    'lng_gps',
+    'este',
+    'oeste',
+    'coordenada_e',
+    'coordenada_x',
+    'easting',
+    'e',
+    'x',
+    'este_m',
+    'norte',
+    'coordenada_n',
+    'coordenada_y',
+    'northing',
+    'n',
+    'y',
+    'norte_m',
+]);
+
+function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
+    void mapNormAOriginal;
+    const out = {};
+    for (const orig of Object.keys(row)) {
+        if (orig == null || String(orig).trim() === '') continue;
+        const nk = normalizarEncabezadoExcelSocios(orig);
+        if (!nk || SOCIOS_EXCEL_CLAVES_RESERVADAS.has(nk)) continue;
+        const v = row[orig];
+        if (v == null || String(v).trim() === '') continue;
+        const key = String(orig).trim();
+        if (!key) continue;
+        out[key] = typeof v === 'number' && Number.isFinite(v) ? String(v) : String(v).trim();
+    }
+    return out;
+}
+
+/** Nombre en BD: columna nombre completo o apellido + nombres. */
+function nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal) {
+    let nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
+    const ap = valorSociosPorEncabezados(row, mapNormAOriginal, 'apellido');
+    const nom = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombres');
+    if (!nombre && ap && nom) nombre = `${ap}, ${nom}`;
+    else if (!nombre && ap && !nom) nombre = ap;
+    else if (!nombre && !ap && nom) nombre = nom;
+    return nombre || null;
+}
+
+function validarAnclasImportSociosPorRubro(rubro, o) {
+    const { nisPart, medPart, nombre, calle, loc, provinciaSoc } = o;
+    const miss = [];
+    if (!nisPart || !String(nisPart).trim()) miss.push('identificador (NIS / abonado / vecino)');
+    if (rubro === 'cooperativa_electrica' || rubro === 'cooperativa_agua') {
+        if (!medPart || !String(medPart).trim()) miss.push('medidor');
+    }
+    if (!nombre || !String(nombre).trim()) miss.push('nombre o apellido+nombres');
+    if (!calle || !String(calle).trim()) miss.push('dirección (calle o columna dirección)');
+    if (!loc || !String(loc).trim()) miss.push('ciudad / localidad');
+    if (!provinciaSoc || !String(provinciaSoc).trim()) miss.push('provincia');
+    return miss;
+}
+
+/** CP por Nominatim (proxy); no bloquea importación si falla. */
+async function inferirCodigoPostalImportSociosNominatim(calle, loc, provincia) {
+    const c = String(calle || '').trim();
+    const l = String(loc || '').trim();
+    const p = String(provincia || '').trim();
+    if (!c || !l || !p) return null;
+    if (typeof _nominatimFetchSearch !== 'function') return null;
+    try {
+        const raw = await _nominatimFetchSearch({
+            q: `${c}, ${l}, ${p}, Argentina`,
+            countrycodes: 'ar',
+            limit: '8',
+            addressdetails: '1',
+        });
+        const arr = Array.isArray(raw) ? raw : [];
+        for (const hit of arr) {
+            const pc = hit && hit.address && hit.address.postcode != null ? String(hit.address.postcode) : '';
+            if (!pc) continue;
+            const d = pc.replace(/\D/g, '');
+            if (d.length >= 4 && d.length <= 8) return d;
+        }
+    } catch (_) {}
+    return null;
 }
 
 function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
@@ -17614,19 +17773,26 @@ const SOCIOS_BULK_CHUNK = 1000;
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const hasT = await sociosCatalogoTieneTenantId();
+    const hasDE = await sociosCatalogoTieneDatosExtra();
     const tidEsc = esc(tenantIdActual());
-    const colList = hasT
-        ? `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, tenant_id`
-        : `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
+    const coreCols = `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
+    const colList = hasT ? `${coreCols}, tenant_id` : coreCols;
+    const colListFull = hasDE ? `${colList}, datos_extra` : colList;
     const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
     const vals = lote
         .map((p) => {
+            const deObj = p.datos_extra && typeof p.datos_extra === 'object' && !Array.isArray(p.datos_extra) ? p.datos_extra : {};
+            const deSql = hasDE ? `, ${esc(JSON.stringify(deObj))}::jsonb` : '';
             const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}`;
-            return hasT ? `${base}, ${tidEsc})` : `${base})`;
+            const tail = hasT ? `${base}, ${tidEsc}${hasDE ? deSql : ''})` : `${base}${hasDE ? deSql : ''})`;
+            return tail;
         })
         .join(',');
+    const mergeDe = hasDE
+        ? `, datos_extra = COALESCE(socios_catalogo.datos_extra, '{}'::jsonb) || COALESCE(EXCLUDED.datos_extra, '{}'::jsonb)`
+        : '';
     await sqlSimple(
-        `INSERT INTO socios_catalogo(${colList})
+        `INSERT INTO socios_catalogo(${colListFull})
          VALUES ${vals}
          ON CONFLICT ${onConf} DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
@@ -17641,7 +17807,7 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud
              WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud 
              ELSE EXCLUDED.longitud 
-           END`
+           END${mergeDe}`
     );
 }
 
@@ -17920,7 +18086,9 @@ async function importarExcelSocios(event) {
         });
         aliasEncabezadosProvinciaSocios(mapNormAOriginal);
         aliasEncabezadosCpSocios(mapNormAOriginal);
+        const rubroImp = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
         const payloads = [];
+        const omitidas = [];
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
@@ -17932,7 +18100,10 @@ async function importarExcelSocios(event) {
                 if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
                 else nis_medidor = nisPart || medPart;
             }
-            if (!nis_medidor) continue;
+            if (!nis_medidor) {
+                omitidas.push({ fila: filaN, r: 'falta identificador (NIS, abonado, vecino o nis_medidor)' });
+                continue;
+            }
             if (nisColUni && (!nisPart || !medPart) && /-/.test(String(nisColUni))) {
                 const sp = String(nisColUni).split('-');
                 if (sp.length >= 2) {
@@ -17944,7 +18115,7 @@ async function importarExcelSocios(event) {
                 actualizarOverlayImportacion(`Analizando Excel… ${filaN} / ${rawRows.length}`);
                 await new Promise((r) => setTimeout(r, 0));
             }
-            const nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
+            const nombre = nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal);
             let calle = valorSociosPorEncabezados(row, mapNormAOriginal, 'calle', 'calle_nombre', 'via');
             let numero = valorSociosPorEncabezados(row, mapNormAOriginal, 'numero', 'nro', 'num', 'altura', 'numero_calle', 'n');
             const textoDireccionUnica = valorSociosPorEncabezados(row, mapNormAOriginal, 'direccion', 'domicilio');
@@ -18017,6 +18188,19 @@ async function importarExcelSocios(event) {
                 latitud = wgs.la;
                 longitud = wgs.lo;
             }
+            const faltan = validarAnclasImportSociosPorRubro(rubroImp, {
+                nisPart,
+                medPart,
+                nombre,
+                calle,
+                loc,
+                provinciaSoc,
+            });
+            if (faltan.length) {
+                omitidas.push({ fila: filaN, r: faltan.join(', ') });
+                continue;
+            }
+            const datosExtra = recolectarDatosExtraExcelSocios(row, mapNormAOriginal);
             payloads.push({
                 nis_medidor,
                 nis: nisPart || null,
@@ -18036,8 +18220,28 @@ async function importarExcelSocios(event) {
                 tcon,
                 fas,
                 latitud: latitud != null ? latitud : null,
-                longitud: longitud != null ? longitud : null
+                longitud: longitud != null ? longitud : null,
+                datos_extra: datosExtra,
             });
+        }
+        if (omitidas.length) {
+            console.warn('[import-socios] filas omitidas (anclas)', omitidas.slice(0, 30));
+        }
+        const totalCp = payloads.filter((p) => !p.codigo_postal && p.calle && p.loc && p.provincia).length;
+        let cpInf = 0;
+        for (let i = 0; i < payloads.length; i++) {
+            const p = payloads[i];
+            if (p.codigo_postal) continue;
+            if (!p.calle || !p.loc || !p.provincia) continue;
+            if (totalCp > 0 && i % 12 === 0) {
+                actualizarOverlayImportacion(`Código postal (Nominatim)… ${Math.min(i + 1, payloads.length)} / ${payloads.length}`);
+            }
+            const cp = await inferirCodigoPostalImportSociosNominatim(p.calle, p.loc, p.provincia);
+            if (cp) {
+                p.codigo_postal = cp;
+                cpInf++;
+            }
+            await new Promise((r) => setTimeout(r, 0));
         }
         let ok = 0;
         let fail = 0;
@@ -18069,6 +18273,20 @@ async function importarExcelSocios(event) {
         } else {
             toast(`Socios: ${ok} OK` + (fail ? ', ' + fail + ' errores' : '') + sufS, ok > 0 ? 'success' : 'error');
             if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
+        }
+        if (omitidas.length) {
+            const muestra = omitidas
+                .slice(0, 6)
+                .map((o) => `Fila ${o.fila}: ${o.r}`)
+                .join('\n');
+            alert(
+                `Se omitieron ${omitidas.length} fila(s) por datos incompletos según el tipo de negocio.\n\n` +
+                    muestra +
+                    (omitidas.length > 6 ? `\n… y ${omitidas.length - 6} más (consola del navegador).` : '')
+            );
+        }
+        if (cpInf > 0) {
+            toast(`Código postal inferido (Nominatim) en ${cpInf} fila(s).`, 'success');
         }
         cargarListaSociosAdmin();
         try {
@@ -18146,21 +18364,132 @@ async function vaciarCoordenadasSociosCatalogo(opts) {
 // Exponer globalmente para onclick
 window.vaciarCoordenadasSociosCatalogo = vaciarCoordenadasSociosCatalogo;
 
+let _modalFormatoSociosKeyHandler = null;
+function cerrarModalFormatoExcelSocios() {
+    const m = document.getElementById('modal-formato-excel-socios');
+    if (m) m.remove();
+    try {
+        if (_modalFormatoSociosKeyHandler) {
+            document.removeEventListener('keydown', _modalFormatoSociosKeyHandler);
+            _modalFormatoSociosKeyHandler = null;
+        }
+    } catch (_) {}
+}
+
+/** Título legible del rubro para el modal de importación de socios. */
+function tituloNegocioFormatoSocios() {
+    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+    if (r === 'municipio') return 'Municipio';
+    if (r === 'cooperativa_agua') return 'Cooperativa de agua';
+    return 'Cooperativa eléctrica';
+}
+
+/** Plantilla CSV vacía con columnas ancla + innegociables (UTF-8 BOM para Excel). */
+function descargarPlantillaCsvSociosRubro() {
+    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+    const post = ['provincia', 'localidad', 'direccion', 'numero', 'codigo_postal', 'telefono', 'latitud', 'longitud'];
+    let head = [];
+    if (r === 'municipio') head = ['vecino', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
+    else if (r === 'cooperativa_agua') head = ['abonado', 'medidor', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
+    else head = ['nis', 'medidor', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
+    const bom = '\ufeff';
+    const csv = bom + head.join(';') + '\n';
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `plantilla_socios_${r}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    toast('Plantilla CSV descargada', 'success');
+}
+
 function mostrarFormatoExcelSocios() {
-    alert(
-        'GestorNova — Excel de socios (fila 1 = encabezados; el orden no importa).\n\n' +
-            'Elegí arriba: WGS84 (latitud/longitud) o Este/Norte proyectadas (requiere familia de proyección en Empresa).\n\n' +
-            'Columnas recomendadas:\n' +
-            'nis | medidor | nombre | calle | numero | localidad | (latitud | longitud) o (este | norte)\n\n' +
-            '• nis y medidor: clave unificada nis_medidor; alternativa columna única nis_medidor.\n' +
-            '• Sinónimos de NIS en encabezados: abonado, vecino (y variantes nro_/numero_).\n' +
-            '• Coordenadas opcionales: vacías → NULL; al fusionar no se borran coords previas.\n' +
-            '• WGS84: decimal o texto con ° ′ ″ (DMS). Al elegir el archivo se sugiere el modo (revisá el mensaje «Detectado»).\n' +
-            '• Faja «Auto»: meridiano central = lng_base de la empresa; sin base, fallback ~faja 4 (−64°).\n' +
-            '• Medidor: preferí texto en Excel para no perder ceros.\n\n' +
-            'Opcionales: provincia (también pcia, estado) · codigo_postal (cp, zip, postal) · telefono · distribuidor_codigo · barrio · tipo_tarifa · urbano_rural · transformador · tipo_conexion · fases · direccion (una celda).\n\n' +
-            'Importación en lotes. Sin «vaciar», se fusiona por nis_medidor; con «vaciar», se borra el catálogo antes.'
-    );
+    cerrarModalFormatoExcelSocios();
+    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+    const tNeg = tituloNegocioFormatoSocios();
+    let obligHtml = '';
+    let ejemplo = '';
+    if (r === 'municipio') {
+        obligHtml =
+            '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
+            '<li><strong>Nº de vecino</strong> (obligatorio; encabezados: vecino, n_vecino, etc.)</li>' +
+            '<li><strong>Apellido</strong> y <strong>nombres</strong> (obligatorios; o columna <code>nombre</code> completo)</li>' +
+            '<li><strong>Dirección</strong> (<code>calle</code> o <code>direccion</code>)</li>' +
+            '<li><strong>Ciudad / localidad</strong> y <strong>provincia</strong> (obligatorias)</li>' +
+            '<li><strong>Nº de puerta</strong>: columna <code>numero</code> — puede ir vacía (se completa con reclamos por WhatsApp)</li>' +
+            '<li><em>No</em> se exige medidor en municipio.</li></ul>';
+        ejemplo =
+            '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">vecino;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
+            '1201;Pérez;Juan;San Martín;;Paraná;Entre Ríos;;;;</pre>';
+    } else if (r === 'cooperativa_agua') {
+        obligHtml =
+            '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
+            '<li><strong>Nº de abonado</strong> (obligatorio; sinónimos: abonado, n_abonado…)</li>' +
+            '<li><strong>Nº de medidor</strong> (obligatorio; preferí texto para no perder ceros)</li>' +
+            '<li><strong>Apellido</strong> y <strong>nombres</strong> (o <code>nombre</code>)</li>' +
+            '<li><strong>Dirección</strong>, <strong>localidad</strong>, <strong>provincia</strong></li>' +
+            '<li><strong>Nº de puerta</strong> (<code>numero</code>) puede ir vacío</li></ul>';
+        ejemplo =
+            '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">abonado;medidor;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
+            '45001;A00123456;Gómez;María;Mitre;;Paraná;Entre Ríos;;;;</pre>';
+    } else {
+        obligHtml =
+            '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
+            '<li><strong>NIS / ID</strong> (obligatorio)</li>' +
+            '<li><strong>Nº de medidor</strong> (obligatorio)</li>' +
+            '<li><strong>Apellido</strong> y <strong>nombres</strong> (o <code>nombre</code>)</li>' +
+            '<li><strong>Dirección</strong>, <strong>localidad</strong>, <strong>provincia</strong></li>' +
+            '<li><strong>Nº de puerta</strong> (<code>numero</code>) puede ir vacío</li></ul>';
+        ejemplo =
+            '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">nis;medidor;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
+            '700001;12345678;López;Carlos;Urquiza;;Paraná;Entre Ríos;;;;</pre>';
+    }
+    const inneg =
+        '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
+        '<li><strong>Código postal</strong> — puede ir vacío (se intenta inferir al importar con Nominatim)</li>' +
+        '<li><strong>Teléfono</strong>, <strong>Lat / Lon (WGS84)</strong>, <strong>Nº de puerta</strong> — pueden ir vacíos</li>' +
+        '</ul>';
+    const wrap = document.createElement('div');
+    wrap.id = 'modal-formato-excel-socios';
+    wrap.style.cssText =
+        'position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-modal', 'true');
+    wrap.innerHTML =
+        `<div style="max-width:560px;width:100%;max-height:min(90vh,640px);overflow:auto;background:var(--bg);border:1px solid var(--bo);border-radius:.65rem;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:1rem 1.1rem 1rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:.65rem">
+        <h3 style="margin:0;font-size:1rem;color:var(--bd)">Formato de planilla para ${String(tNeg).replace(/</g, '&lt;')}</h3>
+        <button type="button" class="panel-win-btn" onclick="cerrarModalFormatoExcelSocios()" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+      </div>
+      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem;line-height:1.45"><strong>Fila 1 = encabezados.</strong> El orden de columnas no importa. Podés sumar columnas libres: se guardan en <code style="font-size:.72rem">datos_extra</code> (JSON en base de datos).</p>
+      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Campos obligatorios (ancla)</h4>
+      ${obligHtml}
+      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Columnas innegociables (pueden ir vacías)</h4>
+      ${inneg}
+      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Enriquecimiento con WhatsApp</h4>
+      <ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">
+        <li>Arrancás con datos básicos del Excel.</li>
+        <li>Cada reclamo por WhatsApp puede completar automáticamente: <strong>teléfono</strong>, <strong>coordenadas</strong> y <strong>nº de puerta</strong> en el catálogo.</li>
+      </ul>
+      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Ejemplo</h4>
+      ${ejemplo}
+      <p style="font-size:.72rem;color:#92400e;margin:.55rem 0 0;line-height:1.45;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"><strong>Nota:</strong> Las columnas de código postal, teléfono, nº de puerta, lat y lon pueden estar vacías. Se irán completando con cada reclamo por WhatsApp (y el CP también se intenta al importar).</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.85rem;align-items:center">
+        <button type="button" class="btn-sm primary" onclick="descargarPlantillaCsvSociosRubro()"><i class="fas fa-download"></i> Descargar plantilla CSV</button>
+        <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="cerrarModalFormatoExcelSocios()">Cerrar</button>
+      </div>
+      <p style="font-size:.72rem;color:var(--tl);margin:.65rem 0 0;line-height:1.4">Coordenadas en el Excel: podés usar WGS84 o Este/Norte (según selector arriba del import). Sin «vaciar», se fusiona por <code>nis_medidor</code>.</p>
+    </div>`;
+    wrap.addEventListener('click', (e) => {
+        if (e.target === wrap) cerrarModalFormatoExcelSocios();
+    });
+    _modalFormatoSociosKeyHandler = (ev) => {
+        if (ev.key === 'Escape') cerrarModalFormatoExcelSocios();
+    };
+    document.addEventListener('keydown', _modalFormatoSociosKeyHandler);
+    document.body.appendChild(wrap);
 }
 
 async function buscarHistorialPorNIS() {
@@ -20125,6 +20454,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         _sociosCatalogoTieneTenantIdCache = null;
     } catch (_) {}
     try {
+        _sociosCatalogoTieneDatosExtraCache = null;
+    } catch (_) {}
+    try {
         _pedidoContadorNeonTenantCache = null;
     } catch (_) {}
     try {
@@ -20837,6 +21169,8 @@ if (typeof cargarFormEmpresa !== "undefined") window.cargarFormEmpresa = cargarF
 if (typeof cargarListaSociosAdmin !== "undefined") window.cargarListaSociosAdmin = cargarListaSociosAdmin;
 if (typeof importarExcelSocios !== "undefined") window.importarExcelSocios = importarExcelSocios;
 if (typeof mostrarFormatoExcelSocios !== "undefined") window.mostrarFormatoExcelSocios = mostrarFormatoExcelSocios;
+if (typeof cerrarModalFormatoExcelSocios !== "undefined") window.cerrarModalFormatoExcelSocios = cerrarModalFormatoExcelSocios;
+if (typeof descargarPlantillaCsvSociosRubro !== "undefined") window.descargarPlantillaCsvSociosRubro = descargarPlantillaCsvSociosRubro;
 if (typeof buscarHistorialPorNIS !== "undefined") window.buscarHistorialPorNIS = buscarHistorialPorNIS;
 if (typeof generarInformeMensualENRE !== "undefined") window.generarInformeMensualENRE = generarInformeMensualENRE;
 if (typeof exportInformeMensualExcel !== "undefined") window.exportInformeMensualExcel = exportInformeMensualExcel;
