@@ -17441,7 +17441,11 @@ async function cargarListaSociosAdmin() {
 }
 
 function normalizarEncabezadoExcelSocios(k) {
-    let s = String(k || '').trim().toLowerCase();
+    let s = String(k || '')
+        .replace(/^\ufeff/g, '')
+        .replace(/[\u00a0\u2007\u202f\u200b\ufeff]/g, ' ')
+        .trim()
+        .toLowerCase();
     try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
@@ -17479,11 +17483,50 @@ function normalizarEncabezadoExcelSocios(k) {
     ) {
         return 'nis';
     }
+    if (
+        n === 'socio' ||
+        n === 'n_socio' ||
+        n === 'numero_socio' ||
+        n === 'nro_socio' ||
+        n === 'num_socio' ||
+        n === 'cod_socio' ||
+        n === 'codigo_socio' ||
+        n === 'id_socio' ||
+        n === 'idsocio' ||
+        n === 'n_de_socio' ||
+        n === 'cliente' ||
+        n === 'n_cliente' ||
+        n === 'numero_cliente' ||
+        n === 'cod_cliente' ||
+        n === 'codigo_cliente' ||
+        n === 'legajo' ||
+        n === 'expediente' ||
+        n === 'expediente_n' ||
+        n === 'id_usuario'
+    ) {
+        return 'nis';
+    }
     if (n === 'apellidos' || n === 'apellido_socio' || n === 'apellido_titular' || n === 'apellido_del_titular') {
         return 'apellido';
     }
     if (n === 'primer_nombre' || n === 'nombre_social') {
         return 'nombres';
+    }
+    if (
+        n === 'titular' ||
+        n === 'apellido_y_nombre' ||
+        n === 'apellido_nombre' ||
+        n === 'nombreyapellido' ||
+        n === 'apellidos_nombres' ||
+        n === 'vecino_nombre' ||
+        n === 'datos_personales' ||
+        n === 'nombre_y_apellido' ||
+        n === 'nombreapellido'
+    ) {
+        return 'nombre';
+    }
+    if (n === 'ubicacion' || n === 'lugar_del_inmueble' || n === 'domicilio_real' || n === 'calle_domicilio') {
+        return 'direccion';
     }
     if (
         n === 'cp' ||
@@ -17523,10 +17566,66 @@ function aliasEncabezadosCpSocios(mapNormAOriginal) {
 }
 
 /** Municipio / planillas exportadas: sinónimos de «nº vecino» que quedaron con otra clave normalizada. */
+function aliasEncabezadosNombreSocios(mapNormAOriginal) {
+    if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
+    if (mapNormAOriginal.nombre) return;
+    const syns = [
+        'titular',
+        'apellido_y_nombre',
+        'apellido_nombre',
+        'nombreyapellido',
+        'apellidos_nombres',
+        'vecino_nombre',
+        'datos_personales',
+        'nombre_y_apellido',
+        'nombreapellido',
+    ];
+    for (const k of syns) {
+        if (mapNormAOriginal[k]) {
+            mapNormAOriginal.nombre = mapNormAOriginal[k];
+            return;
+        }
+    }
+}
+
+/** Si el Excel usa «Socio» y el mapa quedó con clave `socio` (p. ej. caché o versión vieja), copiar a `nis`. */
+function aliasEncabezadosSocioANisSocios(mapNormAOriginal) {
+    if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
+    if (mapNormAOriginal.nis) return;
+    const keys = [
+        'socio',
+        'n_socio',
+        'numero_socio',
+        'nro_socio',
+        'num_socio',
+        'cod_socio',
+        'codigo_socio',
+        'id_socio',
+        'n_de_socio',
+        'cliente',
+        'codigo_cliente',
+        'legajo',
+    ];
+    for (const k of keys) {
+        if (mapNormAOriginal[k]) {
+            mapNormAOriginal.nis = mapNormAOriginal[k];
+            return;
+        }
+    }
+}
+
 function aliasEncabezadosIdentificadorVecinoSocios(mapNormAOriginal) {
     if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
     if (mapNormAOriginal.nis) return;
     const syns = [
+        'socio',
+        'n_socio',
+        'numero_socio',
+        'codigo_socio',
+        'cliente',
+        'codigo_cliente',
+        'legajo',
+        'expediente',
         'n_de_vecino',
         'numero_de_vecino',
         'num_de_vecino',
@@ -17641,7 +17740,17 @@ function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
 
 /** Nombre en BD: columna nombre completo o apellido + nombres. */
 function nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal) {
-    let nombre = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombre', 'razon_social', 'socio');
+    let nombre = valorSociosPorEncabezados(
+        row,
+        mapNormAOriginal,
+        'nombre',
+        'razon_social',
+        'socio',
+        'titular',
+        'apellido_y_nombre',
+        'nombreyapellido',
+        'vecino_nombre'
+    );
     const ap = valorSociosPorEncabezados(row, mapNormAOriginal, 'apellido');
     const nom = valorSociosPorEncabezados(row, mapNormAOriginal, 'nombres');
     if (!nombre && ap && nom) nombre = `${ap}, ${nom}`;
@@ -17650,11 +17759,26 @@ function nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal) {
     return nombre || null;
 }
 
+/** Si el Excel no trae NIS/medidor/vecino/socio pero sí nombre y calle (o domicilio en una celda). */
+function identificadorSinteticoDesdeAnclasImportSocios(filaN, nombre, calle, loc) {
+    const a = String(nombre || '').trim().toLowerCase();
+    const b = String(calle || '').trim().toLowerCase();
+    const c = String(loc || '').trim().toLowerCase();
+    const raw = `${filaN}\t${a}\t${b}\t${c}`;
+    let h = 5381;
+    for (let i = 0; i < raw.length; i++) {
+        h = ((h << 5) + h) ^ raw.charCodeAt(i);
+    }
+    const hx = (h >>> 0).toString(16).slice(0, 10);
+    return `XLSX-${filaN}-${hx}`;
+}
+
 function validarAnclasImportSociosPorRubro(rubro, o) {
-    const { nisPart, medPart, nombre, calle, loc, provinciaSoc } = o;
+    const { nisPart, medPart, nombre, calle, loc, provinciaSoc, identificadorSintetico } = o;
     const miss = [];
     if (!nisPart || !String(nisPart).trim()) miss.push('identificador (NIS / abonado / vecino)');
-    if (rubro === 'cooperativa_electrica' || rubro === 'cooperativa_agua') {
+    const coop = rubro === 'cooperativa_electrica' || rubro === 'cooperativa_agua';
+    if (coop && !identificadorSintetico) {
         if (!medPart || !String(medPart).trim()) miss.push('medidor');
     }
     if (!nombre || !String(nombre).trim()) miss.push('nombre o apellido+nombres');
@@ -18140,22 +18264,67 @@ async function importarExcelSocios(event) {
             const n = normalizarEncabezadoExcelSocios(orig);
             if (n && mapNormAOriginal[n] == null) mapNormAOriginal[n] = orig;
         });
+        aliasEncabezadosSocioANisSocios(mapNormAOriginal);
         aliasEncabezadosProvinciaSocios(mapNormAOriginal);
         aliasEncabezadosCpSocios(mapNormAOriginal);
         aliasEncabezadosIdentificadorVecinoSocios(mapNormAOriginal);
+        aliasEncabezadosNombreSocios(mapNormAOriginal);
         const rubroImp = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+        const ecCfg = window.EMPRESA_CFG || {};
         const payloads = [];
         const omitidas = [];
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
-            const nisColUni = valorSociosPorEncabezados(row, mapNormAOriginal, 'nis_medidor');
-            let nisPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'nis');
+            const nisColUni = valorSociosPorEncabezados(
+                row,
+                mapNormAOriginal,
+                'nis_medidor',
+                'nis',
+                'socio',
+                'vecino',
+                'abonado',
+                'n_socio',
+                'numero_socio',
+                'codigo_socio',
+                'cliente',
+                'legajo'
+            );
+            let nisPart = valorIdentificadorTextoSocios(
+                row,
+                mapNormAOriginal,
+                'nis',
+                'socio',
+                'vecino',
+                'abonado',
+                'nis_medidor',
+                'n_socio',
+                'numero_socio',
+                'codigo_socio',
+                'cliente',
+                'legajo',
+                'expediente',
+                'id_usuario'
+            );
             let medPart = valorIdentificadorTextoSocios(row, mapNormAOriginal, 'medidor', 'nro_medidor', 'numero_medidor');
             let nis_medidor = nisColUni != null && String(nisColUni).trim() !== '' ? String(nisColUni).trim() : null;
             if (!nis_medidor) {
                 if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
                 else nis_medidor = nisPart || medPart;
+            }
+            if (!nis_medidor) {
+                const nomPre = nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal);
+                let calPre = valorSociosPorEncabezados(row, mapNormAOriginal, 'calle', 'calle_nombre', 'via');
+                const dirPre = valorSociosPorEncabezados(row, mapNormAOriginal, 'direccion', 'domicilio');
+                if (!calPre && dirPre) {
+                    const t = String(dirPre).trim();
+                    const m = t.match(/^(.+?)\s+(\d{1,6}[a-zA-Z\u00f1\u00b0]?)$/);
+                    calPre = m ? m[1].trim() : t;
+                }
+                const locPre = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+                if (nomPre && calPre) {
+                    nis_medidor = identificadorSinteticoDesdeAnclasImportSocios(filaN, nomPre, calPre, locPre);
+                }
             }
             if (!nis_medidor) {
                 omitidas.push({ fila: filaN, r: 'falta identificador (NIS, abonado, vecino o nis_medidor)' });
@@ -18166,6 +18335,15 @@ async function importarExcelSocios(event) {
                 if (sp.length >= 2) {
                     if (!nisPart) nisPart = sp[0].trim() || null;
                     if (!medPart) medPart = sp.slice(1).join('-').trim() || null;
+                }
+            }
+            if ((!nisPart || !String(nisPart).trim()) && nis_medidor) {
+                const nm = String(nis_medidor).trim();
+                if (nm.startsWith('XLSX-')) {
+                    nisPart = nm;
+                } else {
+                    const ix = nm.indexOf('-');
+                    nisPart = ix > 0 ? nm.slice(0, ix).trim() : nm;
                 }
             }
             if (filaN % 2500 === 0) {
@@ -18191,8 +18369,16 @@ async function importarExcelSocios(event) {
             const telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
-            const loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
-            const provinciaSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'provincia');
+            let loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
+            if ((!loc || !String(loc).trim()) && rubroImp === 'municipio') {
+                const fl = String(ecCfg.localidad || ecCfg.ciudad || ecCfg.municipio || '').trim();
+                if (fl.length >= 2) loc = fl;
+            }
+            let provinciaSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'provincia');
+            if (!provinciaSoc || !String(provinciaSoc).trim()) {
+                const fp = String(ecCfg.provincia || ecCfg.state || ecCfg.provincia_nominatim || '').trim();
+                if (fp.length >= 2) provinciaSoc = fp;
+            }
             let codigoPostalSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'codigo_postal');
             if (codigoPostalSoc) {
                 const d = String(codigoPostalSoc).replace(/\D/g, '');
@@ -18245,6 +18431,7 @@ async function importarExcelSocios(event) {
                 latitud = wgs.la;
                 longitud = wgs.lo;
             }
+            const identificadorSintetico = String(nis_medidor || '').startsWith('XLSX-');
             const faltan = validarAnclasImportSociosPorRubro(rubroImp, {
                 nisPart,
                 medPart,
@@ -18252,6 +18439,7 @@ async function importarExcelSocios(event) {
                 calle,
                 loc,
                 provinciaSoc,
+                identificadorSintetico,
             });
             if (faltan.length) {
                 omitidas.push({ fila: filaN, r: faltan.join(', ') });
@@ -18282,7 +18470,16 @@ async function importarExcelSocios(event) {
             });
         }
         if (omitidas.length) {
-            console.warn('[import-socios] filas omitidas (anclas)', omitidas.slice(0, 30));
+            const porMotivo = {};
+            for (const o of omitidas) {
+                const k = o.r || '?';
+                porMotivo[k] = (porMotivo[k] || 0) + 1;
+            }
+            console.warn('[import-socios] filas omitidas (anclas)', {
+                total: omitidas.length,
+                por_motivo: porMotivo,
+                muestra: omitidas.slice(0, 15),
+            });
         }
         const totalCp = payloads.filter((p) => !p.codigo_postal && p.calle && p.loc && p.provincia).length;
         let cpInf = 0;
