@@ -98,6 +98,9 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .map-slide-tabs-cluster .map-slide-tab.visible{
   display:block!important;
 }
+.mapa-filtro-tipo-list{
+  max-height:min(52vh,320px);
+}
 .dash-kpi-click{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
 .dash-kpi-click:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(30,58,138,.12)}
 .dash-kpi-click.active-ring{outline:2px solid var(--bm);outline-offset:2px}
@@ -1016,6 +1019,61 @@ html.gn-android-webview .gn-gps-fab {
  */
 html.gn-android-webview #mapa-overlay-ui {
   z-index: 12045;
+}
+/* Paneles Filtros / Tipo / Colores: fixed = mismas coords que el arrastre (viewport); cuerpo con scroll estable */
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card:not(.moui-card-slideoff){
+  position:fixed!important;
+  max-width:min(360px,calc(100vw - 0.85rem - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)))!important;
+  width:min(360px,calc(100vw - 0.85rem - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)));
+  min-width:min(280px,90vw);
+  z-index:848;
+  max-height:min(82dvh,calc(100dvh - var(--app-header-h,58px) - 2.25rem));
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  box-sizing:border-box;
+}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card .moui-hd{flex-shrink:0}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card .moui-bd{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-x:hidden;
+}
+html.gn-android-webview #ms #mapa-overlay-ui .moui-card .moui-bd.moui-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  max-height:none;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtros:not(.moui-card-slideoff){
+  top:calc(var(--app-header-h,58px) + 0.4rem);
+  left:max(0.45rem,env(safe-area-inset-left,0px));
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-card-slideoff){
+  top:calc(var(--app-header-h,58px) + 6.25rem);
+  left:max(0.45rem,env(safe-area-inset-left,0px));
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-colores:not(.moui-card-slideoff){
+  top:calc(var(--app-header-h,58px) + 11.5rem);
+  left:max(0.45rem,env(safe-area-inset-left,0px));
+}
+html.gn-android-webview .map-slide-tabs-cluster{
+  top:calc(var(--app-header-h,58px) + 0.5rem + 1cm);
+  z-index:12050;
+}
+html.gn-android-webview .mapa-filtro-tipo-list{
+  max-height:min(58dvh,440px);
+}
+html.gn-android-webview .btn-mapa-ir-gps{bottom:calc(11.25rem - 1cm)}
+html.gn-android-webview .btn-mapa-nuevo-gps{bottom:calc(14.5rem - 1cm)}
+html.gn-android-webview .btn-mapa-armar-nuevo{bottom:calc(17.75rem - 1cm)}
+@media(min-width:1024px){
+  html.gn-android-webview .btn-mapa-ir-gps{bottom:calc(7.15rem - 1cm)}
+  html.gn-android-webview .btn-mapa-nuevo-gps{bottom:calc(10.35rem - 1cm)}
+  html.gn-android-webview .btn-mapa-armar-nuevo{bottom:calc(13.6rem - 1cm)}
 }
 
 /* Catálogo admin socios (NIS): celdas legibles */

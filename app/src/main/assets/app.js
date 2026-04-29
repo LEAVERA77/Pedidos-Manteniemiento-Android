@@ -5709,6 +5709,18 @@ function mapFloatingPanelPadTopPx() {
     return 64;
 }
 
+/** Margen inferior al arrastrar paneles del mapa (WebView Android: columna FAB + barra / teclado). */
+function androidMouiMapPanelPadBottomPx() {
+    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return 0;
+    try {
+        const vv = typeof window.visualViewport === 'object' && window.visualViewport ? window.visualViewport : null;
+        const ob = vv && Number.isFinite(Number(vv.offsetBottom)) ? Number(vv.offsetBottom) : 0;
+        return Math.round(152 + ob);
+    } catch (_) {
+        return 152;
+    }
+}
+
 /** Mantiene el panel completo dentro del viewport; permite llevarlo hasta los bordes (margen mínimo). */
 function clampFloatingPanelToViewport(el, leftPx, topPx, opts) {
     const padX = (opts && opts.padX) != null ? opts.padX : 0;
@@ -5865,7 +5877,10 @@ function initMouiCardDraggable(cardId) {
             if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
             card.style.right = 'auto';
             card.style.bottom = 'auto';
-            const c = clampFloatingPanelToViewport(card, p.left, p.top, { padX: 0, padBottom: 0 });
+            const c = clampFloatingPanelToViewport(card, p.left, p.top, {
+                padX: 0,
+                padBottom: androidMouiMapPanelPadBottomPx()
+            });
             card.style.left = c.left + 'px';
             card.style.top = c.top + 'px';
         } catch (_) {}
@@ -5898,7 +5913,7 @@ function initMouiCardDraggable(cardId) {
                 card.style.bottom = 'auto';
                 const c = clampFloatingPanelToViewport(card, _mouiCardDragState.sl + dx, _mouiCardDragState.st + dy, {
                     padX: 0,
-                    padBottom: 0
+                    padBottom: androidMouiMapPanelPadBottomPx()
                 });
                 card.style.left = c.left + 'px';
                 card.style.top = c.top + 'px';
@@ -5915,7 +5930,10 @@ function initMouiCardDraggable(cardId) {
             if (_mouiCardDragState && _mouiCardDragState.moved) {
                 try {
                     const br = card.getBoundingClientRect();
-                    const c = clampFloatingPanelToViewport(card, br.left, br.top, { padX: 0, padBottom: 0 });
+                    const c = clampFloatingPanelToViewport(card, br.left, br.top, {
+                        padX: 0,
+                        padBottom: androidMouiMapPanelPadBottomPx()
+                    });
                     card.style.left = c.left + 'px';
                     card.style.top = c.top + 'px';
                     localStorage.setItem(key, JSON.stringify({ left: c.left, top: c.top }));
