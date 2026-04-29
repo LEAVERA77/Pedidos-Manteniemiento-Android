@@ -17240,10 +17240,10 @@ function obtenerZonaImportSociosProyectadas() {
 
 /** Columnas fijas en admin catálogo socios (eléctrica / vista completa). */
 const SOCIOS_TABLA_COLS_BASE = 19;
-/** Sin CP, barrio, transformador, tarifa, U/R, conexión ni fases (municipio y cooperativa de agua). */
-const SOCIOS_TABLA_COLS_COMPACTO = 12;
+/** Sin transformador, tarifa, U/R, conexión ni fases; sí muestra CP y barrio (municipio y cooperativa de agua). */
+const SOCIOS_TABLA_COLS_COMPACTO = 14;
 
-/** Oculta en la tabla columnas propias de red eléctrica que suelen ir vacías en municipio y cooperativa de agua. */
+/** Oculta columnas típicas de red eléctrica (transf., tarifa, U/R, conex., fases) en municipio y cooperativa de agua. */
 function sociosCatalogoTablaOcultarColumnasRedElectrica() {
     const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
     return r === 'municipio' || r === 'cooperativa_agua';
@@ -17438,9 +17438,11 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
         const headExtra = armarHeadExtraProyeccionSociosHtml();
+        const thCpBarrio = '<th>Cód. postal</th><th>Barrio</th>';
+        const thSoloElectricaRed = '<th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th>';
         const thEl = sociosCatalogoTablaOcultarColumnasRedElectrica()
-            ? ''
-            : '<th>Cód. postal</th><th>Barrio</th><th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th>';
+            ? thCpBarrio
+            : `${thCpBarrio}${thSoloElectricaRed}`;
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
 <table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thEl}<th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
@@ -18082,9 +18084,11 @@ function renderSociosCatalogoVirtual() {
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
                 const proy = htmlCeldasProyeccionSociosDesdeLatLng(s.latitud, s.longitud);
+                const tdCpBarrio = `<td>${e(s.codigo_postal)}</td><td>${e(s.barrio)}</td>`;
+                const tdSoloElectricaRed = `<td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td>`;
                 const tdElectricas = sociosCatalogoTablaOcultarColumnasRedElectrica()
-                    ? ''
-                    : `<td>${e(s.codigo_postal)}</td><td>${e(s.barrio)}</td><td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td>`;
+                    ? tdCpBarrio
+                    : `${tdCpBarrio}${tdSoloElectricaRed}`;
                 return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdElectricas}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
