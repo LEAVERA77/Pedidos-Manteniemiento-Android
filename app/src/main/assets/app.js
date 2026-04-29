@@ -17452,7 +17452,31 @@ function normalizarEncabezadoExcelSocios(k) {
     if (n === 'nis_id' || n === 'nis_suministro' || n === 'id_suministro') {
         return 'nis';
     }
-    if (n === 'vecino' || n === 'n_vecino' || n === 'numero_vecino' || n === 'nro_vecino' || n === 'num_vecino') {
+    if (
+        n === 'vecino' ||
+        n === 'n_vecino' ||
+        n === 'numero_vecino' ||
+        n === 'nro_vecino' ||
+        n === 'num_vecino' ||
+        n === 'n_de_vecino' ||
+        n === 'numero_de_vecino' ||
+        n === 'num_de_vecino' ||
+        n === 'nro_de_vecino' ||
+        n === 'numero_del_vecino' ||
+        n === 'n_del_vecino' ||
+        n === 'nd_vecino' ||
+        n === 'id_vecino' ||
+        n === 'codigo_vecino' ||
+        n === 'cod_vecino' ||
+        n === 'partida' ||
+        n === 'padron' ||
+        n === 'padron_vecinal' ||
+        n === 'nmunicipal' ||
+        n === 'n_municipal' ||
+        n === 'clave_vecinal' ||
+        n === 'cuenta_vecino' ||
+        n === 'n_cuenta'
+    ) {
         return 'nis';
     }
     if (n === 'apellidos' || n === 'apellido_socio' || n === 'apellido_titular' || n === 'apellido_del_titular') {
@@ -17494,6 +17518,38 @@ function aliasEncabezadosCpSocios(mapNormAOriginal) {
     for (const k of keys) {
         if (mapNormAOriginal[k] && !mapNormAOriginal.codigo_postal) {
             mapNormAOriginal.codigo_postal = mapNormAOriginal[k];
+        }
+    }
+}
+
+/** Municipio / planillas exportadas: sinónimos de «nº vecino» que quedaron con otra clave normalizada. */
+function aliasEncabezadosIdentificadorVecinoSocios(mapNormAOriginal) {
+    if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
+    if (mapNormAOriginal.nis) return;
+    const syns = [
+        'n_de_vecino',
+        'numero_de_vecino',
+        'num_de_vecino',
+        'nro_de_vecino',
+        'numero_del_vecino',
+        'n_del_vecino',
+        'nd_vecino',
+        'id_vecino',
+        'codigo_vecino',
+        'cod_vecino',
+        'partida',
+        'padron',
+        'padron_vecinal',
+        'nmunicipal',
+        'n_municipal',
+        'clave_vecinal',
+        'cuenta_vecino',
+        'n_cuenta',
+    ];
+    for (const k of syns) {
+        if (mapNormAOriginal[k]) {
+            mapNormAOriginal.nis = mapNormAOriginal[k];
+            return;
         }
     }
 }
@@ -18086,6 +18142,7 @@ async function importarExcelSocios(event) {
         });
         aliasEncabezadosProvinciaSocios(mapNormAOriginal);
         aliasEncabezadosCpSocios(mapNormAOriginal);
+        aliasEncabezadosIdentificadorVecinoSocios(mapNormAOriginal);
         const rubroImp = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
         const payloads = [];
         const omitidas = [];
@@ -18414,7 +18471,7 @@ function mostrarFormatoExcelSocios() {
     if (r === 'municipio') {
         obligHtml =
             '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
-            '<li><strong>Nº de vecino</strong> (obligatorio; encabezados: vecino, n_vecino, etc.)</li>' +
+            '<li><strong>Nº de vecino</strong> (obligatorio; encabezados: <code>vecino</code>, <code>n_vecino</code>, <code>numero_vecino</code>, <code>Nº de vecino</code>, <code>numero_de_vecino</code>, <code>partida</code>, <code>padron</code>…)</li>' +
             '<li><strong>Apellido</strong> y <strong>nombres</strong> (obligatorios; o columna <code>nombre</code> completo)</li>' +
             '<li><strong>Dirección</strong> (<code>calle</code> o <code>direccion</code>)</li>' +
             '<li><strong>Ciudad / localidad</strong> y <strong>provincia</strong> (obligatorias)</li>' +
