@@ -17240,13 +17240,20 @@ function obtenerZonaImportSociosProyectadas() {
 
 /** Columnas fijas en admin catálogo socios (eléctrica / vista completa). */
 const SOCIOS_TABLA_COLS_BASE = 19;
-/** Sin transformador, tarifa, U/R, conexión ni fases; sí muestra CP y barrio (municipio y cooperativa de agua). */
+/** Sin transformador, tarifa, U/R, conexión ni fases; sí muestra CP, barrio y Dist. (cooperativa de agua). */
 const SOCIOS_TABLA_COLS_COMPACTO = 14;
+/** Igual que compacto agua pero sin columna Dist. (municipio / vecinos). */
+const SOCIOS_TABLA_COLS_MUNICIPIO = 13;
 
 /** Oculta columnas típicas de red eléctrica (transf., tarifa, U/R, conex., fases) en municipio y cooperativa de agua. */
 function sociosCatalogoTablaOcultarColumnasRedElectrica() {
     const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
     return r === 'municipio' || r === 'cooperativa_agua';
+}
+
+/** Municipio: no mostrar «Dist.» (distribuidor_codigo) en el listado de socios. */
+function sociosCatalogoTablaOcultarDistribuidorMunicipio() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
 }
 const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
 
@@ -17294,7 +17301,10 @@ function ordenarFamiliasVistaProy(fams, primaria) {
 function obtenerNumColsTablaSociosAdmin() {
     const p = leerPrefsVistaProyeccionSociosCatalogo();
     const n = p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
-    const base = sociosCatalogoTablaOcultarColumnasRedElectrica() ? SOCIOS_TABLA_COLS_COMPACTO : SOCIOS_TABLA_COLS_BASE;
+    let base = SOCIOS_TABLA_COLS_BASE;
+    if (sociosCatalogoTablaOcultarColumnasRedElectrica()) {
+        base = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? SOCIOS_TABLA_COLS_MUNICIPIO : SOCIOS_TABLA_COLS_COMPACTO;
+    }
     return base + n;
 }
 
@@ -17443,9 +17453,10 @@ async function cargarListaSociosAdmin() {
         const thEl = sociosCatalogoTablaOcultarColumnasRedElectrica()
             ? thCpBarrio
             : `${thCpBarrio}${thSoloElectricaRed}`;
+        const thDist = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? '' : '<th>Dist.</th>';
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thEl}<th>Calle</th><th>Nº</th><th>Tel.</th><th>Dist.</th><th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thEl}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
         renderSociosCatalogoVirtual();
@@ -18089,7 +18100,8 @@ function renderSociosCatalogoVirtual() {
                 const tdElectricas = sociosCatalogoTablaOcultarColumnasRedElectrica()
                     ? tdCpBarrio
                     : `${tdCpBarrio}${tdSoloElectricaRed}`;
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdElectricas}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td><td>${e(s.distribuidor_codigo)}</td><td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                const tdDist = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? '' : `<td>${e(s.distribuidor_codigo)}</td>`;
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdElectricas}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
         `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
