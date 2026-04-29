@@ -7819,6 +7819,9 @@ async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
         syncNisClienteReclamoConexionUI();
     } catch (_) {}
     pm.classList.add('active');
+    try {
+        if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) desarmarMapTapNuevoPedido();
+    } catch (_) {}
     const z = mostrarMarcadorUbicacion(latN, lngN, acc != null ? acc : null);
     app.map.invalidateSize({ animate: false });
     app.map.setView([latN, lngN], z || 16, { animate: !gnMapaLigero() });
