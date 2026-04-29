@@ -24,10 +24,84 @@ import {
 import { obtenerProvinciaCodigoPostalCatalogoPorIdentificador } from "./buscarCoordenadasPorNisMedidor.js";
 import { resolverCoordenadasCandidatoWhatsapp } from "./pipelineGeocodificacionPedido.js";
 import {
+  geocodeCalleNumeroLocalidadArgentina,
+  geocodeDomicilioSimpleQArgentina,
+} from "./nominatimClient.js";
+import { coordenadasPlausiblesParaLocalidadTenant } from "./tenantLocalidades.js";
+import {
   buildTelemetriaForCorrelation,
   geocodWaOperacionFinishOk,
 } from "./geocodWaOperaciones.js";
 import { allocarSiguienteNumeroPedido } from "./pedidoContador.js";
+
+/**
+ * Cuando el pedido WA no aporta GPS útil (p. ej. pin Obelisco / fallback) pero sí domicilio en fila:
+ * intenta Nominatim por calle+localidad solo para enriquecer `socios_catalogo` (no modifica el pedido).
+ * made by leavera77
+ */
+async function intentarGeocodificarDomicilioParaEnriquecerSociosCatalogoWa(pedidoRow, tenantId) {
+  const tid = Number(tenantId);
+  if (!pedidoRow || !Number.isFinite(tid) || tid < 1) return null;
+  let calle = pedidoRow.cliente_calle != null ? String(pedidoRow.cliente_calle).trim() : "";
+  let num = pedidoRow.cliente_numero_puerta != null ? String(pedidoRow.cliente_numero_puerta).trim() : "";
+  let loc = pedidoRow.cliente_localidad != null ? String(pedidoRow.cliente_localidad).trim() : "";
+  const prov = pedidoRow.provincia != null ? String(pedidoRow.provincia).trim() : "";
+  const dir = pedidoRow.cliente_direccion != null ? String(pedidoRow.cliente_direccion).trim() : "";
+  if (!calle && !loc && dir) {
+    const parsed = parseDomicilioLibreArgentina(dir, null);
+    if (parsed) {
+      if (!calle) calle = String(parsed.calle || "").trim();
+      if (!num && parsed.numero) num = String(parsed.numero).trim();
+      if (!loc && parsed.localidad) loc = String(parsed.localidad).trim();
+    } else if (!calle) {
+      calle = dir;
+    }
+  }
+  const sp = separarNumeroDuplicadoEnCalle(calle || null, num || null);
+  if (sp.stripped) {
+    calle = String(sp.calle || "").trim();
+    if (!num && sp.numero) num = String(sp.numero).trim();
+  }
+  const numGeo = num && num !== "0" ? num : "";
+  const cpRaw = pedidoRow.codigo_postal != null ? String(pedidoRow.codigo_postal).replace(/\D/g, "") : "";
+  const postalDigits = cpRaw.length >= 4 && cpRaw.length <= 8 ? cpRaw : "";
+  if (!calle || !loc) return null;
+
+  const candidatos = [];
+  try {
+    const sq = await geocodeDomicilioSimpleQArgentina({
+      calle,
+      numero: numGeo,
+      localidad: loc,
+      stateOrProvince: prov,
+      postalCode: postalDigits,
+    });
+    if (sq && coordsValidasWgs84(sq.lat, sq.lng)) {
+      candidatos.push({ la: Number(sq.lat), lo: Number(sq.lng) });
+    }
+  } catch (_) {}
+  try {
+    const gr = await geocodeCalleNumeroLocalidadArgentina(loc, calle, numGeo, {
+      allowTenantCentroidFallback: false,
+      catalogStrict: false,
+      stateOrProvince: prov.length >= 2 ? prov : undefined,
+      postalCode: postalDigits.length >= 4 ? postalDigits : undefined,
+    });
+    if (gr && coordsValidasWgs84(gr.lat, gr.lng)) {
+      candidatos.push({ la: Number(gr.lat), lo: Number(gr.lng) });
+    }
+  } catch (_) {}
+
+  for (const c of candidatos) {
+    const { la, lo } = c;
+    if (!coordsValidasWgs84(la, lo) || esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(la, lo)) continue;
+    try {
+      const ok = await coordenadasPlausiblesParaLocalidadTenant(la, lo, tid, loc, prov, postalDigits);
+      if (ok) return { lat: la, lng: lo };
+    } catch (_) {}
+  }
+  return null;
+}
 
 async function columnasUsuarios() {
   const cols = await query(
@@ -675,19 +749,39 @@ export async function crearPedidoDesdeWhatsappBot({
     });
   }
   setImmediate(() => {
-    notificarAdminsNuevoPedidoWhatsappSafe(Number(tenantId), pedidoRow).catch(() => {});
-    upsertTelefonoSociosCatalogoDesdePedidoWa({
-      pedido: pedidoRow,
-      tenantId: Number(tenantId),
-    }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo tel WA", e?.message || e));
-    if (coordsWhatsappParaCatalogo) {
-      enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp({
+    (async () => {
+      const tid = Number(tenantId);
+      await notificarAdminsNuevoPedidoWhatsappSafe(tid, pedidoRow).catch(() => {});
+      await upsertTelefonoSociosCatalogoDesdePedidoWa({
         pedido: pedidoRow,
-        tenantId: Number(tenantId),
-        lat: coordsWhatsappParaCatalogo.lat,
-        lng: coordsWhatsappParaCatalogo.lng,
-      }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
-    }
+        tenantId: tid,
+      }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo tel WA", e?.message || e));
+
+      const enriquecerCoords = (la, lo) =>
+        enriquecerSociosCatalogoCoordsDesdePedidoWhatsapp({
+          pedido: pedidoRow,
+          tenantId: tid,
+          lat: la,
+          lng: lo,
+        }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo WA", e?.message || e));
+
+      if (coordsWhatsappParaCatalogo) {
+        await enriquecerCoords(coordsWhatsappParaCatalogo.lat, coordsWhatsappParaCatalogo.lng);
+      } else {
+        try {
+          const porDomicilio = await intentarGeocodificarDomicilioParaEnriquecerSociosCatalogoWa(pedidoRow, tid);
+          if (
+            porDomicilio &&
+            coordsValidasWgs84(porDomicilio.lat, porDomicilio.lng) &&
+            !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(porDomicilio.lat, porDomicilio.lng)
+          ) {
+            await enriquecerCoords(porDomicilio.lat, porDomicilio.lng);
+          }
+        } catch (e) {
+          console.warn("[pedido-whatsapp-bot] socios_catalogo geo_domicilio_WA", e?.message || e);
+        }
+      }
+    })();
   });
   return pedidoRow;
 }
