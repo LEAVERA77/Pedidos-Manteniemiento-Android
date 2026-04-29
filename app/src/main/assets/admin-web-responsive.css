@@ -26,6 +26,8 @@
     gap: 0.45rem;
     padding: 0.5rem 0.65rem;
     align-items: flex-start;
+    /* Android WebView: dos filas legibles (marca + estado / empresa + usuario) */
+    min-height: auto;
   }
   #ms .hd h2 {
     font-size: 1rem;

@@ -564,7 +564,11 @@ function ocultarOverlayImportacion() {
 let keepAliveInterval  = null;
 let keepAliveStartTime = null;
 const KEEPALIVE_INTERVAL_MS = 4 * 60 * 1000;  
-const SESSION_MAX_MS        = 60 * 60 * 1000;  
+const SESSION_MAX_MS        = 60 * 60 * 1000;
+/** Cierre de sesión por inactividad (última interacción en UI o keep-alive OK). WebView Android / PWA. */
+const PMG_LAST_ACTIVITY_TS_KEY = 'pmg_last_activity_ts';
+const SESION_INACTIVIDAD_MAX_MS = 15 * 60 * 1000;
+let _pmgActividadUltimaEscrituraLs = 0;
 let _syncCatalogosInterval = null;
 
 function iniciarSyncCatalogos() {
@@ -584,8 +588,50 @@ function detenerSyncCatalogos() {
     }
 }
 
+function registrarActividadSesionUsuario() {
+    if (!app?.u) return;
+    const now = Date.now();
+    if (now - _pmgActividadUltimaEscrituraLs < 8000) return;
+    _pmgActividadUltimaEscrituraLs = now;
+    try {
+        localStorage.setItem(PMG_LAST_ACTIVITY_TS_KEY, String(now));
+    } catch (_) {}
+}
+
+function sesionSuperaInactividadMaxima() {
+    try {
+        const raw = localStorage.getItem(PMG_LAST_ACTIVITY_TS_KEY);
+        if (raw == null || String(raw).trim() === '') return false;
+        const t = parseInt(raw, 10);
+        if (!Number.isFinite(t) || t <= 0) return false;
+        return Date.now() - t > SESION_INACTIVIDAD_MAX_MS;
+    } catch (_) {
+        return false;
+    }
+}
+
+function cerrarSesionPorInactividadSiCorresponde(mensaje) {
+    if (!app?.u || !sesionSuperaInactividadMaxima()) return false;
+    try {
+        toast(mensaje || 'Sesión cerrada por inactividad (más de 15 min). Iniciá sesión de nuevo.', 'info');
+    } catch (_) {}
+    try {
+        ejecutarCerrarSesion();
+    } catch (_) {}
+    return true;
+}
+
+(function bindRegistroActividadSesionGlobal() {
+    const marcar = () => registrarActividadSesionUsuario();
+    try {
+        document.addEventListener('pointerdown', marcar, { passive: true, capture: true });
+        document.addEventListener('keydown', marcar, { passive: true, capture: true });
+    } catch (_) {}
+})();
+
 async function heartbeat() {
-    if (!app.u) return; 
+    if (!app.u) return;
+    if (cerrarSesionPorInactividadSiCorresponde()) return;
 
     
     if (keepAliveStartTime && Date.now() - keepAliveStartTime >= SESSION_MAX_MS) {
@@ -616,6 +662,7 @@ async function heartbeat() {
 
     try {
         await sqlSimple('SELECT 1');
+        registrarActividadSesionUsuario();
         console.log('Keep-alive OK', new Date().toLocaleTimeString('es-AR', {hour12:false}));
         if (modoOffline) {
             
@@ -677,11 +724,13 @@ function detenerKeepAlive() {
 
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden && app.u) {
+        if (cerrarSesionPorInactividadSiCorresponde()) return;
+        registrarActividadSesionUsuario();
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
         window.pollNotificacionesMovil();
         if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
-            void cargarPedidos({ silent: true });
+            if (!_gnDmTypingFocused()) void cargarPedidos({ silent: true });
         }
     }
 });
@@ -3347,6 +3396,10 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
             render();
         } catch (_) {}
         localStorage.setItem('pmg', JSON.stringify(app.u));
+        try {
+            _pmgActividadUltimaEscrituraLs = 0;
+            registrarActividadSesionUsuario();
+        } catch (_) {}
         try {
             actualizarBarraHeaderSesion();
         } catch (_) {}
@@ -6332,6 +6385,8 @@ function iniciarPollSincroPedidosTecnico() {
 function refrescarDetalleSiAbiertoTrasSync() {
     const dm = document.getElementById('dm');
     if (!dm || !dm.classList.contains('active')) return;
+    // Android/WebView: repintar #dmc destruye textareas → se cierra el teclado al derivar / comentar.
+    if (_gnDmTypingFocused()) return;
     const pidKey = dm.dataset?.detallePedidoId;
     if (!pidKey || pidKey === '') return;
     const fresh = app.p.find(x => String(x.id) === pidKey);
@@ -7357,6 +7412,7 @@ async function cargarPedidos(opts) {
 /** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
 window.gnSincronizarPedidosDesdeAndroid = function gnSincronizarPedidosDesdeAndroid() {
     if (!app.u || modoOffline || !NEON_OK || !_sql) return;
+    if (_gnDmTypingFocused()) return;
     void cargarPedidos({ silent: true });
 };
 
@@ -12492,6 +12548,9 @@ function ejecutarCerrarSesion() {
     if (btnRubro2) btnRubro2.style.display = 'none';
     localStorage.removeItem('pmg');
     localStorage.removeItem('pmg_api_token');
+    try {
+        localStorage.removeItem(PMG_LAST_ACTIVITY_TS_KEY);
+    } catch (_) {}
     app.apiToken = null;
     app.u = null;
     try {
@@ -13307,6 +13366,14 @@ try {
         if (tk) app.apiToken = tk;
     } catch (_) {}
     if (s) {
+        if (sesionSuperaInactividadMaxima()) {
+            try {
+                toast('Sesión cerrada por inactividad (más de 15 min). Iniciá sesión de nuevo.', 'info');
+            } catch (_) {}
+            try {
+                ejecutarCerrarSesion();
+            } catch (_) {}
+        } else {
         app.u = JSON.parse(s);
         app.u.rol = normalizarRolStr(app.u.rol);
         try {
@@ -13397,6 +13464,7 @@ try {
             }
             await consumirPedidoPendienteDesdeNotif();
         }, 200);
+        }
     }
 } catch(_) {}
 
