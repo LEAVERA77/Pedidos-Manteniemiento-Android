@@ -17238,22 +17238,136 @@ function obtenerZonaImportSociosProyectadas() {
     return fajaArgentinaPorLongitud(-64);
 }
 
-/** Columnas fijas en admin catálogo socios (eléctrica / vista completa). */
-const SOCIOS_TABLA_COLS_BASE = 19;
-/** Sin transformador, tarifa, U/R, conexión ni fases; sí muestra CP, barrio y Dist. (cooperativa de agua). */
-const SOCIOS_TABLA_COLS_COMPACTO = 14;
-/** Igual que compacto agua pero sin columna Dist. (municipio / vecinos). */
-const SOCIOS_TABLA_COLS_MUNICIPIO = 13;
+/** Columnas opcionales del listado (entre Provincia y Calle, salvo Dist. que va después de Tel.). */
+const SOCIOS_CATALOGO_OPTS_PRE_CALLE = [
+    { id: 'codigo_postal', th: 'Cód. postal', field: 'codigo_postal' },
+    { id: 'barrio', th: 'Barrio', field: 'barrio' },
+    { id: 'transformador', th: 'Transf.', field: 'transformador' },
+    { id: 'tipo_tarifa', th: 'Tarifa', field: 'tipo_tarifa' },
+    { id: 'urbano_rural', th: 'U/R', field: 'urbano_rural' },
+    { id: 'tipo_conexion', th: 'Conex.', field: 'tipo_conexion' },
+    { id: 'fases', th: 'Fases', field: 'fases' },
+];
+const SOCIOS_CATALOGO_OPT_DISTRIB = { id: 'distribuidor_codigo', th: 'Dist.', field: 'distribuidor_codigo' };
+const LS_SOC_COLVIS = 'pmg_socios_colvis_v1';
 
-/** Oculta columnas típicas de red eléctrica (transf., tarifa, U/R, conex., fases) en municipio y cooperativa de agua. */
-function sociosCatalogoTablaOcultarColumnasRedElectrica() {
-    const r = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    return r === 'municipio' || r === 'cooperativa_agua';
+function sociosCatalogoRubroActualParaColumnas() {
+    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
 }
 
-/** Municipio: no mostrar «Dist.» (distribuidor_codigo) en el listado de socios. */
-function sociosCatalogoTablaOcultarDistribuidorMunicipio() {
-    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
+/** Predeterminado por rubro (sin tocar columnas fijas: NIS, medidor, nombre, localidad, provincia, calle, nº, tel., lat, lon, estado). */
+function sociosCatalogoColumnasOpcionalesDefectoPorRubro(rubro) {
+    const r = rubro || sociosCatalogoRubroActualParaColumnas();
+    const all = new Set([...SOCIOS_CATALOGO_OPTS_PRE_CALLE.map((o) => o.id), SOCIOS_CATALOGO_OPT_DISTRIB.id]);
+    if (r === 'cooperativa_electrica') return all;
+    if (r === 'cooperativa_agua') return new Set(['codigo_postal', 'barrio', 'distribuidor_codigo']);
+    if (r === 'municipio') return new Set(['codigo_postal', 'barrio']);
+    return all;
+}
+
+function sociosCatalogoIdsOpcionalesPermitidos() {
+    return new Set([...SOCIOS_CATALOGO_OPTS_PRE_CALLE.map((o) => o.id), SOCIOS_CATALOGO_OPT_DISTRIB.id]);
+}
+
+function sociosCatalogoLeerSetColumnasOpcionalesVisibles() {
+    const rubro = sociosCatalogoRubroActualParaColumnas();
+    const allowed = sociosCatalogoIdsOpcionalesPermitidos();
+    try {
+        const raw = localStorage.getItem(LS_SOC_COLVIS);
+        if (raw) {
+            const o = JSON.parse(raw);
+            const arr = o && o.porRubro && Array.isArray(o.porRubro[rubro]) ? o.porRubro[rubro] : null;
+            if (arr != null) {
+                return new Set(arr.filter((id) => allowed.has(id)));
+            }
+        }
+    } catch (_) {}
+    return sociosCatalogoColumnasOpcionalesDefectoPorRubro(rubro);
+}
+
+function sociosCatalogoGuardarColumnasOpcionalesVisibles(setIds) {
+    const rubro = sociosCatalogoRubroActualParaColumnas();
+    const allowed = sociosCatalogoIdsOpcionalesPermitidos();
+    const arr = [...setIds].filter((id) => allowed.has(id));
+    let o = { version: 1, porRubro: {} };
+    try {
+        const raw = localStorage.getItem(LS_SOC_COLVIS);
+        if (raw) {
+            const prev = JSON.parse(raw);
+            if (prev && typeof prev === 'object' && prev.porRubro) o.porRubro = { ...prev.porRubro };
+        }
+    } catch (_) {}
+    o.porRubro[rubro] = arr;
+    try {
+        localStorage.setItem(LS_SOC_COLVIS, JSON.stringify(o));
+    } catch (_) {}
+}
+
+function sociosCatalogoRestaurarColumnasOpcionalesPorRubro() {
+    const rubro = sociosCatalogoRubroActualParaColumnas();
+    try {
+        const raw = localStorage.getItem(LS_SOC_COLVIS);
+        if (!raw) {
+            void cargarListaSociosAdmin();
+            return;
+        }
+        const o = JSON.parse(raw);
+        if (o && o.porRubro && o.porRubro[rubro] != null) delete o.porRubro[rubro];
+        if (!o.porRubro || Object.keys(o.porRubro).length === 0) localStorage.removeItem(LS_SOC_COLVIS);
+        else localStorage.setItem(LS_SOC_COLVIS, JSON.stringify(o));
+    } catch (_) {}
+    void cargarListaSociosAdmin();
+}
+window.sociosCatalogoRestaurarColumnasOpcionalesPorRubro = sociosCatalogoRestaurarColumnasOpcionalesPorRubro;
+
+function sociosCatalogoHtmlThOpcionalesPreCalle(vis) {
+    let h = '';
+    for (const o of SOCIOS_CATALOGO_OPTS_PRE_CALLE) {
+        if (!vis.has(o.id)) continue;
+        h += `<th>${o.th}</th>`;
+    }
+    return h;
+}
+
+function sociosCatalogoHtmlTdOpcionalesPreCalle(s, vis, esc) {
+    let h = '';
+    for (const o of SOCIOS_CATALOGO_OPTS_PRE_CALLE) {
+        if (!vis.has(o.id)) continue;
+        h += `<td>${esc(s[o.field])}</td>`;
+    }
+    return h;
+}
+
+function sociosCatalogoHtmlThDistrib(vis) {
+    return vis.has(SOCIOS_CATALOGO_OPT_DISTRIB.id) ? `<th>${SOCIOS_CATALOGO_OPT_DISTRIB.th}</th>` : '';
+}
+
+function sociosCatalogoHtmlTdDistrib(s, vis, esc) {
+    return vis.has(SOCIOS_CATALOGO_OPT_DISTRIB.id) ? `<td>${esc(s[SOCIOS_CATALOGO_OPT_DISTRIB.field])}</td>` : '';
+}
+
+function sociosCatalogoRenderPanelPreferenciasColumnas() {
+    const host = document.getElementById('socios-colprefs-cbs');
+    if (!host) return;
+    const vis = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+    const parts = [];
+    for (const o of [...SOCIOS_CATALOGO_OPTS_PRE_CALLE, SOCIOS_CATALOGO_OPT_DISTRIB]) {
+        const ck = vis.has(o.id) ? ' checked' : '';
+        parts.push(
+            `<label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer;white-space:nowrap"><input type="checkbox" data-socios-colvis="${o.id}"${ck}/><span>${o.th}</span></label>`
+        );
+    }
+    host.innerHTML = parts.join('');
+    host.querySelectorAll('input[data-socios-colvis]').forEach((inp) => {
+        inp.addEventListener('change', () => {
+            const next = new Set();
+            host.querySelectorAll('input[data-socios-colvis]').forEach((el) => {
+                if (el.checked) next.add(el.getAttribute('data-socios-colvis'));
+            });
+            sociosCatalogoGuardarColumnasOpcionalesVisibles(next);
+            void cargarListaSociosAdmin();
+        });
+    });
 }
 const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
 
@@ -17300,12 +17414,14 @@ function ordenarFamiliasVistaProy(fams, primaria) {
 
 function obtenerNumColsTablaSociosAdmin() {
     const p = leerPrefsVistaProyeccionSociosCatalogo();
-    const n = p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
-    let base = SOCIOS_TABLA_COLS_BASE;
-    if (sociosCatalogoTablaOcultarColumnasRedElectrica()) {
-        base = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? SOCIOS_TABLA_COLS_MUNICIPIO : SOCIOS_TABLA_COLS_COMPACTO;
+    const nProy = p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
+    const vis = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+    let opt = 0;
+    for (const o of SOCIOS_CATALOGO_OPTS_PRE_CALLE) {
+        if (vis.has(o.id)) opt++;
     }
-    return base + n;
+    if (vis.has(SOCIOS_CATALOGO_OPT_DISTRIB.id)) opt++;
+    return 11 + opt + nProy;
 }
 
 /** Misma regla que import Este/Norte: faja Auto según longitud de la central (`lng_base`). */
@@ -17448,17 +17564,21 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
         const headExtra = armarHeadExtraProyeccionSociosHtml();
-        const thCpBarrio = '<th>Cód. postal</th><th>Barrio</th>';
-        const thSoloElectricaRed = '<th>Transf.</th><th>Tarifa</th><th>U/R</th><th>Conex.</th><th>Fases</th>';
-        const thEl = sociosCatalogoTablaOcultarColumnasRedElectrica()
-            ? thCpBarrio
-            : `${thCpBarrio}${thSoloElectricaRed}`;
-        const thDist = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? '' : '<th>Dist.</th>';
+        const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+        const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
+        const thDist = sociosCatalogoHtmlThDistrib(visCols);
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thEl}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<details id="socios-catalogo-colprefs" style="font-size:.76rem;margin:.5rem 0 0;color:var(--tm);max-width:52rem">
+<summary style="cursor:pointer;font-weight:600">Columnas opcionales del listado</summary>
+<p style="margin:.35rem 0 .5rem;color:var(--tl);font-size:.72rem;line-height:1.35">Elegí qué columnas mostrar para este tipo de negocio (<strong>${escHtmlPrint(sociosCatalogoRubroActualParaColumnas())}</strong>). Siempre visibles: NIS, medidor, nombre, localidad, provincia, calle, número, teléfono, latitud, longitud y estado.</p>
+<div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
+<button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
+</details>
 <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
+        sociosCatalogoRenderPanelPreferenciasColumnas();
         renderSociosCatalogoVirtual();
     } catch (e) {
         logErrorWeb('lista-socios-admin', e);
@@ -18095,13 +18215,10 @@ function renderSociosCatalogoVirtual() {
                 const calleDisp = String(s.calle || '').trim();
                 const numDisp = String(s.numero || '').trim();
                 const proy = htmlCeldasProyeccionSociosDesdeLatLng(s.latitud, s.longitud);
-                const tdCpBarrio = `<td>${e(s.codigo_postal)}</td><td>${e(s.barrio)}</td>`;
-                const tdSoloElectricaRed = `<td>${e(s.transformador)}</td><td>${e(s.tipo_tarifa)}</td><td>${e(s.urbano_rural)}</td><td>${e(s.tipo_conexion)}</td><td>${e(s.fases)}</td>`;
-                const tdElectricas = sociosCatalogoTablaOcultarColumnasRedElectrica()
-                    ? tdCpBarrio
-                    : `${tdCpBarrio}${tdSoloElectricaRed}`;
-                const tdDist = sociosCatalogoTablaOcultarDistribuidorMunicipio() ? '' : `<td>${e(s.distribuidor_codigo)}</td>`;
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdElectricas}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                const visRow = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+                const tdPre = sociosCatalogoHtmlTdOpcionalesPreCalle(s, visRow, e);
+                const tdDist = sociosCatalogoHtmlTdDistrib(s, visRow, e);
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdPre}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
         `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
