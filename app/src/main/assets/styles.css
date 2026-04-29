@@ -246,6 +246,26 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
   min-width:0;
   flex:1 1 12rem;
 }
+.hd-sesion-stack{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:.04rem;
+  min-width:0;
+  flex:1 1 6.5rem;
+  max-width:min(18rem,calc(100vw - 9.5rem));
+}
+.hd-empresa{
+  font-size:.72rem;
+  font-weight:700;
+  color:var(--bd,#1e3a8a);
+  line-height:1.2;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 .hd-slot-right{
   display:flex;
   align-items:center;
@@ -367,7 +387,7 @@ html.gn-android-webview .admin-banner-x{
 .di{font-size:.85rem;padding:.3rem .5rem;border-radius:8px;display:flex;align-items:center;gap:.3rem;font-feature-settings:"tnum"}
 .di.ok{color:#15803d}.di.er{color:#b91c1c}
 .di.ok i,.di.er i{opacity:.95}
-.un{font-size:.82rem;color:var(--tm);font-weight:500;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.un{font-size:.78rem;color:var(--tm);font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib{background:none;border:none;font-size:1.3rem;color:var(--tm);cursor:pointer;padding:.4rem;border-radius:.4rem}
 .ib:hover{background:var(--bg);color:var(--bd)}
 #mc{height:calc(100vh - 58px);height:calc(100dvh - 58px);width:100%;z-index:1;position:relative}
@@ -430,10 +450,23 @@ html.gn-android-webview .admin-banner-x{
 .btn-mapa-ir-gps:hover{transform:scale(1.06);border-color:var(--bm)}
 .btn-mapa-nuevo-gps{position:absolute;bottom:9.95rem;left:1rem;width:2.65rem;height:2.65rem;min-width:2.65rem;min-height:2.65rem;box-sizing:border-box;border-radius:50%;background:linear-gradient(145deg,var(--bm),var(--bm-hover));color:#fff;border:none;box-shadow:var(--shadow-card),0 4px 14px rgba(37,99,235,.35);font-size:1.05rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s;pointer-events:auto;padding:0}
 .btn-mapa-nuevo-gps:hover{transform:scale(1.06)}
+.btn-mapa-armar-nuevo{
+  position:absolute;bottom:13.1rem;left:1rem;width:2.65rem;height:2.65rem;min-width:2.65rem;min-height:2.65rem;box-sizing:border-box;border-radius:50%;
+  background:var(--card,#fff);color:#0f766e;border:2px solid #14b8a6;box-shadow:var(--shadow-card),0 4px 12px rgba(15,23,42,.08);
+  font-size:1.02rem;cursor:pointer;z-index:1005;display:none;align-items:center;justify-content:center;transition:transform .2s,border-color .2s,background .2s;pointer-events:auto;padding:0;
+}
+.btn-mapa-armar-nuevo:hover{transform:scale(1.06)}
+.btn-mapa-armar-nuevo--armed{
+  background:linear-gradient(145deg,#0d9488,#0f766e);color:#fff;border-color:transparent;
+  box-shadow:var(--shadow-card),0 4px 14px rgba(13,148,136,.38);
+}
+#btn-mapa-armar-nuevo{display:none!important}
+html.gn-android-webview #btn-mapa-armar-nuevo{display:flex!important}
 .gn-gps-fab{flex-shrink:0;line-height:1;white-space:nowrap}
 /* WebView Android: subir y acercar a la izquierda para no tapar barra de pedidos ni filtros */
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
 html.gn-android-webview .btn-mapa-nuevo-gps{bottom:14.5rem;left:0.42rem}
+html.gn-android-webview .btn-mapa-armar-nuevo{bottom:17.75rem;left:0.42rem}
 
 /* Leaflet WebView Android: sin tocar transform del .leaflet-container (Leaflet lo usa para tiles). */
 html.gn-android-webview .leaflet-tile {
@@ -446,6 +479,7 @@ html.gn-android-webview #mc .leaflet-container {
 @media(min-width:1024px){
   html.gn-android-webview .btn-mapa-ir-gps{bottom:7.15rem;left:0.42rem}
   html.gn-android-webview .btn-mapa-nuevo-gps{bottom:10.35rem;left:0.42rem}
+  html.gn-android-webview .btn-mapa-armar-nuevo{bottom:13.6rem;left:0.42rem}
 }
 /* FAB mapa: nuevo pedido desde ubicación */
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
@@ -660,6 +694,7 @@ textarea{resize:vertical;min-height:80px}
   #ms .bp2 .ph:active{cursor:grabbing}
   .btn-mapa-ir-gps{bottom:2.55rem;left:1rem}
   .btn-mapa-nuevo-gps{bottom:5.85rem;left:1rem}
+  .btn-mapa-armar-nuevo{bottom:9.1rem;left:1rem}
   .hl{display:none}
 }
 @keyframes pulse-gps{
@@ -933,7 +968,8 @@ html.gn-android-webview #ms .bp2 .pl {
   touch-action: pan-y;
 }
 html.gn-android-webview .btn-mapa-ir-gps,
-html.gn-android-webview .btn-mapa-nuevo-gps {
+html.gn-android-webview .btn-mapa-nuevo-gps,
+html.gn-android-webview .btn-mapa-armar-nuevo {
   position: fixed;
   z-index: 12030;
   pointer-events: auto;

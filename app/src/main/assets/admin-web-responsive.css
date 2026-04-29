@@ -42,6 +42,14 @@
     justify-content: flex-start;
     flex-wrap: wrap;
     gap: 0.35rem;
+    align-items: flex-start;
+  }
+  #ms .hd-sesion-stack {
+    flex: 1 1 auto;
+    max-width: min(calc(100vw - 5.5rem), 22rem);
+  }
+  #ms .hd-empresa {
+    max-width: 100%;
   }
   #ms .bp2 {
     padding-left: 0.35rem;
@@ -71,7 +79,7 @@
     display: none;
   }
   #ms .un {
-    max-width: 42vw;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

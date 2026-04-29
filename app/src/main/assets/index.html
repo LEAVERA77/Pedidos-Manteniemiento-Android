@@ -101,7 +101,10 @@
     </div>
     <div class="hd-slot-mid">
       <span id="di" class="di ok"><i class="fas fa-database"></i></span>
-      <span id="un" class="un"></span>
+      <div class="hd-sesion-stack">
+        <span id="hd-empresa" class="hd-empresa" title=""></span>
+        <span id="un" class="un"></span>
+      </div>
       <div id="web-coords-converter" class="web-coords-converter" style="display:none">
         <label class="web-coords-converter-lbl" for="web-coords-converter-mode">Conversión</label>
         <select id="web-coords-converter-mode" title="Modo de conversión" aria-label="Modo de conversión de coordenadas">
@@ -214,6 +217,9 @@
     </div>
   </div>
   
+  <button type="button" id="btn-mapa-armar-nuevo" class="btn-mapa-armar-nuevo gn-gps-fab" onclick="toggleMapTapNuevoPedidoArmed()" title="Activar: luego tocá el mapa para elegir el punto del nuevo pedido" aria-pressed="false" aria-label="Activar nuevo pedido con toque en el mapa">
+    <i class="fas fa-map-pin"></i>
+  </button>
   <button type="button" id="btn-mapa-nuevo-gps" class="btn-mapa-nuevo-gps gn-gps-fab" title="Nuevo pedido en mi ubicación" aria-label="Nuevo pedido en mi ubicación">
     <i class="fas fa-plus"></i>
   </button>

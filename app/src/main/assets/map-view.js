@@ -899,6 +899,17 @@ export async function runInitMap() {
             return;
         }
 
+        if (
+            ctx.esAndroidWebViewMapa() &&
+            typeof ctx.mapTapNuevoPedidoArmadoSesion === 'function' &&
+            !ctx.mapTapNuevoPedidoArmadoSesion()
+        ) {
+            try {
+                ctx.toast('Tocá «Mapa → nuevo» para elegir el punto en el mapa.', 'info');
+            } catch (_) {}
+            return;
+        }
+
         ctx.app.sel = e.latlng;
         ctx.limpiarFotosYPreviewNuevoPedido();
         ctx.document.getElementById('li').value = e.latlng.lat;
@@ -912,6 +923,11 @@ export async function runInitMap() {
             ctx.syncNisClienteReclamoConexionUI();
         } catch (_) {}
         ctx.document.getElementById('pm').classList.add('active');
+        try {
+            if (ctx.esAndroidWebViewMapa() && typeof ctx.desarmarMapTapNuevoPedido === 'function') {
+                ctx.desarmarMapTapNuevoPedido();
+            }
+        } catch (_) {}
         try {
             if (
                 typeof ctx.debeReverseNominatimAdminMapTap === 'function' &&

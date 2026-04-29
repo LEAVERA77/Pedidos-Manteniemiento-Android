@@ -139,6 +139,8 @@ let marcadorUbicacion = null;
 /** En la app Android: hasta que llegue el primer fix GPS, el primer toque en el mapa fija posición (una vez por sesión). */
 let _gpsRecibidoEstaSesion = false;
 const MAP_SEED_SESSION_KEY = 'pmg_map_seed_done';
+/** Android WebView: el toque en el mapa solo abre «Nuevo pedido» si el usuario armó antes con el botón dedicado. */
+const MAP_TAP_NUEVO_PEDIDO_ARMED_KEY = 'pmg_map_tap_nuevo_pedido_armed';
 let pedidoActualParaAvance = null;
 let modoOffline = false;      
 
@@ -2856,6 +2858,46 @@ function mapTapUbicacionInicialHechaSesion() {
 function marcarMapTapUbicacionInicialHecha() {
     try { sessionStorage.setItem(MAP_SEED_SESSION_KEY, '1'); } catch (_) {}
 }
+
+function mapTapNuevoPedidoArmadoSesion() {
+    try {
+        return sessionStorage.getItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+function setMapTapNuevoPedidoArmado(armed) {
+    try {
+        if (armed) sessionStorage.setItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY, '1');
+        else sessionStorage.removeItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY);
+    } catch (_) {}
+    try {
+        syncMapTapNuevoPedidoArmedUi();
+    } catch (_) {}
+}
+function desarmarMapTapNuevoPedido() {
+    setMapTapNuevoPedidoArmado(false);
+}
+function syncMapTapNuevoPedidoArmedUi() {
+    const btn = document.getElementById('btn-mapa-armar-nuevo');
+    if (!btn) return;
+    const on = mapTapNuevoPedidoArmadoSesion();
+    btn.classList.toggle('btn-mapa-armar-nuevo--armed', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on
+        ? 'Activo: el próximo toque en el mapa abre nuevo pedido (se apaga al abrir el formulario)'
+        : 'Activar: luego tocá el mapa para elegir el punto del nuevo pedido';
+}
+function toggleMapTapNuevoPedidoArmed() {
+    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
+    setMapTapNuevoPedidoArmado(!mapTapNuevoPedidoArmadoSesion());
+    const on = mapTapNuevoPedidoArmadoSesion();
+    toast(
+        on ? 'Tocá el mapa en el punto del nuevo pedido.' : 'Nuevo pedido desde el mapa desactivado.',
+        on ? 'success' : 'info'
+    );
+}
+window.toggleMapTapNuevoPedidoArmed = toggleMapTapNuevoPedidoArmed;
 let _mapLazyIo = null;
 function teardownMapLazyObserver() {
     if (_mapLazyIo) {
@@ -2888,7 +2930,15 @@ function setupMapLazyWhenVisibleOnce() {
 function limpiarEstadoMapaSesion() {
     _gpsRecibidoEstaSesion = false;
     teardownMapLazyObserver();
-    try { sessionStorage.removeItem(MAP_SEED_SESSION_KEY); } catch (_) {}
+    try {
+        sessionStorage.removeItem(MAP_SEED_SESSION_KEY);
+    } catch (_) {}
+    try {
+        sessionStorage.removeItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY);
+    } catch (_) {}
+    try {
+        syncMapTapNuevoPedidoArmedUi();
+    } catch (_) {}
 }
 function marcarGpsRecibidoEstaSesion() {
     _gpsRecibidoEstaSesion = true;
@@ -3297,7 +3347,9 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
             render();
         } catch (_) {}
         localStorage.setItem('pmg', JSON.stringify(app.u));
-        document.getElementById('un').textContent = u.nombre.split(' ')[0];
+        try {
+            actualizarBarraHeaderSesion();
+        } catch (_) {}
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
         resetPreferenciasPanelesInicioCerrados();
@@ -5130,6 +5182,51 @@ function fmtInformeFecha(v) {
     }
 }
 
+function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
+    const opinTxtDet = p.opin != null && String(p.opin).trim() ? String(p.opin).trim() : '';
+    const estrellasDet = p.oes != null && p.oes >= 1 && p.oes <= 5 ? p.oes : null;
+    const lineaEstrellas =
+        estrellasDet != null
+            ? `<p style="font-size:.9rem;margin:0 0 .35rem;font-weight:600;color:var(--bm)">Valoración: ${'⭐'.repeat(estrellasDet)} <span style="color:var(--tm);font-weight:500">(${estrellasDet}/5)</span></p>`
+            : '';
+    if (estrellasDet == null && !opinTxtDet) return '';
+    return `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
+            <h4>💬 Valoración del cliente (WhatsApp)</h4>
+            ${lineaEstrellas}
+            ${opinTxtDet ? `<div class="trb">${escDet(opinTxtDet)}</div>` : '<p style="font-size:.78rem;color:var(--tm);margin:0">Sin comentario de texto.</p>'}
+            ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
+           </div>`;
+}
+
+function _gnDmTypingFocused() {
+    const dm = document.getElementById('dm');
+    const ae = document.activeElement;
+    if (!dm || !ae || typeof ae.closest !== 'function') return false;
+    if (!dm.classList.contains('active')) return false;
+    if (!ae.closest('#dm')) return false;
+    const t = ae.tagName;
+    return t === 'TEXTAREA' || t === 'INPUT' || t === 'SELECT';
+}
+
+function actualizarHostOpinionClienteDetalleModal(p) {
+    const host = document.getElementById('dm-opinion-cliente-host');
+    if (!host) return;
+    const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    host.innerHTML = construirHtmlBloqueOpinionClienteDetalle(p, escDet);
+}
+
+function actualizarBarraHeaderSesion() {
+    const emp = document.getElementById('hd-empresa');
+    const un = document.getElementById('un');
+    const nom = String((window.EMPRESA_CFG || {}).nombre || '').trim();
+    if (emp) {
+        emp.textContent = nom || '';
+        emp.style.display = nom ? '' : 'none';
+        emp.title = nom;
+    }
+    if (un && app?.u?.nombre) un.textContent = String(app.u.nombre).split(' ')[0];
+}
+
 /** Si existe `pedidos.tenant_id`, `empresa_config` es global en Neon y no corresponde al tenant del JWT: no rellenar email/tel desde SQL. */
 let _neonPedidosTenantIdColumnCache = null;
 async function neonPedidosTieneColumnaTenantId() {
@@ -5990,6 +6087,9 @@ function aplicarUIMapaPlataforma() {
     try { initAdminOsmCapasPanelBindings(); } catch (_) {}
     try { syncMapaFiltroTiposRebuild(); } catch (_) {}
     try { initWebCoordsConverterBar(); } catch (_) {}
+    try {
+        syncMapTapNuevoPedidoArmedUi();
+    } catch (_) {}
     void (async () => {
         if (!esAdmin() || (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) || !app.map) return;
         try {
@@ -7788,6 +7888,8 @@ function buildMapViewCtx() {
         esAndroidWebViewMapa,
         esAdmin,
         mapTapUbicacionInicialHechaSesion,
+        mapTapNuevoPedidoArmadoSesion,
+        desarmarMapTapNuevoPedido,
         get _gpsRecibidoEstaSesion() { return _gpsRecibidoEstaSesion; },
         marcarMapTapUbicacionInicialHecha,
         solicitarUbicacion,
@@ -8175,7 +8277,13 @@ async function enfocarPedidoDesdeNotif(pedidoId, opts = {}) {
             requestAnimationFrame(() => {
                 setTimeout(() => {
                     const el = document.getElementById('gn-focus-derivacion-pedido');
-                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (!el) return;
+                    // WebView Android: scroll "smooth" puede cerrar teclado / perder foco en textareas del detalle.
+                    if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
+                        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                    } else {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }, 180);
             });
         }
@@ -11348,8 +11456,9 @@ async function refetchPedidoFilaParaDetalle(pedidoId) {
     return null;
 }
 
-async function detalle(p) {
-    if (p?.id != null && !String(p.id).startsWith('off_') && !modoOffline) {
+async function detalle(p, opts = {}) {
+    const skipBgRefetch = !!opts.skipBackgroundRefetch;
+    if (!skipBgRefetch && p?.id != null && !String(p.id).startsWith('off_') && !modoOffline) {
         const okRol =
             esAdmin() ||
             (esTecnicoOSupervisor() &&
@@ -11357,8 +11466,18 @@ async function detalle(p) {
                 p.tai != null &&
                 String(p.tai) === String(app.u.id));
         if (okRol) {
-            const fr = await refetchPedidoFilaParaDetalle(p.id);
-            if (fr) p = fr;
+            const pidRef = p.id;
+            void refetchPedidoFilaParaDetalle(pidRef).then((fr) => {
+                if (!fr) return;
+                const dm = document.getElementById('dm');
+                if (!dm || String(dm.dataset.detallePedidoId || '') !== String(fr.id)) return;
+                if (_gnDmTypingFocused()) {
+                    const ix = app.p.findIndex((x) => String(x.id) === String(fr.id));
+                    if (ix >= 0) app.p[ix] = fr;
+                    return;
+                }
+                void detalle(fr, { skipBackgroundRefetch: true });
+            });
         }
     }
     try {
@@ -11413,7 +11532,13 @@ async function detalle(p) {
                 if (changed) {
                     // Solo recargar si el pedido NO está cerrado (evita bucle de recarga)
                     if (p.es !== 'Cerrado' && cur.es !== 'Cerrado') {
-                        void detalle(cur);
+                        if (_gnDmTypingFocused()) {
+                            try {
+                                actualizarHostOpinionClienteDetalleModal(cur);
+                            } catch (_) {}
+                        } else {
+                            void detalle(cur, { skipBackgroundRefetch: true });
+                        }
                     }
                 }
             } catch (_) {}
@@ -11501,21 +11626,7 @@ async function detalle(p) {
     const htmlDatosCliente = filasDatosCliente.length
         ? `<div class="dr" style="grid-column:1/-1;margin:.15rem 0 .35rem"><span class="dl" style="font-weight:700;color:var(--bd)">Datos cargados por el cliente</span></div>${filasDatosCliente.join('')}`
         : '';
-    const opinTxtDet = (p.opin != null && String(p.opin).trim()) ? String(p.opin).trim() : '';
-    const estrellasDet = p.oes != null && p.oes >= 1 && p.oes <= 5 ? p.oes : null;
-    const lineaEstrellas =
-        estrellasDet != null
-            ? `<p style="font-size:.9rem;margin:0 0 .35rem;font-weight:600;color:var(--bm)">Valoración: ${'⭐'.repeat(estrellasDet)} <span style="color:var(--tm);font-weight:500">(${estrellasDet}/5)</span></p>`
-            : '';
-    const htmlOpinionCliente =
-        estrellasDet != null || opinTxtDet
-            ? `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
-            <h4>💬 Valoración del cliente (WhatsApp)</h4>
-            ${lineaEstrellas}
-            ${opinTxtDet ? `<div class="trb">${escDet(opinTxtDet)}</div>` : '<p style="font-size:.78rem;color:var(--tm);margin:0">Sin comentario de texto.</p>'}
-            ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
-           </div>`
-            : '';
+    const htmlOpinionCliente = construirHtmlBloqueOpinionClienteDetalle(p, escDet);
     /** Opción A (spec): aviso + wa.me si el tipo es solo agua/municipio y el tenant es eléctrico. */
     let htmlDerivacionCoopElectrica = '';
     if (
@@ -11764,7 +11875,7 @@ async function detalle(p) {
             <div class="dr"><span class="dl">Descripción</span><span class="dv">${escDet(sanitizarTextoDescripcionPedidoVista(p.de))}</span></div>
         </div>
         
-        ${htmlOpinionCliente}
+        <div id="dm-opinion-cliente-host">${htmlOpinionCliente}</div>
         
         ${htmlDerivacionTercerosPedidoDetalle()}
         ${htmlSolicitudDerivacionCoopElectricaTecnico(p)}
@@ -12570,8 +12681,9 @@ async function guardarMiCuentaUsuario() {
             try {
                 localStorage.setItem('pmg', JSON.stringify(app.u));
             } catch (_) {}
-            const un = document.getElementById('un');
-            if (un && app.u.nombre) un.textContent = app.u.nombre.split(' ')[0];
+            try {
+                actualizarBarraHeaderSesion();
+            } catch (_) {}
         }
         toast('Datos actualizados.', 'success');
         document.getElementById('modal-mi-cuenta')?.classList.remove('active');
@@ -13200,7 +13312,9 @@ try {
         try {
             aplicarTenantDesdeJwtSiHaceFalta();
         } catch (_) {}
-        document.getElementById('un').textContent = app.u.nombre.split(' ')[0];
+        try {
+            actualizarBarraHeaderSesion();
+        } catch (_) {}
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
         try {
@@ -13371,6 +13485,9 @@ async function cargarConfigEmpresa() {
         } catch (_) {}
         void refreshMapAdminBaseMarkerIfReady();
         invalidatePedidosTenantSqlCache();
+        try {
+            actualizarBarraHeaderSesion();
+        } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
         syncWrapCoordsDisplayNuevoPedido();
@@ -14502,6 +14619,9 @@ function setupWizardPrev() {
 function aplicarBrandingDesdeConfig() {
     syncEmpresaCfgNombreLogoDesdeMarca();
     aplicarMarcaVisualCompleta();
+    try {
+        actualizarBarraHeaderSesion();
+    } catch (_) {}
 }
 function initSetupWizardBindings() {
     const inputUrl = document.getElementById('cfgi-logo-url');
@@ -20209,8 +20329,9 @@ async function cambiarContrasena() {
                 try {
                     localStorage.setItem('pmg', JSON.stringify(app.u));
                 } catch (_) {}
-                const un = document.getElementById('un');
-                if (un && app.u.nombre) un.textContent = app.u.nombre.split(' ')[0];
+                try {
+                    actualizarBarraHeaderSesion();
+                } catch (_) {}
             }
             setOk('✓ Datos actualizados correctamente');
             ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
