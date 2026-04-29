@@ -17813,6 +17813,52 @@ async function inferirCodigoPostalImportSociosNominatim(calle, loc, provincia) {
     return null;
 }
 
+/**
+ * Inferencia de CP solo para filas sin `codigo_postal`, agrupando por (calle, localidad, provincia)
+ * para no repetir la misma consulta a Nominatim cientos de veces. Respeta ~1 req/s entre claves distintas.
+ */
+async function aplicarInferenciaCpNominatimABulkImportSocios(payloads) {
+    if (!Array.isArray(payloads) || !payloads.length) return 0;
+    const clave = (p) =>
+        `${String(p.calle || '')
+            .trim()
+            .toLowerCase()}\u0001${String(p.loc || '')
+            .trim()
+            .toLowerCase()}\u0001${String(p.provincia || '')
+            .trim()
+            .toLowerCase()}`;
+    const unicos = new Map();
+    for (const p of payloads) {
+        if (p.codigo_postal && String(p.codigo_postal).trim()) continue;
+        if (!p.calle || !p.loc || !p.provincia) continue;
+        const k = clave(p);
+        if (!unicos.has(k)) unicos.set(k, { calle: p.calle, loc: p.loc, provincia: p.provincia });
+    }
+    const cpPorClave = new Map();
+    let idx = 0;
+    const total = unicos.size;
+    for (const [k, { calle, loc, provincia }] of unicos) {
+        if (total > 0 && idx % 6 === 0) {
+            actualizarOverlayImportacion(`Código postal (Nominatim)… ${idx + 1} / ${total} direcciones distintas`);
+        }
+        const cp = await inferirCodigoPostalImportSociosNominatim(calle, loc, provincia);
+        if (cp) cpPorClave.set(k, cp);
+        idx++;
+        if (idx < total) await new Promise((r) => setTimeout(r, 1100));
+    }
+    let cpInf = 0;
+    for (const p of payloads) {
+        if (p.codigo_postal && String(p.codigo_postal).trim()) continue;
+        if (!p.calle || !p.loc || !p.provincia) continue;
+        const cpx = cpPorClave.get(clave(p));
+        if (cpx) {
+            p.codigo_postal = cpx;
+            cpInf++;
+        }
+    }
+    return cpInf;
+}
+
 function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
     for (const canon of clavesCanon) {
         const orig = mapNormAOriginal[canon];
@@ -18481,21 +18527,11 @@ async function importarExcelSocios(event) {
                 muestra: omitidas.slice(0, 15),
             });
         }
-        const totalCp = payloads.filter((p) => !p.codigo_postal && p.calle && p.loc && p.provincia).length;
+        const inferirCpNominatim = document.getElementById('socios-import-cp-nominatim')?.checked === true;
         let cpInf = 0;
-        for (let i = 0; i < payloads.length; i++) {
-            const p = payloads[i];
-            if (p.codigo_postal) continue;
-            if (!p.calle || !p.loc || !p.provincia) continue;
-            if (totalCp > 0 && i % 12 === 0) {
-                actualizarOverlayImportacion(`Código postal (Nominatim)… ${Math.min(i + 1, payloads.length)} / ${payloads.length}`);
-            }
-            const cp = await inferirCodigoPostalImportSociosNominatim(p.calle, p.loc, p.provincia);
-            if (cp) {
-                p.codigo_postal = cp;
-                cpInf++;
-            }
-            await new Promise((r) => setTimeout(r, 0));
+        if (inferirCpNominatim) {
+            actualizarOverlayImportacion('Inferencia de códigos postales (Nominatim)…');
+            cpInf = await aplicarInferenciaCpNominatimABulkImportSocios(payloads);
         }
         let ok = 0;
         let fail = 0;
@@ -18541,6 +18577,14 @@ async function importarExcelSocios(event) {
         }
         if (cpInf > 0) {
             toast(`Código postal inferido (Nominatim) en ${cpInf} fila(s).`, 'success');
+        } else if (
+            !inferirCpNominatim &&
+            payloads.some((p) => !p.codigo_postal && p.calle && p.loc && p.provincia)
+        ) {
+            toast(
+                'Import rápido: sin inferir CP. Podés marcar la casilla Nominatim en la próxima importación, poner CP en el Excel, o dejar que el CP del pedido enriquezca el catálogo al geocodificar reclamos.',
+                'info'
+            );
         }
         cargarListaSociosAdmin();
         try {

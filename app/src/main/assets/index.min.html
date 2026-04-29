@@ -708,9 +708,12 @@
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
             <input type="checkbox" id="socios-import-reemplazar"> Vaciar catálogo antes de importar
           </label>
+          <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;max-width:min(44rem,100%);line-height:1.35" title="Desactivado por defecto: import instantáneo. Si lo activás, se consulta Nominatim una vez por cada calle+localidad+provincia distintas (~1 s entre consultas).">
+            <input type="checkbox" id="socios-import-cp-nominatim"> Inferir CP (Nominatim) si falta en el Excel — opcional, puede ser lento.
+          </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según «Coordenadas en el Excel»: <code style="font-size:.72rem">latitud | longitud</code> (WGS84, se guardan en Neon) o <code style="font-size:.72rem">este | norte</code> (metros; familia según Empresa; convierte a WGS84 con proj4). La sección verde solo agrega columnas X/Y de otras proyecciones en pantalla. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, etc. Fila 1 = encabezados; lotes de 1000 filas.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Columnas recomendadas:</strong> <code style="font-size:.72rem">nis | medidor | nombre | calle | numero | localidad</code> y según «Coordenadas en el Excel»: <code style="font-size:.72rem">latitud | longitud</code> (WGS84, se guardan en Neon) o <code style="font-size:.72rem">este | norte</code> (metros; familia según Empresa; convierte a WGS84 con proj4). La sección verde solo agrega columnas X/Y de otras proyecciones en pantalla. Opcionales: <strong>telefono</strong>, <strong>distribuidor_codigo</strong>, <strong>barrio</strong>, <strong>codigo_postal</strong> (o inferencia solo si marcás la casilla Nominatim). Fila 1 = encabezados; lotes de 1000 filas.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
     </div>
     <div id="admin-estadisticas" class="admin-section">
