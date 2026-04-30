@@ -17369,6 +17369,138 @@ function sociosCatalogoRenderPanelPreferenciasColumnas() {
         });
     });
 }
+
+/** Mapa localidad+provincia → código de área (carga perezosa desde Neon). */
+let _sociosMapCodigoAreaArgImport = null;
+let _sociosMapCodigoAreaArgImportIntentado = false;
+
+async function sociosCatalogoCargarMapaCodigosAreaArgentinaImport() {
+    if (_sociosMapCodigoAreaArgImportIntentado) return _sociosMapCodigoAreaArgImport || new Map();
+    _sociosMapCodigoAreaArgImportIntentado = true;
+    const m = new Map();
+    try {
+        const r = await sqlSimple(
+            'SELECT codigo_area, localidad, provincia FROM codigos_area_argentina'
+        );
+        for (const row of r.rows || []) {
+            const loc = String(row.localidad || '')
+                .trim()
+                .toUpperCase();
+            const prov = String(row.provincia || '')
+                .trim()
+                .toUpperCase();
+            const cod = String(row.codigo_area || '').replace(/\D/g, '');
+            if (!loc || !cod) continue;
+            const k = `${loc}\t${prov}`;
+            if (!m.has(k)) m.set(k, cod);
+        }
+        _sociosMapCodigoAreaArgImport = m;
+    } catch (_) {
+        _sociosMapCodigoAreaArgImport = m;
+    }
+    return _sociosMapCodigoAreaArgImport;
+}
+
+function sociosCatalogoBuscarCodigoAreaEnMapaImport(localidad, provincia) {
+    const map = _sociosMapCodigoAreaArgImport;
+    if (!map || !map.size) return null;
+    const loc = String(localidad || '')
+        .trim()
+        .toUpperCase();
+    const prov = String(provincia || '')
+        .trim()
+        .toUpperCase();
+    if (!loc) return null;
+    return map.get(`${loc}\t${prov}`) || null;
+}
+
+/** Quita un «15» entre código de área (2–4 dígitos) y abonado (6–10 dígitos), típico móvil AR. */
+function sociosCatalogoTelefonoQuitar15TrasArea(d) {
+    const s = String(d || '').replace(/\D/g, '');
+    const m = s.match(/^(\d{2,4})15(\d{6,10})$/);
+    return m ? m[1] + m[2] : s;
+}
+
+/**
+ * Normaliza a dígitos E.164 tipo 549 + área + abonado (Argentina).
+ * Usa tabla codigos_area_argentina si el número viene solo con prefijo 15 y localidad/provincia.
+ */
+function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) {
+    const orig = String(raw || '').trim();
+    let d = orig.replace(/\D/g, '');
+    if (!d || d.length < 6) return orig || null;
+    if (d.startsWith('549')) {
+        let r = d.slice(3).replace(/^0+/, '');
+        let prev;
+        for (let i = 0; i < 3; i++) {
+            prev = r;
+            r = sociosCatalogoTelefonoQuitar15TrasArea(r);
+            if (r === prev) break;
+        }
+        const out = ('549' + r).replace(/\D/g, '');
+        return out.length >= 12 ? out : orig || null;
+    }
+    while (d.startsWith('0')) d = d.slice(1);
+    if (/^15\d{6,10}$/.test(d)) {
+        const sub = d.slice(2);
+        const ar = sociosCatalogoBuscarCodigoAreaEnMapaImport(localidad, provincia);
+        if (ar) d = String(ar).replace(/\D/g, '') + sub;
+        else d = sub;
+    } else {
+        let prev;
+        for (let i = 0; i < 3; i++) {
+            prev = d;
+            d = sociosCatalogoTelefonoQuitar15TrasArea(d);
+            if (d === prev) break;
+        }
+    }
+    if (!d.startsWith('549')) {
+        if (d.startsWith('54')) d = '549' + d.slice(2).replace(/^0+/, '');
+        else d = '549' + d;
+    }
+    d = d.replace(/\D/g, '');
+    if (!d.startsWith('549')) return orig || null;
+    return d.length >= 12 && d.length <= 15 ? d : orig || null;
+}
+
+function sociosCatalogoParseObjetoDatosExtra(val) {
+    if (val == null) return null;
+    if (typeof val === 'object' && !Array.isArray(val)) return val;
+    if (typeof val === 'string') {
+        try {
+            const p = JSON.parse(val);
+            return p && typeof p === 'object' && !Array.isArray(p) ? p : null;
+        } catch (_) {}
+    }
+    return null;
+}
+
+function sociosCatalogoExtraerClavesDatosExtra(rows, maxKeys) {
+    const mx = Math.max(1, Math.min(40, maxKeys == null ? 28 : maxKeys));
+    const k = new Set();
+    for (const row of rows) {
+        const o = sociosCatalogoParseObjetoDatosExtra(row.datos_extra);
+        if (!o) continue;
+        for (const key of Object.keys(o)) {
+            const nk = String(key || '').trim();
+            if (nk) k.add(nk);
+            if (k.size >= mx) break;
+        }
+        if (k.size >= mx) break;
+    }
+    return [...k].sort();
+}
+
+function sociosCatalogoHtmlExtrasDatosExtra(s, keys, esc) {
+    const o = sociosCatalogoParseObjetoDatosExtra(s.datos_extra);
+    let h = '';
+    for (const key of keys) {
+        const v = o && o[key] != null ? String(o[key]) : '';
+        h += `<td style="max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(v)}">${esc(v)}</td>`;
+    }
+    return h;
+}
+
 const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
 
 function leerPrefsVistaProyeccionSociosCatalogo() {
@@ -17421,7 +17553,8 @@ function obtenerNumColsTablaSociosAdmin() {
         if (vis.has(o.id)) opt++;
     }
     if (vis.has(SOCIOS_CATALOGO_OPT_DISTRIB.id)) opt++;
-    return 11 + opt + nProy;
+    const nExtra = Number(window._sociosDatosExtraColCount || 0) || 0;
+    return 11 + opt + nProy + nExtra;
 }
 
 /** Misma regla que import Este/Norte: faja Auto según longitud de la central (`lng_base`). */
@@ -17549,17 +17682,24 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const hasSocTList = await sociosCatalogoTieneTenantId();
+        const hasDEList = await sociosCatalogoTieneDatosExtra();
         const wf = hasSocTList ? ` WHERE tenant_id = ${esc(tenantIdActual())}` : '';
+        const colDe = hasDEList ? ', datos_extra' : '';
         const r = await sqlSimpleSelectAllPages(
-            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo FROM socios_catalogo${wf}`,
+            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe} FROM socios_catalogo${wf}`,
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
             window._sociosVirtualRows = null;
+            window._sociosDatosExtraColumnKeys = [];
+            window._sociosDatosExtraColCount = 0;
             return;
         }
+        const extraKeys = hasDEList ? sociosCatalogoExtraerClavesDatosExtra(rows) : [];
+        window._sociosDatosExtraColumnKeys = extraKeys;
+        window._sociosDatosExtraColCount = extraKeys.length;
         window._sociosVirtualRows = rows;
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
@@ -17567,9 +17707,14 @@ async function cargarListaSociosAdmin() {
         const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
         const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
         const thDist = sociosCatalogoHtmlThDistrib(visCols);
+        const thNis = esMunicipioRubro() ? 'ID vecino' : 'NIS';
+        const thExtras =
+            extraKeys.length > 0
+                ? extraKeys.map((k) => `<th title="Columna extra (datos_extra)" style="max-width:7rem">${escHtmlPrint(k)}</th>`).join('')
+                : '';
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">NIS</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${thNis}</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${thExtras}${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <details id="socios-catalogo-colprefs" style="font-size:.76rem;margin:.5rem 0 0;color:var(--tm);max-width:52rem">
 <summary style="cursor:pointer;font-weight:600">Columnas opcionales del listado</summary>
 <p style="margin:.35rem 0 .5rem;color:var(--tl);font-size:.72rem;line-height:1.35">Elegí qué columnas mostrar para este tipo de negocio (<strong>${escHtmlPrint(sociosCatalogoRubroActualParaColumnas())}</strong>). Siempre visibles: NIS, medidor, nombre, localidad, provincia, calle, número, teléfono, latitud, longitud y estado.</p>
@@ -18218,7 +18363,9 @@ function renderSociosCatalogoVirtual() {
                 const visRow = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
                 const tdPre = sociosCatalogoHtmlTdOpcionalesPreCalle(s, visRow, e);
                 const tdDist = sociosCatalogoHtmlTdDistrib(s, visRow, e);
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdPre}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                const extraKs = window._sociosDatosExtraColumnKeys || [];
+                const tdExtras = sociosCatalogoHtmlExtrasDatosExtra(s, extraKs, e);
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdPre}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${tdExtras}${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
         `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padBot}px;border:none"></td></tr>`;
@@ -18465,6 +18612,7 @@ async function importarExcelSocios(event) {
         aliasEncabezadosIdentificadorVecinoSocios(mapNormAOriginal);
         aliasEncabezadosNombreSocios(mapNormAOriginal);
         const rubroImp = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+        await sociosCatalogoCargarMapaCodigosAreaArgentinaImport();
         const ecCfg = window.EMPRESA_CFG || {};
         const payloads = [];
         const omitidas = [];
@@ -18561,7 +18709,6 @@ async function importarExcelSocios(event) {
             } else if (textoDireccionUnica && !calle) {
                 calle = String(textoDireccionUnica).trim();
             }
-            const telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
             const dist = valorSociosPorEncabezados(row, mapNormAOriginal,
                 'distribuidor_codigo', 'distribuidor_', 'distribuidor', 'codigo_distribuidor');
             let loc = valorSociosPorEncabezados(row, mapNormAOriginal, 'localidad', 'ciudad', 'municipio');
@@ -18573,6 +18720,11 @@ async function importarExcelSocios(event) {
             if (!provinciaSoc || !String(provinciaSoc).trim()) {
                 const fp = String(ecCfg.provincia || ecCfg.state || ecCfg.provincia_nominatim || '').trim();
                 if (fp.length >= 2) provinciaSoc = fp;
+            }
+            let telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
+            if (telefono && String(telefono).trim()) {
+                const tn = normalizarTelefonoArgentinaImportSociosSync(telefono, loc, provinciaSoc);
+                if (tn) telefono = tn;
             }
             let codigoPostalSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'codigo_postal');
             if (codigoPostalSoc) {
@@ -18860,43 +19012,33 @@ function mostrarFormatoExcelSocios() {
     let ejemplo = '';
     if (r === 'municipio') {
         obligHtml =
+            '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>ID vecino</strong> (sinónimos: vecino, nº de vecino, Socio…), <strong>nombre y apellido</strong> (o apellido+nombres), <strong>calle o dirección</strong>, <strong>nº de puerta</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>. No se exige medidor.</p>' +
             '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
-            '<li><strong>Nº de vecino</strong> (obligatorio; encabezados: <code>vecino</code>, <code>n_vecino</code>, <code>numero_vecino</code>, <code>Nº de vecino</code>, <code>numero_de_vecino</code>, <code>partida</code>, <code>padron</code>…)</li>' +
-            '<li><strong>Apellido</strong> y <strong>nombres</strong> (obligatorios; o columna <code>nombre</code> completo)</li>' +
-            '<li><strong>Dirección</strong> (<code>calle</code> o <code>direccion</code>)</li>' +
-            '<li><strong>Ciudad / localidad</strong> y <strong>provincia</strong> (obligatorias)</li>' +
-            '<li><strong>Nº de puerta</strong>: columna <code>numero</code> — puede ir vacía (se completa con reclamos por WhatsApp)</li>' +
-            '<li><em>No</em> se exige medidor en municipio.</li></ul>';
+            '<li>Columnas libres: cualquier otro encabezado se guarda en <code>datos_extra</code> y aparece como columna extra en el listado del catálogo.</li></ul>';
         ejemplo =
             '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">vecino;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
             '1201;Pérez;Juan;San Martín;;Paraná;Entre Ríos;;;;</pre>';
     } else if (r === 'cooperativa_agua') {
         obligHtml =
+            '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>ID socio / abonado</strong>, <strong>medidor</strong>, <strong>nombre y apellido</strong>, <strong>calle o dirección</strong>, <strong>nº de puerta</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>.</p>' +
             '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
-            '<li><strong>Nº de abonado</strong> (obligatorio; sinónimos: abonado, n_abonado…)</li>' +
-            '<li><strong>Nº de medidor</strong> (obligatorio; preferí texto para no perder ceros)</li>' +
-            '<li><strong>Apellido</strong> y <strong>nombres</strong> (o <code>nombre</code>)</li>' +
-            '<li><strong>Dirección</strong>, <strong>localidad</strong>, <strong>provincia</strong></li>' +
-            '<li><strong>Nº de puerta</strong> (<code>numero</code>) puede ir vacío</li></ul>';
+            '<li>Columnas libres → <code>datos_extra</code> y columnas dinámicas en el listado.</li></ul>';
         ejemplo =
             '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">abonado;medidor;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
             '45001;A00123456;Gómez;María;Mitre;;Paraná;Entre Ríos;;;;</pre>';
     } else {
         obligHtml =
+            '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>NIS / ID</strong>, <strong>medidor</strong>, <strong>nombre y apellido</strong>, <strong>calle o dirección</strong>, <strong>nº de puerta</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>.</p>' +
             '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
-            '<li><strong>NIS / ID</strong> (obligatorio)</li>' +
-            '<li><strong>Nº de medidor</strong> (obligatorio)</li>' +
-            '<li><strong>Apellido</strong> y <strong>nombres</strong> (o <code>nombre</code>)</li>' +
-            '<li><strong>Dirección</strong>, <strong>localidad</strong>, <strong>provincia</strong></li>' +
-            '<li><strong>Nº de puerta</strong> (<code>numero</code>) puede ir vacío</li></ul>';
+            '<li>Columnas libres → <code>datos_extra</code> y columnas dinámicas en el listado.</li></ul>';
         ejemplo =
             '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">nis;medidor;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
             '700001;12345678;López;Carlos;Urquiza;;Paraná;Entre Ríos;;;;</pre>';
     }
     const inneg =
         '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
-        '<li><strong>Código postal</strong> — puede ir vacío (se intenta inferir al importar con Nominatim)</li>' +
-        '<li><strong>Teléfono</strong>, <strong>Lat / Lon (WGS84)</strong>, <strong>Nº de puerta</strong> — pueden ir vacíos</li>' +
+        '<li>En base de datos siempre existen las columnas fijas del catálogo; <strong>código postal, teléfono, lat/lon, barrio</strong> pueden venir vacíos en el Excel.</li>' +
+        '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a formato internacional 549… usando la tabla de características telefónicas de Argentina cuando hace falta la característica.</li>' +
         '</ul>';
     const wrap = document.createElement('div');
     wrap.id = 'modal-formato-excel-socios';
@@ -18915,14 +19057,14 @@ function mostrarFormatoExcelSocios() {
       ${obligHtml}
       <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Columnas innegociables (pueden ir vacías)</h4>
       ${inneg}
-      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Enriquecimiento con WhatsApp</h4>
+      <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Enriquecimiento progresivo</h4>
       <ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">
-        <li>Arrancás con datos básicos del Excel.</li>
-        <li>Cada reclamo por WhatsApp puede completar automáticamente: <strong>teléfono</strong>, <strong>coordenadas</strong> y <strong>nº de puerta</strong> en el catálogo.</li>
+        <li><strong>Coordenadas y nº de puerta:</strong> si el usuario comparte <strong>ubicación en vivo por WhatsApp</strong>, tiene prioridad sobre inferencias por Nominatim o geocodificación por dirección.</li>
+        <li>Cada reclamo por WhatsApp también puede completar <strong>teléfono</strong> y otros datos en el catálogo cuando hay coincidencia por NIS o dirección.</li>
       </ul>
       <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Ejemplo</h4>
       ${ejemplo}
-      <p style="font-size:.72rem;color:#92400e;margin:.55rem 0 0;line-height:1.45;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"><strong>Nota:</strong> Las columnas de código postal, teléfono, nº de puerta, lat y lon pueden estar vacías. Se irán completando con cada reclamo por WhatsApp (y el CP también se intenta al importar).</p>
+      <p style="font-size:.72rem;color:#92400e;margin:.55rem 0 0;line-height:1.45;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"><strong>Nota:</strong> Ejecutá en Neon las migraciones <code>add_codigos_area_argentina.sql</code> y <code>seed_codigos_area_argentina.sql</code> para que la normalización de teléfonos use la tabla de características por localidad.</p>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.85rem;align-items:center">
         <button type="button" class="btn-sm primary" onclick="descargarPlantillaCsvSociosRubro()"><i class="fas fa-download"></i> Descargar plantilla CSV</button>
         <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="cerrarModalFormatoExcelSocios()">Cerrar</button>
