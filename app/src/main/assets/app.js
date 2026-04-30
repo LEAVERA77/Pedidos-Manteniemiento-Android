@@ -318,6 +318,9 @@ window.addEventListener('online', async () => {
             await notificarNeonConectadoParaUpdateCheck();
             if (app.u) {
                 toast('Conexión restaurada ✓', 'success');
+                try {
+                    await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
+                } catch (_) {}
                 const q = offlineQueue();
                 if (q.length > 0) setTimeout(sincronizarOffline, 1500);
                 else cargarPedidos();
@@ -569,6 +572,9 @@ const SESSION_MAX_MS        = 60 * 60 * 1000;
 const PMG_LAST_ACTIVITY_TS_KEY = 'pmg_last_activity_ts';
 const SESION_INACTIVIDAD_MAX_MS = 15 * 60 * 1000;
 let _pmgActividadUltimaEscrituraLs = 0;
+/** Releer `usuarios.tenant_id` en Neon con la sesión ya abierta (cambio desde otra sesión / admin web). */
+const TENANT_NEON_REVALIDA_MS = 3 * 60 * 1000;
+let _lastTenantRevalidaNeonMs = 0;
 let _syncCatalogosInterval = null;
 
 function iniciarSyncCatalogos() {
@@ -664,11 +670,21 @@ async function heartbeat() {
         await sqlSimple('SELECT 1');
         registrarActividadSesionUsuario();
         console.log('Keep-alive OK', new Date().toLocaleTimeString('es-AR', {hour12:false}));
+        const now = Date.now();
+        if (!modoOffline && NEON_OK && _sql && document.visibilityState === 'visible') {
+            if (now - _lastTenantRevalidaNeonMs >= TENANT_NEON_REVALIDA_MS) {
+                _lastTenantRevalidaNeonMs = now;
+                void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
+            }
+        }
         if (modoOffline) {
             
             NEON_OK = true;
             setModoOffline(false);
             toast('Conexión restaurada ✓', 'success');
+            try {
+                await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
+            } catch (_) {}
             const q = offlineQueue();
             if (q.length > 0) {
                 setTimeout(sincronizarOffline, 1500);
@@ -688,6 +704,9 @@ async function heartbeat() {
                             NEON_OK = true;
                             setModoOffline(false);
                             toast('Conexión restaurada ✓', 'success');
+                            try {
+                                await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
+                            } catch (_) {}
                             if (offlineQueue().length > 0) sincronizarOffline();
                             else cargarPedidos();
                             return;
@@ -13831,8 +13850,9 @@ async function refrescarEmpresaDesdeClienteNeonPorTenantActual() {
 }
 
 /**
- * Alinea `app.u.tenant_id` con la BD: primero API `mi-configuracion`, si no alcanza Neon (`usuarios`).
- * En WebView Android suele haber sesión Neon sin JWT guardado; sin este fallback no se ve el tenant nuevo.
+ * Alinea `app.u.tenant_id` con la BD.
+ * Con Neon conectado, **prioriza** `usuarios.tenant_id` / `cliente_id` en la misma base que la app (cambio desde admin / attach-tenant).
+ * Si no hay Neon o no hay columna, usa API `mi-configuracion`; último recurso otra lectura Neon.
  * Tras corregir el tenant, intenta renovar el JWT para que el claim coincida con la BD.
  */
 async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
@@ -13841,21 +13861,31 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     try {
         if (!app?.u || modoOffline) return false;
         let tid = NaN;
-        const base = getApiBaseUrl();
-        if (base) {
+        if (NEON_OK && _sql) {
             try {
-                await asegurarJwtApiRest();
-                const tok = getApiToken();
-                if (tok) {
-                    const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                        headers: { Authorization: `Bearer ${tok}` },
-                    });
-                    if (resp.ok) {
-                        const data = await resp.json().catch(() => ({}));
-                        tid = Number(data.tenant_id ?? data.cliente?.id);
-                    }
+                const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
+                if (fromNeon != null && Number.isFinite(fromNeon) && fromNeon > 0) {
+                    tid = fromNeon;
                 }
             } catch (_) {}
+        }
+        const base = getApiBaseUrl();
+        if (!Number.isFinite(tid) || tid < 1) {
+            if (base) {
+                try {
+                    await asegurarJwtApiRest();
+                    const tok = getApiToken();
+                    if (tok) {
+                        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                            headers: { Authorization: `Bearer ${tok}` },
+                        });
+                        if (resp.ok) {
+                            const data = await resp.json().catch(() => ({}));
+                            tid = Number(data.tenant_id ?? data.cliente?.id);
+                        }
+                    }
+                } catch (_) {}
+            }
         }
         if (!Number.isFinite(tid) || tid < 1) {
             const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
