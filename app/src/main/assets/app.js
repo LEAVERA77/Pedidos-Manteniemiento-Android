@@ -17372,46 +17372,191 @@ function sociosCatalogoRenderPanelPreferenciasColumnas() {
 
 /** Mapa localidad+provincia → código de área (carga perezosa desde Neon). */
 let _sociosMapCodigoAreaArgImport = null;
+let _sociosCodigoAreaArgByProvImport = null;
+let _sociosCodigoAreaArgProvinciasNormSet = null;
 let _sociosMapCodigoAreaArgImportIntentado = false;
+
+/** Texto para comparar localidad/provincia con la tabla (minúsculas, sin acentos, espacios colapsados). */
+function sociosCatalogoNormalizarTextoGeoArg(s) {
+    let t = String(s || '')
+        .trim()
+        .toLowerCase();
+    try {
+        t = t.normalize('NFD').replace(/\p{M}/gu, '');
+    } catch (_) {
+        t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+    return t.replace(/\s+/g, ' ').trim();
+}
+
+function sociosCatalogoLevenshteinGeoArg(a, b) {
+    const m = a.length;
+    const n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    if (m > 36 || n > 36) return a === b ? 0 : 40;
+    const dp = new Array(n + 1);
+    for (let j = 0; j <= n; j++) dp[j] = j;
+    for (let i = 1; i <= m; i++) {
+        let prev = dp[0];
+        dp[0] = i;
+        for (let j = 1; j <= n; j++) {
+            const cur = dp[j];
+            const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+            dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+            prev = cur;
+        }
+    }
+    return dp[n];
+}
+
+function sociosCatalogoScoreMatchLocGeoArg(query, cand) {
+    if (query === cand) return 100;
+    const q = query;
+    const c = cand;
+    const minl = Math.min(q.length, c.length);
+    if (minl >= 4) {
+        if (q.startsWith(c) || c.startsWith(q)) return 88;
+        if (q.includes(c) || c.includes(q)) return minl >= 5 ? 78 : 68;
+    }
+    const lev = sociosCatalogoLevenshteinGeoArg(q, c);
+    const mx = Math.max(q.length, c.length) || 1;
+    const thr = mx <= 10 ? 2 : mx <= 18 ? 3 : 4;
+    if (lev <= thr) return 72 - lev;
+    return 0;
+}
+
+function sociosCatalogoResolverProvinciaCodigoAreaImport(provincia) {
+    const set = _sociosCodigoAreaArgProvinciasNormSet;
+    const provN = sociosCatalogoNormalizarTextoGeoArg(provincia);
+    if (!provN) return { provKey: '', avisoProv: null };
+    if (!set || !set.size) return { provKey: provN, avisoProv: null };
+    if (set.has(provN)) return { provKey: provN, avisoProv: null };
+    let best = null;
+    let bestD = 99;
+    for (const p of set) {
+        const d = sociosCatalogoLevenshteinGeoArg(provN, p);
+        if (d < bestD) {
+            bestD = d;
+            best = p;
+        }
+    }
+    const maxD = provN.length <= 5 ? 1 : provN.length <= 12 ? 2 : provN.length <= 22 ? 3 : 4;
+    if (best != null && bestD <= maxD && bestD > 0) {
+        return {
+            provKey: best,
+            avisoProv: `Provincia «${String(provincia).trim()}» → «${best}» (aprox., tabla de áreas)`,
+        };
+    }
+    return { provKey: provN, avisoProv: null };
+}
+
+/**
+ * Resuelve código de área con coincidencia exacta o difusa (localidad mal escrita, provincia sin tilde).
+ * @returns {{ cod: string|null, aviso: string|null, modo: string }}
+ */
+function sociosCatalogoResolverCodigoAreaArgentina(localidad, provincia) {
+    const map = _sociosMapCodigoAreaArgImport;
+    const byProv = _sociosCodigoAreaArgByProvImport;
+    if (!map || !map.size) return { cod: null, aviso: null, modo: 'none' };
+    const locN = sociosCatalogoNormalizarTextoGeoArg(localidad);
+    if (!locN) return { cod: null, aviso: null, modo: 'none' };
+    const pr = sociosCatalogoResolverProvinciaCodigoAreaImport(provincia);
+    const provK = pr.provKey;
+    let aviso = pr.avisoProv;
+    const tryKey = (pk) => {
+        const k = `${locN}\t${pk}`;
+        return map.has(k) ? map.get(k) : null;
+    };
+    let cod = tryKey(provK);
+    if (cod) return { cod, aviso, modo: 'exact' };
+    const provRaw = sociosCatalogoNormalizarTextoGeoArg(provincia);
+    if (provRaw && provRaw !== provK) {
+        cod = tryKey(provRaw);
+        if (cod) return { cod, aviso: aviso || null, modo: 'exact' };
+    }
+    const candidates = (byProv && provK ? byProv.get(provK) : null) || [];
+    if (!candidates.length) {
+        return {
+            cod: null,
+            aviso: aviso || `Sin código de área para «${String(localidad).trim()}» / «${String(provincia).trim()}»`,
+            modo: 'none',
+        };
+    }
+    let bestSc = 0;
+    const scored = [];
+    for (const row of candidates) {
+        const sc = sociosCatalogoScoreMatchLocGeoArg(locN, row.locN);
+        scored.push({ sc, cod: row.cod, locM: row.locN });
+        if (sc > bestSc) bestSc = sc;
+    }
+    if (bestSc < 60) {
+        return {
+            cod: null,
+            aviso: aviso || `Sin coincidencia de localidad para «${String(localidad).trim()}» (${provK})`,
+            modo: 'none',
+        };
+    }
+    const tops = scored.filter((x) => x.sc === bestSc);
+    const cods = [...new Set(tops.map((t) => t.cod))];
+    if (cods.length !== 1) {
+        return {
+            cod: null,
+            aviso:
+                (aviso ? aviso + ' · ' : '') +
+                `Localidad ambigua para «${String(localidad).trim()}» (${tops.length} coincidencias)`,
+            modo: 'ambiguous',
+        };
+    }
+    const locMatch = tops[0].locM;
+    const extra =
+        locMatch === locN
+            ? null
+            : `Localidad «${String(localidad).trim()}» → «${locMatch}» (aprox., código ${cods[0]})`;
+    return {
+        cod: cods[0],
+        aviso: extra ? (aviso ? aviso + ' · ' + extra : extra) : aviso,
+        modo: locMatch === locN && !aviso ? 'exact' : 'fuzzy_loc',
+    };
+}
 
 async function sociosCatalogoCargarMapaCodigosAreaArgentinaImport() {
     if (_sociosMapCodigoAreaArgImportIntentado) return _sociosMapCodigoAreaArgImport || new Map();
     _sociosMapCodigoAreaArgImportIntentado = true;
     const m = new Map();
+    const byProv = new Map();
+    const provSet = new Set();
     try {
         const r = await sqlSimple(
             'SELECT codigo_area, localidad, provincia FROM codigos_area_argentina'
         );
         for (const row of r.rows || []) {
-            const loc = String(row.localidad || '')
-                .trim()
-                .toUpperCase();
-            const prov = String(row.provincia || '')
-                .trim()
-                .toUpperCase();
+            const locRaw = String(row.localidad || '').trim();
+            const provRaw = String(row.provincia || '').trim();
             const cod = String(row.codigo_area || '').replace(/\D/g, '');
-            if (!loc || !cod) continue;
-            const k = `${loc}\t${prov}`;
+            if (!locRaw || !cod) continue;
+            const locN = sociosCatalogoNormalizarTextoGeoArg(locRaw);
+            const provN = sociosCatalogoNormalizarTextoGeoArg(provRaw);
+            if (!locN) continue;
+            const k = `${locN}\t${provN}`;
             if (!m.has(k)) m.set(k, cod);
+            provSet.add(provN);
+            if (!byProv.has(provN)) byProv.set(provN, []);
+            byProv.get(provN).push({ locN, cod, locRaw, provRaw });
         }
         _sociosMapCodigoAreaArgImport = m;
+        _sociosCodigoAreaArgByProvImport = byProv;
+        _sociosCodigoAreaArgProvinciasNormSet = provSet;
     } catch (_) {
         _sociosMapCodigoAreaArgImport = m;
+        _sociosCodigoAreaArgByProvImport = byProv;
+        _sociosCodigoAreaArgProvinciasNormSet = provSet;
     }
     return _sociosMapCodigoAreaArgImport;
 }
 
 function sociosCatalogoBuscarCodigoAreaEnMapaImport(localidad, provincia) {
-    const map = _sociosMapCodigoAreaArgImport;
-    if (!map || !map.size) return null;
-    const loc = String(localidad || '')
-        .trim()
-        .toUpperCase();
-    const prov = String(provincia || '')
-        .trim()
-        .toUpperCase();
-    if (!loc) return null;
-    return map.get(`${loc}\t${prov}`) || null;
+    return sociosCatalogoResolverCodigoAreaArgentina(localidad, provincia).cod;
 }
 
 /** Quita un «15» entre código de área (2–4 dígitos) y abonado (6–10 dígitos), típico móvil AR. */
@@ -17419,6 +17564,16 @@ function sociosCatalogoTelefonoQuitar15TrasArea(d) {
     const s = String(d || '').replace(/\D/g, '');
     const m = s.match(/^(\d{2,4})15(\d{6,10})$/);
     return m ? m[1] + m[2] : s;
+}
+
+function sociosCatalogoTelefonoColapsar15Repetido(d) {
+    let s = String(d || '').replace(/\D/g, '');
+    for (let i = 0; i < 8; i++) {
+        const n = s.replace(/1515/g, '15');
+        if (n === s) break;
+        s = n;
+    }
+    return s;
 }
 
 /**
@@ -17429,18 +17584,39 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
     const orig = String(raw || '').trim();
     let d = orig.replace(/\D/g, '');
     if (!d || d.length < 6) return orig || null;
+    d = sociosCatalogoTelefonoColapsar15Repetido(d);
     if (d.startsWith('549')) {
         let r = d.slice(3).replace(/^0+/, '');
+        if (/^9\d/.test(r) && r.length >= 3) {
+            const r2 = r.slice(1).replace(/^0+/, '');
+            if (r2.length >= 8) r = r2;
+        }
         let prev;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
             prev = r;
             r = sociosCatalogoTelefonoQuitar15TrasArea(r);
             if (r === prev) break;
         }
         const out = ('549' + r).replace(/\D/g, '');
-        return out.length >= 12 ? out : orig || null;
+        return out.length >= 12 && out.length <= 15 ? out : orig || null;
     }
-    while (d.startsWith('0')) d = d.slice(1);
+    if (d.startsWith('54') && !d.startsWith('549')) {
+        d = '549' + d.slice(2).replace(/^0+/, '');
+        d = sociosCatalogoTelefonoColapsar15Repetido(d);
+    }
+    if (d.startsWith('549')) {
+        let r = d.slice(3).replace(/^0+/, '');
+        let prev;
+        for (let i = 0; i < 5; i++) {
+            prev = r;
+            r = sociosCatalogoTelefonoQuitar15TrasArea(r);
+            if (r === prev) break;
+        }
+        const out = ('549' + r).replace(/\D/g, '');
+        return out.length >= 12 && out.length <= 15 ? out : orig || null;
+    }
+    while (d.startsWith('0') && d.length >= 10) d = d.slice(1);
+    d = sociosCatalogoTelefonoColapsar15Repetido(d);
     if (/^15\d{6,10}$/.test(d)) {
         const sub = d.slice(2);
         const ar = sociosCatalogoBuscarCodigoAreaEnMapaImport(localidad, provincia);
@@ -17448,7 +17624,7 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
         else d = sub;
     } else {
         let prev;
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
             prev = d;
             d = sociosCatalogoTelefonoQuitar15TrasArea(d);
             if (d === prev) break;
@@ -17456,9 +17632,19 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
     }
     if (!d.startsWith('549')) {
         if (d.startsWith('54')) d = '549' + d.slice(2).replace(/^0+/, '');
-        else d = '549' + d;
+        else d = '549' + d.replace(/^0+/, '');
     }
-    d = d.replace(/\D/g, '');
+    d = sociosCatalogoTelefonoColapsar15Repetido(d.replace(/\D/g, ''));
+    if (d.startsWith('549')) {
+        let r = d.slice(3).replace(/^0+/, '');
+        let prev;
+        for (let i = 0; i < 5; i++) {
+            prev = r;
+            r = sociosCatalogoTelefonoQuitar15TrasArea(r);
+            if (r === prev) break;
+        }
+        d = ('549' + r).replace(/\D/g, '');
+    }
     if (!d.startsWith('549')) return orig || null;
     return d.length >= 12 && d.length <= 15 ? d : orig || null;
 }
@@ -17721,7 +17907,7 @@ async function cargarListaSociosAdmin() {
 <div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
 <button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
 </details>
-<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja indicadas en el encabezado.</p></div>`;
+<p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Las columnas extra salen del Excel (<code>datos_extra</code>). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja del encabezado.</p></div>`;
         bindSociosCatalogoVirtualScroll();
         sociosCatalogoRenderPanelPreferenciasColumnas();
         renderSociosCatalogoVirtual();
@@ -18616,6 +18802,12 @@ async function importarExcelSocios(event) {
         const ecCfg = window.EMPRESA_CFG || {};
         const payloads = [];
         const omitidas = [];
+        const avisosGeoTel = [];
+        const registrarAvisoGeoTel = (msg) => {
+            if (!msg || avisosGeoTel.length >= 40) return;
+            const m = String(msg);
+            if (!avisosGeoTel.includes(m)) avisosGeoTel.push(m);
+        };
         let filaN = 0;
         for (const row of rawRows) {
             filaN++;
@@ -18720,6 +18912,16 @@ async function importarExcelSocios(event) {
             if (!provinciaSoc || !String(provinciaSoc).trim()) {
                 const fp = String(ecCfg.provincia || ecCfg.state || ecCfg.provincia_nominatim || '').trim();
                 if (fp.length >= 2) provinciaSoc = fp;
+            }
+            const areaImp = sociosCatalogoResolverCodigoAreaArgentina(loc, provinciaSoc);
+            if (areaImp.aviso) registrarAvisoGeoTel(`Fila ${filaN}: ${areaImp.aviso}`);
+            const digTelPre = String(
+                valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular') || ''
+            ).replace(/\D/g, '');
+            if (/^15\d{6,10}$/.test(digTelPre) && !areaImp.cod) {
+                registrarAvisoGeoTel(
+                    `Fila ${filaN}: teléfono con prefijo 15 sin código de área en tabla (revisá localidad/provincia).`
+                );
             }
             let telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
             if (telefono && String(telefono).trim()) {
@@ -18874,6 +19076,15 @@ async function importarExcelSocios(event) {
                 `Se omitieron ${omitidas.length} fila(s) por datos incompletos según el tipo de negocio.\n\n` +
                     muestra +
                     (omitidas.length > 6 ? `\n… y ${omitidas.length - 6} más (consola del navegador).` : '')
+            );
+        }
+        if (avisosGeoTel.length) {
+            console.warn('[import-socios] avisos localidad/provincia/teléfono (tabla de áreas)', avisosGeoTel);
+            const muestraA = avisosGeoTel.slice(0, 14).join('\n');
+            alert(
+                `Avisos de importación (${avisosGeoTel.length}): localidad o provincia aproximada, o tel. 15 sin código de área.\n\n` +
+                    muestraA +
+                    (avisosGeoTel.length > 14 ? `\n… y ${avisosGeoTel.length - 14} más (consola del navegador).` : '')
             );
         }
         if (cpInf > 0) {
@@ -19038,7 +19249,7 @@ function mostrarFormatoExcelSocios() {
     const inneg =
         '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
         '<li>En base de datos siempre existen las columnas fijas del catálogo; <strong>código postal, teléfono, lat/lon, barrio</strong> pueden venir vacíos en el Excel.</li>' +
-        '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a formato internacional 549… usando la tabla de características telefónicas de Argentina cuando hace falta la característica.</li>' +
+        '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a 549… (incluye 0/0343, 15 y variantes) usando la tabla de características por localidad. <strong>Localidad y provincia</strong> se comparan sin tildes y con tolerancia a errores de escritura; si hay duda, se muestra un aviso al terminar.</li>' +
         '</ul>';
     const wrap = document.createElement('div');
     wrap.id = 'modal-formato-excel-socios';
