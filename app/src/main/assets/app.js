@@ -3456,6 +3456,9 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
                 AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
             }
+            if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                AndroidSession.setTenantId(tenantIdActual());
+            }
         } catch (_) {}
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
@@ -3494,6 +3497,9 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
                 await asegurarJwtApiRest();
                 try {
                     aplicarTenantDesdeJwtSiHaceFalta();
+                } catch (_) {}
+                try {
+                    await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
                 } catch (_) {}
                 await cargarDistribuidores();
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
@@ -13436,6 +13442,9 @@ try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
                 AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''));
             }
+            if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                AndroidSession.setTenantId(tenantIdActual());
+            }
         } catch (_) {}
         if (esAdmin()) {
             iniciarDashboardGerenciaPoll();
@@ -13468,6 +13477,9 @@ try {
             await asegurarJwtApiRest();
             try {
                 aplicarTenantDesdeJwtSiHaceFalta();
+            } catch (_) {}
+            try {
+                await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
             } catch (_) {}
             if (!modoOffline) {
                 const cfgLista = await verificarConfiguracionInicialObligatoria();
@@ -13654,6 +13666,67 @@ function aplicarTenantDesdeJwtSiHaceFalta() {
     } catch (_) {
         return false;
     }
+}
+
+/**
+ * Alinea `app.u.tenant_id` con `GET /api/clientes/mi-configuracion` (tenant de la BD).
+ * Cubre cambio de tenant desde la web admin con el mismo usuario: el JWT puede seguir llevando el id viejo
+ * hasta el próximo login, pero la API ya usa el tenant actual del usuario.
+ * Llamar después de `aplicarTenantDesdeJwtSiHaceFalta` para que no pise el valor correcto.
+ */
+async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const silent = !!o.silent;
+    try {
+        if (!app?.u || modoOffline) return false;
+        const base = getApiBaseUrl();
+        if (!base) return false;
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) return false;
+        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        if (!resp.ok) return false;
+        const data = await resp.json().catch(() => ({}));
+        const tid = Number(data.tenant_id ?? data.cliente?.id);
+        if (!Number.isFinite(tid) || tid < 1) return false;
+        const cur = Number(tenantIdActual());
+        if (!Number.isFinite(cur) || cur === tid) return false;
+        app.u.tenant_id = tid;
+        try {
+            delete app.u.tenantId;
+        } catch (_) {}
+        try {
+            localStorage.setItem('pmg', JSON.stringify(app.u));
+        } catch (_) {}
+        try {
+            limpiarLocalStorageContadoresPedido();
+        } catch (_) {}
+        try {
+            invalidarCachesMultitenantSesionYOAdminUI();
+        } catch (_) {}
+        try {
+            if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                AndroidSession.setTenantId(tid);
+            }
+        } catch (_) {}
+        try {
+            actualizarBarraHeaderSesion();
+        } catch (_) {}
+        if (!silent) {
+            try {
+                toast(`Negocio / tenant actualizado (${tid})`, 'info');
+            } catch (_) {}
+        }
+        return true;
+    } catch (e) {
+        console.warn('[tenant-sync-mi-config]', e && e.message ? e.message : e);
+        return false;
+    }
+}
+if (typeof window !== 'undefined') {
+    window.sincronizarTenantOperativoDesdeMiConfiguracionApi = sincronizarTenantOperativoDesdeMiConfiguracionApi;
 }
 
 /** Cache: existe columna socios_catalogo.tenant_id (Neon / multitenant). */
@@ -14536,6 +14609,11 @@ async function wizardTecnicoVincularTenantSeleccionado() {
             } catch (_) {}
             try {
                 invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+            try {
+                if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                    AndroidSession.setTenantId(tid);
+                }
             } catch (_) {}
         }
         const tEl = document.getElementById('cfgi-tenant');

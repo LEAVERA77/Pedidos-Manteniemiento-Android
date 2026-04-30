@@ -26,6 +26,8 @@ public class UbicacionWorker extends Worker {
     public static final String PREFS_SESSION = "gestornova_session";
     public static final String KEY_USER_ID = "user_id";
     public static final String KEY_ROL = "rol";
+    /** Cliente / tenant operativo (sincronizado desde la web admin vía WebView). */
+    public static final String KEY_TENANT_ID = "tenant_id";
 
     public UbicacionWorker(@NonNull Context context, @NonNull WorkerParameters workerParams) {
         super(context, workerParams);

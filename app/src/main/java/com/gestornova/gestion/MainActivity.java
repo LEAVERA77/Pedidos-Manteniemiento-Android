@@ -491,6 +491,9 @@ public class MainActivity extends AppCompatActivity {
                     "if(typeof window.gnSincronizarPedidosDesdeAndroid==='function')window.gnSincronizarPedidosDesdeAndroid()",
                     null);
             webView.evaluateJavascript(
+                    "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
+                    null);
+            webView.evaluateJavascript(
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);
             dispatchPendingPedidoIdToWeb();
@@ -578,6 +581,15 @@ public class MainActivity extends AppCompatActivity {
             getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
                     .putInt(UbicacionWorker.KEY_USER_ID, userId)
                     .putString(UbicacionWorker.KEY_ROL, rol != null ? rol : "")
+                    .apply();
+        }
+
+        /** Persiste el tenant activo (misma sesión que {@link #setUser}) cuando cambia en la web admin. */
+        @JavascriptInterface
+        public void setTenantId(int tenantId) {
+            if (tenantId < 1) return;
+            getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
+                    .putInt(UbicacionWorker.KEY_TENANT_ID, tenantId)
                     .apply();
         }
 

@@ -35,7 +35,8 @@ export async function authMiddleware(req, res, next) {
     const dbTenantId = await getUserTenantId(req.user.id);
     if (decoded.tenant_id != null && Number.isFinite(Number(decoded.tenant_id))) {
       if (Number(decoded.tenant_id) !== Number(dbTenantId)) {
-        return res.status(401).json({ error: "Token no válido para este tenant (iniciá sesión de nuevo)" });
+        /* JWT con tenant viejo: el operativo es el de la BD (p. ej. attach-tenant desde la web admin). */
+        req.jwtTenantClaimStale = true;
       }
     }
     req.tenantId = dbTenantId;
