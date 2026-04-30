@@ -3229,6 +3229,21 @@ async function conectarNeon() {
             }
             setModoOffline(false);
             await notificarNeonConectadoParaUpdateCheck();
+            try {
+                if (app.u) {
+                    await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
+                    if (!getApiToken()) {
+                        try {
+                            localStorage.removeItem(PMG_BRANDING_LS_KEY);
+                        } catch (_) {}
+                        await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+                    }
+                    try {
+                        render();
+                        renderMk();
+                    } catch (_) {}
+                }
+            } catch (_) {}
             if (app.u && offlineQueue().length > 0) setTimeout(sincronizarOffline, 1500);
             else if (app.u) cargarPedidos();
         } else {
@@ -13706,6 +13721,85 @@ async function leerTenantIdUsuarioDesdeNeon(usuarioId) {
 }
 
 /**
+ * Sin JWT, `verificarConfiguracionInicialObligatoria` no llama a la API: armamos nombre/tipo/marca desde `clientes`
+ * del `tenant_id` actual (corrige cabecera y wizard tras cambiar de tenant en la web admin).
+ */
+async function refrescarEmpresaDesdeClienteNeonPorTenantActual() {
+    if (!NEON_OK || !_sql || !app?.u || modoOffline) return;
+    const tid = tenantIdActual();
+    if (!Number.isFinite(tid) || tid < 1) return;
+    try {
+        let cr;
+        try {
+            cr = await sqlSimple(
+                `SELECT id, nombre, tipo, configuracion, active_business_type FROM clientes WHERE id = ${esc(tid)} LIMIT 1`
+            );
+        } catch (_) {
+            cr = await sqlSimple(
+                `SELECT id, nombre, tipo, configuracion FROM clientes WHERE id = ${esc(tid)} LIMIT 1`
+            );
+        }
+        const row = cr.rows?.[0];
+        if (!row) return;
+        let cfg = row.configuracion;
+        if (typeof cfg === 'string') {
+            try {
+                cfg = JSON.parse(cfg);
+            } catch (_) {
+                cfg = {};
+            }
+        }
+        const c = cfg && typeof cfg === 'object' ? cfg : {};
+        const nombreTrim = String(row.nombre || '').trim();
+        const tipoRow = String(row.tipo ?? '').trim();
+        const lbApi =
+            c.lat_base != null && String(c.lat_base).trim() !== '' ? String(c.lat_base).trim() : '';
+        const lbgApi =
+            c.lng_base != null && String(c.lng_base).trim() !== '' ? String(c.lng_base).trim() : '';
+        const ec = window.EMPRESA_CFG || {};
+        window.EMPRESA_CFG = {
+            ...ec,
+            nombre: nombreTrim || ec.nombre,
+            tipo: tipoRow || ec.tipo,
+            ...(c.logo_url ? { logo_url: String(c.logo_url).trim() } : {}),
+            lat_base: lbApi || ec.lat_base,
+            lng_base: lbgApi || ec.lng_base,
+            ...(row.active_business_type != null && String(row.active_business_type).trim()
+                ? { active_business_type: String(row.active_business_type).trim() }
+                : {}),
+        };
+        try {
+            aplicarConfiguracionJsonClienteEnEmpresaCfg(c);
+        } catch (_) {}
+        window.__PMG_TENANT_BRANDING__ = {
+            setup_wizard_completado: !!c.setup_wizard_completado,
+            marca_publicada_admin: !!c.marca_publicada_admin || nombreTrim.length > 0,
+            nombre_cliente: nombreTrim,
+            logo_url: String(c.logo_url || '').trim(),
+            tipo: tipoRow,
+            from_local_cache: false,
+        };
+        window.__PMG_LAST_MI_CLIENTE = {
+            id: Number(row.id) || tid,
+            nombre: nombreTrim,
+            tipo: tipoRow,
+        };
+        syncEmpresaCfgNombreLogoDesdeMarca();
+        aplicarMarcaVisualCompleta();
+        aplicarEtiquetasPorTipo(window.EMPRESA_CFG.tipo || '');
+        poblarSelectTiposReclamo();
+        try {
+            persistTenantBrandingCache({ subtitulo: window.EMPRESA_CFG?.subtitulo });
+        } catch (_) {}
+        try {
+            actualizarBarraHeaderSesion();
+        } catch (_) {}
+    } catch (e) {
+        console.warn('[empresa-neon-cliente]', e && e.message ? e.message : e);
+    }
+}
+
+/**
  * Alinea `app.u.tenant_id` con la BD: primero API `mi-configuracion`, si no alcanza Neon (`usuarios`).
  * En WebView Android suele haber sesión Neon sin JWT guardado; sin este fallback no se ve el tenant nuevo.
  * Llamar después de `aplicarTenantDesdeJwtSiHaceFalta`.
@@ -13759,6 +13853,19 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         } catch (_) {}
         try {
             actualizarBarraHeaderSesion();
+        } catch (_) {}
+        try {
+            localStorage.removeItem(PMG_BRANDING_LS_KEY);
+        } catch (_) {}
+        try {
+            await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+        } catch (_) {}
+        try {
+            render();
+            renderMk();
+        } catch (_) {}
+        try {
+            await verificarConfiguracionInicialObligatoria();
         } catch (_) {}
         if (!silent) {
             try {
