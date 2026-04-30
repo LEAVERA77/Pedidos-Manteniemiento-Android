@@ -1528,6 +1528,53 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
         });
         if (!resp.ok) return;
         const data = await resp.json();
+        const cli = data?.cliente;
+        let empresaMt = false;
+        try {
+            empresaMt = !!(NEON_OK && _sql && (await neonPedidosTieneColumnaTenantId()));
+        } catch (_) {}
+        const apiTid = Number(data?.tenant_id ?? cli?.id);
+        let neonUserTid = null;
+        if (empresaMt && app?.u?.id) {
+            try {
+                neonUserTid = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
+            } catch (_) {}
+        }
+        const jwtVsNeonMismatch =
+            empresaMt &&
+            neonUserTid != null &&
+            Number.isFinite(apiTid) &&
+            apiTid > 0 &&
+            neonUserTid !== apiTid;
+        if (jwtVsNeonMismatch) {
+            try {
+                console.warn(
+                    '[mi-cfg] JWT tenant ≠ Neon usuarios.tenant_id; se ignora cliente de la API y se alinea con Neon'
+                );
+            } catch (_) {}
+            try {
+                app.u.tenant_id = neonUserTid;
+                try {
+                    delete app.u.tenantId;
+                } catch (_) {}
+                try {
+                    localStorage.setItem('pmg', JSON.stringify(app.u));
+                } catch (_) {}
+            } catch (_) {}
+            try {
+                invalidatePedidosTenantSqlCache();
+            } catch (_) {}
+            try {
+                await intentarRefrescarJwtDesdeCredencialesGuardadas();
+            } catch (_) {}
+            try {
+                await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+            } catch (_) {}
+            try {
+                initCommunityBroadcastFab();
+            } catch (_) {}
+            return;
+        }
         let conf = data?.cliente?.configuracion;
         if (typeof conf === 'string') {
             try {
@@ -1537,7 +1584,6 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             }
         }
         aplicarConfiguracionJsonClienteEnEmpresaCfg(conf && typeof conf === 'object' ? conf : {});
-        const cli = data?.cliente;
         if (cli && typeof cli === 'object') {
             window.EMPRESA_CFG = {
                 ...(window.EMPRESA_CFG || {}),
@@ -2063,6 +2109,30 @@ async function loginApiJwt(email, password) {
                 }
             }
         } catch (_) {}
+        try {
+            if (app?.u && NEON_OK && _sql && !modoOffline) {
+                const neonTid = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
+                const cur = Number(app.u.tenant_id ?? app.u.tenantId);
+                if (
+                    neonTid != null &&
+                    Number.isFinite(neonTid) &&
+                    neonTid > 0 &&
+                    Number.isFinite(cur) &&
+                    neonTid !== cur
+                ) {
+                    app.u.tenant_id = neonTid;
+                    try {
+                        delete app.u.tenantId;
+                    } catch (_) {}
+                    try {
+                        localStorage.setItem('pmg', JSON.stringify(app.u));
+                    } catch (_) {}
+                    try {
+                        invalidatePedidosTenantSqlCache();
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
         return data;
     } catch (e) {
         if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
@@ -2521,6 +2591,7 @@ function defaultGestorNovaLogoUrl() {
 function persistTenantBrandingCache(extra) {
     try {
         const b = window.__PMG_TENANT_BRANDING__ || {};
+        const tidSnap = app?.u != null ? Number(app.u.tenant_id ?? app.u.tenantId) : NaN;
         const o = {
             setup_wizard_completado: !!b.setup_wizard_completado,
             marca_publicada_admin: !!b.marca_publicada_admin,
@@ -2528,7 +2599,8 @@ function persistTenantBrandingCache(extra) {
             logo_url: String(b.logo_url || '').trim(),
             tipo: String(b.tipo || '').trim(),
             subtitulo: GN_SUBTITULO_FIJO,
-            from_local_cache: !!b.from_local_cache
+            from_local_cache: !!b.from_local_cache,
+            ...(Number.isFinite(tidSnap) && tidSnap > 0 ? { tenant_id_snapshot: tidSnap } : {}),
         };
         localStorage.setItem(PMG_BRANDING_LS_KEY, JSON.stringify(o));
     } catch (_) {}
@@ -2547,7 +2619,17 @@ function loadTenantBrandingCache() {
 
 /** Pantalla de login o post-logout: restaurar marca guardada (API o última sesión). */
 function hydrateBrandingForPublicScreen() {
-    const c = loadTenantBrandingCache();
+    let c = loadTenantBrandingCache();
+    if (app?.u && c) {
+        const tid = Number(app.u.tenant_id ?? app.u.tenantId);
+        const snap = Number(c.tenant_id_snapshot);
+        if (Number.isFinite(tid) && tid > 0 && Number.isFinite(snap) && snap > 0 && tid !== snap) {
+            try {
+                localStorage.removeItem(PMG_BRANDING_LS_KEY);
+            } catch (_) {}
+            c = null;
+        }
+    }
     if (c && (String(c.nombre_cliente || '').trim() || String(c.logo_url || '').trim())) {
         window.__PMG_TENANT_BRANDING__ = {
             setup_wizard_completado: !!c.setup_wizard_completado,
@@ -13623,11 +13705,30 @@ async function cargarDistribuidores() {
 
 async function cargarConfigEmpresa() {
     try {
+        let empresaConfigEsGlobalMultitenant = false;
+        try {
+            empresaConfigEsGlobalMultitenant = await neonPedidosTieneColumnaTenantId();
+        } catch (_) {}
+        if (empresaConfigEsGlobalMultitenant) {
+            invalidatePedidosTenantSqlCache();
+        }
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const sqlCfg = {};
-        (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
-        // Gana la BD sobre memoria: `empresa_config` suele ser una sola tabla; al cambiar de tenant no debe prevalecer EMPRESA_CFG viejo.
+        (r.rows || []).forEach(row => {
+            sqlCfg[row.clave] = row.valor;
+        });
+        if (empresaConfigEsGlobalMultitenant) {
+            for (const k of ['nombre', 'tipo', 'logo_url', 'active_business_type', 'empresa_identidad_bloqueada']) {
+                delete sqlCfg[k];
+            }
+        }
+        // Gana la BD (clave/valor) sobre memoria; identidad nombre/tipo/logo en multitenant viene de `clientes` vía refrescarEmpresa…
         window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...sqlCfg };
+        if (NEON_OK && app?.u) {
+            try {
+                await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+            } catch (_) {}
+        }
         if (!String(window.EMPRESA_CFG.tipo || '').trim() && NEON_OK) {
             try {
                 const tid = tenantIdActual();
@@ -13641,7 +13742,9 @@ async function cargarConfigEmpresa() {
                 }
             } catch (_) {}
         }
-        ensureBrandingFromLocalEmpresaCfg();
+        if (!empresaConfigEsGlobalMultitenant) {
+            ensureBrandingFromLocalEmpresaCfg();
+        }
         syncEmpresaCfgNombreLogoDesdeMarca();
         syncWrapCoordsDisplayNuevoPedido();
         refrescarLineaUbicacionModalNuevoPedido();
@@ -13660,9 +13763,11 @@ async function cargarConfigEmpresa() {
                 await fetchMiConfiguracionYAplicarEnEmpresaCfg();
             } catch (_) {}
         }
-        try {
-            await refrescarEmpresaDesdeClienteNeonPorTenantActual();
-        } catch (_) {}
+        if (NEON_OK && app?.u) {
+            try {
+                await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+            } catch (_) {}
+        }
         try {
             aplicarVisibilidadTabsAdminRedElectrica();
         } catch (_) {}
@@ -13673,6 +13778,12 @@ async function cargarConfigEmpresa() {
         invalidatePedidosTenantSqlCache();
         try {
             actualizarBarraHeaderSesion();
+        } catch (_) {}
+        try {
+            aplicarMarcaVisualCompleta();
+        } catch (_) {}
+        try {
+            persistTenantBrandingCache({ subtitulo: (window.EMPRESA_CFG || {}).subtitulo });
         } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
@@ -14898,8 +15009,8 @@ function cerrarWizardSetupVoluntario() {
 }
 window.cerrarWizardSetupVoluntario = cerrarWizardSetupVoluntario;
 async function verificarConfiguracionInicialObligatoria() {
-    const token = getApiToken();
-    if (!token) {
+    const token0 = getApiToken();
+    if (!token0) {
         ocultarModalConfigInicial();
         return true;
     }
@@ -14909,6 +15020,8 @@ async function verificarConfiguracionInicialObligatoria() {
     const maxIntentos = 3;
     for (let intento = 1; intento <= maxIntentos; intento++) {
         try {
+            const token = getApiToken();
+            if (!token) break;
             const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -14925,6 +15038,85 @@ async function verificarConfiguracionInicialObligatoria() {
                     }
                 }
                 extraParsed = extra && typeof extra === 'object' ? extra : {};
+                let empresaMt = false;
+                try {
+                    empresaMt = !!(NEON_OK && _sql && (await neonPedidosTieneColumnaTenantId()));
+                } catch (_) {}
+                const apiTid = Number(data?.tenant_id ?? cli?.id);
+                let neonUserTid = null;
+                if (empresaMt && app?.u?.id) {
+                    try {
+                        neonUserTid = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
+                    } catch (_) {}
+                }
+                const jwtVsNeonMismatch =
+                    empresaMt &&
+                    neonUserTid != null &&
+                    Number.isFinite(apiTid) &&
+                    apiTid > 0 &&
+                    neonUserTid !== apiTid;
+
+                if (jwtVsNeonMismatch) {
+                    try {
+                        console.warn(
+                            '[setup] mi-configuración (JWT) ≠ usuarios.tenant_id en Neon; identidad y flags desde clientes (Neon)'
+                        );
+                    } catch (_) {}
+                    try {
+                        app.u.tenant_id = neonUserTid;
+                        try {
+                            delete app.u.tenantId;
+                        } catch (_) {}
+                        try {
+                            localStorage.setItem('pmg', JSON.stringify(app.u));
+                        } catch (_) {}
+                    } catch (_) {}
+                    try {
+                        invalidatePedidosTenantSqlCache();
+                    } catch (_) {}
+                    try {
+                        await intentarRefrescarJwtDesdeCredencialesGuardadas();
+                    } catch (_) {}
+                    try {
+                        await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+                    } catch (_) {}
+                    try {
+                        const cr = await sqlSimple(
+                            `SELECT configuracion FROM clientes WHERE id = ${esc(neonUserTid)} LIMIT 1`
+                        );
+                        let rawCfg = cr.rows?.[0]?.configuracion;
+                        if (typeof rawCfg === 'string') {
+                            try {
+                                rawCfg = JSON.parse(rawCfg);
+                            } catch (_) {
+                                rawCfg = {};
+                            }
+                        }
+                        extraParsed =
+                            rawCfg && typeof rawCfg === 'object' && !Array.isArray(rawCfg) ? rawCfg : {};
+                    } catch (_) {
+                        extraParsed = {};
+                    }
+                    const ec = window.EMPRESA_CFG || {};
+                    cfg = {
+                        nombre: String(ec.nombre || '').trim(),
+                        tipo: String(ec.tipo || '').trim(),
+                        ...(ec.logo_url ? { logo_url: ec.logo_url } : {}),
+                        lat_base:
+                            ec.lat_base != null && String(ec.lat_base).trim() !== ''
+                                ? String(ec.lat_base).trim()
+                                : '',
+                        lng_base:
+                            ec.lng_base != null && String(ec.lng_base).trim() !== ''
+                                ? String(ec.lng_base).trim()
+                                : ''
+                    };
+                    try {
+                        window.__PMG_MI_CFG_FETCH_FAIL = false;
+                    } catch (_) {}
+                    break;
+                }
+
                 try {
                     aplicarConfiguracionJsonClienteEnEmpresaCfg(extraParsed);
                 } catch (_) {}
