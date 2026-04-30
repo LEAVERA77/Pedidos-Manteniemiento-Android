@@ -69,6 +69,16 @@ if (Test-Path $jsSrc) {
     Write-Warning "Omitido (no existe carpeta js): $jsSrc"
 }
 
+$modSrc = Join-Path $assets 'modules'
+$modDst = Join-Path $PedidosMgRoot 'modules'
+if (Test-Path $modSrc) {
+    New-Item -ItemType Directory -Force -Path $modDst | Out-Null
+    Copy-Item -Path (Join-Path $modSrc '*') -Destination $modDst -Force
+    Write-Host 'OK modules/*'
+} else {
+    Write-Warning "Omitido (no existe carpeta modules): $modSrc"
+}
+
 $brandSrc = Join-Path $assets 'branding'
 $brandDst = Join-Path $PedidosMgRoot 'branding'
 if (Test-Path $brandSrc) {

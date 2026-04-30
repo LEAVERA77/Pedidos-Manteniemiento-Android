@@ -44,6 +44,18 @@ router.post("/verify-token", authMiddleware, async (req, res) => {
   return res.json({ ok: true, user: req.user, tenant_id: req.tenantId });
 });
 
+/**
+ * GET: tenant_id operativo desde `usuarios` en BD (misma fuente que attach-tenant / admin web).
+ * Útil cuando el WebView lee Neon con carrera y el JWT aún trae un tenant viejo.
+ */
+router.get("/tenant-operativo", authMiddleware, async (req, res) => {
+  return res.json({
+    tenant_id: req.tenantId,
+    user_id: req.user.id,
+    jwt_claim_stale: !!req.jwtTenantClaimStale,
+  });
+});
+
 /** Confirma la contraseña del usuario autenticado (p. ej. antes de cambiar rubro del tenant en la web admin). */
 router.post("/verify-password", authMiddleware, async (req, res) => {
   try {

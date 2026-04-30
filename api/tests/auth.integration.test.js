@@ -11,6 +11,7 @@ vi.mock("../utils/tenantUser.js", () => ({
 }));
 
 import { query } from "../db/neon.js";
+import { getUserTenantId } from "../utils/tenantUser.js";
 import { createHttpApp } from "../httpApp.js";
 
 describe("Integración — POST /api/auth/login", () => {
@@ -98,5 +99,48 @@ describe("Integración — POST /api/auth/login", () => {
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.rol).toBe("supervisor");
     expect(res.body.user.tenant_id).toBe(1);
+  });
+});
+
+describe("GET /api/auth/tenant-operativo", () => {
+  it("200 devuelve tenant_id desde getUserTenantId (BD)", async () => {
+    vi.mocked(getUserTenantId).mockReset();
+    vi.mocked(getUserTenantId).mockResolvedValue(88);
+    const hash = await bcrypt.hash("pwTenantOp", 4);
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 501,
+          email: "tenantop@test.com",
+          nombre: "Top",
+          rol: "admin",
+          password_hash: hash,
+          activo: true,
+        },
+      ],
+    });
+    const app = createHttpApp();
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "tenantop@test.com", password: "pwTenantOp" })
+      .expect(200);
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 501,
+          email: "tenantop@test.com",
+          nombre: "Top",
+          rol: "admin",
+          activo: true,
+        },
+      ],
+    });
+    const res = await request(app)
+      .get("/api/auth/tenant-operativo")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    expect(res.body).toMatchObject({ tenant_id: 88, user_id: 501 });
+    vi.mocked(getUserTenantId).mockReset();
+    vi.mocked(getUserTenantId).mockResolvedValue(1);
   });
 });

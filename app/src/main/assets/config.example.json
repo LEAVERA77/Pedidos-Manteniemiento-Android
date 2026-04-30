@@ -12,6 +12,6 @@
   },
   "app": {
     "version": "2.0.0",
-    "tenantId": 1
+    "tenantId": null
   }
 }

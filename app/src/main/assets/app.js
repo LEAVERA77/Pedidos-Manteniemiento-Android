@@ -11,6 +11,14 @@ import {
 } from './offline.js';
 
 import {
+  resolverTenantIdPostLoginNeon,
+  usuarioSesionParaEntrar,
+  tenantIdDesdeAppConfig,
+  TENANT_ID_MONOTENANT_FALLBACK
+} from './modules/tenantResolver.js';
+import { preferTenantIdNeonAutoritativo } from './modules/tenantSync.js';
+
+import {
   asegurarDefsProyeccionesARG,
   fajaArgentinaPorLongitud,
   registrarFajaInstalacionSiFalta,
@@ -3636,7 +3644,13 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
     function intentarOffline() {
         const u = verificarUsuarioOffline(em, pw);
         if (u) {
-            entrarConUsuario({ id: u.id, email: u.email, nombre: u.nombre, rol: u.rol }, true);
+            const uEnt = usuarioSesionParaEntrar(u);
+            entrarConUsuario(
+                uEnt && typeof uEnt === 'object'
+                    ? uEnt
+                    : { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol },
+                true
+            );
             toast('📴 Modo offline — ' + u.nombre, 'info');
             return true;
         }
@@ -3700,16 +3714,11 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
 
         const usuario = resultado.rows?.[0];
         if (usuario) {
-            let tidLogin = usuario.tenant_id != null ? Number(usuario.tenant_id) : NaN;
-            if (!Number.isFinite(tidLogin) || tidLogin < 1) tidLogin = NaN;
-            try {
-                const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(usuario.id));
-                if (fromNeon != null && Number.isFinite(fromNeon) && fromNeon > 0) tidLogin = fromNeon;
-            } catch (_) {}
-            if (!Number.isFinite(tidLogin) || tidLogin < 1) {
-                const cfgT = Number(window.APP_CONFIG?.app?.tenantId ?? window.APP_CONFIG?.tenant_id);
-                tidLogin = Number.isFinite(cfgT) && cfgT > 0 ? cfgT : 1;
-            }
+            const tidLogin = await resolverTenantIdPostLoginNeon({
+                usuario,
+                leerTenantIdUsuarioDesdeNeon,
+                appConfig: window.APP_CONFIG
+            });
             const u = {
                 id: usuario.id,
                 email: usuario.email,
@@ -13814,12 +13823,11 @@ function tenantIdActual() {
     const u = app?.u;
     if (u && (u.tenant_id != null || u.tenantId != null)) {
         const n = Number(u.tenant_id ?? u.tenantId);
-        if (Number.isFinite(n)) return n;
+        if (Number.isFinite(n) && n > 0) return n;
     }
-    const cfg = window.APP_CONFIG || {};
-    const fromCfg = Number(cfg.app?.tenantId ?? cfg.tenant_id);
-    if (Number.isFinite(fromCfg)) return fromCfg;
-    return 1;
+    const cfgT = tenantIdDesdeAppConfig(window.APP_CONFIG || {});
+    if (Number.isFinite(cfgT) && cfgT > 0) return cfgT;
+    return TENANT_ID_MONOTENANT_FALLBACK;
 }
 
 function parseJwtPayloadLoose(tok) {
@@ -13974,34 +13982,54 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         let tid = NaN;
         if (NEON_OK && _sql) {
             try {
-                const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
-                if (fromNeon != null && Number.isFinite(fromNeon) && fromNeon > 0) {
-                    tid = fromNeon;
-                }
+                tid = await preferTenantIdNeonAutoritativo(NaN, {
+                    neonOk: NEON_OK && !!_sql,
+                    modoOffline: false,
+                    usuarioId: app.u.id,
+                    leerTenantIdUsuarioDesdeNeon,
+                    reintentos: 3
+                });
             } catch (_) {}
         }
         const base = getApiBaseUrl();
-        if (!Number.isFinite(tid) || tid < 1) {
-            if (base) {
-                try {
-                    await asegurarJwtApiRest();
-                    const tok = getApiToken();
-                    if (tok) {
-                        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                            headers: { Authorization: `Bearer ${tok}` },
-                        });
-                        if (resp.ok) {
-                            const data = await resp.json().catch(() => ({}));
-                            tid = Number(data.tenant_id ?? data.cliente?.id);
-                        }
+        if ((!Number.isFinite(tid) || tid < 1) && base) {
+            try {
+                await asegurarJwtApiRest();
+                const tok = getApiToken();
+                if (tok) {
+                    const respTo = await fetch(apiUrl('/api/auth/tenant-operativo'), {
+                        headers: { Authorization: `Bearer ${tok}` }
+                    });
+                    if (respTo.ok) {
+                        const j = await respTo.json().catch(() => ({}));
+                        const n = Number(j.tenant_id);
+                        if (Number.isFinite(n) && n > 0) tid = n;
                     }
-                } catch (_) {}
-            }
+                }
+            } catch (_) {}
         }
-        if (!Number.isFinite(tid) || tid < 1) {
-            const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
-            if (fromNeon != null) tid = fromNeon;
+        if ((!Number.isFinite(tid) || tid < 1) && base) {
+            try {
+                await asegurarJwtApiRest();
+                const tok = getApiToken();
+                if (tok) {
+                    const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                        headers: { Authorization: `Bearer ${tok}` },
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json().catch(() => ({}));
+                        tid = Number(data.tenant_id ?? data.cliente?.id);
+                    }
+                }
+            } catch (_) {}
         }
+        tid = await preferTenantIdNeonAutoritativo(Number(tid), {
+            neonOk: NEON_OK && !!_sql,
+            modoOffline: false,
+            usuarioId: app.u.id,
+            leerTenantIdUsuarioDesdeNeon,
+            reintentos: 2
+        });
         if (!Number.isFinite(tid) || tid < 1) return false;
         const cur = Number(tenantIdActual());
         if (!Number.isFinite(cur) || cur === tid) return false;
