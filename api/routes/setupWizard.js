@@ -8,7 +8,7 @@ import {
   businessTypeToRubroParaTipos,
 } from "../services/businessType.js";
 import { normalizarRubroCliente } from "../services/tiposReclamo.js";
-import { tableHasColumn } from "../utils/tenantScope.js";
+import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantIdentity.js";
 
 const router = express.Router();
@@ -52,7 +52,33 @@ router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requi
     if (!rC.rows.length) {
       return res.status(404).json({ error: "Cliente / tenant no encontrado" });
     }
+    const uCol = await usuariosTenantColumnName();
+    if (!uCol) {
+      return res.status(503).json({
+        error: "Esquema incompleto",
+        hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
+      });
+    }
     const uid = Number(req.user.id);
+    const oldTid = Number(req.tenantId);
+    if (!Number.isFinite(oldTid) || oldTid < 1) {
+      return res.status(500).json({ error: "Tenant operativo del usuario inválido" });
+    }
+    if (oldTid === tid) {
+      const token = signToken({
+        userId: uid,
+        rol: req.user.rol,
+        tenant_id: tid,
+      });
+      return res.json({
+        ok: true,
+        tenant_id: tid,
+        cliente: rC.rows[0],
+        token,
+        usuarios_actualizados: 0,
+        message: `Sin cambios de tenant (ya operás en ${tid}).`,
+      });
+    }
     const rEmail = await query(`SELECT lower(trim(coalesce(email,''))) AS e FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
     const em = String(rEmail.rows?.[0]?.e || "");
     if (!em) {
@@ -60,7 +86,7 @@ router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requi
     }
     const dup = await query(
       `SELECT id FROM usuarios
-       WHERE tenant_id = $1 AND id <> $2 AND lower(trim(coalesce(email,''))) = $3
+       WHERE ${uCol} = $1 AND id <> $2 AND lower(trim(coalesce(email,''))) = $3
        LIMIT 1`,
       [tid, uid, em]
     );
@@ -70,16 +96,18 @@ router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requi
         hint: "Cambiá el email de una de las cuentas o desactivá la duplicada en Neon.",
       });
     }
+    /** Misma organización: todos los usuarios que compartían el tenant anterior pasan al nuevo (técnicos, supervisores, etc.). */
     const rUpd = await query(
       `UPDATE usuarios
-       SET tenant_id = $1
-       WHERE id = $2
-         AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
-       RETURNING id, tenant_id`,
-      [tid, uid]
+       SET ${uCol} = $1
+       WHERE ${uCol} = $2`,
+      [tid, oldTid]
     );
-    if (!rUpd.rows.length) {
-      return res.status(403).json({ error: "No se actualizó el tenant (¿rol administrador?)" });
+    const moved = Number(rUpd.rowCount ?? 0);
+    const rVerify = await query(`SELECT ${uCol}::int AS tid FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
+    const got = Number(rVerify.rows?.[0]?.tid);
+    if (!Number.isFinite(got) || got !== tid) {
+      return res.status(500).json({ error: "No se pudo confirmar el tenant tras la migración de usuarios" });
     }
     const token = signToken({
       userId: uid,
@@ -91,7 +119,8 @@ router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requi
       tenant_id: tid,
       cliente: rC.rows[0],
       token,
-      message: `Usuario vinculado al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión si hace falta.`,
+      usuarios_actualizados: moved,
+      message: `Vinculados ${moved} usuario(s) al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
     });
   } catch (e) {
     console.error("[setup/technician/attach-tenant]", e);
@@ -320,6 +349,13 @@ router.post("/wizard", async (req, res) => {
     const hasTenantBusinessesTbl = await tableExistsInPublic("tenant_businesses");
     const hasTenantActiveTbl = await tableExistsInPublic("tenant_active_business");
     const hasTenantAuditTbl = await tableExistsInPublic("tenant_business_audit");
+    const uColWiz = await usuariosTenantColumnName();
+    if (!uColWiz) {
+      return res.status(503).json({
+        error: "Esquema incompleto",
+        hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
+      });
+    }
 
     if (!debeNuevaInstancia) {
       let datosExistentes = false;
@@ -394,14 +430,21 @@ router.post("/wizard", async (req, res) => {
         );
 
         const uid = Number(req.user.id);
-        const rUp = await client.query(
-          `UPDATE usuarios SET tenant_id = $1
-           WHERE id = $2 AND tenant_id = $3
+        const rChk = await client.query(
+          `SELECT id FROM usuarios
+           WHERE id = $1 AND ${uColWiz} = $2
              AND (lower(rol) = 'admin' OR lower(rol) = 'administrador')
-           RETURNING id`,
-          [existingTargetId, uid, tenantIdOld]
+           LIMIT 1`,
+          [uid, tenantIdOld]
         );
-        if (!rUp.rows.length) {
+        if (!rChk.rows.length) {
+          throw new Error("solo_admin_puede_crear_instancia");
+        }
+        const rUp = await client.query(
+          `UPDATE usuarios SET ${uColWiz} = $1 WHERE ${uColWiz} = $2`,
+          [existingTargetId, tenantIdOld]
+        );
+        if (!(Number(rUp.rowCount) > 0)) {
           throw new Error("solo_admin_puede_crear_instancia");
         }
       });
@@ -474,14 +517,18 @@ router.post("/wizard", async (req, res) => {
       await upsertActiveBusiness(client, newId, businessType, hasClientesAbt, hasTenantActiveTbl, hasTenantAuditTbl);
 
       const uid = Number(req.user.id);
-      const rUp = await client.query(
-        `UPDATE usuarios SET tenant_id = $1
-         WHERE id = $2 AND tenant_id = $3
+      const rChk = await client.query(
+        `SELECT id FROM usuarios
+         WHERE id = $1 AND ${uColWiz} = $2
            AND (lower(rol) = 'admin' OR lower(rol) = 'administrador')
-         RETURNING id`,
-        [newId, uid, tenantIdOld]
+         LIMIT 1`,
+        [uid, tenantIdOld]
       );
-      if (!rUp.rows.length) {
+      if (!rChk.rows.length) {
+        throw new Error("solo_admin_puede_crear_instancia");
+      }
+      const rUp = await client.query(`UPDATE usuarios SET ${uColWiz} = $1 WHERE ${uColWiz} = $2`, [newId, tenantIdOld]);
+      if (!(Number(rUp.rowCount) > 0)) {
         throw new Error("solo_admin_puede_crear_instancia");
       }
 

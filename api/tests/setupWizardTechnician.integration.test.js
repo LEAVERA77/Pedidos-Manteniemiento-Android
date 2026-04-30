@@ -28,6 +28,9 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("SELECT id, email, nombre, rol, activo FROM usuarios WHERE id = $1 LIMIT 1")) {
         return { rows: [{ id: Number(params[0]), email: "a@t.com", nombre: "Admin", rol: "admin", activo: true }] };
       }
+      if (q.includes("information_schema.columns") && q.includes("usuarios")) {
+        return { rows: [{ column_name: "tenant_id" }] };
+      }
       if (q.includes("lower(trim(coalesce(email,''))) AS e")) {
         return { rows: [{ e: "a@t.com" }] };
       }
@@ -37,8 +40,11 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("FROM usuarios") && q.includes("tenant_id = $1") && q.includes("id <> $2")) {
         return { rows: [] };
       }
-      if (q.includes("UPDATE usuarios") && q.includes("RETURNING id, tenant_id")) {
-        return { rows: [{ id: 1, tenant_id: 7 }] };
+      if (q.includes("UPDATE usuarios") && q.includes("SET") && q.includes("WHERE")) {
+        return { rows: [], rowCount: 3 };
+      }
+      if (q.includes("::int AS tid FROM usuarios WHERE id =")) {
+        return { rows: [{ tid: Number(params[0]) === 1 ? 7 : 2 }] };
       }
       if (q.includes("FROM clientes") && q.includes("ORDER BY id ASC")) {
         return { rows: [{ id: 1, nombre: "A", tipo: "cooperativa_electrica", activo: true }] };
@@ -87,6 +93,7 @@ describe("Setup wizard — técnico tenant", () => {
       .expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.tenant_id).toBe(7);
+    expect(res.body.usuarios_actualizados).toBe(3);
     expect(res.body.token).toBeTruthy();
     const dec = jwt.verify(res.body.token, process.env.JWT_SECRET || "dev_secret");
     expect(dec.tenant_id).toBe(7);
