@@ -1,9 +1,15 @@
 ---
-description: Qué hacer siempre en Android Studio tras cambios (Sync, Run, Clean) según tipo de archivo.
+description: Tras cada request del usuario, el agente debe cerrar con instrucciones Android Studio (o “no aplica”) según qué cambió.
 alwaysApply: true
 ---
 
 # Android Studio — qué hacer siempre
+
+## Regla fija para el agente (Cursor)
+
+Al **terminar de responder** a cada **request** del usuario (tarea hecha, explicación entregada o guía dada), incluir **siempre** al final un bloque corto titulado exactamente **`### En Android Studio`** (o **`### En Android Studio / entorno`** si lo relevante es deploy o repos, no el IDE). Debe ser accionable: bullets concretos según la tabla y la decisión rápida de abajo.
+
+**Excepciones mínimas:** podés omitir el bloque solo si la respuesta es trivial (p. ej. “ok”, “gracias”) o es **100 %** ajena a Nexxo, Android, assets, API o flujo de build (p. ej. chiste, tema general sin proyecto).
 
 Usá esta guía **después de cambiar código en el proyecto** (o cuando el agente cierre una tarea que tocó la app). No hace falta Sync en cada guardado: solo cuando corresponda.
 
@@ -35,9 +41,9 @@ Usá esta guía **después de cambiar código en el proyecto** (o cuando el agen
 
 ## Para el agente (respuesta al usuario)
 
-- **Obligatorio:** al cerrar una tarea que haya tocado código en este proyecto, decirle al usuario **qué tiene que hacer él**, en función **de las rutas donde se guardaron los cambios** (no solo “listo”).
-- Usar la **tabla** y la **decisión rápida** de arriba; si hubo **varias áreas**, un bloque corto por área (ej.: *Gradle* → Sync + Run; *solo Kotlin* → Run; *solo assets* → Run y, si aplica web, ver abajo).
-- En el resumen final, cuando corresponda, una línea explícita: **“En Android Studio: …”**.
+- **Obligatorio:** cumplir la sección **“Regla fija para el agente”** al inicio de este archivo (bloque **`### En Android Studio`** al cierre de cada request sustantiva).
+- Decirle al usuario **qué tiene que hacer él**, en función **de las rutas donde se guardaron los cambios** (no solo “listo”).
+- Usar la **tabla** y la **decisión rápida** de arriba; si hubo **varias áreas**, bullets separados (ej.: *Gradle* → Sync + Run; *solo Kotlin* → Run; *solo assets* → Run y web si aplica; *solo API* → nada en el IDE, sí deploy).
 
 ### Si además cambió el front compartido (`app/src/main/assets/`)
 
