@@ -21,6 +21,9 @@
 }
 html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--td)}
 #app{height:100vh;height:100dvh;position:relative}
+/* Android WebView + rotación: altura real vía JS (--gn-vh); evita cabecera fuera de pantalla cuando 100dvh queda viejo. */
+html.gn-android-webview,html.gn-android-webview body{height:calc(var(--gn-vh,1vh)*100);max-height:calc(var(--gn-vh,1vh)*100)}
+html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(var(--gn-vh,1vh)*100)}
 .screen{display:none;height:100%;width:100%;position:absolute;inset:0}
 #ls{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#2563eb 100%)}
 #ls.active{display:flex;align-items:center;justify-content:center}
@@ -33,7 +36,8 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:v
 .gn-btn-asistente-tl:hover{background:rgba(30,58,138,.55)}
 #gw.active .gn-btn-asistente-tl{display:flex}
 #gw .gn-btn-asistente-tl{display:none}
-#ms.active{display:block;position:relative}
+/* Flex: cabecera (.hd) + mapa (#mc) no deben sumar más que el viewport (rotación WebView / 100dvh stale). */
+#ms.active{display:flex;flex-direction:column;height:100%;max-height:100dvh;min-height:0;overflow:hidden;position:relative}
 #mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
 #mapa-overlay-ui .moui-card .moui-hd{cursor:grab}
 #mapa-overlay-ui .moui-card .moui-hd:active{cursor:grabbing}
@@ -405,10 +409,12 @@ html.gn-android-webview .admin-banner-x{
 .un{font-size:.78rem;color:var(--tm);font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ib{background:none;border:none;font-size:1.3rem;color:var(--tm);cursor:pointer;padding:.4rem;border-radius:.4rem}
 .ib:hover{background:var(--bg);color:var(--bd)}
-#mc{height:calc(100vh - 58px);height:calc(100dvh - 58px);width:100%;z-index:1;position:relative}
+#mc{flex:1 1 auto;min-height:0;width:100%;z-index:1;position:relative;height:auto}
 html.gn-android-webview #mc{
-  height:calc(100dvh - 58px - env(safe-area-inset-top, 0px));
-  min-height:calc(100dvh - 72px - env(safe-area-inset-top, 0px));
+  flex:1 1 auto;
+  min-height:0;
+  height:auto;
+  max-height:none;
 }
 #mc .leaflet-container{border-radius:12px;border:1px solid var(--bo);box-shadow:var(--shadow-card);overflow:hidden}
 .bp2{position:absolute;bottom:0;left:0;right:0;background:var(--card,#fff);border:1px solid var(--bo);border-bottom:none;border-radius:12px 12px 0 0;box-shadow:var(--shadow-card),0 -4px 20px rgba(15,23,42,.08);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column;min-height:0}

@@ -13,6 +13,7 @@ import android.content.Context;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
@@ -516,6 +517,30 @@ public class MainActivity extends AppCompatActivity {
         setIntent(intent);
         capturePedidoIdFromIntent(intent);
         dispatchPendingPedidoIdToWeb();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (webView == null) {
+            return;
+        }
+        webView.post(() -> {
+            try {
+                webView.requestLayout();
+                android.view.View parent = (android.view.View) webView.getParent();
+                if (parent != null) {
+                    parent.requestLayout();
+                }
+            } catch (Exception ignored) {
+            }
+            webView.evaluateJavascript(
+                    "(function(){try{if(typeof window.__pmgNotifyViewportResize==='function')"
+                            + "window.__pmgNotifyViewportResize();"
+                            + "else window.dispatchEvent(new Event('resize'));}catch(e){}})();",
+                    null
+            );
+        });
     }
 
     @Override

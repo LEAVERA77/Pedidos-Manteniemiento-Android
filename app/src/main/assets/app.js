@@ -3511,9 +3511,6 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
             if (!offline) {
                 await asegurarJwtApiRest();
                 try {
-                    aplicarTenantDesdeJwtSiHaceFalta();
-                } catch (_) {}
-                try {
                     await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
                 } catch (_) {}
                 await cargarDistribuidores();
@@ -6093,6 +6090,49 @@ function initAdminOsmCapasPanelBindings() {
     });
 }
 
+let _gnAndroidViewportBound = false;
+/** WebView con `configChanges`: `100dvh` a veces no se actualiza al rotar y la barra (.hd) queda fuera de vista. */
+function encolarAjusteViewportAndroidWebView() {
+    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa() || _gnAndroidViewportBound) return;
+    _gnAndroidViewportBound = true;
+    const bump = () => {
+        try {
+            const h =
+                (window.visualViewport && window.visualViewport.height) ||
+                document.documentElement.clientHeight ||
+                window.innerHeight ||
+                0;
+            if (h > 0) {
+                document.documentElement.style.setProperty('--gn-vh', `${h * 0.01}px`);
+            }
+        } catch (_) {}
+        try {
+            window.dispatchEvent(new Event('resize'));
+        } catch (_) {}
+        try {
+            if (app?.map && typeof app.map.invalidateSize === 'function') app.map.invalidateSize();
+        } catch (_) {}
+        try {
+            scheduleGnMapLayoutBumpsTrasLogin();
+        } catch (_) {}
+    };
+    try {
+        window.addEventListener('resize', bump, { passive: true });
+    } catch (_) {}
+    try {
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', bump, { passive: true });
+        }
+    } catch (_) {}
+    try {
+        window.addEventListener('orientationchange', () => setTimeout(bump, 120), { passive: true });
+    } catch (_) {}
+    try {
+        window.__pmgNotifyViewportResize = bump;
+    } catch (_) {}
+    bump();
+}
+
 function aplicarUIMapaPlataforma() {
     syncMapaLabelsNpCheckbox();
     syncMapaPrioFiltrosFromStorage();
@@ -6202,6 +6242,9 @@ function aplicarUIMapaPlataforma() {
             }
         } catch (_) {}
     })();
+    try {
+        encolarAjusteViewportAndroidWebView();
+    } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
 window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
@@ -13429,9 +13472,6 @@ try {
             localStorage.setItem('pmg', JSON.stringify(app.u));
         } catch (_) {}
         try {
-            aplicarTenantDesdeJwtSiHaceFalta();
-        } catch (_) {}
-        try {
             actualizarBarraHeaderSesion();
         } catch (_) {}
         const btnAdm = document.getElementById('btn-admin');
@@ -13501,9 +13541,6 @@ try {
             setupMapLazyWhenVisibleOnce();
             await asegurarJwtApiRest();
             try {
-                aplicarTenantDesdeJwtSiHaceFalta();
-            } catch (_) {}
-            try {
                 await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
             } catch (_) {}
             if (!modoOffline) {
@@ -13570,7 +13607,8 @@ async function cargarConfigEmpresa() {
         const r = await sqlSimple("SELECT clave, valor FROM empresa_config");
         const sqlCfg = {};
         (r.rows || []).forEach(row => { sqlCfg[row.clave] = row.valor; });
-        window.EMPRESA_CFG = { ...sqlCfg, ...(window.EMPRESA_CFG || {}) };
+        // Gana la BD sobre memoria: `empresa_config` suele ser una sola tabla; al cambiar de tenant no debe prevalecer EMPRESA_CFG viejo.
+        window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...sqlCfg };
         if (!String(window.EMPRESA_CFG.tipo || '').trim() && NEON_OK) {
             try {
                 const tid = tenantIdActual();
@@ -13603,6 +13641,9 @@ async function cargarConfigEmpresa() {
                 await fetchMiConfiguracionYAplicarEnEmpresaCfg();
             } catch (_) {}
         }
+        try {
+            await refrescarEmpresaDesdeClienteNeonPorTenantActual();
+        } catch (_) {}
         try {
             aplicarVisibilidadTabsAdminRedElectrica();
         } catch (_) {}
@@ -13665,32 +13706,12 @@ function parseJwtPayloadLoose(tok) {
 }
 
 /**
- * Si el JWT (`pmg_api_token`) declara otro `tenant_id` que `app.u` / `pmg`, alinea sesión y caches.
- * Cubre el wizard de nueva instancia: el token se renueva antes del reload pero `pmg` podía quedar viejo.
+ * El JWT (`pmg_api_token`) puede traer `tenant_id` obsoleto tras un cambio en la web admin o en Neon.
+ * **No** alinear `app.u` desde el claim: pisa el tenant correcto que ya fijó API/Neon en `sincronizarTenantOperativoDesdeMiConfiguracionApi`.
+ * Se mantiene el nombre por compatibilidad con código antiguo; no hace nada.
  */
 function aplicarTenantDesdeJwtSiHaceFalta() {
-    try {
-        if (!app?.u) return false;
-        const tok = typeof getApiToken === 'function' ? getApiToken() : '';
-        const pl = parseJwtPayloadLoose(tok);
-        const tid = pl != null && pl.tenant_id != null ? Number(pl.tenant_id) : NaN;
-        if (!Number.isFinite(tid) || tid <= 0) return false;
-        const cur = Number(app.u.tenant_id ?? app.u.tenantId);
-        if (Number.isFinite(cur) && cur === tid) return false;
-        app.u.tenant_id = tid;
-        try {
-            delete app.u.tenantId;
-        } catch (_) {}
-        try {
-            localStorage.setItem('pmg', JSON.stringify(app.u));
-        } catch (_) {}
-        try {
-            invalidarCachesMultitenantSesionYOAdminUI();
-        } catch (_) {}
-        return true;
-    } catch (_) {
-        return false;
-    }
+    return false;
 }
 
 let _usuariosTenantColNeonSyncCache = null;
@@ -13812,7 +13833,7 @@ async function refrescarEmpresaDesdeClienteNeonPorTenantActual() {
 /**
  * Alinea `app.u.tenant_id` con la BD: primero API `mi-configuracion`, si no alcanza Neon (`usuarios`).
  * En WebView Android suele haber sesión Neon sin JWT guardado; sin este fallback no se ve el tenant nuevo.
- * Llamar después de `aplicarTenantDesdeJwtSiHaceFalta`.
+ * Tras corregir el tenant, intenta renovar el JWT para que el claim coincida con la BD.
  */
 async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
@@ -13849,6 +13870,9 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         } catch (_) {}
         try {
             localStorage.setItem('pmg', JSON.stringify(app.u));
+        } catch (_) {}
+        try {
+            await intentarRefrescarJwtDesdeCredencialesGuardadas();
         } catch (_) {}
         try {
             limpiarLocalStorageContadoresPedido();
