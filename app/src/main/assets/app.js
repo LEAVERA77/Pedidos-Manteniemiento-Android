@@ -3575,7 +3575,7 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
         // Primero `tenant_id`: muchas BDs no tienen `cliente_id` y la 1ª variante fallaba en consola Android.
         const loginSqlAttempts = [
             `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}`,
-            `SELECT id, email, nombre, rol, COALESCE(cliente_id, 1) AS tenant_id${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, cliente_id AS tenant_id${mustCol} ${loginWhere}`,
             `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
         ];
         try {
@@ -3602,12 +3602,22 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
 
         const usuario = resultado.rows?.[0];
         if (usuario) {
+            let tidLogin = usuario.tenant_id != null ? Number(usuario.tenant_id) : NaN;
+            if (!Number.isFinite(tidLogin) || tidLogin < 1) tidLogin = NaN;
+            try {
+                const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(usuario.id));
+                if (fromNeon != null && Number.isFinite(fromNeon) && fromNeon > 0) tidLogin = fromNeon;
+            } catch (_) {}
+            if (!Number.isFinite(tidLogin) || tidLogin < 1) {
+                const cfgT = Number(window.APP_CONFIG?.app?.tenantId ?? window.APP_CONFIG?.tenant_id);
+                tidLogin = Number.isFinite(cfgT) && cfgT > 0 ? cfgT : 1;
+            }
             const u = {
                 id: usuario.id,
                 email: usuario.email,
                 nombre: usuario.nombre || 'Administrador',
                 rol: normalizarRolStr(usuario.rol || 'tecnico'),
-                tenant_id: usuario.tenant_id != null ? Number(usuario.tenant_id) : tenantIdActual(),
+                tenant_id: tidLogin,
                 must_change_password: !!usuario.must_change_password
             };
             guardarUsuarioOffline(u, pw);
@@ -13709,10 +13719,10 @@ async function leerTenantIdUsuarioDesdeNeon(usuarioId) {
     const col = await sqlColumnaTenantUsuariosNeonSync();
     if (!col) return null;
     try {
-        const r = await sqlSimple(
-            `SELECT COALESCE(${col}, 1)::int AS tenant_id FROM usuarios WHERE id = ${esc(uid)} LIMIT 1`
-        );
-        const t = Number(r.rows?.[0]?.tenant_id);
+        const r = await sqlSimple(`SELECT ${col}::int AS tenant_id FROM usuarios WHERE id = ${esc(uid)} LIMIT 1`);
+        const raw = r.rows?.[0]?.tenant_id;
+        if (raw == null || raw === '') return null;
+        const t = Number(raw);
         if (!Number.isFinite(t) || t < 1) return null;
         return t;
     } catch (_) {
