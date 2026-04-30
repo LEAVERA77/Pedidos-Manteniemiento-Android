@@ -493,6 +493,16 @@ public class MainActivity extends AppCompatActivity {
             webView.evaluateJavascript(
                     "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
                     null);
+            /* Segundo intento: el WebView a veces aún no rehidrató `app.u` en el primer frame tras onResume. */
+            final WebView wvResume = webView;
+            wvResume.postDelayed(() -> {
+                try {
+                    wvResume.evaluateJavascript(
+                            "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
+                            null);
+                } catch (Exception ignored) {
+                }
+            }, 750);
             webView.evaluateJavascript(
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);

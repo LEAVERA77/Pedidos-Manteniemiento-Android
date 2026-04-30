@@ -13668,28 +13668,74 @@ function aplicarTenantDesdeJwtSiHaceFalta() {
     }
 }
 
+let _usuariosTenantColNeonSyncCache = null;
+
+/** Columna `tenant_id` o `cliente_id` en `usuarios` (misma idea que la API / `sqlFiltroUsuariosPorTenant`). */
+async function sqlColumnaTenantUsuariosNeonSync() {
+    if (_usuariosTenantColNeonSyncCache !== null) return _usuariosTenantColNeonSyncCache;
+    _usuariosTenantColNeonSyncCache = '';
+    if (!NEON_OK || !_sql || modoOffline) return '';
+    try {
+        const r = await sqlSimple(
+            `SELECT column_name FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name IN ('tenant_id','cliente_id')`
+        );
+        const names = new Set((r.rows || []).map((x) => x.column_name));
+        if (names.has('tenant_id')) _usuariosTenantColNeonSyncCache = 'tenant_id';
+        else if (names.has('cliente_id')) _usuariosTenantColNeonSyncCache = 'cliente_id';
+    } catch (_) {}
+    return _usuariosTenantColNeonSyncCache;
+}
+
+/** Tenant del usuario en Neon (válido en Android sin `API_BASE_URL` / JWT en disco). */
+async function leerTenantIdUsuarioDesdeNeon(usuarioId) {
+    const uid = Number(usuarioId);
+    if (!Number.isFinite(uid) || uid < 1 || modoOffline || !NEON_OK || !_sql) return null;
+    const col = await sqlColumnaTenantUsuariosNeonSync();
+    if (!col) return null;
+    try {
+        const r = await sqlSimple(
+            `SELECT COALESCE(${col}, 1)::int AS tenant_id FROM usuarios WHERE id = ${esc(uid)} LIMIT 1`
+        );
+        const t = Number(r.rows?.[0]?.tenant_id);
+        if (!Number.isFinite(t) || t < 1) return null;
+        return t;
+    } catch (_) {
+        return null;
+    }
+}
+
 /**
- * Alinea `app.u.tenant_id` con `GET /api/clientes/mi-configuracion` (tenant de la BD).
- * Cubre cambio de tenant desde la web admin con el mismo usuario: el JWT puede seguir llevando el id viejo
- * hasta el próximo login, pero la API ya usa el tenant actual del usuario.
- * Llamar después de `aplicarTenantDesdeJwtSiHaceFalta` para que no pise el valor correcto.
+ * Alinea `app.u.tenant_id` con la BD: primero API `mi-configuracion`, si no alcanza Neon (`usuarios`).
+ * En WebView Android suele haber sesión Neon sin JWT guardado; sin este fallback no se ve el tenant nuevo.
+ * Llamar después de `aplicarTenantDesdeJwtSiHaceFalta`.
  */
 async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const silent = !!o.silent;
     try {
         if (!app?.u || modoOffline) return false;
+        let tid = NaN;
         const base = getApiBaseUrl();
-        if (!base) return false;
-        await asegurarJwtApiRest();
-        const tok = getApiToken();
-        if (!tok) return false;
-        const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-            headers: { Authorization: `Bearer ${tok}` },
-        });
-        if (!resp.ok) return false;
-        const data = await resp.json().catch(() => ({}));
-        const tid = Number(data.tenant_id ?? data.cliente?.id);
+        if (base) {
+            try {
+                await asegurarJwtApiRest();
+                const tok = getApiToken();
+                if (tok) {
+                    const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
+                        headers: { Authorization: `Bearer ${tok}` },
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json().catch(() => ({}));
+                        tid = Number(data.tenant_id ?? data.cliente?.id);
+                    }
+                }
+            } catch (_) {}
+        }
+        if (!Number.isFinite(tid) || tid < 1) {
+            const fromNeon = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
+            if (fromNeon != null) tid = fromNeon;
+        }
         if (!Number.isFinite(tid) || tid < 1) return false;
         const cur = Number(tenantIdActual());
         if (!Number.isFinite(cur) || cur === tid) return false;
@@ -13721,7 +13767,7 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         }
         return true;
     } catch (e) {
-        console.warn('[tenant-sync-mi-config]', e && e.message ? e.message : e);
+        console.warn('[tenant-sync]', e && e.message ? e.message : e);
         return false;
     }
 }
@@ -21336,6 +21382,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
     } catch (_) {}
     try {
         _pedidoContadorNeonTenantCache = null;
+    } catch (_) {}
+    try {
+        _usuariosTenantColNeonSyncCache = null;
     } catch (_) {}
     try {
         window._sociosVirtualRows = null;
