@@ -50,7 +50,8 @@
     <h1 id="app-titulo">GestorNova</h1>
     <p class="sub" id="app-subtitulo">Sistema de gestión de pedidos y reclamos</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
-    <form id="lf" autocomplete="off">
+    <!-- preventDefault nativo: #lb se habilita antes de app.js (módulo); sin esto, GET ?gn_uid=&gn_secret= recarga y vacía campos -->
+    <form id="lf" autocomplete="off" onsubmit="event.preventDefault()">
       <!-- Señuelo: muchos navegadores autocompletan estos en lugar de los campos visibles -->
       <div class="gn-login-decoy" aria-hidden="true">
         <input type="text" tabindex="-1" autocomplete="username">
