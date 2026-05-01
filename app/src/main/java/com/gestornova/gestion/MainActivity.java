@@ -30,6 +30,7 @@ import android.util.Base64;
 import android.util.Log;
 import android.location.Location;
 import android.location.LocationManager;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -222,6 +223,24 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 request.grant(request.getResources());
+            }
+
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                String line = "JS " + message.messageLevel() + ": " + message.message()
+                        + " @ " + message.sourceId() + ":" + message.lineNumber();
+                switch (message.messageLevel()) {
+                    case ERROR:
+                        Log.e(TAG, line);
+                        break;
+                    case WARNING:
+                        Log.w(TAG, line);
+                        break;
+                    default:
+                        Log.i(TAG, line);
+                        break;
+                }
+                return true;
             }
 
             @Override
