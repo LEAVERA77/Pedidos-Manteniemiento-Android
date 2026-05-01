@@ -17,6 +17,8 @@ import {
   TENANT_ID_MONOTENANT_FALLBACK
 } from './modules/tenantResolver.js';
 import { preferTenantIdNeonAutoritativo } from './modules/tenantSync.js';
+import { resolverTenantOperativoSesion } from './modules/tenantSessionPolicy.js';
+import { resolveUsuariosTenantColumnName, resetUsuariosTenantColumnCache } from './modules/tenantNeonUsuario.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -13852,23 +13854,13 @@ function aplicarTenantDesdeJwtSiHaceFalta() {
     return false;
 }
 
-let _usuariosTenantColNeonSyncCache = null;
-
 /** Columna `tenant_id` o `cliente_id` en `usuarios` (misma idea que la API / `sqlFiltroUsuariosPorTenant`). */
 async function sqlColumnaTenantUsuariosNeonSync() {
-    if (_usuariosTenantColNeonSyncCache !== null) return _usuariosTenantColNeonSyncCache;
-    _usuariosTenantColNeonSyncCache = '';
-    if (!NEON_OK || !_sql || modoOffline) return '';
-    try {
-        const r = await sqlSimple(
-            `SELECT column_name FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name IN ('tenant_id','cliente_id')`
-        );
-        const names = new Set((r.rows || []).map((x) => x.column_name));
-        if (names.has('tenant_id')) _usuariosTenantColNeonSyncCache = 'tenant_id';
-        else if (names.has('cliente_id')) _usuariosTenantColNeonSyncCache = 'cliente_id';
-    } catch (_) {}
-    return _usuariosTenantColNeonSyncCache;
+    return resolveUsuariosTenantColumnName({
+        sqlSimple,
+        neonOk: NEON_OK && !!_sql,
+        modoOffline,
+    });
 }
 
 /** Tenant del usuario en Neon (válido en Android sin `API_BASE_URL` / JWT en disco). */
@@ -13970,65 +13962,26 @@ async function refrescarEmpresaDesdeClienteNeonPorTenantActual() {
 
 /**
  * Alinea `app.u.tenant_id` con la BD.
- * Con Neon conectado, **prioriza** `usuarios.tenant_id` / `cliente_id` en la misma base que la app (cambio desde admin / attach-tenant).
- * Si no hay Neon o no hay columna, usa API `mi-configuracion`; último recurso otra lectura Neon.
- * Tras corregir el tenant, intenta renovar el JWT para que el claim coincida con la BD.
+ * Con JWT, **prioriza** GET `/api/auth/tenant-operativo` (misma fuente que el admin web vía API);
+ * si no hay token o falla la API, usa lectura Neon; último recurso `mi-configuracion`.
+ * No se vuelve a forzar Neon al final: en WebView Android podía pisar un tenant API correcto con `1`.
  */
 async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const silent = !!o.silent;
     try {
         if (!app?.u || modoOffline) return false;
-        let tid = NaN;
-        if (NEON_OK && _sql) {
-            try {
-                tid = await preferTenantIdNeonAutoritativo(NaN, {
-                    neonOk: NEON_OK && !!_sql,
-                    modoOffline: false,
-                    usuarioId: app.u.id,
-                    leerTenantIdUsuarioDesdeNeon,
-                    reintentos: 3
-                });
-            } catch (_) {}
-        }
-        const base = getApiBaseUrl();
-        if ((!Number.isFinite(tid) || tid < 1) && base) {
-            try {
-                await asegurarJwtApiRest();
-                const tok = getApiToken();
-                if (tok) {
-                    const respTo = await fetch(apiUrl('/api/auth/tenant-operativo'), {
-                        headers: { Authorization: `Bearer ${tok}` }
-                    });
-                    if (respTo.ok) {
-                        const j = await respTo.json().catch(() => ({}));
-                        const n = Number(j.tenant_id);
-                        if (Number.isFinite(n) && n > 0) tid = n;
-                    }
-                }
-            } catch (_) {}
-        }
-        if ((!Number.isFinite(tid) || tid < 1) && base) {
-            try {
-                await asegurarJwtApiRest();
-                const tok = getApiToken();
-                if (tok) {
-                    const resp = await fetch(apiUrl('/api/clientes/mi-configuracion'), {
-                        headers: { Authorization: `Bearer ${tok}` },
-                    });
-                    if (resp.ok) {
-                        const data = await resp.json().catch(() => ({}));
-                        tid = Number(data.tenant_id ?? data.cliente?.id);
-                    }
-                }
-            } catch (_) {}
-        }
-        tid = await preferTenantIdNeonAutoritativo(Number(tid), {
-            neonOk: NEON_OK && !!_sql,
-            modoOffline: false,
-            usuarioId: app.u.id,
+        const tid = await resolverTenantOperativoSesion({
+            modoOffline,
+            neonOk: NEON_OK,
+            hasSql: !!_sql,
+            appUserId: Number(app.u.id),
             leerTenantIdUsuarioDesdeNeon,
-            reintentos: 2
+            getApiBaseUrl,
+            asegurarJwtApiRest,
+            getApiToken,
+            apiUrl,
+            fetchFn: fetch,
         });
         if (!Number.isFinite(tid) || tid < 1) return false;
         const cur = Number(tenantIdActual());
@@ -21775,7 +21728,7 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         _pedidoContadorNeonTenantCache = null;
     } catch (_) {}
     try {
-        _usuariosTenantColNeonSyncCache = null;
+        resetUsuariosTenantColumnCache();
     } catch (_) {}
     try {
         window._sociosVirtualRows = null;

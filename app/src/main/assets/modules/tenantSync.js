@@ -1,10 +1,11 @@
 /**
- * Alineación tenant operativo: Neon (`usuarios`) gana sobre API/JWT cuando hay lectura válida.
+ * Reintentos de lectura `usuarios.tenant_id` / `cliente_id` en Neon (WebView).
+ * La política global API vs Neon está en `tenantSessionPolicy.js`.
  * made by leavera77
  */
 
 /**
- * Si Neon está activo, devuelve siempre `usuarios.tenant_id` / `cliente_id` válido si existe
+ * Si Neon está activo, devuelve `usuarios.tenant_id` / `cliente_id` válido si existe
  * (reintento breve por carreras WebView / pooler).
  * @param {number|NaN} tidPreliminar - valor ya resuelto por Neon/API (p. ej. JWT obsoleto = 1)
  * @param {{ neonOk: boolean, modoOffline: boolean, usuarioId: number, leerTenantIdUsuarioDesdeNeon: (id:number)=>Promise<number|null>, reintentos?: number }} deps
