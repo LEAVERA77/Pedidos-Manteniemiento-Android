@@ -3189,6 +3189,13 @@ actualizarBadgeOffline();
         unlock(em);
         unlock(pw);
     }, { capture: true });
+    /** En WebView Android el IME a veces no deja `activeElement` en el input; el barrido borra la clave y el teclado queda con InputConnection inactiva (no ingresa). */
+    const esWebViewGestorNova =
+        typeof window.AndroidConfig !== 'undefined' ||
+        (typeof navigator !== 'undefined' && /GestorNova\//i.test(String(navigator.userAgent || '')));
+    if (esWebViewGestorNova) {
+        return;
+    }
     const barridoSiAutofill = () => {
         if (detenerBarridoLogin || usuarioEditoLogin) return;
         if (document.activeElement === em || document.activeElement === pw) return;
