@@ -1559,11 +1559,11 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
         if (jwtVsNeonMismatch) {
             try {
                 console.warn(
-                    '[mi-cfg] JWT tenant ≠ Neon usuarios.tenant_id; se ignora cliente de la API y se alinea con Neon'
+                    '[mi-cfg] Neon WebView usuarios ≠ tenant API; se usa tenant de la API (admin web / getUserTenantId)'
                 );
             } catch (_) {}
             try {
-                app.u.tenant_id = neonUserTid;
+                app.u.tenant_id = apiTid;
                 try {
                     delete app.u.tenantId;
                 } catch (_) {}
@@ -1583,7 +1583,7 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             try {
                 initCommunityBroadcastFab();
             } catch (_) {}
-            return;
+            /** Seguir: aplicar `data.cliente` de la API (no cortar). */
         }
         let conf = data?.cliente?.configuracion;
         if (typeof conf === 'string') {
@@ -2119,30 +2119,7 @@ async function loginApiJwt(email, password) {
                 }
             }
         } catch (_) {}
-        try {
-            if (app?.u && NEON_OK && _sql && !modoOffline) {
-                const neonTid = await leerTenantIdUsuarioDesdeNeon(Number(app.u.id));
-                const cur = Number(app.u.tenant_id ?? app.u.tenantId);
-                if (
-                    neonTid != null &&
-                    Number.isFinite(neonTid) &&
-                    neonTid > 0 &&
-                    Number.isFinite(cur) &&
-                    neonTid !== cur
-                ) {
-                    app.u.tenant_id = neonTid;
-                    try {
-                        delete app.u.tenantId;
-                    } catch (_) {}
-                    try {
-                        localStorage.setItem('pmg', JSON.stringify(app.u));
-                    } catch (_) {}
-                    try {
-                        invalidatePedidosTenantSqlCache();
-                    } catch (_) {}
-                }
-            }
-        } catch (_) {}
+        /** No pisar el tenant del login API con Neon en WebView: la API usa getUserTenantId (misma fuente que admin web); Neon/JDBC en Android suele leer mal. */
         return data;
     } catch (e) {
         if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
@@ -15084,11 +15061,11 @@ async function verificarConfiguracionInicialObligatoria() {
                 if (jwtVsNeonMismatch) {
                     try {
                         console.warn(
-                            '[setup] mi-configuración (JWT) ≠ usuarios.tenant_id en Neon; identidad y flags desde clientes (Neon)'
+                            '[setup] Neon WebView usuarios ≠ tenant API; se usa tenant de la API (mismo que admin web)'
                         );
                     } catch (_) {}
                     try {
-                        app.u.tenant_id = neonUserTid;
+                        app.u.tenant_id = apiTid;
                         try {
                             delete app.u.tenantId;
                         } catch (_) {}
@@ -15107,7 +15084,7 @@ async function verificarConfiguracionInicialObligatoria() {
                     } catch (_) {}
                     try {
                         const cr = await sqlSimple(
-                            `SELECT configuracion FROM clientes WHERE id = ${esc(neonUserTid)} LIMIT 1`
+                            `SELECT configuracion FROM clientes WHERE id = ${esc(apiTid)} LIMIT 1`
                         );
                         let rawCfg = cr.rows?.[0]?.configuracion;
                         if (typeof rawCfg === 'string') {
