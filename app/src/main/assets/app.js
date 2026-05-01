@@ -3129,7 +3129,16 @@ aplicarCapaOnboardingVsLoginInicial();
 const dbs = document.getElementById('dbs');
 const lb  = document.getElementById('lb');
 
-if (lb) lb.disabled = false;
+/** WebView Android: asegurar que el submit de login no quede bloqueado por el atributo HTML `disabled`. */
+function habilitarBotonIngresarLogin() {
+    const el = document.getElementById('lb');
+    if (!el) return;
+    el.disabled = false;
+    try {
+        el.removeAttribute('disabled');
+    } catch (_) {}
+}
+habilitarBotonIngresarLogin();
 actualizarBadgeOffline();
 (function limpiarLoginSinPersistenciaUsuario() {
     try {
@@ -3241,6 +3250,15 @@ async function conectarNeon() {
     try {
         const ok = await initNeon();
         if (ok) {
+            app.ok = true;
+            try {
+                if (dbs) {
+                    dbs.className = 'dbs ok';
+                    dbs.innerHTML =
+                        '<i class="fas fa-circle-notch fa-spin"></i> Conectado — preparando tablas (puede tardar unos segundos)…';
+                }
+            } catch (_) {}
+            habilitarBotonIngresarLogin();
             try {
                 await sqlSimple(`CREATE TABLE IF NOT EXISTS pedidos(
                     id SERIAL PRIMARY KEY,
@@ -3332,8 +3350,6 @@ async function conectarNeon() {
                     'ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE'
                 );
             } catch (_) {}
-            app.ok = true;
-            NEON_OK = true;
             if (dbs) {
                 dbs.className = 'dbs ok';
                 dbs.innerHTML = '<i class="fas fa-check-circle"></i> Conectado - Neon PostgreSQL';
@@ -3374,6 +3390,7 @@ async function conectarNeon() {
                 : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
         }
         setModoOffline(true);
+        habilitarBotonIngresarLogin();
     }
 }
 
@@ -22353,40 +22370,63 @@ if ('serviceWorker' in navigator) {
 
 // ── Inicializar todo al arrancar ──────────────────────────────
 (async function iniciarApp() {
-    initSetupWizardBindings();
-    (function showAndroidExportsBtn() {
-        const b = document.getElementById('btn-android-descargas');
-        if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
-            b.style.display = '';
+    try {
+        window.__GESTORNOVA_APP_BOOT_TS = Date.now();
+        initSetupWizardBindings();
+        (function showAndroidExportsBtn() {
+            const b = document.getElementById('btn-android-descargas');
+            if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
+                b.style.display = '';
+            }
+        })();
+
+        // 1. Cargar config.json
+        const configOk = await cargarAppConfig();
+        if (!configOk) return; // No continuar sin config
+
+        // 2. Cargar EmailJS si hay config
+        if (window.APP_CONFIG?.emailjs?.publicKey) {
+            const ejsScript = document.createElement('script');
+            ejsScript.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+            ejsScript.onload = () => {
+                try {
+                    if (window.emailjs && window.APP_CONFIG?.emailjs?.publicKey) {
+                        emailjs.init(window.APP_CONFIG.emailjs.publicKey);
+                    }
+                } catch (_) {}
+            };
+            document.head.appendChild(ejsScript);
         }
-    })();
 
-    // 1. Cargar config.json
-    const configOk = await cargarAppConfig();
-    if (!configOk) return; // No continuar sin config
-
-    // 2. Cargar EmailJS si hay config
-    if (window.APP_CONFIG?.emailjs?.publicKey) {
-        const ejsScript = document.createElement('script');
-        ejsScript.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-        ejsScript.onload = () => {
+        // Llamar conectarNeon() DESPUÉS de cargar config (timing correcto)
+        await conectarNeon();
+        if (document.getElementById('ls')?.classList.contains('active')) {
+            hydrateBrandingForPublicScreen();
             try {
-                if (window.emailjs && window.APP_CONFIG?.emailjs?.publicKey) {
-                    emailjs.init(window.APP_CONFIG.emailjs.publicKey);
-                }
+                if (NEON_OK) await cargarConfigEmpresa();
             } catch (_) {}
-        };
-        document.head.appendChild(ejsScript);
-    }
-
-    // Llamar conectarNeon() DESPUÉS de cargar config (timing correcto)
-    await conectarNeon();
-    if (document.getElementById('ls')?.classList.contains('active')) {
-        hydrateBrandingForPublicScreen();
+            try {
+                aplicarMarcaVisualCompleta();
+            } catch (_) {}
+        }
+    } catch (e) {
+        console.warn('[iniciarApp]', e && e.message ? e.message : e);
         try {
-            if (NEON_OK) await cargarConfigEmpresa();
+            const dbsEl = document.getElementById('dbs');
+            if (dbsEl && /Verificando red|preparando tablas/i.test(dbsEl.textContent || '')) {
+                dbsEl.className = 'dbs er';
+                dbsEl.innerHTML =
+                    '<i class="fas fa-exclamation-triangle"></i> Error al iniciar. Reintentá; si usás la web, publicá también la carpeta <code>modules/</code>.';
+            }
         } catch (_) {}
-        try { aplicarMarcaVisualCompleta(); } catch (_) {}
+    } finally {
+        try {
+            window.__GESTORNOVA_APP_READY__ = 1;
+        } catch (_) {}
+        habilitarBotonIngresarLogin();
+        try {
+            if (typeof Event === 'function') window.dispatchEvent(new Event('gestornova-app-ready'));
+        } catch (_) {}
     }
 })();
 
