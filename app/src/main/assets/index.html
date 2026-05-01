@@ -50,8 +50,8 @@
     <h1 id="app-titulo">GestorNova</h1>
     <p class="sub" id="app-subtitulo">Sistema de gestión de pedidos y reclamos</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
-    <!-- preventDefault nativo: #lb se habilita antes de app.js (módulo); sin esto, GET ?gn_uid=&gn_secret= recarga y vacía campos -->
-    <form id="lf" autocomplete="off" onsubmit="event.preventDefault()">
+    <!-- No usar onsubmit inline con event.* en WebView (puede fallar y cortar el flujo). El script antes de app.js hace preventDefault en capture. -->
+    <form id="lf" autocomplete="off">
       <!-- Señuelo: muchos navegadores autocompletan estos en lugar de los campos visibles -->
       <div class="gn-login-decoy" aria-hidden="true">
         <input type="text" tabindex="-1" autocomplete="username">
@@ -1280,6 +1280,7 @@
 <script src="autocompletado-calles.js"></script>
 <script>
 (function () {
+    var _gnLoginSubmitCaptureRegistrado = false;
     function habilitarLbLoginTemprano() {
         var b = document.getElementById('lb');
         if (!b) return;
@@ -1288,8 +1289,21 @@
             b.removeAttribute('disabled');
         } catch (e) {}
     }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', habilitarLbLoginTemprano);
-    else habilitarLbLoginTemprano();
+    /** Evita GET nativo (?gn_uid / ?gn_secret) si #lb se usa antes de que cargue app.js; no depende de `event` en HTML inline. */
+    function bloquearSubmitNativoLogin() {
+        var f = document.getElementById('lf');
+        if (!f || _gnLoginSubmitCaptureRegistrado) return;
+        _gnLoginSubmitCaptureRegistrado = true;
+        f.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+        }, true);
+    }
+    function initLoginTemprano() {
+        habilitarLbLoginTemprano();
+        bloquearSubmitNativoLogin();
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initLoginTemprano);
+    else initLoginTemprano();
 })();
 </script>
 <script type="module" src="app.js"></script>
@@ -1298,7 +1312,7 @@
     var esWebView=/wv |WebView/.test(navigator.userAgent)||window.location.protocol==='file:';
     if('serviceWorker' in navigator&&!esWebView){
         window.addEventListener('load',function(){
-            navigator.serviceWorker.register('./sw.js?pmg=4')
+            navigator.serviceWorker.register('./sw.js?pmg=5')
                 .then(r=>console.log('[SW]',r.scope))
                 .catch(e=>console.warn('[SW]',e.message));
         });
