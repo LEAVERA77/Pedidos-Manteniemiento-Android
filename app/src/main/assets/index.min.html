@@ -1281,6 +1281,7 @@
 <script>
 (function () {
     var _gnLoginSubmitCaptureRegistrado = false;
+    var _gnLbLoginBridgeRegistrado = false;
     function habilitarLbLoginTemprano() {
         var b = document.getElementById('lb');
         if (!b) return;
@@ -1289,7 +1290,7 @@
             b.removeAttribute('disabled');
         } catch (e) {}
     }
-    /** Evita GET nativo (?gn_uid / ?gn_secret) si #lb se usa antes de que cargue app.js; no depende de `event` en HTML inline. */
+    /** Evita GET nativo (?gn_uid / ?gn_secret) si #lf dispara submit antes de app.js. */
     function bloquearSubmitNativoLogin() {
         var f = document.getElementById('lf');
         if (!f || _gnLoginSubmitCaptureRegistrado) return;
@@ -1298,9 +1299,28 @@
             ev.preventDefault();
         }, true);
     }
+    /** Un solo click en #lb → window.__gnEjecutarLogin (app.js lo asigna al cargar el módulo). */
+    function registrarBridgeClickIngresar() {
+        var lb = document.getElementById('lb');
+        if (!lb || _gnLbLoginBridgeRegistrado) return;
+        _gnLbLoginBridgeRegistrado = true;
+        lb.addEventListener('click', function (ev) {
+            try {
+                ev.preventDefault();
+            } catch (e0) {}
+            if (typeof window.__gnEjecutarLogin === 'function') {
+                window.__gnEjecutarLogin(ev);
+            } else {
+                try {
+                    console.warn('[GN] Ingresar: app.js aún no cargó (red, error de módulo o caché vieja del SW)');
+                } catch (e1) {}
+            }
+        });
+    }
     function initLoginTemprano() {
         habilitarLbLoginTemprano();
         bloquearSubmitNativoLogin();
+        registrarBridgeClickIngresar();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initLoginTemprano);
     else initLoginTemprano();
@@ -1308,15 +1328,33 @@
 </script>
 <script type="module" src="app.js"></script>
 <script>
-(function(){
-    var esWebView=/wv |WebView/.test(navigator.userAgent)||window.location.protocol==='file:';
-    if('serviceWorker' in navigator&&!esWebView){
-        window.addEventListener('load',function(){
-            navigator.serviceWorker.register('./sw.js?pmg=6')
-                .then(r=>console.log('[SW]',r.scope))
-                .catch(e=>console.warn('[SW]',e.message));
-        });
+(function () {
+    var ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+    /** MainActivity quita "wv" del UA: el SW en Pages cacheaba app.js viejo y el login nuevo no corría. */
+    var esEntornoWebViewGestion =
+        typeof window.AndroidConfig !== 'undefined' ||
+        /GestorNova\//i.test(ua) ||
+        /Nexxo\//i.test(ua) ||
+        /wv |WebView/i.test(ua) ||
+        window.location.protocol === 'file:';
+    if (!('serviceWorker' in navigator)) return;
+    if (esEntornoWebViewGestion) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+            rs.forEach(function (r) {
+                r.unregister();
+            });
+        }).catch(function () {});
+        return;
     }
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js?pmg=7')
+            .then(function (r) {
+                console.log('[SW]', r.scope);
+            })
+            .catch(function (e) {
+                console.warn('[SW]', e && e.message ? e.message : e);
+            });
+    });
 })();
 </script>
 </body>

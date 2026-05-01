@@ -3794,12 +3794,6 @@ const gnLoginSubmitHandler = async e => {
 };
 if (lfLogin) {
     lfLogin.addEventListener('submit', gnLoginSubmitHandler);
-    document.getElementById('lb')?.addEventListener('click', e => {
-        try {
-            e.preventDefault();
-        } catch (_) {}
-        gnLoginSubmitHandler(e);
-    });
     for (const id of ['em', 'pw']) {
         document.getElementById(id)?.addEventListener('keydown', e => {
             if (e.key !== 'Enter') return;
@@ -3810,6 +3804,8 @@ if (lfLogin) {
         });
     }
 }
+/** Expuesto para el script inline de index.html (click en #lb antes de que el módulo termine). */
+window.__gnEjecutarLogin = gnLoginSubmitHandler;
 
 function toast(msg, tipo = 'info', durationMs) {
     let el = document.getElementById('toast');
