@@ -672,6 +672,9 @@ async function heartbeat() {
             document.getElementById('gw')?.classList.remove('active');
             document.getElementById('ls').classList.add('active');
             document.getElementById('ms').classList.remove('active');
+            try {
+                actualizarVisibilidadBotonTenantTecnicoLogin();
+            } catch (_) {}
         }, 3500);
         return;
     }
@@ -1527,8 +1530,12 @@ function initCommunityBroadcastFab() {
     };
 }
 
+/**
+ * GET `/api/clientes/mi-configuracion` (cualquier rol con JWT): el servidor fija `tenant_id` desde la BD
+ * (`getUserTenantId`), igual que el admin web tras un cambio de tenant; alinea sesión si Neon WebView leyó mal.
+ */
 async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
-    if (!esAdmin() || !getApiToken()) return;
+    if (!getApiToken() || !app?.u) return;
     try {
         await asegurarJwtApiRest();
         const tok = getApiToken();
@@ -1559,7 +1566,7 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
         if (jwtVsNeonMismatch) {
             try {
                 console.warn(
-                    '[mi-cfg] Neon WebView usuarios ≠ tenant API; se usa tenant de la API (admin web / getUserTenantId)'
+                    '[mi-cfg] Neon WebView usuarios ≠ tenant API; se usa tenant de la API (getUserTenantId / mismo criterio que admin web)'
                 );
             } catch (_) {}
             try {
@@ -2107,7 +2114,7 @@ async function loginApiJwt(email, password) {
             if (du && app?.u && String(app.u.email || '').toLowerCase() === String(du.email || '').toLowerCase()) {
                 if (du.tenant_id != null) {
                     const n = Number(du.tenant_id);
-                    if (Number.isFinite(n)) {
+                    if (Number.isFinite(n) && n > 0) {
                         app.u.tenant_id = n;
                         try {
                             delete app.u.tenantId;
@@ -2119,7 +2126,7 @@ async function loginApiJwt(email, password) {
                 }
             }
         } catch (_) {}
-        /** No pisar el tenant del login API con Neon en WebView: la API usa getUserTenantId (misma fuente que admin web); Neon/JDBC en Android suele leer mal. */
+        /** Devuelve `data` para que el login (p. ej. técnico Android) fusione `user.tenant_id` antes de `entrarConUsuario`. La API usa getUserTenantId (BD), misma fuente que el admin web. */
         return data;
     } catch (e) {
         if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
@@ -2127,6 +2134,76 @@ async function loginApiJwt(email, password) {
     } finally {
         clearTimeout(t);
     }
+}
+
+/** Login API sin mutar `app.u` (p. ej. modal «tenant técnico» en la pantalla de login Android). */
+async function authLoginApiRetornarTokenUser(email, password) {
+    const em = String(email || '').trim();
+    const pw = String(password || '');
+    if (!em || !pw) return null;
+    const ms = 28000;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), ms);
+    try {
+        const resp = await fetch(apiUrl('/api/auth/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: em, password: pw }),
+            signal: ctl.signal,
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (!data?.token || !data?.user) return null;
+        return { token: String(data.token), user: data.user };
+    } catch (_) {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function apiSetupTechnicianFetchTenants(apiToken, techKey) {
+    const k = String(techKey || '').trim();
+    const r = await fetch(apiUrl('/api/setup/technician/tenants'), {
+        headers: { Authorization: `Bearer ${apiToken}`, 'X-GestorNova-Technician-Key': k },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
+    }
+    return j;
+}
+
+async function apiSetupTechnicianPostAttach(apiToken, techKey, tenantId) {
+    const k = String(techKey || '').trim();
+    const tid = Number(tenantId);
+    const r = await fetch(apiUrl('/api/setup/technician/attach-tenant'), {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+            'X-GestorNova-Technician-Key': k,
+        },
+        body: JSON.stringify({ tenant_id: tid }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        throw new Error([j.error, j.detail, j.hint].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
+    }
+    return j;
+}
+
+function wizardPoblarSelectTenantsClientes(selEl, clientes) {
+    if (!selEl) return;
+    selEl.innerHTML = '';
+    (clientes || []).forEach((c) => {
+        const o = document.createElement('option');
+        o.value = String(c.id);
+        const nom = String(c.nombre || '').trim() || '—';
+        const tip = String(c.tipo || '').trim() || '—';
+        o.textContent = `${c.id} — ${nom} (${tip})`;
+        selEl.appendChild(o);
+    });
 }
 
 /** Login vía API sin guardar token ni tocar `app.u` (p. ej. reabrir asistente con credenciales de admin). */
@@ -2226,6 +2303,9 @@ function aplicarCapaOnboardingVsLoginInicial() {
             sincronizarTextosBotonesWizardOnboarding();
         }
     } catch (_) {}
+    try {
+        actualizarVisibilidadBotonTenantTecnicoLogin();
+    } catch (_) {}
 }
 
 function sincronizarTextosBotonesWizardOnboarding() {
@@ -2257,6 +2337,9 @@ function cerrarVistaWizardMostrarLogin() {
         try {
             aplicarMarcaVisualCompleta();
         } catch (_) {}
+    } catch (_) {}
+    try {
+        actualizarVisibilidadBotonTenantTecnicoLogin();
     } catch (_) {}
 }
 
@@ -3212,6 +3295,9 @@ actualizarBadgeOffline();
             aplicarMarcaVisualCompleta();
         }
     } catch (_) {}
+    try {
+        actualizarVisibilidadBotonTenantTecnicoLogin();
+    } catch (_) {}
 })();
 (function bindWizardOnboardingUi() {
     document.getElementById('wizard-btn-primary')?.addEventListener('click', (e) => {
@@ -3538,6 +3624,9 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try {
+            actualizarVisibilidadBotonTenantTecnicoLogin();
+        } catch (_) {}
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
         try { initWebCoordsConverterBar(); } catch (_) {}
@@ -3737,7 +3826,13 @@ const gnLoginSubmitHandler = async e => {
                 must_change_password: !!usuario.must_change_password
             };
             guardarUsuarioOffline(u, pw);
-            await loginApiJwt(em, pw);
+            const loginJwtPayload = await loginApiJwt(em, pw);
+            try {
+                const apiTidLogin = Number(loginJwtPayload?.user?.tenant_id);
+                if (Number.isFinite(apiTidLogin) && apiTidLogin > 0) {
+                    u.tenant_id = apiTidLogin;
+                }
+            } catch (_) {}
             if (!getApiToken()) {
                 toast('La API (JWT) no respondió: el setup SaaS y datos del tenant pueden no cargar hasta que revises API_BASE_URL o la red.', 'warning');
             }
@@ -12818,6 +12913,9 @@ function ejecutarCerrarSesion() {
     document.getElementById('ls').classList.add('active');
     document.getElementById('ms').classList.remove('active');
     try {
+        actualizarVisibilidadBotonTenantTecnicoLogin();
+    } catch (_) {}
+    try {
         localStorage.removeItem('gestornova_saved_login');
         const emEl = document.getElementById('em');
         const pwEl = document.getElementById('pw');
@@ -13658,6 +13756,9 @@ try {
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try {
+            actualizarVisibilidadBotonTenantTecnicoLogin();
+        } catch (_) {}
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
         try { initWebCoordsConverterBar(); } catch (_) {}
@@ -13790,7 +13891,7 @@ async function cargarConfigEmpresa() {
         try {
             persistTenantBrandingCache({ subtitulo: cfg.subtitulo });
         } catch (_) {}
-        if (esAdmin()) {
+        if (getApiToken() && app?.u) {
             try {
                 await fetchMiConfiguracionYAplicarEnEmpresaCfg();
             } catch (_) {}
@@ -14863,25 +14964,8 @@ async function wizardTecnicoCargarTenantsNeon() {
     }
     _wizardTecnicoSetMsg('Cargando…', false);
     try {
-        const r = await fetch(apiUrl('/api/setup/technician/tenants'), {
-            headers: { Authorization: `Bearer ${token}`, 'X-GestorNova-Technician-Key': k },
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-            throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
-        }
-        const sel = document.getElementById('cfgi-tech-tenant-sel');
-        if (sel) {
-            sel.innerHTML = '';
-            (j.clientes || []).forEach((c) => {
-                const o = document.createElement('option');
-                o.value = String(c.id);
-                const nom = String(c.nombre || '').trim() || '—';
-                const tip = String(c.tipo || '').trim() || '—';
-                o.textContent = `${c.id} — ${nom} (${tip})`;
-                sel.appendChild(o);
-            });
-        }
+        const j = await apiSetupTechnicianFetchTenants(token, k);
+        wizardPoblarSelectTenantsClientes(document.getElementById('cfgi-tech-tenant-sel'), j.clientes);
         _wizardTecnicoSetMsg(`Listo: ${(j.clientes || []).length} fila(s) en clientes. Elegí tenant y tocá Vincular.`, false);
     } catch (e) {
         _wizardTecnicoSetMsg(e.message || 'Error', true);
@@ -14907,19 +14991,7 @@ async function wizardTecnicoVincularTenantSeleccionado() {
     }
     _wizardTecnicoSetMsg('Vinculando…', false);
     try {
-        const r = await fetch(apiUrl('/api/setup/technician/attach-tenant'), {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'X-GestorNova-Technician-Key': k,
-            },
-            body: JSON.stringify({ tenant_id: tid }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-            throw new Error([j.error, j.detail, j.hint].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
-        }
+        const j = await apiSetupTechnicianPostAttach(token, k, tid);
         if (j.token) {
             app.apiToken = String(j.token);
             try {
@@ -14954,6 +15026,162 @@ async function wizardTecnicoVincularTenantSeleccionado() {
         _wizardTecnicoSetMsg(e.message || 'Error', true);
     }
 }
+
+/** JWT temporal del modal «tenant técnico» en login Android; se limpia al cerrar o tras vincular. */
+let __mttAndroidStagingToken = '';
+
+function _mttAndroidSetMsg(texto, esError) {
+    const m = document.getElementById('mtt-android-msg');
+    if (!m) return;
+    if (!texto) {
+        m.style.display = 'none';
+        m.textContent = '';
+        return;
+    }
+    m.style.display = 'block';
+    m.style.color = esError ? 'var(--re)' : 'var(--tm)';
+    m.textContent = texto;
+}
+
+function esEntornoAndroidGestorNovaLogin() {
+    try {
+        return (
+            typeof window.AndroidConfig !== 'undefined' ||
+            (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa())
+        );
+    } catch (_) {
+        return false;
+    }
+}
+
+function actualizarVisibilidadBotonTenantTecnicoLogin() {
+    const b = document.getElementById('btn-login-tenant-tecnico');
+    if (!b) return;
+    const show =
+        esEntornoAndroidGestorNovaLogin() && !!document.getElementById('ls')?.classList?.contains('active');
+    b.style.display = show ? 'flex' : 'none';
+}
+
+function abrirModalTenantTecnicoAndroid() {
+    const modal = document.getElementById('modal-tenant-tecnico-android');
+    if (!modal) return;
+    __mttAndroidStagingToken = '';
+    _mttAndroidSetMsg('');
+    const sel = document.getElementById('mtt-android-tenant-sel');
+    if (sel) sel.innerHTML = '';
+    modal.classList.add('active');
+}
+
+function cerrarModalTenantTecnicoAndroid() {
+    const modal = document.getElementById('modal-tenant-tecnico-android');
+    if (modal) modal.classList.remove('active');
+    __mttAndroidStagingToken = '';
+    _mttAndroidSetMsg('');
+}
+
+async function mttAndroidListarTenants() {
+    const k = (document.getElementById('mtt-android-tech-key')?.value || '').trim();
+    if (!k) {
+        _mttAndroidSetMsg('Ingresá la clave de técnico.', true);
+        return;
+    }
+    const em = (document.getElementById('em')?.value || '').trim();
+    const pw = document.getElementById('pw')?.value || '';
+    if (!em || !pw) {
+        _mttAndroidSetMsg('Completá email y contraseña de administrador en la pantalla de login.', true);
+        return;
+    }
+    _mttAndroidSetMsg('Validando administrador…', false);
+    try {
+        const auth = await authLoginApiRetornarTokenUser(em, pw);
+        if (!auth) {
+            _mttAndroidSetMsg('Email o contraseña incorrectos, o la API no responde.', true);
+            return;
+        }
+        const rol = normalizarRolStr(auth.user?.rol || '');
+        if (rol !== 'admin') {
+            _mttAndroidSetMsg('Solo un usuario administrador puede vincular tenant.', true);
+            return;
+        }
+        __mttAndroidStagingToken = auth.token;
+        _mttAndroidSetMsg('Listando clientes…', false);
+        const j = await apiSetupTechnicianFetchTenants(auth.token, k);
+        wizardPoblarSelectTenantsClientes(document.getElementById('mtt-android-tenant-sel'), j.clientes);
+        _mttAndroidSetMsg(
+            `Listo: ${(j.clientes || []).length} fila(s). Elegí tenant y tocá Vincular; después Ingresar o recargá.`,
+            false
+        );
+    } catch (e) {
+        _mttAndroidSetMsg(e.message || 'Error', true);
+        __mttAndroidStagingToken = '';
+    }
+}
+
+async function mttAndroidVincularTenant() {
+    const k = (document.getElementById('mtt-android-tech-key')?.value || '').trim();
+    const sel = document.getElementById('mtt-android-tenant-sel');
+    const tid = Number(sel?.value);
+    if (!k) {
+        _mttAndroidSetMsg('Ingresá la clave de técnico.', true);
+        return;
+    }
+    if (!Number.isFinite(tid) || tid < 1) {
+        _mttAndroidSetMsg('Primero listá tenants y elegí un id.', true);
+        return;
+    }
+    const tok = (__mttAndroidStagingToken || '').trim() || getApiToken();
+    if (!tok) {
+        _mttAndroidSetMsg('Sin sesión: usá «Listar tenants» primero.', true);
+        return;
+    }
+    _mttAndroidSetMsg('Vinculando…', false);
+    try {
+        const j = await apiSetupTechnicianPostAttach(tok, k, tid);
+        if (j.token) {
+            try {
+                app.apiToken = String(j.token);
+                localStorage.setItem('pmg_api_token', app.apiToken);
+            } catch (_) {}
+            if (app?.u) {
+                app.u.tenant_id = tid;
+                try {
+                    delete app.u.tenantId;
+                } catch (_) {}
+                try {
+                    localStorage.setItem('pmg', JSON.stringify(app.u));
+                } catch (_) {}
+            }
+            try {
+                limpiarLocalStorageContadoresPedido();
+            } catch (_) {}
+            try {
+                invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+            try {
+                if (window.AndroidSession && typeof window.AndroidSession.setTenantId === 'function') {
+                    window.AndroidSession.setTenantId(tid);
+                }
+            } catch (_) {}
+        }
+        _mttAndroidSetMsg(j.message || 'Vinculado.', false);
+        toast(j.message || 'Tenant vinculado. Recargando…', 'success');
+        __mttAndroidStagingToken = '';
+        cerrarModalTenantTecnicoAndroid();
+        setTimeout(() => {
+            try {
+                window.location.reload();
+            } catch (_) {}
+        }, 400);
+    } catch (e) {
+        _mttAndroidSetMsg(e.message || 'Error', true);
+    }
+}
+
+window.abrirModalTenantTecnicoAndroid = abrirModalTenantTecnicoAndroid;
+window.cerrarModalTenantTecnicoAndroid = cerrarModalTenantTecnicoAndroid;
+window.mttAndroidListarTenants = mttAndroidListarTenants;
+window.mttAndroidVincularTenant = mttAndroidVincularTenant;
+window.actualizarVisibilidadBotonTenantTecnicoLogin = actualizarVisibilidadBotonTenantTecnicoLogin;
 
 function mostrarModalConfigInicial() {
     const modal = document.getElementById('modal-config-inicial');
