@@ -50,7 +50,7 @@
     <h1 id="app-titulo">GestorNova</h1>
     <p class="sub" id="app-subtitulo">Sistema de gestión de pedidos y reclamos</p>
     <div id="dbs" class="dbs c"><i class="fas fa-circle-notch fa-spin"></i> Verificando red...</div>
-    <!-- No usar onsubmit inline con event.* en WebView (puede fallar y cortar el flujo). El script antes de app.js hace preventDefault en capture. -->
+    <!-- Ingresar es type=button + click en app.js (evita envío GET nativo del form en WebView). Script temprano: preventDefault capture por si algo dispara submit. -->
     <form id="lf" autocomplete="off">
       <!-- Señuelo: muchos navegadores autocompletan estos en lugar de los campos visibles -->
       <div class="gn-login-decoy" aria-hidden="true">
@@ -59,7 +59,7 @@
       </div>
       <div class="ig"><i class="fas fa-envelope"></i><input type="text" id="em" name="gn_uid" placeholder="Email (usuario)" required autocomplete="off" autocapitalize="none"></div>
       <div class="ig"><i class="fas fa-lock"></i><input type="password" id="pw" name="gn_secret" placeholder="Contraseña" required autocomplete="new-password"></div>
-      <button type="submit" id="lb" class="bp" disabled><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+      <button type="button" id="lb" class="bp" disabled><i class="fas fa-sign-in-alt"></i> Ingresar</button>
     </form>
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem;display:flex;flex-direction:column;align-items:center;gap:.35rem;max-width:24rem;margin-left:auto;margin-right:auto">
@@ -1312,7 +1312,7 @@
     var esWebView=/wv |WebView/.test(navigator.userAgent)||window.location.protocol==='file:';
     if('serviceWorker' in navigator&&!esWebView){
         window.addEventListener('load',function(){
-            navigator.serviceWorker.register('./sw.js?pmg=5')
+            navigator.serviceWorker.register('./sw.js?pmg=6')
                 .then(r=>console.log('[SW]',r.scope))
                 .catch(e=>console.warn('[SW]',e.message));
         });

@@ -3519,8 +3519,14 @@ function initWebCoordsConverterBar() {
     applyPlaceholders();
 }
 
-document.getElementById('lf')?.addEventListener('submit', async e => {
-    e.preventDefault();
+const lfLogin = document.getElementById('lf');
+const gnLoginSubmitHandler = async e => {
+    try {
+        e.preventDefault();
+    } catch (_) {}
+    try {
+        console.log('[GN] login');
+    } catch (_) {}
     const emEl = document.getElementById('em');
     const pwEl = document.getElementById('pw');
     const le = document.getElementById('le');
@@ -3785,7 +3791,25 @@ document.getElementById('lf')?.addEventListener('submit', async e => {
         lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
         lb.disabled = false;
     }
-});
+};
+if (lfLogin) {
+    lfLogin.addEventListener('submit', gnLoginSubmitHandler);
+    document.getElementById('lb')?.addEventListener('click', e => {
+        try {
+            e.preventDefault();
+        } catch (_) {}
+        gnLoginSubmitHandler(e);
+    });
+    for (const id of ['em', 'pw']) {
+        document.getElementById(id)?.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            try {
+                e.preventDefault();
+            } catch (_) {}
+            gnLoginSubmitHandler(e);
+        });
+    }
+}
 
 function toast(msg, tipo = 'info', durationMs) {
     let el = document.getElementById('toast');
