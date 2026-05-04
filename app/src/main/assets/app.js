@@ -19,6 +19,17 @@ import {
 import { preferTenantIdNeonAutoritativo } from './modules/tenantSync.js';
 import { resolverTenantOperativoSesion } from './modules/tenantSessionPolicy.js';
 import { resolveUsuariosTenantColumnName, resetUsuariosTenantColumnCache } from './modules/tenantNeonUsuario.js';
+import {
+    stripGestornovaDicePrefix,
+    gnDice,
+    esc,
+    yieldAnimationFrame,
+    decimalToDmsLite,
+    dmsToDecimalLite,
+    parsearDmsLatLonFlexible,
+    parseDecimalODmsCoord,
+    validarWgs84Import
+} from './modules/utils.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -55,21 +66,7 @@ import {
   proto.__gestornovaWillReadPatch = true;
 })();
 
-/** Quita prefijos históricos «GestorNova Dice:» en toasts / alert / confirm (mensaje limpio). */
-function stripGestornovaDicePrefix(s) {
-    return String(s ?? '')
-        .replace(/^\s*GestorNova\s+Dice\s*:\s*/i, '')
-        .replace(/^\s*Gestornova\s+dice\s*:\s*/i, '')
-        .trim();
-}
-function gnDice(msg) {
-    return stripGestornovaDicePrefix(String(msg ?? ''));
-}
-
-
-
-
-
+// stripGestornovaDicePrefix, gnDice → modules/utils.js
 
 
 /** Una sola línea para el formulario de pedido: WGS84 o planas según preferencia y empresa_config. */
@@ -221,10 +218,7 @@ function setModoOffline(offline) {
     }
 }
 
-
-function yieldAnimationFrame() {
-    return new Promise(r => requestAnimationFrame(() => r()));
-}
+// yieldAnimationFrame → modules/utils.js
 
 let _syncWorkerPrepareSeq = 0;
 function prepareOfflineQueueInWorker(rawQueue) {
@@ -394,12 +388,7 @@ try {
     }
 } catch(_) {}
 
-function esc(v) {
-    if (v === null || v === undefined) return 'NULL';
-    if (typeof v === 'number') return isFinite(v) ? String(v) : 'NULL';
-    if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
-    return "'" + String(v).replace(/'/g, "''") + "'";
-}
+// esc → modules/utils.js
 
 /** Registro en consola con contexto (diagnóstico sin mostrar stack al usuario). */
 function logErrorWeb(tag, err, extra) {
@@ -3477,33 +3466,7 @@ function resetPreferenciasPanelesInicioCerrados() {
     } catch (_) {}
 }
 
-function decimalToDmsLite(decimal, isLat) {
-    const n = Number(decimal);
-    if (!Number.isFinite(n)) return '—';
-    const abs = Math.abs(n);
-    const deg = Math.floor(abs);
-    const minFloat = (abs - deg) * 60;
-    const min = Math.floor(minFloat);
-    const sec = ((minFloat - min) * 60).toFixed(1);
-    const hemi = isLat ? (n >= 0 ? 'N' : 'S') : (n >= 0 ? 'E' : 'O');
-    return `${deg}° ${min}' ${sec}" ${hemi}`;
-}
-
-function dmsToDecimalLite(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return Number.NaN;
-    if (!/[°º'′´"″]/.test(s)) return parseFloat(s.replace(',', '.'));
-    const m = s.match(/^\s*(\d+)[°º]\s*(\d+)['′´]\s*([\d.,]+)\s*["″]?\s*([NnSsEeOoWw])\s*$/);
-    if (!m) return Number.NaN;
-    const deg = parseInt(m[1], 10);
-    const min = parseInt(m[2], 10);
-    const sec = parseFloat(String(m[3]).replace(',', '.'));
-    const hemi = m[4].toUpperCase();
-    if (!Number.isFinite(deg) || !Number.isFinite(min) || !Number.isFinite(sec)) return Number.NaN;
-    let dec = deg + min / 60 + sec / 3600;
-    if (hemi === 'S' || hemi === 'W' || hemi === 'O') dec = -dec;
-    return dec;
-}
+// decimalToDmsLite, dmsToDecimalLite → modules/utils.js
 
 function initWebCoordsConverterBar() {
     const wrap = document.getElementById('web-coords-converter');
@@ -13698,8 +13661,6 @@ try {
             } catch (_) {}
         } else {
         app.u = JSON.parse(s);
-        /** Tras restaurar desde `pmg`, forzar una pasada de `sincronizarTenantOperativoDesdeMiConfiguracionApi` aunque el id coincida (admin pudo cambiar contexto en servidor). */
-        app.u._tenantRecienRestaurado = true;
         app.u.rol = normalizarRolStr(app.u.rol);
         try {
             localStorage.setItem('pmg', JSON.stringify(app.u));
@@ -14095,12 +14056,6 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     const silent = !!o.silent;
     try {
         if (!app?.u || modoOffline) return false;
-        const forzar = !!app.u._tenantRecienRestaurado;
-        if (forzar) {
-            try {
-                delete app.u._tenantRecienRestaurado;
-            } catch (_) {}
-        }
         const tid = await resolverTenantOperativoSesion({
             modoOffline,
             neonOk: NEON_OK,
@@ -14115,8 +14070,7 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         });
         if (!Number.isFinite(tid) || tid < 1) return false;
         const cur = Number(tenantIdActual());
-        if (!Number.isFinite(cur)) return false;
-        if (cur === tid && !forzar) return false;
+        if (!Number.isFinite(cur) || cur === tid) return false;
         app.u.tenant_id = tid;
         try {
             delete app.u.tenantId;
@@ -19079,41 +19033,7 @@ function valorSociosPorEncabezados(row, mapNormAOriginal, ...clavesCanon) {
     return null;
 }
 
-/**
- * Decimal con coma/punto o texto en grados/minutos/segundos (p. ej. 34°30'15,2"S).
- * Si hay símbolos ° ′ ″ no se usa parseFloat directo sobre todo el string.
- */
-function parseDecimalODmsCoord(val) {
-    if (val == null || val === '') return null;
-    if (typeof val === 'number' && Number.isFinite(val)) return val;
-    const raw = String(val).trim();
-    if (!raw) return null;
-    if (!/[°'′″]/.test(raw)) {
-        const n = parseFloat(raw.replace(/\s/g, '').replace(',', '.'));
-        return Number.isFinite(n) ? n : null;
-    }
-    return parsearDmsLatLonFlexible(raw);
-}
-
-/** DMS compacto tipo Excel / Argentina: 34°30'15,2"S o S 34°30'15" */
-function parsearDmsLatLonFlexible(str) {
-    const t = String(str).replace(/\u00a0/g, ' ').trim();
-    const m = t.match(
-        /^\s*(?:([NnSsEeWw])\s+)?(-?\d+(?:[.,]\d+)?)\s*°\s*(\d+)\s*['′]\s*(\d+(?:[.,]\d+)?)?\s*(?:"|″|'')?\s*([NnSsEeWw])?\s*$/i
-    );
-    if (!m) return null;
-    const hemiLead = (m[1] || '').toUpperCase();
-    const hemiTail = (m[5] || '').toUpperCase();
-    const hemi = hemiLead || hemiTail;
-    const degAbs = Math.abs(parseFloat(String(m[2]).replace(',', '.')));
-    const min = parseInt(m[3], 10) || 0;
-    const sec = m[4] ? parseFloat(String(m[4]).replace(',', '.')) : 0;
-    if (!Number.isFinite(degAbs) || min < 0 || min >= 60 || sec < 0 || sec >= 60) return null;
-    let dec = degAbs + min / 60 + sec / 3600;
-    if (hemi === 'S' || hemi === 'W') dec = -dec;
-    else if (String(m[2]).trim().startsWith('-')) dec = -dec;
-    return dec;
-}
+// parseDecimalODmsCoord, parsearDmsLatLonFlexible → modules/utils.js
 
 /** Lee número desde celda Excel (raw o texto): latitud, longitud, este, norte, etc. */
 function leerCoordExcelSocios(row, mapNormAOriginal, ...clavesCanon) {
@@ -19149,15 +19069,7 @@ function leerCoordExcelSocios(row, mapNormAOriginal, ...clavesCanon) {
     return null;
 }
 
-function validarWgs84Import(lat, lng) {
-    if (lat == null || lng == null) return { la: null, lo: null };
-    const a = Number(lat);
-    const b = Number(lng);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return { la: null, lo: null };
-    if (Math.abs(a) > 90 || Math.abs(b) > 180) return { la: null, lo: null };
-    if (Math.abs(a) < 1e-9 && Math.abs(b) < 1e-9) return { la: null, lo: null };
-    return { la: a, lo: b };
-}
+// validarWgs84Import → modules/utils.js
 
 /** Medidor/NIS como texto (evita pérdida de formato; números Excel → String). */
 function valorIdentificadorTextoSocios(row, mapNormAOriginal, ...clavesCanon) {
