@@ -2076,6 +2076,7 @@ function mostrarFormatoExcelSocios() {
 export {
     cargarListaSociosAdmin,
     importarExcelSocios,
+    mostrarFormatoExcelSocios,
     vaciarCoordenadasSociosCatalogo,
     cerrarModalFormatoExcelSocios,
     descargarPlantillaCsvSociosRubro
