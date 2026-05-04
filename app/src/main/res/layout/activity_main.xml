@@ -1,21 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<!--
+  WebView debajo + splash nativo encima: la carga arranca al instante (precarga visual)
+  y el splash se oculta en onPageFinished del WebViewClient (sin timer fijo).
+-->
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:fitsSystemWindows="true"
-    android:background="@android:color/white">
+    android:background="@color/splash_background">
 
-    <!--
-        fitsSystemWindows="true" hace que Android aplique
-        automáticamente el padding necesario para respetar
-        la barra de estado (top) y la de navegación (bottom),
-        sin código Java adicional.
-    -->
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:visibility="visible" />
 
-</LinearLayout>
+    <LinearLayout
+        android:id="@+id/splash_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@color/splash_background"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ImageView
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher"
+            android:importantForAccessibility="yes" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/splash_loading"
+            android:textColor="#64748B"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+</FrameLayout>

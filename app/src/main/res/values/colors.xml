@@ -2,4 +2,6 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- Fondo splash nativo (WebView cargando debajo) -->
+    <color name="splash_background">#FFF1F5F9</color>
 </resources>

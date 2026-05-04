@@ -43,6 +43,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
@@ -90,6 +91,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_UBI_JSON = "cached_json";
 
     private WebView webView;
+    /** Capa nativa encima del WebView hasta el primer {@code onPageFinished} del documento; sin temporizador fijo. */
+    private LinearLayout splashOverlay;
+    private boolean nativeSplashDismissed;
 
     private ValueCallback<Uri[]> filePathCallback;
     private Uri cameraImageUri;
@@ -123,6 +127,9 @@ public class MainActivity extends AppCompatActivity {
 
         crearCanalNotificacionesPedidos();
 
+        splashOverlay = findViewById(R.id.splash_overlay);
+        nativeSplashDismissed = false;
+
         webView = findViewById(R.id.webview);
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         // Render por software en emulador ralentiza mucho el mapa; usar composición por defecto (GPU).
@@ -155,6 +162,29 @@ public class MainActivity extends AppCompatActivity {
         ch.setDescription("Cuando un administrador te envía un pedido al mapa");
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null) nm.createNotificationChannel(ch);
+    }
+
+    /**
+     * Oculta el splash nativo la primera vez que el WebView notifica carga completa del documento.
+     * Sin temporizador fijo; ignora {@code onPageFinished} posteriores (p. ej. navegación en SPA).
+     */
+    private void dismissNativeSplashOnce() {
+        if (nativeSplashDismissed) {
+            return;
+        }
+        nativeSplashDismissed = true;
+        if (splashOverlay == null) {
+            return;
+        }
+        splashOverlay.animate()
+                .alpha(0f)
+                .setDuration(180)
+                .withEndAction(() -> {
+                    splashOverlay.setVisibility(View.GONE);
+                    splashOverlay.setAlpha(1f);
+                    splashOverlay.setClickable(false);
+                    splashOverlay.setFocusable(false);
+                });
     }
 
     private static boolean isProbablyEmulator() {
@@ -322,6 +352,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                dismissNativeSplashOnce();
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
             }
