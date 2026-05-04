@@ -13698,6 +13698,8 @@ try {
             } catch (_) {}
         } else {
         app.u = JSON.parse(s);
+        /** Tras restaurar desde `pmg`, forzar una pasada de `sincronizarTenantOperativoDesdeMiConfiguracionApi` aunque el id coincida (admin pudo cambiar contexto en servidor). */
+        app.u._tenantRecienRestaurado = true;
         app.u.rol = normalizarRolStr(app.u.rol);
         try {
             localStorage.setItem('pmg', JSON.stringify(app.u));
@@ -14093,6 +14095,12 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
     const silent = !!o.silent;
     try {
         if (!app?.u || modoOffline) return false;
+        const forzar = !!app.u._tenantRecienRestaurado;
+        if (forzar) {
+            try {
+                delete app.u._tenantRecienRestaurado;
+            } catch (_) {}
+        }
         const tid = await resolverTenantOperativoSesion({
             modoOffline,
             neonOk: NEON_OK,
@@ -14107,7 +14115,8 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         });
         if (!Number.isFinite(tid) || tid < 1) return false;
         const cur = Number(tenantIdActual());
-        if (!Number.isFinite(cur) || cur === tid) return false;
+        if (!Number.isFinite(cur)) return false;
+        if (cur === tid && !forzar) return false;
         app.u.tenant_id = tid;
         try {
             delete app.u.tenantId;
