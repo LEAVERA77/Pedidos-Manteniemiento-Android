@@ -3376,6 +3376,9 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_opinion_cliente TIMESTAMPTZ`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente_estrellas SMALLINT`);
+                await sqlSimple(
+                    `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_banner_admin_descartado BOOLEAN NOT NULL DEFAULT FALSE`
+                );
                 try {
                     await sqlSimple(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS barrio TEXT`);
                 } catch (_) {}
@@ -11806,7 +11809,7 @@ async function detalle(p, opts = {}) {
         if (esAdmin() && p?.id != null) {
             const ob = document.getElementById('admin-banner-opinion-cliente');
             if (ob?.dataset?.visible === '1' && String(ob.dataset.pedidoId) === pidKey) {
-                ocultarBannerOpinionCliente();
+                void ocultarBannerOpinionCliente();
             }
         }
     } catch (_) {}
@@ -14242,13 +14245,30 @@ function _commitAdminBannerOpinionWatermark() {
     }
 }
 
-function ocultarBannerOpinionCliente() {
+/**
+ * @param {{ persistDismiss?: boolean }} [opts] persistDismiss=false: solo ocultar UI (p. ej. al pasar a técnico), sin marcar descarte permanente.
+ */
+async function ocultarBannerOpinionCliente(opts) {
+    const persist = opts?.persistDismiss !== false;
     const boxPre = document.getElementById('admin-banner-opinion-cliente');
-    if (boxPre?.dataset?.pedidoId) {
+    if (persist && boxPre?.dataset?.pedidoId) {
         _sessionDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
         _persistDismissOpinionBannerPedido(boxPre.dataset.pedidoId);
+        try {
+            if (NEON_OK && _sql && esAdmin()) {
+                const pidNum = parseInt(boxPre.dataset.pedidoId, 10);
+                if (Number.isFinite(pidNum)) {
+                    const tsql = await pedidosFiltroTenantSql();
+                    await sqlSimple(
+                        `UPDATE pedidos SET opinion_banner_admin_descartado = TRUE WHERE id = ${esc(pidNum)}${tsql}`
+                    );
+                }
+            }
+        } catch (e) {
+            console.warn('[opinion-banner-dismiss-db]', e && e.message ? e.message : e);
+        }
     }
-    _commitAdminBannerOpinionWatermark();
+    if (persist) _commitAdminBannerOpinionWatermark();
     const box = document.getElementById('admin-banner-opinion-cliente');
     if (box) {
         box.style.display = 'none';
@@ -14333,6 +14353,7 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
+                 AND COALESCE(opinion_banner_admin_descartado, FALSE) = FALSE
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -14345,6 +14366,7 @@ async function pollBannerOpinionCliente() {
                  WHERE fecha_opinion_cliente IS NOT NULL
                  AND opinion_cliente_estrellas IS NOT NULL
                  AND opinion_cliente_estrellas < 3
+                 AND COALESCE(opinion_banner_admin_descartado, FALSE) = FALSE
                  ${tsql}
                  ORDER BY fecha_opinion_cliente DESC LIMIT 1`
             );
@@ -14460,7 +14482,7 @@ function detenerPollBannerReclamoCliente() {
         _pollBannerAdminInterval = null;
     }
     ocultarBannerReclamoCliente();
-    ocultarBannerOpinionCliente();
+    void ocultarBannerOpinionCliente({ persistDismiss: false });
     _adminBannerNuevoIdsMostrados.clear();
 }
 
@@ -14505,7 +14527,7 @@ async function adminBannerClickVerDetalle() {
 async function adminBannerOpinionClickVerDetalle() {
     const box = document.getElementById('admin-banner-opinion-cliente');
     const pid = box?.dataset?.pedidoId;
-    ocultarBannerOpinionCliente();
+    await ocultarBannerOpinionCliente();
     if (!pid) return;
     let p = app.p.find((x) => String(x.id) === String(pid));
     if (!p && _sql && NEON_OK) {
