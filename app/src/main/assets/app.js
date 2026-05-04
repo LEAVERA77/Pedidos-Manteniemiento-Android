@@ -30,6 +30,13 @@ import {
     parseDecimalODmsCoord,
     validarWgs84Import
 } from './modules/utils.js';
+import {
+    logErrorWeb,
+    mensajeErrorUsuario,
+    toastError,
+    escHtmlPrint,
+    toast
+} from './modules/ui-utils.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -389,67 +396,7 @@ try {
 } catch(_) {}
 
 // esc → modules/utils.js
-
-/** Registro en consola con contexto (diagnóstico sin mostrar stack al usuario). */
-function logErrorWeb(tag, err, extra) {
-    const msg = err != null && err !== '' ? err.message || String(err) : String(err);
-    const det = extra != null ? extra : '';
-    if (err && err.stack) console.error(`[GestorNova:${tag}]`, msg, det, err.stack);
-    else console.error(`[GestorNova:${tag}]`, msg, det);
-}
-
-/**
- * Convierte errores de red, Neon, HTTP o SQL en texto entendible para el operador.
- * No incluye stacks ni detalles técnicos largos.
- */
-function mensajeErrorUsuario(err) {
-    if (err == null) return 'Ocurrió un error. Probá de nuevo.';
-    const raw = String(err.message != null ? err.message : err).trim() || 'Error desconocido';
-    const m = raw.toLowerCase();
-    if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed') || m.includes('network request failed')) {
-        return 'No hay conexión o el servidor no respondió. Comprobá internet y probá de nuevo.';
-    }
-    if (m.includes('aborted') || m.includes('abort') || m.includes('timeout')) {
-        return 'La operación tardó demasiado. Intentá de nuevo.';
-    }
-    if (m.includes('neon no inicializado') || (m.includes('sin conexión') && m.includes('offline'))) {
-        return 'Sin conexión a la base de datos. Revisá la red o la configuración.';
-    }
-    if (m.includes('401') || m.includes('unauthorized')) return 'Sesión vencida o sin permiso. Volvé a iniciar sesión.';
-    if (m.includes('403') || m.includes('forbidden')) return 'No tenés permiso para esta acción.';
-    if (m.includes('502') || m.includes('503') || m.includes('504') || m.includes('bad gateway')) {
-        return 'El servidor está sobrecargado o en mantenimiento. Probá en unos minutos.';
-    }
-    if (m.includes('500') && m.includes('internal')) return 'Error en el servidor. Si persiste, avisá al administrador.';
-    if (m.includes('permission denied') || m.includes('must be owner')) {
-        return 'No se pudo acceder a ese dato con tu usuario.';
-    }
-    if (m.includes('unique') || m.includes('duplicate key')) {
-        return 'Ese dato ya existe (no se puede duplicar).';
-    }
-    if (m.includes('violates foreign key') || m.includes('foreign key')) {
-        return 'No se puede borrar o modificar: está vinculado a otros registros.';
-    }
-    if (raw.length <= 100 && !/^at\s/i.test(raw) && !m.startsWith('error:') && /[áéíóúñüa-z]/i.test(raw)) {
-        return raw;
-    }
-    return 'Algo salió mal. Si se repite, anotá la hora y contactá al administrador.';
-}
-
-/**
- * Muestra toast de error amigable y deja traza en consola con etiqueta de contexto.
- * @param {string} tag - identificador corto (ej. "guardar-pedido")
- * @param {*} err - Error o valor lanzado
- * @param {string} [prefijo] - texto opcional antes del mensaje amigable (ej. "No se pudo guardar.")
- */
-function toastError(tag, err, prefijo) {
-    logErrorWeb(tag, err);
-    const cuerpo = mensajeErrorUsuario(err);
-    let msg = prefijo ? `${String(prefijo).trim()} ${cuerpo}` : cuerpo;
-    msg = msg.replace(/\s+/g, ' ').trim();
-    if (msg.length > 300) msg = msg.slice(0, 297) + '…';
-    toast(msg, 'error');
-}
+// logErrorWeb, mensajeErrorUsuario, toastError, toast → modules/ui-utils.js
 
 async function ejecutarSQLConReintentos(query, params = [], maxIntentos = 3) {
     
@@ -2321,10 +2268,12 @@ function cerrarVistaWizardMostrarLogin() {
         ls?.classList.add('active');
         sincronizarTextosBotonesWizardOnboarding();
         try {
-            hydrateBrandingForPublicScreen();
-        } catch (_) {}
-        try {
-            aplicarMarcaVisualCompleta();
+            if (sesionCompletaParaMarcaLogin()) {
+                hydrateBrandingForPublicScreen();
+                aplicarMarcaVisualCompleta();
+            } else {
+                pintarCabeceraLoginWizardGenerica();
+            }
         } catch (_) {}
     } catch (_) {}
     try {
@@ -2673,6 +2622,44 @@ function loadTenantBrandingCache() {
         return o && typeof o === 'object' ? o : null;
     } catch (_) {
         return null;
+    }
+}
+
+/** Solo con sesión API + usuario en memoria se aplica marca de tenant en la UI pública. */
+function sesionCompletaParaMarcaLogin() {
+    try {
+        return !!(app?.u && getApiToken());
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * Login / wizard sin autenticación: título y logo genéricos (sin nombre de tenant anterior en pantalla).
+ * Solo DOM y document.title; no reemplaza el flujo de login ni escribe localStorage.
+ */
+function pintarCabeceraLoginWizardGenerica() {
+    const titulo = BRAND_DEFAULT_NAME;
+    const sub = GN_SUBTITULO_FIJO;
+    const logo = defaultGestorNovaLogoUrl();
+    try {
+        document.title = titulo + ' — Pedidos';
+    } catch (_) {}
+    document.querySelectorAll('#app-titulo, #gw .gn-wizard-card h1').forEach((h1) => {
+        if (h1) h1.textContent = titulo;
+    });
+    document.querySelectorAll('#app-subtitulo, #gw .gn-wizard-card .sub').forEach((subEl) => {
+        if (subEl) subEl.textContent = sub;
+    });
+    const ll = document.querySelector('#ls .ll');
+    if (ll) {
+        const u = String(logo).replace(/"/g, '&quot;').replace(/</g, '');
+        ll.classList.add('ll--logo');
+        ll.innerHTML = `<img src="${u}" alt="" class="gn-header-logo-img" width="62" height="62">`;
+    }
+    const gwImg = document.querySelector('#gw .gw-brand img');
+    if (gwImg) {
+        gwImg.src = logo;
     }
 }
 
@@ -3280,8 +3267,12 @@ actualizarBadgeOffline();
 (function pintarMarcaLoginAlCargarModulo() {
     try {
         if (document.getElementById('ls')?.classList.contains('active')) {
-            hydrateBrandingForPublicScreen();
-            aplicarMarcaVisualCompleta();
+            if (sesionCompletaParaMarcaLogin()) {
+                hydrateBrandingForPublicScreen();
+                aplicarMarcaVisualCompleta();
+            } else {
+                pintarCabeceraLoginWizardGenerica();
+            }
         }
     } catch (_) {}
     try {
@@ -3841,48 +3832,6 @@ if (lfLogin) {
 }
 /** Expuesto para el script inline de index.html (click en #lb antes de que el módulo termine). */
 window.__gnEjecutarLogin = gnLoginSubmitHandler;
-
-function toast(msg, tipo = 'info', durationMs) {
-    let el = document.getElementById('toast');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'toast';
-        document.body.appendChild(el);
-    }
-    let s = gnDice(String(msg ?? ''));
-    const isRich = s.includes('<div') || s.includes('<p');
-    const maxLen = tipo === 'error' ? (isRich ? 12000 : 600) : 2200;
-    if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…';
-    
-    // Usar innerHTML para renderizar HTML (el contenido ya viene sanitizado)
-    if (s.includes('<div') || s.includes('<p')) {
-        el.innerHTML = s;
-    } else {
-        el.textContent = s;
-    }
-    
-    el.className = 'show ' + tipo + (s.length > 100 ? ' toast-multiline' : '');
-    try {
-        el.style.whiteSpace = s.length > 100 ? 'normal' : 'nowrap';
-        el.style.maxWidth = s.length > 100 ? 'min(92vw, 32rem)' : '';
-    } catch (_) {}
-    if (tipo === 'error') el.setAttribute('role', 'alert');
-    else el.removeAttribute('role');
-    const dur =
-        durationMs != null && Number.isFinite(Number(durationMs)) && Number(durationMs) > 0
-            ? Number(durationMs)
-            : 5200;
-    clearTimeout(window.toastTimer);
-    window.toastTimer = setTimeout(() => {
-        el.className = tipo;
-        try {
-            el.style.whiteSpace = '';
-            el.style.maxWidth = '';
-        } catch (_) {}
-        if (tipo === 'error') el.removeAttribute('role');
-    }, dur);
-}
-window.toast = toast;
 
 (function wrapConfirmGestorNova() {
     if (typeof window === 'undefined' || window.__gnConfirmWrapped) return;
@@ -10292,9 +10241,7 @@ function htmlOptsUnidadMaterial(val) {
     return html;
 }
 
-function escHtmlPrint(s) {
-    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// escHtmlPrint → modules/ui-utils.js
 
 /** Oculta en pantalla ruido técnico ([Sistema]…, caché, sugerencias GPS) ya persistido en descripción. */
 function sanitizarTextoDescripcionPedidoVista(s) {
@@ -12839,9 +12786,11 @@ function ejecutarCerrarSesion() {
     try {
         localStorage.removeItem(PMG_BRANDING_LS_KEY);
     } catch (_) {}
-    hydrateBrandingForPublicScreen();
     try {
-        aplicarMarcaVisualCompleta();
+        resetBrandingSesionNoAutenticada();
+    } catch (_) {}
+    try {
+        pintarCabeceraLoginWizardGenerica();
     } catch (_) {}
     mapaInicializado = false;
     _mapLazyQueued = false;
@@ -15360,10 +15309,16 @@ async function verificarConfiguracionInicialObligatoria() {
             'No se pudo leer la configuración del tenant (red o servidor). Reintentá o recargá la página; el asistente inicial puede no reflejar el estado real.',
             'warning'
         );
-        hydrateBrandingForPublicScreen();
-        try {
-            aplicarMarcaVisualCompleta();
-        } catch (_) {}
+        if (sesionCompletaParaMarcaLogin()) {
+            hydrateBrandingForPublicScreen();
+            try {
+                aplicarMarcaVisualCompleta();
+            } catch (_) {}
+        } else {
+            try {
+                pintarCabeceraLoginWizardGenerica();
+            } catch (_) {}
+        }
         ocultarModalConfigInicial();
         return true;
     }
@@ -22554,13 +22509,22 @@ if ('serviceWorker' in navigator) {
         // Llamar conectarNeon() DESPUÉS de cargar config (timing correcto)
         await conectarNeon();
         if (document.getElementById('ls')?.classList.contains('active')) {
-            hydrateBrandingForPublicScreen();
-            try {
-                if (NEON_OK) await cargarConfigEmpresa();
-            } catch (_) {}
-            try {
-                aplicarMarcaVisualCompleta();
-            } catch (_) {}
+            if (sesionCompletaParaMarcaLogin()) {
+                hydrateBrandingForPublicScreen();
+                try {
+                    if (NEON_OK) await cargarConfigEmpresa();
+                } catch (_) {}
+                try {
+                    aplicarMarcaVisualCompleta();
+                } catch (_) {}
+            } else {
+                try {
+                    pintarCabeceraLoginWizardGenerica();
+                } catch (_) {}
+                try {
+                    if (NEON_OK) await cargarConfigEmpresa();
+                } catch (_) {}
+            }
         }
     } catch (e) {
         console.warn('[iniciarApp]', e && e.message ? e.message : e);
