@@ -20,6 +20,7 @@
  */
 import express from "express";
 import { handleInboundMetaWhatsAppPayload } from "../services/whatsappBotMeta.js";
+import { resolveTenantIdByMetaPhoneNumberId } from "../services/metaTenantWhatsapp.js";
 import { logWhatsappMensajeRecibido } from "../services/whatsappNotificacionesLog.js";
 import { wahaWebhookToMetaShapedPayload } from "../services/wahaWebhookAdapter.js";
 import { whapiWebhookToMetaShapedPayload } from "../services/whapiWebhookAdapter.js";
@@ -27,6 +28,35 @@ import { whapiWebhookToMetaShapedPayload } from "../services/whapiWebhookAdapter
 const router = express.Router();
 
 /** Resumen sin PII masivo: tipos, from_me, orígenes y preview de texto (Whapi). */
+/** Fuerza value.metadata.phone_number_id = channel_id real para multitenant Whapi (el adaptador puede usar WHAPI_META_PHONE_NUMBER_ID). */
+function applyWhapiChannelIdToMetaShapedPayload(metaShaped, channelId) {
+  const ch = String(channelId || "").trim();
+  if (!ch || !metaShaped || typeof metaShaped !== "object") return;
+  const entries = Array.isArray(metaShaped.entry) ? metaShaped.entry : [];
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const value = change?.value;
+      if (value && typeof value === "object" && value.metadata && typeof value.metadata === "object") {
+        value.metadata.phone_number_id = ch;
+      }
+    }
+  }
+}
+
+function readPhoneNumberIdFromMetaShaped(metaShaped) {
+  const entries = Array.isArray(metaShaped?.entry) ? metaShaped.entry : [];
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const pid = change?.value?.metadata?.phone_number_id;
+      const s = String(pid ?? "").trim();
+      if (s) return s;
+    }
+  }
+  return "";
+}
+
 function summarizeWhapiMessagesForLog(body) {
   const msgs = Array.isArray(body?.messages) ? body.messages : [];
   return msgs.slice(0, 8).map((m) => ({
@@ -166,6 +196,21 @@ router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
 
 async function processWhapiInboundAsync(metaShaped, rawWhapi) {
   try {
+    const channelId = String(rawWhapi?.channel_id ?? rawWhapi?.channel?.id ?? "").trim();
+    applyWhapiChannelIdToMetaShapedPayload(metaShaped, channelId);
+    const effectivePid = channelId || readPhoneNumberIdFromMetaShaped(metaShaped);
+    if (effectivePid) {
+      const resolvedProbe = await resolveTenantIdByMetaPhoneNumberId(effectivePid);
+      const fallbackTid = Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+      if (channelId) {
+        if (resolvedProbe != null) {
+          console.log(`[Whapi] channel_id ${channelId} → tenant ${resolvedProbe}`);
+        } else {
+          console.log(`[Whapi] channel_id no mapeado (${channelId}), usando fallback: ${fallbackTid}`);
+        }
+      }
+    }
+
     const entries = Array.isArray(metaShaped?.entry) ? metaShaped.entry : [];
     for (const entry of entries) {
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];

@@ -6,8 +6,10 @@ import { query } from "../db/neon.js";
  *
  * Orden:
  * 1) clientes.configuracion->>'meta_phone_id' coincide con el ID recibido
- * 2) Si no hay fila pero META_PHONE_NUMBER_ID (env) coincide → WHATSAPP_BOT_TENANT_ID
- * 3) null (el caller puede usar WHATSAPP_BOT_TENANT_ID como respaldo legacy)
+ * 2) clientes.whapi_channel_id = ID (Whapi: channel_id del webhook en metadata.phone_number_id)
+ * 3) Si WHATSAPP_PROVIDER=whapi y pid === WHAPI_CHANNEL_ID (env) → WHATSAPP_BOT_TENANT_ID
+ * 4) Si pid === META_PHONE_NUMBER_ID (env) → WHATSAPP_BOT_TENANT_ID
+ * 5) null (el caller usa WHATSAPP_BOT_TENANT_ID como respaldo legacy)
  */
 export async function resolveTenantIdByMetaPhoneNumberId(phoneNumberId) {
   const pid = String(phoneNumberId || "").trim();
@@ -25,6 +27,15 @@ export async function resolveTenantIdByMetaPhoneNumberId(phoneNumberId) {
   );
   const fromDb = r.rows?.[0]?.id;
   if (fromDb != null) return Number(fromDb);
+
+  const rWhapiCh = await query(
+    `SELECT id FROM clientes
+     WHERE activo = TRUE AND whapi_channel_id = $1
+     LIMIT 1`,
+    [pid]
+  );
+  const fromWhapiChannel = rWhapiCh.rows?.[0]?.id;
+  if (fromWhapiChannel != null) return Number(fromWhapiChannel);
 
   const prov = String(process.env.WHATSAPP_PROVIDER || "").toLowerCase().trim();
   const whapiCh = String(process.env.WHAPI_CHANNEL_ID || "").trim();

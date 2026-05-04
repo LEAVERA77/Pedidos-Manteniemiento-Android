@@ -4,6 +4,12 @@
 
 **Mercado:** solo Argentina (sin cambios de internacionalización).
 
+### Implementado (código + migración)
+
+- [x] Migración SQL `clientes.whapi_channel_id` (`api/db/migrations/whapi_channel_id.sql`).
+- [x] Resolver tenant por `channel_id` en el flujo POST `/api/webhooks/whatsapp/whapi` (inyección en payload Meta-shaped + `resolveTenantIdByMetaPhoneNumberId` en `metaTenantWhatsapp.js`).
+- [x] Fallback a `WHATSAPP_BOT_TENANT_ID` cuando no hay fila en BD (sin romper producción).
+
 ---
 
 ## Estado actual del código (referencia)
@@ -22,9 +28,9 @@
 
 ## Fase A — Neon (datos)
 
-- [ ] **A1.** Crear migración SQL (o ejecutar en Neon) para columna dedicada, por ejemplo:
+- [x] **A1.** Crear migración SQL (o ejecutar en Neon) para columna dedicada, por ejemplo:
   - `ALTER TABLE clientes ADD COLUMN IF NOT EXISTS whapi_channel_id VARCHAR(100);`
-  - Índice único parcial si un canal solo puede mapear a un tenant activo: `CREATE UNIQUE INDEX ... ON clientes (whapi_channel_id) WHERE whapi_channel_id IS NOT NULL AND activo = TRUE;` (ajustar reglas de negocio si un tenant puede tener varios canales).
+  - Índice: `api/db/migrations/whapi_channel_id.sql` (no único parcial; agregar UNIQUE parcial si un canal = un solo tenant activo).
 - [ ] **A2.** Backfill manual o script: para el tenant que hoy usás con `WHATSAPP_BOT_TENANT_ID=1`, setear `whapi_channel_id` = el Channel ID real del panel Whapi (mismo valor que hoy podría estar en `WHAPI_CHANNEL_ID` en Render).
 - [ ] **A3.** Documentar en runbook: “cada nuevo cliente SaaS = nuevo canal Whapi + actualizar `clientes.whapi_channel_id`”.
 
@@ -32,11 +38,9 @@
 
 ## Fase B — Backend (resolución de tenant)
 
-- [ ] **B1.** En `api/services/metaTenantWhatsapp.js` (o función dedicada `resolveTenantIdByWhapiChannelId`):
-  - Si `WHATSAPP_PROVIDER === 'whapi'` y llega un `phone_number_id` que en la práctica es el **channel_id** del adaptador:
-  - `SELECT id FROM clientes WHERE activo = TRUE AND whapi_channel_id = $1 LIMIT 1`.
-  - Si hay fila → devolver ese `id`.
-  - Si **no** hay fila → `Number(process.env.WHATSAPP_BOT_TENANT_ID || 1)` **solo como fallback** y loguear `warn` con `channel_id` (sin PII masiva).
+- [x] **B1.** En `api/services/metaTenantWhatsapp.js`:
+  - `SELECT id FROM clientes WHERE activo = TRUE AND whapi_channel_id = $1 LIMIT 1` tras el match por `meta_phone_id`.
+  - Si **no** hay fila → el caller sigue usando `WHATSAPP_BOT_TENANT_ID` vía `botTenantId()`; el POST `/whapi` loguea fallback cuando hay `channel_id` en el body.
 - [ ] **B2.** Opcional pero limpio: si `configuracion` ya guardaba algo equivalente (`whapi_channel_id` en JSON), migrar a columna y unificar una sola fuente de verdad.
 - [ ] **B3.** Revisar **todos** los usos de `resolveTenantIdByMetaPhoneNumberId` y `botTenantId()` en `whatsappBotMeta.js` para asegurar que el inbound Whapi siempre pase el id que corresponde al **channel** del webhook, no un id fijo equivocado.
 - [ ] **B4.** `api/services/whatsappService.js` / credenciales por tenant: confirmar que el envío saliente usa el tenant resuelto por conversación o por `clientes`, no un `tenantId` fijo del env (línea que hoy usa `WHATSAPP_BOT_TENANT_ID` como default).
