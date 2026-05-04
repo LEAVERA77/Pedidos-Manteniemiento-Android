@@ -513,12 +513,17 @@ html.gn-android-webview #mc .leaflet-container {
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
 #modal-asignar-tecnico{z-index:6001}
-.mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
+/* Modales pedido (.mo): scroll en .mc (no en body; el mapa sigue usando html/body overflow:hidden). */
+.mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}
 /* Detalle pedido: contenido con scroll y barra de acciones siempre visible (técnico Android / web). */
 #dm .mc{display:flex;flex-direction:column;max-height:min(92vh,900px);overflow:hidden;padding-bottom:0}
 #dm #dmc{flex:1;min-height:0;display:flex;flex-direction:column;padding:0}
 #dm .gn-dm-detail-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:1rem 1.25rem .75rem}
+/* WebView Android: menos latencia táctil en el formulario nuevo pedido (sin tocar lógica ni HTML). */
+html.gn-android-webview #pm #pf input,
+html.gn-android-webview #pm #pf textarea,
+html.gn-android-webview #pm #pf select{touch-action:manipulation}
 #dm .gn-dm-actions-bar{flex-shrink:0;padding:.65rem 1.25rem 1.1rem;border-top:1px solid var(--bo);background:linear-gradient(180deg,rgba(255,255,255,.98),#fff);box-shadow:0 -4px 14px rgba(15,23,42,.06)}
 #dm .gn-dm-actions-bar .da{margin-top:0}
 @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
