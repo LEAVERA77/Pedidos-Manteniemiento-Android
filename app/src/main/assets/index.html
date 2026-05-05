@@ -584,7 +584,7 @@
           </div>
           <p id="cfg-deriv-wa-format" style="font-size:.72rem;color:var(--tm);margin:0 0 .45rem">Formato: <strong>+</strong> y solo dígitos después (8 a 22 dígitos totales sin el +), ej. <code style="font-size:.7rem">+543434123456</code>.</p>
           <p id="cfg-deriv-inline-error" class="admin-derivacion-inline-error" style="display:none;margin:0 0 .65rem" role="alert"></p>
-          <div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem .55rem;background:#f8fafc;border:1px solid var(--bo);border-radius:.45rem">
+          <div id="wrap-cfg-ocultar-modulos-redes" style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem .55rem;background:#f8fafc;border:1px solid var(--bo);border-radius:.45rem">
             <input type="checkbox" id="cfg-ocultar-modulos-redes" aria-describedby="cfg-ocultar-redes-help" title="Sirve para ocultar pestañas de catálogo eléctrico (distribuidores, barrios, ramales, clientes afectados) cuando tu organización no trabaja con esa red: simplifica el panel sin borrar datos.">
             <div><label for="cfg-ocultar-modulos-redes" style="margin:0;font-weight:600;cursor:pointer" title="Mostrá u ocultá módulos propios de distribución eléctrica en el admin.">Ocultar módulos de red eléctrica en administración</label>
             <p id="cfg-ocultar-redes-help" style="font-size:.72rem;color:var(--tl);margin:.25rem 0 0;line-height:1.35">Oculta la pestaña de catálogo de zona (Distribuidores / Barrios / Ramales) y la de Clientes afectados (transformadores / kVA). Por rubro, municipio y cooperativa de agua ya ocultan solo Clientes afectados; Barrios/Ramales siguen disponibles salvo que marques esta opción.</p></div>
@@ -626,7 +626,7 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. Excel: fila 1 = encabezados <code style="font-size:.75rem">codigo | nombre | tension | localidad</code> (localidad opcional). En Neon, columna <code style="font-size:.75rem">localidad</code>: <code style="font-size:.75rem">docs/NEON_distribuidores_localidad.sql</code>.</p>
+      <p id="admin-distribuidores-excel-hint" style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. Excel: fila 1 = encabezados <code style="font-size:.75rem">codigo | nombre | tension | localidad</code> (localidad opcional). En Neon, columna <code style="font-size:.75rem">localidad</code>: <code style="font-size:.75rem">docs/NEON_distribuidores_localidad.sql</code>.</p>
       <div id="lista-distribuidores-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="form-distribuidor" style="display:none;background:var(--bg);border-radius:.75rem;padding:1rem;margin-top:1rem;border:1px solid var(--bo)">
         <h4 style="margin-bottom:.75rem;color:var(--bd)">Nuevo distribuidor</h4>

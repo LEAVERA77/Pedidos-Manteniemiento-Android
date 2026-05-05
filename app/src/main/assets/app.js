@@ -80,6 +80,11 @@ import {
     resetDerivacionTerceroNuevoPedidoUI,
     syncDerivacionTerceroNuevoPedidoUI,
 } from './modules/derivaciones-terceros.js';
+import {
+    ocultarModulosRedesValorParaApi,
+    syncAyudaDistribuidoresExcelHint,
+    syncOcultarModulosRedesRowVisibility,
+} from './modules/admin-distribuidores-formato.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -929,6 +934,10 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     const hideDist = debeOcultarTabDistribuidoresAdmin();
     const d = document.getElementById('admin-tab-distribuidores');
     if (d) d.style.display = hideDist ? 'none' : '';
+    try {
+        syncOcultarModulosRedesRowVisibility();
+        syncAyudaDistribuidoresExcelHint();
+    } catch (_) {}
 }
 
 /** Mapa localidad → característica (solo dígitos de área) para normalizar móviles AR en difusiones. */
@@ -14547,6 +14556,10 @@ function aplicarEtiquetasPorTipo(tipo) {
     try {
         syncChecklistSeguridadCierreLabels();
     } catch (_) {}
+    try {
+        syncOcultarModulosRedesRowVisibility();
+        syncAyudaDistribuidoresExcelHint();
+    } catch (_) {}
 }
 
 function syncZonaPedidoFormLabels() {
@@ -16332,7 +16345,7 @@ async function guardarConfigEmpresa() {
                     const body = {
                         configuracion: {
                             marca_publicada_admin: true,
-                            ocultar_modulos_redes: !!document.getElementById('cfg-ocultar-modulos-redes')?.checked,
+                            ocultar_modulos_redes: ocultarModulosRedesValorParaApi(),
                         },
                     };
                     const provNom = (document.getElementById('cfg-provincia-nominatim')?.value || '').trim();
@@ -16848,13 +16861,6 @@ async function eliminarDistribuidor(id) {
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
     } catch(e) { toastError('eliminar-distribuidor', e); }
-}
-
-function mostrarFormatoExcel() {
-    const ent = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
-    alert(
-        `Formato requerido para el Excel (${ent}):\n\nColumna A: codigo (ej: D001)\nColumna B: nombre (ej: ZONA NORTE)\nColumna C: tension (ej: 13200 V) — opcional\nColumna D: localidad — opcional (requiere columna en Neon: docs/NEON_distribuidores_localidad.sql)\n\nEncabezados fila 1: codigo | nombre | tension | localidad\nA partir de la fila 2, los datos.\n\nPodés marcar «Vaciar tabla antes de importar» para borrar los registros del tenant actual y volver a cargar desde cero (si la base es multitenant, no borra otros negocios).`
-    );
 }
 
 async function importarExcelDistribuidores(event) {
@@ -19721,7 +19727,6 @@ if (typeof abrirFormDistribuidor !== "undefined") window.abrirFormDistribuidor =
 if (typeof crearDistribuidor !== "undefined") window.crearDistribuidor = crearDistribuidor;
 if (typeof eliminarDistribuidor !== "undefined") window.eliminarDistribuidor = eliminarDistribuidor;
 if (typeof importarExcelDistribuidores !== "undefined") window.importarExcelDistribuidores = importarExcelDistribuidores;
-if (typeof mostrarFormatoExcel !== "undefined") window.mostrarFormatoExcel = mostrarFormatoExcel;
 if (typeof cargarEstadisticas !== "undefined") window.cargarEstadisticas = cargarEstadisticas;
 if (typeof cargarUbicacionesUsuarios !== "undefined") window.cargarUbicacionesUsuarios = cargarUbicacionesUsuarios;
 if (typeof cambiarContrasena !== "undefined") window.cambiarContrasena = cambiarContrasena;
