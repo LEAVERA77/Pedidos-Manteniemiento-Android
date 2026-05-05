@@ -1457,8 +1457,10 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   mediaId,
   phoneNumberId,
   contactName,
-  ctxOk
+  ctxOk,
+  opts = {}
 ) {
+  const soloReemplazarFoto = !!opts.soloReemplazarFoto;
   let accessToken = "";
   const pid = String(phoneNumberId || "").trim();
   if (pid) {
@@ -1490,7 +1492,9 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Listo, *guardamos tu foto*. Te mostramos el *resumen* para confirmar el reclamo.",
+      soloReemplazarFoto
+        ? "Listo, *actualizamos la foto* del reclamo. Te reenviamos el *resumen*."
+        : "Listo, *guardamos tu foto*. Te mostramos el *resumen* para confirmar el reclamo.",
       sess.tenantId,
       phoneNumberId
     );
@@ -1528,8 +1532,12 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
     return;
   }
 
-  const stepOk = sess && (sess.step === "awaiting_wa_foto_upload" || sess.step === "awaiting_wa_foto_opcional");
-  if (!sess || !stepOk) {
+  const stepFotoPrevio =
+    sess &&
+    (sess.step === "awaiting_wa_foto_upload" ||
+      sess.step === "awaiting_wa_foto_opcional" ||
+      sess.step === "awaiting_confirmar_resumen");
+  if (!sess || !stepFotoPrevio) {
     await reply(
       phone,
       "Recibimos tu imagen. Si no estabas cargando un reclamo, no la usamos; para iniciar uno escribí *menú*.",
@@ -1543,6 +1551,13 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   if (!ctxOk) {
     sessions.delete(sk);
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
+    return;
+  }
+
+  if (sess.step === "awaiting_confirmar_resumen") {
+    await aplicarImagenRecibidaFlujoPedidoWa(phone, sess, sk, mediaId, phoneNumberId, contactName, ctxOk, {
+      soloReemplazarFoto: true,
+    });
     return;
   }
 
