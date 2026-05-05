@@ -1827,6 +1827,10 @@ async function pedidoPutApi(id, body) {
     }
 }
 
+try {
+    window.pedidoPutApi = pedidoPutApi;
+} catch (_) {}
+
 async function notificarWhatsappClienteEventoApi(pedidoId, event) {
     if (modoOffline) return;
     const base = getApiBaseUrl();
@@ -9805,13 +9809,23 @@ document.getElementById('pf').addEventListener('submit', async e => {
             
             await ejecutarSQLConReintentos(queryInsert);
             toast('Pedido guardado', 'success');
-            if (telVal && puedeEnviarApiRestPedidos()) {
+            if ((telVal || fotosString) && puedeEnviarApiRestPedidos()) {
                 try {
                     const rNew = await sqlSimple(
                         `SELECT id FROM pedidos WHERE numero_pedido = ${esc(numPedido)} ORDER BY id DESC LIMIT 1`
                     );
                     const newId = rNew.rows?.[0]?.id;
-                    if (newId != null) void notificarAltaReclamoWhatsappApi(Number(newId));
+                    if (newId != null) {
+                        const nid = Number(newId);
+                        if (telVal) void notificarAltaReclamoWhatsappApi(nid);
+                        if (fotosString && typeof window.__gnSyncFotosReclamoCloudinary === 'function') {
+                            await window.__gnSyncFotosReclamoCloudinary({
+                                pedidoId: nid,
+                                numPedido,
+                                fotoBase64Joined: fotosString,
+                            });
+                        }
+                    }
                 } catch (e) {
                     console.warn('[wa-alta-reclamo] lookup id', e && e.message);
                 }
