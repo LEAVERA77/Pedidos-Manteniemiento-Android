@@ -228,6 +228,89 @@ function ensureFab() {
 
 const _selectedNp = new Set();
 
+function getVisibleRowCheckboxes(pl) {
+    return [...pl.querySelectorAll(':scope > .pi input.gn-pi-cb')];
+}
+
+function updateSelectAllLabel(pl, allSelected) {
+    const lbl = document.getElementById('gn-inc-select-all-lbl');
+    if (!lbl) return;
+    lbl.textContent = allSelected ? '☑ Deseleccionar todos' : '☐ Seleccionar todos';
+}
+
+/** Sincroniza el checkbox maestro con el estado de las filas visibles (reglas 5 y 6). */
+function syncSelectAllMasterState(pl) {
+    const wrap = pl.querySelector('#gn-inc-select-all-wrap');
+    const master = document.getElementById('gn-inc-select-all-cb');
+    if (!wrap || !master) return;
+    const cbs = getVisibleRowCheckboxes(pl);
+    if (!cbs.length) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = '';
+    const allOn = cbs.every((cb) => cb.checked);
+    master.checked = allOn;
+    updateSelectAllLabel(pl, allOn);
+}
+
+function onMasterSelectAllChange(ev) {
+    const pl = document.getElementById('pl');
+    if (!pl) return;
+    const master = ev.target;
+    const on = master.checked;
+    const cbs = getVisibleRowCheckboxes(pl);
+    cbs.forEach((cb) => {
+        const k = cb.dataset.np;
+        if (!k) return;
+        cb.checked = on;
+        if (on) _selectedNp.add(k);
+        else _selectedNp.delete(k);
+    });
+    updateFab();
+    syncSelectAllMasterState(pl);
+}
+
+function ensureSelectAllBar(pl) {
+    if (!esAdmin()) {
+        try {
+            pl.querySelector('#gn-inc-select-all-wrap')?.remove();
+        } catch (_) {}
+        return;
+    }
+    const cbs = getVisibleRowCheckboxes(pl);
+    if (!cbs.length) {
+        try {
+            pl.querySelector('#gn-inc-select-all-wrap')?.remove();
+        } catch (_) {}
+        return;
+    }
+
+    let wrap = pl.querySelector('#gn-inc-select-all-wrap');
+    if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'gn-inc-select-all-wrap';
+        wrap.className = 'gn-inc-select-all-wrap';
+        wrap.style.cssText =
+            'display:flex;align-items:center;gap:.5rem;padding:.45rem .65rem;margin:0 0 .4rem;background:var(--bg);border-radius:.5rem;border:1px solid var(--bo);flex-shrink:0';
+        wrap.innerHTML = `<label class="gn-inc-select-all-lbl" style="display:flex;align-items:center;gap:.45rem;margin:0;cursor:pointer;font-size:.82rem;font-weight:600;color:var(--bd);user-select:none">
+<input type="checkbox" id="gn-inc-select-all-cb" />
+<span id="gn-inc-select-all-lbl">☐ Seleccionar todos</span>
+</label>`;
+        const master = wrap.querySelector('#gn-inc-select-all-cb');
+        if (master) {
+            master.addEventListener('change', onMasterSelectAllChange);
+            master.addEventListener('click', (e) => e.stopPropagation());
+        }
+        pl.prepend(wrap);
+    } else if (wrap !== pl.firstElementChild) {
+        try {
+            pl.prepend(wrap);
+        } catch (_) {}
+    }
+    syncSelectAllMasterState(pl);
+}
+
 function updateFab() {
     const fab = ensureFab();
     const n = _selectedNp.size;
@@ -279,6 +362,7 @@ function enhanceListaPedidosInner() {
                 if (cb.checked) _selectedNp.add(npKey);
                 else _selectedNp.delete(npKey);
                 updateFab();
+                syncSelectAllMasterState(pl);
             });
             row.appendChild(cb);
         }
@@ -312,6 +396,7 @@ function enhanceListaPedidosInner() {
         row.dataset.gnIncDone = '1';
     });
     updateFab();
+    ensureSelectAllBar(pl);
 }
 
 async function enhanceListaPedidos() {
