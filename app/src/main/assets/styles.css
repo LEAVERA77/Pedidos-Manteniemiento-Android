@@ -467,7 +467,7 @@ button.gn-inc-fab{touch-action:manipulation;-webkit-tap-highlight-color:transpar
   .mo .mc.gn-inc-modal-mc{max-width:95vw!important;max-height:85vh;font-size:.93rem}
   .mo .mc.gn-inc-modal-mc .mb{padding:.85rem .75rem 1rem}
   .mo .mc.gn-inc-modal-mc .mh h3{font-size:.93rem}
-  #gn-modal-inc-cierre-masivo .bp,#gn-modal-inc-cierre-masivo .btn-sm.sec,#gn-modal-incidencias-assoc .bp,#gn-modal-incidencias-assoc button.sec,#gn-modal-incidencias-vista #gn-inc-v-cerrar-todos{min-height:44px;padding-top:.55rem;padding-bottom:.55rem;touch-action:manipulation}
+  #gn-modal-inc-cierre-masivo .bp,#gn-modal-inc-cierre-masivo .btn-sm.sec,#gn-modal-incidencias-assoc .bp,#gn-modal-incidencias-assoc button.sec,#gn-modal-incidencias-vista #gn-inc-v-cerrar-todos,#gn-modal-incidencias-vista #gn-inc-v-asignar-tecnico{min-height:44px;padding-top:.55rem;padding-bottom:.55rem;touch-action:manipulation}
   #gn-modal-inc-cierre-masivo .btn-foto{min-height:44px;touch-action:manipulation}
 }
 .pi:hover{transform:translateX(3px);box-shadow:0 3px 12px rgba(0,0,0,.1)}

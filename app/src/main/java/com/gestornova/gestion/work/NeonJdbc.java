@@ -23,9 +23,11 @@ public final class NeonJdbc {
         /*
          * Refuerzo antes de cargar el driver: en algunos runtimes Android el parser de maxResultBuffer
          * sigue consultando ManagementFactory si no hay hint global.
+         * Varias claves por versiones de pgjdbc / rutas de parseo.
          */
         try {
             System.setProperty("pgjdbc.config.maxResultBuffer", "0");
+            System.setProperty("org.postgresql.jdbc.maxResultBuffer", "0");
         } catch (Exception ignored) {
         }
         try {

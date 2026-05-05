@@ -119,6 +119,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        try {
+            Class.forName("com.gestornova.gestion.work.NeonJdbc");
+        } catch (Throwable ignored) {
+            // Ejecuta el static {} de NeonJdbc (props pgjdbc) antes de WorkManager / JDBC en background.
+        }
 
         // NO usar WindowCompat.setDecorFitsSystemWindows — eso requiere
         // gestión manual de insets y conflicta con fitsSystemWindows del XML.

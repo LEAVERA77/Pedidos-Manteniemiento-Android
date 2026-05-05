@@ -6091,7 +6091,11 @@ let _gnAndroidViewportBound = false;
 function encolarAjusteViewportAndroidWebView() {
     if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa() || _gnAndroidViewportBound) return;
     _gnAndroidViewportBound = true;
+    /** Evita recursión infinita: dispatchEvent('resize') dispara este mismo listener en el mismo tick. */
+    let _gnVhBumpDepth = 0;
     const bump = () => {
+        if (_gnVhBumpDepth > 0) return;
+        _gnVhBumpDepth++;
         try {
             const h =
                 (window.visualViewport && window.visualViewport.height) ||
@@ -6111,6 +6115,9 @@ function encolarAjusteViewportAndroidWebView() {
         try {
             scheduleGnMapLayoutBumpsTrasLogin();
         } catch (_) {}
+        finally {
+            _gnVhBumpDepth--;
+        }
     };
     try {
         window.addEventListener('resize', bump, { passive: true });

@@ -1161,7 +1161,7 @@ function buildModalVista() {
     <div id="gn-inc-v-prog" style="font-size:.85rem;font-weight:600;margin-bottom:.5rem"></div>
     <div id="gn-inc-v-list" style="max-height:min(50vh,320px);overflow:auto;font-size:.82rem;border:1px solid var(--bo);border-radius:.5rem;padding:.35rem"></div>
     <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.45rem">
-      <button type="button" id="gn-inc-v-asignar-tecnico" class="bp sec" style="flex:1;min-width:12rem;display:none"><i class="fas fa-user-plus"></i> Asignar técnico a incidencia</button>
+      <button type="button" id="gn-inc-v-asignar-tecnico" class="btn-sm sec" style="flex:1;min-width:12rem;display:none;justify-content:center;gap:.35rem;font-size:.9rem;font-weight:600"><i class="fas fa-user-plus"></i> Asignar técnico a incidencia</button>
       <button type="button" id="gn-inc-v-cerrar-todos" class="bp" style="flex:1;min-width:12rem"><i class="fas fa-check-double"></i> Cerrar todos los pedidos</button>
     </div>
   </div>
@@ -1312,7 +1312,10 @@ async function openVistaIncidencia(incId) {
                 btnAll0.style.display = '';
                 const btnAll = btnAll0.cloneNode(true);
                 btnAll0.parentNode.replaceChild(btnAll, btnAll0);
-                btnAll.addEventListener('click', async () => {
+                btnAll.addEventListener('click', async (ev) => {
+                    try {
+                        ev.stopPropagation();
+                    } catch (_) {}
                     if (!puedeGestionarIncidencias()) {
                         toast('Sin permiso para cerrar incidencias.', 'error');
                         return;
