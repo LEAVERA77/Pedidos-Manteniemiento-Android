@@ -26,6 +26,7 @@ import callesNormalizadasRoutes from "./routes/callesNormalizadas.js";
 import adminRoutes from "./routes/admin.js";
 import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
+import incidenciasRoutes from "./routes/incidencias.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
 import {
@@ -145,6 +146,7 @@ export function createHttpApp() {
   app.use("/api/geocode", geocodeNominatimRoutes);
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);
+  app.use("/api/incidencias", incidenciasRoutes);
   app.use("/api/direcciones", direccionesRoutes);
   app.use("/api/tenant-operativa", tenantOperativaSettingsRoutes);
   app.use("/api/infra-afectados", infraAfectadosRoutes);

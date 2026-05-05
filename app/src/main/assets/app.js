@@ -3822,6 +3822,7 @@ const norm = p => ({
             ? parseInt(p.solicitud_derivacion_usuario_id, 10)
             : null,
     sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
+    inci: p.incidencia_id != null ? parseInt(String(p.incidencia_id), 10) || null : null,
     wgeo: (() => {
         const g = p.geocode_log_whatsapp;
         if (g == null || g === '') return null;
@@ -7490,6 +7491,11 @@ async function cargarPedidos(opts) {
         refrescarDetalleSiAbiertoTrasSync();
     } catch (_) {}
     void enriquecerCoordsGeocodificadasPedidos();
+}
+
+/** Hook módulos (p. ej. incidencias): recarga lista desde Neon/API sin duplicar lógica en `modules/`. */
+if (typeof window !== 'undefined') {
+    window.__gnRecargarPedidos = (o) => cargarPedidos(o || { silent: true });
 }
 
 /** Llamado desde Android (onResume) para traer cierres/cambios hechos por el admin en la web. */
@@ -12168,6 +12174,7 @@ function adminDerivacionPendienteIrPrimera() {
     void detalle(pend[0]);
 }
 window.adminDerivacionPendienteIrPrimera = adminDerivacionPendienteIrPrimera;
+window.detalle = detalle;
 
 function actualizarIndicadorSolicitudesDerivacionAdmin() {
     const btn = document.getElementById('btn-derivaciones-pendientes');

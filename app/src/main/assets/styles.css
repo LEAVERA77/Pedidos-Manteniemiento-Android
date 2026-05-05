@@ -449,6 +449,12 @@ html.gn-android-webview #mc{
 .pedidos-panel-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:100%;position:relative;z-index:10}
 .ll2{text-align:center;color:var(--tl);padding:2rem 1rem;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:.5rem}
 .pi{background:white;border-radius:.75rem;padding:.85rem 1rem;margin-bottom:.6rem;border:1px solid var(--bo);border-left:4px solid var(--bd);cursor:pointer;transition:transform .1s,box-shadow .15s}
+/* Lista de pedidos más compacta (#pl dentro del panel bp2) */
+#bp2 .pl .pi{padding:4px 8px;font-size:.75rem;margin-bottom:.35rem;min-height:unset}
+#bp2 .pl .pi .pi2{font-size:.72rem}
+#bp2 .pl .pi .pd{font-size:.78rem;line-height:1.25}
+.incidencia-badge{display:inline-flex;align-items:center;gap:4px;background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:12px;font-size:.7rem;font-weight:600;cursor:pointer;margin-left:.35rem;vertical-align:middle}
+.incidencia-badge:hover{background:#bae6fd}
 .pi:hover{transform:translateX(3px);box-shadow:0 3px 12px rgba(0,0,0,.1)}
 .ph2{display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem}
 .pn{font-weight:700;color:var(--bd);font-size:.9rem}
