@@ -121,47 +121,34 @@ function listaImagenesDesdeRowPedido(row) {
     return out;
 }
 
-function pedidoTieneSrcImagenMostrable(p) {
-    return !!primeraUrlImagenReclamoPedido(p);
-}
-
-async function enriquecerFotosHttpDesdeApiSiFalta(p) {
+/**
+ * Primera imagen desde GET `/api/pedidos/:id` o caché por id.
+ * Usa solo el JSON de la API y la caché interna — **no muta `p`** (p. ej. objeto congelado o sin `foto_urls` tras `norm()`).
+ */
+async function resolverSrcImagenReclamoDesdeApiOCaché(p) {
     const id = p?.id != null ? String(p.id) : '';
-    if (!id || id.startsWith('off_')) return;
-    /* Sin GET si ya se puede resolver imagen (prioriza foto_urls / foto_base64 en `p`). */
-    if (pedidoTieneSrcImagenMostrable(p)) return;
+    if (!id || id.startsWith('off_')) return null;
 
     if (_fotoSrcCache.has(id)) {
         const list = _fotoSrcCache.get(id);
-        if (list?.length && !primeraUrlDesdeFotoUrlsCampo(p.foto_urls)) {
-            const http = list.map((x) => normalizarSrcImagenReclamo(x)).filter(Boolean).filter((u) => esUrlHttp(u));
-            if (http.length) {
-                try {
-                    p.foto_urls = http.join('||');
-                } catch (_) {}
-            }
-        }
-        return;
+        return list?.length ? list[0] : null;
     }
 
     try {
         const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
         const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
-        if (!tok || !apiUrlFn) return;
+        if (!tok || !apiUrlFn) return null;
         const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(id)}`), {
             headers: { Authorization: `Bearer ${tok}` },
         });
-        if (!r.ok) return;
+        if (!r.ok) return null;
         const row = await r.json();
-        try {
-            const fu = row.foto_urls != null ? String(row.foto_urls).trim() : '';
-            if (fu) p.foto_urls = fu;
-            const fb = row.foto_base64 != null ? String(row.foto_base64).trim() : '';
-            if (fb) p.foto_base64 = fb;
-        } catch (_) {}
         const merged = listaImagenesDesdeRowPedido(row);
-        _fotoSrcCache.set(id, merged);
-    } catch (_) {}
+        if (merged.length) _fotoSrcCache.set(id, merged);
+        return merged[0] || null;
+    } catch (_) {
+        return null;
+    }
 }
 
 function encontrarSeccionUbicacion(scroll) {
@@ -183,11 +170,8 @@ export async function injectPedidoVerImagenReclamo(p) {
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
 
-    if (!pedidoTieneSrcImagenMostrable(p)) {
-        await enriquecerFotosHttpDesdeApiSiFalta(p);
-    }
-
-    const src = primeraUrlImagenReclamoPedido(p);
+    let src = primeraUrlImagenReclamoPedido(p);
+    if (!src) src = await resolverSrcImagenReclamoDesdeApiOCaché(p);
     if (!src) return;
 
     const scroll = dm.querySelector('.gn-dm-detail-scroll');
