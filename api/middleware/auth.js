@@ -56,5 +56,20 @@ export function adminOnly(req, res, next) {
   return next();
 }
 
+/** Incidencias: crear, cerrar grupo y desasociar — alineado con `esTecnicoOSupervisor` en el front (tecnico | supervisor). */
+export function adminOrTecnicoIncidencias(req, res, next) {
+  const rol = String(req.user?.rol || "").toLowerCase().trim();
+  if (
+    !req.user ||
+    (rol !== "admin" &&
+      rol !== "administrador" &&
+      rol !== "tecnico" &&
+      rol !== "supervisor")
+  ) {
+    return res.status(403).json({ error: "Requiere rol administrador o técnico" });
+  }
+  return next();
+}
+
 /** Autenticación + (opcional) validación host vs JWT cuando ENFORCE_TENANT_HOST=true */
 export const authWithTenantHost = [authMiddleware, tenantHostMiddleware, businessContextMiddleware];

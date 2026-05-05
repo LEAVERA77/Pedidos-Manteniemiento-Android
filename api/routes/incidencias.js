@@ -4,7 +4,7 @@
  */
 import express from "express";
 import { query, withTransaction } from "../db/neon.js";
-import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOrTecnicoIncidencias } from "../middleware/auth.js";
 import { pedidosTableHasTenantIdColumn, tableHasColumn } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 import { splitUrls } from "../utils/helpers.js";
@@ -67,7 +67,7 @@ router.get("/pedido-map", async (req, res) => {
   }
 });
 
-router.post("/", adminOnly, async (req, res) => {
+router.post("/", adminOrTecnicoIncidencias, async (req, res) => {
   try {
     if (!(await incidenciasFeatureAvailable()) || !(await pedidosTieneIncidenciaColumn())) {
       return res.status(503).json({
@@ -159,7 +159,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-router.put("/:id", adminOnly, async (req, res) => {
+router.put("/:id", adminOrTecnicoIncidencias, async (req, res) => {
   try {
     if (!(await incidenciasFeatureAvailable())) {
       return res.status(503).json({ error: "Incidencias no disponibles en BD" });
@@ -208,7 +208,7 @@ router.put("/:id", adminOnly, async (req, res) => {
   }
 });
 
-router.post("/:id/desasociar", adminOnly, async (req, res) => {
+router.post("/:id/desasociar", adminOrTecnicoIncidencias, async (req, res) => {
   try {
     if (!(await incidenciasFeatureAvailable()) || !(await pedidosTieneIncidenciaColumn())) {
       return res.status(503).json({ error: "Incidencias no disponibles en BD" });

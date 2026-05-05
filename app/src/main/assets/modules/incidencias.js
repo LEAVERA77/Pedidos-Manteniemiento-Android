@@ -30,6 +30,23 @@ function getTok() {
 function esAdmin() {
     return typeof window.esAdmin === 'function' && window.esAdmin();
 }
+
+/** Solo lectura de rol (misma regla que `esTecnicoOSupervisor` en app.js). No modifica `app.u`. */
+function esTecnicoOSupervisorIncModule() {
+    try {
+        const r = String(window.app?.u?.rol || '')
+            .trim()
+            .toLowerCase();
+        return r === 'tecnico' || r === 'supervisor';
+    } catch (_) {
+        return false;
+    }
+}
+
+/** Checkboxes, FAB asociar, badges, vista/cierre masivo y desasociar (admin + técnico/supervisor). */
+function puedeGestionarIncidencias() {
+    return esAdmin() || esTecnicoOSupervisorIncModule();
+}
 function rubroPanel() {
     const t = String(window.EMPRESA_CFG?.tipo || '').toLowerCase();
     if (t === 'municipio') return 'municipio';
@@ -574,7 +591,7 @@ function onMasterSelectAllChange(ev) {
 }
 
 function ensureSelectAllBar(pl) {
-    if (!esAdmin()) {
+    if (!puedeGestionarIncidencias()) {
         try {
             pl.querySelector('#gn-inc-select-all-wrap')?.remove();
         } catch (_) {}
@@ -616,7 +633,7 @@ function ensureSelectAllBar(pl) {
 function updateFab() {
     const fab = ensureFab();
     const n = _selectedNp.size;
-    if (!esAdmin() || n < 2) {
+    if (!puedeGestionarIncidencias() || n < 2) {
         fab.style.display = 'none';
         return;
     }
@@ -653,7 +670,7 @@ function enhanceListaPedidosInner() {
         move.style.cssText = 'flex:1;min-width:0';
         while (row.firstChild) move.appendChild(row.firstChild);
 
-        if (esAdmin()) {
+        if (puedeGestionarIncidencias()) {
             const wrapCb = document.createElement('label');
             wrapCb.className = 'gn-pi-cb-wrap';
             wrapCb.setAttribute('aria-label', 'Seleccionar pedido para incidencia');
@@ -787,7 +804,7 @@ function closeModalAssoc() {
 }
 
 async function openModalAsociar() {
-    if (!esAdmin()) return;
+    if (!puedeGestionarIncidencias()) return;
     await prefetchPedidosParaIncidencias(true);
     const peds = [..._selectedNp]
         .map((np) => findPedidoForIncidenciasUi(np))
@@ -971,7 +988,7 @@ async function openVistaIncidencia(incId) {
             <span style="flex:1;min-width:10rem;line-height:1.35"><strong>#${String(np).replace(/</g, '&lt;')}</strong> · <em>${est.replace(/</g, '&lt;')}</em><br><span style="font-size:.78rem;color:var(--tm)">${nom.replace(/</g, '&lt;')} · ${tt.replace(/</g, '&lt;')}</span></span>
             <button type="button" class="btn-sm" data-ver="${id}" style="padding:.2rem .45rem;font-size:.72rem">Ver</button>
             ${
-                esAdmin()
+                puedeGestionarIncidencias()
                     ? `<button type="button" class="btn-sm sec" data-des="${id}" style="padding:.2rem .45rem;font-size:.72rem">Desasociar</button>`
                     : ''
             }
@@ -1019,15 +1036,15 @@ async function openVistaIncidencia(incId) {
 
         const btnAll0 = m.querySelector('#gn-inc-v-cerrar-todos');
         if (btnAll0) {
-            if (!esAdmin()) {
+            if (!puedeGestionarIncidencias()) {
                 btnAll0.style.display = 'none';
             } else {
                 btnAll0.style.display = '';
                 const btnAll = btnAll0.cloneNode(true);
                 btnAll0.parentNode.replaceChild(btnAll, btnAll0);
                 btnAll.addEventListener('click', async () => {
-                    if (!esAdmin()) {
-                        toast('Solo administradores', 'error');
+                    if (!puedeGestionarIncidencias()) {
+                        toast('Sin permiso para cerrar incidencias.', 'error');
                         return;
                     }
                     const abiertos = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
