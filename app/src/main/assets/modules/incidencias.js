@@ -31,21 +31,56 @@ function esAdmin() {
     return typeof window.esAdmin === 'function' && window.esAdmin();
 }
 
-/** Solo lectura de rol (misma regla que `esTecnicoOSupervisor` en app.js). No modifica `app.u`. */
-function esTecnicoOSupervisorIncModule() {
+/**
+ * Lee `rol` del JWT guardado (misma fuente que la API en login). Sin verificar firma; solo UI/WebView.
+ * Cubre casos donde `window.app.u` no está poblado aún en Android WebView.
+ */
+function leerRolDesdeJwtCliente() {
     try {
-        const r = String(window.app?.u?.rol || '')
-            .trim()
-            .toLowerCase();
-        return r === 'tecnico' || r === 'supervisor';
+        let tok = '';
+        if (typeof window.getApiToken === 'function') tok = String(window.getApiToken() || '').trim();
+        if (!tok) {
+            try {
+                tok = String(localStorage.getItem('pmg_api_token') || '').trim();
+            } catch (_) {}
+        }
+        const parts = tok.split('.');
+        if (parts.length < 2 || !parts[1]) return '';
+        let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+        b64 += pad;
+        const json = atob(b64);
+        const p = JSON.parse(json);
+        return String(p.rol ?? p.role ?? '').trim().toLowerCase();
     } catch (_) {
-        return false;
+        return '';
     }
+}
+
+/** Rol efectivo para permisos del módulo: `app.u` si existe, si no payload JWT. Solo lectura. */
+function obtenerRolUsuarioParaIncidencias() {
+    try {
+        const a = String(window.app?.u?.rol ?? '').trim().toLowerCase();
+        if (a) return a;
+    } catch (_) {}
+    return leerRolDesdeJwtCliente();
+}
+
+function esAdminIncModule() {
+    if (esAdmin()) return true;
+    const r = obtenerRolUsuarioParaIncidencias();
+    return r === 'admin' || r === 'administrador';
+}
+
+/** Misma regla que `esTecnicoOSupervisor` en app.js. */
+function esTecnicoOSupervisorIncModule() {
+    const r = obtenerRolUsuarioParaIncidencias();
+    return r === 'tecnico' || r === 'supervisor';
 }
 
 /** Checkboxes, FAB asociar, badges, vista/cierre masivo y desasociar (admin + técnico/supervisor). */
 function puedeGestionarIncidencias() {
-    return esAdmin() || esTecnicoOSupervisorIncModule();
+    return esAdminIncModule() || esTecnicoOSupervisorIncModule();
 }
 function rubroPanel() {
     const t = String(window.EMPRESA_CFG?.tipo || '').toLowerCase();
@@ -1079,6 +1114,8 @@ export function installIncidenciasUI() {
         window.__gnIncidenciasInit = true;
         window.__gnIncidenciasRefresh = debouncedEnhance;
         window.__gnIncidenciasInvalidateCache = invalidatePedidosIncidenciasCache;
+        window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
     } catch (_) {}
     void fetchPedidoMap().then(() => debouncedEnhance());
     bootObserver();
@@ -1095,6 +1132,10 @@ export function installIncidenciasUI() {
 }
 
 if (typeof window !== 'undefined') {
+    try {
+        window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
+    } catch (_) {}
     const run = () => {
         try {
             installIncidenciasUI();
