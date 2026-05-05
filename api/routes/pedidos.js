@@ -66,6 +66,18 @@ async function assertPedidoMismoTenant(pedido, req) {
   }
 }
 
+async function sqlTableExistsPublic(name) {
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
+      [name]
+    );
+    return r.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Pedido por id + tenant sin filtro `business_type` (admin multi-rubro). */
 async function getPedidoPorIdEnTenant(id, tenantId) {
   const pid = Number(id);
@@ -1819,31 +1831,73 @@ router.put("/:id", async (req, res) => {
       upParams
     );
     const updated = r.rows[0];
-    if (String(updated.telefono_contacto || "").trim()) {
+    let rowOut = updated;
+    try {
+      let fotoCierreUrl = null;
+      const bfc = req.body?.foto_cierre_base64;
+      if (typeof bfc === "string" && bfc.trim()) {
+        const urls = await uploadManyBase64([bfc.trim()]);
+        fotoCierreUrl = urls[0] || null;
+      } else if (typeof req.body?.foto_cierre === "string") {
+        const s = req.body.foto_cierre.trim();
+        if (/^https?:\/\//i.test(s)) fotoCierreUrl = s;
+      }
+      if (fotoCierreUrl && (await tableHasColumn("pedidos", "foto_cierre"))) {
+        const rFc = await query(`UPDATE pedidos SET foto_cierre = $1 WHERE id = $2 RETURNING *`, [fotoCierreUrl, id]);
+        if (rFc.rows?.[0]) rowOut = rFc.rows[0];
+      }
+      const mats = req.body?.materiales;
+      if (Array.isArray(mats) && mats.length && (await sqlTableExistsPublic("pedido_materiales"))) {
+        await query(`DELETE FROM pedido_materiales WHERE pedido_id = $1`, [id]);
+        for (const m of mats) {
+          const d = String(m?.descripcion ?? "").trim();
+          const cant = Number(m?.cantidad);
+          if (!d || !Number.isFinite(cant)) continue;
+          const un = m?.unidad != null ? String(m.unidad).trim().slice(0, 32) : null;
+          await query(
+            `INSERT INTO pedido_materiales (pedido_id, descripcion, cantidad, unidad) VALUES ($1, $2, $3, $4)`,
+            [id, d, cant, un]
+          );
+        }
+        const rMat = await query(`SELECT * FROM pedidos WHERE id = $1`, [id]);
+        if (rMat.rows?.[0]) rowOut = rMat.rows[0];
+      }
+      if (req.body?.incidencia_id != null && (await tableHasColumn("pedidos", "incidencia_id"))) {
+        const iid = Number(req.body.incidencia_id);
+        if (Number.isFinite(iid) && iid >= 0) {
+          const rInc = await query(`UPDATE pedidos SET incidencia_id = $1 WHERE id = $2 RETURNING *`, [iid, id]);
+          if (rInc.rows?.[0]) rowOut = rInc.rows[0];
+        }
+      }
+    } catch (sup) {
+      console.warn("[pedidos PUT] suplemento foto_cierre/materiales/incidencia_id", sup?.message || sup);
+    }
+
+    if (String(rowOut.telefono_contacto || "").trim()) {
       setImmediate(() => {
-        propagarTelefonoReclamanteASociosCatalogoIfEmpty(updated, req.tenantId).catch(() => {});
+        propagarTelefonoReclamanteASociosCatalogoIfEmpty(rowOut, req.tenantId).catch(() => {});
       });
     }
     const becameCerrado = estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     if (becameCerrado) {
-      scheduleNotifyCierreWhatsApp(updated, telefono_contacto, req.user.id);
+      scheduleNotifyCierreWhatsApp(rowOut, telefono_contacto, req.user.id);
       setImmediate(() => {
         enqueueNotificacionPedidoCerradoParaTecnico({
           tecnicoUsuarioId: pedido.tecnico_asignado_id,
-          pedidoId: updated.id,
-          numeroPedido: updated.numero_pedido,
+          pedidoId: rowOut.id,
+          numeroPedido: rowOut.numero_pedido,
           cerradoPorUsuarioId: req.user.id,
         }).catch(() => {});
       });
     }
     scheduleNotifyClientePedidoWhatsapp({
       pedidoAntes: pedido,
-      pedidoDespues: updated,
+      pedidoDespues: rowOut,
       body: req.body,
       userId: req.user.id,
       estadoAntes: estadoAntesRaw,
     });
-    return res.json(coercePedidoLatLng(updated));
+    return res.json(coercePedidoLatLng(rowOut));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar pedido", detail: error.message });
   }

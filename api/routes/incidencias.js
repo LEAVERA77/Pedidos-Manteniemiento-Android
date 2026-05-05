@@ -187,6 +187,16 @@ router.put("/:id", adminOnly, async (req, res) => {
       sets.push(`estado = $${i++}`);
       params.push(estado);
     }
+    const estadoNorm = estado !== null && estado !== "" ? String(estado).trim().toLowerCase() : "";
+    if (estadoNorm === "cerrada") {
+      if (await tableHasColumn("incidencias", "fecha_cierre")) {
+        sets.push(`fecha_cierre = COALESCE(fecha_cierre, NOW())`);
+      }
+      if (await tableHasColumn("incidencias", "usuario_cierre_id")) {
+        sets.push(`usuario_cierre_id = $${i++}`);
+        params.push(req.user.id);
+      }
+    }
     if (!sets.length) return res.status(400).json({ error: "Nada para actualizar" });
     params.push(id);
     if (hasT) params.push(req.tenantId);

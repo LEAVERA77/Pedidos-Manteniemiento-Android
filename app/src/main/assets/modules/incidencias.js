@@ -16,6 +16,8 @@ const _PREFETCH_PEDIDOS_TTL_MS = 20000;
 let _fabEl = null;
 let _modalAssoc = null;
 let _modalVista = null;
+/** Modal administrativo: cierre masivo con foto/materiales/observaciones heredados a cada pedido. */
+let _modalCierreMasivo = null;
 let _moPl = null;
 let _debTimer = null;
 
@@ -136,6 +138,293 @@ function recargarPedidosYMapa() {
         } catch (_) {}
         debouncedEnhance();
     });
+}
+
+/** Alineado con `MATERIAL_UNIDADES` en app.js (selector de unidades en materiales). */
+const MATERIAL_UNIDADES = [
+    'PZA',
+    'MTR',
+    'LTR',
+    'KG',
+    'M3',
+    'M2',
+    'ML',
+    'JGO',
+    'UN',
+    'BOL',
+    'TN',
+    'BOB',
+    'TR',
+    'CJ',
+    'PAR',
+    'KIT',
+    'TAM',
+];
+
+function esTipoPedidoFactibilidad(tipoTrabajo) {
+    return String(tipoTrabajo || '')
+        .trim()
+        .toLowerCase()
+        .includes('factibilidad');
+}
+
+/** Misma regla que `tipoPedidoExcluyeMateriales` en app.js (sin importar app.js). */
+function tipoPedidoExcluyeMaterialesModule(tipoTrabajo) {
+    const v = String(tipoTrabajo || '').trim();
+    if (!v) return false;
+    if (v === 'Otros') return true;
+    if (esTipoPedidoFactibilidad(v)) return true;
+    return false;
+}
+
+function htmlOptsUnidadMaterial(u0) {
+    const uNorm = String(u0 || '').trim();
+    let html = MATERIAL_UNIDADES.map(
+        (u) => `<option value="${u}"${u === uNorm ? ' selected' : ''}>${u}</option>`
+    ).join('');
+    if (uNorm && MATERIAL_UNIDADES.indexOf(uNorm) < 0) {
+        html += `<option value="${uNorm.replace(/"/g, '&quot;')}" selected>${uNorm.replace(/</g, '&lt;')}</option>`;
+    }
+    return html;
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ''));
+        fr.onerror = () => reject(fr.error);
+        fr.readAsDataURL(file);
+    });
+}
+
+function collectMaterialesRows(root) {
+    const wrap = root.querySelector('#gn-inc-cierre-mat-rows');
+    if (!wrap) return [];
+    const out = [];
+    wrap.querySelectorAll('[data-gn-mat-row]').forEach((row) => {
+        const d = row.querySelector('.gn-inc-mat-desc')?.value?.trim() || '';
+        const c = Number(row.querySelector('.gn-inc-mat-cant')?.value);
+        const un = row.querySelector('.gn-inc-mat-un')?.value?.trim() || null;
+        if (!d || !Number.isFinite(c)) return;
+        out.push({ descripcion: d, cantidad: c, unidad: un });
+    });
+    return out;
+}
+
+function addMaterialRow(wrap, opts = {}) {
+    const d = opts.descripcion || '';
+    const c = opts.cantidad != null && opts.cantidad !== '' ? opts.cantidad : '';
+    const u = opts.unidad || 'PZA';
+    const row = document.createElement('div');
+    row.setAttribute('data-gn-mat-row', '1');
+    row.style.cssText =
+        'display:grid;grid-template-columns:1fr 5rem 5.5rem auto;gap:.35rem;align-items:center;margin-bottom:.35rem';
+    row.innerHTML = `
+    <input type="text" class="gn-inc-mat-desc" placeholder="Descripción" style="min-width:0">
+    <input type="number" class="gn-inc-mat-cant" min="0" step="any" placeholder="Cant." style="min-width:0">
+    <select class="gn-inc-mat-un">${htmlOptsUnidadMaterial(u)}</select>
+    <button type="button" class="btn-sm sec gn-inc-mat-del" title="Quitar"><i class="fas fa-times"></i></button>`;
+    const di = row.querySelector('.gn-inc-mat-desc');
+    const ci = row.querySelector('.gn-inc-mat-cant');
+    if (di) di.value = d;
+    if (ci && c !== '') ci.value = String(c);
+    wrap.appendChild(row);
+    row.querySelector('.gn-inc-mat-del')?.addEventListener('click', () => row.remove());
+}
+
+function ensureModalCierreMasivo() {
+    if (_modalCierreMasivo) return _modalCierreMasivo;
+    const root = document.createElement('div');
+    root.id = 'gn-modal-inc-cierre-masivo';
+    root.className = 'mo';
+    root.style.zIndex = '10060';
+    root.innerHTML = `
+<div class="mc lg" style="max-width:min(96vw,34rem)">
+  <div class="mh"><h3 id="gn-inc-cierre-tit"><i class="fas fa-check-double"></i> Cerrar incidencia</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
+  <div class="mb" style="padding:0 1rem 1rem">
+    <p id="gn-inc-cierre-sub" style="font-size:.8rem;color:var(--tm);margin:0 0 .65rem"></p>
+    <label style="display:block;font-size:.85rem;margin-bottom:.25rem"><i class="fas fa-camera"></i> Foto del cierre (opcional)</label>
+    <div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.35rem">
+      <button type="button" id="gn-inc-foto-cam" class="btn-foto"><i class="fas fa-camera"></i> Tomar foto</button>
+      <label for="gn-inc-foto-gal" class="btn-foto" style="cursor:pointer;display:inline-flex;align-items:center;gap:.5rem"><i class="fas fa-upload"></i> Galería</label>
+    </div>
+    <input type="file" id="gn-inc-foto-cam-inp" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    <input type="file" id="gn-inc-foto-gal" accept="image/*" style="display:none">
+    <div id="gn-inc-foto-prev" class="fotos-container" style="margin-bottom:.65rem;min-height:0"></div>
+    <div id="gn-inc-mat-wrap">
+      <label style="display:block;font-size:.85rem;margin-bottom:.25rem"><i class="fas fa-wrench"></i> Materiales utilizados</label>
+      <div id="gn-inc-cierre-mat-rows"></div>
+      <button type="button" id="gn-inc-mat-add" class="btn-sm sec" style="margin-top:.35rem"><i class="fas fa-plus"></i> Agregar material</button>
+    </div>
+    <label for="gn-inc-tr" style="display:block;font-size:.85rem;margin:.65rem 0 .25rem"><i class="fas fa-clipboard"></i> Trabajo realizado / Observaciones</label>
+    <textarea id="gn-inc-tr" rows="4" style="width:100%;box-sizing:border-box" placeholder="Describe el trabajo realizado…"></textarea>
+    <div style="margin-top:.85rem;display:flex;flex-wrap:wrap;gap:.45rem">
+      <button type="button" id="gn-inc-cierre-cancel" class="btn-sm sec" style="flex:1">Cancelar</button>
+      <button type="button" id="gn-inc-cierre-ok" class="bp" style="flex:1"><i class="fas fa-check"></i> Cerrar todos</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(root);
+    root.addEventListener('click', (e) => {
+        if (e.target === root) root.classList.remove('active');
+    });
+    root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => root.classList.remove('active')));
+    _modalCierreMasivo = root;
+    return root;
+}
+
+/**
+ * @param {{ incId: number, incNombre: string, pedidosAbiertos: Array<Record<string, unknown>>, tok: string }} args
+ */
+function openModalCierreMasivoIncidencia(args) {
+    const { incId, incNombre, pedidosAbiertos, tok } = args;
+    const putFn = typeof window.pedidoPutApi === 'function' ? window.pedidoPutApi : null;
+    if (!putFn) {
+        toast('No se pudo usar el guardado de pedidos (pedidoPutApi). Recargá la app.', 'error');
+        return;
+    }
+    const mc = ensureModalCierreMasivo();
+    const tit = mc.querySelector('#gn-inc-cierre-tit');
+    const sub = mc.querySelector('#gn-inc-cierre-sub');
+    const prev = mc.querySelector('#gn-inc-foto-prev');
+    const tr = mc.querySelector('#gn-inc-tr');
+    const rowsWrap = mc.querySelector('#gn-inc-cierre-mat-rows');
+    const matWrap = mc.querySelector('#gn-inc-mat-wrap');
+    const btnOk0 = mc.querySelector('#gn-inc-cierre-ok');
+    const btnCancel0 = mc.querySelector('#gn-inc-cierre-cancel');
+
+    let fotoDataUrl = '';
+    const nombreEsc = String(incNombre || '').trim();
+    const titulo =
+        nombreEsc.length > 0
+            ? `Cerrar incidencia #${incId} — ${nombreEsc}`
+            : `Cerrar incidencia #${incId}`;
+    if (tit) tit.innerHTML = `<i class="fas fa-check-double"></i> ${titulo.replace(/</g, '&lt;')}`;
+    if (sub) sub.textContent = `Se aplicará a ${pedidosAbiertos.length} pedido(s) abierto(s).`;
+    if (tr) tr.value = '';
+    if (prev) prev.innerHTML = '';
+    if (rowsWrap) {
+        rowsWrap.innerHTML = '';
+        addMaterialRow(rowsWrap);
+    }
+
+    const algunPermiteMat = pedidosAbiertos.some((p) => {
+        const tt = String(p.tipo_trabajo ?? p.tt ?? '').trim();
+        return !tipoPedidoExcluyeMaterialesModule(tt);
+    });
+    if (matWrap) matWrap.style.display = algunPermiteMat ? '' : 'none';
+
+    const setPreview = (dataUrl) => {
+        fotoDataUrl = dataUrl || '';
+        if (!prev) return;
+        if (!fotoDataUrl) {
+            prev.innerHTML = '';
+            return;
+        }
+        prev.innerHTML = `<img alt="" src="${fotoDataUrl.replace(/"/g, '&quot;')}" style="max-width:100%;max-height:200px;border-radius:.35rem;border:1px solid var(--bo);object-fit:contain"/>`;
+    };
+
+    const onPick = async (file) => {
+        if (!file || !String(file.type || '').startsWith('image/')) return;
+        try {
+            const u = await readFileAsDataUrl(file);
+            setPreview(u);
+        } catch (e) {
+            toast(String(e?.message || e), 'error');
+        }
+    };
+
+    const btnCam0 = mc.querySelector('#gn-inc-foto-cam');
+    if (btnCam0?.parentNode) {
+        const nb = btnCam0.cloneNode(true);
+        btnCam0.parentNode.replaceChild(nb, btnCam0);
+        nb.addEventListener('click', () => mc.querySelector('#gn-inc-foto-cam-inp')?.click());
+    }
+    const inpCam0 = mc.querySelector('#gn-inc-foto-cam-inp');
+    if (inpCam0?.parentNode) {
+        const ni = inpCam0.cloneNode(true);
+        inpCam0.parentNode.replaceChild(ni, inpCam0);
+        ni.addEventListener('change', () => {
+            const f = ni.files?.[0];
+            ni.value = '';
+            void onPick(f);
+        });
+    }
+    const inpGal0 = mc.querySelector('#gn-inc-foto-gal');
+    if (inpGal0?.parentNode) {
+        const ng = inpGal0.cloneNode(true);
+        inpGal0.parentNode.replaceChild(ng, inpGal0);
+        ng.addEventListener('change', () => {
+            const f = ng.files?.[0];
+            ng.value = '';
+            void onPick(f);
+        });
+    }
+
+    const addBtn0 = mc.querySelector('#gn-inc-mat-add');
+    if (addBtn0?.parentNode) {
+        const nb = addBtn0.cloneNode(true);
+        addBtn0.parentNode.replaceChild(nb, addBtn0);
+        nb.addEventListener('click', () => {
+            const w = mc.querySelector('#gn-inc-cierre-mat-rows');
+            if (w) addMaterialRow(w);
+        });
+    }
+
+    if (btnCancel0?.parentNode) {
+        const nb = btnCancel0.cloneNode(true);
+        btnCancel0.parentNode.replaceChild(nb, btnCancel0);
+        nb.addEventListener('click', () => mc.classList.remove('active'));
+    }
+    if (btnOk0?.parentNode) {
+        const nb = btnOk0.cloneNode(true);
+        btnOk0.parentNode.replaceChild(nb, btnOk0);
+        nb.addEventListener('click', async () => {
+            const trabajo = mc.querySelector('#gn-inc-tr')?.value?.trim() || '';
+            if (!trabajo) {
+                toast('Describí el trabajo realizado', 'error');
+                return;
+            }
+            const matsAll = algunPermiteMat ? collectMaterialesRows(mc) : [];
+            nb.disabled = true;
+            try {
+                let okCount = 0;
+                for (const p of pedidosAbiertos) {
+                    const pid = p.id;
+                    const tt = String(p.tipo_trabajo ?? p.tt ?? '').trim();
+                    const body = {
+                        estado: 'Cerrado',
+                        avance: 100,
+                        trabajo_realizado: trabajo,
+                        incidencia_id: incId,
+                    };
+                    if (fotoDataUrl) body.foto_cierre_base64 = fotoDataUrl;
+                    if (!tipoPedidoExcluyeMaterialesModule(tt) && matsAll.length) body.materiales = matsAll;
+                    const row = await putFn(pid, body);
+                    if (!row) throw new Error(`No se pudo cerrar el pedido ${pid}`);
+                    okCount += 1;
+                }
+                const rr = await fetch(apiUrl(`/api/incidencias/${encodeURIComponent(String(incId))}`), {
+                    method: 'PUT',
+                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ estado: 'cerrada' }),
+                });
+                const jj = await rr.json().catch(() => ({}));
+                if (!rr.ok) throw new Error(jj.error || jj.detail || `Incidencia HTTP ${rr.status}`);
+                toast(`✅ Incidencia #${incId} cerrada. ${okCount} pedido(s) actualizado(s).`, 'success');
+                mc.classList.remove('active');
+                invalidatePedidosIncidenciasCache();
+                recargarPedidosYMapa();
+                void openVistaIncidencia(incId);
+            } catch (e) {
+                toast(String(e?.message || e), 'error');
+            } finally {
+                nb.disabled = false;
+            }
+        });
+    }
+
+    mc.classList.add('active');
 }
 
 function parseNpFromRow(row) {
@@ -624,8 +913,25 @@ async function openVistaIncidencia(incId) {
                 ? `Incidencia #${inc.id} – ${nombreInc}`
                 : `Incidencia #${inc.id}`;
         if (tit) tit.innerHTML = `<i class="fas fa-project-diagram"></i> ${titulo.replace(/</g, '&lt;')}`;
+        let fcTxt = '';
+        if (inc.fecha_cierre) {
+            try {
+                fcTxt = new Date(inc.fecha_cierre).toLocaleString('es-AR', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                });
+            } catch (_) {
+                fcTxt = String(inc.fecha_cierre);
+            }
+        }
+        const ucInc = inc.usuario_cierre_id;
+        const estIncLow = String(inc.estado || '').trim().toLowerCase();
+        const lineCierre =
+            estIncLow === 'cerrada' || fcTxt || ucInc != null
+                ? `<span style="display:block;margin-top:.35rem;font-size:.78rem;border-top:1px solid var(--bo);padding-top:.35rem"><strong>Fecha cierre:</strong> ${(fcTxt || '—').replace(/</g, '&lt;')} · <strong>Usuario cierre:</strong> ${ucInc != null ? `id ${String(ucInc).replace(/</g, '&lt;')}` : '—'}</span>`
+                : '';
         if (meta)
-            meta.innerHTML = `<span style="display:block"><strong>Criterio:</strong> ${String(inc.criterio_agrupacion || '—').replace(/</g, '&lt;')} · <strong>Valor:</strong> ${String(inc.valor_criterio || '—').replace(/</g, '&lt;')}</span><span style="display:block;margin-top:.25rem"><strong>Estado incidencia:</strong> ${String(inc.estado || '—').replace(/</g, '&lt;')}</span>`;
+            meta.innerHTML = `<span style="display:block"><strong>Criterio:</strong> ${String(inc.criterio_agrupacion || '—').replace(/</g, '&lt;')} · <strong>Valor:</strong> ${String(inc.valor_criterio || '—').replace(/</g, '&lt;')}</span><span style="display:block;margin-top:.25rem"><strong>Estado incidencia:</strong> ${String(inc.estado || '—').replace(/</g, '&lt;')}</span>${lineCierre}`;
         const totProg = pr.total ?? pedidos.length;
         const cerProg = pr.cerrados ?? 0;
         if (prog) prog.textContent = `Progreso: ${cerProg} de ${totProg} pedidos cerrados`;
@@ -706,35 +1012,12 @@ async function openVistaIncidencia(incId) {
                         toast('No hay pedidos abiertos', 'info');
                         return;
                     }
-                    const n = abiertos.length;
-                    if (!confirm(`¿Cerrar los ${n} pedidos de esta incidencia?`)) return;
-                    btnAll.disabled = true;
-                    try {
-                        for (const p of abiertos) {
-                            const pid = p.id;
-                            const rr = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}`), {
-                                method: 'PUT',
-                                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ estado: 'Cerrado', avance: 100 }),
-                            });
-                            if (!rr.ok) {
-                                const jj = await rr.json().catch(() => ({}));
-                                throw new Error(jj.error || `Pedido ${pid}: HTTP ${rr.status}`);
-                            }
-                        }
-                        await fetch(apiUrl(`/api/incidencias/${encodeURIComponent(String(incId))}`), {
-                            method: 'PUT',
-                            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ estado: 'cerrada' }),
-                        }).catch(() => {});
-                        toast(`✅ Incidencia #${incId} cerrada con ${n} pedidos`, 'success');
-                        m.classList.remove('active');
-                        recargarPedidosYMapa();
-                    } catch (e) {
-                        toast(String(e?.message || e), 'error');
-                    } finally {
-                        btnAll.disabled = false;
-                    }
+                    openModalCierreMasivoIncidencia({
+                        incId,
+                        incNombre: nombreInc,
+                        pedidosAbiertos: abiertos,
+                        tok,
+                    });
                 });
             }
         }
