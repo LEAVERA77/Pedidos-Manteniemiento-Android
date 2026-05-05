@@ -18,6 +18,8 @@ let _modalAssoc = null;
 let _modalVista = null;
 /** Modal administrativo: cierre masivo con foto/materiales/observaciones heredados a cada pedido. */
 let _modalCierreMasivo = null;
+/** Modal admin: asignar un técnico a todos los pedidos abiertos de una incidencia. */
+let _modalAsignarInc = null;
 let _moPl = null;
 let _debTimer = null;
 
@@ -31,11 +33,8 @@ function esAdmin() {
     return typeof window.esAdmin === 'function' && window.esAdmin();
 }
 
-/**
- * Lee `rol` del JWT guardado (misma fuente que la API en login). Sin verificar firma; solo UI/WebView.
- * Cubre casos donde `window.app.u` no está poblado aún en Android WebView.
- */
-function leerRolDesdeJwtCliente() {
+/** Payload JWT local (sin verificar firma): rol, userId, etc. */
+function parseJwtPayloadCliente() {
     try {
         let tok = '';
         if (typeof window.getApiToken === 'function') tok = String(window.getApiToken() || '').trim();
@@ -45,16 +44,39 @@ function leerRolDesdeJwtCliente() {
             } catch (_) {}
         }
         const parts = tok.split('.');
-        if (parts.length < 2 || !parts[1]) return '';
+        if (parts.length < 2 || !parts[1]) return null;
         let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
         const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
         b64 += pad;
-        const json = atob(b64);
-        const p = JSON.parse(json);
-        return String(p.rol ?? p.role ?? '').trim().toLowerCase();
+        const p = JSON.parse(atob(b64));
+        return p && typeof p === 'object' ? p : null;
     } catch (_) {
-        return '';
+        return null;
     }
+}
+
+/**
+ * Lee `rol` del JWT guardado (misma fuente que la API en login). Sin verificar firma; solo UI/WebView.
+ * Cubre casos donde `window.app.u` no está poblado aún en Android WebView.
+ */
+function leerRolDesdeJwtCliente() {
+    const p = parseJwtPayloadCliente();
+    return p ? String(p.rol ?? p.role ?? '').trim().toLowerCase() : '';
+}
+
+/** Id usuario para comparar con `tecnico_asignado_id` (app.u o JWT). */
+function obtenerUserIdParaIncidencias() {
+    try {
+        const id = window.app?.u?.id;
+        if (id != null && String(id).trim() !== '') {
+            const n = parseInt(String(id), 10);
+            if (Number.isFinite(n) && n > 0) return n;
+        }
+    } catch (_) {}
+    const p = parseJwtPayloadCliente();
+    if (!p) return null;
+    const uid = Number(p.userId ?? p.sub);
+    return Number.isFinite(uid) && uid > 0 ? uid : null;
 }
 
 /** Rol efectivo para permisos del módulo: `app.u` si existe, si no payload JWT. Solo lectura. */
@@ -81,6 +103,48 @@ function esTecnicoOSupervisorIncModule() {
 /** Checkboxes, FAB asociar, badges, vista/cierre masivo y desasociar (admin + técnico/supervisor). */
 function puedeGestionarIncidencias() {
     return esAdminIncModule() || esTecnicoOSupervisorIncModule();
+}
+
+function estadoPedidoInc(p) {
+    return String(p?.es ?? p?.estado ?? '').trim();
+}
+
+function taiPedidoInc(p) {
+    if (!p) return null;
+    const raw = p.tai ?? p.tecnico_asignado_id;
+    if (raw == null || raw === '') return null;
+    const n = parseInt(String(raw), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * ¿Se puede marcar el pedido para armar una incidencia?
+ * - Admin/superadmin web: todos salvo cerrados.
+ * - Técnico/supervisor: solo Asignado o En ejecución, asignados a sí mismo; nunca Pendiente ni Cerrado ni derivado externo.
+ */
+function puedeSeleccionarPedidoParaIncidencias(p) {
+    if (!p || !puedeGestionarIncidencias()) return false;
+    const es = estadoPedidoInc(p);
+    if (es === 'Cerrado') return false;
+    if (esAdminIncModule()) return true;
+    if (!esTecnicoOSupervisorIncModule()) return false;
+    if (es === 'Pendiente' || es === 'Derivado externo') return false;
+    if (es !== 'Asignado' && es !== 'En ejecución') return false;
+    const uid = obtenerUserIdParaIncidencias();
+    const tai = taiPedidoInc(p);
+    if (uid == null || tai == null) return false;
+    return Number(tai) === Number(uid);
+}
+
+/** Fila API GET incidencia → forma mínima para permisos de cierre masivo. */
+function pedidoApiRowParaPermisoInc(row) {
+    if (!row || row.id == null) return null;
+    return {
+        id: row.id,
+        es: row.estado,
+        tt: row.tipo_trabajo,
+        tai: row.tecnico_asignado_id != null ? Number(row.tecnico_asignado_id) : null,
+    };
 }
 function rubroPanel() {
     const t = String(window.EMPRESA_CFG?.tipo || '').toLowerCase();
@@ -112,6 +176,12 @@ function rowApiToPedidoLite(row) {
         const n = parseInt(String(incRaw), 10);
         inci = Number.isFinite(n) ? n : null;
     }
+    const taiRaw = row.tecnico_asignado_id;
+    let tai = null;
+    if (taiRaw != null && taiRaw !== '') {
+        const n = parseInt(String(taiRaw), 10);
+        tai = Number.isFinite(n) && n > 0 ? n : null;
+    }
     return {
         id: row.id,
         np,
@@ -123,6 +193,7 @@ function rowApiToPedidoLite(row) {
         dis: row.distribuidor,
         trf: row.trafo,
         inci,
+        tai,
     };
 }
 
@@ -491,6 +562,124 @@ function openModalCierreMasivoIncidencia(args) {
     mc.classList.add('active');
 }
 
+function ensureModalAsignarTecnicoIncidencia() {
+    if (_modalAsignarInc) return _modalAsignarInc;
+    const root = document.createElement('div');
+    root.id = 'gn-modal-inc-asignar-tecnico';
+    root.className = 'mo';
+    root.style.zIndex = '10062';
+    root.innerHTML = `
+<div class="mc lg gn-inc-modal-mc" style="max-width:min(96vw,28rem)">
+  <div class="mh"><h3 id="gn-inc-asig-tit"><i class="fas fa-user-plus"></i> Asignar técnico</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
+  <div class="mb" style="padding:0 1rem 1rem">
+    <p id="gn-inc-asig-sub" style="font-size:.8rem;color:var(--tm);margin:0 0 .65rem"></p>
+    <label for="gn-inc-asig-sel" style="display:block;font-size:.85rem;margin-bottom:.25rem">Técnico</label>
+    <select id="gn-inc-asig-sel" style="width:100%;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);margin-bottom:.85rem"></select>
+    <div style="display:flex;flex-wrap:wrap;gap:.45rem">
+      <button type="button" id="gn-inc-asig-cancel" class="btn-sm sec" style="flex:1">Cancelar</button>
+      <button type="button" id="gn-inc-asig-ok" class="bp" style="flex:1"><i class="fas fa-check"></i> Asignar a todos</button>
+    </div>
+  </div>
+</div>`;
+    document.body.appendChild(root);
+    root.addEventListener('click', (e) => {
+        if (e.target === root) root.classList.remove('active');
+    });
+    root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => root.classList.remove('active')));
+    _modalAsignarInc = root;
+    return root;
+}
+
+/**
+ * Admin: PUT `/api/pedidos/:id/asignar` en cada pedido abierto de la incidencia.
+ * @param {{ incId: number, pedidoIds: number[], tok: string, onDone?: () => void }} args
+ */
+async function openModalAsignarTecnicoIncidencia(args) {
+    const { incId, pedidoIds, tok, onDone } = args;
+    if (!Array.isArray(pedidoIds) || !pedidoIds.length) {
+        toast('No hay pedidos para asignar.', 'info');
+        return;
+    }
+    const mc = ensureModalAsignarTecnicoIncidencia();
+    const tit = mc.querySelector('#gn-inc-asig-tit');
+    const sub = mc.querySelector('#gn-inc-asig-sub');
+    const sel = mc.querySelector('#gn-inc-asig-sel');
+    const btnOk0 = mc.querySelector('#gn-inc-asig-ok');
+    const btnCancel0 = mc.querySelector('#gn-inc-asig-cancel');
+
+    if (tit) tit.innerHTML = `<i class="fas fa-user-plus"></i> Asignar técnico — incidencia #${incId}`;
+    if (sub) sub.textContent = `Se asignará el mismo técnico a ${pedidoIds.length} pedido(s) abierto(s).`;
+    if (sel) {
+        sel.innerHTML = '<option value="">Elegí un técnico…</option>';
+    }
+
+    try {
+        const r = await fetch(apiUrl('/api/usuarios/tecnicos'), { headers: { Authorization: `Bearer ${tok}` } });
+        const rows = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(rows.error || rows.detail || `HTTP ${r.status}`);
+        const list = Array.isArray(rows) ? rows : [];
+        if (!list.length) {
+            toast('No hay técnicos activos.', 'error');
+            return;
+        }
+        for (const u of list) {
+            const id = u.id;
+            const nom = String(u.nombre || u.email || `Usuario ${id}`).trim();
+            const opt = document.createElement('option');
+            opt.value = String(id);
+            opt.textContent = nom;
+            sel?.appendChild(opt);
+        }
+    } catch (e) {
+        toast(String(e?.message || e), 'error');
+        return;
+    }
+
+    const close = () => mc.classList.remove('active');
+
+    if (btnCancel0?.parentNode) {
+        const nb = btnCancel0.cloneNode(true);
+        btnCancel0.parentNode.replaceChild(nb, btnCancel0);
+        nb.addEventListener('click', close);
+    }
+    if (btnOk0?.parentNode) {
+        const nb = btnOk0.cloneNode(true);
+        btnOk0.parentNode.replaceChild(nb, btnOk0);
+        nb.addEventListener('click', async () => {
+            const tid = parseInt(String(sel?.value || ''), 10);
+            if (!Number.isFinite(tid) || tid <= 0) {
+                toast('Elegí un técnico.', 'error');
+                return;
+            }
+            nb.disabled = true;
+            try {
+                let ok = 0;
+                for (const pid of pedidoIds) {
+                    const rr = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}/asignar`), {
+                        method: 'PUT',
+                        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tecnico_asignado_id: tid }),
+                    });
+                    const jj = await rr.json().catch(() => ({}));
+                    if (!rr.ok) throw new Error(jj.error || jj.detail || `Pedido ${pid}: HTTP ${rr.status}`);
+                    ok += 1;
+                }
+                toast(`✅ Técnico asignado en ${ok} pedido(s).`, 'success');
+                close();
+                invalidatePedidosIncidenciasCache();
+                recargarPedidosYMapa();
+                if (typeof onDone === 'function') onDone();
+            } catch (e) {
+                toast(String(e?.message || e), 'error');
+            } finally {
+                nb.disabled = false;
+            }
+        });
+    }
+
+    mc.classList.add('active');
+}
+
 function parseNpFromRow(row) {
     const fromDs = row.dataset?.gnNp;
     if (fromDs != null && String(fromDs).trim() !== '') return String(fromDs).trim();
@@ -582,6 +771,15 @@ function ensureFab() {
 
 const _selectedNp = new Set();
 
+function countSelectableSelectedNp() {
+    let n = 0;
+    for (const k of _selectedNp) {
+        const px = findPedidoForIncidenciasUi(k);
+        if (px && puedeSeleccionarPedidoParaIncidencias(px)) n += 1;
+    }
+    return n;
+}
+
 function getVisibleRowCheckboxes(pl) {
     return [...pl.querySelectorAll(':scope > .pi .gn-pi-cb-wrap input.gn-pi-cb, :scope > .pi input.gn-pi-cb')];
 }
@@ -667,7 +865,7 @@ function ensureSelectAllBar(pl) {
 
 function updateFab() {
     const fab = ensureFab();
-    const n = _selectedNp.size;
+    const n = countSelectableSelectedNp();
     if (!puedeGestionarIncidencias() || n < 2) {
         fab.style.display = 'none';
         return;
@@ -683,14 +881,25 @@ function enhanceListaPedidosInner() {
 
     const rows = pl.querySelectorAll(':scope > .pi');
     rows.forEach((row) => {
-        if (row.dataset.gnIncDone === '1') {
-            if (!row.querySelector('.gn-pi-cb-wrap input.gn-pi-cb') && !row.querySelector('input.gn-pi-cb')) {
-                row.removeAttribute('data-gn-inc-done');
-            }
-            else return;
-        }
         const np = parseNpFromRow(row);
         const p = findPedidoForIncidenciasUi(np);
+        const wantCb = puedeGestionarIncidencias() && p && puedeSeleccionarPedidoParaIncidencias(p);
+        const hasCb = !!row.querySelector('.gn-pi-cb-wrap');
+
+        if (row.dataset.gnIncDone === '1') {
+            if (wantCb === hasCb) return;
+            row.removeAttribute('data-gn-inc-done');
+            row.querySelector('.gn-pi-cb-wrap')?.remove();
+            const mv0 = row.querySelector(':scope > .gn-pi-inc-move');
+            if (mv0) {
+                while (mv0.firstChild) row.insertBefore(mv0.firstChild, mv0);
+                mv0.remove();
+            }
+            row.classList.remove('gn-pi-inc');
+            row.style.display = '';
+            row.style.alignItems = '';
+            row.style.gap = '';
+        }
         if (!p) {
             return;
         }
@@ -702,10 +911,11 @@ function enhanceListaPedidosInner() {
         row.classList.add('gn-pi-inc');
 
         const move = document.createElement('div');
+        move.className = 'gn-pi-inc-move';
         move.style.cssText = 'flex:1;min-width:0';
         while (row.firstChild) move.appendChild(row.firstChild);
 
-        if (puedeGestionarIncidencias()) {
+        if (wantCb) {
             const wrapCb = document.createElement('label');
             wrapCb.className = 'gn-pi-cb-wrap';
             wrapCb.setAttribute('aria-label', 'Seleccionar pedido para incidencia');
@@ -759,6 +969,12 @@ function enhanceListaPedidosInner() {
 
         row.dataset.gnIncDone = '1';
     });
+    try {
+        for (const k of [..._selectedNp]) {
+            const px = findPedidoForIncidenciasUi(k);
+            if (!px || !puedeSeleccionarPedidoParaIncidencias(px)) _selectedNp.delete(k);
+        }
+    } catch (_) {}
     updateFab();
     ensureSelectAllBar(pl);
 }
@@ -843,9 +1059,10 @@ async function openModalAsociar() {
     await prefetchPedidosParaIncidencias(true);
     const peds = [..._selectedNp]
         .map((np) => findPedidoForIncidenciasUi(np))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((x) => puedeSeleccionarPedidoParaIncidencias(x));
     if (peds.length < 2) {
-        toast('Seleccioná al menos 2 pedidos', 'error');
+        toast('Seleccioná al menos 2 pedidos que podás asociar (según tu rol).', 'error');
         return;
     }
     const m = paintAssocModalContent();
@@ -944,6 +1161,7 @@ function buildModalVista() {
     <div id="gn-inc-v-prog" style="font-size:.85rem;font-weight:600;margin-bottom:.5rem"></div>
     <div id="gn-inc-v-list" style="max-height:min(50vh,320px);overflow:auto;font-size:.82rem;border:1px solid var(--bo);border-radius:.5rem;padding:.35rem"></div>
     <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.45rem">
+      <button type="button" id="gn-inc-v-asignar-tecnico" class="bp sec" style="flex:1;min-width:12rem;display:none"><i class="fas fa-user-plus"></i> Asignar técnico a incidencia</button>
       <button type="button" id="gn-inc-v-cerrar-todos" class="bp" style="flex:1;min-width:12rem"><i class="fas fa-check-double"></i> Cerrar todos los pedidos</button>
     </div>
   </div>
@@ -1022,11 +1240,7 @@ async function openVistaIncidencia(incId) {
                     return `<div style="display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;padding:.35rem;border-bottom:1px solid var(--bo)" data-pid="${id}">
             <span style="flex:1;min-width:10rem;line-height:1.35"><strong>#${String(np).replace(/</g, '&lt;')}</strong> · <em>${est.replace(/</g, '&lt;')}</em><br><span style="font-size:.78rem;color:var(--tm)">${nom.replace(/</g, '&lt;')} · ${tt.replace(/</g, '&lt;')}</span></span>
             <button type="button" class="btn-sm" data-ver="${id}" style="padding:.2rem .45rem;font-size:.72rem">Ver</button>
-            ${
-                puedeGestionarIncidencias()
-                    ? `<button type="button" class="btn-sm sec" data-des="${id}" style="padding:.2rem .45rem;font-size:.72rem">Desasociar</button>`
-                    : ''
-            }
+            ${esAdminIncModule() ? `<button type="button" class="btn-sm sec" data-des="${id}" style="padding:.2rem .45rem;font-size:.72rem">Desasociar</button>` : ''}
           </div>`;
                 })
                 .join('');
@@ -1069,6 +1283,27 @@ async function openVistaIncidencia(incId) {
             });
         }
 
+        const btnAsig0 = m.querySelector('#gn-inc-v-asignar-tecnico');
+        const pedidosNoCerrados = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
+        const pedidosIdsAsignar = pedidosNoCerrados.map((p) => Number(p.id)).filter((id) => Number.isFinite(id) && id > 0);
+        if (btnAsig0) {
+            if (!esAdminIncModule() || !pedidosIdsAsignar.length) {
+                btnAsig0.style.display = 'none';
+            } else {
+                btnAsig0.style.display = '';
+                const btnAsig = btnAsig0.cloneNode(true);
+                btnAsig0.parentNode.replaceChild(btnAsig, btnAsig0);
+                btnAsig.addEventListener('click', () => {
+                    void openModalAsignarTecnicoIncidencia({
+                        incId,
+                        pedidoIds: pedidosIdsAsignar,
+                        tok,
+                        onDone: () => void openVistaIncidencia(incId),
+                    });
+                });
+            }
+        }
+
         const btnAll0 = m.querySelector('#gn-inc-v-cerrar-todos');
         if (btnAll0) {
             if (!puedeGestionarIncidencias()) {
@@ -1082,9 +1317,18 @@ async function openVistaIncidencia(incId) {
                         toast('Sin permiso para cerrar incidencias.', 'error');
                         return;
                     }
-                    const abiertos = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
+                    const abiertosAll = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
+                    const abiertos = esAdminIncModule()
+                        ? abiertosAll
+                        : abiertosAll.filter((row) => {
+                              const lite = pedidoApiRowParaPermisoInc(row);
+                              return lite && puedeSeleccionarPedidoParaIncidencias({ ...lite, estado: lite.es });
+                          });
                     if (!abiertos.length) {
-                        toast('No hay pedidos abiertos', 'info');
+                        toast(
+                            esAdminIncModule() ? 'No hay pedidos abiertos' : 'No hay pedidos abiertos que puedas cerrar con tu usuario.',
+                            'info'
+                        );
                         return;
                     }
                     openModalCierreMasivoIncidencia({
@@ -1115,6 +1359,7 @@ export function installIncidenciasUI() {
         window.__gnIncidenciasRefresh = debouncedEnhance;
         window.__gnIncidenciasInvalidateCache = invalidatePedidosIncidenciasCache;
         window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.puedeSeleccionarPedidoParaIncidencias = puedeSeleccionarPedidoParaIncidencias;
         window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
     } catch (_) {}
     void fetchPedidoMap().then(() => debouncedEnhance());
@@ -1134,6 +1379,7 @@ export function installIncidenciasUI() {
 if (typeof window !== 'undefined') {
     try {
         window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.puedeSeleccionarPedidoParaIncidencias = puedeSeleccionarPedidoParaIncidencias;
         window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
     } catch (_) {}
     const run = () => {
