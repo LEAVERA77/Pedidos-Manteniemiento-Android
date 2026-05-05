@@ -5,6 +5,7 @@
  */
 
 import { toast } from './ui-utils.js';
+import { injectPedidoVerImagenReclamo } from './pedido-ver-imagen.js';
 
 /** @type {Map<string, { frp: string|null, urvid: number|null }>} */
 const _reversionApiCache = new Map();
@@ -148,6 +149,9 @@ export function installPedidoVolverPendiente(deps) {
             await origDetalle(p, opts);
             try {
                 await injectHistorialDerivacionRevertida(p);
+            } catch (_) {}
+            try {
+                await injectPedidoVerImagenReclamo(p);
             } catch (_) {}
         },
     };
