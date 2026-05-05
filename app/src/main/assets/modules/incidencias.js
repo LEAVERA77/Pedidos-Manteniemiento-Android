@@ -57,16 +57,25 @@ function recargarPedidosYMapa() {
 }
 
 function parseNpFromRow(row) {
+    const fromDs = row.dataset?.gnNp;
+    if (fromDs != null && String(fromDs).trim() !== '') return String(fromDs).trim();
     const t = row.querySelector('.pn')?.textContent || '';
     const m = t.match(/#(\d+)/);
-    if (!m) return null;
-    return parseInt(m[1], 10);
+    if (m) return String(parseInt(m[1], 10));
+    const raw = t.replace(/\s+/g, ' ').trim();
+    const hash = raw.indexOf('#');
+    if (hash === -1) return null;
+    let token = raw.slice(hash + 1).trim();
+    token = token.replace(/LOCAL$/i, '').trim();
+    return token || null;
 }
 function findPedidoLocal(np) {
-    if (np == null || !Number.isFinite(np)) return null;
+    if (np == null || np === '') return null;
+    const key = String(np).trim();
+    if (!key) return null;
     const list = window.app?.p;
     if (!Array.isArray(list)) return null;
-    return list.find((x) => x && Number(x.np) === Number(np)) || null;
+    return list.find((x) => x && String(x.np ?? '').trim() === key) || null;
 }
 
 function uniqueNonEmpty(...vals) {
@@ -173,12 +182,13 @@ function enhanceListaPedidos() {
             cb.type = 'checkbox';
             cb.className = 'gn-pi-cb';
             cb.style.marginTop = '4px';
-            cb.dataset.np = String(np);
-            cb.checked = _selectedNp.has(np);
+            const npKey = String(np);
+            cb.dataset.np = npKey;
+            cb.checked = _selectedNp.has(npKey);
             cb.addEventListener('click', (e) => e.stopPropagation());
             cb.addEventListener('change', () => {
-                if (cb.checked) _selectedNp.add(np);
-                else _selectedNp.delete(np);
+                if (cb.checked) _selectedNp.add(npKey);
+                else _selectedNp.delete(npKey);
                 updateFab();
             });
             row.appendChild(cb);

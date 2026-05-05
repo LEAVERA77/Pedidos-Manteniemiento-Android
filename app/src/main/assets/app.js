@@ -12272,6 +12272,9 @@ function render() {
     fl.forEach(p => {
         const d = document.createElement('div');
         d.className = 'pi';
+        try {
+            d.dataset.gnNp = p.np != null && String(p.np).trim() !== '' ? String(p.np).trim() : '';
+        } catch (_) {}
         d.style.borderLeftColor = bC[p.pr] || '#3b82f6';
         d.addEventListener('click', () => void detalle(p));
         
