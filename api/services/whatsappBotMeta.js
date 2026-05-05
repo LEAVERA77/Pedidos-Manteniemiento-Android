@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { query } from "../db/neon.js";
 import {
   sendWhatsAppInteractiveListWithCredentials,
+  sendWhatsAppInteractiveButtonsWithCredentials,
   decodeWhatsAppListRowId,
   normalizeWhatsAppRecipientForMeta,
   maskWaDigitsForLog,
@@ -14,6 +15,13 @@ import {
   sendTenantWhatsAppText,
 } from "./whatsappService.js";
 import { crearPedidoDesdeWhatsappBot } from "./pedidoWhatsappBot.js";
+import {
+  WA_PEDIDO_FOTO_BTN_GALERIA,
+  WA_PEDIDO_FOTO_BTN_CAMARA,
+  WA_PEDIDO_FOTO_BTN_OMITIR,
+  whatsappPedidoSubirFotoDesdeMediaId,
+  destroyCloudinaryImageBySecureUrl,
+} from "./whatsappPedidoFotoHelpers.js";
 import {
   geocodWaOperacionCreate,
   geocodWaOperacionFinishErr,
@@ -166,6 +174,8 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_opcional_id",
   "awaiting_nis_whatsapp",
   "awaiting_confirmar_resumen",
+  "awaiting_wa_foto_opcional",
+  "awaiting_wa_foto_upload",
 ]);
 
 /** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
@@ -1013,6 +1023,14 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   if (sess.identificacionLibreTexto && String(sess.identificacionLibreTexto).trim()) {
     descripcionFinal += `\n\nIdentificación / referencia: ${String(sess.identificacionLibreTexto).trim()}`;
   }
+  if (sess.waPedidoFotoUploadFallback) {
+    descripcionFinal +=
+      "\n\n_(Nota sistema: la foto del reclamo se subió sin optimización estándar por un fallo temporal al procesarla.)_";
+  }
+  const fotoWaUrl =
+    sess.waPedidoFotoCloudinaryUrl != null && String(sess.waPedidoFotoCloudinaryUrl).trim()
+      ? String(sess.waPedidoFotoCloudinaryUrl).trim()
+      : null;
   const dirDecl = String(sess.direccionDeclaradaUsuario || "").trim();
   const dirMapa = String(sess.direccionTexto || "").trim();
   const calleT = String(sess.addrCalle || "").trim();
@@ -1068,6 +1086,7 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       barrio: sess.barrio ?? null,
       notaUbicacionInterna: notaInt || null,
       correlationId,
+      fotoUrlOpcionalWhatsapp: fotoWaUrl,
     });
     sessions.delete(sk);
     const notaSinMapa =
@@ -1155,6 +1174,30 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   }
 }
 
+/** Misma limpieza que *atrás* en el resumen; no borra la foto opcional WA (sigue asociada al borrador). */
+function volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId) {
+  delete sess.direccionDeclaradaUsuario;
+  delete sess.direccionTexto;
+  delete sess._geocodeSinMapa;
+  sess.addrNumero = null;
+  if (!sess.userSharedGps) {
+    sess.lat = null;
+    sess.lng = null;
+  }
+  sess.step = "awaiting_addr_numero";
+  if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+  sessions.set(sk, sess);
+}
+
+async function limpiarFotoOpcionalWhatsappEnSesion(sess) {
+  const u = sess?.waPedidoFotoCloudinaryUrl != null ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
+  if (u) {
+    await destroyCloudinaryImageBySecureUrl(u);
+    delete sess.waPedidoFotoCloudinaryUrl;
+  }
+  delete sess.waPedidoFotoUploadFallback;
+}
+
 /**
  * Resumen legible + confirmación explícita antes del INSERT (`finalizePedidoFromSession`).
  */
@@ -1180,6 +1223,7 @@ async function pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactN
     sess.suministroTipoConexion || sess.suministroFases
       ? `\n*Suministro:* ${String(sess.suministroTipoConexion || "—")} · ${String(sess.suministroFases || "—")}`
       : "";
+  const fotoLine = sess.waPedidoFotoCloudinaryUrl ? `\n*Foto adjunta:* sí` : "";
   const body =
     `*Resumen del reclamo*\n\n` +
     `${ident.join(" · ")}\n` +
@@ -1187,10 +1231,64 @@ async function pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactN
     `*Domicilio:* ${calle} ${num === "0" ? "(s/n)" : num}, *${loc}*${prov ? `, *${prov}*` : ""}` +
     sumLine +
     `\n\n*Descripción:*\n${descShort || "—"}` +
+    fotoLine +
     `\n\n¿*Confirmás* el registro?\n` +
     `Respondé *SI* o *1* para cargar el reclamo.\n` +
     `Si querés corregir *calle o número*, escribí *atrás*. *menú* = cancelar todo.`;
   await reply(phone, body + MSG_SALIR_ATRAS, tid, wpid);
+}
+
+/**
+ * Paso intermedio antes del resumen: hasta una foto Cloudinary (reemplazo si mandan otra).
+ */
+async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId) {
+  const tid = sess.tenantId;
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
+  sess.step = "awaiting_wa_foto_opcional";
+  sessions.set(sk, sess);
+  const bodyText =
+    `¿Querés adjuntar *una foto* del problema?\n\n` +
+    `Podés enviarla *desde la galería* o *con la cámara* (📎 → Imagen).\n\n` +
+    `_Solo guardamos *una* foto por reclamo; si mandás otra, *reemplaza* la anterior._`;
+
+  const pid = String(wpid || "").trim();
+  let accessToken = "";
+  let graphPid = pid;
+  if (pid) {
+    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    accessToken = String(byPid.accessToken || "").trim();
+  }
+  if (!accessToken || !graphPid) {
+    const creds = await getWhatsAppCredentialsForTenant(ctx.id);
+    accessToken = String(creds.accessToken || "").trim();
+    graphPid = pid || String(creds.phoneNumberId || "").trim();
+  }
+
+  const buttons = [
+    { id: WA_PEDIDO_FOTO_BTN_GALERIA, title: "Desde galería" },
+    { id: WA_PEDIDO_FOTO_BTN_CAMARA, title: "Tomar foto" },
+    { id: WA_PEDIDO_FOTO_BTN_OMITIR, title: "Sin foto" },
+  ];
+
+  if (accessToken && graphPid) {
+    const r = await sendWhatsAppInteractiveButtonsWithCredentials(
+      phone,
+      { bodyText: `${bodyText}${MSG_SALIR_ATRAS}`, buttons },
+      { accessToken, phoneNumberId: graphPid, purpose: "whatsapp_pedido_foto_opcional" }
+    );
+    if (r.ok) return;
+    console.warn("[whatsapp-bot-meta] botones foto opcional fallaron, texto plano", r.error || r.graph);
+  }
+
+  await reply(
+    phone,
+    `${bodyText}\n\n` +
+      `Si querés mandar foto: escribí *1* y después enviá la imagen con 📎.\n` +
+      `Si no: escribí *3* u *omitir*.` +
+      MSG_SALIR_ATRAS,
+    tid,
+    wpid
+  );
 }
 
 /**
@@ -1283,7 +1381,7 @@ async function geocodeStructuredAddressAndFinalizePedido(
   }
 
   sessions.set(sk, sess);
-  await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId);
+  await pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId);
 }
 
 /** Cloud API: máximo 10 filas en una lista interactiva. */
@@ -1352,6 +1450,110 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
   return r;
 }
 
+async function aplicarImagenRecibidaFlujoPedidoWa(
+  phone,
+  sess,
+  sk,
+  mediaId,
+  phoneNumberId,
+  contactName,
+  ctxOk
+) {
+  let accessToken = "";
+  const pid = String(phoneNumberId || "").trim();
+  if (pid) {
+    const byPid = await getWhatsAppCredentialsByMetaPhoneNumberId(pid);
+    accessToken = String(byPid.accessToken || "").trim();
+  }
+  if (!accessToken) {
+    const creds = await getWhatsAppCredentialsForTenant(sess.tenantId);
+    accessToken = String(creds.accessToken || "").trim();
+  }
+  if (!accessToken) {
+    await reply(
+      phone,
+      "No pudimos procesar la imagen (configuración). Intentá más tarde o escribí *omitir*.",
+      sess.tenantId,
+      phoneNumberId
+    );
+    return;
+  }
+  try {
+    const prevUrl = sess.waPedidoFotoCloudinaryUrl ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
+    const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken);
+    if (prevUrl) {
+      await destroyCloudinaryImageBySecureUrl(prevUrl).catch(() => {});
+    }
+    sess.waPedidoFotoCloudinaryUrl = secureUrl;
+    sess.waPedidoFotoUploadFallback = !!usedFallback;
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Listo, *guardamos tu foto*. Te mostramos el *resumen* para confirmar el reclamo.",
+      sess.tenantId,
+      phoneNumberId
+    );
+    await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctxOk, phoneNumberId);
+  } catch (e) {
+    console.error("[whatsapp-bot-meta] subida foto WA", e?.message || e);
+    await reply(
+      phone,
+      "No pudimos guardar la imagen. Podés escribir *omitir* para seguir *sin foto*, probar otra imagen, o *atrás* para elegir de nuevo.",
+      sess.tenantId,
+      phoneNumberId
+    );
+  }
+}
+
+async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId, contactName }) {
+  const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
+  if (await isWhatsAppAutomatedBotDisabled()) return;
+
+  const mediaId = msg?.image?.id ? String(msg.image.id).trim() : "";
+  if (!mediaId) return;
+
+  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
+  const tid = resolvedTid ?? botTenantId();
+  const sk = sessionKey(phone, tid);
+  const sess = sessions.get(sk);
+
+  if (sess && sess.step === "human_chat") {
+    await reply(
+      phone,
+      "Recibimos una imagen, pero en este modo solo podemos seguirte por *texto*. Escribí tu consulta o *menú*.",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  const stepOk = sess && (sess.step === "awaiting_wa_foto_upload" || sess.step === "awaiting_wa_foto_opcional");
+  if (!sess || !stepOk) {
+    await reply(
+      phone,
+      "Recibimos tu imagen. Si no estabas cargando un reclamo, no la usamos; para iniciar uno escribí *menú*.",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  const ctxOk = await loadTenantBotContext(tid);
+  if (!ctxOk) {
+    sessions.delete(sk);
+    await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
+    return;
+  }
+
+  if (sess.step === "awaiting_wa_foto_opcional") {
+    sess.step = "awaiting_wa_foto_upload";
+    sessions.set(sk, sess);
+  }
+
+  await aplicarImagenRecibidaFlujoPedidoWa(phone, sess, sk, mediaId, phoneNumberId, contactName, ctxOk);
+}
+
 export async function handleInboundMetaWhatsAppPayload(body) {
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
@@ -1394,12 +1596,14 @@ export async function handleInboundMetaWhatsAppPayload(body) {
             }
           } else if (ir?.type === "button_reply") {
             const title = String(ir?.button_reply?.title || "").trim();
+            const buttonReplyId = String(ir?.button_reply?.id || "").trim();
             try {
               await processInboundText({
                 fromRaw: from,
                 text: title || "menú",
                 phoneNumberId,
                 contactName,
+                buttonReplyId,
               });
             } catch (e) {
               console.error("[whatsapp-bot-meta] button_reply error", e);
@@ -1432,6 +1636,26 @@ export async function handleInboundMetaWhatsAppPayload(body) {
             await reply(
               fromNorm,
               "Error al procesar la ubicación. Intentá de nuevo o escribí *menú*.",
+              await tenantIdForWebhook(phoneNumberId),
+              phoneNumberId
+            );
+          }
+          continue;
+        }
+
+        if (msg?.type === "image") {
+          try {
+            await processInboundWhatsappImageMessage({
+              fromRaw: from,
+              msg,
+              phoneNumberId,
+              contactName,
+            });
+          } catch (e) {
+            console.error("[whatsapp-bot-meta] image inbound error", e);
+            await reply(
+              fromNorm,
+              "No pudimos procesar la imagen. Si estabas cargando un reclamo, escribí *menú* o intentá de nuevo.",
               await tenantIdForWebhook(phoneNumberId),
               phoneNumberId
             );
@@ -1688,7 +1912,7 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
   return true;
 }
 
-async function processInboundText({ fromRaw, text, phoneNumberId, contactName }) {
+async function processInboundText({ fromRaw, text, phoneNumberId, contactName, buttonReplyId = "" }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
@@ -1961,6 +2185,99 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
 
   let sess = sessions.get(sk);
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+  const replyBtnId = String(buttonReplyId || "").trim();
+
+  if (sess && sess.step === "awaiting_wa_foto_opcional") {
+    const t = String(text || "").trim();
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      sessions.delete(sk);
+      await reply(phone, menuTextoNumerado(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (esComandoAtras(t)) {
+      volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId);
+      await reply(
+        phone,
+        "Volvimos al *número de puerta*. Corregí el dato y seguimos.\n\n" + MSG_ADDR_NUMERO,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    if (
+      replyBtnId === WA_PEDIDO_FOTO_BTN_OMITIR ||
+      lower === "omitir" ||
+      lower === "sin foto" ||
+      lower === "no foto" ||
+      t === "3"
+    ) {
+      await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      sessions.set(sk, sess);
+      await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
+      return;
+    }
+    if (
+      replyBtnId === WA_PEDIDO_FOTO_BTN_GALERIA ||
+      replyBtnId === WA_PEDIDO_FOTO_BTN_CAMARA ||
+      t === "1" ||
+      t === "2"
+    ) {
+      sess.step = "awaiting_wa_foto_upload";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      const hintCamara =
+        replyBtnId === WA_PEDIDO_FOTO_BTN_CAMARA ||
+        /\bcamara\b|\bfoto\b.*\bsacar\b/i.test(t + lower);
+      const hint = hintCamara
+        ? "Abrí 📎 → *Cámara*, sacá *una* foto y enviala."
+        : "Abrí 📎 → *Galería* o *Cámara*, elegí *una* imagen y enviala.";
+      await reply(
+        phone,
+        `Perfecto. ${hint}\n\n_Si preferís no mandar imagen, escribí *omitir*.` + MSG_SALIR_ATRAS,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    await reply(
+      phone,
+      "Usá los *botones* del mensaje anterior, o escribí *1* para adjuntar foto, *3* u *omitir* si no querés foto.",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_wa_foto_upload") {
+    const t = String(text || "").trim();
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      sessions.delete(sk);
+      await reply(phone, menuTextoNumerado(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_wa_foto_opcional";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
+      return;
+    }
+    if (lower === "omitir" || lower === "sin foto" || lower === "no foto" || t === "3") {
+      await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      sessions.set(sk, sess);
+      await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
+      return;
+    }
+    await reply(
+      phone,
+      "En este paso enviá *una imagen* con 📎 o escribí *omitir* para seguir sin foto.",
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
 
   if (sess && sess.step === "awaiting_factibilidad_post_gps") {
     if (esComandoAtras(text)) {
@@ -2497,17 +2814,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
       return;
     }
     if (esComandoAtras(t)) {
-      delete sess.direccionDeclaradaUsuario;
-      delete sess.direccionTexto;
-      delete sess._geocodeSinMapa;
-      sess.addrNumero = null;
-      if (!sess.userSharedGps) {
-        sess.lat = null;
-        sess.lng = null;
-      }
-      sess.step = "awaiting_addr_numero";
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
+      volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId);
       await reply(
         phone,
         "Volvimos al *número de puerta*. Corregí el dato y seguimos.\n\n" + MSG_ADDR_NUMERO,
@@ -2518,17 +2825,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName })
     }
     const conf = interpretaConfirmacionResumenWhatsapp(text);
     if (conf === "no") {
-      delete sess.direccionDeclaradaUsuario;
-      delete sess.direccionTexto;
-      delete sess._geocodeSinMapa;
-      sess.addrNumero = null;
-      if (!sess.userSharedGps) {
-        sess.lat = null;
-        sess.lng = null;
-      }
-      sess.step = "awaiting_addr_numero";
-      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-      sessions.set(sk, sess);
+      volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId);
       await reply(phone, "Indicá de nuevo el *número de puerta* (solo dígitos, o *0* si no aplica).\n\n" + MSG_ADDR_NUMERO, tid, phoneNumberId);
       return;
     }

@@ -250,6 +250,8 @@ export async function crearPedidoDesdeWhatsappBot({
   barrio,
   notaUbicacionInterna,
   correlationId,
+  /** Una URL Cloudinary (misma convención que fotos de app/web: columna `foto_urls`). */
+  fotoUrlOpcionalWhatsapp = null,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   let de = String(descripcion || "").trim();
@@ -588,6 +590,15 @@ export async function crearPedidoDesdeWhatsappBot({
   if (hasOrigen) {
     cols.push("origen_reclamo");
     vals.push("whatsapp");
+  }
+
+  const fotoWa =
+    fotoUrlOpcionalWhatsapp != null && String(fotoUrlOpcionalWhatsapp).trim()
+      ? String(fotoUrlOpcionalWhatsapp).trim()
+      : null;
+  if (pCols.has("foto_urls") && fotoWa) {
+    cols.push("foto_urls");
+    vals.push(fotoWa);
   }
 
   if (cols.length !== vals.length) {

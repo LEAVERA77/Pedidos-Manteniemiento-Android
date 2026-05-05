@@ -334,3 +334,107 @@ export async function sendWhatsAppInteractiveList(toDigits, opts) {
     purpose: "interactive_list_env",
   });
 }
+
+/**
+ * Botones de respuesta rápida (máx. 3). `title` ≤ 20 caracteres (Cloud API).
+ * @param {{ bodyText: string, buttons: Array<{ id: string, title: string }> }} opts
+ */
+export async function sendWhatsAppInteractiveButtonsWithCredentials(
+  toDigits,
+  { bodyText, buttons },
+  { accessToken, phoneNumberId, purpose }
+) {
+  const purposeTag = String(purpose || "interactive_buttons").slice(0, 96);
+  const token = String(accessToken || "").trim();
+  const pid = String(phoneNumberId || "").trim();
+  if (!token || !pid) {
+    return { ok: false, error: "missing_meta_credentials" };
+  }
+  const rawTo = String(toDigits || "").replace(/\D/g, "");
+  const to = normalizeWhatsAppRecipientForMeta(rawTo, { mode: "outbound" });
+  const btns = Array.isArray(buttons) ? buttons.filter((b) => b && String(b.id || "").trim() && String(b.title || "").trim()) : [];
+  if (!to || !bodyText || !btns.length) {
+    return { ok: false, error: "invalid_params" };
+  }
+  if (btns.length > 3) {
+    return { ok: false, error: "too_many_buttons" };
+  }
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: String(bodyText || "").slice(0, 1024) },
+      action: {
+        buttons: btns.slice(0, 3).map((b) => ({
+          type: "reply",
+          reply: {
+            id: String(b.id).slice(0, 256),
+            title: String(b.title).slice(0, 20),
+          },
+        })),
+      },
+    },
+  };
+  const endpoint = `${metaGraphBaseUrl()}/${GRAPH_VERSION}/${pid}/messages`;
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const graph = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const errPart = graph?.error
+      ? `${graph.error.message || "graph_error"} (code ${graph.error.code ?? "?"})`
+      : JSON.stringify(graph).slice(0, 400);
+    console.error("[meta-whatsapp] interactive buttons error", {
+      purpose: purposeTag,
+      toOut: maskWaDigitsForLog(to),
+      status: resp.status,
+      detail: errPart,
+    });
+    return { ok: false, status: resp.status, graph };
+  }
+  if (graph?.error) {
+    return { ok: false, status: resp.status || 502, graph };
+  }
+  return { ok: true, graph };
+}
+
+/**
+ * Descarga binario de imagen (u otro media) referenciado por id en webhook de WhatsApp Cloud API.
+ * @returns {Promise<{ buffer: Buffer, mimeType: string }>}
+ */
+export async function downloadWhatsAppMediaById(mediaId, accessToken) {
+  const mid = String(mediaId || "").trim();
+  const token = String(accessToken || "").trim();
+  if (!mid || !token) {
+    throw new Error("missing_media_id_or_token");
+  }
+  const metaEndpoint = `${metaGraphBaseUrl()}/${GRAPH_VERSION}/${mid}`;
+  const r1 = await fetch(metaEndpoint, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const j = await r1.json().catch(() => ({}));
+  if (!r1.ok) {
+    throw new Error(j?.error?.message || `meta_media_meta_${r1.status}`);
+  }
+  const url = j?.url ? String(j.url) : "";
+  const mimeType = j?.mime_type ? String(j.mime_type) : "image/jpeg";
+  if (!url) {
+    throw new Error("meta_media_sin_url");
+  }
+  const r2 = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r2.ok) {
+    throw new Error(`meta_media_download_${r2.status}`);
+  }
+  const buf = Buffer.from(await r2.arrayBuffer());
+  return { buffer: buf, mimeType };
+}
