@@ -29,10 +29,16 @@ export function normalizarSrcImagenReclamo(raw) {
 
 /**
  * Primera imagen desde `foto_urls` (Neon / API), sin pasar por `norm()`.
- * Separador `||` como en BD y en helpers del servidor.
+ * Texto con `||` o array de URLs.
  */
 export function primeraUrlDesdeFotoUrlsCampo(raw) {
-    const joined = raw != null ? String(raw).trim() : '';
+    if (raw == null) return null;
+    let joined;
+    if (Array.isArray(raw)) {
+        joined = raw.map((x) => String(x).trim()).filter(Boolean).join('||');
+    } else {
+        joined = String(raw).trim();
+    }
     if (!joined) return null;
     const parts = joined.split('||').map((x) => x.trim()).filter(Boolean);
     for (const part of parts) {
@@ -42,11 +48,28 @@ export function primeraUrlDesdeFotoUrlsCampo(raw) {
     return null;
 }
 
-/** Primera imagen útil (prioriza `foto_urls` → Cloudinary). */
+/** Varias fotos en un solo campo TEXT, separador `||` (como `foto_base64` en BD). */
+export function primeraUrlDesdeFotoBase64Campo(raw) {
+    if (raw == null) return null;
+    const joined = Array.isArray(raw)
+        ? raw.map((x) => String(x).trim()).filter(Boolean).join('||')
+        : String(raw).trim();
+    if (!joined) return null;
+    const parts = joined.split('||').map((x) => x.trim()).filter(Boolean);
+    for (const part of parts) {
+        const hit = normalizarSrcImagenReclamo(part);
+        if (hit) return hit;
+    }
+    return null;
+}
+
+/** Primera imagen: `foto_urls` → `foto_base64` → otros campos → `p.fotos` al final (suele venir vacío por norm()). */
 export function primeraUrlImagenReclamoPedido(p) {
     if (!p || typeof p !== 'object') return null;
-    const desdeNeon = primeraUrlDesdeFotoUrlsCampo(p.foto_urls);
-    if (desdeNeon) return desdeNeon;
+    const desdeUrls = primeraUrlDesdeFotoUrlsCampo(p.foto_urls);
+    if (desdeUrls) return desdeUrls;
+    const desdeB64 = primeraUrlDesdeFotoBase64Campo(p.foto_base64);
+    if (desdeB64) return desdeB64;
     for (const k of ['imagen_url', 'foto_url', 'imagen', 'media_url', 'attachment_url']) {
         const hit = normalizarSrcImagenReclamo(p[k]);
         if (hit) return hit;
@@ -80,21 +103,21 @@ function listaImagenesDesdeRowPedido(row) {
         const n = normalizarSrcImagenReclamo(x);
         if (n) out.push(n);
     };
-    coerceFotosArray(row.fotos).forEach((x) => pushNorm(x));
+    /* 1) foto_urls (Neon / Cloudinary), 2) foto_base64, 3) legacy, 4) row.fotos (derivado de URLs en API) */
     String(row.foto_urls || '')
         .split('||')
         .map((s) => s.trim())
         .filter(Boolean)
         .forEach((x) => pushNorm(x));
-    /* Posibles nombres legacy / WhatsApp en fila cruda */
-    for (const k of ['foto_url', 'imagen_url', 'media_url', 'attachment_url']) {
-        if (row[k] != null && String(row[k]).trim()) pushNorm(row[k]);
-    }
     String(row.foto_base64 || '')
         .split('||')
         .map((s) => s.trim())
         .filter(Boolean)
         .forEach((x) => pushNorm(x));
+    for (const k of ['foto_url', 'imagen_url', 'media_url', 'attachment_url']) {
+        if (row[k] != null && String(row[k]).trim()) pushNorm(row[k]);
+    }
+    coerceFotosArray(row.fotos).forEach((x) => pushNorm(x));
     return out;
 }
 
@@ -105,15 +128,18 @@ function pedidoTieneSrcImagenMostrable(p) {
 async function enriquecerFotosHttpDesdeApiSiFalta(p) {
     const id = p?.id != null ? String(p.id) : '';
     if (!id || id.startsWith('off_')) return;
+    /* Sin GET si ya se puede resolver imagen (prioriza foto_urls / foto_base64 en `p`). */
     if (pedidoTieneSrcImagenMostrable(p)) return;
 
     if (_fotoSrcCache.has(id)) {
         const list = _fotoSrcCache.get(id);
-        if (
-            list?.length &&
-            (!Array.isArray(p.fotos) || !p.fotos.some((x) => normalizarSrcImagenReclamo(x)))
-        ) {
-            p.fotos = [...list];
+        if (list?.length && !primeraUrlDesdeFotoUrlsCampo(p.foto_urls)) {
+            const http = list.map((x) => normalizarSrcImagenReclamo(x)).filter(Boolean).filter((u) => esUrlHttp(u));
+            if (http.length) {
+                try {
+                    p.foto_urls = http.join('||');
+                } catch (_) {}
+            }
         }
         return;
     }
@@ -130,15 +156,11 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
         try {
             const fu = row.foto_urls != null ? String(row.foto_urls).trim() : '';
             if (fu) p.foto_urls = fu;
+            const fb = row.foto_base64 != null ? String(row.foto_base64).trim() : '';
+            if (fb) p.foto_base64 = fb;
         } catch (_) {}
         const merged = listaImagenesDesdeRowPedido(row);
         _fotoSrcCache.set(id, merged);
-        if (
-            merged.length &&
-            (!Array.isArray(p.fotos) || !p.fotos.some((x) => normalizarSrcImagenReclamo(x)))
-        ) {
-            p.fotos = [...merged];
-        }
     } catch (_) {}
 }
 
@@ -161,7 +183,9 @@ export async function injectPedidoVerImagenReclamo(p) {
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
 
-    await enriquecerFotosHttpDesdeApiSiFalta(p);
+    if (!pedidoTieneSrcImagenMostrable(p)) {
+        await enriquecerFotosHttpDesdeApiSiFalta(p);
+    }
 
     const src = primeraUrlImagenReclamoPedido(p);
     if (!src) return;
