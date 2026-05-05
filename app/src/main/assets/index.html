@@ -660,6 +660,14 @@
           </div>
           <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()" style="padding:.55rem 1.1rem;font-weight:600"><i class="fas fa-search"></i> Buscar reclamos</button>
         </div>
+        <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.55rem;padding-top:.55rem;border-top:1px dashed #93c5fd">
+          <div style="flex:1;min-width:220px">
+            <label for="historial-apellido-input" style="font-size:.78rem;font-weight:600;color:var(--tm)">Apellido del socio/vecino</label>
+            <input type="text" id="historial-apellido-input" placeholder="Ej: García" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem">
+          </div>
+          <button type="button" class="btn-sm primary" onclick="buscarPorApellido()" style="padding:.55rem 1.1rem;font-weight:600;background:#059669;border-color:#059669"><i class="fas fa-search"></i> Buscar por apellido</button>
+        </div>
+        <div id="historial-apellido-result" role="region" aria-label="Resultados de búsqueda por apellido" style="margin-top:.5rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
         <div id="historial-nis-result" role="region" aria-label="Resultados de reclamos" style="margin-top:.85rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
       </div>
       <div id="socios-import-crs-wrap" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:.85rem;padding:.65rem .85rem;background:var(--bg2,#f8fafc);border-radius:.5rem;border:1px solid var(--bo)">

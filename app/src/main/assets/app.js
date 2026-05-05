@@ -86,6 +86,7 @@ import {
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modules/gn-panel-docks.js';
+import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -19596,6 +19597,21 @@ function descargarGrafico(canvasId, nombre) {
     }
 }
 window.descargarGrafico = descargarGrafico;
+
+try {
+    installBusquedaApellidoHistorial({
+        sqlSimple,
+        pedidosFiltroTenantSql,
+        tenantIdActual,
+        fmtInformeFecha,
+        neonOk: () => !!NEON_OK,
+        etiquetaNisSocio: () => {
+            if (typeof esMunicipioRubro === 'function' && esMunicipioRubro()) return 'ID vecino';
+            if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'ID socio';
+            return 'NIS';
+        },
+    });
+} catch (_) {}
 
 // ── Exponer funciones admin al scope global ────────────
 if (typeof adminTab !== "undefined") window.adminTab = adminTab;
