@@ -7,6 +7,7 @@ import { rubroCatalogoTiposReclamo } from './catalogoReclamoPorRubro.js';
 
 /** Motivo de reclamo → clave en `clientes.configuracion.derivaciones_terceros`. */
 const SLOT_BY_TIPO_TRABAJO = {
+    'Alumbrado Público': 'alumbrado_publico',
     'Alumbrado público apagado': 'alumbrado_publico',
     'Rotura de cañería / Pérdida de agua': 'rotura_caneria',
 };

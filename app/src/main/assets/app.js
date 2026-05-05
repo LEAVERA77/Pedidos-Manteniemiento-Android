@@ -96,6 +96,11 @@ import {
   etiquetaFamiliaProyeccionCorta,
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
+import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
+if (typeof window !== 'undefined') {
+    window.generarMenuBot = generarMenuBot;
+    window.procesarRespuestaBot = procesarRespuestaBot;
+}
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
 (function installCanvas2DWillReadFrequently() {
@@ -12961,6 +12966,7 @@ function tipoReclamoElectricoPideSuministroWhatsapp(tipoTrabajo) {
         v === 'Problemas de Tensión' ||
         v === 'Consumo elevado' ||
         v === 'Corte de Energía' ||
+        v === 'Alumbrado Público (Mantenimiento)' ||
         v === 'Pedido de factibilidad (nuevo servicio)'
     );
 }

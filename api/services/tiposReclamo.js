@@ -1,6 +1,6 @@
 /**
  * Catálogos de tipos de reclamo por rubro (Argentina).
- * Debe mantenerse alineado con el frontend (index.html).
+ * Mantener alineado con `app/src/main/assets/modules/catalogoReclamoPorRubro.js` y el menú del bot (whatsappBotMeta).
  */
 
 export const TIPOS_RECLAMO_POR_RUBRO = {
@@ -13,14 +13,20 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Limpieza de Zanjas",
     "Recolección (otros)",
     "Obstrucción de Cloaca",
+    "Ruidos molestos / Perturbación",
+    "Animales sueltos / Mascotas",
     "Otros",
   ],
   cooperativa_agua: [
-    "Pérdida en Vereda/Calle",
-    "Falta de Presión",
-    "Calidad del Agua",
-    "Consumo elevado",
-    "Conexión Nueva",
+    "Corte de suministro de agua",
+    "Rotura de cañería / Pérdida de agua",
+    "Baja presión de agua",
+    "Reparación de conexión domiciliaria",
+    "Instalación de medidor",
+    "Rehabilitación de servicio",
+    "Control de presión",
+    "Limpieza de tanques",
+    "Pedido de factibilidad (nuevo servicio)",
     "Otros",
   ],
   cooperativa_electrica: [
@@ -65,8 +71,18 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Limpieza de Zanjas": "Media",
   "Recolección (otros)": "Media",
   "Obstrucción de Cloaca": "Alta",
+  "Ruidos molestos / Perturbación": "Media",
+  "Animales sueltos / Mascotas": "Media",
   Otros: "Media",
   // cooperativa_agua
+  "Corte de suministro de agua": "Alta",
+  "Rotura de cañería / Pérdida de agua": "Crítica",
+  "Baja presión de agua": "Media",
+  "Reparación de conexión domiciliaria": "Media",
+  "Instalación de medidor": "Baja",
+  "Rehabilitación de servicio": "Media",
+  "Control de presión": "Baja",
+  "Limpieza de tanques": "Baja",
   "Pérdida en Vereda/Calle": "Alta",
   "Falta de Presión": "Media",
   "Calidad del Agua": "Alta",
