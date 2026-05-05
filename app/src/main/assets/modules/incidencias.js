@@ -374,24 +374,25 @@ function enhanceListaPedidosInner() {
             const badge = document.createElement('span');
             badge.className = 'incidencia-badge';
             badge.textContent = `🔗 Incidencia #${incId}`;
-            badge.addEventListener('click', (e) => {
+            badge.title = 'Ver pedidos de la incidencia';
+            badge.style.cursor = 'pointer';
+            badge.setAttribute('role', 'button');
+            badge.tabIndex = 0;
+            const openInc = (e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 void openVistaIncidencia(incId);
+            };
+            badge.addEventListener('click', openInc);
+            badge.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    openInc(e);
+                }
             });
             const ph2 = move.querySelector('.ph2');
             if (ph2) ph2.appendChild(badge);
             else move.insertBefore(badge, move.firstChild);
         }
-
-        row.addEventListener(
-            'click',
-            (e) => {
-                if (e.target.closest('.gn-pi-cb') || e.target.closest('.incidencia-badge')) {
-                    e.stopPropagation();
-                }
-            },
-            true
-        );
 
         row.dataset.gnIncDone = '1';
     });
@@ -617,10 +618,17 @@ async function openVistaIncidencia(incId) {
         const pedidos = Array.isArray(j.pedidos) ? j.pedidos : [];
         const pr = j.progreso || {};
 
-        if (tit) tit.innerHTML = `<i class="fas fa-project-diagram"></i> ${String(inc.nombre || `Incidencia #${inc.id}`).replace(/</g, '&lt;')}`;
+        const nombreInc = String(inc.nombre || '').trim();
+        const titulo =
+            nombreInc.length > 0
+                ? `Incidencia #${inc.id} – ${nombreInc}`
+                : `Incidencia #${inc.id}`;
+        if (tit) tit.innerHTML = `<i class="fas fa-project-diagram"></i> ${titulo.replace(/</g, '&lt;')}`;
         if (meta)
-            meta.innerHTML = `<span style="display:block"><strong>Criterio:</strong> ${String(inc.criterio_agrupacion || '—').replace(/</g, '&lt;')} · <strong>Valor:</strong> ${String(inc.valor_criterio || '—').replace(/</g, '&lt;')}</span><span style="display:block;margin-top:.25rem"><strong>Estado:</strong> ${String(inc.estado || '—').replace(/</g, '&lt;')}</span>`;
-        if (prog) prog.textContent = `Progreso: ${pr.cerrados ?? 0}/${pr.total ?? pedidos.length} cerrados`;
+            meta.innerHTML = `<span style="display:block"><strong>Criterio:</strong> ${String(inc.criterio_agrupacion || '—').replace(/</g, '&lt;')} · <strong>Valor:</strong> ${String(inc.valor_criterio || '—').replace(/</g, '&lt;')}</span><span style="display:block;margin-top:.25rem"><strong>Estado incidencia:</strong> ${String(inc.estado || '—').replace(/</g, '&lt;')}</span>`;
+        const totProg = pr.total ?? pedidos.length;
+        const cerProg = pr.cerrados ?? 0;
+        if (prog) prog.textContent = `Progreso: ${cerProg} de ${totProg} pedidos cerrados`;
 
         if (list) {
             list.innerHTML = pedidos
@@ -628,9 +636,10 @@ async function openVistaIncidencia(incId) {
                     const id = row.id;
                     const np = row.numero_pedido ?? row.np ?? id;
                     const est = String(row.estado || '').trim();
+                    const nom = String(row.cliente_nombre || row.cliente || '').trim() || '—';
                     const tt = String(row.tipo_trabajo || '').trim();
                     return `<div style="display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;padding:.35rem;border-bottom:1px solid var(--bo)" data-pid="${id}">
-            <span style="flex:1;min-width:10rem"><strong>#${np}</strong> · ${tt.replace(/</g, '&lt;')} · <em>${est.replace(/</g, '&lt;')}</em></span>
+            <span style="flex:1;min-width:10rem;line-height:1.35"><strong>#${String(np).replace(/</g, '&lt;')}</strong> · <em>${est.replace(/</g, '&lt;')}</em><br><span style="font-size:.78rem;color:var(--tm)">${nom.replace(/</g, '&lt;')} · ${tt.replace(/</g, '&lt;')}</span></span>
             <button type="button" class="btn-sm" data-ver="${id}" style="padding:.2rem .45rem;font-size:.72rem">Ver</button>
             ${
                 esAdmin()
@@ -644,11 +653,16 @@ async function openVistaIncidencia(incId) {
                 b.addEventListener('click', (ev) => {
                     ev.stopPropagation();
                     const pid = b.getAttribute('data-ver');
-                    const loc = findPedidoLiteById(pid);
+                    const pidNum = Number(pid);
+                    const loc =
+                        findPedidoLiteById(pid) ||
+                        (Number.isFinite(pidNum) && pidNum > 0 ? { id: pidNum } : null);
                     if (loc && typeof window.detalle === 'function') {
                         m.classList.remove('active');
                         void window.detalle(loc);
-                    } else toast('Pedido no está en la lista local. Actualizá la vista.', 'info');
+                    } else {
+                        toast('No se pudo abrir el pedido.', 'error');
+                    }
                 });
             });
             list.querySelectorAll('button[data-des]').forEach((b) => {
@@ -674,47 +688,55 @@ async function openVistaIncidencia(incId) {
             });
         }
 
-        const btnAll = m.querySelector('#gn-inc-v-cerrar-todos');
-        if (btnAll) {
-            btnAll.onclick = async () => {
-                if (!esAdmin()) {
-                    toast('Solo administradores', 'error');
-                    return;
-                }
-                const abiertos = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
-                if (!abiertos.length) {
-                    toast('No hay pedidos abiertos', 'info');
-                    return;
-                }
-                if (!confirm(`¿Cerrar ${abiertos.length} pedido(s) y marcar la incidencia como cerrada?`)) return;
-                btnAll.disabled = true;
-                try {
-                    for (const p of abiertos) {
-                        const pid = p.id;
-                        const rr = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}`), {
+        const btnAll0 = m.querySelector('#gn-inc-v-cerrar-todos');
+        if (btnAll0) {
+            if (!esAdmin()) {
+                btnAll0.style.display = 'none';
+            } else {
+                btnAll0.style.display = '';
+                const btnAll = btnAll0.cloneNode(true);
+                btnAll0.parentNode.replaceChild(btnAll, btnAll0);
+                btnAll.addEventListener('click', async () => {
+                    if (!esAdmin()) {
+                        toast('Solo administradores', 'error');
+                        return;
+                    }
+                    const abiertos = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
+                    if (!abiertos.length) {
+                        toast('No hay pedidos abiertos', 'info');
+                        return;
+                    }
+                    const n = abiertos.length;
+                    if (!confirm(`¿Cerrar los ${n} pedidos de esta incidencia?`)) return;
+                    btnAll.disabled = true;
+                    try {
+                        for (const p of abiertos) {
+                            const pid = p.id;
+                            const rr = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}`), {
+                                method: 'PUT',
+                                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ estado: 'Cerrado', avance: 100 }),
+                            });
+                            if (!rr.ok) {
+                                const jj = await rr.json().catch(() => ({}));
+                                throw new Error(jj.error || `Pedido ${pid}: HTTP ${rr.status}`);
+                            }
+                        }
+                        await fetch(apiUrl(`/api/incidencias/${encodeURIComponent(String(incId))}`), {
                             method: 'PUT',
                             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ estado: 'Cerrado', avance: 100 }),
-                        });
-                        if (!rr.ok) {
-                            const jj = await rr.json().catch(() => ({}));
-                            throw new Error(jj.error || `Pedido ${pid}: HTTP ${rr.status}`);
-                        }
+                            body: JSON.stringify({ estado: 'cerrada' }),
+                        }).catch(() => {});
+                        toast(`✅ Incidencia #${incId} cerrada con ${n} pedidos`, 'success');
+                        m.classList.remove('active');
+                        recargarPedidosYMapa();
+                    } catch (e) {
+                        toast(String(e?.message || e), 'error');
+                    } finally {
+                        btnAll.disabled = false;
                     }
-                    await fetch(apiUrl(`/api/incidencias/${encodeURIComponent(String(incId))}`), {
-                        method: 'PUT',
-                        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ estado: 'cerrada' }),
-                    }).catch(() => {});
-                    toast('Pedidos cerrados e incidencia archivada', 'success');
-                    m.classList.remove('active');
-                    recargarPedidosYMapa();
-                } catch (e) {
-                    toast(String(e?.message || e), 'error');
-                } finally {
-                    btnAll.disabled = false;
-                }
-            };
+                });
+            }
         }
     } catch (e) {
         if (meta) meta.textContent = String(e?.message || e);
