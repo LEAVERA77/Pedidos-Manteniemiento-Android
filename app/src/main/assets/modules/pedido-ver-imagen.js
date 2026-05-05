@@ -27,20 +27,28 @@ export function normalizarSrcImagenReclamo(raw) {
     return null;
 }
 
-/** Primera imagen útil (reclamo / WhatsApp / técnico con URL o base64). */
-export function primeraUrlImagenReclamoPedido(p) {
-    if (!p || typeof p !== 'object') return null;
-    for (const k of ['imagen_url', 'foto_url', 'imagen', 'media_url', 'attachment_url']) {
-        const hit = normalizarSrcImagenReclamo(p[k]);
+/**
+ * Primera imagen desde `foto_urls` (Neon / API), sin pasar por `norm()`.
+ * Separador `||` como en BD y en helpers del servidor.
+ */
+export function primeraUrlDesdeFotoUrlsCampo(raw) {
+    const joined = raw != null ? String(raw).trim() : '';
+    if (!joined) return null;
+    const parts = joined.split('||').map((x) => x.trim()).filter(Boolean);
+    for (const part of parts) {
+        const hit = normalizarSrcImagenReclamo(part);
         if (hit) return hit;
     }
-    const joined = p.foto_urls != null ? String(p.foto_urls) : '';
-    if (joined) {
-        const hit = joined
-            .split('||')
-            .map((x) => x.trim())
-            .map((x) => normalizarSrcImagenReclamo(x))
-            .find(Boolean);
+    return null;
+}
+
+/** Primera imagen útil (prioriza `foto_urls` → Cloudinary). */
+export function primeraUrlImagenReclamoPedido(p) {
+    if (!p || typeof p !== 'object') return null;
+    const desdeNeon = primeraUrlDesdeFotoUrlsCampo(p.foto_urls);
+    if (desdeNeon) return desdeNeon;
+    for (const k of ['imagen_url', 'foto_url', 'imagen', 'media_url', 'attachment_url']) {
+        const hit = normalizarSrcImagenReclamo(p[k]);
         if (hit) return hit;
     }
     const arr = Array.isArray(p.fotos) ? p.fotos : [];
@@ -119,6 +127,10 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
         });
         if (!r.ok) return;
         const row = await r.json();
+        try {
+            const fu = row.foto_urls != null ? String(row.foto_urls).trim() : '';
+            if (fu) p.foto_urls = fu;
+        } catch (_) {}
         const merged = listaImagenesDesdeRowPedido(row);
         _fotoSrcCache.set(id, merged);
         if (
