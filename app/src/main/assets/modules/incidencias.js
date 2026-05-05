@@ -8,6 +8,11 @@ import { toast } from './ui-utils.js';
 
 /** @type {Record<string, number>} */
 let _mapPedidoIncidencia = {};
+/** Mapa numero_pedido → objeto compatible con norm() para UI de incidencias (la app no expone `window.app`). */
+let _pedidosByNp = new Map();
+let _prefetchPedidosAt = 0;
+const _PREFETCH_PEDIDOS_TTL_MS = 20000;
+
 let _fabEl = null;
 let _modalAssoc = null;
 let _modalVista = null;
@@ -42,10 +47,87 @@ async function fetchPedidoMap() {
     } catch (_) {}
 }
 
+/** Respuesta GET /api/pedidos → forma corta usada por badges / modal / FAB (mismos aliases que `norm()`). */
+function rowApiToPedidoLite(row) {
+    if (!row || row.id == null) return null;
+    const np = String(row.numero_pedido ?? '').trim();
+    if (!np) return null;
+    const incRaw = row.incidencia_id;
+    let inci = null;
+    if (incRaw != null && incRaw !== '') {
+        const n = parseInt(String(incRaw), 10);
+        inci = Number.isFinite(n) ? n : null;
+    }
+    return {
+        id: row.id,
+        np,
+        nis: row.nis_medidor,
+        tt: row.tipo_trabajo,
+        es: row.estado,
+        br: row.barrio,
+        ccal: row.cliente_calle,
+        dis: row.distribuidor,
+        trf: row.trafo,
+        inci,
+    };
+}
+
+function invalidatePedidosIncidenciasCache() {
+    _pedidosByNp = new Map();
+    _prefetchPedidosAt = 0;
+}
+
+/**
+ * Carga pedidos vía API para poder resolver filas sin `window.app` (el estado vive en el módulo cerrado de app.js).
+ */
+async function prefetchPedidosParaIncidencias(force) {
+    const tok = getTok();
+    if (!tok || typeof window.apiUrl !== 'function') return;
+    const now = Date.now();
+    if (
+        !force &&
+        _pedidosByNp.size > 0 &&
+        now - _prefetchPedidosAt < _PREFETCH_PEDIDOS_TTL_MS
+    ) {
+        return;
+    }
+    try {
+        const r = await fetch(apiUrl('/api/pedidos?limit=800'), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        if (!r.ok) return;
+        const rows = await r.json();
+        if (!Array.isArray(rows)) return;
+        const m = new Map();
+        for (const row of rows) {
+            const lite = rowApiToPedidoLite(row);
+            if (lite?.np) m.set(lite.np, lite);
+        }
+        _pedidosByNp = m;
+        _prefetchPedidosAt = Date.now();
+    } catch (_) {}
+}
+
+function findPedidoLiteById(pid) {
+    const idStr = String(pid ?? '');
+    try {
+        const list = window.app?.p;
+        if (Array.isArray(list)) {
+            const hit = list.find((x) => x && String(x.id) === idStr);
+            if (hit) return hit;
+        }
+    } catch (_) {}
+    for (const v of _pedidosByNp.values()) {
+        if (v && String(v.id) === idStr) return v;
+    }
+    return null;
+}
+
 function recargarPedidosYMapa() {
     try {
         if (typeof window.__gnRecargarPedidos === 'function') window.__gnRecargarPedidos({ silent: true });
     } catch (_) {}
+    invalidatePedidosIncidenciasCache();
     void fetchPedidoMap().then(() => {
         try {
             document.querySelectorAll('.pi[data-gn-inc-done="1"]').forEach((el) => {
@@ -69,13 +151,18 @@ function parseNpFromRow(row) {
     token = token.replace(/LOCAL$/i, '').trim();
     return token || null;
 }
-function findPedidoLocal(np) {
+function findPedidoForIncidenciasUi(np) {
     if (np == null || np === '') return null;
     const key = String(np).trim();
     if (!key) return null;
-    const list = window.app?.p;
-    if (!Array.isArray(list)) return null;
-    return list.find((x) => x && String(x.np ?? '').trim() === key) || null;
+    try {
+        const list = window.app?.p;
+        if (Array.isArray(list)) {
+            const hit = list.find((x) => x && String(x.np ?? '').trim() === key);
+            if (hit) return hit;
+        }
+    } catch (_) {}
+    return _pedidosByNp.get(key) || null;
 }
 
 function uniqueNonEmpty(...vals) {
@@ -133,7 +220,7 @@ function ensureFab() {
     el.style.cssText =
         'display:none;position:fixed;bottom:5.5rem;left:50%;transform:translateX(-50%);z-index:10040;padding:.55rem 1rem;border-radius:999px;border:none;background:#0ea5e9;color:#fff;font-weight:700;font-size:.82rem;cursor:pointer;box-shadow:0 4px 14px rgba(14,165,233,.45);align-items:center;gap:.35rem';
     el.innerHTML = '<i class="fas fa-link"></i> <span id="gn-incidencias-fab-txt"></span>';
-    el.addEventListener('click', () => openModalAsociar());
+    el.addEventListener('click', () => void openModalAsociar());
     document.body.appendChild(el);
     _fabEl = el;
     return el;
@@ -153,17 +240,19 @@ function updateFab() {
     if (sp) sp.textContent = `Asociar reclamos (${n})`;
 }
 
-function enhanceListaPedidos() {
+function enhanceListaPedidosInner() {
     const pl = document.getElementById('pl');
     if (!pl) return;
 
     const rows = pl.querySelectorAll(':scope > .pi');
     rows.forEach((row) => {
-        if (row.dataset.gnIncDone === '1') return;
+        if (row.dataset.gnIncDone === '1') {
+            if (!row.querySelector('.gn-pi-cb')) row.removeAttribute('data-gn-inc-done');
+            else return;
+        }
         const np = parseNpFromRow(row);
-        const p = findPedidoLocal(np);
+        const p = findPedidoForIncidenciasUi(np);
         if (!p) {
-            row.dataset.gnIncDone = '1';
             return;
         }
 
@@ -225,11 +314,16 @@ function enhanceListaPedidos() {
     updateFab();
 }
 
+async function enhanceListaPedidos() {
+    await prefetchPedidosParaIncidencias(false);
+    enhanceListaPedidosInner();
+}
+
 function debouncedEnhance() {
     if (_debTimer) clearTimeout(_debTimer);
     _debTimer = setTimeout(() => {
         _debTimer = null;
-        enhanceListaPedidos();
+        void enhanceListaPedidos();
     }, 80);
 }
 
@@ -276,10 +370,11 @@ function closeModalAssoc() {
     if (_modalAssoc) _modalAssoc.classList.remove('active');
 }
 
-function openModalAsociar() {
+async function openModalAsociar() {
     if (!esAdmin()) return;
+    await prefetchPedidosParaIncidencias(true);
     const peds = [..._selectedNp]
-        .map((np) => findPedidoLocal(np))
+        .map((np) => findPedidoForIncidenciasUi(np))
         .filter(Boolean);
     if (peds.length < 2) {
         toast('Seleccioná al menos 2 pedidos', 'error');
@@ -438,7 +533,7 @@ async function openVistaIncidencia(incId) {
                 b.addEventListener('click', (ev) => {
                     ev.stopPropagation();
                     const pid = b.getAttribute('data-ver');
-                    const loc = window.app?.p?.find((x) => String(x.id) === String(pid));
+                    const loc = findPedidoLiteById(pid);
                     if (loc && typeof window.detalle === 'function') {
                         m.classList.remove('active');
                         void window.detalle(loc);
@@ -524,12 +619,20 @@ function bootObserver() {
 }
 
 export function installIncidenciasUI() {
+    try {
+        window.__gnIncidenciasInit = true;
+        window.__gnIncidenciasRefresh = debouncedEnhance;
+        window.__gnIncidenciasInvalidateCache = invalidatePedidosIncidenciasCache;
+    } catch (_) {}
     void fetchPedidoMap().then(() => debouncedEnhance());
     bootObserver();
     document.addEventListener(
         'visibilitychange',
         () => {
-            if (document.visibilityState === 'visible') void fetchPedidoMap().then(() => debouncedEnhance());
+            if (document.visibilityState === 'visible') {
+                invalidatePedidosIncidenciasCache();
+                void fetchPedidoMap().then(() => debouncedEnhance());
+            }
         },
         false
     );
