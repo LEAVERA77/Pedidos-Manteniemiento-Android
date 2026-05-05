@@ -66,7 +66,7 @@ function findPedidoLocal(np) {
     if (np == null || !Number.isFinite(np)) return null;
     const list = window.app?.p;
     if (!Array.isArray(list)) return null;
-    return list.find((x) => x && Number(x.np) === np) || null;
+    return list.find((x) => x && Number(x.np) === Number(np)) || null;
 }
 
 function uniqueNonEmpty(...vals) {
