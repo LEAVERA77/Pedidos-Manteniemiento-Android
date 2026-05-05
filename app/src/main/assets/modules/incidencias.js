@@ -327,41 +327,59 @@ function debouncedEnhance() {
     }, 80);
 }
 
-function buildModalAssoc() {
-    if (_modalAssoc) return _modalAssoc;
-    const root = document.createElement('div');
-    root.id = 'gn-modal-incidencias-assoc';
-    root.className = 'mo';
-    root.style.zIndex = '10050';
-    root.innerHTML = `
-<div class="mc" style="max-width:min(96vw,26rem)">
+/** Contenido del modal de asociación (se repinta en cada apertura para garantizar selects/input en el DOM). */
+const GN_ASSOC_MC_INNER_HTML = `
   <div class="mh"><h3><i class="fas fa-link"></i> Asociar reclamos</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
   <div class="mb" style="padding:0 1rem 1rem">
     <p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Pedidos seleccionados:</p>
     <ul id="gn-inc-lista-sel" style="font-size:.8rem;max-height:8rem;overflow:auto;margin:0 0 .75rem;padding-left:1.1rem"></ul>
     <div class="fg" style="padding:0">
       <label for="gn-inc-criterio" style="font-size:.78rem">Criterio de agrupación</label>
-      <select id="gn-inc-criterio" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)"></select>
+      <select id="gn-inc-criterio" name="gn-inc-criterio" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)"></select>
     </div>
     <div class="fg" style="padding:0;margin-top:.5rem">
-      <label for="gn-inc-valor" style="font-size:.78rem">Valor</label>
-      <select id="gn-inc-valor" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)"></select>
+      <label for="gn-inc-valor-criterio" style="font-size:.78rem">Valor</label>
+      <select id="gn-inc-valor-criterio" name="gn-inc-valor-criterio" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)"></select>
     </div>
     <div class="fg" style="padding:0;margin-top:.5rem">
       <label for="gn-inc-nombre" style="font-size:.78rem">Nombre de la incidencia (opcional)</label>
-      <input type="text" id="gn-inc-nombre" maxlength="200" placeholder="Autogenerado si lo dejás vacío" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)" />
+      <input type="text" id="gn-inc-nombre" name="gn-inc-nombre" maxlength="200" placeholder="Autogenerado si lo dejás vacío" style="width:100%;margin-top:.25rem;padding:.4rem;border-radius:.45rem;border:1px solid var(--bo)" />
     </div>
     <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
       <button type="button" class="sec" data-close="1" style="flex:1">Cancelar</button>
       <button type="button" id="gn-inc-confirm" class="bp" style="flex:1.2"><i class="fas fa-check"></i> Confirmar asociación</button>
     </div>
-  </div>
-</div>`;
-    document.body.appendChild(root);
+  </div>`;
+
+function ensureAssocModalRoot() {
+    let root = document.getElementById('gn-modal-incidencias-assoc');
+    if (root && document.body.contains(root)) {
+        _modalAssoc = root;
+        return root;
+    }
+    root = document.createElement('div');
+    root.id = 'gn-modal-incidencias-assoc';
+    root.className = 'mo';
+    root.style.zIndex = '10050';
+    root.innerHTML = '<div class="mc" style="max-width:min(96vw,26rem)"></div>';
     root.addEventListener('click', (e) => {
         if (e.target === root) closeModalAssoc();
     });
-    root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModalAssoc()));
+    document.body.appendChild(root);
+    _modalAssoc = root;
+    return root;
+}
+
+/** Repinta el formulario dentro de .mc cada vez que se abre el modal (evita DOM vacío / caché rota). */
+function paintAssocModalContent() {
+    const root = ensureAssocModalRoot();
+    const mc = root.querySelector('.mc');
+    if (!mc) return root;
+    mc.innerHTML = GN_ASSOC_MC_INNER_HTML;
+    mc.style.maxWidth = 'min(96vw,26rem)';
+    root.querySelectorAll('[data-close]').forEach((b) => {
+        b.onclick = () => closeModalAssoc();
+    });
     _modalAssoc = root;
     return root;
 }
@@ -380,7 +398,7 @@ async function openModalAsociar() {
         toast('Seleccioná al menos 2 pedidos', 'error');
         return;
     }
-    const m = buildModalAssoc();
+    const m = paintAssocModalContent();
     const ul = m.querySelector('#gn-inc-lista-sel');
     if (ul)
         ul.innerHTML = peds
@@ -392,65 +410,73 @@ async function openModalAsociar() {
 
     const { criterios, valuesByCriterio } = criterioOptionsForRubro(peds);
     const selC = m.querySelector('#gn-inc-criterio');
-    const selV = m.querySelector('#gn-inc-valor');
-    if (selC) {
-        selC.innerHTML = criterios.map((c) => `<option value="${c.value}">${c.label}</option>`).join('');
+    const selV = m.querySelector('#gn-inc-valor-criterio');
+    const inpNombre = m.querySelector('#gn-inc-nombre');
+    if (!selC || !selV || !inpNombre) {
+        toast('No se pudo cargar el formulario de asociación. Reintentá.', 'error');
+        return;
     }
+
+    selC.innerHTML = criterios.map((c) => `<option value="${c.value}">${c.label}</option>`).join('');
     const syncVal = () => {
-        const c = selC?.value || criterios[0]?.value;
+        const c = selC.value || criterios[0]?.value;
         const opts = valuesByCriterio(c) || [];
-        if (selV) {
-            selV.innerHTML = opts.length
-                ? opts.map((o) => `<option value="${o.replace(/"/g, '&quot;')}">${o.replace(/</g, '&lt;')}</option>`).join('')
-                : '<option value="">— Sin valores comunes —</option>';
-        }
+        selV.innerHTML = opts.length
+            ? opts.map((o) => `<option value="${o.replace(/"/g, '&quot;')}">${o.replace(/</g, '&lt;')}</option>`).join('')
+            : '<option value="">— Sin valores comunes —</option>';
     };
-    if (selC) selC.onchange = syncVal;
+    selC.onchange = syncVal;
     syncVal();
 
-    const confirm = m.querySelector('#gn-inc-confirm');
-    if (confirm) {
-        confirm.onclick = async () => {
-            const criterio = (selC?.value || '').trim();
-            const valor = (selV?.value || '').trim();
-            const nombre = (m.querySelector('#gn-inc-nombre')?.value || '').trim();
-            if (!criterio || !valor) {
-                toast('Elegí criterio y valor', 'error');
-                return;
-            }
-            const tok = getTok();
-            if (!tok) {
-                toast('Sin sesión', 'error');
-                return;
-            }
-            confirm.disabled = true;
-            try {
-                const body = {
-                    pedido_ids: peds.map((p) => p.id),
-                    criterio_agrupacion: criterio,
-                    valor_criterio: valor,
-                };
-                if (nombre) body.nombre = nombre;
-                const r = await fetch(apiUrl('/api/incidencias'), {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                const j = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(j.error || j.detail || `HTTP ${r.status}`);
-                const nid = j.id;
-                toast(`✅ Incidencia #${nid} creada con ${peds.length} pedidos`, 'success');
-                _selectedNp.clear();
-                updateFab();
-                closeModalAssoc();
-                recargarPedidosYMapa();
-            } catch (e) {
-                toast(String(e?.message || e), 'error');
-            } finally {
-                confirm.disabled = false;
-            }
-        };
+    const confirmBtn = m.querySelector('#gn-inc-confirm');
+    if (!confirmBtn) {
+        toast('Falta el botón de confirmación en el formulario.', 'error');
+        return;
     }
+    const confirm = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(confirm, confirmBtn);
+
+    confirm.addEventListener('click', async () => {
+        const criterio = selC.value.trim();
+        const valor = selV.value.trim();
+        const nombre = inpNombre.value.trim();
+        if (!criterio || !valor) {
+            toast('Elegí criterio y valor', 'error');
+            return;
+        }
+        const tok = getTok();
+        if (!tok) {
+            toast('Sin sesión', 'error');
+            return;
+        }
+        confirm.disabled = true;
+        try {
+            const body = {
+                pedido_ids: peds.map((p) => p.id),
+                criterio_agrupacion: criterio,
+                valor_criterio: valor,
+            };
+            if (nombre) body.nombre = nombre;
+            const r = await fetch(apiUrl('/api/incidencias'), {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || j.detail || `HTTP ${r.status}`);
+            const nid = j.id;
+            toast(`✅ Incidencia #${nid} creada con ${peds.length} pedidos`, 'success');
+            _selectedNp.clear();
+            updateFab();
+            closeModalAssoc();
+            recargarPedidosYMapa();
+        } catch (e) {
+            toast(String(e?.message || e), 'error');
+        } finally {
+            confirm.disabled = false;
+        }
+    });
+
     m.classList.add('active');
 }
 
