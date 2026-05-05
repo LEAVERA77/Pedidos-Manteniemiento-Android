@@ -6,8 +6,27 @@
 import { toast } from './ui-utils.js';
 
 const DOCK_ID = 'gn-minimized-panels-dock';
+const DOCK_HOST_CLUSTER = 'gn-map-dock-extras';
 
+/** Chips debajo de «Capas» en `#map-slide-tabs-cluster`; fallback body si no hay mapa. */
 function ensureDock() {
+    const cluster = document.getElementById('map-slide-tabs-cluster');
+    if (cluster) {
+        let host = document.getElementById(DOCK_HOST_CLUSTER);
+        if (!host) {
+            host = document.createElement('div');
+            host.id = DOCK_HOST_CLUSTER;
+            host.className = 'gn-map-dock-extras';
+            host.setAttribute('aria-label', 'Pedidos y avisos');
+            const capas = document.getElementById('map-tab-capas-osm');
+            if (capas && capas.parentElement === cluster) {
+                capas.insertAdjacentElement('afterend', host);
+            } else {
+                cluster.appendChild(host);
+            }
+        }
+        return host;
+    }
     let dock = document.getElementById(DOCK_ID);
     if (!dock) {
         dock = document.createElement('div');
@@ -16,6 +35,69 @@ function ensureDock() {
         document.body.appendChild(dock);
     }
     return dock;
+}
+
+/** Clic sin movimiento → acción; arrastre → posición fixed clamp al viewport (sin persistencia). */
+function bindGnDockChipDrag(chip, onActivate) {
+    if (!chip || chip.dataset.gnDockDragInit === '1') return;
+    chip.dataset.gnDockDragInit = '1';
+    try {
+        chip.style.touchAction = 'none';
+    } catch (_) {}
+    let ptr = null;
+    chip.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        const r = chip.getBoundingClientRect();
+        ptr = {
+            pid: e.pointerId,
+            x0: e.clientX,
+            y0: e.clientY,
+            moved: false,
+            sl: r.left,
+            st: r.top,
+        };
+        try {
+            chip.setPointerCapture(e.pointerId);
+        } catch (_) {}
+    });
+    chip.addEventListener('pointermove', (e) => {
+        if (!ptr || e.pointerId !== ptr.pid) return;
+        const dx = Math.abs(e.clientX - ptr.x0);
+        const dy = Math.abs(e.clientY - ptr.y0);
+        if (dx + dy > 6) ptr.moved = true;
+        if (!ptr.moved) return;
+        if (e.cancelable) e.preventDefault();
+        let nl = ptr.sl + (e.clientX - ptr.x0);
+        let nt = ptr.st + (e.clientY - ptr.y0);
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const rr = chip.getBoundingClientRect();
+        const w = rr.width || 48;
+        const h = rr.height || 48;
+        nl = Math.min(Math.max(8, nl), vw - w - 8);
+        nt = Math.min(Math.max(8, nt), vh - h - 8);
+        chip.style.position = 'fixed';
+        chip.style.left = `${Math.round(nl)}px`;
+        chip.style.top = `${Math.round(nt)}px`;
+        chip.style.right = 'auto';
+        chip.style.bottom = 'auto';
+        chip.style.zIndex = '12070';
+    });
+    chip.addEventListener('pointerup', (e) => {
+        if (!ptr || e.pointerId !== ptr.pid) return;
+        const moved = ptr.moved;
+        ptr = null;
+        try {
+            chip.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+        if (!moved) onActivate();
+    });
+    chip.addEventListener('pointercancel', (e) => {
+        ptr = null;
+        try {
+            chip.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+    });
 }
 
 /** Primer chip del dock = arriba en pantalla (flex-direction: column). */
@@ -47,8 +129,8 @@ export function syncPedidosDockChip() {
             chip.className = 'gn-dock-chip gn-dock-chip--pedidos';
             chip.setAttribute('aria-label', 'Mostrar lista de pedidos');
             chip.innerHTML = '<span aria-hidden="true">📋</span><span class="gn-dock-chip-label">Pedidos</span>';
-            chip.title = 'Mostrar lista de pedidos';
-            chip.addEventListener('click', () => {
+            chip.title = 'Mostrar lista de pedidos (arrastrá para mover)';
+            bindGnDockChipDrag(chip, () => {
                 try {
                     if (typeof window.setBp2PanelHidden === 'function') window.setBp2PanelHidden(false);
                     scheduleClampBp2PanelIntoViewport();
@@ -222,7 +304,8 @@ function syncCommunityDock(root, st, modal) {
             chip.setAttribute('aria-label', 'Aviso a la comunidad');
             chip.title = 'Aviso a la comunidad';
             chip.innerHTML = '<span aria-hidden="true">📢</span>';
-            chip.addEventListener('click', () => {
+            chip.title = 'Aviso a la comunidad (arrastrá para mover)';
+            bindGnDockChipDrag(chip, () => {
                 st.minimized = false;
                 modal.style.display = 'flex';
                 syncCommunityDock(root, st, modal);

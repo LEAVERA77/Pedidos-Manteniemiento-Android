@@ -20,8 +20,9 @@ export function normalizarSrcImagenReclamo(raw) {
     const t = String(raw == null ? '' : raw).trim();
     if (!t) return null;
     if (esUrlHttp(t) || esDataImagen(t)) return t;
-    if (/^[a-z0-9+/=\s]+$/i.test(t) && t.replace(/\s/g, '').length >= 80) {
-        return `data:image/jpeg;base64,${t.replace(/\s/g, '')}`;
+    const b64clean = t.replace(/\s/g, '');
+    if (/^[a-z0-9+/=]+$/i.test(b64clean) && b64clean.length >= 32) {
+        return `data:image/jpeg;base64,${b64clean}`;
     }
     return null;
 }
@@ -50,18 +51,37 @@ export function primeraUrlImagenReclamoPedido(p) {
     return null;
 }
 
+/** API suele mandar `fotos` como array; Neon/sql puede traer string JSON. */
+function coerceFotosArray(val) {
+    if (val == null) return [];
+    if (Array.isArray(val)) return val.map((x) => String(x).trim()).filter(Boolean);
+    const s = String(val).trim();
+    if (!s) return [];
+    if (s.startsWith('[')) {
+        try {
+            const j = JSON.parse(s);
+            if (Array.isArray(j)) return j.map((x) => String(x).trim()).filter(Boolean);
+        } catch (_) {}
+    }
+    return [];
+}
+
 function listaImagenesDesdeRowPedido(row) {
     const out = [];
     const pushNorm = (x) => {
         const n = normalizarSrcImagenReclamo(x);
         if (n) out.push(n);
     };
-    if (Array.isArray(row.fotos)) row.fotos.forEach((x) => pushNorm(x));
+    coerceFotosArray(row.fotos).forEach((x) => pushNorm(x));
     String(row.foto_urls || '')
         .split('||')
         .map((s) => s.trim())
         .filter(Boolean)
         .forEach((x) => pushNorm(x));
+    /* Posibles nombres legacy / WhatsApp en fila cruda */
+    for (const k of ['foto_url', 'imagen_url', 'media_url', 'attachment_url']) {
+        if (row[k] != null && String(row[k]).trim()) pushNorm(row[k]);
+    }
     String(row.foto_base64 || '')
         .split('||')
         .map((s) => s.trim())
