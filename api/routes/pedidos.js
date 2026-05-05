@@ -1637,6 +1637,50 @@ router.post("/:id/abrir-chat-calificacion-baja", adminOnly, async (req, res) => 
   }
 });
 
+/** Persistir rotación del visor «Imagen del reclamo» (0–359°, admin o técnico asignado). Requiere columna `reclamo_imagen_rotacion`. */
+router.patch("/:id/reclamo-imagen-rotacion", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "id inválido" });
+    const pedido = await getPedidoInTenant(id, req);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    if (
+      req.user.rol !== "admin" &&
+      pedido.tecnico_asignado_id &&
+      pedido.tecnico_asignado_id !== req.user.id
+    ) {
+      return res.status(403).json({ error: "Sin permiso para actualizar este pedido" });
+    }
+    if (!(await tableHasColumn("pedidos", "reclamo_imagen_rotacion"))) {
+      return res.status(501).json({
+        error:
+          "Falta columna reclamo_imagen_rotacion. Ejecutá docs/NEON_pedidos_reclamo_imagen_rotacion.sql en Neon.",
+      });
+    }
+    const raw = req.body?.reclamo_imagen_rotacion ?? req.body?.angulo_grados;
+    const ang = Number(raw);
+    if (!Number.isFinite(ang)) return res.status(400).json({ error: "reclamo_imagen_rotacion inválido" });
+    const norm = ((Math.round(ang) % 360) + 360) % 360;
+    const hasTUp = await pedidosTableHasTenantIdColumn();
+    const params = hasTUp ? [norm, id, req.tenantId] : [norm, id];
+    const bt = await pushPedidoBusinessFilter(req, params);
+    const sql = hasTUp
+      ? `UPDATE pedidos SET reclamo_imagen_rotacion = $1 WHERE id = $2 AND tenant_id = $3${bt} RETURNING *`
+      : `UPDATE pedidos SET reclamo_imagen_rotacion = $1 WHERE id = $2${bt} RETURNING *`;
+    const r = await query(sql, params);
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+    return res.json(coercePedidoLatLng(r.rows[0]));
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo guardar rotación", detail: error.message });
+  }
+});
+
 router.put("/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);

@@ -121,6 +121,78 @@ function listaImagenesDesdeRowPedido(row) {
     return out;
 }
 
+function normalizarRotacionGrados(n) {
+    const x = Math.round(Number(n) || 0);
+    return ((x % 360) + 360) % 360;
+}
+
+function crearBotonToolbar(texto, titulo, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = texto;
+    b.title = titulo || texto;
+    b.style.cssText =
+        'font-size:.72rem;padding:.35rem .55rem;border:1px solid var(--bo);border-radius:6px;background:var(--bg);cursor:pointer;color:inherit;line-height:1.2';
+    b.addEventListener('click', onClick);
+    return b;
+}
+
+function actualizarEstadoBotonGuardarRotacion(btn, rotationDeg, savedRotation, puedePersistir) {
+    if (!btn) return;
+    const iguales = normalizarRotacionGrados(rotationDeg) === normalizarRotacionGrados(savedRotation);
+    btn.disabled = !puedePersistir || iguales;
+    btn.style.opacity = btn.disabled ? '0.45' : '1';
+    btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
+}
+
+function descargarOAbrirImagenReclamo(src, pedidoId) {
+    const base = pedidoId ? `reclamo-pedido-${pedidoId}` : 'reclamo';
+    try {
+        if (esUrlHttp(src)) {
+            window.open(src, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        const a = document.createElement('a');
+        a.href = src;
+        a.download = `${base}.jpg`;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    } catch (_) {
+        if (typeof window.toast === 'function') window.toast('No se pudo descargar la imagen.', 'error');
+    }
+}
+
+async function persistirRotacionReclamoApi(pedidoId, grados) {
+    const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
+    const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
+    if (!tok || !apiUrlFn) throw new Error('Sin sesión API');
+    const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(pedidoId)}/reclamo-imagen-rotacion`), {
+        method: 'PATCH',
+        headers: {
+            Authorization: `Bearer ${tok}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reclamo_imagen_rotacion: normalizarRotacionGrados(grados) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        const msg = j.error || j.detail || `Error ${r.status}`;
+        throw new Error(msg);
+    }
+    return j;
+}
+
+function sincronizarRotacionEnListaPedidosApp(pedidoId, grados) {
+    try {
+        const list = window.app?.p;
+        if (!Array.isArray(list) || pedidoId == null) return;
+        const hit = list.find((x) => x && String(x.id) === String(pedidoId));
+        if (hit) hit.reclamo_imagen_rotacion = normalizarRotacionGrados(grados);
+    } catch (_) {}
+}
+
 function encontrarSeccionUbicacion(scroll) {
     if (!scroll) return null;
     const bloques = scroll.querySelectorAll(':scope > .ds');
@@ -140,9 +212,11 @@ function obtenerContenedorScrollDetallePedido() {
 }
 
 /**
- * Inserta el bloque de imagen en el modal (`#dmc` / `.gn-dm-detail-scroll`), sin usar `p.foto_urls`.
+ * Inserta el bloque de imagen en el modal (`#dmc` / `.gn-dm-detail-scroll`).
+ * @param {string} src
+ * @param {{ pedidoId?: string|number, reclamo_imagen_rotacion?: number }} [meta]
  */
-function insertarImagenReclamoEnDOM(src) {
+function insertarImagenReclamoEnDOM(src, meta = {}) {
     if (!src) return;
     const dm = document.getElementById('dm');
     if (!dm) return;
@@ -150,6 +224,13 @@ function insertarImagenReclamoEnDOM(src) {
 
     const scroll = obtenerContenedorScrollDetallePedido();
     if (!scroll) return;
+
+    const pedidoId = meta.pedidoId != null ? String(meta.pedidoId).trim() : '';
+    const puedePersistir = Boolean(pedidoId && !pedidoId.startsWith('off_'));
+
+    let savedRotation = normalizarRotacionGrados(meta.reclamo_imagen_rotacion);
+    let rotationDeg = savedRotation;
+    let scale = 1;
 
     const wrap = document.createElement('div');
     wrap.id = 'gn-pedido-imagen-reclamo';
@@ -161,26 +242,95 @@ function insertarImagenReclamoEnDOM(src) {
     const inner = document.createElement('div');
     inner.style.marginTop = '0.5rem';
 
+    const imgHost = document.createElement('div');
+    imgHost.style.cssText =
+        'margin-top:0.35rem;overflow:auto;max-height:440px;display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);';
+
     const img = document.createElement('img');
     img.src = src;
     img.alt = 'Foto del reclamo';
+    img.draggable = false;
     img.style.cssText =
-        'max-width:100%;max-height:400px;border-radius:8px;cursor:pointer;border:1px solid var(--bo)';
+        'max-width:100%;max-height:400px;border-radius:8px;cursor:pointer;display:block;transform-origin:center center;transition:transform 0.12s ease-out';
+
+    const aplicarTransform = () => {
+        img.style.transform = `rotate(${rotationDeg}deg) scale(${scale})`;
+    };
+    aplicarTransform();
+
     img.addEventListener('click', () => {
         try {
             if (esUrlHttp(src)) window.open(src, '_blank', 'noopener,noreferrer');
         } catch (_) {}
     });
+
     img.addEventListener('error', () => {
-        inner.innerHTML =
-            '<p style="font-size:.8rem;color:var(--tl)">No se pudo cargar la imagen.</p>';
+        imgHost.innerHTML =
+            '<p style="font-size:.8rem;color:var(--tl);padding:.5rem">No se pudo cargar la imagen.</p>';
     });
 
-    const hint = document.createElement('p');
-    hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.35rem';
-    hint.textContent = 'Hacé clic en la imagen para verla en tamaño completo.';
+    imgHost.appendChild(img);
 
-    inner.appendChild(img);
+    const bar = document.createElement('div');
+    bar.className = 'gn-pedido-img-toolbar';
+    bar.style.cssText =
+        'display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem;align-items:center';
+
+    const btnZoomIn = crearBotonToolbar('🔍 +', 'Acercar (máx. 200%)', () => {
+        scale = Math.min(2, Math.round(scale * 1.15 * 100) / 100);
+        aplicarTransform();
+    });
+    const btnZoomOut = crearBotonToolbar('🔍 −', 'Alejar (mín. 50%)', () => {
+        scale = Math.max(0.5, Math.round((scale / 1.15) * 100) / 100);
+        aplicarTransform();
+    });
+    const btnReset = crearBotonToolbar('📐 Reset', 'Volver zoom al 100%', () => {
+        scale = 1;
+        aplicarTransform();
+    });
+    const btnRot = crearBotonToolbar('↻ 90°', 'Rotar 90° horario', () => {
+        rotationDeg += 90;
+        aplicarTransform();
+        actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+    });
+    const btnDl = crearBotonToolbar('💾 Guardar', 'Abrir o descargar imagen original', () =>
+        descargarOAbrirImagenReclamo(src, pedidoId)
+    );
+    const btnSaveRot = crearBotonToolbar(
+        '💾 Rotación → BD',
+        'Guardar ángulo de rotación en el servidor',
+        async () => {
+            if (!puedePersistir) return;
+            btnSaveRot.disabled = true;
+            try {
+                await persistirRotacionReclamoApi(pedidoId, rotationDeg);
+                savedRotation = normalizarRotacionGrados(rotationDeg);
+                sincronizarRotacionEnListaPedidosApp(pedidoId, savedRotation);
+                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+                if (typeof window.toast === 'function') window.toast('Rotación guardada.', 'success', 2800);
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : 'Error al guardar';
+                if (typeof window.toast === 'function') window.toast(msg, 'error', 5000);
+                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+            }
+        }
+    );
+    actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+
+    bar.appendChild(btnZoomIn);
+    bar.appendChild(btnZoomOut);
+    bar.appendChild(btnReset);
+    bar.appendChild(btnRot);
+    bar.appendChild(btnDl);
+    bar.appendChild(btnSaveRot);
+
+    const hint = document.createElement('p');
+    hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
+    hint.textContent =
+        'Zoom 50–200 %. Clic en la imagen: vista completa (URL). «Rotación → BD» solo si cambiaste el ángulo.';
+
+    inner.appendChild(imgHost);
+    inner.appendChild(bar);
     inner.appendChild(hint);
     wrap.appendChild(h);
     wrap.appendChild(inner);
@@ -203,7 +353,11 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
     if (_fotoSrcCache.has(id)) {
         const list = _fotoSrcCache.get(id);
         const src = list?.[0];
-        if (src) insertarImagenReclamoEnDOM(src);
+        if (src)
+            insertarImagenReclamoEnDOM(src, {
+                pedidoId: id,
+                reclamo_imagen_rotacion: p?.reclamo_imagen_rotacion,
+            });
         return;
     }
 
@@ -222,21 +376,25 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
             merged[0] ||
             primeraUrlDesdeFotoUrlsCampo(row.foto_urls) ||
             primeraUrlDesdeFotoBase64Campo(row.foto_base64);
-        if (src) insertarImagenReclamoEnDOM(src);
+        if (src)
+            insertarImagenReclamoEnDOM(src, {
+                pedidoId: id,
+                reclamo_imagen_rotacion: row.reclamo_imagen_rotacion ?? p?.reclamo_imagen_rotacion,
+            });
     } catch (_) {}
 }
 
 export async function injectPedidoVerImagenReclamo(p) {
-    /* Temporal: confirmar ejecución al abrir detalle (quitar cuando ya no haga falta). */
-    console.log('[pedido-ver-imagen] injectPedidoVerImagenReclamo', p?.id);
-
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
 
     const srcLocal = primeraUrlImagenReclamoPedido(p);
     if (srcLocal) {
-        insertarImagenReclamoEnDOM(srcLocal);
+        insertarImagenReclamoEnDOM(srcLocal, {
+            pedidoId: p?.id,
+            reclamo_imagen_rotacion: p?.reclamo_imagen_rotacion,
+        });
         return;
     }
     await enriquecerFotosHttpDesdeApiSiFalta(p);
