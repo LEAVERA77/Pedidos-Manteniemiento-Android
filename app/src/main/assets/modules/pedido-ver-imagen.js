@@ -121,36 +121,6 @@ function listaImagenesDesdeRowPedido(row) {
     return out;
 }
 
-/**
- * Primera imagen desde GET `/api/pedidos/:id` o caché por id.
- * Usa solo el JSON de la API y la caché interna — **no muta `p`** (p. ej. objeto congelado o sin `foto_urls` tras `norm()`).
- */
-async function resolverSrcImagenReclamoDesdeApiOCaché(p) {
-    const id = p?.id != null ? String(p.id) : '';
-    if (!id || id.startsWith('off_')) return null;
-
-    if (_fotoSrcCache.has(id)) {
-        const list = _fotoSrcCache.get(id);
-        return list?.length ? list[0] : null;
-    }
-
-    try {
-        const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
-        const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
-        if (!tok || !apiUrlFn) return null;
-        const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(id)}`), {
-            headers: { Authorization: `Bearer ${tok}` },
-        });
-        if (!r.ok) return null;
-        const row = await r.json();
-        const merged = listaImagenesDesdeRowPedido(row);
-        if (merged.length) _fotoSrcCache.set(id, merged);
-        return merged[0] || null;
-    } catch (_) {
-        return null;
-    }
-}
-
 function encontrarSeccionUbicacion(scroll) {
     if (!scroll) return null;
     const bloques = scroll.querySelectorAll(':scope > .ds');
@@ -162,19 +132,23 @@ function encontrarSeccionUbicacion(scroll) {
     return null;
 }
 
+/** Contenedor de scroll del detalle: hijo de `#dmc` que rellena `detalle()`. */
+function obtenerContenedorScrollDetallePedido() {
+    const dmc = document.getElementById('dmc');
+    if (!dmc) return null;
+    return dmc.querySelector('.gn-dm-detail-scroll') || dmc;
+}
+
 /**
- * Inserta bloque con la primera foto por URL (p. ej. WhatsApp → Cloudinary), antes de «Ubicación».
+ * Inserta el bloque de imagen en el modal (`#dmc` / `.gn-dm-detail-scroll`), sin usar `p.foto_urls`.
  */
-export async function injectPedidoVerImagenReclamo(p) {
+function insertarImagenReclamoEnDOM(src) {
+    if (!src) return;
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
 
-    let src = primeraUrlImagenReclamoPedido(p);
-    if (!src) src = await resolverSrcImagenReclamoDesdeApiOCaché(p);
-    if (!src) return;
-
-    const scroll = dm.querySelector('.gn-dm-detail-scroll');
+    const scroll = obtenerContenedorScrollDetallePedido();
     if (!scroll) return;
 
     const wrap = document.createElement('div');
@@ -217,6 +191,52 @@ export async function injectPedidoVerImagenReclamo(p) {
     } else {
         scroll.appendChild(wrap);
     }
+}
+
+/**
+ * GET `/api/pedidos/:id` o caché: **no modifica `p`**; renderiza con `row` / caché vía `insertarImagenReclamoEnDOM`.
+ */
+async function enriquecerFotosHttpDesdeApiSiFalta(p) {
+    const id = p?.id != null ? String(p.id) : '';
+    if (!id || id.startsWith('off_')) return;
+
+    if (_fotoSrcCache.has(id)) {
+        const list = _fotoSrcCache.get(id);
+        const src = list?.[0];
+        if (src) insertarImagenReclamoEnDOM(src);
+        return;
+    }
+
+    try {
+        const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
+        const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
+        if (!tok || !apiUrlFn) return;
+        const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(id)}`), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        if (!r.ok) return;
+        const row = await r.json();
+        const merged = listaImagenesDesdeRowPedido(row);
+        if (merged.length) _fotoSrcCache.set(id, merged);
+        const src =
+            merged[0] ||
+            primeraUrlDesdeFotoUrlsCampo(row.foto_urls) ||
+            primeraUrlDesdeFotoBase64Campo(row.foto_base64);
+        if (src) insertarImagenReclamoEnDOM(src);
+    } catch (_) {}
+}
+
+export async function injectPedidoVerImagenReclamo(p) {
+    const dm = document.getElementById('dm');
+    if (!dm) return;
+    dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
+
+    const srcLocal = primeraUrlImagenReclamoPedido(p);
+    if (srcLocal) {
+        insertarImagenReclamoEnDOM(srcLocal);
+        return;
+    }
+    await enriquecerFotosHttpDesdeApiSiFalta(p);
 }
 
 /**
