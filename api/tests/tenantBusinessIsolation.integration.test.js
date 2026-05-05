@@ -129,6 +129,37 @@ describe("Integración — aislamiento tenant/business", () => {
         const u = st.users[Number(params[0])];
         return { rows: u && u.activo ? [u] : [] };
       }
+      if (
+        q.includes("SELECT id FROM usuarios") &&
+        q.includes("tenant_id = $2") &&
+        q.includes("rol") &&
+        q.includes("admin")
+      ) {
+        const uid = Number(params[0]);
+        const tid = Number(params[1]);
+        const u = st.users[uid];
+        const rol = String(u?.rol || "").toLowerCase();
+        if (u && u.tenant_id === tid && (rol === "admin" || rol === "administrador")) {
+          return { rows: [{ id: u.id }] };
+        }
+        return { rows: [] };
+      }
+      if (
+        q.includes("UPDATE usuarios SET tenant_id = $1 WHERE tenant_id = $2") &&
+        !q.includes("RETURNING")
+      ) {
+        const newT = Number(params[0]);
+        const oldT = Number(params[1]);
+        let count = 0;
+        for (const k of Object.keys(st.users)) {
+          const u = st.users[k];
+          if (u && u.tenant_id === oldT) {
+            u.tenant_id = newT;
+            count++;
+          }
+        }
+        return { rows: [], rowCount: count };
+      }
       if (q.includes("SELECT nombre, configuracion FROM clientes WHERE id = $1 LIMIT 1")) {
         const c = st.clients[Number(params[0])];
         return { rows: c ? [{ nombre: c.nombre, configuracion: c.configuracion }] : [] };
