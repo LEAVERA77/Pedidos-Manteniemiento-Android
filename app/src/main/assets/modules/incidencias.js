@@ -239,7 +239,7 @@ function ensureModalCierreMasivo() {
     root.className = 'mo';
     root.style.zIndex = '10060';
     root.innerHTML = `
-<div class="mc lg" style="max-width:min(96vw,34rem)">
+<div class="mc lg gn-inc-modal-mc" style="max-width:min(96vw,34rem)">
   <div class="mh"><h3 id="gn-inc-cierre-tit"><i class="fas fa-check-double"></i> Cerrar incidencia</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
   <div class="mb" style="padding:0 1rem 1rem">
     <p id="gn-inc-cierre-sub" style="font-size:.8rem;color:var(--tm);margin:0 0 .65rem"></p>
@@ -248,7 +248,7 @@ function ensureModalCierreMasivo() {
       <button type="button" id="gn-inc-foto-cam" class="btn-foto"><i class="fas fa-camera"></i> Tomar foto</button>
       <label for="gn-inc-foto-gal" class="btn-foto" style="cursor:pointer;display:inline-flex;align-items:center;gap:.5rem"><i class="fas fa-upload"></i> Galería</label>
     </div>
-    <input type="file" id="gn-inc-foto-cam-inp" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    <input type="file" id="gn-inc-foto-cam-inp" accept="image/*" capture="environment" class="gn-inc-file-input-hidden" aria-hidden="true" tabindex="-1">
     <input type="file" id="gn-inc-foto-gal" accept="image/*" style="display:none">
     <div id="gn-inc-foto-prev" class="fotos-container" style="margin-bottom:.65rem;min-height:0"></div>
     <div id="gn-inc-mat-wrap">
@@ -324,13 +324,25 @@ function openModalCierreMasivoIncidencia(args) {
         prev.innerHTML = `<img alt="" src="${fotoDataUrl.replace(/"/g, '&quot;')}" style="max-width:100%;max-height:200px;border-radius:.35rem;border:1px solid var(--bo);object-fit:contain"/>`;
     };
 
+    const MAX_FOTO_CIERRE_BYTES = 14 * 1024 * 1024;
     const onPick = async (file) => {
-        if (!file || !String(file.type || '').startsWith('image/')) return;
+        if (!file || !String(file.type || '').startsWith('image/')) {
+            if (file) toast('Elegí un archivo de imagen.', 'info');
+            return;
+        }
+        if (typeof file.size === 'number' && file.size > MAX_FOTO_CIERRE_BYTES) {
+            toast('La imagen es demasiado grande (máx. ~14 MB). Probá otra foto o comprimila.', 'error');
+            return;
+        }
         try {
             const u = await readFileAsDataUrl(file);
+            if (!String(u || '').startsWith('data:image/')) {
+                toast('No se pudo leer la imagen.', 'error');
+                return;
+            }
             setPreview(u);
         } catch (e) {
-            toast(String(e?.message || e), 'error');
+            toast(String(e?.message || e || 'No se pudo cargar la imagen'), 'error');
         }
     };
 
@@ -506,8 +518,9 @@ function ensureFab() {
     const el = document.createElement('button');
     el.type = 'button';
     el.id = 'gn-incidencias-fab';
+    el.className = 'gn-inc-fab';
     el.style.cssText =
-        'display:none;position:fixed;bottom:5.5rem;left:50%;transform:translateX(-50%);z-index:10040;padding:.55rem 1rem;border-radius:999px;border:none;background:#0ea5e9;color:#fff;font-weight:700;font-size:.82rem;cursor:pointer;box-shadow:0 4px 14px rgba(14,165,233,.45);align-items:center;gap:.35rem';
+        'display:none;position:fixed;bottom:5.5rem;left:50%;transform:translateX(-50%);z-index:10040;padding:.55rem 1rem;border-radius:999px;border:none;background:#0ea5e9;color:#fff;font-weight:700;font-size:.82rem;cursor:pointer;box-shadow:0 4px 14px rgba(14,165,233,.45);align-items:center;gap:.35rem;touch-action:manipulation;-webkit-tap-highlight-color:transparent';
     el.innerHTML = '<i class="fas fa-link"></i> <span id="gn-incidencias-fab-txt"></span>';
     el.addEventListener('click', () => void openModalAsociar());
     document.body.appendChild(el);
@@ -518,7 +531,7 @@ function ensureFab() {
 const _selectedNp = new Set();
 
 function getVisibleRowCheckboxes(pl) {
-    return [...pl.querySelectorAll(':scope > .pi input.gn-pi-cb')];
+    return [...pl.querySelectorAll(':scope > .pi .gn-pi-cb-wrap input.gn-pi-cb, :scope > .pi input.gn-pi-cb')];
 }
 
 function updateSelectAllLabel(pl, allSelected) {
@@ -619,7 +632,9 @@ function enhanceListaPedidosInner() {
     const rows = pl.querySelectorAll(':scope > .pi');
     rows.forEach((row) => {
         if (row.dataset.gnIncDone === '1') {
-            if (!row.querySelector('.gn-pi-cb')) row.removeAttribute('data-gn-inc-done');
+            if (!row.querySelector('.gn-pi-cb-wrap input.gn-pi-cb') && !row.querySelector('input.gn-pi-cb')) {
+                row.removeAttribute('data-gn-inc-done');
+            }
             else return;
         }
         const np = parseNpFromRow(row);
@@ -639,10 +654,12 @@ function enhanceListaPedidosInner() {
         while (row.firstChild) move.appendChild(row.firstChild);
 
         if (esAdmin()) {
+            const wrapCb = document.createElement('label');
+            wrapCb.className = 'gn-pi-cb-wrap';
+            wrapCb.setAttribute('aria-label', 'Seleccionar pedido para incidencia');
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'gn-pi-cb';
-            cb.style.marginTop = '4px';
             const npKey = String(np);
             cb.dataset.np = npKey;
             cb.checked = _selectedNp.has(npKey);
@@ -653,7 +670,9 @@ function enhanceListaPedidosInner() {
                 updateFab();
                 syncSelectAllMasterState(pl);
             });
-            row.appendChild(cb);
+            wrapCb.appendChild(cb);
+            wrapCb.addEventListener('click', (e) => e.stopPropagation());
+            row.appendChild(wrapCb);
         }
 
         row.appendChild(move);
@@ -667,12 +686,15 @@ function enhanceListaPedidosInner() {
             badge.style.cursor = 'pointer';
             badge.setAttribute('role', 'button');
             badge.tabIndex = 0;
+            /** Captura: evita que el click llegue al `.pi` y abra el detalle del pedido (WebView / táctil). */
             const openInc = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                try {
+                    e.preventDefault();
+                    e.stopPropagation();
+                } catch (_) {}
                 void openVistaIncidencia(incId);
             };
-            badge.addEventListener('click', openInc);
+            badge.addEventListener('click', openInc, true);
             badge.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     openInc(e);
@@ -736,7 +758,7 @@ function ensureAssocModalRoot() {
     root.id = 'gn-modal-incidencias-assoc';
     root.className = 'mo';
     root.style.zIndex = '10050';
-    root.innerHTML = '<div class="mc" style="max-width:min(96vw,26rem)"></div>';
+    root.innerHTML = '<div class="mc gn-inc-modal-mc" style="max-width:min(96vw,26rem)"></div>';
     root.addEventListener('click', (e) => {
         if (e.target === root) closeModalAssoc();
     });
@@ -751,6 +773,7 @@ function paintAssocModalContent() {
     const mc = root.querySelector('.mc');
     if (!mc) return root;
     mc.innerHTML = GN_ASSOC_MC_INNER_HTML;
+    mc.classList.add('gn-inc-modal-mc');
     mc.style.maxWidth = 'min(96vw,26rem)';
     root.querySelectorAll('[data-close]').forEach((b) => {
         b.onclick = () => closeModalAssoc();
@@ -862,7 +885,7 @@ function buildModalVista() {
     root.className = 'mo';
     root.style.zIndex = '10050';
     root.innerHTML = `
-<div class="mc lg" style="max-width:min(96vw,36rem)">
+<div class="mc lg gn-inc-modal-mc" style="max-width:min(96vw,36rem)">
   <div class="mh"><h3 id="gn-inc-v-tit"><i class="fas fa-project-diagram"></i> Incidencia</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
   <div class="mb" style="padding:0 1rem 1rem">
     <div id="gn-inc-v-meta" style="font-size:.8rem;color:var(--tm);margin-bottom:.65rem"></div>
