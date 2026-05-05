@@ -1689,6 +1689,30 @@ router.put("/:id", async (req, res) => {
       estadoBodyRaw === null || estadoBodyRaw === ""
         ? null
         : normalizarEstadoPedidoOperativo(estadoBodyRaw);
+    if (
+      estadoAntesNorm === "Derivado externo" &&
+      estadoParam === "Pendiente" &&
+      String(req.user?.rol || "").toLowerCase() !== "admin"
+    ) {
+      return res.status(403).json({
+        error: "Solo administradores pueden volver a Pendiente un pedido derivado externamente",
+      });
+    }
+    let derivacionClearSql = "";
+    if (
+      estadoAntesNorm === "Derivado externo" &&
+      estadoParam === "Pendiente" &&
+      String(req.user?.rol || "").toLowerCase() === "admin" &&
+      (await pedidosTableHasDerivadoExternoColumn())
+    ) {
+      derivacionClearSql = `,
+         derivado_externo = FALSE,
+         derivado_a = NULL,
+         derivado_destino_nombre = NULL,
+         fecha_derivacion = NULL,
+         usuario_derivacion_id = NULL,
+         derivacion_nota = NULL`;
+    }
     const cerrandoOperativo =
       estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     let avanceParam = avance ?? null;
@@ -1744,7 +1768,7 @@ router.put("/:id", async (req, res) => {
          cliente_referencia = COALESCE($15, cliente_referencia),
          telefono_contacto = COALESCE($16, telefono_contacto),
          cliente_calle = COALESCE($18, cliente_calle),
-         cliente_localidad = COALESCE($19, cliente_localidad)
+         cliente_localidad = COALESCE($19, cliente_localidad)${derivacionClearSql}
        WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}${btUp}
        RETURNING *`,
       upParams

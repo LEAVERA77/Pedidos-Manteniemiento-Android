@@ -533,6 +533,8 @@ html.gn-android-webview #pm #pf textarea,
 html.gn-android-webview #pm #pf select{touch-action:manipulation}
 #dm .gn-dm-actions-bar{flex-shrink:0;padding:.65rem 1.25rem 1.1rem;border-top:1px solid var(--bo);background:linear-gradient(180deg,rgba(255,255,255,.98),#fff);box-shadow:0 -4px 14px rgba(15,23,42,.06)}
 #dm .gn-dm-actions-bar .da{margin-top:0}
+.btn-volver-pendiente{background:#f59e0b!important;color:#fff!important;border:1px solid #d97706!important;border-radius:6px!important;padding:8px 14px!important;font-size:.82rem!important;cursor:pointer!important;font-weight:600!important}
+.btn-volver-pendiente:hover{background:#d97706!important}
 @keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .mh{padding:1rem 1.25rem;border-bottom:1px solid var(--bo);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:white;z-index:10;border-radius:1rem 1rem 0 0}
 .mh h3{color:var(--bd);font-size:1rem;display:flex;align-items:center;gap:.4rem}

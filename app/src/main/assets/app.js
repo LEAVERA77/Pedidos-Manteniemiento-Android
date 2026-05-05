@@ -87,6 +87,7 @@ import {
 } from './modules/admin-distribuidores-formato.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
+import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -12092,7 +12093,10 @@ async function detalle(p, opts = {}) {
         </div>
         </div>
     `;
-    
+    try {
+        syncPedidoVolverPendienteButton(p);
+    } catch (_) {}
+
     document.getElementById('dm').classList.add('active');
     _gnOcultarPanelPedidosParaDetalleAndroid();
     _gnBindDetalleModalOcultarBp2AndroidUnaVez();
@@ -19610,6 +19614,19 @@ try {
             if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'ID socio';
             return 'NIS';
         },
+    });
+} catch (_) {}
+
+try {
+    installPedidoVolverPendiente({
+        esAdmin,
+        modoOffline: () => !!modoOffline,
+        pedidoPutApi,
+        norm,
+        app: () => app,
+        offlinePedidosSave,
+        render,
+        detalle,
     });
 } catch (_) {}
 
