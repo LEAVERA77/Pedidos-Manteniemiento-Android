@@ -324,6 +324,26 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
     bar.appendChild(btnDl);
     bar.appendChild(btnSaveRot);
 
+    /** Misma UI que index (`cerrar-modal-foto`); otro id porque `#cerrar-modal-foto` ya es el del modal foto ampliada. */
+    const cerrarRow = document.createElement('div');
+    cerrarRow.style.cssText = 'margin-top:.5rem;display:flex;justify-content:flex-start;flex-wrap:wrap';
+    const btnCerrarDet = document.createElement('button');
+    btnCerrarDet.type = 'button';
+    btnCerrarDet.id = 'cerrar-modal-foto-detalle-reclamo';
+    btnCerrarDet.className = 'cerrar-modal-foto';
+    btnCerrarDet.style.cssText =
+        'color:var(--td);font-size:1rem;cursor:pointer;background:none;border:none;display:flex;align-items:center;gap:.4rem;padding:.25rem 0';
+    btnCerrarDet.innerHTML = '<i class="fas fa-times"></i> Cerrar';
+    btnCerrarDet.title = 'Cerrar detalle del pedido';
+    btnCerrarDet.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+            document.querySelector('#dm .mh button.cm')?.click();
+        } catch (_) {}
+    });
+    cerrarRow.appendChild(btnCerrarDet);
+
     const hint = document.createElement('p');
     hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
     hint.textContent =
@@ -331,6 +351,7 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
 
     inner.appendChild(imgHost);
     inner.appendChild(bar);
+    inner.appendChild(cerrarRow);
     inner.appendChild(hint);
     wrap.appendChild(h);
     wrap.appendChild(inner);
