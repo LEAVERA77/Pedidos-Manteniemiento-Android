@@ -49,6 +49,33 @@ export function digitsForWhapiSend(rawDigits) {
  * @param {string} text Cuerpo del mensaje
  * @returns {Promise<{ ok: boolean, data?: object, error?: unknown }>}
  */
+/**
+ * Descarga binario de un medio Whapi por ID (mismo token que envío).
+ * @see https://support.whapi.cloud/help-desk/receiving/http-api/how-to-retrieve-files
+ * @returns {Promise<{ buffer: Buffer, contentType: string }>}
+ */
+export async function downloadWhapiMediaBuffer(mediaId) {
+  const mid = String(mediaId || "").trim();
+  if (!mid || !WHAPI_API_KEY) {
+    throw new Error("missing_whapi_media_id_or_key");
+  }
+  const url = `${WHAPI_API_URL}/media/${encodeURIComponent(mid)}`;
+  const r = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "*/*",
+      Authorization: `Bearer ${WHAPI_API_KEY}`,
+    },
+  });
+  if (!r.ok) {
+    const snippet = (await r.text().catch(() => "")).slice(0, 200);
+    throw new Error(`whapi_media_http_${r.status}:${snippet}`);
+  }
+  const ct = String(r.headers.get("content-type") || "").split(";")[0].trim() || "application/octet-stream";
+  const buf = Buffer.from(await r.arrayBuffer());
+  return { buffer: buf, contentType: ct };
+}
+
 export async function sendText(toDigits, text) {
   const to = digitsForWhapiSend(String(toDigits || "").replace(/\D/g, ""));
   const body = String(text || "").trim();

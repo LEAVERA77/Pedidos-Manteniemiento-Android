@@ -48,4 +48,33 @@ describe("whapiWebhookToMetaShapedPayload", () => {
     expect(msg.location.latitude).toBe(-31.4);
     expect(msg.location.longitude).toBe(-64.2);
   });
+
+  it("maps Whapi image to Meta-shaped image message (id + optional link)", () => {
+    const body = {
+      channel_id: "CH1",
+      messages: [
+        {
+          id: "img1",
+          from_me: false,
+          type: "image",
+          chat_id: "5491112223333@s.whatsapp.net",
+          timestamp: 1713202936,
+          from: "5491112223333",
+          from_name: "Vecino",
+          image: {
+            id: "jpeg-abc123def456-804713c25d2b57",
+            mime_type: "image/jpeg",
+            link: "https://example.com/f.jpg",
+          },
+        },
+      ],
+    };
+    const shaped = whapiWebhookToMetaShapedPayload(body);
+    expect(shaped).toBeTruthy();
+    const msg = shaped.entry[0].changes[0].value.messages[0];
+    expect(msg.type).toBe("image");
+    expect(msg.image.id).toBe("jpeg-abc123def456-804713c25d2b57");
+    expect(msg.image.mime_type).toBe("image/jpeg");
+    expect(msg.image.link).toBe("https://example.com/f.jpg");
+  });
 });

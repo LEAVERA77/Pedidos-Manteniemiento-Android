@@ -48,3 +48,10 @@ export function procesarRespuestaBot(numero, tipoNegocio) {
     if (n > tipos.length) return null;
     return tipos[n - 1] || null;
 }
+
+/**
+ * Referencia única para vecinos (municipio, cooperativa eléctrica y agua): mismo paso opcional de foto en el bot.
+ * El procesamiento real está en la API (`whatsappBotMeta` / Whapi adapter).
+ */
+export const AYUDA_ENVIAR_FOTO_RECLAMO_WA =
+    'Podés adjuntar una sola foto (JPG o PNG): en WhatsApp tocá 📎 y elegí Galería o Cámara.';

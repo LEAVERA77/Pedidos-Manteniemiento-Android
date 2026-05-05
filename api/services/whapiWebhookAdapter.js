@@ -36,6 +36,27 @@ function extractWhapiTextBody(msg) {
  * Whapi `location` / `live_location` → coordenadas Meta Cloud API (`latitude` / `longitude`).
  * @returns {{ latitude: number, longitude: number } | null}
  */
+/**
+ * Imagen entrante Whapi → forma compatible con `processInboundWhatsappImageMessage` (id + link opcional Auto Download).
+ * @returns {{ id: string, mime_type: string, link: string } | null}
+ */
+function extractWhapiImageForMeta(msg) {
+  if (!msg || typeof msg !== "object") return null;
+  const t = String(msg.type || "").toLowerCase();
+  if (t !== "image") return null;
+  const img = msg.image;
+  if (!img || typeof img !== "object") return null;
+  const id = String(img.id || "").trim();
+  const link = String(img.link || img.url || "").trim();
+  if (!id && !link) return null;
+  const mime = img.mime_type ? String(img.mime_type).trim() : "image/jpeg";
+  return {
+    id: id || `whapi_img_${Date.now()}`,
+    mime_type: mime,
+    link,
+  };
+}
+
 function extractWhapiLocationForMeta(msg) {
   if (!msg || typeof msg !== "object") return null;
   const t = String(msg.type || "").toLowerCase();
@@ -105,8 +126,9 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
 
     const body = extractWhapiTextBody(m);
     const loc = extractWhapiLocationForMeta(m);
-    if (!body && !loc) {
-      console.warn("[whapi-adapter] mensaje sin texto ni ubicación útil, type=", m.type);
+    const img = extractWhapiImageForMeta(m);
+    if (!body && !loc && !img) {
+      console.warn("[whapi-adapter] mensaje sin texto ni ubicación ni imagen útil, type=", m.type);
       continue;
     }
 
@@ -127,7 +149,7 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
         type: "text",
         text: { body },
       });
-    } else {
+    } else if (loc) {
       metaMessages.push({
         ...base,
         type: "location",
@@ -135,6 +157,14 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
           latitude: loc.latitude,
           longitude: loc.longitude,
         },
+      });
+    } else if (img) {
+      const image = { id: img.id, mime_type: img.mime_type };
+      if (img.link) image.link = img.link;
+      metaMessages.push({
+        ...base,
+        type: "image",
+        image,
       });
     }
   }

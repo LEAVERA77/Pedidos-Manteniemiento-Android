@@ -1461,6 +1461,9 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   opts = {}
 ) {
   const soloReemplazarFoto = !!opts.soloReemplazarFoto;
+  const directMediaUrl = opts.directMediaUrl ? String(opts.directMediaUrl).trim() : "";
+  const waProv = String(process.env.WHATSAPP_PROVIDER || "meta").toLowerCase().trim();
+
   let accessToken = "";
   const pid = String(phoneNumberId || "").trim();
   if (pid) {
@@ -1471,10 +1474,13 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     const creds = await getWhatsAppCredentialsForTenant(sess.tenantId);
     accessToken = String(creds.accessToken || "").trim();
   }
-  if (!accessToken) {
+
+  const necesitaTokenMeta =
+    !directMediaUrl && waProv === "meta" && String(mediaId || "").trim().length > 0;
+  if (necesitaTokenMeta && !accessToken) {
     await reply(
       phone,
-      "No pudimos procesar la imagen (configuración). Intentá más tarde o escribí *omitir*.",
+      "No pudimos procesar la imagen (configuración Meta). Intentá más tarde o escribí *omitir*.",
       sess.tenantId,
       phoneNumberId
     );
@@ -1482,7 +1488,9 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   }
   try {
     const prevUrl = sess.waPedidoFotoCloudinaryUrl ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
-    const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken);
+    const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
+      directUrl: directMediaUrl,
+    });
     if (prevUrl) {
       await destroyCloudinaryImageBySecureUrl(prevUrl).catch(() => {});
     }
@@ -1503,7 +1511,9 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     console.error("[whatsapp-bot-meta] subida foto WA", e?.message || e);
     await reply(
       phone,
-      "No pudimos guardar la imagen. Podés escribir *omitir* para seguir *sin foto*, probar otra imagen, o *atrás* para elegir de nuevo.",
+      "❌ No pudimos procesar la imagen.\n\n" +
+        "¿Querés *intentar de nuevo* enviando otra foto con 📎, o *seguir sin foto*?\n\n" +
+        "Escribí *1* para reintentar (mandá otra imagen), *2* u *omitir* para ir al resumen sin foto, o *atrás* para volver al paso anterior.",
       sess.tenantId,
       phoneNumberId
     );
@@ -1515,7 +1525,8 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
   const mediaId = msg?.image?.id ? String(msg.image.id).trim() : "";
-  if (!mediaId) return;
+  const directMediaUrl = msg?.image?.link ? String(msg.image.link).trim() : "";
+  if (!mediaId && !directMediaUrl) return;
 
   const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
   const tid = resolvedTid ?? botTenantId();
@@ -1557,6 +1568,7 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   if (sess.step === "awaiting_confirmar_resumen") {
     await aplicarImagenRecibidaFlujoPedidoWa(phone, sess, sk, mediaId, phoneNumberId, contactName, ctxOk, {
       soloReemplazarFoto: true,
+      directMediaUrl,
     });
     return;
   }
@@ -1566,7 +1578,9 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
     sessions.set(sk, sess);
   }
 
-  await aplicarImagenRecibidaFlujoPedidoWa(phone, sess, sk, mediaId, phoneNumberId, contactName, ctxOk);
+  await aplicarImagenRecibidaFlujoPedidoWa(phone, sess, sk, mediaId, phoneNumberId, contactName, ctxOk, {
+    directMediaUrl,
+  });
 }
 
 export async function handleInboundMetaWhatsAppPayload(body) {
@@ -2247,12 +2261,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       const hint = hintCamara
         ? "Abrí 📎 → *Cámara*, sacá *una* foto y enviala."
         : "Abrí 📎 → *Galería* o *Cámara*, elegí *una* imagen y enviala.";
-      await reply(
-        phone,
-        `Perfecto. ${hint}\n\n_Si preferís no mandar imagen, escribí *omitir*.` + MSG_SALIR_ATRAS,
-        tid,
-        phoneNumberId
-      );
+    await reply(
+      phone,
+        `Perfecto. ${hint}\n\n` +
+        `_Una sola imagen por reclamo (JPG o PNG desde galería o cámara)._ ` +
+        `Si preferís no mandar foto, escribí *omitir* o *2*.` +
+        MSG_SALIR_ATRAS,
+      tid,
+      phoneNumberId
+    );
       return;
     }
     await reply(
@@ -2279,15 +2296,30 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
       return;
     }
-    if (lower === "omitir" || lower === "sin foto" || lower === "no foto" || t === "3") {
+    if (
+      lower === "omitir" ||
+      lower === "sin foto" ||
+      lower === "no foto" ||
+      t === "2" ||
+      t === "3"
+    ) {
       await limpiarFotoOpcionalWhatsappEnSesion(sess);
       sessions.set(sk, sess);
       await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
       return;
     }
+    if (t === "1") {
+      await reply(
+        phone,
+        "Listo. Enviá *una imagen* con 📎 (galería o cámara). Si cambiás de idea: *2* u *omitir*.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     await reply(
       phone,
-      "En este paso enviá *una imagen* con 📎 o escribí *omitir* para seguir sin foto.",
+        "En este paso enviá *una imagen* con 📎 o escribí *2* / *omitir* para seguir sin foto.",
       tid,
       phoneNumberId
     );
