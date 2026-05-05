@@ -5,7 +5,8 @@
  */
 
 import { toast } from './ui-utils.js';
-import { injectPedidoVerImagenReclamo } from './pedido-ver-imagen.js';
+/** Registra observer + `window.injectPedidoVerImagenReclamo` (el wrapper de `detalle` aquí no reemplaza al global de app.js). */
+import './pedido-ver-imagen.js';
 
 /** @type {Map<string, { frp: string|null, urvid: number|null }>} */
 const _reversionApiCache = new Map();
@@ -150,9 +151,7 @@ export function installPedidoVolverPendiente(deps) {
             try {
                 await injectHistorialDerivacionRevertida(p);
             } catch (_) {}
-            try {
-                await injectPedidoVerImagenReclamo(p);
-            } catch (_) {}
+            /* Imagen del reclamo: `pedido-ver-imagen.js` usa MutationObserver en `#dmc` porque `detalle` global de app.js no pasa por este wrapper. */
         },
     };
 }

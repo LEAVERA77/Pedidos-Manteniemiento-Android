@@ -227,6 +227,9 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
 }
 
 export async function injectPedidoVerImagenReclamo(p) {
+    /* Temporal: confirmar ejecución al abrir detalle (quitar cuando ya no haga falta). */
+    console.log('[pedido-ver-imagen] injectPedidoVerImagenReclamo', p?.id);
+
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
@@ -240,8 +243,65 @@ export async function injectPedidoVerImagenReclamo(p) {
 }
 
 /**
- * Reservado por si en el futuro se instala desde app.js; hoy el hook es vía `pedido-volver-pendiente`.
+ * Reservado por si en el futuro se instala desde app.js.
+ * El hook real es `installPedidoVerImagenDetalleObserver` (detalle() no usa el `detalle` envuelto de pedido-volver-pendiente).
  */
 export function installPedidoVerImagen() {
     /* noop — ver injectPedidoVerImagenReclamo */
+}
+
+/** Pedido abierto: `#dm.dataset.detallePedidoId` + `window.app.p`, o `{ id }` mínimo para el GET. */
+function obtenerPedidoParaImagenDetalle() {
+    const dm = document.getElementById('dm');
+    const pid = dm?.dataset?.detallePedidoId;
+    if (!pid) return null;
+    try {
+        const list = window.app?.p;
+        if (Array.isArray(list)) {
+            const hit = list.find((x) => x && String(x.id) === String(pid));
+            if (hit) return hit;
+        }
+    } catch (_) {}
+    return { id: pid };
+}
+
+let _moDetallePedidoImg = null;
+let _rafDetallePedidoImg = null;
+
+/**
+ * Tras `detalle()`, `app.js` asigna `dmc.innerHTML` (reemplaza hijos directos de `#dmc`).
+ * `installPedidoVolverPendiente` envuelve `detalle` en `_deps` pero la app sigue llamando al `detalle` original,
+ * por eso aquí observamos `#dmc` y ejecutamos el inject en el siguiente frame.
+ */
+export function installPedidoVerImagenDetalleObserver() {
+    if (typeof document === 'undefined' || _moDetallePedidoImg) return;
+    const boot = () => {
+        const dmc = document.getElementById('dmc');
+        if (!dmc) return;
+        _moDetallePedidoImg = new MutationObserver(() => {
+            if (_rafDetallePedidoImg != null) cancelAnimationFrame(_rafDetallePedidoImg);
+            _rafDetallePedidoImg = requestAnimationFrame(() => {
+                _rafDetallePedidoImg = null;
+                const ped = obtenerPedidoParaImagenDetalle();
+                if (!ped?.id || String(ped.id).startsWith('off_')) return;
+                void injectPedidoVerImagenReclamo(ped);
+            });
+        });
+        _moDetallePedidoImg.observe(dmc, { childList: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+}
+
+if (typeof window !== 'undefined') {
+    window.injectPedidoVerImagenReclamo = injectPedidoVerImagenReclamo;
+    const bootPvImg = () => {
+        try {
+            installPedidoVerImagenDetalleObserver();
+        } catch (_) {}
+    };
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootPvImg);
+        else bootPvImg();
+    }
 }
