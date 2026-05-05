@@ -20,8 +20,25 @@ let _modalVista = null;
 let _modalCierreMasivo = null;
 /** Modal admin: asignar un técnico a todos los pedidos abiertos de una incidencia. */
 let _modalAsignarInc = null;
+/** Tras cancelar/backdrop del modal cierre masivo, volver a mostrar la vista de incidencia (evita dos `.mo` en WebView). */
+let _gnDismissVistaIncidencia = null;
 let _moPl = null;
 let _debTimer = null;
+
+function closeModalCierreMasivoUI() {
+    const root = _modalCierreMasivo;
+    if (!root) return;
+    const cb = _gnDismissVistaIncidencia;
+    _gnDismissVistaIncidencia = null;
+    try {
+        root.classList.remove('active');
+    } catch (_) {}
+    if (typeof cb === 'function') {
+        try {
+            cb();
+        } catch (_) {}
+    }
+}
 
 function apiUrl(p) {
     return typeof window.apiUrl === 'function' ? window.apiUrl(p) : p;
@@ -105,8 +122,35 @@ function puedeGestionarIncidencias() {
     return esAdminIncModule() || esTecnicoOSupervisorIncModule();
 }
 
+/**
+ * Misma lógica canónica que la API (`normalizarEstadoPedidoOperativo` en pedidos).
+ * Evita que técnicos queden sin pedidos filtrables si Neon devuelve variantes de texto.
+ */
+function normalizarEstadoOperativoInc(raw) {
+    const s0 = raw == null || raw === '' ? '' : String(raw).trim();
+    if (!s0) return '';
+    const low = s0.toLowerCase().replace(/\s+/g, ' ');
+    const compact = low.replace(/[\s_-]/g, '');
+    if (low === 'derivado externo' || compact === 'derivadoexterno') return 'Derivado externo';
+    if (low === 'cerrado') return 'Cerrado';
+    if (low === 'pendiente') return 'Pendiente';
+    if (low === 'asignado') return 'Asignado';
+    if (
+        low === 'en ejecución' ||
+        low === 'en ejecucion' ||
+        compact === 'enejecución' ||
+        compact === 'enejecucion' ||
+        compact === 'enprogreso' ||
+        low === 'en progreso' ||
+        low === 'en curso'
+    ) {
+        return 'En ejecución';
+    }
+    return s0;
+}
+
 function estadoPedidoInc(p) {
-    return String(p?.es ?? p?.estado ?? '').trim();
+    return normalizarEstadoOperativoInc(p?.es ?? p?.estado ?? '');
 }
 
 function taiPedidoInc(p) {
@@ -141,7 +185,7 @@ function pedidoApiRowParaPermisoInc(row) {
     if (!row || row.id == null) return null;
     return {
         id: row.id,
-        es: row.estado,
+        es: normalizarEstadoOperativoInc(row.estado),
         tt: row.tipo_trabajo,
         tai: row.tecnico_asignado_id != null ? Number(row.tecnico_asignado_id) : null,
     };
@@ -360,7 +404,7 @@ function ensureModalCierreMasivo() {
     const root = document.createElement('div');
     root.id = 'gn-modal-inc-cierre-masivo';
     root.className = 'mo';
-    root.style.zIndex = '10060';
+    root.style.zIndex = '10070';
     root.innerHTML = `
 <div class="mc lg gn-inc-modal-mc" style="max-width:min(96vw,34rem)">
   <div class="mh"><h3 id="gn-inc-cierre-tit"><i class="fas fa-check-double"></i> Cerrar incidencia</h3><button type="button" class="cm" data-close="1"><i class="fas fa-times"></i></button></div>
@@ -389,23 +433,29 @@ function ensureModalCierreMasivo() {
 </div>`;
     document.body.appendChild(root);
     root.addEventListener('click', (e) => {
-        if (e.target === root) root.classList.remove('active');
+        if (e.target === root) closeModalCierreMasivoUI();
     });
-    root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => root.classList.remove('active')));
+    root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModalCierreMasivoUI()));
     _modalCierreMasivo = root;
     return root;
 }
 
 /**
- * @param {{ incId: number, incNombre: string, pedidosAbiertos: Array<Record<string, unknown>>, tok: string }} args
+ * @param {{ incId: number, incNombre: string, pedidosAbiertos: Array<Record<string, unknown>>, tok: string, dismissVistaIncidencia?: () => void }} args
  */
 function openModalCierreMasivoIncidencia(args) {
-    const { incId, incNombre, pedidosAbiertos, tok } = args;
+    const { incId, incNombre, pedidosAbiertos, tok, dismissVistaIncidencia } = args;
     const putFn = typeof window.pedidoPutApi === 'function' ? window.pedidoPutApi : null;
     if (!putFn) {
         toast('No se pudo usar el guardado de pedidos (pedidoPutApi). Recargá la app.', 'error');
+        if (typeof dismissVistaIncidencia === 'function') {
+            try {
+                dismissVistaIncidencia();
+            } catch (_) {}
+        }
         return;
     }
+    _gnDismissVistaIncidencia = typeof dismissVistaIncidencia === 'function' ? dismissVistaIncidencia : null;
     const mc = ensureModalCierreMasivo();
     const tit = mc.querySelector('#gn-inc-cierre-tit');
     const sub = mc.querySelector('#gn-inc-cierre-sub');
@@ -509,7 +559,7 @@ function openModalCierreMasivoIncidencia(args) {
     if (btnCancel0?.parentNode) {
         const nb = btnCancel0.cloneNode(true);
         btnCancel0.parentNode.replaceChild(nb, btnCancel0);
-        nb.addEventListener('click', () => mc.classList.remove('active'));
+        nb.addEventListener('click', () => closeModalCierreMasivoUI());
     }
     if (btnOk0?.parentNode) {
         const nb = btnOk0.cloneNode(true);
@@ -547,6 +597,7 @@ function openModalCierreMasivoIncidencia(args) {
                 const jj = await rr.json().catch(() => ({}));
                 if (!rr.ok) throw new Error(jj.error || jj.detail || `Incidencia HTTP ${rr.status}`);
                 toast(`✅ Incidencia #${incId} cerrada. ${okCount} pedido(s) actualizado(s).`, 'success');
+                _gnDismissVistaIncidencia = null;
                 mc.classList.remove('active');
                 invalidatePedidosIncidenciasCache();
                 recargarPedidosYMapa();
@@ -1320,7 +1371,7 @@ async function openVistaIncidencia(incId) {
                         toast('Sin permiso para cerrar incidencias.', 'error');
                         return;
                     }
-                    const abiertosAll = pedidos.filter((p) => String(p.estado || '').trim() !== 'Cerrado');
+                    const abiertosAll = pedidos.filter((p) => normalizarEstadoOperativoInc(p.estado) !== 'Cerrado');
                     const abiertos = esAdminIncModule()
                         ? abiertosAll
                         : abiertosAll.filter((row) => {
@@ -1334,11 +1385,19 @@ async function openVistaIncidencia(incId) {
                         );
                         return;
                     }
+                    try {
+                        m.classList.remove('active');
+                    } catch (_) {}
                     openModalCierreMasivoIncidencia({
                         incId,
                         incNombre: nombreInc,
                         pedidosAbiertos: abiertos,
                         tok,
+                        dismissVistaIncidencia: () => {
+                            try {
+                                m.classList.add('active');
+                            } catch (_) {}
+                        },
                     });
                 });
             }
