@@ -193,7 +193,7 @@ router.put("/:id", adminOnly, async (req, res) => {
         sets.push(`fecha_cierre = COALESCE(fecha_cierre, NOW())`);
       }
       if (await tableHasColumn("incidencias", "usuario_cierre_id")) {
-        sets.push(`usuario_cierre_id = $${i++}`);
+        sets.push(`usuario_cierre_id = COALESCE(usuario_cierre_id, $${i++})`);
         params.push(req.user.id);
       }
     }
