@@ -89,51 +89,7 @@ export function normalizarWhatsappInternacionalDesdeInput(raw) {
     return `+${digits}`;
 }
 
-const PRIORIDAD_RECLAMO_POR_TIPO = {
-    'Alumbrado Público': 'Media',
-    'Bacheo y Pavimento': 'Media',
-    'Recolección/Poda': 'Baja',
-    'Espacios Verdes': 'Baja',
-    'Señalización/Semáforos': 'Alta',
-    'Limpieza de Zanjas': 'Media',
-    'Recolección (otros)': 'Media',
-    'Obstrucción de Cloaca': 'Alta',
-    Otros: 'Media',
-    'Pérdida en Vereda/Calle': 'Alta',
-    'Falta de Presión': 'Media',
-    'Calidad del Agua': 'Alta',
-    'Consumo elevado': 'Baja',
-    'Conexión Nueva': 'Baja',
-    'Corte de Energía': 'Alta',
-    'Cables Caídos/Peligro': 'Crítica',
-    'Problemas de Tensión': 'Alta',
-    'Poste Inclinado/Dañado': 'Crítica',
-    'Cambio de Medidor': 'Baja',
-    'Alumbrado Público (Mantenimiento)': 'Baja',
-    'Riesgo en la vía pública': 'Crítica',
-    'Corrimiento de poste/columna': 'Crítica',
-    'Pedido de factibilidad (nuevo servicio)': 'Baja',
-    'Riesgo vía pública': 'Crítica',
-    'Mantenimiento preventivo': 'Baja',
-    'Material averiado': 'Media',
-    'Poda de árboles': 'Baja',
-    Nidos: 'Baja',
-    'Falla de Línea': 'Alta',
-    'Inspección Termográfica': 'Baja',
-    'Avería en Transformador': 'Alta',
-    'Reclamo de Cliente': 'Media',
-    'Corte Programado': 'Baja',
-    Emergencia: 'Crítica',
-};
-const _PRIORIDADES_VALIDAS_UI = new Set(['Baja', 'Media', 'Alta', 'Crítica']);
-
-export function prioridadPredeterminadaPorTipoTrabajoUI(tipoTrabajo) {
-    const t = String(tipoTrabajo || '').trim();
-    if (!t) return 'Media';
-    const p = PRIORIDAD_RECLAMO_POR_TIPO[t];
-    if (p && _PRIORIDADES_VALIDAS_UI.has(p)) return p;
-    return 'Media';
-}
+export { prioridadPredeterminadaPorTipoTrabajoUI, PRIORIDAD_RECLAMO_POR_TIPO } from '../modules/catalogoReclamoPorRubro.js';
 
 export function _escOpt(s) {
     return String(s == null ? '' : s)

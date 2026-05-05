@@ -64,6 +64,18 @@ import {
 } from './modules/admin-socios.js';
 
 import {
+    TIPOS_RECLAMO_POR_RUBRO,
+    TIPOS_RECLAMO_LEGACY,
+    prioridadPredeterminadaPorTipoTrabajoUI,
+    rubroCatalogoTiposReclamo,
+    tiposReclamoSeleccionables,
+    syncChecklistSeguridadCierreLabels,
+    textoResumenChecklistSeguridad,
+    TIPOS_TRABAJO_DERIVACION_SOLO_AGUA,
+    TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO,
+} from './modules/catalogoReclamoPorRubro.js';
+
+import {
   asegurarDefsProyeccionesARG,
   fajaArgentinaPorLongitud,
   registrarFajaInstalacionSiFalta,
@@ -863,102 +875,6 @@ async function initNeon() {
 
 let DIST = []; // Se carga desde Neon: tabla distribuidores
 
-const TIPOS_RECLAMO_POR_RUBRO = {
-    municipio: [
-        'Alumbrado Público',
-        'Bacheo y Pavimento',
-        'Recolección/Poda',
-        'Espacios Verdes',
-        'Señalización/Semáforos',
-        'Limpieza de Zanjas',
-        'Recolección (otros)',
-        'Obstrucción de Cloaca',
-        'Otros'
-    ],
-    cooperativa_agua: [
-        'Pérdida en Vereda/Calle',
-        'Falta de Presión',
-        'Calidad del Agua',
-        'Consumo elevado',
-        'Conexión Nueva',
-        'Otros'
-    ],
-    cooperativa_electrica: [
-        'Corte de Energía',
-        'Cables Caídos/Peligro',
-        'Problemas de Tensión',
-        'Poste Inclinado/Dañado',
-        'Consumo elevado',
-        'Alumbrado Público (Mantenimiento)',
-        'Riesgo en la vía pública',
-        'Corrimiento de poste/columna',
-        'Pedido de factibilidad (nuevo servicio)',
-        'Otros'
-    ]
-};
-
-const TIPOS_RECLAMO_LEGACY = [
-    'Riesgo vía pública',
-    'Mantenimiento preventivo',
-    'Material averiado',
-    'Poda de árboles',
-    'Nidos',
-    'Falla de Línea',
-    'Inspección Termográfica',
-    'Avería en Transformador',
-    'Reclamo de Cliente',
-    'Conexión Nueva',
-    'Corte Programado',
-    'Emergencia',
-    'Otros'
-];
-
-const PRIORIDAD_RECLAMO_POR_TIPO = {
-    'Alumbrado Público': 'Media',
-    'Bacheo y Pavimento': 'Media',
-    'Recolección/Poda': 'Baja',
-    'Espacios Verdes': 'Baja',
-    'Señalización/Semáforos': 'Alta',
-    'Limpieza de Zanjas': 'Media',
-    'Recolección (otros)': 'Media',
-    'Obstrucción de Cloaca': 'Alta',
-    'Otros': 'Media',
-    'Pérdida en Vereda/Calle': 'Alta',
-    'Falta de Presión': 'Media',
-    'Calidad del Agua': 'Alta',
-    'Consumo elevado': 'Baja',
-    'Conexión Nueva': 'Baja',
-    'Corte de Energía': 'Alta',
-    'Cables Caídos/Peligro': 'Crítica',
-    'Problemas de Tensión': 'Alta',
-    'Poste Inclinado/Dañado': 'Crítica',
-    'Cambio de Medidor': 'Baja',
-    'Alumbrado Público (Mantenimiento)': 'Baja',
-    'Riesgo en la vía pública': 'Crítica',
-    'Corrimiento de poste/columna': 'Crítica',
-    'Pedido de factibilidad (nuevo servicio)': 'Baja',
-    'Riesgo vía pública': 'Crítica',
-    'Mantenimiento preventivo': 'Baja',
-    'Material averiado': 'Media',
-    'Poda de árboles': 'Baja',
-    'Nidos': 'Baja',
-    'Falla de Línea': 'Alta',
-    'Inspección Termográfica': 'Baja',
-    'Avería en Transformador': 'Alta',
-    'Reclamo de Cliente': 'Media',
-    'Corte Programado': 'Baja',
-    'Emergencia': 'Crítica'
-};
-const _PRIORIDADES_VALIDAS_UI = new Set(['Baja', 'Media', 'Alta', 'Crítica']);
-
-function prioridadPredeterminadaPorTipoTrabajoUI(tipoTrabajo) {
-    const t = String(tipoTrabajo || '').trim();
-    if (!t) return 'Media';
-    const p = PRIORIDAD_RECLAMO_POR_TIPO[t];
-    if (p && _PRIORIDADES_VALIDAS_UI.has(p)) return p;
-    return 'Media';
-}
-
 function syncPrioridadConTipoReclamo() {
     const tt = document.getElementById('tt');
     const pr = document.getElementById('pr');
@@ -973,14 +889,6 @@ function normalizarRubroEmpresa(tipo) {
     if (t === 'cooperativa_agua' || t === 'cooperativa de agua') return 'cooperativa_agua';
     if (t === 'cooperativa_electrica' || t === 'cooperativa eléctrica' || t === 'cooperativa electrica') return 'cooperativa_electrica';
     return null;
-}
-
-function tiposReclamoSeleccionables() {
-    const rubro = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    if (rubro && TIPOS_RECLAMO_POR_RUBRO[rubro]) return [...TIPOS_RECLAMO_POR_RUBRO[rubro]];
-    const u = new Set();
-    Object.values(TIPOS_RECLAMO_POR_RUBRO).forEach(arr => arr.forEach(x => u.add(x)));
-    return [...u];
 }
 
 function esMunicipioRubro() {
@@ -1870,10 +1778,13 @@ function poblarSelectTiposReclamo() {
         st.appendChild(o);
     });
     if (prev && lista.includes(prev)) st.value = prev;
-    else if (lista.length) st.selectedIndex = 0;
+    else     if (lista.length) st.selectedIndex = 0;
     syncNisClienteReclamoConexionUI();
     syncSuministroElectricoUI();
     syncPrioridadConTipoReclamo();
+    try {
+        syncChecklistSeguridadCierreLabels();
+    } catch (_) {}
 }
 
 const MATERIAL_UNIDADES = ['PZA','MTR','LTR','KG','M3','M2','ML','JGO','UN','BOL','TN','BOB','TR','CJ','PAR','KIT','TAM'];
@@ -11195,6 +11106,9 @@ async function abrirCierre(id) {
         const el = document.getElementById(id);
         if (el) el.checked = false;
     });
+    try {
+        syncChecklistSeguridadCierreLabels();
+    } catch (_) {}
 
     const blkMat = document.getElementById('cierre-materiales-block');
     const bodyMat = document.getElementById('cierre-materiales-body');
@@ -12030,7 +11944,7 @@ async function detalle(p, opts = {}) {
     try {
         const o = p.chkl ? JSON.parse(p.chkl) : null;
         if (o && typeof o === 'object') {
-            chkResumen = `<div class="dr"><span class="dl">Checklist seguridad</span><span class="dv">EPPS: ${o.epp ? 'Sí' : '—'} · Corte energía: ${o.corte ? 'Sí' : '—'} · Señalización: ${o.senal ? 'Sí' : '—'}</span></div>`;
+            chkResumen = `<div class="dr"><span class="dl">Checklist seguridad</span><span class="dv">${escDet(textoResumenChecklistSeguridad(o))}</span></div>`;
         }
     } catch (_) {}
     
@@ -13076,25 +12990,6 @@ try { syncZonaPedidoFormLabels(); } catch (_) {}
 function esCooperativaElectricaRubro() {
     return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'cooperativa_electrica';
 }
-
-/**
- * Tipos que en catálogo son solo agua (no eléctrico): aviso derivación en coop. eléctrica (opción A spec).
- * No incluye nombres compartidos con el rubro eléctrico (p. ej. Consumo elevado, Otros).
- */
-const TIPOS_TRABAJO_DERIVACION_SOLO_AGUA = new Set([
-    'Pérdida en Vereda/Calle',
-    'Falta de Presión',
-    'Calidad del Agua',
-]);
-const TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO = new Set([
-    'Bacheo y Pavimento',
-    'Recolección/Poda',
-    'Espacios Verdes',
-    'Señalización/Semáforos',
-    'Limpieza de Zanjas',
-    'Recolección (otros)',
-    'Obstrucción de Cloaca',
-]);
 
 function pedidoSugiereDerivacionAguaOMunicipioEnElectrica(tt) {
     const t = String(tt || '').trim();
@@ -14558,10 +14453,11 @@ function pedidoVisibleSegunRubro(p) {
     const tt = String(p?.tt || '').trim();
     if (!tt) return true;
     if (TIPOS_RECLAMO_LEGACY.includes(tt)) return true;
-    const mis = TIPOS_RECLAMO_POR_RUBRO[rubro];
+    const catalogKey = rubroCatalogoTiposReclamo();
+    const mis = TIPOS_RECLAMO_POR_RUBRO[catalogKey];
     if (mis && mis.includes(tt)) return true;
     for (const k of Object.keys(TIPOS_RECLAMO_POR_RUBRO)) {
-        if (k !== rubro && (TIPOS_RECLAMO_POR_RUBRO[k] || []).includes(tt)) return false;
+        if (k !== catalogKey && (TIPOS_RECLAMO_POR_RUBRO[k] || []).includes(tt)) return false;
     }
     return true;
 }
@@ -14604,6 +14500,9 @@ function aplicarEtiquetasPorTipo(tipo) {
     try { syncNisClienteReclamoConexionUI(); } catch (_) {}
     try { syncZonaPedidoFormLabels(); } catch (_) {}
     try { syncMapaFiltroTiposRebuild(); } catch (_) {}
+    try {
+        syncChecklistSeguridadCierreLabels();
+    } catch (_) {}
 }
 
 function syncZonaPedidoFormLabels() {
