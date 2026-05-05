@@ -74,6 +74,12 @@ import {
     TIPOS_TRABAJO_DERIVACION_SOLO_AGUA,
     TIPOS_TRABAJO_DERIVACION_SOLO_MUNICIPIO,
 } from './modules/catalogoReclamoPorRubro.js';
+import {
+    afterPedidoGuardadoIntentarWhatsappDerivacionTercero,
+    initDerivacionesTercerosNuevoPedido,
+    resetDerivacionTerceroNuevoPedidoUI,
+    syncDerivacionTerceroNuevoPedidoUI,
+} from './modules/derivaciones-terceros.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -993,6 +999,9 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     if (conf.derivacion_reclamos && typeof conf.derivacion_reclamos === 'object') {
         next.derivacion_reclamos = conf.derivacion_reclamos;
     }
+    if (conf.derivaciones_terceros && typeof conf.derivaciones_terceros === 'object') {
+        next.derivaciones_terceros = conf.derivaciones_terceros;
+    }
     if (Object.prototype.hasOwnProperty.call(conf, 'ocultar_modulos_redes')) {
         next.ocultar_modulos_redes = !!conf.ocultar_modulos_redes;
     }
@@ -1018,6 +1027,9 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     } catch (_) {}
     try {
         syncDerivacionesTercerosWrap();
+    } catch (_) {}
+    try {
+        syncDerivacionTerceroNuevoPedidoUI();
     } catch (_) {}
     try {
         sincronizarCamposWhatsappArAreaDesdeEmpresaCfg();
@@ -1784,6 +1796,9 @@ function poblarSelectTiposReclamo() {
     syncPrioridadConTipoReclamo();
     try {
         syncChecklistSeguridadCierreLabels();
+    } catch (_) {}
+    try {
+        syncDerivacionTerceroNuevoPedidoUI();
     } catch (_) {}
 }
 
@@ -9900,6 +9915,23 @@ document.getElementById('pf').addEventListener('submit', async e => {
             }
         }
 
+        const domicilioDeriv = [calleVal, numVal, locVal, refUbicVal]
+            .map((x) => String(x || '').trim())
+            .filter(Boolean)
+            .join(', ');
+        try {
+            afterPedidoGuardadoIntentarWhatsappDerivacionTercero({
+                numPedido,
+                tipoTr,
+                desc: document.getElementById('de')?.value || '',
+                cliNomVal,
+                domicilio: domicilioDeriv,
+                telVal,
+                lat: app.sel?.lat,
+                lng: app.sel?.lng,
+            });
+        } catch (_) {}
+
         fotosTemporales = [];
         actualizarVistaPreviaFotos();
         closeAll();
@@ -12385,6 +12417,9 @@ function closeAll() {
         if (dm) delete dm.dataset.detallePedidoId;
     } catch (_) {}
     document.getElementById('pf').reset();
+    try {
+        resetDerivacionTerceroNuevoPedidoUI();
+    } catch (_) {}
     limpiarFotosYPreviewNuevoPedido();
     _nisPedidoCatalogoUltimoValor = '';
     clearTimeout(_nisPedidoCatalogoDebounceTimer);
@@ -12877,6 +12912,9 @@ const sd = document.getElementById('di2');
 });
 
 poblarSelectTiposReclamo();
+try {
+    initDerivacionesTercerosNuevoPedido();
+} catch (_) {}
 
 function tipoTrabajoRequiereNisYCliente() {
     return tipoReclamoRequiereNisYCliente(document.getElementById('tt')?.value || '');

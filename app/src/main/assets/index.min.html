@@ -308,6 +308,17 @@
       <div class="fg"><label for="tt">Tipo de trabajo *</label>
         <select id="tt" required onchange="syncPrioridadConTipoReclamo();syncSuministroElectricoUI();"></select>
       </div>
+      <div id="pf-deriv-tercero-wrap" class="fg" style="display:none">
+        <span class="lbl">📞 ¿Derivar a tercero responsable?</span>
+        <div class="fr" style="align-items:center;flex-wrap:wrap;gap:.5rem;margin-top:.35rem">
+          <label class="inline-chk" style="display:inline-flex;align-items:center;gap:.4rem;margin:0">
+            <input type="checkbox" id="pf-deriv-tercero-chk">
+            Sí, derivar a:
+          </label>
+          <select id="pf-deriv-tercero-sel" style="display:none;min-width:14rem"></select>
+        </div>
+        <small id="pf-deriv-tercero-hint" class="cc" style="display:block;margin-top:.35rem"></small>
+      </div>
       <div class="fg"><label for="de">Descripción *</label>
         <textarea id="de" rows="3" maxlength="500" placeholder="Describí el problema..." required></textarea>
         <span class="cc"><span id="dc">0</span>/500</span>
