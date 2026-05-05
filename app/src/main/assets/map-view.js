@@ -8,6 +8,9 @@ let ctx = null;
 let _gnAdminBaseMarker = null;
 /** Control de coordenadas del cursor (esquina inferior izquierda). */
 let _gnCursorCoordsControl = null;
+/** Android: toques en mapa sin modo «nuevo» armado; el aviso solo tras N toques (no en arrastres). */
+let _gnTapsHintNuevoPedidoMapa = 0;
+const GN_TAPS_ANTES_HINT_NUEVO_PEDIDO = 5;
 
 export function setMapViewContext(c) {
     ctx = c;
@@ -815,6 +818,7 @@ export async function runInitMap() {
     let suppressMapClickAfterPan = false;
     map.on('dragend', () => {
         suppressMapClickAfterPan = true;
+        _gnTapsHintNuevoPedidoMapa = 0;
     });
     const mcPan = ctx.document.getElementById('mc');
     if (mcPan) {
@@ -904,13 +908,18 @@ export async function runInitMap() {
             typeof ctx.mapTapNuevoPedidoArmadoSesion === 'function' &&
             !ctx.mapTapNuevoPedidoArmadoSesion()
         ) {
-            try {
-                ctx.toast('Tocá «Mapa → nuevo» para elegir el punto en el mapa.', 'info');
-            } catch (_) {}
+            _gnTapsHintNuevoPedidoMapa += 1;
+            if (_gnTapsHintNuevoPedidoMapa >= GN_TAPS_ANTES_HINT_NUEVO_PEDIDO) {
+                _gnTapsHintNuevoPedidoMapa = 0;
+                try {
+                    ctx.toast('Tocá «Mapa → nuevo» y después el mapa para elegir el punto del pedido.', 'info');
+                } catch (_) {}
+            }
             return;
         }
 
         ctx.app.sel = e.latlng;
+        _gnTapsHintNuevoPedidoMapa = 0;
         ctx.limpiarFotosYPreviewNuevoPedido();
         ctx.document.getElementById('li').value = e.latlng.lat;
         ctx.document.getElementById('gi').value = e.latlng.lng;
