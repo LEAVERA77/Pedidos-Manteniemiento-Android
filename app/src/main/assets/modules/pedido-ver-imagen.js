@@ -5,43 +5,86 @@
  */
 
 /** @type {Map<string, string[]>} */
-const _fotoHttpCache = new Map();
+const _fotoSrcCache = new Map();
 
 function esUrlHttp(u) {
     return /^https?:\/\//i.test(String(u || '').trim());
 }
 
-/** Primera URL http(s) útil (Cloudinary, etc.). */
+function esDataImagen(u) {
+    return /^data:image\//i.test(String(u || '').trim());
+}
+
+/** Cloudinary / https / data URI / base64 crudo (foto_base64 en BD). */
+export function normalizarSrcImagenReclamo(raw) {
+    const t = String(raw == null ? '' : raw).trim();
+    if (!t) return null;
+    if (esUrlHttp(t) || esDataImagen(t)) return t;
+    if (/^[a-z0-9+/=\s]+$/i.test(t) && t.replace(/\s/g, '').length >= 80) {
+        return `data:image/jpeg;base64,${t.replace(/\s/g, '')}`;
+    }
+    return null;
+}
+
+/** Primera imagen útil (reclamo / WhatsApp / técnico con URL o base64). */
 export function primeraUrlImagenReclamoPedido(p) {
     if (!p || typeof p !== 'object') return null;
     for (const k of ['imagen_url', 'foto_url', 'imagen', 'media_url', 'attachment_url']) {
-        const v = p[k];
-        if (v != null && esUrlHttp(v)) return String(v).trim();
+        const hit = normalizarSrcImagenReclamo(p[k]);
+        if (hit) return hit;
     }
     const joined = p.foto_urls != null ? String(p.foto_urls) : '';
     if (joined) {
         const hit = joined
             .split('||')
             .map((x) => x.trim())
-            .find((x) => esUrlHttp(x));
+            .map((x) => normalizarSrcImagenReclamo(x))
+            .find(Boolean);
         if (hit) return hit;
     }
     const arr = Array.isArray(p.fotos) ? p.fotos : [];
     for (const u of arr) {
-        const s = String(u || '').trim();
-        if (esUrlHttp(s)) return s;
+        const hit = normalizarSrcImagenReclamo(u);
+        if (hit) return hit;
     }
     return null;
+}
+
+function listaImagenesDesdeRowPedido(row) {
+    const out = [];
+    const pushNorm = (x) => {
+        const n = normalizarSrcImagenReclamo(x);
+        if (n) out.push(n);
+    };
+    if (Array.isArray(row.fotos)) row.fotos.forEach((x) => pushNorm(x));
+    String(row.foto_urls || '')
+        .split('||')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((x) => pushNorm(x));
+    String(row.foto_base64 || '')
+        .split('||')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((x) => pushNorm(x));
+    return out;
+}
+
+function pedidoTieneSrcImagenMostrable(p) {
+    return !!primeraUrlImagenReclamoPedido(p);
 }
 
 async function enriquecerFotosHttpDesdeApiSiFalta(p) {
     const id = p?.id != null ? String(p.id) : '';
     if (!id || id.startsWith('off_')) return;
-    if (primeraUrlImagenReclamoPedido(p)) return;
+    if (pedidoTieneSrcImagenMostrable(p)) return;
 
-    if (_fotoHttpCache.has(id)) {
-        const list = _fotoHttpCache.get(id);
-        if (list?.length && (!Array.isArray(p.fotos) || !p.fotos.some((x) => esUrlHttp(x)))) {
+    if (_fotoSrcCache.has(id)) {
+        const list = _fotoSrcCache.get(id);
+        if (
+            list?.length &&
+            (!Array.isArray(p.fotos) || !p.fotos.some((x) => normalizarSrcImagenReclamo(x)))
+        ) {
             p.fotos = [...list];
         }
         return;
@@ -56,16 +99,13 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
         });
         if (!r.ok) return;
         const row = await r.json();
-        const urls = Array.isArray(row.fotos)
-            ? row.fotos.map(String)
-            : String(row.foto_urls || '')
-                  .split('||')
-                  .map((s) => s.trim())
-                  .filter(Boolean);
-        const http = urls.map((s) => String(s).trim()).filter((s) => esUrlHttp(s));
-        _fotoHttpCache.set(id, http);
-        if (http.length && (!Array.isArray(p.fotos) || !p.fotos.some((x) => esUrlHttp(x)))) {
-            p.fotos = [...http];
+        const merged = listaImagenesDesdeRowPedido(row);
+        _fotoSrcCache.set(id, merged);
+        if (
+            merged.length &&
+            (!Array.isArray(p.fotos) || !p.fotos.some((x) => normalizarSrcImagenReclamo(x)))
+        ) {
+            p.fotos = [...merged];
         }
     } catch (_) {}
 }
@@ -91,8 +131,8 @@ export async function injectPedidoVerImagenReclamo(p) {
 
     await enriquecerFotosHttpDesdeApiSiFalta(p);
 
-    const url = primeraUrlImagenReclamoPedido(p);
-    if (!url) return;
+    const src = primeraUrlImagenReclamoPedido(p);
+    if (!src) return;
 
     const scroll = dm.querySelector('.gn-dm-detail-scroll');
     if (!scroll) return;
@@ -108,13 +148,13 @@ export async function injectPedidoVerImagenReclamo(p) {
     inner.style.marginTop = '0.5rem';
 
     const img = document.createElement('img');
-    img.src = url;
+    img.src = src;
     img.alt = 'Foto del reclamo';
     img.style.cssText =
         'max-width:100%;max-height:400px;border-radius:8px;cursor:pointer;border:1px solid var(--bo)';
     img.addEventListener('click', () => {
         try {
-            window.open(url, '_blank', 'noopener,noreferrer');
+            if (esUrlHttp(src)) window.open(src, '_blank', 'noopener,noreferrer');
         } catch (_) {}
     });
     img.addEventListener('error', () => {

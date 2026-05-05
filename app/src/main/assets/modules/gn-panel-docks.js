@@ -18,9 +18,10 @@ function ensureDock() {
     return dock;
 }
 
-/** Pedidos arriba del FAB comunidad en columna invertida: primer hijo = abajo en pantalla. */
+/** Primer chip del dock = arriba en pantalla (flex-direction: column). */
 function dockInsertPedidosChip(chip, dock) {
-    dock.insertBefore(chip, dock.firstChild);
+    if (dock.firstChild) dock.insertBefore(chip, dock.firstChild);
+    else dock.appendChild(chip);
 }
 
 function dockInsertCommunityChip(chip, dock) {
@@ -50,6 +51,7 @@ export function syncPedidosDockChip() {
             chip.addEventListener('click', () => {
                 try {
                     if (typeof window.setBp2PanelHidden === 'function') window.setBp2PanelHidden(false);
+                    scheduleClampBp2PanelIntoViewport();
                 } catch (_) {}
             });
             dockInsertPedidosChip(chip, dock);
@@ -65,6 +67,111 @@ export function syncPedidosDockChip() {
 
 let _bp2DockObsInstalled = false;
 
+function gnFloatingBp2ClampEnabled() {
+    try {
+        return (
+            window.matchMedia('(min-width:1024px)').matches ||
+            (typeof window.esAndroidWebViewMapa === 'function' && window.esAndroidWebViewMapa())
+        );
+    } catch (_) {
+        return typeof window.esAndroidWebViewMapa === 'function' && window.esAndroidWebViewMapa();
+    }
+}
+
+function gnClampBp2PadTopPx() {
+    try {
+        const hd = document.querySelector('#ms .hd');
+        if (hd) {
+            const r = hd.getBoundingClientRect();
+            if (r.height > 0 && r.bottom > 0) return Math.ceil(r.bottom) + 6;
+        }
+    } catch (_) {}
+    return 64;
+}
+
+function gnClampBp2PadBottomPx() {
+    try {
+        if (typeof window.esAndroidWebViewMapa === 'function' && window.esAndroidWebViewMapa()) {
+            const vv = window.visualViewport;
+            const ob =
+                vv && Number.isFinite(Number(vv.offsetBottom)) ? Number(vv.offsetBottom) : 0;
+            return Math.round(152 + ob);
+        }
+    } catch (_) {}
+    return 12;
+}
+
+/** Panel bp2 (fixed en escritorio / WebView): mantener dentro del viewport al salir de minimizado. */
+export function clampBp2PanelIntoViewport() {
+    const bp2 = document.getElementById('bp2');
+    if (!bp2 || bp2.classList.contains('bp2-fullhide')) return;
+    if (!gnFloatingBp2ClampEnabled()) {
+        try {
+            bp2.style.zIndex = '10030';
+        } catch (_) {}
+        return;
+    }
+    const padX = 8;
+    const padTop = gnClampBp2PadTopPx();
+    const padBottom = gnClampBp2PadBottomPx();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const br = bp2.getBoundingClientRect();
+    const w = br.width || bp2.offsetWidth || 320;
+    const h = br.height || bp2.offsetHeight || 200;
+    let left = br.left;
+    let top = br.top;
+    const minL = padX;
+    const maxL = Math.max(minL, vw - w - padX);
+    const minT = padTop;
+    const maxT = Math.max(minT, vh - h - padBottom);
+    left = Math.min(Math.max(left, minL), maxL);
+    top = Math.min(Math.max(top, minT), maxT);
+    try {
+        bp2.style.right = 'auto';
+        bp2.style.bottom = 'auto';
+        bp2.style.left = `${Math.round(left)}px`;
+        bp2.style.top = `${Math.round(top)}px`;
+        bp2.style.zIndex = '10025';
+    } catch (_) {}
+}
+
+function scheduleClampBp2PanelIntoViewport() {
+    const run = () => clampBp2PanelIntoViewport();
+    requestAnimationFrame(() => requestAnimationFrame(run));
+    setTimeout(run, 50);
+    setTimeout(run, 340);
+}
+
+function installBp2ShowClampObserver() {
+    if (typeof window !== 'undefined' && window.__gnBp2ShowClampObs) return;
+    const attach = () => {
+        const bp2 = document.getElementById('bp2');
+        if (!bp2) return false;
+        if (typeof window !== 'undefined' && window.__gnBp2ShowClampObs) return true;
+        try {
+            const mo = new MutationObserver(() => {
+                if (bp2.classList.contains('bp2-fullhide')) return;
+                scheduleClampBp2PanelIntoViewport();
+            });
+            mo.observe(bp2, { attributes: true, attributeFilter: ['class'] });
+            if (typeof window !== 'undefined') window.__gnBp2ShowClampObs = mo;
+            return true;
+        } catch (_) {}
+        return false;
+    };
+    if (!attach()) {
+        const iv = setInterval(() => {
+            if (attach()) clearInterval(iv);
+        }, 250);
+        setTimeout(() => {
+            try {
+                clearInterval(iv);
+            } catch (_) {}
+        }, 8000);
+    }
+}
+
 export function installGnPanelDockObservers() {
     if (_bp2DockObsInstalled) return;
     _bp2DockObsInstalled = true;
@@ -72,6 +179,7 @@ export function installGnPanelDockObservers() {
         const bp2 = document.getElementById('bp2');
         if (!bp2) return;
         try {
+            installBp2ShowClampObserver();
             syncPedidosDockChip();
             const mo = new MutationObserver(() => syncPedidosDockChip());
             mo.observe(bp2, { attributes: true, attributeFilter: ['class'] });
