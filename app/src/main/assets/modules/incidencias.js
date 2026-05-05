@@ -81,19 +81,32 @@ function leerRolDesdeJwtCliente() {
     return p ? String(p.rol ?? p.role ?? '').trim().toLowerCase() : '';
 }
 
-/** Id usuario para comparar con `tecnico_asignado_id` (app.u o JWT). */
+/** Id usuario para comparar con `tecnico_asignado_id`. Prioriza JWT (sesión real) sobre `app.u` (puede desincronizarse en WebView). */
 function obtenerUserIdParaIncidencias() {
+    const parseId = (v) => {
+        if (v == null || v === '') return null;
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v | 0;
+        const n = parseInt(String(v).trim(), 10);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const fromJwt = () => {
+        const p = parseJwtPayloadCliente();
+        if (!p) return null;
+        const candidates = [p.userId, p.sub, p.id, p.usuario_id, p.usuarioId, p.uid];
+        for (const c of candidates) {
+            const n = parseId(c);
+            if (n != null) return n;
+        }
+        return null;
+    };
+    const j = fromJwt();
+    if (j != null) return j;
     try {
         const id = window.app?.u?.id;
-        if (id != null && String(id).trim() !== '') {
-            const n = parseInt(String(id), 10);
-            if (Number.isFinite(n) && n > 0) return n;
-        }
+        const n = parseId(id);
+        if (n != null) return n;
     } catch (_) {}
-    const p = parseJwtPayloadCliente();
-    if (!p) return null;
-    const uid = Number(p.userId ?? p.sub);
-    return Number.isFinite(uid) && uid > 0 ? uid : null;
+    return null;
 }
 
 /** Rol efectivo para permisos del módulo: `app.u` si existe, si no payload JWT. Solo lectura. */
@@ -153,12 +166,17 @@ function estadoPedidoInc(p) {
     return normalizarEstadoOperativoInc(p?.es ?? p?.estado ?? '');
 }
 
-function taiPedidoInc(p) {
-    if (!p) return null;
-    const raw = p.tai ?? p.tecnico_asignado_id;
+/** `tecnico_asignado_id` en filas API (snake / camel) o objeto lite con `tai`. */
+function rawTecnicoAsignadoIdFromPedidoRow(row) {
+    if (!row || typeof row !== 'object') return null;
+    const raw = row.tai ?? row.tecnico_asignado_id ?? row.tecnicoAsignadoId ?? row.Tecnico_asignado_id;
     if (raw == null || raw === '') return null;
-    const n = parseInt(String(raw), 10);
+    const n = parseInt(String(raw).trim(), 10);
     return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function taiPedidoInc(p) {
+    return rawTecnicoAsignadoIdFromPedidoRow(p);
 }
 
 /**
@@ -180,15 +198,21 @@ function puedeSeleccionarPedidoParaIncidencias(p) {
     return Number(tai) === Number(uid);
 }
 
-/** Fila API GET incidencia → forma mínima para permisos de cierre masivo. */
-function pedidoApiRowParaPermisoInc(row) {
-    if (!row || row.id == null) return null;
-    return {
-        id: row.id,
-        es: normalizarEstadoOperativoInc(row.estado),
-        tt: row.tipo_trabajo,
-        tai: row.tecnico_asignado_id != null ? Number(row.tecnico_asignado_id) : null,
-    };
+/**
+ * Cierre masivo desde vista incidencia: técnico solo pedidos Asignado/En ejecución a su nombre (fila GET /api/incidencias/:id).
+ * Separado de `puedeSeleccionarPedidoParaIncidencias` para leer bien columnas crudas del servidor.
+ */
+function pedidoPermiteCierreMasivoIncidenciaParaUsuarioActual(row) {
+    if (!row || row.id == null || !puedeGestionarIncidencias()) return false;
+    const es = normalizarEstadoOperativoInc(row.estado);
+    if (es === 'Cerrado' || es === 'Derivado externo' || es === 'Pendiente') return false;
+    if (es !== 'Asignado' && es !== 'En ejecución') return false;
+    if (esAdminIncModule()) return true;
+    if (!esTecnicoOSupervisorIncModule()) return false;
+    const uid = obtenerUserIdParaIncidencias();
+    const tai = rawTecnicoAsignadoIdFromPedidoRow(row);
+    if (uid == null || tai == null) return false;
+    return Number(uid) === Number(tai);
 }
 function rubroPanel() {
     const t = String(window.EMPRESA_CFG?.tipo || '').toLowerCase();
@@ -1374,10 +1398,7 @@ async function openVistaIncidencia(incId) {
                     const abiertosAll = pedidos.filter((p) => normalizarEstadoOperativoInc(p.estado) !== 'Cerrado');
                     const abiertos = esAdminIncModule()
                         ? abiertosAll
-                        : abiertosAll.filter((row) => {
-                              const lite = pedidoApiRowParaPermisoInc(row);
-                              return lite && puedeSeleccionarPedidoParaIncidencias({ ...lite, estado: lite.es });
-                          });
+                        : abiertosAll.filter((row) => pedidoPermiteCierreMasivoIncidenciaParaUsuarioActual(row));
                     if (!abiertos.length) {
                         toast(
                             esAdminIncModule() ? 'No hay pedidos abiertos' : 'No hay pedidos abiertos que puedas cerrar con tu usuario.',
