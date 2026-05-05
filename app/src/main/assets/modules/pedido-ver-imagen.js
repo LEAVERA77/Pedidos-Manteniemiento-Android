@@ -276,29 +276,29 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
     bar.style.cssText =
         'display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem;align-items:center';
 
-    const btnZoomIn = crearBotonToolbar('🔍 +', 'Acercar (máx. 200%)', () => {
+    const btnZoomIn = crearBotonToolbar('🔍 Zoom in (+)', 'Acercar (máx. 200%)', () => {
         scale = Math.min(2, Math.round(scale * 1.15 * 100) / 100);
         aplicarTransform();
     });
-    const btnZoomOut = crearBotonToolbar('🔍 −', 'Alejar (mín. 50%)', () => {
+    const btnZoomOut = crearBotonToolbar('🔍 Zoom out (−)', 'Alejar (mín. 50%)', () => {
         scale = Math.max(0.5, Math.round((scale / 1.15) * 100) / 100);
         aplicarTransform();
     });
-    const btnReset = crearBotonToolbar('📐 Reset', 'Volver zoom al 100%', () => {
+    const btnReset = crearBotonToolbar('📐 Reset', 'Volver al tamaño original (zoom 100%)', () => {
         scale = 1;
         aplicarTransform();
     });
-    const btnRot = crearBotonToolbar('↻ 90°', 'Rotar 90° horario', () => {
+    const btnRot = crearBotonToolbar('↻ Rotar 90°', 'Rotar 90° horario (acumulable)', () => {
         rotationDeg += 90;
         aplicarTransform();
         actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
     });
-    const btnDl = crearBotonToolbar('💾 Guardar', 'Abrir o descargar imagen original', () =>
+    const btnDl = crearBotonToolbar('💾 Guardar (descargar)', 'Abrir URL en pestaña nueva o descargar imagen', () =>
         descargarOAbrirImagenReclamo(src, pedidoId)
     );
     const btnSaveRot = crearBotonToolbar(
-        '💾 Rotación → BD',
-        'Guardar ángulo de rotación en el servidor',
+        '💾 Guardar rotación en BD',
+        'Persistir el ángulo de rotación en el servidor',
         async () => {
             if (!puedePersistir) return;
             btnSaveRot.disabled = true;
@@ -327,7 +327,7 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
     const hint = document.createElement('p');
     hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
     hint.textContent =
-        'Zoom 50–200 %. Clic en la imagen: vista completa (URL). «Rotación → BD» solo si cambiaste el ángulo.';
+        'Zoom 50–200 %. Clic en la imagen: vista completa (URL). «Guardar rotación en BD» solo si cambiaste el ángulo.';
 
     inner.appendChild(imgHost);
     inner.appendChild(bar);
