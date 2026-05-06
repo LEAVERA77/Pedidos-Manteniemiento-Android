@@ -17,10 +17,16 @@ export function normalizarTipoNegocioBot(raw) {
     return 'cooperativa_electrica';
 }
 
+/** Opción 6 municipio: nombre operativo (paridad con `catalogoReclamoPorRubro.js` / API `tiposReclamo.js`). */
+const MUNICIPIO_MENU_OPC6 = 'Alcantarillas tapadas';
+const MUNICIPIO_MENU_OPC6_LEGACY = 'Limpieza de Zanjas';
+
 export function listaTiposBotPorRubro(rubroKey) {
     const k = normalizarTipoNegocioBot(rubroKey);
     const arr = TIPOS_RECLAMO_POR_RUBRO[k];
-    return arr && arr.length ? [...arr] : [...TIPOS_RECLAMO_POR_RUBRO.cooperativa_electrica];
+    const base = arr && arr.length ? [...arr] : [...TIPOS_RECLAMO_POR_RUBRO.cooperativa_electrica];
+    if (k !== 'municipio') return base;
+    return base.map((t) => (t === MUNICIPIO_MENU_OPC6_LEGACY ? MUNICIPIO_MENU_OPC6 : t));
 }
 
 /**

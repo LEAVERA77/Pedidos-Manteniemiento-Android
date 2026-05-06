@@ -10,7 +10,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Recolección/Poda",
     "Espacios Verdes",
     "Señalización/Semáforos",
-    "Limpieza de Zanjas",
+    "Alcantarillas tapadas",
     "Recolección (otros)",
     "Obstrucción de Cloaca",
     "Ruidos molestos / Perturbación",
@@ -68,6 +68,8 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Recolección/Poda": "Baja",
   "Espacios Verdes": "Baja",
   "Señalización/Semáforos": "Alta",
+  "Alcantarillas tapadas": "Media",
+  /** Histórico (antes del rename en menú municipio opción 6). */
   "Limpieza de Zanjas": "Media",
   "Recolección (otros)": "Media",
   "Obstrucción de Cloaca": "Alta",
