@@ -52,6 +52,7 @@ function shellAssetUrls() {
     j('modules/admin-socios.js'),
     j('modules/bot-menus.js'),
     j('modules/catalogoReclamoPorRubro.js'),
+    j('modules/conversor-coordenadas.js'),
     j('modules/derivaciones-terceros.js'),
     j('modules/pedido-form-labels-rubro.js'),
     j('modules/pedido-alta-derivacion-api.js'),
