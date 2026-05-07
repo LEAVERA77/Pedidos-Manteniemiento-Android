@@ -3322,11 +3322,16 @@ async function conectarNeon() {
 
 function resetPreferenciasPanelesInicioCerrados() {
     try {
-        localStorage.setItem('pmg_slideoff_filtros', '1');
+        localStorage.setItem('pmg_map_filtros_slid', '1');
+        localStorage.setItem('pmg_map_capas_slid', '1');
+        localStorage.setItem('pmg_map_filtros_body_collapsed', '0');
+        localStorage.setItem('pmg_map_capas_body_collapsed', '0');
+        localStorage.setItem('pmg_map_panels_storage_v2', '1');
+        localStorage.removeItem('pmg_slideoff_filtros');
+        localStorage.removeItem('pmg_slideoff_capas_osm');
         localStorage.setItem('pmg_slideoff_filtro_tipo', '1');
         localStorage.setItem('pmg_slideoff_colores', '1');
         localStorage.setItem('pmg_slideoff_dash', '1');
-        localStorage.setItem('pmg_slideoff_capas_osm', '1');
         localStorage.setItem('pmg_bp2_hidden', '1');
     } catch (_) {}
 }

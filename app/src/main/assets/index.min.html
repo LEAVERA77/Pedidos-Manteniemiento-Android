@@ -145,7 +145,7 @@
     <div id="map-slide-tabs-cluster" class="map-slide-tabs-cluster">
     <button type="button" id="map-tab-dash" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-dashboard',false)" title="Mostrar dashboard">Dash</button>
     <button type="button" id="map-tab-capas-osm" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-capas-osm',false)" title="Mostrar capas del mapa (admin web)">Capas</button>
-    <button type="button" id="map-tab-filtros" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
+    <button type="button" id="map-tab-filtros" class="map-slide-tab visible" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
     <button type="button" id="map-tab-filtro-tipo" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtro-tipo',false)" title="Mostrar filtro por tipo de reclamo">Tipo</button>
     <button type="button" id="map-tab-colores" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-colores',false)" title="Mostrar colores">Colores</button>
     </div>
@@ -153,7 +153,7 @@
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-tags"></i> Tipo de reclamo <span id="mapa-filtro-tipo-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtro-tipo',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-filtro-tipo-body" class="moui-bd moui-scroll mapa-filtro-tipo-list"></div>
     </div>
-    <div id="mapa-card-filtros" class="moui-card">
+    <div id="mapa-card-filtros" class="moui-card moui-card-slideoff">
       <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-filter"></i> Filtros del mapa <span id="mapa-filtros-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-filtros',true)"><i class="fas fa-eye-slash"></i></button></div>
       <div id="mapa-filtros-body" class="moui-bd">
         <div id="wrap-android-scope" class="moui-row" style="display:none;align-items:center;gap:.35rem;flex-wrap:wrap;margin-bottom:.35rem;width:100%">
