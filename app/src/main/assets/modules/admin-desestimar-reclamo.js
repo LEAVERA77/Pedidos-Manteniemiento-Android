@@ -1,6 +1,5 @@
 /**
- * Admin: desestimar reclamo desde la barra de acciones del detalle (#dm).
- * PUT pedidos; sin notificación WA (la API no agenda aviso para Desestimado).
+ * Admin: desestimar reclamo (detalle + lista). PUT pedidos; sin WA al reclamante.
  * made by leavera77
  */
 
@@ -22,9 +21,25 @@ const MOTIVOS = [
     { value: '📝 Otro motivo', label: '📝 Otro motivo' },
 ];
 
+function normEstado(raw) {
+    try {
+        if (typeof window.normalizarEstadoPedidoUi === 'function') {
+            return window.normalizarEstadoPedidoUi(raw);
+        }
+    } catch (_) {}
+    return String(raw || '').trim();
+}
+
 function esAdminGestor() {
     try {
-        const r = String(window.app?.u?.rol || '').toLowerCase();
+        if (typeof window.esAdmin === 'function') return window.esAdmin();
+    } catch (_) {}
+    try {
+        const r = String(window.app?.u?.rol || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
         return r === 'admin' || r === 'administrador';
     } catch (_) {
         return false;
@@ -32,8 +47,7 @@ function esAdminGestor() {
 }
 
 function estadoPermiteDesestimar(estadoRaw) {
-    const s = String(estadoRaw || '').trim();
-    return s === 'Pendiente';
+    return normEstado(estadoRaw) === 'Pendiente';
 }
 
 function pedidoAbiertoEnDetalle() {
@@ -45,6 +59,12 @@ function pedidoAbiertoEnDetalle() {
     } catch (_) {
         return null;
     }
+}
+
+function buscarPedidoPorId(id) {
+    const list = window.app?.p;
+    if (!Array.isArray(list)) return null;
+    return list.find((x) => x && String(x.id) === String(id)) || null;
 }
 
 function escOpt(s) {
@@ -117,6 +137,40 @@ async function putDesestimar(pedidoId, motivo) {
     return j;
 }
 
+async function refrescarTrasDesestimar(p, motivo) {
+    toast('✅ Reclamo desestimado', 'success', 3200);
+    try {
+        const list = window.app?.p;
+        if (Array.isArray(list)) {
+            const hit = list.find((x) => x && String(x.id) === String(p.id));
+            if (hit) {
+                hit.estado = 'Desestimado';
+                hit.motivo_desestimacion = motivo;
+                hit.foto_urls = null;
+                hit.foto_base64 = null;
+            }
+        }
+    } catch (_) {}
+    if (typeof window.cargarPedidos === 'function') await window.cargarPedidos();
+    if (typeof window.render === 'function') window.render();
+    if (typeof window.detalle === 'function' && window.app?.cid != null && String(window.app.cid) === String(p.id)) {
+        const p2 = buscarPedidoPorId(p.id);
+        if (p2) await window.detalle(p2);
+    }
+}
+
+function flujoDesestimarPedido(p) {
+    if (!p) return;
+    abrirModalMotivo(async (motivo) => {
+        try {
+            await putDesestimar(p.id, motivo);
+            await refrescarTrasDesestimar(p, motivo);
+        } catch (e) {
+            toast(e?.message || 'Error', 'error', 5200);
+        }
+    });
+}
+
 function quitarBoton() {
     document.getElementById(BTN_ID)?.remove();
 }
@@ -133,7 +187,7 @@ function inyectarBotonSiCorresponde() {
         return;
     }
     const p = pedidoAbiertoEnDetalle();
-    if (!p || !estadoPermiteDesestimar(p.estado)) {
+    if (!p || !estadoPermiteDesestimar(p.es ?? p.estado)) {
         quitarBoton();
         return;
     }
@@ -147,33 +201,44 @@ function inyectarBotonSiCorresponde() {
     btn.innerHTML = '<i class="fas fa-ban"></i> 🚫 Desestimar';
     btn.title = 'Marcar como desestimado (sin aviso al reclamante)';
     btn.addEventListener('click', () => {
-        abrirModalMotivo(async (motivo) => {
-            try {
-                await putDesestimar(p.id, motivo);
-                toast('✅ Reclamo desestimado', 'success', 3200);
-                try {
-                    const list = window.app?.p;
-                    if (Array.isArray(list)) {
-                        const hit = list.find((x) => x && String(x.id) === String(p.id));
-                        if (hit) {
-                            hit.estado = 'Desestimado';
-                            hit.motivo_desestimacion = motivo;
-                            hit.foto_urls = null;
-                            hit.foto_base64 = null;
-                        }
-                    }
-                } catch (_) {}
-                if (typeof window.cargarPedidos === 'function') await window.cargarPedidos();
-                if (typeof window.detalle === 'function') await window.detalle(p);
-            } catch (e) {
-                toast(e?.message || 'Error', 'error', 5200);
-            }
-        });
+        flujoDesestimarPedido(p);
     });
     da.insertBefore(btn, da.firstChild);
 }
 
+function instalarClickDesestimarEnLista() {
+    if (typeof document === 'undefined' || document.documentElement.dataset.gnDesestListaBound === '1') return;
+    document.documentElement.dataset.gnDesestListaBound = '1';
+    document.addEventListener(
+        'click',
+        (e) => {
+            const pl = document.getElementById('pl');
+            const btn = e.target.closest('[data-gn-desestimar-pid]');
+            if (!pl || !btn || !pl.contains(btn)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (!esAdminGestor()) {
+                toast('Solo administrador', 'error');
+                return;
+            }
+            const pid = btn.getAttribute('data-gn-desestimar-pid');
+            const p = buscarPedidoPorId(pid);
+            if (!p) {
+                toast('Pedido no encontrado', 'error');
+                return;
+            }
+            if (!estadoPermiteDesestimar(p.es ?? p.estado)) {
+                toast('Solo se puede desestimar en estado Pendiente.', 'info');
+                return;
+            }
+            flujoDesestimarPedido(p);
+        },
+        true
+    );
+}
+
 function boot() {
+    instalarClickDesestimarEnLista();
     const obs = new MutationObserver(() => {
         try {
             inyectarBotonSiCorresponde();

@@ -3795,6 +3795,7 @@ function normalizarEstadoPedidoUi(raw) {
     const compact = low.replace(/[\s_-]/g, '');
     if (low === 'derivado externo' || compact === 'derivadoexterno') return 'Derivado externo';
     if (low === 'cerrado') return 'Cerrado';
+    if (low === 'desestimado' || compact === 'desestimado') return 'Desestimado';
     if (low === 'pendiente') return 'Pendiente';
     if (low === 'asignado') return 'Asignado';
     if (
@@ -3812,6 +3813,7 @@ function normalizarEstadoPedidoUi(raw) {
     }
     return s0;
 }
+if (typeof window !== 'undefined') window.normalizarEstadoPedidoUi = normalizarEstadoPedidoUi;
 
 const norm = p => ({
     id: p.id,
@@ -12372,7 +12374,10 @@ function render() {
         d.innerHTML = `
             <div class="ph2">
                 <span class="pn">#${p.np}${p._offline ? '<span class="offline-tag">LOCAL</span>' : ''}</span>
-                <span class="pe ${eC[p.es] || ''}">${p.es}</span>
+                <span class="ph2-actions">
+                    ${esAdmin() && p.es === 'Pendiente' ? `<button type="button" class="gn-pi-desest" data-gn-desestimar-pid="${String(p.id).replace(/"/g, '')}" title="Desestimar reclamo" aria-label="Desestimar">🚫</button>` : ''}
+                    <span class="pe ${eC[p.es] || ''}">${p.es}</span>
+                </span>
             </div>
             <div class="pi2">
                 ${p.dis}${(p.cnom || p.cl) ? ' - ' + String(p.cnom || p.cl) : ''}${p.nis ? ' · ' + etiquetaIdentificadorPedidoLista() + ' ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}

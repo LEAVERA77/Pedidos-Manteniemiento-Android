@@ -181,7 +181,7 @@ function listaVisibleTienePedidoPendiente(pl) {
 /** Checkboxes de incidencias: solo en la pestaña «Pendientes» del panel de pedidos. */
 function listaPedidosTabEsPendientes() {
     try {
-        const tab = document.querySelector('#bp2 .pt .tb.active');
+        const tab = document.querySelector('#bp2 .gn-bp2-tabs .tb.active');
         return tab && tab.getAttribute('data-tab') === 'p';
     } catch (_) {
         return false;

@@ -86,11 +86,15 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Barra de pedidos: sin scroll horizontal del panel entero (solapaba pestañas y filtros) */
   #ms .bp2 {
-    overflow-x: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
     justify-content: flex-start;
+  }
+  #bp2 .gn-bp2-toolbar {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
   }
   #ms .bp2 .ph {
     flex-shrink: 0;
