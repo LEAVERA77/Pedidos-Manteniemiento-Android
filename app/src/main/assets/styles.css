@@ -703,16 +703,44 @@ textarea{resize:vertical;min-height:80px}
 .modal-foto{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:3000;display:none;flex-direction:column;align-items:center;justify-content:center}
 /* Por encima de #dm (99999), admin, FAB, dock minimizado, WA float, notificaciones, etc. */
 #modal-foto-ampliada.modal-foto{z-index:200000!important}
-.modal-foto.active{display:flex}
-/* Barra superior con controles */
-.modal-foto .foto-toolbar{position:absolute;top:0;left:0;right:0;height:3.5rem;display:flex;align-items:center;justify-content:space-between;padding:0 1rem;background:rgba(0,0,0,.4);z-index:3002}
-.modal-foto .foto-toolbar button{background:rgba(255,255,255,.15);border:none;color:white;border-radius:.5rem;padding:.4rem .8rem;cursor:pointer;font-size:.9rem;display:flex;align-items:center;gap:.4rem}
+.modal-foto.active{display:flex;flex-direction:column;align-items:stretch}
+/* Barra: antes absolute fija 3.5rem — en móviles estrechos (p. ej. Samsung) los botones cortaban a la derecha */
+.modal-foto .foto-toolbar{
+    position:relative;
+    flex:0 0 auto;
+    width:100%;
+    max-width:100%;
+    box-sizing:border-box;
+    min-height:3.25rem;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:.35rem .5rem;
+    padding:.35rem max(.65rem, env(safe-area-inset-right,0px)) .35rem max(.65rem, env(safe-area-inset-left,0px));
+    background:rgba(0,0,0,.4);
+    z-index:3002;
+}
+.modal-foto .foto-toolbar-actions{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+    gap:.35rem;
+    flex:1 1 auto;
+    min-width:0;
+}
+.modal-foto .foto-toolbar button{background:rgba(255,255,255,.15);border:none;color:white;border-radius:.5rem;padding:.4rem .8rem;cursor:pointer;font-size:.9rem;display:flex;align-items:center;gap:.4rem;flex-shrink:0}
 .modal-foto .foto-toolbar button:hover{background:rgba(255,255,255,.3)}
-.modal-foto .foto-zoom-info{color:rgba(255,255,255,.7);font-size:.8rem}
+.modal-foto .foto-zoom-info{color:rgba(255,255,255,.7);font-size:.8rem;flex-shrink:0}
 /* Contenedor con overflow para arrastre cuando ampliado */
 .modal-foto .img-container{
-    margin-top:3.5rem;
-    width:100%;height:calc(100vh - 3.5rem);
+    margin-top:0;
+    flex:1 1 auto;
+    min-height:0;
+    width:100%;
+    height:auto;
+    max-height:none;
     overflow:hidden;
     cursor:grab;
     display:flex;align-items:center;justify-content:center;
@@ -720,7 +748,7 @@ textarea{resize:vertical;min-height:80px}
 }
 .modal-foto .img-container:active{cursor:grabbing}
 .modal-foto img{
-    max-width:95vw;max-height:calc(95vh - 3.5rem);
+    max-width:100%;max-height:calc(100dvh - 5.5rem);
     object-fit:contain;
     transform-origin:center center;
     transition:transform 0.15s ease;
@@ -739,9 +767,9 @@ html.gn-android-webview #modal-foto-ampliada.modal-foto{
 }
 html.gn-android-webview .modal-foto .img-container,
 html.gn-android-webview #modal-foto-ampliada #img-container{
-    margin-top:3.5rem;
-    height:calc(var(--gn-vh,1vh)*100 - 3.5rem);
-    max-height:calc(var(--gn-vh,1vh)*100 - 3.5rem);
+    flex:1 1 auto;
+    min-height:0;
+    max-height:calc(var(--gn-vh,1vh)*100 - 5.5rem);
     width:100%;
     max-width:100%;
     box-sizing:border-box;
@@ -750,12 +778,17 @@ html.gn-android-webview #modal-foto-ampliada #img-container{
 html.gn-android-webview .modal-foto img,
 html.gn-android-webview #modal-foto-ampliada #foto-ampliada{
     max-width:100%;
-    max-height:calc(var(--gn-vh,1vh)*100 - 3.5rem - 0.5rem);
+    max-height:calc(var(--gn-vh,1vh)*100 - 6rem);
 }
 html.gn-android-webview #modal-foto-ampliada #gn-reclamo-foto-nav{
     max-width:100%;
     flex-wrap:wrap;
     box-sizing:border-box;
+}
+@media (max-width:420px){
+  .modal-foto .foto-toolbar button{font-size:.78rem;padding:.32rem .5rem}
+  .modal-foto .cerrar-modal-foto{font-size:1.1rem}
+  .modal-foto .foto-zoom-info{font-size:.72rem}
 }
 .cerrar-modal-foto{color:white;font-size:1.5rem;cursor:pointer;background:none;border:none;display:flex;align-items:center;gap:.4rem}
 /* Estilos para impresión */
