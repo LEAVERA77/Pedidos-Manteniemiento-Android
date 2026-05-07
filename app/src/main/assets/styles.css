@@ -727,6 +727,36 @@ textarea{resize:vertical;min-height:80px}
     user-select:none;
     pointer-events:none;
 }
+/* Android WebView: 100vh/95vh desbordan el viewport real; misma base que #app (--gn-vh). */
+html.gn-android-webview #modal-foto-ampliada.modal-foto{
+    max-height:calc(var(--gn-vh,1vh)*100);
+    height:calc(var(--gn-vh,1vh)*100);
+    width:100%;
+    max-width:100%;
+    box-sizing:border-box;
+    overflow:hidden;
+    overscroll-behavior:contain;
+}
+html.gn-android-webview .modal-foto .img-container,
+html.gn-android-webview #modal-foto-ampliada #img-container{
+    margin-top:3.5rem;
+    height:calc(var(--gn-vh,1vh)*100 - 3.5rem);
+    max-height:calc(var(--gn-vh,1vh)*100 - 3.5rem);
+    width:100%;
+    max-width:100%;
+    box-sizing:border-box;
+    overflow:hidden;
+}
+html.gn-android-webview .modal-foto img,
+html.gn-android-webview #modal-foto-ampliada #foto-ampliada{
+    max-width:100%;
+    max-height:calc(var(--gn-vh,1vh)*100 - 3.5rem - 0.5rem);
+}
+html.gn-android-webview #modal-foto-ampliada #gn-reclamo-foto-nav{
+    max-width:100%;
+    flex-wrap:wrap;
+    box-sizing:border-box;
+}
 .cerrar-modal-foto{color:white;font-size:1.5rem;cursor:pointer;background:none;border:none;display:flex;align-items:center;gap:.4rem}
 /* Estilos para impresión */
 #print-container{display:none}
