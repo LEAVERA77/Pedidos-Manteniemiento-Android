@@ -903,16 +903,15 @@ export async function runInitMap() {
             return;
         }
 
-        if (
-            ctx.esAndroidWebViewMapa() &&
-            typeof ctx.mapTapNuevoPedidoArmadoSesion === 'function' &&
-            !ctx.mapTapNuevoPedidoArmadoSesion()
-        ) {
+        if (typeof ctx.mapTapNuevoPedidoArmadoSesion === 'function' && !ctx.mapTapNuevoPedidoArmadoSesion()) {
             _gnTapsHintNuevoPedidoMapa += 1;
             if (_gnTapsHintNuevoPedidoMapa >= GN_TAPS_ANTES_HINT_NUEVO_PEDIDO) {
                 _gnTapsHintNuevoPedidoMapa = 0;
                 try {
-                    ctx.toast('Tocá «Mapa → nuevo» y después el mapa para elegir el punto del pedido.', 'info');
+                    ctx.toast(
+                        'Activá el botón «Armar nuevo» en el mapa y después tocá el punto del pedido.',
+                        'info'
+                    );
                 } catch (_) {}
             }
             return;
@@ -933,9 +932,7 @@ export async function runInitMap() {
         } catch (_) {}
         ctx.document.getElementById('pm').classList.add('active');
         try {
-            if (ctx.esAndroidWebViewMapa() && typeof ctx.desarmarMapTapNuevoPedido === 'function') {
-                ctx.desarmarMapTapNuevoPedido();
-            }
+            if (typeof ctx.desarmarMapTapNuevoPedido === 'function') ctx.desarmarMapTapNuevoPedido();
         } catch (_) {}
         try {
             if (

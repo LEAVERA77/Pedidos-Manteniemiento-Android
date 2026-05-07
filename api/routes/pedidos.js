@@ -1711,8 +1711,10 @@ router.put("/:id", async (req, res) => {
       if (e.statusCode === 403) return res.status(403).json({ error: e.message });
       throw e;
     }
+    const rolLowerPut = String(req.user?.rol || "").toLowerCase();
+    const esAdminApiPut = rolLowerPut === "admin" || rolLowerPut === "administrador";
     if (
-      req.user.rol !== "admin" &&
+      !esAdminApiPut &&
       pedido.tecnico_asignado_id &&
       pedido.tecnico_asignado_id !== req.user.id
     ) {
@@ -1745,10 +1747,9 @@ router.put("/:id", async (req, res) => {
       estadoBodyRaw === null || estadoBodyRaw === ""
         ? null
         : normalizarEstadoPedidoOperativo(estadoBodyRaw);
-    const rolLower = String(req.user?.rol || "").toLowerCase();
     if (
       (estadoParam === "Evidencia insuficiente" || estadoParam === "Desestimado") &&
-      rolLower !== "admin"
+      !esAdminApiPut
     ) {
       return res.status(403).json({ error: "Solo administradores pueden usar este estado operativo" });
     }
@@ -1774,7 +1775,7 @@ router.put("/:id", async (req, res) => {
     if (
       estadoAntesNorm === "Derivado externo" &&
       estadoParam === "Pendiente" &&
-      String(req.user?.rol || "").toLowerCase() !== "admin"
+      !esAdminApiPut
     ) {
       return res.status(403).json({
         error: "Solo administradores pueden volver a Pendiente un pedido derivado externamente",
@@ -1785,7 +1786,7 @@ router.put("/:id", async (req, res) => {
     if (
       estadoAntesNorm === "Derivado externo" &&
       estadoParam === "Pendiente" &&
-      String(req.user?.rol || "").toLowerCase() === "admin" &&
+      esAdminApiPut &&
       (await pedidosTableHasDerivadoExternoColumn())
     ) {
       derivacionRevertSql = ", derivado_externo = FALSE";
@@ -1891,7 +1892,7 @@ router.put("/:id", async (req, res) => {
         hasTUp ? [id, req.body.motivo_desestimacion ?? null, req.tenantId] : [id, req.body.motivo_desestimacion ?? null]
       );
     }
-    if (hasFotoVal && req.body.foto_evidencia_validada !== undefined && rolLower === "admin") {
+    if (hasFotoVal && req.body.foto_evidencia_validada !== undefined && esAdminApiPut) {
       const fv = !!req.body.foto_evidencia_validada;
       await query(
         hasTUp
@@ -1903,7 +1904,7 @@ router.put("/:id", async (req, res) => {
     if (
       (hasMotMr && req.body.motivo_rechazo_foto !== undefined) ||
       (hasMotMd && req.body.motivo_desestimacion !== undefined) ||
-      (hasFotoVal && req.body.foto_evidencia_validada !== undefined && rolLower === "admin")
+      (hasFotoVal && req.body.foto_evidencia_validada !== undefined && esAdminApiPut)
     ) {
       const rRf = await query(
         hasTUp ? `SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1` : `SELECT * FROM pedidos WHERE id = $1 LIMIT 1`,

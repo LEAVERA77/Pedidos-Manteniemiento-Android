@@ -2937,7 +2937,6 @@ function syncMapTapNuevoPedidoArmedUi() {
         : 'Activar: luego tocá el mapa para elegir el punto del nuevo pedido';
 }
 function toggleMapTapNuevoPedidoArmed() {
-    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
     setMapTapNuevoPedidoArmado(!mapTapNuevoPedidoArmadoSesion());
     const on = mapTapNuevoPedidoArmadoSesion();
     toast(
@@ -3308,6 +3307,7 @@ function resetPreferenciasPanelesInicioCerrados() {
         localStorage.setItem('pmg_slideoff_filtro_tipo', '1');
         localStorage.setItem('pmg_slideoff_colores', '1');
         localStorage.setItem('pmg_slideoff_dash', '1');
+        localStorage.setItem('pmg_slideoff_capas_osm', '1');
         localStorage.setItem('pmg_bp2_hidden', '1');
     } catch (_) {}
 }
@@ -5708,7 +5708,10 @@ function toggleMapaCardSlideoff(cardId, hide) {
 
 function syncMapSlideTabsFromStorage() {
     const cf = document.getElementById('mapa-card-filtros');
-    if (cf && localStorage.getItem('pmg_slideoff_filtros') === '1') toggleMapaCardSlideoff('mapa-card-filtros', true);
+    if (cf && cf.style.display !== 'none') {
+        const vF = localStorage.getItem('pmg_slideoff_filtros');
+        toggleMapaCardSlideoff('mapa-card-filtros', vF !== '0');
+    }
     const cft = document.getElementById('mapa-card-filtro-tipo');
     if (cft && localStorage.getItem('pmg_slideoff_filtro_tipo') === '1') toggleMapaCardSlideoff('mapa-card-filtro-tipo', true);
     const cc = document.getElementById('mapa-card-colores');
@@ -5716,7 +5719,10 @@ function syncMapSlideTabsFromStorage() {
     const cd = document.getElementById('mapa-card-dashboard');
     if (cd && cd.style.display !== 'none' && localStorage.getItem('pmg_slideoff_dash') === '1') toggleMapaCardSlideoff('mapa-card-dashboard', true);
     const cOsm = document.getElementById('mapa-card-capas-osm');
-    if (cOsm && cOsm.style.display !== 'none' && localStorage.getItem('pmg_slideoff_capas_osm') === '1') toggleMapaCardSlideoff('mapa-card-capas-osm', true);
+    if (cOsm && cOsm.style.display !== 'none') {
+        const vOsm = localStorage.getItem('pmg_slideoff_capas_osm');
+        toggleMapaCardSlideoff('mapa-card-capas-osm', vOsm !== '0');
+    }
 }
 
 let _bp2DragState = null;

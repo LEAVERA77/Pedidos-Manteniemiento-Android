@@ -125,7 +125,7 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 .gn-map-dock-extras{display:flex;flex-direction:column;align-items:flex-start;gap:8px;pointer-events:none}
 .gn-map-dock-extras .gn-dock-chip,
 #gn-minimized-panels-dock .gn-dock-chip{pointer-events:auto;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;min-width:2.35rem;min-height:2.35rem;padding:.35rem .55rem;border-radius:.55rem;font-size:1rem;font-weight:700;cursor:pointer;border:none;box-shadow:0 4px 14px rgba(0,0,0,.22);line-height:1}
-#gn-minimized-panels-dock{position:fixed;left:12px;top:max(12px,env(safe-area-inset-top,0px));bottom:auto;z-index:10052;display:flex;flex-direction:column;align-items:flex-start;gap:8px;pointer-events:none;max-height:min(70vh,calc(100vh - max(24px,env(safe-area-inset-top,0px)) - env(safe-area-inset-bottom,0px)));overflow-y:auto;padding:0;margin:0}
+#gn-minimized-panels-dock{position:fixed;left:12px;top:max(12px,env(safe-area-inset-top,0px));bottom:auto;z-index:12070;display:flex;flex-direction:column;align-items:flex-start;gap:8px;pointer-events:none;max-height:min(70vh,calc(100vh - max(24px,env(safe-area-inset-top,0px)) - env(safe-area-inset-bottom,0px)));overflow-y:auto;padding:0;margin:0}
 .gn-dock-chip--pedidos{background:#1e3a5f;color:#f8fafc;border-left:3px solid #38bdf8}
 .gn-dock-chip--community{background:#128C7E;color:#fff;border-left:3px solid #34d399}
 .gn-dock-chip-label{font-size:.72rem;font-weight:600}
@@ -511,15 +511,13 @@ button.gn-inc-fab{touch-action:manipulation;-webkit-tap-highlight-color:transpar
 .btn-mapa-armar-nuevo{
   position:absolute;bottom:13.1rem;left:1rem;width:2.65rem;height:2.65rem;min-width:2.65rem;min-height:2.65rem;box-sizing:border-box;border-radius:50%;
   background:var(--card,#fff);color:#0f766e;border:2px solid #14b8a6;box-shadow:var(--shadow-card),0 4px 12px rgba(15,23,42,.08);
-  font-size:1.02rem;cursor:pointer;z-index:1005;display:none;align-items:center;justify-content:center;transition:transform .2s,border-color .2s,background .2s;pointer-events:auto;padding:0;
+  font-size:1.02rem;cursor:pointer;z-index:1005;display:flex;align-items:center;justify-content:center;transition:transform .2s,border-color .2s,background .2s;pointer-events:auto;padding:0;
 }
 .btn-mapa-armar-nuevo:hover{transform:scale(1.06)}
 .btn-mapa-armar-nuevo--armed{
   background:linear-gradient(145deg,#0d9488,#0f766e);color:#fff;border-color:transparent;
   box-shadow:var(--shadow-card),0 4px 14px rgba(13,148,136,.38);
 }
-#btn-mapa-armar-nuevo{display:none!important}
-html.gn-android-webview #btn-mapa-armar-nuevo{display:flex!important}
 .gn-gps-fab{flex-shrink:0;line-height:1;white-space:nowrap}
 /* WebView Android: subir y acercar a la izquierda para no tapar barra de pedidos ni filtros */
 html.gn-android-webview .btn-mapa-ir-gps{bottom:11.25rem;left:0.42rem}
@@ -1053,7 +1051,7 @@ html.gn-android-webview #bp2.bp2-fullhide + .fab-show-pedidos {
 }
 html.gn-android-webview #gn-minimized-panels-dock,
 html.gn-android-webview .gn-map-dock-extras {
-  z-index: 12065;
+  z-index: 12075;
 }
 html.gn-android-webview .gn-gps-fab {
   width: 2.9rem;
