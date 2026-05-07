@@ -1,0 +1,12 @@
+---
+description: Evitar inflar app.js; usar modules/
+alwaysApply: true
+---
+
+# Regla: no agrandar `app.js`
+
+Si necesitás modificar o agregar lógica que hoy vive en `app/src/main/assets/app.js`, **preferí un archivo nuevo** bajo `app/src/main/assets/modules/` (o `modules/` en la raíz de Pedidos-MG) y mové la lógica allí.
+
+En `app.js` dejá solo **import** y **una llamada mínima** de integración (o unas pocas líneas de pegamento).
+
+Si no hay otra opción técnica, documentá en el commit **por qué** y **qué líneas** de `app.js` se tocaron.
