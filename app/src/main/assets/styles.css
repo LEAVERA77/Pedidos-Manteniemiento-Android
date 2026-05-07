@@ -335,6 +335,36 @@ html.gn-android-webview .hd-slot-right{
   gap:.28rem;
   flex-wrap:wrap;
 }
+.web-coords-converter-fields.wc-stack{
+  flex-direction:column;
+  align-items:stretch;
+  gap:.28rem;
+}
+.wc-row{
+  display:flex;
+  align-items:center;
+  gap:.28rem;
+  width:100%;
+  min-width:0;
+}
+.wc-ax{
+  flex:0 0 1.55rem;
+  font-size:.6rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.03em;
+  color:#64748b;
+  text-align:center;
+  font-family:'Inter',system-ui,sans-serif;
+}
+.web-coords-converter-fields.wc-stack .wc-row input{
+  flex:1 1 0;
+  min-width:0;
+}
+.web-coords-converter-run.wc-run-full{
+  align-self:center;
+  margin-top:.12rem;
+}
 .web-coords-converter select{
   height:1.75rem;
   border-radius:8px;

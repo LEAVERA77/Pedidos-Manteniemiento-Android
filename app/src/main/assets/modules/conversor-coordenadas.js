@@ -1,18 +1,9 @@
 /**
- * Barra header `#web-coords-converter`: un valor en A, resultado en B (modo según selector).
+ * Barra header `#web-coords-converter`: par Lat / Lon (columna A entrada, B resultado).
  * made by leavera77
  */
 
 import { decimalToDmsLite, dmsToDecimalLite } from './utils.js';
-
-/** Heurística sur/cono sur: |lon| suele > ~54; |lat| suele ≤ ~54. */
-function inferEsLatitudParaDms(dec) {
-    const a = Math.abs(Number(dec));
-    if (!Number.isFinite(a)) return true;
-    if (a > 90) return false;
-    if (a > 54.5) return false;
-    return true;
-}
 
 function parseDecimalUnCampo(raw) {
     const t = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
@@ -22,55 +13,96 @@ function parseDecimalUnCampo(raw) {
 }
 
 /**
- * Convierte según modo actual: entrada en A, salida en B.
- * @returns {{ ok: boolean, message?: string }}
+ * @param {'lat'|'lon'} eje — GMS con N/S vs E/O
  */
-export function convertirWebCoordsUnCampo(mode, aEl, bEl) {
+function convertirFila(mode, aEl, bEl, eje) {
+    const ejeLat = eje === 'lat';
+    const rawA = String(aEl?.value || '').trim();
+    if (!rawA) {
+        if (bEl) bEl.value = '';
+        return { ok: true, skip: true };
+    }
     if (mode === 'dec_to_dms') {
-        const dec = parseDecimalUnCampo(aEl?.value);
+        const dec = parseDecimalUnCampo(rawA);
         if (!Number.isFinite(dec)) {
-            return { ok: false, message: 'Ingresá un decimal válido en el primer campo.' };
+            return {
+                ok: false,
+                skip: false,
+                message: ejeLat ? 'Lat: decimal inválido.' : 'Lon: decimal inválido.',
+            };
         }
-        const isLat = inferEsLatitudParaDms(dec);
-        bEl.value = decimalToDmsLite(dec, isLat);
-        return { ok: true, message: `${bEl.value}` };
+        bEl.value = decimalToDmsLite(dec, ejeLat);
+        return { ok: true, skip: false, out: bEl.value };
     }
-    const rawGms = String(aEl?.value || '').trim();
-    if (!rawGms) {
-        return { ok: false, message: 'Ingresá grados minutos segundos en el primer campo.' };
-    }
-    const dec = dmsToDecimalLite(rawGms);
+    const dec = dmsToDecimalLite(rawA);
     if (!Number.isFinite(dec)) {
-        return { ok: false, message: 'Formato GMS no reconocido (ej. 31°33\'57.6"S).' };
+        return {
+            ok: false,
+            skip: false,
+            message: ejeLat ? 'Lat: GMS inválido (ej. 31°34\'8.4"S).' : 'Lon: GMS inválido (ej. 60°30\'0"O).',
+        };
     }
     bEl.value = dec.toFixed(7);
-    return { ok: true, message: bEl.value };
+    return { ok: true, skip: false, out: bEl.value };
 }
 
-function limpiarCampos(a, b, out) {
-    if (a) a.value = '';
-    if (b) b.value = '';
+function obtenerParInputs() {
+    return {
+        aLat: document.getElementById('web-coords-converter-a-lat'),
+        bLat: document.getElementById('web-coords-converter-b-lat'),
+        aLon: document.getElementById('web-coords-converter-a-lon'),
+        bLon: document.getElementById('web-coords-converter-b-lon'),
+    };
+}
+
+function limpiarPar(par, out) {
+    if (par.aLat) par.aLat.value = '';
+    if (par.bLat) par.bLat.value = '';
+    if (par.aLon) par.aLon.value = '';
+    if (par.bLon) par.bLon.value = '';
     if (out) out.textContent = '';
 }
 
-function applyPlaceholders(mode, a, b) {
-    if (!a || !b) return;
+function applyPlaceholders(mode, par) {
+    const { aLat, bLat, aLon, bLon } = par;
+    if (!aLat || !bLat || !aLon || !bLon) return;
     if (mode === 'dec_to_dms') {
-        a.placeholder = 'Decimal (ej. -31.566)';
-        b.placeholder = 'Resultado GMS';
+        aLat.placeholder = 'Lat decimal';
+        bLat.placeholder = 'Lat GMS';
+        aLon.placeholder = 'Lon decimal';
+        bLon.placeholder = 'Lon GMS';
     } else {
-        a.placeholder = 'GMS (ej. 31°33\'57.6"S)';
-        b.placeholder = 'Decimal resultante';
+        aLat.placeholder = 'Lat GMS';
+        bLat.placeholder = 'Lat decimal';
+        aLon.placeholder = 'Lon GMS';
+        bLon.placeholder = 'Lon decimal';
     }
 }
 
-/**
- * ↔: convierte A→B con el modo actual, cambia el modo e intercambia contenidos de A/B
- * (queda coherente con el nuevo modo: lo que era resultado pasa a ser entrada).
- */
-function intercambiarModoYValores(modeEl, a, b, out, ctx) {
+/** Convierte todas las filas con A no vacío; exige al menos una. */
+function convertirParCompleto(mode, par) {
+    const hasLat = String(par.aLat?.value || '').trim();
+    const hasLon = String(par.aLon?.value || '').trim();
+    if (!hasLat && !hasLon) {
+        return { ok: false, message: 'Ingresá latitud y/o longitud en la columna izquierda.' };
+    }
+    const piezas = [];
+    if (hasLat) {
+        const r = convertirFila(mode, par.aLat, par.bLat, 'lat');
+        if (!r.ok) return { ok: false, message: r.message || 'Error latitud' };
+        if (!r.skip && r.out) piezas.push(r.out);
+    } else if (par.bLat) par.bLat.value = '';
+    if (hasLon) {
+        const r = convertirFila(mode, par.aLon, par.bLon, 'lon');
+        if (!r.ok) return { ok: false, message: r.message || 'Error longitud' };
+        if (!r.skip && r.out) piezas.push(r.out);
+    } else if (par.bLon) par.bLon.value = '';
+    return { ok: true, message: piezas.join(' · ') };
+}
+
+function intercambiarModoYValores(modeEl, par, out, ctx) {
     const cur = modeEl.value;
-    const r = convertirWebCoordsUnCampo(cur, a, b);
+    const r = convertirParCompleto(cur, par);
     if (!r.ok) {
         if (out) out.textContent = r.message || 'Error';
         return;
@@ -83,26 +115,30 @@ function intercambiarModoYValores(modeEl, a, b, out, ctx) {
     } finally {
         ctx.syncingMode = false;
     }
-    const ta = a.value;
-    a.value = b.value;
-    b.value = ta;
-    applyPlaceholders(next, a, b);
+    for (const [ae, be] of [
+        [par.aLat, par.bLat],
+        [par.aLon, par.bLon],
+    ]) {
+        if (!ae || !be) continue;
+        const ta = ae.value;
+        ae.value = be.value;
+        be.value = ta;
+    }
+    applyPlaceholders(next, par);
 }
 
-/** Enter: solo rellena B desde A, sin cambiar modo. */
-function soloConvertir(modeEl, a, b, out) {
-    const r = convertirWebCoordsUnCampo(modeEl.value, a, b);
+function soloConvertir(modeEl, par, out) {
+    const r = convertirParCompleto(modeEl.value, par);
     if (out) out.textContent = r.ok ? r.message || '' : r.message || 'Error';
 }
 
 export function installWebCoordsConverterBar(esAndroidWebViewMapaFn) {
     const wrap = document.getElementById('web-coords-converter');
     const mode = document.getElementById('web-coords-converter-mode');
-    const a = document.getElementById('web-coords-converter-a');
-    const b = document.getElementById('web-coords-converter-b');
     const run = document.getElementById('web-coords-converter-run');
     const out = document.getElementById('web-coords-converter-out');
-    if (!wrap || !mode || !a || !b || !run || !out) return;
+    const par = obtenerParInputs();
+    if (!wrap || !mode || !run || !out || !par.aLat || !par.bLat || !par.aLon || !par.bLon) return;
 
     const visible = typeof esAndroidWebViewMapaFn !== 'function' || !esAndroidWebViewMapaFn();
     wrap.style.display = visible ? 'inline-flex' : 'none';
@@ -112,11 +148,11 @@ export function installWebCoordsConverterBar(esAndroidWebViewMapaFn) {
 
     let prevMode = mode.value;
     const ctx = { syncingMode: false };
-    applyPlaceholders(mode.value, a, b);
+    applyPlaceholders(mode.value, par);
 
     run.addEventListener('click', () => {
         try {
-            intercambiarModoYValores(mode, a, b, out, ctx);
+            intercambiarModoYValores(mode, par, out, ctx);
             prevMode = mode.value;
         } catch (_) {}
     });
@@ -124,25 +160,23 @@ export function installWebCoordsConverterBar(esAndroidWebViewMapaFn) {
     mode.addEventListener('change', () => {
         if (ctx.syncingMode) {
             prevMode = mode.value;
-            applyPlaceholders(mode.value, a, b);
+            applyPlaceholders(mode.value, par);
             return;
         }
         if (mode.value === prevMode) return;
-        limpiarCampos(a, b, out);
+        limpiarPar(par, out);
         prevMode = mode.value;
-        applyPlaceholders(mode.value, a, b);
+        applyPlaceholders(mode.value, par);
     });
 
-    a.addEventListener('keydown', (e) => {
+    const onEnter = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            soloConvertir(mode, a, b, out);
+            soloConvertir(mode, par, out);
         }
-    });
-    b.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            soloConvertir(mode, a, b, out);
-        }
-    });
+    };
+    par.aLat.addEventListener('keydown', onEnter);
+    par.bLat.addEventListener('keydown', onEnter);
+    par.aLon.addEventListener('keydown', onEnter);
+    par.bLon.addEventListener('keydown', onEnter);
 }
