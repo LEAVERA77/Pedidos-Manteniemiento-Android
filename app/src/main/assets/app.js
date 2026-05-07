@@ -121,6 +121,7 @@ import {
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
+import { guardarRotacionReclamoDesdeFotoAmpliada } from './modules/pedido-ver-imagen.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -2738,6 +2739,7 @@ function aplicarMarcaVisualCompleta() {
 /** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
 const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
 const LS_MOSTRAR_DESESTIMADOS_LISTA = 'pmg_pedidos_mostrar_desestimados_lista';
+const LS_SOLO_AGRUPADOS_INCI_LISTA = 'pmg_pedidos_solo_agrupados_incidencia_lista';
 let _resolveAdminTipoModal = null;
 
 function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
@@ -3484,6 +3486,18 @@ const gnLoginSubmitHandler = async e => {
                     localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
                 } catch (_) {}
                 chkDes.checked = false;
+            }
+        }
+        const wrapSoloAg = document.getElementById('wrap-chk-solo-agrupados-incidencia');
+        const chkSoloAg = document.getElementById('chk-lista-solo-agrupados-incidencia');
+        if (wrapSoloAg && chkSoloAg) {
+            wrapSoloAg.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkSoloAg.checked = esAdmin() && localStorage.getItem(LS_SOLO_AGRUPADOS_INCI_LISTA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_SOLO_AGRUPADOS_INCI_LISTA);
+                } catch (_) {}
+                chkSoloAg.checked = false;
             }
         }
         try {
@@ -5417,6 +5431,9 @@ window.onMapaFiltroTipoTrabajoChange = onMapaFiltroTipoTrabajoChange;
 
 function pedidosParaMarcadoresMapa() {
     const relaxRubroMapa = esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
+    const soloAgMap = esAdmin() && document.getElementById('chk-lista-solo-agrupados-incidencia')?.checked;
+    const soloDesMap = esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
+    const soloDerivMap = esAdmin() && document.getElementById('chk-mostrar-derivados-fuera')?.checked;
     const chk = (id) => {
         const el = document.getElementById(id);
         return !el || el.checked;
@@ -5444,6 +5461,10 @@ function pedidosParaMarcadoresMapa() {
     const uidF = selU?.value || '';
     const asigF = selA?.value || '';
     return app.p.filter(p => {
+        if (soloAgMap && !(p.inci != null && Number(p.inci) > 0)) return false;
+        if (soloDesMap) {
+            if (String(p.es || '') !== 'Desestimado') return false;
+        } else if (soloDerivMap && !pedidoEsDerivadoFuera(p)) return false;
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return false;
         if (!allowEstado(normalizarEstadoPedidoUi(p.es || ''))) return false;
@@ -9130,7 +9151,13 @@ function comprimirImagen(file, opts = {}) {
         resetZoom();
         modal.classList.add('active');
         img.style.transition = 'none';
-        rot = 0; tx = 0; ty = 0; scale = 1;
+        const rr = ctx && ctx.tipo === 'reclamo_imagen' ? Number(ctx.reclamo_imagen_rotacion) : NaN;
+        if (Number.isFinite(rr)) {
+            rot = ((Math.round(rr) % 360) + 360) % 360;
+        } else {
+            rot = 0;
+        }
+        tx = 0; ty = 0; scale = 1;
         applyTransform(false);
         
         if (btnGuardarBD) btnGuardarBD.style.display = ctx ? 'flex' : 'none';
@@ -9252,6 +9279,15 @@ function comprimirImagen(file, opts = {}) {
                     if (pedidoActual) void detalle(pedidoActual);
                     toast('✓ Rotación guardada en el pedido', 'success');
 
+                } else if (ctx3.tipo === 'reclamo_imagen') {
+                    const pid = String(ctx3.id || '').trim();
+                    if (!pid) throw new Error('Pedido inválido');
+                    await guardarRotacionReclamoDesdeFotoAmpliada(pid, rot);
+                    img.src = dataUrl;
+                    rot = 0; tx = 0; ty = 0; scale = 1; applyTransform(false);
+                    btnGuardar.style.display = 'none';
+                    btnGuardarBD.style.display = 'none';
+                    toast('✓ Rotación de imagen del reclamo guardada', 'success');
                 } else if (ctx3.tipo === 'pedido_cierre') {
                     
                     const pedido = app.p.find(x => String(x.id) === String(ctx3.id));
@@ -12234,16 +12270,19 @@ function actualizarIndicadorSolicitudesDerivacionAdmin() {
 function render() {
     actualizarIndicadorSolicitudesDerivacionAdmin();
     const vis = pedidosVisiblesEnUI();
-    const listaDesest =
-        esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
-    const cer = vis.filter(
-        (p) =>
-            p.es === 'Cerrado' ||
-            p.es === 'Derivado externo' ||
-            (listaDesest && p.es === 'Desestimado')
-    ).length;
-    const asg = vis.filter(p => p.es === 'Asignado' || p.es === 'En ejecución').length;
-    const pen = vis.filter(p => p.es === 'Pendiente').length;
+    const soloAgLista = esAdmin() && document.getElementById('chk-lista-solo-agrupados-incidencia')?.checked;
+    const soloDesLista = esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
+    const soloDerivLista = esAdmin() && document.getElementById('chk-mostrar-derivados-fuera')?.checked;
+    const pasaSoloAgrupadosToolbar = (p) =>
+        !soloAgLista || (p.inci != null && Number(p.inci) > 0);
+    const cer = vis.filter((p) => {
+        if (!pasaSoloAgrupadosToolbar(p)) return false;
+        if (soloDesLista) return p.es === 'Desestimado';
+        if (soloDerivLista) return pedidoEsDerivadoFuera(p);
+        return p.es === 'Cerrado' || p.es === 'Derivado externo';
+    }).length;
+    const asg = vis.filter((p) => pasaSoloAgrupadosToolbar(p) && (p.es === 'Asignado' || p.es === 'En ejecución')).length;
+    const pen = vis.filter((p) => pasaSoloAgrupadosToolbar(p) && p.es === 'Pendiente').length;
     const pcEl = document.getElementById('pc');
     const acEl = document.getElementById('ac');
     const ccEl = document.getElementById('cc');
@@ -12252,19 +12291,20 @@ function render() {
     if (ccEl) ccEl.textContent = cer;
 
     const fl = tecnicoPideVerTodosPedidosEmpresa()
-        ? [...vis].sort((a, b) => {
-              const ta = a.f ? new Date(a.f).getTime() : 0;
-              const tb = b.f ? new Date(b.f).getTime() : 0;
-              return tb - ta;
-          })
-        : vis.filter(p => {
+        ? [...vis]
+              .filter((p) => pasaSoloAgrupadosToolbar(p))
+              .sort((a, b) => {
+                  const ta = a.f ? new Date(a.f).getTime() : 0;
+                  const tb = b.f ? new Date(b.f).getTime() : 0;
+                  return tb - ta;
+              })
+        : vis.filter((p) => {
+              if (!pasaSoloAgrupadosToolbar(p)) return false;
               if (app.tab === 'p') return p.es === 'Pendiente';
               if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-              return (
-                  p.es === 'Cerrado' ||
-                  p.es === 'Derivado externo' ||
-                  (listaDesest && p.es === 'Desestimado')
-              );
+              if (soloDesLista) return p.es === 'Desestimado';
+              if (soloDerivLista) return pedidoEsDerivadoFuera(p);
+              return p.es === 'Cerrado' || p.es === 'Derivado externo';
           });
     const c = document.getElementById('pl');
     c.innerHTML = '';
@@ -12837,17 +12877,28 @@ document.getElementById('chk-lista-mostrar-desestimados')?.addEventListener('cha
     } catch (_) {}
 });
 
+document.getElementById('chk-lista-solo-agrupados-incidencia')?.addEventListener('change', function () {
+    try {
+        localStorage.setItem(LS_SOLO_AGRUPADOS_INCI_LISTA, this.checked ? '1' : '0');
+    } catch (_) {}
+    try {
+        render();
+        renderMk();
+    } catch (_) {}
+});
+
 document.getElementById('eb').addEventListener('click', () => {
-    const listaDesest =
-        esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
-    const flt = p => {
+    const soloAg = esAdmin() && document.getElementById('chk-lista-solo-agrupados-incidencia')?.checked;
+    const soloDes = esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
+    const soloDeriv = esAdmin() && document.getElementById('chk-mostrar-derivados-fuera')?.checked;
+    const pasaAg = (p) => !soloAg || (p.inci != null && Number(p.inci) > 0);
+    const flt = (p) => {
+        if (!pasaAg(p)) return false;
         if (app.tab === 'p') return p.es === 'Pendiente';
         if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-        return (
-            p.es === 'Cerrado' ||
-            p.es === 'Derivado externo' ||
-            (listaDesest && p.es === 'Desestimado')
-        );
+        if (soloDes) return p.es === 'Desestimado';
+        if (soloDeriv) return pedidoEsDerivadoFuera(p);
+        return p.es === 'Cerrado' || p.es === 'Derivado externo';
     };
     exportPedido(
         pedidosVisiblesEnUI().filter(flt),
@@ -13402,6 +13453,18 @@ try {
                     localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
                 } catch (_) {}
                 chkDes2.checked = false;
+            }
+        }
+        const wrapSoloAg2 = document.getElementById('wrap-chk-solo-agrupados-incidencia');
+        const chkSoloAg2 = document.getElementById('chk-lista-solo-agrupados-incidencia');
+        if (wrapSoloAg2 && chkSoloAg2) {
+            wrapSoloAg2.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkSoloAg2.checked = esAdmin() && localStorage.getItem(LS_SOLO_AGRUPADOS_INCI_LISTA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_SOLO_AGRUPADOS_INCI_LISTA);
+                } catch (_) {}
+                chkSoloAg2.checked = false;
             }
         }
         try {

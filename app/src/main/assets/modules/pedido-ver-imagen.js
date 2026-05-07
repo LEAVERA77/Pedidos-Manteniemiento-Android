@@ -223,14 +223,6 @@ function abrirModalSeleccion(titulo, opciones, onConfirm) {
     document.body.appendChild(ov);
 }
 
-function actualizarEstadoBotonGuardarRotacion(btn, rotationDeg, savedRotation, puedePersistir) {
-    if (!btn) return;
-    const iguales = normalizarRotacionGrados(rotationDeg) === normalizarRotacionGrados(savedRotation);
-    btn.disabled = !puedePersistir || iguales;
-    btn.style.opacity = btn.disabled ? '0.45' : '1';
-    btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
-}
-
 async function descargarOAbrirImagenReclamo(src, pedidoId) {
     const base = pedidoId ? `reclamo-pedido-${pedidoId}` : 'reclamo';
     try {
@@ -272,11 +264,22 @@ async function descargarOAbrirImagenReclamo(src, pedidoId) {
     }
 }
 
+/** Cierra solo el modal de detalle (#dm) para dejar visible el visor de foto (z-index). */
+function cerrarModalDetallePedidoSiAbierto() {
+    try {
+        const dm = document.getElementById('dm');
+        if (!dm || !dm.classList.contains('active')) return;
+        const btn = dm.querySelector('.mh button.cm');
+        if (btn) btn.click();
+    } catch (_) {}
+}
+
 /**
- * Mismo modal que `verFotoAmpliada` (operarios): zoom, arrastre, rueda, rotar, descargar.
+ * Mismo modal que `verFotoAmpliada` (operarios): zoom, arrastre, rueda, rotar, descargar, guardar rotación en BD.
  * Varias fotos: barra Anterior / Siguiente (sin tocar app.js).
+ * @param {{ pedidoId?: string, reclamo_imagen_rotacion?: number }} [metaVisor]
  */
-function abrirVisorReclamoUnificado(urls, indiceInicial) {
+function abrirVisorReclamoUnificado(urls, indiceInicial, metaVisor = {}) {
     const list = (Array.isArray(urls) ? urls : [urls]).map((x) => String(x || '').trim()).filter(Boolean);
     if (!list.length) return;
     const ver = typeof window.verFotoAmpliada === 'function' ? window.verFotoAmpliada : null;
@@ -292,7 +295,19 @@ function abrirVisorReclamoUnificado(urls, indiceInicial) {
 
     let idx = Math.max(0, Math.min(Number(indiceInicial) || 0, list.length - 1));
 
-    ver(list[idx], null);
+    const pid = metaVisor.pedidoId != null ? String(metaVisor.pedidoId).trim() : '';
+    const ctxBase =
+        pid && !pid.startsWith('off_')
+            ? {
+                  tipo: 'reclamo_imagen',
+                  id: pid,
+                  urls: list,
+                  reclamo_imagen_rotacion: normalizarRotacionGrados(metaVisor.reclamo_imagen_rotacion),
+              }
+            : null;
+    const mkCtx = () => (ctxBase ? { ...ctxBase, idx } : null);
+    cerrarModalDetallePedidoSiAbierto();
+    ver(list[idx], mkCtx());
     const btnDl = document.getElementById('foto-guardar');
     if (btnDl) btnDl.style.display = 'flex';
 
@@ -320,7 +335,7 @@ function abrirVisorReclamoUnificado(urls, indiceInicial) {
     syncLab();
     const abrirIdx = (i) => {
         idx = ((i % list.length) + list.length) % list.length;
-        ver(list[idx], null);
+        ver(list[idx], mkCtx());
         if (btnDl) btnDl.style.display = 'flex';
         syncLab();
     };
@@ -346,6 +361,12 @@ function abrirVisorReclamoUnificado(urls, indiceInicial) {
         }
     });
     mo.observe(modal, { attributes: true, attributeFilter: ['class'] });
+}
+
+/** Llamado desde `app.js` al guardar rotación en el modal `verFotoAmpliada` (ctx `reclamo_imagen`). */
+export async function guardarRotacionReclamoDesdeFotoAmpliada(pedidoId, rotationDeg) {
+    await persistirRotacionReclamoApi(pedidoId, rotationDeg);
+    sincronizarRotacionEnListaPedidosApp(pedidoId, rotationDeg);
 }
 
 async function persistirRotacionReclamoApi(pedidoId, grados) {
@@ -424,22 +445,28 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
 
     const pedidoId = meta.pedidoId != null ? String(meta.pedidoId).trim() : '';
     const puedePersistir = Boolean(pedidoId && !pedidoId.startsWith('off_'));
-
-    let savedRotation = normalizarRotacionGrados(meta.reclamo_imagen_rotacion);
-    let rotationDeg = savedRotation;
-    let scale = 1;
+    const rotPreview = normalizarRotacionGrados(meta.reclamo_imagen_rotacion);
     let activeIndex = 0;
     const srcActivo = () => sources[activeIndex] || sources[0];
+
+    const abrirVisorDesdePreview = (idx) => {
+        abrirVisorReclamoUnificado(sources, idx, {
+            pedidoId,
+            reclamo_imagen_rotacion: meta.reclamo_imagen_rotacion,
+        });
+    };
 
     const wrap = document.createElement('div');
     wrap.id = 'gn-pedido-imagen-reclamo';
     wrap.className = 'ds';
+    wrap.addEventListener('click', (e) => e.stopPropagation(), true);
 
     const h = document.createElement('h4');
     h.textContent = sources.length > 1 ? '📸 Imágenes del reclamo' : '📸 Imagen del reclamo';
 
     const inner = document.createElement('div');
     inner.style.marginTop = '0.5rem';
+    inner.addEventListener('click', (e) => e.stopPropagation(), true);
 
     let thumbRow = null;
     if (sources.length > 1) {
@@ -452,15 +479,20 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
             t.alt = `Miniatura ${idx + 1}`;
             t.style.cssText =
                 `height:52px;width:auto;max-width:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${idx === 0 ? 'var(--p2,#0a84ff)' : 'transparent'};opacity:${idx === 0 ? 1 : 0.85}`;
-            t.addEventListener('click', () => {
+            t.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
                 activeIndex = idx;
                 img.src = srcActivo();
-                aplicarTransform();
                 thumbRow.querySelectorAll('img').forEach((im, j) => {
                     im.style.borderColor = j === idx ? 'var(--p2,#0a84ff)' : 'transparent';
                     im.style.opacity = j === idx ? '1' : '0.85';
                 });
-                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+            });
+            t.addEventListener('dblclick', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                abrirVisorDesdePreview(idx);
             });
             thumbRow.appendChild(t);
         });
@@ -468,38 +500,18 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
 
     const imgHost = document.createElement('div');
     imgHost.style.cssText =
-        'margin-top:0.35rem;overflow:auto;max-height:min(80vh,900px);display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);-webkit-overflow-scrolling:touch';
+        'margin-top:0.35rem;overflow:auto;max-height:min(42vh,420px);display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);-webkit-overflow-scrolling:touch';
 
     const img = document.createElement('img');
     img.src = srcActivo();
     img.alt = 'Foto del reclamo';
     img.draggable = false;
-    img.style.cssText =
-        'max-width:min(100%,96vw);width:auto;height:auto;max-height:min(75vh,920px);object-fit:contain;border-radius:8px;cursor:pointer;display:block;transform-origin:center center;transition:transform 0.12s ease-out';
-
-    const aplicarTransform = () => {
-        img.style.transform = `rotate(${rotationDeg}deg) scale(${scale})`;
-    };
-    aplicarTransform();
-
-    imgHost.addEventListener(
-        'wheel',
-        (ev) => {
-            if (!ev.ctrlKey && !ev.metaKey) return;
-            ev.preventDefault();
-            const d = ev.deltaY > 0 ? -0.08 : 0.08;
-            scale = Math.min(2.5, Math.max(0.4, Math.round((scale + d) * 100) / 100));
-            aplicarTransform();
-        },
-        { passive: false }
-    );
+    img.style.cssText = `max-width:min(100%,96vw);width:auto;height:auto;max-height:min(38vh,380px);object-fit:contain;border-radius:8px;cursor:zoom-in;display:block;transform-origin:center center;transform:rotate(${rotPreview}deg)`;
 
     img.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        try {
-            document.querySelector('#dm .mh button.cm')?.click();
-        } catch (_) {}
+        abrirVisorDesdePreview(activeIndex);
     });
 
     img.addEventListener('error', () => {
@@ -511,88 +523,34 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
 
     const bar = document.createElement('div');
     bar.className = 'gn-pedido-img-toolbar';
-    bar.style.cssText =
-        'display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem;align-items:center';
+    bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem;align-items:center';
 
-    const btnZoomIn = crearBotonToolbar('🔍 Zoom in (+)', 'Acercar (máx. 200%)', () => {
-        scale = Math.min(2, Math.round(scale * 1.15 * 100) / 100);
-        aplicarTransform();
-    });
-    const btnZoomOut = crearBotonToolbar('🔍 Zoom out (−)', 'Alejar (mín. 50%)', () => {
-        scale = Math.max(0.5, Math.round((scale / 1.15) * 100) / 100);
-        aplicarTransform();
-    });
-    const btnReset = crearBotonToolbar('📐 Reset', 'Volver al tamaño original (zoom 100%)', () => {
-        scale = 1;
-        aplicarTransform();
-    });
-    const btnRot = crearBotonToolbar('↻ Rotar 90°', 'Rotar 90° horario (acumulable)', () => {
-        rotationDeg += 90;
-        aplicarTransform();
-        actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
-    });
+    const btnVisor = crearBotonToolbar(
+        '🖼 Abrir en visor',
+        'Mismo visor que fotos del pedido (zoom, rotar, descargar, guardar rotación). Cierra este detalle.',
+        () => abrirVisorDesdePreview(activeIndex)
+    );
+    btnVisor.style.cssText =
+        (btnVisor.style.cssText || '') +
+        ';font-weight:600;background:linear-gradient(135deg,#1e40af,#2563eb);color:#fff;border-color:#1d4ed8';
+
     const btnDl = crearBotonToolbar(
-        '💾 Descargar',
-        'Descargar la imagen actual (sin abrir pestaña nueva)',
+        '💾 Descargar vista previa',
+        'Descargar la miniatura actual sin abrir el visor',
         () => void descargarOAbrirImagenReclamo(srcActivo(), pedidoId)
     );
-    const btnSaveRot = crearBotonToolbar(
-        '💾 Guardar rotación en BD',
-        'Persistir el ángulo de rotación en el servidor',
-        async () => {
-            if (!puedePersistir) return;
-            btnSaveRot.disabled = true;
-            try {
-                await persistirRotacionReclamoApi(pedidoId, rotationDeg);
-                savedRotation = normalizarRotacionGrados(rotationDeg);
-                sincronizarRotacionEnListaPedidosApp(pedidoId, savedRotation);
-                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
-                if (typeof window.toast === 'function') window.toast('Rotación guardada.', 'success', 2800);
-            } catch (e) {
-                const msg = e && e.message ? String(e.message) : 'Error al guardar';
-                if (typeof window.toast === 'function') window.toast(msg, 'error', 5000);
-                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
-            }
-        }
-    );
-    actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
 
-    bar.appendChild(btnZoomIn);
-    bar.appendChild(btnZoomOut);
-    bar.appendChild(btnReset);
-    bar.appendChild(btnRot);
+    bar.appendChild(btnVisor);
     bar.appendChild(btnDl);
-    bar.appendChild(btnSaveRot);
-
-    /** Misma UI que index (`cerrar-modal-foto`); otro id porque `#cerrar-modal-foto` ya es el del modal foto ampliada. */
-    const cerrarRow = document.createElement('div');
-    cerrarRow.style.cssText = 'margin-top:.5rem;display:flex;justify-content:flex-start;flex-wrap:wrap';
-    const btnCerrarDet = document.createElement('button');
-    btnCerrarDet.type = 'button';
-    btnCerrarDet.id = 'cerrar-modal-foto-detalle-reclamo';
-    btnCerrarDet.className = 'cerrar-modal-foto';
-    btnCerrarDet.style.cssText =
-        'color:var(--td);font-size:1rem;cursor:pointer;background:none;border:none;display:flex;align-items:center;gap:.4rem;padding:.25rem 0';
-    btnCerrarDet.innerHTML = '<i class="fas fa-times"></i> Cerrar';
-    btnCerrarDet.title = 'Cerrar detalle del pedido';
-    btnCerrarDet.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        try {
-            document.querySelector('#dm .mh button.cm')?.click();
-        } catch (_) {}
-    });
-    cerrarRow.appendChild(btnCerrarDet);
 
     const hint = document.createElement('p');
-    hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
+    hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem;line-height:1.35';
     hint.textContent =
-        'Clic en la imagen principal: cierra el detalle del pedido. Varias fotos: miniaturas arriba. «Guardar rotación en BD» solo si cambiaste el ángulo.';
+        'Clic en la imagen o «Abrir en visor»: mismo modal que al cargar fotos del pedido (técnico/admin). Doble clic en una miniatura: abre esa foto.';
 
     if (thumbRow) inner.appendChild(thumbRow);
     inner.appendChild(imgHost);
     inner.appendChild(bar);
-    inner.appendChild(cerrarRow);
     inner.appendChild(hint);
 
     if (esAdminPanelGestorNova() && puedePersistir && estadoPermiteAccionesValidacionFoto(meta.estado)) {
