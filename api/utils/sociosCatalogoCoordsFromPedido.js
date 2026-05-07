@@ -932,3 +932,32 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
     return { ok: false, reason: "error", detail: String(e?.message || e) };
   }
 }
+
+/**
+ * Refleja el teléfono del chat en `socios_catalogo` apenas hay identificador (antes del INSERT del pedido).
+ * Misma lógica que `upsertTelefonoSociosCatalogoDesdePedidoWa` con un objeto pedido mínimo.
+ */
+export async function upsertTelefonoSociosCatalogoDesdeWhatsappInbound(opts) {
+  const tenantId = Number(opts.tenantId);
+  const dig = String(opts.phoneDigits || "").replace(/\D/g, "");
+  if (!Number.isFinite(tenantId) || tenantId < 1 || dig.length < 8) {
+    return { ok: false, reason: "parametros" };
+  }
+  return upsertTelefonoSociosCatalogoDesdePedidoWa({
+    tenantId,
+    pedido: {
+      id: 0,
+      telefono_contacto: dig,
+      nis: opts.nis != null ? String(opts.nis).trim() : null,
+      medidor: opts.medidor != null ? String(opts.medidor).trim() : null,
+      nis_medidor: opts.nisMedidor != null ? String(opts.nisMedidor).trim() : null,
+      cliente_nombre: opts.clienteNombre != null ? String(opts.clienteNombre).trim() : null,
+      cliente_calle: opts.clienteCalle != null ? String(opts.clienteCalle).trim() : null,
+      cliente_localidad: opts.clienteLocalidad != null ? String(opts.clienteLocalidad).trim() : null,
+      provincia: opts.provincia != null ? String(opts.provincia).trim() : null,
+      codigo_postal: opts.codigoPostal != null ? String(opts.codigoPostal).trim() : null,
+      lat: null,
+      lng: null,
+    },
+  });
+}

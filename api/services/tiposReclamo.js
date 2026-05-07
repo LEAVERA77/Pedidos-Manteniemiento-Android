@@ -13,6 +13,9 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Alcantarillas tapadas",
     "Recolección (otros)",
     "Obstrucción de Cloaca",
+    "Limpieza de Zanjas",
+    "Rotura de Caño de cloacas",
+    "Tránsito",
     "Ruidos molestos / Perturbación",
     "Animales sueltos / Mascotas",
     "Otros",
@@ -43,6 +46,16 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
   ],
 };
 
+/** Subtipos de *Tránsito* (municipio): menú WA 11 → 1–6; `tipo_trabajo` en pedido = una de estas cadenas. */
+export const SUBTIPOS_TRANSITO_MUNICIPIO = [
+  "Semáforo apagado/intermitente",
+  "Señalización dañada o faltante",
+  "Vehículo mal estacionado/abandonado",
+  "Calle cortada sin aviso",
+  "Semaforo fuera de sincronización",
+  "Otro problema de tránsito",
+];
+
 /** Lista histórica (antes de rubros); solo lectura / compatibilidad en UI. */
 export const TIPOS_RECLAMO_LEGACY = [
   "Riesgo vía pública",
@@ -62,26 +75,33 @@ export const TIPOS_RECLAMO_LEGACY = [
 
 /** Gravedad sugerida por tipo (alineado con estadísticas / mapa: Crítica, Alta, Media, Baja). */
 export const PRIORIDAD_RECLAMO_POR_TIPO = {
-  // municipio
-  "Alumbrado Público": "Media",
-  "Bacheo y Pavimento": "Media",
-  "Recolección/Poda": "Baja",
-  "Espacios Verdes": "Baja",
+  // municipio (menú 14 + subtránsito)
+  "Obstrucción de Cloaca": "Crítica",
+  "Rotura de Caño de cloacas": "Crítica",
+  "Semáforo apagado/intermitente": "Crítica",
+  "Alumbrado Público": "Alta",
+  "Bacheo y Pavimento": "Alta",
   "Señalización/Semáforos": "Alta",
-  "Alcantarillas tapadas": "Media",
-  /** Histórico (antes del rename en menú municipio opción 6). */
+  "Alcantarillas tapadas": "Alta",
+  "Señalización dañada o faltante": "Alta",
   "Limpieza de Zanjas": "Media",
+  "Recolección/Poda": "Media",
+  "Vehículo mal estacionado/abandonado": "Media",
+  "Calle cortada sin aviso": "Media",
+  "Espacios Verdes": "Baja",
+  "Ruidos molestos / Perturbación": "Baja",
+  "Animales sueltos / Mascotas": "Baja",
+  "Semaforo fuera de sincronización": "Media",
+  "Otro problema de tránsito": "Media",
+  "Tránsito": "Media",
   "Recolección (otros)": "Media",
-  "Obstrucción de Cloaca": "Alta",
-  "Ruidos molestos / Perturbación": "Media",
-  "Animales sueltos / Mascotas": "Media",
   Otros: "Media",
   // cooperativa_agua
-  "Corte de suministro de agua": "Alta",
+  "Corte de suministro de agua": "Crítica",
   "Rotura de cañería / Pérdida de agua": "Crítica",
-  "Baja presión de agua": "Media",
-  "Reparación de conexión domiciliaria": "Media",
-  "Instalación de medidor": "Baja",
+  "Baja presión de agua": "Alta",
+  "Reparación de conexión domiciliaria": "Alta",
+  "Instalación de medidor": "Media",
   "Rehabilitación de servicio": "Media",
   "Control de presión": "Baja",
   "Limpieza de tanques": "Baja",
@@ -174,6 +194,7 @@ export function tipoTrabajoPermitidoParaNuevoPedido(tipoTrabajo, tipoCliente) {
   const tt = String(tipoTrabajo || "").trim();
   if (!tt) return false;
   const rubro = normalizarRubroCliente(tipoCliente);
+  if (rubro === "municipio" && SUBTIPOS_TRANSITO_MUNICIPIO.includes(tt)) return true;
   const permitidos = rubro
     ? TIPOS_RECLAMO_POR_RUBRO[rubro] || tiposReclamoParaClienteTipo(null)
     : tiposReclamoParaClienteTipo(null);

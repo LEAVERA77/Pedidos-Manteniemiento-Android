@@ -17,16 +17,10 @@ export function normalizarTipoNegocioBot(raw) {
     return 'cooperativa_electrica';
 }
 
-/** Opción 6 municipio: nombre operativo (paridad con `catalogoReclamoPorRubro.js` / API `tiposReclamo.js`). */
-const MUNICIPIO_MENU_OPC6 = 'Alcantarillas tapadas';
-const MUNICIPIO_MENU_OPC6_LEGACY = 'Limpieza de Zanjas';
-
 export function listaTiposBotPorRubro(rubroKey) {
     const k = normalizarTipoNegocioBot(rubroKey);
     const arr = TIPOS_RECLAMO_POR_RUBRO[k];
-    const base = arr && arr.length ? [...arr] : [...TIPOS_RECLAMO_POR_RUBRO.cooperativa_electrica];
-    if (k !== 'municipio') return base;
-    return base.map((t) => (t === MUNICIPIO_MENU_OPC6_LEGACY ? MUNICIPIO_MENU_OPC6 : t));
+    return arr && arr.length ? [...arr] : [...TIPOS_RECLAMO_POR_RUBRO.cooperativa_electrica];
 }
 
 /**
@@ -39,8 +33,8 @@ export function generarMenuBot(tipoNegocio, nombreEmpresa) {
     const nombre = String(nombreEmpresa || '').trim() || 'GestorNova';
     const tipos = listaTiposBotPorRubro(rubro);
     const head = `Bienvenido al centro de atención de ${nombre}.`;
-    const lines = tipos.map((t, i) => `${i + 1}) ${t}`);
-    return `${head}\n\n${lines.join('\n')}\n\nEnviá menú o 0 para repetir.`;
+    const lines = ['0) Mis reclamos (pedidos abiertos)', ...tipos.map((t, i) => `${i + 1}) ${t}`)];
+    return `${head}\n\n${lines.join('\n')}\n\nEnviá *menú* para repetir. *0* = Mis reclamos.`;
 }
 
 /**

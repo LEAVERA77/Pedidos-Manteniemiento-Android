@@ -31,6 +31,7 @@ export function initAdminSocios(deps) {
     _sociosDeps = deps;
     try {
         window.actualizarUiSociosVistaProyeccion = actualizarUiSociosVistaProyeccion;
+        window.descargarPlanillaSociosCsvExport = descargarPlanillaSociosCsvExport;
     } catch (_) {}
 }
 
@@ -507,6 +508,70 @@ function sociosCatalogoHtmlExtrasDatosExtra(s, keys, escCell) {
         h += `<td style="max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escCell(v)}">${escCell(v)}</td>`;
     }
     return h;
+}
+
+function escCsvCeldaSocios(v) {
+    const s = v == null ? '' : String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+/** CSV UTF-8 con BOM (compatible Excel) con columnas de la planilla actual, incl. teléfonos. */
+export function descargarPlanillaSociosCsvExport() {
+    const rows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
+    if (!Array.isArray(rows) || !rows.length) {
+        toastError('No hay datos cargados. Abrí Socios y esperá a que cargue la lista.');
+        return;
+    }
+    const extraKeys = Array.isArray(window._sociosDatosExtraColumnKeys) ? window._sociosDatosExtraColumnKeys : [];
+    const baseHeaders = [
+        'id',
+        'nis_medidor',
+        'nis',
+        'medidor',
+        'nombre',
+        'calle',
+        'numero',
+        'barrio',
+        'telefono',
+        'distribuidor_codigo',
+        'localidad',
+        'provincia',
+        'codigo_postal',
+        'tipo_tarifa',
+        'urbano_rural',
+        'transformador',
+        'tipo_conexion',
+        'fases',
+        'latitud',
+        'longitud',
+        'activo',
+    ];
+    const headers = [...baseHeaders, ...extraKeys.map((k) => `extra_${k}`)];
+    const lines = [headers.join(',')];
+    for (const r of rows) {
+        const cells = headers.map((h) => {
+            if (h.startsWith('extra_')) {
+                const k = h.slice(6);
+                const o = sociosCatalogoParseObjetoDatosExtra(r.datos_extra);
+                return escCsvCeldaSocios(o && o[k] != null ? o[k] : '');
+            }
+            return escCsvCeldaSocios(r[h]);
+        });
+        lines.push(cells.join(','));
+    }
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `socios_catalogo_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    try {
+        toast('Planilla descargada (CSV). Abrila con Excel si querés.');
+    } catch (_) {}
 }
 
 const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
@@ -2079,5 +2144,6 @@ export {
     mostrarFormatoExcelSocios,
     vaciarCoordenadasSociosCatalogo,
     cerrarModalFormatoExcelSocios,
-    descargarPlantillaCsvSociosRubro
+    descargarPlantillaCsvSociosRubro,
+    descargarPlanillaSociosCsvExport,
 };

@@ -36,7 +36,16 @@ import {
   normalizarRubroCliente,
   tipoReclamoWhatsappFlujoSoloNis,
   tipoReclamoElectricoPideSuministroWhatsapp,
+  SUBTIPOS_TRANSITO_MUNICIPIO,
 } from "./tiposReclamo.js";
+import {
+  MSG_MIS_RECLAMOS_PEDIR_ID,
+  textoSubmenuTransitoMunicipio,
+  buscarPedidosAbiertosPorIdentificadorWhatsapp,
+  interpretaRespuestaSiOperadorWhatsapp,
+  notificarAdminsChatOperadorSolicitadoWhatsapp,
+} from "./whatsappBotMisReclamos.js";
+import { upsertTelefonoSociosCatalogoDesdeWhatsappInbound } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 import { reverseGeocodeArgentina } from "./nominatimClient.js";
@@ -60,8 +69,21 @@ import {
 
 const sessions = new Map();
 
-const MSG_SALIR_ATRAS =
-  "\n\n_Escribí *menú* o *0* para salir · *atrás* para el paso anterior._";
+const MSG_SALIR_ATRAS = "\n\n_Escribí *menú* para salir · *atrás* para el paso anterior._";
+
+const WA_OTROS_DESCRIPCION_MAX = 250;
+
+function fireUpsertTelefonoInboundCatalogo(tenantId, phoneDigits, sess) {
+  if (!sess || !Number.isFinite(Number(tenantId))) return;
+  void upsertTelefonoSociosCatalogoDesdeWhatsappInbound({
+    tenantId: Number(tenantId),
+    phoneDigits,
+    nis: sess.nisParaPedido,
+    medidor: sess.medidorParaPedido,
+    nisMedidor: sess.nisMedidorParaPedido,
+    clienteNombre: sess.contactName,
+  }).catch(() => {});
+}
 
 const MSG_ADDR_CIUDAD =
   "¿En qué *ciudad o localidad* está el reclamo? (ej: *Hasenkamp*, *Rosario*).\n\n" +
@@ -176,12 +198,17 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_confirmar_resumen",
   "awaiting_wa_foto_opcional",
   "awaiting_wa_foto_upload",
+  "awaiting_municipio_transito_subtipo",
+  "awaiting_mis_reclamos_id",
+  "awaiting_mis_reclamos_operador",
 ]);
 
 /** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
 const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
   "awaiting_addr_numero",
   "awaiting_opcional_id",
+  "awaiting_mis_reclamos_id",
+  "awaiting_mis_reclamos_operador",
 ]);
 
 /**
@@ -197,6 +224,8 @@ function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
   }
   if (lower === "0") {
     if (sess && WHATSAPP_PASOS_CERO_ES_DATO.has(sess.step)) return false;
+    /** En el menú principal *0* = «Mis reclamos», no salir. */
+    if (!sess || !sess.step) return false;
     return true;
   }
   if (lower === "cancelar" || lower === "cancel") {
@@ -403,7 +432,7 @@ function mensajeMenuIdentificacion(ctx) {
       `*1)* Tengo *NIS* o *número de medidor* (dato de la cooperativa eléctrica).\n` +
       `*2)* Prefiero con *nombre y dirección* (sin datos de cuenta).\n\n` +
       `En cualquier momento podés enviar *GPS* con *Adjuntar* (📎) → *Ubicación*.\n` +
-      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
+      `*atrás* = corregir la descripción · *menú* = salir.`
     );
   }
   if (r === "cooperativa_agua") {
@@ -412,7 +441,7 @@ function mensajeMenuIdentificacion(ctx) {
       `*1)* Tengo *ID de usuario* o *número de medidor* del servicio de agua.\n` +
       `*2)* Prefiero con *nombre y dirección*.\n\n` +
       `También podés mandar *ubicación GPS* con *Adjuntar* → *Ubicación*.\n` +
-      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
+      `*atrás* = corregir la descripción · *menú* = salir.`
     );
   }
   if (r === "municipio") {
@@ -421,7 +450,7 @@ function mensajeMenuIdentificacion(ctx) {
       `*1)* Tengo mi *número de vecino* (credencial / cuenta municipal).\n` +
       `*2)* Prefiero con *nombre y dirección*.\n\n` +
       `Podés adjuntar *ubicación* en cualquier momento (📎 → *Ubicación*).\n` +
-      `*atrás* = corregir la descripción · *menú* / *0* = salir.`
+      `*atrás* = corregir la descripción · *menú* = salir.`
     );
   }
   return (
@@ -429,7 +458,7 @@ function mensajeMenuIdentificacion(ctx) {
     `*1)* Datos del servicio (*NIS*, medidor, ID o número de vecino).\n` +
     `*2)* *Nombre y dirección* sin datos de cuenta.\n\n` +
     `Podés enviar *GPS* con *Adjuntar* → *Ubicación*.\n` +
-    `*atrás* = corregir la descripción · *menú* / *0* = salir.`
+      `*atrás* = corregir la descripción · *menú* = salir.`
   );
 }
 
@@ -700,10 +729,11 @@ function textoBienvenidaYAyuda(ctx) {
   const bienvenida = ctx.bienvenida ? `\n\n${ctx.bienvenida}\n` : "";
   return (
     `Bienvenido al centro de atención de *${n}*.${bienvenida}\n\n` +
+    `*0)* *Mis reclamos* (consultar pedidos abiertos con tu NIS, medidor o número de vecino/socio).\n\n` +
     (max
-      ? `Si preferís, escribí solo el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
+      ? `Para un *nuevo reclamo*, escribí el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
-    `Enviá *menú* o *0* para repetir este mensaje.`
+    `Enviá *menú* para repetir este mensaje.`
   );
 }
 
@@ -712,14 +742,16 @@ function menuTextoNumerado(ctx) {
   const lineas = [
     `📋 *${ctx.nombre || "Pedidos"}*`,
     "",
-    "Escribí el *número* de tu reclamo:",
+    "Escribí el *número* de tu reclamo (o *0* para *Mis reclamos*):",
+    "",
+    "*0)* *Mis reclamos*",
     "",
   ];
   ctx.tipos.forEach((t, i) => {
     lineas.push(`${i + 1}) ${t}`);
   });
   lineas.push("");
-  lineas.push("Para *salir*: *menú* o *0*.");
+  lineas.push("Para *salir* o repetir este menú: *menú*.");
   return lineas.join("\n");
 }
 
@@ -1393,8 +1425,8 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     return { ok: true, blocked: true };
   }
   const bodyText =
-    `Elegí el tipo que mejor describe tu reclamo:\n\n` +
-    `_Para *salir* escribí *menú* o *0* en un mensaje de texto._`;
+    `Elegí el tipo que mejor describe tu reclamo (o *Mis reclamos* con *0*):\n\n` +
+    `_Para *salir* escribí *menú*._`;
   const pid = String(phoneNumberIdWebhook || "").trim();
   let accessToken = "";
   let graphPid = pid;
@@ -1780,7 +1812,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
       sessions.set(sk, sess);
       await reply(
         phone,
-        "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección) o *0* (salir).\n\n" +
+        "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección). Para salir: *menú*.\n\n" +
           `_(*menú* = salir · *atrás* = volver a describir / otra ubicación)_`,
         tid,
         phoneNumberId
@@ -1790,7 +1822,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     await reply(
       phone,
       "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa. Ahora escribí la *descripción* del problema (texto).\n\n" +
-        `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
+        `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
       tid,
       phoneNumberId
     );
@@ -1870,8 +1902,19 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     return;
   }
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
-  if (tipo === TIPO_RECLAMO_OTROS || tipo === "Pérdida en Vereda/Calle") {
+  if (tipo === "Pérdida en Vereda/Calle") {
     await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+    return;
+  }
+  if (tipo === "Tránsito" && normalizarRubroCliente(ctx.tipo) === "municipio") {
+    sessions.set(sk, {
+      step: "awaiting_municipio_transito_subtipo",
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: wpid,
+    });
+    await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
     return;
   }
   sessions.set(sk, {
@@ -1882,13 +1925,11 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     contactName: contactName || null,
     phoneNumberId: wpid,
   });
-  await reply(
-    phone,
-    `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n` +
-      `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
-    tid,
-    phoneNumberId
-  );
+  const introDesc =
+    tipo === TIPO_RECLAMO_OTROS
+      ? `Elegiste: *${tipo}*.\n\nDescribí tu reclamo (máximo *${WA_OTROS_DESCRIPCION_MAX}* caracteres):\n\n`
+      : `Elegiste: *${tipo}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n`;
+  await reply(phone, introDesc + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
 }
 
 /**
@@ -1903,7 +1944,7 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (lower === "salir" || lower === "fin" || lower === "chau") {
+  if (lower === "salir" || lower === "fin" || lower === "chau" || lower === "menu" || lower === "menú" || lower === "inicio") {
     try {
       await humanChatCloseBySessionId(sess.humanChatSessionId);
     } catch (_) {}
@@ -2124,7 +2165,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         phone,
         "Hola. Tenemos pendiente tu valoración del reclamo que cerramos.\n\n" +
           "*Primero* enviá un número del *1 al 5* (o ⭐). *Después* podés agregar un comentario o *omitir*.\n\n" +
-          "Para el *menú* de nuevos reclamos, escribí *menú* o *0*.",
+          "Para el *menú* de nuevos reclamos, escribí *menú*.",
         tid,
         phoneNumberId
       );
@@ -2335,7 +2376,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(
         phone,
         "Volvimos atrás. Podés enviar otra *ubicación GPS* o escribir la *descripción* del pedido.\n\n" +
-          `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
+          `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
         tid,
         phoneNumberId
       );
@@ -2350,7 +2391,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(
         phone,
         "Perfecto. Ahora escribí una *breve descripción* del pedido de factibilidad (una o varias líneas).\n\n" +
-          `_(*menú* / *0* = salir · *atrás* = paso anterior)_`,
+          `_(*menú* = salir · *atrás* = paso anterior)_`,
         tid,
         phoneNumberId
       );
@@ -2358,7 +2399,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     await reply(
       phone,
-      "No reconocimos la opción. Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *0* (salir).",
+      "No reconocimos la opción. Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *menú* para salir.",
       tid,
       phoneNumberId
     );
@@ -2519,6 +2560,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       aplicarSuministroCatalogoWhatsappRes(nextSess, res);
       aplicarPadronCoordsWhatsapp(nextSess, res);
       sessions.set(sk, nextSess);
+      fireUpsertTelefonoInboundCatalogo(tid, phone, nextSess);
       const extraPad = lineasExtraPadronWhatsapp(res);
       await reply(
         phone,
@@ -2554,6 +2596,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     aplicarSuministroCatalogoWhatsappRes(sessOpc, res);
     aplicarPadronCoordsWhatsapp(sessOpc, res);
     sessions.set(sk, sessOpc);
+    fireUpsertTelefonoInboundCatalogo(tid, phone, sessOpc);
     if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sessOpc, sk, contactName, ctx, phoneNumberId || wpid)) {
       return;
     }
@@ -2605,6 +2648,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     aplicarSuministroCatalogoWhatsappRes(sess, res);
     aplicarPadronCoordsWhatsapp(sess, res);
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    fireUpsertTelefonoInboundCatalogo(tid, phone, sess);
 
     if (puedeMapaDesdePadron) {
       sessions.set(sk, sess);
@@ -2924,6 +2968,120 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     return;
   }
 
+  if (sess && sess.step === "awaiting_municipio_transito_subtipo") {
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (esComandoAtras(text)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    const nt = parseInt(String(text || "").trim(), 10);
+    if (!Number.isFinite(nt) || nt < 1 || nt > SUBTIPOS_TRANSITO_MUNICIPIO.length) {
+      await reply(
+        phone,
+        "Respondé con un número del *1* al *6* según la lista de *Tránsito*, o *menú* para salir.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const tipoFin = SUBTIPOS_TRANSITO_MUNICIPIO[nt - 1];
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_desc",
+      tipo: tipoFin,
+      phoneNumberId: sess.phoneNumberId || wpid,
+    });
+    await reply(
+      phone,
+      `Elegiste: *${tipoFin}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n` +
+        `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_mis_reclamos_id") {
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    const idTxt = String(text || "").trim();
+    if (!idTxt || idTxt.length > 120) {
+      await reply(phone, "Escribí un dato de búsqueda (hasta 120 caracteres) o *menú* para salir.", tid, phoneNumberId);
+      return;
+    }
+    const rows = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tid, idTxt);
+    if (!rows.length) {
+      await reply(
+        phone,
+        "No encontramos *reclamos abiertos* con ese dato. Revisá el NIS, medidor o número de vecino/socio, o escribí *menú*.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const lines = rows.map((r) => {
+      const np = r.numero_pedido != null ? String(r.numero_pedido) : `#${r.id}`;
+      const tt = r.tipo_trabajo || "—";
+      const es = r.estado || "—";
+      return `· *${np}* — ${tt} — _${es}_`;
+    });
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_mis_reclamos_operador",
+      misReclamosPedidosPreview: rows.slice(0, 8),
+      phoneNumberId: sess.phoneNumberId || wpid,
+    });
+    await reply(
+      phone,
+      `Encontramos estos reclamos *sin cerrar*:\n\n${lines.join("\n")}\n\n¿Querés hablar con un *operador*? Respondé *SI*.` +
+        `\n\n_Si no querés, escribí *no* o *menú*._`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_mis_reclamos_operador") {
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    const op = interpretaRespuestaSiOperadorWhatsapp(text);
+    if (op === null) {
+      await reply(phone, "Respondé *SI* si querés que un operador te contacte, o *no* / *menú*.", tid, phoneNumberId);
+      return;
+    }
+    if (!op) {
+      sessions.delete(sk);
+      await reply(phone, "Gracias. Cuando quieras, escribí *menú* para ver las opciones.", tid, phoneNumberId);
+      return;
+    }
+    const nom = String(contactName || sess.contactName || "").trim() || "Vecino";
+    await notificarAdminsChatOperadorSolicitadoWhatsapp({
+      tenantId: tid,
+      nombreVecino: nom,
+      telefonoVecino: phone,
+    });
+    await reply(
+      phone,
+      "Un *operador* se comunicará con vos a la brevedad.\n\n" +
+        "Si querés agregar un *mensaje*, quedá en línea; si no, escribí *menú* cuando termines.",
+      tid,
+      phoneNumberId
+    );
+    await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+    return;
+  }
+
   if (!sess || sess.step === "idle") {
     if (pendOpinionActiva) {
       try {
@@ -2948,11 +3106,33 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await replyListaTiposReclamo(phone, ctx, phoneNumberId);
       return;
     }
+    if (lower === "0" || lower === "mis reclamos" || lower === "mis reclamo") {
+      sessions.set(sk, {
+        step: "awaiting_mis_reclamos_id",
+        tenantId: tid,
+        tipoCliente: ctx.tipo,
+        contactName: contactName || null,
+        phoneNumberId: wpid,
+      });
+      await reply(phone, `${MSG_MIS_RECLAMOS_PEDIR_ID}\n\n_Escribí *menú* para volver._`, tid, phoneNumberId);
+      return;
+    }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const tipoSel = ctx.tipos[n - 1];
-      if (tipoSel === TIPO_RECLAMO_OTROS || tipoSel === "Pérdida en Vereda/Calle") {
+      if (tipoSel === "Pérdida en Vereda/Calle") {
         await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+        return;
+      }
+      if (tipoSel === "Tránsito" && normalizarRubroCliente(ctx.tipo) === "municipio") {
+        sessions.set(sk, {
+          step: "awaiting_municipio_transito_subtipo",
+          tenantId: tid,
+          tipoCliente: ctx.tipo,
+          contactName: contactName || null,
+          phoneNumberId: wpid,
+        });
+        await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
         return;
       }
       if (ctx.whatsappBloqueoReclamos) {
@@ -2967,13 +3147,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         contactName: contactName || null,
         phoneNumberId: wpid,
       });
-      await reply(
-        phone,
-        `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n` +
-          `_(*menú* / *0* = salir · *atrás* = cancelar este reclamo)_`,
-        tid,
-        phoneNumberId
-      );
+      const introIdle =
+        tipoSel === TIPO_RECLAMO_OTROS
+          ? `Elegiste: *${tipoSel}*.\n\nDescribí tu reclamo (máximo *${WA_OTROS_DESCRIPCION_MAX}* caracteres):\n\n`
+          : `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n`;
+      await reply(phone, introIdle + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
       return;
     }
     await reply(
@@ -2994,7 +3172,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         sessions.set(sk, sess);
         await reply(
           phone,
-          "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección) o *0* (salir).\n\n" +
+          "Recibimos tu *ubicación*. Respondé con *1* (datos del servicio) o *2* (nombre y dirección). Para salir: *menú*.\n\n" +
             `_(*menú* = salir · *atrás* = volver a describir / otra ubicación)_`,
           tid,
           phoneNumberId
@@ -3008,6 +3186,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     const desc = String(text ?? "");
     if (!desc.trim()) {
       await reply(phone, "Escribí una *breve descripción* del problema (no puede quedar vacío).", tid, phoneNumberId);
+      return;
+    }
+    if (String(sess.tipo || "").trim() === TIPO_RECLAMO_OTROS && desc.length > WA_OTROS_DESCRIPCION_MAX) {
+      await reply(
+        phone,
+        "Tu descripción es *muy larga*. Resumila en *250 caracteres* o menos.",
+        tid,
+        phoneNumberId
+      );
       return;
     }
     const ramaFac = sess.factibilidadPostGpsRama;

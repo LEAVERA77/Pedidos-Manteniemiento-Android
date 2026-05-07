@@ -7,6 +7,7 @@ import {
   tipoReclamoRequiereNisYCliente,
   tipoReclamoElectricoPideSuministroWhatsapp,
   tiposReclamoParaClienteTipo,
+  SUBTIPOS_TRANSITO_MUNICIPIO,
 } from "../services/tiposReclamo.js";
 
 describe("tiposReclamo — rubro", () => {
@@ -56,9 +57,20 @@ describe("tiposReclamo — permisos y reglas", () => {
     expect(tipoReclamoElectricoPideSuministroWhatsapp("Pedido de factibilidad (nuevo servicio)")).toBe(true);
   });
 
-  it("tiposReclamoParaClienteTipo: municipio incluye Otros", () => {
+  it("tiposReclamoParaClienteTipo: municipio incluye Otros y Tránsito (14 ítems)", () => {
     const tipos = tiposReclamoParaClienteTipo("municipio");
     expect(tipos).toContain("Otros");
+    expect(tipos).toContain("Tránsito");
+    expect(tipos.length).toBe(14);
+  });
+
+  it("subtipos de tránsito permitidos para pedido municipio", () => {
+    expect(SUBTIPOS_TRANSITO_MUNICIPIO.length).toBe(6);
+    expect(tipoTrabajoPermitidoParaNuevoPedido(SUBTIPOS_TRANSITO_MUNICIPIO[0], "municipio")).toBe(true);
+  });
+
+  it("prioridad agua: corte de suministro Crítica", () => {
+    expect(prioridadPredeterminadaPorTipoTrabajo("Corte de suministro de agua")).toBe("Crítica");
   });
 
   it("Obstrucción de Cloaca solo en municipio (no en cooperativa_agua)", () => {
