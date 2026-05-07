@@ -492,6 +492,7 @@
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
       <button class="admin-tab" onclick="adminTab('mapa-usuarios')"><i class="fas fa-map-marker-alt"></i> Ubicaciones</button>
+      <button class="admin-tab" onclick="adminTab('historicos')"><i class="fas fa-archive"></i> Históricos</button>
       <button class="admin-tab" onclick="adminTab('contrasena')"><i class="fas fa-key"></i> Contraseña</button>
     </div>
     <div id="admin-empresa" class="admin-section active">
@@ -1012,6 +1013,10 @@
       </div>
       <div id="mapa-usuarios-admin" style="height:390px;border-radius:.75rem;overflow:hidden;border:1px solid var(--bo)"></div>
       <div id="lista-ubicaciones" style="margin-top:.75rem;font-size:.82rem"></div>
+    </div>
+    <div id="admin-historicos" class="admin-section">
+      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .75rem">Históricos</h3>
+      <div id="admin-historicos-root"></div>
     </div>
     <div id="admin-contrasena" class="admin-section">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1rem">Cuenta y contraseña</h3>

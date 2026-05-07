@@ -49,6 +49,7 @@ import {
     poblarDerivacionesListasDesdeCfg,
     refreshDerivacionListaWaButtons,
 } from './modules/derivaciones-reclamos-admin.js';
+import { initAdminHistoricosPanel } from './modules/admin-historicos.js';
 import {
     sqlMotivosDesestimacion,
     datasetsTiposTrabajoConDesestimados,
@@ -14802,7 +14803,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -15987,6 +15988,11 @@ function adminTab(tab) {
         } catch (_) {}
     }
     if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
+    if (tab === 'historicos') {
+        try {
+            if (typeof window.__gnAdminTabHistoricos === 'function') window.__gnAdminTabHistoricos();
+        } catch (_) {}
+    }
     if (tab === 'contrasena') {
         try {
             sincronizarFormularioAdminContrasenaDesdeSesion();
@@ -18720,6 +18726,9 @@ function pintarListaUsuariosAdminSoloSesionActual() {
 /** Admin en sesión: datos operativos (stats, dashboard tacho, mapa ubicaciones) sin vaciar EMPRESA_CFG ni formulario empresa — p. ej. tras cambiar rubro en pantalla. */
 function resetAdminUiMultitenantDatosOperativos() {
     try {
+        if (typeof window.__gnResetAdminHistoricosUi === 'function') window.__gnResetAdminHistoricosUi();
+    } catch (_) {}
+    try {
         invalidatePedidosTenantSqlCache();
     } catch (_) {}
     try {
@@ -18758,6 +18767,9 @@ function resetAdminUiMultitenantDatosOperativos() {
  * No toca la base: los datos se vuelven a cargar con el `tenant_id` activo.
  */
 function vaciarPanelesAdminPorCambioTenantSesion() {
+    try {
+        if (typeof window.__gnResetAdminHistoricosUi === 'function') window.__gnResetAdminHistoricosUi();
+    } catch (_) {}
     try {
         window.EMPRESA_CFG = {};
     } catch (_) {}
@@ -19698,6 +19710,14 @@ try {
         toast,
         setDerivacionesInlineError,
         onUiRefresh: actualizarBotonesWhatsappDerivacionesUi,
+    });
+} catch (_) {}
+
+try {
+    initAdminHistoricosPanel({
+        toast,
+        refrescarPedidos: () => cargarPedidos({ silent: true }),
+        cerrarAdminPanel,
     });
 } catch (_) {}
 
