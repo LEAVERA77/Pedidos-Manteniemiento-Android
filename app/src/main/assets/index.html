@@ -113,21 +113,13 @@
           <option value="dec_to_dms">Decimal → GMS</option>
           <option value="dms_to_dec">GMS → Decimal</option>
         </select>
-        <div class="web-coords-converter-fields wc-stack">
-          <div class="wc-row" title="Latitud">
-            <span class="wc-ax" aria-hidden="true">Lat</span>
-            <input id="web-coords-converter-a-lat" type="text" autocomplete="off" spellcheck="false" aria-label="Latitud entrada"/>
-            <input id="web-coords-converter-b-lat" type="text" autocomplete="off" spellcheck="false" aria-label="Latitud convertida"/>
-          </div>
-          <div class="wc-row" title="Longitud">
-            <span class="wc-ax" aria-hidden="true">Lon</span>
-            <input id="web-coords-converter-a-lon" type="text" autocomplete="off" spellcheck="false" aria-label="Longitud entrada"/>
-            <input id="web-coords-converter-b-lon" type="text" autocomplete="off" spellcheck="false" aria-label="Longitud convertida"/>
-          </div>
-          <button id="web-coords-converter-run" type="button" class="web-coords-converter-run wc-run-full" title="Convertir e intercambiar modo (ambas filas)"><i class="fas fa-exchange-alt"></i></button>
+        <div class="web-coords-converter-row">
+          <input id="web-coords-converter-a" type="text" autocomplete="off" spellcheck="false" aria-label="Latitud"/>
+          <input id="web-coords-converter-b" type="text" autocomplete="off" spellcheck="false" aria-label="Longitud"/>
+          <button id="web-coords-converter-run" type="button" class="web-coords-converter-run" title="Convertir latitud y longitud"><i class="fas fa-exchange-alt"></i></button>
         </div>
+        <span id="web-coords-converter-out" class="web-coords-converter-out" aria-live="polite"></span>
       </div>
-      <span id="web-coords-converter-out" class="web-coords-converter-out" style="display:none" aria-live="polite"></span>
     </div>
     <div class="hd-slot-right">
       <div id="user-menu-wrap" class="user-menu-wrap">

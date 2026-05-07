@@ -308,125 +308,102 @@ html.gn-android-webview .hd-slot-right{
   min-width:0;
 }
 .hr{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;min-width:0}
-/* Barra superior: conversión decimal ↔ GMS (slate / blue, Inter + mono) */
+/* Barra superior: conversión decimal ↔ GMS (compacto; resultado solo en .web-coords-converter-out) */
 .web-coords-converter{
   display:flex;
   flex-direction:column;
   align-items:stretch;
-  gap:.28rem;
-  max-width:min(300px,min(42vw,calc(100vw - 14rem)));
-  padding:.32rem .45rem;
+  gap:4px;
+  max-width:min(420px,calc(100vw - 14rem));
+  flex-wrap:wrap;
+  padding:.28rem .4rem;
   background:linear-gradient(165deg,#f8fafc 0%,#e2e8f0 100%);
   border:1px solid #cbd5e1;
-  border-radius:12px;
+  border-radius:10px;
   box-shadow:0 4px 14px rgba(15,23,42,.08),0 1px 0 rgba(255,255,255,.9) inset;
 }
 .web-coords-converter-lbl{
-  font-size:.62rem;
+  font-size:.6rem;
   font-weight:700;
   text-transform:uppercase;
   letter-spacing:.04em;
   color:#64748b;
   font-family:'Inter',system-ui,sans-serif;
 }
-.web-coords-converter-fields{
+.web-coords-converter-row{
   display:flex;
-  align-items:center;
-  gap:.28rem;
   flex-wrap:wrap;
-}
-.web-coords-converter-fields.wc-stack{
-  flex-direction:column;
-  align-items:stretch;
-  gap:.28rem;
-}
-.wc-row{
-  display:flex;
   align-items:center;
-  gap:.28rem;
-  width:100%;
+  gap:4px;
   min-width:0;
-}
-.wc-ax{
-  flex:0 0 1.55rem;
-  font-size:.6rem;
-  font-weight:700;
-  text-transform:uppercase;
-  letter-spacing:.03em;
-  color:#64748b;
-  text-align:center;
-  font-family:'Inter',system-ui,sans-serif;
-}
-.web-coords-converter-fields.wc-stack .wc-row input{
-  flex:1 1 0;
-  min-width:0;
-}
-.web-coords-converter-run.wc-run-full{
-  align-self:center;
-  margin-top:.12rem;
 }
 .web-coords-converter select{
-  height:1.75rem;
-  border-radius:8px;
+  height:1.65rem;
+  border-radius:6px;
   border:1px solid #94a3b8;
   background:#fff;
   color:#0f172a;
-  font-size:.72rem;
+  font-size:.75rem;
   font-weight:600;
   font-family:'Inter',system-ui,sans-serif;
-  padding:0 .4rem;
+  padding:4px 6px;
   max-width:100%;
 }
-.web-coords-converter input{
-  flex:1 1 6.5rem;
-  min-width:5.5rem;
-  height:1.75rem;
-  border-radius:8px;
+.web-coords-converter .web-coords-converter-row input{
+  width:7.5rem;
+  max-width:min(130px,32vw);
+  min-width:0;
+  box-sizing:border-box;
+  height:1.65rem;
+  border-radius:6px;
   border:1px solid #94a3b8;
   background:#fff;
   color:#0f172a;
-  font-size:.74rem;
+  font-size:.75rem;
   font-weight:500;
   font-family:'JetBrains Mono','Fira Code',ui-monospace,monospace;
-  padding:0 .4rem;
+  padding:4px 6px;
   font-feature-settings:"tnum";
   font-variant-numeric:tabular-nums;
+  flex:0 0 auto;
 }
 .web-coords-converter .web-coords-converter-run{
   flex-shrink:0;
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:2.1rem;
-  height:1.75rem;
+  width:2rem;
+  height:1.65rem;
   background:#2563eb;
   border:1px solid #1d4ed8;
   color:#f8fafc;
   padding:0;
-  border-radius:8px;
+  border-radius:6px;
   cursor:pointer;
   box-shadow:0 2px 6px rgba(37,99,235,.35);
 }
 .web-coords-converter .web-coords-converter-run:hover{filter:brightness(1.06)}
-.web-coords-converter-out{
-  display:none;
-  font-size:.68rem;
+.web-coords-converter .web-coords-converter-out{
+  display:block;
+  font-size:.72rem;
   font-weight:600;
   color:#0f172a;
-  max-width:min(20rem,40vw);
+  max-width:200px;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
   font-family:'JetBrains Mono','Fira Code',monospace;
   font-feature-settings:"tnum";
-  padding:.15rem .35rem;
+  padding:2px 6px;
   background:rgba(248,250,252,.95);
-  border-radius:8px;
+  border-radius:6px;
   border:1px solid #e2e8f0;
+  min-height:1.35rem;
+  line-height:1.35;
 }
 @media (max-width:700px){
-  .web-coords-converter{max-width:min(300px,calc(100vw - 5.5rem))}
-  .web-coords-converter-out{max-width:min(18rem,calc(100vw - 4rem));white-space:normal}
+  .web-coords-converter{max-width:min(420px,calc(100vw - 5.5rem))}
+  .web-coords-converter .web-coords-converter-out{max-width:min(200px,calc(100vw - 4rem))}
 }
 html.gn-android-webview .admin-banner-nuevo-cliente{
   font-size:.78rem;
