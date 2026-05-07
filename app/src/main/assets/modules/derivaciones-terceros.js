@@ -1,33 +1,9 @@
 /**
- * Derivación opcional a terceros al crear pedido (WhatsApp), según tipo de trabajo y `derivaciones_terceros` en configuración del cliente.
+ * Derivación opcional a terceros al crear pedido (#pm), usando `derivaciones_terceros` en configuración del cliente.
  * made by leavera77
  */
 
-import { rubroCatalogoTiposReclamo } from './catalogoReclamoPorRubro.js';
-
-/** Motivo de reclamo → clave en `clientes.configuracion.derivaciones_terceros`. */
-const SLOT_BY_TIPO_TRABAJO = {
-    'Alumbrado Público': 'alumbrado_publico',
-    'Alumbrado público apagado': 'alumbrado_publico',
-    'Rotura de cañería / Pérdida de agua': 'rotura_caneria',
-};
-
-export function configSlotDerivacionTerceroPorTipoTrabajo(tipoTrabajo) {
-    return SLOT_BY_TIPO_TRABAJO[String(tipoTrabajo || '').trim()] || null;
-}
-
-function derivacionTerceroAplicaParaCatalogoActual(slot) {
-    const cat = rubroCatalogoTiposReclamo();
-    if (slot === 'alumbrado_publico') return cat === 'municipio';
-    if (slot === 'rotura_caneria') return cat === 'cooperativa_agua';
-    return false;
-}
-
-export function leerDerivacionesTercerosDesdeEmpresaCfg() {
-    const raw =
-        (typeof window !== 'undefined' && window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones_terceros) || {};
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-}
+import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 
 function normalizeListaTerceros(entry) {
     if (!entry) return [];
@@ -39,15 +15,51 @@ function normalizeListaTerceros(entry) {
             out.push({
                 nombre: String(x.nombre || '').trim(),
                 whatsapp: dg,
+                slotKey: null,
             });
         }
     };
     if (Array.isArray(entry)) {
-        entry.forEach(pushValid);
+        entry.forEach((x) => pushValid(x));
         return out;
     }
     pushValid(entry);
     return out;
+}
+
+export function leerDerivacionesTercerosDesdeEmpresaCfg() {
+    const raw =
+        (typeof window !== 'undefined' && window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones_terceros) || {};
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+/** Todas las empresas terceras configuradas (cualquier clave del objeto). */
+export function listarTodosTercerosDerivacionCfg() {
+    const raw = leerDerivacionesTercerosDesdeEmpresaCfg();
+    const out = [];
+    for (const slotKey of Object.keys(raw)) {
+        const chunk = normalizeListaTerceros(raw[slotKey]);
+        for (const e of chunk) {
+            out.push({ ...e, slotKey });
+        }
+    }
+    return out;
+}
+
+/** Dígitos para wa.me (sin +). Aplica quitar 9 móvil tras 54 para coincidir con formato esperado en AR. */
+export function digitosParaWaMeDesdeRaw(raw) {
+    let d = String(raw || '').replace(/\D/g, '');
+    if (!d) return '';
+    while (d.startsWith('00')) d = d.slice(2);
+    d = quitarMovil9Tras54Digitos(d);
+    return d;
+}
+
+/** +54… para API `whatsapp_tercero` (mínimo 8 dígitos tras +). */
+export function internacionalMasDesdeDigitosOTexto(raw) {
+    const d = digitosParaWaMeDesdeRaw(raw);
+    if (d.length < 10 || d.length > 15) return '';
+    return `+${d}`;
 }
 
 export function syncDerivacionTerceroNuevoPedidoUI() {
@@ -55,52 +67,51 @@ export function syncDerivacionTerceroNuevoPedidoUI() {
     const chk = document.getElementById('pf-deriv-tercero-chk');
     const sel = document.getElementById('pf-deriv-tercero-sel');
     const hint = document.getElementById('pf-deriv-tercero-hint');
+    const manual = document.getElementById('pf-deriv-tercero-manual');
     const tt = document.getElementById('tt');
     if (!wrap || !chk || !sel || !tt) return;
 
     const tipo = String(tt.value || '').trim();
-    const slot = configSlotDerivacionTerceroPorTipoTrabajo(tipo);
-    const aplica = slot && derivacionTerceroAplicaParaCatalogoActual(slot);
+    const debe =
+        typeof window.debeMostrarBotonDerivacion === 'function' && window.debeMostrarBotonDerivacion(tipo);
 
-    if (!aplica) {
+    if (!debe) {
         wrap.style.display = 'none';
         chk.checked = false;
         chk.disabled = false;
         sel.innerHTML = '';
         sel.style.display = 'none';
+        if (manual) manual.style.display = 'none';
         if (hint) hint.textContent = '';
         return;
     }
 
-    const lista = normalizeListaTerceros(leerDerivacionesTercerosDesdeEmpresaCfg()[slot]);
+    const lista = listarTodosTercerosDerivacionCfg();
     wrap.style.display = '';
+    chk.disabled = false;
 
-    if (!lista.length) {
-        chk.checked = false;
-        chk.disabled = true;
+    if (lista.length) {
+        if (manual) manual.style.display = 'none';
         sel.innerHTML = '';
-        sel.style.display = 'none';
+        lista.forEach((e, i) => {
+            const o = document.createElement('option');
+            o.value = String(i);
+            o.textContent = e.nombre || `WhatsApp …${String(e.whatsapp).slice(-4)}`;
+            sel.appendChild(o);
+        });
+        sel.style.display = chk.checked ? '' : 'none';
         if (hint) {
             hint.textContent =
-                'Definí el contacto en configuración del cliente (Neon: clientes.configuracion → derivaciones_terceros → ' +
-                slot +
-                ').';
+                'Si marcás la casilla, al guardar se deriva el pedido al tercero: mensaje por WhatsApp (servidor) y seguimiento en el panel.';
         }
-        return;
-    }
-
-    chk.disabled = false;
-    sel.innerHTML = '';
-    lista.forEach((e, i) => {
-        const o = document.createElement('option');
-        o.value = String(i);
-        o.textContent = e.nombre || `WhatsApp ${e.whatsapp.slice(-4)}`;
-        sel.appendChild(o);
-    });
-    sel.style.display = chk.checked ? '' : 'none';
-    if (hint) {
-        hint.textContent =
-            'Si marcás la casilla, al guardar el pedido se abrirá WhatsApp con un texto sugerido para el tercero.';
+    } else {
+        sel.innerHTML = '';
+        sel.style.display = 'none';
+        if (manual) manual.style.display = chk.checked ? '' : 'none';
+        if (hint) {
+            hint.textContent =
+                'Completá *nombre* y *WhatsApp* del tercero (formato internacional, ej. +543434540250) o cargá contactos en Admin → Empresa → derivaciones_terceros.';
+        }
     }
 }
 
@@ -109,6 +120,9 @@ export function resetDerivacionTerceroNuevoPedidoUI() {
     const chk = document.getElementById('pf-deriv-tercero-chk');
     const sel = document.getElementById('pf-deriv-tercero-sel');
     const hint = document.getElementById('pf-deriv-tercero-hint');
+    const manual = document.getElementById('pf-deriv-tercero-manual');
+    const nom = document.getElementById('pf-deriv-manual-nom');
+    const wa = document.getElementById('pf-deriv-manual-wa');
     if (chk) {
         chk.checked = false;
         chk.disabled = false;
@@ -117,6 +131,9 @@ export function resetDerivacionTerceroNuevoPedidoUI() {
         sel.innerHTML = '';
         sel.style.display = 'none';
     }
+    if (nom) nom.value = '';
+    if (wa) wa.value = '';
+    if (manual) manual.style.display = 'none';
     if (wrap) wrap.style.display = 'none';
     if (hint) hint.textContent = '';
 }
@@ -142,40 +159,51 @@ function construirTextoWhatsappDerivacion(payload, terceroNombre) {
     return lines.join('\n');
 }
 
+/** Tercero elegido si el checkbox está marcado; si no, null. */
+export function leerTerceroDerivacionNuevoPedidoSiActivo() {
+    const chk = document.getElementById('pf-deriv-tercero-chk');
+    if (!chk?.checked) return null;
+    const lista = listarTodosTercerosDerivacionCfg();
+    const sel = document.getElementById('pf-deriv-tercero-sel');
+    if (lista.length) {
+        const idx = Math.min(Math.max(parseInt(String(sel?.value || '0'), 10) || 0, 0), lista.length - 1);
+        const ent = lista[idx];
+        if (!ent?.whatsapp) return null;
+        return { nombre: ent.nombre || '', whatsappDigitos: ent.whatsapp, slotKey: ent.slotKey };
+    }
+    const nom = String(document.getElementById('pf-deriv-manual-nom')?.value || '').trim();
+    const waRaw = String(document.getElementById('pf-deriv-manual-wa')?.value || '').trim();
+    const intl = internacionalMasDesdeDigitosOTexto(waRaw);
+    if (!nom || intl.length < 9) return null;
+    return { nombre: nom, whatsappDigitos: intl.replace(/\D/g, ''), slotKey: null };
+}
+
 /**
- * Tras guardar el pedido con éxito: si el usuario marcó derivación y hay WhatsApp configurado, abre wa.me.
+ * Tras guardar el pedido con éxito: abre wa.me al tercero (solo cliente; la derivación operativa va por API si aplica).
  */
 export function afterPedidoGuardadoIntentarWhatsappDerivacionTercero(payload) {
     try {
-        const chk = document.getElementById('pf-deriv-tercero-chk');
-        const sel = document.getElementById('pf-deriv-tercero-sel');
-        if (!chk?.checked) return;
-
-        const slot = configSlotDerivacionTerceroPorTipoTrabajo(payload.tipoTr);
-        if (!slot || !derivacionTerceroAplicaParaCatalogoActual(slot)) return;
-
-        const lista = normalizeListaTerceros(leerDerivacionesTercerosDesdeEmpresaCfg()[slot]);
-        if (!lista.length) return;
-
-        const idx = Math.min(Math.max(parseInt(String(sel?.value || '0'), 10) || 0, 0), lista.length - 1);
-        const ent = lista[idx];
-        if (!ent?.whatsapp) return;
-
-        const body = construirTextoWhatsappDerivacion(payload, ent.nombre);
-        const url = `https://wa.me/${ent.whatsapp}?text=${encodeURIComponent(body)}`;
+        const t = leerTerceroDerivacionNuevoPedidoSiActivo();
+        if (!t?.whatsappDigitos) return;
+        const d = digitosParaWaMeDesdeRaw(t.whatsappDigitos);
+        if (d.length < 10) return;
+        const body = construirTextoWhatsappDerivacion(payload, t.nombre);
+        const url = `https://wa.me/${d}?text=${encodeURIComponent(body)}`;
         window.open(url, '_blank', 'noopener,noreferrer');
     } catch (_) {}
 }
 
-/** Registra listeners una sola vez (modal nuevo pedido). */
 export function initDerivacionesTercerosNuevoPedido() {
     const chk = document.getElementById('pf-deriv-tercero-chk');
     const sel = document.getElementById('pf-deriv-tercero-sel');
     const tt = document.getElementById('tt');
+    const manual = document.getElementById('pf-deriv-tercero-manual');
     if (chk && sel && !chk.dataset.gnDerivTercBound) {
         chk.dataset.gnDerivTercBound = '1';
         chk.addEventListener('change', () => {
-            sel.style.display = chk.checked ? '' : 'none';
+            const lista = listarTodosTercerosDerivacionCfg();
+            if (lista.length) sel.style.display = chk.checked ? '' : 'none';
+            if (manual) manual.style.display = !lista.length && chk.checked ? '' : 'none';
         });
     }
     if (tt && !tt.dataset.gnDerivTercBound) {

@@ -5,9 +5,21 @@
 
 import { query } from "../db/neon.js";
 import { sendTenantWhatsAppText } from "./whatsappService.js";
+import { normalizarRubroCliente } from "./tiposReclamo.js";
 
-export const MSG_MIS_RECLAMOS_PEDIR_ID =
-  "Ingresá tu *NIS*, *medidor*, *N° de vecino* o *N° de socio* (el dato que figure en tu cuenta o credencial):";
+/** Fila especial en lista interactiva de tipos (debe coincidir con `whatsappBotMeta`). */
+export const WHATSAPP_LIST_ROW_MIS_RECLAMOS = "Mis reclamos";
+
+export function mensajePedirIdentificadorMisReclamos(tipoCliente) {
+  const r = normalizarRubroCliente(tipoCliente);
+  if (r === "municipio") {
+    return "Ingresá tu *ID Vecino* (el dato que figure en tu cuenta o credencial):";
+  }
+  if (r === "cooperativa_agua") {
+    return "Ingresá tu *N° de Socio* o *medidor* (el dato en tu cuenta):";
+  }
+  return "Ingresá tu *NIS* o *medidor* (el dato en tu cuenta):";
+}
 
 export function textoSubmenuTransitoMunicipio() {
   return (
@@ -36,7 +48,7 @@ function normalizarEstadoNoCerradoSql() {
  * Pedidos abiertos del tenant que coinciden por NIS / medidor / nis_medidor (texto o solo dígitos).
  * @param {number} tenantId
  * @param {string} rawQ
- * @returns {Promise<Array<{ id: number, numero_pedido: string|null, tipo_trabajo: string|null, estado: string|null, fecha_creacion: string|null }>>}
+ * @returns {Promise<Array<{ id: number, numero_pedido: string|null, tipo_trabajo: string|null, estado: string|null, fecha_creacion: string|null, derivado_destino_nombre: string|null }>>}
  */
 export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, rawQ) {
   const tid = Number(tenantId);
@@ -82,8 +94,10 @@ export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, ra
 
   if (!cond) return [];
 
+  const hasDdn = cols.has("derivado_destino_nombre");
   const sql = `
     SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion
+    ${hasDdn ? ", TRIM(COALESCE(derivado_destino_nombre::text,'')) AS derivado_destino_nombre" : ", NULL::text AS derivado_destino_nombre"}
     FROM pedidos
     WHERE tenant_id = $1
       AND (${normalizarEstadoNoCerradoSql()})
@@ -98,11 +112,50 @@ export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, ra
       tipo_trabajo: row.tipo_trabajo != null ? String(row.tipo_trabajo) : null,
       estado: row.estado != null ? String(row.estado) : null,
       fecha_creacion: row.fecha_creacion != null ? String(row.fecha_creacion) : null,
+      derivado_destino_nombre:
+        row.derivado_destino_nombre != null ? String(row.derivado_destino_nombre).trim() || null : null,
     }));
   } catch (e) {
     console.warn("[whatsapp-mis-reclamos] query", e?.message || e);
     return [];
   }
+}
+
+export function mensajeNoEncontramosMisReclamos(tipoCliente) {
+  const r = normalizarRubroCliente(tipoCliente);
+  if (r === "municipio") {
+    return "No encontramos *reclamos vigentes* con ese *ID Vecino*. Revisá el dato o escribí *menú*.";
+  }
+  if (r === "cooperativa_agua") {
+    return "No encontramos *reclamos vigentes* con ese *N° de Socio* o *medidor*. Revisá el dato o escribí *menú*.";
+  }
+  return "No encontramos *reclamos vigentes* con ese *NIS* o *medidor*. Revisá el dato o escribí *menú*.";
+}
+
+/** Texto corto para el menú de bienvenida (rubro). */
+export function textoAyudaMisReclamosMenuInicial(tipoCliente) {
+  const r = normalizarRubroCliente(tipoCliente);
+  if (r === "municipio") return "ID Vecino";
+  if (r === "cooperativa_agua") return "N° de Socio o medidor";
+  return "NIS o medidor";
+}
+
+/**
+ * Una línea por pedido (formato pedido en Mis reclamos).
+ * @param {{ numero_pedido?: string|null, id: number, tipo_trabajo?: string|null, estado?: string|null, derivado_destino_nombre?: string|null }} r
+ */
+export function formatoLineaPedidoVigenteMisReclamos(r) {
+  const npRaw = r.numero_pedido != null ? String(r.numero_pedido).trim() : "";
+  const np = npRaw ? (npRaw.startsWith("#") ? npRaw : `#${npRaw}`) : `#${r.id}`;
+  const tt = r.tipo_trabajo || "—";
+  const esRaw = r.estado != null ? String(r.estado).trim() : "";
+  const esLow = esRaw.toLowerCase().replace(/\s+/g, "");
+  const derivNom = r.derivado_destino_nombre != null ? String(r.derivado_destino_nombre).trim() : "";
+  if ((esLow.includes("derivado") || esLow.includes("externo")) && derivNom) {
+    const nom = derivNom.slice(0, 80);
+    return `${np} - ${tt} - Derivado a ${nom}`;
+  }
+  return `${np} - ${tt} - ${esRaw || "—"}`;
 }
 
 export function interpretaRespuestaSiOperadorWhatsapp(text) {

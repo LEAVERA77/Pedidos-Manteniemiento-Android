@@ -223,8 +223,9 @@ function normalizarEstadoPedidoOperativo(raw) {
   return s0;
 }
 
-function pedidoEstadoPermiteDerivacionApi(estado) {
+function pedidoEstadoPermiteDerivacionApi(estado, opts = {}) {
   const n = normalizarEstadoPedidoOperativo(estado);
+  if (opts.desdeAltaPedidoNuevo && n === "Pendiente") return true;
   return n === "Asignado" || n === "En ejecución";
 }
 
@@ -964,6 +965,12 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
     const destinoStr = String(destino || "").trim();
     if (!destinoStr) return res.status(400).json({ error: "destino es obligatorio" });
 
+    const desdeAltaPedidoNuevo =
+      req.body?.desde_alta_pedido_nuevo === true ||
+      String(req.body?.desde_alta_pedido_nuevo || "")
+        .trim()
+        .toLowerCase() === "true";
+
     const pedido = await getPedidoInTenant(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
@@ -973,8 +980,12 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       throw e;
     }
 
-    if (!pedidoEstadoPermiteDerivacionApi(pedido.estado)) {
-      return res.status(400).json({ error: "Solo se puede derivar un pedido asignado o en ejecución" });
+    if (!pedidoEstadoPermiteDerivacionApi(pedido.estado, { desdeAltaPedidoNuevo })) {
+      return res.status(400).json({
+        error: desdeAltaPedidoNuevo
+          ? "Solo se puede derivar al alta un pedido en estado Pendiente recién creado (u operativo asignado/en ejecución)."
+          : "Solo se puede derivar un pedido asignado o en ejecución",
+      });
     }
     if (pedidoEstaDerivadoExternoApi(pedido)) {
       return res.status(400).json({ error: "El pedido ya fue derivado fuera del tenant" });
@@ -1021,7 +1032,10 @@ router.post("/:id/derivar-externo", adminOnly, async (req, res) => {
       pedido.solicitud_derivacion_motivo != null && String(pedido.solicitud_derivacion_motivo).trim()
         ? String(pedido.solicitud_derivacion_motivo).trim().slice(0, MAX_OBSERVACIONES_DERIVACION_API)
         : "";
-    const textoObservaciones = adminObs || obsTecnico;
+    let textoObservaciones = adminObs || obsTecnico;
+    if (!textoObservaciones && desdeAltaPedidoNuevo) {
+      textoObservaciones = "Derivación al dar de alta el pedido desde el panel de administración.";
+    }
     if (!textoObservaciones) {
       return res.status(400).json({
         error:

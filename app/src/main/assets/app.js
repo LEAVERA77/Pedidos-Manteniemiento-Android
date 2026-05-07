@@ -94,7 +94,11 @@ import {
     initDerivacionesTercerosNuevoPedido,
     resetDerivacionTerceroNuevoPedidoUI,
     syncDerivacionTerceroNuevoPedidoUI,
+    leerTerceroDerivacionNuevoPedidoSiActivo,
+    internacionalMasDesdeDigitosOTexto,
 } from './modules/derivaciones-terceros.js';
+import { syncPedidoFormNisYClienteLabels, syncPedidoFormZonaDistribuidorLabels } from './modules/pedido-form-labels-rubro.js';
+import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import {
     ocultarModulosRedesValorParaApi,
     syncAyudaDistribuidoresExcelHint,
@@ -9743,6 +9747,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
             ${esc(barrioVal || null)}
         )`;
 
+        let derivacionAltaApiOk = false;
         if (modoOffline || !NEON_OK) {
             
             enqueueOffline({ tipo: 'INSERT', query: queryInsert });
@@ -9784,7 +9789,7 @@ document.getElementById('pf').addEventListener('submit', async e => {
             
             await ejecutarSQLConReintentos(queryInsert);
             toast('Pedido guardado', 'success');
-            if ((telVal || fotosString) && puedeEnviarApiRestPedidos()) {
+            if (puedeEnviarApiRestPedidos()) {
                 try {
                     const rNew = await sqlSimple(
                         `SELECT id FROM pedidos WHERE numero_pedido = ${esc(numPedido)} ORDER BY id DESC LIMIT 1`
@@ -9800,6 +9805,30 @@ document.getElementById('pf').addEventListener('submit', async e => {
                                 fotoBase64Joined: fotosString,
                             });
                         }
+                        const rol = String(app?.u?.rol || '').toLowerCase();
+                        const esAdmin = rol === 'admin' || rol === 'administrador';
+                        if (esAdmin) {
+                            const terc = leerTerceroDerivacionNuevoPedidoSiActivo();
+                            if (terc?.whatsappDigitos) {
+                                const intl = internacionalMasDesdeDigitosOTexto(String(terc.whatsappDigitos));
+                                if (intl) {
+                                    const rDeriv = await postDerivarExternoDesdeAltaNuevoPedido({
+                                        url: apiUrl(`/api/pedidos/${nid}/derivar-externo`),
+                                        asegurarJwtApiRest,
+                                        getToken,
+                                        whatsappTercero: intl,
+                                        nombreTercero: terc.nombre || 'Tercero',
+                                        motivo: String(document.getElementById('de')?.value || '')
+                                            .trim()
+                                            .slice(0, 2000),
+                                        lat: app.sel?.lat,
+                                        lng: app.sel?.lng,
+                                    });
+                                    if (rDeriv?.ok) derivacionAltaApiOk = true;
+                                    else if (rDeriv?.error) console.warn('[deriv-alta-pedido]', rDeriv.error);
+                                }
+                            }
+                        }
                     }
                 } catch (e) {
                     console.warn('[wa-alta-reclamo] lookup id', e && e.message);
@@ -9812,16 +9841,18 @@ document.getElementById('pf').addEventListener('submit', async e => {
             .filter(Boolean)
             .join(', ');
         try {
-            afterPedidoGuardadoIntentarWhatsappDerivacionTercero({
-                numPedido,
-                tipoTr,
-                desc: document.getElementById('de')?.value || '',
-                cliNomVal,
-                domicilio: domicilioDeriv,
-                telVal,
-                lat: app.sel?.lat,
-                lng: app.sel?.lng,
-            });
+            if (!derivacionAltaApiOk) {
+                afterPedidoGuardadoIntentarWhatsappDerivacionTercero({
+                    numPedido,
+                    tipoTr,
+                    desc: document.getElementById('de')?.value || '',
+                    cliNomVal,
+                    domicilio: domicilioDeriv,
+                    telVal,
+                    lat: app.sel?.lat,
+                    lng: app.sel?.lng,
+                });
+            }
         } catch (_) {}
 
         fotosTemporales = [];
@@ -12882,37 +12913,7 @@ function syncSuministroElectricoUI() {
 function syncNisClienteReclamoConexionUI() {
     const req = tipoTrabajoRequiereNisYCliente();
     const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';
-    const persona = esMunicipio ? 'vecino' : 'socio';
-    const rubroN = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    const nisLabel =
-        rubroN === 'municipio' || rubroN === 'cooperativa_agua' ? 'NIS / Medidor / Socio' : 'NIS / Medidor';
-    const lbN = document.getElementById('lbl-nis');
-    const inpN = document.getElementById('nis');
-    if (lbN) lbN.textContent = req ? `${nisLabel} *` : nisLabel;
-    if (inpN) {
-        if (req) {
-            inpN.setAttribute('required', 'required');
-            inpN.placeholder =
-                rubroN === 'municipio' || rubroN === 'cooperativa_agua'
-                    ? `Obligatorio — NIS, medidor o nº socio del ${persona}`
-                    : `Obligatorio — NIS o medidor del ${persona}`;
-        } else {
-            inpN.removeAttribute('required');
-            inpN.placeholder =
-                rubroN === 'municipio' || rubroN === 'cooperativa_agua'
-                    ? 'Opcional — al salir del campo se completa domicilio desde padrón si existe'
-                    : 'Opcional (obligatorio en conexión / medidor / factibilidad según tipo)';
-        }
-    }
-    const lb = document.getElementById('lbl-cl');
-    const inp = document.getElementById('cl');
-    const etiquetaPersona = esMunicipio ? 'Vecino' : 'Cliente';
-    if (lb) lb.textContent = req ? `${etiquetaPersona} *` : etiquetaPersona;
-    if (inp) {
-        if (req) inp.setAttribute('required', 'required');
-        else inp.removeAttribute('required');
-        inp.placeholder = esMunicipio ? 'Nombre del vecino (si aplica)' : 'Nombre o razón social del socio';
-    }
+    syncPedidoFormNisYClienteLabels({ requiereNis: req, esMunicipio });
 }
 const st = document.getElementById('tt');
 if (st) {
@@ -14448,15 +14449,9 @@ function aplicarEtiquetasPorTipo(tipo) {
 }
 
 function syncZonaPedidoFormLabels() {
-    const di2 = document.getElementById('di2');
-    const lb = document.getElementById('lbl-di2-zona') || di2?.closest('.fg')?.querySelector('label[for="di2"]');
-    if (lb) lb.textContent = etiquetaZonaPedido();
-    if (di2 && di2.options && di2.options[0]) {
-        di2.options[0].textContent =
-            esMunicipioRubro() || esCooperativaAguaRubro()
-                ? '— Opcional —'
-                : '— Elegir distribuidor (opcional si no hay NIS) —';
-    }
+    try {
+        syncPedidoFormZonaDistribuidorLabels();
+    } catch (_) {}
     const trafoW = document.getElementById('trafo-pedido')?.closest('.fg');
     if (trafoW) trafoW.style.display = esCooperativaElectricaRubro() ? '' : 'none';
 }

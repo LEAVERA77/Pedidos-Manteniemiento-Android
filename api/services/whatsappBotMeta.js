@@ -39,11 +39,15 @@ import {
   SUBTIPOS_TRANSITO_MUNICIPIO,
 } from "./tiposReclamo.js";
 import {
-  MSG_MIS_RECLAMOS_PEDIR_ID,
+  mensajePedirIdentificadorMisReclamos,
   textoSubmenuTransitoMunicipio,
   buscarPedidosAbiertosPorIdentificadorWhatsapp,
   interpretaRespuestaSiOperadorWhatsapp,
   notificarAdminsChatOperadorSolicitadoWhatsapp,
+  WHATSAPP_LIST_ROW_MIS_RECLAMOS,
+  mensajeNoEncontramosMisReclamos,
+  formatoLineaPedidoVigenteMisReclamos,
+  textoAyudaMisReclamosMenuInicial,
 } from "./whatsappBotMisReclamos.js";
 import { tryAttachWhatsappImageToPedidoEvidenciaInsuficiente } from "./pedidoFotoEvidenciaInbound.js";
 import { textoClienteNuevaFotoRecibida } from "./pedidoFotoValidacionWa.js";
@@ -729,9 +733,10 @@ function textoBienvenidaYAyuda(ctx) {
   const n = ctx.nombre || "nuestro servicio";
   const max = ctx.tipos?.length || 0;
   const bienvenida = ctx.bienvenida ? `\n\n${ctx.bienvenida}\n` : "";
+  const idHelp = textoAyudaMisReclamosMenuInicial(ctx.tipo);
   return (
     `Bienvenido al centro de atención de *${n}*.${bienvenida}\n\n` +
-    `*0)* *Mis reclamos* (consultar pedidos abiertos con tu NIS, medidor o número de vecino/socio).\n\n` +
+    `*0)* *Mis reclamos* (consultar reclamos vigentes con tu *${idHelp}*).\n\n` +
     (max
       ? `Para un *nuevo reclamo*, escribí el *número* del *1* al *${max}* según esta guía:\n\n${ctx.tipos.map((t, i) => `${i + 1}) ${t}`).join("\n")}\n\n`
       : "") +
@@ -1461,8 +1466,8 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
     return { ok: false, error: "missing_meta_credentials" };
   }
-  if (ctx.tipos.length > MAX_WHATSAPP_LIST_ROWS) {
-    console.warn("[whatsapp-bot-meta] demasiados tipos para lista WA, usando menú numerado", {
+  if (ctx.tipos.length > MAX_WHATSAPP_LIST_ROWS - 1) {
+    console.warn("[whatsapp-bot-meta] demasiados tipos para lista WA (fila Mis reclamos), usando menú numerado", {
       n: ctx.tipos.length,
       tenantId: ctx.id,
     });
@@ -1474,17 +1479,20 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     );
     return { ok: true, skippedInteractive: true };
   }
+  const tiposLista = [WHATSAPP_LIST_ROW_MIS_RECLAMOS, ...ctx.tipos];
   const r = await sendWhatsAppInteractiveListWithCredentials(
     phoneDigits,
     {
       bodyText,
       buttonText: "Ver tipos",
       sectionTitle: "Tipos de reclamo",
-      tipos: ctx.tipos,
+      tipos: tiposLista,
     },
     { accessToken, phoneNumberId: graphPid, purpose: "whatsapp_bot_menu_tipos" }
   );
-  const logTxt = r.ok ? `[lista interactiva] ${ctx.tipos.length} tipos (${ctx.nombre || "tenant"})` : `[lista interactiva] error`;
+  const logTxt = r.ok
+    ? `[lista interactiva] ${tiposLista.length} filas (${ctx.nombre || "tenant"})`
+    : `[lista interactiva] error`;
   try {
     await logWhatsappMensajeEnviado(phoneDigits, logTxt, r.ok);
   } catch (e) {
@@ -1932,6 +1940,23 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     return;
   }
   const tipo = decodeWhatsAppListRowId(listRowId);
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
+  if (tipo === WHATSAPP_LIST_ROW_MIS_RECLAMOS) {
+    sessions.set(sk, {
+      step: "awaiting_mis_reclamos_id",
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: wpid,
+    });
+    await reply(
+      phone,
+      `${mensajePedirIdentificadorMisReclamos(ctx.tipo)}\n\n_Escribí *menú* para volver._`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
   if (!tipo || !ctx.tipos.includes(tipo)) {
     await reply(phone, "Opción no válida. Escribí *menú* para ver las opciones.", tid, phoneNumberId);
     return;
@@ -1940,7 +1965,6 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
     return;
   }
-  const wpid = phoneNumberId ? String(phoneNumberId).trim() : null;
   if (tipo === "Pérdida en Vereda/Calle") {
     await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
     return;
@@ -3058,20 +3082,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     const rows = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tid, idTxt);
     if (!rows.length) {
-      await reply(
-        phone,
-        "No encontramos *reclamos abiertos* con ese dato. Revisá el NIS, medidor o número de vecino/socio, o escribí *menú*.",
-        tid,
-        phoneNumberId
-      );
+      await reply(phone, mensajeNoEncontramosMisReclamos(ctx.tipo), tid, phoneNumberId);
       return;
     }
-    const lines = rows.map((r) => {
-      const np = r.numero_pedido != null ? String(r.numero_pedido) : `#${r.id}`;
-      const tt = r.tipo_trabajo || "—";
-      const es = r.estado || "—";
-      return `· *${np}* — ${tt} — _${es}_`;
-    });
+    const lines = rows.map((r) => formatoLineaPedidoVigenteMisReclamos(r));
     sessions.set(sk, {
       ...sess,
       step: "awaiting_mis_reclamos_operador",
@@ -3080,7 +3094,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     });
     await reply(
       phone,
-      `Encontramos estos reclamos *sin cerrar*:\n\n${lines.join("\n")}\n\n¿Querés hablar con un *operador*? Respondé *SI*.` +
+      `📋 *Tus reclamos vigentes:*\n\n${lines.join("\n")}\n\n¿Querés hablar con un *operador*? Respondé *SI*.` +
         `\n\n_Si no querés, escribí *no* o *menú*._`,
       tid,
       phoneNumberId
@@ -3153,7 +3167,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         contactName: contactName || null,
         phoneNumberId: wpid,
       });
-      await reply(phone, `${MSG_MIS_RECLAMOS_PEDIR_ID}\n\n_Escribí *menú* para volver._`, tid, phoneNumberId);
+      await reply(
+        phone,
+        `${mensajePedirIdentificadorMisReclamos(ctx.tipo)}\n\n_Escribí *menú* para volver._`,
+        tid,
+        phoneNumberId
+      );
       return;
     }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
