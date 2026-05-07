@@ -29,7 +29,7 @@ function soloDigitos(s) {
 }
 
 function normalizarEstadoNoCerradoSql() {
-  return `UPPER(TRIM(COALESCE(estado::text,''))) NOT IN ('CERRADO','CANCELADO','CANCELADA')`;
+  return `UPPER(TRIM(COALESCE(estado::text,''))) NOT IN ('CERRADO','CANCELADO','CANCELADA','DESESTIMADO')`;
 }
 
 /**

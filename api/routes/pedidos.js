@@ -4,7 +4,7 @@ import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn, tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
-import { uploadManyBase64 } from "../services/cloudinary.js";
+import { uploadManyBase64, destroyCloudinaryImageBySecureUrl } from "../services/cloudinary.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import {
   tipoTrabajoPermitidoParaNuevoPedido,
@@ -17,8 +17,13 @@ import {
   notifyPedidoClienteActualizacionWhatsAppSafe,
   notifyPedidoAltaClienteWhatsAppSafe,
   notifyPedidoDerivacionClienteWhatsAppSafe,
+  notifyPedidoClienteTextoPlanoWhatsAppSafe,
   sendTenantWhatsAppText,
 } from "../services/whatsappService.js";
+import {
+  textoClienteFotoCalidadPendiente,
+  loadActiveBusinessTypeForTenant,
+} from "../services/pedidoFotoValidacionWa.js";
 import { normalizeWhatsAppRecipientForMeta } from "../services/metaWhatsapp.js";
 import {
   enqueueNotificacionPedidoCerradoParaTecnico,
@@ -213,6 +218,8 @@ function normalizarEstadoPedidoOperativo(raw) {
   ) {
     return "En ejecución";
   }
+  if (low === "evidencia insuficiente" || compact === "evidenciainsuficiente") return "Evidencia insuficiente";
+  if (low === "desestimado" || compact === "desestimado") return "Desestimado";
   return s0;
 }
 
@@ -1730,13 +1737,6 @@ router.put("/:id", async (req, res) => {
       telefono_contacto,
     } = req.body;
 
-    const fotosB64 = parseFotosBase64(req.body);
-    let mergedUrls = splitUrls(pedido.foto_urls);
-    if (fotosB64.length) {
-      const newUrls = await uploadManyBase64(fotosB64);
-      mergedUrls = [...mergedUrls, ...newUrls];
-    }
-
     const estadoAntesRaw = String(pedido.estado || "");
     const estadoAntesNorm = normalizarEstadoPedidoOperativo(estadoAntesRaw);
     const estadoBodyRaw =
@@ -1745,6 +1745,32 @@ router.put("/:id", async (req, res) => {
       estadoBodyRaw === null || estadoBodyRaw === ""
         ? null
         : normalizarEstadoPedidoOperativo(estadoBodyRaw);
+    const rolLower = String(req.user?.rol || "").toLowerCase();
+    if (
+      (estadoParam === "Evidencia insuficiente" || estadoParam === "Desestimado") &&
+      rolLower !== "admin"
+    ) {
+      return res.status(403).json({ error: "Solo administradores pueden usar este estado operativo" });
+    }
+
+    const estadoPedidoNorm = estadoAntesNorm;
+    const fotosB64 = parseFotosBase64(req.body);
+    if (estadoPedidoNorm === "Desestimado" && fotosB64.length) {
+      return res.status(400).json({ error: "No se pueden agregar fotos a un reclamo desestimado" });
+    }
+
+    let mergedUrls = splitUrls(pedido.foto_urls);
+    const becameDesestimado = estadoParam === "Desestimado" && estadoAntesNorm !== "Desestimado";
+    if (becameDesestimado) {
+      for (const u of splitUrls(pedido.foto_urls)) {
+        await destroyCloudinaryImageBySecureUrl(u).catch(() => {});
+      }
+      mergedUrls = [];
+    } else if (fotosB64.length) {
+      const newUrls = await uploadManyBase64(fotosB64);
+      mergedUrls = [...mergedUrls, ...newUrls];
+    }
+
     if (
       estadoAntesNorm === "Derivado externo" &&
       estadoParam === "Pendiente" &&
@@ -1832,6 +1858,60 @@ router.put("/:id", async (req, res) => {
     );
     const updated = r.rows[0];
     let rowOut = updated;
+    if (becameDesestimado) {
+      const exCol = (await tableHasColumn("pedidos", "foto_base64")) ? ", foto_base64 = NULL" : "";
+      if (hasTUp) {
+        await query(`UPDATE pedidos SET foto_urls = NULL${exCol} WHERE id = $1 AND tenant_id = $2`, [id, req.tenantId]);
+      } else {
+        await query(`UPDATE pedidos SET foto_urls = NULL${exCol} WHERE id = $1`, [id]);
+      }
+      const rClear = await query(
+        hasTUp ? `SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1` : `SELECT * FROM pedidos WHERE id = $1 LIMIT 1`,
+        hasTUp ? [id, req.tenantId] : [id]
+      );
+      if (rClear.rows?.[0]) rowOut = coercePedidoLatLng(rClear.rows[0]);
+    }
+
+    const hasMotMr = await tableHasColumn("pedidos", "motivo_rechazo_foto");
+    const hasMotMd = await tableHasColumn("pedidos", "motivo_desestimacion");
+    const hasFotoVal = await tableHasColumn("pedidos", "foto_evidencia_validada");
+    if (hasMotMr && req.body.motivo_rechazo_foto !== undefined) {
+      await query(
+        hasTUp
+          ? `UPDATE pedidos SET motivo_rechazo_foto = $2 WHERE id = $1 AND tenant_id = $3`
+          : `UPDATE pedidos SET motivo_rechazo_foto = $2 WHERE id = $1`,
+        hasTUp ? [id, req.body.motivo_rechazo_foto ?? null, req.tenantId] : [id, req.body.motivo_rechazo_foto ?? null]
+      );
+    }
+    if (hasMotMd && req.body.motivo_desestimacion !== undefined) {
+      await query(
+        hasTUp
+          ? `UPDATE pedidos SET motivo_desestimacion = $2 WHERE id = $1 AND tenant_id = $3`
+          : `UPDATE pedidos SET motivo_desestimacion = $2 WHERE id = $1`,
+        hasTUp ? [id, req.body.motivo_desestimacion ?? null, req.tenantId] : [id, req.body.motivo_desestimacion ?? null]
+      );
+    }
+    if (hasFotoVal && req.body.foto_evidencia_validada !== undefined && rolLower === "admin") {
+      const fv = !!req.body.foto_evidencia_validada;
+      await query(
+        hasTUp
+          ? `UPDATE pedidos SET foto_evidencia_validada = $2 WHERE id = $1 AND tenant_id = $3`
+          : `UPDATE pedidos SET foto_evidencia_validada = $2 WHERE id = $1`,
+        hasTUp ? [id, fv, req.tenantId] : [id, fv]
+      );
+    }
+    if (
+      (hasMotMr && req.body.motivo_rechazo_foto !== undefined) ||
+      (hasMotMd && req.body.motivo_desestimacion !== undefined) ||
+      (hasFotoVal && req.body.foto_evidencia_validada !== undefined && rolLower === "admin")
+    ) {
+      const rRf = await query(
+        hasTUp ? `SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1` : `SELECT * FROM pedidos WHERE id = $1 LIMIT 1`,
+        hasTUp ? [id, req.tenantId] : [id]
+      );
+      if (rRf.rows?.[0]) rowOut = coercePedidoLatLng(rRf.rows[0]);
+    }
+
     try {
       let fotoCierreUrl = null;
       const bfc = req.body?.foto_cierre_base64;
@@ -1897,6 +1977,35 @@ router.put("/:id", async (req, res) => {
       userId: req.user.id,
       estadoAntes: estadoAntesRaw,
     });
+
+    const becameEvidenciaInsuf =
+      estadoParam === "Evidencia insuficiente" && estadoAntesNorm !== "Evidencia insuficiente";
+    if (becameEvidenciaInsuf && pedidoOrigenWhatsappCliente(rowOut)) {
+      setImmediate(() => {
+        (async () => {
+          try {
+            const tenantId =
+              rowOut.tenant_id != null && Number.isFinite(Number(rowOut.tenant_id))
+                ? Number(rowOut.tenant_id)
+                : await getUserTenantId(req.user.id);
+            const bt = await loadActiveBusinessTypeForTenant(tenantId);
+            let phoneRaw = rowOut.telefono_contacto;
+            phoneRaw = await resolverTelefonoContactoParaNotificacionCliente(rowOut, tenantId);
+            const bodyTxt = textoClienteFotoCalidadPendiente(bt, rowOut.numero_pedido);
+            await notifyPedidoClienteTextoPlanoWhatsAppSafe({
+              tenantId,
+              telefonoContactoRaw: phoneRaw,
+              pedidoId: rowOut.id,
+              bodyText: bodyTxt,
+              logContext: "cliente_pedido_evidencia_insuficiente",
+            });
+          } catch (e) {
+            console.error("[pedidos] notify evidencia insuficiente WA", e?.message || e);
+          }
+        })();
+      });
+    }
+
     return res.json(coercePedidoLatLng(rowOut));
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar pedido", detail: error.message });

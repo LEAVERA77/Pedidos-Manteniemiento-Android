@@ -583,3 +583,42 @@ export async function notifyPedidoDerivacionClienteWhatsAppSafe({
   }
 }
 
+/**
+ * Mensaje de texto libre al teléfono del pedido (p. ej. evidencia de foto / confirmación).
+ * No bloquea si falla el envío.
+ */
+export async function notifyPedidoClienteTextoPlanoWhatsAppSafe({
+  tenantId,
+  telefonoContactoRaw,
+  pedidoId,
+  bodyText,
+  logContext = "cliente_pedido_texto_libre",
+}) {
+  const phone = String(telefonoContactoRaw || "").replace(/\D/g, "");
+  if (!phone || phone.length < 8) {
+    return { sent: false, skipped: true, reason: "no_phone" };
+  }
+  const text = String(bodyText || "").trim();
+  if (!text) return { sent: false, skipped: true, reason: "empty_body" };
+  try {
+    const r = await sendTenantWhatsAppText({
+      tenantId,
+      toDigits: phone,
+      bodyText: text,
+      pedidoId,
+      logContext,
+    });
+    if (!r.ok) {
+      console.error("[whatsapp-service] texto libre cliente: envío falló", {
+        pedidoId,
+        tenantId,
+        detail: r.error || r.graph,
+      });
+    }
+    return { sent: !!r.ok, skipped: false, ok: r.ok };
+  } catch (e) {
+    console.error("[whatsapp-service] texto libre cliente: excepción", e.message);
+    return { sent: false, skipped: false, error: e.message };
+  }
+}
+

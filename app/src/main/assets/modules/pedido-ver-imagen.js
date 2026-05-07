@@ -137,6 +137,83 @@ function crearBotonToolbar(texto, titulo, onClick) {
     return b;
 }
 
+function esAdminPanelGestorNova() {
+    try {
+        return String(window.app?.u?.rol || '').toLowerCase() === 'admin';
+    } catch (_) {
+        return false;
+    }
+}
+
+function estadoPermiteAccionesValidacionFoto(estadoRaw) {
+    const s = String(estadoRaw || '').trim();
+    return !['Cerrado', 'Desestimado', 'Derivado externo'].includes(s);
+}
+
+async function putPedidoCamposValidacion(pedidoId, body) {
+    const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
+    const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
+    if (!tok || !apiUrlFn) throw new Error('Sin sesión API');
+    const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(pedidoId)}`), {
+        method: 'PUT',
+        headers: {
+            Authorization: `Bearer ${tok}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        const msg = j.error || j.detail || `Error ${r.status}`;
+        throw new Error(msg);
+    }
+    return j;
+}
+
+/** Modal mínimo (sin inflar app.js). */
+function abrirModalSeleccion(titulo, opciones, onConfirm) {
+    const ov = document.createElement('div');
+    ov.style.cssText =
+        'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:12000;display:flex;align-items:center;justify-content:center;padding:1rem';
+    const box = document.createElement('div');
+    box.style.cssText =
+        'background:var(--bg);color:inherit;border-radius:10px;max-width:380px;width:100%;padding:1rem;border:1px solid var(--bo);box-shadow:0 8px 32px rgba(0,0,0,.2)';
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:600;margin-bottom:.65rem;font-size:.9rem';
+    h.textContent = titulo;
+    box.appendChild(h);
+    const sel = document.createElement('select');
+    sel.style.cssText = 'width:100%;padding:.4rem;border-radius:6px;border:1px solid var(--bo);margin-bottom:.65rem;font-size:.85rem';
+    for (const op of opciones) {
+        const o = document.createElement('option');
+        o.value = op.value;
+        o.textContent = op.label;
+        sel.appendChild(o);
+    }
+    box.appendChild(sel);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:.5rem;justify-content:flex-end;margin-top:.5rem';
+    const cerrar = () => {
+        try {
+            ov.remove();
+        } catch (_) {}
+    };
+    const btnOk = crearBotonToolbar('Confirmar', '', () => {
+        const v = String(sel.value || '').trim();
+        cerrar();
+        void Promise.resolve(onConfirm(v)).catch(() => {});
+    });
+    const btnX = crearBotonToolbar('Cancelar', '', cerrar);
+    row.appendChild(btnX);
+    row.appendChild(btnOk);
+    box.appendChild(row);
+    ov.appendChild(box);
+    ov.addEventListener('click', (ev) => {
+        if (ev.target === ov) cerrar();
+    });
+    document.body.appendChild(ov);
+}
+
 function actualizarEstadoBotonGuardarRotacion(btn, rotationDeg, savedRotation, puedePersistir) {
     if (!btn) return;
     const iguales = normalizarRotacionGrados(rotationDeg) === normalizarRotacionGrados(savedRotation);
@@ -213,11 +290,16 @@ function obtenerContenedorScrollDetallePedido() {
 
 /**
  * Inserta el bloque de imagen en el modal (`#dmc` / `.gn-dm-detail-scroll`).
- * @param {string} src
- * @param {{ pedidoId?: string|number, reclamo_imagen_rotacion?: number }} [meta]
+ * @param {string|string[]} srcOrSources — una URL o varias (galería).
+ * @param {{ pedidoId?: string|number, reclamo_imagen_rotacion?: number, estado?: string }} [meta]
  */
-function insertarImagenReclamoEnDOM(src, meta = {}) {
-    if (!src) return;
+function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
+    const sources = Array.isArray(srcOrSources)
+        ? srcOrSources.map((s) => String(s || '').trim()).filter(Boolean)
+        : srcOrSources
+          ? [String(srcOrSources).trim()].filter(Boolean)
+          : [];
+    if (!sources.length) return;
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
@@ -231,23 +313,50 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
     let savedRotation = normalizarRotacionGrados(meta.reclamo_imagen_rotacion);
     let rotationDeg = savedRotation;
     let scale = 1;
+    let activeIndex = 0;
+    const srcActivo = () => sources[activeIndex] || sources[0];
 
     const wrap = document.createElement('div');
     wrap.id = 'gn-pedido-imagen-reclamo';
     wrap.className = 'ds';
 
     const h = document.createElement('h4');
-    h.textContent = '📸 Imagen del reclamo';
+    h.textContent = sources.length > 1 ? '📸 Imágenes del reclamo' : '📸 Imagen del reclamo';
 
     const inner = document.createElement('div');
     inner.style.marginTop = '0.5rem';
+
+    let thumbRow = null;
+    if (sources.length > 1) {
+        thumbRow = document.createElement('div');
+        thumbRow.style.cssText =
+            'display:flex;flex-wrap:wrap;gap:6px;margin-top:.25rem;align-items:center;max-height:72px;overflow:auto';
+        sources.forEach((u, idx) => {
+            const t = document.createElement('img');
+            t.src = u;
+            t.alt = `Miniatura ${idx + 1}`;
+            t.style.cssText =
+                `height:52px;width:auto;max-width:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${idx === 0 ? 'var(--p2,#0a84ff)' : 'transparent'};opacity:${idx === 0 ? 1 : 0.85}`;
+            t.addEventListener('click', () => {
+                activeIndex = idx;
+                img.src = srcActivo();
+                aplicarTransform();
+                thumbRow.querySelectorAll('img').forEach((im, j) => {
+                    im.style.borderColor = j === idx ? 'var(--p2,#0a84ff)' : 'transparent';
+                    im.style.opacity = j === idx ? '1' : '0.85';
+                });
+                actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
+            });
+            thumbRow.appendChild(t);
+        });
+    }
 
     const imgHost = document.createElement('div');
     imgHost.style.cssText =
         'margin-top:0.35rem;overflow:auto;max-height:440px;display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);';
 
     const img = document.createElement('img');
-    img.src = src;
+    img.src = srcActivo();
     img.alt = 'Foto del reclamo';
     img.draggable = false;
     img.style.cssText =
@@ -260,7 +369,8 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
 
     img.addEventListener('click', () => {
         try {
-            if (esUrlHttp(src)) window.open(src, '_blank', 'noopener,noreferrer');
+            const s = srcActivo();
+            if (esUrlHttp(s)) window.open(s, '_blank', 'noopener,noreferrer');
         } catch (_) {}
     });
 
@@ -294,7 +404,7 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
         actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
     });
     const btnDl = crearBotonToolbar('💾 Guardar (descargar)', 'Abrir URL en pestaña nueva o descargar imagen', () =>
-        descargarOAbrirImagenReclamo(src, pedidoId)
+        descargarOAbrirImagenReclamo(srcActivo(), pedidoId)
     );
     const btnSaveRot = crearBotonToolbar(
         '💾 Guardar rotación en BD',
@@ -349,10 +459,161 @@ function insertarImagenReclamoEnDOM(src, meta = {}) {
     hint.textContent =
         'Zoom 50–200 %. Clic en la imagen: vista completa (URL). «Guardar rotación en BD» solo si cambiaste el ángulo.';
 
+    if (thumbRow) inner.appendChild(thumbRow);
     inner.appendChild(imgHost);
     inner.appendChild(bar);
     inner.appendChild(cerrarRow);
     inner.appendChild(hint);
+
+    if (esAdminPanelGestorNova() && puedePersistir && estadoPermiteAccionesValidacionFoto(meta.estado)) {
+        const adm = document.createElement('div');
+        adm.style.cssText =
+            'margin-top:.75rem;padding:.55rem;border:1px solid var(--bo);border-radius:8px;background:rgba(127,127,127,.06)';
+        const lab = document.createElement('div');
+        lab.style.cssText = 'font-size:.72rem;color:var(--tm);margin-bottom:.4rem;font-weight:600';
+        lab.textContent = 'Validación de fotos (admin)';
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;flex-wrap:wrap;gap:.4rem;align-items:center';
+
+        const mk = (txt, bg, title, fn) => {
+            const b = crearBotonToolbar(txt, title, fn);
+            b.style.background = bg;
+            b.style.color = '#fff';
+            b.style.borderColor = 'rgba(0,0,0,.12)';
+            return b;
+        };
+
+        const toastOk = (m) => {
+            if (typeof window.toast === 'function') window.toast(m, 'success', 3200);
+        };
+        const toastErr = (m) => {
+            if (typeof window.toast === 'function') window.toast(m, 'error', 5200);
+        };
+
+        const refrescarBloqueImagen = async () => {
+            _fotoSrcCache.delete(pedidoId);
+            try {
+                const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
+                const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
+                if (!tok || !apiUrlFn) return;
+                const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(pedidoId)}`), {
+                    headers: { Authorization: `Bearer ${tok}` },
+                });
+                if (!r.ok) return;
+                const row = await r.json();
+                const merged = listaImagenesDesdeRowPedido(row);
+                if (merged.length) {
+                    insertarImagenReclamoEnDOM(merged, {
+                        pedidoId,
+                        reclamo_imagen_rotacion: row.reclamo_imagen_rotacion ?? meta.reclamo_imagen_rotacion,
+                        estado: row.estado ?? meta.estado,
+                    });
+                } else {
+                    dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
+                }
+                try {
+                    const list = window.app?.p;
+                    if (Array.isArray(list)) {
+                        const hit = list.find((x) => x && String(x.id) === String(pedidoId));
+                        if (hit) {
+                            hit.estado = row.estado;
+                            hit.foto_urls = row.foto_urls;
+                            hit.foto_base64 = row.foto_base64;
+                            hit.motivo_rechazo_foto = row.motivo_rechazo_foto;
+                            hit.motivo_desestimacion = row.motivo_desestimacion;
+                            hit.foto_evidencia_validada = row.foto_evidencia_validada;
+                        }
+                    }
+                } catch (_) {}
+            } catch (_) {}
+        };
+
+        row.appendChild(
+            mk(
+                '✅ Foto válida',
+                '#2e7d32',
+                'Confirmar que la foto sirve como evidencia',
+                async () => {
+                    try {
+                        await putPedidoCamposValidacion(pedidoId, { foto_evidencia_validada: true });
+                        toastOk('Foto marcada como válida.');
+                        await refrescarBloqueImagen();
+                    } catch (e) {
+                        toastErr(e?.message || 'Error');
+                    }
+                }
+            )
+        );
+        row.appendChild(
+            mk(
+                '📸 Foto borrosa/no clara',
+                '#f9a825',
+                'Rechazar por calidad y pedir otra foto por WhatsApp',
+                () => {
+                    abrirModalSeleccion(
+                        'Motivo (foto borrosa / no clara)',
+                        [
+                            { value: 'Foto borrosa', label: 'Foto borrosa' },
+                            { value: 'No muestra el reclamo', label: 'No muestra el reclamo' },
+                            { value: 'Mala iluminación', label: 'Mala iluminación' },
+                        ],
+                        async (motivo) => {
+                            try {
+                                await putPedidoCamposValidacion(pedidoId, {
+                                    estado: 'Evidencia insuficiente',
+                                    motivo_rechazo_foto: motivo,
+                                });
+                                toastOk('Estado actualizado. Se notificó al reclamante por WhatsApp si aplica.');
+                                await refrescarBloqueImagen();
+                            } catch (e) {
+                                toastErr(e?.message || 'Error');
+                            }
+                        }
+                    );
+                }
+            )
+        );
+        row.appendChild(
+            mk(
+                '🚫 Desestimar reclamo',
+                '#c62828',
+                'Reclamo falso, broma o contenido inapropiado (elimina fotos en servidor)',
+                () => {
+                    abrirModalSeleccion(
+                        'Motivo de desestimación',
+                        [
+                            {
+                                value: 'Foto con contenido inapropiado (desnudos, violencia, odio)',
+                                label: '📸 Contenido inapropiado',
+                            },
+                            { value: 'Lenguaje ofensivo o agresivo', label: '😡 Lenguaje ofensivo o agresivo' },
+                            { value: 'Broma / reclamo falso', label: '🤡 Broma / reclamo falso' },
+                            { value: 'Foto no relacionada (meme, selfie, paisaje)', label: '📸 Foto no relacionada' },
+                            { value: 'Otro motivo', label: '📝 Otro motivo' },
+                        ],
+                        async (motivo) => {
+                            try {
+                                await putPedidoCamposValidacion(pedidoId, {
+                                    estado: 'Desestimado',
+                                    motivo_desestimacion: motivo,
+                                    foto_urls: null,
+                                    foto_base64: null,
+                                });
+                                toastOk('Reclamo desestimado. Fotos eliminadas del almacenamiento en la nube.');
+                                await refrescarBloqueImagen();
+                            } catch (e) {
+                                toastErr(e?.message || 'Error');
+                            }
+                        }
+                    );
+                }
+            )
+        );
+        adm.appendChild(lab);
+        adm.appendChild(row);
+        inner.appendChild(adm);
+    }
+
     wrap.appendChild(h);
     wrap.appendChild(inner);
 
@@ -373,11 +634,11 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
 
     if (_fotoSrcCache.has(id)) {
         const list = _fotoSrcCache.get(id);
-        const src = list?.[0];
-        if (src)
-            insertarImagenReclamoEnDOM(src, {
+        if (list?.length)
+            insertarImagenReclamoEnDOM(list, {
                 pedidoId: id,
                 reclamo_imagen_rotacion: p?.reclamo_imagen_rotacion,
+                estado: p?.estado,
             });
         return;
     }
@@ -393,14 +654,11 @@ async function enriquecerFotosHttpDesdeApiSiFalta(p) {
         const row = await r.json();
         const merged = listaImagenesDesdeRowPedido(row);
         if (merged.length) _fotoSrcCache.set(id, merged);
-        const src =
-            merged[0] ||
-            primeraUrlDesdeFotoUrlsCampo(row.foto_urls) ||
-            primeraUrlDesdeFotoBase64Campo(row.foto_base64);
-        if (src)
-            insertarImagenReclamoEnDOM(src, {
+        if (merged.length)
+            insertarImagenReclamoEnDOM(merged, {
                 pedidoId: id,
                 reclamo_imagen_rotacion: row.reclamo_imagen_rotacion ?? p?.reclamo_imagen_rotacion,
+                estado: row.estado ?? p?.estado,
             });
     } catch (_) {}
 }
@@ -410,11 +668,21 @@ export async function injectPedidoVerImagenReclamo(p) {
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
 
+    const listLocal = listaImagenesDesdeRowPedido(p);
+    if (listLocal.length) {
+        insertarImagenReclamoEnDOM(listLocal, {
+            pedidoId: p?.id,
+            reclamo_imagen_rotacion: p?.reclamo_imagen_rotacion,
+            estado: p?.estado,
+        });
+        return;
+    }
     const srcLocal = primeraUrlImagenReclamoPedido(p);
     if (srcLocal) {
         insertarImagenReclamoEnDOM(srcLocal, {
             pedidoId: p?.id,
             reclamo_imagen_rotacion: p?.reclamo_imagen_rotacion,
+            estado: p?.estado,
         });
         return;
     }

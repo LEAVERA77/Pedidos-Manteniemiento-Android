@@ -45,6 +45,8 @@ import {
   interpretaRespuestaSiOperadorWhatsapp,
   notificarAdminsChatOperadorSolicitadoWhatsapp,
 } from "./whatsappBotMisReclamos.js";
+import { tryAttachWhatsappImageToPedidoEvidenciaInsuficiente } from "./pedidoFotoEvidenciaInbound.js";
+import { textoClienteNuevaFotoRecibida } from "./pedidoFotoValidacionWa.js";
 import { upsertTelefonoSociosCatalogoDesdeWhatsappInbound } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
@@ -1059,10 +1061,8 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
     descripcionFinal +=
       "\n\n_(Nota sistema: la foto del reclamo se subió sin optimización estándar por un fallo temporal al procesarla.)_";
   }
-  const fotoWaUrl =
-    sess.waPedidoFotoCloudinaryUrl != null && String(sess.waPedidoFotoCloudinaryUrl).trim()
-      ? String(sess.waPedidoFotoCloudinaryUrl).trim()
-      : null;
+  const _waFotos = waSessionFotoUrls(sess);
+  const fotoWaUrl = _waFotos.length ? _waFotos.join("||") : null;
   const dirDecl = String(sess.direccionDeclaradaUsuario || "").trim();
   const dirMapa = String(sess.direccionTexto || "").trim();
   const calleT = String(sess.addrCalle || "").trim();
@@ -1206,6 +1206,21 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
   }
 }
 
+/** URLs Cloudinary acumuladas en sesión (varias fotos con `||` al confirmar). */
+function waSessionFotoUrls(sess) {
+  if (!sess) return [];
+  if (Array.isArray(sess.waPedidoFotosCloudinaryUrls) && sess.waPedidoFotosCloudinaryUrls.length) {
+    return sess.waPedidoFotosCloudinaryUrls.map((u) => String(u).trim()).filter(Boolean);
+  }
+  const u = sess.waPedidoFotoCloudinaryUrl ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
+  return u ? [u] : [];
+}
+
+function waSessionSetFotoUrls(sess, urls) {
+  delete sess.waPedidoFotoCloudinaryUrl;
+  sess.waPedidoFotosCloudinaryUrls = Array.isArray(urls) ? urls.map((x) => String(x).trim()).filter(Boolean) : [];
+}
+
 /** Misma limpieza que *atrás* en el resumen; no borra la foto opcional WA (sigue asociada al borrador). */
 function volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId) {
   delete sess.direccionDeclaradaUsuario;
@@ -1222,11 +1237,12 @@ function volverAtrasDomicilioDesdeResumenWhatsapp(sess, sk, phoneNumberId) {
 }
 
 async function limpiarFotoOpcionalWhatsappEnSesion(sess) {
-  const u = sess?.waPedidoFotoCloudinaryUrl != null ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
-  if (u) {
-    await destroyCloudinaryImageBySecureUrl(u);
-    delete sess.waPedidoFotoCloudinaryUrl;
+  const list = waSessionFotoUrls(sess);
+  for (const u of list) {
+    await destroyCloudinaryImageBySecureUrl(u).catch(() => {});
   }
+  delete sess.waPedidoFotoCloudinaryUrl;
+  delete sess.waPedidoFotosCloudinaryUrls;
   delete sess.waPedidoFotoUploadFallback;
 }
 
@@ -1255,7 +1271,8 @@ async function pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactN
     sess.suministroTipoConexion || sess.suministroFases
       ? `\n*Suministro:* ${String(sess.suministroTipoConexion || "—")} · ${String(sess.suministroFases || "—")}`
       : "";
-  const fotoLine = sess.waPedidoFotoCloudinaryUrl ? `\n*Foto adjunta:* sí` : "";
+  const nF = waSessionFotoUrls(sess).length;
+  const fotoLine = nF ? `\n*Fotos adjuntas:* ${nF}` : "";
   const body =
     `*Resumen del reclamo*\n\n` +
     `${ident.join(" · ")}\n` +
@@ -1279,9 +1296,9 @@ async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, conta
   sess.step = "awaiting_wa_foto_opcional";
   sessions.set(sk, sess);
   const bodyText =
-    `¿Querés adjuntar *una foto* del problema?\n\n` +
-    `Podés enviarla *desde la galería* o *con la cámara* (📎 → Imagen).\n\n` +
-    `_Solo guardamos *una* foto por reclamo; si mandás otra, *reemplaza* la anterior._`;
+    `¿Querés adjuntar *foto(s)* del problema?\n\n` +
+    `Podés enviarlas *desde la galería* o *con la cámara* (📎 → Imagen). Podés mandar *varias*; todas quedan asociadas al reclamo.\n\n` +
+    `_Cuando termines, tocá *Sin foto* o seguí el resumen._`;
 
   const pid = String(wpid || "").trim();
   let accessToken = "";
@@ -1519,15 +1536,12 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     return;
   }
   try {
-    const prevUrl = sess.waPedidoFotoCloudinaryUrl ? String(sess.waPedidoFotoCloudinaryUrl).trim() : "";
+    const prevList = waSessionFotoUrls(sess);
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
       directUrl: directMediaUrl,
     });
-    if (prevUrl) {
-      await destroyCloudinaryImageBySecureUrl(prevUrl).catch(() => {});
-    }
-    sess.waPedidoFotoCloudinaryUrl = secureUrl;
-    sess.waPedidoFotoUploadFallback = !!usedFallback;
+    waSessionSetFotoUrls(sess, [...prevList, secureUrl]);
+    sess.waPedidoFotoUploadFallback = !!usedFallback || !!sess.waPedidoFotoUploadFallback;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await reply(
@@ -1581,6 +1595,20 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
       sess.step === "awaiting_wa_foto_opcional" ||
       sess.step === "awaiting_confirmar_resumen");
   if (!sess || !stepFotoPrevio) {
+    const ctxProbe = await loadTenantBotContext(tid);
+    if (ctxProbe) {
+      const att = await tryAttachWhatsappImageToPedidoEvidenciaInsuficiente({
+        tenantId: tid,
+        phoneDigits: phone,
+        mediaId,
+        phoneNumberId,
+        directMediaUrl,
+      });
+      if (att.attached) {
+        await reply(phone, textoClienteNuevaFotoRecibida(), tid, phoneNumberId);
+        return;
+      }
+    }
     await reply(
       phone,
       "Recibimos tu imagen. Si no estabas cargando un reclamo, no la usamos; para iniciar uno escribí *menú*.",
