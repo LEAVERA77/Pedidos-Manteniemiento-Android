@@ -8,16 +8,10 @@ import { toast } from './ui-utils.js';
 const BTN_ID = 'gn-btn-desestimar-reclamo';
 
 const MOTIVOS = [
-    {
-        value: '📸 Imagen inapropiada (desnudos, violencia, odio)',
-        label: '📸 Imagen inapropiada (desnudos, violencia, odio)',
-    },
+    { value: '📸 Imagen inapropiada', label: '📸 Imagen inapropiada' },
     { value: '🤡 Broma / reclamo falso', label: '🤡 Broma / reclamo falso' },
     { value: '📝 Reclamo improcedente', label: '📝 Reclamo improcedente' },
-    {
-        value: '📸 Foto no relacionada (meme, selfie, paisaje)',
-        label: '📸 Foto no relacionada (meme, selfie, paisaje)',
-    },
+    { value: '📸 Foto no relacionada', label: '📸 Foto no relacionada' },
     { value: '📝 Otro motivo', label: '📝 Otro motivo' },
 ];
 
@@ -65,6 +59,26 @@ function buscarPedidoPorId(id) {
     const list = window.app?.p;
     if (!Array.isArray(list)) return null;
     return list.find((x) => x && String(x.id) === String(id)) || null;
+}
+
+/** Lista puede no incluir el pedido (paginación / filtro): GET + mismo shape que `norm()`. */
+async function obtenerPedidoLiteParaDesestimar(pid) {
+    const local = buscarPedidoPorId(pid);
+    if (local) return local;
+    const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : '';
+    const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : null;
+    const normFn = typeof window.gnNormPedidoDesdeApi === 'function' ? window.gnNormPedidoDesdeApi : null;
+    if (!tok || !apiUrlFn || !normFn) return null;
+    const r = await fetch(apiUrlFn(`/api/pedidos/${encodeURIComponent(String(pid))}`), {
+        headers: { Authorization: `Bearer ${tok}` },
+    });
+    const row = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        const err = new Error(row.error || row.detail || `Error ${r.status}`);
+        err._httpStatus = r.status;
+        throw err;
+    }
+    return normFn(row);
 }
 
 function escOpt(s) {
@@ -222,16 +236,24 @@ function instalarClickDesestimarEnLista() {
                 return;
             }
             const pid = btn.getAttribute('data-gn-desestimar-pid');
-            const p = buscarPedidoPorId(pid);
-            if (!p) {
-                toast('Pedido no encontrado', 'error');
-                return;
-            }
-            if (!estadoPermiteDesestimar(p.es ?? p.estado)) {
-                toast('Solo se puede desestimar en estado Pendiente.', 'info');
-                return;
-            }
-            flujoDesestimarPedido(p);
+            void (async () => {
+                let p;
+                try {
+                    p = await obtenerPedidoLiteParaDesestimar(pid);
+                } catch (err) {
+                    toast(err?.message || 'No se pudo cargar el pedido', 'error');
+                    return;
+                }
+                if (!p) {
+                    toast('Pedido no encontrado', 'error');
+                    return;
+                }
+                if (!estadoPermiteDesestimar(p.es ?? p.estado)) {
+                    toast('Solo se puede desestimar en estado Pendiente.', 'info');
+                    return;
+                }
+                flujoDesestimarPedido(p);
+            })();
         },
         true
     );

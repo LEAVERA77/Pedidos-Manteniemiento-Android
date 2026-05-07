@@ -794,7 +794,10 @@ textarea{resize:vertical;min-height:80px}
 /* ── v2.0 ── */
 @keyframes alertaIn{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 @keyframes slideIn{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-.admin-panel{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:5000;display:none;align-items:center;justify-content:center;padding:max(.35rem,env(safe-area-inset-top)) max(.35rem,env(safe-area-inset-right)) max(.35rem,env(safe-area-inset-bottom)) max(.35rem,env(safe-area-inset-left));overflow:hidden;box-sizing:border-box}
+/* Por encima de panel pedidos bp2 / docks (~12k) y mapas flotantes; no forzar position (sigue fixed en .admin-panel). */
+#admin-panel.admin-panel{z-index:99999!important}
+.admin-panel{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999!important;display:none;align-items:center;justify-content:center;padding:max(.35rem,env(safe-area-inset-top)) max(.35rem,env(safe-area-inset-right)) max(.35rem,env(safe-area-inset-bottom)) max(.35rem,env(safe-area-inset-left));overflow:hidden;box-sizing:border-box}
+.admin-panel .admin-box{position:relative;z-index:1}
 .admin-panel.active{display:flex}
 .admin-panel.admin-panel--maximized{padding:0;align-items:stretch;justify-content:stretch}
 .admin-panel.admin-panel--maximized .admin-box{width:100%!important;max-width:none!important;margin:0!important;border-radius:0!important;height:100dvh!important;max-height:100dvh!important;min-height:0!important;flex:1 1 auto!important}

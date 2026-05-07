@@ -497,7 +497,9 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     img.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        abrirVisorReclamoUnificado(sources, activeIndex);
+        try {
+            document.querySelector('#dm .mh button.cm')?.click();
+        } catch (_) {}
     });
 
     img.addEventListener('error', () => {
@@ -585,7 +587,7 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     const hint = document.createElement('p');
     hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
     hint.textContent =
-        'Clic en la imagen: mismo visor que en fotos de trabajo (zoom con rueda, arrastre, rotar, descargar). Varias fotos: miniaturas arriba. «Guardar rotación en BD» solo si cambiaste el ángulo.';
+        'Clic en la imagen principal: cierra el detalle del pedido. Varias fotos: miniaturas arriba. «Guardar rotación en BD» solo si cambiaste el ángulo.';
 
     if (thumbRow) inner.appendChild(thumbRow);
     inner.appendChild(imgHost);

@@ -80,7 +80,18 @@ export function crearGraficoMotivosDesestimacion(crearChart, rMotivosRows) {
         {
             plugins: {
                 legend: { display: true, position: 'bottom' },
-                tooltip: { callbacks: { label: (c) => ` ${c.label}: ${c.parsed} pedidos` } },
+                tooltip: {
+                    callbacks: {
+                        label: (c) => {
+                            const ds = c.dataset;
+                            const arr = ds?.data || [];
+                            const tot = arr.reduce((s, v) => s + Number(v || 0), 0);
+                            const v = Number(c.parsed || 0);
+                            const pct = tot ? Math.round((1000 * v) / tot) / 10 : 0;
+                            return ` ${c.label}: ${v} pedidos (${pct}%)`;
+                        },
+                    },
+                },
             },
         }
     );

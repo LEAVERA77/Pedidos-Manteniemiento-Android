@@ -3929,6 +3929,8 @@ const norm = p => ({
     })(),
 });
 
+if (typeof window !== 'undefined') window.gnNormPedidoDesdeApi = norm;
+
 if (typeof window !== 'undefined' && !window._pedidoCoordsInferidas) window._pedidoCoordsInferidas = {};
 
 /** WGS84 finito, no (0,0), dentro de rango — pin útil en mapa (no confundir con domicilio exacto). */
@@ -16332,16 +16334,36 @@ async function guardarConfigEmpresa() {
                         body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
                     }
                     {
-                        const waDef = (document.getElementById('cfg-wa-ar-default-area')?.value || '').trim();
-                        const waDigits = waDef.replace(/\D/g, '').slice(0, 6);
-                        body.configuracion.whatsapp_ar_default_area = waDigits || null;
-                        const waPr = parseWhatsappArAreaPrefixesInput(
-                            document.getElementById('cfg-wa-ar-area-prefixes')?.value || ''
-                        );
-                        body.configuracion.whatsapp_ar_area_prefixes = waPr.length ? waPr : null;
-                        body.configuracion.whatsapp_ar_areas_por_localidad = parseWhatsappArAreasPorLocalidadTextarea(
-                            document.getElementById('cfg-wa-ar-areas-por-localidad')?.value || ''
-                        );
+                        const elWaDef = document.getElementById('cfg-wa-ar-default-area');
+                        const elWaPr = document.getElementById('cfg-wa-ar-area-prefixes');
+                        const elWaTa = document.getElementById('cfg-wa-ar-areas-por-localidad');
+                        if (elWaDef || elWaPr || elWaTa) {
+                            const waDef = (elWaDef?.value || '').trim();
+                            const waDigits = waDef.replace(/\D/g, '').slice(0, 6);
+                            body.configuracion.whatsapp_ar_default_area = waDigits || null;
+                            const waPr = parseWhatsappArAreaPrefixesInput(elWaPr?.value || '');
+                            body.configuracion.whatsapp_ar_area_prefixes = waPr.length ? waPr : null;
+                            body.configuracion.whatsapp_ar_areas_por_localidad = parseWhatsappArAreasPorLocalidadTextarea(
+                                elWaTa?.value || ''
+                            );
+                        } else {
+                            const ec = window.EMPRESA_CFG || {};
+                            const def = ec.whatsapp_ar_default_area != null ? ec.whatsapp_ar_default_area : ec.ar_default_area;
+                            body.configuracion.whatsapp_ar_default_area =
+                                def != null && String(def).replace(/\D/g, '').length
+                                    ? String(def).replace(/\D/g, '').slice(0, 6)
+                                    : null;
+                            const rawPr = ec.whatsapp_ar_area_prefixes;
+                            const prArr = Array.isArray(rawPr)
+                                ? rawPr
+                                : typeof rawPr === 'string'
+                                  ? parseWhatsappArAreaPrefixesInput(rawPr)
+                                  : [];
+                            body.configuracion.whatsapp_ar_area_prefixes = prArr.length ? prArr : null;
+                            const m = ec.whatsapp_ar_areas_por_localidad;
+                            body.configuracion.whatsapp_ar_areas_por_localidad =
+                                m && typeof m === 'object' && !Array.isArray(m) ? m : null;
+                        }
                     }
                     if (campos.nombre) body.nombre = campos.nombre;
                     if (campos.tipo) body.tipo = campos.tipo;
@@ -18032,7 +18054,7 @@ async function generarInformeMensualENRE() {
                 ctx.restore();
                 return;
             }
-            const pctCharts = { 'chart-prioridades': true, 'chart-usuarios': true, 'chart-tecnicos': true };
+            const pctCharts = { 'chart-usuarios': true, 'chart-tecnicos': true };
             if (pctCharts[cid] && chart.config.type === 'bar' && chart.options.indexAxis !== 'y') {
                 drawPctVertical(chart.data.datasets[0]?.data, chart.getDatasetMeta(0));
             }
@@ -18327,17 +18349,42 @@ async function cargarEstadisticas() {
                ),
                borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.98)' }],
             { plugins: { legend: { display: true, position: 'bottom' },
-                tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + c.parsed + ' pedidos' }}}}
+                tooltip: { callbacks: { label: (c) => {
+                    const ds = c.dataset;
+                    const arr = ds?.data || [];
+                    const tot = arr.reduce((s, v) => s + Number(v || 0), 0);
+                    const v = Number(c.parsed || 0);
+                    const pct = tot ? Math.round((1000 * v) / tot) / 10 : 0;
+                    return ` ${c.label}: ${v} pedidos (${pct}%)`;
+                } }}}}
         );
 
-        // ── Gráfico prioridades: barras coloreadas ────────────
-        crearChart('chart-prioridades', 'bar',
+        // ── Gráfico prioridades: dona + % (plugin gestornovaPctDoughnut) ──
+        crearChart('chart-prioridades', 'doughnut',
             rPrior.rows.map(r => r.prioridad),
-            [{ label: 'Pedidos', data: rPrior.rows.map(r => parseInt(r.n)),
-               backgroundColor: rPrior.rows.map(r => priorColor[r.prioridad] || 'rgba(203, 213, 225, 0.5)') }],
-            { layout: { padding: { top: 32, bottom: 4, left: 4, right: 8 } },
-                plugins: { legend: { display: false },
-                tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}}}
+            [{
+                data: rPrior.rows.map(r => parseInt(r.n, 10)),
+                backgroundColor: rPrior.rows.map(r => priorColor[r.prioridad] || 'rgba(203, 213, 225, 0.5)'),
+                borderWidth: 1.5,
+                borderColor: 'rgba(255, 255, 255, 0.98)',
+            }],
+            {
+                plugins: {
+                    legend: { display: true, position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: (c) => {
+                                const ds = c.dataset;
+                                const arr = ds?.data || [];
+                                const tot = arr.reduce((s, v) => s + Number(v || 0), 0);
+                                const v = Number(c.parsed || 0);
+                                const pct = tot ? Math.round((1000 * v) / tot) / 10 : 0;
+                                return ` ${c.label}: ${v} pedidos (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+            }
         );
 
         // ── Gráfico tipos de trabajo: barras horizontales apiladas (otros + desestimados) ─────
