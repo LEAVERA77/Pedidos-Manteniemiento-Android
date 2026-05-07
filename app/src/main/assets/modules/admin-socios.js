@@ -2145,5 +2145,4 @@ export {
     vaciarCoordenadasSociosCatalogo,
     cerrarModalFormatoExcelSocios,
     descargarPlantillaCsvSociosRubro,
-    descargarPlanillaSociosCsvExport,
 };
