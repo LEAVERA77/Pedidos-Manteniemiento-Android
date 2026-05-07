@@ -9,6 +9,7 @@ Aplica al **`app.js`** de **`app/src/main/assets/app.js`** (Nexxo) y a la copia 
 
 ## Regla para el agente
 
+0. **Norma dura:** salvo bugfix mínimo o refactor que **saca** líneas, **no aumentar** el tamaño de `app.js` (evitar diff neto positivo en ese archivo). Nueva lógica → **`js/*.js`** o **`modules/*.js`** + import mínimo.
 1. **No añadir** bloques grandes de lógica nueva dentro de `app.js` si se puede evitar.
 2. **Nueva funcionalidad:** extraer a **módulos ES** bajo **`app/src/main/assets/js/`** (p. ej. `js/mi-feature.js`) o reutilizar **archivos hermanos ya existentes** (`offline.js`, `map.js`, `map-view.js`, **`admin-web-responsive.css`** para layout admin móvil/tablet sin inflar JS, etc.), e importar desde `app.js` solo el **pegamento mínimo** (unas líneas).
 3. **Correcciones pequeñas** en `app.js` (bugs, null checks, mensajes) están bien si son **pocas líneas** o si el **balance neto** reduce tamaño (refactor que mueve código fuera).

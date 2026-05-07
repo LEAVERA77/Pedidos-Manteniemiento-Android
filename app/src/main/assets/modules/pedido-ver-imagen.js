@@ -141,7 +141,11 @@ function crearBotonToolbar(texto, titulo, onClick) {
     b.title = titulo || texto;
     b.style.cssText =
         'font-size:.72rem;padding:.35rem .55rem;border:1px solid var(--bo);border-radius:6px;background:var(--bg);cursor:pointer;color:inherit;line-height:1.2';
-    b.addEventListener('click', onClick);
+    b.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onClick(ev);
+    });
     return b;
 }
 
@@ -459,14 +463,15 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     const wrap = document.createElement('div');
     wrap.id = 'gn-pedido-imagen-reclamo';
     wrap.className = 'ds';
-    wrap.addEventListener('click', (e) => e.stopPropagation(), true);
+    /** Bubble (no capture): en capture el contenedor bloqueaba el clic antes de llegar a botones/imágenes. */
+    wrap.addEventListener('click', (e) => e.stopPropagation());
 
     const h = document.createElement('h4');
     h.textContent = sources.length > 1 ? '📸 Imágenes del reclamo' : '📸 Imagen del reclamo';
 
     const inner = document.createElement('div');
     inner.style.marginTop = '0.5rem';
-    inner.addEventListener('click', (e) => e.stopPropagation(), true);
+    inner.addEventListener('click', (e) => e.stopPropagation());
 
     let thumbRow = null;
     if (sources.length > 1) {
@@ -546,7 +551,7 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     const hint = document.createElement('p');
     hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem;line-height:1.35';
     hint.textContent =
-        'Clic en la imagen o «Abrir en visor»: mismo modal que al cargar fotos del pedido (técnico/admin). Doble clic en una miniatura: abre esa foto.';
+        'Clic en la imagen o «Abrir en visor»: mismo visor de foto ampliada (zoom, rotar, descargar). Guardar rotación en servidor según permisos del rol. Doble clic en una miniatura: abre esa foto.';
 
     if (thumbRow) inner.appendChild(thumbRow);
     inner.appendChild(imgHost);
