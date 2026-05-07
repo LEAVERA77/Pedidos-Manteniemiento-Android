@@ -3822,6 +3822,7 @@ const norm = p => ({
             ? parseInt(p.solicitud_derivacion_usuario_id, 10)
             : null,
     sddsu: String(p.solicitud_derivacion_destino_sugerido || '').trim(),
+    mdes: String(p.motivo_desestimacion || '').trim(),
     inci: p.incidencia_id != null ? parseInt(String(p.incidencia_id), 10) || null : null,
     wgeo: (() => {
         const g = p.geocode_log_whatsapp;
@@ -11768,7 +11769,8 @@ async function detalle(p, opts = {}) {
         'Asignado': '#fae8ff',
         'En ejecución': '#dbeafe',
         'Cerrado': '#dcfce7',
-        'Derivado externo': '#e2e8f0'
+        'Derivado externo': '#e2e8f0',
+        Desestimado: '#f1f5f9',
     };
     
     const co = {
@@ -11776,7 +11778,8 @@ async function detalle(p, opts = {}) {
         'Asignado': '#86198f',
         'En ejecución': '#1d4ed8',
         'Cerrado': '#166534',
-        'Derivado externo': '#334155'
+        'Derivado externo': '#334155',
+        Desestimado: '#475569',
     };
     
     const ed = esAdmin() || String(p.ui) === String(app.u?.id)
@@ -12077,6 +12080,7 @@ async function detalle(p, opts = {}) {
             <div class="dr"><span class="dl">Tipo</span><span class="dv">${p.tt||'--'}</span></div>
             <div class="dr"><span class="dl">Técnico asignado</span><span class="dv">${nAsig}${fasiStr ? ' · ' + fasiStr : ''}</span></div>
             <div class="dr"><span class="dl">Avance</span><span class="dv">${p.av}% <div style="height:4px;background:#e2e8f0;border-radius:2px;width:100px;display:inline-block;vertical-align:middle;margin-left:6px;overflow:hidden"><div style="height:100%;width:${p.av}%;background:linear-gradient(90deg,#1e3a8a,#3b82f6)"></div></div></span></div>
+            ${p.es === 'Desestimado' ? `<div class="dr" style="flex-direction:column;gap:.3rem;margin-top:.35rem;padding:.5rem .55rem;background:#fef2f2;border:1px solid #fecaca;border-radius:.45rem"><span class="dl">Motivo de desestimación</span><div class="trb" style="color:#7f1d1d;font-size:.88rem;line-height:1.45">${p.mdes ? escDet(p.mdes) : '<span style="color:var(--tl)">Sin registro.</span>'}</div></div>` : ''}
         </div>
         
         <div class="ds">
@@ -12137,8 +12141,8 @@ async function detalle(p, opts = {}) {
         <div class="gn-dm-actions-bar">
         <div class="da">
             ${ed && p.es === 'En ejecución' ? `<div class="gn-dm-estado-ejecucion" role="status"><i class="fas fa-play-circle"></i> Pedido en ejecución — usá Cargar avance o Cerrar cuando corresponda.</div>` : ''}
-            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
-            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
+            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && p.es !== 'Desestimado' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
+            ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && p.es !== 'Desestimado' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
             ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 p2" title="Marca el pedido como En ejecución. Con teléfono válido y WhatsApp del tenant, el servidor puede avisar al cliente." onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> ${lblPonerEnEjecucion}</button><button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
             ${ed && p.es === 'En ejecución' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button type="button" class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
             <button type="button" class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
