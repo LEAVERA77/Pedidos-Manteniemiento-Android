@@ -10050,6 +10050,21 @@ async function updPedido(id, campos, usuarioId) {
     render();
 }
 
+/** WebView Android: tras «Poner en ejecución» el técnico sigue en #dm; en web se cierra el modal como antes. */
+function _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(pedidoId) {
+    try {
+        if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
+            const p2 = app.p.find((p) => String(p.id) === String(pedidoId));
+            if (p2) void detalle(p2, { skipBackgroundRefetch: true });
+            else closeAll();
+        } else {
+            closeAll();
+        }
+    } catch (_) {
+        closeAll();
+    }
+}
+
 async function iniciar(id) {
     try {
         const now = new Date().toISOString();
@@ -10059,8 +10074,11 @@ async function iniciar(id) {
             if (idx !== -1) app.p[idx] = norm(apiRow);
             offlinePedidosSave(app.p);
             render();
-            toast('Pedido iniciado. Si hay teléfono de contacto y WhatsApp configurado, se avisó al cliente.', 'success');
-            closeAll();
+            toast(
+                '✅ Pedido en ejecución. Si hay teléfono de contacto y WhatsApp configurado, se avisó al cliente.',
+                'success'
+            );
+            _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(id);
             return;
         }
         await updPedido(id, {
@@ -10072,8 +10090,8 @@ async function iniciar(id) {
             const pidNum = parseInt(id, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
         }
-        toast('Pedido iniciado', 'info');
-        closeAll();
+        toast('✅ Pedido en ejecución', 'success');
+        _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(id);
     } catch(e) {
         toastError('iniciar-pedido', e);
     }
