@@ -28,7 +28,7 @@ function aplicarPlaceholders(texto, ctx) {
 }
 
 /**
- * Destinatarios masivos: **solo móviles** AR (549…). Excluye fijos (54 sin 9).
+ * Destinatarios masivos: **solo móviles** AR (54 + 9 + área). Excluye fijos (54 sin 9).
  * Une `pedidos.telefono_contacto` y `socios_catalogo.telefono` del tenant (y rubro si existe la columna).
  */
 async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType) {

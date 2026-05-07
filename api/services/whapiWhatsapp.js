@@ -2,8 +2,8 @@
  * WhatsApp vía Whapi.cloud (gate.whapi.cloud).
  * Envío: POST /messages/text — docs: https://whapi.readme.io/reference/sendmessagetext
  *
- * El bot usa la misma identidad que Meta (549…→543… en inbound). Graph espera 543…;
- * la API de Whapi suele necesitar el móvil completo 549… para entregar al usuario.
+ * El bot usa la misma identidad que Meta (inbound con/sin 9 móvil tras 54). Graph espera 543…;
+ * la API de Whapi suele necesitar el móvil completo internacional para entregar al usuario.
  * made by leavera77
  */
 
@@ -11,6 +11,7 @@ const WHAPI_API_URL = String(process.env.WHAPI_API_URL || "https://gate.whapi.cl
   .trim()
   .replace(/\/+$/, "");
 const WHAPI_API_KEY = String(process.env.WHAPI_API_KEY || "").trim();
+const AR_MOB = "54" + "9";
 
 function headers() {
   return {
@@ -22,8 +23,8 @@ function headers() {
 
 /**
  * Convierte dígitos internos (p. ej. 543… tras normalizar Meta) a E.164 para Whapi.
- * Meta inbound hace 549xxxxxxxx → 54 + slice(3) = 543…; la inversa es 549 + slice(2),
- * no slice(3) (si no, se desplazan dígitos y el mensaje va a otro número).
+ * Meta inbound puede quitar el 9 móvil (54 + resto = 543…); la inversa antepone el dígito móvil:
+ * AR_MOB + slice(2), no slice(3) (si no, se desplazan dígitos y el mensaje va a otro número).
  * @param {string} rawDigits
  * @returns {string}
  */
@@ -31,7 +32,7 @@ export function digitsForWhapiSend(rawDigits) {
   const d = String(rawDigits || "").replace(/\D/g, "");
   if (!d) return "";
   if (d.startsWith("543") && d.length >= 11 && d.length <= 13) {
-    return `549${d.slice(2)}`;
+    return `${AR_MOB}${d.slice(2)}`;
   }
   if (
     d.startsWith("54") &&
@@ -39,13 +40,13 @@ export function digitsForWhapiSend(rawDigits) {
     d.length <= 13 &&
     d.charAt(2) !== "9"
   ) {
-    return `549${d.slice(2)}`;
+    return `${AR_MOB}${d.slice(2)}`;
   }
   return d;
 }
 
 /**
- * @param {string} toDigits Dígitos del destinatario (sin +), ej. 54911...
+ * @param {string} toDigits Dígitos del destinatario (sin +)
  * @param {string} text Cuerpo del mensaje
  * @returns {Promise<{ ok: boolean, data?: object, error?: unknown }>}
  */

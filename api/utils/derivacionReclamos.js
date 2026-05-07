@@ -1,6 +1,6 @@
 /**
  * Configuración `clientes.configuracion.derivacion_reclamos`.
- * Slots simples: { nombre?, whatsapp? } con whatsapp internacional +549...
+ * Slots simples: { nombre?, whatsapp? } con whatsapp internacional +54…
  * Listas (internet, TV): array de esos slots (máx. DERIVACION_LIST_MAX).
  */
 

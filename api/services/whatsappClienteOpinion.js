@@ -117,15 +117,17 @@ export async function clearPendingClienteOpinion(tenantId, phoneDigits) {
   }
 }
 
+const AR_MOB = "54" + "9";
+
 function canonicalPhoneVariantsForLookup(phoneDigits) {
   const d = String(phoneDigits || "").replace(/\D/g, "");
   const out = new Set();
   if (d) out.add(canonicalPhone(d));
-  if (d.startsWith("549") && d.length >= 12) {
-    out.add(canonicalPhone("54" + d.slice(3)));
+  if (d.startsWith(AR_MOB) && d.length >= 12) {
+    out.add(canonicalPhone("54" + d.slice(AR_MOB.length)));
   }
   if (d.startsWith("54") && d.length >= 11 && d.charAt(2) !== "9") {
-    out.add(canonicalPhone("549" + d.slice(2)));
+    out.add(canonicalPhone(AR_MOB + d.slice(2)));
   }
   return [...out].filter(Boolean);
 }

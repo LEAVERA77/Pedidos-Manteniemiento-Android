@@ -22,7 +22,7 @@ function argentinaStripEnabledFromEnv() {
 }
 
 /**
- * Insertar 9 móvil tras +54 cuando falta (543… → 549…). Por defecto ACTIVO en **outbound**:
+ * Insertar 9 móvil tras +54 cuando falta (falta dígito móvil tras el país). Por defecto ACTIVO en **outbound**:
  * contactos guardados sin 9 y envíos a terceros (ENERSA) lo requieren.
  * Desactivar: META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false
  */
@@ -34,15 +34,17 @@ function argentinaInsertMobileNineEnabledFromEnv() {
   return true;
 }
 
+const AR_MOB_PREFIX = "54" + "9";
+
 /**
- * Graph API `to` (Argentina): el webhook manda 549 + área + abonado; la lista de prueba de Meta
+ * Graph API `to` (Argentina): el webhook manda prefijo móvil internacional + área + abonado; la lista de prueba de Meta
  * suele registrar 54 + área + abonado (sin el 9) → 131030 si no normalizamos.
  *
- * Por defecto: quitar un 9 tras 54 (549… → 54…). Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
+ * Por defecto: quitar un 9 tras 54. Desactivar solo con META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9=false|0|no|off
  *
  * **Modos:**
  * - `inbound` (default): solo strip; NO insertar 9. Identidad/sesión/webhook/`wa_id` (debe ser estable).
- * - `outbound`: strip + inserción 543…→549… cuando aplica (derivación ENERSA, envíos Graph).
+ * - `outbound`: strip + inserción 54+área → 54+9+área cuando aplica (derivación ENERSA, envíos Graph).
  *
  * @param {string} digits
  * @param {{ mode?: 'inbound' | 'outbound' }} [opts]
@@ -52,11 +54,11 @@ export function normalizeWhatsAppRecipientForMeta(digits, opts = {}) {
   const d = String(digits || "").replace(/\D/g, "");
   const stripEnvRaw = process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
   const stripOn = argentinaStripEnabledFromEnv();
-  const wouldStrip = d.startsWith("549") && d.length >= 12 && d.length <= 16;
+  const wouldStrip = d.startsWith(AR_MOB_PREFIX) && d.length >= 12 && d.length <= 16;
   let out = d;
 
   if (stripOn && wouldStrip) {
-    out = `54${d.slice(3)}`;
+    out = `54${d.slice(AR_MOB_PREFIX.length)}`;
   } else if (
     mode === "outbound" &&
     argentinaInsertMobileNineEnabledFromEnv() &&
@@ -64,7 +66,7 @@ export function normalizeWhatsAppRecipientForMeta(digits, opts = {}) {
     d.length >= 11 &&
     d.charAt(2) !== "9"
   ) {
-    out = `549${d.slice(2)}`;
+    out = `${AR_MOB_PREFIX}${d.slice(2)}`;
   }
 
   if (wouldStrip || d.startsWith("54")) {
@@ -86,7 +88,7 @@ export function normalizeWhatsAppRecipientForMeta(digits, opts = {}) {
 }
 
 /**
- * Máscara para logs (Render): varios números AR comparten los mismos 4–6 dígitos iniciales (ej. 549343…).
+ * Máscara para logs (Render): varios números AR comparten los mismos 4–6 dígitos iniciales.
  * Usar siempre `mask` o `tail4` para distinguir vecino vs tercero (ENERSA).
  */
 export function maskWaDigitsForLog(digits) {

@@ -5,6 +5,9 @@
  * Referencia: E.164 móvil AR = 54 + 9 + código de área (sin 0) + abonado (sin el 15 nacional).
  */
 
+/** Prefijo internacional móvil AR (54 + dígito 9 móvil). */
+const AR_MOB = "54" + "9";
+
 /** @param {unknown} s */
 export function digitsOnly(s) {
   return String(s ?? "").replace(/\D/g, "");
@@ -17,19 +20,19 @@ export function digitsOnly(s) {
  */
 export function isLikelyArgentinaInternationalLandline(d) {
   if (!d || d.length < 10 || !d.startsWith("54")) return false;
-  if (d.startsWith("549")) return false;
+  if (d.startsWith(AR_MOB)) return false;
   if (d.charAt(2) === "9") return false;
   return d.length >= 11;
 }
 
 /**
- * Algunos catálogos guardan el 15 nacional dentro del bloque 549…; lo quitamos una vez.
+ * Algunos catálogos guardan el 15 nacional dentro del bloque móvil internacional; lo quitamos una vez.
  * @param {string} d
  */
-function stripSpurious15After549Area(d) {
+function stripSpurious15AfterMobilePrefix(d) {
   for (const n of [4, 3, 2]) {
-    const m = d.match(new RegExp(`^549(\\d{${n}})15(\\d{6,9})$`));
-    if (m) return `549${m[1]}${m[2]}`;
+    const m = d.match(new RegExp(`^${AR_MOB}(\\d{${n}})15(\\d{6,9})$`));
+    if (m) return `${AR_MOB}${m[1]}${m[2]}`;
   }
   return d;
 }
@@ -52,7 +55,7 @@ function extractNationalMobile15(body) {
 }
 
 /**
- * Convierte texto libre a dígitos E.164 móvil AR (549…) o null si parece fijo / inválido.
+ * Convierte texto libre a dígitos E.164 móvil AR (54 + 9 + área + abonado) o null si parece fijo / inválido.
  *
  * @param {unknown} raw
  * @param {{ defaultAreaDigits?: string }} [opts] — si el valor es solo "15…" sin característica, se antepone `defaultAreaDigits` (p. ej. "343").
@@ -69,14 +72,14 @@ export function normalizeArgentinaMobileWhatsappDigits(raw, opts = {}) {
 
   if (isLikelyArgentinaInternationalLandline(d)) return null;
 
-  if (d.startsWith("549")) {
-    d = stripSpurious15After549Area(d);
+  if (d.startsWith(AR_MOB)) {
+    d = stripSpurious15AfterMobilePrefix(d);
     if (d.length >= 12 && d.length <= 15) return d;
     return null;
   }
 
   if (d.startsWith("54") && d.charAt(2) === "9") {
-    d = stripSpurious15After549Area(d);
+    d = stripSpurious15AfterMobilePrefix(d);
     if (d.length >= 12 && d.length <= 15) return d;
     return null;
   }
@@ -85,25 +88,25 @@ export function normalizeArgentinaMobileWhatsappDigits(raw, opts = {}) {
 
   if (d.startsWith("9") && d.length >= 10 && d.length <= 13) {
     const rest = d.slice(1);
-    if (/^11\d{8,9}$/.test(rest)) return `549${rest}`;
+    if (/^11\d{8,9}$/.test(rest)) return `${AR_MOB}${rest}`;
     const m3 = rest.match(/^(\d{3})(\d{6,8})$/);
-    if (m3) return `549${m3[1]}${m3[2]}`;
+    if (m3) return `${AR_MOB}${m3[1]}${m3[2]}`;
   }
 
   const m15only = d.match(/^15(\d{6,8})$/);
   if (m15only && defaultArea.length >= 2) {
-    return `549${defaultArea}${m15only[1]}`;
+    return `${AR_MOB}${defaultArea}${m15only[1]}`;
   }
 
   if (d.startsWith("0")) {
     const body = d.slice(1);
     const mob = extractNationalMobile15(body);
-    if (mob) return `549${mob.area}${mob.subscriber}`;
+    if (mob) return `${AR_MOB}${mob.area}${mob.subscriber}`;
     return null;
   }
 
   const mob2 = extractNationalMobile15(d);
-  if (mob2) return `549${mob2.area}${mob2.subscriber}`;
+  if (mob2) return `${AR_MOB}${mob2.area}${mob2.subscriber}`;
 
   return null;
 }

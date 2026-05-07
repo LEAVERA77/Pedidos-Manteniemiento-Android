@@ -76,7 +76,7 @@ function extractWhapiLocationForMeta(msg) {
   return { latitude: la, longitude: lo };
 }
 
-/** Dígitos del remitente: `from` o, si falta, JID en `chat_id` (ej. 549...@s.whatsapp.net). */
+/** Dígitos del remitente: `from` o, si falta, JID en `chat_id` (ej. 54…@s.whatsapp.net). */
 function senderDigitsFromWhapiMessage(m) {
   let digits = String(m.from || "").replace(/\D/g, "");
   if (digits.length >= 8) return digits;

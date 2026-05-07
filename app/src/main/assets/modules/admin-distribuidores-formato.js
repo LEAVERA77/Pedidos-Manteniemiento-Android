@@ -106,7 +106,6 @@ function modalFormatoMunicipio() {
       <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Ejemplo</h4>
       <pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">nombre | localidad | provincia
 Centro Cívico | Paraná | Entre Ríos</pre>
-      <p style="font-size:.72rem;color:var(--tl);margin:.55rem 0 0;line-height:1.45">Importación actual del panel: la primera fila debe mapear a las columnas internas <code style="font-size:.7rem">codigo | nombre | tension | localidad</code>; podés usar código de barrio en la primera columna, nombre en la segunda y localidad en la cuarta; dejá tensión vacía si no aplica.</p>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.85rem">
         <button type="button" class="btn-sm primary" onclick="descargarPlantillaCsvDistribuidoresRubro()"><i class="fas fa-download"></i> Descargar plantilla CSV</button>
         <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="cerrarModalFormatoExcelDistribuidores()">Cerrar</button>
@@ -142,7 +141,6 @@ function modalFormatoAgua() {
       <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Ejemplo</h4>
       <pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">id_socio | medidor | nombre | direccion | localidad | provincia
 45001 | A001 | María Gómez | Mitre 120 | Paraná | Entre Ríos</pre>
-      <p style="font-size:.72rem;color:var(--tl);margin:.55rem 0 0;line-height:1.45">Importación actual del panel: fila 1 como <code style="font-size:.7rem">codigo | nombre | tension | localidad</code> en la tabla interna; podés usar código de ramal, nombre, tensión vacía y localidad hasta alinear un import dedicado.</p>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.85rem">
         <button type="button" class="btn-sm primary" onclick="descargarPlantillaCsvDistribuidoresRubro()"><i class="fas fa-download"></i> Descargar plantilla CSV</button>
         <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="cerrarModalFormatoExcelDistribuidores()">Cerrar</button>

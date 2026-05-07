@@ -18,9 +18,9 @@ function ensureDock() {
             host.id = DOCK_HOST_CLUSTER;
             host.className = 'gn-map-dock-extras';
             host.setAttribute('aria-label', 'Pedidos y avisos');
-            const capas = document.getElementById('map-tab-capas-osm');
-            if (capas && capas.parentElement === cluster) {
-                capas.insertAdjacentElement('afterend', host);
+            const filtrosTab = document.getElementById('map-tab-filtros');
+            if (filtrosTab && filtrosTab.parentElement === cluster) {
+                filtrosTab.insertAdjacentElement('afterend', host);
             } else {
                 cluster.appendChild(host);
             }

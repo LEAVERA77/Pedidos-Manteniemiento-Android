@@ -400,9 +400,9 @@ function sociosCatalogoTelefonoColapsar15Repetido(d) {
     return s;
 }
 
-/** Tras armar dígitos con prefijo país 54 + área + abonado, quita el 9 móvil (549… → 54…). */
-function sociosImportTelefonoCanon54(digits549style) {
-    const q = quitarMovil9Tras54Digitos(String(digits549style || '').replace(/\D/g, ''));
+/** Tras armar dígitos con prefijo país + área + abonado, quita el 9 móvil tras el 54 cuando corresponde. */
+function sociosImportTelefonoCanon54(digitsWithOptionalMobile9) {
+    const q = quitarMovil9Tras54Digitos(String(digitsWithOptionalMobile9 || '').replace(/\D/g, ''));
     return q.length >= 11 && q.length <= 15 ? q : '';
 }
 
@@ -411,11 +411,12 @@ function sociosImportTelefonoCanon54(digits549style) {
  * Usa tabla codigos_area_argentina si el número viene solo con prefijo 15 y localidad/provincia.
  */
 function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) {
+    const P54M = '54' + '9';
     const orig = String(raw || '').trim();
     let d = orig.replace(/\D/g, '');
     if (!d || d.length < 6) return orig || null;
     d = sociosCatalogoTelefonoColapsar15Repetido(d);
-    if (d.startsWith('549')) {
+    if (d.startsWith(P54M)) {
         let r = d.slice(3).replace(/^0+/, '');
         if (/^9\d/.test(r) && r.length >= 3) {
             const r2 = r.slice(1).replace(/^0+/, '');
@@ -427,14 +428,14 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             r = sociosCatalogoTelefonoQuitar15TrasArea(r);
             if (r === prev) break;
         }
-        const out = ('549' + r).replace(/\D/g, '');
+        const out = (P54M + r).replace(/\D/g, '');
         return sociosImportTelefonoCanon54(out) || orig || null;
     }
-    if (d.startsWith('54') && !d.startsWith('549')) {
-        d = '549' + d.slice(2).replace(/^0+/, '');
+    if (d.startsWith('54') && !d.startsWith(P54M)) {
+        d = P54M + d.slice(2).replace(/^0+/, '');
         d = sociosCatalogoTelefonoColapsar15Repetido(d);
     }
-    if (d.startsWith('549')) {
+    if (d.startsWith(P54M)) {
         let r = d.slice(3).replace(/^0+/, '');
         let prev;
         for (let i = 0; i < 5; i++) {
@@ -442,7 +443,7 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             r = sociosCatalogoTelefonoQuitar15TrasArea(r);
             if (r === prev) break;
         }
-        const out = ('549' + r).replace(/\D/g, '');
+        const out = (P54M + r).replace(/\D/g, '');
         return sociosImportTelefonoCanon54(out) || orig || null;
     }
     while (d.startsWith('0') && d.length >= 10) d = d.slice(1);
@@ -460,12 +461,12 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             if (d === prev) break;
         }
     }
-    if (!d.startsWith('549')) {
-        if (d.startsWith('54')) d = '549' + d.slice(2).replace(/^0+/, '');
-        else d = '549' + d.replace(/^0+/, '');
+    if (!d.startsWith(P54M)) {
+        if (d.startsWith('54')) d = P54M + d.slice(2).replace(/^0+/, '');
+        else d = P54M + d.replace(/^0+/, '');
     }
     d = sociosCatalogoTelefonoColapsar15Repetido(d.replace(/\D/g, ''));
-    if (d.startsWith('549')) {
+    if (d.startsWith(P54M)) {
         let r = d.slice(3).replace(/^0+/, '');
         let prev;
         for (let i = 0; i < 5; i++) {
@@ -473,9 +474,9 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             r = sociosCatalogoTelefonoQuitar15TrasArea(r);
             if (r === prev) break;
         }
-        d = ('549' + r).replace(/\D/g, '');
+        d = (P54M + r).replace(/\D/g, '');
     }
-    if (!d.startsWith('549')) return orig || null;
+    if (!d.startsWith(P54M)) return orig || null;
     return sociosImportTelefonoCanon54(d) || orig || null;
 }
 
@@ -2128,12 +2129,10 @@ function mostrarFormatoExcelSocios() {
       </ul>
       <h4 style="margin:.65rem 0 .25rem;font-size:.82rem;color:var(--tm);text-transform:uppercase;letter-spacing:.04em">Ejemplo</h4>
       ${ejemplo}
-      <p style="font-size:.72rem;color:#92400e;margin:.55rem 0 0;line-height:1.45;padding:.45rem .55rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"><strong>Nota:</strong> Ejecutá en Neon las migraciones <code>add_codigos_area_argentina.sql</code> y <code>seed_codigos_area_argentina.sql</code> para que la normalización de teléfonos use la tabla de características por localidad.</p>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.85rem;align-items:center">
         <button type="button" class="btn-sm primary" onclick="descargarPlantillaCsvSociosRubro()"><i class="fas fa-download"></i> Descargar plantilla CSV</button>
         <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="cerrarModalFormatoExcelSocios()">Cerrar</button>
       </div>
-      <p style="font-size:.72rem;color:var(--tl);margin:.65rem 0 0;line-height:1.4">Coordenadas en el Excel: podés usar WGS84 o Este/Norte (según selector arriba del import). Sin «vaciar», se fusiona por <code>nis_medidor</code>.</p>
     </div>`;
     wrap.addEventListener('click', (e) => {
         if (e.target === wrap) cerrarModalFormatoExcelSocios();

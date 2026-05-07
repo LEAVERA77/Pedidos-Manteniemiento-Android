@@ -50,6 +50,8 @@ import {
     toggleMapaFiltrosBody,
     toggleMapaCapasOsmBody
 } from './modules/filtros-estado.js';
+import { etiquetaIdentificadorPedidoLista, tituloResumenReferenciaEstadisticas } from './modules/etiqueta-identificador-pedido.js';
+import { appendTipoTrabajoFilterToWhere, initEstCsvTipoAutocomplete } from './modules/est-csv-tipo-filtro.js';
 import {
     arrayBufferToBase64,
     escapeCsvCeldaPedidos,
@@ -5427,14 +5429,20 @@ function pedidosParaMarcadoresMapa() {
         const el = document.getElementById(id);
         return !el || el.checked;
     };
-    const anyChecked = ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado']
-        .some(id => document.getElementById(id)?.checked);
+    const anyChecked = [
+        'mapa-flt-pendiente',
+        'mapa-flt-asignado',
+        'mapa-flt-ejecucion',
+        'mapa-flt-cerrado',
+        'mapa-flt-derivado',
+    ].some(id => document.getElementById(id)?.checked);
     const allowEstado = (es) => {
         if (!anyChecked) return true;
         if (es === 'Pendiente') return chk('mapa-flt-pendiente');
         if (es === 'Asignado') return chk('mapa-flt-asignado');
         if (es === 'En ejecución') return chk('mapa-flt-ejecucion');
-        if (es === 'Cerrado' || es === 'Derivado externo') return chk('mapa-flt-cerrado');
+        if (es === 'Cerrado') return chk('mapa-flt-cerrado');
+        if (es === 'Derivado externo') return chk('mapa-flt-derivado');
         return true;
     };
     const selU = document.getElementById('mapa-filtro-usuario');
@@ -5556,7 +5564,7 @@ function abrirAndroidFiltrosMapaRapidos() {
 window.abrirAndroidFiltrosMapaRapidos = abrirAndroidFiltrosMapaRapidos;
 
 function resetMapaFiltros() {
-    ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado'].forEach(id => {
+    ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado', 'mapa-flt-derivado'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
     });
@@ -11322,7 +11330,7 @@ function abrirModalRevisionDerivacionAdmin(pid) {
         if (telEl) {
             telEl.removeAttribute('readonly');
             telEl.value = '';
-            telEl.placeholder = '+5491123456789';
+            telEl.placeholder = '+5434341234567';
         }
         try {
             const syncPrev = () => {
@@ -11451,7 +11459,7 @@ async function confirmarEnvioDerivacionPreviewAdmin() {
         destinoParsed?.destino === 'otro' || destinoParsed?.destino === 'otro_personalizado';
     const telPreview = String(document.getElementById('deriv-prev-telefono')?.value || '').trim();
     if (esOtro && (!telPreview || !/^\+\d{8,22}$/.test(telPreview))) {
-        toast('Completá el WhatsApp del tercero en formato internacional (ej. +5491123456789).', 'warning');
+        toast('Completá el WhatsApp del tercero en formato internacional (ej. +5434341234567).', 'warning');
         return;
     }
     await ejecutarDerivacionExternaAdmin(pid, {
@@ -12253,7 +12261,7 @@ function render() {
                 <span class="pe ${eC[p.es] || ''}">${p.es}</span>
             </div>
             <div class="pi2">
-                ${p.dis}${(p.cnom || p.cl) ? ' - ' + String(p.cnom || p.cl) : ''}${p.nis ? ' · NIS ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}
+                ${p.dis}${(p.cnom || p.cl) ? ' - ' + String(p.cnom || p.cl) : ''}${p.nis ? ' · ' + etiquetaIdentificadorPedidoLista() + ' ' + String(p.nis).substring(0, 14) + (String(p.nis).length > 14 ? '…' : '') : ''}
                 <span style="float:right;color:#94a3b8">${f}</span>
             </div>
             <div class="pd">${p.de.substring(0,70)}${p.de.length > 70 ? '…' : ''}</div>
@@ -16068,8 +16076,6 @@ function aplicarBloqueoIdentidadEmpresaFormulario() {
         el.readOnly = !!lock;
         el.title = lock ? 'Definido en el setup inicial — no editable' : '';
     });
-    const hint = document.getElementById('cfg-identidad-bloqueada-hint');
-    if (hint) hint.style.display = lock ? '' : 'none';
 }
 
 async function cargarFormEmpresa() {
@@ -16982,9 +16988,7 @@ async function exportarPedidosCsvAdmin() {
     const tipoFilt = (document.getElementById('est-csv-tipo')?.value || '').trim();
     let where = `WHERE ${condFecha}${tsql}`;
     if (estadoSel) where += ` AND estado = ${esc(estadoSel)}`;
-    if (tipoFilt) {
-        where += ` AND POSITION(LOWER(${esc(tipoFilt.toLowerCase())}) IN LOWER(COALESCE(tipo_trabajo,''))) > 0`;
-    }
+    where = appendTipoTrabajoFilterToWhere(where, tipoFilt, esc);
     const q = `SELECT id, numero_pedido, fecha_creacion, fecha_cierre, estado, prioridad, tipo_trabajo,
         COALESCE(TRIM(distribuidor),'') AS distribuidor,
         COALESCE(TRIM(barrio),'') AS barrio,
@@ -17498,7 +17502,7 @@ async function imprimirInformeConGraficos() {
                 const canvas = await capturaPdfBloqueResumenEstadisticas();
                 if (canvas) {
                     const u = await canvasToUrl(canvas);
-                    pageBlocks.push({ kind: 'resumen', url: u, title: 'Resumen y referencia ENRE' });
+                    pageBlocks.push({ kind: 'resumen', url: u, title: tituloResumenReferenciaEstadisticas() });
                 }
             } else if (sec.type === 'chart') {
                 const canvas = await html2canvasCapturaElemento(sec.el, {
@@ -17779,7 +17783,8 @@ async function generarInformeMensualENRE() {
         const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
         const tit = ent + ' — Informe de pedidos';
         const hdr = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
-        let tab = '<p style="font-size:7.5pt;color:#475569;margin:0 0 .35rem">Arrastrá el borde derecho de cada encabezado para ajustar el ancho de columna antes de imprimir.</p><table id="gn-informe-pedidos-tab"><thead><tr><th>Pedido</th><th>NIS</th><th>Estado</th><th>Prior.</th><th>F. alta</th><th>H. alta</th><th>F. cierre</th><th>H. cierre</th><th>Dist.</th><th>Tipo</th><th>Cliente</th><th>Calle</th><th>N°</th><th>Loc.</th></tr></thead><tbody>';
+        const colId = etiquetaIdentificadorPedidoLista();
+        let tab = '<p style="font-size:7.5pt;color:#475569;margin:0 0 .35rem">Arrastrá el borde derecho de cada encabezado para ajustar el ancho de columna antes de imprimir.</p><table id="gn-informe-pedidos-tab"><thead><tr><th>Pedido</th><th>' + String(colId).replace(/</g, '&lt;') + '</th><th>Estado</th><th>Prior.</th><th>F. alta</th><th>H. alta</th><th>F. cierre</th><th>H. cierre</th><th>Dist.</th><th>Tipo</th><th>Cliente</th><th>Calle</th><th>N°</th><th>Loc.</th></tr></thead><tbody>';
         rows.forEach(row => {
             const fc = splitFechaHoraExportAR(row.fecha_creacion);
             const ff = splitFechaHoraExportAR(row.fecha_cierre);
@@ -19589,6 +19594,10 @@ try {
         render,
         detalle,
     });
+} catch (_) {}
+
+try {
+    initEstCsvTipoAutocomplete();
 } catch (_) {}
 
 // ── Exponer funciones admin al scope global ────────────

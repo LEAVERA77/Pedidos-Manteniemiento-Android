@@ -44,7 +44,7 @@ function pedidoAbiertoEnDetalle() {
 function abrirModalMotivo(onPick) {
     const backdrop = document.createElement('div');
     backdrop.className = 'mo active';
-    backdrop.style.zIndex = '10002';
+    backdrop.style.zIndex = '100001';
     backdrop.setAttribute('role', 'dialog');
     backdrop.innerHTML = `<div class="mc" style="max-width:22rem;width:92vw">
       <div class="mh"><h3>Desestimar reclamo</h3><button type="button" class="cm" aria-label="Cerrar">&times;</button></div>

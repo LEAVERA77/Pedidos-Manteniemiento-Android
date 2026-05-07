@@ -1538,12 +1538,7 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   try {
     const prevList = waSessionFotoUrls(sess);
     if (!soloReemplazarFoto && prevList.length >= 2) {
-      await reply(
-        phone,
-        "Ya enviaste *2 fotos* (el máximo). Escribí *3* para continuar u *omitir* y pasar al resumen del reclamo.",
-        sess.tenantId,
-        phoneNumberId
-      );
+      await reply(phone, "Ya enviaste 2 fotos.", sess.tenantId, phoneNumberId);
       return;
     }
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
@@ -2045,7 +2040,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(
         phone,
         `Recibí la orden *${comandoMaster}*, pero este número no está autorizado.\n\n` +
-          "Revisá en Neon que tu usuario *admin* tenga en *telefono* o *whatsapp_notificaciones* el mismo número que usás en WhatsApp (con o sin 9 móvil), o definí *WHATSAPP_BOT_MASTER_PHONE* en el servidor con los dígitos completos (ej. 5493434540250).",
+          "Revisá en Neon que tu usuario *admin* tenga en *telefono* o *whatsapp_notificaciones* el mismo número que usás en WhatsApp (con o sin 9 móvil), o definí *WHATSAPP_BOT_MASTER_PHONE* en el servidor con los dígitos completos (prefijo país 54 + número).",
         tid,
         phoneNumberId ? String(phoneNumberId).trim() : null
       );

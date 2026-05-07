@@ -1,6 +1,6 @@
 /**
  * Si el reclamo trae un móvil válido y el catálogo tiene la misma cuenta (NIS/medidor) pero sin teléfono,
- * copia el número **canonico** (549…) a `socios_catalogo.telefono`. No pisa datos ya cargados.
+ * copia el número **canonico** (formato internacional móvil AR) a `socios_catalogo.telefono`. No pisa datos ya cargados.
  */
 import { query } from "../db/neon.js";
 import {

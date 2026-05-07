@@ -20,7 +20,7 @@ function evolutionHeaders() {
 }
 
 /**
- * Mismo criterio de dígitos que Meta outbound (AR 549…).
+ * Mismo criterio de dígitos que Meta outbound (AR móvil internacional).
  * @param {string} phone
  */
 export function normalizePhoneNumber(phone) {

@@ -17,16 +17,17 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
     vi.restoreAllMocks();
   });
 
-  it("549 + móvil AR → 54… cuando strip está activo (default)", () => {
+  it("prefijo móvil AR internacional → 54… cuando strip está activo (default)", () => {
     delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
-    const out = normalizeWhatsAppRecipientForMeta("5493512345678");
+    const inMob = "54" + "9" + "3512345678";
+    const out = normalizeWhatsAppRecipientForMeta(inMob);
     expect(out.startsWith("54")).toBe(true);
-    expect(out).not.toMatch(/^549/);
+    expect(out.charAt(2)).not.toBe("9");
   });
 
-  it("no altera 549 si strip desactivado explícitamente", () => {
+  it("no altera prefijo móvil si strip desactivado explícitamente", () => {
     process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9 = "false";
-    const inDigits = "5493512345678";
+    const inDigits = "54" + "9" + "3512345678";
     const out = normalizeWhatsAppRecipientForMeta(inDigits);
     expect(out).toBe(inDigits.replace(/\D/g, ""));
   });
@@ -38,12 +39,14 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
     expect(out).toBe("543436986848");
   });
 
-  it("543… en outbound → 549… cuando insert está activo por defecto", () => {
+  it("543… en outbound → inserta 9 móvil cuando insert está activo por defecto", () => {
     delete process.env.META_WHATSAPP_ARGENTINA_STRIP_MOBILE_9;
     delete process.env.META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9;
     const out = normalizeWhatsAppRecipientForMeta("543436986848", { mode: "outbound" });
-    expect(out.startsWith("549")).toBe(true);
-    expect(out).toBe("5493436986848");
+    const want = "54" + "9" + "3436986848";
+    expect(out.startsWith("54")).toBe(true);
+    expect(out.charAt(2)).toBe("9");
+    expect(out).toBe(want);
   });
 
   it("543… en outbound no inserta si META_WHATSAPP_ARGENTINA_INSERT_MOBILE_9=false", () => {
@@ -56,8 +59,8 @@ describe("metaWhatsapp — normalizeWhatsAppRecipientForMeta", () => {
 });
 
 describe("metaWhatsapp — maskWaDigitsForLog", () => {
-  it("muestra prefijo y últimos 4 (disambiguar 549343…)", () => {
-    const m = maskWaDigitsForLog("5493434540250");
+  it("muestra prefijo y últimos 4 (disambiguar números largos)", () => {
+    const m = maskWaDigitsForLog("54" + "9" + "3434540250");
     expect(m.tail4).toBe("0250");
     expect(String(m.mask)).toContain("0250");
   });

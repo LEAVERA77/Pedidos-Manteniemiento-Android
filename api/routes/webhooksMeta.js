@@ -98,7 +98,7 @@ router.post("/", express.raw({ type: "application/json", limit: "5mb" }), async 
         console.log("[WEBHOOK] mensaje recibido de:", waId);
         console.log("[WEBHOOK] from original:", waId);
         console.log("[WEBHOOK] from procesado (inbound):", fromProcesado);
-        console.log("[WEBHOOK] from inbound mask (últimos 4 = huella; 549343… es común en la zona):", maskWaDigitsForLog(fromProcesado));
+        console.log("[WEBHOOK] from inbound mask (últimos 4 = huella):", maskWaDigitsForLog(fromProcesado));
         console.log("[WEBHOOK] ¿pasa validación long. inbound?:", fromProcesado.length >= 8 && fromProcesado.length <= 16);
         console.log("[WEBHOOK] destino outbound (Graph) ok longitud:", toParaGraph.length >= 8 && toParaGraph.length <= 16, {
           toLen: toParaGraph.length,

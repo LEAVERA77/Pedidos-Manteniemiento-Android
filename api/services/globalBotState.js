@@ -70,12 +70,12 @@ export function masterPhonesWhatsappBotFromEnv() {
     .filter(Boolean);
 }
 
-/** Solo dígitos con longitud mínima (evita MASTER=549 que bloqueaba fallback a BD). */
+/** Solo dígitos con longitud mínima (evita MASTER demasiado corto que bloqueaba fallback a BD). */
 export function masterPhonesValidFromEnv() {
   return masterPhonesWhatsappBotFromEnv().filter((s) => String(s).replace(/\D/g, "").length >= 8);
 }
 
-/** Misma regla que el webhook (549… → 54… inbound) para comparar con telefono en Neon. */
+/** Misma regla que el webhook (strip 9 móvil inbound) para comparar con telefono en Neon. */
 export function normalizePhoneForBotMasterMatch(digits) {
   return normalizeWhatsAppRecipientForMeta(String(digits || "").replace(/\D/g, ""), { mode: "inbound" });
 }

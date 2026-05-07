@@ -1003,6 +1003,7 @@ function enhanceListaPedidosInner() {
         const wantCb =
             puedeGestionarIncidencias() &&
             p &&
+            estadoPedidoInc(p) === 'Pendiente' &&
             puedeSeleccionarPedidoParaIncidencias(p) &&
             listaPedidosTabEsPendientes();
         const hasCb = !!row.querySelector('.gn-pi-cb-wrap');

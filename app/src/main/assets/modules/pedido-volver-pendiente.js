@@ -7,6 +7,7 @@
 import { toast } from './ui-utils.js';
 /** Registra observer + `window.injectPedidoVerImagenReclamo` (el wrapper de `detalle` aquí no reemplaza al global de app.js). */
 import './pedido-ver-imagen.js';
+import './pedido-dm-pm-drag.js';
 
 /** @type {Map<string, { frp: string|null, urvid: number|null }>} */
 const _reversionApiCache = new Map();

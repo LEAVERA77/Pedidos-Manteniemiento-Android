@@ -468,19 +468,31 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
 
     const imgHost = document.createElement('div');
     imgHost.style.cssText =
-        'margin-top:0.35rem;overflow:auto;max-height:440px;display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);';
+        'margin-top:0.35rem;overflow:auto;max-height:min(80vh,900px);display:flex;justify-content:center;align-items:center;padding:6px;border-radius:10px;border:1px solid var(--bo);background:var(--bg);-webkit-overflow-scrolling:touch';
 
     const img = document.createElement('img');
     img.src = srcActivo();
     img.alt = 'Foto del reclamo';
     img.draggable = false;
     img.style.cssText =
-        'max-width:100%;max-height:400px;border-radius:8px;cursor:pointer;display:block;transform-origin:center center;transition:transform 0.12s ease-out';
+        'max-width:min(100%,96vw);width:auto;height:auto;max-height:min(75vh,920px);object-fit:contain;border-radius:8px;cursor:pointer;display:block;transform-origin:center center;transition:transform 0.12s ease-out';
 
     const aplicarTransform = () => {
         img.style.transform = `rotate(${rotationDeg}deg) scale(${scale})`;
     };
     aplicarTransform();
+
+    imgHost.addEventListener(
+        'wheel',
+        (ev) => {
+            if (!ev.ctrlKey && !ev.metaKey) return;
+            ev.preventDefault();
+            const d = ev.deltaY > 0 ? -0.08 : 0.08;
+            scale = Math.min(2.5, Math.max(0.4, Math.round((scale + d) * 100) / 100));
+            aplicarTransform();
+        },
+        { passive: false }
+    );
 
     img.addEventListener('click', (ev) => {
         ev.preventDefault();

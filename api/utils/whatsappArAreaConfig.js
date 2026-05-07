@@ -1,6 +1,6 @@
 /**
  * Configuración de **características** (código de área) argentinas para completar/normalizar móviles.
- * El prefijo internacional de país + móvil (**549**) no se configura: es fijo en toda Argentina.
+ * El prefijo internacional de país + dígito móvil (54 + 9) no se configura: es fijo en toda Argentina.
  *
  * Claves en `clientes.configuracion`:
  * - `whatsapp_ar_default_area` — string, p. ej. `"343"` (sin 0 inicial).
@@ -62,7 +62,7 @@ export function parseAreaPrefixesList(cfg) {
 }
 
 /**
- * Elige la característica (solo dígitos, sin 549) según localidad del pedido/padrón y defaults del tenant.
+ * Elige la característica (solo dígitos, sin prefijo país ni 9 móvil) según localidad del pedido/padrón y defaults del tenant.
  *
  * @param {Record<string, unknown>} cfg
  * @param {unknown} localityHint — `cliente_localidad` o `localidad` del padrón
