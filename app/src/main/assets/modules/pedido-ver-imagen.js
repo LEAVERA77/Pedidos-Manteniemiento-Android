@@ -118,7 +118,15 @@ function listaImagenesDesdeRowPedido(row) {
         if (row[k] != null && String(row[k]).trim()) pushNorm(row[k]);
     }
     coerceFotosArray(row.fotos).forEach((x) => pushNorm(x));
-    return out;
+    const seen = new Set();
+    const deduped = [];
+    for (const u of out) {
+        const k = String(u || '').trim();
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        deduped.push(u);
+    }
+    return deduped;
 }
 
 function normalizarRotacionGrados(n) {
@@ -139,7 +147,8 @@ function crearBotonToolbar(texto, titulo, onClick) {
 
 function esAdminPanelGestorNova() {
     try {
-        return String(window.app?.u?.rol || '').toLowerCase() === 'admin';
+        const r = String(window.app?.u?.rol || '').toLowerCase();
+        return r === 'admin' || r === 'administrador';
     } catch (_) {
         return false;
     }
@@ -222,23 +231,121 @@ function actualizarEstadoBotonGuardarRotacion(btn, rotationDeg, savedRotation, p
     btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
 }
 
-function descargarOAbrirImagenReclamo(src, pedidoId) {
+async function descargarOAbrirImagenReclamo(src, pedidoId) {
     const base = pedidoId ? `reclamo-pedido-${pedidoId}` : 'reclamo';
     try {
         if (esUrlHttp(src)) {
-            window.open(src, '_blank', 'noopener,noreferrer');
+            try {
+                const r = await fetch(src, { mode: 'cors', credentials: 'omit' });
+                if (r.ok) {
+                    const blob = await r.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${base}.jpg`;
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    return;
+                }
+            } catch (_) {}
+            const a = document.createElement('a');
+            a.href = src;
+            a.download = `${base}.jpg`;
+            a.rel = 'noopener';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
             return;
         }
-        const a = document.createElement('a');
-        a.href = src;
-        a.download = `${base}.jpg`;
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+        const a2 = document.createElement('a');
+        a2.href = src;
+        a2.download = `${base}.jpg`;
+        a2.rel = 'noopener';
+        document.body.appendChild(a2);
+        a2.click();
+        a2.remove();
     } catch (_) {
         if (typeof window.toast === 'function') window.toast('No se pudo descargar la imagen.', 'error');
     }
+}
+
+/**
+ * Mismo modal que `verFotoAmpliada` (operarios): zoom, arrastre, rueda, rotar, descargar.
+ * Varias fotos: barra Anterior / Siguiente (sin tocar app.js).
+ */
+function abrirVisorReclamoUnificado(urls, indiceInicial) {
+    const list = (Array.isArray(urls) ? urls : [urls]).map((x) => String(x || '').trim()).filter(Boolean);
+    if (!list.length) return;
+    const ver = typeof window.verFotoAmpliada === 'function' ? window.verFotoAmpliada : null;
+    const modal = document.getElementById('modal-foto-ampliada');
+    if (!ver || !modal) return;
+
+    const cleanupNav = () => {
+        try {
+            document.getElementById('gn-reclamo-foto-nav')?.remove();
+        } catch (_) {}
+    };
+    cleanupNav();
+
+    let idx = Math.max(0, Math.min(Number(indiceInicial) || 0, list.length - 1));
+
+    ver(list[idx], null);
+    const btnDl = document.getElementById('foto-guardar');
+    if (btnDl) btnDl.style.display = 'flex';
+
+    if (list.length <= 1) return;
+
+    const nav = document.createElement('div');
+    nav.id = 'gn-reclamo-foto-nav';
+    nav.style.cssText =
+        'display:flex;justify-content:center;align-items:center;gap:.75rem;padding:.4rem .6rem;background:rgba(15,23,42,.88);border-bottom:1px solid rgba(255,255,255,.12)';
+    const lab = document.createElement('span');
+    lab.style.cssText = 'color:#e2e8f0;font-size:.78rem;min-width:5ch;text-align:center;font-variant-numeric:tabular-nums';
+    const mkBtn = (txt) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = txt;
+        b.style.cssText =
+            'font-size:.78rem;padding:.35rem .65rem;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:#f8fafc;cursor:pointer';
+        return b;
+    };
+    const prev = mkBtn('◀ Anterior');
+    const next = mkBtn('Siguiente ▶');
+    const syncLab = () => {
+        lab.textContent = `${idx + 1} / ${list.length}`;
+    };
+    syncLab();
+    const abrirIdx = (i) => {
+        idx = ((i % list.length) + list.length) % list.length;
+        ver(list[idx], null);
+        if (btnDl) btnDl.style.display = 'flex';
+        syncLab();
+    };
+    prev.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirIdx(idx - 1);
+    });
+    next.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirIdx(idx + 1);
+    });
+    nav.appendChild(prev);
+    nav.appendChild(lab);
+    nav.appendChild(next);
+    const imgc = modal.querySelector('#img-container');
+    if (imgc) modal.insertBefore(nav, imgc);
+    else modal.appendChild(nav);
+
+    const mo = new MutationObserver(() => {
+        if (!modal.classList.contains('active')) {
+            cleanupNav();
+            mo.disconnect();
+        }
+    });
+    mo.observe(modal, { attributes: true, attributeFilter: ['class'] });
 }
 
 async function persistirRotacionReclamoApi(pedidoId, grados) {
@@ -294,11 +401,19 @@ function obtenerContenedorScrollDetallePedido() {
  * @param {{ pedidoId?: string|number, reclamo_imagen_rotacion?: number, estado?: string }} [meta]
  */
 function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
-    const sources = Array.isArray(srcOrSources)
+    const rawList = Array.isArray(srcOrSources)
         ? srcOrSources.map((s) => String(s || '').trim()).filter(Boolean)
         : srcOrSources
           ? [String(srcOrSources).trim()].filter(Boolean)
           : [];
+    const seenSrc = new Set();
+    const sources = [];
+    for (const u of rawList) {
+        const k = String(u || '').trim();
+        if (!k || seenSrc.has(k)) continue;
+        seenSrc.add(k);
+        sources.push(u);
+    }
     if (!sources.length) return;
     const dm = document.getElementById('dm');
     if (!dm) return;
@@ -367,11 +482,10 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     };
     aplicarTransform();
 
-    img.addEventListener('click', () => {
-        try {
-            const s = srcActivo();
-            if (esUrlHttp(s)) window.open(s, '_blank', 'noopener,noreferrer');
-        } catch (_) {}
+    img.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        abrirVisorReclamoUnificado(sources, activeIndex);
     });
 
     img.addEventListener('error', () => {
@@ -403,8 +517,10 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
         aplicarTransform();
         actualizarEstadoBotonGuardarRotacion(btnSaveRot, rotationDeg, savedRotation, puedePersistir);
     });
-    const btnDl = crearBotonToolbar('💾 Guardar (descargar)', 'Abrir URL en pestaña nueva o descargar imagen', () =>
-        descargarOAbrirImagenReclamo(srcActivo(), pedidoId)
+    const btnDl = crearBotonToolbar(
+        '💾 Descargar',
+        'Descargar la imagen actual (sin abrir pestaña nueva)',
+        () => void descargarOAbrirImagenReclamo(srcActivo(), pedidoId)
     );
     const btnSaveRot = crearBotonToolbar(
         '💾 Guardar rotación en BD',
@@ -457,7 +573,7 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     const hint = document.createElement('p');
     hint.style.cssText = 'font-size:.72rem;color:var(--tm);margin-top:.4rem';
     hint.textContent =
-        'Zoom 50–200 %. Clic en la imagen: vista completa (URL). «Guardar rotación en BD» solo si cambiaste el ángulo.';
+        'Clic en la imagen: mismo visor que en fotos de trabajo (zoom con rueda, arrastre, rotar, descargar). Varias fotos: miniaturas arriba. «Guardar rotación en BD» solo si cambiaste el ángulo.';
 
     if (thumbRow) inner.appendChild(thumbRow);
     inner.appendChild(imgHost);

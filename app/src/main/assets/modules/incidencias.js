@@ -166,6 +166,18 @@ function estadoPedidoInc(p) {
     return normalizarEstadoOperativoInc(p?.es ?? p?.estado ?? '');
 }
 
+/** La barra «Seleccionar todos» solo aplica cuando hay al menos un reclamo Pendiente en la lista visible. */
+function listaVisibleTienePedidoPendiente(pl) {
+    if (!pl) return false;
+    const rows = pl.querySelectorAll(':scope > .pi');
+    for (const row of rows) {
+        const np = parseNpFromRow(row);
+        const p = findPedidoForIncidenciasUi(np);
+        if (p && estadoPedidoInc(p) === 'Pendiente') return true;
+    }
+    return false;
+}
+
 /** `tecnico_asignado_id` en filas API (snake / camel) o objeto lite con `tai`. */
 function rawTecnicoAsignadoIdFromPedidoRow(row) {
     if (!row || typeof row !== 'object') return null;
@@ -870,6 +882,14 @@ function syncSelectAllMasterState(pl) {
     const wrap = pl.querySelector('#gn-inc-select-all-wrap');
     const master = document.getElementById('gn-inc-select-all-cb');
     if (!wrap || !master) return;
+    if (!listaVisibleTienePedidoPendiente(pl)) {
+        try {
+            wrap.remove();
+        } catch (_) {
+            wrap.style.display = 'none';
+        }
+        return;
+    }
     const cbs = getVisibleRowCheckboxes(pl);
     if (!cbs.length) {
         wrap.style.display = 'none';
@@ -900,6 +920,12 @@ function onMasterSelectAllChange(ev) {
 
 function ensureSelectAllBar(pl) {
     if (!puedeGestionarIncidencias()) {
+        try {
+            pl.querySelector('#gn-inc-select-all-wrap')?.remove();
+        } catch (_) {}
+        return;
+    }
+    if (!listaVisibleTienePedidoPendiente(pl)) {
         try {
             pl.querySelector('#gn-inc-select-all-wrap')?.remove();
         } catch (_) {}
