@@ -169,6 +169,7 @@
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-ejecucion" checked onchange="onMapaFiltroChange()"> En ejecución</label>
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-cerrado" checked onchange="onMapaFiltroChange()"> Cerrado</label>
           <label class="moui-chk"><input type="checkbox" id="mapa-flt-derivado" checked onchange="onMapaFiltroChange()"> Derivados fuera</label>
+          <label class="moui-chk"><input type="checkbox" id="mapa-flt-desestimado" onchange="onMapaFiltroChange()"> Desestimados</label>
         </div>
         <div class="moui-row">
           <span class="moui-lbl">Creador (usuario)</span>
@@ -242,6 +243,9 @@
         </label>
         <label id="wrap-chk-derivados-fuera" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
           <input type="checkbox" id="chk-mostrar-derivados-fuera" title="Mostrar en listas y mapa los reclamos ya derivados a otras empresas"> Derivados fuera
+        </label>
+        <label id="wrap-chk-desestimados-lista" style="display:none;align-items:center;gap:.35rem;font-size:.72rem;color:var(--tm);white-space:nowrap;margin:0 .25rem">
+          <input type="checkbox" id="chk-lista-mostrar-desestimados" title="Mostrar reclamos desestimados en la lista (pestaña Cerrados) y en el mapa si el filtro lo permite"> Desestimados
         </label>
         <button id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>
         <span id="zoom-altura" class="zoom-indicator">1000 m</span>
@@ -785,6 +789,7 @@
       </div>
       <div id="enre-marco" class="gn-enre-marco" role="note" aria-live="polite"></div>
       <div id="stats-cards" class="stat-grid"></div>
+      <div id="stats-desestimados-pdf-block" style="display:none" aria-hidden="true"></div>
       <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
           <h4 style="margin:0">Confiabilidad eléctrica (estimación interna)</h4>
@@ -853,6 +858,14 @@
           </div>
           <div class="chart-container chart-container--tall"><canvas id="chart-tipos"></canvas></div>
           <div class="chart-legend-caption" id="chart-cap-tipos"></div>
+        </div>
+        <div class="chart-wrap" style="margin:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+            <h4 style="margin:0">Motivos de desestimación</h4>
+            <button class="btn-sm" onclick="descargarGrafico('chart-desest-motivos','motivos_desestimacion')" title="Descargar" style="background:var(--bg);border:1px solid var(--bo);padding:.2rem .5rem"><i class="fas fa-download"></i></button>
+          </div>
+          <div class="chart-container"><canvas id="chart-desest-motivos"></canvas></div>
+          <div class="chart-legend-caption" id="chart-cap-desest-motivos"></div>
         </div>
         <div class="chart-wrap" style="margin:0">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">

@@ -10,7 +10,7 @@ export const ESTADO_DONUT_COLORS = {
     'En ejecución': '#8b5cf6',
     Cerrado: '#10b981',
     Desestimado: '#6b7280',
-    'Derivado externo': '#64748b',
+    'Derivado externo': '#ef4444',
 };
 
 export const DONUT_FALLBACK_SEQUENCE = [

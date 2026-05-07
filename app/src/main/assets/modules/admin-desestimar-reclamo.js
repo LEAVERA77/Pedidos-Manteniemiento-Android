@@ -1,19 +1,25 @@
 /**
- * Admin: desestimar reclamo desde el detalle (#dm), con o sin bloque de foto.
+ * Admin: desestimar reclamo desde la barra de acciones del detalle (#dm).
  * PUT pedidos; sin notificación WA (la API no agenda aviso para Desestimado).
  * made by leavera77
  */
 
 import { toast } from './ui-utils.js';
 
-const BAR_ID = 'gn-admin-desestimar-bar';
+const BTN_ID = 'gn-btn-desestimar-reclamo';
 
 const MOTIVOS = [
-    { value: '📸 Imagen inapropiada', label: '📸 Imagen inapropiada' },
+    {
+        value: '📸 Imagen inapropiada (desnudos, violencia, odio)',
+        label: '📸 Imagen inapropiada (desnudos, violencia, odio)',
+    },
     { value: '🤡 Broma / reclamo falso', label: '🤡 Broma / reclamo falso' },
     { value: '📝 Reclamo improcedente', label: '📝 Reclamo improcedente' },
-    { value: '📸 Foto no relacionada', label: '📸 Foto no relacionada' },
-    { value: 'Otro', label: 'Otro' },
+    {
+        value: '📸 Foto no relacionada (meme, selfie, paisaje)',
+        label: '📸 Foto no relacionada (meme, selfie, paisaje)',
+    },
+    { value: '📝 Otro motivo', label: '📝 Otro motivo' },
 ];
 
 function esAdminGestor() {
@@ -27,7 +33,7 @@ function esAdminGestor() {
 
 function estadoPermiteDesestimar(estadoRaw) {
     const s = String(estadoRaw || '').trim();
-    return !['Cerrado', 'Desestimado', 'Derivado externo'].includes(s);
+    return s === 'Pendiente';
 }
 
 function pedidoAbiertoEnDetalle() {
@@ -41,6 +47,13 @@ function pedidoAbiertoEnDetalle() {
     }
 }
 
+function escOpt(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
 function abrirModalMotivo(onPick) {
     const backdrop = document.createElement('div');
     backdrop.className = 'mo active';
@@ -52,7 +65,7 @@ function abrirModalMotivo(onPick) {
         <p style="margin:0 0 .65rem;font-size:.85rem;color:var(--tm)">Elegí el motivo. Se eliminan las fotos del reclamo en el servidor.</p>
         <label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:.25rem">Motivo</label>
         <select id="gn-desest-motivo-sel" style="width:100%;padding:.4rem;border-radius:.5rem;border:1px solid var(--bo)">
-          ${MOTIVOS.map((m) => `<option value="${String(m.value).replace(/"/g, '&quot;')}">${m.label}</option>`).join('')}
+          ${MOTIVOS.map((m) => `<option value="${escOpt(m.value)}">${escOpt(m.label)}</option>`).join('')}
         </select>
         <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
           <button type="button" class="ba2" id="gn-desest-cancel">Cancelar</button>
@@ -104,37 +117,34 @@ async function putDesestimar(pedidoId, motivo) {
     return j;
 }
 
-function quitarBarra() {
-    document.getElementById(BAR_ID)?.remove();
+function quitarBoton() {
+    document.getElementById(BTN_ID)?.remove();
 }
 
-function inyectarBarraSiCorresponde() {
+function inyectarBotonSiCorresponde() {
     const dm = document.getElementById('dm');
-    const scroll = document.querySelector('#dmc .gn-dm-detail-scroll') || document.getElementById('dmc');
-    if (!dm?.classList.contains('active') || !scroll) {
-        quitarBarra();
+    const da = document.querySelector('.gn-dm-actions-bar .da');
+    if (!dm?.classList.contains('active') || !da) {
+        quitarBoton();
         return;
     }
     if (!esAdminGestor()) {
-        quitarBarra();
+        quitarBoton();
         return;
     }
     const p = pedidoAbiertoEnDetalle();
     if (!p || !estadoPermiteDesestimar(p.estado)) {
-        quitarBarra();
+        quitarBoton();
         return;
     }
-    if (document.getElementById(BAR_ID)) return;
+    if (document.getElementById(BTN_ID)) return;
 
-    const wrap = document.createElement('div');
-    wrap.id = BAR_ID;
-    wrap.style.cssText =
-        'margin:.5rem 0 0;padding:.55rem;border:1px solid var(--bo);border-radius:8px;background:rgba(198,40,40,.06);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center';
     const btn = document.createElement('button');
+    btn.id = BTN_ID;
     btn.type = 'button';
-    btn.className = 'bp';
-    btn.style.cssText = 'background:#b91c1c;border-color:#991b1b';
-    btn.textContent = '🚫 Desestimar reclamo';
+    btn.className = 'ba2';
+    btn.style.cssText = 'background:#b91c1c;color:#fff;border-color:#991b1b';
+    btn.innerHTML = '<i class="fas fa-ban"></i> 🚫 Desestimar';
     btn.title = 'Marcar como desestimado (sin aviso al reclamante)';
     btn.addEventListener('click', () => {
         abrirModalMotivo(async (motivo) => {
@@ -160,20 +170,13 @@ function inyectarBarraSiCorresponde() {
             }
         });
     });
-    wrap.appendChild(btn);
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size:.72rem;color:var(--tm)';
-    hint.textContent = 'No se notifica por WhatsApp al reclamante.';
-    wrap.appendChild(hint);
-    const first = scroll.querySelector(':scope > .ds, :scope > h3, :scope > div');
-    if (first) scroll.insertBefore(wrap, first);
-    else scroll.appendChild(wrap);
+    da.insertBefore(btn, da.firstChild);
 }
 
 function boot() {
     const obs = new MutationObserver(() => {
         try {
-            inyectarBarraSiCorresponde();
+            inyectarBotonSiCorresponde();
         } catch (_) {}
     });
     const dmc = document.getElementById('dmc');
@@ -181,7 +184,7 @@ function boot() {
     const dm = document.getElementById('dm');
     if (dm) obs.observe(dm, { attributes: true, attributeFilter: ['class'] });
     try {
-        inyectarBarraSiCorresponde();
+        inyectarBotonSiCorresponde();
     } catch (_) {}
 }
 

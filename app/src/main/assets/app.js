@@ -45,6 +45,20 @@ import {
     datasetsMensualCreadosCerrados
 } from './modules/graficos-colores.js';
 import {
+    initDerivacionesReclamosAdminBindings,
+    construirDerivacionReclamosDesdeFormularioDerivacionesCompleto,
+    poblarDerivacionesListasDesdeCfg,
+    refreshDerivacionListaWaButtons,
+} from './modules/derivaciones-reclamos-admin.js';
+import {
+    sqlMotivosDesestimacion,
+    datasetsTiposTrabajoConDesestimados,
+    opcionesChartTiposApilados,
+    crearGraficoMotivosDesestimacion,
+    insertarCardDesestimadosEnResumen,
+    renderBloquePdfDesestimados,
+} from './modules/estadisticas-desestimados.js';
+import {
     toggleMapaCardSlideoff,
     syncMapSlideTabsFromStorage,
     toggleMapaFiltrosBody,
@@ -1420,7 +1434,7 @@ function normalizarWhatsappInternacionalDesdeInput(raw) {
 }
 
 function actualizarBotonesWhatsappDerivacionesUi() {
-    ['energia', 'agua'].forEach((slot) => {
+    ['energia', 'agua', 'gas', 'tel'].forEach((slot) => {
         const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
         if (!btn) return;
         const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
@@ -1429,6 +1443,9 @@ function actualizarBotonesWhatsappDerivacionesUi() {
         const ok = /^\+\d{8,22}$/.test(w);
         btn.disabled = !(act && ok);
     });
+    try {
+        refreshDerivacionListaWaButtons(normalizarWhatsappInternacionalDesdeInput);
+    } catch (_) {}
 }
 
 let _cfgDerivWaInputBound = false;
@@ -1464,7 +1481,7 @@ let _cfgDerivWaInputBound = false;
 function bindDerivacionesFormInputsOnce() {
     if (_cfgDerivWaInputBound) return;
     _cfgDerivWaInputBound = true;
-    ['energia', 'agua'].forEach((slot) => {
+    ['energia', 'agua', 'gas', 'tel'].forEach((slot) => {
         const el = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
         if (el) el.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
         const nm = document.getElementById(`cfg-deriv-${slot}-nombre`);
@@ -1478,6 +1495,8 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     const dr = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivacion_reclamos) || null;
     let energia = { activo: false, nombre: '', whatsapp: '' };
     let agua = { activo: false, nombre: '', whatsapp: '' };
+    let gas = { activo: false, nombre: '', whatsapp: '' };
+    let tel = { activo: false, nombre: '', whatsapp: '' };
     if (dr && typeof dr === 'object' && (dr.empresa_energia || dr.cooperativa_agua)) {
         const ee = dr.empresa_energia || {};
         const ca = dr.cooperativa_agua || {};
@@ -1490,6 +1509,18 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
             activo: !!(ca.whatsapp || ca.nombre),
             nombre: String(ca.nombre != null ? ca.nombre : ''),
             whatsapp: String(ca.whatsapp != null ? ca.whatsapp : ''),
+        };
+        const gsn = dr.empresa_gas_natural || {};
+        const tlf = dr.empresa_telefonia || {};
+        gas = {
+            activo: !!(gsn.whatsapp || gsn.nombre),
+            nombre: String(gsn.nombre != null ? gsn.nombre : ''),
+            whatsapp: String(gsn.whatsapp != null ? gsn.whatsapp : ''),
+        };
+        tel = {
+            activo: !!(tlf.whatsapp || tlf.nombre),
+            nombre: String(tlf.nombre != null ? tlf.nombre : ''),
+            whatsapp: String(tlf.whatsapp != null ? tlf.whatsapp : ''),
         };
     } else {
         const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
@@ -1509,6 +1540,8 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     const slots = [
         { key: 'energia', s: energia },
         { key: 'agua', s: agua },
+        { key: 'gas', s: gas },
+        { key: 'tel', s: tel },
     ];
     slots.forEach(({ key, s }) => {
         const ca = document.getElementById(`cfg-deriv-${key}-activo`);
@@ -1518,6 +1551,14 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
         if (cn) cn.value = s.nombre;
         if (cw) cw.value = s.whatsapp;
     });
+    try {
+        poblarDerivacionesListasDesdeCfg(dr && typeof dr === 'object' ? dr : {}, {
+            normalizarWhatsappInternacionalDesdeInput,
+            toast,
+            setDerivacionesInlineError,
+            onChange: actualizarBotonesWhatsappDerivacionesUi,
+        });
+    } catch (_) {}
     const om = document.getElementById('cfg-ocultar-modulos-redes');
     if (om) om.checked = !!(window.EMPRESA_CFG && window.EMPRESA_CFG.ocultar_modulos_redes);
     actualizarBotonesWhatsappDerivacionesUi();
@@ -2696,6 +2737,7 @@ function aplicarMarcaVisualCompleta() {
 
 /** Admin: incluir pedidos en estado «Derivado externo» en listas y mapa (histórico operativo). */
 const LS_MOSTRAR_DERIVADOS_FUERA = 'pmg_pedidos_mostrar_derivados_fuera';
+const LS_MOSTRAR_DESESTIMADOS_LISTA = 'pmg_pedidos_mostrar_desestimados_lista';
 let _resolveAdminTipoModal = null;
 
 function invalidateCachesTrasCambioRubro(tipoAnterior, tipoNuevo) {
@@ -3505,6 +3547,18 @@ const gnLoginSubmitHandler = async e => {
                     localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
                 } catch (_) {}
                 chkDf.checked = false;
+            }
+        }
+        const wrapDes = document.getElementById('wrap-chk-desestimados-lista');
+        const chkDes = document.getElementById('chk-lista-mostrar-desestimados');
+        if (wrapDes && chkDes) {
+            wrapDes.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkDes.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DESESTIMADOS_LISTA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
+                } catch (_) {}
+                chkDes.checked = false;
             }
         }
         try {
@@ -5444,6 +5498,7 @@ function pedidosParaMarcadoresMapa() {
         'mapa-flt-ejecucion',
         'mapa-flt-cerrado',
         'mapa-flt-derivado',
+        'mapa-flt-desestimado',
     ].some(id => document.getElementById(id)?.checked);
     const allowEstado = (es) => {
         if (!anyChecked) return true;
@@ -5452,6 +5507,7 @@ function pedidosParaMarcadoresMapa() {
         if (es === 'En ejecución') return chk('mapa-flt-ejecucion');
         if (es === 'Cerrado') return chk('mapa-flt-cerrado');
         if (es === 'Derivado externo') return chk('mapa-flt-derivado');
+        if (es === 'Desestimado') return chk('mapa-flt-desestimado');
         return true;
     };
     const selU = document.getElementById('mapa-filtro-usuario');
@@ -5577,6 +5633,8 @@ function resetMapaFiltros() {
         const el = document.getElementById(id);
         if (el) el.checked = true;
     });
+    const desM = document.getElementById('mapa-flt-desestimado');
+    if (desM) desM.checked = false;
     MAPA_PRIO_CHK_IDS.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
@@ -7189,6 +7247,8 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
         q = `SELECT id, numero_pedido, estado, prioridad, fecha_cierre, descripcion FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE${tsql} ORDER BY fecha_cierre DESC LIMIT ${lim}`;
     } else if (filter === 'derivados_terceros') {
         q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion, derivado_destino_nombre FROM pedidos WHERE (estado = 'Derivado externo' OR COALESCE(derivado_externo, FALSE) = TRUE)${tsql} ORDER BY COALESCE(fecha_derivacion, fecha_creacion) DESC NULLS LAST LIMIT ${lim}`;
+    } else if (filter === 'desestimados') {
+        q = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, descripcion, motivo_desestimacion FROM pedidos WHERE estado = 'Desestimado'${tsql} ORDER BY fecha_creacion DESC LIMIT ${lim}`;
     } else {
         host.style.display = 'none';
         host.innerHTML = '';
@@ -7210,7 +7270,11 @@ async function ejecutarDashboardFiltroLista(filter, hostId) {
             const ddn = row.derivado_destino_nombre
                 ? ` · → ${String(row.derivado_destino_nombre).replace(/</g, '&lt;')}`
                 : '';
-            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}${ddn}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
+            const motDes =
+                filter === 'desestimados' && row.motivo_desestimacion
+                    ? ` · ${String(row.motivo_desestimacion).replace(/</g, '&lt;').substring(0, 48)}`
+                    : '';
+            return `<div style="padding:.3rem 0;border-bottom:1px solid var(--bo);cursor:pointer;color:var(--bm)" onclick="cerrarModalDashYAbrirPedido(${row.id})"><strong>#${np}</strong> · ${es} · ${pr}${ddn}${motDes}<br><span style="color:var(--tm);font-size:.78rem">${fe} — ${de}${(row.descripcion && row.descripcion.length > 72) ? '…' : ''}</span></div>`;
         }).join('');
     } catch (e) {
         logErrorWeb('dashboard-filtro-lista', e);
@@ -7241,7 +7305,8 @@ async function refrescarDashboardGerencia(silent) {
                 COUNT(*) FILTER (WHERE estado = 'En ejecución') AS en_ejec,
                 COUNT(*) FILTER (WHERE estado = 'Pendiente') AS pendientes,
                 COUNT(*) FILTER (WHERE estado = 'Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy,
-                COUNT(*) FILTER (WHERE estado = 'Derivado externo' OR COALESCE(derivado_externo, FALSE) = TRUE) AS derivados_terceros
+                COUNT(*) FILTER (WHERE estado = 'Derivado externo' OR COALESCE(derivado_externo, FALSE) = TRUE) AS derivados_terceros,
+                COUNT(*) FILTER (WHERE estado = 'Desestimado') AS desestimados
                 FROM pedidos WHERE 1=1${tsql}`),
             sqlSimple(`SELECT DISTINCT ON (uu.usuario_id) uu.usuario_id, uu.lat, uu.lng, uu.timestamp, u.nombre, u.email, u.rol
                 FROM ubicaciones_usuarios uu
@@ -7257,6 +7322,7 @@ async function refrescarDashboardGerencia(silent) {
             { val: a.pendientes || 0, lbl: 'Pendiente', cls: 'orange', filter: 'pendientes' },
             { val: a.asignados || 0, lbl: 'Asignados', cls: 'dash-kpi-blue', filter: 'asignados' },
             { val: a.en_ejec || 0, lbl: 'En ejecución', cls: 'dash-kpi-blue', filter: 'en_ejecucion' },
+            { val: a.desestimados || 0, lbl: 'Desestimados', cls: 'dash-kpi-slate', filter: 'desestimados' },
             { val: a.derivados_terceros || 0, lbl: 'Derivados (terceros)', cls: 'dash-kpi-slate', filter: 'derivados_terceros' },
             { val: a.cerrados_hoy || 0, lbl: 'Cerrados hoy', cls: 'green', filter: 'cerrados_hoy' },
             { val: (rTec.rows || []).length, lbl: 'Con posición &lt;20 min', cls: '', filter: 'tecnicos_gps' }
@@ -12174,7 +12240,7 @@ window._xl = id => {
 
 function tabPedidoListaPorEstado(es) {
     const n = normalizarEstadoPedidoUi(es);
-    if (n === 'Cerrado' || n === 'Derivado externo') return 'c';
+    if (n === 'Cerrado' || n === 'Derivado externo' || n === 'Desestimado') return 'c';
     if (n === 'Asignado' || n === 'En ejecución') return 'a';
     return 'p';
 }
@@ -12225,7 +12291,14 @@ function actualizarIndicadorSolicitudesDerivacionAdmin() {
 function render() {
     actualizarIndicadorSolicitudesDerivacionAdmin();
     const vis = pedidosVisiblesEnUI();
-    const cer = vis.filter(p => p.es === 'Cerrado' || p.es === 'Derivado externo').length;
+    const listaDesest =
+        esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
+    const cer = vis.filter(
+        (p) =>
+            p.es === 'Cerrado' ||
+            p.es === 'Derivado externo' ||
+            (listaDesest && p.es === 'Desestimado')
+    ).length;
     const asg = vis.filter(p => p.es === 'Asignado' || p.es === 'En ejecución').length;
     const pen = vis.filter(p => p.es === 'Pendiente').length;
     const pcEl = document.getElementById('pc');
@@ -12244,7 +12317,11 @@ function render() {
         : vis.filter(p => {
               if (app.tab === 'p') return p.es === 'Pendiente';
               if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-              return p.es === 'Cerrado' || p.es === 'Derivado externo';
+              return (
+                  p.es === 'Cerrado' ||
+                  p.es === 'Derivado externo' ||
+                  (listaDesest && p.es === 'Desestimado')
+              );
           });
     const c = document.getElementById('pl');
     c.innerHTML = '';
@@ -12268,7 +12345,8 @@ function render() {
         'Asignado': 'ea',
         'En ejecución': 'ee',
         'Cerrado': 'ec',
-        'Derivado externo': 'edex'
+        'Derivado externo': 'edex',
+        Desestimado: 'edes',
     };
     
     const pC = {
@@ -12594,6 +12672,8 @@ function ejecutarCerrarSesion() {
     if (wvt) wvt.style.display = 'none';
     const wdf = document.getElementById('wrap-chk-derivados-fuera');
     if (wdf) wdf.style.display = 'none';
+    const wdes = document.getElementById('wrap-chk-desestimados-lista');
+    if (wdes) wdes.style.display = 'none';
     cerrarAdminPanel();
     document.getElementById('gw')?.classList.remove('active');
     document.getElementById('ls').classList.add('active');
@@ -12801,11 +12881,27 @@ document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change
     } catch (_) {}
 });
 
+document.getElementById('chk-lista-mostrar-desestimados')?.addEventListener('change', function () {
+    try {
+        localStorage.setItem(LS_MOSTRAR_DESESTIMADOS_LISTA, this.checked ? '1' : '0');
+    } catch (_) {}
+    try {
+        render();
+        renderMk();
+    } catch (_) {}
+});
+
 document.getElementById('eb').addEventListener('click', () => {
+    const listaDesest =
+        esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
     const flt = p => {
         if (app.tab === 'p') return p.es === 'Pendiente';
         if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-        return p.es === 'Cerrado' || p.es === 'Derivado externo';
+        return (
+            p.es === 'Cerrado' ||
+            p.es === 'Derivado externo' ||
+            (listaDesest && p.es === 'Desestimado')
+        );
     };
     exportPedido(
         pedidosVisiblesEnUI().filter(flt),
@@ -13028,32 +13124,7 @@ function vaciarDerivacionesTercerosFormularioAdmin() {
  * @throws {Error} mensaje para toast / inline
  */
 function construirDerivacionReclamosDesdeFormularioDerivaciones() {
-    const out = {};
-    const pushSlot = (slot, apiKey) => {
-        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-        const n = (document.getElementById(`cfg-deriv-${slot}-nombre`)?.value || '').trim().slice(0, 120);
-        const wRaw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
-        const w = normalizarWhatsappInternacionalDesdeInput(wRaw);
-        const label = slot === 'energia' ? 'Empresa de energía' : 'Cooperativa de agua';
-        if (act) {
-            if (!w || !/^\+\d{8,22}$/.test(w)) {
-                throw new Error(
-                    `${label}: con «activo» marcado, cargá WhatsApp internacional válido (+ y 8–22 dígitos).`
-                );
-            }
-            out[apiKey] = { whatsapp: w, ...(n ? { nombre: n } : {}) };
-        } else if (n || wRaw) {
-            if (wRaw && (!w || !/^\+\d{8,22}$/.test(w))) {
-                throw new Error(`${label}: WhatsApp inválido (usá + y solo dígitos).`);
-            }
-            if (n || w) {
-                out[apiKey] = { ...(n ? { nombre: n } : {}), ...(w ? { whatsapp: w } : {}) };
-            }
-        }
-    };
-    pushSlot('energia', 'empresa_energia');
-    pushSlot('agua', 'cooperativa_agua');
-    return out;
+    return construirDerivacionReclamosDesdeFormularioDerivacionesCompleto(normalizarWhatsappInternacionalDesdeInput);
 }
 
 function setDerivacionesInlineError(msg) {
@@ -13373,6 +13444,18 @@ try {
                     localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
                 } catch (_) {}
                 chkDf2.checked = false;
+            }
+        }
+        const wrapDes2 = document.getElementById('wrap-chk-desestimados-lista');
+        const chkDes2 = document.getElementById('chk-lista-mostrar-desestimados');
+        if (wrapDes2 && chkDes2) {
+            wrapDes2.style.display = esAdmin() ? 'inline-flex' : 'none';
+            chkDes2.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DESESTIMADOS_LISTA) === '1';
+            if (!esAdmin()) {
+                try {
+                    localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
+                } catch (_) {}
+                chkDes2.checked = false;
             }
         }
         try {
@@ -14409,9 +14492,12 @@ function pedidoVisibleSegunRubro(p) {
 function pedidosVisiblesEnUI() {
     const relaxRubroLista =
         esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
+    const chkDes =
+        esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
     return (app.p || []).filter((p) => {
         if (!relaxRubroLista && !pedidoVisibleSegunRubro(p)) return false;
         if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
+        if (String(p.es || '') === 'Desestimado' && !chkDes) return false;
         return true;
     });
 }
@@ -17363,6 +17449,10 @@ async function capturaPdfBloqueResumenEstadisticas() {
         wrap.appendChild(m);
     }
     if (cards) wrap.appendChild(cards.cloneNode(true));
+    const pdfDes = document.getElementById('stats-desestimados-pdf-block');
+    if (pdfDes && pdfDes.innerHTML && pdfDes.innerHTML.trim()) {
+        wrap.appendChild(pdfDes.cloneNode(true));
+    }
     document.body.appendChild(wrap);
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     await new Promise(r => setTimeout(r, 70));
@@ -17909,16 +17999,22 @@ async function generarInformeMensualENRE() {
                 return;
             }
             if (cid === 'chart-tipos' && chart.config.type === 'bar' && chart.options.indexAxis === 'y') {
-                const data = chart.data.datasets[0]?.data;
-                const meta0 = chart.getDatasetMeta(0);
-                if (!data || meta0.hidden || !meta0?.data?.length) { ctx.restore(); return; }
+                const dsets = chart.data.datasets || [];
+                const metaLast = chart.getDatasetMeta(dsets.length - 1);
+                if (!metaLast?.data?.length) {
+                    ctx.restore();
+                    return;
+                }
                 ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                 ctx.fillStyle = '#0f172a';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
-                meta0.data.forEach((bar, i) => {
-                    const v = Number(data[i] || 0);
-                    if (!v) return;
+                metaLast.data.forEach((bar, i) => {
+                    let sum = 0;
+                    dsets.forEach((ds) => {
+                        sum += Number(ds.data?.[i] || 0);
+                    });
+                    if (!sum) return;
                     const p = typeof bar.getProps === 'function' ? bar.getProps(['x', 'y', 'base'], true) : null;
                     const xv = p?.x ?? bar.x;
                     const yv = p?.y ?? bar.y;
@@ -17926,7 +18022,7 @@ async function generarInformeMensualENRE() {
                     if (xv == null || yv == null || bs == null) return;
                     const right = Math.max(xv, bs);
                     const tx = Math.min(right + 6, area.right - 4);
-                    ctx.fillText(String(v), tx, yv);
+                    ctx.fillText(String(sum), tx, yv);
                 });
                 ctx.restore();
                 return;
@@ -17973,7 +18069,7 @@ async function cargarEstadisticas() {
         const showConf = esCooperativaElectricaRubro();
         const socTieneTStats = await sociosCatalogoTieneTenantId();
         const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
-        const [rTotal, rEstados, rPrior, rMensual, rTipos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
+        const [rTotal, rEstados, rPrior, rMensual, rTipos, rMotivos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
             // Resumen general
             statSql(`SELECT
@@ -17982,6 +18078,7 @@ async function cargarEstadisticas() {
                 COUNT(*) FILTER(WHERE estado='Pendiente') AS pendientes,
                 COUNT(*) FILTER(WHERE estado='Asignado') AS asignados,
                 COUNT(*) FILTER(WHERE estado='En ejecución') AS en_ejec,
+                COUNT(*) FILTER(WHERE estado='Desestimado') AS desestimados,
                 COUNT(*) FILTER(WHERE prioridad='Crítica' AND estado!='Cerrado') AS criticos,
                 COUNT(*) FILTER(WHERE prioridad='Alta' AND estado!='Cerrado') AS altos,
                 COUNT(*) FILTER(WHERE estado='Cerrado' AND fecha_cierre::date = CURRENT_DATE) AS cerrados_hoy
@@ -17996,9 +18093,11 @@ async function cargarEstadisticas() {
                 COUNT(*) AS total,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
                 FROM pedidos ${filtro} GROUP BY mes ORDER BY mes`, 'mensual'),
-            // Por tipo de trabajo
-            statSql(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n
+            // Por tipo de trabajo (incluye conteo desestimados por tipo)
+            statSql(`SELECT COALESCE(tipo_trabajo,'Sin tipo') AS tipo, COUNT(*) AS n,
+                COUNT(*) FILTER(WHERE estado='Desestimado') AS nd
                 FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`, 'tipos'),
+            statSql(sqlMotivosDesestimacion(filtro), 'motivos_desest'),
             // Por distribuidor / ramal / barrio (top 10)
             statSql(sqlDistZona, 'dist'),
             // Tiempo promedio de cierre (horas) — solo pedidos cerrados con fecha
@@ -18125,6 +18224,16 @@ async function cargarEstadisticas() {
                 }
             );
         }
+        try {
+            insertarCardDesestimadosEnResumen(cardList, t.desestimados, totalN);
+        } catch (_) {}
+        try {
+            renderBloquePdfDesestimados(document.getElementById('stats-desestimados-pdf-block'), {
+                totalN,
+                desestimados: t.desestimados,
+                motivosRows: rMotivos.rows || [],
+            });
+        } catch (_) {}
         document.getElementById('stats-cards').innerHTML = cardList
             .map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
             .join('');
@@ -18226,19 +18335,17 @@ async function cargarEstadisticas() {
                 tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}}}
         );
 
-        // ── Gráfico tipos de trabajo: barras horizontales ─────
-        // En Chart.js v4: 'bar' con indexAxis:'y' (horizontalBar fue eliminado)
-        crearChart('chart-tipos', 'bar',
-            rTipos.rows.map(r => r.tipo.length > 25 ? r.tipo.substring(0,25)+'…' : r.tipo),
-            [{ label: 'Pedidos', data: rTipos.rows.map(r => parseInt(r.n)),
-               backgroundColor: rTipos.rows.map((_, i) => CHART_PALETTE_ARRAY[i % CHART_PALETTE_ARRAY.length]),
-               borderColor: 'rgba(148, 163, 184, 0.35)',
-               borderWidth: 1 }],
-            { indexAxis: 'y',
-              layout: { padding: { top: 4, bottom: 4, left: 4, right: 36 } },
-              plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + c.parsed.x + ' pedidos' }}},
-              scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        // ── Gráfico tipos de trabajo: barras horizontales apiladas (otros + desestimados) ─────
+        crearChart(
+            'chart-tipos',
+            'bar',
+            rTipos.rows.map((r) => (r.tipo.length > 25 ? r.tipo.substring(0, 25) + '…' : r.tipo)),
+            datasetsTiposTrabajoConDesestimados(rTipos.rows),
+            opcionesChartTiposApilados()
         );
+        try {
+            crearGraficoMotivosDesestimacion(crearChart, rMotivos.rows || []);
+        } catch (_) {}
 
         // ── Gráfico distribuidor / ramal / barrio: barras con % cierre ─
         crearChart('chart-distribuidores', 'bar',
@@ -19598,6 +19705,15 @@ try {
 
 try {
     initEstCsvTipoAutocomplete();
+} catch (_) {}
+
+try {
+    initDerivacionesReclamosAdminBindings({
+        normalizarWhatsappInternacionalDesdeInput,
+        toast,
+        setDerivacionesInlineError,
+        onUiRefresh: actualizarBotonesWhatsappDerivacionesUi,
+    });
 } catch (_) {}
 
 // ── Exponer funciones admin al scope global ────────────

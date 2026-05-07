@@ -39,6 +39,8 @@ function shellAssetUrls() {
     j('modules/admin-desestimar-reclamo.js'),
     j('modules/normalizar-telefono.js'),
     j('modules/graficos-colores.js'),
+    j('modules/derivaciones-reclamos-admin.js'),
+    j('modules/estadisticas-desestimados.js'),
     j('modules/mapa-interaccion.js'),
     j('modules/etiqueta-identificador-pedido.js'),
     j('modules/est-csv-tipo-filtro.js'),
