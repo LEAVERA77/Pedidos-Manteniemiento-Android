@@ -689,42 +689,6 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
                 }
             )
         );
-        row.appendChild(
-            mk(
-                '🚫 Desestimar reclamo',
-                '#c62828',
-                'Reclamo falso, broma o contenido inapropiado (elimina fotos en servidor)',
-                () => {
-                    abrirModalSeleccion(
-                        'Motivo de desestimación',
-                        [
-                            {
-                                value: 'Foto con contenido inapropiado (desnudos, violencia, odio)',
-                                label: '📸 Contenido inapropiado',
-                            },
-                            { value: 'Lenguaje ofensivo o agresivo', label: '😡 Lenguaje ofensivo o agresivo' },
-                            { value: 'Broma / reclamo falso', label: '🤡 Broma / reclamo falso' },
-                            { value: 'Foto no relacionada (meme, selfie, paisaje)', label: '📸 Foto no relacionada' },
-                            { value: 'Otro motivo', label: '📝 Otro motivo' },
-                        ],
-                        async (motivo) => {
-                            try {
-                                await putPedidoCamposValidacion(pedidoId, {
-                                    estado: 'Desestimado',
-                                    motivo_desestimacion: motivo,
-                                    foto_urls: null,
-                                    foto_base64: null,
-                                });
-                                toastOk('Reclamo desestimado. Fotos eliminadas del almacenamiento en la nube.');
-                                await refrescarBloqueImagen();
-                            } catch (e) {
-                                toastErr(e?.message || 'Error');
-                            }
-                        }
-                    );
-                }
-            )
-        );
         adm.appendChild(lab);
         adm.appendChild(row);
         inner.appendChild(adm);

@@ -5,6 +5,7 @@
  */
 
 import { esc, parseDecimalODmsCoord, validarWgs84Import } from './utils.js';
+import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
 import {
     fajaArgentinaPorLongitud,
@@ -399,8 +400,14 @@ function sociosCatalogoTelefonoColapsar15Repetido(d) {
     return s;
 }
 
+/** Tras armar dígitos con prefijo país 54 + área + abonado, quita el 9 móvil (549… → 54…). */
+function sociosImportTelefonoCanon54(digits549style) {
+    const q = quitarMovil9Tras54Digitos(String(digits549style || '').replace(/\D/g, ''));
+    return q.length >= 11 && q.length <= 15 ? q : '';
+}
+
 /**
- * Normaliza a dígitos E.164 tipo 549 + área + abonado (Argentina).
+ * Normaliza a dígitos E.164 Argentina (54 + área + abonado, sin 9 móvil tras el 54).
  * Usa tabla codigos_area_argentina si el número viene solo con prefijo 15 y localidad/provincia.
  */
 function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) {
@@ -421,7 +428,7 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             if (r === prev) break;
         }
         const out = ('549' + r).replace(/\D/g, '');
-        return out.length >= 12 && out.length <= 15 ? out : orig || null;
+        return sociosImportTelefonoCanon54(out) || orig || null;
     }
     if (d.startsWith('54') && !d.startsWith('549')) {
         d = '549' + d.slice(2).replace(/^0+/, '');
@@ -436,7 +443,7 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
             if (r === prev) break;
         }
         const out = ('549' + r).replace(/\D/g, '');
-        return out.length >= 12 && out.length <= 15 ? out : orig || null;
+        return sociosImportTelefonoCanon54(out) || orig || null;
     }
     while (d.startsWith('0') && d.length >= 10) d = d.slice(1);
     d = sociosCatalogoTelefonoColapsar15Repetido(d);
@@ -469,7 +476,7 @@ function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) 
         d = ('549' + r).replace(/\D/g, '');
     }
     if (!d.startsWith('549')) return orig || null;
-    return d.length >= 12 && d.length <= 15 ? d : orig || null;
+    return sociosImportTelefonoCanon54(d) || orig || null;
 }
 
 function sociosCatalogoParseObjetoDatosExtra(val) {
@@ -2095,7 +2102,7 @@ function mostrarFormatoExcelSocios() {
     const inneg =
         '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
         '<li>En base de datos siempre existen las columnas fijas del catálogo; <strong>código postal, teléfono, lat/lon, barrio</strong> pueden venir vacíos en el Excel.</li>' +
-        '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a 549… (incluye 0/0343, 15 y variantes) usando la tabla de características por localidad. <strong>Localidad y provincia</strong> se comparan sin tildes y con tolerancia a errores de escritura; si hay duda, se muestra un aviso al terminar.</li>' +
+        '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a 54… (sin el 9 móvil tras el país; incluye 0/0343, 15 y variantes) usando la tabla de características por localidad. <strong>Localidad y provincia</strong> se comparan sin tildes y con tolerancia a errores de escritura; si hay duda, se muestra un aviso al terminar.</li>' +
         '</ul>';
     const wrap = document.createElement('div');
     wrap.id = 'modal-formato-excel-socios';

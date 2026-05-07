@@ -953,6 +953,14 @@ export async function runInitMap() {
     ctx.aplicarUIMapaPlataforma();
     ctx.renderMk();
 
+    try {
+        import('./modules/mapa-interaccion.js').then((mod) => {
+            if (typeof mod.initMapaInteraccionAdminNavegador === 'function') {
+                mod.initMapaInteraccionAdminNavegador(ctx.app.map, ctx);
+            }
+        });
+    } catch (_) {}
+
     const gnBumpMapLayout = () => {
         try {
             if (!ctx.app.map) return;

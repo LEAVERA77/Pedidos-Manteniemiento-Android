@@ -37,6 +37,19 @@ import {
     escHtmlPrint,
     toast
 } from './modules/ui-utils.js';
+import { quitarMovil9Tras54Digitos } from './modules/normalizar-telefono.js';
+import {
+    ESTADO_DONUT_COLORS,
+    DONUT_FALLBACK_SEQUENCE,
+    CHART_PALETTE_ARRAY,
+    datasetsMensualCreadosCerrados
+} from './modules/graficos-colores.js';
+import {
+    toggleMapaCardSlideoff,
+    syncMapSlideTabsFromStorage,
+    toggleMapaFiltrosBody,
+    toggleMapaCapasOsmBody
+} from './modules/filtros-estado.js';
 import {
     arrayBufferToBase64,
     escapeCsvCeldaPedidos,
@@ -1395,7 +1408,7 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
 function normalizarWhatsappInternacionalDesdeInput(raw) {
     const s = String(raw || '').trim();
     if (!s) return '';
-    const digits = s.replace(/\D/g, '');
+    const digits = quitarMovil9Tras54Digitos(s.replace(/\D/g, ''));
     if (!digits) return '';
     return `+${digits}`;
 }
@@ -5682,74 +5695,6 @@ function _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid() {
     });
 }
 
-function mapTabIdForCard(cardId) {
-    if (cardId === 'mapa-card-filtros') return 'map-tab-filtros';
-    if (cardId === 'mapa-card-filtro-tipo') return 'map-tab-filtro-tipo';
-    if (cardId === 'mapa-card-colores') return 'map-tab-colores';
-    if (cardId === 'mapa-card-capas-osm') return 'map-tab-capas-osm';
-    return 'map-tab-dash';
-}
-
-function toggleMapaCardSlideoff(cardId, hide) {
-    const el = document.getElementById(cardId);
-    const tab = document.getElementById(mapTabIdForCard(cardId));
-    if (!el) return;
-    if (hide === undefined) hide = !el.classList.contains('moui-card-slideoff');
-    const wasSlideoff = el.classList.contains('moui-card-slideoff');
-    el.classList.toggle('moui-card-slideoff', !!hide);
-    if (tab) tab.classList.toggle('visible', !!hide);
-    if (!hide && wasSlideoff && (cardId === 'mapa-card-filtros' || cardId === 'mapa-card-capas-osm')) {
-        const bodyId = cardId === 'mapa-card-filtros' ? 'mapa-filtros-body' : 'mapa-capas-osm-body';
-        const chId = cardId === 'mapa-card-filtros' ? 'mapa-filtros-chevron' : 'mapa-capas-osm-chevron';
-        const b = document.getElementById(bodyId);
-        const ch = document.getElementById(chId);
-        if (b) b.classList.remove('collapsed');
-        if (ch) ch.textContent = '▼';
-    }
-    try {
-        if (cardId === 'mapa-card-filtros') localStorage.setItem('pmg_slideoff_filtros', hide ? '1' : '0');
-        if (cardId === 'mapa-card-filtro-tipo') localStorage.setItem('pmg_slideoff_filtro_tipo', hide ? '1' : '0');
-        if (cardId === 'mapa-card-colores') localStorage.setItem('pmg_slideoff_colores', hide ? '1' : '0');
-        if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
-        if (cardId === 'mapa-card-capas-osm') localStorage.setItem('pmg_slideoff_capas_osm', hide ? '1' : '0');
-    } catch (_) {}
-}
-
-function syncMapSlideTabsFromStorage() {
-    const cf = document.getElementById('mapa-card-filtros');
-    if (cf && cf.style.display !== 'none') {
-        const vF = localStorage.getItem('pmg_slideoff_filtros');
-        cf.classList.remove('moui-card-slideoff');
-        try {
-            document.getElementById('map-tab-filtros')?.classList.remove('visible');
-        } catch (_) {}
-        const bF = document.getElementById('mapa-filtros-body');
-        const chF = document.getElementById('mapa-filtros-chevron');
-        const colF = vF !== '0';
-        if (bF) bF.classList.toggle('collapsed', colF);
-        if (chF) chF.textContent = colF ? '▶' : '▼';
-    }
-    const cft = document.getElementById('mapa-card-filtro-tipo');
-    if (cft && localStorage.getItem('pmg_slideoff_filtro_tipo') === '1') toggleMapaCardSlideoff('mapa-card-filtro-tipo', true);
-    const cc = document.getElementById('mapa-card-colores');
-    if (cc && cc.style.display !== 'none' && localStorage.getItem('pmg_slideoff_colores') === '1') toggleMapaCardSlideoff('mapa-card-colores', true);
-    const cd = document.getElementById('mapa-card-dashboard');
-    if (cd && cd.style.display !== 'none' && localStorage.getItem('pmg_slideoff_dash') === '1') toggleMapaCardSlideoff('mapa-card-dashboard', true);
-    const cOsm = document.getElementById('mapa-card-capas-osm');
-    if (cOsm && cOsm.style.display !== 'none') {
-        const vOsm = localStorage.getItem('pmg_slideoff_capas_osm');
-        cOsm.classList.remove('moui-card-slideoff');
-        try {
-            document.getElementById('map-tab-capas-osm')?.classList.remove('visible');
-        } catch (_) {}
-        const bO = document.getElementById('mapa-capas-osm-body');
-        const chO = document.getElementById('mapa-capas-osm-chevron');
-        const colO = vOsm !== '0';
-        if (bO) bO.classList.toggle('collapsed', colO);
-        if (chO) chO.textContent = colO ? '▶' : '▼';
-    }
-}
-
 let _bp2DragState = null;
 
 /** Borde superior seguro para paneles `position:fixed` (mapa escritorio): debajo de la barra .hd. */
@@ -6281,18 +6226,6 @@ function aplicarUIMapaPlataforma() {
     } catch (_) {}
 }
 window.setBp2PanelHidden = setBp2PanelHidden;
-window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
-
-function toggleMapaFiltrosBody() {
-    const b = document.getElementById('mapa-filtros-body');
-    const ch = document.getElementById('mapa-filtros-chevron');
-    if (!b) return;
-    b.classList.toggle('collapsed');
-    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
-    try {
-        localStorage.setItem('pmg_slideoff_filtros', b.classList.contains('collapsed') ? '1' : '0');
-    } catch (_) {}
-}
 
 function toggleMapaFiltroTipoBody() {
     const b = document.getElementById('mapa-filtro-tipo-body');
@@ -6319,18 +6252,6 @@ function toggleMapaColoresBody() {
     if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
 }
 window.toggleMapaColoresBody = toggleMapaColoresBody;
-
-function toggleMapaCapasOsmBody() {
-    const b = document.getElementById('mapa-capas-osm-body');
-    const ch = document.getElementById('mapa-capas-osm-chevron');
-    if (!b) return;
-    b.classList.toggle('collapsed');
-    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
-    try {
-        localStorage.setItem('pmg_slideoff_capas_osm', b.classList.contains('collapsed') ? '1' : '0');
-    } catch (_) {}
-}
-window.toggleMapaCapasOsmBody = toggleMapaCapasOsmBody;
 
 function iniciarTecnicosMapaPrincipalPoll() {
     detenerTecnicosMapaPrincipalPoll();
@@ -8536,8 +8457,10 @@ function normalizarTelefonoWhatsapp(raw) {
     if (!t) return '';
     t = t.replace(/[^\d+]/g, '');
     if (t.startsWith('00')) t = '+' + t.substring(2);
-    if (t.startsWith('+')) return t;
-    return '+' + t;
+    let digits = t.replace(/\D/g, '');
+    digits = quitarMovil9Tras54Digitos(digits);
+    if (!digits) return '';
+    return '+' + digits;
 }
 
 function esTelefonoWhatsappValido(tel) {
@@ -18243,18 +18166,6 @@ async function cargarEstadisticas() {
             });
         };
 
-        const COLORES = [
-            'rgba(186, 230, 253, 0.75)',
-            'rgba(167, 243, 208, 0.78)',
-            'rgba(254, 215, 170, 0.78)',
-            'rgba(233, 213, 255, 0.78)',
-            'rgba(253, 224, 231, 0.82)',
-            'rgba(207, 250, 254, 0.78)',
-            'rgba(254, 249, 195, 0.82)',
-            'rgba(221, 214, 254, 0.78)',
-            'rgba(209, 250, 229, 0.78)',
-            'rgba(254, 202, 202, 0.72)',
-        ];
         const priorColor = {
             Crítica: 'rgba(254, 202, 202, 0.72)',
             Alta: 'rgba(253, 186, 116, 0.55)',
@@ -18265,10 +18176,7 @@ async function cargarEstadisticas() {
         // ── Gráfico mensual: total y cerrados por mes ─────────
         crearChart('chart-mensual', 'bar',
             rMensual.rows.map(r => r.mes),
-            [
-                { label: 'Creados',  data: rMensual.rows.map(r => parseInt(r.total   || 0)), backgroundColor: 'rgba(186, 230, 253, 0.85)', borderColor: 'rgba(56, 189, 248, 0.55)', borderWidth: 1.5 },
-                { label: 'Cerrados', data: rMensual.rows.map(r => parseInt(r.cerrados|| 0)), backgroundColor: 'rgba(167, 243, 208, 0.88)', borderColor: 'rgba(52, 211, 153, 0.55)', borderWidth: 1.5 }
-            ],
+            datasetsMensualCreadosCerrados(rMensual.rows),
             { layout: { padding: { top: 10, bottom: 22, left: 4, right: 8 } },
                 plugins: { legend: { display: true, position: 'top' },
                 tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}}}
@@ -18292,26 +18200,11 @@ async function cargarEstadisticas() {
         }
 
         // ── Gráfico estados: doughnut ─────────────────────────
-        const estadoColors = {
-            Pendiente: 'rgba(254, 249, 195, 0.92)',
-            Asignado: 'rgba(233, 213, 255, 0.9)',
-            'En ejecución': 'rgba(186, 230, 253, 0.92)',
-            Cerrado: 'rgba(167, 243, 208, 0.92)',
-            'Derivado externo': 'rgba(221, 214, 254, 0.9)',
-        };
-        const pastelDonutFallback = [
-            'rgba(254, 215, 170, 0.9)',
-            'rgba(253, 224, 231, 0.92)',
-            'rgba(207, 250, 254, 0.9)',
-            'rgba(209, 250, 229, 0.92)',
-            'rgba(243, 232, 255, 0.9)',
-            'rgba(254, 243, 199, 0.92)',
-        ];
         crearChart('chart-estados', 'doughnut',
             rEstados.rows.map(r => r.estado),
             [{ data: rEstados.rows.map(r => parseInt(r.n)),
                backgroundColor: rEstados.rows.map((row, i) =>
-                   estadoColors[row.estado] || pastelDonutFallback[i % pastelDonutFallback.length]
+                   ESTADO_DONUT_COLORS[row.estado] || DONUT_FALLBACK_SEQUENCE[i % DONUT_FALLBACK_SEQUENCE.length]
                ),
                borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.98)' }],
             { plugins: { legend: { display: true, position: 'bottom' },
@@ -18333,7 +18226,7 @@ async function cargarEstadisticas() {
         crearChart('chart-tipos', 'bar',
             rTipos.rows.map(r => r.tipo.length > 25 ? r.tipo.substring(0,25)+'…' : r.tipo),
             [{ label: 'Pedidos', data: rTipos.rows.map(r => parseInt(r.n)),
-               backgroundColor: rTipos.rows.map((_, i) => COLORES[i % COLORES.length]),
+               backgroundColor: rTipos.rows.map((_, i) => CHART_PALETTE_ARRAY[i % CHART_PALETTE_ARRAY.length]),
                borderColor: 'rgba(148, 163, 184, 0.35)',
                borderWidth: 1 }],
             { indexAxis: 'y',
@@ -18398,7 +18291,7 @@ async function cargarEstadisticas() {
             crearChart('chart-usuarios', 'bar',
                 rUsuarios.rows.map(r => r.usuario.length > 14 ? r.usuario.substring(0,14)+'…' : r.usuario),
                 [{ label: 'Pedidos', data: rUsuarios.rows.map(r => parseInt(r.n)),
-                   backgroundColor: COLORES.slice(0,10) }],
+                   backgroundColor: rUsuarios.rows.map((_, i) => CHART_PALETTE_ARRAY[i % CHART_PALETTE_ARRAY.length]) }],
                 { layout: { padding: { top: 32, bottom: 28, left: 4, right: 8 } },
                     plugins: { legend: { display: false },
                     tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}},
@@ -18413,7 +18306,7 @@ async function cargarEstadisticas() {
             crearChart('chart-tecnicos', 'bar',
                 rTecnicos.rows.map(r => r.tecnico.length > 15 ? r.tecnico.substring(0,15)+'…' : r.tecnico),
                 [{ label: 'Pedidos cerrados', data: rTecnicos.rows.map(r => parseInt(r.n)),
-                   backgroundColor: COLORES }],
+                   backgroundColor: rTecnicos.rows.map((_, i) => CHART_PALETTE_ARRAY[i % CHART_PALETTE_ARRAY.length]) }],
                 { layout: { padding: { top: 32, bottom: 28, left: 4, right: 8 } },
                     plugins: { legend: { display: false },
                     tooltip: { callbacks: { label: c => ' ' + c.parsed.y + ' pedidos' }}} }
@@ -18431,13 +18324,13 @@ async function cargarEstadisticas() {
         if (capM) {
             const totCr = rMensual.rows.reduce((s, r) => s + parseInt(r.total || 0, 10), 0);
             const totCe = rMensual.rows.reduce((s, r) => s + parseInt(r.cerrados || 0, 10), 0);
-            capM.innerHTML = `<strong>Resumen numérico</strong> · Suma de pedidos creados (por mes): ${totCr}. Suma de cierres registrados por mes: ${totCe}.<br><strong>Colores:</strong> tono azulado = ingresos del mes; tono verdoso = cierres del mes.`;
+            capM.innerHTML = `<strong>Resumen numérico</strong> · Suma de pedidos creados (por mes): ${totCr}. Suma de cierres registrados por mes: ${totCe}.<br><strong>Colores:</strong> ámbar = creados del mes; verde = cierres del mes.`;
         }
         const totEst = (rEstados.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
         const capE = document.getElementById('chart-cap-estados');
         if (capE) {
             if (totEst) {
-                const estadoLeg = 'Tonos suaves: amarillento Pendiente · violáceo Asignado · azulado En ejecución · verdoso Cerrado.';
+                const estadoLeg = 'Ámbar Pendiente · azul Asignado · violeta En ejecución · verde Cerrado · gris Desestimado / derivado.';
                 const lines = rEstados.rows.map(r => {
                     const n = parseInt(r.n || 0, 10);
                     return `${scap(r.estado)} <strong>${pctOf(n, totEst)}%</strong> (${n})`;
@@ -19736,6 +19629,5 @@ if (typeof cancelarModoFijarUbicacionAdmin !== "undefined") window.cancelarModoF
 if (typeof centrarMapaAdminUbicacionesEnMapa !== "undefined") window.centrarMapaAdminUbicacionesEnMapa = centrarMapaAdminUbicacionesEnMapa;
 if (typeof onMapaFiltroChange !== "undefined") window.onMapaFiltroChange = onMapaFiltroChange;
 if (typeof resetMapaFiltros !== "undefined") window.resetMapaFiltros = resetMapaFiltros;
-if (typeof toggleMapaFiltrosBody !== "undefined") window.toggleMapaFiltrosBody = toggleMapaFiltrosBody;
 if (typeof toggleMapaDashBody !== "undefined") window.toggleMapaDashBody = toggleMapaDashBody;
 

@@ -41,7 +41,7 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 #gw .gn-btn-asistente-tl{display:none}
 /* Flex: cabecera (.hd) + mapa (#mc) no deben sumar más que el viewport (rotación WebView / 100dvh stale). */
 #ms.active{display:flex;flex-direction:column;height:100%;max-height:100dvh;min-height:0;overflow:hidden;position:relative}
-#mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:850}
+#mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:10050}
 #mapa-overlay-ui .moui-card .moui-hd{cursor:grab}
 #mapa-overlay-ui .moui-card .moui-hd:active{cursor:grabbing}
 .moui-card{pointer-events:auto;position:absolute;background:var(--card,#fff);border:1px solid var(--bo);border-radius:12px;box-shadow:var(--shadow-card),0 4px 18px rgba(15,23,42,.06);max-width:min(360px,calc(100vw - 1rem));font-size:.78rem}
@@ -540,6 +540,8 @@ html.gn-android-webview #mc .leaflet-container {
 /* FAB mapa: nuevo pedido desde ubicación */
 .mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:2000;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
 .mo.active{display:flex}
+#pm.mo.active,
+#dm.mo.active{z-index:9999}
 #modal-asignar-tecnico{z-index:6001}
 /* Modales pedido (.mo): scroll en .mc (no en body; el mapa sigue usando html/body overflow:hidden). */
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}

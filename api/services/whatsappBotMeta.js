@@ -1297,7 +1297,7 @@ async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, conta
   sessions.set(sk, sess);
   const bodyText =
     `¿Querés adjuntar *foto(s)* del problema?\n\n` +
-    `Podés enviarlas *desde la galería* o *con la cámara* (📎 → Imagen). Podés mandar *varias*; todas quedan asociadas al reclamo.\n\n` +
+    `Podés enviar hasta *2 fotos* desde la galería o la cámara (📎 → Imagen).\n\n` +
     `_Cuando termines, tocá *Sin foto* o seguí el resumen._`;
 
   const pid = String(wpid || "").trim();
@@ -1537,10 +1537,26 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   }
   try {
     const prevList = waSessionFotoUrls(sess);
+    if (!soloReemplazarFoto && prevList.length >= 2) {
+      await reply(
+        phone,
+        "Ya enviaste *2 fotos* (el máximo). Escribí *3* para continuar u *omitir* y pasar al resumen del reclamo.",
+        sess.tenantId,
+        phoneNumberId
+      );
+      return;
+    }
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
       directUrl: directMediaUrl,
     });
-    waSessionSetFotoUrls(sess, [...prevList, secureUrl]);
+    let nextList;
+    if (soloReemplazarFoto) {
+      nextList = prevList.length >= 1 ? [...prevList.slice(0, -1), secureUrl] : [secureUrl];
+    } else {
+      nextList = [...prevList, secureUrl];
+    }
+    if (nextList.length > 2) nextList = nextList.slice(-2);
+    waSessionSetFotoUrls(sess, nextList);
     sess.waPedidoFotoUploadFallback = !!usedFallback || !!sess.waPedidoFotoUploadFallback;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
@@ -2333,8 +2349,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     await reply(
       phone,
         `Perfecto. ${hint}\n\n` +
-        `_Una sola imagen por reclamo (JPG o PNG desde galería o cámara)._ ` +
-        `Si preferís no mandar foto, escribí *omitir* o *2*.` +
+        `_Podés mandar hasta *2 fotos* por reclamo (JPG o PNG)._ ` +
+        `Si preferís no mandar foto, escribí *omitir*, *2* o *3* según el paso.` +
         MSG_SALIR_ATRAS,
       tid,
       phoneNumberId
@@ -2380,7 +2396,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     if (t === "1") {
       await reply(
         phone,
-        "Listo. Enviá *una imagen* con 📎 (galería o cámara). Si cambiás de idea: *2* u *omitir*.",
+        "Listo. Enviá *hasta 2 imágenes* con 📎 (galería o cámara). Si cambiás de idea: *2*, *3* u *omitir*.",
         tid,
         phoneNumberId
       );
@@ -2388,7 +2404,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     await reply(
       phone,
-        "En este paso enviá *una imagen* con 📎 o escribí *2* / *omitir* para seguir sin foto.",
+        "En este paso enviá *fotos* con 📎 (máximo 2) o escribí *2*, *3* u *omitir* para seguir sin foto.",
       tid,
       phoneNumberId
     );

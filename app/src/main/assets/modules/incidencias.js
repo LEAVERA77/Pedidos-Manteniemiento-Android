@@ -178,6 +178,16 @@ function listaVisibleTienePedidoPendiente(pl) {
     return false;
 }
 
+/** Checkboxes de incidencias: solo en la pestaña «Pendientes» del panel de pedidos. */
+function listaPedidosTabEsPendientes() {
+    try {
+        const tab = document.querySelector('#bp2 .pt .tb.active');
+        return tab && tab.getAttribute('data-tab') === 'p';
+    } catch (_) {
+        return false;
+    }
+}
+
 /** `tecnico_asignado_id` en filas API (snake / camel) o objeto lite con `tai`. */
 function rawTecnicoAsignadoIdFromPedidoRow(row) {
     if (!row || typeof row !== 'object') return null;
@@ -925,6 +935,12 @@ function ensureSelectAllBar(pl) {
         } catch (_) {}
         return;
     }
+    if (!listaPedidosTabEsPendientes()) {
+        try {
+            pl.querySelector('#gn-inc-select-all-wrap')?.remove();
+        } catch (_) {}
+        return;
+    }
     if (!listaVisibleTienePedidoPendiente(pl)) {
         try {
             pl.querySelector('#gn-inc-select-all-wrap')?.remove();
@@ -984,7 +1000,11 @@ function enhanceListaPedidosInner() {
     rows.forEach((row) => {
         const np = parseNpFromRow(row);
         const p = findPedidoForIncidenciasUi(np);
-        const wantCb = puedeGestionarIncidencias() && p && puedeSeleccionarPedidoParaIncidencias(p);
+        const wantCb =
+            puedeGestionarIncidencias() &&
+            p &&
+            puedeSeleccionarPedidoParaIncidencias(p) &&
+            listaPedidosTabEsPendientes();
         const hasCb = !!row.querySelector('.gn-pi-cb-wrap');
 
         if (row.dataset.gnIncDone === '1') {
