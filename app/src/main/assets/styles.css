@@ -50,6 +50,7 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 #mapa-card-filtro-tipo{top:6.75rem;left:.45rem;z-index:851}
 #mapa-card-filtros{top:.45rem;left:.45rem;z-index:852}
 #mapa-card-capas-osm{top:12.25rem;left:.45rem;z-index:851;max-width:min(320px,calc(100vw - 1rem))}
+#mapa-card-coords-converter{top:17.75rem;left:.45rem;z-index:851;max-width:min(340px,calc(100vw - 1rem))}
 #mapa-card-dashboard{top:.45rem;right:.45rem;max-width:min(300px,42vw);z-index:853}
 @media (max-width:700px){#mapa-card-dashboard{right:.45rem;left:.45rem;max-width:none;top:auto;bottom:5.5rem;max-height:38vh}}
 .moui-hd{font-weight:700;color:var(--bd);padding:.45rem .6rem;border-bottom:1px solid var(--bo);display:flex;align-items:center;gap:.35rem;cursor:pointer;user-select:none;font-size:.8rem}
@@ -75,12 +76,14 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 #mapa-filtro-tipo-body.collapsed{display:none}
 #mapa-colores-body.collapsed{display:none}
 #mapa-capas-osm-body.collapsed{display:none}
+#mapa-coords-converter-body.collapsed{display:none}
 /* Paneles del mapa: ocultar deslizando hacia la derecha (fuera de pantalla) */
 #mapa-card-filtros.moui-card-slideoff,
 #mapa-card-filtro-tipo.moui-card-slideoff,
 #mapa-card-colores.moui-card-slideoff,
 #mapa-card-dashboard.moui-card-slideoff,
-#mapa-card-capas-osm.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
+#mapa-card-capas-osm.moui-card-slideoff,
+#mapa-card-coords-converter.moui-card-slideoff{transform:translateX(calc(100vw + 1.5rem))!important;opacity:0!important;pointer-events:none!important;transition:transform .25s ease,opacity .2s}
 .map-slide-tab{position:fixed;top:120px;left:0;z-index:9600;display:none;padding:.28rem .45rem;background:var(--bd);color:#fff;font-size:.65rem;font-weight:700;border-radius:0 .4rem .4rem 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);pointer-events:auto}
 .map-slide-tab.visible{display:block!important}
 /* Pestañas Filtros / Tipo / Colores / Dash: columna fija con separación uniforme */
@@ -254,6 +257,11 @@ body.gn-dock-pedidos-active #bp2.bp2-fullhide + .fab-show-pedidos{display:none!i
   z-index:1000;
   min-height:58px;
   border-bottom:1px solid var(--bo);
+  width:calc(100% - 2cm);
+  max-width:calc(100% - 2cm);
+  margin-left:auto;
+  margin-right:auto;
+  box-sizing:border-box;
 }
 html.gn-android-webview .hd{
   padding-top:max(0.35rem, env(safe-area-inset-top, 0px));
@@ -404,6 +412,17 @@ html.gn-android-webview .hd-slot-right{
 @media (max-width:700px){
   .web-coords-converter{max-width:min(420px,calc(100vw - 5.5rem))}
   .web-coords-converter .web-coords-converter-out{max-width:min(200px,calc(100vw - 4rem))}
+}
+/* Conversor dentro del panel flotante del mapa (sin doble “caja”) */
+#mapa-card-coords-converter .web-coords-converter{
+  max-width:none;
+  padding:0;
+  background:transparent;
+  border:none;
+  box-shadow:none;
+}
+#mapa-card-coords-converter .web-coords-converter .web-coords-converter-out{
+  max-width:100%;
 }
 html.gn-android-webview .admin-banner-nuevo-cliente{
   font-size:.78rem;
@@ -757,6 +776,10 @@ textarea{resize:vertical;min-height:80px}
   }
   #ms #mapa-overlay-ui #mapa-card-capas-osm:not(.moui-card-slideoff){
     top:max(12.25rem, calc(var(--app-header-h, 58px) + 6.5rem));
+    left:0.45rem;
+  }
+  #ms #mapa-overlay-ui #mapa-card-coords-converter:not(.moui-card-slideoff){
+    top:max(17.75rem, calc(var(--app-header-h, 58px) + 10.25rem));
     left:0.45rem;
   }
   /* left/top/right/bottom sin !important: el arrastre usa estilos inline */
@@ -1132,6 +1155,10 @@ html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-filtro-tipo:not(.moui-ca
 }
 html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-colores:not(.moui-card-slideoff){
   top:calc(var(--app-header-h,58px) + 11.5rem);
+  left:max(0.45rem,env(safe-area-inset-left,0px));
+}
+html.gn-android-webview #ms #mapa-overlay-ui #mapa-card-coords-converter:not(.moui-card-slideoff){
+  top:calc(var(--app-header-h,58px) + 16.25rem);
   left:max(0.45rem,env(safe-area-inset-left,0px));
 }
 html.gn-android-webview .map-slide-tabs-cluster{

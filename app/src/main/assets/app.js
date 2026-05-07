@@ -61,7 +61,8 @@ import {
     toggleMapaCardSlideoff,
     syncMapSlideTabsFromStorage,
     toggleMapaFiltrosBody,
-    toggleMapaCapasOsmBody
+    toggleMapaCapasOsmBody,
+    toggleMapaCoordsConverterBody
 } from './modules/filtros-estado.js';
 import { etiquetaIdentificadorPedidoLista, tituloResumenReferenciaEstadisticas } from './modules/etiqueta-identificador-pedido.js';
 import { appendTipoTrabajoFilterToWhere, initEstCsvTipoAutocomplete } from './modules/est-csv-tipo-filtro.js';
@@ -5980,6 +5981,7 @@ function bindMouiCardHeaderToggles() {
         ['mapa-card-filtro-tipo', toggleMapaFiltroTipoBody],
         ['mapa-card-colores', toggleMapaColoresBody],
         ['mapa-card-capas-osm', toggleMapaCapasOsmBody],
+        ['mapa-card-coords-converter', toggleMapaCoordsConverterBody],
         ['mapa-card-dashboard', toggleMapaDashBody]
     ];
     for (const [id, fn] of pairs) {
@@ -6123,6 +6125,8 @@ function aplicarUIMapaPlataforma() {
     const cardCol = document.getElementById('mapa-card-colores');
     const cardCapasOsm = document.getElementById('mapa-card-capas-osm');
     const tabCapasOsm = document.getElementById('map-tab-capas-osm');
+    const cardCoords = document.getElementById('mapa-card-coords-converter');
+    const tabCoords = document.getElementById('map-tab-coords-converter');
     if (!card) return;
     if (esAndroidWebViewMapa()) {
         try {
@@ -6139,6 +6143,14 @@ function aplicarUIMapaPlataforma() {
         if (tabCapasOsm) {
             tabCapasOsm.classList.remove('visible');
             tabCapasOsm.style.setProperty('display', 'none', 'important');
+        }
+        if (cardCoords) {
+            cardCoords.style.display = 'none';
+            cardCoords.classList.remove('moui-card-slideoff');
+        }
+        if (tabCoords) {
+            tabCoords.classList.remove('visible');
+            tabCoords.style.setProperty('display', 'none', 'important');
         }
         const mapDash = document.getElementById('mapa-card-dashboard');
         if (mapDash) mapDash.style.display = esAdmin() ? 'block' : 'none';
@@ -6189,6 +6201,8 @@ function aplicarUIMapaPlataforma() {
                 tabCapasOsm.style.removeProperty('display');
             }
         }
+        if (cardCoords) cardCoords.style.display = 'block';
+        if (tabCoords) tabCoords.style.removeProperty('display');
         const cc = document.getElementById('gn-cursor-coords');
         if (cc) cc.style.display = '';
     }
@@ -6205,6 +6219,7 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-filtro-tipo'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-colores'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-capas-osm'); } catch (_) {}
+    try { initMouiCardDraggable('mapa-card-coords-converter'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
     try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaCapasOsmCheckboxesFromStorage(); } catch (_) {}

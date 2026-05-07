@@ -107,19 +107,6 @@
         <span id="hd-empresa" class="hd-empresa" title=""></span>
         <span id="un" class="un"></span>
       </div>
-      <div id="web-coords-converter" class="web-coords-converter" style="display:none">
-        <label class="web-coords-converter-lbl" for="web-coords-converter-mode">Conversión</label>
-        <select id="web-coords-converter-mode" title="Modo de conversión" aria-label="Modo de conversión de coordenadas">
-          <option value="dec_to_dms">Decimal → GMS</option>
-          <option value="dms_to_dec">GMS → Decimal</option>
-        </select>
-        <div class="web-coords-converter-row">
-          <input id="web-coords-converter-a" type="text" autocomplete="off" spellcheck="false" aria-label="Latitud"/>
-          <input id="web-coords-converter-b" type="text" autocomplete="off" spellcheck="false" aria-label="Longitud"/>
-          <button id="web-coords-converter-run" type="button" class="web-coords-converter-run" title="Convertir latitud y longitud"><i class="fas fa-exchange-alt"></i></button>
-        </div>
-        <span id="web-coords-converter-out" class="web-coords-converter-out" aria-live="polite"></span>
-      </div>
     </div>
     <div class="hd-slot-right">
       <div id="user-menu-wrap" class="user-menu-wrap">
@@ -145,6 +132,7 @@
     <div id="map-slide-tabs-cluster" class="map-slide-tabs-cluster">
     <button type="button" id="map-tab-dash" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-dashboard',false)" title="Mostrar dashboard">Dash</button>
     <button type="button" id="map-tab-capas-osm" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-capas-osm',false)" title="Mostrar capas del mapa (admin web)">Capas</button>
+    <button type="button" id="map-tab-coords-converter" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-coords-converter',false)" title="Mostrar conversión de coordenadas (decimal ↔ GMS)">Conv.</button>
     <button type="button" id="map-tab-filtros" class="map-slide-tab visible" onclick="toggleMapaCardSlideoff('mapa-card-filtros',false)" title="Mostrar filtros">Filtros</button>
     <button type="button" id="map-tab-filtro-tipo" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-filtro-tipo',false)" title="Mostrar filtro por tipo de reclamo">Tipo</button>
     <button type="button" id="map-tab-colores" class="map-slide-tab" onclick="toggleMapaCardSlideoff('mapa-card-colores',false)" title="Mostrar colores">Colores</button>
@@ -205,6 +193,24 @@
         <label class="moui-chk gn-capas-osm-row"><input type="checkbox" data-osm-layer="hot"> Ejidos municipales y lugares</label>
         <label class="moui-chk gn-capas-osm-row"><input type="checkbox" data-osm-layer="rail"> Vías férreas (OpenRailwayMap)</label>
         <p class="gn-capas-osm-foot">Los datos y estilos son de terceros; respetá sus términos de uso. Si una capa falla al cargar, desmarcala.</p>
+      </div>
+    </div>
+    <div id="mapa-card-coords-converter" class="moui-card moui-card-slideoff">
+      <div class="moui-hd"><i class="fas fa-grip-vertical moui-drag-handle" title="Arrastrar desde la barra"></i><i class="fas fa-exchange-alt"></i> Conversión coords <span id="mapa-coords-converter-chevron" style="margin-left:auto;opacity:.6">▼</span><button type="button" class="ib-mini" style="margin-left:.35rem" title="Ocultar panel" onclick="event.stopPropagation();toggleMapaCardSlideoff('mapa-card-coords-converter',true)"><i class="fas fa-eye-slash"></i></button></div>
+      <div id="mapa-coords-converter-body" class="moui-bd">
+        <div id="web-coords-converter" class="web-coords-converter">
+          <label class="web-coords-converter-lbl" for="web-coords-converter-mode">Conversión</label>
+          <select id="web-coords-converter-mode" title="Modo de conversión" aria-label="Modo de conversión de coordenadas">
+            <option value="dec_to_dms">Decimal → GMS</option>
+            <option value="dms_to_dec">GMS → Decimal</option>
+          </select>
+          <div class="web-coords-converter-row">
+            <input id="web-coords-converter-a" type="text" autocomplete="off" spellcheck="false" aria-label="Latitud"/>
+            <input id="web-coords-converter-b" type="text" autocomplete="off" spellcheck="false" aria-label="Longitud"/>
+            <button id="web-coords-converter-run" type="button" class="web-coords-converter-run" title="Convertir latitud y longitud"><i class="fas fa-exchange-alt"></i></button>
+          </div>
+          <span id="web-coords-converter-out" class="web-coords-converter-out" aria-live="polite"></span>
+        </div>
       </div>
     </div>
     <div id="mapa-card-dashboard" class="moui-card moui-dash" style="display:none">

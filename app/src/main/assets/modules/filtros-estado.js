@@ -11,6 +11,8 @@ const LS_FILTROS_SLID = 'pmg_map_filtros_slid';
 const LS_FILTROS_BODY = 'pmg_map_filtros_body_collapsed';
 const LS_CAPAS_SLID = 'pmg_map_capas_slid';
 const LS_CAPAS_BODY = 'pmg_map_capas_body_collapsed';
+const LS_COORDS_SLID = 'pmg_map_coords_slid';
+const LS_COORDS_BODY = 'pmg_map_coords_body_collapsed';
 const LS_MAP_PANELS_V2 = 'pmg_map_panels_storage_v2';
 
 function migrateMapFiltrosCapasStorageV2Once() {
@@ -47,6 +49,7 @@ function mapTabIdForCard(cardId) {
     if (cardId === 'mapa-card-filtro-tipo') return 'map-tab-filtro-tipo';
     if (cardId === 'mapa-card-colores') return 'map-tab-colores';
     if (cardId === 'mapa-card-capas-osm') return 'map-tab-capas-osm';
+    if (cardId === 'mapa-card-coords-converter') return 'map-tab-coords-converter';
     return 'map-tab-dash';
 }
 
@@ -58,13 +61,25 @@ function toggleMapaCardSlideoff(cardId, hide) {
     const wasSlideoff = el.classList.contains('moui-card-slideoff');
     el.classList.toggle('moui-card-slideoff', !!hide);
     if (tab) tab.classList.toggle('visible', !!hide);
-    if (!hide && wasSlideoff && (cardId === 'mapa-card-filtros' || cardId === 'mapa-card-capas-osm')) {
-        const bodyId = cardId === 'mapa-card-filtros' ? 'mapa-filtros-body' : 'mapa-capas-osm-body';
-        const chId = cardId === 'mapa-card-filtros' ? 'mapa-filtros-chevron' : 'mapa-capas-osm-chevron';
-        const b = document.getElementById(bodyId);
-        const ch = document.getElementById(chId);
-        if (b) b.classList.remove('collapsed');
-        if (ch) ch.textContent = '▼';
+    if (!hide && wasSlideoff) {
+        let bodyId = null;
+        let chId = null;
+        if (cardId === 'mapa-card-filtros') {
+            bodyId = 'mapa-filtros-body';
+            chId = 'mapa-filtros-chevron';
+        } else if (cardId === 'mapa-card-capas-osm') {
+            bodyId = 'mapa-capas-osm-body';
+            chId = 'mapa-capas-osm-chevron';
+        } else if (cardId === 'mapa-card-coords-converter') {
+            bodyId = 'mapa-coords-converter-body';
+            chId = 'mapa-coords-converter-chevron';
+        }
+        if (bodyId) {
+            const b = document.getElementById(bodyId);
+            const ch = document.getElementById(chId);
+            if (b) b.classList.remove('collapsed');
+            if (ch) ch.textContent = '▼';
+        }
     }
     try {
         if (cardId === 'mapa-card-filtros') localStorage.setItem(LS_FILTROS_SLID, hide ? '1' : '0');
@@ -72,6 +87,7 @@ function toggleMapaCardSlideoff(cardId, hide) {
         if (cardId === 'mapa-card-colores') localStorage.setItem('pmg_slideoff_colores', hide ? '1' : '0');
         if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
         if (cardId === 'mapa-card-capas-osm') localStorage.setItem(LS_CAPAS_SLID, hide ? '1' : '0');
+        if (cardId === 'mapa-card-coords-converter') localStorage.setItem(LS_COORDS_SLID, hide ? '1' : '0');
     } catch (_) {}
 }
 
@@ -113,6 +129,23 @@ function syncMapSlideTabsFromStorage() {
         if (bO) bO.classList.toggle('collapsed', bodyCollapsedO);
         if (chO) chO.textContent = bodyCollapsedO ? '▶' : '▼';
     }
+    const cCr = document.getElementById('mapa-card-coords-converter');
+    const tabCr = document.getElementById('map-tab-coords-converter');
+    if (cCr && cCr.style.display !== 'none') {
+        try {
+            if (localStorage.getItem(LS_COORDS_SLID) === null) localStorage.setItem(LS_COORDS_SLID, '1');
+        } catch (_) {}
+        const slidCr = localStorage.getItem(LS_COORDS_SLID) !== '0';
+        cCr.classList.toggle('moui-card-slideoff', slidCr);
+        try {
+            tabCr?.classList.toggle('visible', slidCr);
+        } catch (_) {}
+        const bCr = document.getElementById('mapa-coords-converter-body');
+        const chCr = document.getElementById('mapa-coords-converter-chevron');
+        const bodyCollapsedCr = localStorage.getItem(LS_COORDS_BODY) === '1';
+        if (bCr) bCr.classList.toggle('collapsed', bodyCollapsedCr);
+        if (chCr) chCr.textContent = bodyCollapsedCr ? '▶' : '▼';
+    }
 }
 
 function toggleMapaFiltrosBody() {
@@ -137,11 +170,29 @@ function toggleMapaCapasOsmBody() {
     } catch (_) {}
 }
 
+function toggleMapaCoordsConverterBody() {
+    const b = document.getElementById('mapa-coords-converter-body');
+    const ch = document.getElementById('mapa-coords-converter-chevron');
+    if (!b) return;
+    b.classList.toggle('collapsed');
+    if (ch) ch.textContent = b.classList.contains('collapsed') ? '▶' : '▼';
+    try {
+        localStorage.setItem(LS_COORDS_BODY, b.classList.contains('collapsed') ? '1' : '0');
+    } catch (_) {}
+}
+
 if (typeof window !== 'undefined') {
     window.toggleMapaCardSlideoff = toggleMapaCardSlideoff;
     window.syncMapSlideTabsFromStorage = syncMapSlideTabsFromStorage;
     window.toggleMapaFiltrosBody = toggleMapaFiltrosBody;
     window.toggleMapaCapasOsmBody = toggleMapaCapasOsmBody;
+    window.toggleMapaCoordsConverterBody = toggleMapaCoordsConverterBody;
 }
 
-export { toggleMapaCardSlideoff, syncMapSlideTabsFromStorage, toggleMapaFiltrosBody, toggleMapaCapasOsmBody };
+export {
+    toggleMapaCardSlideoff,
+    syncMapSlideTabsFromStorage,
+    toggleMapaFiltrosBody,
+    toggleMapaCapasOsmBody,
+    toggleMapaCoordsConverterBody
+};

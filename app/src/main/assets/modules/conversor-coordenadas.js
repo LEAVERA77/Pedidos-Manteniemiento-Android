@@ -1,5 +1,5 @@
 /**
- * Barra header `#web-coords-converter`: lat + lon en A/B; resultado en `#web-coords-converter-out`.
+ * Conversor en panel mapa `#mapa-card-coords-converter` (lat/lon en A/B; salida `#web-coords-converter-out`).
  * made by leavera77
  */
 
@@ -70,18 +70,30 @@ function ejecutarConversion(modeEl, a, b, out) {
 }
 
 export function installWebCoordsConverterBar(esAndroidWebViewMapaFn) {
+    const card = document.getElementById('mapa-card-coords-converter');
+    const tab = document.getElementById('map-tab-coords-converter');
     const wrap = document.getElementById('web-coords-converter');
     const mode = document.getElementById('web-coords-converter-mode');
     const a = document.getElementById('web-coords-converter-a');
     const b = document.getElementById('web-coords-converter-b');
     const run = document.getElementById('web-coords-converter-run');
     const out = document.getElementById('web-coords-converter-out');
-    if (!wrap || !mode || !a || !b || !run || !out) return;
+    if (!card || !wrap || !mode || !a || !b || !run || !out) return;
 
     const visible = typeof esAndroidWebViewMapaFn !== 'function' || !esAndroidWebViewMapaFn();
-    wrap.style.display = visible ? 'inline-flex' : 'none';
-    if (out) out.style.display = visible ? 'block' : 'none';
-    if (!visible || run.dataset.bound === '1') return;
+    if (!visible) {
+        try {
+            card.style.display = 'none';
+            if (tab) tab.style.setProperty('display', 'none', 'important');
+        } catch (_) {}
+        return;
+    }
+    try {
+        card.style.display = 'block';
+        if (tab) tab.style.removeProperty('display');
+    } catch (_) {}
+    if (out) out.style.display = 'block';
+    if (run.dataset.bound === '1') return;
     run.dataset.bound = '1';
 
     let prevMode = mode.value;
