@@ -582,7 +582,8 @@ html.gn-android-webview #mc .leaflet-container {
 #pm.mo.active > .mc,
 #dm.mo.active > .mc{position:relative;z-index:1}
 .mc.lg{z-index:auto}
-#modal-asignar-tecnico{z-index:6001}
+/* Por encima del detalle #dm (99999); por debajo del visor foto (200000). */
+#modal-asignar-tecnico.mo.active{z-index:199000!important;position:fixed!important;inset:0}
 /* Modales pedido (.mo): scroll en .mc (no en body; el mapa sigue usando html/body overflow:hidden). */
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}
