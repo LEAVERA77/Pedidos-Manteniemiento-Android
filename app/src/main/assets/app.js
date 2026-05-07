@@ -122,6 +122,10 @@ import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modu
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import { guardarRotacionReclamoDesdeFotoAmpliada } from './modules/pedido-ver-imagen.js';
+import {
+    initPedidosToolbarFiltrosExclusivos,
+    syncPedidosToolbarFiltrosExclusivosFromLs,
+} from './js/pedidos-toolbar-filtros-exclusivos.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -3464,42 +3468,15 @@ const gnLoginSubmitHandler = async e => {
             wrapTog.style.display = esTecnicoOSupervisor() ? 'inline-flex' : 'none';
             chkTod.checked = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
         }
-        const wrapDf = document.getElementById('wrap-chk-derivados-fuera');
-        const chkDf = document.getElementById('chk-mostrar-derivados-fuera');
-        if (wrapDf && chkDf) {
-            wrapDf.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkDf.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
-                } catch (_) {}
-                chkDf.checked = false;
+        ['wrap-chk-derivados-fuera', 'wrap-chk-desestimados-lista', 'wrap-chk-solo-agrupados-incidencia'].forEach(
+            (wid) => {
+                const w = document.getElementById(wid);
+                if (w) w.style.display = esAdmin() ? 'inline-flex' : 'none';
             }
-        }
-        const wrapDes = document.getElementById('wrap-chk-desestimados-lista');
-        const chkDes = document.getElementById('chk-lista-mostrar-desestimados');
-        if (wrapDes && chkDes) {
-            wrapDes.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkDes.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DESESTIMADOS_LISTA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
-                } catch (_) {}
-                chkDes.checked = false;
-            }
-        }
-        const wrapSoloAg = document.getElementById('wrap-chk-solo-agrupados-incidencia');
-        const chkSoloAg = document.getElementById('chk-lista-solo-agrupados-incidencia');
-        if (wrapSoloAg && chkSoloAg) {
-            wrapSoloAg.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkSoloAg.checked = esAdmin() && localStorage.getItem(LS_SOLO_AGRUPADOS_INCI_LISTA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_SOLO_AGRUPADOS_INCI_LISTA);
-                } catch (_) {}
-                chkSoloAg.checked = false;
-            }
-        }
+        );
+        try {
+            syncPedidosToolbarFiltrosExclusivosFromLs(esAdmin());
+        } catch (_) {}
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
                 AndroidSession.setUser(parseInt(u.id, 10) || 0, String(u.rol || ''));
@@ -12857,30 +12834,7 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
     if (esTecnicoOSupervisor() && !modoOffline && NEON_OK) void cargarPedidos();
 });
 
-document.getElementById('chk-mostrar-derivados-fuera')?.addEventListener('change', function () {
-    try {
-        localStorage.setItem(LS_MOSTRAR_DERIVADOS_FUERA, this.checked ? '1' : '0');
-    } catch (_) {}
-    try {
-        render();
-        renderMk();
-    } catch (_) {}
-});
-
-document.getElementById('chk-lista-mostrar-desestimados')?.addEventListener('change', function () {
-    try {
-        localStorage.setItem(LS_MOSTRAR_DESESTIMADOS_LISTA, this.checked ? '1' : '0');
-    } catch (_) {}
-    try {
-        render();
-        renderMk();
-    } catch (_) {}
-});
-
-document.getElementById('chk-lista-solo-agrupados-incidencia')?.addEventListener('change', function () {
-    try {
-        localStorage.setItem(LS_SOLO_AGRUPADOS_INCI_LISTA, this.checked ? '1' : '0');
-    } catch (_) {}
+initPedidosToolbarFiltrosExclusivos(() => {
     try {
         render();
         renderMk();
@@ -13431,42 +13385,15 @@ try {
             wrapTog2.style.display = esTecnicoOSupervisor() ? 'inline-flex' : 'none';
             chkTod2.checked = localStorage.getItem('pmg_tecnico_ver_todos') === '1';
         }
-        const wrapDf2 = document.getElementById('wrap-chk-derivados-fuera');
-        const chkDf2 = document.getElementById('chk-mostrar-derivados-fuera');
-        if (wrapDf2 && chkDf2) {
-            wrapDf2.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkDf2.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DERIVADOS_FUERA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_MOSTRAR_DERIVADOS_FUERA);
-                } catch (_) {}
-                chkDf2.checked = false;
+        ['wrap-chk-derivados-fuera', 'wrap-chk-desestimados-lista', 'wrap-chk-solo-agrupados-incidencia'].forEach(
+            (wid) => {
+                const w = document.getElementById(wid);
+                if (w) w.style.display = esAdmin() ? 'inline-flex' : 'none';
             }
-        }
-        const wrapDes2 = document.getElementById('wrap-chk-desestimados-lista');
-        const chkDes2 = document.getElementById('chk-lista-mostrar-desestimados');
-        if (wrapDes2 && chkDes2) {
-            wrapDes2.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkDes2.checked = esAdmin() && localStorage.getItem(LS_MOSTRAR_DESESTIMADOS_LISTA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_MOSTRAR_DESESTIMADOS_LISTA);
-                } catch (_) {}
-                chkDes2.checked = false;
-            }
-        }
-        const wrapSoloAg2 = document.getElementById('wrap-chk-solo-agrupados-incidencia');
-        const chkSoloAg2 = document.getElementById('chk-lista-solo-agrupados-incidencia');
-        if (wrapSoloAg2 && chkSoloAg2) {
-            wrapSoloAg2.style.display = esAdmin() ? 'inline-flex' : 'none';
-            chkSoloAg2.checked = esAdmin() && localStorage.getItem(LS_SOLO_AGRUPADOS_INCI_LISTA) === '1';
-            if (!esAdmin()) {
-                try {
-                    localStorage.removeItem(LS_SOLO_AGRUPADOS_INCI_LISTA);
-                } catch (_) {}
-                chkSoloAg2.checked = false;
-            }
-        }
+        );
+        try {
+            syncPedidosToolbarFiltrosExclusivosFromLs(esAdmin());
+        } catch (_) {}
         try {
             if (window.AndroidSession && typeof AndroidSession.setUser === 'function') {
                 AndroidSession.setUser(parseInt(app.u.id, 10) || 0, String(app.u.rol || ''));
