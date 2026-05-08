@@ -36,7 +36,13 @@ import {
     escHtmlPrint,
     toast
 } from './modules/ui-utils.js';
-import { quitarMovil9Tras54Digitos } from './modules/normalizar-telefono.js';
+import {
+    quitarMovil9Tras54Digitos,
+    normalizarTelefonoWhatsapp,
+    esTelefonoWhatsappValido,
+} from './modules/normalizar-telefono.js';
+import { kpiPdfMiniChartDataUrl } from './modules/kpi-pdf-charts.js';
+import { openAdminUsuarioWhatsappModal } from './modules/admin-usuarios-whatsapp.js';
 import {
     ESTADO_DONUT_COLORS,
     DONUT_FALLBACK_SEQUENCE,
@@ -112,7 +118,12 @@ import {
     leerTerceroDerivacionNuevoPedidoSiActivo,
     internacionalMasDesdeDigitosOTexto,
 } from './modules/derivaciones-terceros.js';
-import { syncPedidoFormNisYClienteLabels, syncPedidoFormZonaDistribuidorLabels } from './modules/pedido-form-labels-rubro.js';
+import {
+    syncPedidoFormNisYClienteLabels,
+    syncPedidoFormZonaDistribuidorLabels,
+    etiquetaNisDetalleModalPedido,
+    syncHistorialNisBusquedaDom,
+} from './modules/pedido-form-labels-rubro.js';
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import {
     ocultarModulosRedesValorParaApi,
@@ -7403,8 +7414,11 @@ async function sqlWhereDistribuidoresPorTenantOUsadosEnPedidos() {
 /** Lista de usuarios para mapas / asignación / nombres — siempre acotada al tenant actual si la columna existe. */
 async function refrescarUsuariosCacheDesdeNeon() {
     if (!NEON_OK || modoOffline || !_sql) return;
+    try {
+        await sqlSimple('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono_whatsapp VARCHAR(32)');
+    } catch (_) {}
     const wf = await sqlFiltroUsuariosPorTenant();
-    const ru = await sqlSimple(`SELECT id, nombre, email, rol, telefono, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
+    const ru = await sqlSimple(`SELECT id, nombre, email, rol, telefono, telefono_whatsapp, COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
         FROM usuarios WHERE activo = TRUE${wf} ORDER BY nombre`);
     app.usuariosCache = (ru.rows || []).map((row) => ({ ...row, rol: normalizarRolStr(row.rol) }));
 }
@@ -8466,7 +8480,7 @@ function llenarSelectUsuariosNotif() {
         if (normalizarRolStr(u.rol) === 'admin') return;
         const o = document.createElement('option');
         o.value = u.id;
-        const tel = (u.telefono || '').trim();
+        const tel = String(u.telefono_whatsapp || u.telefono || '').trim();
         o.textContent = (u.nombre || 'Usuario') + (u.email ? ' — ' + u.email : '') + (tel ? ' — ' + tel : ' — sin teléfono');
         sel.appendChild(o);
     });
@@ -8478,27 +8492,13 @@ function llenarSelectUsuariosNotif() {
     }
 }
 
-function normalizarTelefonoWhatsapp(raw) {
-    let t = String(raw || '').trim();
-    if (!t) return '';
-    t = t.replace(/[^\d+]/g, '');
-    if (t.startsWith('00')) t = '+' + t.substring(2);
-    let digits = t.replace(/\D/g, '');
-    digits = quitarMovil9Tras54Digitos(digits);
-    if (!digits) return '';
-    return '+' + digits;
-}
-
-function esTelefonoWhatsappValido(tel) {
-    return /^\+\d{10,15}$/.test(String(tel || '').trim());
-}
 async function enviarWhatsappMetaTecnico(uid, pedidoId, mensaje) {
     try {
         const tk = getApiToken();
         if (!tk) return;
         const u = (app.usuariosCache || []).find(x => String(x.id) === String(uid));
         if (!u) return;
-        const tel = normalizarTelefonoWhatsapp(u.telefono || '');
+        const tel = normalizarTelefonoWhatsapp(u.telefono_whatsapp || u.telefono || '');
         if (!tel || u.whatsapp_notificaciones === false) return;
         await fetch(apiUrl('/api/whatsapp/meta/enviar-texto'), {
             method: 'POST',
@@ -11823,7 +11823,9 @@ async function detalle(p, opts = {}) {
     const nisVal = String(p.nis || '').trim();
     const medVal = String(p.med || '').trim();
     if (nisVal) {
-        filasDatosCliente.push(`<div class="dr"><span class="dl">NIS</span><span class="dv" style="font-weight:700">${escDet(nisVal)}</span></div>`);
+        filasDatosCliente.push(
+            `<div class="dr"><span class="dl">${etiquetaNisDetalleModalPedido()}</span><span class="dv" style="font-weight:700">${escDet(nisVal)}</span></div>`
+        );
     }
     if (medVal) {
         filasDatosCliente.push(`<div class="dr"><span class="dl">Medidor</span><span class="dv" style="font-weight:700">${escDet(medVal)}</span></div>`);
@@ -15660,7 +15662,7 @@ function textoBreveInterpretacionKpiPdf(rows) {
     ).length;
     return (
         `Informe KPI piloto: ${nReg} registro(s) con valor numérico en ${nTipos} tipo(s) de métrica. ` +
-        'Cada tipo incluye un gráfico compacto (línea si hay varios periodos, barra si hay uno). ' +
+        'Cada tipo incluye un gráfico de barras horizontales (A4, colores sólidos, fondo blanco). ' +
         'Debajo se listan todos los snapshots. Documento para uso interno.'
     );
 }
@@ -15699,7 +15701,7 @@ function kpiPdfTruncCell(s, max) {
 
 function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(7);
+    pdf.setFontSize(10);
     pdf.setTextColor(30, 41, 59);
     const cols = [
         { w: 50, t: 'Métrica' },
@@ -15737,70 +15739,6 @@ function kpiPdfPiePaginas(pdf) {
         pdf.setTextColor(100, 116, 139);
         pdf.text(`Página ${i} de ${n} · ${ent}`, pageW / 2, pageH - 6, { align: 'center' });
     }
-}
-
-async function kpiPdfMiniChartDataUrl(metricaKey, points) {
-    if (!points.length || typeof Chart === 'undefined') return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = 420;
-    canvas.height = 200;
-    const ctx = canvas.getContext('2d');
-    const lab = KPI_METRICA_ETIQUETAS[metricaKey] || metricaKey;
-    const labels = points.map((p) => kpiPdfTruncCell(p.label, 12));
-    const data = points.map((p) => p.y);
-    const type = points.length === 1 ? 'bar' : 'line';
-    const lineC = '#5b7cba';
-    const fillC = type === 'bar' ? 'rgba(91, 124, 186, 0.45)' : 'rgba(91, 124, 186, 0.14)';
-    const chart = new Chart(ctx, {
-        type,
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: lab,
-                    data,
-                    borderColor: lineC,
-                    backgroundColor: fillC,
-                    borderWidth: type === 'line' ? 2 : 1,
-                    tension: 0.25,
-                    fill: type === 'line',
-                },
-            ],
-        },
-        options: {
-            animation: false,
-            responsive: false,
-            devicePixelRatio: 1.25,
-            layout: { padding: { top: 8, bottom: 22, left: 6, right: 8 } },
-            plugins: {
-                title: { display: true, text: lab, color: '#1e3a8a', font: { size: 10, weight: '600' } },
-                legend: { display: false },
-            },
-            scales: {
-                x: {
-                    ticks: {
-                        font: { size: 8 },
-                        maxRotation: 40,
-                        minRotation: 0,
-                        autoSkip: true,
-                        maxTicksLimit: 8,
-                    },
-                },
-                y: { beginAtZero: false, ticks: { font: { size: 8 } } },
-            },
-        },
-    });
-    await new Promise((r) => setTimeout(r, 120));
-    let url = null;
-    try {
-        url = canvas.toDataURL('image/png');
-    } catch (_) {
-        url = null;
-    }
-    try {
-        chart.destroy();
-    } catch (_) {}
-    return url;
 }
 
 /** PDF A4 listo para imprimir: encabezado empresa, texto breve, un gráfico compacto por tipo de métrica y tabla de snapshots. */
@@ -15842,12 +15780,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.text('Informe KPI piloto', margin, y);
         y += 7;
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8.1);
+        pdf.setFontSize(10);
         pdf.setTextColor(51, 65, 85);
         const intro = textoBreveInterpretacionKpiPdf(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
-        const lineH = 3.55;
+        const lineH = 4.1;
         for (let li = 0; li < introLines.length; li++) {
             if (y + lineH > pageH - 14) {
                 pdf.addPage();
@@ -15869,14 +15807,14 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
-        const hMmMax = 52;
+        const hMmMax = 88;
         for (const mk of keysOrden) {
             const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
             if (!pts.length) continue;
-            const dataUrl = await kpiPdfMiniChartDataUrl(mk, pts);
+            const dataUrl = await kpiPdfMiniChartDataUrl(KPI_METRICA_ETIQUETAS[mk] || mk, pts);
             if (!dataUrl) continue;
-            let hMm = hMmMax;
-            let wMm = Math.min(maxW, 168);
+            let hMm = Math.min(hMmMax, Math.max(24, 10 + pts.length * 4.6));
+            let wMm = Math.min(maxW, 190);
             if (y + hMm + 3.5 > pageH - 14) {
                 pdf.addPage();
                 y = margin;
@@ -15902,9 +15840,9 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         y += 5;
         y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6.8);
+        pdf.setFontSize(10);
         pdf.setTextColor(15, 23, 42);
-        const rowH = 4;
+        const rowH = 4.6;
         for (let ri = 0; ri < rows.length; ri++) {
             const row = rows[ri];
             if (y + rowH > pageH - 14) {
@@ -15912,7 +15850,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 y = margin + 2;
                 y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
                 pdf.setFont('helvetica', 'normal');
-                pdf.setFontSize(6.8);
+                pdf.setFontSize(10);
                 pdf.setTextColor(15, 23, 42);
             }
             let x = margin;
@@ -15981,6 +15919,9 @@ function adminTab(tab) {
             if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
         } catch (_) {}
         cargarListaSociosAdmin();
+        try {
+            syncHistorialNisBusquedaDom();
+        } catch (_) {}
         if (!document.getElementById('nis-historial-item-style')) {
             const st = document.createElement('style');
             st.id = 'nis-historial-item-style';
@@ -16456,6 +16397,7 @@ async function cargarListaUsuarios() {
         await sqlSimple(
             "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"
         );
+        await sqlSimple('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono_whatsapp VARCHAR(32)');
     } catch(_) {}
     const cont = document.getElementById('lista-usuarios-admin');
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
@@ -16464,6 +16406,7 @@ async function cargarListaUsuarios() {
         const r = await sqlSimple(`SELECT id, email, nombre, rol,
             COALESCE(activo, true) AS activo,
             telefono,
+            telefono_whatsapp,
             COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
             FROM usuarios WHERE 1=1${wf} ORDER BY id`);
         if (!r.rows.length) { cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin usuarios</p>'; return; }
@@ -16474,13 +16417,13 @@ async function cargarListaUsuarios() {
                 <td><b>${u.email}</b></td>
                 <td>${u.nombre}</td>
                 <td>
-                    <div style="font-size:.8rem">${u.telefono || '<span style="color:var(--tl)">Sin cargar</span>'}</div>
+                    <div style="font-size:.8rem">${u.telefono_whatsapp || u.telefono || '<span style="color:var(--tl)">Sin cargar</span>'}</div>
                     <div style="font-size:.74rem;color:${u.whatsapp_notificaciones ? '#166534' : '#b45309'}">${u.whatsapp_notificaciones ? 'Notificaciones ON' : 'Notificaciones OFF'}</div>
                 </td>
                 <td><span style="background:var(--bg);padding:.15rem .5rem;border-radius:.3rem;font-size:.78rem;font-weight:600">${u.rol}</span></td>
                 <td><span style="color:${u.activo ? '#166534' : '#dc2626'};font-weight:600">${u.activo ? '✓ Activo' : '✗ Inactivo'}</span></td>
                 <td style="display:flex;gap:.3rem;flex-wrap:wrap">
-                    <button class="btn-sm" onclick="editarTelefonoWhatsappUsuario(${u.id}, ${escJs(u.telefono || '')}, ${u.whatsapp_notificaciones ? 'true' : 'false'})" style="background:#ecfeff;border:1px solid #a5f3fc;color:#0f766e">WhatsApp</button>
+                    <button class="btn-sm" onclick="editarTelefonoWhatsappUsuario(${u.id}, ${escJs(u.telefono_whatsapp || '')}, ${escJs(u.telefono || '')}, ${u.whatsapp_notificaciones ? 'true' : 'false'})" style="background:#ecfeff;border:1px solid #a5f3fc;color:#0f766e">WhatsApp</button>
                     ${['tecnico','supervisor'].includes(String(u.rol||'').toLowerCase()) ? `<button type="button" class="btn-sm" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e" onclick="adminGenerarClaveProvisionalUsuario(${u.id})" title="Solo el admin puede recuperar la clave del técnico; en Android le pedirá cambiarla al ingresar">Clave provisoria</button>` : ''}
                     <button class="btn-sm warning" onclick="toggleUsuario(${u.id}, ${!u.activo})">${u.activo ? 'Desactivar' : 'Activar'}</button>
                     ${u.email !== 'admin' ? `<button class="btn-sm danger" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ''}
@@ -16538,25 +16481,20 @@ function escJs(v) {
     return `'${String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
-async function editarTelefonoWhatsappUsuario(id, telefonoActual, habilitadoActual) {
-    const nuevo = prompt('Número WhatsApp del usuario (formato +543434540250):', (telefonoActual || '').trim());
-    if (nuevo === null) return;
-    const telNorm = normalizarTelefonoWhatsapp(nuevo);
-    if (telNorm && !esTelefonoWhatsappValido(telNorm)) {
-        toast('Formato inválido. Ejemplo: +543434540250', 'error');
-        return;
-    }
-    const habilitar = confirm('¿Habilitar notificaciones WhatsApp para este usuario?\nAceptar = Sí / Cancelar = No');
-    try {
-        await sqlSimple(`UPDATE usuarios SET telefono = ${esc(telNorm || null)}, whatsapp_notificaciones = ${esc(habilitar)} WHERE id = ${esc(id)}`);
-        toast('WhatsApp de usuario actualizado', 'success');
-        await cargarListaUsuarios();
-        try {
-            await refrescarUsuariosCacheDesdeNeon();
-        } catch (_) {}
-    } catch (e) {
-        toastError('usuario-whatsapp', e, 'No se pudo actualizar WhatsApp.');
-    }
+async function editarTelefonoWhatsappUsuario(id, telefonoWhatsappActual, telefonoContactoLegacy, habilitadoActual) {
+    await openAdminUsuarioWhatsappModal({
+        userId: id,
+        telefonoWhatsapp: telefonoWhatsappActual || '',
+        telefonoContacto: telefonoContactoLegacy || '',
+        whatsappNotificaciones: habilitadoActual === true || habilitadoActual === 'true',
+        sqlSimple,
+        onAfterSave: async () => {
+            await cargarListaUsuarios();
+            try {
+                await refrescarUsuariosCacheDesdeNeon();
+            } catch (_) {}
+        },
+    });
 }
 
 async function toggleUsuario(id, activar) {
@@ -18722,7 +18660,7 @@ function pintarListaUsuariosAdminSoloSesionActual() {
     const cont = document.getElementById('lista-usuarios-admin');
     if (!cont || !app?.u) return;
     const u = app.u;
-    const tel = escHtmlPrint(String(u.telefono != null ? u.telefono : ''));
+    const tel = escHtmlPrint(String(u.telefono_whatsapp != null && u.telefono_whatsapp !== '' ? u.telefono_whatsapp : u.telefono != null ? u.telefono : ''));
     const waOn = u.whatsapp_notificaciones !== false;
     cont.innerHTML = `<p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem;line-height:1.35">Mostrando solo tu usuario de sesión hasta cargar el listado completo del tenant (sin datos de otro negocio).</p>
 <table class="admin-table">
@@ -19745,6 +19683,7 @@ if (typeof guardarConfigEmpresa !== "undefined") window.guardarConfigEmpresa = g
 if (typeof abrirFormUsuario !== "undefined") window.abrirFormUsuario = abrirFormUsuario;
 if (typeof crearUsuario !== "undefined") window.crearUsuario = crearUsuario;
 if (typeof toggleUsuario !== "undefined") window.toggleUsuario = toggleUsuario;
+if (typeof editarTelefonoWhatsappUsuario !== "undefined") window.editarTelefonoWhatsappUsuario = editarTelefonoWhatsappUsuario;
 if (typeof eliminarUsuario !== "undefined") window.eliminarUsuario = eliminarUsuario;
 if (typeof abrirFormDistribuidor !== "undefined") window.abrirFormDistribuidor = abrirFormDistribuidor;
 if (typeof crearDistribuidor !== "undefined") window.crearDistribuidor = crearDistribuidor;

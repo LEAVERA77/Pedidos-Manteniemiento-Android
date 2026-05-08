@@ -23,6 +23,18 @@ export const DONUT_FALLBACK_SEQUENCE = [
 ];
 
 /** Lista rotativa (tipos / usuarios / barras genéricas). */
+/** Barras horizontales KPI PDF / impresión A4 (sólidos, sin degradados). */
+export const KPI_PDF_IMPRESION_BARRAS_SOLIDOS = [
+    '#2563eb',
+    '#16a34a',
+    '#ca8a04',
+    '#9333ea',
+    '#dc2626',
+    '#0d9488',
+    '#475569',
+    '#ea580c',
+];
+
 export const CHART_PALETTE_ARRAY = [
     'rgba(245, 158, 11, 0.82)',
     'rgba(59, 130, 246, 0.82)',

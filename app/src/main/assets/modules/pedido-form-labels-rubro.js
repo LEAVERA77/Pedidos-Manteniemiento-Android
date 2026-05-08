@@ -33,6 +33,27 @@ export function etiquetaCampoIdentificadorServicio() {
     return 'NIS / Medidor';
 }
 
+/** Etiqueta del campo NIS/ID en el modal de detalle del pedido (#dm). */
+export function etiquetaNisDetalleModalPedido() {
+    const r = rubroForm();
+    if (r === 'municipio') return 'ID Vecino';
+    if (r === 'cooperativa_agua') return 'N° Socio';
+    return 'NIS';
+}
+
+/** Label del buscador de historial por identificador (admin socios). */
+export function etiquetaHistorialNisBusquedaAdmin() {
+    const r = rubroForm();
+    if (r === 'municipio') return 'ID Vecino';
+    if (r === 'cooperativa_agua') return 'N° Socio o medidor';
+    return 'NIS o medidor';
+}
+
+export function syncHistorialNisBusquedaDom() {
+    const lb = document.getElementById('historial-nis-label');
+    if (lb) lb.textContent = etiquetaHistorialNisBusquedaAdmin();
+}
+
 export function placeholderNisCampo({ requerido }) {
     const r = rubroForm();
     const req = !!requerido;
@@ -74,6 +95,9 @@ export function syncPedidoFormNisYClienteLabels(opts) {
         else inp.removeAttribute('required');
         inp.placeholder = esMunicipio ? 'Nombre del vecino (si aplica)' : 'Nombre o razón social del socio';
     }
+    try {
+        syncHistorialNisBusquedaDom();
+    } catch (_) {}
 }
 
 export function syncPedidoFormZonaDistribuidorLabels() {
