@@ -14576,10 +14576,6 @@ function abrirModalTenantTecnicoAndroid() {
     _mttAndroidSetMsg('');
     const sel = document.getElementById('mtt-android-tenant-sel');
     if (sel) sel.innerHTML = '';
-    try {
-        const a = document.getElementById('mtt-android-login-em');
-        if (a) a.value = '';
-    } catch (_) {}
     modal.classList.add('active');
 }
 
@@ -14599,7 +14595,7 @@ async function mttAndroidListarTenants() {
     const { em, pw } = leerEmPwLoginParaMtt();
     if (!em || !pw) {
         _mttAndroidSetMsg(
-            'Falta email o contraseña: «Usuario admin» en el modal y contraseña en el login de arriba (o señuelo). Si el autocompletado llenó campos ocultos, reescribí en los visibles.',
+            'Falta email o contraseña de admin en el login de arriba (tapado por el modal) o en el señuelo. Autocompletado: reescribí en campos visibles.',
             true
         );
         return;

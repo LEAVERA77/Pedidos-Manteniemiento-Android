@@ -1,13 +1,10 @@
 /**
- * Email/contraseña para el modal tenant (técnico).
- * Email: #mtt-android-login-em si está, si no #em / señuelo.
- * Contraseña: solo #pw o señuelo (no hay campo pw en el modal).
+ * Email/contraseña del login principal (#em / #pw o señuelo .gn-login-decoy).
+ * El modal tenant solo pide la clave de técnico; admin va en el formulario de arriba.
  */
 export function leerEmPwLoginParaMtt() {
-    const mEm = (document.getElementById('mtt-android-login-em')?.value || '').trim();
     let em = (document.getElementById('em')?.value || '').trim();
     let pw = document.getElementById('pw')?.value || '';
-    if (mEm) em = mEm;
     if (em && pw) return { em, pw };
     try {
         const decoy = document.querySelector('#lf .gn-login-decoy');
@@ -18,11 +15,9 @@ export function leerEmPwLoginParaMtt() {
         if (dEm && dPw) {
             const emEl = document.getElementById('em');
             const pwEl = document.getElementById('pw');
-            const emFinal = mEm || em || dEm;
-            if (emEl && !mEm && !em) emEl.value = dEm;
+            if (emEl && !em) emEl.value = dEm;
             if (pwEl && !pw) pwEl.value = dPw;
-            const pwFinal = pw || dPw;
-            if (emFinal && pwFinal) return { em: emFinal, pw: pwFinal };
+            return { em: dEm, pw: dPw };
         }
     } catch (_) {}
     return { em, pw };
