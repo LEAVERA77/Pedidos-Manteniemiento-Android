@@ -49,6 +49,9 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("FROM clientes") && q.includes("ORDER BY id ASC")) {
         return { rows: [{ id: 1, nombre: "A", tipo: "cooperativa_electrica", activo: true }] };
       }
+      if (q.includes("SELECT id, rol FROM usuarios") && q.includes("ORDER BY id ASC") && q.includes("LIMIT 1")) {
+        return { rows: [{ id: 1, rol: "admin" }] };
+      }
       return { rows: [] };
     });
   });
@@ -60,18 +63,24 @@ describe("Setup wizard — técnico tenant", () => {
 
   it("403 sin clave o clave incorrecta", async () => {
     const app = createHttpApp();
+    await request(app).get("/api/setup/technician/tenants").expect(403);
     await request(app)
       .get("/api/setup/technician/tenants")
-      .set("Authorization", `Bearer ${tokenAdmin(1, 2)}`)
-      .expect(403);
-    await request(app)
-      .get("/api/setup/technician/tenants")
-      .set("Authorization", `Bearer ${tokenAdmin(1, 2)}`)
       .set("X-GestorNova-Technician-Key", "mala")
       .expect(403);
   });
 
-  it("200 lista clientes con clave correcta", async () => {
+  it("200 lista clientes solo clave (sin Bearer)", async () => {
+    const app = createHttpApp();
+    const res = await request(app)
+      .get("/api/setup/technician/tenants")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_test")
+      .expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.clientes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("200 lista clientes con clave correcta y Bearer (compat)", async () => {
     const app = createHttpApp();
     const res = await request(app)
       .get("/api/setup/technician/tenants")
@@ -97,5 +106,18 @@ describe("Setup wizard — técnico tenant", () => {
     expect(res.body.token).toBeTruthy();
     const dec = jwt.verify(res.body.token, process.env.JWT_SECRET || "dev_secret");
     expect(dec.tenant_id).toBe(7);
+  });
+
+  it("200 attach solo clave + from_tenant_id (sin Bearer)", async () => {
+    const app = createHttpApp();
+    const res = await request(app)
+      .post("/api/setup/technician/attach-tenant")
+      .set("Content-Type", "application/json")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_test")
+      .send({ tenant_id: 7, from_tenant_id: 2 })
+      .expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.tenant_id).toBe(7);
+    expect(res.body.token).toBeTruthy();
   });
 });

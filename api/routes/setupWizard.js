@@ -27,7 +27,99 @@ function requireTechnicianTenantKey(req, res, next) {
   return next();
 }
 
-router.get("/technician/tenants", ...authWithTenantHost, adminOnly, requireTechnicianTenantKey, async (req, res) => {
+function httpAttachError(status, body) {
+  const e = new Error(String(body?.error || "attach"));
+  e.httpStatus = status;
+  e.httpBody = body;
+  return e;
+}
+
+/**
+ * Vincular tenant (misma lógica con sesión admin o con clave técnico + from_tenant_id).
+ * @param {number} uid
+ * @param {number} oldTid
+ * @param {number} tid destino
+ * @param {string} userRol rol del usuario (JWT o primer admin en origen)
+ */
+async function runAttachTenantTechnicianCore(uid, oldTid, tid, userRol) {
+  if (!Number.isFinite(tid) || tid < 1) {
+    throw httpAttachError(400, { error: "tenant_id inválido" });
+  }
+  const rC = await query(`SELECT id, nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
+  if (!rC.rows.length) {
+    throw httpAttachError(404, { error: "Cliente / tenant no encontrado" });
+  }
+  const uCol = await usuariosTenantColumnName();
+  if (!uCol) {
+    throw httpAttachError(503, {
+      error: "Esquema incompleto",
+      hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
+    });
+  }
+  if (!Number.isFinite(oldTid) || oldTid < 1) {
+    throw httpAttachError(500, { error: "Tenant de origen inválido" });
+  }
+  if (oldTid === tid) {
+    const token = signToken({
+      userId: uid,
+      rol: userRol,
+      tenant_id: tid,
+    });
+    return {
+      ok: true,
+      tenant_id: tid,
+      cliente: rC.rows[0],
+      token,
+      usuarios_actualizados: 0,
+      message: `Sin cambios de tenant (ya operás en ${tid}).`,
+    };
+  }
+  const rEmail = await query(`SELECT lower(trim(coalesce(email,''))) AS e FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
+  const em = String(rEmail.rows?.[0]?.e || "");
+  if (!em) {
+    throw httpAttachError(400, { error: "Tu usuario no tiene email; no se puede comprobar duplicados" });
+  }
+  const dup = await query(
+    `SELECT id FROM usuarios
+     WHERE ${uCol} = $1 AND id <> $2 AND lower(trim(coalesce(email,''))) = $3
+     LIMIT 1`,
+    [tid, uid, em]
+  );
+  if (dup.rows.length) {
+    throw httpAttachError(409, {
+      error: "Ya existe otro usuario con el mismo email en ese tenant",
+      hint: "Cambiá el email de una de las cuentas o desactivá la duplicada en Neon.",
+    });
+  }
+  const rUpd = await query(
+    `UPDATE usuarios
+     SET ${uCol} = $1
+     WHERE ${uCol} = $2`,
+    [tid, oldTid]
+  );
+  const moved = Number(rUpd.rowCount ?? 0);
+  const rVerify = await query(`SELECT ${uCol}::int AS tid FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
+  const got = Number(rVerify.rows?.[0]?.tid);
+  if (!Number.isFinite(got) || got !== tid) {
+    throw httpAttachError(500, { error: "No se pudo confirmar el tenant tras la migración de usuarios" });
+  }
+  const token = signToken({
+    userId: uid,
+    rol: userRol,
+    tenant_id: tid,
+  });
+  return {
+    ok: true,
+    tenant_id: tid,
+    cliente: rC.rows[0],
+    token,
+    usuarios_actualizados: moved,
+    message: `Vinculados ${moved} usuario(s) al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
+  };
+}
+
+/** Lista `clientes`: solo exige clave técnico (misma confianza que env en servidor). */
+router.get("/technician/tenants", requireTechnicianTenantKey, async (req, res) => {
   try {
     const r = await query(
       `SELECT id, nombre, tipo, COALESCE(activo, TRUE) AS activo
@@ -42,91 +134,73 @@ router.get("/technician/tenants", ...authWithTenantHost, adminOnly, requireTechn
   }
 });
 
-router.post("/technician/attach-tenant", ...authWithTenantHost, adminOnly, requireTechnicianTenantKey, async (req, res) => {
-  try {
-    const tid = Number(req.body?.tenant_id);
-    if (!Number.isFinite(tid) || tid < 1) {
-      return res.status(400).json({ error: "tenant_id inválido" });
+router.post(
+  "/technician/attach-tenant",
+  async (req, res, next) => {
+    if (!technicianTenantKeyOk(req)) {
+      return res.status(403).json({ error: "Operación no permitida" });
     }
-    const rC = await query(`SELECT id, nombre FROM clientes WHERE id = $1 LIMIT 1`, [tid]);
-    if (!rC.rows.length) {
-      return res.status(404).json({ error: "Cliente / tenant no encontrado" });
+    const auth = String(req.headers.authorization || "");
+    if (/\bBearer\s+\S/.test(auth)) {
+      return next();
     }
-    const uCol = await usuariosTenantColumnName();
-    if (!uCol) {
-      return res.status(503).json({
-        error: "Esquema incompleto",
-        hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
-      });
+    try {
+      const tid = Number(req.body?.tenant_id);
+      const fromTid = Number(req.body?.from_tenant_id);
+      if (!Number.isFinite(fromTid) || fromTid < 1) {
+        return res.status(400).json({
+          error: "from_tenant_id requerido",
+          hint: "Sin sesión Bearer: enviá el tenant de origen (p. ej. el de la app o 1).",
+        });
+      }
+      const uCol = await usuariosTenantColumnName();
+      if (!uCol) {
+        return res.status(503).json({
+          error: "Esquema incompleto",
+          hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
+        });
+      }
+      const rAdm = await query(
+        `SELECT id, rol FROM usuarios
+         WHERE ${uCol} = $1
+           AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
+           AND COALESCE(activo, TRUE)
+         ORDER BY id ASC
+         LIMIT 1`,
+        [fromTid]
+      );
+      if (!rAdm.rows.length) {
+        return res.status(400).json({ error: "No hay administrador en el tenant de origen indicado" });
+      }
+      const uid = Number(rAdm.rows[0].id);
+      const userRol = String(rAdm.rows[0].rol || "admin");
+      const out = await runAttachTenantTechnicianCore(uid, fromTid, tid, userRol);
+      return res.json(out);
+    } catch (e) {
+      if (e.httpStatus && e.httpBody) {
+        return res.status(e.httpStatus).json(e.httpBody);
+      }
+      console.error("[setup/technician/attach-tenant]", e);
+      return res.status(500).json({ error: "No se pudo vincular el tenant", detail: e.message });
     }
-    const uid = Number(req.user.id);
-    const oldTid = Number(req.tenantId);
-    if (!Number.isFinite(oldTid) || oldTid < 1) {
-      return res.status(500).json({ error: "Tenant operativo del usuario inválido" });
+  },
+  ...authWithTenantHost,
+  adminOnly,
+  requireTechnicianTenantKey,
+  async (req, res) => {
+    try {
+      const tid = Number(req.body?.tenant_id);
+      const out = await runAttachTenantTechnicianCore(Number(req.user.id), Number(req.tenantId), tid, req.user.rol);
+      return res.json(out);
+    } catch (e) {
+      if (e.httpStatus && e.httpBody) {
+        return res.status(e.httpStatus).json(e.httpBody);
+      }
+      console.error("[setup/technician/attach-tenant]", e);
+      return res.status(500).json({ error: "No se pudo vincular el tenant", detail: e.message });
     }
-    if (oldTid === tid) {
-      const token = signToken({
-        userId: uid,
-        rol: req.user.rol,
-        tenant_id: tid,
-      });
-      return res.json({
-        ok: true,
-        tenant_id: tid,
-        cliente: rC.rows[0],
-        token,
-        usuarios_actualizados: 0,
-        message: `Sin cambios de tenant (ya operás en ${tid}).`,
-      });
-    }
-    const rEmail = await query(`SELECT lower(trim(coalesce(email,''))) AS e FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
-    const em = String(rEmail.rows?.[0]?.e || "");
-    if (!em) {
-      return res.status(400).json({ error: "Tu usuario no tiene email; no se puede comprobar duplicados" });
-    }
-    const dup = await query(
-      `SELECT id FROM usuarios
-       WHERE ${uCol} = $1 AND id <> $2 AND lower(trim(coalesce(email,''))) = $3
-       LIMIT 1`,
-      [tid, uid, em]
-    );
-    if (dup.rows.length) {
-      return res.status(409).json({
-        error: "Ya existe otro usuario con el mismo email en ese tenant",
-        hint: "Cambiá el email de una de las cuentas o desactivá la duplicada en Neon.",
-      });
-    }
-    /** Misma organización: todos los usuarios que compartían el tenant anterior pasan al nuevo (técnicos, supervisores, etc.). */
-    const rUpd = await query(
-      `UPDATE usuarios
-       SET ${uCol} = $1
-       WHERE ${uCol} = $2`,
-      [tid, oldTid]
-    );
-    const moved = Number(rUpd.rowCount ?? 0);
-    const rVerify = await query(`SELECT ${uCol}::int AS tid FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
-    const got = Number(rVerify.rows?.[0]?.tid);
-    if (!Number.isFinite(got) || got !== tid) {
-      return res.status(500).json({ error: "No se pudo confirmar el tenant tras la migración de usuarios" });
-    }
-    const token = signToken({
-      userId: uid,
-      rol: req.user.rol,
-      tenant_id: tid,
-    });
-    return res.json({
-      ok: true,
-      tenant_id: tid,
-      cliente: rC.rows[0],
-      token,
-      usuarios_actualizados: moved,
-      message: `Vinculados ${moved} usuario(s) al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
-    });
-  } catch (e) {
-    console.error("[setup/technician/attach-tenant]", e);
-    return res.status(500).json({ error: "No se pudo vincular el tenant", detail: e.message });
   }
-});
+);
 
 router.use(authWithTenantHost, adminOnly);
 

@@ -165,7 +165,6 @@ import {
 } from './map.js';
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
-import { leerEmPwLoginParaMtt } from './modules/mtt-login-creds-read.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -2072,9 +2071,9 @@ async function authLoginApiRetornarTokenUser(email, password) {
 
 async function apiSetupTechnicianFetchTenants(apiToken, techKey) {
     const k = String(techKey || '').trim();
-    const r = await fetch(apiUrl('/api/setup/technician/tenants'), {
-        headers: { Authorization: `Bearer ${apiToken}`, 'X-GestorNova-Technician-Key': k },
-    });
+    const headers = { 'X-GestorNova-Technician-Key': k };
+    if (apiToken) headers.Authorization = `Bearer ${apiToken}`;
+    const r = await fetch(apiUrl('/api/setup/technician/tenants'), { headers });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
         throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
@@ -2082,17 +2081,18 @@ async function apiSetupTechnicianFetchTenants(apiToken, techKey) {
     return j;
 }
 
-async function apiSetupTechnicianPostAttach(apiToken, techKey, tenantId) {
+async function apiSetupTechnicianPostAttach(apiToken, techKey, tenantId, fromTenantId) {
     const k = String(techKey || '').trim();
     const tid = Number(tenantId);
+    const body = { tenant_id: tid };
+    const fromT = Number(fromTenantId);
+    if (Number.isFinite(fromT) && fromT > 0) body.from_tenant_id = fromT;
+    const headers = { 'Content-Type': 'application/json', 'X-GestorNova-Technician-Key': k };
+    if (apiToken) headers.Authorization = `Bearer ${apiToken}`;
     const r = await fetch(apiUrl('/api/setup/technician/attach-tenant'), {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-            'X-GestorNova-Technician-Key': k,
-        },
-        body: JSON.stringify({ tenant_id: tid }),
+        headers,
+        body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
@@ -14592,29 +14592,10 @@ async function mttAndroidListarTenants() {
         _mttAndroidSetMsg('Ingresá la clave de técnico.', true);
         return;
     }
-    const { em, pw } = leerEmPwLoginParaMtt();
-    if (!em || !pw) {
-        _mttAndroidSetMsg(
-            'Falta email o contraseña de admin en el login de arriba (tapado por el modal) o en el señuelo. Autocompletado: reescribí en campos visibles.',
-            true
-        );
-        return;
-    }
-    _mttAndroidSetMsg('Validando administrador…', false);
+    __mttAndroidStagingToken = '';
+    _mttAndroidSetMsg('Listando clientes…', false);
     try {
-        const auth = await authLoginApiRetornarTokenUser(em, pw);
-        if (!auth) {
-            _mttAndroidSetMsg('Email o contraseña incorrectos, o la API no responde.', true);
-            return;
-        }
-        const rol = normalizarRolStr(auth.user?.rol || '');
-        if (rol !== 'admin') {
-            _mttAndroidSetMsg('Solo un usuario administrador puede vincular tenant.', true);
-            return;
-        }
-        __mttAndroidStagingToken = auth.token;
-        _mttAndroidSetMsg('Listando clientes…', false);
-        const j = await apiSetupTechnicianFetchTenants(auth.token, k);
+        const j = await apiSetupTechnicianFetchTenants(null, k);
         wizardPoblarSelectTenantsClientes(document.getElementById('mtt-android-tenant-sel'), j.clientes);
         _mttAndroidSetMsg(
             `Listo: ${(j.clientes || []).length} fila(s). Elegí tenant y tocá Vincular; después Ingresar o recargá.`,
@@ -14622,7 +14603,6 @@ async function mttAndroidListarTenants() {
         );
     } catch (e) {
         _mttAndroidSetMsg(e.message || 'Error', true);
-        __mttAndroidStagingToken = '';
     }
 }
 
@@ -14639,13 +14619,10 @@ async function mttAndroidVincularTenant() {
         return;
     }
     const tok = (__mttAndroidStagingToken || '').trim() || getApiToken();
-    if (!tok) {
-        _mttAndroidSetMsg('Sin sesión: usá «Listar tenants» primero.', true);
-        return;
-    }
+    const fromTid = tenantIdActual();
     _mttAndroidSetMsg('Vinculando…', false);
     try {
-        const j = await apiSetupTechnicianPostAttach(tok, k, tid);
+        const j = await apiSetupTechnicianPostAttach(tok || null, k, tid, tok ? undefined : fromTid);
         if (j.token) {
             try {
                 app.apiToken = String(j.token);
