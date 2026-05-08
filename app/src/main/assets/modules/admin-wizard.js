@@ -557,7 +557,7 @@ async function guardarConfiguracionInicialObligatoria() {
     if (firmaWiz !== firmaAnt && req().esAdmin()) {
         if (req().NEON_OK && typeof req().sqlSimple === 'function') {
             try {
-                await req().vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+                await req().vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
             } catch (e) {
                 console.warn('[wizard] vaciar socios_catalogo', e);
             }

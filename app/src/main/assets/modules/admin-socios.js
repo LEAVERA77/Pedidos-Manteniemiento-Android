@@ -1970,6 +1970,12 @@ async function vaciarCoordenadasSociosCatalogo(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const skipConfirm = !!o.skipConfirm;
     const silent = !!o.silent;
+    if (skipConfirm && silent && !o.allowNeonRowsDelete) {
+        console.warn(
+            '[socios] vaciarCoordenadasSociosCatalogo omitido: con skipConfirm+silent debe pasarse allowNeonRowsDelete:true (evita borrados accidentales al cambiar tenant o sesión).'
+        );
+        return;
+    }
     if (!req().esAdmin()) {
         toast('Operación solo para administradores', 'error');
         return;

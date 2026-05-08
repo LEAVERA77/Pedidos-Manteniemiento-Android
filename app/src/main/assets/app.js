@@ -88,6 +88,7 @@ import {
     runExportPedidosExcelCsv,
     splitFechaHoraExportAR
 } from './modules/export-excel.js';
+import { initExportPedidosAdminStats, exportarPedidosExcelAdmin } from './modules/export-pedidos-admin-stats.js';
 import {
     initAdminWizard,
     initSetupWizardBindings,
@@ -12707,7 +12708,7 @@ async function logoutYLimpiarClienteTrasRubroPersistidoEnServidor() {
     try {
         if (NEON_OK && typeof sqlSimple === 'function' && esAdmin()) {
             try {
-                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
             } catch (e) {
                 console.warn('[rubro-logout] vaciar socios_catalogo', e);
             }
@@ -13632,7 +13633,17 @@ async function cargarConfigEmpresa() {
 
 // Estado y lógica del wizard SaaS (modal cfgi) → modules/admin-wizard.js
 
+/**
+ * Tenant para filtros SQL y UI multitenant.
+ * Prioriza `app.u.tenant_id` (API/Neon/sincronización) sobre el claim del JWT: el token puede quedar
+ * desfasado unos instantes tras vincular tenant (Android) o `sincronizarTenantOperativoDesdeMiConfiguracionApi`.
+ */
 function tenantIdActual() {
+    const u = app?.u;
+    if (u && (u.tenant_id != null || u.tenantId != null)) {
+        const n = Number(u.tenant_id ?? u.tenantId);
+        if (Number.isFinite(n) && n > 0) return n;
+    }
     try {
         const tok = getApiToken();
         const pl = tok ? parseJwtPayloadLoose(tok) : null;
@@ -13641,11 +13652,6 @@ function tenantIdActual() {
             if (Number.isFinite(jt) && jt > 0) return jt;
         }
     } catch (_) {}
-    const u = app?.u;
-    if (u && (u.tenant_id != null || u.tenantId != null)) {
-        const n = Number(u.tenant_id ?? u.tenantId);
-        if (Number.isFinite(n) && n > 0) return n;
-    }
     const cfgT = tenantIdDesdeAppConfig(window.APP_CONFIG || {});
     if (Number.isFinite(cfgT) && cfgT > 0) return cfgT;
     return TENANT_ID_MONOTENANT_FALLBACK;
@@ -14668,7 +14674,7 @@ async function mttAndroidVincularTenant() {
             } catch (_) {}
             try {
                 if (window.AndroidSession && typeof window.AndroidSession.setTenantId === 'function') {
-                    window.AndroidSession.setTenantId(tid);
+                    window.AndroidSession.setTenantId(tidOk);
                 }
             } catch (_) {}
         }
@@ -16232,7 +16238,7 @@ async function guardarConfigEmpresa() {
     if (firmaNueva !== firmaGuardada && esAdmin()) {
         if (NEON_OK && typeof sqlSimple === 'function') {
             try {
-                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true });
+                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
             } catch (e) {
                 console.warn('[empresa] vaciar socios_catalogo tras cambio identidad', e);
             }
@@ -17044,109 +17050,7 @@ function aplicarFiltroDiaEstadisticas() {
 }
 window.aplicarFiltroDiaEstadisticas = aplicarFiltroDiaEstadisticas;
 
-// escapeCsvCeldaPedidos, splitFechaHoraExportAR → modules/export-excel.js (import arriba).
-
-async function exportarPedidosCsvAdmin() {
-    gnCerrarModalPedidoDetalleSiAbierto();
-    if (!esAdmin()) {
-        toast('Solo administradores pueden exportar el listado.', 'error');
-        return;
-    }
-    if (!NEON_OK || !_sql) {
-        toast('Se requiere conexión a la base (Neon).', 'error');
-        return;
-    }
-    const tsql = await pedidosFiltroTenantSql();
-    const { condFecha } = await resolveCondicionFechaPedidosStats(tsql);
-    const estadoSel = (document.getElementById('est-csv-estado')?.value || '').trim();
-    const tipoFilt = (document.getElementById('est-csv-tipo')?.value || '').trim();
-    let where = `WHERE ${condFecha}${tsql}`;
-    if (estadoSel) where += ` AND estado = ${esc(estadoSel)}`;
-    where = appendTipoTrabajoFilterToWhere(where, tipoFilt, esc);
-    const q = `SELECT id, numero_pedido, fecha_creacion, fecha_cierre, estado, prioridad, tipo_trabajo,
-        COALESCE(TRIM(distribuidor),'') AS distribuidor,
-        COALESCE(TRIM(barrio),'') AS barrio,
-        COALESCE(TRIM(trafo),'') AS trafo,
-        COALESCE(TRIM(nis_medidor),'') AS nis_medidor,
-        COALESCE(NULLIF(TRIM(cliente_nombre),''), NULLIF(TRIM(cliente),''), '') AS contacto,
-        COALESCE(TRIM(cliente_calle),'') AS cliente_calle,
-        COALESCE(TRIM(cliente_numero_puerta),'') AS cliente_numero_puerta,
-        COALESCE(TRIM(cliente_localidad),'') AS cliente_localidad,
-        COALESCE(TRIM(telefono_contacto),'') AS telefono_contacto,
-        descripcion
-        FROM pedidos ${where} ORDER BY fecha_creacion DESC LIMIT 10000`;
-    try {
-        const r = await sqlSimple(q);
-        const rows = r.rows || [];
-        if (!rows.length) {
-            toast('No hay pedidos con esos filtros.', 'info');
-            return;
-        }
-        const headers = [
-            'id',
-            'numero_pedido',
-            'fecha_creacion_fecha',
-            'fecha_creacion_hora',
-            'fecha_cierre_fecha',
-            'fecha_cierre_hora',
-            'estado',
-            'prioridad',
-            'tipo_trabajo',
-            'distribuidor',
-            'barrio',
-            'trafo',
-            'nis_medidor',
-            'contacto',
-            'cliente_calle',
-            'cliente_numero_puerta',
-            'cliente_localidad',
-            'direccion_consolidada',
-            'telefono_contacto',
-            'descripcion',
-        ];
-        const lines = [headers.join(',')];
-        for (const row of rows) {
-            const fc = splitFechaHoraExportAR(row.fecha_creacion);
-            const ff = splitFechaHoraExportAR(row.fecha_cierre);
-            lines.push(
-                [
-                    row.id,
-                    row.numero_pedido,
-                    fc.fecha,
-                    fc.hora,
-                    ff.fecha,
-                    ff.hora,
-                    row.estado,
-                    row.prioridad,
-                    row.tipo_trabajo,
-                    row.distribuidor,
-                    row.barrio,
-                    row.trafo,
-                    row.nis_medidor,
-                    row.contacto,
-                    row.cliente_calle,
-                    row.cliente_numero_puerta,
-                    row.cliente_localidad,
-                    [row.cliente_calle, row.cliente_numero_puerta, row.cliente_localidad].filter(Boolean).join(', ') || '',
-                    row.telefono_contacto,
-                    row.descripcion,
-                ]
-                    .map(escapeCsvCeldaPedidos)
-                    .join(',')
-            );
-        }
-        const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `pedidos_export_${new Date().toISOString().slice(0, 10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-        toast(`Exportados ${rows.length} pedidos`, 'success');
-    } catch (e) {
-        toastError('export-pedidos-csv', e);
-    }
-}
-window.exportarPedidosCsvAdmin = exportarPedidosCsvAdmin;
+// Export listado pedidos admin (Excel) → modules/export-pedidos-admin-stats.js
 
 function periodoInformeDesdeSelectEstadisticasSync() {
     const dia = (document.getElementById('est-fecha-dia')?.value || '').trim();
@@ -19501,6 +19405,24 @@ try {
 } catch (_) {}
 
 try {
+    initExportPedidosAdminStats({
+        esAdmin,
+        toast,
+        toastError,
+        gnCerrarModalPedidoDetalleSiAbierto,
+        neonOk: () => NEON_OK,
+        sqlReady: () => typeof _sql !== 'undefined' && !!_sql,
+        modoOffline: () => !!modoOffline,
+        sqlSimple,
+        pedidosFiltroTenantSql,
+        resolveCondicionFechaPedidosStats,
+        appendTipoTrabajoFilterToWhere,
+        esc,
+        tenantIdActual,
+    });
+} catch (_) {}
+
+try {
     initDerivacionesReclamosAdminBindings({
         normalizarWhatsappInternacionalDesdeInput,
         toast,
@@ -19547,6 +19469,10 @@ if (typeof descargarPlantillaCsvSociosRubro !== "undefined") window.descargarPla
 if (typeof buscarHistorialPorNIS !== "undefined") window.buscarHistorialPorNIS = buscarHistorialPorNIS;
 if (typeof generarInformeMensualENRE !== "undefined") window.generarInformeMensualENRE = generarInformeMensualENRE;
 if (typeof exportInformeMensualExcel !== "undefined") window.exportInformeMensualExcel = exportInformeMensualExcel;
+if (typeof exportarPedidosExcelAdmin !== "undefined") {
+    window.exportarPedidosExcelAdmin = exportarPedidosExcelAdmin;
+    window.exportarPedidosCsvAdmin = exportarPedidosExcelAdmin;
+}
 if (typeof imprimirInformeConGraficos !== "undefined") window.imprimirInformeConGraficos = imprimirInformeConGraficos;
 if (typeof generarPdfEstadisticasMultipaginaENRE !== "undefined") window.generarPdfEstadisticasMultipaginaENRE = generarPdfEstadisticasMultipaginaENRE;
 if (typeof abrirModalDashboardGerencia !== "undefined") window.abrirModalDashboardGerencia = abrirModalDashboardGerencia;
