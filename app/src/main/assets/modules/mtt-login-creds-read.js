@@ -1,17 +1,13 @@
 /**
- * Email/contraseña del formulario de login para el modal tenant (técnico).
- * 1) Preferir campos dentro del modal (el login de atrás suele estar vacío o tapado).
- * 2) Si no, #em / #pw del login.
- * 3) Fallback señuelo .gn-login-decoy (autocompletado del navegador).
+ * Email/contraseña para el modal tenant (técnico).
+ * Email: #mtt-android-login-em si está, si no #em / señuelo.
+ * Contraseña: solo #pw o señuelo (no hay campo pw en el modal).
  */
 export function leerEmPwLoginParaMtt() {
     const mEm = (document.getElementById('mtt-android-login-em')?.value || '').trim();
-    const mPw = document.getElementById('mtt-android-login-pw')?.value || '';
-    if (mEm && mPw) {
-        return { em: mEm, pw: mPw };
-    }
     let em = (document.getElementById('em')?.value || '').trim();
     let pw = document.getElementById('pw')?.value || '';
+    if (mEm) em = mEm;
     if (em && pw) return { em, pw };
     try {
         const decoy = document.querySelector('#lf .gn-login-decoy');
@@ -22,9 +18,11 @@ export function leerEmPwLoginParaMtt() {
         if (dEm && dPw) {
             const emEl = document.getElementById('em');
             const pwEl = document.getElementById('pw');
-            if (emEl && !em) emEl.value = dEm;
+            const emFinal = mEm || em || dEm;
+            if (emEl && !mEm && !em) emEl.value = dEm;
             if (pwEl && !pw) pwEl.value = dPw;
-            return { em: dEm, pw: dPw };
+            const pwFinal = pw || dPw;
+            if (emFinal && pwFinal) return { em: emFinal, pw: pwFinal };
         }
     } catch (_) {}
     return { em, pw };
