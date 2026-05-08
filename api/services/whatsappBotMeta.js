@@ -1706,6 +1706,15 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
       directUrl: directMediaUrl,
     });
+    if (!secureUrl) {
+      await reply(
+        phone,
+        "No pudimos subir la imagen al servidor. Podés *intentar otra foto* o *seguir sin foto* (omitir).",
+        sess.tenantId,
+        phoneNumberId
+      );
+      return;
+    }
     let nextList;
     if (soloReemplazarFoto) {
       nextList = prevList.length >= 1 ? [...prevList.slice(0, -1), secureUrl] : [secureUrl];

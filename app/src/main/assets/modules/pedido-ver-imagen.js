@@ -15,6 +15,14 @@ function esDataImagen(u) {
     return /^data:image\//i.test(String(u || '').trim());
 }
 
+/** Entrega on-the-fly más liviana (menos datos en WebView / navegador). No modifica URLs guardadas en BD. */
+export function optimizarUrlCloudinary(url) {
+    const u = String(url || '').trim();
+    if (!u || !/res\.cloudinary\.com/i.test(u) || !/\/upload\//i.test(u)) return u;
+    if (/\bupload\/[^?]*\bq_auto\b/i.test(u) && /\bf_auto\b/i.test(u)) return u;
+    return u.replace(/\/upload\//i, '/upload/q_auto,f_auto/');
+}
+
 /** Cloudinary / https / data URI / base64 crudo (foto_base64 en BD). */
 export function normalizarSrcImagenReclamo(raw) {
     const t = String(raw == null ? '' : raw).trim();
@@ -440,6 +448,7 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
         sources.push(u);
     }
     if (!sources.length) return;
+    const sourcesUi = sources.map((u) => optimizarUrlCloudinary(u));
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.querySelector('#gn-pedido-imagen-reclamo')?.remove();
@@ -451,10 +460,10 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     const puedePersistir = Boolean(pedidoId && !pedidoId.startsWith('off_'));
     const rotPreview = normalizarRotacionGrados(meta.reclamo_imagen_rotacion);
     let activeIndex = 0;
-    const srcActivo = () => sources[activeIndex] || sources[0];
+    const srcActivo = () => sourcesUi[activeIndex] || sourcesUi[0];
 
     const abrirVisorDesdePreview = (idx) => {
-        abrirVisorReclamoUnificado(sources, idx, {
+        abrirVisorReclamoUnificado(sourcesUi, idx, {
             pedidoId,
             reclamo_imagen_rotacion: meta.reclamo_imagen_rotacion,
         });
@@ -478,7 +487,7 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
         thumbRow = document.createElement('div');
         thumbRow.style.cssText =
             'display:flex;flex-wrap:wrap;gap:6px;margin-top:.25rem;align-items:center;max-height:72px;overflow:auto';
-        sources.forEach((u, idx) => {
+        sourcesUi.forEach((u, idx) => {
             const t = document.createElement('img');
             t.src = u;
             t.alt = `Miniatura ${idx + 1}`;

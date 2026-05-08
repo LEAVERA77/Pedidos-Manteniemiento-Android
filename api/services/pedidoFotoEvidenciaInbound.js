@@ -121,6 +121,10 @@ export async function tryAttachWhatsappImageToPedidoEvidenciaInsuficiente({
   const { secureUrl } = await whatsappPedidoSubirFotoDesdeMediaId(mid, accessToken, {
     directUrl: direct,
   });
+  if (!secureUrl) {
+    console.warn("[pedido-foto-evidencia-inbound] Cloudinary devolvió sin URL; no se adjunta foto");
+    return { attached: false, reason: "cloudinary_upload_failed" };
+  }
   const prev = splitUrls(hit.foto_urls);
   prev.push(secureUrl);
   const joined = toJoinedUrls(prev) || secureUrl;
