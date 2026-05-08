@@ -170,6 +170,7 @@ import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
     aplicarMascaraEmpresaAdminTrasCambioTenant,
 } from './modules/ocultar-datos-tenant.js';
+import { restaurarDatosCompletosTrasCambioTenant } from './modules/restaurar-datos-tenant.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -5621,12 +5622,14 @@ function abrirAndroidFiltrosMapaRapidos() {
 window.abrirAndroidFiltrosMapaRapidos = abrirAndroidFiltrosMapaRapidos;
 
 function resetMapaFiltros() {
-    ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion', 'mapa-flt-cerrado', 'mapa-flt-derivado'].forEach(id => {
+    ['mapa-flt-pendiente', 'mapa-flt-asignado', 'mapa-flt-ejecucion'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
     });
-    const desM = document.getElementById('mapa-flt-desestimado');
-    if (desM) desM.checked = false;
+    ['mapa-flt-cerrado', 'mapa-flt-derivado', 'mapa-flt-desestimado'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
     MAPA_PRIO_CHK_IDS.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.checked = true;
@@ -13833,6 +13836,9 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
             await refrescarEmpresaDesdeClienteNeonPorTenantActual();
         } catch (_) {}
         try {
+            await restaurarDatosCompletosTrasCambioTenant({ silent: true });
+        } catch (_) {}
+        try {
             render();
             renderMk();
         } catch (_) {}
@@ -19532,6 +19538,7 @@ if (typeof abrirAdmin !== "undefined") window.abrirAdmin = abrirAdmin;
 if (typeof cargarListaUsuarios !== "undefined") window.cargarListaUsuarios = cargarListaUsuarios;
 if (typeof cargarListaDistribuidoresAdmin !== "undefined") window.cargarListaDistribuidoresAdmin = cargarListaDistribuidoresAdmin;
 if (typeof cargarFormEmpresa !== "undefined") window.cargarFormEmpresa = cargarFormEmpresa;
+if (typeof cargarConfigEmpresa !== "undefined") window.cargarConfigEmpresa = cargarConfigEmpresa;
 if (typeof cargarListaSociosAdmin !== "undefined") window.cargarListaSociosAdmin = cargarListaSociosAdmin;
 if (typeof importarExcelSocios !== "undefined") window.importarExcelSocios = importarExcelSocios;
 if (typeof mostrarFormatoExcelSocios !== "undefined") window.mostrarFormatoExcelSocios = mostrarFormatoExcelSocios;
