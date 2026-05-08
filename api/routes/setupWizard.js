@@ -11,6 +11,7 @@ import { normalizarRubroCliente } from "../services/tiposReclamo.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantIdentity.js";
 import { requireTechnicianTenantKey, technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
+import { getOrCreateAdminUidForTechnicianAttach, defaultAdminEmailForTenant } from "../services/defaultTenantAdminForAttach.js";
 
 const router = express.Router();
 
@@ -131,21 +132,16 @@ router.post(
           hint: "La tabla usuarios debe tener tenant_id o cliente_id (migración multitenant).",
         });
       }
-      const rAdm = await query(
-        `SELECT id, rol FROM usuarios
-         WHERE ${uCol} = $1
-           AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
-           AND COALESCE(activo, TRUE)
-         ORDER BY id ASC
-         LIMIT 1`,
-        [fromTid]
-      );
-      if (!rAdm.rows.length) {
-        return res.status(400).json({ error: "No hay administrador en el tenant de origen indicado" });
+      const adm = await getOrCreateAdminUidForTechnicianAttach(uCol, fromTid);
+      if (!adm) {
+        return res.status(500).json({ error: "No se pudo resolver administrador del tenant de origen" });
       }
-      const uid = Number(rAdm.rows[0].id);
-      const userRol = String(rAdm.rows[0].rol || "admin");
+      const uid = adm.uid;
+      const userRol = adm.rol;
       const out = await runAttachTenantTechnicianCore(uid, fromTid, tid, userRol);
+      if (adm.created) {
+        out.hint_admin_creado = `Se creó admin de respaldo: email ${defaultAdminEmailForTenant(fromTid)} y contraseña inicial admin (cambiarla desde el programa).`;
+      }
       return res.json(out);
     } catch (e) {
       if (e.httpStatus && e.httpBody) {
