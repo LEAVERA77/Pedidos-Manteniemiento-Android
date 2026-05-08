@@ -13,6 +13,7 @@ import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
 import { sanitizeWhatsappArAreaConfigIncrement } from "../utils/whatsappArAreaConfig.js";
+import { resetPedidoContadorPorTenant } from "../services/pedidoContador.js";
 
 const router = express.Router();
 
@@ -76,10 +77,16 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       tipoDb = norm;
     }
 
-    const rTipoNow = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [tenantId]);
+    const hasAbtCol = await tableHasColumn("clientes", "active_business_type");
+    const rTipoNow = await query(
+      `SELECT tipo${hasAbtCol ? ", active_business_type" : ""} FROM clientes WHERE id = $1 LIMIT 1`,
+      [tenantId]
+    );
     if (!rTipoNow.rows.length) {
       return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
     }
+    const prevTipoNorm = normalizarRubroCliente(rTipoNow.rows[0]?.tipo);
+    const prevAb = hasAbtCol ? String(rTipoNow.rows[0]?.active_business_type || "").trim().toLowerCase() : "";
 
     const Inc =
       typeof configuracionBody === "object" && configuracionBody !== null ? { ...configuracionBody } : {};
@@ -127,19 +134,29 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
       }
     }
 
+    let newActiveBt = null;
     let activeBtSql = "";
     const params = [tenantId, nombre ?? null, tipoDb, JSON.stringify(cfgJson)];
     if (
-      (await tableHasColumn("clientes", "active_business_type")) &&
+      hasAbtCol &&
       activeBusinessBody !== undefined &&
       activeBusinessBody !== null &&
       String(activeBusinessBody).trim() !== ""
     ) {
       const ab = normalizeBusinessTypeInput(activeBusinessBody);
       if (ab) {
+        newActiveBt = ab;
         params.push(ab);
         activeBtSql = `, active_business_type = $${params.length}`;
       }
+    }
+
+    let debeResetearContadorPedidos = false;
+    if (tipoDb != null && tipoDb !== prevTipoNorm) {
+      debeResetearContadorPedidos = true;
+    }
+    if (newActiveBt && prevAb !== "" && newActiveBt !== prevAb) {
+      debeResetearContadorPedidos = true;
     }
     let sqlBarrio = "";
     if (barrioIn !== undefined) {
@@ -162,6 +179,13 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
     const row = r.rows[0];
+    if (debeResetearContadorPedidos) {
+      try {
+        await resetPedidoContadorPorTenant(tenantId);
+      } catch (e) {
+        console.warn("[clientes] reset pedido_contador tras cambio rubro/línea:", e?.message || e);
+      }
+    }
     let cfgMerged = row.configuracion;
     if (typeof cfgMerged === "string") {
       try {
@@ -243,6 +267,9 @@ router.put("/:id", async (req, res) => {
     return res.status(403).json({ error: "Solo podés modificar el tenant de tu sesión" });
   }
   const { nombre, tipo, plan, activo, configuracion } = req.body;
+  const rPrev = await query(`SELECT tipo FROM clientes WHERE id = $1 LIMIT 1`, [id]);
+  const prevTipoNorm = normalizarRubroCliente(rPrev.rows?.[0]?.tipo);
+  const tipoNormNuevo = tipo != null && tipo !== undefined ? normalizarRubroCliente(tipo) : null;
   const r = await query(
     `UPDATE clientes
      SET nombre = COALESCE($2,nombre),
@@ -255,6 +282,13 @@ router.put("/:id", async (req, res) => {
     [id, nombre ?? null, tipo ?? null, plan ?? null, activo ?? null, configuracion ? JSON.stringify(configuracion) : null]
   );
   if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado" });
+  if (tipoNormNuevo && tipoNormNuevo !== prevTipoNorm) {
+    try {
+      await resetPedidoContadorPorTenant(id);
+    } catch (e) {
+      console.warn("[clientes] reset pedido_contador PUT /:id:", e?.message || e);
+    }
+  }
   res.json(r.rows[0]);
 });
 

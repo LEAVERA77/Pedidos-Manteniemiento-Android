@@ -3,6 +3,7 @@ import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
+import { resetPedidoContadorPorTenant } from "../services/pedidoContador.js";
 
 const router = express.Router();
 
@@ -70,11 +71,20 @@ router.post("/switch-business", authWithTenantHost, adminOnly, async (req, res) 
     if (!bt) {
       return res.status(400).json({ error: "business_type inválido", permitidos: ["electricidad", "agua", "municipio"] });
     }
+    const rPrev = await query(`SELECT active_business_type FROM clientes WHERE id = $1 LIMIT 1`, [req.tenantId]);
+    const prevAb = String(rPrev.rows?.[0]?.active_business_type || "").trim().toLowerCase();
     const r = await query(
       `UPDATE clientes SET active_business_type = $2, fecha_actualizacion = NOW() WHERE id = $1 RETURNING id, active_business_type, tipo`,
       [req.tenantId, bt]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado" });
+    if (bt !== prevAb) {
+      try {
+        await resetPedidoContadorPorTenant(req.tenantId);
+      } catch (e) {
+        console.warn("[tenantSwitch] reset pedido_contador:", e?.message || e);
+      }
+    }
     if (await tableHasColumn("tenant_active_business", "active_business_type")) {
       try {
         await query(

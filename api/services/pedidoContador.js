@@ -16,6 +16,23 @@ async function pedidoContadorHasTenantId() {
  * @param {number} tenantId
  * @returns {Promise<string>}
  */
+/**
+ * Borra contadores del tenant para que el próximo reclamo use AÑO-00001 (p. ej. 2026-00001).
+ * Llamar al cambiar rubro (`clientes.tipo`) o línea de negocio activa (`active_business_type`).
+ * @param {number} tenantId
+ */
+export async function resetPedidoContadorPorTenant(tenantId) {
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return;
+  if (!(await pedidoContadorHasTenantId())) return;
+  try {
+    await query(`DELETE FROM pedido_contador WHERE tenant_id = $1`, [tid]);
+    console.log(`[pedido-contador] reset contador pedidos tenant_id=${tid}`);
+  } catch (e) {
+    console.warn("[pedido-contador] reset omitido:", e?.message || e);
+  }
+}
+
 export async function allocarSiguienteNumeroPedido(tenantId) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) {
