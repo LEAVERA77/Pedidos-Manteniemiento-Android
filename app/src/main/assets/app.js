@@ -166,6 +166,7 @@ import {
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { leerEmPwLoginParaMtt } from './modules/mtt-login-creds-read.js';
+import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -16007,7 +16008,7 @@ function adminTab(tab) {
     }
     if (tab === 'contrasena') {
         try {
-            sincronizarFormularioAdminContrasenaDesdeSesion();
+            window.sincronizarFormularioAdminContrasenaDesdeSesion?.();
         } catch (_) {}
     }
 }
@@ -19015,139 +19016,7 @@ async function cargarUbicacionesUsuarios() {
     } catch(e) { console.warn('Error ubicaciones usuarios:', e.message); }
 }
 
-// ── Cambio de contraseña ──────────────────────────────────────
-function sincronizarFormularioAdminContrasenaDesdeSesion() {
-    if (!app.u) return;
-    const em = document.getElementById('pw-email-nuevo');
-    const nm = document.getElementById('pw-nombre-nuevo');
-    if (em) em.value = String(app.u.email || '').trim();
-    if (nm) nm.value = String(app.u.nombre || '').trim();
-}
-
-async function cambiarContrasena() {
-    const actual = (document.getElementById('pw-actual')?.value || '').trim();
-    const nueva = (document.getElementById('pw-nueva')?.value || '').trim();
-    const confirmar = (document.getElementById('pw-confirmar')?.value || '').trim();
-    const emailNuevo = (document.getElementById('pw-email-nuevo')?.value || '').trim().toLowerCase();
-    const nombreNuevo = (document.getElementById('pw-nombre-nuevo')?.value || '').trim();
-    const msg = document.getElementById('pw-msg');
-    if (!msg) return;
-
-    const setErr = (t) => {
-        msg.style.color = 'var(--re)';
-        msg.textContent = t;
-    };
-    const setOk = (t) => {
-        msg.style.color = '#166534';
-        msg.textContent = t;
-    };
-
-    const emailActual = String(app.u?.email || '').trim().toLowerCase();
-    const nombreActual = String(app.u?.nombre || '').trim();
-    const cambiaPw = !!(nueva || confirmar);
-    const cambiaEmail = emailNuevo !== emailActual;
-    const cambiaNombre = nombreNuevo !== nombreActual;
-
-    if (!actual) {
-        setErr('Ingresá la contraseña actual');
-        return;
-    }
-    if (cambiaPw) {
-        if (!nueva || !confirmar) {
-            setErr('Completá nueva contraseña y confirmación, o dejá ambas vacías si solo cambiás email o nombre');
-            return;
-        }
-        if (nueva !== confirmar) {
-            setErr('Las contraseñas nuevas no coinciden');
-            return;
-        }
-        if (nueva.length < 4) {
-            setErr('La contraseña debe tener al menos 4 caracteres');
-            return;
-        }
-    }
-    if (!cambiaPw && !cambiaEmail && !cambiaNombre) {
-        setErr('No hay cambios: indicá nueva contraseña o modificá email o nombre');
-        return;
-    }
-    if (cambiaEmail) {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNuevo)) {
-            setErr('El email no es válido');
-            return;
-        }
-    }
-    if ((cambiaEmail || cambiaNombre) && (modoOffline || typeof getApiToken !== 'function' || !getApiToken())) {
-        setErr('Cambiar email o nombre requiere sesión con el servidor (token API). Usá «Mi cuenta» del menú o iniciá sesión de nuevo.');
-        return;
-    }
-
-    const tok = typeof getApiToken === 'function' ? getApiToken() : '';
-    if (tok && typeof apiUrl === 'function' && !modoOffline) {
-        try {
-            const body = {
-                password_actual: actual,
-                email: cambiaEmail ? emailNuevo : emailActual,
-                nombre: nombreNuevo,
-            };
-            if (cambiaPw) body.password_nueva = nueva;
-            const resp = await fetch(apiUrl('/api/auth/me'), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-                body: JSON.stringify(body),
-            });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                setErr(data.error || data.detail || 'No se pudo actualizar');
-                return;
-            }
-            if (data.user) {
-                app.u.nombre = data.user.nombre || app.u.nombre;
-                app.u.email = data.user.email || app.u.email;
-                try {
-                    localStorage.setItem('pmg', JSON.stringify(app.u));
-                } catch (_) {}
-                try {
-                    actualizarBarraHeaderSesion();
-                } catch (_) {}
-            }
-            setOk('✓ Datos actualizados correctamente');
-            ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
-                const el = document.getElementById(id);
-                if (el) el.value = '';
-            });
-            sincronizarFormularioAdminContrasenaDesdeSesion();
-        } catch (e) {
-            logErrorWeb('cambiar-contrasena-api', e);
-            setErr(mensajeErrorUsuario(e));
-        }
-        return;
-    }
-
-    if (cambiaEmail || cambiaNombre) {
-        setErr('Sin token de API no se puede cambiar email o nombre desde aquí.');
-        return;
-    }
-
-    try {
-        const wf = await sqlFiltroUsuariosPorTenant();
-        const r = await sqlSimple(
-            `SELECT id FROM usuarios WHERE id = ${esc(app.u.id)} AND password_hash = ${esc(actual)}` + wf
-        );
-        if (!r.rows.length) {
-            setErr('La contraseña actual es incorrecta');
-            return;
-        }
-        await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(nueva)} WHERE id = ${esc(app.u.id)}` + wf);
-        setOk('✓ Contraseña actualizada correctamente');
-        ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-    } catch (e) {
-        logErrorWeb('cambiar-contrasena', e);
-        setErr(mensajeErrorUsuario(e));
-    }
-}
+// ── Cambio de contraseña / usuario admin → modules/admin-cambiar-credenciales.js ──
 
 // ── Reset de contraseña con EmailJS ──────────────────────────
 let _resetPaso = 1;
@@ -19499,6 +19368,20 @@ if ('serviceWorker' in navigator) {
             WEB_MAP_FILTRO_TIPOS_KEY,
         });
         initSetupWizardBindings();
+        initAdminCambiarCredenciales({
+            getApp: () => app,
+            getApiToken,
+            apiUrl,
+            getModoOffline: () => modoOffline,
+            esc,
+            sqlSimple,
+            sqlFiltroUsuariosPorTenant,
+            actualizarBarraHeaderSesion,
+            logErrorWeb,
+            mensajeErrorUsuario,
+            toast,
+            ejecutarCerrarSesion,
+        });
         (function showAndroidExportsBtn() {
             const b = document.getElementById('btn-android-descargas');
             if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
@@ -19654,7 +19537,6 @@ if (typeof eliminarDistribuidor !== "undefined") window.eliminarDistribuidor = e
 if (typeof importarExcelDistribuidores !== "undefined") window.importarExcelDistribuidores = importarExcelDistribuidores;
 if (typeof cargarEstadisticas !== "undefined") window.cargarEstadisticas = cargarEstadisticas;
 if (typeof cargarUbicacionesUsuarios !== "undefined") window.cargarUbicacionesUsuarios = cargarUbicacionesUsuarios;
-if (typeof cambiarContrasena !== "undefined") window.cambiarContrasena = cambiarContrasena;
 if (typeof pasoResetPw !== "undefined") window.pasoResetPw = pasoResetPw;
 if (typeof toggleOfflineBanner !== "undefined") window.toggleOfflineBanner = toggleOfflineBanner;
 if (typeof reactivarSesion !== "undefined") window.reactivarSesion = reactivarSesion;
