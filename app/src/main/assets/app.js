@@ -167,6 +167,10 @@ import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { leerEmPwLoginParaMtt } from './modules/mtt-login-creds-read.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
+import {
+    registrarOnboardingCompletadoTrasVinculoTenantMtt,
+    aplicarMascaraEmpresaAdminTrasCambioTenant,
+} from './modules/ocultar-datos-tenant.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -14673,6 +14677,9 @@ async function mttAndroidVincularTenant() {
                 limpiarLocalStorageContadoresPedido();
             } catch (_) {}
             try {
+                registrarOnboardingCompletadoTrasVinculoTenantMtt();
+            } catch (_) {}
+            try {
                 invalidarCachesMultitenantSesionYOAdminUI();
             } catch (_) {}
             try {
@@ -18804,6 +18811,9 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         _genCargaUbicacionesAdmin++;
     } catch (_) {}
     vaciarPanelesAdminPorCambioTenantSesion();
+    try {
+        aplicarMascaraEmpresaAdminTrasCambioTenant();
+    } catch (_) {}
     try {
         _sociosCatalogoTieneTenantIdCache = null;
     } catch (_) {}
