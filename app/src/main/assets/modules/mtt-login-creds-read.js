@@ -1,9 +1,15 @@
 /**
  * Email/contraseña del formulario de login para el modal tenant (técnico).
- * Varios navegadores autocompletan primero los campos señuelo (.gn-login-decoy)
- * con autocomplete estándar, dejando #em / #pw vacíos.
+ * 1) Preferir campos dentro del modal (el login de atrás suele estar vacío o tapado).
+ * 2) Si no, #em / #pw del login.
+ * 3) Fallback señuelo .gn-login-decoy (autocompletado del navegador).
  */
 export function leerEmPwLoginParaMtt() {
+    const mEm = (document.getElementById('mtt-android-login-em')?.value || '').trim();
+    const mPw = document.getElementById('mtt-android-login-pw')?.value || '';
+    if (mEm && mPw) {
+        return { em: mEm, pw: mPw };
+    }
     let em = (document.getElementById('em')?.value || '').trim();
     let pw = document.getElementById('pw')?.value || '';
     if (em && pw) return { em, pw };

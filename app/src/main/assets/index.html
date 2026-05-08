@@ -1217,8 +1217,12 @@
       <button type="button" class="cm" onclick="if(typeof cerrarModalTenantTecnicoAndroid==='function')cerrarModalTenantTecnicoAndroid()"><i class="fas fa-times"></i></button>
     </div>
     <div class="mb">
-      <p style="font-size:.8rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">Misma API que el asistente web: <code style="font-size:.72rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code> en el servidor. Usá el <strong>mismo email y contraseña de administrador</strong> que arriba; primero <strong>Listar tenants</strong>, elegí <code>clientes.id</code> y <strong>Vincular</strong>. Luego tocá <strong>Ingresar</strong> o recargá.</p>
-      <div class="fg" style="padding:0"><label for="mtt-android-tech-key">Clave de técnico</label>
+      <p style="font-size:.8rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">Misma API que el asistente web: <code style="font-size:.72rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code> en el servidor. Completá <strong>administrador</strong> abajo (recomendado: el modal tapa el login de arriba). Luego <strong>Listar tenants</strong>, elegí <code>clientes.id</code> y <strong>Vincular</strong>. Después <strong>Ingresar</strong> o recargá.</p>
+      <div class="fg" style="padding:0"><label for="mtt-android-login-em">Usuario admin (email o login)</label>
+        <input id="mtt-android-login-em" type="text" autocomplete="username" placeholder="Ej. admin@… o usuario"></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label for="mtt-android-login-pw">Contraseña admin</label>
+        <input id="mtt-android-login-pw" type="password" autocomplete="current-password" placeholder="Contraseña del administrador"></div>
+      <div class="fg" style="padding:0;margin-top:.65rem"><label for="mtt-android-tech-key">Clave de técnico</label>
         <input id="mtt-android-tech-key" type="password" autocomplete="off" placeholder="Mismo valor que en el servidor"></div>
       <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.65rem">
         <button type="button" class="btn-sm" style="background:var(--bg);border:1px solid var(--bo)" onclick="if(typeof mttAndroidListarTenants==='function')mttAndroidListarTenants()"><i class="fas fa-database"></i> Listar tenants</button>
