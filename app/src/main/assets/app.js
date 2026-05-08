@@ -13624,6 +13624,14 @@ async function cargarConfigEmpresa() {
 // Estado y lógica del wizard SaaS (modal cfgi) → modules/admin-wizard.js
 
 function tenantIdActual() {
+    try {
+        const tok = getApiToken();
+        const pl = tok ? parseJwtPayloadLoose(tok) : null;
+        if (pl && pl.tenant_id != null) {
+            const jt = Number(pl.tenant_id);
+            if (Number.isFinite(jt) && jt > 0) return jt;
+        }
+    } catch (_) {}
     const u = app?.u;
     if (u && (u.tenant_id != null || u.tenantId != null)) {
         const n = Number(u.tenant_id ?? u.tenantId);
@@ -14638,15 +14646,28 @@ async function mttAndroidVincularTenant() {
                 app.apiToken = String(j.token);
                 localStorage.setItem('pmg_api_token', app.apiToken);
             } catch (_) {}
-            if (app?.u) {
-                app.u.tenant_id = tid;
+            const tidApi = Number(j.tenant_id);
+            const tidOk = Number.isFinite(tidApi) && tidApi > 0 ? tidApi : tid;
+            const pl = parseJwtPayloadLoose(j.token);
+            const uidJwt = pl ? Number(pl.userId ?? pl.sub) : NaN;
+            if (!app?.u && Number.isFinite(uidJwt) && uidJwt > 0 && pl) {
+                app.u = {
+                    id: uidJwt,
+                    email: String(pl.email || ''),
+                    nombre: String(pl.nombre || ''),
+                    rol: normalizarRolStr(pl.rol || ''),
+                    tenant_id: tidOk,
+                    activo: true
+                };
+            } else if (app?.u) {
+                app.u.tenant_id = tidOk;
                 try {
                     delete app.u.tenantId;
                 } catch (_) {}
-                try {
-                    localStorage.setItem('pmg', JSON.stringify(app.u));
-                } catch (_) {}
             }
+            try {
+                if (app?.u) localStorage.setItem('pmg', JSON.stringify(app.u));
+            } catch (_) {}
             try {
                 limpiarLocalStorageContadoresPedido();
             } catch (_) {}
