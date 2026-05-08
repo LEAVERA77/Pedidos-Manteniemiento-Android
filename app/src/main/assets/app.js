@@ -44,6 +44,7 @@ import {
 import { kpiPdfMiniChartDataUrl } from './modules/kpi-pdf-charts.js';
 import { pdfEncabezadoEmpresaBloque, construirDomicilioEmpresaLinea } from './modules/empresa-encabezado-pdf.js';
 import { introInformeKpiPdfLegible, legibleFuenteKpi, lineasNarrativaMetricaKpiPdf } from './modules/kpi-informe-textos.js';
+import { abrirPdfBlobParaImpresion } from './modules/pdf-blob-open.js';
 import { openAdminUsuarioWhatsappModal } from './modules/admin-usuarios-whatsapp.js';
 import {
     ESTADO_DONUT_COLORS,
@@ -15929,25 +15930,17 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         }
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');
-        if (!w) {
-            URL.revokeObjectURL(url);
-            toast('Permití ventanas emergentes para abrir el informe.', 'error');
-            return;
+        const modo = abrirPdfBlobParaImpresion(blob, `informe-kpi-${tenantIdActual()}.pdf`);
+        if (modo === 'ventana') {
+            toast('Informe listo — se abrió la vista de impresión.', 'success');
+        } else if (modo === 'descarga') {
+            toast(
+                'El PDF se guardó en Descargas (WebView no abre ventanas nuevas). Abrilo desde ahí para imprimir.',
+                'success'
+            );
+        } else {
+            toast('No se pudo generar el archivo PDF.', 'error');
         }
-        setTimeout(() => {
-            try {
-                w.focus();
-                w.print();
-            } catch (_) {}
-            setTimeout(() => {
-                try {
-                    URL.revokeObjectURL(url);
-                } catch (_) {}
-            }, 120000);
-        }, 450);
-        toast('Informe listo — se abrió la vista de impresión.', 'success');
     } catch (e) {
         toastError('kpi-informe-pdf', e);
     }
