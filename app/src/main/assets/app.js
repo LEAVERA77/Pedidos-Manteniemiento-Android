@@ -42,6 +42,8 @@ import {
     esTelefonoWhatsappValido,
 } from './modules/normalizar-telefono.js';
 import { kpiPdfMiniChartDataUrl } from './modules/kpi-pdf-charts.js';
+import { pdfEncabezadoEmpresaBloque, construirDomicilioEmpresaLinea } from './modules/empresa-encabezado-pdf.js';
+import { introInformeKpiPdfLegible, legibleFuenteKpi, lineasNarrativaMetricaKpiPdf } from './modules/kpi-informe-textos.js';
 import { openAdminUsuarioWhatsappModal } from './modules/admin-usuarios-whatsapp.js';
 import {
     ESTADO_DONUT_COLORS,
@@ -1074,6 +1076,11 @@ function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     }
     for (const k of ['provincia', 'state', 'provincia_nominatim']) {
         if (Object.prototype.hasOwnProperty.call(conf, k) && conf[k] != null && String(conf[k]).trim()) {
+            next[k] = String(conf[k]).trim();
+        }
+    }
+    for (const k of ['calle', 'numero', 'localidad', 'ciudad']) {
+        if (Object.prototype.hasOwnProperty.call(conf, k) && conf[k] != null) {
             next[k] = String(conf[k]).trim();
         }
     }
@@ -15654,19 +15661,6 @@ function kpiPuntosDesdeFilasSnapshot(filas) {
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function textoBreveInterpretacionKpiPdf(rows) {
-    const map = kpiAgruparSnapshotsNumericosPorMetrica(rows);
-    const nTipos = map.size;
-    const nReg = (rows || []).filter(
-        (r) => r.valor_numero != null && r.valor_numero !== '' && !Number.isNaN(Number(r.valor_numero))
-    ).length;
-    return (
-        `Informe KPI piloto: ${nReg} registro(s) con valor numérico en ${nTipos} tipo(s) de métrica. ` +
-        'Cada tipo incluye un gráfico de barras horizontales (A4, colores sólidos, fondo blanco). ' +
-        'Debajo se listan todos los snapshots. Documento para uso interno.'
-    );
-}
-
 function textoBreveInterpretacionKpi(rows, metricaSel, points) {
     const parts = [];
     parts.push(
@@ -15808,17 +15802,15 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 14;
         const maxW = pageW - 2 * margin;
-        const lineaGen = `KPI piloto · Tenant ${tenantIdActual()} · Generado ${new Date().toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' })}`;
-        let y = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaGen);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12.5);
-        pdf.setTextColor(30, 58, 138);
-        pdf.text('Informe KPI piloto', margin, y);
-        y += 7;
+        const lineaGen = `Documento generado el ${new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}.`;
+        let y = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, {
+            variante: 'kpi',
+            lineaContexto: lineaGen,
+        });
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);
         pdf.setTextColor(51, 65, 85);
-        const intro = textoBreveInterpretacionKpiPdf(rows);
+        const intro = introInformeKpiPdfLegible(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
         const lineH = 3.35;
@@ -15838,15 +15830,43 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             pdf.addPage();
             y = margin;
         }
-        pdf.text('Gráficos por tipo de métrica (compactos)', margin, y);
+        pdf.text('Indicadores por tipo', margin, y);
         y += 5;
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
         const hMmMax = 88;
         for (const mk of keysOrden) {
-            const pts = kpiPuntosDesdeFilasSnapshot(porMetrica.get(mk));
+            const filasM = porMetrica.get(mk);
+            const pts = kpiPuntosDesdeFilasSnapshot(filasM);
             if (!pts.length) continue;
+            const narr = lineasNarrativaMetricaKpiPdf(mk, filasM, {
+                fmtFechaCorta: fmtFechaKpiSnapshotCorta,
+                KPI_METRICA_ETIQUETAS,
+            });
+            pdf.setTextColor(55, 65, 81);
+            narr.forEach((nl, idx) => {
+                if (nl == null || !String(nl).trim()) {
+                    y += 1.2;
+                    return;
+                }
+                const t = String(nl);
+                const isIt = t.startsWith('*') && t.endsWith('*') && t.length > 2;
+                const raw = isIt ? t.slice(1, -1) : t;
+                const tituloBloque = idx === 0 && !isIt;
+                pdf.setFont('helvetica', tituloBloque ? 'bold' : isIt ? 'italic' : 'normal');
+                pdf.setFontSize(tituloBloque ? 8.5 : 7.7);
+                const split = pdf.splitTextToSize(raw, maxW);
+                split.forEach((line) => {
+                    if (y + lineH > pageH - 14) {
+                        pdf.addPage();
+                        y = margin;
+                    }
+                    pdf.text(line, margin, y);
+                    y += lineH;
+                });
+            });
+            y += 2;
             const dataUrl = await kpiPdfMiniChartDataUrl(KPI_METRICA_ETIQUETAS[mk] || mk, pts);
             if (!dataUrl) continue;
             let hMm = Math.min(hMmMax, Math.max(24, 10 + pts.length * 4.6));
@@ -15872,7 +15892,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(9);
         pdf.setTextColor(30, 58, 138);
-        pdf.text('Registros (snapshots)', margin, y);
+        pdf.text('Detalle por periodo', margin, y);
         y += 5;
         y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
         for (let ri = 0; ri < rows.length; ri++) {
@@ -15886,7 +15906,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 { w: 19, t: fmtFechaKpiSnapshotCorta(row.periodo_fin) || '—' },
                 { w: 13, t: vn },
                 { w: 17, t: formatearUnidadKpiVista(row.unidad) || '—' },
-                { w: 20, t: row.fuente || '' },
+                { w: 20, t: legibleFuenteKpi(row.fuente) },
                 { w: 22, t: al.fecha || '' },
                 { w: 22, t: al.hora || '' },
             ];
@@ -16185,6 +16205,13 @@ async function cargarFormEmpresa() {
             const ec = window.EMPRESA_CFG || {};
             sincronizarFirmaIdentidadTenantDesdeValores(ec.nombre || cfg.nombre, ec.tipo || cfg.tipo);
         } catch (_) {}
+        try {
+            const ec = window.EMPRESA_CFG || {};
+            const calleIn = document.getElementById('cfg-calle');
+            const numIn = document.getElementById('cfg-numero');
+            if (calleIn) calleIn.value = String(ec.calle || '').trim();
+            if (numIn) numIn.value = String(ec.numero || '').trim();
+        } catch (_) {}
     } catch(e) { console.warn(e); }
 }
 
@@ -16261,6 +16288,12 @@ async function guardarConfigEmpresa() {
                         body.configuracion.provincia = provNom;
                         body.configuracion.state = provNom;
                         body.configuracion.provincia_nominatim = provNom;
+                    }
+                    {
+                        const calleVal = (document.getElementById('cfg-calle')?.value || '').trim();
+                        const numeroVal = (document.getElementById('cfg-numero')?.value || '').trim();
+                        body.configuracion.calle = calleVal || null;
+                        body.configuracion.numero = numeroVal || null;
                     }
                     if (derivacionReclamosPayload !== null) {
                         body.configuracion.derivacion_reclamos = derivacionReclamosPayload;
@@ -16347,6 +16380,9 @@ async function guardarConfigEmpresa() {
                             ]) {
                                 if (Object.prototype.hasOwnProperty.call(cfg, k)) next[k] = cfg[k];
                             }
+                            for (const k of ['calle', 'numero', 'localidad', 'ciudad']) {
+                                if (Object.prototype.hasOwnProperty.call(cfg, k)) next[k] = cfg[k];
+                            }
                             window.EMPRESA_CFG = next;
                             sincronizarCamposWhatsappArAreaDesdeEmpresaCfg();
                         }
@@ -16377,6 +16413,10 @@ async function guardarConfigEmpresa() {
             nombre: campos.nombre,
             tipo: campos.tipo,
             subtitulo: campos.subtitulo,
+            telefono: campos.telefono,
+            email_contacto: campos.email_contacto,
+            calle: (document.getElementById('cfg-calle')?.value || '').trim(),
+            numero: (document.getElementById('cfg-numero')?.value || '').trim(),
         };
         window.__PMG_TENANT_BRANDING__ = {
             ...(window.__PMG_TENANT_BRANDING__ || {}),
@@ -17181,75 +17221,32 @@ function escInformePdfTexto(s) {
 }
 
 function construirHtmlEncabezadoInformeEmpresa(lineaPeriodo) {
-    const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
-    const sub = GN_SUBTITULO_FIJO;
-    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
+    const ec = window.EMPRESA_CFG || {};
+    const nombre = String(ec.nombre || 'GestorNova').trim() || 'GestorNova';
+    const dom = construirDomicilioEmpresaLinea(ec);
+    const tel = String(ec.telefono_contacto || ec.telefono || '').trim();
+    const mail = String(ec.email_contacto || ec.email || '').trim();
+    const logo = String(ec.logo_url || '').trim();
     const logoSrc = escInformePdfTexto(logo || 'gestornova-logo.png');
     const lp = lineaPeriodo
         ? `<div style="margin-top:6px;font-size:9px;color:#64748b;line-height:1.35">${escInformePdfTexto(lineaPeriodo)}</div>`
+        : '';
+    const domHtml = dom
+        ? `<div style="font-size:10px;color:#475569;margin-top:4px;line-height:1.35">${escInformePdfTexto(dom)}</div>`
+        : '';
+    const telHtml = tel
+        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(`Tel: ${tel}`)}</div>`
+        : '';
+    const mailHtml = mail
+        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(`Email: ${mail}`)}</div>`
         : '';
     return (
         `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 12px;background:linear-gradient(180deg,#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.06)">` +
         `<img src="${logoSrc}" alt="" width="48" height="48" style="width:48px;height:48px;object-fit:contain;border-radius:8px;flex-shrink:0" crossorigin="anonymous"/>` +
         `<div style="min-width:0;flex:1"><div style="font-size:16px;font-weight:800;color:#1e3a8a;letter-spacing:-.02em">${escInformePdfTexto(nombre)}</div>` +
-        (sub ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(sub)}</div>` : '') +
+        `${domHtml}${telHtml}${mailHtml}` +
         `${lp}</div></div>`
     );
-}
-
-async function logoEmpresaBase64ParaPdf() {
-    const logo = String(window.EMPRESA_CFG?.logo_url || '').trim();
-    const path = logo || 'gestornova-logo.png';
-    try {
-        const abs = new URL(path, window.location.href).href;
-        const r = await fetch(abs, { credentials: 'same-origin' });
-        if (!r.ok) return null;
-        const buf = await r.arrayBuffer();
-        const b64 = arrayBufferToBase64(buf);
-        const ct = (r.headers.get('content-type') || '').toLowerCase();
-        if (ct.includes('jpeg') || /\.jpe?g(\?|$)/i.test(path)) return { b64, fmt: 'JPEG' };
-        return { b64, fmt: 'PNG' };
-    } catch (_) {
-        return null;
-    }
-}
-
-/** Encabezado A4 en jsPDF: logo + nombre + subtítulo + líneas de período. Devuelve Y inferior del bloque. */
-async function pdfEncabezadoEmpresaBloque(pdf, margin, pageW, yStart, lineasPeriodo) {
-    const maxW = pageW - 2 * margin;
-    let xTexto = margin;
-    let y = yStart;
-    const lg = await logoEmpresaBase64ParaPdf();
-    if (lg) {
-        try {
-            pdf.addImage('data:image/' + lg.fmt.toLowerCase() + ';base64,' + lg.b64, lg.fmt, margin, y, 9, 9);
-            xTexto = margin + 11;
-        } catch (_) {}
-    }
-    const nombre = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
-    const sub = GN_SUBTITULO_FIJO;
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.setTextColor(30, 58, 138);
-    pdf.text(nombre, xTexto, y + 6);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.6);
-    pdf.setTextColor(71, 85, 105);
-    let y2 = y + 9;
-    if (sub) {
-        const subL = pdf.splitTextToSize(sub, maxW - (xTexto - margin));
-        pdf.text(subL, xTexto, y2);
-        y2 += subL.length * 3.3;
-    }
-    pdf.setFontSize(7.2);
-    pdf.setTextColor(100, 116, 139);
-    const perL = pdf.splitTextToSize(String(lineasPeriodo || ''), maxW);
-    pdf.text(perL, margin, y2 + 2);
-    y2 += perL.length * 3.1;
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.35);
-    pdf.line(margin, y2 + 3, pageW - margin, y2 + 3);
-    return y2 + 5;
 }
 
 async function exportInformeMensualExcel() {
