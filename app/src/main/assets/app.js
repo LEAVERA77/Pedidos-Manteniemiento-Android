@@ -165,6 +165,7 @@ import {
 } from './map.js';
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
+import { leerEmPwLoginParaMtt } from './modules/mtt-login-creds-read.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -14578,10 +14579,12 @@ async function mttAndroidListarTenants() {
         _mttAndroidSetMsg('Ingresá la clave de técnico.', true);
         return;
     }
-    const em = (document.getElementById('em')?.value || '').trim();
-    const pw = document.getElementById('pw')?.value || '';
+    const { em, pw } = leerEmPwLoginParaMtt();
     if (!em || !pw) {
-        _mttAndroidSetMsg('Completá email y contraseña de administrador en la pantalla de login.', true);
+        _mttAndroidSetMsg(
+            'Falta email o contraseña de admin en el login (arriba). Si el autocompletado llenó campos ocultos, escribí de nuevo en Email y Contraseña visibles.',
+            true
+        );
         return;
     }
     _mttAndroidSetMsg('Validando administrador…', false);
