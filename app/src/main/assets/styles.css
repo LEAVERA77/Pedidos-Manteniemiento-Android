@@ -483,7 +483,7 @@ html.gn-android-webview #mc{
 .ll2{text-align:center;color:var(--tl);padding:2rem 1rem;font-size:.9rem;display:flex;align-items:center;justify-content:center;gap:.5rem}
 .pi{background:white;border-radius:.75rem;padding:.85rem 1rem;margin-bottom:.6rem;border:1px solid var(--bo);border-left:4px solid var(--bd);cursor:pointer;transition:transform .1s,box-shadow .15s}
 /* Lista de pedidos más compacta (#pl dentro del panel bp2) */
-#bp2 .pl .pi{padding:4px 8px;font-size:.75rem;margin-bottom:.35rem;min-height:unset}
+#bp2 .pl .pi{padding:.35rem .5rem;font-size:.75rem;margin-bottom:.35rem;min-height:unset}
 #bp2 .pl .pi .pi2{font-size:.72rem}
 #bp2 .pl .pi .pd{font-size:.78rem;line-height:1.25}
 .incidencia-badge{display:inline-flex;align-items:center;gap:4px;background:#e0f2fe;color:#0369a1;padding:4px 10px;border-radius:12px;font-size:.7rem;font-weight:600;cursor:pointer;margin-left:.35rem;vertical-align:middle;touch-action:manipulation;-webkit-tap-highlight-color:rgba(3,105,161,.12);min-height:28px;box-sizing:border-box;position:relative;z-index:2}
@@ -506,8 +506,10 @@ button.gn-inc-fab{touch-action:manipulation;-webkit-tap-highlight-color:transpar
 .pi:hover{transform:translateX(3px);box-shadow:0 3px 12px rgba(0,0,0,.1)}
 .ph2{display:flex;justify-content:space-between;align-items:flex-start;gap:.35rem;margin-bottom:.35rem;flex-wrap:wrap}
 .ph2-actions{display:inline-flex;align-items:center;gap:.35rem;flex-shrink:0;margin-left:auto;max-width:100%}
-button.gn-pi-desest{flex-shrink:0;min-width:40px;min-height:40px;padding:0 .45rem;border-radius:.45rem;border:1px solid #b91c1c;background:#fef2f2;font-size:1rem;line-height:1;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;z-index:2;position:relative}
+button.gn-pi-desest{flex-shrink:0;font-size:.65rem;padding:2px 6px;width:22px;height:22px;min-width:22px;min-height:22px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;border-radius:.45rem;border:1px solid #b91c1c;background:#fef2f2;line-height:1;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;z-index:2;position:relative}
 button.gn-pi-desest:active{background:#fee2e2}
+.gn-pi-inc-move{max-width:calc(100% - .5cm)}
+#bp2 .pl .gn-pi-inc-move{max-width:calc(100% - .5cm)}
 .pn{font-weight:700;color:var(--bd);font-size:.9rem}
 .pe{font-size:.7rem;padding:.2rem .55rem;border-radius:1rem;font-weight:600}
 .ep{background:#fef9c3;color:#854d0e}.ea{background:#fae8ff;color:#86198f}.ee{background:#dbeafe;color:#1d4ed8}.ec{background:#dcfce7;color:#166534}.edex{background:#fee2e2;color:#991b1b}.edes{background:#f1f5f9;color:#475569}
@@ -1254,4 +1256,10 @@ table.gn-soc-admin-table td {
 }
 table.gn-soc-admin-table thead th {
   border-bottom: 1px solid var(--bo, #cbd5e1);
+}
+
+/* Modales «Formato» Excel (socios / distribuidores): por encima de overlays del mapa y paneles */
+#modal-formato-excel,
+[id^="modal-formato"] {
+  z-index: 99999 !important;
 }

@@ -122,7 +122,6 @@
         <i class="fas fa-code-branch"></i>
         <span id="badge-derivaciones-pendientes" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:999px;min-width:16px;height:16px;padding:0 4px;font-size:.65rem;line-height:16px;text-align:center;font-weight:700"></span>
       </button>
-      <button id="btn-admin-cambiar-rubro" type="button" class="ib" onclick="abrirModalCambioRubroAdminConPassword()" title="Cambiar tipo de negocio (rubro)" style="display:none"><i class="fas fa-briefcase"></i></button>
       <button id="btn-admin" class="ib" onclick="abrirAdmin()" title="Panel Admin" style="display:none"><i class="fas fa-cog"></i></button>
     </div>
   </div>
@@ -238,7 +237,7 @@
   </button>
   
   <div id="bp2" class="bp2 col">
-    <div class="ph" id="ph" title="Arrastrá para mover el panel (PC) · tocá para plegar/desplegar"><div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:.4rem"><span style="display:flex;align-items:center;gap:.35rem"><div class="hb"></div><span class="hl">Pedidos</span></span><button type="button" class="ib-mini" id="btn-bp2-hide" title="Ocultar panel (mostrar con el botón flotante Pedidos)" onclick="event.stopPropagation();setBp2PanelHidden(true)"><i class="fas fa-eye-slash"></i></button></div></div>
+    <div class="ph" id="ph" title="Arrastrá desde la barra para mover el panel. Tocá «Pedidos» para plegar o desplegar. El ícono del ojo oculta el panel."><div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:.4rem"><span class="gn-bp2-plegar-trigger" role="button" tabindex="0" title="Plegar o desplegar la lista" style="display:flex;align-items:center;gap:.35rem;cursor:pointer;flex:1;min-width:0"><div class="hb"></div><span class="hl">Pedidos</span></span><button type="button" class="ib-mini" id="btn-bp2-hide" title="Ocultar panel (mostrar con el botón flotante Pedidos)" onclick="event.stopPropagation();setBp2PanelHidden(true)"><i class="fas fa-eye-slash"></i></button></div></div>
     <div class="pc">
       <div class="pt gn-bp2-tabs" role="tablist" aria-label="Filtro por estado de pedidos">
         <button type="button" class="tb active" data-tab="p"><span class="tb-stack"><span class="tb-line"><i class="fas fa-clock"></i> Pendientes</span><span id="pc" class="bge">0</span></span></button>
@@ -250,13 +249,13 @@
           <input type="checkbox" id="toggle-ver-todos-pedidos" title="Todos los reclamos de la empresa (pendientes, en curso y cerrados)"> Todos
         </label>
         <label id="wrap-chk-derivados-fuera" class="gn-bp2-toolbar-chk" style="display:none">
-          <input type="checkbox" id="chk-mostrar-derivados-fuera" title="Incluir derivados externos en datos y mapa; en pestaña Cerrados, mostrar solo esos reclamos. Solo uno activo a la vez (con Desestimados y Solo agrupados)."> Derivados fuera
+          <input type="checkbox" id="chk-mostrar-derivados-fuera" title="En el panel de pedidos: incluir derivados externos; en pestaña Cerrados, mostrar solo esos reclamos. Solo uno activo a la vez (con Desestimados y Solo agrupados)."> Derivados fuera
         </label>
         <label id="wrap-chk-desestimados-lista" class="gn-bp2-toolbar-chk" style="display:none">
-          <input type="checkbox" id="chk-lista-mostrar-desestimados" title="Incluir desestimados en datos y mapa; en pestaña Cerrados, mostrar solo reclamos desestimados. Solo uno activo a la vez (con Derivados fuera y Solo agrupados)."> Desestimados
+          <input type="checkbox" id="chk-lista-mostrar-desestimados" title="En el panel de pedidos: incluir desestimados; en pestaña Cerrados, mostrar solo reclamos desestimados. Solo uno activo a la vez (con Derivados fuera y Solo agrupados)."> Desestimados
         </label>
         <label id="wrap-chk-solo-agrupados-incidencia" class="gn-bp2-toolbar-chk" style="display:none">
-          <input type="checkbox" id="chk-lista-solo-agrupados-incidencia" title="Solo pedidos con incidencia agrupada (campo inci) en listas, contadores y mapa. Solo uno activo a la vez (con Desestimados y Derivados fuera)."> Solo agrupados
+          <input type="checkbox" id="chk-lista-solo-agrupados-incidencia" title="En el panel de pedidos: solo pedidos con incidencia agrupada (campo inci) en listas y contadores. Solo uno activo a la vez (con Desestimados y Derivados fuera)."> Solo agrupados
         </label>
         <span class="gn-bp2-toolbar-spacer" aria-hidden="true"></span>
         <button type="button" id="eb" class="eb" title="Exportar Excel"><i class="fas fa-file-excel"></i></button>

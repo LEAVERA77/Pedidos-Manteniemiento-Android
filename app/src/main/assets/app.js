@@ -71,6 +71,8 @@ import {
     insertarCardDesestimadosEnResumen,
     renderBloquePdfDesestimados,
 } from './modules/estadisticas-desestimados.js';
+import { pintarCaptionsGraficosEstadisticasAdmin } from './modules/estadisticas-chart-captions.js';
+import { pedidosBaseMapaSinToolbarBp2 } from './modules/filtros-checkboxes.js';
 import {
     toggleMapaCardSlideoff,
     syncMapSlideTabsFromStorage,
@@ -3471,8 +3473,6 @@ const gnLoginSubmitHandler = async e => {
         try {
             gnGeocodeAdminLogSyncDockVisibility();
         } catch (_) {}
-        const btnRubro = document.getElementById('btn-admin-cambiar-rubro');
-        if (btnRubro) btnRubro.style.display = esAdminSesionWebPublica() ? 'flex' : 'none';
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
         const mtBtn = document.getElementById('mt');
@@ -5433,9 +5433,14 @@ window.onMapaFiltroTipoTrabajoChange = onMapaFiltroTipoTrabajoChange;
 
 function pedidosParaMarcadoresMapa() {
     const relaxRubroMapa = esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
-    const soloAgMap = esAdmin() && document.getElementById('chk-lista-solo-agrupados-incidencia')?.checked;
-    const soloDesMap = esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
-    const soloDerivMap = esAdmin() && document.getElementById('chk-mostrar-derivados-fuera')?.checked;
+    const mostrarDerivadoExternoEnMapa = (x) =>
+        esAdmin() ? true : mostrarPedidoDerivadoFueraEnListasYMapa(x);
+    const baseLista = pedidosBaseMapaSinToolbarBp2({
+        pedidos: app.p || [],
+        relaxRubroMapa,
+        pedidoVisibleSegunRubro,
+        mostrarDerivadoExternoEnMapa,
+    });
     const chk = (id) => {
         const el = document.getElementById(id);
         return !el || el.checked;
@@ -5462,11 +5467,7 @@ function pedidosParaMarcadoresMapa() {
     const selA = document.getElementById('mapa-filtro-asignado');
     const uidF = selU?.value || '';
     const asigF = selA?.value || '';
-    return app.p.filter(p => {
-        if (soloAgMap && !(p.inci != null && Number(p.inci) > 0)) return false;
-        if (soloDesMap) {
-            if (String(p.es || '') !== 'Desestimado') return false;
-        } else if (soloDerivMap && !pedidoEsDerivadoFuera(p)) return false;
+    return baseLista.filter(p => {
         const { la, ln } = coordsEfectivasPedidoMapa(p);
         if (!Number.isFinite(la) || !Number.isFinite(ln)) return false;
         if (!allowEstado(normalizarEstadoPedidoUi(p.es || ''))) return false;
@@ -5489,8 +5490,6 @@ function pedidosParaMarcadoresMapa() {
             return chkP(mapPr[p.pr] || 'mapa-flt-prio-baja');
         })();
         if (!prioOk) return false;
-        if (!relaxRubroMapa && !pedidoVisibleSegunRubro(p)) return false;
-        if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
         if (!pedidoPasaFiltroTipoReclamoMapa(p)) return false;
         return true;
     });
@@ -5500,6 +5499,15 @@ function llenarSelectsFiltroMapa() {
     const selU = document.getElementById('mapa-filtro-usuario');
     const selA = document.getElementById('mapa-filtro-asignado');
     if (!selU || !selA) return;
+    const relaxRubroMapa = esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
+    const mostrarDerivadoExternoEnMapa = (x) =>
+        esAdmin() ? true : mostrarPedidoDerivadoFueraEnListasYMapa(x);
+    const baseMapa = pedidosBaseMapaSinToolbarBp2({
+        pedidos: app.p || [],
+        relaxRubroMapa,
+        pedidoVisibleSegunRubro,
+        mostrarDerivadoExternoEnMapa,
+    });
     const prevU = selU.value;
     const prevA = selA.value;
     selU.innerHTML = '<option value="">Todos los creadores</option>';
@@ -5507,7 +5515,7 @@ function llenarSelectsFiltroMapa() {
     const nombrePorId = new Map();
     (app.usuariosCache || []).forEach(u => nombrePorId.set(String(u.id), u.nombre || u.email || ('#' + u.id)));
     const seenCre = new Set();
-    pedidosVisiblesEnUI().forEach(p => {
+    baseMapa.forEach(p => {
         const id = p.uc != null ? p.uc : p.ui;
         if (id == null || seenCre.has(String(id))) return;
         seenCre.add(String(id));
@@ -5527,7 +5535,7 @@ function llenarSelectsFiltroMapa() {
         selA.insertAdjacentHTML('beforeend', `<option value="${u.id}">${_escOpt((u.nombre || '') + ' (' + u.rol + ')')}</option>`);
         seenTec.add(String(u.id));
     });
-    pedidosVisiblesEnUI().forEach(p => {
+    baseMapa.forEach(p => {
         if (p.tai == null) return;
         const sid = String(p.tai);
         if (seenTec.has(sid)) return;
@@ -5663,44 +5671,6 @@ function setBp2PanelHidden(hidden) {
 
 /** Android: al abrir el detalle (#dm) guardamos si el panel inferior estaba visible para restaurarlo al cerrar. */
 let _gnBp2SnapAntesDetalleAndroid = null;
-
-function _gnOcultarPanelPedidosParaDetalleAndroid() {
-    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
-    const bp2 = document.getElementById('bp2');
-    if (!bp2 || _gnBp2SnapAntesDetalleAndroid) return;
-    _gnBp2SnapAntesDetalleAndroid = {
-        fullhide: bp2.classList.contains('bp2-fullhide'),
-        col: bp2.classList.contains('col'),
-    };
-    bp2.classList.remove('col');
-    setBp2PanelHidden(true);
-    requestAnimationFrame(() => {
-        try {
-            if (app.map) app.map.invalidateSize({ animate: false });
-        } catch (_) {}
-    });
-}
-
-/** Una vez: en Android, cualquier interacción con un modal (.mo) oculta el panel de lista de pedidos (bp2). */
-let _gnDetalleTapHideBp2Bound = false;
-function _gnBindDetalleModalOcultarBp2AndroidUnaVez() {
-    if (_gnDetalleTapHideBp2Bound) return;
-    if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) return;
-    _gnDetalleTapHideBp2Bound = true;
-    document.addEventListener(
-        'pointerdown',
-        (e) => {
-            if (!e.target || !e.target.closest || !e.target.closest('.mo.active')) return;
-            setBp2PanelHidden(true);
-            requestAnimationFrame(() => {
-                try {
-                    if (app.map) app.map.invalidateSize({ animate: false });
-                } catch (_) {}
-            });
-        },
-        { capture: true }
-    );
-}
 
 function _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid() {
     if (typeof esAndroidWebViewMapa !== 'function' || !esAndroidWebViewMapa()) {
@@ -5871,13 +5841,13 @@ function initBp2PanelFlotanteDesktop() {
     };
     ph.addEventListener('mousedown', (e) => {
         if (!floatingPanelsDragEnabled()) return;
-        if (e.button !== 0 || e.target.closest('button')) return;
+        if (e.button !== 0 || e.target.closest('button') || e.target.closest('.gn-bp2-plegar-trigger')) return;
         e.preventDefault();
         startDrag(e.clientX, e.clientY);
     });
     ph.addEventListener('touchstart', (e) => {
         if (!floatingPanelsDragEnabled()) return;
-        if (e.touches.length !== 1 || e.target.closest('button')) return;
+        if (e.touches.length !== 1 || e.target.closest('button') || e.target.closest('.gn-bp2-plegar-trigger')) return;
         e.preventDefault();
         const t = e.touches[0];
         startDrag(t.clientX, t.clientY);
@@ -12034,7 +12004,7 @@ async function detalle(p, opts = {}) {
         const who = findUser(p.uider) || (p.uider != null ? 'id:' + p.uider : '—');
         htmlDerivacionAdminExterna = `<div class="ds" style="border-left:4px solid #64748b">
             <h4>➡️ Derivado a tercero</h4>
-            <p style="font-size:.78rem;margin:0 0 .5rem;line-height:1.4">Este reclamo ya no está en la operativa habitual del tenant. Para verlo en listas y mapa, activá <strong>Derivados fuera</strong> en la barra de pedidos.</p>
+            <p style="font-size:.78rem;margin:0 0 .5rem;line-height:1.4">Este reclamo ya no está en la operativa habitual del tenant. Para verlo en el panel de pedidos, activá <strong>Derivados fuera</strong> en la barra del listado.</p>
             <div class="dr"><span class="dl">Fecha</span><span class="dv">${escDet(fdx)}</span></div>
             <div class="dr"><span class="dl">Destino (clave)</span><span class="dv">${escDet(p.dda || '—')}</span></div>
             <div class="dr"><span class="dl">Contacto</span><span class="dv">${escDet(p.ddn || '—')}</span></div>
@@ -12189,8 +12159,6 @@ async function detalle(p, opts = {}) {
     } catch (_) {}
 
     document.getElementById('dm').classList.add('active');
-    _gnOcultarPanelPedidosParaDetalleAndroid();
-    _gnBindDetalleModalOcultarBp2AndroidUnaVez();
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p)) refrescarMaterialesEnDetalle(p);
     });
@@ -12410,20 +12378,12 @@ function closeAll() {
     });
     if (dmAntes) {
         try {
-            // Android: el panel de pedidos debe quedar oculto tras acciones en el modal (Cerrar, avance, etc.).
-            if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
-                _gnBp2SnapAntesDetalleAndroid = null;
+            _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
+            requestAnimationFrame(() => {
                 try {
-                    setBp2PanelHidden(true);
+                    if (app.map) app.map.invalidateSize({ animate: false });
                 } catch (_) {}
-                requestAnimationFrame(() => {
-                    try {
-                        if (app.map) app.map.invalidateSize({ animate: false });
-                    } catch (_) {}
-                });
-            } else {
-                _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
-            }
+            });
         } catch (_) {}
     }
     app.cid = null;
@@ -12579,7 +12539,7 @@ document.getElementById('mt').addEventListener('click', () => {
         console.warn('[wizard-marca-manual]', e?.message || e);
     });
 });
-document.getElementById('ph').addEventListener('click', (e) => {
+document.querySelector('#ph .gn-bp2-plegar-trigger')?.addEventListener('click', (e) => {
     if (e.target.closest('button')) return;
     if (window.__bp2DragJustEnded) return;
     togglePanel();
@@ -12634,8 +12594,6 @@ function ejecutarCerrarSesion() {
     } catch (_) {}
     detenerSyncCatalogos();
     limpiarEstadoMapaSesion();
-    const btnRubro2 = document.getElementById('btn-admin-cambiar-rubro');
-    if (btnRubro2) btnRubro2.style.display = 'none';
     localStorage.removeItem('pmg');
     localStorage.removeItem('pmg_api_token');
     try {
@@ -12882,7 +12840,6 @@ document.getElementById('toggle-ver-todos-pedidos')?.addEventListener('change', 
 initPedidosToolbarFiltrosExclusivos(() => {
     try {
         render();
-        renderMk();
     } catch (_) {}
 });
 
@@ -18404,90 +18361,20 @@ async function cargarEstadisticas() {
 
         const scap = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
         const pctOf = (n, tot) => (!tot ? 0 : Math.round(1000 * Number(n) / tot) / 10);
-        const capM = document.getElementById('chart-cap-mensual');
-        if (capM) {
-            const totCr = rMensual.rows.reduce((s, r) => s + parseInt(r.total || 0, 10), 0);
-            const totCe = rMensual.rows.reduce((s, r) => s + parseInt(r.cerrados || 0, 10), 0);
-            capM.innerHTML = `<strong>Resumen numérico</strong> · Suma de pedidos creados (por mes): ${totCr}. Suma de cierres registrados por mes: ${totCe}.<br><strong>Colores:</strong> ámbar = creados del mes; verde = cierres del mes.`;
-        }
-        const totEst = (rEstados.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
-        const capE = document.getElementById('chart-cap-estados');
-        if (capE) {
-            if (totEst) {
-                const estadoLeg = 'Ámbar Pendiente · azul Asignado · violeta En ejecución · verde Cerrado · gris Desestimado / derivado.';
-                const lines = rEstados.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    return `${scap(r.estado)} <strong>${pctOf(n, totEst)}%</strong> (${n})`;
-                }).join(' · ');
-                capE.innerHTML = `<strong>Distribución sobre ${totEst} pedidos</strong><br>${lines}<br><strong>Significado de colores:</strong> ${estadoLeg}`;
-            } else capE.textContent = 'Sin datos en el período.';
-        }
-        const totPr = (rPrior.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
-        const capP = document.getElementById('chart-cap-prioridades');
-        if (capP) {
-            if (totPr) {
-                const prLeg = 'Tonos suaves: rojizo Crítica · albaricoque Alta · amarillento Media · azulado Baja.';
-                const lines = rPrior.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    return `${scap(r.prioridad)} <strong>${pctOf(n, totPr)}%</strong> (${n})`;
-                }).join(' · ');
-                capP.innerHTML = `<strong>Distribución sobre ${totPr} pedidos</strong><br>${lines}<br><strong>Significado de colores:</strong> ${prLeg}`;
-            } else capP.textContent = 'Sin datos en el período.';
-        }
-        const capD = document.getElementById('chart-cap-distribuidores');
-        if (capD) {
-            const lblZ = esMun ? 'barrio' : esCooperativaAguaRubro() ? 'ramal' : 'distribuidor';
-            if ((rDist.rows || []).length) {
-                const lines = rDist.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    const c = parseInt(r.cerrados || 0, 10);
-                    const pc = n ? pctOf(c, n) : 0;
-                    return `${scap(r.distribuidor)}: total ${n}, cerrados ${c} (<strong>${pc}%</strong> del propio ${lblZ})`;
-                }).join('<br>');
-                capD.innerHTML = `<strong>Por ${lblZ}</strong><br>${lines}<br><strong>Colores:</strong> azulado = total de pedidos; verdoso = cerrados en el período.`;
-            } else capD.textContent = 'Sin datos en el período.';
-        }
-        const capBT = document.getElementById('chart-cap-barrios-tiempo');
-        if (capBT) {
-            if (esMun && (rBarT?.rows || []).length) {
-                capBT.innerHTML =
-                    '<strong>Tiempo promedio de resolución por barrio</strong> (pedidos cerrados en el período). ' +
-                    'Barras más cortas = cierre más rápido. Requiere columna <code>barrio</code> en pedidos.';
-            } else capBT.textContent = '';
-        }
-        const totTip = (rTipos.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
-        const capT = document.getElementById('chart-cap-tipos');
-        if (capT) {
-            if (totTip) {
-                const lines = rTipos.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    return `${scap(r.tipo)} <strong>${pctOf(n, totTip)}%</strong> (${n})`;
-                }).join(' · ');
-                capT.innerHTML = `<strong>Top tipos (${totTip} pedidos en la muestra)</strong><br>${lines}<br><strong>Color:</strong> tono azulado = volumen relativo de cada tipo (barras horizontales).`;
-            } else capT.textContent = 'Sin datos en el período.';
-        }
-        const totU = (rUsuarios?.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
-        const capU = document.getElementById('chart-cap-usuarios');
-        if (capU) {
-            if (totU && (rUsuarios?.rows || []).length) {
-                const lines = rUsuarios.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    return `${scap(r.usuario)} <strong>${pctOf(n, totU)}%</strong> (${n})`;
-                }).join(' · ');
-                capU.innerHTML = `<strong>Creadores (${totU} pedidos)</strong><br>${lines}<br><strong>Colores:</strong> cada tono distingue un usuario en el ranking (no implica semáforo de calidad).`;
-            } else capU.textContent = 'Sin datos en el período.';
-        }
-        const totTc = (rTecnicos?.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
-        const capTc = document.getElementById('chart-cap-tecnicos');
-        if (capTc) {
-            if (totTc && (rTecnicos?.rows || []).length) {
-                const lines = rTecnicos.rows.map(r => {
-                    const n = parseInt(r.n || 0, 10);
-                    return `${scap(r.tecnico)} <strong>${pctOf(n, totTc)}%</strong> (${n})`;
-                }).join(' · ');
-                capTc.innerHTML = `<strong>Cierres por técnico (${totTc} pedidos)</strong><br>${lines}<br><strong>Colores:</strong> cada tono distingue un técnico en el ranking.`;
-            } else if ((rTecnicos?.rows || []).length === 0) capTc.innerHTML = '';
-        }
+        pintarCaptionsGraficosEstadisticasAdmin({
+            scap,
+            pctOf,
+            esMun,
+            esCooperativaAgua: esCooperativaAguaRubro(),
+            rMensual,
+            rEstados,
+            rPrior,
+            rDist,
+            rBarT,
+            rTipos,
+            rUsuarios: rUsuarios || { rows: [] },
+            rTecnicos: rTecnicos || { rows: [] },
+        });
 
         requestAnimationFrame(() => {
             Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
@@ -18554,6 +18441,7 @@ function resetEstadisticasAdminVisualNeutro() {
             'chart-cap-distribuidores',
             'chart-cap-barrios-tiempo',
             'chart-cap-tipos',
+            'chart-cap-desest-motivos',
             'chart-cap-usuarios',
             'chart-cap-tecnicos'
         ].forEach((id) => {
