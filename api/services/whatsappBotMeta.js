@@ -50,7 +50,7 @@ import {
   textoAyudaMisReclamosMenuInicial,
 } from "./whatsappBotMisReclamos.js";
 import { tryAttachWhatsappImageToPedidoEvidenciaInsuficiente } from "./pedidoFotoEvidenciaInbound.js";
-import { textoClienteNuevaFotoRecibida } from "./pedidoFotoValidacionWa.js";
+import { textoClienteNuevaFotoRecibida, loadActiveBusinessTypeForTenant } from "./pedidoFotoValidacionWa.js";
 import { upsertTelefonoSociosCatalogoDesdeWhatsappInbound } from "../utils/sociosCatalogoCoordsFromPedido.js";
 import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
 import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
@@ -1395,9 +1395,28 @@ async function pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactN
   sess.step = "awaiting_confirmar_resumen";
   sessions.set(sk, sess);
   const ident = [];
-  if (sess.nisParaPedido) ident.push(`NIS: *${sess.nisParaPedido}*`);
-  if (sess.medidorParaPedido) ident.push(`Medidor: *${sess.medidorParaPedido}*`);
-  if (sess.nisMedidorParaPedido) ident.push(`NIS/medidor: *${sess.nisMedidorParaPedido}*`);
+  let bt = "electricidad";
+  try {
+    bt = await loadActiveBusinessTypeForTenant(tid);
+  } catch (_) {}
+  const nis = trimOrNullWhatsapp(sess.nisParaPedido);
+  const med = trimOrNullWhatsapp(sess.medidorParaPedido);
+  const nm = trimOrNullWhatsapp(sess.nisMedidorParaPedido);
+  if (bt === "municipio") {
+    const idVecino = nis || med || nm;
+    if (idVecino) ident.push(`ID Vecino: *${idVecino}*`);
+  } else if (bt === "agua") {
+    const nSocio = nis || (!nis && nm ? nm : null);
+    if (nSocio || med || nm) {
+      ident.push(`N° Socio: *${nSocio || "—"}* · Medidor: *${med || "—"}*`);
+    }
+  } else {
+    if (nis || med) {
+      ident.push(`NIS: *${nis || "—"}* · Medidor: *${med || "—"}*`);
+    } else if (nm) {
+      ident.push(`NIS/medidor: *${nm}*`);
+    }
+  }
   const nom = String(sess.contactName || contactName || "").trim();
   if (nom && !ident.length) ident.push(`Nombre / titular: *${nom}*`);
   if (!ident.length) ident.push("Identificación: *solo WhatsApp*");
