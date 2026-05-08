@@ -72,6 +72,10 @@ import {
   setGlobalBotActiveDb,
   isPhoneWhatsappHumanChatDirect,
 } from "./globalBotState.js";
+import {
+  clasificarBusquedaNombreSociosParaBotWa,
+  catalogoNombreRowToIdentidadRes,
+} from "../modules/busqueda-nombre-bot.js";
 
 const sessions = new Map();
 
@@ -178,6 +182,8 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_desc",
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
+  "awaiting_catalogo_nombre_confirm",
+  "awaiting_catalogo_nombre_elegir",
   "awaiting_opcional_id",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
@@ -193,6 +199,8 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_factibilidad_post_gps",
   "awaiting_identificacion_modo",
   "awaiting_nombre_persona",
+  "awaiting_catalogo_nombre_confirm",
+  "awaiting_catalogo_nombre_elegir",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
   "awaiting_addr_calle",
@@ -559,6 +567,133 @@ function pareceNombreParaContactoWhatsapp(texto) {
   const digitCount = (t.match(/\d/g) || []).length;
   if (digitCount > 5) return false;
   return /[\p{L}]{2,}/u.test(t);
+}
+
+function waEscapeBoldFragment(s) {
+  return String(s || "").replace(/\*/g, "·");
+}
+
+function limpiarEstadoBusquedaNombreCatalogo(sess) {
+  if (!sess) return;
+  delete sess.waNombreCatalogoLibre;
+  delete sess.waNombreCatalogoCandidatos;
+  delete sess.waNombreCatalogoNingunaNumero;
+  delete sess.waNombreCatalogoModo;
+}
+
+function msgConfirmarCatalogoNombreUnSocio(row) {
+  const nom = waEscapeBoldFragment(row.nombre);
+  const calle = waEscapeBoldFragment(row.calle || "");
+  const num = waEscapeBoldFragment(row.numero || "");
+  const loc = waEscapeBoldFragment(row.localidad || "");
+  const dir = [calle, num].filter(Boolean).join(" ").trim();
+  const lugar = [dir, loc].filter(Boolean).join(", ").replace(/\s+,/g, ",");
+  const tel = row.telefono ? waEscapeBoldFragment(String(row.telefono).trim()) : "—";
+  return (
+    `✅ *Encontramos tus datos:*\n\n` +
+    `👤 *${nom}*\n` +
+    `📍 *${lugar || "—"}*\n` +
+    `📞 *${tel}*\n\n` +
+    `¿Son correctos? Respondé:\n` +
+    `*1*) Sí, son mis datos\n` +
+    `*2*) No, no soy yo` +
+    MSG_SALIR_ATRAS
+  );
+}
+
+function msgElegirCatalogoNombreLista(rows, ningunaNumero) {
+  const lines = rows.map((r, i) => {
+    const nom = waEscapeBoldFragment(r.nombre);
+    const calle = waEscapeBoldFragment(r.calle || "");
+    const num = waEscapeBoldFragment(r.numero || "");
+    const loc = waEscapeBoldFragment(r.localidad || "");
+    const dir = [calle, num].filter(Boolean).join(" ").trim();
+    const lugar = [dir, loc].filter(Boolean).join(", ").replace(/\s+,/g, ",");
+    return `*${i + 1})* ${nom} — ${lugar || "—"}`;
+  });
+  return (
+    `🔍 *¿Sos alguna de estas personas?*\n\n` +
+    lines.join("\n") +
+    `\n*${ningunaNumero})* Ninguna de las anteriores\n\n` +
+    `Respondé con el *número*.` +
+    MSG_SALIR_ATRAS
+  );
+}
+
+function interpretaUnoDosCatalogoNombreConfirm(t) {
+  const low = String(t || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (/^(1|1\.|1\)|si|sí|ok|dale|correcto)\b/.test(low)) return 1;
+  if (/^(2|2\.|2\)|no)\b/.test(low)) return 2;
+  return null;
+}
+
+async function aplicarMatchCatalogoNombreDesdeRow(phone, sess, sk, contactName, ctx, wpid, tid, row) {
+  limpiarEstadoBusquedaNombreCatalogo(sess);
+  const res = await catalogoNombreRowToIdentidadRes(tid, row);
+  const nuevoNombre = res.clienteNombre;
+  const locCat = String(res.catalogoLocalidad || "").trim();
+  const calleCat = String(res.catalogoCalle || "").trim();
+  const numCat = String(res.catalogoNumero || "").trim();
+  const puedeMapaDesdePadron =
+    locCat.length >= 2 && calleCat.length >= 2 && sess.descripcion && String(sess.descripcion).trim();
+
+  const nextBase = {
+    ...sess,
+    contactName: nuevoNombre || sess.contactName,
+    nisParaPedido: res.nis ?? null,
+    medidorParaPedido: res.medidor ?? null,
+    nisMedidorParaPedido: res.nisMedidor ?? null,
+    addrOrigenPaso: "nombre",
+    phoneNumberId: sess.phoneNumberId || wpid,
+  };
+  aplicarSuministroCatalogoWhatsappRes(nextBase, res);
+  aplicarPadronCoordsWhatsapp(nextBase, res);
+  const provMap = provinciaBotDesdeTextoOsm(res.catalogoProvincia);
+  if (provMap && !trimOrNullWhatsapp(nextBase.addrProvincia)) nextBase.addrProvincia = provMap;
+  sessions.set(sk, nextBase);
+  fireUpsertTelefonoInboundCatalogo(tid, phone, nextBase);
+
+  if (puedeMapaDesdePadron) {
+    const extraPad = lineasExtraPadronWhatsapp(res);
+    await reply(
+      phone,
+      `Listo, tomamos los datos de *${waEscapeBoldFragment(nuevoNombre)}* desde el padrón.${extraPad}\n\nDomicilio: *${waEscapeBoldFragment(calleCat)} ${waEscapeBoldFragment(numCat || "s/n")}*, *${waEscapeBoldFragment(locCat)}*. Te mostramos un *resumen* para confirmar…`,
+      tid,
+      wpid
+    );
+    await geocodeStructuredAddressAndFinalizePedido(
+      phone,
+      nextBase,
+      sk,
+      contactName,
+      ctx,
+      wpid || nextBase.phoneNumberId,
+      locCat,
+      calleCat,
+      numCat || "0",
+      {
+        origenCatalogo: true,
+        stateOrProvince: trimOrNullWhatsapp(nextBase.addrProvincia) || ctx?.geocodeState || "",
+      }
+    );
+    return;
+  }
+
+  nextBase.step = "awaiting_addr_provincia";
+  sessions.set(sk, nextBase);
+  if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, nextBase, sk, contactName, ctx, wpid || nextBase.phoneNumberId)) {
+    return;
+  }
+  await reply(
+    phone,
+    `Listo, tomamos el nombre desde el padrón: *${waEscapeBoldFragment(nuevoNombre)}*.\n\n` + MSG_ADDR_PROVINCIA,
+    tid,
+    wpid
+  );
 }
 
 function botTenantId() {
@@ -1904,6 +2039,20 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
+  if (stepAddr === "awaiting_catalogo_nombre_confirm" || stepAddr === "awaiting_catalogo_nombre_elegir") {
+    sess.ubicacionGpsPin = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await reply(
+      phone,
+      "Recibimos tu *ubicación GPS*; la usaremos más adelante para el mapa. Seguí eligiendo en *texto* el número de la lista o *1*/*2* en la confirmación.\n\n" +
+        `_*menú* = salir · *atrás* = paso anterior_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (stepAddr === "awaiting_suministro_conexion" || stepAddr === "awaiting_suministro_fases") {
     sess.userSharedGps = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
@@ -2510,6 +2659,104 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     return;
   }
 
+  if (sess && sess.step === "awaiting_catalogo_nombre_confirm") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      limpiarEstadoBusquedaNombreCatalogo(sess);
+      sess.step = "awaiting_nombre_persona";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      return;
+    }
+    const opt = interpretaUnoDosCatalogoNombreConfirm(t);
+    if (opt === 1) {
+      const row = Array.isArray(sess.waNombreCatalogoCandidatos) ? sess.waNombreCatalogoCandidatos[0] : null;
+      if (!row) {
+        limpiarEstadoBusquedaNombreCatalogo(sess);
+        sess.step = "awaiting_nombre_persona";
+        sessions.set(sk, sess);
+        await reply(phone, "No pudimos recuperar la fila del padrón. Escribí de nuevo tu *nombre y apellido*.", tid, phoneNumberId);
+        return;
+      }
+      await aplicarMatchCatalogoNombreDesdeRow(phone, sess, sk, contactName, ctx, phoneNumberId || wpid, tid, row);
+      return;
+    }
+    if (opt === 2) {
+      limpiarEstadoBusquedaNombreCatalogo(sess);
+      sess.contactName = String(sess.waNombreCatalogoLibre || t || "").trim() || sess.contactName;
+      sess.addrOrigenPaso = "nombre";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
+        return;
+      }
+      sess.step = "awaiting_addr_provincia";
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Perfecto. Seguimos para ubicar el reclamo con tu nombre y la *dirección*.\n\n" + MSG_ADDR_PROVINCIA,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    await reply(phone, "Respondé con *1* (sí, son mis datos) o *2* (no, no soy yo).", tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_catalogo_nombre_elegir") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      limpiarEstadoBusquedaNombreCatalogo(sess);
+      sess.step = "awaiting_nombre_persona";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      return;
+    }
+    const ning = Number(sess.waNombreCatalogoNingunaNumero);
+    const n = parseInt(t, 10);
+    const rows = Array.isArray(sess.waNombreCatalogoCandidatos) ? sess.waNombreCatalogoCandidatos : [];
+    const maxOp = Number.isFinite(ning) && ning > 0 ? ning : rows.length + 1;
+    if (!Number.isFinite(n) || n < 1 || n > maxOp) {
+      await reply(
+        phone,
+        `Respondé con un *número del 1 al ${maxOp}* (${maxOp} = ninguna de las anteriores).`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const esNinguna =
+      (Number.isFinite(ning) && n === ning) || (!Number.isFinite(ning) && rows.length > 0 && n === rows.length + 1);
+    if (esNinguna) {
+      limpiarEstadoBusquedaNombreCatalogo(sess);
+      sess.contactName = String(sess.waNombreCatalogoLibre || "").trim() || sess.contactName;
+      sess.addrOrigenPaso = "nombre";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, phoneNumberId || wpid)) {
+        return;
+      }
+      sess.step = "awaiting_addr_provincia";
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "No encontré *tus datos* en el padrón con ese nombre.\n\n" + MSG_ADDR_PROVINCIA,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    if (n >= 1 && n <= rows.length) {
+      await aplicarMatchCatalogoNombreDesdeRow(phone, sess, sk, contactName, ctx, phoneNumberId || wpid, tid, rows[n - 1]);
+      return;
+    }
+    await reply(phone, `Respondé con un *número del 1 al ${maxOp}*.`, tid, phoneNumberId);
+    return;
+  }
+
   if (sess && sess.step === "awaiting_nombre_persona") {
     const t = String(text || "").trim();
     if (esComandoAtras(t)) {
@@ -2527,6 +2774,32 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(phone, "El nombre es muy largo. Acortalo un poco.", tid, phoneNumberId);
       return;
     }
+    let busc = { kind: "normal", nombreLibre: t, sinCoincidenciaPadron: false };
+    try {
+      busc = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: t });
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] busqueda nombre socios catálogo", e?.message || e);
+    }
+    if (busc.kind === "confirm_one" && busc.row) {
+      sess.waNombreCatalogoLibre = t;
+      sess.waNombreCatalogoCandidatos = [busc.row];
+      sess.waNombreCatalogoModo = "confirm_one";
+      sess.step = "awaiting_catalogo_nombre_confirm";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, msgConfirmarCatalogoNombreUnSocio(busc.row), tid, phoneNumberId);
+      return;
+    }
+    if (busc.kind === "pick_list" && busc.rows?.length) {
+      sess.waNombreCatalogoLibre = t;
+      sess.waNombreCatalogoCandidatos = busc.rows;
+      sess.waNombreCatalogoNingunaNumero = busc.ningunaNumero;
+      sess.step = "awaiting_catalogo_nombre_elegir";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, msgElegirCatalogoNombreLista(busc.rows, busc.ningunaNumero), tid, phoneNumberId);
+      return;
+    }
     sess.contactName = t;
     sess.addrOrigenPaso = "nombre";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
@@ -2536,7 +2809,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     sess.step = "awaiting_addr_provincia";
     sessions.set(sk, sess);
-    await reply(phone, MSG_ADDR_PROVINCIA, tid, phoneNumberId);
+    const introNoPadron = busc.kind === "normal" && busc.sinCoincidenciaPadron ? "No encontré *tus datos* en el padrón con ese nombre.\n\n" : "";
+    await reply(phone, introNoPadron + MSG_ADDR_PROVINCIA, tid, phoneNumberId);
     return;
   }
 
