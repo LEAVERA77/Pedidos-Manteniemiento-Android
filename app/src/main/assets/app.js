@@ -164,9 +164,11 @@ import {
   etiquetaFamiliaProyeccionLarga
 } from './map.js';
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
+import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
+    window.gnAbrirAsistenteDesdeWizardOLogin = gnAbrirAsistenteDesdeWizardOLogin;
 }
 
 /** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
@@ -2244,6 +2246,7 @@ function cerrarVistaWizardMostrarLogin() {
         actualizarVisibilidadBotonTenantTecnicoLogin();
     } catch (_) {}
 }
+window.cerrarVistaWizardMostrarLogin = cerrarVistaWizardMostrarLogin;
 
 function finalizarOnboardingPrimeraVezGestorNova() {
     try {
@@ -2597,6 +2600,7 @@ function sesionCompletaParaMarcaLogin() {
         return false;
     }
 }
+window.sesionCompletaParaMarcaLogin = sesionCompletaParaMarcaLogin;
 
 /**
  * Login / wizard sin autenticación: título y logo genéricos (sin nombre de tenant anterior en pantalla).
@@ -14546,8 +14550,8 @@ function esEntornoAndroidGestorNovaLogin() {
 function actualizarVisibilidadBotonTenantTecnicoLogin() {
     const b = document.getElementById('btn-login-tenant-tecnico');
     if (!b) return;
-    const show =
-        esEntornoAndroidGestorNovaLogin() && !!document.getElementById('ls')?.classList?.contains('active');
+    const lsActivo = !!document.getElementById('ls')?.classList?.contains('active');
+    const show = lsActivo && (esEntornoAndroidGestorNovaLogin() || esGestorNovaWebPublico());
     b.style.display = show ? 'flex' : 'none';
 }
 
