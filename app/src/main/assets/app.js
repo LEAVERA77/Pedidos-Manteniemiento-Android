@@ -910,10 +910,14 @@ async function initNeon() {
     }
 
     const versions = ['0.10.4', '0.9.5', '0.8.0'];
+    /** Red móvil / WebView: import y primer SQL a Neon pueden superar 12s; esm.sh a veces tarda más que unpkg. */
+    const NEON_IMPORT_MS = 22000;
+    const NEON_PING_MS = 32000;
+    const NEON_PING_INTENTOS = 3;
     const cdnFactories = [
-        (ver) => `https://esm.sh/@neondatabase/serverless@${ver}`,
+        (ver) => `https://unpkg.com/@neondatabase/serverless@${ver}/index.mjs`,
         (ver) => `https://cdn.jsdelivr.net/npm/@neondatabase/serverless@${ver}/+esm`,
-        (ver) => `https://unpkg.com/@neondatabase/serverless@${ver}/index.mjs`
+        (ver) => `https://esm.sh/@neondatabase/serverless@${ver}`,
     ];
     for (const ver of versions) {
         for (const mkUrl of cdnFactories) {
@@ -921,7 +925,7 @@ async function initNeon() {
             try {
                 const mod = await conTimeout(
                     import(sdkUrl),
-                    12000,
+                    NEON_IMPORT_MS,
                     `timeout import SDK ${ver}`
                 );
                 const { neon, neonConfig } = mod;
@@ -936,7 +940,24 @@ async function initNeon() {
                     if (rows && rows.rows) return rows;
                     return { rows: [] };
                 };
-                const test = await conTimeout(_sql('SELECT 1 AS ok'), 12000, 'timeout SELECT 1');
+                let test = null;
+                let pingErr = null;
+                for (let intento = 0; intento < NEON_PING_INTENTOS; intento++) {
+                    if (intento > 0) {
+                        await new Promise((r) => setTimeout(r, 450 + intento * 750));
+                    }
+                    try {
+                        test = await conTimeout(_sql('SELECT 1 AS ok'), NEON_PING_MS, 'timeout SELECT 1');
+                        if (test && Array.isArray(test.rows)) {
+                            pingErr = null;
+                            break;
+                        }
+                        pingErr = new Error('respuesta invalida');
+                    } catch (e) {
+                        pingErr = e;
+                    }
+                }
+                if (pingErr) throw pingErr;
                 if (!test || !Array.isArray(test.rows)) throw new Error('respuesta invalida');
                 NEON_OK = true;
                 console.log(`[neon] SDK ${ver} OK via ${sdkUrl}`);
