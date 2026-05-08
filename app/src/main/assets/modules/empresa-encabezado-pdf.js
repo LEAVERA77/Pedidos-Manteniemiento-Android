@@ -55,6 +55,26 @@ function textoEmailEmpresa(ec) {
     return String(e.email_contacto || e.email || '').trim();
 }
 
+/** Doble raya + filetes cortos a los lados (sin Unicode: evita %P%P en impresión). */
+function pdfDibujarMarquesinaKpi(pdf, x1, x2, yMm) {
+    const w = x2 - x1;
+    const tick = Math.min(5, w * 0.04);
+    pdf.setDrawColor(30, 64, 175);
+    pdf.setLineWidth(0.55);
+    pdf.line(x1, yMm, x2, yMm);
+    pdf.setDrawColor(199, 210, 230);
+    pdf.setLineWidth(0.32);
+    pdf.line(x1, yMm + 0.75, x2, yMm + 0.75);
+    pdf.setLineWidth(0.4);
+    pdf.setDrawColor(30, 64, 175);
+    pdf.line(x1, yMm, x1, yMm + tick);
+    pdf.line(x2, yMm, x2, yMm + tick);
+    pdf.setDrawColor(199, 210, 230);
+    pdf.setLineWidth(0.25);
+    pdf.line(x1, yMm + 0.75, x1, yMm + 0.75 + tick * 0.65);
+    pdf.line(x2, yMm + 0.75, x2, yMm + 0.75 + tick * 0.65);
+}
+
 /**
  * Encabezado A4: opciones o string legacy (solo línea de contexto).
  * variante 'kpi': cinta decorativa + INFORME KPI + domicilio + fecha + contacto.
@@ -74,13 +94,10 @@ export async function pdfEncabezadoEmpresaBloque(pdf, margin, pageW, yStart, opt
     let y = yStart;
 
     if (variante === 'kpi') {
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(30, 58, 138);
-        const rule = '═══════════════════════════════════════';
-        const ruleLines = pdf.splitTextToSize(rule, maxW);
-        pdf.text(ruleLines, margin, y + 4);
-        y += ruleLines.length * 3.5 + 2;
+        const x1 = margin;
+        const x2 = pageW - margin;
+        pdfDibujarMarquesinaKpi(pdf, x1, x2, y + 1);
+        y += 6;
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(11);
         pdf.setTextColor(30, 58, 138);
@@ -98,11 +115,8 @@ export async function pdfEncabezadoEmpresaBloque(pdf, margin, pageW, yStart, opt
         const fechaStr = new Date().toLocaleDateString('es-AR', { dateStyle: 'short' });
         pdf.text(`Fecha: ${fechaStr}`, margin, y + 4);
         y += 6;
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(30, 58, 138);
-        const rule2 = pdf.splitTextToSize(rule, maxW);
-        pdf.text(rule2, margin, y + 4);
-        y += rule2.length * 3.5 + 3;
+        pdfDibujarMarquesinaKpi(pdf, x1, x2, y + 1);
+        y += 6;
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(7.4);
         pdf.setTextColor(71, 85, 105);
