@@ -10,22 +10,9 @@ import {
 import { normalizarRubroCliente } from "../services/tiposReclamo.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantIdentity.js";
+import { requireTechnicianTenantKey, technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
 
 const router = express.Router();
-
-/** Clave en env + header `X-GestorNova-Technician-Key` (solo personal técnico; no va en el repo). */
-function technicianTenantKeyOk(req) {
-  const expected = String(process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY || "").trim();
-  const got = String(req.headers["x-gestornova-technician-key"] || "").trim();
-  return Boolean(expected && got === expected);
-}
-
-function requireTechnicianTenantKey(req, res, next) {
-  if (!technicianTenantKeyOk(req)) {
-    return res.status(403).json({ error: "Operación no permitida" });
-  }
-  return next();
-}
 
 function httpAttachError(status, body) {
   const e = new Error(String(body?.error || "attach"));
@@ -117,22 +104,6 @@ async function runAttachTenantTechnicianCore(uid, oldTid, tid, userRol) {
     message: `Vinculados ${moved} usuario(s) al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
   };
 }
-
-/** Lista `clientes`: solo exige clave técnico (misma confianza que env en servidor). */
-router.get("/technician/tenants", requireTechnicianTenantKey, async (req, res) => {
-  try {
-    const r = await query(
-      `SELECT id, nombre, tipo, COALESCE(activo, TRUE) AS activo
-       FROM clientes
-       ORDER BY id ASC
-       LIMIT 500`
-    );
-    return res.json({ ok: true, clientes: r.rows || [] });
-  } catch (e) {
-    console.error("[setup/technician/tenants]", e);
-    return res.status(500).json({ error: "No se pudo listar clientes", detail: e.message });
-  }
-});
 
 router.post(
   "/technician/attach-tenant",

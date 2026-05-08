@@ -2073,7 +2073,7 @@ async function apiSetupTechnicianFetchTenants(apiToken, techKey) {
     const k = String(techKey || '').trim();
     const headers = { 'X-GestorNova-Technician-Key': k };
     if (apiToken) headers.Authorization = `Bearer ${apiToken}`;
-    const r = await fetch(apiUrl('/api/setup/technician/tenants'), { headers });
+    const r = await fetch(apiUrl('/api/setup/technician/tenants'), { headers, cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
         throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
@@ -2093,6 +2093,7 @@ async function apiSetupTechnicianPostAttach(apiToken, techKey, tenantId, fromTen
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        cache: 'no-store',
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
