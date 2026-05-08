@@ -15699,10 +15699,45 @@ function kpiPdfTruncCell(s, max) {
     return t.slice(0, Math.max(1, max - 1)) + '…';
 }
 
+/** Fuente compacta para tabla KPI en A4 (evita solapamiento entre columnas). */
+const KPI_PDF_TAB_FS = 6.2;
+const KPI_PDF_TAB_HDR_FS = 6.8;
+const KPI_PDF_TAB_LINE_MM = 2.35;
+
+/**
+ * Dibuja una fila de tabla con texto envuelto al ancho de cada columna (no invade la siguiente).
+ * @returns {number} nueva coordenada Y (baseline última línea aprox. + margen).
+ */
+function kpiPdfDibujarFilaTablaKpi(pdf, margin, y, cols, opts) {
+    const lineH = opts?.lineH ?? KPI_PDF_TAB_LINE_MM;
+    const fontSize = opts?.fontSize ?? KPI_PDF_TAB_FS;
+    const bold = !!opts?.bold;
+    const rgb = opts?.rgb ?? (bold ? [30, 41, 59] : [15, 23, 42]);
+    pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+    pdf.setFontSize(fontSize);
+    pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
+    let x = margin;
+    let maxLines = 1;
+    const bloques = cols.map((c) => {
+        const innerW = Math.max(3.5, c.w - 0.45);
+        const raw = String(c.t ?? '').replace(/\s+/g, ' ').trim();
+        const lines = pdf.splitTextToSize(raw, innerW);
+        maxLines = Math.max(maxLines, lines.length || 1);
+        const bx = x;
+        x += c.w;
+        return { bx, lines: lines.length ? lines : [''] };
+    });
+    const y0 = y;
+    bloques.forEach((b) => {
+        b.lines.forEach((line, li) => {
+            pdf.text(line, b.bx, y0 + li * lineH);
+        });
+    });
+    const altura = maxLines * lineH + (opts?.extraBottom ?? 0.9);
+    return y0 + altura;
+}
+
 function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(10);
-    pdf.setTextColor(30, 41, 59);
     const cols = [
         { w: 50, t: 'Métrica' },
         { w: 19, t: 'Desde' },
@@ -15713,15 +15748,16 @@ function kpiPdfDibujarCabeceraTabla(pdf, margin, y) {
         { w: 22, t: 'Alta fecha' },
         { w: 22, t: 'Alta hora' },
     ];
-    let x = margin;
-    cols.forEach(c => {
-        pdf.text(c.t, x, y);
-        x += c.w;
+    const yAfter = kpiPdfDibujarFilaTablaKpi(pdf, margin, y, cols, {
+        bold: true,
+        fontSize: KPI_PDF_TAB_HDR_FS,
+        lineH: KPI_PDF_TAB_LINE_MM,
+        extraBottom: 0.35,
     });
     pdf.setDrawColor(203, 213, 225);
-    pdf.setLineWidth(0.25);
-    pdf.line(margin, y + 1.2, margin + 182, y + 1.2); /* suma anchos ≈ 182 */
-    return y + 5;
+    pdf.setLineWidth(0.22);
+    pdf.line(margin, yAfter + 0.5, margin + 182, yAfter + 0.5);
+    return yAfter + 2.2;
 }
 
 function kpiPdfPiePaginas(pdf) {
@@ -15780,12 +15816,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.text('Informe KPI piloto', margin, y);
         y += 7;
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
+        pdf.setFontSize(8);
         pdf.setTextColor(51, 65, 85);
         const intro = textoBreveInterpretacionKpiPdf(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
-        const lineH = 4.1;
+        const lineH = 3.35;
         for (let li = 0; li < introLines.length; li++) {
             if (y + lineH > pageH - 14) {
                 pdf.addPage();
@@ -15839,39 +15875,37 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.text('Registros (snapshots)', margin, y);
         y += 5;
         y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
-        pdf.setTextColor(15, 23, 42);
-        const rowH = 4.6;
         for (let ri = 0; ri < rows.length; ri++) {
             const row = rows[ri];
-            if (y + rowH > pageH - 14) {
-                pdf.addPage();
-                y = margin + 2;
-                y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
-                pdf.setFont('helvetica', 'normal');
-                pdf.setFontSize(10);
-                pdf.setTextColor(15, 23, 42);
-            }
-            let x = margin;
             const labM = KPI_METRICA_ETIQUETAS[row.metrica] || row.metrica;
             const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
             const al = splitFechaHoraExportAR(row.created_at);
             const cells = [
-                { w: 50, t: kpiPdfTruncCell(labM, 32) },
-                { w: 19, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_inicio), 12) },
-                { w: 19, t: kpiPdfTruncCell(fmtFechaKpiSnapshotCorta(row.periodo_fin), 12) },
-                { w: 13, t: kpiPdfTruncCell(vn, 8) },
-                { w: 17, t: kpiPdfTruncCell(formatearUnidadKpiVista(row.unidad), 10) },
-                { w: 20, t: kpiPdfTruncCell(row.fuente || '', 12) },
-                { w: 22, t: kpiPdfTruncCell(al.fecha, 14) },
-                { w: 22, t: kpiPdfTruncCell(al.hora, 8) },
+                { w: 50, t: labM },
+                { w: 19, t: fmtFechaKpiSnapshotCorta(row.periodo_inicio) || '—' },
+                { w: 19, t: fmtFechaKpiSnapshotCorta(row.periodo_fin) || '—' },
+                { w: 13, t: vn },
+                { w: 17, t: formatearUnidadKpiVista(row.unidad) || '—' },
+                { w: 20, t: row.fuente || '' },
+                { w: 22, t: al.fecha || '' },
+                { w: 22, t: al.hora || '' },
             ];
-            cells.forEach(c => {
-                pdf.text(c.t, x, y);
-                x += c.w;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(KPI_PDF_TAB_FS);
+            const estMetric = pdf.splitTextToSize(String(labM).trim(), 49.55).length || 1;
+            const rowEstH = estMetric * KPI_PDF_TAB_LINE_MM + 1.35;
+            if (y + rowEstH > pageH - 14) {
+                pdf.addPage();
+                y = margin + 2;
+                y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
+            }
+            y = kpiPdfDibujarFilaTablaKpi(pdf, margin, y, cells, {
+                bold: false,
+                fontSize: KPI_PDF_TAB_FS,
+                lineH: KPI_PDF_TAB_LINE_MM,
+                extraBottom: 0.25,
+                rgb: [15, 23, 42],
             });
-            y += rowH;
         }
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
