@@ -74,6 +74,10 @@ const EXPLICACION_METRICA = {
     tiempo_respuesta_medio_horas:
         'Promedio de horas entre el ingreso del reclamo y la primera respuesta operativa registrada.',
     avance_medio_pct: 'Promedio del avance declarado en trabajos en curso o recientes en el periodo.',
+    saifi_indice: 'SAIFI: frecuencia equivalente de interrupciones del servicio eléctrico en el periodo.',
+    saidi_minutos: 'SAIDI: duración equivalente de interrupciones (minutos) en el periodo.',
+    pct_bacheo_resuelto_48h: 'Porcentaje de reclamos de bacheo resueltos en menos de 48 horas.',
+    pct_alumbrado_repuesto_24h: 'Porcentaje de reclamos de alumbrado resueltos en menos de 24 horas.',
 };
 
 /**

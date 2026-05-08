@@ -11,7 +11,7 @@ async function pedidoContadorHasTenantId() {
 }
 
 /**
- * Reserva el siguiente `numero_pedido` visible (formato AÑO-NNNN, sin prefijo PM-).
+ * Reserva el siguiente `numero_pedido` visible (formato AÑO-NNNNN por tenant/año, sin prefijo PM-).
  * Compatible con esquema legacy (solo `anio` PK global) hasta aplicar migración `pedido_contador_tenant_id.sql`.
  * @param {number} tenantId
  * @returns {Promise<string>}
@@ -38,7 +38,7 @@ export async function allocarSiguienteNumeroPedido(tenantId) {
     );
     const row = rCont.rows?.[0];
     if (!row) throw new Error("contador_pedido");
-    return `${row.anio}-${String(row.ultimo_numero).padStart(4, "0")}`;
+    return `${row.anio}-${String(row.ultimo_numero).padStart(5, "0")}`;
   }
 
   await query(
@@ -54,5 +54,5 @@ export async function allocarSiguienteNumeroPedido(tenantId) {
   );
   const row = rCont.rows?.[0];
   if (!row) throw new Error("contador_pedido");
-  return `${row.anio}-${String(row.ultimo_numero).padStart(4, "0")}`;
+  return `${row.anio}-${String(row.ultimo_numero).padStart(5, "0")}`;
 }

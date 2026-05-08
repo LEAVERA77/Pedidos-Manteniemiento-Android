@@ -110,6 +110,15 @@ export function toast(msg, tipo = 'info', durationMs) {
     }, dur);
 }
 
+/** Cierra el modal de detalle de pedido (#dm) si está abierto (p. ej. antes de imprimir / exportar). */
+export function gnCerrarModalPedidoDetalleSiAbierto() {
+    try {
+        if (typeof window.__gnCerrarModalPedidoDetalleSiAbierto === 'function') {
+            window.__gnCerrarModalPedidoDetalleSiAbierto();
+        }
+    } catch (_) {}
+}
+
 if (typeof window !== 'undefined') {
     window.toast = toast;
 }

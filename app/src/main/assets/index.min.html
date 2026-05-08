@@ -887,7 +887,7 @@
       </div>
     </div>
     <div id="admin-kpi" class="admin-section">
-      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Indicadores para <strong>piloto comercial</strong> o reportes. Elegí un tipo abajo y completá fechas y números; no hace falta saber claves técnicas. Los datos quedan asociados al <code style="font-size:.78rem">tenant_id</code> de esta sesión. Si falta la tabla en Neon, ejecutá <code style="font-size:.78rem">docs/NEON_kpi_snapshots.sql</code>.</p>
+      <div id="kpi-admin-intro-rubro"></div>
       <div id="kpi-snapshots-sin-tabla" style="display:none;padding:.85rem;background:#fff7ed;border:1px solid #fdba74;border-radius:.5rem;font-size:.82rem;color:#9a3412;margin-bottom:1rem"></div>
       <div id="kpi-snapshots-form-wrap" style="display:none">
         <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0 0 .75rem">Nuevo registro o actualizar</h3>
@@ -897,21 +897,11 @@
             <label for="kpi-preset">¿Qué indicador querés cargar?</label>
             <select id="kpi-preset" onchange="aplicarKpiPresetAdmin()">
               <option value="">— Elegí una opción —</option>
-              <option value="pct_cierres_con_foto">Porcentaje de cierres con foto</option>
-              <option value="reclamos_cerrados">Cantidad de reclamos cerrados en el periodo</option>
-              <option value="reclamos_recibidos">Cantidad de reclamos recibidos (nuevos) en el periodo</option>
-              <option value="tiempo_respuesta_horas">Tiempo medio de respuesta (horas)</option>
-              <option value="satisfaccion_pct">Satisfacción / opiniones positivas (%)</option>
-              <option value="avance_medio">Avance medio de trabajos (%)</option>
-              <option value="avanzado">Otro — modo avanzado (clave técnica)</option>
             </select>
             <p id="kpi-preset-ayuda" class="kpi-preset-hint" style="display:none"></p>
           </div>
           <input type="hidden" id="kpi-metrica" value="" maxlength="100" autocomplete="off">
-          <div class="full" id="kpi-wrap-metrica-avanzada" style="display:none">
-            <label for="kpi-metrica-visible">Clave interna de la métrica</label>
-            <input id="kpi-metrica-visible" type="text" placeholder="solo letras, números, punto, guión y _" maxlength="100" autocomplete="off" oninput="syncKpiMetricaAvanzadaAdmin()">
-          </div>
+          <input type="hidden" id="kpi-metrica-visible" value="" maxlength="100" autocomplete="off">
           <div><label for="kpi-desde">Periodo desde</label><input id="kpi-desde" type="date"></div>
           <div><label for="kpi-hasta">Periodo hasta</label><input id="kpi-hasta" type="date"></div>
           <div class="full kpi-neon-calc-wrap" id="kpi-neon-calc-wrap" style="display:none">
@@ -954,15 +944,6 @@
               <option value="__custom">Otra (escribir)…</option>
             </select>
             <input id="kpi-unidad-custom" type="text" placeholder="Ej. minutos" maxlength="32" style="display:none;width:100%;margin-top:.4rem" autocomplete="off">
-          </div>
-          <div><label for="kpi-fuente">Origen del dato</label>
-            <select id="kpi-fuente">
-              <option value="manual">Lo cargo yo en este formulario</option>
-              <option value="computed_batch">Cálculo automático / lote</option>
-              <option value="sql_report">Informe o consulta SQL</option>
-              <option value="import">Importación (Excel, etc.)</option>
-              <option value="api">Sistema externo (API)</option>
-            </select>
           </div>
           <div class="full admin-kpi-advanced" id="kpi-json-advanced-wrap" style="display:none">
             <details>

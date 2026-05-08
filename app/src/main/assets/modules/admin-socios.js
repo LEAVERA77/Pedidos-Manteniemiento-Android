@@ -2108,7 +2108,7 @@ function mostrarFormatoExcelSocios() {
     const wrap = document.createElement('div');
     wrap.id = 'modal-formato-excel-socios';
     wrap.style.cssText =
-        'position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)';
+        'position:fixed;inset:0;z-index:100080;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)';
     wrap.setAttribute('role', 'dialog');
     wrap.setAttribute('aria-modal', 'true');
     wrap.innerHTML =

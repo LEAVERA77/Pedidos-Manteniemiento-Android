@@ -34,7 +34,8 @@ import {
     mensajeErrorUsuario,
     toastError,
     escHtmlPrint,
-    toast
+    toast,
+    gnCerrarModalPedidoDetalleSiAbierto,
 } from './modules/ui-utils.js';
 import {
     quitarMovil9Tras54Digitos,
@@ -59,6 +60,9 @@ import {
     refreshDerivacionListaWaButtons,
 } from './modules/derivaciones-reclamos-admin.js';
 import { initAdminHistoricosPanel } from './modules/admin-historicos.js';
+import { initDashboardGerenciaModalDrag } from './modules/dashboard-gerencia.js';
+import { syncKpiAdminRubroDom } from './modules/kpi-admin-rubro-ui.js';
+import { bp2OcultarHistoricosResueltosActivo } from './modules/vaciado-quincenal.js';
 import {
     sqlMotivosDesestimacion,
     datasetsTiposTrabajoConDesestimados,
@@ -6240,6 +6244,7 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-capas-osm'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-coords-converter'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
+    try { initDashboardGerenciaModalDrag(); } catch (_) {}
     try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaCapasOsmCheckboxesFromStorage(); } catch (_) {}
     try { initAdminOsmCapasPanelBindings(); } catch (_) {}
@@ -12211,6 +12216,7 @@ window.copiarTexto = function(texto) {
 // Movido a modules/export-excel.js: arrayBufferToBase64, textToBase64, guardarArchivoAndroid, dl, exportarCSV, runExportPedidosExcelCsv.
 
 function exportPedido(pedidos, nombre) {
+    gnCerrarModalPedidoDetalleSiAbierto();
     runExportPedidosExcelCsv(pedidos, nombre, {
         proyectarCoordPedido,
         etiquetaZonaPedido,
@@ -12457,6 +12463,12 @@ function closeAll() {
         ui.className = 'ud';
     }
 }
+
+window.__gnCerrarModalPedidoDetalleSiAbierto = () => {
+    try {
+        if (document.getElementById('dm')?.classList.contains('active')) closeAll();
+    } catch (_) {}
+};
 
 function togglePanel() {
     document.getElementById('bp2').classList.toggle('col');
@@ -14463,10 +14475,16 @@ function pedidosVisiblesEnUI() {
         esTecnicoOSupervisor() && leerVerTodosPedidosTecnico();
     const chkDes =
         esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
+    const ocultarHistBp2 = esAdmin() && bp2OcultarHistoricosResueltosActivo();
     return (app.p || []).filter((p) => {
         if (!relaxRubroLista && !pedidoVisibleSegunRubro(p)) return false;
         if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
         if (String(p.es || '') === 'Desestimado' && !chkDes) return false;
+        if (ocultarHistBp2) {
+            const es = String(p.es || '');
+            if (es === 'Cerrado' || es === 'Desestimado' || es === 'Derivado externo') return false;
+            if (p.dex === true || p.dex === 1) return false;
+        }
         return true;
     });
 }
@@ -14505,6 +14523,9 @@ function aplicarEtiquetasPorTipo(tipo) {
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
+    } catch (_) {}
+    try {
+        syncKpiAdminRubroDom();
     } catch (_) {}
 }
 
@@ -14894,19 +14915,33 @@ const KPI_ADMIN_PRESET_META = {
         valorAyuda:
             'Con «Calcular desde datos del sistema» se usan opinion_cliente_estrellas en el rango de fecha_opinion_cliente.',
     },
-    avance_medio: {
-        metrica: 'avance_medio_pct',
+    saifi: {
+        metrica: 'saifi_indice',
+        detail: 'none',
+        unidad: 'proporción',
+        hint: 'SAIFI: índice de frecuencia de interrupciones del servicio eléctrico en el periodo (definición operativa de la cooperativa).',
+        valorAyuda: 'Cargá el valor principal a mano según tu informe de calidad de suministro.',
+    },
+    saidi: {
+        metrica: 'saidi_minutos',
+        detail: 'none',
+        unidad: 'minutos',
+        hint: 'SAIDI: duración equivalente de interrupciones en minutos (criterio de la cooperativa).',
+        valorAyuda: 'Cargá el valor principal a mano según tu informe.',
+    },
+    pct_bacheo_48h: {
+        metrica: 'pct_bacheo_resuelto_48h',
         detail: 'none',
         unidad: 'porcentaje',
-        hint: 'Promedio del campo avance (%) en pedidos cerrados en el periodo.',
-        valorAyuda: 'Se puede calcular automáticamente desde Neon con el botón de abajo.',
+        hint: 'Porcentaje de reclamos de bacheo resueltos en menos de 48 h (desde alta hasta cierre).',
+        valorAyuda: 'Completá el % según tus datos municipales o el valor principal a mano.',
     },
-    avanzado: {
-        metrica: '',
-        detail: 'advanced',
-        unidad: '',
-        hint: 'Para una clave nueva o datos extra en JSON. El resto del equipo puede usar las opciones de arriba.',
-        valorAyuda: '',
+    pct_alumbrado_24h: {
+        metrica: 'pct_alumbrado_repuesto_24h',
+        detail: 'none',
+        unidad: 'porcentaje',
+        hint: 'Porcentaje de reclamos de alumbrado público resueltos en menos de 24 h.',
+        valorAyuda: 'Completá el % según tus datos municipales o el valor principal a mano.',
     },
 };
 
@@ -14916,7 +14951,10 @@ const KPI_METRICA_ETIQUETAS = {
     reclamos_recibidos_count: 'Reclamos recibidos',
     tiempo_respuesta_medio_horas: 'Tiempo medio respuesta (h)',
     satisfaccion_pct: 'Satisfacción (WA 1–5★ → %)',
-    avance_medio_pct: 'Avance medio trabajos',
+    saifi_indice: 'SAIFI (índice)',
+    saidi_minutos: 'SAIDI (minutos)',
+    pct_bacheo_resuelto_48h: '% bacheo resuelto <48 h',
+    pct_alumbrado_repuesto_24h: '% alumbrado repuesto <24 h',
 };
 
 function normalizarUnidadKpiParaGuardar(raw) {
@@ -14992,8 +15030,8 @@ function aplicarKpiPresetAdmin() {
         const lbl = document.getElementById('kpi-det-conteo-label');
         if (lbl && meta.conteoLabel) lbl.textContent = meta.conteoLabel;
     }
-    if (wrapAdvMet) wrapAdvMet.style.display = preset === 'avanzado' ? 'block' : 'none';
-    if (wrapJsonAdv) wrapJsonAdv.style.display = preset === 'avanzado' ? 'block' : 'none';
+    if (wrapAdvMet) wrapAdvMet.style.display = 'none';
+    if (wrapJsonAdv) wrapJsonAdv.style.display = 'none';
     const wrapSatWa = document.getElementById('kpi-detail-satisfaccion-wa');
     if (wrapSatWa) wrapSatWa.style.display = meta.detail === 'satisfaccion_wa' ? 'block' : 'none';
     const wrapNeonCalc = document.getElementById('kpi-neon-calc-wrap');
@@ -15004,18 +15042,13 @@ function aplicarKpiPresetAdmin() {
             'reclamos_recibidos',
             'tiempo_respuesta_horas',
             'satisfaccion_pct',
-            'avance_medio',
         ]);
         wrapNeonCalc.style.display = calcPresets.has(preset) ? 'block' : 'none';
     }
     const visMet = document.getElementById('kpi-metrica-visible');
-    if (preset === 'avanzado') {
-        if (hiddenM) hiddenM.value = (visMet?.value || '').trim();
-    } else {
-        if (hiddenM) hiddenM.value = meta.metrica || '';
-        if (visMet) visMet.value = '';
-    }
-    if (preset !== 'avanzado') {
+    if (hiddenM) hiddenM.value = meta.metrica || '';
+    if (visMet) visMet.value = '';
+    {
         const ta = document.getElementById('kpi-json');
         if (ta) ta.value = '';
     }
@@ -15034,8 +15067,8 @@ window.kpiAdminRellenarDesdeNeon = async function kpiAdminRellenarDesdeNeon() {
         return;
     }
     const preset = (document.getElementById('kpi-preset')?.value || '').trim();
-    if (!preset || preset === 'avanzado') {
-        toast('Elegí un tipo de indicador (no «avanzado»).', 'warning');
+    if (!preset) {
+        toast('Elegí un tipo de indicador.', 'warning');
         return;
     }
     const desde = (document.getElementById('kpi-desde')?.value || '').trim();
@@ -15049,8 +15082,6 @@ window.kpiAdminRellenarDesdeNeon = async function kpiAdminRellenarDesdeNeon() {
         return;
     }
     const tsql = await pedidosFiltroTenantSql();
-    const fu = document.getElementById('kpi-fuente');
-    if (fu) fu.value = 'computed_batch';
     const round2 = (x) => Math.round(Number(x) * 100) / 100;
     try {
         if (preset === 'pct_cierres_con_foto') {
@@ -15171,24 +15202,6 @@ window.kpiAdminRellenarDesdeNeon = async function kpiAdminRellenarDesdeNeon() {
             toast(`Satisfacción ≈ ${pct}% (${n} resp., promedio ${round2(prom)}★)`, 'success');
             return;
         }
-        if (preset === 'avance_medio') {
-            const r = await sqlSimple(
-                `SELECT COALESCE(AVG(avance::double precision), 0) AS m
-                 FROM pedidos WHERE estado = 'Cerrado' AND fecha_cierre IS NOT NULL
-                 AND fecha_cierre::date >= ${esc(desde)}::date AND fecha_cierre::date <= ${esc(hasta)}::date
-                 ${tsql}`
-            );
-            let m = Number(r.rows?.[0]?.m);
-            if (!Number.isFinite(m) || m <= 0) {
-                toast('No hay cierres con avance en ese periodo.', 'warning');
-                return;
-            }
-            m = round2(m);
-            const v = document.getElementById('kpi-valor');
-            if (v) v.value = String(m).replace('.', ',');
-            toast(`Avance medio en cierres: ${m}%`, 'success');
-            return;
-        }
     } catch (e) {
         toastError('kpi-calc-neon', e);
     }
@@ -15224,8 +15237,6 @@ function limpiarFormKpiSnapshotAdmin() {
     const unidad = document.getElementById('kpi-unidad');
     if (unidad) unidad.value = '';
     aplicarKpiPresetAdmin();
-    const fu = document.getElementById('kpi-fuente');
-    if (fu) fu.value = 'manual';
 }
 window.limpiarFormKpiSnapshotAdmin = limpiarFormKpiSnapshotAdmin;
 
@@ -15479,17 +15490,16 @@ async function guardarKpiSnapshotAdmin() {
         toast('Elegí qué tipo de indicador vas a cargar.', 'warning');
         return;
     }
-    if (preset === 'avanzado') syncKpiMetricaAvanzadaAdmin();
     const desde = (document.getElementById('kpi-desde')?.value || '').trim();
     const hasta = (document.getElementById('kpi-hasta')?.value || '').trim();
     let valStr = (document.getElementById('kpi-valor')?.value || '').trim();
     const unidad = normalizarUnidadKpiParaGuardar(leerUnidadKpiAdmin());
-    const fuente = (document.getElementById('kpi-fuente')?.value || 'manual').trim();
+    const fuente = 'computed_batch';
     const notas = (document.getElementById('kpi-notas')?.value || '').trim();
     const jsonRaw = (document.getElementById('kpi-json')?.value || '').trim();
     const metrica = (document.getElementById('kpi-metrica')?.value || '').trim();
     if (!metrica || !desde || !hasta) {
-        toast('Falta la clave de la métrica o las fechas. Si usás «Otro — avanzado», completá la clave interna.', 'warning');
+        toast('Falta la clave de la métrica o las fechas.', 'warning');
         return;
     }
     if (!/^[a-zA-Z0-9._-]{1,100}$/.test(metrica)) {
@@ -15500,16 +15510,11 @@ async function guardarKpiSnapshotAdmin() {
         toast('«Desde» no puede ser posterior a «Hasta».', 'warning');
         return;
     }
-    const fuentesOk = ['manual', 'computed_batch', 'sql_report', 'import', 'api'];
-    if (!fuentesOk.includes(fuente)) {
-        toast('Fuente no válida.', 'warning');
-        return;
-    }
     if (document.getElementById('kpi-unidad')?.value === '__custom' && !unidad) {
         toast('Escribí la unidad personalizada o elegí otra opción.', 'warning');
         return;
     }
-    const meta = KPI_ADMIN_PRESET_META[preset];
+    const meta = KPI_ADMIN_PRESET_META[preset] || KPI_ADMIN_PRESET_META[''];
     let valorJson = {};
     if (preset === 'pct_cierres_con_foto') {
         const cf = parseInt(document.getElementById('kpi-det-con-foto')?.value, 10);
@@ -15540,20 +15545,9 @@ async function guardarKpiSnapshotAdmin() {
             toast('Completá la cantidad o el valor principal.', 'warning');
             return;
         }
-    } else if (preset === 'avanzado') {
-        if (jsonRaw) {
-            try {
-                valorJson = JSON.parse(jsonRaw);
-                if (valorJson === null || typeof valorJson !== 'object' || Array.isArray(valorJson)) {
-                    toast('El JSON debe ser un objeto { ... }.', 'warning');
-                    return;
-                }
-            } catch (_) {
-                toast('JSON inválido.', 'error');
-                return;
-            }
-        }
-    } else if (['tiempo_respuesta_horas', 'satisfaccion_pct', 'avance_medio'].includes(preset)) {
+    } else if (
+        ['tiempo_respuesta_horas', 'satisfaccion_pct', 'saifi', 'saidi', 'pct_bacheo_48h', 'pct_alumbrado_24h'].includes(preset)
+    ) {
         if (valStr === '') {
             toast('Completá el valor principal.', 'warning');
             return;
@@ -15778,6 +15772,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         toast('Solo administrador', 'error');
         return;
     }
+    gnCerrarModalPedidoDetalleSiAbierto();
     if (modoOffline || !NEON_OK) {
         toast('Requiere conexión', 'error');
         return;
@@ -15955,7 +15950,12 @@ function adminTab(tab) {
     const sec = document.getElementById('admin-' + tab);
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') cargarEstadisticas();
-    if (tab === 'kpi') void cargarKpiSnapshotsAdmin();
+    if (tab === 'kpi') {
+        try {
+            syncKpiAdminRubroDom();
+        } catch (_) {}
+        void cargarKpiSnapshotsAdmin();
+    }
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
     if (tab === 'socios') {
@@ -17049,6 +17049,7 @@ window.aplicarFiltroDiaEstadisticas = aplicarFiltroDiaEstadisticas;
 // escapeCsvCeldaPedidos, splitFechaHoraExportAR → modules/export-excel.js (import arriba).
 
 async function exportarPedidosCsvAdmin() {
+    gnCerrarModalPedidoDetalleSiAbierto();
     if (!esAdmin()) {
         toast('Solo administradores pueden exportar el listado.', 'error');
         return;
@@ -19630,6 +19631,7 @@ if ('serviceWorker' in navigator) {
 
 // ── Descargar gráfico como PNG ────────────────────────────────
 function descargarGrafico(canvasId, nombre) {
+    gnCerrarModalPedidoDetalleSiAbierto();
     const canvas = document.getElementById(canvasId);
     if (!canvas) { toast('Gráfico no disponible', 'error'); return; }
     try {

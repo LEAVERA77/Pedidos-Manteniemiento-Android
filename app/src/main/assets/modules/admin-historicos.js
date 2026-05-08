@@ -1,12 +1,49 @@
 /**
  * Admin → pestaña Históricos: reclamos resueltos (Cerrado, Desestimado, Derivado externo), filtros y enlace a detalle (#dm).
  */
-import { runQuincenaHistCheck, marcarVaciadoQuincenaHecho } from './vaciado-quincenal.js';
+import {
+    runQuincenaHistCheck,
+    marcarVaciadoQuincenaHecho,
+    desactivarOcultarHistoricosResueltosBp2,
+} from './vaciado-quincenal.js';
 
 function _tidTenant() {
     const u = window.app?.u;
     const n = Number(u?.tenant_id ?? u?.tenantId);
     return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function _rubroHist() {
+    const fn = window.normalizarRubroEmpresa;
+    if (typeof fn === 'function') return fn(window.EMPRESA_CFG?.tipo) || '';
+    const t = String(window.EMPRESA_CFG?.tipo || '').toLowerCase();
+    if (t === 'municipio') return 'municipio';
+    if (t.includes('agua')) return 'cooperativa_agua';
+    if (t.includes('electric')) return 'cooperativa_electrica';
+    return '';
+}
+
+function _labelsHistoricosRubro() {
+    const r = _rubroHist();
+    if (r === 'municipio') {
+        return {
+            idFiltro: 'ID vecino / N° pedido',
+            colId: 'ID vecino',
+            tipoPh: 'Ej. Alumbrado*',
+        };
+    }
+    if (r === 'cooperativa_agua') {
+        return {
+            idFiltro: 'N° socio / medidor / N° pedido',
+            colId: 'N° Socio / Medidor',
+            tipoPh: 'Ej. Rotura de cañería*',
+        };
+    }
+    return {
+        idFiltro: 'NIS / medidor / N° pedido',
+        colId: 'NIS / Medidor',
+        tipoPh: 'Ej. Corte de Energía*',
+    };
 }
 
 function _esHistorico(p) {
@@ -184,6 +221,7 @@ export function initAdminHistoricosPanel(deps) {
     if (!root || root.dataset.gnHistInit === '1') return;
     root.dataset.gnHistInit = '1';
 
+    const L = _labelsHistoricosRubro();
     root.innerHTML = `
       <p style="font-size:.78rem;color:var(--tl);margin:0 0 .75rem;line-height:1.45">
         Reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> del tenant actual (misma fuente que el mapa y la lista principal). No se borran datos en el servidor.
@@ -191,7 +229,7 @@ export function initAdminHistoricosPanel(deps) {
       <div class="gn-admin-hist-filtros" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
         <div><label for="gn-hist-f-desde" style="font-size:.72rem;color:var(--tm)">Fecha creación desde</label><br><input type="date" id="gn-hist-f-desde" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-f-hasta" style="font-size:.72rem;color:var(--tm)">Fecha creación hasta</label><br><input type="date" id="gn-hist-f-hasta" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
-        <div><label for="gn-hist-id" style="font-size:.72rem;color:var(--tm)">ID / NIS / N° pedido</label><br><input type="text" id="gn-hist-id" placeholder="Texto parcial" style="margin-top:.2rem;min-width:8rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div><label for="gn-hist-id" id="gn-hist-id-lbl" style="font-size:.72rem;color:var(--tm)">${_esc(L.idFiltro)}</label><br><input type="text" id="gn-hist-id" placeholder="Texto parcial" style="margin-top:.2rem;min-width:8rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-estado" style="font-size:.72rem;color:var(--tm)">Estado</label><br>
           <select id="gn-hist-estado" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem">
             <option value="todos">Todos</option>
@@ -200,11 +238,12 @@ export function initAdminHistoricosPanel(deps) {
             <option value="Derivado externo">Derivado externo</option>
           </select>
         </div>
-        <div style="flex:1;min-width:10rem"><label for="gn-hist-tipo" style="font-size:.72rem;color:var(--tm)">Tipo reclamo (<code>*</code> <code>?</code>)</label><br><input type="text" id="gn-hist-tipo" placeholder="Ej. Alumbrado*" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div style="flex:1;min-width:10rem"><label for="gn-hist-tipo" style="font-size:.72rem;color:var(--tm)">Tipo reclamo (<code>*</code> <code>?</code>)</label><br><input type="text" id="gn-hist-tipo" placeholder="${_esc(L.tipoPh)}" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
         <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a pedir pedidos al servidor si hay API"><i class="fas fa-sync"></i> Recargar lista</button>
         <button type="button" class="btn-sm" id="gn-hist-quincena" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e" title="Actualiza el recordatorio quincenal (no borra Neon)"><i class="fas fa-calendar-check"></i> Marcar recordatorio quincenal</button>
+        <button type="button" class="btn-sm" id="gn-hist-mostrar-bp2" style="background:var(--bg);border:1px solid var(--bo);color:var(--tm)" title="Vuelve a mostrar cerrados/desestimados/derivados en el panel de pedidos">Mostrar históricos en panel pedidos</button>
       </div>
       <div style="overflow:auto;max-height:min(62vh,560px);border:1px solid var(--bo);border-radius:.5rem">
         <table class="gn-admin-hist-table" style="width:100%;border-collapse:collapse;font-size:.8rem">
@@ -218,7 +257,7 @@ export function initAdminHistoricosPanel(deps) {
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Prioridad</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Nombre</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Dirección</th>
-              <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">ID / NIS / med.</th>
+              <th id="gn-hist-th-idcol" style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">${_esc(L.colId)}</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Agr.</th>
             </tr>
           </thead>
@@ -263,6 +302,16 @@ export function initAdminHistoricosPanel(deps) {
     });
     root.querySelector('#gn-hist-quincena')?.addEventListener('click', () => {
         marcarVaciadoQuincenaHecho(toast);
+        try {
+            if (typeof window.render === 'function') window.render();
+        } catch (_) {}
+    });
+    root.querySelector('#gn-hist-mostrar-bp2')?.addEventListener('click', () => {
+        desactivarOcultarHistoricosResueltosBp2();
+        if (typeof toast === 'function') toast('Listo: volvés a ver los históricos en el panel de pedidos.', 'success', 3200);
+        try {
+            if (typeof window.render === 'function') window.render();
+        } catch (_) {}
     });
 
     window.__gnAdminHistoricosRefresh = render;
@@ -279,6 +328,13 @@ export function initAdminHistoricosPanel(deps) {
         if (root.dataset.gnHistTid !== tidNow) {
             root.dataset.gnHistTid = tidNow;
         }
+        const L2 = _labelsHistoricosRubro();
+        const lbl = root.querySelector('#gn-hist-id-lbl');
+        if (lbl) lbl.textContent = L2.idFiltro;
+        const th = root.querySelector('#gn-hist-th-idcol');
+        if (th) th.textContent = L2.colId;
+        const tipoInp = root.querySelector('#gn-hist-tipo');
+        if (tipoInp) tipoInp.placeholder = L2.tipoPh;
         render();
     };
 }

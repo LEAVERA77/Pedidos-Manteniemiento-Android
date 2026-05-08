@@ -31,7 +31,7 @@ export async function openAdminUsuarioWhatsappModal(p) {
     const wrap = document.createElement('div');
     wrap.id = MODAL_ID;
     wrap.style.cssText =
-        'position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:1rem';
+        'position:fixed;inset:0;z-index:100080;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:1rem';
     wrap.innerHTML = `
 <div style="background:var(--bg,#fff);color:var(--tm,#0f172a);max-width:420px;width:100%;border-radius:.65rem;box-shadow:0 20px 50px rgba(0,0,0,.2);padding:1.1rem 1.15rem;font-size:.9rem">
   <div style="font-weight:700;margin-bottom:.35rem">WhatsApp del usuario</div>
