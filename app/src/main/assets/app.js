@@ -14666,8 +14666,8 @@ async function mttAndroidVincularTenant() {
                 }
             } catch (_) {}
         }
-        _mttAndroidSetMsg(j.message || 'Vinculado.', false);
-        toast(j.message || 'Tenant vinculado. Recargando…', 'success');
+        _mttAndroidSetMsg([j.message, j.hint_admin_creado].filter(Boolean).join(' ') || 'Vinculado.', false);
+        toast([j.message, j.hint_admin_creado].filter(Boolean).join(' ') || 'Tenant vinculado. Recargando…', 'success');
         __mttAndroidStagingToken = '';
         cerrarModalTenantTecnicoAndroid();
         setTimeout(() => {
