@@ -210,20 +210,36 @@ async function wizardTecnicoVincularTenantSeleccionado() {
     _wizardTecnicoSetMsg('Vinculando…', false);
     try {
         const j = await req().apiSetupTechnicianPostAttach(token, k, tid);
+        let tidShow = tid;
         if (j.token) {
             req().app.apiToken = String(j.token);
             try {
                 localStorage.setItem('pmg_api_token', req().app.apiToken);
             } catch (_) {}
-            if (req().app.u) {
-                req().app.u.tenant_id = tid;
+            const tidApi = Number(j.tenant_id);
+            const tidOk = Number.isFinite(tidApi) && tidApi > 0 ? tidApi : tid;
+            tidShow = tidOk;
+            const pl =
+                typeof req().parseJwtPayloadLoose === 'function' ? req().parseJwtPayloadLoose(j.token) : null;
+            const uidJwt = pl ? Number(pl.userId ?? pl.sub) : NaN;
+            if (!req().app?.u && Number.isFinite(uidJwt) && uidJwt > 0 && pl) {
+                req().app.u = {
+                    id: uidJwt,
+                    email: String(pl.email || ''),
+                    nombre: String(pl.nombre || ''),
+                    rol: typeof req().normalizarRolStr === 'function' ? req().normalizarRolStr(pl.rol || '') : String(pl.rol || ''),
+                    tenant_id: tidOk,
+                    activo: true,
+                };
+            } else if (req().app?.u) {
+                req().app.u.tenant_id = tidOk;
                 try {
                     delete req().app.u.tenantId;
                 } catch (_) {}
-                try {
-                    localStorage.setItem('pmg', JSON.stringify(req().app.u));
-                } catch (_) {}
             }
+            try {
+                if (req().app?.u) localStorage.setItem('pmg', JSON.stringify(req().app.u));
+            } catch (_) {}
             try {
                 req().limpiarLocalStorageContadoresPedido();
             } catch (_) {}
@@ -232,12 +248,12 @@ async function wizardTecnicoVincularTenantSeleccionado() {
             } catch (_) {}
             try {
                 if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
-                    AndroidSession.setTenantId(tid);
+                    AndroidSession.setTenantId(tidOk);
                 }
             } catch (_) {}
         }
         const tEl = document.getElementById('cfgi-tenant');
-        if (tEl) tEl.textContent = 'tenant_id: ' + tid;
+        if (tEl) tEl.textContent = 'tenant_id: ' + tidShow;
         _wizardTecnicoSetMsg(j.message || 'Vinculado. Podés seguir el wizard o recargar la página.', false);
         toast(j.message || 'Tenant vinculado correctamente.', 'success');
     } catch (e) {
@@ -555,13 +571,8 @@ async function guardarConfiguracionInicialObligatoria() {
     const firmaWiz = req().firmaIdentidadTenant(nombre, tipo);
     const firmaAnt = req().leerFirmaIdentidadAlmacenada();
     if (firmaWiz !== firmaAnt && req().esAdmin()) {
-        if (req().NEON_OK && typeof req().sqlSimple === 'function') {
-            try {
-                await req().vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
-            } catch (e) {
-                console.warn('[wizard] vaciar socios_catalogo', e);
-            }
-        }
+        // Nunca vaciar socios_catalogo desde el wizard (vincular tenant + finalizar): borraba el catálogo del
+        // tenant actual cuando la firma local no coincidía aún con nombre/tipo del formulario.
         req().vaciarDerivacionesTercerosFormularioAdmin();
     }
     try {
