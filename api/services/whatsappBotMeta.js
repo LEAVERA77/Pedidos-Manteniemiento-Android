@@ -72,6 +72,7 @@ import {
   setGlobalBotActiveDb,
   isPhoneWhatsappHumanChatDirect,
 } from "./globalBotState.js";
+// Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
   catalogoNombreRowToIdentidadRes,

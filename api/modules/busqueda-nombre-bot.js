@@ -1,9 +1,16 @@
 /**
  * Búsqueda por nombre/apellido en socios_catalogo para el bot de WhatsApp (Levenshtein).
- * Requiere extensión fuzzystrmatch en PostgreSQL (migración enable_fuzzystrmatch.sql).
- * Si no existe la función, usa fallback LIKE + Levenshtein en Node.
+ * Requiere fuzzystrmatch (levenshtein). Opcional: unaccent (migración enable_unaccent_for_bot_nombre.sql);
+ * si no hay unaccent, se usa translate() para vocales típicas del español.
+ * Si falla levenshtein, fallback LIKE + distancia en Node.
  * made by leavera77
  */
+
+/** Misma longitud para translate() en PostgreSQL (español + mayúsculas). */
+const PG_NOMBRE_TRANSLATE_FROM =
+  "áàäâãåéèëêìíîïòóõöùúûüýñÁÀÄÂÃÅÉÈËÊÌÍÎÏÒÓÕÖÙÚÛÜÝÑ";
+const PG_NOMBRE_TRANSLATE_TO =
+  "aaaaaaeeeeiiiiooooouuuuynaaaaaaeeeeiiiiooooouuuuyn";
 
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
@@ -90,18 +97,26 @@ function buildSelectList(cols, distSqlExpr) {
         ${fSel}`;
 }
 
-/** Distancia de Levenshtein (iterativa; fallback en Node). */
+/**
+ * Normaliza texto del reclamante o del catálogo: minúsculas, sin tildes, solo letras/números y espacios.
+ * Ej.: "Cintia Fernández" → "cintia fernandez"
+ * @param {unknown} texto
+ * @returns {string}
+ */
+export function normalizarTextoBusquedaNombreWa(texto) {
+  return String(texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Distancia de Levenshtein sobre cadenas ya normalizadas (`normalizarTextoBusquedaNombreWa`). */
 export function levenshteinDistance(a, b) {
-  const s = String(a || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-  const t = String(b || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+  const s = normalizarTextoBusquedaNombreWa(a);
+  const t = normalizarTextoBusquedaNombreWa(b);
   if (s === t) return 0;
   const maxLen = 120;
   const ss = s.length > maxLen ? s.slice(0, maxLen) : s;
@@ -212,11 +227,14 @@ export async function catalogoNombreRowToIdentidadRes(tenantId, row) {
   return out;
 }
 
-async function ejecutarBusquedaSql(tenantId, needle) {
+/**
+ * @param {string} nombreCanonSql — expresión SQL sobre `s` (sin alias extra).
+ */
+async function ejecutarBusquedaSqlConCanon(tenantId, needleNorm, nombreCanonSql) {
   const cols = await columnasSet("socios_catalogo");
-  const distExpr = `levenshtein(LOWER(TRIM(COALESCE(s.nombre::text,''))), LOWER(TRIM($2::text)))`;
+  const distExpr = `levenshtein(${nombreCanonSql}, $2::text)`;
   const selectList = buildSelectList(cols, distExpr);
-  const params = [tenantId, needle];
+  const params = [tenantId, needleNorm];
   let businessSql = "";
   const { activeBusinessType, businessTypeFilterEnabled } = await loadTenantBusinessContext(tenantId);
   const hasBt = cols.has("business_type");
@@ -241,25 +259,41 @@ async function ejecutarBusquedaSql(tenantId, needle) {
   return (r.rows || []).map(normalizeCatalogRow);
 }
 
+const SQL_NOMBRE_CANON_UNACCENT = `trim(both ' ' from regexp_replace(regexp_replace(unaccent(lower(trim(coalesce(s.nombre::text,'')))), '[^a-z0-9]+', ' ', 'gi'), E'\\\\s+', ' ', 'g'))`;
+
+const SQL_NOMBRE_CANON_TRANSLATE = `trim(both ' ' from regexp_replace(regexp_replace(translate(lower(trim(coalesce(s.nombre::text,'')))), '${PG_NOMBRE_TRANSLATE_FROM}', '${PG_NOMBRE_TRANSLATE_TO}'), '[^a-z0-9]+', ' ', 'gi'), E'\\\\s+', ' ', 'g'))`;
+
+async function ejecutarBusquedaSql(tenantId, needle) {
+  const needleNorm = normalizarTextoBusquedaNombreWa(needle);
+  if (!needleNorm) return [];
+  let lastErr;
+  for (const expr of [SQL_NOMBRE_CANON_UNACCENT, SQL_NOMBRE_CANON_TRANSLATE]) {
+    try {
+      return await ejecutarBusquedaSqlConCanon(tenantId, needleNorm, expr);
+    } catch (e) {
+      lastErr = e;
+      const m = String(e?.message || e);
+      if (expr === SQL_NOMBRE_CANON_UNACCENT && /unaccent|42883|does not exist/i.test(m)) continue;
+      break;
+    }
+  }
+  throw lastErr;
+}
+
 async function ejecutarBusquedaFallbackLike(tenantId, needle) {
   const cols = await columnasSet("socios_catalogo");
   const selectList = buildSelectList(cols, "0");
-  const tokens = String(needle || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .split(/\s+/)
-    .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, ""))
-    .filter((t) => t.length >= 2)
-    .slice(0, 3);
-  const tok = tokens[0] || String(needle || "").trim().slice(0, 4);
+  const needleNorm = normalizarTextoBusquedaNombreWa(needle);
+  const tokens = needleNorm.split(/\s+/).filter((t) => t.length >= 2).slice(0, 3);
+  const tok = tokens[0] || needleNorm.slice(0, 4);
   if (!tok) return [];
   const params = [tenantId];
-  let likeWhere = `LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($2::text)`;
+  const colTr = `translate(lower(trim(coalesce(s.nombre::text,''))), '${PG_NOMBRE_TRANSLATE_FROM}', '${PG_NOMBRE_TRANSLATE_TO}')`;
+  let likeWhere = `(${colTr} LIKE $2 OR LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($2::text))`;
   params.push(`%${tok}%`);
   if (tokens.length >= 2) {
     params.push(`%${tokens[1]}%`);
-    likeWhere = `LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($2::text) AND LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($3::text)`;
+    likeWhere = `(${colTr} LIKE $2 OR LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($2::text)) AND (${colTr} LIKE $3 OR LOWER(TRIM(COALESCE(s.nombre::text,''))) LIKE LOWER($3::text))`;
   }
   let businessSql = "";
   const { activeBusinessType, businessTypeFilterEnabled } = await loadTenantBusinessContext(tenantId);
@@ -281,13 +315,8 @@ async function ejecutarBusquedaFallbackLike(tenantId, needle) {
     LIMIT 400`;
   const r = await query(sql, params);
   const rows = (r.rows || []).map(normalizeCatalogRow);
-  const nNorm = String(needle || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
   for (const row of rows) {
-    row.nombre_dist = levenshteinDistance(nNorm, row.nombre);
+    row.nombre_dist = levenshteinDistance(needleNorm, row.nombre);
   }
   rows.sort((a, b) => a.nombre_dist - b.nombre_dist || a.id - b.id);
   return rows.slice(0, 25);
@@ -318,7 +347,7 @@ export async function clasificarBusquedaNombreSociosParaBotWa(p) {
     rows = await ejecutarBusquedaSql(tenantId, nombreLibre);
   } catch (e) {
     const msg = String(e?.message || e);
-    if (/levenshtein|fuzzystrmatch|42883|does not exist/i.test(msg)) {
+    if (/levenshtein|fuzzystrmatch|unaccent|42883|does not exist/i.test(msg)) {
       console.warn("[busqueda-nombre-bot] levenshtein no disponible, fallback LIKE + JS", msg.slice(0, 160));
       try {
         rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre);
