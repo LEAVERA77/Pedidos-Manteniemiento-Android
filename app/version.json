@@ -1,7 +1,6 @@
 {
-  "versionCode": 28,
-  "versionName": "1.0.28",
+  "versionCode": 29,
+  "versionName": "1.0.29",
   "apkUrl": "https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android/releases/latest/download/app-release.apk",
-  "changeLog": "Correcciones y nuevas funcionalidades",
-  "forceUpdate": false
+  "changeLog": "Soporte para ingreso por huellas dactilares."
 }
