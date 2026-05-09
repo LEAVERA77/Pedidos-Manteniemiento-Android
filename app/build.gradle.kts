@@ -6,6 +6,11 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/**
+ * Firma release automática: creá en la raíz del repo `keystore.properties` (no va a Git; ver
+ * `keystore.properties.example`). Propiedades: storeFile, storePassword, keyAlias, keyPassword.
+ * `storeFile` puede ser ruta absoluta, p. ej. `C:/Users/tu_usuario/keystore/nombre.jks`.
+ */
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val releaseKeystoreConfigured = if (keystorePropertiesFile.exists()) {
@@ -44,7 +49,13 @@ android {
     signingConfigs {
         if (releaseKeystoreConfigured) {
             create("release") {
-                storeFile = file(keystoreProperties.getProperty("storeFile")!!)
+                val storePath = keystoreProperties.getProperty("storeFile")?.trim()
+                    ?: error("keystore.properties: falta storeFile")
+                val storeFileResolved = rootProject.file(storePath)
+                if (!storeFileResolved.exists()) {
+                    error("Keystore no encontrado: ${storeFileResolved.absolutePath}")
+                }
+                storeFile = storeFileResolved
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
