@@ -1,6 +1,6 @@
 {
-  "versionCode": 33,
-  "versionName": "1.0.33",
+  "versionCode": 34,
+  "versionName": "1.0.34",
   "apkUrl": "https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android/releases/latest/download/app-release.apk",
   "changeLog": "OTA GitHub: Download público, persistencia aviso, omitir versión, login re-chequeo.",
   "forceUpdate": false
