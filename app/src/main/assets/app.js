@@ -12731,9 +12731,6 @@ function ejecutarCerrarSesion() {
         if (pwEl) pwEl.value = '';
     } catch (_) {}
     cerrarUserMenuPop();
-    try {
-        void notificarNeonConectadoParaUpdateCheck();
-    } catch (_) {}
 }
 
 /**

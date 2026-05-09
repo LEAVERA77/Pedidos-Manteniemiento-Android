@@ -35,6 +35,16 @@ public final class AppUpdateChecker {
     private static final String KEY_SNOOZED_REMOTE = "update_snoozed_remote_code";
     private static final String KEY_SNOOZED_UNTIL_MS = "update_snoozed_until_ms";
 
+    /** Hay actualización remota conocida (re-mostrar tras logout / reinicio). */
+    private static final String KEY_UPDATE_PENDING = "gn_update_pending";
+
+    private static final String KEY_UPDATE_PENDING_RC = "gn_update_pending_rc";
+    /** El usuario eligió no instalar esta versión remota hasta que salga otra mayor. */
+    private static final String KEY_UPDATE_SKIPPED_RC = "gn_update_skipped_remote_vc";
+
+    /** «Más tarde» en GitHub: snooze corto para poder ver el aviso de nuevo pronto (p. ej. tras cerrar sesión). */
+    private static final long GITHUB_LATER_SNOOZE_MS = 120_000L;
+
     /** Evita carreras entre hilo Neon y hilo manifest. */
     private static final Object APPLY_LOCK = new Object();
 
@@ -190,6 +200,13 @@ public final class AppUpdateChecker {
                     return;
                 }
 
+                SharedPreferences sp = activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE);
+                int skipped = sp.getInt(KEY_UPDATE_SKIPPED_RC, -1);
+                if (skipped == rc) {
+                    Log.d(TAG, "Versión remota omitida por el usuario: " + rc + " (" + source + ")");
+                    return;
+                }
+
                 PackageInfo pi = activity.getPackageManager()
                         .getPackageInfo(activity.getPackageName(), 0);
                 long cur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
@@ -199,6 +216,7 @@ public final class AppUpdateChecker {
                 if (rc <= cur) {
                     Log.d(TAG, "Sin actualización (" + source + "): local=" + cur + " remoto=" + rc);
                     clearSnoozeIfInstalled(activity, (int) cur);
+                    clearOfferStateIfUpgraded(activity, (int) cur);
                     return;
                 }
 
@@ -218,6 +236,7 @@ public final class AppUpdateChecker {
                 apkUrl = apk;
                 notes = nt;
                 forceUpdate = fu;
+                markUpdateOfferPending(activity, rc);
             }
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Package?", e);
@@ -241,8 +260,64 @@ public final class AppUpdateChecker {
         final boolean fuFinal = forceUpdate;
         final String titleFinal = title;
         final String msgFinal = msg;
+        final String sourceFinal = source;
         activity.runOnUiThread(
-                () -> showDialog(activity, titleFinal, msgFinal, apkFinal, fuFinal, rcFinal, rnFinal));
+                () ->
+                        showDialog(
+                                activity, titleFinal, msgFinal, apkFinal, fuFinal, rcFinal, rnFinal, sourceFinal));
+    }
+
+    private static void markUpdateOfferPending(AppCompatActivity activity, int remoteCode) {
+        if (activity == null || remoteCode <= 0) return;
+        try {
+            activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_UPDATE_PENDING, true)
+                    .putInt(KEY_UPDATE_PENDING_RC, remoteCode)
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void clearOfferStateIfUpgraded(AppCompatActivity activity, int currentLocalCode) {
+        if (activity == null) return;
+        try {
+            SharedPreferences sp = activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE);
+            int pendingRc = sp.getInt(KEY_UPDATE_PENDING_RC, -1);
+            int skipped = sp.getInt(KEY_UPDATE_SKIPPED_RC, -1);
+            SharedPreferences.Editor ed = sp.edit();
+            if (pendingRc > 0 && currentLocalCode >= pendingRc) {
+                ed.remove(KEY_UPDATE_PENDING).remove(KEY_UPDATE_PENDING_RC);
+            }
+            if (skipped > 0 && currentLocalCode >= skipped) {
+                ed.remove(KEY_UPDATE_SKIPPED_RC);
+            }
+            ed.apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    static void skipThisRemoteVersion(AppCompatActivity activity, int remoteCode) {
+        if (activity == null || remoteCode <= 0) return;
+        try {
+            activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
+                    .edit()
+                    .putInt(KEY_UPDATE_SKIPPED_RC, remoteCode)
+                    .remove(KEY_UPDATE_PENDING)
+                    .remove(KEY_UPDATE_PENDING_RC)
+                    .remove(KEY_SNOOZED_REMOTE)
+                    .remove(KEY_SNOOZED_UNTIL_MS)
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void applyLaterSnooze(AppCompatActivity activity, int remoteCode, String source) {
+        long ms =
+                "github".equals(source)
+                        ? GITHUB_LATER_SNOOZE_MS
+                        : 24L * 60L * 60L * 1000L;
+        applySnooze(activity, remoteCode, ms);
     }
 
     private static boolean isSnoozedForRemote(AppCompatActivity activity, int remoteCode) {
@@ -270,7 +345,8 @@ public final class AppUpdateChecker {
             String apkUrl,
             boolean forceUpdate,
             int remoteCode,
-            String remoteName) {
+            String remoteName,
+            String source) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
 
         /* Si quedó un diálogo colgado o hubo varias comprobaciones, cerrar el anterior antes de mostrar otro. */
@@ -289,6 +365,13 @@ public final class AppUpdateChecker {
                     }
                     sActiveUpdateDialog = null;
                     clearSnooze(activity);
+                    try {
+                        activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean(KEY_UPDATE_PENDING, false)
+                                .apply();
+                    } catch (Exception ignored) {
+                    }
                     AppUpdateDownloadHelper.enqueueApkDownload(activity, apkUrl, remoteName, remoteCode);
                 });
         /* Siempre ofrecer posponer: evita diálogo “atrapado” si force_update quedó en true en Neon. */
@@ -299,8 +382,21 @@ public final class AppUpdateChecker {
             } catch (Exception ignored) {
             }
             sActiveUpdateDialog = null;
-            applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+            applyLaterSnooze(activity, remoteCode, source);
         });
+        if (!forceUpdate) {
+            b.setNeutralButton(
+                    R.string.update_dialog_skip_version,
+                    (DialogInterface dialog, int which) -> {
+                        outcome[0] = 3;
+                        try {
+                            dialog.dismiss();
+                        } catch (Exception ignored) {
+                        }
+                        sActiveUpdateDialog = null;
+                        skipThisRemoteVersion(activity, remoteCode);
+                    });
+        }
 
         AlertDialog dialog = b.create();
         dialog.setCancelable(true);
@@ -309,7 +405,7 @@ public final class AppUpdateChecker {
                 d -> {
                     sActiveUpdateDialog = null;
                     if (outcome[0] == 0 && remoteCode > 0) {
-                        applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+                        applyLaterSnooze(activity, remoteCode, source);
                     }
                 });
         sActiveUpdateDialog = dialog;
@@ -353,6 +449,8 @@ public final class AppUpdateChecker {
             c.setReadTimeout(Math.max(1000, readTimeoutMs));
             c.setRequestMethod("GET");
             c.setRequestProperty("Accept", "application/json");
+            c.setRequestProperty("Cache-Control", "no-cache");
+            c.setRequestProperty("Pragma", "no-cache");
             int code = c.getResponseCode();
             if (code != 200) {
                 Log.w(TAG, "HTTP " + code + " al leer " + urlStr);

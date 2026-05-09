@@ -25,6 +25,7 @@
     <string name="update_dialog_message_forced">Debés actualizar la app para continuar. Versión disponible: %1$s</string>
     <string name="update_dialog_download">Descargar</string>
     <string name="update_dialog_later">Más tarde</string>
+    <string name="update_dialog_skip_version">Omitir esta versión</string>
     <string name="update_dialog_open_failed">No se pudo abrir el enlace de descarga</string>
 
     <string name="open_downloads_chooser">Abrir carpeta</string>

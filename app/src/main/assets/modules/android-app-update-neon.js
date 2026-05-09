@@ -81,3 +81,42 @@ export async function runNeonAppVersionCheckAndroid(deps) {
         } catch (_) {}
     }
 }
+
+/**
+ * Sin tocar app.js: al volver a la pantalla de login (#ls) pedir chequeo OTA nativo (GitHub).
+ * Debounce para no martillar al bridge.
+ */
+function armGithubUpdateCheckWhenLoginVisible() {
+    const ac = typeof window !== 'undefined' ? window.AndroidConfig : null;
+    if (!ac?.usesGithubAppVersionJson?.() || !ac.usesGithubAppVersionJson()) return;
+    if (typeof ac.requestUpdateCheck !== 'function') return;
+    let deb = null;
+    const fire = () => {
+        try {
+            const ls = document.getElementById('ls');
+            if (!ls?.classList.contains('active')) return;
+            if (deb) clearTimeout(deb);
+            deb = setTimeout(() => {
+                deb = null;
+                try {
+                    ac.requestUpdateCheck();
+                } catch (_) {}
+            }, 500);
+        } catch (_) {}
+    };
+    const ls = document.getElementById('ls');
+    if (!ls || ls.dataset.gnGhOtaLs === '1') return;
+    ls.dataset.gnGhOtaLs = '1';
+    try {
+        new MutationObserver(() => fire()).observe(ls, { attributes: true, attributeFilter: ['class'] });
+    } catch (_) {}
+    fire();
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', armGithubUpdateCheckWhenLoginVisible, { once: true });
+    } else {
+        armGithubUpdateCheckWhenLoginVisible();
+    }
+}

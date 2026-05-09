@@ -27,8 +27,15 @@ public final class AppUpdateDownloadHelper {
     static final String KEY_PENDING_FILE_NAME = "pending_apk_file_name";
     /** version_code remoto asociado a la descarga en curso (snooze tras abrir instalador). */
     static final String KEY_PENDING_REMOTE_CODE = "pending_apk_remote_code";
+    static final String KEY_PENDING_DEST_PUBLIC = "pending_apk_dest_public";
 
     private static final Pattern DRIVE_ID = Pattern.compile("[?&]id=([^&]+)");
+
+    /**
+     * Nombre fijo bajo {@code Download/} público (mejor visibilidad en Samsung / “Descargas” del sistema).
+     * Si el sistema no permite destino público, se usa el directorio privado de la app.
+     */
+    public static final String PUBLIC_UPDATE_APK_NAME = "GestorNova-update.apk";
 
     private AppUpdateDownloadHelper() {}
 
@@ -71,6 +78,7 @@ public final class AppUpdateDownloadHelper {
                     .remove(KEY_PENDING_DOWNLOAD_ID)
                     .remove(KEY_PENDING_FILE_NAME)
                     .remove(KEY_PENDING_REMOTE_CODE)
+                    .remove(KEY_PENDING_DEST_PUBLIC)
                     .apply();
             return false;
         }
@@ -82,6 +90,7 @@ public final class AppUpdateDownloadHelper {
                         .remove(KEY_PENDING_DOWNLOAD_ID)
                         .remove(KEY_PENDING_FILE_NAME)
                         .remove(KEY_PENDING_REMOTE_CODE)
+                        .remove(KEY_PENDING_DEST_PUBLIC)
                         .apply();
                 return false;
             }
@@ -99,6 +108,7 @@ public final class AppUpdateDownloadHelper {
                     .remove(KEY_PENDING_DOWNLOAD_ID)
                     .remove(KEY_PENDING_FILE_NAME)
                     .remove(KEY_PENDING_REMOTE_CODE)
+                    .remove(KEY_PENDING_DEST_PUBLIC)
                     .apply();
             return false;
         } catch (Exception e) {
@@ -114,6 +124,7 @@ public final class AppUpdateDownloadHelper {
                     .remove(KEY_PENDING_DOWNLOAD_ID)
                     .remove(KEY_PENDING_FILE_NAME)
                     .remove(KEY_PENDING_REMOTE_CODE)
+                    .remove(KEY_PENDING_DEST_PUBLIC)
                     .apply();
         } catch (Exception ignored) {
         }
@@ -129,24 +140,41 @@ public final class AppUpdateDownloadHelper {
         String vn = versionName != null ? versionName : ("v" + remoteCode);
         String safe = "GestorNova-" + vn.replaceAll("[^0-9a-zA-Z.\\-]", "_") + ".apk";
 
-        File base = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        if (base == null) {
-            base = activity.getExternalFilesDir(null);
+        try {
+            File pub = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    PUBLIC_UPDATE_APK_NAME);
+            if (pub.exists()) {
+                try {
+                    if (!pub.delete()) {
+                        Log.w(TAG, "No se pudo borrar APK previa en Download público");
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, e.getMessage());
+                }
+            }
+        } catch (Exception ignored) {
         }
-        if (base != null && !base.exists()) {
+        File basePriv = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (basePriv == null) {
+            basePriv = activity.getExternalFilesDir(null);
+        }
+        if (basePriv != null && !basePriv.exists()) {
             try {
-                base.mkdirs();
+                basePriv.mkdirs();
             } catch (Exception ignored) {
             }
         }
-        File out = base != null ? new File(base, safe) : null;
-        if (out != null && out.exists()) {
-            try {
-                if (!out.delete()) {
-                    Log.w(TAG, "No se pudo borrar APK previa: " + out.getAbsolutePath());
+        if (basePriv != null) {
+            File prev = new File(basePriv, safe);
+            if (prev.exists()) {
+                try {
+                    if (!prev.delete()) {
+                        Log.w(TAG, "No se pudo borrar APK previa en almacén de la app");
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, e.getMessage());
                 }
-            } catch (Exception e) {
-                Log.w(TAG, e.getMessage());
             }
         }
 
@@ -154,10 +182,10 @@ public final class AppUpdateDownloadHelper {
             DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
             req.setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
-            /* Notificación durante toda la descarga (Samsung / analizadores suelen usar el aviso del sistema). */
+            /* Progreso en barra de notificaciones + entrada en app “Descargas” del sistema (Samsung). */
             req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
             req.setTitle("GestorNova " + vn);
-            req.setDescription("Descargando actualización " + vn + " (tocá aquí al terminar si no se abre solo el instalador)");
+            req.setDescription("Descargando " + vn + " — mirá el aviso de progreso; tocá al finalizar para analizar/instalar.");
             req.setMimeType("application/vnd.android.package-archive");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                 try {
@@ -165,7 +193,17 @@ public final class AppUpdateDownloadHelper {
                 } catch (Exception ignored) {
                 }
             }
-            req.setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, safe);
+            boolean destPublic = false;
+            try {
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, PUBLIC_UPDATE_APK_NAME);
+                destPublic = true;
+                Log.d(TAG, "Descarga OTA → Download/" + PUBLIC_UPDATE_APK_NAME);
+            } catch (Throwable t) {
+                Log.w(TAG, "Destino público no disponible, usando almacén de la app", t);
+            }
+            if (!destPublic) {
+                req.setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, safe);
+            }
 
             DownloadManager dm = (DownloadManager) activity.getSystemService(Context.DOWNLOAD_SERVICE);
             if (dm == null) {
@@ -176,7 +214,8 @@ public final class AppUpdateDownloadHelper {
             activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     .edit()
                     .putLong(KEY_PENDING_DOWNLOAD_ID, id)
-                    .putString(KEY_PENDING_FILE_NAME, safe)
+                    .putString(KEY_PENDING_FILE_NAME, destPublic ? PUBLIC_UPDATE_APK_NAME : safe)
+                    .putBoolean(KEY_PENDING_DEST_PUBLIC, destPublic)
                     .putInt(KEY_PENDING_REMOTE_CODE, remoteCode)
                     .apply();
             Toast.makeText(
