@@ -1,6 +1,7 @@
 /**
- * Android WebView: tras conectar a Neon, lee app_version y delega en el bridge nativo
- * (prioridad sobre manifest HTTP en assets).
+ * Android WebView: comprobación de actualización.
+ * - Con {@code usesGithubAppVersionJson}: solo {@code requestUpdateCheck()} (nativo lee GitHub); no exige Neon.
+ * - Si no: lee {@code app_version} en Neon y delega en el bridge, o manifest.
  */
 export async function runNeonAppVersionCheckAndroid(deps) {
     const sqlSimple = deps?.sqlSimple;
@@ -10,19 +11,24 @@ export async function runNeonAppVersionCheckAndroid(deps) {
         return;
     }
     if (!isGestorNovaApp()) return;
-    if (!isNeonReady()) return;
+
     const ac = typeof window !== 'undefined' ? window.AndroidConfig : null;
-    if (!ac || typeof ac.applyUpdateCheckFromNeon !== 'function') {
-        if (typeof ac?.requestUpdateCheck === 'function') {
-            try {
-                ac.requestUpdateCheck();
-            } catch (_) {}
-        }
+    /* OTA desde GitHub: no depende de Neon (login sin sesión, tras logout, antes de cargar config). */
+    if (
+        ac &&
+        typeof ac.usesGithubAppVersionJson === 'function' &&
+        ac.usesGithubAppVersionJson() &&
+        typeof ac.requestUpdateCheck === 'function'
+    ) {
+        try {
+            ac.requestUpdateCheck();
+        } catch (_) {}
         return;
     }
-    /* APK: actualización desde GitHub version.json (nativo); no hace falta leer app_version en Neon. */
-    if (typeof ac.usesGithubAppVersionJson === 'function' && ac.usesGithubAppVersionJson()) {
-        if (typeof ac.requestUpdateCheck === 'function') {
+
+    if (!isNeonReady()) return;
+    if (!ac || typeof ac.applyUpdateCheckFromNeon !== 'function') {
+        if (typeof ac?.requestUpdateCheck === 'function') {
             try {
                 ac.requestUpdateCheck();
             } catch (_) {}

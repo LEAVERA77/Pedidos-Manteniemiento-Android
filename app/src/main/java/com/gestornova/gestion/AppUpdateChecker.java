@@ -83,7 +83,9 @@ public final class AppUpdateChecker {
     private static boolean tryApplyFromGitHub(AppCompatActivity activity) {
         if (activity == null) return false;
         try {
-            String body = httpGet(GITHUB_VERSION_JSON, 5000, 5000);
+            /* Evita JSON en caché (CDN/proxy) cuando subís versionCode nuevo. */
+            String url = GITHUB_VERSION_JSON + "?t=" + System.currentTimeMillis();
+            String body = httpGet(url, 5000, 5000);
             if (body == null || body.trim().isEmpty()) {
                 return false;
             }

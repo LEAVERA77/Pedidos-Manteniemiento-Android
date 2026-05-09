@@ -4,6 +4,7 @@ import android.app.DownloadManager;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
 import android.widget.Toast;
@@ -153,10 +154,17 @@ public final class AppUpdateDownloadHelper {
             DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
             req.setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
-            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            /* Notificación durante toda la descarga (Samsung / analizadores suelen usar el aviso del sistema). */
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
             req.setTitle("GestorNova " + vn);
-            req.setDescription("Actualización " + remoteCode);
+            req.setDescription("Descargando actualización " + vn + " (tocá aquí al terminar si no se abre solo el instalador)");
             req.setMimeType("application/vnd.android.package-archive");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                try {
+                    req.setVisibleInDownloadsUi(true);
+                } catch (Exception ignored) {
+                }
+            }
             req.setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, safe);
 
             DownloadManager dm = (DownloadManager) activity.getSystemService(Context.DOWNLOAD_SERVICE);
@@ -173,7 +181,9 @@ public final class AppUpdateDownloadHelper {
                     .apply();
             Toast.makeText(
                             activity,
-                            "Descargando actualización… Al terminar se abrirá el instalador.",
+                            "Descargando actualización… Mirá la notificación arriba; tocála al terminar "
+                                    + "para abrir el instalador (Samsung puede analizar el APK antes). "
+                                    + "Si no aparece, abrí «Descargas» del sistema.",
                             Toast.LENGTH_LONG)
                     .show();
         } catch (Exception e) {
