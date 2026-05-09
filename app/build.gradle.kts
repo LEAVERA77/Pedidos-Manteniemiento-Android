@@ -8,8 +8,8 @@ plugins {
 
 /**
  * Firma release automática: creá en la raíz del repo `keystore.properties` (no va a Git; ver
- * `keystore.properties.example`). Propiedades: storeFile, storePassword, keyAlias, keyPassword.
- * `storeFile` puede ser ruta absoluta, p. ej. `C:/Users/tu_usuario/keystore/nombre.jks`.
+ * `keystore.properties.example`). Propiedades: **storeFilePath** o **storeFile** (ruta al archivo
+ * keystore), storePassword, keyAlias, keyPassword. Preferí `storeFilePath` si el archivo no tiene extensión.
  */
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -49,8 +49,10 @@ android {
     signingConfigs {
         if (releaseKeystoreConfigured) {
             create("release") {
-                val storePath = keystoreProperties.getProperty("storeFile")?.trim()
-                    ?: error("keystore.properties: falta storeFile")
+                val storePath =
+                    keystoreProperties.getProperty("storeFilePath")?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: keystoreProperties.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: error("keystore.properties: falta storeFilePath o storeFile (ruta al keystore)")
                 val storeFileResolved = rootProject.file(storePath)
                 if (!storeFileResolved.exists()) {
                     error("Keystore no encontrado: ${storeFileResolved.absolutePath}")
