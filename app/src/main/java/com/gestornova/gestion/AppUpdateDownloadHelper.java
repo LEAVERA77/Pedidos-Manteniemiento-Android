@@ -2,6 +2,7 @@ package com.gestornova.gestion;
 
 import android.app.DownloadManager;
 import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
 import android.util.Log;
@@ -23,6 +24,8 @@ public final class AppUpdateDownloadHelper {
     static final String PREFS = "gn_app_update_prefs";
     static final String KEY_PENDING_DOWNLOAD_ID = "pending_apk_download_id";
     static final String KEY_PENDING_FILE_NAME = "pending_apk_file_name";
+    /** version_code remoto asociado a la descarga en curso (snooze tras abrir instalador). */
+    static final String KEY_PENDING_REMOTE_CODE = "pending_apk_remote_code";
 
     private static final Pattern DRIVE_ID = Pattern.compile("[?&]id=([^&]+)");
 
@@ -48,6 +51,71 @@ public final class AppUpdateDownloadHelper {
             }
         }
         return u;
+    }
+
+    /**
+     * No volver a mostrar el cartel de actualización mientras haya una descarga en curso o recién terminada
+     * que aún estamos procesando (evita bucle Neon ↔ diálogo).
+     */
+    public static boolean shouldSuppressUpdateDialog(Context ctx) {
+        android.content.SharedPreferences sp =
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long pendingId = sp.getLong(KEY_PENDING_DOWNLOAD_ID, -1L);
+        if (pendingId < 0L) {
+            return false;
+        }
+        DownloadManager dm = (DownloadManager) ctx.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (dm == null) {
+            sp.edit()
+                    .remove(KEY_PENDING_DOWNLOAD_ID)
+                    .remove(KEY_PENDING_FILE_NAME)
+                    .remove(KEY_PENDING_REMOTE_CODE)
+                    .apply();
+            return false;
+        }
+        DownloadManager.Query q = new DownloadManager.Query();
+        q.setFilterById(pendingId);
+        try (Cursor c = dm.query(q)) {
+            if (c == null || !c.moveToFirst()) {
+                sp.edit()
+                        .remove(KEY_PENDING_DOWNLOAD_ID)
+                        .remove(KEY_PENDING_FILE_NAME)
+                        .remove(KEY_PENDING_REMOTE_CODE)
+                        .apply();
+                return false;
+            }
+            int st = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            if (st == DownloadManager.STATUS_PENDING
+                    || st == DownloadManager.STATUS_RUNNING
+                    || st == DownloadManager.STATUS_PAUSED) {
+                return true;
+            }
+            if (st == DownloadManager.STATUS_SUCCESSFUL) {
+                /* Hasta que {@link MainActivity} termine de abrir el instalador y limpie el pending. */
+                return true;
+            }
+            sp.edit()
+                    .remove(KEY_PENDING_DOWNLOAD_ID)
+                    .remove(KEY_PENDING_FILE_NAME)
+                    .remove(KEY_PENDING_REMOTE_CODE)
+                    .apply();
+            return false;
+        } catch (Exception e) {
+            Log.w(TAG, "shouldSuppressUpdateDialog", e);
+            return false;
+        }
+    }
+
+    public static void clearPendingDownloadState(Context ctx) {
+        try {
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove(KEY_PENDING_DOWNLOAD_ID)
+                    .remove(KEY_PENDING_FILE_NAME)
+                    .remove(KEY_PENDING_REMOTE_CODE)
+                    .apply();
+        } catch (Exception ignored) {
+        }
     }
 
     public static void enqueueApkDownload(AppCompatActivity activity, String apkUrl, String versionName, int remoteCode) {
@@ -101,6 +169,7 @@ public final class AppUpdateDownloadHelper {
                     .edit()
                     .putLong(KEY_PENDING_DOWNLOAD_ID, id)
                     .putString(KEY_PENDING_FILE_NAME, safe)
+                    .putInt(KEY_PENDING_REMOTE_CODE, remoteCode)
                     .apply();
             Toast.makeText(
                             activity,

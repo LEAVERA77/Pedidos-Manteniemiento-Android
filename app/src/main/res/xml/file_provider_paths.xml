@@ -12,4 +12,6 @@
     <external-path name="GestorNova_exports" path="Download/GestorNova" />
     <external-path name="Nexxo_exports_legacy" path="Download/Nexxo" />
     <files-path name="internal_files" path="." />
+    <!-- APK OTA copiado desde content:// del DownloadManager (Android 10+) -->
+    <cache-path name="gn_apk_cache" path="apk_updates/" />
 </paths>

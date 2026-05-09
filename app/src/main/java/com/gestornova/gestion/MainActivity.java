@@ -645,10 +645,8 @@ public class MainActivity extends AppCompatActivity {
                         if (id != expected) {
                             return;
                         }
-                        sp.edit()
-                                .remove(AppUpdateDownloadHelper.KEY_PENDING_DOWNLOAD_ID)
-                                .remove(AppUpdateDownloadHelper.KEY_PENDING_FILE_NAME)
-                                .apply();
+                        /* No limpiar prefs aquí: {@link #handleAppUpdateDownloadFinished} lo hace al terminar
+                         * (así shouldSuppressUpdateDialog sigue true hasta abrir instalador o fallar). */
                         runOnUiThread(() -> handleAppUpdateDownloadFinished(id));
                     }
                 };
@@ -664,78 +662,153 @@ public class MainActivity extends AppCompatActivity {
         if (isFinishing()) {
             return;
         }
-        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-        if (dm == null) {
-            return;
-        }
-        DownloadManager.Query query = new DownloadManager.Query();
-        query.setFilterById(downloadId);
-        try (Cursor c = dm.query(query)) {
-            if (c == null || !c.moveToFirst()) {
-                Toast.makeText(this, "No se encontró la descarga.", Toast.LENGTH_LONG).show();
+        final int pendingRemote =
+                getSharedPreferences(AppUpdateDownloadHelper.PREFS, MODE_PRIVATE)
+                        .getInt(AppUpdateDownloadHelper.KEY_PENDING_REMOTE_CODE, -1);
+        boolean openedInstaller = false;
+        try {
+            DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            if (dm == null) {
+                Toast.makeText(this, "Descargas no disponibles.", Toast.LENGTH_LONG).show();
                 return;
             }
-            int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
-            if (status != DownloadManager.STATUS_SUCCESSFUL) {
-                Toast.makeText(this, "La descarga no se completó.", Toast.LENGTH_LONG).show();
-                return;
-            }
-            int uriCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
-            String uriStr = uriCol >= 0 ? c.getString(uriCol) : null;
-            if (uriStr == null || uriStr.isEmpty()) {
-                Toast.makeText(this, "No se pudo ubicar el APK descargado.", Toast.LENGTH_LONG).show();
-                return;
-            }
-            Uri local = Uri.parse(uriStr);
-            if (!"file".equalsIgnoreCase(local.getScheme())) {
-                Toast.makeText(this, "Abrí la notificación de descarga del sistema para instalar.", Toast.LENGTH_LONG).show();
-                return;
-            }
-            File apk = new File(local.getPath());
-            if (!apk.isFile() || apk.length() < 50_000L) {
-                Toast.makeText(
-                        this,
-                        "El archivo descargado no parece un APK. Revisá la URL en Neon (Drive, descarga directa).",
-                        Toast.LENGTH_LONG)
-                        .show();
-                return;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!getPackageManager().canRequestPackageInstalls()) {
-                    Toast.makeText(
-                                    this,
-                                    "Activá «Instalar apps desconocidas» para GestorNova en Ajustes y volvé a descargar.",
-                                    Toast.LENGTH_LONG)
-                            .show();
-                    try {
-                        Intent s = new Intent(
-                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                Uri.parse("package:" + getPackageName()));
-                        startActivity(s);
-                    } catch (Exception e) {
-                        Log.w(TAG, "MANAGE_UNKNOWN_APP_SOURCES", e);
-                    }
+            DownloadManager.Query query = new DownloadManager.Query();
+            query.setFilterById(downloadId);
+            try (Cursor c = dm.query(query)) {
+                if (c == null || !c.moveToFirst()) {
+                    Toast.makeText(this, "No se encontró la descarga.", Toast.LENGTH_LONG).show();
                     return;
                 }
-            }
-            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apk);
-            Intent install = new Intent(Intent.ACTION_VIEW);
-            install.setDataAndType(contentUri, "application/vnd.android.package-archive");
-            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            try {
-                startActivity(install);
-            } catch (Exception e) {
-                Log.e(TAG, "Abrir instalador APK", e);
-                Toast.makeText(
-                                this,
-                                "No se abrió el instalador. Abrí el APK desde la notificación de descarga.",
-                                Toast.LENGTH_LONG)
-                        .show();
+                int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                if (status != DownloadManager.STATUS_SUCCESSFUL) {
+                    Toast.makeText(this, "La descarga no se completó.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                int uriCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                String uriStr = uriCol >= 0 ? c.getString(uriCol) : null;
+                if (uriStr == null || uriStr.isEmpty()) {
+                    Toast.makeText(this, "No se pudo ubicar el APK descargado.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Uri local = Uri.parse(uriStr);
+                String scheme = local.getScheme();
+                File apkFile = null;
+                if ("file".equalsIgnoreCase(scheme)) {
+                    apkFile = new File(local.getPath());
+                } else if ("content".equalsIgnoreCase(scheme)) {
+                    int fnCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME);
+                    String suggested =
+                            (fnCol >= 0 ? c.getString(fnCol) : null);
+                    try {
+                        apkFile = copyDownloadedApkToCache(local, suggested);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Copiar APK desde content://", e);
+                        Toast.makeText(
+                                        this,
+                                        "No se pudo preparar el instalador. Abrí la descarga desde el panel de notificaciones.",
+                                        Toast.LENGTH_LONG)
+                                .show();
+                        return;
+                    }
+                } else {
+                    Toast.makeText(
+                                    this,
+                                    "Abrí la notificación de descarga del sistema para instalar.",
+                                    Toast.LENGTH_LONG)
+                            .show();
+                    return;
+                }
+                if (apkFile == null
+                        || !apkFile.isFile()
+                        || apkFile.length() < 50_000L) {
+                    Toast.makeText(
+                                    this,
+                                    "El archivo descargado no parece un APK. Revisá la URL en Neon (Drive, descarga directa).",
+                                    Toast.LENGTH_LONG)
+                            .show();
+                    return;
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!getPackageManager().canRequestPackageInstalls()) {
+                        Toast.makeText(
+                                        this,
+                                        "Activá «Instalar apps desconocidas» para GestorNova en Ajustes y volvé a descargar.",
+                                        Toast.LENGTH_LONG)
+                                .show();
+                        try {
+                            Intent s =
+                                    new Intent(
+                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                            Uri.parse("package:" + getPackageName()));
+                            startActivity(s);
+                        } catch (Exception e) {
+                            Log.w(TAG, "MANAGE_UNKNOWN_APP_SOURCES", e);
+                        }
+                        return;
+                    }
+                }
+                Uri contentUri =
+                        FileProvider.getUriForFile(
+                                this, getPackageName() + ".fileprovider", apkFile);
+                Intent install = new Intent(Intent.ACTION_VIEW);
+                install.setDataAndType(contentUri, "application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                if (Build.VERSION.SDK_INT >= 16) {
+                    install.setClipData(ClipData.newRawUri("", contentUri));
+                }
+                try {
+                    startActivity(install);
+                    openedInstaller = true;
+                } catch (Exception e) {
+                    Log.e(TAG, "Abrir instalador APK", e);
+                    Toast.makeText(
+                                    this,
+                                    "No se abrió el instalador. Abrí el APK desde la notificación de descarga.",
+                                    Toast.LENGTH_LONG)
+                            .show();
+                }
             }
         } catch (Exception e) {
             Log.e(TAG, "handleAppUpdateDownloadFinished", e);
             Toast.makeText(this, "Error al preparar la instalación.", Toast.LENGTH_LONG).show();
+        } finally {
+            if (openedInstaller && pendingRemote > 0) {
+                AppUpdateChecker.snoozeAfterOpeningInstaller(this, pendingRemote);
+            }
+            AppUpdateDownloadHelper.clearPendingDownloadState(this);
         }
+    }
+
+    /** Copia el APK del DownloadManager (content:// en API 29+) a cache con nombre estable para FileProvider. */
+    private File copyDownloadedApkToCache(Uri contentUri, String suggestedFileName)
+            throws java.io.IOException {
+        File dir = new File(getCacheDir(), "apk_updates");
+        if (!dir.isDirectory() && !dir.mkdirs()) {
+            throw new java.io.IOException("mkdir apk_updates");
+        }
+        String base =
+                (suggestedFileName != null
+                                && !suggestedFileName.isEmpty()
+                                && suggestedFileName.toLowerCase(Locale.ROOT).endsWith(".apk"))
+                        ? suggestedFileName
+                        : "GestorNova_update.apk";
+        File out = new File(dir, base);
+        if (out.exists() && !out.delete()) {
+            out = new File(dir, "update_" + System.currentTimeMillis() + ".apk");
+        }
+        try (InputStream in = getContentResolver().openInputStream(contentUri);
+                FileOutputStream fos = new FileOutputStream(out)) {
+            if (in == null) {
+                throw new java.io.IOException("openInputStream null");
+            }
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                fos.write(buf, 0, n);
+            }
+            fos.flush();
+        }
+        return out;
     }
 
     /** Libera el WebView para evitar fugas y cierres al salir de la actividad. */

@@ -112,6 +112,14 @@ public final class AppUpdateChecker {
         }
     }
 
+    /**
+     * Tras abrir el instalador del sistema, evita que Neon vuelva a mostrar el cartel al instante
+     * (la app sigue en versionCode viejo hasta que el usuario complete la instalación).
+     */
+    public static void snoozeAfterOpeningInstaller(AppCompatActivity activity, int remoteCode) {
+        applySnooze(activity, remoteCode, 48L * 60L * 60L * 1000L);
+    }
+
     private static void applyIfNewer(AppCompatActivity activity, JSONObject remote, String source) {
         int remoteCode;
         String remoteName;
@@ -146,6 +154,11 @@ public final class AppUpdateChecker {
 
                 if (!fu && isSnoozedForRemote(activity, rc)) {
                     Log.d(TAG, "Actualización pospuesta por el usuario (misma versión remota): " + rc);
+                    return;
+                }
+
+                if (AppUpdateDownloadHelper.shouldSuppressUpdateDialog(activity)) {
+                    Log.d(TAG, "Diálogo omitido: descarga OTA en curso o pendiente de instalación.");
                     return;
                 }
 
