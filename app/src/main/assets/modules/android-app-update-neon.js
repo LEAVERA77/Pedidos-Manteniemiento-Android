@@ -1,7 +1,6 @@
 /**
- * Android WebView: comprobación de actualización.
- * - Con {@code usesGithubAppVersionJson}: solo {@code requestUpdateCheck()} (nativo lee GitHub); no exige Neon.
- * - Si no: lee {@code app_version} en Neon y delega en el bridge, o manifest.
+ * Android WebView: comprobación de actualización vía tabla {@code app_version} en Neon
+ * (delega en {@code applyUpdateCheckFromNeon}) y fallback a manifest con {@code requestUpdateCheck()}.
  */
 export async function runNeonAppVersionCheckAndroid(deps) {
     const sqlSimple = deps?.sqlSimple;
@@ -12,21 +11,8 @@ export async function runNeonAppVersionCheckAndroid(deps) {
     }
     if (!isGestorNovaApp()) return;
 
-    const ac = typeof window !== 'undefined' ? window.AndroidConfig : null;
-    /* OTA desde GitHub: no depende de Neon (login sin sesión, tras logout, antes de cargar config). */
-    if (
-        ac &&
-        typeof ac.usesGithubAppVersionJson === 'function' &&
-        ac.usesGithubAppVersionJson() &&
-        typeof ac.requestUpdateCheck === 'function'
-    ) {
-        try {
-            ac.requestUpdateCheck();
-        } catch (_) {}
-        return;
-    }
-
     if (!isNeonReady()) return;
+    const ac = typeof window !== 'undefined' ? window.AndroidConfig : null;
     if (!ac || typeof ac.applyUpdateCheckFromNeon !== 'function') {
         if (typeof ac?.requestUpdateCheck === 'function') {
             try {
@@ -79,44 +65,5 @@ export async function runNeonAppVersionCheckAndroid(deps) {
         try {
             ac.requestUpdateCheck();
         } catch (_) {}
-    }
-}
-
-/**
- * Sin tocar app.js: al volver a la pantalla de login (#ls) pedir chequeo OTA nativo (GitHub).
- * Debounce para no martillar al bridge.
- */
-function armGithubUpdateCheckWhenLoginVisible() {
-    const ac = typeof window !== 'undefined' ? window.AndroidConfig : null;
-    if (!ac?.usesGithubAppVersionJson?.() || !ac.usesGithubAppVersionJson()) return;
-    if (typeof ac.requestUpdateCheck !== 'function') return;
-    let deb = null;
-    const fire = () => {
-        try {
-            const ls = document.getElementById('ls');
-            if (!ls?.classList.contains('active')) return;
-            if (deb) clearTimeout(deb);
-            deb = setTimeout(() => {
-                deb = null;
-                try {
-                    ac.requestUpdateCheck();
-                } catch (_) {}
-            }, 500);
-        } catch (_) {}
-    };
-    const ls = document.getElementById('ls');
-    if (!ls || ls.dataset.gnGhOtaLs === '1') return;
-    ls.dataset.gnGhOtaLs = '1';
-    try {
-        new MutationObserver(() => fire()).observe(ls, { attributes: true, attributeFilter: ['class'] });
-    } catch (_) {}
-    fire();
-}
-
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', armGithubUpdateCheckWhenLoginVisible, { once: true });
-    } else {
-        armGithubUpdateCheckWhenLoginVisible();
     }
 }

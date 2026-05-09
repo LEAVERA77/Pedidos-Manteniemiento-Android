@@ -1,7 +1,7 @@
 {
   "versionCode": 34,
   "versionName": "1.0.34",
-  "apkUrl": "https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android/releases/latest/download/app-release.apk",
-  "changeLog": "OTA GitHub: Download público, persistencia aviso, omitir versión, login re-chequeo.",
+  "apkUrl": "https://drive.google.com/uc?export=download&id=1yFsxwgB3e8yGOmw-69Il084oxrz4w3Ol",
+  "changeLog": "Respaldo manual (la app no lee este archivo; OTA = Neon + Drive).",
   "forceUpdate": false
 }

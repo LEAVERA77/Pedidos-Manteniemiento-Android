@@ -20,16 +20,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Comprueba actualizaciones: primero {@code version.json} en GitHub (APK firmada), si falla manifest en
- * assets, y la tabla Neon sigue existiendo para la web — en Android el JS puede omitir la consulta Neon.
+ * Comprueba actualizaciones: JSON desde la tabla {@code app_version} en Neon (vía WebView) o manifest HTTP
+ * en assets. {@code app/version.json} en GitHub puede existir como respaldo manual; la app no lo consulta.
  */
 public final class AppUpdateChecker {
 
     private static final String TAG = "AppUpdateChecker";
-    /** JSON en la rama default del repo Android (actualizar versionCode/apkUrl al publicar release). */
-    private static final String GITHUB_VERSION_JSON =
-            "https://raw.githubusercontent.com/LEAVERA77/Pedidos-Manteniemiento-Android/main/app/version.json";
-
     private static final String ASSET_CONFIG = "app_update_config.json";
     private static final String PREFS = AppUpdateDownloadHelper.PREFS;
     private static final String KEY_SNOOZED_REMOTE = "update_snoozed_remote_code";
@@ -42,9 +38,6 @@ public final class AppUpdateChecker {
     /** El usuario eligió no instalar esta versión remota hasta que salga otra mayor. */
     private static final String KEY_UPDATE_SKIPPED_RC = "gn_update_skipped_remote_vc";
 
-    /** «Más tarde» en GitHub: snooze corto para poder ver el aviso de nuevo pronto (p. ej. tras cerrar sesión). */
-    private static final long GITHUB_LATER_SNOOZE_MS = 120_000L;
-
     /** Evita carreras entre hilo Neon y hilo manifest. */
     private static final Object APPLY_LOCK = new Object();
 
@@ -53,28 +46,17 @@ public final class AppUpdateChecker {
     private AppUpdateChecker() {}
 
     public static void checkAsync(AppCompatActivity activity) {
-        new Thread(
-                () -> {
-                    if (!tryApplyFromGitHub(activity)) {
-                        doCheckFromManifest(activity);
-                    }
-                },
-                "gn-app-update")
-                .start();
+        new Thread(() -> doCheckFromManifest(activity), "gn-app-update").start();
     }
 
     /**
-     * Llamado desde JS con datos de {@code app_version} en Neon. Si GitHub responde con {@code version.json}
-     * válido, se usa ese origen y se ignora el JSON de Neon (la tabla sigue en la BD para admin/PWA).
+     * Llamado desde JS con datos de {@code app_version} en Neon (prioridad sobre manifest HTTP en assets).
      */
     public static void checkWithRemoteJson(AppCompatActivity activity, String jsonBody) {
         if (activity == null || jsonBody == null || jsonBody.trim().isEmpty()) return;
         new Thread(
                 () -> {
                     try {
-                        if (tryApplyFromGitHub(activity)) {
-                            return;
-                        }
                         JSONObject remote = new JSONObject(jsonBody.trim());
                         applyIfNewer(activity, remote, "neon-db");
                     } catch (Exception e) {
@@ -84,34 +66,6 @@ public final class AppUpdateChecker {
                 },
                 "gn-app-update-neon")
                 .start();
-    }
-
-    /**
-     * @return {@code true} si se obtuvo y parseó {@code version.json} de GitHub (aunque no haya update);
-     *         {@code false} para seguir con Neon o manifest.
-     */
-    private static boolean tryApplyFromGitHub(AppCompatActivity activity) {
-        if (activity == null) return false;
-        try {
-            /* Evita JSON en caché (CDN/proxy) cuando subís versionCode nuevo. */
-            String url = GITHUB_VERSION_JSON + "?t=" + System.currentTimeMillis();
-            String body = httpGet(url, 5000, 5000);
-            if (body == null || body.trim().isEmpty()) {
-                return false;
-            }
-            JSONObject remote = new JSONObject(body.trim());
-            int rc = remote.optInt("versionCode", remote.optInt("version_code", 0));
-            String apk = remote.optString("apkUrl", remote.optString("apk_url", "")).trim();
-            if (rc <= 0 || apk.isEmpty()) {
-                Log.w(TAG, "version.json GitHub incompleto (versionCode/apkUrl)");
-                return false;
-            }
-            applyIfNewer(activity, remote, "github");
-            return true;
-        } catch (Exception e) {
-            Log.w(TAG, "GitHub version.json omitido: " + e.getMessage());
-            return false;
-        }
     }
 
     private static void doCheckFromManifest(AppCompatActivity activity) {
@@ -312,14 +266,6 @@ public final class AppUpdateChecker {
         }
     }
 
-    private static void applyLaterSnooze(AppCompatActivity activity, int remoteCode, String source) {
-        long ms =
-                "github".equals(source)
-                        ? GITHUB_LATER_SNOOZE_MS
-                        : 24L * 60L * 60L * 1000L;
-        applySnooze(activity, remoteCode, ms);
-    }
-
     private static boolean isSnoozedForRemote(AppCompatActivity activity, int remoteCode) {
         SharedPreferences sp = activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE);
         int sn = sp.getInt(KEY_SNOOZED_REMOTE, -1);
@@ -382,7 +328,7 @@ public final class AppUpdateChecker {
             } catch (Exception ignored) {
             }
             sActiveUpdateDialog = null;
-            applyLaterSnooze(activity, remoteCode, source);
+            applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
         });
         if (!forceUpdate) {
             b.setNeutralButton(
@@ -405,7 +351,7 @@ public final class AppUpdateChecker {
                 d -> {
                     sActiveUpdateDialog = null;
                     if (outcome[0] == 0 && remoteCode > 0) {
-                        applyLaterSnooze(activity, remoteCode, source);
+                        applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
                     }
                 });
         sActiveUpdateDialog = dialog;
