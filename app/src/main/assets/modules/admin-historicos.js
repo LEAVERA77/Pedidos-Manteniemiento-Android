@@ -69,11 +69,16 @@ function _direccionPedido(p) {
 }
 
 function _idColumna(p) {
+    const r = _rubroHist();
+    const nm = String(p.nis_med || '').trim();
+    if (r === 'municipio' && nm) return nm;
     const n = String(p.nis || '').trim();
     const m = String(p.med || '').trim();
     if (n && m) return `${n} · ${m}`;
     if (n) return n;
     if (m) return m;
+    if (nm) return nm;
+    if (p.np != null && String(p.np).trim() !== '') return String(p.np).trim();
     return String(p.id ?? '—');
 }
 
@@ -150,6 +155,9 @@ function _filtrarLista(list, f) {
                     .toLowerCase()
                     .includes(idQ) ||
                 String(p.med || '')
+                    .toLowerCase()
+                    .includes(idQ) ||
+                String(p.nis_med || '')
                     .toLowerCase()
                     .includes(idQ) ||
                 String(p.np ?? '')
@@ -289,6 +297,24 @@ export function initAdminHistoricosPanel(deps) {
         _pintarTabla(tbody, rows, onRowClick);
     };
 
+    let _histFilterT = 0;
+    const scheduleRenderFiltros = () => {
+        try {
+            clearTimeout(_histFilterT);
+        } catch (_) {}
+        _histFilterT = setTimeout(() => {
+            _histFilterT = 0;
+            render();
+        }, 220);
+    };
+    ['#gn-hist-f-desde', '#gn-hist-f-hasta', '#gn-hist-estado', '#gn-hist-solo-ag'].forEach((sel) => {
+        const el = root.querySelector(sel);
+        if (!el) return;
+        el.addEventListener('change', () => render());
+    });
+    root.querySelector('#gn-hist-id')?.addEventListener('input', scheduleRenderFiltros);
+    root.querySelector('#gn-hist-tipo')?.addEventListener('input', scheduleRenderFiltros);
+
     root.querySelector('#gn-hist-buscar')?.addEventListener('click', () => render());
     root.querySelector('#gn-hist-refrescar')?.addEventListener('click', () => {
         try {
@@ -311,7 +337,11 @@ export function initAdminHistoricosPanel(deps) {
         try {
             root.dataset.gnHistTid = '';
         } catch (_) {}
-        if (tbody) tbody.innerHTML = '';
+        /* Igual que socios: no dejar la tabla en blanco al cambiar tenant; mensaje hasta la próxima recarga/pestaña. */
+        if (tbody) {
+            tbody.innerHTML =
+                '<tr><td colspan="10" style="padding:.75rem;color:var(--tm);font-size:.85rem;line-height:1.45">Actualizando listado para el tenant actual… Volvé a abrir <strong>Históricos</strong> o tocá <strong>Recargar lista</strong> cuando termine la carga de pedidos.</td></tr>';
+        }
     };
 
     window.__gnAdminTabHistoricos = () => {

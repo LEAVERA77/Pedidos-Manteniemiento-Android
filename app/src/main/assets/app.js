@@ -6046,10 +6046,11 @@ function syncMapaCapasOsmCheckboxesFromStorage() {
     card.querySelectorAll('input[type="checkbox"][data-osm-layer]').forEach((inp) => {
         const id = inp.getAttribute('data-osm-layer');
         if (!id) return;
-        let on = false;
+        let raw = '';
         try {
-            on = localStorage.getItem(`pmg_overlay_osm_${id}`) === '1';
+            raw = localStorage.getItem(`pmg_overlay_osm_${id}`) ?? '';
         } catch (_) {}
+        const on = id === 'topo' || id === 'hot' ? raw !== '0' : raw === '1';
         inp.checked = on;
     });
 }
@@ -11409,7 +11410,10 @@ function abrirModalRevisionDerivacionAdmin(pid) {
     if (!esOtroDest) {
         const telPre = obtenerTelefonoDerivacionDesdeEmpresaCfg(v);
         if (!telPre || !/^\+\d{8,22}$/.test(String(telPre).trim())) {
-            toast('Elegí un destino con WhatsApp configurado.', 'warning');
+            toast(
+                'No hay teléfono configurado para esta derivación. Carguelo en Panel Admin → Datos de la Empresa → Derivación a terceros.',
+                'error'
+            );
             return;
         }
     }

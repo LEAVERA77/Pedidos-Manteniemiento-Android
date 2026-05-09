@@ -544,10 +544,12 @@ export function gnApplyAdminOsmOverlaysFromStorage(map) {
     if (!layers) return;
     for (const def of GN_OSM_OVERLAY_LAYERS) {
         const id = def.id;
-        let on = false;
+        let raw = '';
         try {
-            on = localStorage.getItem(`pmg_overlay_osm_${id}`) === '1';
+            raw = localStorage.getItem(`pmg_overlay_osm_${id}`) ?? '';
         } catch (_) {}
+        /* Relieve (topo) y Ejidos (hot): activos por defecto salvo preferencia explícita «off» en localStorage. */
+        const on = id === 'topo' || id === 'hot' ? raw !== '0' : raw === '1';
         const layer = layers[id];
         if (!layer) continue;
         try {
