@@ -370,6 +370,13 @@ public class MainActivity extends AppCompatActivity {
                 dismissNativeSplashOnce();
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
+                try {
+                    view.evaluateJavascript(
+                            "(function(){try{document.documentElement.classList.add('gn-android-shell');}"
+                                    + "catch(e){}})();",
+                            null);
+                } catch (Exception ignored) {
+                }
             }
         });
 

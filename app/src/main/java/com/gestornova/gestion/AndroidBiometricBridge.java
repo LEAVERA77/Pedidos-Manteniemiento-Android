@@ -1,6 +1,7 @@
 package com.gestornova.gestion;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
@@ -38,14 +39,42 @@ public final class AndroidBiometricBridge {
         return activity.getApplicationContext();
     }
 
+    private static int allowedBiometricAuthenticators() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return BiometricManager.Authenticators.BIOMETRIC_STRONG
+                    | BiometricManager.Authenticators.BIOMETRIC_WEAK;
+        }
+        return BiometricManager.Authenticators.BIOMETRIC_WEAK;
+    }
+
     @JavascriptInterface
     public boolean isAvailable() {
         try {
             BiometricManager bm = BiometricManager.from(ctx());
-            int r = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK);
+            int r = bm.canAuthenticate(allowedBiometricAuthenticators());
             return r == BiometricManager.BIOMETRIC_SUCCESS;
         } catch (Throwable t) {
             return false;
+        }
+    }
+
+    @JavascriptInterface
+    public void clearSavedLogin() {
+        try {
+            ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .remove(K_EM)
+                    .remove(K_PW)
+                    .apply();
+            activity.runOnUiThread(
+                    () ->
+                            webView.post(
+                                    () ->
+                                            webView.evaluateJavascript(
+                                                    "try{if(typeof window.__gnRefreshLoginBiometricUi==='function')"
+                                                            + "window.__gnRefreshLoginBiometricUi();}catch(e){}",
+                                                    null)));
+        } catch (Throwable ignored) {
         }
     }
 
@@ -148,11 +177,15 @@ public final class AndroidBiometricBridge {
                 activity,
                 ContextCompat.getMainExecutor(activity),
                 cb);
-        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setSubtitle(subtitle)
-                .setNegativeButtonText("Cancelar")
-                .build();
+        BiometricPrompt.PromptInfo.Builder b =
+                new BiometricPrompt.PromptInfo.Builder()
+                        .setTitle(title)
+                        .setSubtitle(subtitle)
+                        .setNegativeButtonText("Cancelar");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            b.setAllowedAuthenticators(allowedBiometricAuthenticators());
+        }
+        BiometricPrompt.PromptInfo info = b.build();
         prompt.authenticate(info);
     }
 }

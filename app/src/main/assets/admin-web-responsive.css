@@ -127,3 +127,11 @@
     max-width: calc(100vw - 1rem);
   }
 }
+
+/* APK GestorNova (clase inyectada desde MainActivity): sin asistente inicial en login ni botón mágico en bienvenida */
+html.gn-android-shell .gn-login-asistente-link,
+html.gn-android-shell #gw .gn-btn-asistente-tl {
+  display: none !important;
+  pointer-events: none;
+  visibility: hidden;
+}
