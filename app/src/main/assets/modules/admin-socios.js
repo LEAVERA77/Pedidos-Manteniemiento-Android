@@ -635,7 +635,8 @@ function obtenerNumColsTablaSociosAdmin() {
     }
     if (vis.has(SOCIOS_CATALOGO_OPT_DISTRIB.id)) opt++;
     const nExtra = Number(window._sociosDatosExtraColCount || 0) || 0;
-    return 11 + opt + nProy + nExtra;
+    const base = req().esMunicipioRubro() ? 10 : 11;
+    return base + opt + nProy + nExtra;
 }
 
 /** Misma regla que import Este/Norte: faja Auto según longitud de la central (`lng_base`). */
@@ -789,16 +790,17 @@ async function cargarListaSociosAdmin() {
         const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
         const thDist = sociosCatalogoHtmlThDistrib(visCols);
         const thNis = req().esMunicipioRubro() ? 'ID vecino' : 'NIS';
+        const thMedidor = req().esMunicipioRubro() ? '' : '<th align="left">Medidor</th>';
         const thExtras =
             extraKeys.length > 0
                 ? extraKeys.map((k) => `<th title="Columna extra (datos_extra)" style="max-width:7rem">${escHtmlPrint(k)}</th>`).join('')
                 : '';
         cont.innerHTML =
             `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
-<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${thNis}</th><th align="left">Medidor</th><th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${thExtras}${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
+<table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${thNis}</th>${thMedidor}<th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${thExtras}${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <details id="socios-catalogo-colprefs" style="font-size:.76rem;margin:.5rem 0 0;color:var(--tm);max-width:52rem">
 <summary style="cursor:pointer;font-weight:600">Columnas opcionales del listado</summary>
-<p style="margin:.35rem 0 .5rem;color:var(--tl);font-size:.72rem;line-height:1.35">Elegí qué columnas mostrar para este tipo de negocio (<strong>${escHtmlPrint(sociosCatalogoRubroActualParaColumnas())}</strong>). Siempre visibles: NIS, medidor, nombre, localidad, provincia, calle, número, teléfono, latitud, longitud y estado.</p>
+<p style="margin:.35rem 0 .5rem;color:var(--tl);font-size:.72rem;line-height:1.35">Elegí qué columnas mostrar para este tipo de negocio (<strong>${escHtmlPrint(sociosCatalogoRubroActualParaColumnas())}</strong>). Siempre visibles: NIS${req().esMunicipioRubro() ? '' : ', medidor'}, nombre, localidad, provincia, calle, número, teléfono, latitud, longitud y estado.</p>
 <div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
 <button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
 </details>
@@ -1393,6 +1395,7 @@ function renderSociosCatalogoVirtual() {
         return Number.isFinite(n) ? n.toFixed(6) : '—';
     };
     const ncol = window._sociosTablaColCount || obtenerNumColsTablaSociosAdmin();
+    const hideMed = req().esMunicipioRubro();
     tb.innerHTML =
         `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padTop}px;border:none"></td></tr>` +
         slice
@@ -1405,7 +1408,8 @@ function renderSociosCatalogoVirtual() {
                 const tdDist = sociosCatalogoHtmlTdDistrib(s, visRow, e);
                 const extraKs = window._sociosDatosExtraColumnKeys || [];
                 const tdExtras = sociosCatalogoHtmlExtrasDatosExtra(s, extraKs, e);
-                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td><td>${e(sociosCatalogoMedidorCelda(s))}</td><td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdPre}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${tdExtras}${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
+                const tdMed = hideMed ? '' : `<td>${e(sociosCatalogoMedidorCelda(s))}</td>`;
+                return `<tr><td>${e(sociosCatalogoNisCelda(s))}</td>${tdMed}<td>${e(s.nombre)}</td><td>${e(s.localidad)}</td><td>${e(s.provincia)}</td>${tdPre}<td>${e(calleDisp)}</td><td>${e(numDisp)}</td><td>${e(s.telefono)}</td>${tdDist}<td align="right" class="gn-soc-coord gn-soc-lat">${fmtLon(s.latitud)}</td><td align="right" class="gn-soc-coord gn-soc-lon">${fmtLon(s.longitud)}</td>${tdExtras}${proy}<td>${s.activo ? 'Activo' : 'Baja'}</td></tr>`;
             })
             .join('') +
         `<tr class="gn-vspad"><td colspan="${ncol}" style="padding:0;height:${padBot}px;border:none"></td></tr>`;

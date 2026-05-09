@@ -1263,3 +1263,15 @@ table.gn-soc-admin-table thead th {
 [id^="modal-formato"] {
   z-index: 99999 !important;
 }
+
+/* Aviso comunidad (📢): solo con sesión iniciada (main #ms) */
+body:not(.gn-sesion-activa) #gn-fab-community-root,
+body:not(.gn-sesion-activa) #gn-fab-community-btn {
+  display: none !important;
+}
+
+/* Mapa Leaflet: pan/zoom táctil sin quedar bloqueado por reglas globales */
+#mc.leaflet-container,
+.leaflet-container#mc {
+  touch-action: pan-x pan-y pinch-zoom;
+}

@@ -5,16 +5,6 @@
 
 export function initMapaInteraccionAdminNavegador(map, ctx) {
     if (!map || !ctx) return;
-    try {
-        if (typeof ctx.esAndroidWebViewMapa === 'function' && ctx.esAndroidWebViewMapa()) return;
-    } catch (_) {
-        return;
-    }
-    let ok = false;
-    try {
-        ok = typeof ctx.esAdmin === 'function' && ctx.esAdmin();
-    } catch (_) {}
-    if (!ok) return;
     const fix = () => {
         try {
             if (map.dragging && typeof map.dragging.enable === 'function') map.dragging.enable();
@@ -33,5 +23,24 @@ export function initMapaInteraccionAdminNavegador(map, ctx) {
     try {
         map.on('mousedown', fix);
         map.on('touchstart', fix);
+        map.on('mouseup', fix);
+        map.on('touchend', fix);
+        map.on('pointercancel', fix);
+    } catch (_) {}
+    try {
+        if (!window.__gnMapLeafletPanFixGlobal) {
+            window.__gnMapLeafletPanFixGlobal = true;
+            window.addEventListener(
+                'pointerup',
+                () => {
+                    try {
+                        const m = typeof window !== 'undefined' && window.app ? window.app.map : null;
+                        if (!m || typeof m.dragging?.enable !== 'function') return;
+                        m.dragging.enable();
+                    } catch (_) {}
+                },
+                { passive: true }
+            );
+        }
     } catch (_) {}
 }

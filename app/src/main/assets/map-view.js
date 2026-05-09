@@ -251,8 +251,7 @@ function gnAttachCursorCoordsControl(L, map) {
                 container.style.top = `${startTop + dy}px`;
             };
             const onWinUp = () => {
-                if (!isDragging) return;
-                isDragging = false;
+                if (isDragging) isDragging = false;
                 try {
                     mapInstance.dragging.enable();
                 } catch (_) {}
@@ -279,6 +278,8 @@ function gnAttachCursorCoordsControl(L, map) {
 
             window.addEventListener('mousemove', onWinMove);
             window.addEventListener('mouseup', onWinUp);
+            window.addEventListener('pointerup', onWinUp, true);
+            window.addEventListener('blur', onWinUp);
 
             if (toggleBtn) {
                 toggleBtn.addEventListener('click', (e) => {
@@ -313,7 +314,11 @@ function gnAttachCursorCoordsControl(L, map) {
             if (this._gnCcOnMapMove) mapInstance.off('mousemove', this._gnCcOnMapMove);
             if (this._gnCcOnMapOut) mapInstance.off('mouseout', this._gnCcOnMapOut);
             if (this._gnCcOnWinMove) window.removeEventListener('mousemove', this._gnCcOnWinMove);
-            if (this._gnCcOnWinUp) window.removeEventListener('mouseup', this._gnCcOnWinUp);
+            if (this._gnCcOnWinUp) {
+                window.removeEventListener('mouseup', this._gnCcOnWinUp);
+                window.removeEventListener('pointerup', this._gnCcOnWinUp, true);
+                window.removeEventListener('blur', this._gnCcOnWinUp);
+            }
             try {
                 mapInstance.dragging.enable();
             } catch (_) {}

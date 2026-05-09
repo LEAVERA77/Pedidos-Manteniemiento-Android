@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1e3a8a">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <title>GestorNova — Pedidos</title>
@@ -64,9 +67,10 @@
     </form>
     <div id="le" class="le"></div>
     <div style="text-align:center;margin-top:.5rem;display:flex;flex-direction:column;align-items:center;gap:.35rem;max-width:24rem;margin-left:auto;margin-right:auto">
-      <button type="button" onclick="if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu usuario o contraseña?</button>
-      <span style="font-size:.74rem;color:var(--tm);line-height:1.35;text-align:center">Ingresá el <strong>usuario</strong> de la cuenta (puede ser email o el nombre de login que definió el administrador). Recuperación de clave vía correo (EmailJS) para cuentas administrador.</span>
+      <button type="button" onclick="if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button>
+      <span style="font-size:.74rem;color:var(--tm);line-height:1.35;text-align:center">¿Olvidaste tu contraseña? Ingresá tu nombre de usuario y el mail donde querés recibir el código de recuperación.</span>
     </div>
+    <div id="gn-login-bio-android" style="display:none;margin-top:.55rem;text-align:center;max-width:22rem;margin-left:auto;margin-right:auto;flex-direction:column;gap:.35rem;align-items:center" aria-live="polite"></div>
     <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
     <div style="text-align:center;margin-top:.25rem;display:flex;flex-direction:column;align-items:center;gap:.2rem">
       <button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button>
@@ -1237,8 +1241,8 @@
   <div class="mc" style="max-width:420px">
     <div class="mh"><h3><i class="fas fa-key"></i> Recuperar acceso (admin)</h3><button type="button" class="cm" onclick="document.getElementById('modal-reset-pw').classList.remove('active');if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo cuentas <strong>administrador</strong>. Si no recordás el <strong>email</strong> con el que te registraron, consultá con quien gestiona el sistema o la bandeja de bienvenida. Para la <strong>contraseña</strong>, recibirás un código de 6 dígitos (válido ~30 min) en el correo que indiques abajo o en el email de contacto de la empresa (servicio EmailJS, sin secretos en la app).</p>
-      <div class="fg" style="padding:0"><label>Email de tu cuenta admin</label><input id="reset-email" type="text" placeholder="admin@cooperativa.org" autocomplete="username"></div>
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo <strong>administradores</strong>. Recibirás un código de 6 dígitos (válido ~30 min) en el correo que indiques o en el email de contacto de la empresa (EmailJS).</p>
+      <div class="fg" style="padding:0"><label for="reset-email">Nombre de usuario administrador</label><input id="reset-email" type="text" placeholder="Usuario o email del admin" autocomplete="username"></div>
       <div class="fg" style="padding:0;margin-top:.55rem"><label>Enviar código a (opcional)</label><input id="reset-email-destino" type="email" placeholder="Si está vacío: email empresa o tu email"></div>
       <div id="reset-codigo-wrap" style="display:none;margin-top:.75rem">
         <div class="fg" style="padding:0"><label>Código recibido por email</label><input id="reset-codigo" type="text" placeholder="000000"></div>

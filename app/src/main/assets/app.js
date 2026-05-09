@@ -149,6 +149,8 @@ import {
     syncPedidosToolbarFiltrosExclusivosFromLs,
 } from './js/pedidos-toolbar-filtros-exclusivos.js';
 
+import './modules/login-biometric-android.js';
+
 import {
   asegurarDefsProyeccionesARG,
   fajaArgentinaPorLongitud,
@@ -3490,6 +3492,9 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try {
+            document.body.classList.add('gn-sesion-activa');
+        } catch (_) {}
         try {
             actualizarVisibilidadBotonTenantTecnicoLogin();
         } catch (_) {}
@@ -12308,9 +12313,19 @@ function render() {
     const ccEl = document.getElementById('cc');
     if (pcEl) pcEl.textContent = pen;
     if (acEl) acEl.textContent = asg;
-    if (ccEl) ccEl.textContent = cer;
+    if (ccEl) {
+        if (cer > 20) {
+            ccEl.textContent = '20+';
+            ccEl.title = `${cer} en Cerrados / derivados; en esta pestaña se listan los 20 más recientes. Ver el resto en Admin → Históricos.`;
+        } else {
+            ccEl.textContent = String(cer);
+            try {
+                ccEl.removeAttribute('title');
+            } catch (_) {}
+        }
+    }
 
-    const fl = tecnicoPideVerTodosPedidosEmpresa()
+    let fl = tecnicoPideVerTodosPedidosEmpresa()
         ? [...vis]
               .filter((p) => pasaSoloAgrupadosToolbar(p))
               .sort((a, b) => {
@@ -12326,6 +12341,15 @@ function render() {
               if (soloDerivLista) return pedidoEsDerivadoFuera(p);
               return p.es === 'Cerrado' || p.es === 'Derivado externo';
           });
+    if (!tecnicoPideVerTodosPedidosEmpresa() && app.tab === 'c' && Array.isArray(fl) && fl.length > 20) {
+        fl = [...fl]
+            .sort((a, b) => {
+                const ta = a.f ? new Date(a.f).getTime() : 0;
+                const tb = b.f ? new Date(b.f).getTime() : 0;
+                return tb - ta;
+            })
+            .slice(0, 20);
+    }
     const c = document.getElementById('pl');
     c.innerHTML = '';
     
@@ -12680,6 +12704,9 @@ function ejecutarCerrarSesion() {
     document.getElementById('gw')?.classList.remove('active');
     document.getElementById('ls').classList.add('active');
     document.getElementById('ms').classList.remove('active');
+    try {
+        document.body.classList.remove('gn-sesion-activa');
+    } catch (_) {}
     try {
         actualizarVisibilidadBotonTenantTecnicoLogin();
     } catch (_) {}
@@ -13454,6 +13481,9 @@ try {
         }
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try {
+            document.body.classList.add('gn-sesion-activa');
+        } catch (_) {}
         try {
             actualizarVisibilidadBotonTenantTecnicoLogin();
         } catch (_) {}
@@ -18974,7 +19004,10 @@ async function pasoResetPw() {
 
     if (_resetPaso === 1) {
         const email = document.getElementById('reset-email').value.trim();
-        if (!email) { msg.textContent = 'Ingresá el email de tu cuenta administrador'; return; }
+        if (!email) {
+            msg.textContent = 'Ingresá el nombre de usuario administrador (o su email de cuenta).';
+            return;
+        }
         _resetUsuarioAdmin = false;
         try {
             const emailLc = email.toLowerCase();

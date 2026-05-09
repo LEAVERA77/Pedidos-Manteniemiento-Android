@@ -3,7 +3,6 @@
  */
 import {
     runQuincenaHistCheck,
-    marcarVaciadoQuincenaHecho,
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 
@@ -242,7 +241,6 @@ export function initAdminHistoricosPanel(deps) {
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
         <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a pedir pedidos al servidor si hay API"><i class="fas fa-sync"></i> Recargar lista</button>
-        <button type="button" class="btn-sm" id="gn-hist-quincena" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e" title="Actualiza el recordatorio quincenal (no borra Neon)"><i class="fas fa-calendar-check"></i> Marcar recordatorio quincenal</button>
         <button type="button" class="btn-sm" id="gn-hist-mostrar-bp2" style="background:var(--bg);border:1px solid var(--bo);color:var(--tm)" title="Vuelve a mostrar cerrados/desestimados/derivados en el panel de pedidos">Mostrar históricos en panel pedidos</button>
       </div>
       <div style="overflow:auto;max-height:min(62vh,560px);border:1px solid var(--bo);border-radius:.5rem">
@@ -300,12 +298,6 @@ export function initAdminHistoricosPanel(deps) {
             render();
         }
     });
-    root.querySelector('#gn-hist-quincena')?.addEventListener('click', () => {
-        marcarVaciadoQuincenaHecho(toast);
-        try {
-            if (typeof window.render === 'function') window.render();
-        } catch (_) {}
-    });
     root.querySelector('#gn-hist-mostrar-bp2')?.addEventListener('click', () => {
         desactivarOcultarHistoricosResueltosBp2();
         if (typeof toast === 'function') toast('Listo: volvés a ver los históricos en el panel de pedidos.', 'success', 3200);
@@ -335,6 +327,11 @@ export function initAdminHistoricosPanel(deps) {
         if (th) th.textContent = L2.colId;
         const tipoInp = root.querySelector('#gn-hist-tipo');
         if (tipoInp) tipoInp.placeholder = L2.tipoPh;
-        render();
+        try {
+            if (typeof refrescarPedidos === 'function') void Promise.resolve(refrescarPedidos()).then(() => render());
+            else render();
+        } catch (_) {
+            render();
+        }
     };
 }

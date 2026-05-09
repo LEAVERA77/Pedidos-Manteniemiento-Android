@@ -273,7 +273,7 @@ function mostrarModalConfigInicial() {
     document.getElementById('cfgi-tenant').textContent = 'tenant_id: ' + req().tenantIdActual();
     try {
         const tw = document.getElementById('cfgi-tech-wrap');
-        if (tw) tw.style.display = esAdm ? '' : 'none';
+        if (tw) tw.style.display = '';
         _wizardTecnicoSetMsg('', false);
     } catch (_) {}
     const msg = document.getElementById('cfgi-msg');
@@ -285,7 +285,7 @@ function mostrarModalConfigInicial() {
             : '';
     msg.textContent = esAdm
         ? 'Setup inicial (una vez): elegí tipo de negocio, nombre y ubicación base; al final tocá Finalizar. Si ya estaban cargados, revisalos y confirmá.' + snapLine
-        : 'Este tenant no está configurado. Pedí a un administrador completar el setup.';
+        : 'Este tenant no está configurado. Con la clave de técnico (abajo) podés listar clientes y vincular tu sesión a otro tenant; solo un administrador puede pulsar Finalizar y completar el setup.';
     ['cfgi-nombre','cfgi-tipo','cfgi-logo-url','cfgi-logo-file'].forEach(id => {
         const el = document.getElementById(id); if (el) el.disabled = !esAdm;
     });

@@ -5,47 +5,49 @@
 
 /** Doughnut «estados» — hex sólidos + borde blanco (Chart.js ya define border en app). */
 export const ESTADO_DONUT_COLORS = {
-    Pendiente: '#f59e0b',
-    Asignado: '#3b82f6',
-    'En ejecución': '#8b5cf6',
-    Cerrado: '#10b981',
-    Desestimado: '#6b7280',
-    'Derivado externo': '#ef4444',
+    Pendiente: '#fcd34d',
+    Asignado: '#93c5fd',
+    'En ejecución': '#c4b5fd',
+    Cerrado: '#6ee7b7',
+    Desestimado: '#d1d5db',
+    'Derivado externo': '#fca5a5',
 };
 
 export const DONUT_FALLBACK_SEQUENCE = [
-    '#94a3b8',
-    '#cbd5e1',
     '#e2e8f0',
+    '#cbd5e1',
     '#fcd34d',
     '#93c5fd',
     '#c4b5fd',
+    '#6ee7b7',
+    '#d1d5db',
+    '#fca5a5',
 ];
 
 /** Lista rotativa (tipos / usuarios / barras genéricas). */
-/** Barras horizontales KPI PDF / impresión A4 (sólidos, sin degradados). */
+/** Barras horizontales KPI PDF / impresión A4 (pastel, legible en pantalla e impresión). */
 export const KPI_PDF_IMPRESION_BARRAS_SOLIDOS = [
-    '#2563eb',
-    '#16a34a',
-    '#ca8a04',
-    '#9333ea',
-    '#dc2626',
-    '#0d9488',
-    '#475569',
-    '#ea580c',
+    '#93c5fd',
+    '#6ee7b7',
+    '#fcd34d',
+    '#c4b5fd',
+    '#fca5a5',
+    '#d1d5db',
+    '#a5b4fc',
+    '#fde68a',
 ];
 
 export const CHART_PALETTE_ARRAY = [
-    'rgba(245, 158, 11, 0.82)',
-    'rgba(59, 130, 246, 0.82)',
-    'rgba(139, 92, 246, 0.82)',
-    'rgba(16, 185, 129, 0.82)',
-    'rgba(107, 114, 128, 0.78)',
-    'rgba(251, 191, 36, 0.78)',
-    'rgba(56, 189, 248, 0.78)',
-    'rgba(167, 139, 250, 0.78)',
-    'rgba(52, 211, 153, 0.78)',
-    'rgba(148, 163, 184, 0.72)',
+    'rgba(252, 211, 77, 0.9)',
+    'rgba(147, 197, 253, 0.9)',
+    'rgba(196, 181, 253, 0.9)',
+    'rgba(110, 231, 183, 0.9)',
+    'rgba(209, 213, 219, 0.88)',
+    'rgba(252, 165, 165, 0.9)',
+    'rgba(253, 230, 138, 0.88)',
+    'rgba(165, 180, 252, 0.88)',
+    'rgba(167, 243, 208, 0.88)',
+    'rgba(226, 232, 240, 0.85)',
 ];
 
 export function datasetsMensualCreadosCerrados(rMensualRows) {
@@ -53,15 +55,15 @@ export function datasetsMensualCreadosCerrados(rMensualRows) {
         {
             label: 'Creados',
             data: rMensualRows.map((r) => parseInt(r.total || 0, 10)),
-            backgroundColor: 'rgba(245, 158, 11, 0.88)',
-            borderColor: 'rgba(217, 119, 6, 0.75)',
+            backgroundColor: 'rgba(252, 211, 77, 0.92)',
+            borderColor: 'rgba(245, 158, 11, 0.55)',
             borderWidth: 1.5,
         },
         {
             label: 'Cerrados',
             data: rMensualRows.map((r) => parseInt(r.cerrados || 0, 10)),
-            backgroundColor: 'rgba(16, 185, 129, 0.88)',
-            borderColor: 'rgba(5, 150, 105, 0.75)',
+            backgroundColor: 'rgba(110, 231, 183, 0.92)',
+            borderColor: 'rgba(52, 211, 153, 0.55)',
             borderWidth: 1.5,
         },
     ];

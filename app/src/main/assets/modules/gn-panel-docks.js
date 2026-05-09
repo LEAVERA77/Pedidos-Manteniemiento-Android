@@ -341,7 +341,7 @@ export function initCommunityBroadcastFab(deps) {
         'position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-family:system-ui,sans-serif';
     root.innerHTML = `
 <button type="button" id="gn-fab-community-hide" title="Minimizar (icono a la izquierda)" style="font-size:.7rem;padding:2px 6px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569">−</button>
-<button type="button" id="gn-fab-community-btn" title="Aviso a la comunidad" style="width:52px;height:52px;border-radius:50%;border:none;background:#128C7E;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;font-size:1.35rem;touch-action:none">📢</button>
+<button type="button" id="gn-fab-community-btn" title="Aviso a la comunidad" style="width:52px;height:52px;border-radius:50%;border:none;background:#128C7E;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;font-size:1.35rem;touch-action:manipulation">📢</button>
 <div id="gn-fab-community-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9998;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
     <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
