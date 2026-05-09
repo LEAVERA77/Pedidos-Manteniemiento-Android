@@ -135,6 +135,7 @@ import {
     syncHistorialNisBusquedaDom,
 } from './modules/pedido-form-labels-rubro.js';
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
+import { resolverPedidoParaDerivacionRevisionAdmin } from './modules/derivacion-revision-admin-modal.js';
 import {
     ocultarModulosRedesValorParaApi,
     syncAyudaDistribuidoresExcelHint,
@@ -11390,8 +11391,14 @@ function abrirModalRevisionDerivacionAdmin(pid) {
         toast('Elegí un destino.', 'warning');
         return;
     }
-    const pRow = app.p.find((x) => String(x.id) === String(pid));
-    if (!pRow) return;
+    const pRow = resolverPedidoParaDerivacionRevisionAdmin(pid);
+    if (!pRow) {
+        toast(
+            'No se encontró el pedido en la lista cargada. Abrí de nuevo el detalle desde Pedidos o tocá «Recargar» y reintentá.',
+            'error'
+        );
+        return;
+    }
     const obsTa = (ta?.value || '').trim();
     const obsTec = String(pRow?.sdm || '').trim();
     if (!obsTa && !obsTec) {
@@ -11426,7 +11433,12 @@ function abrirModalRevisionDerivacionAdmin(pid) {
         esOtroDest && nomOtroVal ? nomOtroVal : esOtroDest ? 'Tercero' : destinoNombre;
     const msg = buildPreviewMensajeDerivacionAdmin(pRow, destinoParaMsg, obsTa || obsTec);
     const mp = document.getElementById('modal-derivacion-preview-admin');
-    document.getElementById('deriv-prev-pid').value = String(pid);
+    const pidEl = document.getElementById('deriv-prev-pid');
+    if (!mp || !pidEl) {
+        toast('No se encontró el modal de revisión de derivación. Recargá la página (F5).', 'error');
+        return;
+    }
+    pidEl.value = String(pid);
     const dstEl = document.getElementById('deriv-prev-destino');
     if (dstEl) dstEl.innerHTML = `<option value="${v.replace(/"/g, '&quot;')}">${destinoNombre.replace(/</g, '&lt;')}</option>`;
     const telEl = document.getElementById('deriv-prev-telefono');
@@ -11462,7 +11474,11 @@ function abrirModalRevisionDerivacionAdmin(pid) {
     if (telEl && !esOtroDest) telEl.value = tel || '';
     const msgEl = document.getElementById('deriv-prev-mensaje');
     if (msgEl) msgEl.value = msg;
-    mp?.classList.add('active');
+    try {
+        mp.classList.add('active');
+    } catch (e) {
+        toast('No se pudo abrir el modal de revisión.', 'error');
+    }
 }
 window.abrirModalRevisionDerivacionAdmin = abrirModalRevisionDerivacionAdmin;
 
@@ -11748,6 +11764,9 @@ async function detalle(p, opts = {}) {
     try {
         const dmRoot = document.getElementById('dm');
         if (dmRoot) dmRoot.dataset.detallePedidoId = pidKey;
+    } catch (_) {}
+    try {
+        window.__gnDetallePedidoActivo = p;
     } catch (_) {}
     try {
         if (esAdmin() && p?.id != null) {
@@ -12454,6 +12473,9 @@ function closeAll() {
     try {
         const dm = document.getElementById('dm');
         if (dm) delete dm.dataset.detallePedidoId;
+    } catch (_) {}
+    try {
+        delete window.__gnDetallePedidoActivo;
     } catch (_) {}
     document.getElementById('pf').reset();
     try {
