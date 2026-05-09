@@ -6,12 +6,15 @@ import android.app.DownloadManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.media.MediaScannerConnection;
@@ -26,6 +29,8 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import android.provider.Settings;
+import android.database.Cursor;
 import android.util.Base64;
 import android.util.Log;
 import android.location.Location;
@@ -100,6 +105,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int RC_FILE_CHOOSER = 1001;
     private String pendingPedidoIdIntent;
 
+    /** Descarga de APK OTA (Neon): completada → abrir instalador. */
+    private BroadcastReceiver apkUpdateDownloadReceiver;
+
     private final ActivityResultLauncher<String[]> permissionLauncher =
             registerForActivityResult(
                     new ActivityResultContracts.RequestMultiplePermissions(),
@@ -131,6 +139,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         crearCanalNotificacionesPedidos();
+        registerApkUpdateDownloadReceiver();
 
         splashOverlay = findViewById(R.id.splash_overlay);
         nativeSplashDismissed = false;
@@ -601,11 +610,132 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (apkUpdateDownloadReceiver != null) {
+            try {
+                unregisterReceiver(apkUpdateDownloadReceiver);
+            } catch (Exception ignored) {
+            }
+            apkUpdateDownloadReceiver = null;
+        }
         if (isFinishing() && !isChangingConfigurations()) {
             detenerNetworkWatchdog();
         }
         destroyWebViewSafely();
         super.onDestroy();
+    }
+
+    private void registerApkUpdateDownloadReceiver() {
+        if (apkUpdateDownloadReceiver != null) {
+            return;
+        }
+        apkUpdateDownloadReceiver =
+                new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        if (!DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction())) {
+                            return;
+                        }
+                        long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L);
+                        if (id < 0L) {
+                            return;
+                        }
+                        SharedPreferences sp =
+                                getSharedPreferences(AppUpdateDownloadHelper.PREFS, MODE_PRIVATE);
+                        long expected = sp.getLong(AppUpdateDownloadHelper.KEY_PENDING_DOWNLOAD_ID, -1L);
+                        if (id != expected) {
+                            return;
+                        }
+                        sp.edit()
+                                .remove(AppUpdateDownloadHelper.KEY_PENDING_DOWNLOAD_ID)
+                                .remove(AppUpdateDownloadHelper.KEY_PENDING_FILE_NAME)
+                                .apply();
+                        runOnUiThread(() -> handleAppUpdateDownloadFinished(id));
+                    }
+                };
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(apkUpdateDownloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(apkUpdateDownloadReceiver, filter);
+        }
+    }
+
+    private void handleAppUpdateDownloadFinished(long downloadId) {
+        if (isFinishing()) {
+            return;
+        }
+        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        if (dm == null) {
+            return;
+        }
+        DownloadManager.Query query = new DownloadManager.Query();
+        query.setFilterById(downloadId);
+        try (Cursor c = dm.query(query)) {
+            if (c == null || !c.moveToFirst()) {
+                Toast.makeText(this, "No se encontró la descarga.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+            if (status != DownloadManager.STATUS_SUCCESSFUL) {
+                Toast.makeText(this, "La descarga no se completó.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            int uriCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+            String uriStr = uriCol >= 0 ? c.getString(uriCol) : null;
+            if (uriStr == null || uriStr.isEmpty()) {
+                Toast.makeText(this, "No se pudo ubicar el APK descargado.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Uri local = Uri.parse(uriStr);
+            if (!"file".equalsIgnoreCase(local.getScheme())) {
+                Toast.makeText(this, "Abrí la notificación de descarga del sistema para instalar.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            File apk = new File(local.getPath());
+            if (!apk.isFile() || apk.length() < 50_000L) {
+                Toast.makeText(
+                        this,
+                        "El archivo descargado no parece un APK. Revisá la URL en Neon (Drive, descarga directa).",
+                        Toast.LENGTH_LONG)
+                        .show();
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!getPackageManager().canRequestPackageInstalls()) {
+                    Toast.makeText(
+                                    this,
+                                    "Activá «Instalar apps desconocidas» para GestorNova en Ajustes y volvé a descargar.",
+                                    Toast.LENGTH_LONG)
+                            .show();
+                    try {
+                        Intent s = new Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:" + getPackageName()));
+                        startActivity(s);
+                    } catch (Exception e) {
+                        Log.w(TAG, "MANAGE_UNKNOWN_APP_SOURCES", e);
+                    }
+                    return;
+                }
+            }
+            Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", apk);
+            Intent install = new Intent(Intent.ACTION_VIEW);
+            install.setDataAndType(contentUri, "application/vnd.android.package-archive");
+            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            try {
+                startActivity(install);
+            } catch (Exception e) {
+                Log.e(TAG, "Abrir instalador APK", e);
+                Toast.makeText(
+                                this,
+                                "No se abrió el instalador. Abrí el APK desde la notificación de descarga.",
+                                Toast.LENGTH_LONG)
+                        .show();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "handleAppUpdateDownloadFinished", e);
+            Toast.makeText(this, "Error al preparar la instalación.", Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Libera el WebView para evitar fugas y cierres al salir de la actividad. */

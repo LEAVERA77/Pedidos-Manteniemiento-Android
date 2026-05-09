@@ -136,6 +136,7 @@ import {
 } from './modules/pedido-form-labels-rubro.js';
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import { resolverPedidoParaDerivacionRevisionAdmin } from './modules/derivacion-revision-admin-modal.js';
+import { runNeonAppVersionCheckAndroid } from './modules/android-app-update-neon.js';
 import {
     ocultarModulosRedesValorParaApi,
     syncAyudaDistribuidoresExcelHint,
@@ -297,31 +298,17 @@ let modoOffline = false;
 
 
 async function notificarNeonConectadoParaUpdateCheck() {
-    const esApp = window.AndroidConfig && (/GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent) || window.location.protocol === 'file:');
-    if (!esApp) return;
-    if (NEON_OK && _sql && typeof window.AndroidConfig.applyUpdateCheckFromNeon === 'function') {
-        try {
-            const r = await sqlSimple(`SELECT version_code, version_name, apk_url, COALESCE(release_notes,'') AS release_notes, COALESCE(force_update, false) AS force_update FROM app_version ORDER BY version_code DESC LIMIT 1`);
-            const row = r.rows && r.rows[0];
-            if (row && row.apk_url) {
-                const fu = row.force_update === true || row.force_update === 't' || row.force_update === 1 || String(row.force_update).toLowerCase() === 'true';
-                const payload = JSON.stringify({
-                    versionCode: parseInt(row.version_code, 10) || 0,
-                    versionName: String(row.version_name || ''),
-                    apkUrl: String(row.apk_url || ''),
-                    releaseNotes: String(row.release_notes || ''),
-                    forceUpdate: fu
-                });
-                try { window.AndroidConfig.applyUpdateCheckFromNeon(payload); } catch (_) {}
-                return;
-            }
-        } catch (e) {
-            console.warn('[update] app_version Neon:', e.message || e);
-        }
-    }
-    if (typeof window.AndroidConfig.requestUpdateCheck === 'function') {
-        try { window.AndroidConfig.requestUpdateCheck(); } catch (_) {}
-    }
+    await runNeonAppVersionCheckAndroid({
+        sqlSimple,
+        isNeonReady: () => !!(NEON_OK && _sql),
+        isGestorNovaApp: () =>
+            !!(
+                window.AndroidConfig &&
+                (/GestorNova\//i.test(navigator.userAgent) ||
+                    /Nexxo\//i.test(navigator.userAgent) ||
+                    window.location.protocol === 'file:')
+            ),
+    });
 }
 
 function setModoOffline(offline) {
