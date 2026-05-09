@@ -182,10 +182,10 @@ public final class AppUpdateDownloadHelper {
             DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
             req.setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
-            /* Progreso en barra de notificaciones + entrada en app “Descargas” del sistema (Samsung). */
-            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
-            req.setTitle("GestorNova " + vn);
-            req.setDescription("Descargando " + vn + " — mirá el aviso de progreso; tocá al finalizar para analizar/instalar.");
+            /* Notificación del sistema con progreso mientras corre y visible al completar (tocá para instalar). */
+            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            req.setTitle("GestorNova");
+            req.setDescription("Descargando actualización " + vn + "…");
             req.setMimeType("application/vnd.android.package-archive");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                 try {
@@ -220,9 +220,8 @@ public final class AppUpdateDownloadHelper {
                     .apply();
             Toast.makeText(
                             activity,
-                            "Descargando actualización… Mirá la notificación arriba; tocála al terminar "
-                                    + "para abrir el instalador (Samsung puede analizar el APK antes). "
-                                    + "Si no aparece, abrí «Descargas» del sistema.",
+                            "Descargando… En la barra de notificaciones verás el progreso; al terminar "
+                                    + "tocá la notificación o se abrirá el instalador desde la app.",
                             Toast.LENGTH_LONG)
                     .show();
         } catch (Exception e) {

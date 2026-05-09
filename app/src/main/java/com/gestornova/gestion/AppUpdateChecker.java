@@ -38,6 +38,9 @@ public final class AppUpdateChecker {
     /** El usuario eligió no instalar esta versión remota hasta que salga otra mayor. */
     private static final String KEY_UPDATE_SKIPPED_RC = "gn_update_skipped_remote_vc";
 
+    /** «Más tarde» o cerrar el diálogo sin elegir: no posponer más de 6 horas. */
+    private static final long SNOOZE_LATER_MS = 6L * 60L * 60L * 1000L;
+
     /** Evita carreras entre hilo Neon y hilo manifest. */
     private static final Object APPLY_LOCK = new Object();
 
@@ -328,7 +331,7 @@ public final class AppUpdateChecker {
             } catch (Exception ignored) {
             }
             sActiveUpdateDialog = null;
-            applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+            applySnooze(activity, remoteCode, SNOOZE_LATER_MS);
         });
         if (!forceUpdate) {
             b.setNeutralButton(
@@ -351,7 +354,7 @@ public final class AppUpdateChecker {
                 d -> {
                     sActiveUpdateDialog = null;
                     if (outcome[0] == 0 && remoteCode > 0) {
-                        applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+                        applySnooze(activity, remoteCode, SNOOZE_LATER_MS);
                     }
                 });
         sActiveUpdateDialog = dialog;
