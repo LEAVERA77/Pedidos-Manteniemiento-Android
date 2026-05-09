@@ -1,14 +1,11 @@
 package com.gestornova.gestion;
 
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -32,6 +29,9 @@ public final class AppUpdateChecker {
     private static final String PREFS = AppUpdateDownloadHelper.PREFS;
     private static final String KEY_SNOOZED_REMOTE = "update_snoozed_remote_code";
     private static final String KEY_SNOOZED_UNTIL_MS = "update_snoozed_until_ms";
+
+    /** Evita carreras entre hilo Neon y hilo manifest. */
+    private static final Object APPLY_LOCK = new Object();
 
     private static AlertDialog sActiveUpdateDialog;
 
@@ -73,54 +73,113 @@ public final class AppUpdateChecker {
         }
     }
 
-    private static void applyIfNewer(AppCompatActivity activity, JSONObject remote, String source) {
+    private static void dismissStaleUpdateDialog() {
         try {
-            int remoteCode = remote.optInt("versionCode", remote.optInt("version_code", 0));
-            String remoteNameRaw = remote.optString("versionName", remote.optString("version_name", ""));
-            final String remoteName =
-                    remoteNameRaw.isEmpty() ? ("v" + remoteCode) : remoteNameRaw;
-            String apkUrl = remote.optString("apkUrl", remote.optString("apk_url", ""));
-            String notes = remote.optString("releaseNotes", remote.optString("release_notes", ""));
-            boolean forceUpdate = remote.optBoolean("forceUpdate", remote.optBoolean("force_update", false));
-
-            if (remoteCode <= 0 || apkUrl.isEmpty()) {
-                Log.w(TAG, "Manifest incompleto (" + source + "): versionCode/apkUrl");
-                return;
+            if (sActiveUpdateDialog != null) {
+                try {
+                    sActiveUpdateDialog.dismiss();
+                } catch (Exception ignored) {
+                }
             }
+        } catch (Exception ignored) {
+        } finally {
+            sActiveUpdateDialog = null;
+        }
+    }
 
-            PackageInfo pi = activity.getPackageManager()
-                    .getPackageInfo(activity.getPackageName(), 0);
-            long current = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    ? pi.getLongVersionCode()
-                    : pi.versionCode;
+    private static void applySnooze(AppCompatActivity activity, int remoteCode, long durationMs) {
+        if (remoteCode <= 0 || activity == null) return;
+        long until = System.currentTimeMillis() + durationMs;
+        try {
+            activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
+                    .edit()
+                    .putInt(KEY_SNOOZED_REMOTE, remoteCode)
+                    .putLong(KEY_SNOOZED_UNTIL_MS, until)
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
 
-            if (remoteCode <= current) {
-                Log.d(TAG, "Sin actualización (" + source + "): local=" + current + " remoto=" + remoteCode);
-                clearSnoozeIfInstalled(activity, (int) current);
-                return;
+    private static void clearSnooze(AppCompatActivity activity) {
+        if (activity == null) return;
+        try {
+            activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
+                    .edit()
+                    .remove(KEY_SNOOZED_REMOTE)
+                    .remove(KEY_SNOOZED_UNTIL_MS)
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void applyIfNewer(AppCompatActivity activity, JSONObject remote, String source) {
+        int remoteCode;
+        String remoteName;
+        String apkUrl;
+        String notes;
+        boolean forceUpdate;
+        try {
+            synchronized (APPLY_LOCK) {
+                int rc = remote.optInt("versionCode", remote.optInt("version_code", 0));
+                String remoteNameRaw = remote.optString("versionName", remote.optString("version_name", ""));
+                String rn = remoteNameRaw.isEmpty() ? ("v" + rc) : remoteNameRaw;
+                String apk = remote.optString("apkUrl", remote.optString("apk_url", ""));
+                String nt = remote.optString("releaseNotes", remote.optString("release_notes", ""));
+                boolean fu = remote.optBoolean("forceUpdate", remote.optBoolean("force_update", false));
+
+                if (rc <= 0 || apk.isEmpty()) {
+                    Log.w(TAG, "Manifest incompleto (" + source + "): versionCode/apkUrl");
+                    return;
+                }
+
+                PackageInfo pi = activity.getPackageManager()
+                        .getPackageInfo(activity.getPackageName(), 0);
+                long cur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                        ? pi.getLongVersionCode()
+                        : pi.versionCode;
+
+                if (rc <= cur) {
+                    Log.d(TAG, "Sin actualización (" + source + "): local=" + cur + " remoto=" + rc);
+                    clearSnoozeIfInstalled(activity, (int) cur);
+                    return;
+                }
+
+                if (!fu && isSnoozedForRemote(activity, rc)) {
+                    Log.d(TAG, "Actualización pospuesta por el usuario (misma versión remota): " + rc);
+                    return;
+                }
+
+                Log.i(TAG, "Actualización disponible (" + source + "): " + cur + " -> " + rc);
+                remoteCode = rc;
+                remoteName = rn;
+                apkUrl = apk;
+                notes = nt;
+                forceUpdate = fu;
             }
-
-            if (!forceUpdate && isSnoozedForRemote(activity, remoteCode)) {
-                Log.d(TAG, "Actualización pospuesta por el usuario (misma versión remota): " + remoteCode);
-                return;
-            }
-
-            Log.i(TAG, "Actualización disponible (" + source + "): " + current + " -> " + remoteCode);
-
-            String title = forceUpdate
-                    ? activity.getString(R.string.update_dialog_title_forced)
-                    : activity.getString(R.string.update_dialog_title);
-            String msg = forceUpdate
-                    ? activity.getString(R.string.update_dialog_message_forced, remoteName)
-                            + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
-                    : buildMessage(activity, remoteName, notes);
-
-            activity.runOnUiThread(() -> showDialog(activity, title, msg, apkUrl, forceUpdate, remoteCode, remoteName));
         } catch (PackageManager.NameNotFoundException e) {
             Log.e(TAG, "Package?", e);
+            return;
         } catch (Exception e) {
             Log.w(TAG, "applyIfNewer: " + e.getMessage());
+            return;
         }
+
+        String title = forceUpdate
+                ? activity.getString(R.string.update_dialog_title_forced)
+                : activity.getString(R.string.update_dialog_title);
+        String msg = forceUpdate
+                ? activity.getString(R.string.update_dialog_message_forced, remoteName)
+                        + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
+                : buildMessage(activity, remoteName, notes);
+
+        final int rcFinal = remoteCode;
+        final String rnFinal = remoteName;
+        final String apkFinal = apkUrl;
+        final boolean fuFinal = forceUpdate;
+        final String titleFinal = title;
+        final String msgFinal = msg;
+        activity.runOnUiThread(
+                () -> showDialog(activity, titleFinal, msgFinal, apkFinal, fuFinal, rcFinal, rnFinal));
     }
 
     private static boolean isSnoozedForRemote(AppCompatActivity activity, int remoteCode) {
@@ -150,56 +209,46 @@ public final class AppUpdateChecker {
             int remoteCode,
             String remoteName) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
-        try {
-            if (sActiveUpdateDialog != null && sActiveUpdateDialog.isShowing()) {
-                return;
-            }
-        } catch (Exception ignored) {
-        }
+
+        /* Si quedó un diálogo colgado o hubo varias comprobaciones, cerrar el anterior antes de mostrar otro. */
+        dismissStaleUpdateDialog();
+
+        final int[] outcome = new int[] {0};
 
         AlertDialog.Builder b = new AlertDialog.Builder(activity)
                 .setTitle(title)
                 .setMessage(msg)
                 .setPositiveButton(R.string.update_dialog_download, (DialogInterface dialog, int which) -> {
+                    outcome[0] = 1;
                     try {
                         dialog.dismiss();
                     } catch (Exception ignored) {
                     }
                     sActiveUpdateDialog = null;
-                    try {
-                        activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
-                                .edit()
-                                .remove(KEY_SNOOZED_REMOTE)
-                                .remove(KEY_SNOOZED_UNTIL_MS)
-                                .apply();
-                    } catch (Exception ignored) {
-                    }
+                    clearSnooze(activity);
                     AppUpdateDownloadHelper.enqueueApkDownload(activity, apkUrl, remoteName, remoteCode);
                 });
-        if (!forceUpdate) {
-            b.setNegativeButton(R.string.update_dialog_later, (DialogInterface dialog, int which) -> {
-                try {
-                    dialog.dismiss();
-                } catch (Exception ignored) {
-                }
-                sActiveUpdateDialog = null;
-                long until = System.currentTimeMillis() + 12L * 60L * 60L * 1000L;
-                try {
-                    activity.getSharedPreferences(PREFS, AppCompatActivity.MODE_PRIVATE)
-                            .edit()
-                            .putInt(KEY_SNOOZED_REMOTE, remoteCode)
-                            .putLong(KEY_SNOOZED_UNTIL_MS, until)
-                            .apply();
-                } catch (Exception ignored) {
-                }
-            });
-        }
+        /* Siempre ofrecer posponer: evita diálogo “atrapado” si force_update quedó en true en Neon. */
+        b.setNegativeButton(R.string.update_dialog_later, (DialogInterface dialog, int which) -> {
+            outcome[0] = 2;
+            try {
+                dialog.dismiss();
+            } catch (Exception ignored) {
+            }
+            sActiveUpdateDialog = null;
+            applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+        });
+
         AlertDialog dialog = b.create();
-        if (forceUpdate) {
-            dialog.setCancelable(false);
-            dialog.setCanceledOnTouchOutside(false);
-        }
-        dialog.setOnDismissListener(d -> sActiveUpdateDialog = null);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.setOnDismissListener(
+                d -> {
+                    sActiveUpdateDialog = null;
+                    if (outcome[0] == 0 && remoteCode > 0) {
+                        applySnooze(activity, remoteCode, 24L * 60L * 60L * 1000L);
+                    }
+                });
         sActiveUpdateDialog = dialog;
         dialog.show();
     }

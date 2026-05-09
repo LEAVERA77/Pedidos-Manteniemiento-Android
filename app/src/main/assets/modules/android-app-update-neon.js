@@ -31,13 +31,27 @@ export async function runNeonAppVersionCheckAndroid(deps) {
                 row.force_update === 't' ||
                 row.force_update === 1 ||
                 String(row.force_update).toLowerCase() === 'true';
+            const vc = parseInt(row.version_code, 10) || 0;
             const payload = JSON.stringify({
-                versionCode: parseInt(row.version_code, 10) || 0,
+                versionCode: vc,
                 versionName: String(row.version_name || ''),
                 apkUrl: String(row.apk_url || ''),
                 releaseNotes: String(row.release_notes || ''),
                 forceUpdate: fu,
             });
+            /* Evita martillar al bridge nativo en cada reconexión Neon (mismo versionCode). */
+            const TS_KEY = 'pmg_neon_update_bridge_ts';
+            const VC_KEY = 'pmg_neon_update_bridge_vc';
+            try {
+                const now = Date.now();
+                const prevVc = parseInt(sessionStorage.getItem(VC_KEY) || '0', 10) || 0;
+                const prevTs = parseInt(sessionStorage.getItem(TS_KEY) || '0', 10) || 0;
+                if (vc === prevVc && now - prevTs < 120000) {
+                    return;
+                }
+                sessionStorage.setItem(VC_KEY, String(vc));
+                sessionStorage.setItem(TS_KEY, String(now));
+            } catch (_) {}
             try {
                 ac.applyUpdateCheckFromNeon(payload);
             } catch (_) {}
