@@ -188,3 +188,37 @@ tasks.register<Copy>("renameReleaseApk") {
     doNotTrackState("Destino puede ser carpeta externa (Drive); no rastrear para el incremental build")
 }
 
+/**
+ * Copia `app-release.apk` firmada a la carpeta en `GESTORNOVA_RELEASE_COPY_DIR` **sin renombrar**
+ * (útil para `keytool -printcert -jarfile .../app-release.apk` o scripts OTA).
+ */
+tasks.register("exportReleaseApkFlat") {
+    group = "build"
+    description =
+        "Copia app-release.apk a GESTORNOVA_RELEASE_COPY_DIR (variable de entorno; mismo nombre de archivo)."
+    dependsOn("assembleRelease")
+    doLast {
+        val dir =
+            gestornovaReleaseCopyDir?.trim()?.takeIf { it.isNotEmpty() }
+                ?: error(
+                    "Definí la variable de entorno GESTORNOVA_RELEASE_COPY_DIR (ruta absoluta de la carpeta destino)."
+                )
+        val rel = layout.buildDirectory.get().asFile.resolve("outputs/apk/release")
+        val src =
+            sequenceOf(rel.resolve("app-release.apk"), rel.resolve("app-release-unsigned.apk"))
+                .firstOrNull { it.isFile }
+                ?: error(
+                    "No hay APK en ${rel.absolutePath}. Con firma: revisá keystore.properties. Sin firma: solo existe app-release-unsigned.apk."
+                )
+        val destDir = rootProject.file(dir)
+        destDir.mkdirs()
+        val destApk = destDir.resolve("app-release.apk")
+        copy {
+            from(src)
+            into(destDir)
+            rename { "app-release.apk" }
+        }
+        logger.lifecycle("GestorNova: copiado ${src.name} → ${destApk.absolutePath}")
+    }
+}
+
