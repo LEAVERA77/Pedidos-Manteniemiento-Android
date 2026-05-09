@@ -20,6 +20,15 @@ export async function runNeonAppVersionCheckAndroid(deps) {
         }
         return;
     }
+    /* APK: actualización desde GitHub version.json (nativo); no hace falta leer app_version en Neon. */
+    if (typeof ac.usesGithubAppVersionJson === 'function' && ac.usesGithubAppVersionJson()) {
+        if (typeof ac.requestUpdateCheck === 'function') {
+            try {
+                ac.requestUpdateCheck();
+            } catch (_) {}
+        }
+        return;
+    }
     try {
         const r = await sqlSimple(
             `SELECT version_code, version_name, apk_url, COALESCE(release_notes,'') AS release_notes, COALESCE(force_update, false) AS force_update FROM app_version ORDER BY version_code DESC LIMIT 1`

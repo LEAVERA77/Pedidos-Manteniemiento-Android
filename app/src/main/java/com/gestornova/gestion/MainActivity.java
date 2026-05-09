@@ -943,6 +943,15 @@ public class MainActivity extends AppCompatActivity {
         }
 
         /**
+         * Si es true, el módulo JS no consulta {@code app_version} en Neon para OTA: basta con
+         * {@link #requestUpdateCheck()} (GitHub {@code version.json} + fallback manifest).
+         */
+        @JavascriptInterface
+        public boolean usesGithubAppVersionJson() {
+            return true;
+        }
+
+        /**
          * JSON desde tabla app_version en Neon (misma forma que el manifest HTTP).
          * Si falla el parse, se intenta el manifest.
          */

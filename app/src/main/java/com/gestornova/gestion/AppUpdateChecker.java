@@ -20,11 +20,16 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Comprueba actualizaciones vía JSON remoto (manifest HTTP o fila app_version desde Neon vía WebView).
+ * Comprueba actualizaciones: primero {@code version.json} en GitHub (APK firmada), si falla manifest en
+ * assets, y la tabla Neon sigue existiendo para la web — en Android el JS puede omitir la consulta Neon.
  */
 public final class AppUpdateChecker {
 
     private static final String TAG = "AppUpdateChecker";
+    /** JSON en la rama default del repo Android (actualizar versionCode/apkUrl al publicar release). */
+    private static final String GITHUB_VERSION_JSON =
+            "https://raw.githubusercontent.com/LEAVERA77/Pedidos-Manteniemiento-Android/main/app/version.json";
+
     private static final String ASSET_CONFIG = "app_update_config.json";
     private static final String PREFS = AppUpdateDownloadHelper.PREFS;
     private static final String KEY_SNOOZED_REMOTE = "update_snoozed_remote_code";
@@ -38,23 +43,63 @@ public final class AppUpdateChecker {
     private AppUpdateChecker() {}
 
     public static void checkAsync(AppCompatActivity activity) {
-        new Thread(() -> doCheckFromManifest(activity), "gn-app-update").start();
+        new Thread(
+                () -> {
+                    if (!tryApplyFromGitHub(activity)) {
+                        doCheckFromManifest(activity);
+                    }
+                },
+                "gn-app-update")
+                .start();
     }
 
     /**
-     * Llamado desde JS cuando ya hay datos de {@code app_version} en Neon (prioridad sobre manifest HTTP).
+     * Llamado desde JS con datos de {@code app_version} en Neon. Si GitHub responde con {@code version.json}
+     * válido, se usa ese origen y se ignora el JSON de Neon (la tabla sigue en la BD para admin/PWA).
      */
     public static void checkWithRemoteJson(AppCompatActivity activity, String jsonBody) {
         if (activity == null || jsonBody == null || jsonBody.trim().isEmpty()) return;
-        new Thread(() -> {
-            try {
-                JSONObject remote = new JSONObject(jsonBody.trim());
-                applyIfNewer(activity, remote, "neon-db");
-            } catch (Exception e) {
-                Log.w(TAG, "JSON Neon inválido: " + e.getMessage());
-                doCheckFromManifest(activity);
+        new Thread(
+                () -> {
+                    try {
+                        if (tryApplyFromGitHub(activity)) {
+                            return;
+                        }
+                        JSONObject remote = new JSONObject(jsonBody.trim());
+                        applyIfNewer(activity, remote, "neon-db");
+                    } catch (Exception e) {
+                        Log.w(TAG, "JSON Neon inválido: " + e.getMessage());
+                        doCheckFromManifest(activity);
+                    }
+                },
+                "gn-app-update-neon")
+                .start();
+    }
+
+    /**
+     * @return {@code true} si se obtuvo y parseó {@code version.json} de GitHub (aunque no haya update);
+     *         {@code false} para seguir con Neon o manifest.
+     */
+    private static boolean tryApplyFromGitHub(AppCompatActivity activity) {
+        if (activity == null) return false;
+        try {
+            String body = httpGet(GITHUB_VERSION_JSON, 5000, 5000);
+            if (body == null || body.trim().isEmpty()) {
+                return false;
             }
-        }, "gn-app-update-neon").start();
+            JSONObject remote = new JSONObject(body.trim());
+            int rc = remote.optInt("versionCode", remote.optInt("version_code", 0));
+            String apk = remote.optString("apkUrl", remote.optString("apk_url", "")).trim();
+            if (rc <= 0 || apk.isEmpty()) {
+                Log.w(TAG, "version.json GitHub incompleto (versionCode/apkUrl)");
+                return false;
+            }
+            applyIfNewer(activity, remote, "github");
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "GitHub version.json omitido: " + e.getMessage());
+            return false;
+        }
     }
 
     private static void doCheckFromManifest(AppCompatActivity activity) {
@@ -113,7 +158,7 @@ public final class AppUpdateChecker {
     }
 
     /**
-     * Tras abrir el instalador del sistema, evita que Neon vuelva a mostrar el cartel al instante
+     * Tras abrir el instalador del sistema, evita que el chequeo remoto vuelva a mostrar el cartel al instante
      * (la app sigue en versionCode viejo hasta que el usuario complete la instalación).
      */
     public static void snoozeAfterOpeningInstaller(AppCompatActivity activity, int remoteCode) {
@@ -132,7 +177,10 @@ public final class AppUpdateChecker {
                 String remoteNameRaw = remote.optString("versionName", remote.optString("version_name", ""));
                 String rn = remoteNameRaw.isEmpty() ? ("v" + rc) : remoteNameRaw;
                 String apk = remote.optString("apkUrl", remote.optString("apk_url", ""));
-                String nt = remote.optString("releaseNotes", remote.optString("release_notes", ""));
+                String nt =
+                        remote.optString(
+                                "releaseNotes",
+                                remote.optString("release_notes", remote.optString("changeLog", "")));
                 boolean fu = remote.optBoolean("forceUpdate", remote.optBoolean("force_update", false));
 
                 if (rc <= 0 || apk.isEmpty()) {
@@ -291,24 +339,28 @@ public final class AppUpdateChecker {
     }
 
     private static String httpGet(String urlStr) {
+        return httpGet(urlStr, 15000, 15000);
+    }
+
+    private static String httpGet(String urlStr, int connectTimeoutMs, int readTimeoutMs) {
         HttpURLConnection c = null;
         try {
             URL u = new URL(urlStr);
             c = (HttpURLConnection) u.openConnection();
-            c.setConnectTimeout(15000);
-            c.setReadTimeout(15000);
+            c.setConnectTimeout(Math.max(1000, connectTimeoutMs));
+            c.setReadTimeout(Math.max(1000, readTimeoutMs));
             c.setRequestMethod("GET");
             c.setRequestProperty("Accept", "application/json");
             int code = c.getResponseCode();
             if (code != 200) {
-                Log.w(TAG, "HTTP " + code + " al leer manifest");
+                Log.w(TAG, "HTTP " + code + " al leer " + urlStr);
                 return null;
             }
             try (InputStream in = c.getInputStream()) {
                 return readStream(in);
             }
         } catch (Exception e) {
-            Log.w(TAG, "Error HTTP manifest: " + e.getMessage());
+            Log.w(TAG, "Error HTTP GET: " + e.getMessage());
             return null;
         } finally {
             if (c != null) c.disconnect();
