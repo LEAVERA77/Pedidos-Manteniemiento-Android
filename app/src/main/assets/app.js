@@ -14837,10 +14837,8 @@ async function cargarAppConfig() {
         typeof navigator !== 'undefined' &&
         (/GestorNova\//i.test(navigator.userAgent) || /Nexxo\//i.test(navigator.userAgent));
     const desdeAssetsFile = window.location.protocol === 'file:';
-    // Solo leer config desde el APK cuando la UI va por file://. Con HTTPS (ej. GitHub Pages en WebView)
-    // hay que usar el config.json del sitio — igual que en el navegador — o Neon falla con credenciales del ejemplo.
+    /* APK GestorNova: Neon/API en assets/config.json. Con HTTPS (Pages) no hay fetch a ./config.json con secretos. */
     if (
-        desdeAssetsFile &&
         uaGestorNova &&
         window.AndroidConfig &&
         typeof window.AndroidConfig.getConfigJson === 'function'

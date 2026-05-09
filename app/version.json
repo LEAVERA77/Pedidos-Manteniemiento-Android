@@ -1,6 +1,7 @@
 {
-  "versionCode": 29,
-  "versionName": "1.0.29",
+  "versionCode": 30,
+  "versionName": "1.0.30",
   "apkUrl": "https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android/releases/latest/download/app-release.apk",
-  "changeLog": "Soporte para ingreso por huellas dactilares."
+  "changeLog": "Corrección: config Neon/API desde el APK con WebView HTTPS. Incluye soporte huella (1.0.29).",
+  "forceUpdate": false
 }
