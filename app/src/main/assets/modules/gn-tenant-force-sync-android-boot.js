@@ -1,8 +1,6 @@
 /**
- * Shell Android: al cargar la app, alinea tenant con GET /api/auth/tenant-operativo.
- * Si no coincide con localStorage (pmg), intenta sincronizarTenant; si sigue mal,
- * limpia localStorage (conserva pmg_api_token) y recarga. Timeout 10s → recarga.
- * Logs: tag GestorNovaTenant vía AndroidConfig.gnTenantPollLog.
+ * Shell Android: alinea tenant con GET /api/auth/tenant-operativo tras existir sesión (JWT + apiUrl).
+ * Reintenta hasta 5 veces cada 3s si load llega antes del login; también en visibility y gnBoot… nativo.
  * made by leavera77
  */
 
@@ -10,9 +8,15 @@ import { fetchTenantOperativoDesdeApi } from './tenantPrincipalApi.js';
 
 const GUARD_KEY = 'pmg_gn_tenant_force_reload_ts';
 const GUARD_MS = 14000;
+const MAX_SESSION_WAIT = 5;
+const SESSION_WAIT_MS = 3000;
 
-/** Evita ejecuciones solapadas (load + eval nativo). */
-let _running = false;
+/** Mutex solo para el bloque fetch/sync (no para la espera de sesión). */
+let _runningVerify = false;
+/** Intento actual de espera de sesión (1..MAX_SESSION_WAIT). */
+let _waitAttempt = 0;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let _waitTimer = null;
 
 function log(msg) {
     const s = String(msg || '').slice(0, 3800);
@@ -35,6 +39,28 @@ function isShell() {
         );
     } catch (_) {
         return false;
+    }
+}
+
+function getDeps() {
+    const getTok =
+        typeof window !== 'undefined' && typeof window.getApiToken === 'function'
+            ? () => window.getApiToken()
+            : () => null;
+    const urlFn =
+        typeof window !== 'undefined' && typeof window.apiUrl === 'function' ? (p) => window.apiUrl(p) : null;
+    return { getTok, urlFn };
+}
+
+function sessionReady() {
+    const { getTok, urlFn } = getDeps();
+    return !!(getTok() && urlFn);
+}
+
+function clearWaitTimer() {
+    if (_waitTimer) {
+        clearTimeout(_waitTimer);
+        _waitTimer = null;
     }
 }
 
@@ -81,27 +107,17 @@ function clearLocalExceptApiToken() {
 }
 
 /**
- * Llamada en window.load (y desde window tras recarga nativa).
+ * Consulta API y alinea tenant (sync / recarga).
  * @returns {Promise<void>}
  */
-export async function bootGnTenantForceSyncAndroid() {
-    if (!isShell() || _running) return;
-    _running = true;
+async function runTenantVerifyCore() {
+    if (!isShell() || _runningVerify) return;
+    _runningVerify = true;
     try {
-        const getTok =
-            typeof window !== 'undefined' && typeof window.getApiToken === 'function'
-                ? () => window.getApiToken()
-                : () => null;
-        const urlFn =
-            typeof window !== 'undefined' && typeof window.apiUrl === 'function' ? (p) => window.apiUrl(p) : null;
-
-        const tok0 = getTok();
-        if (!tok0 || !urlFn) {
-            log('[gn-tenant-boot] sin token o apiUrl; omitido');
+        const { getTok, urlFn } = getDeps();
+        if (!getTok() || !urlFn) {
             return;
         }
-
-        log('[gn-tenant-boot] verificando tenant-operativo…');
 
         let row = null;
         let errLabel = '';
@@ -142,11 +158,13 @@ export async function bootGnTenantForceSyncAndroid() {
         const mismatch = !Number.isFinite(local) || local !== remote || stale;
 
         if (!mismatch) {
-            log(`[gn-tenant-boot] ok local=${local} remote=${remote}`);
+            log(`[gn-tenant-boot] tenant coincide: ${remote}`);
             return;
         }
 
-        log(`[gn-tenant-boot] desajuste local=${Number.isFinite(local) ? local : '?'} remote=${remote} staleJwt=${stale}`);
+        log(
+            `[gn-tenant-boot] desajuste: local=${Number.isFinite(local) ? local : '?'} remoto=${remote}, sincronizando…`
+        );
 
         if (typeof window.sincronizarTenantOperativoDesdeMiConfiguracionApi === 'function') {
             try {
@@ -171,15 +189,47 @@ export async function bootGnTenantForceSyncAndroid() {
             window.location.reload();
         } catch (_) {}
     } finally {
-        _running = false;
+        _runningVerify = false;
     }
 }
 
+function tryWaitForSession() {
+    if (!isShell()) return;
+    clearWaitTimer();
+
+    if (sessionReady()) {
+        log('[gn-tenant-boot] sesión detectada, verificando tenant-operativo…');
+        _waitAttempt = 0;
+        void runTenantVerifyCore();
+        return;
+    }
+
+    if (_waitAttempt >= MAX_SESSION_WAIT) {
+        log('[gn-tenant-boot] sin sesión tras 5 intentos; omitido');
+        return;
+    }
+
+    _waitAttempt += 1;
+    log(`[gn-tenant-boot] esperando sesión… (intento ${_waitAttempt}/${MAX_SESSION_WAIT})`);
+    _waitTimer = setTimeout(() => {
+        _waitTimer = null;
+        tryWaitForSession();
+    }, SESSION_WAIT_MS);
+}
+
+/**
+ * Punto de entrada: reinicia contador de espera y arranca comprobación (load, visibility, MainActivity).
+ */
+export function bootGnTenantForceSyncAndroid() {
+    if (!isShell()) return;
+    clearWaitTimer();
+    _waitAttempt = 0;
+    queueMicrotask(() => tryWaitForSession());
+}
+
 function scheduleBoot() {
-    const run = () => {
-        void bootGnTenantForceSyncAndroid();
-    };
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const run = () => bootGnTenantForceSyncAndroid();
     if (document.readyState === 'complete') {
         queueMicrotask(run);
     } else {
@@ -187,9 +237,23 @@ function scheduleBoot() {
     }
 }
 
+function installVisibilityHook() {
+    if (typeof document === 'undefined') return;
+    try {
+        document.addEventListener('visibilitychange', () => {
+            try {
+                if (document.visibilityState === 'visible' && isShell()) {
+                    bootGnTenantForceSyncAndroid();
+                }
+            } catch (_) {}
+        });
+    } catch (_) {}
+}
+
 if (typeof window !== 'undefined') {
     window.gnBootTenantForceSyncAndroid = bootGnTenantForceSyncAndroid;
     if (isShell()) {
         scheduleBoot();
+        installVisibilityHook();
     }
 }
