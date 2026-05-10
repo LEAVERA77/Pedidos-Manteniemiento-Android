@@ -92,6 +92,15 @@ android {
         }
     }
 
+    /*
+     * Windows + Android Studio: `lintVitalAnalyzeRelease` suele chocar con JARs en `lint-cache/migrated-jars`
+     * bloqueados por otro proceso (IDE, segundo daemon, indexación). Para `assembleRelease` local no hace falta
+     * lint “vital” en cada build; ejecutá `.\gradlew :app:lint` cuando quieras el informe.
+     */
+    lint {
+        checkReleaseBuilds = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
