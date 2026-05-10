@@ -19455,6 +19455,8 @@ try {
         toast,
         refrescarPedidos: () => cargarPedidos({ silent: true }),
         cerrarAdminPanel,
+        sqlSimple,
+        neonOk: () => NEON_OK,
     });
 } catch (_) {}
 

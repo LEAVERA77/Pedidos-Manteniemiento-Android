@@ -1,11 +1,13 @@
 /**
- * Admin → pestaña Históricos: reclamos resueltos (Cerrado, Desestimado, Derivado externo), filtros y enlace a detalle (#dm).
+ * Admin → pestaña Históricos: reclamos resueltos de todos los tenants (Neon),
+ * filtros solo refinan la lista ya cargada; enlace a detalle (#dm).
  */
 import {
     runQuincenaHistCheck,
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
+import { fetchHistoricosResueltosTodosTenants, LIM_HIST_GLOBAL } from './admin-historicos-neon-fetch.js';
 
 function _tidTenant() {
     const u = window.app?.u;
@@ -27,20 +29,20 @@ function _labelsHistoricosRubro() {
     const r = _rubroHist();
     if (r === 'municipio') {
         return {
-            idFiltro: 'ID vecino / N° pedido',
+            idFiltro: 'NIS / ID / N° pedido / tenant',
             colId: 'ID vecino',
             tipoPh: 'Ej. Alumbrado*',
         };
     }
     if (r === 'cooperativa_agua') {
         return {
-            idFiltro: 'N° socio / medidor / N° pedido',
+            idFiltro: 'N° socio / medidor / N° pedido / tenant',
             colId: 'N° Socio / Medidor',
             tipoPh: 'Ej. Rotura de cañería*',
         };
     }
     return {
-        idFiltro: 'NIS / medidor / N° pedido',
+        idFiltro: 'NIS / medidor / N° pedido / tenant',
         colId: 'NIS / Medidor',
         tipoPh: 'Ej. Corte de Energía*',
     };
@@ -164,6 +166,12 @@ function _filtrarLista(list, f) {
                     .includes(idQ) ||
                 String(p.np ?? '')
                     .toLowerCase()
+                    .includes(idQ) ||
+                String(p._histTenantNom || '')
+                    .toLowerCase()
+                    .includes(idQ) ||
+                String(p._histTenantId ?? '')
+                    .toLowerCase()
                     .includes(idQ);
             if (!hay) return false;
         }
@@ -207,19 +215,21 @@ function _leerFiltrosDesdeDom(root) {
     };
 }
 
+function _pintarMensajeTabla(tbody, texto, esError) {
+    const col = esError ? 'var(--re)' : 'var(--tl)';
+    tbody.innerHTML = `<tr><td colspan="11" style="padding:.75rem;color:${col};font-size:.85rem;line-height:1.45">${texto}</td></tr>`;
+}
+
 function _pintarTabla(tbody, rows, onRowClick) {
     tbody.innerHTML = '';
-    if (!rows.length) {
-        tbody.innerHTML =
-            '<tr><td colspan="10" style="padding:.75rem;color:var(--tl);font-size:.85rem">Sin resultados con los filtros actuales.</td></tr>';
-        return;
-    }
     const frag = document.createDocumentFragment();
     for (const p of rows) {
         const tr = document.createElement('tr');
         tr.style.cursor = 'pointer';
+        const tnom = String(p._histTenantNom || '—').trim() || '—';
         tr.innerHTML = `
             <td style="padding:.45rem .35rem;font-weight:600">#${_esc(p.np)}</td>
+            <td style="padding:.45rem .35rem;font-size:.76rem;color:var(--tm);max-width:9rem;word-break:break-word">${_esc(tnom)}</td>
             <td style="padding:.45rem .35rem;font-size:.78rem">${_esc(_fechaCreacion(p))}</td>
             <td style="padding:.45rem .35rem;font-size:.78rem">${_esc(_fechaCierreMostrar(p))}</td>
             <td style="padding:.45rem .35rem;font-size:.78rem">${_esc(p.es)}</td>
@@ -236,23 +246,37 @@ function _pintarTabla(tbody, rows, onRowClick) {
 }
 
 /**
- * @param {{ toast?: function, refrescarPedidos?: function, cerrarAdminPanel?: function }} deps
+ * @param {{
+ *   toast?: function,
+ *   refrescarPedidos?: function,
+ *   cerrarAdminPanel?: function,
+ *   sqlSimple?: function,
+ *   neonOk?: () => boolean,
+ * }} deps
  */
 export function initAdminHistoricosPanel(deps) {
     const toast = deps?.toast;
     const refrescarPedidos = deps?.refrescarPedidos;
     const cerrarAdminPanel = deps?.cerrarAdminPanel;
+    const sqlSimple = deps?.sqlSimple;
+    const neonOk = typeof deps?.neonOk === 'function' ? deps.neonOk : () => true;
 
     const root = document.getElementById('admin-historicos-root');
     if (!root || root.dataset.gnHistInit === '1') return;
     root.dataset.gnHistInit = '1';
 
+    /** @type {unknown[] | null} */
+    let _histCacheNeon = null;
+    let _histCargando = false;
+    let _histErrorCarga = null;
+    let _renderGen = 0;
+
     const L = _labelsHistoricosRubro();
     root.innerHTML = `
       <p style="font-size:.78rem;color:var(--tl);margin:0 0 .75rem;line-height:1.45">
-        Reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> del tenant actual (misma fuente que el mapa y la lista principal). Podés filtrar por <strong>nombre del vecino/socio</strong> con tolerancia a tildes y errores de escritura (Levenshtein). Si los filtros no devuelven filas, se listan todos los históricos del tenant. No se borran datos en el servidor.
+        Listado global desde <strong>Neon</strong>: reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> de <strong>todos los tenants</strong> (hasta <strong>${LIM_HIST_GLOBAL}</strong> más recientes por fecha de derivación / cierre). Los filtros solo <strong>acotan</strong> esa lista ya cargada. Tocá <strong>Recargar lista</strong> para volver a leer la base.
       </p>
-      <div id="gn-hist-aviso" style="display:none;margin:0 0 .55rem;padding:.45rem .55rem;font-size:.76rem;line-height:1.45;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"></div>
+      <div id="gn-hist-aviso" style="display:none;margin:0 0 .55rem;padding:.45rem .55rem;font-size:.76rem;line-height:1.45;color:#1e40af;background:#eff6ff;border:1px solid #93c5fd;border-radius:.4rem"></div>
       <div class="gn-admin-hist-filtros" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
         <div><label for="gn-hist-f-desde" style="font-size:.72rem;color:var(--tm)">Fecha creación desde</label><br><input type="date" id="gn-hist-f-desde" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-f-hasta" style="font-size:.72rem;color:var(--tm)">Fecha creación hasta</label><br><input type="date" id="gn-hist-f-hasta" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
@@ -269,7 +293,7 @@ export function initAdminHistoricosPanel(deps) {
         <div style="flex:1;min-width:11rem"><label for="gn-hist-nombre" style="font-size:.72rem;color:var(--tm)">Nombre / vecino (fuzzy)</label><br><input type="text" id="gn-hist-nombre" placeholder="Ej. Garcia" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
-        <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a pedir pedidos al servidor si hay API"><i class="fas fa-sync"></i> Recargar lista</button>
+        <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a cargar históricos desde Neon (todos los tenants)"><i class="fas fa-sync"></i> Recargar lista</button>
         <button type="button" class="btn-sm" id="gn-hist-mostrar-bp2" style="background:var(--bg);border:1px solid var(--bo);color:var(--tm)" title="Vuelve a mostrar cerrados/desestimados/derivados en el panel de pedidos">Mostrar históricos en panel pedidos</button>
       </div>
       <div style="overflow:auto;max-height:min(62vh,560px);border:1px solid var(--bo);border-radius:.5rem">
@@ -277,6 +301,7 @@ export function initAdminHistoricosPanel(deps) {
           <thead style="position:sticky;top:0;background:#f8fafc;z-index:1">
             <tr>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">N°</th>
+              <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Tenant</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Creación</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Cierre / deriv.</th>
               <th style="text-align:left;padding:.45rem .35rem;border-bottom:1px solid var(--bo)">Estado</th>
@@ -306,38 +331,95 @@ export function initAdminHistoricosPanel(deps) {
         }
     };
 
-    const render = () => {
-        const list = Array.isArray(window.app?.p) ? window.app.p : [];
-        const historicos = list.filter(_esHistorico);
+    const pintarDesdeCache = () => {
         const f = _leerFiltrosDesdeDom(root);
-        const rowsFiltrados = _filtrarLista(historicos, f).sort((a, b) => {
+        const base = Array.isArray(_histCacheNeon) ? _histCacheNeon : [];
+        const rowsFiltrados = _filtrarLista(base, f).sort((a, b) => {
             const ta = a.f ? new Date(a.f).getTime() : 0;
             const tb = b.f ? new Date(b.f).getTime() : 0;
             return tb - ta;
         });
-        let rows = rowsFiltrados;
-        let modoFallback = false;
-        if (!rowsFiltrados.length && historicos.length && _hayFiltrosActivos(f)) {
-            rows = [...historicos].sort((a, b) => {
-                const ta = a.f ? new Date(a.f).getTime() : 0;
-                const tb = b.f ? new Date(b.f).getTime() : 0;
-                return tb - ta;
-            });
-            modoFallback = true;
-        }
         if (avisoEl) {
-            if (modoFallback) {
+            if (base.length >= LIM_HIST_GLOBAL) {
                 avisoEl.style.display = 'block';
                 avisoEl.textContent =
-                    'Sin filas con los filtros actuales. Se muestran todos los reclamos históricos del tenant (' +
-                    String(rows.length) +
-                    '). Ajustá fechas, NIS, tipo, nombre u otro criterio.';
+                    'Se alcanzó el límite de filas mostradas (' +
+                    LIM_HIST_GLOBAL +
+                    '). Los más viejos no aparecen hasta que acotes con filtros o uses consultas en Neon.';
+            } else if (base.length > 0) {
+                avisoEl.style.display = 'block';
+                avisoEl.textContent = 'Cargados ' + base.length + ' reclamo(s) histórico(s) de todos los tenants. Usá los filtros para buscar entre ellos.';
             } else {
                 avisoEl.style.display = 'none';
                 avisoEl.textContent = '';
             }
         }
-        _pintarTabla(tbody, rows, onRowClick);
+        if (!rowsFiltrados.length && base.length && _hayFiltrosActivos(f)) {
+            _pintarMensajeTabla(
+                tbody,
+                'Sin coincidencias con los filtros entre los <strong>' +
+                    base.length +
+                    '</strong> reclamos históricos ya cargados. Probá limpiar criterios o tocá <strong>Recargar lista</strong>.',
+                false
+            );
+            return;
+        }
+        if (!rowsFiltrados.length && base.length && !_hayFiltrosActivos(f)) {
+            _pintarMensajeTabla(tbody, 'No hay filas para mostrar (lista vacía).', false);
+            return;
+        }
+        if (!rowsFiltrados.length) {
+            _pintarMensajeTabla(
+                tbody,
+                'No hay reclamos cerrados, desestimados o derivados en la base (o aún no se cargaron).',
+                false
+            );
+            return;
+        }
+        _pintarTabla(tbody, rowsFiltrados, onRowClick);
+    };
+
+    const render = () => {
+        const gen = ++_renderGen;
+        if (!tbody) return;
+        if (!neonOk() || typeof sqlSimple !== 'function') {
+            _histCacheNeon = null;
+            _pintarMensajeTabla(
+                tbody,
+                'Históricos globales requieren <strong>Neon conectado</strong> y <code>sqlSimple</code>. Revisá la conexión o el modo offline.',
+                true
+            );
+            return;
+        }
+        if (_histErrorCarga) {
+            _pintarMensajeTabla(tbody, _esc(String(_histErrorCarga)), true);
+            return;
+        }
+        if (_histCacheNeon !== null) {
+            pintarDesdeCache();
+            return;
+        }
+        if (_histCargando) {
+            _pintarMensajeTabla(tbody, '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (todos los tenants)…', false);
+            return;
+        }
+        _histCargando = true;
+        _pintarMensajeTabla(tbody, '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (todos los tenants)…', false);
+        void fetchHistoricosResueltosTodosTenants({ sqlSimple })
+            .then((rows) => {
+                if (gen !== _renderGen) return;
+                _histCacheNeon = rows;
+                _histErrorCarga = null;
+                _histCargando = false;
+                pintarDesdeCache();
+            })
+            .catch((e) => {
+                if (gen !== _renderGen) return;
+                _histErrorCarga = String(e && e.message ? e.message : e);
+                _histCargando = false;
+                _histCacheNeon = null;
+                _pintarMensajeTabla(tbody, _esc(_histErrorCarga), true);
+            });
     };
 
     let _histFilterT = 0;
@@ -347,26 +429,31 @@ export function initAdminHistoricosPanel(deps) {
         } catch (_) {}
         _histFilterT = setTimeout(() => {
             _histFilterT = 0;
-            render();
+            if (_histCacheNeon !== null) pintarDesdeCache();
         }, 220);
     };
     ['#gn-hist-f-desde', '#gn-hist-f-hasta', '#gn-hist-estado', '#gn-hist-solo-ag'].forEach((sel) => {
         const el = root.querySelector(sel);
         if (!el) return;
-        el.addEventListener('change', () => render());
+        el.addEventListener('change', () => {
+            if (_histCacheNeon !== null) pintarDesdeCache();
+        });
     });
     root.querySelector('#gn-hist-id')?.addEventListener('input', scheduleRenderFiltros);
     root.querySelector('#gn-hist-tipo')?.addEventListener('input', scheduleRenderFiltros);
     root.querySelector('#gn-hist-nombre')?.addEventListener('input', scheduleRenderFiltros);
 
-    root.querySelector('#gn-hist-buscar')?.addEventListener('click', () => render());
+    root.querySelector('#gn-hist-buscar')?.addEventListener('click', () => {
+        if (_histCacheNeon !== null) pintarDesdeCache();
+    });
     root.querySelector('#gn-hist-refrescar')?.addEventListener('click', () => {
+        _histCacheNeon = null;
+        _histErrorCarga = null;
+        _histCargando = false;
         try {
-            if (typeof refrescarPedidos === 'function') void Promise.resolve(refrescarPedidos()).then(() => render());
-            else render();
-        } catch (_) {
-            render();
-        }
+            if (typeof refrescarPedidos === 'function') void Promise.resolve(refrescarPedidos());
+        } catch (_) {}
+        render();
     });
     root.querySelector('#gn-hist-mostrar-bp2')?.addEventListener('click', () => {
         desactivarOcultarHistoricosResueltosBp2();
@@ -381,10 +468,15 @@ export function initAdminHistoricosPanel(deps) {
         try {
             root.dataset.gnHistTid = '';
         } catch (_) {}
-        /* Igual que socios: no dejar la tabla en blanco al cambiar tenant; mensaje hasta la próxima recarga/pestaña. */
+        _histCacheNeon = null;
+        _histErrorCarga = null;
+        _histCargando = false;
         if (tbody) {
-            tbody.innerHTML =
-                '<tr><td colspan="10" style="padding:.75rem;color:var(--tm);font-size:.85rem;line-height:1.45">Actualizando listado para el tenant actual… Volvé a abrir <strong>Históricos</strong> o tocá <strong>Recargar lista</strong> cuando termine la carga de pedidos.</td></tr>';
+            _pintarMensajeTabla(
+                tbody,
+                'Cambiando de contexto… Volvé a abrir <strong>Históricos</strong> o tocá <strong>Recargar lista</strong> para cargar de nuevo desde Neon.',
+                false
+            );
         }
     };
 
@@ -402,10 +494,8 @@ export function initAdminHistoricosPanel(deps) {
         const tipoInp = root.querySelector('#gn-hist-tipo');
         if (tipoInp) tipoInp.placeholder = L2.tipoPh;
         try {
-            if (typeof refrescarPedidos === 'function') void Promise.resolve(refrescarPedidos()).then(() => render());
-            else render();
-        } catch (_) {
-            render();
-        }
+            if (typeof refrescarPedidos === 'function') void Promise.resolve(refrescarPedidos());
+        } catch (_) {}
+        render();
     };
 }
