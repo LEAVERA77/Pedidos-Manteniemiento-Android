@@ -55,15 +55,15 @@ Reemplazá `TU_API_URL` por la URL real de tu API desplegada.
 ### 5. Compilar y publicar cada nueva versión
 
 1. **En `app/build.gradle.kts`:** subí `versionCode` (p. ej. 4) y `versionName` (p. ej. `"1.0.3"`).
-2. **En Android Studio:** Build → Generate Signed Bundle / APK. Generá la APK firmada.
-3. La salida estándar queda en `app/build/outputs/apk/release/`. La tarea Gradle **`renameReleaseApk`** copia una copia renombrada a **`release-export/`** en la raíz del repo (disco local). Para copiar además a otra carpeta (Drive/OneDrive), usá **`scripts/build-release-and-export.ps1 -ExportDir 'RUTA'`** o definí **`GESTORNOVA_RELEASE_COPY_DIR` solo en esa sesión de PowerShell** al ejecutar `exportReleaseApkFlat`. **No** la dejes en variables de entorno permanentes del usuario ni en **Android Studio → Gradle → Environment variables** mientras compilás: con OneDrive suele aparecer `packageRelease` + `AccessDeniedException` en `baselineProfiles`. **No** enlaces la carpeta `app/build` a “Mi unidad”.
-4. **Subí la APK** a la carpeta de Drive (desde `release-export/` o la copia en Drive).
-5. **En Neon:** ejecutá:
+2. **Firma:** en la raíz del repo, `keystore.properties` (no va a Git) con `storeFilePath` al archivo del store. Recomendado fuera de OneDrive, p. ej. `C:/Keystore/keystore` — podés preparar la carpeta con `scripts/ensure-c-keystore-folder.ps1` (PowerShell como administrador).
+3. **En Android Studio:** Build → Generate Signed Bundle / APK, o `.\gradlew :app:assembleRelease`. Generá la APK firmada.
+4. La salida estándar queda en `app/build/outputs/apk/release/`. La tarea Gradle **`renameReleaseApk`** copia una copia renombrada a **`release-export/`** en la raíz del repo (disco local). Para copiar además a otra carpeta (Drive/OneDrive), usá **`scripts/build-release-and-export.ps1 -ExportDir 'RUTA'`** o definí **`GESTORNOVA_RELEASE_COPY_DIR` solo en esa sesión de PowerShell** al ejecutar `exportReleaseApkFlat`. **No** la dejes en variables de entorno permanentes del usuario ni en **Android Studio → Gradle → Environment variables** mientras compilás: con OneDrive suele aparecer `packageRelease` + `AccessDeniedException` en `baselineProfiles`. **No** enlaces la carpeta `app/build` a “Mi unidad”.
+5. **Subí la APK** a la carpeta de Drive (desde `release-export/` o la copia en Drive).
+6. **En Neon:** ejecutá el `INSERT` en `app_version` (ver SQL de ejemplo en `docs/`). Las apps instaladas, al iniciar sesión, consultan la API; si detectan `versionCode` mayor, muestran el diálogo para actualizar.
    ```sql
    INSERT INTO app_version (version_code, version_name, apk_url, release_notes, force_update)
    VALUES (4, '1.0.3', 'https://drive.google.com/uc?export=download&id=ID_NUEVO_APK', 'Descripción de cambios', false);
    ```
-6. Las apps instaladas, al iniciar sesión, consultan la API. Si detectan `versionCode` mayor, muestran el diálogo para actualizar.
 
 ---
 

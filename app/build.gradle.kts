@@ -9,8 +9,8 @@ plugins {
 /**
  * Firma release automática: creá en la raíz del repo `keystore.properties` (no va a Git; ver
  * `keystore.properties.example`). Propiedades: **storeFilePath** o **storeFile** (ruta al archivo
- * keystore), storePassword, keyAlias, keyPassword. Si la carpeta se llama `keystore` y el archivo también,
- * la ruta es `C:/Users/tu_usuario/keystore/keystore` (carpeta + archivo).
+ * keystore), storePassword, keyAlias, keyPassword. En Windows conviene un path local fuera de OneDrive,
+ * p. ej. `C:/Keystore/keystore` (carpeta + archivo) o `C:/Keystore/release.jks`.
  */
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -59,13 +59,13 @@ android {
                     error(
                         "La ruta es una carpeta, no el archivo keystore: ${storeFileResolved.absolutePath}. " +
                             "Si el .jks está dentro de esa carpeta, usá la ruta completa al archivo " +
-                            "(ej. C:/Users/tu_usuario/keystore/keystore cuando carpeta y archivo se llaman keystore)."
+                            "(ej. C:/Keystore/keystore o C:/Users/tu_usuario/keystore/keystore)."
                     )
                 }
                 if (!storeFileResolved.isFile) {
                     error(
                         "Keystore no encontrado: ${storeFileResolved.absolutePath}. " +
-                            "storeFilePath debe ser el archivo (p. ej. C:/Users/leave/keystore/keystore)."
+                            "storeFilePath debe ser el archivo (p. ej. C:/Keystore/keystore)."
                     )
                 }
                 storeFile = storeFileResolved
