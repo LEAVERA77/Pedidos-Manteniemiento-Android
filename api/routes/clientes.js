@@ -1,5 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import {
@@ -53,12 +54,45 @@ router.get("/mi-configuracion", authWithTenantHost, async (req, res) => {
 router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
   try {
     const rol = String(req.user.rol || "").toLowerCase();
-    if (rol !== "admin" && rol !== "administrador") {
+    const esAdminRol = rol === "admin" || rol === "administrador";
+    const techKeyOk = technicianTenantKeyOk(req);
+    const techRolOk =
+      techKeyOk && (rol === "tecnico" || rol === "técnico" || rol === "supervisor");
+    if (!esAdminRol && !techRolOk) {
       return res.status(403).json({ error: "Requiere rol administrador" });
     }
 
-    const tenantId = req.tenantId;
     const body = req.body || {};
+    if (!esAdminRol && techRolOk) {
+      const allowTop = new Set([
+        "nombre",
+        "tipo",
+        "latitud",
+        "longitud",
+        "logo_url",
+        "configuracion",
+        "active_business_type",
+      ]);
+      for (const k of Object.keys(body)) {
+        if (!allowTop.has(k)) delete body[k];
+      }
+      const cfgIn = body.configuracion;
+      if (cfgIn && typeof cfgIn === "object" && !Array.isArray(cfgIn)) {
+        const allowCfg = new Set([
+          "setup_wizard_completado",
+          "marca_publicada_admin",
+          "abrir_wizard_recuperacion",
+          "provincia",
+          "state",
+          "provincia_nominatim",
+        ]);
+        for (const k of Object.keys(cfgIn)) {
+          if (!allowCfg.has(k)) delete cfgIn[k];
+        }
+      }
+    }
+
+    const tenantId = req.tenantId;
     const { nombre, tipo, latitud, longitud, configuracion: configuracionBody, active_business_type: activeBusinessBody } =
       body;
     const logo_url = Object.prototype.hasOwnProperty.call(body, "logo_url") ? body.logo_url : undefined;

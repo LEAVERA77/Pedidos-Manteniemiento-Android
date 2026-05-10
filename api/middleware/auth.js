@@ -3,6 +3,7 @@ import { query } from "../db/neon.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tenantHostMiddleware } from "./tenantHost.js";
 import { businessContextMiddleware } from "./businessContext.js";
+import { technicianTenantKeyOk } from "./technicianTenantKey.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
 
@@ -54,6 +55,21 @@ export function adminOnly(req, res, next) {
     return res.status(403).json({ error: "Requiere rol administrador" });
   }
   return next();
+}
+
+/** POST /api/setup/wizard: admin o técnico/supervisor con GESTORNOVA_TECHNICIAN_TENANT_KEY (sin crear instancia nueva). */
+export function adminOrTechnicianWizardKey(req, res, next) {
+  const rol = String(req.user?.rol || "").toLowerCase();
+  if (rol === "admin" || rol === "administrador") return next();
+  if (
+    technicianTenantKeyOk(req) &&
+    (rol === "tecnico" || rol === "técnico" || rol === "supervisor")
+  ) {
+    return next();
+  }
+  return res.status(403).json({
+    error: "Requiere administrador o técnico/supervisor con clave GESTORNOVA_TECHNICIAN_TENANT_KEY",
+  });
 }
 
 /** Incidencias: crear, cerrar grupo y desasociar — alineado con `esTecnicoOSupervisor` en el front (tecnico | supervisor). */

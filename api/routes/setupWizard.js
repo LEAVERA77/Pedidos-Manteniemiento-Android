@@ -1,6 +1,6 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import { authWithTenantHost, adminOnly, signToken } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly, adminOrTechnicianWizardKey, signToken } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import {
   normalizeBusinessTypeInput,
@@ -169,7 +169,7 @@ router.post(
   }
 );
 
-router.use(authWithTenantHost, adminOnly);
+router.use(authWithTenantHost, adminOrTechnicianWizardKey);
 
 function parseConfiguracionDb(val) {
   if (val == null) return {};
@@ -385,6 +385,15 @@ router.post("/wizard", async (req, res) => {
     const pairOld = tenantIdentityPairKey(state.nombre, state.businessType);
 
     const debeNuevaInstancia = state.setupDone && pairNew !== pairOld;
+
+    const rolWiz = String(req.user?.rol || "").toLowerCase();
+    const esAdminWiz = rolWiz === "admin" || rolWiz === "administrador";
+    if (debeNuevaInstancia && !esAdminWiz) {
+      return res.status(403).json({
+        error: "Solo un administrador puede crear o cambiar de instancia de tenant",
+        hint: "El técnico puede completar el setup en el tenant actual sin cambiar nombre/tipo a un par distinto ya completado.",
+      });
+    }
 
     const hasClientesAbt = await tableHasColumn("clientes", "active_business_type");
     const hasTenantBusinessesTbl = await tableExistsInPublic("tenant_businesses");

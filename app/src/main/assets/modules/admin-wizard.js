@@ -14,6 +14,7 @@ import {
     getGnStoredTechnicianKey,
     persistGnTechnicianKeyForSession,
 } from './gn-tenant-acceso-tecnico-unificado.js';
+import { gnMostrarVeilRecargaTenant } from './gn-tenant-reload-veil.js';
 
 /** @type {Record<string, unknown> | null} */
 let _wizardDeps = null;
@@ -69,11 +70,7 @@ function actualizarStepWizard() {
     document.getElementById('sw-next').style.display = _setupWizardStep < 3 ? '' : 'none';
     const guW = document.getElementById('cfgi-guardar');
     if (guW) {
-        let showG = _setupWizardStep === 3;
-        try {
-            if (!req().esAdmin()) showG = false;
-        } catch (_) {}
-        guW.style.display = showG ? '' : 'none';
+        guW.style.display = _setupWizardStep === 3 ? '' : 'none';
     }
     try {
         const adm = req().esAdmin();
@@ -399,9 +396,10 @@ function mostrarModalConfigInicial() {
             ? 'Acceso técnico validado: podés editar nombre, tipo, logo y ubicación base del tenant; al final tocá Finalizar.' + snapLine
             : 'El administrador no puede editar estos datos sin la clave técnica. Usá el botón de listado (arriba a la izquierda) o el asistente, validá GESTORNOVA_TECHNICIAN_TENANT_KEY y volvé a abrir este asistente.' +
                   snapLine
-        : 'Este tenant no está configurado. Con la clave de técnico (abajo) podés listar clientes y vincular tu sesión a otro tenant; solo un administrador puede pulsar Finalizar y completar el setup.';
-    const puedeEditarMarca = esAdm && tecOk;
-    /** Técnicos pueden elegir tenant en la lista (solo clave); el admin necesita además tecOk. */
+        : 'Con la clave de técnico (abajo) podés listar tenants, elegir marca/logo/ubicación y pulsar Finalizar; la API valida la clave en cada guardado.';
+    /** Con clave técnica validada: admin o técnico puede editar marca/logo/ubicación y usar Finalizar. */
+    const puedeEditarMarca = tecOk;
+    /** Lista Neon: técnico sin flag aún puede usar clave en details; admin necesita tecOk o ser no-admin. */
     const puedeUsarListaTenant = !esAdm || puedeEditarMarca;
     const nmField = document.getElementById('cfgi-nombre');
     const tpField = document.getElementById('cfgi-tipo');
@@ -698,13 +696,9 @@ function initSetupWizardBindings() {
     }
 }
 async function guardarConfiguracionInicialObligatoria() {
-    if (!req().esAdmin()) {
-        toast('Solo un administrador puede completar el setup.', 'error');
-        return;
-    }
     if (!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {
         toast(
-            'Falta la validación técnica: el administrador no puede guardar nombre/tipo/marca sin la clave GESTORNOVA_TECHNICIAN_TENANT_KEY.',
+            'Falta la validación técnica: no se puede guardar sin la clave GESTORNOVA_TECHNICIAN_TENANT_KEY.',
             'error'
         );
         return;
@@ -737,9 +731,15 @@ async function guardarConfiguracionInicialObligatoria() {
         const abtWiz =
             rubWiz === 'cooperativa_agua' ? 'agua' : rubWiz === 'municipio' ? 'municipio' : 'electricidad';
         let authToken = token;
+        const techK = getGnStoredTechnicianKey();
+        const wizHeaders = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+        };
+        if (techK) wizHeaders['X-GestorNova-Technician-Key'] = techK;
         const wizResp = await fetch(req().apiUrl('/api/setup/wizard'), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+            headers: wizHeaders,
             body: JSON.stringify({ tenant_nombre: nombre, business_type: abtWiz }),
         });
         if (!wizResp.ok) {
@@ -777,12 +777,14 @@ async function guardarConfiguracionInicialObligatoria() {
                 toast('Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.', 'info');
             }
         }
+        const putHeaders = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+        };
+        if (techK) putHeaders['X-GestorNova-Technician-Key'] = techK;
         const resp = await fetch(req().apiUrl('/api/clientes/mi-configuracion'), {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
-            },
+            headers: putHeaders,
             body: JSON.stringify({
                 nombre,
                 tipo,
@@ -874,6 +876,12 @@ async function guardarConfiguracionInicialObligatoria() {
             try {
                 req().invalidatePedidosTenantSqlCache();
                 req().invalidarCachesMultitenantSesionYOAdminUI();
+            } catch (_) {}
+            try {
+                gnMostrarVeilRecargaTenant();
+            } catch (_) {}
+            try {
+                await new Promise((r) => setTimeout(r, 80));
             } catch (_) {}
             try {
                 const u = new URL(window.location.href);
