@@ -1,6 +1,5 @@
 /**
- * Botón asistente (fa-magic en #gw): paridad con #mt cuando la pantalla principal está activa;
- * sin sesión API: cerrar bienvenida si aplica, modal tenant (técnico) y acceso a reabrir asistente (admin).
+ * Botón asistente (fa-magic en #gw): misma validación técnica que #mt y Tenant (clave GESTORNOVA_TECHNICIAN_TENANT_KEY).
  */
 
 function esAndroidWebViewMapaUa() {
@@ -23,15 +22,13 @@ function esEntornoAndroidGestorNovaLoginLocal() {
     }
 }
 
-function esGestorNovaWebPublicoLocal() {
-    return typeof window.AndroidConfig === 'undefined';
-}
-
 export function gnAbrirAsistenteDesdeWizardOLogin() {
     try {
         const ms = document.getElementById('ms');
         if (ms?.classList.contains('active')) {
-            if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
+            if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+                window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+            } else if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
                 void window.abrirWizardMarcaEmpresaManual();
             }
             return;
@@ -45,9 +42,16 @@ export function gnAbrirAsistenteDesdeWizardOLogin() {
         const tokenOk =
             typeof window.sesionCompletaParaMarcaLogin === 'function' && window.sesionCompletaParaMarcaLogin();
         if (tokenOk) {
-            if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
+            if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+                window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+            } else if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
                 void window.abrirWizardMarcaEmpresaManual();
             }
+            return;
+        }
+
+        if (typeof window.gnAbrirFlujoTenantTecnicoLogin === 'function') {
+            window.gnAbrirFlujoTenantTecnicoLogin();
             return;
         }
 
@@ -55,7 +59,7 @@ export function gnAbrirAsistenteDesdeWizardOLogin() {
             window.abrirModalTenantTecnicoAndroid();
         }
 
-        const envOk = esGestorNovaWebPublicoLocal() || esEntornoAndroidGestorNovaLoginLocal();
+        const envOk = typeof window.AndroidConfig === 'undefined' || esEntornoAndroidGestorNovaLoginLocal();
         if (envOk && typeof window.abrirModalReabrirAsistenteAdmin === 'function') {
             setTimeout(() => {
                 try {

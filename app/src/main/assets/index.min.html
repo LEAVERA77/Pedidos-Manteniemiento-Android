@@ -48,7 +48,7 @@
 
 <!-- LOGIN SCREEN -->
 <div id="ls" class="screen active">
-  <button type="button" id="btn-login-tenant-tecnico" title="Cambiar tenant (técnico)" aria-label="Cambiar tenant técnico" onclick="if(typeof abrirModalTenantTecnicoAndroid==='function')abrirModalTenantTecnicoAndroid()"><span style="font-size:.68rem;font-weight:600;letter-spacing:.02em">Tenant</span></button>
+  <button type="button" id="btn-login-tenant-tecnico" title="Cambiar tenant (técnico)" aria-label="Cambiar tenant técnico" onclick="if(typeof gnAbrirFlujoTenantTecnicoLogin==='function')gnAbrirFlujoTenantTecnicoLogin();else if(typeof abrirModalTenantTecnicoAndroid==='function')abrirModalTenantTecnicoAndroid()"><span style="font-size:.68rem;font-weight:600;letter-spacing:.02em">Tenant</span></button>
   <div class="lc">
     <div class="ll ll--logo"><img src="gestornova-logo.png" alt="" class="gn-header-logo-img" width="62" height="62"/></div>
     <h1 id="app-titulo">GestorNova</h1>
@@ -102,7 +102,7 @@
   </div>
   <div class="hd">
     <div class="hd-slot-left">
-      <button type="button" id="mt" class="ib" title="Marca, logo y ubicación (admin: pide contraseña). Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
+      <button type="button" id="mt" class="ib" title="Marca, logo y ubicación (solo técnico con clave del servidor). Otros roles: panel de pedidos."><i class="fas fa-list"></i></button>
       <h2><i class="fas fa-network-wired"></i> GestorNova</h2>
     </div>
     <div class="hd-slot-mid">
@@ -1034,6 +1034,24 @@
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button type="button" class="sec" onclick="document.getElementById('modal-admin-verify-pw-setup-saas').classList.remove('active')">Cancelar</button>
         <button type="button" class="bp" onclick="confirmarPasswordYAbrirSetupSaaSWizard()"><i class="fas fa-check"></i> Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="modal-gn-acceso-tecnico-tenant" class="mo">
+  <div class="mc" style="max-width:440px">
+    <div class="mh"><h3><i class="fas fa-user-shield"></i> Acceso exclusivo para técnicos</h3></div>
+    <div class="mb">
+      <p style="font-size:.82rem;color:var(--tm);margin:0 0 .75rem;line-height:1.45">
+        El perfil <strong>administrador</strong> <strong>no está autorizado</strong> a modificar el nombre del negocio, el tipo de organización ni la marca del tenant.
+        Solo personal técnico con la clave definida en el servidor como <code style="font-size:.68rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code> puede continuar.
+      </p>
+      <label style="display:block;font-size:.78rem;color:var(--tl);margin-bottom:.25rem">Clave técnica</label>
+      <input id="gn-acceso-tec-clave" type="password" autocomplete="off" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:.5rem">
+      <p id="gn-acceso-tec-err" style="display:none;font-size:.8rem;color:var(--re);margin:0 0 .75rem" role="alert"></p>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="sec" onclick="if(typeof _gnAccesoTecCancelar==='function')_gnAccesoTecCancelar()">Cancelar</button>
+        <button type="button" class="bp" onclick="if(typeof _gnAccesoTecContinuar==='function')void _gnAccesoTecContinuar()"><i class="fas fa-check"></i> Continuar</button>
       </div>
     </div>
   </div>

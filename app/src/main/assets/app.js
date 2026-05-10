@@ -170,6 +170,8 @@ import {
 } from './map.js';
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
+import { initGnModalZIndexStack } from './modules/gn-modal-z-index-stack.js';
+import { initGnTenantAccesoTecnicoUnificado } from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -12516,6 +12518,10 @@ async function abrirWizardMarcaEmpresaManual() {
         togglePanel();
         return;
     }
+    if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+        window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+        return;
+    }
     const inp = document.getElementById('admin-verify-pw-setup-saas-input');
     if (inp) inp.value = '';
     document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.add('active');
@@ -12523,33 +12529,14 @@ async function abrirWizardMarcaEmpresaManual() {
 window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
 
 async function confirmarPasswordYAbrirSetupSaaSWizard() {
-    const pw = (document.getElementById('admin-verify-pw-setup-saas-input')?.value || '').trim();
-    if (!pw) {
-        toast('Ingresá tu contraseña de administrador', 'error');
-        return;
-    }
-    await asegurarJwtApiRest();
-    const token = getApiToken();
-    if (!token) {
-        toast('No hay token de API. Volvé a iniciar sesión.', 'error');
-        return;
-    }
-    try {
-        const resp = await fetch(apiUrl('/api/auth/verify-password'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ password: pw })
-        });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || `HTTP ${resp.status}`);
-        }
-    } catch (e) {
-        toast(String(e?.message || e) || 'Contraseña incorrecta', 'error');
-        return;
-    }
     document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.remove('active');
-    await abrirWizardMarcaEmpresaManualTrasPassword();
+    toast(
+        'La configuración de marca y tenant del negocio solo se abre con la clave técnica del servidor (GESTORNOVA_TECHNICIAN_TENANT_KEY), no con la contraseña de administrador.',
+        'info'
+    );
+    if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+        window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+    }
 }
 window.confirmarPasswordYAbrirSetupSaaSWizard = confirmarPasswordYAbrirSetupSaaSWizard;
 
@@ -19265,6 +19252,7 @@ if ('serviceWorker' in navigator) {
             ocultarOverlayImportacion,
             nominatimFetchSearch: _nominatimFetchSearch
         });
+        initGnModalZIndexStack();
         initAdminWizard({
             app,
             getApiToken,
@@ -19309,6 +19297,10 @@ if ('serviceWorker' in navigator) {
             wizardPoblarSelectTenantsClientes,
             GN_SUBTITULO_FIJO,
             WEB_MAP_FILTRO_TIPOS_KEY,
+        });
+        initGnTenantAccesoTecnicoUnificado({
+            apiSetupTechnicianFetchTenants,
+            abrirWizardMarcaEmpresaManualTrasPassword,
         });
         initSetupWizardBindings();
         initAdminCambiarCredenciales({

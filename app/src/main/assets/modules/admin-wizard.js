@@ -59,11 +59,21 @@ function actualizarStepWizard() {
     document.getElementById('sw-prev').style.display = _setupWizardStep > 1 ? '' : 'none';
     document.getElementById('sw-next').style.display = _setupWizardStep < 3 ? '' : 'none';
     document.getElementById('cfgi-guardar').style.display = _setupWizardStep === 3 ? '' : 'none';
+    try {
+        const adm = req().esAdmin();
+        const tecOk = !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
+        if (adm && !tecOk) {
+            const nx = document.getElementById('sw-next');
+            if (nx) nx.style.display = 'none';
+            const gu = document.getElementById('cfgi-guardar');
+            if (gu && _setupWizardStep === 3) gu.style.display = 'none';
+        }
+    } catch (_) {}
     if (_setupWizardStep === 3) {
         setTimeout(inicializarMapaSetupWizard, 20);
     }
     const hintBar = document.getElementById('cfgi-hint-bar');
-    if (hintBar && req().esAdmin()) {
+    if (hintBar && req().esAdmin() && window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {
         hintBar.style.display = 'block';
         const manual = _setupWizardContextoManual
             ? 'Con la X cerrás solo esta ventana: no guarda lo que editaste ahora; lo ya guardado en el servidor no se borra. '
@@ -267,6 +277,12 @@ function mostrarModalConfigInicial() {
     _configInicialBloqueante = true;
     const cfg = window.EMPRESA_CFG || {};
     const esAdm = req().esAdmin();
+    let tecOk = false;
+    try {
+        tecOk = !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
+    } catch (_) {
+        tecOk = false;
+    }
     document.getElementById('cfgi-nombre').value = cfg.nombre || '';
     document.getElementById('cfgi-tipo').value = cfg.tipo || '';
     document.getElementById('cfgi-logo-url').value = cfg.logo_url || '';
@@ -284,13 +300,18 @@ function mostrarModalConfigInicial() {
             ? ` Registro en servidor: id ${snap.id} — ${String(snap.nombre || '').trim() || '—'} · ${String(snap.tipo || '').trim() || '—'}. Los campos coinciden con la tabla; confirmá con Finalizar.`
             : '';
     msg.textContent = esAdm
-        ? 'Setup inicial (una vez): elegí tipo de negocio, nombre y ubicación base; al final tocá Finalizar. Si ya estaban cargados, revisalos y confirmá.' + snapLine
+        ? tecOk
+            ? 'Acceso técnico validado: podés editar nombre, tipo, logo y ubicación base del tenant; al final tocá Finalizar.' + snapLine
+            : 'El administrador no puede editar estos datos sin la clave técnica. Usá el botón de listado (arriba a la izquierda) o el asistente, validá GESTORNOVA_TECHNICIAN_TENANT_KEY y volvé a abrir este asistente.' +
+                  snapLine
         : 'Este tenant no está configurado. Con la clave de técnico (abajo) podés listar clientes y vincular tu sesión a otro tenant; solo un administrador puede pulsar Finalizar y completar el setup.';
-    ['cfgi-nombre','cfgi-tipo','cfgi-logo-url','cfgi-logo-file'].forEach(id => {
-        const el = document.getElementById(id); if (el) el.disabled = !esAdm;
+    const puedeEditarMarca = !esAdm ? false : tecOk;
+    ['cfgi-nombre', 'cfgi-tipo', 'cfgi-logo-url', 'cfgi-logo-file'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !puedeEditarMarca;
     });
     document.getElementById('sw-prev').style.display = 'none';
-    document.getElementById('sw-next').style.display = esAdm ? '' : 'none';
+    document.getElementById('sw-next').style.display = puedeEditarMarca ? '' : 'none';
     document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
     const btnCerrar = document.getElementById('cfgi-btn-cerrar');
     if (btnCerrar) btnCerrar.style.display = (esAdm && _setupWizardContextoManual) ? '' : 'none';
@@ -305,6 +326,9 @@ function ocultarModalConfigInicial() {
     modal.classList.remove('active');
     _configInicialBloqueante = false;
     _setupWizardContextoManual = false;
+    try {
+        window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK = false;
+    } catch (_) {}
 }
 
 function cerrarWizardSetupVoluntario() {
@@ -494,7 +518,11 @@ async function verificarConfiguracionInicialObligatoria() {
         _setupWizardContextoManual = false;
         window.EMPRESA_CFG = { ...cfg };
         req().poblarSelectTiposReclamo();
-        mostrarModalConfigInicial();
+        if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+            window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+        } else {
+            mostrarModalConfigInicial();
+        }
         return false;
     }
     window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), ...cfg };
@@ -510,6 +538,10 @@ async function verificarConfiguracionInicialObligatoria() {
     return true;
 }
 function setupWizardNext() {
+    if (req().esAdmin() && !window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {
+        toast('Validá la clave técnica (GESTORNOVA_TECHNICIAN_TENANT_KEY) antes de editar el setup del tenant.', 'error');
+        return;
+    }
     if (_setupWizardStep === 1) {
         if (!(document.getElementById('cfgi-nombre').value || '').trim()) return toast('Ingresá nombre', 'error');
         if (!(document.getElementById('cfgi-tipo').value || '').trim()) return toast('Elegí tipo', 'error');
@@ -560,6 +592,13 @@ function initSetupWizardBindings() {
 async function guardarConfiguracionInicialObligatoria() {
     if (!req().esAdmin()) {
         toast('Solo un administrador puede completar el setup.', 'error');
+        return;
+    }
+    if (!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {
+        toast(
+            'Falta la validación técnica: el administrador no puede guardar nombre/tipo/marca sin la clave GESTORNOVA_TECHNICIAN_TENANT_KEY.',
+            'error'
+        );
         return;
     }
     const nombre = (document.getElementById('cfgi-nombre')?.value || '').trim();
@@ -711,6 +750,9 @@ async function guardarConfiguracionInicialObligatoria() {
                         'Configuración inicial guardada en el servidor.\n\n' +
                         'La página se va a recargar por completo para aplicar aislamiento, marca y evitar datos mezclados.'
                 );
+            } catch (_) {}
+            try {
+                window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK = false;
             } catch (_) {}
             try {
                 sessionStorage.clear();

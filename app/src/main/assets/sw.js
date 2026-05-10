@@ -49,6 +49,8 @@ function shellAssetUrls() {
     j('modules/ui-utils.js'),
     j('modules/export-excel.js'),
     j('modules/admin-wizard.js'),
+    j('modules/gn-modal-z-index-stack.js'),
+    j('modules/gn-tenant-acceso-tecnico-unificado.js'),
     j('modules/admin-socios.js'),
     j('modules/bot-menus.js'),
     j('modules/catalogoReclamoPorRubro.js'),
