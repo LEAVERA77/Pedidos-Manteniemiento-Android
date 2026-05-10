@@ -5,6 +5,12 @@
 
 import { generarPasswordFacilDictado } from './password-facil-sugerido.js';
 
+/** Evita falsos positivos (ej. admin2026): solo si parece un hash bcrypt pegado entero. */
+function pareceHashBcryptPegado(s) {
+    const t = String(s || '').trim();
+    return t.length >= 53 && /^\$2[aby]\$\d{2}\$/.test(t);
+}
+
 /** @type {Record<string, unknown> | null} */
 let _ctx = null;
 
@@ -30,7 +36,7 @@ export function rellenarContrasenaFacilAdminPanel() {
     if (msg) {
         msg.style.color = 'var(--tm)';
         msg.textContent =
-            'Sugerencia en «Nueva» y «Confirmar». En «Contraseña actual» escribí la clave con la que entrás al sistema (no pegues códigos $2a$… de la base).';
+            'Sugerencia en «Nueva» y «Confirmar». En «Contraseña actual» poné la misma clave que usás en el login (ej. temporal palabra+año o la que definiste); no pegues el hash largo de la base.';
     }
 }
 
@@ -82,9 +88,9 @@ export async function cambiarContrasena() {
         setErr('Ingresá la contraseña actual');
         return;
     }
-    if (/^\$2[aby]\$/i.test(actual)) {
+    if (pareceHashBcryptPegado(actual)) {
         setErr(
-            'En «Contraseña actual» va la clave con la que iniciás sesión (texto plano), no el hash de la base ($2a$…). Si la dejaron por defecto, probá admin.'
+            'Parece que pegaste el hash de la base ($2a$10$…). Ahí va la contraseña con la que entrás al panel (la misma del login: puede ser una temporal tipo palabra+año, admin si no la cambiaron, etc.).'
         );
         return;
     }
