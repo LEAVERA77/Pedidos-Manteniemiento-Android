@@ -195,24 +195,36 @@ tasks.named("preBuild").configure {
  * del usuario Windows ni en **Android Studio → Settings → Build → Gradle → Environment variables** mientras
  * compilás el proyecto: puede provocar `AccessDeniedException` en `baselineProfiles` bajo la carpeta de releases.
  * Usá `scripts/build-release-and-export.ps1` o definí la variable **solo** en la sesión de PowerShell del paso de copia.
+ *
+ * Importante: no usar `Copy.into(OneDrive)` en tiempo de **configuración** del script: en algunos entornos
+ * Gradle/AGP termina intentando escribir `baselineProfiles` bajo esa ruta durante `packageRelease` y falla con
+ * AccessDenied. Las tareas de copia leen `GESTORNOVA_RELEASE_COPY_DIR` solo en **doLast**.
  */
-val gestornovaReleaseCopyDir: String? =
-    System.getenv("GESTORNOVA_RELEASE_COPY_DIR")?.trim()?.takeIf { it.isNotEmpty() }
 
-// APK renombrado: primero siempre en build estándar; esta tarea solo copia a release-export/ o a GESTORNOVA_RELEASE_COPY_DIR.
-tasks.register<Copy>("renameReleaseApk") {
+// APK renombrado: salida estándar en app/build; copia al final (env solo en ejecución).
+tasks.register("renameReleaseApk") {
+    group = "build"
+    description = "Copia la APK release renombrada a release-export/ o a GESTORNOVA_RELEASE_COPY_DIR."
     dependsOn("assembleRelease")
-    from(layout.buildDirectory.dir("outputs/apk/release")) {
-        include("app-release.apk", "app-release-unsigned.apk")
+    doLast {
+        val raw = System.getenv("GESTORNOVA_RELEASE_COPY_DIR")?.trim()?.takeIf { it.isNotEmpty() }
+        val destRoot = raw?.let { rootProject.file(it) } ?: rootProject.file("release-export")
+        destRoot.mkdirs()
+        val vName = android.defaultConfig.versionName ?: "0.0.0"
+        val vCode = android.defaultConfig.versionCode ?: 0
+        val outName = "GestorNova-$vName($vCode)-release.apk"
+        val rel = layout.buildDirectory.get().asFile.resolve("outputs/apk/release")
+        val src =
+            sequenceOf(rel.resolve("app-release.apk"), rel.resolve("app-release-unsigned.apk"))
+                .firstOrNull { it.isFile }
+                ?: error("No hay APK en ${rel.absolutePath}")
+        copy {
+            from(src)
+            into(destRoot)
+            rename { outName }
+        }
+        logger.lifecycle("GestorNova: copiado release → ${destRoot.resolve(outName).absolutePath}")
     }
-    val destRoot =
-        gestornovaReleaseCopyDir?.let { rootProject.file(it) }
-            ?: rootProject.file("release-export")
-    into(destRoot)
-    val vName = android.defaultConfig.versionName ?: "0.0.0"
-    val vCode = android.defaultConfig.versionCode ?: 0
-    rename { "GestorNova-$vName($vCode)-release.apk" }
-    doNotTrackState("Destino puede ser carpeta externa (Drive); no rastrear para el incremental build")
 }
 
 /**
@@ -226,7 +238,7 @@ tasks.register("exportReleaseApkFlat") {
     dependsOn("assembleRelease")
     doLast {
         val dir =
-            gestornovaReleaseCopyDir?.trim()?.takeIf { it.isNotEmpty() }
+            System.getenv("GESTORNOVA_RELEASE_COPY_DIR")?.trim()?.takeIf { it.isNotEmpty() }
                 ?: error(
                     "Definí la variable de entorno GESTORNOVA_RELEASE_COPY_DIR (ruta absoluta de la carpeta destino)."
                 )
