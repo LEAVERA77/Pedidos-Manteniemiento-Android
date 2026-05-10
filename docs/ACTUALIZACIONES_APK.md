@@ -56,7 +56,7 @@ Reemplazá `TU_API_URL` por la URL real de tu API desplegada.
 
 1. **En `app/build.gradle.kts`:** subí `versionCode` (p. ej. 4) y `versionName` (p. ej. `"1.0.3"`).
 2. **En Android Studio:** Build → Generate Signed Bundle / APK. Generá la APK firmada.
-3. La salida estándar queda en `app/build/outputs/apk/release/`. La tarea Gradle **`renameReleaseApk`** copia una copia renombrada a **`release-export/`** en la raíz del repo (disco local). Para copiar además a Google Drive, definí la variable de entorno **`GESTORNOVA_RELEASE_COPY_DIR`** con la ruta absoluta de la carpeta destino antes de ejecutar Gradle. **No** enlaces la carpeta `app/build` a “Mi unidad”: Gradle 9 falla al empaquetar (`packageRelease`) con `AccessDeniedException`.
+3. La salida estándar queda en `app/build/outputs/apk/release/`. La tarea Gradle **`renameReleaseApk`** copia una copia renombrada a **`release-export/`** en la raíz del repo (disco local). Para copiar además a otra carpeta (Drive/OneDrive), usá **`scripts/build-release-and-export.ps1 -ExportDir 'RUTA'`** o definí **`GESTORNOVA_RELEASE_COPY_DIR` solo en esa sesión de PowerShell** al ejecutar `exportReleaseApkFlat`. **No** la dejes en variables de entorno permanentes del usuario ni en **Android Studio → Gradle → Environment variables** mientras compilás: con OneDrive suele aparecer `packageRelease` + `AccessDeniedException` en `baselineProfiles`. **No** enlaces la carpeta `app/build` a “Mi unidad”.
 4. **Subí la APK** a la carpeta de Drive (desde `release-export/` o la copia en Drive).
 5. **En Neon:** ejecutá:
    ```sql

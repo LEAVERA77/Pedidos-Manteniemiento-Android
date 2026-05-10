@@ -190,6 +190,11 @@ tasks.named("preBuild").configure {
  *
  * No enlaces `app/build` ni la salida de `packageRelease` a Google Drive: Gradle 9 inspecciona esas rutas y suele fallar con
  * AccessDeniedException en "Mi unidad". La APK release se genera siempre en `app/build/outputs/apk/release/`; esta tarea solo copia.
+ *
+ * **OneDrive / `packageRelease`:** no dejes `GESTORNOVA_RELEASE_COPY_DIR` en variables de entorno **permanentes**
+ * del usuario Windows ni en **Android Studio → Settings → Build → Gradle → Environment variables** mientras
+ * compilás el proyecto: puede provocar `AccessDeniedException` en `baselineProfiles` bajo la carpeta de releases.
+ * Usá `scripts/build-release-and-export.ps1` o definí la variable **solo** en la sesión de PowerShell del paso de copia.
  */
 val gestornovaReleaseCopyDir: String? =
     System.getenv("GESTORNOVA_RELEASE_COPY_DIR")?.trim()?.takeIf { it.isNotEmpty() }
