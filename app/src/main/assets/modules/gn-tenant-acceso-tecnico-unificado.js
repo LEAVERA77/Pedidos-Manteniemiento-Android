@@ -4,6 +4,8 @@
  */
 
 const TECH_SESS_KEY = 'pmg_gn_tenant_tech_ok';
+/** Misma vida útil que TECH_SESS_KEY: solo para llamadas API de listado en el wizard (hasta cerrar sesión). */
+const TECH_KEY_SESS_KEY = 'pmg_gn_tenant_tech_key';
 
 /** @type {{ apiSetupTechnicianFetchTenants: Function, abrirWizardMarcaEmpresaManualTrasPassword: Function } | null} */
 let _deps = null;
@@ -18,7 +20,30 @@ function el(id) {
 export function clearGnTenantTechSession() {
     try {
         sessionStorage.removeItem(TECH_SESS_KEY);
+        sessionStorage.removeItem(TECH_KEY_SESS_KEY);
     } catch (_) {}
+}
+
+/** Clave técnica guardada solo en sessionStorage tras validar (listar tenants en el wizard sin reingresarla). */
+export function getGnStoredTechnicianKey() {
+    try {
+        return String(sessionStorage.getItem(TECH_KEY_SESS_KEY) || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+function storeGnTechnicianKey(k) {
+    const s = String(k || '').trim();
+    if (!s) return;
+    try {
+        sessionStorage.setItem(TECH_KEY_SESS_KEY, s);
+    } catch (_) {}
+}
+
+/** Tras «Listar tenants» en el wizard (clave en #cfgi-tech-key). */
+export function persistGnTechnicianKeyForSession(k) {
+    storeGnTechnicianKey(k);
 }
 
 function tieneTechSesion() {
@@ -64,8 +89,9 @@ async function gnAbrirWizardTenantUnificado() {
         await abrirWizardTrasClaveTecnica();
         return;
     }
-    _onSuccess = async () => {
+    _onSuccess = async (keyValidated) => {
         marcarTechSesion();
+        storeGnTechnicianKey(keyValidated);
         await abrirWizardTrasClaveTecnica();
     };
     abrirModalAccesoTecnicoTenantUnificado();

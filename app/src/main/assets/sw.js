@@ -51,6 +51,7 @@ function shellAssetUrls() {
     j('modules/admin-wizard.js'),
     j('modules/gn-modal-z-index-stack.js'),
     j('modules/gn-tenant-acceso-tecnico-unificado.js'),
+    j('modules/cfgi-wizard-tenant-select.js'),
     j('modules/admin-socios.js'),
     j('modules/bot-menus.js'),
     j('modules/catalogoReclamoPorRubro.js'),

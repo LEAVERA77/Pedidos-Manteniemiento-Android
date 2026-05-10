@@ -5,6 +5,15 @@
  */
 
 import { logErrorWeb, mensajeErrorUsuario, toast } from './ui-utils.js';
+import {
+    poblarCfgiNombreSelect,
+    leerNombreTipoDesdeCfgiNombre,
+    aplicarTipoInferidoEnSelectCfgiTipo,
+} from './cfgi-wizard-tenant-select.js';
+import {
+    getGnStoredTechnicianKey,
+    persistGnTechnicianKeyForSession,
+} from './gn-tenant-acceso-tecnico-unificado.js';
 
 /** @type {Record<string, unknown> | null} */
 let _wizardDeps = null;
@@ -79,7 +88,7 @@ function actualizarStepWizard() {
             ? 'Con la X cerrás solo esta ventana: no guarda lo que editaste ahora; lo ya guardado en el servidor no se borra. '
             : '';
         const perStep = {
-            1: 'Paso 1: nombre y tipo (municipio vs cooperativa) adaptan textos y el catálogo NIS en toda la app.',
+            1: 'Paso 1: elegí el tenant desde la lista (Neon) y el tipo se ajusta solo; adapta textos y el catálogo NIS en toda la app.',
             2: 'Paso 2: logo opcional para encabezado e informes (URL o archivo).',
             3: 'Paso 3: ubicación base del tenant (oficina): usá el mapa o el pin. No se reemplaza sola por el GPS del dispositivo; opcionalmente tocá «Usar mi ubicación» si querés empezar desde ahí. «Finalizar» guarda en servidor.'
         };
@@ -166,6 +175,48 @@ function usarUbicacionAutomaticaSetupWizard() {
     );
 }
 
+function getCfgiNombreEl() {
+    return document.getElementById('cfgi-nombre');
+}
+
+/** Nombre del negocio elegido en paso 1 (select Neon o legado). */
+function getCfgiNombreTrimmed() {
+    return String(leerNombreTipoDesdeCfgiNombre(getCfgiNombreEl()).nombre || '').trim();
+}
+
+function cfgiSalirSetupWizard() {
+    try {
+        ocultarModalConfigInicial();
+    } catch (_) {}
+    toast('Asistente de setup cerrado.', 'success');
+}
+
+async function cargarCfgiNombreTenantsDesdeNeonSiTecnico(cfgNombre, idPreferido) {
+    const sel = getCfgiNombreEl();
+    if (!sel || sel.tagName !== 'SELECT') return;
+    const puedeEditarMarca = !req().esAdmin() ? false : !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
+    if (!puedeEditarMarca) {
+        poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
+        return;
+    }
+    const token = req().getApiToken();
+    const k = getGnStoredTechnicianKey();
+    if (!token || !k) {
+        poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
+        return;
+    }
+    try {
+        const j = await req().apiSetupTechnicianFetchTenants(token, k);
+        const list = j.clientes || [];
+        poblarCfgiNombreSelect(sel, list, { nombreActual: cfgNombre, idActual: idPreferido });
+        const tipoEl = document.getElementById('cfgi-tipo');
+        if (tipoEl) aplicarTipoInferidoEnSelectCfgiTipo(sel, tipoEl);
+    } catch (e) {
+        poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
+        toast(String(e?.message || e) || 'No se pudo cargar la lista de tenants.', 'warning');
+    }
+}
+
 function _wizardTecnicoSetMsg(texto, esError) {
     const m = document.getElementById('cfgi-tech-msg');
     if (!m) return;
@@ -193,8 +244,21 @@ async function wizardTecnicoCargarTenantsNeon() {
     _wizardTecnicoSetMsg('Cargando…', false);
     try {
         const j = await req().apiSetupTechnicianFetchTenants(token, k);
-        req().wizardPoblarSelectTenantsClientes(document.getElementById('cfgi-tech-tenant-sel'), j.clientes);
-        _wizardTecnicoSetMsg(`Listo: ${(j.clientes || []).length} fila(s) en clientes. Elegí tenant y tocá Vincular.`, false);
+        persistGnTechnicianKeyForSession(k);
+        const list = j.clientes || [];
+        req().wizardPoblarSelectTenantsClientes(document.getElementById('cfgi-tech-tenant-sel'), list);
+        const selNom = getCfgiNombreEl();
+        if (selNom?.tagName === 'SELECT') {
+            const tid = Number(req().tenantIdActual());
+            const nomCfg = String((window.EMPRESA_CFG || {}).nombre || '').trim();
+            poblarCfgiNombreSelect(selNom, list, {
+                nombreActual: nomCfg,
+                idActual: Number.isFinite(tid) && tid > 0 ? tid : null,
+            });
+            const tipoEl = document.getElementById('cfgi-tipo');
+            if (tipoEl) aplicarTipoInferidoEnSelectCfgiTipo(selNom, tipoEl);
+        }
+        _wizardTecnicoSetMsg(`Listo: ${list.length} fila(s) en clientes. Elegí tenant y tocá Vincular.`, false);
     } catch (e) {
         _wizardTecnicoSetMsg(e.message || 'Error', true);
     }
@@ -283,8 +347,28 @@ function mostrarModalConfigInicial() {
     } catch (_) {
         tecOk = false;
     }
-    document.getElementById('cfgi-nombre').value = cfg.nombre || '';
-    document.getElementById('cfgi-tipo').value = cfg.tipo || '';
+    const nombreCfg = String(cfg.nombre || '').trim();
+    const tipoCfg = String(cfg.tipo || '').trim();
+    const tidPrefer = Number(req().tenantIdActual());
+    const idPrefer =
+        Number.isFinite(tidPrefer) && tidPrefer > 0
+            ? tidPrefer
+            : (() => {
+                  try {
+                      const snap = window.__PMG_LAST_MI_CLIENTE;
+                      const n = Number(snap?.id);
+                      return Number.isFinite(n) && n > 0 ? n : null;
+                  } catch (_) {
+                      return null;
+                  }
+              })();
+    const nmEl = document.getElementById('cfgi-nombre');
+    if (nmEl?.tagName === 'SELECT') {
+        void cargarCfgiNombreTenantsDesdeNeonSiTecnico(nombreCfg, idPrefer);
+    } else if (nmEl) {
+        nmEl.value = nombreCfg;
+    }
+    document.getElementById('cfgi-tipo').value = tipoCfg;
     document.getElementById('cfgi-logo-url').value = cfg.logo_url || '';
     document.getElementById('cfgi-tenant').textContent = 'tenant_id: ' + req().tenantIdActual();
     try {
@@ -312,7 +396,7 @@ function mostrarModalConfigInicial() {
     });
     document.getElementById('sw-prev').style.display = 'none';
     document.getElementById('sw-next').style.display = puedeEditarMarca ? '' : 'none';
-    document.getElementById('cfgi-logout').style.display = esAdm ? 'none' : '';
+    document.getElementById('cfgi-logout').style.display = '';
     const btnCerrar = document.getElementById('cfgi-btn-cerrar');
     if (btnCerrar) btnCerrar.style.display = (esAdm && _setupWizardContextoManual) ? '' : 'none';
     _setupWizardStep = 1;
@@ -545,7 +629,7 @@ function setupWizardNext() {
         return;
     }
     if (_setupWizardStep === 1) {
-        if (!(document.getElementById('cfgi-nombre').value || '').trim()) return toast('Ingresá nombre', 'error');
+        if (!getCfgiNombreTrimmed()) return toast('Elegí un tenant (nombre)', 'error');
         if (!(document.getElementById('cfgi-tipo').value || '').trim()) return toast('Elegí tipo', 'error');
     }
     if (_setupWizardStep < 3) _setupWizardStep++;
@@ -590,6 +674,11 @@ function initSetupWizardBindings() {
             reader.readAsDataURL(f);
         });
     }
+    const selNom = document.getElementById('cfgi-nombre');
+    const selTipo = document.getElementById('cfgi-tipo');
+    if (selNom && selTipo && selNom.tagName === 'SELECT') {
+        selNom.addEventListener('change', () => aplicarTipoInferidoEnSelectCfgiTipo(selNom, selTipo));
+    }
 }
 async function guardarConfiguracionInicialObligatoria() {
     if (!req().esAdmin()) {
@@ -603,7 +692,7 @@ async function guardarConfiguracionInicialObligatoria() {
         );
         return;
     }
-    const nombre = (document.getElementById('cfgi-nombre')?.value || '').trim();
+    const nombre = getCfgiNombreTrimmed();
     const tipo = (document.getElementById('cfgi-tipo')?.value || '').trim();
     const logoUrlInput = (document.getElementById('cfgi-logo-url')?.value || '').trim();
     const logoUrl = _setupLogoDataUrl || logoUrlInput || '';
@@ -821,3 +910,4 @@ window.wizardTecnicoCargarTenantsNeon = wizardTecnicoCargarTenantsNeon;
 window.wizardTecnicoVincularTenantSeleccionado = wizardTecnicoVincularTenantSeleccionado;
 window.usarUbicacionAutomaticaSetupWizard = usarUbicacionAutomaticaSetupWizard;
 window.cerrarWizardSetupVoluntario = cerrarWizardSetupVoluntario;
+window.cfgiSalirSetupWizard = cfgiSalirSetupWizard;

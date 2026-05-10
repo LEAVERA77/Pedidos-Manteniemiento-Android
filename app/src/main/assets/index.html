@@ -1067,9 +1067,9 @@
     <div class="mb">
       <div id="sw-paso-1" class="sw-step active">
         <h4 style="margin:.2rem 0 .6rem;color:var(--bd)">Identidad</h4>
-        <p style="font-size:.88rem;color:var(--tm)">Elegí el tipo de organización. Esto adapta textos en toda la app.</p>
+        <p style="font-size:.88rem;color:var(--tm)">Elegí el tenant (lista desde Neon con clave técnica). El tipo se completa solo al elegir.</p>
         <div class="form-grid">
-          <div class="full"><label>Nombre *</label><input id="cfgi-nombre" type="text" placeholder="Cooperativa Norte"></div>
+          <div class="full"><label>Tenant (nombre) *</label><select id="cfgi-nombre" style="width:100%;max-width:100%;padding:.4rem .45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem"><option value="">Cargando lista…</option></select></div>
           <div class="full"><label>Tipo *</label>
             <select id="cfgi-tipo">
               <option value="">Seleccionar...</option>
@@ -1081,7 +1081,7 @@
         </div>
         <details id="cfgi-tech-wrap" style="margin-top:.85rem;padding:.65rem .7rem;background:#f8fafc;border:1px solid var(--bo);border-radius:.5rem">
           <summary style="cursor:pointer;font-size:.8rem;color:var(--tm);font-weight:600">Herramienta interna (técnico): elegir tenant en el servidor</summary>
-          <p style="font-size:.72rem;color:var(--tl);margin:.45rem 0 .5rem;line-height:1.4">Requiere que en el API (Render, etc.) esté definida la variable <code style="font-size:.68rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code>. La clave no se guarda en el navegador. Se listan filas de <code style="font-size:.68rem">clientes</code> (Neon) y se reasigna <strong>tu usuario administrador</strong> al tenant elegido; recibís un JWT nuevo.</p>
+          <p style="font-size:.72rem;color:var(--tl);margin:.45rem 0 .5rem;line-height:1.4">Requiere que en el API (Render, etc.) esté definida la variable <code style="font-size:.68rem">GESTORNOVA_TECHNICIAN_TENANT_KEY</code>. Tras validarla, se guarda solo en <strong>sessionStorage</strong> de esta pestaña hasta cerrar sesión, para poder listar tenants sin reingresarla. Se listan filas de <code style="font-size:.68rem">clientes</code> (Neon) y se reasigna <strong>tu usuario administrador</strong> al tenant elegido; recibís un JWT nuevo.</p>
           <div class="form-grid" style="margin-top:.35rem">
             <div class="full"><label for="cfgi-tech-key">Clave de técnico</label>
               <input id="cfgi-tech-key" type="password" autocomplete="off" placeholder="Mismo valor que GESTORNOVA_TECHNICIAN_TENANT_KEY en el servidor"></div>
@@ -1123,7 +1123,7 @@
       <p id="cfgi-tenant" style="margin-top:.7rem;font-size:.8rem;color:var(--tl)"></p>
       <p id="cfgi-msg" style="margin-top:.45rem;font-size:.84rem;color:#b45309;display:none"></p>
       <div style="display:flex;gap:.5rem;justify-content:space-between;margin-top:1rem;flex-wrap:wrap">
-        <button id="cfgi-logout" class="sec" type="button" onclick="logout()" title="Cerrar sesión de la cuenta (no es lo mismo que cerrar solo este asistente)"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        <button id="cfgi-logout" class="sec" type="button" onclick="if(typeof cfgiSalirSetupWizard==='function')cfgiSalirSetupWizard();else if(typeof logout==='function')logout();" title="Cerrar este asistente y volver atrás (no cierra la sesión de la cuenta)"><i class="fas fa-times-circle"></i> Salir</button>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <button id="sw-prev" class="sec" type="button" onclick="setupWizardPrev()" style="display:none" title="Volver al paso anterior del setup">Anterior</button>
           <button id="sw-next" class="bp" type="button" onclick="setupWizardNext()" title="Avanzar: nombre y tipo → logo → ubicación base en mapa">Siguiente</button>
