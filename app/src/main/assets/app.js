@@ -2004,7 +2004,7 @@ async function loginApiJwt(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ usuario: email, password }),
             signal: ctl.signal
         });
         if (!resp.ok) return null;
@@ -2053,7 +2053,7 @@ async function authLoginApiRetornarTokenUser(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: em, password: pw }),
+            body: JSON.stringify({ usuario: em, password: pw }),
             signal: ctl.signal,
         });
         if (!resp.ok) return null;
@@ -2122,10 +2122,10 @@ async function verificarLoginSoloAdminSinPersistir(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: String(email || '').trim(), password: String(password || '') }),
+            body: JSON.stringify({ usuario: String(email || '').trim(), password: String(password || '') }),
             signal: ctl.signal
         });
-        if (!resp.ok) return { ok: false, error: 'Email o contraseña incorrectos' };
+        if (!resp.ok) return { ok: false, error: 'Usuario o contraseña incorrectos' };
         const data = await resp.json();
         const rol = normalizarRolStr(data.user?.rol || '');
         if (rol !== 'admin') return { ok: false, error: 'Solo un administrador puede reabrir el asistente.' };
@@ -2292,7 +2292,7 @@ async function confirmarReabrirAsistenteConCredenciales(ev) {
     const err = document.getElementById('reabrir-asistente-err');
     if (err) err.textContent = '';
     if (!em || !pw) {
-        if (err) err.textContent = 'Completá email y contraseña de administrador.';
+        if (err) err.textContent = 'Completá usuario y contraseña de administrador.';
         return;
     }
     const btn = document.getElementById('reabrir-asistente-submit');
@@ -3638,7 +3638,7 @@ const gnLoginSubmitHandler = async e => {
         let resultado = null;
         // Login directo Neon: igualdad literal password_hash = contraseña (no bcrypt en SQL).
         // Recuperación: ver docs/NEON_ops_insertar_admin_emergencia.sql (texto plano solo pruebas).
-        const loginWhere = `FROM usuarios WHERE email = ${esc(em)} AND password_hash = ${esc(pw)}`;
+        const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
         // tenantIdActual() (p. ej. 1 desde config) y el listado queda vacío aunque el login sea válido.
@@ -3712,7 +3712,7 @@ const gnLoginSubmitHandler = async e => {
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
         } else {
-            if (le) le.textContent = 'Email o contraseña incorrectos.';
+            if (le) le.textContent = 'Usuario o contraseña incorrectos.';
         }
     } catch (error) {
         console.error('Error inesperado en login:', error);
@@ -12833,7 +12833,7 @@ async function guardarMiCuentaUsuario() {
     const p1 = document.getElementById('micuenta-pw-nueva');
     const p2 = document.getElementById('micuenta-pw-nueva2');
     const nombre = (n?.value || '').trim();
-    const email = (em?.value || '').trim().toLowerCase();
+    const usuario = (em?.value || '').trim().toLowerCase();
     const password_actual = pa?.value || '';
     const password_nueva = (p1?.value || '').trim();
     const password_nueva2 = (p2?.value || '').trim();
@@ -12845,11 +12845,11 @@ async function guardarMiCuentaUsuario() {
         setErr('Las contraseñas nuevas no coinciden.');
         return;
     }
-    if (!email) {
-        setErr('El email no puede quedar vacío.');
+    if (!usuario) {
+        setErr('El nombre de usuario no puede quedar vacío.');
         return;
     }
-    const body = { password_actual, nombre, email };
+    const body = { password_actual, nombre, usuario };
     if (password_nueva) body.password_nueva = password_nueva;
     const btn = document.getElementById('btn-micuenta-guardar');
     if (btn) {
@@ -16523,7 +16523,7 @@ async function cargarListaUsuarios() {
             FROM usuarios WHERE 1=1${wf} ORDER BY id`);
         if (!r.rows.length) { cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin usuarios</p>'; return; }
         cont.innerHTML = `<table class="admin-table">
-            <thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>ID</th><th>Usuario</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>${r.rows.map(u => `<tr>
                 <td style="color:var(--tl)">${u.id}</td>
                 <td><b>${u.email}</b></td>
@@ -18542,7 +18542,7 @@ function pintarListaUsuariosAdminSoloSesionActual() {
     const waOn = u.whatsapp_notificaciones !== false;
     cont.innerHTML = `<p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem;line-height:1.35">Mostrando solo tu usuario de sesión hasta cargar el listado completo del tenant (sin datos de otro negocio).</p>
 <table class="admin-table">
-<thead><tr><th>ID</th><th>Email</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+<thead><tr><th>ID</th><th>Usuario</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
 <tbody><tr>
   <td style="color:var(--tl)">${escHtmlPrint(String(u.id))}</td>
   <td><b>${escHtmlPrint(String(u.email || ''))}</b></td>
@@ -18940,7 +18940,7 @@ async function cargarUbicacionesUsuarios() {
 let _resetPaso = 1;
 let _resetTokenActual = null;
 let _resetUsuarioAdmin = false;
-/** Usuario que recibió `reset_token` en el paso 1 (evita fallar el paso 2 si el email del formulario es el de empresa y no coincide con `usuarios.email`). */
+/** Usuario que recibió `reset_token` en el paso 1 (evita fallar el paso 2 si el usuario del formulario no coincide con la fila resuelta en paso 1). */
 let _resetTargetUserId = null;
 
 /** Quita espacios y, si hay exactamente 6 dígitos, usa solo esos (p. ej. mail con «Código: 123 456»). */
@@ -18995,7 +18995,7 @@ async function pasoResetPw() {
     if (_resetPaso === 1) {
         const email = document.getElementById('reset-email').value.trim();
         if (!email) {
-            msg.textContent = 'Ingresá el nombre de usuario administrador (o su email de cuenta).';
+            msg.textContent = 'Ingresá el nombre de usuario del administrador.';
             return;
         }
         _resetUsuarioAdmin = false;
@@ -19004,12 +19004,8 @@ async function pasoResetPw() {
             const matchSql = (wfExtra) => `SELECT id, email, nombre, rol
                 FROM usuarios
                 WHERE activo = TRUE
-                  AND (
-                    lower(coalesce(email,'')) = ${esc(emailLc)}
-                    OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
-                  )
+                  AND lower(coalesce(email,'')) = ${esc(emailLc)}
                 ${wfExtra || ''}
-                ORDER BY CASE WHEN lower(coalesce(email,'')) = ${esc(emailLc)} THEN 0 ELSE 1 END
                 LIMIT 1`;
             const wf = await sqlFiltroUsuariosPorTenant();
             let r = await sqlSimple(matchSql(wf));
@@ -19056,7 +19052,7 @@ async function pasoResetPw() {
             }
             if (!_esEmailValidoSimple(toEmail)) {
                 msg.textContent =
-                    'No hay correo de destino. Completá «Enviar código a» o cargá el email de la empresa en el panel Admin → Empresa (email de contacto).';
+                    'No hay correo de destino. Completá «Correo para el código» o cargá el correo de la empresa en Admin → Empresa (email de contacto).';
                 return;
             }
 
@@ -19134,10 +19130,7 @@ async function pasoResetPw() {
                 LIMIT 1`;
             const matchUpd = (wfExtra) => `SELECT id
                 FROM usuarios
-                WHERE (
-                        lower(coalesce(email,'')) = ${esc(emailLc)}
-                     OR lower(coalesce(nombre,'')) = ${esc(emailLc)}
-                      )
+                WHERE lower(coalesce(email,'')) = ${esc(emailLc)}
                   AND ${tokSql}
                   AND reset_expiry > NOW()
                 ${wfExtra || ''}

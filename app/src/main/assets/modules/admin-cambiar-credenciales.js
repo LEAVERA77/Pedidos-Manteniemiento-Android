@@ -150,7 +150,7 @@ export async function cambiarContrasena() {
 
             const body = {
                 password_actual: actual,
-                email: usuarioActual,
+                usuario: usuarioActual,
                 nombre: nombreNuevo,
             };
             const resp = await fetch(c.apiUrl('/api/auth/me'), {

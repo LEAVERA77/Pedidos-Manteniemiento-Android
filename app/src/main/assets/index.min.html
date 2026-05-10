@@ -613,7 +613,7 @@
       <div id="form-usuario" style="display:none;background:var(--bg);border-radius:.75rem;padding:1rem;margin-top:1rem;border:1px solid var(--bo)">
         <h4 style="margin-bottom:.75rem;color:var(--bd)">Nuevo usuario</h4>
         <div class="form-grid">
-          <div><label>Email / Usuario</label><input id="nu-email" type="text"></div>
+          <div><label>Nombre de usuario (login)</label><input id="nu-email" type="text" placeholder="Ej. jperez" autocapitalize="none" autocomplete="username"></div>
           <div><label>Nombre completo</label><input id="nu-nombre" type="text"></div>
           <div><label>Contraseña</label><input id="nu-pw" type="text"></div>
           <div><label>Rol</label><select id="nu-rol"><option value="tecnico">Técnico</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select></div>
@@ -1011,7 +1011,7 @@
         <div style="margin-bottom:.75rem"><label>Nombre visible</label><input id="pw-nombre-nuevo" type="text" maxlength="120" autocomplete="name"></div>
         <p style="font-size:.72rem;color:var(--tl);margin:-.25rem 0 .75rem;line-height:1.35">Requiere <strong>contraseña actual</strong> y sesión con el servidor (token API). Si cambiás <strong>usuario</strong> o <strong>contraseña</strong>, al guardar se cierra la sesión: volvé a ingresar con los datos nuevos.</p>
         <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password" autocomplete="current-password"></div>
-        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás email o nombre"></div>
+        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás usuario o nombre"></div>
         <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password" autocomplete="new-password"></div>
         <button class="bp" style="max-width:200px" onclick="cambiarContrasena()"><i class="fas fa-save"></i> Guardar</button>
         <div id="pw-msg" style="margin-top:.5rem;font-size:.85rem"></div>
@@ -1222,7 +1222,7 @@
     <div class="mh"><h3><i class="fas fa-magic"></i> Reabrir asistente</h3><button type="button" class="cm" onclick="cerrarModalReabrirAsistente()"><i class="fas fa-times"></i></button></div>
     <form id="form-reabrir-asistente" class="mb">
       <p style="font-size:.85rem;color:var(--tm);margin-bottom:.85rem">Ingresá las credenciales de un usuario <strong>administrador</strong> para volver a ver el asistente de bienvenida. No se guarda la sesión en este paso.</p>
-      <div class="fg" style="padding:0"><label>Email</label><input id="reabrir-asistente-em" type="text" required autocomplete="username" placeholder="admin@…"></div>
+      <div class="fg" style="padding:0"><label>Usuario administrador</label><input id="reabrir-asistente-em" type="text" required autocomplete="username" placeholder="Ej. admin" autocapitalize="none"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña</label><input id="reabrir-asistente-pw" type="password" required autocomplete="current-password"></div>
       <div id="reabrir-asistente-err" class="le" style="margin-top:.5rem;min-height:1.1rem"></div>
       <div style="display:flex;gap:.75rem;margin-top:1rem">
@@ -1259,9 +1259,9 @@
   <div class="mc" style="max-width:420px">
     <div class="mh"><h3><i class="fas fa-key"></i> Recuperar acceso (admin)</h3><button type="button" class="cm" onclick="document.getElementById('modal-reset-pw').classList.remove('active');if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo <strong>administradores</strong>. Recibirás un código de 6 dígitos (válido ~30 min) en el correo que indiques o en el email de contacto de la empresa (EmailJS).</p>
-      <div class="fg" style="padding:0"><label for="reset-email">Nombre de usuario administrador</label><input id="reset-email" type="text" placeholder="Usuario o email del admin" autocomplete="username"></div>
-      <div class="fg" style="padding:0;margin-top:.55rem"><label>Enviar código a (opcional)</label><input id="reset-email-destino" type="email" placeholder="Si está vacío: email empresa o tu email"></div>
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo <strong>administradores</strong>. Identificá la cuenta con tu <strong>usuario</strong>; el código de 6 dígitos (válido ~30 min) se envía al <strong>correo</strong> que indiques abajo o al correo de contacto de la empresa (EmailJS).</p>
+      <div class="fg" style="padding:0"><label for="reset-email">Usuario del administrador</label><input id="reset-email" type="text" placeholder="Ej. administrador" autocomplete="username" autocapitalize="none"></div>
+      <div class="fg" style="padding:0;margin-top:.55rem"><label>Correo para el código (opcional)</label><input id="reset-email-destino" type="email" placeholder="Si está vacío: correo de la empresa en Admin → Empresa"></div>
       <div id="reset-codigo-wrap" style="display:none;margin-top:.75rem">
         <div class="fg" style="padding:0"><label>Código recibido por email</label><input id="reset-codigo" type="text" placeholder="000000"></div>
         <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña</label><input id="reset-nueva-pw" type="password"></div>
@@ -1279,9 +1279,9 @@
   <div class="mc" style="max-width:440px">
     <div class="mh"><h3><i class="fas fa-id-card"></i> Mi cuenta</h3><button type="button" class="cm" onclick="document.getElementById('modal-mi-cuenta').classList.remove('active')"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.85rem;color:var(--tm);margin-bottom:.85rem">Cambios con validación de seguridad. El usuario de ingreso es el <strong>email</strong>. Requiere conexión al servidor (no disponible en modo offline).</p>
+      <p style="font-size:.85rem;color:var(--tm);margin-bottom:.85rem">Cambios con validación de seguridad. El <strong>usuario</strong> es el nombre con el que iniciás sesión; el correo solo se usa en recuperación de contraseña. Requiere conexión al servidor (no disponible en modo offline).</p>
       <div class="fg" style="padding:0"><label>Nombre visible</label><input id="micuenta-nombre" type="text" autocomplete="name"></div>
-      <div class="fg" style="padding:0;margin-top:.5rem"><label>Email (usuario)</label><input id="micuenta-email" type="email" autocomplete="username"></div>
+      <div class="fg" style="padding:0;margin-top:.5rem"><label>Usuario (login)</label><input id="micuenta-email" type="text" autocomplete="username" autocapitalize="none"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña actual <span style="color:var(--re)">*</span></label><input id="micuenta-pw-actual" type="password" autocomplete="current-password"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña nueva (opcional)</label><input id="micuenta-pw-nueva" type="password" autocomplete="new-password"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Repetir contraseña nueva</label><input id="micuenta-pw-nueva2" type="password" autocomplete="new-password"></div>

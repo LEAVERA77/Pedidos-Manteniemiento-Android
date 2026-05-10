@@ -68,6 +68,9 @@ export function guardarUsuarioOffline(u, pw) {
 export function verificarUsuarioOffline(em, pw) {
     try {
         const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
-        return lista.find(u => u.email === em && u._pw === pw) || null;
-    } catch(_) { return null; }
+        const emLc = String(em || '').trim().toLowerCase();
+        return lista.find((u) => String(u.email || '').trim().toLowerCase() === emLc && u._pw === pw) || null;
+    } catch (_) {
+        return null;
+    }
 }

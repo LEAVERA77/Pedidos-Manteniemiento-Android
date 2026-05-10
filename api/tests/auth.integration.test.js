@@ -19,7 +19,7 @@ describe("Integración — POST /api/auth/login", () => {
     vi.mocked(query).mockReset();
   });
 
-  it("400 si faltan email o contraseña", async () => {
+  it("400 si faltan usuario o contraseña", async () => {
     const app = createHttpApp();
     const res = await request(app).post("/api/auth/login").send({}).expect(400);
     expect(res.body.error).toMatch(/requeridos/i);
@@ -53,6 +53,28 @@ describe("Integración — POST /api/auth/login", () => {
       .send({ email: "in@activo.com", password: "x" })
       .expect(403);
     expect(res.body.error).toMatch(/inactivo/i);
+  });
+
+  it("200 con body { usuario } (alias de login)", async () => {
+    vi.mocked(query).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 99,
+          email: "operador1",
+          nombre: "Op",
+          rol: "admin",
+          password_hash: "clave",
+          activo: true,
+        },
+      ],
+    });
+    const app = createHttpApp();
+    const res = await request(app)
+      .post("/api/auth/login")
+      .send({ usuario: "operador1", password: "clave" })
+      .expect(200);
+    expect(res.body.token).toBeTruthy();
+    expect(res.body.user).toMatchObject({ id: 99, email: "operador1", rol: "admin", tenant_id: 1 });
   });
 
   it("200 con contraseña en texto plano (compatibilidad)", async () => {

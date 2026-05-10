@@ -49,12 +49,12 @@ function inferirLineaNegocioUsuarioDesdeEmpresaCfg() {
  * }} d
  */
 export async function ejecutarCrearUsuarioAdminPanel(d) {
-    const email = document.getElementById('nu-email')?.value?.trim() || '';
+    const usuarioLogin = document.getElementById('nu-email')?.value?.trim() || '';
     const nombre = document.getElementById('nu-nombre')?.value?.trim() || '';
     const pw = document.getElementById('nu-pw')?.value?.trim() || '';
     const rol = document.getElementById('nu-rol')?.value || '';
     const telefono = normalizarTelefonoWhatsapp(document.getElementById('nu-telefono')?.value || '');
-    if (!email || !nombre || !pw) {
+    if (!usuarioLogin || !nombre || !pw) {
         d.toast('Completá todos los campos', 'error');
         return;
     }
@@ -75,7 +75,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                     Authorization: `Bearer ${tok}`,
                 },
                 body: JSON.stringify({
-                    email,
+                    usuario: usuarioLogin,
                     nombre,
                     password: pw,
                     rol,
@@ -87,7 +87,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                 const msg = String(j.detail || j.error || r.status);
                 const low = msg.toLowerCase();
                 if (r.status === 409 || low.includes('unique') || low.includes('duplicate')) {
-                    d.toast('Ese email ya está registrado.', 'error');
+                    d.toast('Ese nombre de usuario ya está registrado.', 'error');
                     return;
                 }
                 if (r.status === 401 || r.status === 403) {
@@ -128,12 +128,12 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
 
         if (colT) {
             await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql}, ${colT})
-                VALUES(${d.esc(email)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql}, ${d.esc(
+                VALUES(${d.esc(usuarioLogin)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql}, ${d.esc(
                     d.tenantIdActual()
                 )})`);
         } else {
             await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql})
-                VALUES(${d.esc(email)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql})`);
+                VALUES(${d.esc(usuarioLogin)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql})`);
         }
         d.toast('Usuario creado: ' + nombre, 'success');
         document.getElementById('form-usuario').style.display = 'none';
@@ -147,7 +147,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         } catch (_) {}
     } catch (e) {
         const low = String(e && e.message ? e.message : e).toLowerCase();
-        if (low.includes('unique') || low.includes('duplicate')) d.toast('Ese email ya está registrado.', 'error');
+        if (low.includes('unique') || low.includes('duplicate')) d.toast('Ese nombre de usuario ya está registrado.', 'error');
         else d.toastError('crear-usuario', e);
     }
 }

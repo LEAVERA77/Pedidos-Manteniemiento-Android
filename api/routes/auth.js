@@ -8,16 +8,13 @@ const router = express.Router();
 
 router.post("/login", async (req, res) => {
   try {
-    const loginId = String(req.body.email || req.body.usuario || "").trim();
+    const loginId = String(req.body.usuario || req.body.email || "").trim();
     const password = String(req.body.password || "").trim();
     if (!loginId || !password) return res.status(400).json({ error: "Usuario y contraseña requeridos" });
 
     const r = await query(
       `SELECT id, email, nombre, rol, password_hash, activo FROM usuarios
-       WHERE activo = TRUE AND (
-         LOWER(TRIM(email)) = LOWER(TRIM($1))
-         OR LOWER(TRIM(COALESCE(nombre, ''))) = LOWER(TRIM($1))
-       )
+       WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))
        LIMIT 1`,
       [loginId]
     );
@@ -89,23 +86,29 @@ router.post("/verify-password", authMiddleware, async (req, res) => {
 });
 
 /**
- * Usuario autenticado: cambiar email y/o nombre y/o contraseña (requiere contraseña actual).
+ * Usuario autenticado: cambiar usuario de login (columna `email` en BD), nombre y/o contraseña (requiere contraseña actual).
+ * Cuerpo: `usuario` (preferido) o `email` (alias) para el identificador de login.
  */
 router.patch("/me", authMiddleware, async (req, res) => {
   try {
-    const emailNuevo = req.body?.email != null ? String(req.body.email).trim().toLowerCase() : null;
+    const loginNuevo =
+      req.body?.usuario != null
+        ? String(req.body.usuario).trim().toLowerCase()
+        : req.body?.email != null
+          ? String(req.body.email).trim().toLowerCase()
+          : null;
     const nombreNuevo = req.body?.nombre != null ? String(req.body.nombre).trim() : null;
     const passwordActual = String(req.body?.password_actual || "").trim();
     const passwordNueva = req.body?.password_nueva != null ? String(req.body.password_nueva).trim() : "";
 
     if (!passwordActual) return res.status(400).json({ error: "Contraseña actual requerida" });
-    if (!emailNuevo && !nombreNuevo && !passwordNueva) {
-      return res.status(400).json({ error: "Indicá email, nombre o contraseña nueva" });
+    if (!loginNuevo && !nombreNuevo && !passwordNueva) {
+      return res.status(400).json({ error: "Indicá usuario, nombre o contraseña nueva" });
     }
-    if (emailNuevo) {
-      const looksEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNuevo);
-      if (!looksEmail && (emailNuevo.length < 2 || emailNuevo.length > 120 || /\s/.test(emailNuevo))) {
-        return res.status(400).json({ error: "Usuario o email no válido" });
+    if (loginNuevo) {
+      const looksEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginNuevo);
+      if (!looksEmail && (loginNuevo.length < 2 || loginNuevo.length > 120 || /\s/.test(loginNuevo))) {
+        return res.status(400).json({ error: "Nombre de usuario no válido" });
       }
     }
     if (passwordNueva && passwordNueva.length < 4) {
@@ -126,15 +129,15 @@ router.patch("/me", authMiddleware, async (req, res) => {
     }
     if (!okPw) return res.status(401).json({ error: "Contraseña actual incorrecta" });
 
-    if (emailNuevo) {
+    if (loginNuevo) {
       const dup = await query("SELECT id FROM usuarios WHERE lower(trim(email)) = $1 AND id <> $2 LIMIT 1", [
-        emailNuevo,
+        loginNuevo,
         req.user.id,
       ]);
-      if (dup.rows.length) return res.status(409).json({ error: "Ya existe un usuario con ese email" });
+      if (dup.rows.length) return res.status(409).json({ error: "Ya existe un usuario con ese nombre de usuario" });
     }
 
-    const nextEmail = emailNuevo || row.email;
+    const nextEmail = loginNuevo || row.email;
     const nextNombre = nombreNuevo != null && nombreNuevo !== "" ? nombreNuevo : row.nombre;
     let nextHash = hash;
     if (passwordNueva) nextHash = await bcrypt.hash(passwordNueva, 10);

@@ -35,9 +35,9 @@ router.get("/tecnicos", async (_req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const emailTrim = String(req.body?.email || "").trim();
+    const loginTrim = String(req.body?.usuario || req.body?.email || "").trim();
     const { nombre, rol = "tecnico", password, telefono } = req.body || {};
-    if (!emailTrim || !password) return res.status(400).json({ error: "email y password son requeridos" });
+    if (!loginTrim || !password) return res.status(400).json({ error: "Usuario y contraseña son requeridos" });
     const hash = await bcrypt.hash(String(password), 10);
     const col = await usuariosTenantColumnName();
     const hasBt = await tableHasColumn("usuarios", "business_type");
@@ -71,14 +71,14 @@ router.post("/", async (req, res) => {
         const r = await query(
           `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, business_type)
            VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id, email, nombre, rol, activo`,
-          [emailTrim, nombre || null, rol, hash, btVal]
+          [loginTrim, nombre || null, rol, hash, btVal]
         );
         return res.status(201).json(r.rows[0]);
       }
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo)
          VALUES ($1,$2,$3,$4,TRUE) RETURNING id, email, nombre, rol, activo`,
-        [emailTrim, nombre || null, rol, hash]
+        [loginTrim, nombre || null, rol, hash]
       );
       return res.status(201).json(r.rows[0]);
     }
@@ -88,14 +88,14 @@ router.post("/", async (req, res) => {
         const r = await query(
           `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type, telefono, telefono_whatsapp, whatsapp_notificaciones)
            VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,$7,TRUE) RETURNING id, email, nombre, rol, activo`,
-          [emailTrim, nombre || null, rol, hash, req.tenantId, btVal, tel]
+          [loginTrim, nombre || null, rol, hash, req.tenantId, btVal, tel]
         );
         return res.status(201).json(r.rows[0]);
       }
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type)
          VALUES ($1,$2,$3,$4,TRUE,$5,$6) RETURNING id, email, nombre, rol, activo`,
-        [emailTrim, nombre || null, rol, hash, req.tenantId, btVal]
+        [loginTrim, nombre || null, rol, hash, req.tenantId, btVal]
       );
       return res.status(201).json(r.rows[0]);
     }
@@ -104,20 +104,20 @@ router.post("/", async (req, res) => {
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, telefono, telefono_whatsapp, whatsapp_notificaciones)
          VALUES ($1,$2,$3,$4,TRUE,$5,$6,$6,TRUE) RETURNING id, email, nombre, rol, activo`,
-        [emailTrim, nombre || null, rol, hash, req.tenantId, tel]
+        [loginTrim, nombre || null, rol, hash, req.tenantId, tel]
       );
       return res.status(201).json(r.rows[0]);
     }
     const r = await query(
       `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col})
        VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id, email, nombre, rol, activo`,
-      [emailTrim, nombre || null, rol, hash, req.tenantId]
+      [loginTrim, nombre || null, rol, hash, req.tenantId]
     );
     res.status(201).json(r.rows[0]);
   } catch (error) {
     const msg = String(error?.message || error || "");
     if (/unique|duplicate key/i.test(msg)) {
-      return res.status(409).json({ error: "Email ya registrado", detail: msg });
+      return res.status(409).json({ error: "Ese nombre de usuario ya existe", detail: msg });
     }
     res.status(500).json({ error: "No se pudo crear usuario", detail: msg });
   }
