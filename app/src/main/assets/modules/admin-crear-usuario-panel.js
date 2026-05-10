@@ -44,6 +44,7 @@ function inferirLineaNegocioUsuarioDesdeEmpresaCfg() {
  *   tenantIdActual: () => number;
  *   getApiToken: () => string | null | undefined;
  *   apiUrl: () => string;
+ *   asegurarJwtApiRest?: () => Promise<boolean>;
  *   cargarListaUsuarios: () => Promise<void> | void;
  *   refrescarUsuariosCacheDesdeNeon: () => Promise<void>;
  * }} d
@@ -63,24 +64,30 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         return;
     }
 
+    try {
+        await d.asegurarJwtApiRest?.();
+    } catch (_) {}
     const tok = d.getApiToken?.();
     const baseRaw = d.apiUrl?.() || '';
     const apiBase = String(baseRaw).replace(/\/+$/, '');
     if (tok && apiBase) {
         try {
+            const tidPanel = Number(d.tenantIdActual?.());
+            const body = {
+                usuario: usuarioLogin,
+                nombre,
+                password: pw,
+                rol,
+                telefono: telefono || undefined,
+            };
+            if (Number.isFinite(tidPanel) && tidPanel > 0) body.tenant_id = tidPanel;
             const r = await fetch(`${apiBase}/api/usuarios`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${tok}`,
                 },
-                body: JSON.stringify({
-                    usuario: usuarioLogin,
-                    nombre,
-                    password: pw,
-                    rol,
-                    telefono: telefono || undefined,
-                }),
+                body: JSON.stringify(body),
             });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) {

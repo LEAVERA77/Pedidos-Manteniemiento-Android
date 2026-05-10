@@ -39,6 +39,16 @@ router.post("/", async (req, res) => {
     const { nombre, rol = "tecnico", password, telefono } = req.body || {};
     if (!loginTrim || !password) return res.status(400).json({ error: "Usuario y contraseña son requeridos" });
     const hash = await bcrypt.hash(String(password), 10);
+    const rolOperador = String(req.user?.rol || "").toLowerCase();
+    const bodyTid = Number(req.body?.tenant_id);
+    let insertTenantId = req.tenantId;
+    if (
+      (rolOperador === "admin" || rolOperador === "administrador") &&
+      Number.isFinite(bodyTid) &&
+      bodyTid > 0
+    ) {
+      insertTenantId = bodyTid;
+    }
     const col = await usuariosTenantColumnName();
     const hasBt = await tableHasColumn("usuarios", "business_type");
     const rolL = String(rol || "").toLowerCase();
@@ -49,7 +59,7 @@ router.post("/", async (req, res) => {
           error: "No se puede fijar línea de negocio: falta tenant_id/cliente_id en usuarios",
         });
       }
-      const rC = await query(`SELECT active_business_type, tipo FROM clientes WHERE id = $1 LIMIT 1`, [req.tenantId]);
+      const rC = await query(`SELECT active_business_type, tipo FROM clientes WHERE id = $1 LIMIT 1`, [insertTenantId]);
       const row = rC.rows?.[0];
       let bt = String(row?.active_business_type || "").trim().toLowerCase();
       if (bt !== "electricidad" && bt !== "agua" && bt !== "municipio") {
@@ -88,14 +98,14 @@ router.post("/", async (req, res) => {
         const r = await query(
           `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type, telefono, telefono_whatsapp, whatsapp_notificaciones)
            VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,$7,TRUE) RETURNING id, email, nombre, rol, activo`,
-          [loginTrim, nombre || null, rol, hash, req.tenantId, btVal, tel]
+          [loginTrim, nombre || null, rol, hash, insertTenantId, btVal, tel]
         );
         return res.status(201).json(r.rows[0]);
       }
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type)
          VALUES ($1,$2,$3,$4,TRUE,$5,$6) RETURNING id, email, nombre, rol, activo`,
-        [loginTrim, nombre || null, rol, hash, req.tenantId, btVal]
+        [loginTrim, nombre || null, rol, hash, insertTenantId, btVal]
       );
       return res.status(201).json(r.rows[0]);
     }
@@ -104,14 +114,14 @@ router.post("/", async (req, res) => {
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, telefono, telefono_whatsapp, whatsapp_notificaciones)
          VALUES ($1,$2,$3,$4,TRUE,$5,$6,$6,TRUE) RETURNING id, email, nombre, rol, activo`,
-        [loginTrim, nombre || null, rol, hash, req.tenantId, tel]
+        [loginTrim, nombre || null, rol, hash, insertTenantId, tel]
       );
       return res.status(201).json(r.rows[0]);
     }
     const r = await query(
       `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col})
        VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id, email, nombre, rol, activo`,
-      [loginTrim, nombre || null, rol, hash, req.tenantId]
+      [loginTrim, nombre || null, rol, hash, insertTenantId]
     );
     res.status(201).json(r.rows[0]);
   } catch (error) {

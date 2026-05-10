@@ -16560,6 +16560,7 @@ async function crearUsuario() {
         tenantIdActual,
         getApiToken,
         apiUrl: getApiBaseUrl,
+        asegurarJwtApiRest,
         cargarListaUsuarios,
         refrescarUsuariosCacheDesdeNeon,
     });
