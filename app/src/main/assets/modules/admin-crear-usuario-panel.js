@@ -122,7 +122,10 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                 const msg = piece(j.detail) || piece(j.error) || piece(j.message) || rawText.slice(0, 280) || `Error ${r.status}`;
                 const low = String(msg).toLowerCase();
                 if (r.status === 409 || low.includes('unique') || low.includes('duplicate')) {
-                    d.toast('Ese nombre de usuario ya está registrado.', 'error');
+                    d.toast(
+                        'Ese nombre de usuario ya está registrado en este tenant (o la base aún tiene unicidad global: ejecutá docs/NEON_usuarios_email_unique_per_tenant.sql en Neon).',
+                        'error'
+                    );
                     return;
                 }
                 if (r.status === 401 || r.status === 403) {
@@ -172,9 +175,17 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         const twValSql = hasTw ? `, ${d.esc(telefono || null)}` : '';
 
         if (colT) {
+            const tidIns = d.tenantIdActual();
+            const dupN = await d.sqlSimple(
+                `SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${d.esc(usuarioLogin)})) AND ${colT} = ${d.esc(tidIns)} LIMIT 1`
+            );
+            if (dupN.rows?.length) {
+                d.toast('Ese nombre de usuario ya existe en este tenant.', 'error');
+                return;
+            }
             await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql}, ${colT})
                 VALUES(${d.esc(usuarioLogin)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql}, ${d.esc(
-                    d.tenantIdActual()
+                    tidIns
                 )})`);
         } else {
             await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql})
@@ -192,7 +203,11 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         } catch (_) {}
     } catch (e) {
         const low = String(e && e.message ? e.message : e).toLowerCase();
-        if (low.includes('unique') || low.includes('duplicate')) d.toast('Ese nombre de usuario ya está registrado.', 'error');
+        if (low.includes('unique') || low.includes('duplicate'))
+            d.toast(
+                'Ese nombre de usuario ya está registrado en este tenant (o falta migración única por tenant en Neon).',
+                'error'
+            );
         else d.toastError('crear-usuario', e);
     }
 }

@@ -76,6 +76,16 @@ router.post("/", async (req, res) => {
     const tel = telefono != null && String(telefono).trim() !== "" ? String(telefono).trim() : null;
     const hasTw = await tableHasColumn("usuarios", "telefono_whatsapp");
 
+    if (col) {
+      const d0 = await query(
+        `SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND ${col} = $2 LIMIT 1`,
+        [loginTrim, insertTenantId]
+      );
+      if (d0.rows.length) {
+        return res.status(409).json({ error: "Ese login ya existe en este tenant" });
+      }
+    }
+
     if (!col) {
       if (hasBt && btVal != null) {
         const r = await query(
@@ -127,7 +137,10 @@ router.post("/", async (req, res) => {
   } catch (error) {
     const msg = String(error?.message || error || "");
     if (/unique|duplicate key/i.test(msg)) {
-      return res.status(409).json({ error: "Ese nombre de usuario ya existe", detail: msg });
+      return res.status(409).json({
+        error: "Ese login ya existe (mismo tenant o restricción global en BD: migración NEON_usuarios_email_unique_per_tenant.sql)",
+        detail: msg,
+      });
     }
     res.status(500).json({ error: "No se pudo crear usuario", detail: msg });
   }

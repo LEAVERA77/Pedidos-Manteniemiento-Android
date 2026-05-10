@@ -3642,13 +3642,14 @@ const gnLoginSubmitHandler = async e => {
         // Recuperación: ver docs/NEON_ops_insertar_admin_emergencia.sql (texto plano solo pruebas).
         const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
+        const loginOrd = ' ORDER BY id ASC';
         // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
         // tenantIdActual() (p. ej. 1 desde config) y el listado queda vacío aunque el login sea válido.
         // Primero `tenant_id`: muchas BDs no tienen `cliente_id` y la 1ª variante fallaba en consola Android.
         const loginSqlAttempts = [
-            `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}`,
-            `SELECT id, email, nombre, rol, cliente_id AS tenant_id${mustCol} ${loginWhere}`,
-            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}`,
+            `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}${loginOrd}`,
+            `SELECT id, email, nombre, rol, cliente_id AS tenant_id${mustCol} ${loginWhere}${loginOrd}`,
+            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}${loginOrd}`,
         ];
         try {
             let lastErr = null;

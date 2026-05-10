@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { query } from "../db/neon.js";
 import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
+import { usuariosTenantColumnName } from "../utils/tenantScope.js";
 
 const router = express.Router();
 
@@ -12,24 +13,35 @@ router.post("/login", async (req, res) => {
     const password = String(req.body.password || "").trim();
     if (!loginId || !password) return res.status(400).json({ error: "Usuario y contraseña requeridos" });
 
-    const r = await query(
-      `SELECT id, email, nombre, rol, password_hash, activo FROM usuarios
-       WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))
-       LIMIT 1`,
-      [loginId]
-    );
-    if (!r.rows.length) return res.status(401).json({ error: "Credenciales inválidas" });
-    const u = r.rows[0];
-    if (!u.activo) return res.status(403).json({ error: "Usuario inactivo" });
-
-    const hash = String(u.password_hash || "");
-    let ok = false;
-    if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
-      ok = await bcrypt.compare(password, hash);
-    } else {
-      ok = password === hash; // compatibilidad temporal texto plano
+    const col = await usuariosTenantColumnName();
+    const hintTid = Number(req.body?.tenant_id);
+    const params = [loginId];
+    let sql = `SELECT id, email, nombre, rol, password_hash, activo FROM usuarios
+       WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))`;
+    if (col && Number.isFinite(hintTid) && hintTid > 0) {
+      sql += ` AND ${col} = $2`;
+      params.push(hintTid);
     }
-    if (!ok) return res.status(401).json({ error: "Credenciales inválidas" });
+    sql += ` ORDER BY id ASC`;
+    const r = await query(sql, params);
+    if (!r.rows.length) return res.status(401).json({ error: "Credenciales inválidas" });
+
+    let u = null;
+    for (const row of r.rows) {
+      const hash = String(row.password_hash || "");
+      let ok = false;
+      if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
+        ok = await bcrypt.compare(password, hash);
+      } else {
+        ok = password === hash;
+      }
+      if (ok) {
+        u = row;
+        break;
+      }
+    }
+    if (!u) return res.status(401).json({ error: "Credenciales inválidas" });
+    if (!u.activo) return res.status(403).json({ error: "Usuario inactivo" });
 
     const tenant_id = await getUserTenantId(u.id);
     const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
@@ -130,10 +142,18 @@ router.patch("/me", authMiddleware, async (req, res) => {
     if (!okPw) return res.status(401).json({ error: "Contraseña actual incorrecta" });
 
     if (loginNuevo) {
-      const dup = await query("SELECT id FROM usuarios WHERE lower(trim(email)) = $1 AND id <> $2 LIMIT 1", [
-        loginNuevo,
-        req.user.id,
-      ]);
+      const col = await usuariosTenantColumnName();
+      const tid = await getUserTenantId(req.user.id);
+      const dup =
+        col && tid != null && Number.isFinite(Number(tid))
+          ? await query(
+              `SELECT id FROM usuarios WHERE lower(trim(email)) = $1 AND id <> $2 AND ${col} = $3 LIMIT 1`,
+              [loginNuevo, req.user.id, tid]
+            )
+          : await query("SELECT id FROM usuarios WHERE lower(trim(email)) = $1 AND id <> $2 LIMIT 1", [
+              loginNuevo,
+              req.user.id,
+            ]);
       if (dup.rows.length) return res.status(409).json({ error: "Ya existe un usuario con ese nombre de usuario" });
     }
 
@@ -196,10 +216,18 @@ router.put("/cambiar-credenciales", authMiddleware, adminOnly, async (req, res) 
     }
 
     if (nuevoUsuario.toLowerCase() !== emailDb.toLowerCase()) {
-      const dup = await query(
-        "SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND id <> $2 LIMIT 1",
-        [nuevoUsuario, req.user.id]
-      );
+      const col = await usuariosTenantColumnName();
+      const tid = await getUserTenantId(req.user.id);
+      const dup =
+        col && tid != null && Number.isFinite(Number(tid))
+          ? await query(
+              `SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND id <> $2 AND ${col} = $3 LIMIT 1`,
+              [nuevoUsuario, req.user.id, tid]
+            )
+          : await query(
+              "SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) AND id <> $2 LIMIT 1",
+              [nuevoUsuario, req.user.id]
+            );
       if (dup.rows.length) return res.status(409).json({ error: "Ya existe un usuario con ese nombre de login" });
     }
 
