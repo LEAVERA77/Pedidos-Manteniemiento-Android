@@ -67,7 +67,14 @@ function actualizarStepWizard() {
     });
     document.getElementById('sw-prev').style.display = _setupWizardStep > 1 ? '' : 'none';
     document.getElementById('sw-next').style.display = _setupWizardStep < 3 ? '' : 'none';
-    document.getElementById('cfgi-guardar').style.display = _setupWizardStep === 3 ? '' : 'none';
+    const guW = document.getElementById('cfgi-guardar');
+    if (guW) {
+        let showG = _setupWizardStep === 3;
+        try {
+            if (!req().esAdmin()) showG = false;
+        } catch (_) {}
+        guW.style.display = showG ? '' : 'none';
+    }
     try {
         const adm = req().esAdmin();
         const tecOk = !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
@@ -194,19 +201,23 @@ function cfgiSalirSetupWizard() {
 async function cargarCfgiNombreTenantsDesdeNeonSiTecnico(cfgNombre, idPreferido) {
     const sel = getCfgiNombreEl();
     if (!sel || sel.tagName !== 'SELECT') return;
-    const puedeEditarMarca = !req().esAdmin() ? false : !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
-    if (!puedeEditarMarca) {
+    const esAdm = req().esAdmin();
+    const tecOk = !!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK;
+    const puedeLista = !esAdm || (esAdm && tecOk);
+    if (!puedeLista) {
         poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
         return;
     }
-    const token = req().getApiToken();
-    const k = getGnStoredTechnicianKey();
-    if (!token || !k) {
+    const k =
+        getGnStoredTechnicianKey() ||
+        String(document.getElementById('cfgi-tech-key')?.value || '').trim();
+    if (!k) {
         poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
         return;
     }
     try {
-        const j = await req().apiSetupTechnicianFetchTenants(token, k);
+        const token = req().getApiToken();
+        const j = await req().apiSetupTechnicianFetchTenants(token || null, k);
         const list = j.clientes || [];
         poblarCfgiNombreSelect(sel, list, { nombreActual: cfgNombre, idActual: idPreferido });
         const tipoEl = document.getElementById('cfgi-tipo');
@@ -236,14 +247,10 @@ async function wizardTecnicoCargarTenantsNeon() {
         _wizardTecnicoSetMsg('Ingresá la clave de técnico.', true);
         return;
     }
-    const token = req().getApiToken();
-    if (!token) {
-        _wizardTecnicoSetMsg('Sin sesión API. Reiniciá sesión.', true);
-        return;
-    }
     _wizardTecnicoSetMsg('Cargando…', false);
     try {
-        const j = await req().apiSetupTechnicianFetchTenants(token, k);
+        const token = req().getApiToken();
+        const j = await req().apiSetupTechnicianFetchTenants(token || null, k);
         persistGnTechnicianKeyForSession(k);
         const list = j.clientes || [];
         req().wizardPoblarSelectTenantsClientes(document.getElementById('cfgi-tech-tenant-sel'), list);
@@ -277,13 +284,17 @@ async function wizardTecnicoVincularTenantSeleccionado() {
         return;
     }
     const token = req().getApiToken();
-    if (!token) {
-        _wizardTecnicoSetMsg('Sin sesión API.', true);
+    const fromTid = Number(req().tenantIdActual());
+    if (!token && (!Number.isFinite(fromTid) || fromTid < 1)) {
+        _wizardTecnicoSetMsg(
+            'Sin sesión API: no se puede vincular sin saber el tenant de origen. Iniciá sesión o recargá la app.',
+            true
+        );
         return;
     }
     _wizardTecnicoSetMsg('Vinculando…', false);
     try {
-        const j = await req().apiSetupTechnicianPostAttach(token, k, tid);
+        const j = await req().apiSetupTechnicianPostAttach(token || null, k, tid, token ? undefined : fromTid);
         let tidShow = tid;
         if (j.token) {
             req().app.apiToken = String(j.token);
@@ -389,13 +400,19 @@ function mostrarModalConfigInicial() {
             : 'El administrador no puede editar estos datos sin la clave técnica. Usá el botón de listado (arriba a la izquierda) o el asistente, validá GESTORNOVA_TECHNICIAN_TENANT_KEY y volvé a abrir este asistente.' +
                   snapLine
         : 'Este tenant no está configurado. Con la clave de técnico (abajo) podés listar clientes y vincular tu sesión a otro tenant; solo un administrador puede pulsar Finalizar y completar el setup.';
-    const puedeEditarMarca = !esAdm ? false : tecOk;
-    ['cfgi-nombre', 'cfgi-tipo', 'cfgi-logo-url', 'cfgi-logo-file'].forEach((id) => {
+    const puedeEditarMarca = esAdm && tecOk;
+    /** Técnicos pueden elegir tenant en la lista (solo clave); el admin necesita además tecOk. */
+    const puedeUsarListaTenant = !esAdm || puedeEditarMarca;
+    const nmField = document.getElementById('cfgi-nombre');
+    const tpField = document.getElementById('cfgi-tipo');
+    if (nmField) nmField.disabled = !puedeUsarListaTenant;
+    if (tpField) tpField.disabled = !puedeEditarMarca;
+    ['cfgi-logo-url', 'cfgi-logo-file'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.disabled = !puedeEditarMarca;
     });
     document.getElementById('sw-prev').style.display = 'none';
-    document.getElementById('sw-next').style.display = puedeEditarMarca ? '' : 'none';
+    document.getElementById('sw-next').style.display = !esAdm || puedeEditarMarca ? '' : 'none';
     document.getElementById('cfgi-logout').style.display = '';
     const btnCerrar = document.getElementById('cfgi-btn-cerrar');
     if (btnCerrar) btnCerrar.style.display = (esAdm && _setupWizardContextoManual) ? '' : 'none';

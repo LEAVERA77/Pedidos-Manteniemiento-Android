@@ -5,6 +5,21 @@
 
 const TIPOS_VALIDOS = new Set(['municipio', 'cooperativa_agua', 'cooperativa_electrica']);
 
+/** Mapea texto/tipo tal cual viene de Neon al value del <select id="cfgi-tipo">. */
+export function normalizarTipoNeonASelectValue(raw) {
+    const s = String(raw || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    if (!s) return '';
+    if (TIPOS_VALIDOS.has(s)) return s;
+    if (s.includes('municip')) return 'municipio';
+    if (s.includes('elect') || s.includes('electric') || s === 'electricidad') return 'cooperativa_electrica';
+    if (s.includes('agua') || s.includes('coop_agua')) return 'cooperativa_agua';
+    return '';
+}
+
 /**
  * @param {HTMLSelectElement | null} sel
  * @param {Array<{ id?: unknown, nombre?: unknown, tipo?: unknown }>} clientes
@@ -32,10 +47,12 @@ export function poblarCfgiNombreSelect(sel, clientes, opts) {
         const id = Number(c?.id);
         const nom = String(c?.nombre || '').trim();
         const tipoRaw = String(c?.tipo || '').trim();
+        const tipoNorm = normalizarTipoNeonASelectValue(tipoRaw);
         const o = document.createElement('option');
         o.value = Number.isFinite(id) && id > 0 ? String(id) : '';
         o.dataset.nombre = nom;
-        o.dataset.tipo = tipoRaw;
+        o.dataset.tipo = tipoNorm;
+        o.dataset.tipoRaw = tipoRaw;
         o.textContent = nom ? `${nom} (${tipoRaw || '—'})` : `Tenant #${id}`;
         sel.appendChild(o);
         const pick =
@@ -64,9 +81,11 @@ export function leerNombreTipoDesdeCfgiNombre(el) {
         return { nombre: '', tipo: '' };
     }
     const nombre = String(opt.dataset?.nombre || '').trim();
-    const tipoRaw = String(opt.dataset?.tipo || '').trim();
-    const tipo = TIPOS_VALIDOS.has(tipoRaw) ? tipoRaw : '';
-    return { nombre, tipo: tipo || tipoRaw };
+    const tipoDs = String(opt.dataset?.tipo || '').trim();
+    const tipoRaw = String(opt.dataset?.tipoRaw || '').trim();
+    let tipo = TIPOS_VALIDOS.has(tipoDs) ? tipoDs : normalizarTipoNeonASelectValue(tipoRaw || tipoDs);
+    if (!TIPOS_VALIDOS.has(tipo)) tipo = '';
+    return { nombre, tipo };
 }
 
 /**
