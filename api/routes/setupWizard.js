@@ -79,13 +79,20 @@ async function runAttachTenantTechnicianCore(uid, oldTid, tid, userRol) {
       hint: "Cambiá el email de una de las cuentas o desactivá la duplicada en Neon.",
     });
   }
+  /** Solo el usuario que vincula (uid), no todos los del tenant origen — evita violar usuarios_email_key y duplicados masivos. */
   const rUpd = await query(
     `UPDATE usuarios
      SET ${uCol} = $1
-     WHERE ${uCol} = $2`,
-    [tid, oldTid]
+     WHERE id = $2 AND ${uCol} = $3`,
+    [tid, uid, oldTid]
   );
   const moved = Number(rUpd.rowCount ?? 0);
+  if (moved < 1) {
+    throw httpAttachError(400, {
+      error: "No se pudo mover tu usuario al tenant elegido",
+      hint: "Verificá que tu sesión pertenezca al tenant de origen indicado.",
+    });
+  }
   const rVerify = await query(`SELECT ${uCol}::int AS tid FROM usuarios WHERE id = $1 LIMIT 1`, [uid]);
   const got = Number(rVerify.rows?.[0]?.tid);
   if (!Number.isFinite(got) || got !== tid) {
@@ -102,7 +109,7 @@ async function runAttachTenantTechnicianCore(uid, oldTid, tid, userRol) {
     cliente: rC.rows[0],
     token,
     usuarios_actualizados: moved,
-    message: `Vinculados ${moved} usuario(s) al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
+    message: `Tu usuario quedó vinculado al tenant ${tid} (${String(rC.rows[0].nombre || "").trim() || "sin nombre"}). Guardá el token en el cliente y recargá o cerrá sesión en la app si hace falta.`,
   };
 }
 

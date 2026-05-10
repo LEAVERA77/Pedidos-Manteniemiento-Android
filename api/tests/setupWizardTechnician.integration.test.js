@@ -40,11 +40,11 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("FROM usuarios") && q.includes("tenant_id = $1") && q.includes("id <> $2")) {
         return { rows: [] };
       }
-      if (q.includes("UPDATE usuarios") && q.includes("SET") && q.includes("WHERE")) {
-        return { rows: [], rowCount: 3 };
+      if (q.includes("UPDATE usuarios") && q.includes("WHERE id = $2")) {
+        return { rows: [], rowCount: 1 };
       }
       if (q.includes("::int AS tid FROM usuarios WHERE id =")) {
-        return { rows: [{ tid: Number(params[0]) === 1 ? 7 : 2 }] };
+        return { rows: [{ tid: 7 }] };
       }
       if (q.includes("FROM clientes") && q.includes("ORDER BY id ASC")) {
         return { rows: [{ id: 1, nombre: "A", tipo: "cooperativa_electrica", activo: true }] };
@@ -102,7 +102,7 @@ describe("Setup wizard — técnico tenant", () => {
       .expect(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.tenant_id).toBe(7);
-    expect(res.body.usuarios_actualizados).toBe(3);
+    expect(res.body.usuarios_actualizados).toBe(1);
     expect(res.body.token).toBeTruthy();
     const dec = jwt.verify(res.body.token, process.env.JWT_SECRET || "dev_secret");
     expect(dec.tenant_id).toBe(7);
