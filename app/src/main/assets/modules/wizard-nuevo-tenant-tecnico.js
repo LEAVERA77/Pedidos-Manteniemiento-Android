@@ -12,6 +12,7 @@ import {
 } from './cfgi-wizard-tenant-select.js';
 import { alinearSelectoresCfgiTrasCargarLista } from './cfgi-wizard-tenant-selectors-sync.js';
 import { getGnStoredTechnicianKey, persistGnTechnicianKeyForSession } from './gn-tenant-acceso-tecnico-unificado.js';
+import { mostrarModalCredencialesAdminNuevoTenant } from './tenant-nuevo-admin-creds-ui.js';
 
 function apiUrl(path) {
     return typeof window !== 'undefined' && typeof window.apiUrl === 'function' ? window.apiUrl(path) : String(path || '');
@@ -83,46 +84,59 @@ async function crearNuevoTenantDesdePanel() {
         if (!Number.isFinite(newId) || newId < 1) {
             throw new Error('Respuesta inválida del servidor');
         }
-        toast(`Tenant creado: ${String(cli.nombre || '').trim()} (#${newId})`, 'success');
-        persistGnTechnicianKeyForSession(k);
-        const list = await fetchListaTenants(k);
-        const selNom = document.getElementById('cfgi-nombre');
-        const selTech = document.getElementById('cfgi-tech-tenant-sel');
-        const tipoEl = document.getElementById('cfgi-tipo');
-        if (selTech) {
-            selTech.innerHTML = '';
-            (list || []).forEach((c) => {
-                const o = document.createElement('option');
-                o.value = String(c.id);
-                const nom = String(c.nombre || '').trim() || '—';
-                const tip = String(c.tipo || '').trim() || '—';
-                o.textContent = `${c.id} — ${nom} (${tip})`;
-                selTech.appendChild(o);
+        const admin = j.admin_creado;
+        const continuarTrasCrear = async () => {
+            toast(`Tenant creado: ${String(cli.nombre || '').trim()} (#${newId})`, 'success');
+            persistGnTechnicianKeyForSession(k);
+            const list = await fetchListaTenants(k);
+            const selNom = document.getElementById('cfgi-nombre');
+            const selTech = document.getElementById('cfgi-tech-tenant-sel');
+            const tipoEl = document.getElementById('cfgi-tipo');
+            if (selTech) {
+                selTech.innerHTML = '';
+                (list || []).forEach((c) => {
+                    const o = document.createElement('option');
+                    o.value = String(c.id);
+                    const nom = String(c.nombre || '').trim() || '—';
+                    const tip = String(c.tipo || '').trim() || '—';
+                    o.textContent = `${c.id} — ${nom} (${tip})`;
+                    selTech.appendChild(o);
+                });
+                selTech.value = String(newId);
+            }
+            if (selNom?.tagName === 'SELECT' && tipoEl) {
+                poblarCfgiNombreSelect(selNom, list, {
+                    nombreActual: String(cli.nombre || '').trim(),
+                    idActual: newId,
+                });
+                aplicarTipoInferidoEnSelectCfgiTipo(selNom, tipoEl);
+                const tn = normalizarTipoNeonASelectValue(cli.tipo);
+                if (tn && tipoEl) tipoEl.value = tn;
+                alinearSelectoresCfgiTrasCargarLista(list);
+            } else if (tipoEl && cli.tipo) {
+                const tn = normalizarTipoNeonASelectValue(cli.tipo);
+                if (tn) tipoEl.value = tn;
+            }
+            const tEl = document.getElementById('cfgi-tenant');
+            if (tEl) tEl.textContent = 'tenant_id: ' + newId;
+            const panel = document.getElementById('cfgi-nuevo-tenant-panel');
+            if (panel) panel.style.display = 'none';
+            const nmIn = document.getElementById('cfgi-nuevo-tenant-nombre');
+            if (nmIn) nmIn.value = '';
+            try {
+                window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), nombre: String(cli.nombre || '').trim(), tipo: String(cli.tipo || '').trim() };
+            } catch (_) {}
+        };
+        if (admin && admin.usuario && admin.password) {
+            await mostrarModalCredencialesAdminNuevoTenant({
+                usuario: admin.usuario,
+                password: admin.password,
+                nombre: admin.nombre,
+                onContinue: continuarTrasCrear,
             });
-            selTech.value = String(newId);
+        } else {
+            await continuarTrasCrear();
         }
-        if (selNom?.tagName === 'SELECT' && tipoEl) {
-            poblarCfgiNombreSelect(selNom, list, {
-                nombreActual: String(cli.nombre || '').trim(),
-                idActual: newId,
-            });
-            aplicarTipoInferidoEnSelectCfgiTipo(selNom, tipoEl);
-            const tn = normalizarTipoNeonASelectValue(cli.tipo);
-            if (tn && tipoEl) tipoEl.value = tn;
-            alinearSelectoresCfgiTrasCargarLista(list);
-        } else if (tipoEl && cli.tipo) {
-            const tn = normalizarTipoNeonASelectValue(cli.tipo);
-            if (tn) tipoEl.value = tn;
-        }
-        const tEl = document.getElementById('cfgi-tenant');
-        if (tEl) tEl.textContent = 'tenant_id: ' + newId;
-        const panel = document.getElementById('cfgi-nuevo-tenant-panel');
-        if (panel) panel.style.display = 'none';
-        const nmIn = document.getElementById('cfgi-nuevo-tenant-nombre');
-        if (nmIn) nmIn.value = '';
-        try {
-            window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), nombre: String(cli.nombre || '').trim(), tipo: String(cli.tipo || '').trim() };
-        } catch (_) {}
     } catch (e) {
         toast(String(e?.message || e) || 'No se pudo crear el tenant.', 'error');
     } finally {

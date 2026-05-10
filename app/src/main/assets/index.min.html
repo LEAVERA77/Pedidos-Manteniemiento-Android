@@ -1316,6 +1316,26 @@
   </div>
 </div>
 
+<div id="modal-cfgi-tenant-admin-creds" class="mo" aria-hidden="true">
+  <div class="mc" style="max-width:480px">
+    <div class="mh"><h3><i class="fas fa-user-shield"></i> Usuario administrador del tenant</h3></div>
+    <div class="mb">
+      <p style="font-size:.88rem;color:var(--ok);margin:0 0 .65rem"><i class="fas fa-check-circle"></i> Tenant creado exitosamente.</p>
+      <p style="font-size:.82rem;color:var(--tm);margin:0 0 .5rem;line-height:1.45">Estas credenciales se muestran <strong>una sola vez</strong>. Copiálas y compartilas con el administrador de la empresa; deberá cambiar la contraseña desde <strong>Mi cuenta</strong> al iniciar sesión.</p>
+      <div style="padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.45rem;font-size:.86rem;line-height:1.55;margin-bottom:.65rem">
+        <div><span style="color:var(--tm)">Nombre:</span> <span id="cfgi-tenant-admin-creds-nombre"></span></div>
+        <div><span style="color:var(--tm)">Usuario:</span> <code id="cfgi-tenant-admin-creds-usuario" style="font-size:.84rem"></code></div>
+        <div><span style="color:var(--tm)">Contraseña:</span> <code id="cfgi-tenant-admin-creds-password" style="font-size:.84rem"></code></div>
+      </div>
+      <p style="font-size:.78rem;color:#b45309;margin:0 0 .75rem;line-height:1.4"><i class="fas fa-exclamation-triangle"></i> No se guardan en el navegador; si cerrás este aviso sin copiar, tendrás que restablecer la contraseña desde el panel.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.55rem">
+        <button type="button" class="sec" id="cfgi-tenant-admin-creds-copy"><i class="fas fa-copy"></i> Copiar credenciales</button>
+        <button type="button" class="bp" id="cfgi-tenant-admin-creds-continue"><i class="fas fa-arrow-right"></i> Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="modal-asignar-tecnico" class="mo">
   <div class="mc" style="max-width:440px">
     <div class="mh"><h3 id="assign-modal-title"><i class="fas fa-user-hard-hat"></i> Asignar técnico</h3><button type="button" class="cm" onclick="document.getElementById('modal-asignar-tecnico').classList.remove('active')"><i class="fas fa-times"></i></button></div>

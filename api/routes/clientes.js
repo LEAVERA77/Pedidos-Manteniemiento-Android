@@ -1,8 +1,9 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { technicianTenantKeyOk, requireTechnicianTenantKey } from "../middleware/technicianTenantKey.js";
-import { query } from "../db/neon.js";
-import { tableHasColumn } from "../utils/tenantScope.js";
+import { query, withTransaction } from "../db/neon.js";
+import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { crearUsuarioAdminBootstrap } from "../services/tenantBootstrapAdminUser.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
@@ -284,23 +285,42 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
     }
     const hasAbt = await tableHasColumn("clientes", "active_business_type");
     const abt = normalizeBusinessTypeInput(tipoDb) || rubroNormToBusinessType(tipoDb);
-    let r;
-    if (hasAbt) {
-      r = await query(
-        `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion, active_business_type)
-         VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW(), $3)
-         RETURNING id, nombre, tipo, active_business_type, activo`,
-        [nombreRaw, tipoDb, abt]
-      );
-    } else {
-      r = await query(
-        `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion)
-         VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW())
-         RETURNING id, nombre, tipo, activo`,
-        [nombreRaw, tipoDb]
-      );
-    }
-    const row = r.rows[0];
+    const uCol = await usuariosTenantColumnName();
+    const hasBt = await tableHasColumn("usuarios", "business_type");
+    const hasTw = await tableHasColumn("usuarios", "telefono_whatsapp");
+    const telefonoOpt = String(req.body?.telefono || req.body?.whatsapp || "").trim() || null;
+
+    const { row, admin_creado } = await withTransaction(async (client) => {
+      let r;
+      if (hasAbt) {
+        r = await client.query(
+          `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion, active_business_type)
+           VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW(), $3)
+           RETURNING id, nombre, tipo, active_business_type, activo`,
+          [nombreRaw, tipoDb, abt]
+        );
+      } else {
+        r = await client.query(
+          `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion)
+           VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW())
+           RETURNING id, nombre, tipo, activo`,
+          [nombreRaw, tipoDb]
+        );
+      }
+      const row0 = r.rows[0];
+      const tid = Number(row0.id);
+      const admin_creado0 = await crearUsuarioAdminBootstrap({
+        client,
+        col: uCol,
+        hasBt,
+        hasTw,
+        tenantId: tid,
+        nombreTenant: nombreRaw,
+        telefono: telefonoOpt,
+      });
+      return { row: row0, admin_creado: admin_creado0 };
+    });
+
     return res.status(201).json({
       ok: true,
       cliente: {
@@ -309,6 +329,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         tipo: row.tipo,
         ...(hasAbt && row.active_business_type != null ? { active_business_type: row.active_business_type } : {}),
       },
+      admin_creado,
     });
   } catch (error) {
     console.error("[clientes/nuevo]", error);
