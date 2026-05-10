@@ -21,8 +21,8 @@
 
     <string name="update_dialog_title">Actualización disponible</string>
     <string name="update_dialog_title_forced">Actualización obligatoria</string>
-    <string name="update_dialog_message">Hay una versión más nueva (%1$s). ¿Descargar la instalación?</string>
-    <string name="update_dialog_message_forced">Debés actualizar la app para continuar. Versión disponible: %1$s</string>
+    <string name="update_dialog_message">Hay una versión más nueva: %1$s.\n\nVersión instalada: %2$s (código %3$d).\n\n¿Descargar la instalación?</string>
+    <string name="update_dialog_message_forced">Debés actualizar la app para continuar.\n\nDisponible: %1$s\nInstalada: %2$s (código %3$d)</string>
     <string name="update_dialog_download">Descargar</string>
     <string name="update_dialog_later">Más tarde</string>
     <string name="update_dialog_skip_version">Omitir esta versión</string>

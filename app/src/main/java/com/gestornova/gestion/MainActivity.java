@@ -15,7 +15,9 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -89,6 +91,7 @@ import com.gestornova.gestion.work.UbicacionWorker;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
+    private static final String TAG_OTA = "GestorNovaOTA";
     private static final String NOTIF_CHANNEL_ID = "pmg_pedidos_avisos";
     private static final int NOTIF_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_HIGH;
     /** Caché local de ubicación central (mapa principal + mapa dedicado HTML). */
@@ -669,6 +672,7 @@ public class MainActivity extends AppCompatActivity {
         if (isFinishing()) {
             return;
         }
+        Log.d(TAG_OTA, "handleAppUpdateDownloadFinished downloadId=" + downloadId);
         final int pendingRemote =
                 getSharedPreferences(AppUpdateDownloadHelper.PREFS, MODE_PRIVATE)
                         .getInt(AppUpdateDownloadHelper.KEY_PENDING_REMOTE_CODE, -1);
@@ -688,11 +692,17 @@ public class MainActivity extends AppCompatActivity {
                 }
                 int status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
                 if (status != DownloadManager.STATUS_SUCCESSFUL) {
-                    Toast.makeText(this, "La descarga no se completó.", Toast.LENGTH_LONG).show();
+                    Log.w(TAG_OTA, "descarga no exitosa status=" + status + " id=" + downloadId);
+                    Toast.makeText(
+                                    this,
+                                    "La descarga no se completó (código " + status + "). Probá de nuevo.",
+                                    Toast.LENGTH_LONG)
+                            .show();
                     return;
                 }
                 int uriCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
                 String uriStr = uriCol >= 0 ? c.getString(uriCol) : null;
+                Log.d(TAG_OTA, "COLUMN_LOCAL_URI=" + uriStr);
                 if (uriStr == null || uriStr.isEmpty()) {
                     Toast.makeText(this, "No se pudo ubicar el APK descargado.", Toast.LENGTH_LONG).show();
                     return;
@@ -709,7 +719,7 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         apkFile = copyDownloadedApkToCache(local, suggested);
                     } catch (Exception e) {
-                        Log.e(TAG, "Copiar APK desde content://", e);
+                        Log.e(TAG_OTA, "Copiar APK desde content://", e);
                         Toast.makeText(
                                         this,
                                         "No se pudo preparar el instalador. Abrí la descarga desde el panel de notificaciones.",
@@ -722,15 +732,37 @@ public class MainActivity extends AppCompatActivity {
                                     this,
                                     "Abrí la notificación de descarga del sistema para instalar.",
                                     Toast.LENGTH_LONG)
+                                    .show();
+                    return;
+                }
+                if (apkFile == null || !apkFile.isFile()) {
+                    Toast.makeText(this, "No se encontró el archivo descargado.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                long len = apkFile.length();
+                Log.d(TAG_OTA, "apk path=" + apkFile.getAbsolutePath() + " size=" + len);
+                if (len < 4096L) {
+                    Log.e(TAG_OTA, "archivo demasiado chico para ser un APK");
+                    Toast.makeText(
+                                    this,
+                                    "El archivo descargado es demasiado pequeño. Revisá la URL del APK en Neon (Drive).",
+                                    Toast.LENGTH_LONG)
                             .show();
                     return;
                 }
-                if (apkFile == null
-                        || !apkFile.isFile()
-                        || apkFile.length() < 50_000L) {
+                if (!isZipMagicApkFile(apkFile)) {
+                    Log.e(TAG_OTA, "cabecera no ZIP/APK — suele ser página HTML de Drive, no el binario");
                     Toast.makeText(
                                     this,
-                                    "El archivo descargado no parece un APK. Revisá la URL en Neon (Drive, descarga directa).",
+                                    "La descarga no es un APK válido (p. ej. aviso de Google Drive). Revisá el enlace en Neon.",
+                                    Toast.LENGTH_LONG)
+                            .show();
+                    return;
+                }
+                if (!validateDownloadedApkMatchesThisApp(apkFile)) {
+                    Toast.makeText(
+                                    this,
+                                    "El APK no corresponde a GestorNova o está dañado. Revisá el archivo en Drive.",
                                     Toast.LENGTH_LONG)
                             .show();
                     return;
@@ -749,7 +781,7 @@ public class MainActivity extends AppCompatActivity {
                                             Uri.parse("package:" + getPackageName()));
                             startActivity(s);
                         } catch (Exception e) {
-                            Log.w(TAG, "MANAGE_UNKNOWN_APP_SOURCES", e);
+                            Log.w(TAG_OTA, "MANAGE_UNKNOWN_APP_SOURCES", e);
                         }
                         return;
                     }
@@ -757,32 +789,95 @@ public class MainActivity extends AppCompatActivity {
                 Uri contentUri =
                         FileProvider.getUriForFile(
                                 this, getPackageName() + ".fileprovider", apkFile);
+                Log.d(TAG_OTA, "FileProvider uri=" + contentUri);
                 Intent install = new Intent(Intent.ACTION_VIEW);
                 install.setDataAndType(contentUri, "application/vnd.android.package-archive");
-                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
                 if (Build.VERSION.SDK_INT >= 16) {
                     install.setClipData(ClipData.newRawUri("", contentUri));
                 }
+                grantInstallReadPermissionToResolvers(contentUri, install);
                 try {
                     startActivity(install);
                     openedInstaller = true;
+                    Log.i(TAG_OTA, "instalador del sistema abierto");
                 } catch (Exception e) {
-                    Log.e(TAG, "Abrir instalador APK", e);
+                    Log.e(TAG_OTA, "Abrir instalador APK", e);
                     Toast.makeText(
                                     this,
-                                    "No se abrió el instalador. Abrí el APK desde la notificación de descarga.",
+                                    "No se abrió el instalador: "
+                                            + (e.getMessage() != null ? e.getMessage() : "error")
+                                            + ". Abrí el APK desde la notificación de descarga.",
                                     Toast.LENGTH_LONG)
-                            .show();
+                                    .show();
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "handleAppUpdateDownloadFinished", e);
+            Log.e(TAG_OTA, "handleAppUpdateDownloadFinished", e);
             Toast.makeText(this, "Error al preparar la instalación.", Toast.LENGTH_LONG).show();
         } finally {
             if (openedInstaller && pendingRemote > 0) {
                 AppUpdateChecker.snoozeAfterOpeningInstaller(this, pendingRemote);
             }
             AppUpdateDownloadHelper.clearPendingDownloadState(this);
+        }
+    }
+
+    /** Los APK son ZIP: deben empezar con PK (Drive a veces devuelve HTML con estado “exitoso”). */
+    private static boolean isZipMagicApkFile(File f) {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            byte[] hdr = new byte[4];
+            int n = in.read(hdr);
+            return n == 4 && hdr[0] == 'P' && hdr[1] == 'K';
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean validateDownloadedApkMatchesThisApp(File apkFile) {
+        try {
+            PackageManager pm = getPackageManager();
+            PackageInfo arch =
+                    pm.getPackageArchiveInfo(
+                            apkFile.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
+            if (arch == null) {
+                Log.e(TAG_OTA, "getPackageArchiveInfo=null");
+                return false;
+            }
+            if (arch.packageName == null || !getPackageName().equals(arch.packageName)) {
+                Log.e(TAG_OTA, "packageName APK=" + arch.packageName + " app=" + getPackageName());
+                return false;
+            }
+            long fvc =
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            ? arch.getLongVersionCode()
+                            : arch.versionCode;
+            Log.d(TAG_OTA, "APK válido paquete OK versionCode archivo=" + fvc);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG_OTA, "validateDownloadedApkMatchesThisApp", e);
+            return false;
+        }
+    }
+
+    private void grantInstallReadPermissionToResolvers(Uri apkUri, Intent installIntent) {
+        try {
+            List<ResolveInfo> resolvers =
+                    getPackageManager()
+                            .queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            Log.d(TAG_OTA, "queryIntentActivities instalador count=" + resolvers.size());
+            for (ResolveInfo ri : resolvers) {
+                if (ri.activityInfo == null || ri.activityInfo.packageName == null) continue;
+                String pkg = ri.activityInfo.packageName;
+                try {
+                    grantUriPermission(pkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception e) {
+                    Log.w(TAG_OTA, "grantUriPermission " + pkg, e);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG_OTA, "grantInstallReadPermissionToResolvers", e);
         }
     }
 

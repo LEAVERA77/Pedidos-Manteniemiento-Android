@@ -140,6 +140,8 @@ public final class AppUpdateChecker {
         String apkUrl;
         String notes;
         boolean forceUpdate;
+        String localVersionName = "";
+        int localVersionCode = 0;
         try {
             synchronized (APPLY_LOCK) {
                 int rc = remote.optInt("versionCode", remote.optInt("version_code", 0));
@@ -193,6 +195,11 @@ public final class AppUpdateChecker {
                 apkUrl = apk;
                 notes = nt;
                 forceUpdate = fu;
+                localVersionName =
+                        pi.versionName != null && !pi.versionName.isEmpty()
+                                ? pi.versionName
+                                : ("build " + cur);
+                localVersionCode = (int) cur;
                 markUpdateOfferPending(activity, rc);
             }
         } catch (PackageManager.NameNotFoundException e) {
@@ -206,10 +213,15 @@ public final class AppUpdateChecker {
         String title = forceUpdate
                 ? activity.getString(R.string.update_dialog_title_forced)
                 : activity.getString(R.string.update_dialog_title);
-        String msg = forceUpdate
-                ? activity.getString(R.string.update_dialog_message_forced, remoteName)
-                        + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
-                : buildMessage(activity, remoteName, notes);
+        String msg =
+                forceUpdate
+                        ? activity.getString(
+                                        R.string.update_dialog_message_forced,
+                                        remoteName,
+                                        localVersionName,
+                                        localVersionCode)
+                                + (notes != null && !notes.isEmpty() ? "\n\n" + notes : "")
+                        : buildMessage(activity, remoteName, notes, localVersionName, localVersionCode);
 
         final int rcFinal = remoteCode;
         final String rnFinal = remoteName;
@@ -361,8 +373,15 @@ public final class AppUpdateChecker {
         dialog.show();
     }
 
-    private static String buildMessage(AppCompatActivity activity, String remoteName, String notes) {
-        String base = activity.getString(R.string.update_dialog_message, remoteName);
+    private static String buildMessage(
+            AppCompatActivity activity,
+            String remoteName,
+            String notes,
+            String localVersionName,
+            int localVersionCode) {
+        String base =
+                activity.getString(
+                        R.string.update_dialog_message, remoteName, localVersionName, localVersionCode);
         if (notes != null && !notes.isEmpty()) {
             return base + "\n\n" + notes;
         }

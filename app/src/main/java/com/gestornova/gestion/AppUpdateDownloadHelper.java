@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  */
 public final class AppUpdateDownloadHelper {
 
-    private static final String TAG = "AppUpdateDl";
+    private static final String TAG = "GestorNovaOTA";
     static final String PREFS = "gn_app_update_prefs";
     static final String KEY_PENDING_DOWNLOAD_ID = "pending_apk_download_id";
     static final String KEY_PENDING_FILE_NAME = "pending_apk_file_name";
@@ -30,6 +30,7 @@ public final class AppUpdateDownloadHelper {
     static final String KEY_PENDING_DEST_PUBLIC = "pending_apk_dest_public";
 
     private static final Pattern DRIVE_ID = Pattern.compile("[?&]id=([^&]+)");
+    private static final Pattern DRIVE_FILE_D = Pattern.compile("/file/d/([a-zA-Z0-9_-]+)");
 
     /**
      * Nombre fijo bajo {@code Download/} público (mejor visibilidad en Samsung / “Descargas” del sistema).
@@ -47,14 +48,25 @@ public final class AppUpdateDownloadHelper {
         if (apkUrl == null) return "";
         String u = apkUrl.trim();
         if (u.isEmpty()) return u;
-        if (u.contains("drive.google.com") && u.contains("export=download")) {
-            Matcher m = DRIVE_ID.matcher(u);
-            if (m.find()) {
-                String id = m.group(1);
+        if (u.contains("drive.google.com")) {
+            Matcher mFile = DRIVE_FILE_D.matcher(u);
+            if (mFile.find()) {
+                String id = mFile.group(1);
                 if (id != null && !id.isEmpty()) {
                     return "https://drive.usercontent.google.com/download?id="
                             + id
                             + "&export=download&confirm=t";
+                }
+            }
+            if (u.contains("export=download") || u.contains("open?id=") || u.contains("/uc?")) {
+                Matcher m = DRIVE_ID.matcher(u);
+                if (m.find()) {
+                    String id = m.group(1);
+                    if (id != null && !id.isEmpty()) {
+                        return "https://drive.usercontent.google.com/download?id="
+                                + id
+                                + "&export=download&confirm=t";
+                    }
                 }
             }
         }
@@ -179,7 +191,16 @@ public final class AppUpdateDownloadHelper {
         }
 
         try {
+            Log.d(TAG, "enqueueApkDownload url=" + url + " remoteCode=" + remoteCode);
             DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+            /* Drive a veces sirve HTML de confirmación sin un User-Agent de navegador. */
+            try {
+                req.addRequestHeader(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+                req.addRequestHeader("Accept", "*/*");
+            } catch (Exception ignored) {
+            }
             req.setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
             /* Notificación del sistema con progreso mientras corre y visible al completar (tocá para instalar). */
