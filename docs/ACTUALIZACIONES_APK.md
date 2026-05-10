@@ -55,7 +55,7 @@ Reemplazá `TU_API_URL` por la URL real de tu API desplegada.
 ### 5. Compilar y publicar cada nueva versión
 
 1. **En `app/build.gradle.kts`:** subí `versionCode` (p. ej. 4) y `versionName` (p. ej. `"1.0.3"`).
-2. **Firma:** en la raíz del repo, `keystore.properties` (no va a Git) con `storeFilePath` al archivo del store. Recomendado fuera de OneDrive, p. ej. `C:/Keystore/keystore` — podés preparar la carpeta con `scripts/ensure-c-keystore-folder.ps1` (PowerShell como administrador).
+2. **Firma:** configurada en `app/build.gradle.kts` (keystore en `C:/Keystore/keystore`). Podés preparar la carpeta con `scripts/ensure-c-keystore-folder.ps1` (PowerShell como administrador). `keystore.properties` en la raíz es solo referencia opcional, Gradle no lo usa para firmar.
 3. **En Android Studio:** Build → Generate Signed Bundle / APK, o `.\gradlew :app:assembleRelease`. Generá la APK firmada.
 4. La salida estándar queda en `app/build/outputs/apk/release/`. La tarea **`renameReleaseApk`** copia al final a **`release-export/`** o a la ruta de `GESTORNOVA_RELEASE_COPY_DIR` (solo se lee al ejecutar esa tarea, no durante `assembleRelease`). Para OneDrive usá **`scripts/build-release-and-export.ps1`** o definí la variable **solo** al copiar. Quitá `GESTORNOVA_RELEASE_COPY_DIR` de variables de usuario y de **Android Studio → Gradle → Environment variables** si `packageRelease` falla en `baselineProfiles` bajo OneDrive; luego **File → Invalidate Caches / Restart** o `.\gradlew --stop`.
 5. **Subí la APK** a la carpeta de Drive (desde `release-export/` o la copia en Drive).

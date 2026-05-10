@@ -1,25 +1,7 @@
-import com.android.build.api.dsl.ApplicationExtension
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     // Kotlin viene integrado en AGP 9+; no aplicar org.jetbrains.kotlin.android.
     alias(libs.plugins.kotlin.compose)
-}
-
-/**
- * Firma release automática: creá en la raíz del repo `keystore.properties` (no va a Git; ver
- * `keystore.properties.example`). Propiedades: **storeFilePath** o **storeFile** (ruta al archivo
- * keystore), storePassword, keyAlias, keyPassword. En Windows conviene un path local fuera de OneDrive,
- * p. ej. `C:/Keystore/keystore` (carpeta + archivo) o `C:/Keystore/release.jks`.
- */
-val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val releaseKeystoreConfigured = if (keystorePropertiesFile.exists()) {
-    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
-    true
-} else {
-    false
 }
 
 android {
@@ -48,38 +30,17 @@ android {
         )
     }
 
+    /*
+     * Firma release fija (ruta absoluta). keystore.properties en la raíz del repo puede existir como
+     * respaldo documental pero NO se usa aquí. Ojo: contraseñas en este archivo quedan en el historial de Git;
+     * en equipos compartidos preferí variables locales o otro mecanismo.
+     */
     signingConfigs {
-        if (releaseKeystoreConfigured) {
-            create("release") {
-                val storePath =
-                    keystoreProperties.getProperty("storeFilePath")?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: keystoreProperties.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() }
-                        ?: error("keystore.properties: falta storeFilePath o storeFile (ruta al keystore)")
-                val storeFileResolved = rootProject.file(storePath)
-                if (storeFileResolved.isDirectory) {
-                    error(
-                        "La ruta es una carpeta, no el archivo keystore: ${storeFileResolved.absolutePath}. " +
-                            "Si el .jks está dentro de esa carpeta, usá la ruta completa al archivo " +
-                            "(ej. C:/Keystore/keystore o C:/Users/tu_usuario/keystore/keystore)."
-                    )
-                }
-                if (!storeFileResolved.isFile) {
-                    error(
-                        "Keystore no encontrado: ${storeFileResolved.absolutePath}. " +
-                            "storeFilePath debe ser el archivo (p. ej. C:/Keystore/keystore)."
-                    )
-                }
-                val alias = keystoreProperties.getProperty("keyAlias")?.trim().orEmpty()
-                val spw = keystoreProperties.getProperty("storePassword")?.trim().orEmpty()
-                val kpw = keystoreProperties.getProperty("keyPassword")?.trim().orEmpty()
-                if (alias.isEmpty() || spw.isEmpty() || kpw.isEmpty()) {
-                    error("keystore.properties: keyAlias, storePassword y keyPassword no pueden estar vacíos")
-                }
-                storeFile = storeFileResolved
-                storePassword = spw
-                keyAlias = alias
-                keyPassword = kpw
-            }
+        create("release") {
+            storeFile = file("C:/Keystore/keystore")
+            storePassword = "leavera77"
+            keyAlias = "pmmant"
+            keyPassword = "leavera77"
         }
     }
 
@@ -90,10 +51,8 @@ android {
             // en WebView con "Failed to fetch" al conectar (misma app que en navegador sí funciona).
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
-            if (releaseKeystoreConfigured) {
-                signingConfig = signingConfigs.getByName("release")
-            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -120,36 +79,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/LICENSE*"
             excludes += "META-INF/NOTICE*"
-        }
-    }
-}
-
-afterEvaluate {
-    val app = extensions.findByType(ApplicationExtension::class.java) ?: return@afterEvaluate
-    val rel = app.buildTypes.getByName("release")
-    val sc = rel.signingConfig
-    if (releaseKeystoreConfigured && sc != null) {
-        logger.lifecycle("GestorNova: release firmado con keystore=${sc.storeFile?.absolutePath}")
-    } else if (releaseKeystoreConfigured) {
-        logger.warn("GestorNova: keystore.properties cargado pero release.signingConfig es null — revisá app/build.gradle.kts")
-    } else {
-        logger.warn(
-            "GestorNova: sin ${keystorePropertiesFile.absolutePath} — assembleRelease fallará " +
-                "salvo -PallowUnsignedRelease (no uses en producción)."
-        )
-    }
-
-    tasks.named("assembleRelease").configure {
-        doFirst {
-            if (project.hasProperty("allowUnsignedRelease")) return@doFirst
-            val appExt = project.extensions.findByType(ApplicationExtension::class.java) ?: return@doFirst
-            if (appExt.buildTypes.getByName("release").signingConfig == null) {
-                throw GradleException(
-                    "GestorNova: assembleRelease sin firma. Creá keystore.properties en:\n  ${keystorePropertiesFile.absolutePath}\n" +
-                        "con storeFilePath, storePassword, keyPassword, keyAlias (ver keystore.properties.example).\n" +
-                        "Solo depuración: gradlew :app:assembleRelease -PallowUnsignedRelease"
-                )
-            }
         }
     }
 }
@@ -284,7 +213,7 @@ tasks.register("exportReleaseApkFlat") {
             sequenceOf(rel.resolve("app-release.apk"), rel.resolve("app-release-unsigned.apk"))
                 .firstOrNull { it.isFile }
                 ?: error(
-                    "No hay APK en ${rel.absolutePath}. Con firma: revisá keystore.properties. Sin firma: solo existe app-release-unsigned.apk."
+                    "No hay APK en ${rel.absolutePath}. Revisá firma en app/build.gradle.kts y que assembleRelease haya generado app-release.apk."
                 )
         val destDir = rootProject.file(dir)
         destDir.mkdirs()
