@@ -1,33 +1,13 @@
 /**
- * Botón asistente (fa-magic en #gw): misma validación técnica que #mt y Tenant (clave GESTORNOVA_TECHNICIAN_TENANT_KEY).
+ * Botón asistente (fa-magic en #gw): mismo wizard de tenant que #mt y Tenant (gnAbrirWizardTenantUnificado).
  */
-
-function esAndroidWebViewMapaUa() {
-    try {
-        return (
-            /GestorNova\//i.test(navigator.userAgent) ||
-            /Nexxo\//i.test(navigator.userAgent) ||
-            window.location.protocol === 'file:'
-        );
-    } catch (_) {
-        return false;
-    }
-}
-
-function esEntornoAndroidGestorNovaLoginLocal() {
-    try {
-        return typeof window.AndroidConfig !== 'undefined' || esAndroidWebViewMapaUa();
-    } catch (_) {
-        return false;
-    }
-}
 
 export function gnAbrirAsistenteDesdeWizardOLogin() {
     try {
         const ms = document.getElementById('ms');
         if (ms?.classList.contains('active')) {
-            if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-                window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+            if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+                void window.gnAbrirWizardTenantUnificado();
             } else if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
                 void window.abrirWizardMarcaEmpresaManual();
             }
@@ -42,30 +22,16 @@ export function gnAbrirAsistenteDesdeWizardOLogin() {
         const tokenOk =
             typeof window.sesionCompletaParaMarcaLogin === 'function' && window.sesionCompletaParaMarcaLogin();
         if (tokenOk) {
-            if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-                window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+            if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+                void window.gnAbrirWizardTenantUnificado();
             } else if (typeof window.abrirWizardMarcaEmpresaManual === 'function') {
                 void window.abrirWizardMarcaEmpresaManual();
             }
             return;
         }
 
-        if (typeof window.gnAbrirFlujoTenantTecnicoLogin === 'function') {
-            window.gnAbrirFlujoTenantTecnicoLogin();
-            return;
-        }
-
-        if (typeof window.abrirModalTenantTecnicoAndroid === 'function') {
-            window.abrirModalTenantTecnicoAndroid();
-        }
-
-        const envOk = typeof window.AndroidConfig === 'undefined' || esEntornoAndroidGestorNovaLoginLocal();
-        if (envOk && typeof window.abrirModalReabrirAsistenteAdmin === 'function') {
-            setTimeout(() => {
-                try {
-                    window.abrirModalReabrirAsistenteAdmin();
-                } catch (_) {}
-            }, 380);
+        if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+            void window.gnAbrirWizardTenantUnificado();
         }
     } catch (e) {
         console.warn('[gn-asistente-paridad-magic-mt]', e?.message || e);

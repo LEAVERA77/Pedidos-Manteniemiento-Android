@@ -1,9 +1,11 @@
 /**
- * Unifica el acceso a configuración de tenant (marca / nombre / tipo): solo con clave GESTORNOVA_TECHNICIAN_TENANT_KEY.
- * Los botones #mt, Tenant (login) y asistente (magic) delegan aquí.
+ * Unifica #mt, Tenant (login) y botón magic: mismo wizard de 3 pasos tras clave GESTORNOVA_TECHNICIAN_TENANT_KEY.
+ * Si la clave ya se validó en esta sesión (hasta cerrar sesión), no se vuelve a pedir.
  */
 
-/** @type {{ apiSetupTechnicianFetchTenants: Function } | null} */
+const TECH_SESS_KEY = 'pmg_gn_tenant_tech_ok';
+
+/** @type {{ apiSetupTechnicianFetchTenants: Function, abrirWizardMarcaEmpresaManualTrasPassword: Function } | null} */
 let _deps = null;
 
 /** @type {null | (key: string) => void | Promise<void>} */
@@ -11,6 +13,26 @@ let _onSuccess = null;
 
 function el(id) {
     return document.getElementById(id);
+}
+
+export function clearGnTenantTechSession() {
+    try {
+        sessionStorage.removeItem(TECH_SESS_KEY);
+    } catch (_) {}
+}
+
+function tieneTechSesion() {
+    try {
+        return sessionStorage.getItem(TECH_SESS_KEY) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function marcarTechSesion() {
+    try {
+        sessionStorage.setItem(TECH_SESS_KEY, '1');
+    } catch (_) {}
 }
 
 function setErr(msg) {
@@ -25,44 +47,35 @@ function setErr(msg) {
     e.textContent = msg;
 }
 
+async function abrirWizardTrasClaveTecnica() {
+    try {
+        window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK = true;
+    } catch (_) {}
+    if (_deps?.abrirWizardMarcaEmpresaManualTrasPassword) {
+        await _deps.abrirWizardMarcaEmpresaManualTrasPassword();
+    }
+}
+
+/**
+ * Misma función para lista (#mt / admin), Tenant (login) y asistente (magic): wizard completo.
+ */
+async function gnAbrirWizardTenantUnificado() {
+    if (tieneTechSesion()) {
+        await abrirWizardTrasClaveTecnica();
+        return;
+    }
+    _onSuccess = async () => {
+        marcarTechSesion();
+        await abrirWizardTrasClaveTecnica();
+    };
+    abrirModalAccesoTecnicoTenantUnificado();
+}
+
 export function initGnTenantAccesoTecnicoUnificado(deps) {
     _deps = deps;
-    window.gnSolicitarAccesoTecnicoYAbrirWizardConfig = function gnSolicitarAccesoTecnicoYAbrirWizardConfig() {
-        _onSuccess = async (clave) => {
-            try {
-                window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK = true;
-            } catch (_) {}
-            if (typeof deps.abrirWizardMarcaEmpresaManualTrasPassword === 'function') {
-                await deps.abrirWizardMarcaEmpresaManualTrasPassword();
-            }
-        };
-        abrirModalAccesoTecnicoTenantUnificado();
-    };
-
-    window.gnAbrirFlujoTenantTecnicoLogin = function gnAbrirFlujoTenantTecnicoLogin() {
-        _onSuccess = async (clave) => {
-            try {
-                const inp = el('mtt-android-tech-key');
-                if (inp) inp.value = clave;
-            } catch (_) {}
-            if (typeof window.abrirModalTenantTecnicoAndroid === 'function') {
-                window.abrirModalTenantTecnicoAndroid();
-            }
-            const envWeb = typeof window.AndroidConfig === 'undefined';
-            const envAndroid =
-                typeof window.AndroidConfig !== 'undefined' ||
-                (typeof window.esAndroidWebViewMapa === 'function' && window.esAndroidWebViewMapa());
-            const envOk = envWeb || envAndroid;
-            if (envOk && typeof window.abrirModalReabrirAsistenteAdmin === 'function') {
-                setTimeout(() => {
-                    try {
-                        window.abrirModalReabrirAsistenteAdmin();
-                    } catch (_) {}
-                }, 380);
-            }
-        };
-        abrirModalAccesoTecnicoTenantUnificado();
-    };
+    window.gnAbrirWizardTenantUnificado = gnAbrirWizardTenantUnificado;
+    window.gnSolicitarAccesoTecnicoYAbrirWizardConfig = gnAbrirWizardTenantUnificado;
+    window.gnAbrirFlujoTenantTecnicoLogin = gnAbrirWizardTenantUnificado;
 
     window._gnAccesoTecCancelar = function _gnAccesoTecCancelar() {
         const m = el('modal-gn-acceso-tecnico-tenant');
@@ -107,13 +120,13 @@ export function initGnTenantAccesoTecnicoUnificado(deps) {
 }
 
 function abrirModalAccesoTecnicoTenantUnificado() {
-    const m = el('modal-gn-acceso-tecnico-tenant');
-    if (!m) {
+    const modal = el('modal-gn-acceso-tecnico-tenant');
+    if (!modal) {
         console.warn('[gn-tenant-acceso] falta #modal-gn-acceso-tecnico-tenant en index.html');
         return;
     }
     setErr('');
     const k = el('gn-acceso-tec-clave');
     if (k) k.value = '';
-    m.classList.add('active');
+    modal.classList.add('active');
 }

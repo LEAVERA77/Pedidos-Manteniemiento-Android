@@ -171,7 +171,10 @@ import {
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { initGnModalZIndexStack } from './modules/gn-modal-z-index-stack.js';
-import { initGnTenantAccesoTecnicoUnificado } from './modules/gn-tenant-acceso-tecnico-unificado.js';
+import {
+    initGnTenantAccesoTecnicoUnificado,
+    clearGnTenantTechSession,
+} from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -12518,8 +12521,12 @@ async function abrirWizardMarcaEmpresaManual() {
         togglePanel();
         return;
     }
+    if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+        void window.gnAbrirWizardTenantUnificado();
+        return;
+    }
     if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-        window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+        void window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
         return;
     }
     const inp = document.getElementById('admin-verify-pw-setup-saas-input');
@@ -12534,8 +12541,10 @@ async function confirmarPasswordYAbrirSetupSaaSWizard() {
         'La configuración de marca y tenant del negocio solo se abre con la clave técnica del servidor (GESTORNOVA_TECHNICIAN_TENANT_KEY), no con la contraseña de administrador.',
         'info'
     );
-    if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-        window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+    if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+        void window.gnAbrirWizardTenantUnificado();
+    } else if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+        void window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
     }
 }
 window.confirmarPasswordYAbrirSetupSaaSWizard = confirmarPasswordYAbrirSetupSaaSWizard;
@@ -12661,6 +12670,9 @@ function ejecutarCerrarSesion() {
     } catch (_) {}
     app.apiToken = null;
     app.u = null;
+    try {
+        clearGnTenantTechSession();
+    } catch (_) {}
     try {
         localStorage.removeItem(PMG_BRANDING_LS_KEY);
     } catch (_) {}

@@ -48,7 +48,7 @@
 
 <!-- LOGIN SCREEN -->
 <div id="ls" class="screen active">
-  <button type="button" id="btn-login-tenant-tecnico" title="Cambiar tenant (técnico)" aria-label="Cambiar tenant técnico" onclick="if(typeof gnAbrirFlujoTenantTecnicoLogin==='function')gnAbrirFlujoTenantTecnicoLogin();else if(typeof abrirModalTenantTecnicoAndroid==='function')abrirModalTenantTecnicoAndroid()"><span style="font-size:.68rem;font-weight:600;letter-spacing:.02em">Tenant</span></button>
+  <button type="button" id="btn-login-tenant-tecnico" title="Cambiar tenant (técnico)" aria-label="Cambiar tenant técnico" onclick="if(typeof gnAbrirWizardTenantUnificado==='function')void gnAbrirWizardTenantUnificado();else if(typeof gnAbrirFlujoTenantTecnicoLogin==='function')void gnAbrirFlujoTenantTecnicoLogin();else if(typeof abrirModalTenantTecnicoAndroid==='function')abrirModalTenantTecnicoAndroid()"><span style="font-size:.68rem;font-weight:600;letter-spacing:.02em">Tenant</span></button>
   <div class="lc">
     <div class="ll ll--logo"><img src="gestornova-logo.png" alt="" class="gn-header-logo-img" width="62" height="62"/></div>
     <h1 id="app-titulo">GestorNova</h1>

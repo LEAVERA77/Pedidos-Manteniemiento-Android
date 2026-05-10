@@ -518,8 +518,10 @@ async function verificarConfiguracionInicialObligatoria() {
         _setupWizardContextoManual = false;
         window.EMPRESA_CFG = { ...cfg };
         req().poblarSelectTiposReclamo();
-        if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-            window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
+        if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
+            void window.gnAbrirWizardTenantUnificado();
+        } else if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
+            void window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
         } else {
             mostrarModalConfigInicial();
         }
