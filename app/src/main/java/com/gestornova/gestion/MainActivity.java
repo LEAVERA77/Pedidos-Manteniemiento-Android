@@ -579,6 +579,14 @@ public class MainActivity extends AppCompatActivity {
                 } catch (Exception ignored) {
                 }
             }, 750);
+            wvResume.postDelayed(() -> {
+                try {
+                    wvResume.evaluateJavascript(
+                            "(function(){ try { if (typeof gnTickTenantRemotoPollAndroidOnce==='function') void gnTickTenantRemotoPollAndroidOnce(); } catch(e) {} })();",
+                            null);
+                } catch (Exception ignored) {
+                }
+            }, 2000);
             webView.evaluateJavascript(
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);

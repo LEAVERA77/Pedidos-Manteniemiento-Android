@@ -177,6 +177,11 @@ import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
+import {
+    initGnTenantRemotoPollAndroid,
+    stopGnTenantRemotoPollAndroid,
+    gnTickTenantRemotoPollAndroidOnce,
+} from './modules/gn-tenant-remoto-poll-android.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
@@ -742,8 +747,13 @@ async function heartbeat() {
         registrarActividadSesionUsuario();
         console.log('Keep-alive OK', new Date().toLocaleTimeString('es-AR', {hour12:false}));
         const now = Date.now();
-        if (!modoOffline && NEON_OK && _sql && document.visibilityState === 'visible') {
-            if (now - _lastTenantRevalidaNeonMs >= TENANT_NEON_REVALIDA_MS) {
+        if (!modoOffline && document.visibilityState === 'visible') {
+            const neonListo = NEON_OK && !!_sql;
+            const shellAndroid = typeof window.AndroidConfig !== 'undefined';
+            if (
+                now - _lastTenantRevalidaNeonMs >= TENANT_NEON_REVALIDA_MS &&
+                (neonListo || shellAndroid)
+            ) {
                 _lastTenantRevalidaNeonMs = now;
                 void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
             }
@@ -799,9 +809,25 @@ function iniciarKeepAlive() {
     keepAliveStartTime = Date.now();
     keepAliveInterval  = setInterval(heartbeat, KEEPALIVE_INTERVAL_MS);
     console.log('Keep-alive iniciado, sesión máxima 1h');
+    try {
+        initGnTenantRemotoPollAndroid({
+            esShellAndroid: () => typeof window.AndroidConfig !== 'undefined',
+            getModoOffline: () => modoOffline,
+            tieneSesionUsuario: () => !!app?.u,
+            getApiToken,
+            apiUrl,
+            asegurarJwtApiRest,
+            tenantIdActual,
+            sincronizarTenant: sincronizarTenantOperativoDesdeMiConfiguracionApi,
+            intervalMs: 45000,
+        });
+    } catch (_) {}
 }
 
 function detenerKeepAlive() {
+    try {
+        stopGnTenantRemotoPollAndroid();
+    } catch (_) {}
     if (keepAliveInterval) {
         clearInterval(keepAliveInterval);
         keepAliveInterval = null;
@@ -818,6 +844,9 @@ document.addEventListener('visibilitychange', () => {
         registrarActividadSesionUsuario();
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
+        try {
+            void gnTickTenantRemotoPollAndroidOnce();
+        } catch (_) {}
         window.pollNotificacionesMovil();
         if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
             if (!_gnDmTypingFocused()) void cargarPedidos({ silent: true });
