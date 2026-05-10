@@ -54,8 +54,17 @@ android {
                         ?: keystoreProperties.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() }
                         ?: error("keystore.properties: falta storeFilePath o storeFile (ruta al keystore)")
                 val storeFileResolved = rootProject.file(storePath)
-                if (!storeFileResolved.exists()) {
-                    error("Keystore no encontrado: ${storeFileResolved.absolutePath}")
+                if (storeFileResolved.isDirectory) {
+                    error(
+                        "La ruta es una carpeta, no el archivo keystore: ${storeFileResolved.absolutePath}. " +
+                            "Ej.: .../keystore/mi-release.jks o .../keystore/keystore (carpeta + archivo sin extensión)."
+                    )
+                }
+                if (!storeFileResolved.isFile) {
+                    error(
+                        "Keystore no encontrado: ${storeFileResolved.absolutePath}. " +
+                            "storeFilePath / storeFile deben apuntar al **archivo** completo, no solo a la carpeta."
+                    )
                 }
                 storeFile = storeFileResolved
                 storePassword = keystoreProperties.getProperty("storePassword")
