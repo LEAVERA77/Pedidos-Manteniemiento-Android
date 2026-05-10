@@ -49,6 +49,41 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("FROM clientes") && q.includes("ORDER BY id ASC")) {
         return { rows: [{ id: 1, nombre: "A", tipo: "cooperativa_electrica", activo: true }] };
       }
+      if (
+        q.includes("information_schema.columns") &&
+        q.includes("table_name = $1") &&
+        q.includes("column_name = $2")
+      ) {
+        if (params[0] === "clientes" && params[1] === "active_business_type") {
+          return { rows: [{ ok: 1 }] };
+        }
+        if (params[0] === "pedido_contador" && params[1] === "tenant_id") {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      }
+      if (q.includes("SELECT tipo") && q.includes("FROM clientes WHERE id = $1")) {
+        return { rows: [{ tipo: "cooperativa_electrica", active_business_type: "electricidad" }] };
+      }
+      if (q.includes("UPDATE clientes") && q.includes("configuracion = COALESCE(configuracion")) {
+        const cfg = JSON.parse(params[3]);
+        return {
+          rows: [
+            {
+              id: Number(params[0]),
+              nombre: params[1] || "Coop Guardada",
+              tipo: params[2] || "cooperativa_electrica",
+              configuracion: { ...cfg },
+            },
+          ],
+        };
+      }
+      if (q.includes("CREATE TABLE IF NOT EXISTS configuracion")) {
+        return { rows: [] };
+      }
+      if (q.includes("INSERT INTO configuracion") && q.includes("ON CONFLICT")) {
+        return { rows: [], rowCount: 1 };
+      }
       if (q.includes("SELECT id, rol FROM usuarios") && q.includes("ORDER BY id ASC") && q.includes("LIMIT 1")) {
         return { rows: [{ id: 1, rol: "admin" }] };
       }
@@ -119,5 +154,46 @@ describe("Setup wizard — técnico tenant", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.tenant_id).toBe(7);
     expect(res.body.token).toBeTruthy();
+  });
+
+  it("200 completar setup inicial solo clave (sin Bearer)", async () => {
+    const app = createHttpApp();
+    const res = await request(app)
+      .post("/api/setup/technician/completar-setup-inicial")
+      .set("Content-Type", "application/json")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_test")
+      .send({
+        tenant_id: 7,
+        nombre: "Coop Sur",
+        tipo: "cooperativa_electrica",
+        latitud: -31.4,
+        longitud: -64.2,
+        configuracion: {
+          setup_wizard_completado: true,
+          marca_publicada_admin: true,
+          abrir_wizard_recuperacion: false,
+        },
+      })
+      .expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.tenant_id).toBe(7);
+    expect(res.body.cliente?.nombre).toBe("Coop Sur");
+    expect(res.body.cliente?.configuracion?.setup_wizard_completado).toBe(true);
+  });
+
+  it("400 completar setup sin tenant_id", async () => {
+    const app = createHttpApp();
+    const res = await request(app)
+      .post("/api/setup/technician/completar-setup-inicial")
+      .set("Content-Type", "application/json")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_test")
+      .send({
+        nombre: "X",
+        tipo: "cooperativa_electrica",
+        latitud: -31,
+        longitud: -64,
+      })
+      .expect(400);
+    expect(String(res.body.error || "")).toMatch(/tenant_id/i);
   });
 });

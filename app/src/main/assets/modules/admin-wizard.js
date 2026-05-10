@@ -728,10 +728,7 @@ async function guardarConfiguracionInicialObligatoria() {
     }
     try {
         const token = req().getApiToken();
-        if (!token) {
-            toast('Sesión API no disponible. Cerrá sesión e ingresá nuevamente con internet.', 'error');
-            return;
-        }
+        const techK = getGnStoredTechnicianKey();
         let provExtra = {};
         try {
             const pv = await req().nominatimReverseProvinciaArgentina(_setupLat, _setupLng);
@@ -740,32 +737,57 @@ async function guardarConfiguracionInicialObligatoria() {
         const rubWiz = req().normalizarRubroEmpresa(tipo);
         const abtWiz =
             rubWiz === 'cooperativa_agua' ? 'agua' : rubWiz === 'municipio' ? 'municipio' : 'electricidad';
+
+        let wiz = null;
         let authToken = token;
-        const techK = getGnStoredTechnicianKey();
-        const wizHeaders = {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-        };
-        if (techK) wizHeaders['X-GestorNova-Technician-Key'] = techK;
-        const wizResp = await fetch(req().apiUrl('/api/setup/wizard'), {
-            method: 'POST',
-            headers: wizHeaders,
-            body: JSON.stringify({ tenant_nombre: nombre, business_type: abtWiz }),
-        });
-        if (!wizResp.ok) {
-            const err = await wizResp.json().catch(() => ({}));
-            const det = [err.detail, err.error].filter(Boolean).join(' — ');
-            throw new Error(det || `wizard HTTP ${wizResp.status}`);
-        }
-        const wiz = await wizResp.json();
-        if (wiz.token && (wiz.nueva_instancia || wiz.tenant_recuperado)) {
-            authToken = String(wiz.token);
-            req().app.apiToken = authToken;
-            try {
-                localStorage.setItem('pmg_api_token', authToken);
-            } catch (_) {}
-            if (req().app.u) {
-                req().app.u.tenant_id = Number(wiz.tenant_id);
+
+        if (!token) {
+            if (!techK) {
+                toast(
+                    'Sesión API no disponible. Ingresá con internet o usá la clave de técnico y un tenant de la lista.',
+                    'error'
+                );
+                return;
+            }
+            const nomEl = getCfgiNombreEl();
+            const tenantIdSinJwt =
+                nomEl && nomEl.tagName === 'SELECT' ? Number(nomEl.value) : NaN;
+            if (!Number.isFinite(tenantIdSinJwt) || tenantIdSinJwt < 1) {
+                toast(
+                    'Sin sesión: en el paso 1 elegí un tenant de la lista (tras «Listar tenants» o carga automática) y volvé a Finalizar.',
+                    'error'
+                );
+                return;
+            }
+            const respSin = await fetch(req().apiUrl('/api/setup/technician/completar-setup-inicial'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-GestorNova-Technician-Key': techK,
+                },
+                body: JSON.stringify({
+                    tenant_id: tenantIdSinJwt,
+                    nombre,
+                    tipo,
+                    logo_url: logoUrl,
+                    latitud: _setupLat,
+                    longitud: _setupLng,
+                    configuracion: {
+                        setup_wizard_completado: true,
+                        marca_publicada_admin: true,
+                        abrir_wizard_recuperacion: false,
+                        ...provExtra,
+                    },
+                }),
+            });
+            if (!respSin.ok) {
+                const err = await respSin.json().catch(() => ({}));
+                throw new Error(
+                    [err.error, err.detail].filter(Boolean).join(' — ') || `HTTP ${respSin.status}`
+                );
+            }
+            if (req().app?.u && Number.isFinite(tenantIdSinJwt)) {
+                req().app.u.tenant_id = tenantIdSinJwt;
                 try {
                     delete req().app.u.tenantId;
                 } catch (_) {}
@@ -773,45 +795,82 @@ async function guardarConfiguracionInicialObligatoria() {
                     localStorage.setItem('pmg', JSON.stringify(req().app.u));
                 } catch (_) {}
             }
-            req().limpiarLocalStorageContadoresPedido();
-            try {
-                req().invalidarCachesMultitenantSesionYOAdminUI();
-            } catch (_) {}
-            if (wiz.tenant_recuperado) {
-                toast(
-                    wiz.message ||
-                        'Ya existía un tenant con el mismo nombre y tipo de negocio: se recuperó ese registro y tu sesión pasó a ese id.',
-                    'success'
-                );
-            } else {
-                toast('Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.', 'info');
+        } else {
+            authToken = token;
+            const wizHeaders = {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (techK) wizHeaders['X-GestorNova-Technician-Key'] = techK;
+            const wizResp = await fetch(req().apiUrl('/api/setup/wizard'), {
+                method: 'POST',
+                headers: wizHeaders,
+                body: JSON.stringify({ tenant_nombre: nombre, business_type: abtWiz }),
+            });
+            if (!wizResp.ok) {
+                const err = await wizResp.json().catch(() => ({}));
+                const det = [err.detail, err.error].filter(Boolean).join(' — ');
+                throw new Error(det || `wizard HTTP ${wizResp.status}`);
             }
-        }
-        const putHeaders = {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-        };
-        if (techK) putHeaders['X-GestorNova-Technician-Key'] = techK;
-        const resp = await fetch(req().apiUrl('/api/clientes/mi-configuracion'), {
-            method: 'PUT',
-            headers: putHeaders,
-            body: JSON.stringify({
-                nombre,
-                tipo,
-                logo_url: logoUrl,
-                latitud: _setupLat,
-                longitud: _setupLng,
-                configuracion: {
-                    setup_wizard_completado: true,
-                    marca_publicada_admin: true,
-                    abrir_wizard_recuperacion: false,
-                    ...provExtra,
+            wiz = await wizResp.json();
+            if (wiz.token && (wiz.nueva_instancia || wiz.tenant_recuperado)) {
+                authToken = String(wiz.token);
+                req().app.apiToken = authToken;
+                try {
+                    localStorage.setItem('pmg_api_token', authToken);
+                } catch (_) {}
+                if (req().app.u) {
+                    req().app.u.tenant_id = Number(wiz.tenant_id);
+                    try {
+                        delete req().app.u.tenantId;
+                    } catch (_) {}
+                    try {
+                        localStorage.setItem('pmg', JSON.stringify(req().app.u));
+                    } catch (_) {}
                 }
-            })
-        });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || `HTTP ${resp.status}`);
+                req().limpiarLocalStorageContadoresPedido();
+                try {
+                    req().invalidarCachesMultitenantSesionYOAdminUI();
+                } catch (_) {}
+                if (wiz.tenant_recuperado) {
+                    toast(
+                        wiz.message ||
+                            'Ya existía un tenant con el mismo nombre y tipo de negocio: se recuperó ese registro y tu sesión pasó a ese id.',
+                        'success'
+                    );
+                } else {
+                    toast(
+                        'Nueva instancia de tenant: se aísla la numeración de pedidos y los datos del tenant anterior.',
+                        'info'
+                    );
+                }
+            }
+            const putHeaders = {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`,
+            };
+            if (techK) putHeaders['X-GestorNova-Technician-Key'] = techK;
+            const resp = await fetch(req().apiUrl('/api/clientes/mi-configuracion'), {
+                method: 'PUT',
+                headers: putHeaders,
+                body: JSON.stringify({
+                    nombre,
+                    tipo,
+                    logo_url: logoUrl,
+                    latitud: _setupLat,
+                    longitud: _setupLng,
+                    configuracion: {
+                        setup_wizard_completado: true,
+                        marca_publicada_admin: true,
+                        abrir_wizard_recuperacion: false,
+                        ...provExtra,
+                    },
+                }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
         }
         req().sincronizarFirmaIdentidadTenantDesdeValores(nombre, tipo);
         window.__PMG_TENANT_BRANDING__ = {
