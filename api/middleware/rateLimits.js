@@ -28,6 +28,7 @@ export const generalApiLimiter = rateLimit({
     if (p.startsWith("/api/webhooks")) return true;
     // Listar/vincular tenant con X-GestorNova-Technician-Key: no bloquear por el limitador general (429).
     if (p.startsWith("/api/setup/technician")) return true;
+    if (p.includes("/api/clientes/nuevo") && req.method === "POST") return true;
     return false;
   },
 });

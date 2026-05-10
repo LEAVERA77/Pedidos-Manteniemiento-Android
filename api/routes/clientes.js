@@ -1,6 +1,6 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
-import { technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
+import { technicianTenantKeyOk, requireTechnicianTenantKey } from "../middleware/technicianTenantKey.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import {
@@ -8,7 +8,7 @@ import {
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
 } from "../services/tiposReclamo.js";
-import { normalizeBusinessTypeInput } from "../services/businessType.js";
+import { normalizeBusinessTypeInput, rubroNormToBusinessType } from "../services/businessType.js";
 import { rubroEfectivoParaTipos } from "../utils/businessScope.js";
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
@@ -247,6 +247,72 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
     return res.json({ ok: true, tenant_id: tenantId, cliente: row });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar configuración", detail: error.message });
+  }
+});
+
+/**
+ * Alta de tenant vacío (solo clave técnica). El wizard completa logo/ubicación con Finalizar.
+ * Headers: X-GestorNova-Technician-Key o x-tech-key (alias).
+ */
+router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
+  try {
+    const nombreRaw = String(req.body?.nombre || "").trim();
+    const tipoRaw = String(req.body?.tipo || "").trim();
+    if (nombreRaw.length < 2 || nombreRaw.length > 200) {
+      return res.status(400).json({ error: "Nombre inválido (entre 2 y 200 caracteres)" });
+    }
+    if (!tipoRaw) {
+      return res.status(400).json({ error: "tipo requerido" });
+    }
+    const tipoDb = normalizarRubroCliente(tipoRaw);
+    if (!tipoDb) {
+      return res.status(400).json({
+        error: "Tipo de cliente no reconocido",
+        detail: tipoRaw,
+        tipos_sugeridos: ["municipio", "cooperativa_electrica", "cooperativa_agua"],
+      });
+    }
+    const dup = await query(
+      `SELECT id FROM clientes WHERE lower(trim(nombre)) = lower(trim($1)) AND COALESCE(activo, TRUE) LIMIT 1`,
+      [nombreRaw]
+    );
+    if (dup.rows.length) {
+      return res.status(409).json({
+        error: "Ya existe un tenant con ese nombre",
+        cliente_id: dup.rows[0].id,
+      });
+    }
+    const hasAbt = await tableHasColumn("clientes", "active_business_type");
+    const abt = normalizeBusinessTypeInput(tipoDb) || rubroNormToBusinessType(tipoDb);
+    let r;
+    if (hasAbt) {
+      r = await query(
+        `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion, active_business_type)
+         VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW(), $3)
+         RETURNING id, nombre, tipo, active_business_type, activo`,
+        [nombreRaw, tipoDb, abt]
+      );
+    } else {
+      r = await query(
+        `INSERT INTO clientes (nombre, tipo, plan, activo, configuracion, fecha_registro, fecha_actualizacion)
+         VALUES ($1, $2, 'basico', TRUE, '{}'::jsonb, NOW(), NOW())
+         RETURNING id, nombre, tipo, activo`,
+        [nombreRaw, tipoDb]
+      );
+    }
+    const row = r.rows[0];
+    return res.status(201).json({
+      ok: true,
+      cliente: {
+        id: row.id,
+        nombre: row.nombre,
+        tipo: row.tipo,
+        ...(hasAbt && row.active_business_type != null ? { active_business_type: row.active_business_type } : {}),
+      },
+    });
+  } catch (error) {
+    console.error("[clientes/nuevo]", error);
+    return res.status(500).json({ error: "No se pudo crear el tenant", detail: error.message });
   }
 });
 

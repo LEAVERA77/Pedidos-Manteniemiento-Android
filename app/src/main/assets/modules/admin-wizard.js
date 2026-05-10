@@ -20,6 +20,7 @@ import {
     persistGnTechnicianKeyForSession,
 } from './gn-tenant-acceso-tecnico-unificado.js';
 import { gnMostrarVeilRecargaTenant } from './gn-tenant-reload-veil.js';
+import { initWizardNuevoTenantTecnico, syncWizardNuevoTenantBlockVisibility } from './wizard-nuevo-tenant-tecnico.js';
 
 /** @type {Record<string, unknown> | null} */
 let _wizardDeps = null;
@@ -391,6 +392,9 @@ function mostrarModalConfigInicial() {
         if (tw) tw.style.display = '';
         _wizardTecnicoSetMsg('', false);
     } catch (_) {}
+    try {
+        syncWizardNuevoTenantBlockVisibility(tecOk);
+    } catch (_) {}
     const msg = document.getElementById('cfgi-msg');
     msg.style.display = 'block';
     const snap = window.__PMG_LAST_MI_CLIENTE || null;
@@ -699,6 +703,7 @@ function initSetupWizardBindings() {
         });
     }
     initCfgiTenantSelectorsSync({ toast });
+    initWizardNuevoTenantTecnico();
 }
 async function guardarConfiguracionInicialObligatoria() {
     if (!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {

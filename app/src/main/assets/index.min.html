@@ -1071,6 +1071,27 @@
         <p style="font-size:.88rem;color:var(--tm)">Elegí el tenant (lista desde Neon con clave técnica). El tipo se completa solo al elegir.</p>
         <div class="form-grid">
           <div class="full"><label>Tenant (nombre) *</label><select id="cfgi-nombre" style="width:100%;max-width:100%;padding:.4rem .45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem"><option value="">Cargando lista…</option></select></div>
+          <div id="cfgi-nuevo-tenant-wrap" class="full" style="display:none;margin-top:.2rem">
+            <button type="button" id="cfgi-nuevo-tenant" class="btn-sm" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-plus"></i> Nuevo Tenant</button>
+            <div id="cfgi-nuevo-tenant-panel" style="display:none;margin-top:.55rem;padding:.65rem .75rem;border:1px solid var(--bo);border-radius:.5rem;background:#f8fafc">
+              <p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem;line-height:1.35">Alta en <code style="font-size:.68rem">clientes</code> (solo técnico). Después seguí con logo, mapa y <strong>Finalizar</strong> como con cualquier tenant.</p>
+              <div class="form-grid">
+                <div class="full"><label for="cfgi-nuevo-tenant-nombre">Nombre del tenant *</label>
+                  <input id="cfgi-nuevo-tenant-nombre" type="text" maxlength="200" placeholder="Ej. Cooperativa Nueva" style="width:100%;padding:.4rem .45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem"></div>
+                <div class="full"><label for="cfgi-nuevo-tenant-tipo">Tipo *</label>
+                  <select id="cfgi-nuevo-tenant-tipo" style="width:100%;max-width:420px;padding:.4rem .45rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem">
+                    <option value="">Elegir…</option>
+                    <option value="municipio">Municipio</option>
+                    <option value="cooperativa_agua">Cooperativa de Agua</option>
+                    <option value="cooperativa_electrica">Cooperativa Eléctrica</option>
+                  </select></div>
+                <div class="full" style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.35rem">
+                  <button type="button" class="sec" id="cfgi-nuevo-tenant-cancelar">Cancelar</button>
+                  <button type="button" class="btn-sm primary" id="cfgi-nuevo-tenant-crear"><i class="fas fa-check"></i> Crear y continuar</button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="full"><label>Tipo *</label>
             <select id="cfgi-tipo">
               <option value="">Seleccionar...</option>
