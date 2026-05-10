@@ -177,11 +177,7 @@ import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
-import {
-    initGnTenantRemotoPollAndroid,
-    stopGnTenantRemotoPollAndroid,
-    gnTickTenantRemotoPollAndroidOnce,
-} from './modules/gn-tenant-remoto-poll-android.js';
+import './modules/gn-tenant-force-sync-android-boot.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
@@ -811,27 +807,9 @@ function iniciarKeepAlive() {
     keepAliveStartTime = Date.now();
     keepAliveInterval  = setInterval(heartbeat, KEEPALIVE_INTERVAL_MS);
     console.log('Keep-alive iniciado, sesión máxima 1h');
-    try {
-        initGnTenantRemotoPollAndroid({
-            esShellAndroid: () =>
-                typeof window.AndroidConfig !== 'undefined' ||
-                typeof window.AndroidSession !== 'undefined',
-            getModoOffline: () => modoOffline,
-            tieneSesionUsuario: () => !!app?.u,
-            getApiToken,
-            apiUrl,
-            asegurarJwtApiRest,
-            tenantIdActual,
-            sincronizarTenant: sincronizarTenantOperativoDesdeMiConfiguracionApi,
-            intervalMs: 45000,
-        });
-    } catch (_) {}
 }
 
 function detenerKeepAlive() {
-    try {
-        stopGnTenantRemotoPollAndroid();
-    } catch (_) {}
     if (keepAliveInterval) {
         clearInterval(keepAliveInterval);
         keepAliveInterval = null;
@@ -848,9 +826,6 @@ document.addEventListener('visibilitychange', () => {
         registrarActividadSesionUsuario();
         console.log('Tab visible: heartbeat preventivo');
         heartbeat();
-        try {
-            void gnTickTenantRemotoPollAndroidOnce();
-        } catch (_) {}
         window.pollNotificacionesMovil();
         if (!esAdmin() && esTecnicoOSupervisor() && !modoOffline && NEON_OK && _sql) {
             if (!_gnDmTypingFocused()) void cargarPedidos({ silent: true });

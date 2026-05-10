@@ -108,6 +108,11 @@ public class MainActivity extends AppCompatActivity {
     private static final int RC_FILE_CHOOSER = 1001;
     private String pendingPedidoIdIntent;
 
+    /** Marca tiempo de {@link #onPause()} para recargar WebView al volver de background (tenant / shell fresco). */
+    private long gnLastPauseMillis;
+    /** Tras el primer {@code onPageFinished} del documento principal; evita reload en el primer {@link #onResume()}. */
+    private boolean gnWebMainDocumentReady;
+
     /** Descarga de APK OTA (Neon): completada → abrir instalador. */
     private BroadcastReceiver apkUpdateDownloadReceiver;
 
@@ -370,6 +375,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                gnWebMainDocumentReady = true;
                 dismissNativeSplashOnce();
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
@@ -531,6 +537,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
+        gnLastPauseMillis = System.currentTimeMillis();
         if (webView != null) {
             webView.onPause();
         }
@@ -560,6 +567,34 @@ public class MainActivity extends AppCompatActivity {
                 drainUbic);
         if (webView != null) {
             webView.onResume();
+            final boolean resumeFromBackground =
+                    !isChangingConfigurations()
+                            && gnWebMainDocumentReady
+                            && gnLastPauseMillis > 0L
+                            && (System.currentTimeMillis() - gnLastPauseMillis) > 1500L;
+            if (resumeFromBackground) {
+                try {
+                    webView.clearCache(true);
+                } catch (Exception ignored) {
+                }
+                try {
+                    Uri base = Uri.parse(BuildConfig.WEB_APP_URL);
+                    Uri.Builder b = base.buildUpon();
+                    b.appendQueryParameter("_gnTenantReload", String.valueOf(System.currentTimeMillis()));
+                    String next = b.build().toString();
+                    Log.i(
+                            "GestorNovaTenant",
+                            "onResume WebView recarga forzada (background) dtMs="
+                                    + (System.currentTimeMillis() - gnLastPauseMillis));
+                    gnWebMainDocumentReady = false;
+                    gnLastPauseMillis = 0L;
+                    webView.loadUrl(next);
+                } catch (Exception e) {
+                    Log.w("GestorNovaTenant", "onResume reload URL", e);
+                }
+                dispatchPendingPedidoIdToWeb();
+                return;
+            }
             webView.evaluateJavascript(
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);
@@ -582,11 +617,11 @@ public class MainActivity extends AppCompatActivity {
             wvResume.postDelayed(() -> {
                 try {
                     wvResume.evaluateJavascript(
-                            "(function(){ try { if (typeof gnTickTenantRemotoPollAndroidOnce==='function') void gnTickTenantRemotoPollAndroidOnce(); } catch(e) {} })();",
+                            "(function(){ try { if (typeof gnBootTenantForceSyncAndroid==='function') void gnBootTenantForceSyncAndroid(); } catch(e) {} })();",
                             null);
                 } catch (Exception ignored) {
                 }
-            }, 2000);
+            }, 1500);
             webView.evaluateJavascript(
                     "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
                     null);
