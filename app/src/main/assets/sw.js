@@ -49,6 +49,7 @@ function shellAssetUrls() {
     j('modules/ui-utils.js'),
     j('modules/export-excel.js'),
     j('modules/gn-tenant-reload-veil.js'),
+    j('modules/cfgi-wizard-tenant-selectors-sync.js'),
     j('modules/admin-wizard.js'),
     j('modules/gn-modal-z-index-stack.js'),
     j('modules/gn-tenant-acceso-tecnico-unificado.js'),

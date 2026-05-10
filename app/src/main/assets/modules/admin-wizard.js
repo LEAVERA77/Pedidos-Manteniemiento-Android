@@ -11,6 +11,11 @@ import {
     aplicarTipoInferidoEnSelectCfgiTipo,
 } from './cfgi-wizard-tenant-select.js';
 import {
+    alinearSelectoresCfgiTrasCargarLista,
+    initCfgiTenantSelectorsSync,
+    validarConsistenciaSelectoresTenantWizard,
+} from './cfgi-wizard-tenant-selectors-sync.js';
+import {
     getGnStoredTechnicianKey,
     persistGnTechnicianKeyForSession,
 } from './gn-tenant-acceso-tecnico-unificado.js';
@@ -219,6 +224,7 @@ async function cargarCfgiNombreTenantsDesdeNeonSiTecnico(cfgNombre, idPreferido)
         poblarCfgiNombreSelect(sel, list, { nombreActual: cfgNombre, idActual: idPreferido });
         const tipoEl = document.getElementById('cfgi-tipo');
         if (tipoEl) aplicarTipoInferidoEnSelectCfgiTipo(sel, tipoEl);
+        alinearSelectoresCfgiTrasCargarLista(list);
     } catch (e) {
         poblarCfgiNombreSelect(sel, [], { nombreActual: cfgNombre, idActual: idPreferido });
         toast(String(e?.message || e) || 'No se pudo cargar la lista de tenants.', 'warning');
@@ -262,6 +268,7 @@ async function wizardTecnicoCargarTenantsNeon() {
             const tipoEl = document.getElementById('cfgi-tipo');
             if (tipoEl) aplicarTipoInferidoEnSelectCfgiTipo(selNom, tipoEl);
         }
+        alinearSelectoresCfgiTrasCargarLista(list);
         _wizardTecnicoSetMsg(`Listo: ${list.length} fila(s) en clientes. Elegí tenant y tocá Vincular.`, false);
     } catch (e) {
         _wizardTecnicoSetMsg(e.message || 'Error', true);
@@ -646,6 +653,8 @@ function setupWizardNext() {
     if (_setupWizardStep === 1) {
         if (!getCfgiNombreTrimmed()) return toast('Elegí un tenant (nombre)', 'error');
         if (!(document.getElementById('cfgi-tipo').value || '').trim()) return toast('Elegí tipo', 'error');
+        const vCons = validarConsistenciaSelectoresTenantWizard();
+        if (!vCons.ok) return toast(vCons.mensaje || 'Selectores de tenant inconsistentes.', 'error');
     }
     if (_setupWizardStep < 3) _setupWizardStep++;
     actualizarStepWizard();
@@ -689,11 +698,7 @@ function initSetupWizardBindings() {
             reader.readAsDataURL(f);
         });
     }
-    const selNom = document.getElementById('cfgi-nombre');
-    const selTipo = document.getElementById('cfgi-tipo');
-    if (selNom && selTipo && selNom.tagName === 'SELECT') {
-        selNom.addEventListener('change', () => aplicarTipoInferidoEnSelectCfgiTipo(selNom, selTipo));
-    }
+    initCfgiTenantSelectorsSync({ toast });
 }
 async function guardarConfiguracionInicialObligatoria() {
     if (!window.__GN_CONFIG_TENANT_SOLO_TECNICO_OK) {
@@ -701,6 +706,11 @@ async function guardarConfiguracionInicialObligatoria() {
             'Falta la validación técnica: no se puede guardar sin la clave GESTORNOVA_TECHNICIAN_TENANT_KEY.',
             'error'
         );
+        return;
+    }
+    const vCons = validarConsistenciaSelectoresTenantWizard();
+    if (!vCons.ok) {
+        toast(vCons.mensaje || 'Selectores de tenant inconsistentes.', 'error');
         return;
     }
     const nombre = getCfgiNombreTrimmed();

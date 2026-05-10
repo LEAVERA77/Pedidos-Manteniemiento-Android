@@ -39,6 +39,8 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 .gn-btn-asistente-tl:hover{background:rgba(30,58,138,.55)}
 #gw.active .gn-btn-asistente-tl{display:flex}
 #gw .gn-btn-asistente-tl{display:none}
+/* Con sesión iniciada: ocultar varita (no debe verse detrás de modales / wizard). */
+body.gn-sesion-activa .gn-btn-asistente-tl{display:none !important;visibility:hidden !important;pointer-events:none !important}
 /* Flex: cabecera (.hd) + mapa (#mc) no deben sumar más que el viewport (rotación WebView / 100dvh stale). */
 #ms.active{display:flex;flex-direction:column;height:100%;max-height:100dvh;min-height:0;overflow:hidden;position:relative}
 #mapa-overlay-ui{position:absolute;top:58px;left:0;right:0;bottom:0;pointer-events:none;z-index:10050}
