@@ -1447,6 +1447,11 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
                 try {
                     localStorage.setItem('pmg', JSON.stringify(app.u));
                 } catch (_) {}
+                try {
+                    if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                        AndroidSession.setTenantId(apiTid);
+                    }
+                } catch (_) {}
             } catch (_) {}
             try {
                 invalidatePedidosTenantSqlCache();
@@ -13851,6 +13856,11 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
             fetchFn: fetch,
         });
         if (!Number.isFinite(tid) || tid < 1) return false;
+        try {
+            if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
+                AndroidSession.setTenantId(tid);
+            }
+        } catch (_) {}
         const cur = Number(tenantIdActual());
         if (!Number.isFinite(cur) || cur === tid) return false;
         app.u.tenant_id = tid;
@@ -13868,11 +13878,6 @@ async function sincronizarTenantOperativoDesdeMiConfiguracionApi(opts) {
         } catch (_) {}
         try {
             invalidarCachesMultitenantSesionYOAdminUI();
-        } catch (_) {}
-        try {
-            if (window.AndroidSession && typeof AndroidSession.setTenantId === 'function') {
-                AndroidSession.setTenantId(tid);
-            }
         } catch (_) {}
         try {
             actualizarBarraHeaderSesion();
