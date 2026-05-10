@@ -144,6 +144,7 @@ import {
 } from './modules/admin-distribuidores-formato.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
+import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import { guardarRotacionReclamoDesdeFotoAmpliada } from './modules/pedido-ver-imagen.js';
 import {
@@ -12330,9 +12331,9 @@ function render() {
     if (pcEl) pcEl.textContent = pen;
     if (acEl) acEl.textContent = asg;
     if (ccEl) {
-        if (cer > 20) {
-            ccEl.textContent = '20+';
-            ccEl.title = `${cer} en Cerrados / derivados; en esta pestaña se listan los 20 más recientes. Ver el resto en Admin → Históricos.`;
+        if (cer > GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS) {
+            ccEl.textContent = `${GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS}+`;
+            ccEl.title = `${cer} en Cerrados / derivados / desestimados (según filtros); en esta pestaña se listan los ${GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS} resueltos más recientes. Ver el resto en Admin → Históricos.`;
         } else {
             ccEl.textContent = String(cer);
             try {
@@ -12357,14 +12358,10 @@ function render() {
               if (soloDerivLista) return pedidoEsDerivadoFuera(p);
               return p.es === 'Cerrado' || p.es === 'Derivado externo';
           });
-    if (!tecnicoPideVerTodosPedidosEmpresa() && app.tab === 'c' && Array.isArray(fl) && fl.length > 20) {
+    if (!tecnicoPideVerTodosPedidosEmpresa() && app.tab === 'c' && Array.isArray(fl) && fl.length > GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS) {
         fl = [...fl]
-            .sort((a, b) => {
-                const ta = a.f ? new Date(a.f).getTime() : 0;
-                const tb = b.f ? new Date(b.f).getTime() : 0;
-                return tb - ta;
-            })
-            .slice(0, 20);
+            .sort((a, b) => tsResolucionPedidoMs(b) - tsResolucionPedidoMs(a))
+            .slice(0, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS);
     }
     const c = document.getElementById('pl');
     c.innerHTML = '';

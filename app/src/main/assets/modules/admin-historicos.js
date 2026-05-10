@@ -5,6 +5,7 @@ import {
     runQuincenaHistCheck,
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
+import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 
 function _tidTenant() {
     const u = window.app?.u;
@@ -137,6 +138,7 @@ function _filtrarLista(list, f) {
     const fd = f.fDesde ? new Date(f.fDesde + 'T00:00:00') : null;
     const fh = f.fHasta ? new Date(f.fHasta + 'T23:59:59') : null;
     const idQ = String(f.idTxt || '').trim().toLowerCase();
+    const nomQ = String(f.nombreTxt || '').trim();
     const st = String(f.estadoSel || 'todos');
     const tipoRe = _patronTipoWild(f.tipoPat);
     const soloAg = !!f.soloAgrupados;
@@ -165,6 +167,10 @@ function _filtrarLista(list, f) {
                     .includes(idQ);
             if (!hay) return false;
         }
+        if (nomQ) {
+            const nm = String(p.cnom || p.cl || '').trim();
+            if (!nombreCoincideFuzzy(nomQ, nm)) return false;
+        }
         if (fd && Number.isFinite(fd.getTime())) {
             const t = p.f ? new Date(p.f).getTime() : NaN;
             if (!Number.isFinite(t) || t < fd.getTime()) return false;
@@ -177,6 +183,18 @@ function _filtrarLista(list, f) {
     });
 }
 
+function _hayFiltrosActivos(f) {
+    return !!(
+        (f.fDesde && String(f.fDesde).trim()) ||
+        (f.fHasta && String(f.fHasta).trim()) ||
+        String(f.idTxt || '').trim() ||
+        (f.estadoSel && f.estadoSel !== 'todos') ||
+        String(f.tipoPat || '').trim() ||
+        f.soloAgrupados ||
+        String(f.nombreTxt || '').trim()
+    );
+}
+
 function _leerFiltrosDesdeDom(root) {
     return {
         fDesde: root.querySelector('#gn-hist-f-desde')?.value || '',
@@ -184,6 +202,7 @@ function _leerFiltrosDesdeDom(root) {
         idTxt: root.querySelector('#gn-hist-id')?.value || '',
         estadoSel: root.querySelector('#gn-hist-estado')?.value || 'todos',
         tipoPat: root.querySelector('#gn-hist-tipo')?.value || '',
+        nombreTxt: root.querySelector('#gn-hist-nombre')?.value || '',
         soloAgrupados: !!root.querySelector('#gn-hist-solo-ag')?.checked,
     };
 }
@@ -231,8 +250,9 @@ export function initAdminHistoricosPanel(deps) {
     const L = _labelsHistoricosRubro();
     root.innerHTML = `
       <p style="font-size:.78rem;color:var(--tl);margin:0 0 .75rem;line-height:1.45">
-        Reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> del tenant actual (misma fuente que el mapa y la lista principal). No se borran datos en el servidor.
+        Reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> del tenant actual (misma fuente que el mapa y la lista principal). Podés filtrar por <strong>nombre del vecino/socio</strong> con tolerancia a tildes y errores de escritura (Levenshtein). Si los filtros no devuelven filas, se listan todos los históricos del tenant. No se borran datos en el servidor.
       </p>
+      <div id="gn-hist-aviso" style="display:none;margin:0 0 .55rem;padding:.45rem .55rem;font-size:.76rem;line-height:1.45;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:.4rem"></div>
       <div class="gn-admin-hist-filtros" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
         <div><label for="gn-hist-f-desde" style="font-size:.72rem;color:var(--tm)">Fecha creación desde</label><br><input type="date" id="gn-hist-f-desde" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-f-hasta" style="font-size:.72rem;color:var(--tm)">Fecha creación hasta</label><br><input type="date" id="gn-hist-f-hasta" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
@@ -246,6 +266,7 @@ export function initAdminHistoricosPanel(deps) {
           </select>
         </div>
         <div style="flex:1;min-width:10rem"><label for="gn-hist-tipo" style="font-size:.72rem;color:var(--tm)">Tipo reclamo (<code>*</code> <code>?</code>)</label><br><input type="text" id="gn-hist-tipo" placeholder="${_esc(L.tipoPh)}" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div style="flex:1;min-width:11rem"><label for="gn-hist-nombre" style="font-size:.72rem;color:var(--tm)">Nombre / vecino (fuzzy)</label><br><input type="text" id="gn-hist-nombre" placeholder="Ej. Garcia" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
         <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a pedir pedidos al servidor si hay API"><i class="fas fa-sync"></i> Recargar lista</button>
@@ -272,6 +293,7 @@ export function initAdminHistoricosPanel(deps) {
       </div>`;
 
     const tbody = root.querySelector('#gn-hist-tbody');
+    const avisoEl = root.querySelector('#gn-hist-aviso');
 
     const onRowClick = (p) => {
         try {
@@ -285,15 +307,36 @@ export function initAdminHistoricosPanel(deps) {
     };
 
     const render = () => {
-        const tidNow = _tidTenant();
         const list = Array.isArray(window.app?.p) ? window.app.p : [];
         const historicos = list.filter(_esHistorico);
         const f = _leerFiltrosDesdeDom(root);
-        const rows = _filtrarLista(historicos, f).sort((a, b) => {
+        const rowsFiltrados = _filtrarLista(historicos, f).sort((a, b) => {
             const ta = a.f ? new Date(a.f).getTime() : 0;
             const tb = b.f ? new Date(b.f).getTime() : 0;
             return tb - ta;
         });
+        let rows = rowsFiltrados;
+        let modoFallback = false;
+        if (!rowsFiltrados.length && historicos.length && _hayFiltrosActivos(f)) {
+            rows = [...historicos].sort((a, b) => {
+                const ta = a.f ? new Date(a.f).getTime() : 0;
+                const tb = b.f ? new Date(b.f).getTime() : 0;
+                return tb - ta;
+            });
+            modoFallback = true;
+        }
+        if (avisoEl) {
+            if (modoFallback) {
+                avisoEl.style.display = 'block';
+                avisoEl.textContent =
+                    'Sin filas con los filtros actuales. Se muestran todos los reclamos históricos del tenant (' +
+                    String(rows.length) +
+                    '). Ajustá fechas, NIS, tipo, nombre u otro criterio.';
+            } else {
+                avisoEl.style.display = 'none';
+                avisoEl.textContent = '';
+            }
+        }
         _pintarTabla(tbody, rows, onRowClick);
     };
 
@@ -314,6 +357,7 @@ export function initAdminHistoricosPanel(deps) {
     });
     root.querySelector('#gn-hist-id')?.addEventListener('input', scheduleRenderFiltros);
     root.querySelector('#gn-hist-tipo')?.addEventListener('input', scheduleRenderFiltros);
+    root.querySelector('#gn-hist-nombre')?.addEventListener('input', scheduleRenderFiltros);
 
     root.querySelector('#gn-hist-buscar')?.addEventListener('click', () => render());
     root.querySelector('#gn-hist-refrescar')?.addEventListener('click', () => {

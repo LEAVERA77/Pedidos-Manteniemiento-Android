@@ -5,6 +5,7 @@
 
 import { esc } from './utils.js';
 import { toast } from './ui-utils.js';
+import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 
 let _installed = false;
 /** @type {{ html: string, q: string } | null} */
@@ -93,28 +94,39 @@ export function installBusquedaApellidoHistorial(deps) {
             '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando socios…</div>';
         try {
             const wSoc = await sociosWhereTenantSql(deps, 's');
-            const needle = raw.toLowerCase();
             const tsql = await deps.pedidosFiltroTenantSql();
             const matchPs = sqlPedidosCoincidenConSocio('p', 's');
-            const q = `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia,
+            const LIM_CAND = 3200;
+            const qBase = `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia
+                FROM socios_catalogo s
+                WHERE COALESCE(s.activo, TRUE) = TRUE
+                ${wSoc}
+                ORDER BY s.nombre NULLS LAST
+                LIMIT ${LIM_CAND}`;
+            const r = await deps.sqlSimple(qBase);
+            const candidatos = (r.rows || []).filter((row) => nombreCoincideFuzzy(raw, row.nombre)).slice(0, 80);
+            if (!candidatos.length) {
+                out.innerHTML = `<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin socios en el catálogo que coincidan con «${escHtml(raw)}».</p>`;
+                return;
+            }
+            const ids = candidatos.map((x) => Number(x.id)).filter((id) => Number.isFinite(id) && id > 0);
+            const idList = ids.map((id) => esc(id)).join(',');
+            const qCnt = `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia,
                 (
                   SELECT COUNT(DISTINCT p.id)::int FROM pedidos p
                   WHERE 1=1 ${tsql} AND ${matchPs}
                 ) AS reclamos_count
                 FROM socios_catalogo s
-                WHERE COALESCE(s.activo, TRUE) = TRUE
-                AND POSITION(LOWER(${esc(needle)}) IN LOWER(COALESCE(s.nombre,''))) > 0
-                ${wSoc}
-                ORDER BY s.nombre NULLS LAST
-                LIMIT 80`;
-            const r = await deps.sqlSimple(q);
-            const rows = r.rows || [];
-            if (!rows.length) {
-                out.innerHTML = `<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin socios en el catálogo que coincidan con «${escHtml(raw)}».</p>`;
-                return;
-            }
+                WHERE s.id IN (${idList})`;
+            const r2 = await deps.sqlSimple(qCnt);
+            const byId = new Map((r2.rows || []).map((row) => [Number(row.id), row]));
+            const rows = candidatos.map((c) => byId.get(Number(c.id)) || c);
+            const truncado = (r.rows || []).length >= LIM_CAND;
             const lblNis = escHtml(deps.etiquetaNisSocio());
-            const head = `<div style="font-size:.78rem;color:var(--tm);margin-bottom:.45rem"><strong>📋 ${rows.length}</strong> resultado(s) para «${escHtml(raw)}»</div>`;
+            const avisoLim = truncado
+                ? `<p style="font-size:.72rem;color:#b45309;margin:0 0 .4rem;line-height:1.35">Se evaluaron los primeros <strong>${LIM_CAND}</strong> socios del catálogo (orden alfabético). Si falta alguien, refiná la búsqueda o revisá el catálogo.</p>`
+                : '';
+            const head = `<div style="font-size:.78rem;color:var(--tm);margin-bottom:.45rem">${avisoLim}<strong>📋 ${rows.length}</strong> resultado(s) para «${escHtml(raw)}»</div>`;
             const cards = rows
                 .map((row) => {
                     const id = Number(row.id);
