@@ -11,6 +11,27 @@ import { fetchTenantOperativoDesdeApi } from './tenantPrincipalApi.js';
 let _iv = null;
 /** @type {Record<string, unknown> | null} */
 let _deps = null;
+/** @type {number} */
+let _lastLogNoTokenMs = 0;
+/** @type {number} */
+let _lastLogFetchNullMs = 0;
+
+/**
+ * Log en logcat Android (tag GestorNovaTenant) vía bridge; en desktop no hace nada.
+ * @param {string} msg
+ */
+function _log(msg) {
+    const s = String(msg || '').slice(0, 3800);
+    try {
+        if (
+            typeof window !== 'undefined' &&
+            window.AndroidConfig &&
+            typeof window.AndroidConfig.gnTenantPollLog === 'function'
+        ) {
+            window.AndroidConfig.gnTenantPollLog(s);
+        }
+    } catch (_) {}
+}
 
 /**
  * @param {object} d
@@ -27,8 +48,22 @@ function _androidShell(d) {
 async function tick() {
     const d = _deps;
     if (!d || !_androidShell(d)) return;
+    /**
+     * modoOffline suele significar «Neon JDBC no disponible» en WebView/emulador;
+     * GET /api/auth/tenant-operativo sigue siendo válido con JWT.
+     */
     try {
-        if (typeof d.getModoOffline === 'function' && d.getModoOffline()) return;
+        if (typeof d.getModoOffline === 'function' && d.getModoOffline()) {
+            const tok = typeof d.getApiToken === 'function' ? d.getApiToken() : '';
+            if (!tok) {
+                const now = Date.now();
+                if (now - _lastLogNoTokenMs > 60000) {
+                    _lastLogNoTokenMs = now;
+                    _log('[gn-tenant-poll] skip: modoOffline y sin JWT');
+                }
+                return;
+            }
+        }
     } catch (_) {
         return;
     }
@@ -53,7 +88,14 @@ async function tick() {
         apiUrl: d.apiUrl,
         fetchFn: typeof fetch !== 'undefined' ? fetch : null,
     });
-    if (!row) return;
+    if (!row) {
+        const now = Date.now();
+        if (now - _lastLogFetchNullMs > 45000) {
+            _lastLogFetchNullMs = now;
+            _log('[gn-tenant-poll] tenant-operativo sin respuesta (401/red?)');
+        }
+        return;
+    }
     const remote = Number(row.tenant_id);
     if (!Number.isFinite(remote) || remote < 1) return;
     let local = NaN;
@@ -66,6 +108,7 @@ async function tick() {
     const mismatch = !localGood || local !== remote;
     const stale = !!row.jwt_claim_stale;
     if (!mismatch && !stale) return;
+    _log(`[gn-tenant-poll] sync local=${localGood ? local : '?'} remote=${remote} staleJwt=${stale}`);
     if (typeof d.sincronizarTenant === 'function') {
         await d.sincronizarTenant({ silent: true });
     }
@@ -93,6 +136,7 @@ export function initGnTenantRemotoPollAndroid(deps) {
     if (typeof window !== 'undefined') {
         window.gnTickTenantRemotoPollAndroidOnce = gnTickTenantRemotoPollAndroidOnce;
     }
+    _log(`[gn-tenant-poll] iniciado intervalMs=${ms}`);
     void tick();
     _iv = setInterval(() => void tick(), ms);
 }

@@ -1008,6 +1008,18 @@ public class MainActivity extends AppCompatActivity {
      * <strong>no</strong> existe {@code ./config.json} público con secretos Neon; los técnicos llevan la config en el APK.
      */
     private class AndroidConfigBridge {
+        /**
+         * Diagnóstico tenant WebView: {@code adb logcat -s GestorNovaTenant} (también filtrable con findstr).
+         */
+        @JavascriptInterface
+        public void gnTenantPollLog(String line) {
+            String s = line != null ? line : "";
+            if (s.length() > 3800) {
+                s = s.substring(0, 3800) + "…";
+            }
+            Log.i("GestorNovaTenant", s);
+        }
+
         @JavascriptInterface
         public String getConfigJson() {
             try (InputStream in = getAssets().open("config.json")) {

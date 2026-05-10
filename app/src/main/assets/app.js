@@ -749,7 +749,9 @@ async function heartbeat() {
         const now = Date.now();
         if (!modoOffline && document.visibilityState === 'visible') {
             const neonListo = NEON_OK && !!_sql;
-            const shellAndroid = typeof window.AndroidConfig !== 'undefined';
+            const shellAndroid =
+                typeof window.AndroidConfig !== 'undefined' ||
+                typeof window.AndroidSession !== 'undefined';
             if (
                 now - _lastTenantRevalidaNeonMs >= TENANT_NEON_REVALIDA_MS &&
                 (neonListo || shellAndroid)
@@ -811,7 +813,9 @@ function iniciarKeepAlive() {
     console.log('Keep-alive iniciado, sesión máxima 1h');
     try {
         initGnTenantRemotoPollAndroid({
-            esShellAndroid: () => typeof window.AndroidConfig !== 'undefined',
+            esShellAndroid: () =>
+                typeof window.AndroidConfig !== 'undefined' ||
+                typeof window.AndroidSession !== 'undefined',
             getModoOffline: () => modoOffline,
             tieneSesionUsuario: () => !!app?.u,
             getApiToken,
