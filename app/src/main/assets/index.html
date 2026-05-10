@@ -1011,9 +1011,14 @@
         <div style="margin-bottom:.75rem"><label>Usuario (login)</label><input id="pw-email-nuevo" type="text" maxlength="254" autocomplete="username"></div>
         <div style="margin-bottom:.75rem"><label>Nombre visible</label><input id="pw-nombre-nuevo" type="text" maxlength="120" autocomplete="name"></div>
         <p style="font-size:.72rem;color:var(--tl);margin:-.25rem 0 .75rem;line-height:1.35">Requiere <strong>contraseña actual</strong> y sesión con el servidor (token API). Si cambiás <strong>usuario</strong> o <strong>contraseña</strong>, al guardar se cierra la sesión: volvé a ingresar con los datos nuevos.</p>
-        <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password" autocomplete="current-password"></div>
-        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás usuario o nombre"></div>
-        <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password" autocomplete="new-password"></div>
+        <p style="font-size:.7rem;color:var(--tm);margin:-.35rem 0 .6rem;line-height:1.4;border-left:3px solid #f59e0b;padding-left:.5rem;background:#fffbeb;border-radius:.25rem;padding:.4rem .5rem .4rem .55rem">En <strong>Contraseña actual</strong> va el texto con el que iniciás sesión (ej. <code style="font-size:.68rem">admin</code> si no la cambiaron). <strong>No</strong> pegues el hash de la base (<code style="font-size:.65rem;word-break:break-all">$2a$10$…</code>): eso no es la clave.</p>
+        <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" data-form-type="password"></div>
+        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-form-type="new-password" placeholder="Opcional si solo cambiás usuario o nombre"></div>
+        <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" data-form-type="new-password"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin-bottom:.75rem">
+          <button type="button" class="btn-sm sec" onclick="window.rellenarContrasenaFacilAdminPanel?.()" title="Rellena nueva y confirmar con la misma sugerencia fácil de recordar"><i class="fas fa-magic"></i> Sugerir contraseña fácil</button>
+          <span style="font-size:.68rem;color:var(--tl)">Palabra + año; podés editarla antes de guardar.</span>
+        </div>
         <button class="bp" style="max-width:200px" onclick="cambiarContrasena()"><i class="fas fa-save"></i> Guardar</button>
         <div id="pw-msg" style="margin-top:.5rem;font-size:.85rem"></div>
       </div>

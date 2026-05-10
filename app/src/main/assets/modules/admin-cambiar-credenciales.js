@@ -3,6 +3,8 @@
  * Cambios de usuario/contraseña vía PUT /api/auth/cambiar-credenciales (Neon + JWT nuevo).
  */
 
+import { generarPasswordFacilDictado } from './password-facil-sugerido.js';
+
 /** @type {Record<string, unknown> | null} */
 let _ctx = null;
 
@@ -14,6 +16,22 @@ export function initAdminCambiarCredenciales(c) {
     _ctx = c;
     window.cambiarContrasena = cambiarContrasena;
     window.sincronizarFormularioAdminContrasenaDesdeSesion = sincronizarFormularioAdminContrasenaDesdeSesion;
+    window.rellenarContrasenaFacilAdminPanel = rellenarContrasenaFacilAdminPanel;
+}
+
+/** Rellena «Nueva» y «Confirmar» con la misma sugerencia (la actual la escribe el usuario a mano). */
+export function rellenarContrasenaFacilAdminPanel() {
+    const p = generarPasswordFacilDictado();
+    const n = document.getElementById('pw-nueva');
+    const c = document.getElementById('pw-confirmar');
+    if (n) n.value = p;
+    if (c) c.value = p;
+    const msg = document.getElementById('pw-msg');
+    if (msg) {
+        msg.style.color = 'var(--tm)';
+        msg.textContent =
+            'Sugerencia en «Nueva» y «Confirmar». En «Contraseña actual» escribí la clave con la que entrás al sistema (no pegues códigos $2a$… de la base).';
+    }
 }
 
 export function sincronizarFormularioAdminContrasenaDesdeSesion() {
@@ -62,6 +80,12 @@ export async function cambiarContrasena() {
 
     if (!actual) {
         setErr('Ingresá la contraseña actual');
+        return;
+    }
+    if (/^\$2[aby]\$/i.test(actual)) {
+        setErr(
+            'En «Contraseña actual» va la clave con la que iniciás sesión (texto plano), no el hash de la base ($2a$…). Si la dejaron por defecto, probá admin.'
+        );
         return;
     }
     if (cambiaPw) {
