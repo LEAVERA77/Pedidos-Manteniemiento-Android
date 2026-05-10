@@ -1,3 +1,4 @@
+import com.android.build.api.dsl.ApplicationExtension
 import java.util.Properties
 
 plugins {
@@ -68,10 +69,16 @@ android {
                             "storeFilePath debe ser el archivo (p. ej. C:/Keystore/keystore)."
                     )
                 }
+                val alias = keystoreProperties.getProperty("keyAlias")?.trim().orEmpty()
+                val spw = keystoreProperties.getProperty("storePassword")?.trim().orEmpty()
+                val kpw = keystoreProperties.getProperty("keyPassword")?.trim().orEmpty()
+                if (alias.isEmpty() || spw.isEmpty() || kpw.isEmpty()) {
+                    error("keystore.properties: keyAlias, storePassword y keyPassword no pueden estar vacíos")
+                }
                 storeFile = storeFileResolved
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storePassword = spw
+                keyAlias = alias
+                keyPassword = kpw
             }
         }
     }
@@ -113,6 +120,36 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/LICENSE*"
             excludes += "META-INF/NOTICE*"
+        }
+    }
+}
+
+afterEvaluate {
+    val app = extensions.findByType(ApplicationExtension::class.java) ?: return@afterEvaluate
+    val rel = app.buildTypes.getByName("release")
+    val sc = rel.signingConfig
+    if (releaseKeystoreConfigured && sc != null) {
+        logger.lifecycle("GestorNova: release firmado con keystore=${sc.storeFile?.absolutePath}")
+    } else if (releaseKeystoreConfigured) {
+        logger.warn("GestorNova: keystore.properties cargado pero release.signingConfig es null — revisá app/build.gradle.kts")
+    } else {
+        logger.warn(
+            "GestorNova: sin ${keystorePropertiesFile.absolutePath} — assembleRelease fallará " +
+                "salvo -PallowUnsignedRelease (no uses en producción)."
+        )
+    }
+
+    tasks.named("assembleRelease").configure {
+        doFirst {
+            if (project.hasProperty("allowUnsignedRelease")) return@doFirst
+            val appExt = project.extensions.findByType(ApplicationExtension::class.java) ?: return@doFirst
+            if (appExt.buildTypes.getByName("release").signingConfig == null) {
+                throw GradleException(
+                    "GestorNova: assembleRelease sin firma. Creá keystore.properties en:\n  ${keystorePropertiesFile.absolutePath}\n" +
+                        "con storeFilePath, storePassword, keyPassword, keyAlias (ver keystore.properties.example).\n" +
+                        "Solo depuración: gradlew :app:assembleRelease -PallowUnsignedRelease"
+                )
+            }
         }
     }
 }
