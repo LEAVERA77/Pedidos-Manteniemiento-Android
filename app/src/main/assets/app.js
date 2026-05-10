@@ -176,6 +176,7 @@ import {
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
+import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
     aplicarMascaraEmpresaAdminTrasCambioTenant,
@@ -16553,39 +16554,18 @@ function abrirFormUsuario() {
 }
 
 async function crearUsuario() {
-    const email  = document.getElementById('nu-email').value.trim();
-    const nombre = document.getElementById('nu-nombre').value.trim();
-    const pw     = document.getElementById('nu-pw').value.trim();
-    const rol    = document.getElementById('nu-rol').value;
-    const telefono = normalizarTelefonoWhatsapp(document.getElementById('nu-telefono')?.value || '');
-    if (!email || !nombre || !pw) { toast('Completá todos los campos', 'error'); return; }
-    if (telefono && !esTelefonoWhatsappValido(telefono)) { toast('Teléfono inválido. Usá formato +543434540250', 'error'); return; }
-    try {
-        const wfU = await sqlFiltroUsuariosPorTenant();
-        const colT = wfU.includes('tenant_id')
-            ? 'tenant_id'
-            : wfU.includes('cliente_id')
-              ? 'cliente_id'
-              : null;
-        if (colT) {
-            await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, ${colT})
-                VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE, ${esc(tenantIdActual())})`);
-        } else {
-            await sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password)
-                VALUES(${esc(email)}, ${esc(nombre)}, ${esc(pw)}, ${esc(rol)}, ${esc(telefono || null)}, TRUE, FALSE)`);
-        }
-        toast('Usuario creado: ' + nombre, 'success');
-        document.getElementById('form-usuario').style.display = 'none';
-        ['nu-email','nu-nombre','nu-pw','nu-telefono'].forEach(id => document.getElementById(id).value = '');
-        cargarListaUsuarios();
-        try {
-            await refrescarUsuariosCacheDesdeNeon();
-        } catch (_) {}
-    } catch(e) {
-        const low = String(e && e.message ? e.message : e).toLowerCase();
-        if (low.includes('unique')) toast('Ese email ya está registrado.', 'error');
-        else toastError('crear-usuario', e);
-    }
+    return ejecutarCrearUsuarioAdminPanel({
+        toast,
+        toastError,
+        sqlSimple,
+        esc,
+        sqlFiltroUsuariosPorTenant,
+        tenantIdActual,
+        getApiToken,
+        apiUrl: getApiBaseUrl,
+        cargarListaUsuarios,
+        refrescarUsuariosCacheDesdeNeon,
+    });
 }
 
 function escJs(v) {

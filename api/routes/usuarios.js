@@ -2,7 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
-import { usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -35,26 +35,91 @@ router.get("/tecnicos", async (_req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { email, nombre, rol = "tecnico", password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: "email y password son requeridos" });
+    const emailTrim = String(req.body?.email || "").trim();
+    const { nombre, rol = "tecnico", password, telefono } = req.body || {};
+    if (!emailTrim || !password) return res.status(400).json({ error: "email y password son requeridos" });
     const hash = await bcrypt.hash(String(password), 10);
     const col = await usuariosTenantColumnName();
+    const hasBt = await tableHasColumn("usuarios", "business_type");
+    const rolL = String(rol || "").toLowerCase();
+    let btVal = null;
+    if (hasBt && rolL !== "admin" && rolL !== "administrador") {
+      if (!col) {
+        return res.status(400).json({
+          error: "No se puede fijar línea de negocio: falta tenant_id/cliente_id en usuarios",
+        });
+      }
+      const rC = await query(`SELECT active_business_type, tipo FROM clientes WHERE id = $1 LIMIT 1`, [req.tenantId]);
+      const row = rC.rows?.[0];
+      let bt = String(row?.active_business_type || "").trim().toLowerCase();
+      if (bt !== "electricidad" && bt !== "agua" && bt !== "municipio") {
+        const t = String(row?.tipo || "").toLowerCase();
+        bt =
+          t.includes("agua") || t.includes("cooperativa_agua")
+            ? "agua"
+            : t.includes("municipio")
+              ? "municipio"
+              : "electricidad";
+      }
+      btVal = bt;
+    }
+    const tel = telefono != null && String(telefono).trim() !== "" ? String(telefono).trim() : null;
+    const hasTw = await tableHasColumn("usuarios", "telefono_whatsapp");
+
     if (!col) {
+      if (hasBt && btVal != null) {
+        const r = await query(
+          `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, business_type)
+           VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id, email, nombre, rol, activo`,
+          [emailTrim, nombre || null, rol, hash, btVal]
+        );
+        return res.status(201).json(r.rows[0]);
+      }
       const r = await query(
         `INSERT INTO usuarios (email, nombre, rol, password_hash, activo)
          VALUES ($1,$2,$3,$4,TRUE) RETURNING id, email, nombre, rol, activo`,
-        [String(email).trim(), nombre || null, rol, hash]
+        [emailTrim, nombre || null, rol, hash]
+      );
+      return res.status(201).json(r.rows[0]);
+    }
+
+    if (hasBt && btVal != null) {
+      if (hasTw && tel) {
+        const r = await query(
+          `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type, telefono, telefono_whatsapp, whatsapp_notificaciones)
+           VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,$7,TRUE) RETURNING id, email, nombre, rol, activo`,
+          [emailTrim, nombre || null, rol, hash, req.tenantId, btVal, tel]
+        );
+        return res.status(201).json(r.rows[0]);
+      }
+      const r = await query(
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type)
+         VALUES ($1,$2,$3,$4,TRUE,$5,$6) RETURNING id, email, nombre, rol, activo`,
+        [emailTrim, nombre || null, rol, hash, req.tenantId, btVal]
+      );
+      return res.status(201).json(r.rows[0]);
+    }
+
+    if (hasTw && tel) {
+      const r = await query(
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, telefono, telefono_whatsapp, whatsapp_notificaciones)
+         VALUES ($1,$2,$3,$4,TRUE,$5,$6,$6,TRUE) RETURNING id, email, nombre, rol, activo`,
+        [emailTrim, nombre || null, rol, hash, req.tenantId, tel]
       );
       return res.status(201).json(r.rows[0]);
     }
     const r = await query(
       `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col})
        VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id, email, nombre, rol, activo`,
-      [String(email).trim(), nombre || null, rol, hash, req.tenantId]
+      [emailTrim, nombre || null, rol, hash, req.tenantId]
     );
     res.status(201).json(r.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: "No se pudo crear usuario", detail: error.message });
+    const msg = String(error?.message || error || "");
+    if (/unique|duplicate key/i.test(msg)) {
+      return res.status(409).json({ error: "Email ya registrado", detail: msg });
+    }
+    res.status(500).json({ error: "No se pudo crear usuario", detail: msg });
   }
 });
 
