@@ -8,33 +8,42 @@ export function defaultAdminEmailForTenant(tenantId) {
 }
 
 /**
- * Admin del tenant para attach técnico: primero rol admin; si no hay, crea cuenta de respaldo (clave `admin`).
- * No tocar app.js: la UI puede seguir usando el login habitual tras cambiar email/clave desde el programa.
+ * Solo la cuenta de respaldo `admin+tenant{N}@gestornova.default` para attach-tenant **sin Bearer**.
+ * Nunca reutiliza otros administradores del tenant: moverlos los sacaría del tenant origen.
+ * Si la cuenta de respaldo existe en otro tenant (email único global), la reubica al tenant origen.
  */
-export async function getOrCreateAdminUidForTechnicianAttach(uCol, tenantId) {
-  const tid = Number(tenantId);
+export async function getOrCreateAdminUidForTechnicianAttach(uCol, sourceTenantId) {
+  const tid = Number(sourceTenantId);
   if (!Number.isFinite(tid) || tid < 1) return null;
-  const rAdm = await query(
-    `SELECT id, rol FROM usuarios
-     WHERE ${uCol} = $1
-       AND lower(trim(coalesce(rol,''))) IN ('admin','administrador')
-       AND COALESCE(activo, TRUE)
-     ORDER BY id ASC
-     LIMIT 1`,
-    [tid]
-  );
-  if (rAdm.rows.length) {
-    return { uid: Number(rAdm.rows[0].id), rol: String(rAdm.rows[0].rol || "admin"), created: false };
-  }
   const email = defaultAdminEmailForTenant(tid);
-  const dup = await query(
-    `SELECT id, rol FROM usuarios WHERE ${uCol} = $1 AND lower(trim(email)) = lower($2) LIMIT 1`,
+
+  const rLocal = await query(
+    `SELECT id, rol FROM usuarios
+     WHERE ${uCol} = $1 AND lower(trim(coalesce(email,''))) = lower(trim($2::text))
+     LIMIT 1`,
     [tid, email]
   );
-  if (dup.rows.length) {
-    await query(`UPDATE usuarios SET rol = 'admin', activo = TRUE WHERE id = $1`, [dup.rows[0].id]);
-    return { uid: Number(dup.rows[0].id), rol: "admin", created: false };
+  if (rLocal.rows.length) {
+    await query(`UPDATE usuarios SET rol = 'admin', activo = TRUE WHERE id = $1`, [rLocal.rows[0].id]);
+    return { uid: Number(rLocal.rows[0].id), rol: "admin", created: false };
   }
+
+  const rGlobal = await query(
+    `SELECT id, rol, ${uCol}::int AS cur_tid FROM usuarios
+     WHERE lower(trim(coalesce(email,''))) = lower(trim($1::text))
+     LIMIT 1`,
+    [email]
+  );
+  if (rGlobal.rows.length) {
+    const uid = Number(rGlobal.rows[0].id);
+    const curTid = Number(rGlobal.rows[0].cur_tid);
+    if (Number.isFinite(curTid) && curTid !== tid) {
+      await query(`UPDATE usuarios SET ${uCol} = $1 WHERE id = $2`, [tid, uid]);
+    }
+    await query(`UPDATE usuarios SET rol = 'admin', activo = TRUE WHERE id = $1`, [uid]);
+    return { uid, rol: "admin", created: false };
+  }
+
   const hash = await bcrypt.hash("admin", 10);
   const hasBt = await tableHasColumn("usuarios", "business_type");
   const ins = hasBt

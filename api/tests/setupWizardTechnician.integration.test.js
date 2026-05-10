@@ -84,8 +84,19 @@ describe("Setup wizard — técnico tenant", () => {
       if (q.includes("INSERT INTO configuracion") && q.includes("ON CONFLICT")) {
         return { rows: [], rowCount: 1 };
       }
-      if (q.includes("SELECT id, rol FROM usuarios") && q.includes("ORDER BY id ASC") && q.includes("LIMIT 1")) {
-        return { rows: [{ id: 1, rol: "admin" }] };
+      if (q.includes("AS cur_tid") && q.includes("FROM usuarios") && q.includes("lower(trim")) {
+        return { rows: [] };
+      }
+      if (
+        q.includes("SELECT id, rol FROM usuarios") &&
+        (q.includes("tenant_id = $1") || q.includes("cliente_id = $1")) &&
+        q.includes("lower(trim") &&
+        params.length === 2
+      ) {
+        return { rows: [] };
+      }
+      if (q.includes("INSERT INTO usuarios") && q.includes("RETURNING id, rol")) {
+        return { rows: [{ id: 500, rol: "admin" }] };
       }
       return { rows: [] };
     });
