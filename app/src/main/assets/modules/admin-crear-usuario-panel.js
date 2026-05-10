@@ -81,18 +81,46 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                 telefono: telefono || undefined,
             };
             if (Number.isFinite(tidPanel) && tidPanel > 0) body.tenant_id = tidPanel;
-            const r = await fetch(`${apiBase}/api/usuarios`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${tok}`,
-                },
-                body: JSON.stringify(body),
-            });
-            const j = await r.json().catch(() => ({}));
+            d.toast('Creando usuario…', 'info', 2800);
+            const ac = new AbortController();
+            const tmo = setTimeout(() => {
+                try {
+                    ac.abort();
+                } catch (_) {}
+            }, 45000);
+            let r;
+            try {
+                r = await fetch(`${apiBase}/api/usuarios`, {
+                    method: 'POST',
+                    signal: ac.signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${tok}`,
+                    },
+                    body: JSON.stringify(body),
+                });
+            } finally {
+                clearTimeout(tmo);
+            }
+            const rawText = await r.text().catch(() => '');
+            let j = {};
+            try {
+                j = rawText ? JSON.parse(rawText) : {};
+            } catch (_) {
+                j = { error: rawText ? rawText.slice(0, 280) : `HTTP ${r.status}` };
+            }
             if (!r.ok) {
-                const msg = String(j.detail || j.error || r.status);
-                const low = msg.toLowerCase();
+                const piece = (v) => {
+                    if (v == null) return '';
+                    if (typeof v === 'string') return v;
+                    try {
+                        return JSON.stringify(v).slice(0, 400);
+                    } catch (_) {
+                        return String(v);
+                    }
+                };
+                const msg = piece(j.detail) || piece(j.error) || piece(j.message) || rawText.slice(0, 280) || `Error ${r.status}`;
+                const low = String(msg).toLowerCase();
                 if (r.status === 409 || low.includes('unique') || low.includes('duplicate')) {
                     d.toast('Ese nombre de usuario ya está registrado.', 'error');
                     return;
@@ -101,7 +129,11 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                     d.toast('Sesión API: revisá permisos o volvé a iniciar sesión.', 'error');
                     return;
                 }
-                d.toastError('crear-usuario-api', new Error(msg));
+                if (r.status === 400) {
+                    d.toast(String(msg).trim() || 'Datos inválidos para crear el usuario.', 'error');
+                    return;
+                }
+                d.toastError('crear-usuario-api', new Error(String(msg).trim() || `HTTP ${r.status}`));
                 return;
             }
             d.toast('Usuario creado: ' + nombre, 'success');
@@ -115,12 +147,18 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
                 await d.refrescarUsuariosCacheDesdeNeon();
             } catch (_) {}
         } catch (e) {
-            d.toastError('crear-usuario-api', e);
+            const m = String(e && e.name === 'AbortError' ? 'timeout' : e && e.message ? e.message : e).toLowerCase();
+            if (m.includes('abort') || m.includes('timeout')) {
+                d.toast('La creación tardó demasiado o se canceló. Comprobá la API y volvé a intentar.', 'error');
+            } else {
+                d.toastError('crear-usuario-api', e);
+            }
         }
         return;
     }
 
     try {
+        d.toast('Guardando usuario…', 'info', 2800);
         const wfU = await d.sqlFiltroUsuariosPorTenant();
         const colT = wfU.includes('tenant_id') ? 'tenant_id' : wfU.includes('cliente_id') ? 'cliente_id' : null;
         const hasBt = await neonUsuariosTieneColumna(d.sqlSimple, d.esc, 'business_type');
