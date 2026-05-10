@@ -16502,6 +16502,7 @@ async function cargarListaUsuarios() {
         sqlSimple,
         neonOk: !!(NEON_OK && _sql),
         modoOffline,
+        sqlFiltroUsuariosPorTenant,
     });
 }
 

@@ -1,5 +1,5 @@
 /**
- * Panel Admin → Usuarios: lista global (todos los tenants) vía Neon.
+ * Panel Admin → Usuarios: lista vía Neon acotada al tenant actual (`sqlFiltroUsuariosPorTenant`).
  * made by leavera77
  */
 import { resolveUsuariosTenantColumnName } from './tenantNeonUsuario.js';
@@ -10,7 +10,12 @@ function escJs(v) {
 }
 
 /**
- * @param {{ sqlSimple: (q: string) => Promise<{ rows?: unknown[] }>; neonOk: boolean; modoOffline: boolean }} d
+ * @param {{
+ *   sqlSimple: (q: string) => Promise<{ rows?: unknown[] }>;
+ *   neonOk: boolean;
+ *   modoOffline: boolean;
+ *   sqlFiltroUsuariosPorTenant?: () => Promise<string>;
+ * }} d
  */
 export async function cargarListaUsuariosTodosTenantsNeon(d) {
     const sqlSimple = d.sqlSimple;
@@ -30,6 +35,12 @@ export async function cargarListaUsuariosTodosTenantsNeon(d) {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
+        const wf = typeof d.sqlFiltroUsuariosPorTenant === 'function' ? await d.sqlFiltroUsuariosPorTenant() : '';
+        const scoped = String(wf || '').trim().length > 0;
+        const wfAliasedU = String(wf || '')
+            .replace(/\btenant_id\b/g, 'u.tenant_id')
+            .replace(/\bcliente_id\b/g, 'u.cliente_id');
+
         const col = await resolveUsuariosTenantColumnName({
             sqlSimple,
             neonOk: d.neonOk,
@@ -46,6 +57,7 @@ export async function cargarListaUsuariosTodosTenantsNeon(d) {
                     COALESCE(c.nombre, '') AS _u_tenant_nom
                  FROM usuarios u
                  LEFT JOIN clientes c ON c.id = u.${col}
+                 WHERE 1=1${wfAliasedU}
                  ORDER BY u.id`
             );
         } else {
@@ -53,14 +65,16 @@ export async function cargarListaUsuariosTodosTenantsNeon(d) {
                 COALESCE(activo, true) AS activo,
                 telefono, telefono_whatsapp,
                 COALESCE(whatsapp_notificaciones, true) AS whatsapp_notificaciones
-                FROM usuarios ORDER BY id`);
+                FROM usuarios WHERE 1=1${wf}
+                ORDER BY id`);
         }
         const rows = r.rows || [];
         if (!rows.length) {
             cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem;padding:.5rem">Sin usuarios</p>';
             return;
         }
-        const thTenant = col ? '<th>Tenant</th>' : '';
+        const showTenantCol = col && !scoped;
+        const thTenant = showTenantCol ? '<th>Tenant</th>' : '';
         cont.innerHTML = `<table class="admin-table">
             <thead><tr><th>ID</th>${thTenant}<th>Usuario</th><th>Nombre</th><th>WhatsApp</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>${rows
@@ -68,7 +82,7 @@ export async function cargarListaUsuariosTodosTenantsNeon(d) {
                     const tid = u._u_tenant_id != null ? String(u._u_tenant_id) : '';
                     const tnom = String(u._u_tenant_nom || '').trim();
                     const tenantCell =
-                        col &&
+                        showTenantCol &&
                         `<td style="font-size:.76rem;color:var(--tm);max-width:9rem;word-break:break-word">${escHtmlPrint(
                             tnom || '—'
                         )}<div style="font-size:.68rem;color:var(--tl)">${tid ? `id ${escHtmlPrint(tid)}` : ''}</div></td>`;
