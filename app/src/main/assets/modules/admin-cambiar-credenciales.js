@@ -5,12 +5,6 @@
 
 import { generarPasswordFacilDictado } from './password-facil-sugerido.js';
 
-/** Evita falsos positivos (ej. admin2026): solo si parece un hash bcrypt pegado entero. */
-function pareceHashBcryptPegado(s) {
-    const t = String(s || '').trim();
-    return t.length >= 53 && /^\$2[aby]\$\d{2}\$/.test(t);
-}
-
 /** @type {Record<string, unknown> | null} */
 let _ctx = null;
 
@@ -88,12 +82,6 @@ export async function cambiarContrasena() {
         setErr('Ingresá la contraseña actual');
         return;
     }
-    if (pareceHashBcryptPegado(actual)) {
-        setErr(
-            'Parece que pegaste el hash de la base ($2a$10$…). Ahí va la contraseña con la que entrás al panel (la misma del login: puede ser una temporal tipo palabra+año, admin si no la cambiaron, etc.).'
-        );
-        return;
-    }
     if (cambiaPw) {
         if (!nueva || !confirmar) {
             setErr('Completá nueva contraseña y confirmación, o dejá ambas vacías si solo cambiás usuario o nombre');
@@ -103,8 +91,8 @@ export async function cambiarContrasena() {
             setErr('Las contraseñas nuevas no coinciden');
             return;
         }
-        if (nueva.length < 4) {
-            setErr('La contraseña debe tener al menos 4 caracteres');
+        if (nueva.length < 3) {
+            setErr('La contraseña debe tener al menos 3 caracteres');
             return;
         }
     }
