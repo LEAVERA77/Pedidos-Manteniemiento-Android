@@ -498,10 +498,10 @@ async function solicitarPermisos() {
         resultados.gps = true;
     } catch(_) { resultados.gps = false; }
     
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && typeof window.AndroidConfig !== 'undefined') {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-            stream.getTracks().forEach(t => t.stop()); 
+            stream.getTracks().forEach(t => t.stop());
             resultados.camara = true;
         } catch(_) { resultados.camara = false; }
     }
@@ -13563,10 +13563,12 @@ async function cargarDistribuidores() {
             'ORDER BY d.codigo'
         );
         DIST = (r.rows || []).map(d => ({ v: d.codigo, l: d.codigo + ' - ' + d.nombre, g: d.tension || '' }));
-        // Repoblar el select de distribuidores
         const sd = document.getElementById('di2');
         if (sd) {
-            sd.innerHTML = '<option value="">— Elegir distribuidor —</option>';
+            const lbl = etiquetaZonaPedido();
+            sd.innerHTML = `<option value="">— Elegir ${lbl.toLowerCase()} —</option>`;
+            const lblEl = document.getElementById('lbl-di2-zona');
+            if (lblEl) lblEl.textContent = lbl;
             const grupos = {};
             DIST.forEach(d => {
                 const g = d.g || 'Sin clasificar';
