@@ -3,8 +3,6 @@
  * Cambios de usuario/contraseña vía PUT /api/auth/cambiar-credenciales (Neon + JWT nuevo).
  */
 
-import { generarPasswordFacilDictado } from './password-facil-sugerido.js';
-
 /** @type {Record<string, unknown> | null} */
 let _ctx = null;
 
@@ -16,22 +14,6 @@ export function initAdminCambiarCredenciales(c) {
     _ctx = c;
     window.cambiarContrasena = cambiarContrasena;
     window.sincronizarFormularioAdminContrasenaDesdeSesion = sincronizarFormularioAdminContrasenaDesdeSesion;
-    window.rellenarContrasenaFacilAdminPanel = rellenarContrasenaFacilAdminPanel;
-}
-
-/** Rellena «Nueva» y «Confirmar» con la misma sugerencia (la actual la escribe el usuario a mano). */
-export function rellenarContrasenaFacilAdminPanel() {
-    const p = generarPasswordFacilDictado();
-    const n = document.getElementById('pw-nueva');
-    const c = document.getElementById('pw-confirmar');
-    if (n) n.value = p;
-    if (c) c.value = p;
-    const msg = document.getElementById('pw-msg');
-    if (msg) {
-        msg.style.color = 'var(--tm)';
-        msg.textContent =
-            'Sugerencia en «Nueva» y «Confirmar». En «Contraseña actual» poné la misma clave que usás en el login (ej. temporal palabra+año o la que definiste); no pegues el hash largo de la base.';
-    }
 }
 
 export function sincronizarFormularioAdminContrasenaDesdeSesion() {
@@ -91,8 +73,8 @@ export async function cambiarContrasena() {
             setErr('Las contraseñas nuevas no coinciden');
             return;
         }
-        if (nueva.length < 3) {
-            setErr('La contraseña debe tener al menos 3 caracteres');
+        if (nueva.length < 4) {
+            setErr('La contraseña debe tener al menos 4 caracteres');
             return;
         }
     }

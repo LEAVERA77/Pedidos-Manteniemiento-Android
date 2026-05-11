@@ -123,8 +123,8 @@ router.patch("/me", authMiddleware, async (req, res) => {
         return res.status(400).json({ error: "Nombre de usuario no válido" });
       }
     }
-    if (passwordNueva && passwordNueva.length < 3) {
-      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 3 caracteres" });
+    if (passwordNueva && passwordNueva.length < 4) {
+      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
     }
 
     const r0 = await query("SELECT id, email, nombre, password_hash FROM usuarios WHERE id = $1 AND activo = TRUE LIMIT 1", [
@@ -231,8 +231,8 @@ router.put("/cambiar-credenciales", authMiddleware, adminOnly, async (req, res) 
       if (dup.rows.length) return res.status(409).json({ error: "Ya existe un usuario con ese nombre de login" });
     }
 
-    if (nuevaPassword && nuevaPassword.length < 3) {
-      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 3 caracteres" });
+    if (nuevaPassword && nuevaPassword.length < 4) {
+      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
     }
 
     const nextNombre = nombreNuevo != null && nombreNuevo !== "" ? nombreNuevo : row.nombre;
