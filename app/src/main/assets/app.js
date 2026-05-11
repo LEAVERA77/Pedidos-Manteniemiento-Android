@@ -154,6 +154,7 @@ import {
 } from './js/pedidos-toolbar-filtros-exclusivos.js';
 
 import './modules/login-biometric-android.js';
+import './modules/ia-sugerir-reclamo.js';
 
 import {
   asegurarDefsProyeccionesARG,
