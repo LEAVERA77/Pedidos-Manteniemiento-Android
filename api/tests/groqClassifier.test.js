@@ -41,9 +41,12 @@ describe("clasificarReclamoConGroq", () => {
             message: {
               content: JSON.stringify({
                 tipo: "Alumbrado Público",
-                direccion: "San Martín 500",
+                direccion: "San Martín",
+                numero_puerta: "500",
                 prioridad: "Alta",
                 resumen: "Poste de luz apagado",
+                nombre_vecino: "Carlos Franco",
+                localidad: "Municipio de María Grande",
               }),
             },
           },
@@ -57,9 +60,12 @@ describe("clasificarReclamoConGroq", () => {
     });
     expect(r.ok).toBe(true);
     expect(r.clasificacion.tipo).toBe("Alumbrado Público");
-    expect(r.clasificacion.direccion).toBe("San Martín 500");
+    expect(r.clasificacion.direccion).toBe("San Martín");
+    expect(r.clasificacion.numero_puerta).toBe("500");
     expect(r.clasificacion.prioridad).toBe("Alta");
     expect(r.clasificacion.resumen).toBeTruthy();
+    expect(r.clasificacion.nombre_vecino).toBe("Carlos Franco");
+    expect(r.clasificacion.localidad).toBe("María Grande");
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     const [url, opts] = globalThis.fetch.mock.calls[0];

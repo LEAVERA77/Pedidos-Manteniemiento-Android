@@ -22,6 +22,13 @@ function highlightField(el) {
   setTimeout(() => { el.style.background = ''; }, 1800);
 }
 
+function limpiarNombreLocalidad(raw) {
+  if (!raw) return '';
+  return raw
+    .replace(/^(municipio|cooperativa)\s+(de\s+agua\s+de|eléctrica\s+de|electrica\s+de|de)\s+/i, '')
+    .trim();
+}
+
 async function sugerirConIA() {
   const btn = document.getElementById('btn-ia-sugerir-reclamo');
   const textarea = document.getElementById('de');
@@ -90,25 +97,47 @@ async function sugerirConIA() {
 
     if (c.direccion) {
       const calleEl = document.getElementById('ped-cli-calle');
-      const numEl = document.getElementById('ped-cli-num');
       const calleVal = String(calleEl?.value || '').trim();
-      const numVal = String(numEl?.value || '').trim();
-      if (!calleVal && !numVal) {
-        const parts = String(c.direccion).match(/^(.+?)\s+(\d+)\s*$/);
-        if (parts) {
-          if (calleEl) { calleEl.value = parts[1].trim(); highlightField(calleEl); }
-          if (numEl) { numEl.value = parts[2].trim(); highlightField(numEl); }
-        } else if (calleEl) {
-          calleEl.value = String(c.direccion).trim();
-          highlightField(calleEl);
-        }
+      if (!calleVal && calleEl) {
+        calleEl.value = String(c.direccion).trim();
+        highlightField(calleEl);
       }
     }
 
-    if (c.resumen && textarea) {
-      const curr = String(textarea.value || '').trim();
-      if (curr.length < 60 && c.resumen.length > curr.length) {
-        // no reemplazar — solo informar si el resumen difiere significativamente
+    const numEl = document.getElementById('ped-cli-num');
+    if (c.numero_puerta && numEl) {
+      const numVal = String(numEl.value || '').trim();
+      if (!numVal) {
+        numEl.value = String(c.numero_puerta).trim();
+        highlightField(numEl);
+      }
+    }
+
+    const clEl = document.getElementById('cl');
+    if (c.nombre_vecino && clEl) {
+      const clVal = String(clEl.value || '').trim();
+      if (!clVal) {
+        clEl.value = String(c.nombre_vecino).trim();
+        highlightField(clEl);
+      }
+    }
+
+    const locEl = document.getElementById('ped-cli-loc');
+    if (c.localidad && locEl) {
+      const locVal = String(locEl.value || '').trim();
+      if (!locVal) {
+        locEl.value = limpiarNombreLocalidad(c.localidad);
+        highlightField(locEl);
+      }
+    }
+    if (locEl) {
+      const locCurr = String(locEl.value || '').trim();
+      if (locCurr) {
+        const cleaned = limpiarNombreLocalidad(locCurr);
+        if (cleaned !== locCurr) {
+          locEl.value = cleaned;
+          highlightField(locEl);
+        }
       }
     }
 

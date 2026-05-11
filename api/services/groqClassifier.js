@@ -14,13 +14,19 @@ function buildSystemPrompt(tiposValidos) {
     "Tu tarea es devolver un JSON con exactamente estas claves:",
     '  tipo: el tipo de reclamo más probable de la siguiente lista:',
     `    ${JSON.stringify(tiposValidos)}`,
-    '  direccion: la dirección mencionada (calle y número si aparece), o null si no se menciona.',
+    '  direccion: solo el nombre de la calle (sin número), o null si no se menciona.',
+    '  numero_puerta: el número de puerta/altura mencionado (ej: "769", "500"), o "" si no hay.',
     '  prioridad: "Alta", "Media" o "Baja" según la urgencia percibida del reclamo.',
     '  resumen: una frase corta (máximo 60 caracteres) que resuma el problema.',
+    '  nombre_vecino: nombre del reclamante si se menciona (ej: "Carlos Franco"), o "" si no hay.',
+    '  localidad: nombre propio de la ciudad/localidad mencionada, limpio de prefijos institucionales, o "" si no se menciona.',
     "",
     "Reglas:",
     '- Si no podés determinar el tipo con confianza, usá "Otros".',
     '- Si no hay dirección explícita, devolvé direccion: null.',
+    '- numero_puerta: extraer de "Urquiza 769" → "769", "San Martín al 500" → "500". Si no hay, "".',
+    '- nombre_vecino: extraer de "vecino Carlos Franco", "el señor Juan Pérez", "de parte de José". Si no hay, "".',
+    '- localidad: SIEMPRE quitar prefijos como "Municipio de", "Cooperativa de Agua de", "Cooperativa Eléctrica de". Ej: "Municipio de María Grande" → "María Grande".',
     '- Si no podés evaluar la urgencia, usá prioridad "Media".',
     "- Respondé SOLO con el JSON, sin texto adicional, sin markdown.",
   ].join("\n");
@@ -34,12 +40,22 @@ function parseGroqResponse(text) {
     return {
       tipo: String(obj.tipo || "Otros"),
       direccion: obj.direccion != null ? String(obj.direccion).trim() || null : null,
+      numero_puerta: String(obj.numero_puerta || "").trim(),
       prioridad: ["Alta", "Media", "Baja"].includes(obj.prioridad) ? obj.prioridad : "Media",
       resumen: String(obj.resumen || "").slice(0, 120) || null,
+      nombre_vecino: String(obj.nombre_vecino || "").trim(),
+      localidad: limpiarNombreLocalidad(String(obj.localidad || "").trim()),
     };
   } catch {
-    return { tipo: "Otros", direccion: null, prioridad: "Media", resumen: null };
+    return { tipo: "Otros", direccion: null, numero_puerta: "", prioridad: "Media", resumen: null, nombre_vecino: "", localidad: "" };
   }
+}
+
+function limpiarNombreLocalidad(raw) {
+  if (!raw) return "";
+  return raw
+    .replace(/^(municipio|cooperativa)\s+(de\s+agua\s+de|eléctrica\s+de|electrica\s+de|de)\s+/i, "")
+    .trim();
 }
 
 /**
