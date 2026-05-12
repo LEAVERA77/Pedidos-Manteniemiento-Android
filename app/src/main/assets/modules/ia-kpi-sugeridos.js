@@ -65,19 +65,18 @@ async function guardarKpiCard(kpi) {
   }
   const u = window.app?.u;
   const uid = u?.id != null && Number.isFinite(Number(u.id)) ? escSql(Number(u.id)) : 'NULL';
-  const metrica = String(kpi.metrica || '').slice(0, 80);
+  const rawMetrica = String(kpi.metrica || kpi.nombre || '').slice(0, 80);
+  const metrica = rawMetrica.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9._-]/g, '');
   const unidad = String(kpi.unidad || '').slice(0, 32);
   const valor = Number(kpi.valor) || 0;
   const desde = kpi.periodo_inicio || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const hasta = kpi.periodo_fin || new Date().toISOString().slice(0, 10);
-  const notas = String(kpi.interpretacion || '').slice(0, 300);
+  const notas = String(kpi.interpretacion || kpi.nombre || '').slice(0, 300);
 
   try {
     await sqlSimple(
       `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
-       VALUES (${escSql(t)}, ${escSql(metrica)}, ${escSql(desde)}::date, ${escSql(hasta)}::date, ${escSql(valor)}, '{}'::jsonb, ${escSql(unidad)}, ${escSql('ia_sugerido')}, ${escSql(notas)}, ${uid})
-       ON CONFLICT (tenant_id, metrica, periodo_inicio, periodo_fin)
-       DO UPDATE SET valor_numero = EXCLUDED.valor_numero, unidad = EXCLUDED.unidad, fuente = EXCLUDED.fuente, notas = EXCLUDED.notas, created_at = NOW(), created_by_usuario_id = EXCLUDED.created_by_usuario_id`
+       VALUES (${escSql(t)}, ${escSql(metrica)}, ${escSql(desde)}::date, ${escSql(hasta)}::date, ${escSql(valor)}, '{}'::jsonb, ${escSql(unidad)}, ${escSql('ia_sugerido')}, ${escSql(notas)}, ${uid})`
     );
     return true;
   } catch (e) {

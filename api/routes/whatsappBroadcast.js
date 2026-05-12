@@ -39,7 +39,7 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
   let whP = "tenant_id = $1 AND telefono_contacto IS NOT NULL AND TRIM(telefono_contacto::text) <> ''";
   if (hasBtP && businessType) {
     paramsP.push(businessType);
-    whP += ` AND business_type = $${paramsP.length}`;
+    whP += ` AND (business_type = $${paramsP.length} OR business_type IS NULL OR TRIM(business_type::text) = '')`;
   }
   const hasLocP = await tableHasColumn("pedidos", "cliente_localidad");
   const rP = await query(
@@ -62,7 +62,7 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
       let whS = `tenant_id = $1 AND COALESCE(activo, TRUE) AND telefono IS NOT NULL AND TRIM(telefono::text) <> ''`;
       if (hasBtS && businessType) {
         paramsS.push(businessType);
-        whS += ` AND business_type = $${paramsS.length}`;
+        whS += ` AND (business_type = $${paramsS.length} OR business_type IS NULL OR TRIM(business_type::text) = '')`;
       }
       rS = await query(
         hasLocS

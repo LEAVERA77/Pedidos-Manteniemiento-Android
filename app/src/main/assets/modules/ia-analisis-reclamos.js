@@ -71,7 +71,14 @@ function getOrCreateOutput(btnId) {
     c.id = 'ia-analisis-est-output';
     c.style.cssText = 'margin-top:.75rem;max-height:min(50vh,420px);overflow-y:auto';
     const sec = document.getElementById('admin-estadisticas');
-    if (sec) sec.appendChild(c);
+    if (sec) {
+      const firstBar = sec.querySelector('div[style*="display:flex"]');
+      if (firstBar && firstBar.nextSibling) {
+        sec.insertBefore(c, firstBar.nextSibling);
+      } else {
+        sec.insertBefore(c, sec.children[1] || null);
+      }
+    }
   }
   return c;
 }
