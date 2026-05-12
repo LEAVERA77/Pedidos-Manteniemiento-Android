@@ -519,19 +519,46 @@ function sociosCatalogoHtmlExtrasDatosExtra(s, keys, escCell) {
 }
 
 /**
- * Detecta separador CSV (`,` o `;`) según la primera línea (el que más aparece gana).
- * Si ambos empatan, prefiere `;` (estándar europeo / argentino).
+ * Quita comillas envolventes si toda la línea es un solo campo entrecomillado
+ * (frecuente al copiar/pegar desde Excel o ciertos exportadores).
  */
-function detectarSeparadorCsv(texto) {
-    const primeraLinea = texto.split(/\r?\n/)[0] || '';
-    const comas = (primeraLinea.match(/,/g) || []).length;
-    const puntoyComa = (primeraLinea.match(/;/g) || []).length;
-    return puntoyComa >= comas ? ';' : ',';
+function _csvDesenwrapLineaEntera(linea) {
+    const t = linea.trim();
+    if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') {
+        const interior = t.slice(1, -1);
+        let dentroCom = false;
+        for (let i = 0; i < interior.length; i++) {
+            if (interior[i] === '"') {
+                if (i + 1 < interior.length && interior[i + 1] === '"') { i++; continue; }
+                dentroCom = !dentroCom;
+            }
+        }
+        if (!dentroCom) return interior;
+    }
+    return linea;
 }
 
 /**
- * Parsea una línea CSV respetando campos entre comillas dobles.
- * Soporta comillas escapadas ("") dentro de campos entrecomillados.
+ * Detecta separador (tab, `;` o `,`) según la primera línea.
+ * Prioridad: tab > `;` > `,` (tab es inequívoco; `;` es estándar AR/EU).
+ */
+function detectarSeparadorCsv(texto) {
+    const raw = texto.split(/\r?\n/)[0] || '';
+    const primeraLinea = _csvDesenwrapLineaEntera(raw);
+    const tabs = (primeraLinea.match(/\t/g) || []).length;
+    if (tabs >= 2) return '\t';
+    const puntoyComa = (primeraLinea.match(/;/g) || []).length;
+    const comas = (primeraLinea.match(/,/g) || []).length;
+    if (puntoyComa >= 2 && puntoyComa >= comas) return ';';
+    if (comas >= 2) return ',';
+    if (puntoyComa >= 1) return ';';
+    if (comas >= 1) return ',';
+    if (tabs >= 1) return '\t';
+    return ';';
+}
+
+/**
+ * Parsea una línea CSV/TSV respetando campos entre comillas dobles.
  */
 function parsearLineaCsv(linea, sep) {
     const campos = [];
@@ -564,18 +591,20 @@ function parsearLineaCsv(linea, sep) {
 }
 
 /**
- * Parsea texto CSV a array de objetos (misma estructura que XLSX.utils.sheet_to_json).
- * Primera fila = encabezados. Detecta separador automáticamente. Maneja comillas dobles.
+ * Parsea texto CSV/TSV a array de objetos (misma estructura que XLSX.utils.sheet_to_json).
+ * Primera fila = encabezados. Detecta separador (tab, `;`, `,`) automáticamente.
+ * Maneja líneas enteras envueltas en comillas y comillas escapadas.
  */
 function parsearCsvARowsComoExcel(texto) {
     const limpio = texto.replace(/^\ufeff/, '');
     const sep = detectarSeparadorCsv(limpio);
     const lineas = limpio.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lineas.length < 2) return [];
-    const encabezados = parsearLineaCsv(lineas[0], sep).map((h) => h.trim());
+    const encabezados = parsearLineaCsv(_csvDesenwrapLineaEntera(lineas[0]), sep).map((h) => h.trim());
+    if (encabezados.length < 2) return [];
     const rows = [];
     for (let i = 1; i < lineas.length; i++) {
-        const campos = parsearLineaCsv(lineas[i], sep);
+        const campos = parsearLineaCsv(_csvDesenwrapLineaEntera(lineas[i]), sep);
         const obj = {};
         let tieneAlgo = false;
         for (let j = 0; j < encabezados.length; j++) {
@@ -590,9 +619,9 @@ function parsearCsvARowsComoExcel(texto) {
     return rows;
 }
 
-function _esArchivoCsv(file) {
+function _esArchivoCsvOTsv(file) {
     const name = String(file?.name || '').toLowerCase();
-    return name.endsWith('.csv');
+    return name.endsWith('.csv') || name.endsWith('.tsv') || name.endsWith('.txt');
 }
 
 function escCsvCeldaSocios(v) {
@@ -1230,7 +1259,11 @@ function identificadorSinteticoDesdeAnclasImportSocios(filaN, nombre, calle, loc
 function validarAnclasImportSociosPorRubro(rubro, o) {
     const { nisPart, medPart, nombre, calle, loc, provinciaSoc, identificadorSintetico } = o;
     const miss = [];
-    if (!nisPart || !String(nisPart).trim()) miss.push('identificador (NIS / abonado / vecino)');
+    if (!nisPart || !String(nisPart).trim()) {
+        miss.push(rubro === 'municipio'
+            ? 'identificador (ID vecino, nº vecino o nis_medidor)'
+            : 'identificador (NIS, abonado, socio o nis_medidor)');
+    }
     const coop = rubro === 'cooperativa_electrica' || rubro === 'cooperativa_agua';
     if (coop && !identificadorSintetico) {
         if (!medPart || !String(medPart).trim()) miss.push('medidor');
@@ -1663,7 +1696,7 @@ async function inferirCrsSociosExcelAntesImport(file) {
 async function onInputExcelSociosConInferencia(event) {
     const file = event && event.target && event.target.files && event.target.files[0];
     if (!file) return;
-    const esCsv = _esArchivoCsv(file);
+    const esCsv = _esArchivoCsvOTsv(file);
     if (!esCsv && typeof XLSX === 'undefined') {
         toast('Librería Excel no cargada', 'error');
         event.target.value = '';
@@ -1696,7 +1729,7 @@ window.onInputExcelSociosConInferencia = onInputExcelSociosConInferencia;
 async function importarExcelSocios(event) {
     const file = event.target.files[0];
     if (!file) return;
-    const esCsv = _esArchivoCsv(file);
+    const esCsv = _esArchivoCsvOTsv(file);
     if (!esCsv && typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
     try {
         if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
