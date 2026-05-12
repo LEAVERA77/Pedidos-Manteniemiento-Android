@@ -318,7 +318,6 @@ function abrirVisorReclamoUnificado(urls, indiceInicial, metaVisor = {}) {
               }
             : null;
     const mkCtx = () => (ctxBase ? { ...ctxBase, idx } : null);
-    cerrarModalDetallePedidoSiAbierto();
     ver(list[idx], mkCtx());
     const btnDl = document.getElementById('foto-guardar');
     if (btnDl) btnDl.style.display = 'flex';

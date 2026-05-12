@@ -7368,7 +7368,6 @@ async function refrescarDashboardGerencia(silent) {
 
 window.cerrarModalDashYAbrirPedido = async function (pid) {
     cerrarModalDashboardGerencia();
-    cerrarAdminPanel();
     await cargarPedidos();
     const p = app.p.find(x => String(x.id) === String(pid));
     if (!p) { toast('Pedido no encontrado', 'error'); return; }
