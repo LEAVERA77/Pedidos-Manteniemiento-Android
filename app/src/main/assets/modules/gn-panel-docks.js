@@ -438,9 +438,6 @@ export function initCommunityBroadcastFab(deps) {
     modal.querySelector('#gn-bc-cancel').onclick = () => {
         closeModal();
     };
-    modal.onclick = (e) => {
-        if (e.target === modal) closeModal();
-    };
     modal.querySelector('#gn-bc-ia').onclick = async () => {
         const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
         if (!titulo) {
