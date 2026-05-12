@@ -342,17 +342,21 @@ export function initCommunityBroadcastFab(deps) {
     root.innerHTML = `
 <button type="button" id="gn-fab-community-hide" title="Minimizar (icono a la izquierda)" style="font-size:.7rem;padding:2px 6px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;color:#475569">−</button>
 <button type="button" id="gn-fab-community-btn" title="Aviso a la comunidad" style="width:52px;height:52px;border-radius:50%;border:none;background:#128C7E;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;font-size:1.35rem;touch-action:manipulation">📢</button>
-<div id="gn-fab-community-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9998;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
-    <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
+<div id="gn-fab-community-modal" style="display:none;position:fixed;inset:0;z-index:9998;padding:16px;pointer-events:none">
+  <div id="gn-bc-panel" style="pointer-events:auto;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--pa,#fff);color:var(--tx,#111);max-width:540px;width:94%;border-radius:14px;padding:1.1rem 1.25rem;box-shadow:0 16px 48px rgba(0,0,0,.3);touch-action:none">
+    <div id="gn-bc-drag-handle" style="cursor:grab;display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;user-select:none">
+      <h3 style="margin:0;font-size:1.05rem">Aviso masivo (WhatsApp)</h3>
+      <span style="font-size:.7rem;color:var(--tm,#94a3b8);letter-spacing:.03em">Arrastrá para mover</span>
+    </div>
     <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
-    <label style="font-size:.78rem;font-weight:600">Título del aviso</label>
+    <label style="font-size:.78rem;font-weight:600">Estilo del aviso</label>
     <div style="display:flex;gap:.35rem;align-items:center;margin:.2rem 0 .5rem">
-      <input id="gn-bc-titulo" type="text" style="flex:1;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" placeholder="Ej: Inundaciones, Corte de agua…" />
+      <input id="gn-bc-titulo" type="text" style="flex:1;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="500" placeholder="Ej: Inundaciones, Corte de agua, Fiesta patronal…" />
       <button type="button" id="gn-bc-ia" title="Generar mensaje con IA" style="flex-shrink:0;padding:.4rem .65rem;border-radius:8px;border:1px solid #a78bfa;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:.82rem;font-weight:600;display:flex;align-items:center;gap:.25rem">✨ IA</button>
     </div>
     <label style="font-size:.78rem;font-weight:600">Mensaje</label>
-    <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="Escribí o generá con IA…"></textarea>
+    <textarea id="gn-bc-msg" rows="8" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1;resize:vertical" placeholder="Escribí o generá con IA…"></textarea>
+    <div id="gn-bc-firma-preview" style="font-size:.72rem;color:var(--tm,#64748b);margin-bottom:.5rem;font-style:italic"></div>
     <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.6rem">
       <button type="button" id="gn-bc-cancel" class="ba2" style="background:#e2e8f0;border-color:#cbd5e1;color:#334155">Cancelar</button>
       <button type="button" id="gn-bc-send" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E">Enviar</button>
@@ -364,6 +368,7 @@ export function initCommunityBroadcastFab(deps) {
     const st = { minimized: false };
     const btn = root.querySelector('#gn-fab-community-btn');
     const modal = root.querySelector('#gn-fab-community-modal');
+    const bcPanel = modal.querySelector('#gn-bc-panel');
 
     const closeModal = () => {
         modal.style.display = 'none';
@@ -371,9 +376,68 @@ export function initCommunityBroadcastFab(deps) {
     };
 
     const openModal = () => {
-        modal.style.display = 'flex';
+        modal.style.display = 'block';
+        actualizarFirmaPreview();
         syncCommunityDock(root, st, modal);
     };
+
+    /* --- Drag del panel interior (como otros paneles) --- */
+    let panelDrag = null;
+    const dragHandle = modal.querySelector('#gn-bc-drag-handle');
+    if (dragHandle && bcPanel) {
+        dragHandle.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            const r = bcPanel.getBoundingClientRect();
+            panelDrag = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, sl: r.left, st: r.top, moved: false };
+            bcPanel.style.transform = 'none';
+            bcPanel.style.left = `${r.left}px`;
+            bcPanel.style.top = `${r.top}px`;
+            try { dragHandle.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+        dragHandle.addEventListener('pointermove', (e) => {
+            if (!panelDrag || e.pointerId !== panelDrag.pid) return;
+            if (e.cancelable) e.preventDefault();
+            panelDrag.moved = true;
+            let nl = panelDrag.sl + (e.clientX - panelDrag.x0);
+            let nt = panelDrag.st + (e.clientY - panelDrag.y0);
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const pw = bcPanel.offsetWidth || 420;
+            const ph = bcPanel.offsetHeight || 300;
+            nl = Math.min(Math.max(4, nl), vw - pw - 4);
+            nt = Math.min(Math.max(4, nt), vh - ph - 4);
+            bcPanel.style.left = `${Math.round(nl)}px`;
+            bcPanel.style.top = `${Math.round(nt)}px`;
+        });
+        dragHandle.addEventListener('pointerup', (e) => {
+            if (!panelDrag || e.pointerId !== panelDrag.pid) return;
+            panelDrag = null;
+            try { dragHandle.releasePointerCapture(e.pointerId); } catch (_) {}
+        });
+        dragHandle.addEventListener('pointercancel', (e) => {
+            panelDrag = null;
+            try { dragHandle.releasePointerCapture(e.pointerId); } catch (_) {}
+        });
+    }
+
+    /* --- Firma automática según tipo de negocio y nombre del tenant --- */
+    function obtenerFirmaTenant() {
+        const cfg = window.EMPRESA_CFG || {};
+        const nombre = String(cfg.nombre || '').trim();
+        if (!nombre) return '';
+        const rub = normalizarRubroCfg(cfg.tipo);
+        if (rub === 'municipio') return `Municipalidad de ${nombre}`;
+        if (rub === 'cooperativa_agua') return `Cooperativa de Agua ${nombre}`;
+        if (rub === 'cooperativa_electrica') return `Cooperativa Eléctrica ${nombre}`;
+        return nombre;
+    }
+
+    function actualizarFirmaPreview() {
+        const el = modal.querySelector('#gn-bc-firma-preview');
+        if (!el) return;
+        const firma = obtenerFirmaTenant();
+        el.textContent = firma ? `Firma automática al final: ${firma}` : '';
+    }
 
     /** Arrastre con coordenadas correctas (fixed + right/bottom); clic sin movimiento abre modal. */
     let ptrDrag = null;
@@ -441,7 +505,7 @@ export function initCommunityBroadcastFab(deps) {
     modal.querySelector('#gn-bc-ia').onclick = async () => {
         const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
         if (!titulo) {
-            toast('Escribí un título primero (ej: Inundaciones)', 'warning');
+            toast('Escribí el estilo del aviso primero (ej: Inundaciones, Fiesta patronal)', 'warning');
             modal.querySelector('#gn-bc-titulo').focus();
             return;
         }
@@ -452,11 +516,13 @@ export function initCommunityBroadcastFab(deps) {
             await asegurarJwtApiRest();
             const tok = getApiToken();
             if (!tok) throw new Error('Sin sesión');
-            const tipo_negocio = (window.EMPRESA_CFG && window.EMPRESA_CFG.tipo) || 'municipio';
+            const cfg = window.EMPRESA_CFG || {};
+            const tipo_negocio = cfg.tipo || 'municipio';
+            const nombre_tenant = String(cfg.nombre || '').trim();
             const r = await fetch(apiUrl('/api/ia/generar-aviso'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-                body: JSON.stringify({ titulo, tipo_negocio }),
+                body: JSON.stringify({ titulo, tipo_negocio, nombre_tenant }),
             });
             const d = await r.json().catch(() => ({}));
             if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
@@ -464,6 +530,10 @@ export function initCommunityBroadcastFab(deps) {
             let msg = d.mensaje || '';
             if (telCfg && telCfg.value) {
                 msg = msg.replace(/\{telefono\}/g, telCfg.value.trim());
+            }
+            const firma = obtenerFirmaTenant();
+            if (firma && !msg.includes(firma)) {
+                msg = msg.trimEnd() + '\n\n' + firma;
             }
             modal.querySelector('#gn-bc-msg').value = msg;
             toast('Mensaje generado. Editalo si hace falta.', 'success');
@@ -477,10 +547,14 @@ export function initCommunityBroadcastFab(deps) {
 
     modal.querySelector('#gn-bc-send').onclick = async () => {
         const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
-        const mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
+        let mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
         if (!mensaje) {
             toast('Completá el mensaje', 'warning');
             return;
+        }
+        const firma = obtenerFirmaTenant();
+        if (firma && !mensaje.includes(firma)) {
+            mensaje = mensaje + '\n\n' + firma;
         }
         if (!confirm('¿Confirmás el envío masivo por WhatsApp a los contactos de pedidos?')) return;
         await asegurarJwtApiRest();

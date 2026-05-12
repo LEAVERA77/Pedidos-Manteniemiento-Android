@@ -48,10 +48,11 @@ router.post("/generar-aviso", authWithTenantHost, adminOnly, async (req, res) =>
   try {
     const titulo = String(req.body?.titulo || "").trim();
     const tipo_negocio = String(req.body?.tipo_negocio || "").trim();
+    const nombre_tenant = String(req.body?.nombre_tenant || "").trim();
     if (!titulo) {
       return res.status(400).json({ ok: false, error: "titulo es requerido" });
     }
-    const result = await generarMensajeBroadcast({ titulo, tipo_negocio });
+    const result = await generarMensajeBroadcast({ titulo, tipo_negocio, nombre_tenant });
     if (!result.ok) {
       return res.status(502).json(result);
     }
