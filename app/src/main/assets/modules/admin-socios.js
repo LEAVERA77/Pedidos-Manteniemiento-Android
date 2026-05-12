@@ -619,6 +619,18 @@ function parsearCsvARowsComoExcel(texto) {
     return rows;
 }
 
+/**
+ * Lee texto de un archivo probando UTF-8 primero; si detecta U+FFFD (reemplazo
+ * por byte inválido), reintenta con windows-1252 (superset de latin1, cubre
+ * ñ, á, é, í, ó, ú y otros caracteres latinos frecuentes en padrones AR).
+ */
+async function _leerTextoConEncodingCsv(file) {
+    const buf = await file.arrayBuffer();
+    const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+    if (!utf8.includes('\ufffd')) return utf8;
+    return new TextDecoder('windows-1252').decode(buf);
+}
+
 function _esArchivoCsvOTsv(file) {
     const name = String(file?.name || '').toLowerCase();
     return name.endsWith('.csv') || name.endsWith('.tsv') || name.endsWith('.txt');
@@ -1756,7 +1768,7 @@ async function importarExcelSocios(event) {
         }
         let rawRows;
         if (esCsv) {
-            const texto = await file.text();
+            const texto = await _leerTextoConEncodingCsv(file);
             rawRows = parsearCsvARowsComoExcel(texto);
         } else {
             const buf = await file.arrayBuffer();
