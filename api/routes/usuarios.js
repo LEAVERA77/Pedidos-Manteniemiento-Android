@@ -22,13 +22,13 @@ router.get("/tecnicos", async (_req, res) => {
   const col = await usuariosTenantColumnName();
   const r = col
     ? await query(
-        "SELECT id, email, nombre, rol, activo, telefono FROM usuarios WHERE rol IN ('tecnico','supervisor') AND activo = TRUE AND " +
+        "SELECT id, email, nombre, CASE WHEN LOWER(rol)='supervisor' THEN 'tecnico' ELSE rol END AS rol, activo, telefono FROM usuarios WHERE LOWER(rol) IN ('tecnico','supervisor') AND activo = TRUE AND " +
           col +
           " = $1 ORDER BY nombre",
         [_req.tenantId]
       )
     : await query(
-        "SELECT id, email, nombre, rol, activo, telefono FROM usuarios WHERE rol IN ('tecnico','supervisor') AND activo = TRUE ORDER BY nombre"
+        "SELECT id, email, nombre, CASE WHEN LOWER(rol)='supervisor' THEN 'tecnico' ELSE rol END AS rol, activo, telefono FROM usuarios WHERE LOWER(rol) IN ('tecnico','supervisor') AND activo = TRUE ORDER BY nombre"
       );
   res.json(r.rows);
 });

@@ -45,9 +45,11 @@ router.post("/login", async (req, res) => {
 
     const tenant_id = await getUserTenantId(u.id);
     const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
+    const isDefault = loginId.toLowerCase() === "admin" && password === "admin";
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
+      is_default_credentials: isDefault || undefined,
     });
   } catch (error) {
     return res.status(500).json({ error: "Error en login", detail: error.message });

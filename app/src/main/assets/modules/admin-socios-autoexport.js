@@ -1,23 +1,32 @@
 /**
- * Descarga automática diaria del CSV de socios al iniciar sesión (solo web admin, no Android).
+ * Descarga automática diaria del Excel de socios (solo web admin, no Android).
+ * Se ejecuta UNA sola vez por día, sin importar cuántas veces el admin recargue.
  * made by leavera77
  */
 
 const LS_KEY = 'gn_socios_export_last';
+const SS_KEY = 'gn_socios_export_session';
 
 function isAndroidWebView() {
     return typeof window.AndroidConfig !== 'undefined' || typeof window.AndroidDevice !== 'undefined';
 }
 
 function alreadyDownloadedToday() {
-    const last = localStorage.getItem(LS_KEY);
-    if (!last) return false;
-    const today = new Date().toISOString().slice(0, 10);
-    return last === today;
+    if (sessionStorage.getItem(SS_KEY)) return true;
+    try {
+        const last = localStorage.getItem(LS_KEY);
+        if (!last) return false;
+        const today = new Date().toISOString().slice(0, 10);
+        return last === today;
+    } catch (_) {
+        return false;
+    }
 }
 
 function markDownloadedToday() {
-    localStorage.setItem(LS_KEY, new Date().toISOString().slice(0, 10));
+    const today = new Date().toISOString().slice(0, 10);
+    try { localStorage.setItem(LS_KEY, today); } catch (_) {}
+    try { sessionStorage.setItem(SS_KEY, '1'); } catch (_) {}
 }
 
 function showExportToast() {

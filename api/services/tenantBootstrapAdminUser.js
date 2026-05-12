@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 
 /**
- * Slug para login admin_<slug> y base de contraseña temporal.
+ * Slug para login admin_<slug> (fallback si "admin" ya existe).
  * Minúsculas, sin acentos; espacios y símbolos → _; quita artículos iniciales comunes.
  */
 export function slugFromTenantNombre(nombre) {
@@ -27,15 +27,20 @@ export function temporaryPasswordFromSlug(slug) {
   return `${base || "tenant"}${y}`;
 }
 
-async function pickUniqueAdminLogin(client, slugBase) {
+/** Default: "admin". Si colisiona (multi-tenant BD compartida), admin_<slug>, admin_<slug>2… */
+async function pickUniqueAdminLogin(client, slugBase, tenantCol, tenantId) {
+  const candidates = ["admin"];
   const base = slugFromTenantNombre(slugBase);
   for (let i = 0; i < 200; i++) {
-    const candidate = i === 0 ? `admin_${base}` : `admin_${base}${i + 1}`;
-    const r = await client.query(
-      `SELECT 1 FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1`,
-      [candidate]
-    );
-    if (!r.rows.length) return candidate;
+    candidates.push(i === 0 ? `admin_${base}` : `admin_${base}${i + 1}`);
+  }
+  for (const c of candidates) {
+    const where = tenantCol
+      ? `LOWER(TRIM(email)) = LOWER(TRIM($1)) AND ${tenantCol} = $2`
+      : `LOWER(TRIM(email)) = LOWER(TRIM($1))`;
+    const params = tenantCol ? [c, tenantId] : [c];
+    const r = await client.query(`SELECT 1 FROM usuarios WHERE ${where} LIMIT 1`, params);
+    if (!r.rows.length) return c;
   }
   throw new Error("No se pudo generar un usuario administrador único");
 }
@@ -46,10 +51,9 @@ async function pickUniqueAdminLogin(client, slugBase) {
  */
 export async function crearUsuarioAdminBootstrap({ client, col, hasBt, hasTw, tenantId, nombreTenant, telefono }) {
   const nombreTrim = String(nombreTenant || "").trim();
-  const slug = slugFromTenantNombre(nombreTrim);
-  const passwordPlain = temporaryPasswordFromSlug(slug);
   const nombreCompleto = `Administrador del ${nombreTrim}`;
-  const login = await pickUniqueAdminLogin(client, nombreTrim);
+  const login = await pickUniqueAdminLogin(client, nombreTrim, col, Number(tenantId));
+  const passwordPlain = login === "admin" ? "admin" : temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim));
   const hash = await bcrypt.hash(String(passwordPlain), 10);
   const rol = "admin";
   const tid = Number(tenantId);

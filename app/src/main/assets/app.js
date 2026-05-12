@@ -164,6 +164,7 @@ import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/ia-priorizacion-bp2.js';
 import './modules/panel-clima.js';
 import './modules/ia-duplicados-pedido.js';
+import './modules/suggest-change-creds.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
@@ -1901,6 +1902,7 @@ function normalizarRolStr(r) {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
     if (x === 'administrador') return 'admin';
+    if (x === 'supervisor') return 'tecnico';
     return x || 'tecnico';
 }
 function getApiBaseUrl() {
@@ -2505,8 +2507,7 @@ function esAdmin() {
     return rolApp() === 'admin';
 }
 function esTecnicoOSupervisor() {
-    const r = rolApp();
-    return r === 'tecnico' || r === 'supervisor';
+    return rolApp() === 'tecnico';
 }
 /**
  * Técnico/supervisor con «Todos»: fuente de verdad = checkbox y select Android (evita WebView/localStorage desfasados),
@@ -3756,7 +3757,7 @@ const gnLoginSubmitHandler = async e => {
             const forzarCambioAndroid =
                 u.must_change_password &&
                 esAndroidWebViewMapa() &&
-                (rolL === 'tecnico' || rolL === 'supervisor');
+                rolL === 'tecnico';
             if (forzarCambioAndroid) {
                 window._pendingAndroidPasswordChange = { u, passwordActual: pw };
                 document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
@@ -3767,6 +3768,7 @@ const gnLoginSubmitHandler = async e => {
             }
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
+            if (typeof window._gnCheckDefaultCreds === 'function') window._gnCheckDefaultCreds(loginJwtPayload);
         } else {
             if (le) le.textContent = 'Usuario o contraseña incorrectos.';
         }
