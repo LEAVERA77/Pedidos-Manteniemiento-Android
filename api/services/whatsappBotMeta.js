@@ -186,6 +186,7 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_catalogo_nombre_confirm",
   "awaiting_catalogo_nombre_elegir",
   "awaiting_opcional_id",
+  "awaiting_addr_solo_direccion",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
   "awaiting_addr_calle",
@@ -202,6 +203,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_nombre_persona",
   "awaiting_catalogo_nombre_confirm",
   "awaiting_catalogo_nombre_elegir",
+  "awaiting_addr_solo_direccion",
   "awaiting_addr_ciudad",
   "awaiting_addr_provincia",
   "awaiting_addr_calle",
@@ -418,6 +420,7 @@ function interpretaMenuIdentificacion(raw) {
   if (!t) return 0;
   if (t === "1" || t === "1." || t.startsWith("1)") || t === "uno" || /^1\s+/.test(t)) return 1;
   if (t === "2" || t === "2." || t.startsWith("2)") || t === "dos" || /^2\s+/.test(t)) return 2;
+  if (t === "3" || t === "3." || t.startsWith("3)") || t === "tres" || /^3\s+/.test(t)) return 3;
   return 0;
 }
 
@@ -443,11 +446,13 @@ function mensajeMenuIdentificacion(ctx) {
   const base =
     `Ya tenemos la *descripción* del problema. Ahora necesitamos *identificar* y *ubicar* el reclamo.\n\n` +
     `Elegí *una opción* respondiendo con *1* o *2*:\n\n`;
+  const opt3 = `*3)* Solo *dirección* (sin datos personales).\n\n`;
   if (r === "cooperativa_electrica") {
     return (
       base +
       `*1)* Tengo *NIS* o *número de medidor* (dato de la cooperativa eléctrica).\n` +
-      `*2)* Prefiero con *nombre y dirección* (sin datos de cuenta).\n\n` +
+      `*2)* Prefiero con *nombre y dirección* (sin datos de cuenta).\n` +
+      opt3 +
       `En cualquier momento podés enviar *GPS* con *Adjuntar* (📎) → *Ubicación*.\n` +
       `*atrás* = corregir la descripción · *menú* = salir.`
     );
@@ -456,7 +461,8 @@ function mensajeMenuIdentificacion(ctx) {
     return (
       base +
       `*1)* Tengo *ID de usuario* o *número de medidor* del servicio de agua.\n` +
-      `*2)* Prefiero con *nombre y dirección*.\n\n` +
+      `*2)* Prefiero con *nombre y dirección*.\n` +
+      opt3 +
       `También podés mandar *ubicación GPS* con *Adjuntar* → *Ubicación*.\n` +
       `*atrás* = corregir la descripción · *menú* = salir.`
     );
@@ -465,7 +471,8 @@ function mensajeMenuIdentificacion(ctx) {
     return (
       base +
       `*1)* Tengo mi *número de vecino* (credencial / cuenta municipal).\n` +
-      `*2)* Prefiero con *nombre y dirección*.\n\n` +
+      `*2)* Prefiero con *nombre y dirección*.\n` +
+      opt3 +
       `Podés adjuntar *ubicación* en cualquier momento (📎 → *Ubicación*).\n` +
       `*atrás* = corregir la descripción · *menú* = salir.`
     );
@@ -473,7 +480,8 @@ function mensajeMenuIdentificacion(ctx) {
   return (
     base +
     `*1)* Datos del servicio (*NIS*, medidor, ID o número de vecino).\n` +
-    `*2)* *Nombre y dirección* sin datos de cuenta.\n\n` +
+    `*2)* *Nombre y dirección* sin datos de cuenta.\n` +
+    opt3 +
     `Podés enviar *GPS* con *Adjuntar* → *Ubicación*.\n` +
       `*atrás* = corregir la descripción · *menú* = salir.`
   );
@@ -1152,6 +1160,59 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
     stateOrProvince: sess.addrProvincia || ctx?.geocodeState,
   });
+}
+
+/**
+ * Opcion 3 (solo direccion): GPS recibido → reverse geocode, armar sesion anonima y pasar a fotos/confirmacion.
+ */
+async function inferirDireccionDesdeGpsYGeocodificarAnonimo(
+  phone, sess, sk, contactName, ctx, phoneNumberId, lat, lng
+) {
+  const tid = sess.tenantId;
+  const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
+  let rev = null;
+  try {
+    rev = await reverseGeocodeArgentina(lat, lng);
+  } catch (_) {}
+
+  sess.userSharedGps = { lat, lng };
+  sess.lat = lat;
+  sess.lng = lng;
+  sess.modoAnonimo = true;
+  sess.contactName = "Vecino anónimo";
+  if (rev?.displayName) sess.direccionTexto = rev.displayName;
+  if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio" && !sess.barrio) {
+    sess.barrio = rev.barrio;
+  }
+  if (wpid) sess.phoneNumberId = wpid;
+
+  const ext = extraerCiudadCalleNumeroDesdeReverse(rev);
+  if (ext && ext.ciudad.length >= 2 && ext.calle.length >= 2) {
+    sess.addrCiudad = ext.ciudad;
+    sess.addrCalle = ext.calle;
+    sess.addrNumero = ext.numero || "0";
+    if (rev?.address?.state) {
+      const pBot = provinciaBotDesdeTextoOsm(String(rev.address.state).trim());
+      if (pBot) sess.addrProvincia = pBot;
+    }
+    sessions.set(sk, sess);
+    await geocodeStructuredAddressAndFinalizePedido(
+      phone, sess, sk, contactName, ctx, wpid,
+      ext.ciudad, ext.calle, ext.numero || "0",
+      { stateOrProvince: sess.addrProvincia || ctx?.geocodeState }
+    );
+    return;
+  }
+
+  sessions.set(sk, sess);
+  await reply(
+    phone,
+    "✅ Recibimos tu *ubicación GPS*, pero no pudimos inferir la calle automáticamente.\n\n" +
+      "Escribí la *dirección* del problema (calle y número, o una referencia)." +
+      MSG_SALIR_ATRAS,
+    tid,
+    wpid
+  );
 }
 
 /**
@@ -2088,6 +2149,13 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
+  if (stepAddr === "awaiting_addr_solo_direccion") {
+    await inferirDireccionDesdeGpsYGeocodificarAnonimo(
+      phone, sess, sk, contactName, ctxOk, phoneNumberId, lat, lng
+    );
+    return;
+  }
+
   if (stepAddr === "awaiting_nombre_persona") {
     sess.ubicacionGpsPin = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
@@ -2703,9 +2771,26 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
       return;
     }
+    if (choice === 3) {
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_addr_solo_direccion",
+        modoAnonimo: true,
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(
+        phone,
+        "Escribí la *dirección del problema* (calle y número, o una referencia).\n\n" +
+          "También podés enviar tu *ubicación GPS* (📎 → *Ubicación*) para que infiramos la dirección automáticamente." +
+          MSG_SALIR_ATRAS,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     await reply(
       phone,
-      "Respondé con *1* (datos del servicio) o *2* (nombre y dirección).",
+      "Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *3* (solo dirección).",
       tid,
       phoneNumberId
     );
@@ -2807,6 +2892,51 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     await reply(phone, `Respondé con un *número del 1 al ${maxOp}*.`, tid, phoneNumberId);
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_addr_solo_direccion") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      sess.step = "awaiting_identificacion_modo";
+      delete sess.modoAnonimo;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (t.length < 3) {
+      await reply(phone, "Escribí al menos *3 caracteres* para la dirección.", tid, phoneNumberId);
+      return;
+    }
+    if (t.length > 300) {
+      await reply(phone, "La dirección es muy larga. Acortala un poco.", tid, phoneNumberId);
+      return;
+    }
+    sess.modoAnonimo = true;
+    sess.contactName = "Vecino anónimo";
+    sess.addrCalle = t;
+    sess.addrNumero = "0";
+    const ciudadFallback =
+      String(sess.addrCiudad || "").trim() ||
+      String(ctx?.localidad || ctx?.ciudad || "").trim() ||
+      "";
+    if (ciudadFallback) sess.addrCiudad = ciudadFallback;
+    sess.direccionDeclaradaUsuario = t;
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+
+    if (sess.ubicacionGpsPin && Number.isFinite(sess.ubicacionGpsPin.lat)) {
+      sess.userSharedGps = sess.ubicacionGpsPin;
+      sess.lat = sess.ubicacionGpsPin.lat;
+      sess.lng = sess.ubicacionGpsPin.lng;
+      delete sess.ubicacionGpsPin;
+    }
+
+    sess.direccionTexto = ciudadFallback
+      ? `Dirección indicada: ${t}, ${ciudadFallback}. (Reclamo anónimo, solo dirección.)`
+      : `Dirección indicada: ${t}. (Reclamo anónimo, solo dirección.)`;
+    sessions.set(sk, sess);
+    await pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId);
     return;
   }
 
