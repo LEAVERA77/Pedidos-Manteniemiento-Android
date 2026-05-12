@@ -45,7 +45,17 @@ router.post("/login", async (req, res) => {
 
     const tenant_id = await getUserTenantId(u.id);
     const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
-    const isDefault = loginId.toLowerCase() === "admin" && password === "admin";
+    let isDefault = false;
+    if (loginId.toLowerCase() === "admin" && password === "admin" && tenant_id) {
+      try {
+        const cfgR = await query("SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1", [tenant_id]);
+        const cfgRaw = cfgR.rows?.[0]?.configuracion;
+        const cfg = typeof cfgRaw === "string" ? JSON.parse(cfgRaw) : cfgRaw;
+        isDefault = !(cfg && cfg.default_creds_changed);
+      } catch (_) {
+        isDefault = true;
+      }
+    }
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },

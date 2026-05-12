@@ -1,9 +1,10 @@
 /**
  * Sugiere cambio de usuario/contraseña si se inició sesión con credenciales por defecto (admin/admin).
+ * La bandera se persiste en el servidor (clientes.configuracion.default_creds_changed) para
+ * que no reaparezca al limpiar cache del navegador.
  * made by leavera77
  */
 
-const LS_DISMISSED = 'gn_default_creds_dismissed';
 let _shown = false;
 
 function buildModal() {
@@ -40,6 +41,26 @@ function buildModal() {
   return overlay;
 }
 
+function _apiUrl(path) {
+  return typeof window.apiUrl === 'function' ? window.apiUrl(path) : path;
+}
+function _token() {
+  return typeof window.getApiToken === 'function' ? window.getApiToken() : null;
+}
+
+async function _marcarCredsChangedEnServidor() {
+  try {
+    const tok = _token();
+    if (!tok) return;
+    if (typeof window.asegurarJwtApiRest === 'function') await window.asegurarJwtApiRest();
+    await fetch(_apiUrl('/api/clientes/mi-configuracion'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ configuracion: { default_creds_changed: true } }),
+    });
+  } catch (_) {}
+}
+
 async function guardarCreds() {
   const user = (document.getElementById('gn-creds-new-user')?.value || '').trim();
   const pass = (document.getElementById('gn-creds-new-pass')?.value || '').trim();
@@ -53,8 +74,7 @@ async function guardarCreds() {
     return;
   }
 
-  const base = typeof window.apiUrl === 'function' ? window.apiUrl('/api/auth/me') : '/api/auth/me';
-  const token = typeof window.getApiToken === 'function' ? window.getApiToken() : null;
+  const token = _token();
   if (!token) return;
 
   try {
@@ -62,7 +82,7 @@ async function guardarCreds() {
     if (user) body.usuario = user;
     if (pass) body.password_nueva = pass;
 
-    const r = await fetch(base, {
+    const r = await fetch(_apiUrl('/api/auth/me'), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
@@ -72,17 +92,23 @@ async function guardarCreds() {
       if (err) { err.textContent = d.error || 'Error al guardar.'; err.style.display = 'block'; }
       return;
     }
-    try { localStorage.setItem(LS_DISMISSED, '1'); } catch (_) {}
+    await _marcarCredsChangedEnServidor();
     document.getElementById('gn-creds-suggest-overlay')?.remove();
-    if (typeof window.toast === 'function') window.toast('Credenciales actualizadas. Volvé a iniciar sesión.', 'success');
-    setTimeout(() => { try { window.location.reload(); } catch (_) {} }, 1800);
+    const nuevoUser = user || 'admin';
+    const nuevaPass = pass || 'admin';
+    if (typeof window.toast === 'function') {
+      window.toast(`Credenciales actualizadas. Ingresá con: ${nuevoUser}`, 'success');
+    }
+    setTimeout(() => {
+      try { window.location.reload(); } catch (_) {}
+    }, 2200);
   } catch (e) {
     if (err) { err.textContent = 'Error de conexión.'; err.style.display = 'block'; }
   }
 }
 
-function dismiss() {
-  try { localStorage.setItem(LS_DISMISSED, '1'); } catch (_) {}
+async function dismiss() {
+  await _marcarCredsChangedEnServidor();
   document.getElementById('gn-creds-suggest-overlay')?.remove();
 }
 
@@ -93,7 +119,6 @@ if (typeof window !== 'undefined') {
 export function checkAndSuggestCredentialsChange(loginResponse) {
   if (_shown) return;
   if (!loginResponse?.is_default_credentials) return;
-  try { if (localStorage.getItem(LS_DISMISSED)) return; } catch (_) {}
 
   _shown = true;
   setTimeout(() => {
