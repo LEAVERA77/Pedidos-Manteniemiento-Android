@@ -35,9 +35,9 @@ export async function openAdminUsuarioWhatsappModal(p) {
     wrap.innerHTML = `
 <div style="background:var(--bg,#fff);color:var(--tm,#0f172a);max-width:420px;width:100%;border-radius:.65rem;box-shadow:0 20px 50px rgba(0,0,0,.2);padding:1.1rem 1.15rem;font-size:.9rem">
   <div style="font-weight:700;margin-bottom:.35rem">WhatsApp del usuario</div>
-  <p style="margin:0 0 .65rem;font-size:.82rem;color:var(--tl,#64748b);line-height:1.35">Ingresá el número con prefijo país <b>54</b> y <b>sin</b> el 9 móvil (ej: <code>543434540250</code>). Se guarda en <code>telefono_whatsapp</code>.</p>
+  <p style="margin:0 0 .65rem;font-size:.82rem;color:var(--tl,#64748b);line-height:1.35">Ingresá el número con prefijo país <b>54</b> y <b>sin</b> el 9 móvil (ej: <code>543434123456</code>). Se guarda en <code>telefono_whatsapp</code>.</p>
   <label for="gn-wa-user-input" style="display:block;font-size:.78rem;font-weight:600;margin-bottom:.2rem">Número WhatsApp</label>
-  <input id="gn-wa-user-input" type="text" inputmode="numeric" autocomplete="tel" value="${digMostrar.replace(/"/g, '&quot;')}" placeholder="543434540250" style="width:100%;padding:.5rem .65rem;border:1.5px solid #cbd5e1;border-radius:.45rem;font-size:.95rem;box-sizing:border-box" />
+  <input id="gn-wa-user-input" type="text" inputmode="numeric" autocomplete="tel" value="${digMostrar.replace(/"/g, '&quot;')}" placeholder="543434123456" style="width:100%;padding:.5rem .65rem;border:1.5px solid #cbd5e1;border-radius:.45rem;font-size:.95rem;box-sizing:border-box" />
   <label style="display:flex;align-items:center;gap:.45rem;margin-top:.75rem;font-size:.82rem;cursor:pointer">
     <input type="checkbox" id="gn-wa-user-notif" ${p.whatsappNotificaciones !== false ? 'checked' : ''} /> Notificaciones WhatsApp habilitadas
   </label>
@@ -57,7 +57,7 @@ export async function openAdminUsuarioWhatsappModal(p) {
         const raw = (inp?.value || '').trim();
         const telNorm = normalizarTelefonoWhatsapp(raw.startsWith('+') ? raw : raw.replace(/\s/g, ''));
         if (telNorm && !esTelefonoWhatsappValido(telNorm)) {
-            toast('Formato inválido. Ejemplo: 543434540250 o +543434540250', 'error');
+            toast('Formato inválido. Ejemplo: 543434123456 o +543434123456', 'error');
             return;
         }
         const hab = !!(cb && cb.checked);

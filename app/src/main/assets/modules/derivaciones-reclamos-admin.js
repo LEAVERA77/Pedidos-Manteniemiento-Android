@@ -108,7 +108,7 @@ export function agregarFilaDerivacionLista(kind, deps) {
     <div><label for="cfg-deriv-${kind}-nombre-${uid}">Nombre visible</label>
       <input id="cfg-deriv-${kind}-nombre-${uid}" data-deriv-field="nombre" type="text" maxlength="120" placeholder="${ph}"></div>
     <div style="margin-top:.35rem"><label for="cfg-deriv-${kind}-whatsapp-${uid}">WhatsApp internacional</label>
-      <input id="cfg-deriv-${kind}-whatsapp-${uid}" data-deriv-field="whatsapp" type="tel" inputmode="tel" placeholder="543434540250" autocomplete="tel"></div>
+      <input id="cfg-deriv-${kind}-whatsapp-${uid}" data-deriv-field="whatsapp" type="tel" inputmode="tel" placeholder="543434123456" autocomplete="tel"></div>
     <div style="display:flex;gap:.35rem;margin-top:.45rem;flex-wrap:wrap">
       <button type="button" class="btn-sm primary" data-deriv-open-wa="1">Abrir WhatsApp</button>
       <button type="button" class="btn-sm" style="background:var(--bg);border:1px solid var(--bo)" data-deriv-remove="1">Quitar</button>

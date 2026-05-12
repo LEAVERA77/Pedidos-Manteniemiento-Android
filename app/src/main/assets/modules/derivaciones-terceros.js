@@ -110,7 +110,7 @@ export function syncDerivacionTerceroNuevoPedidoUI() {
         if (manual) manual.style.display = chk.checked ? '' : 'none';
         if (hint) {
             hint.textContent =
-                'Completá *nombre* y *WhatsApp* del tercero (formato internacional, ej. +543434540250) o cargá contactos en Admin → Empresa → derivaciones_terceros.';
+                'Completá *nombre* y *WhatsApp* del tercero (formato internacional, ej. +543434123456) o cargá contactos en Admin → Empresa → derivaciones_terceros.';
         }
     }
 }

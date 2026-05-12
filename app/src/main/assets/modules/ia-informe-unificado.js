@@ -685,9 +685,10 @@ function mostrarModalEmail() {
 
   const overlay = document.createElement('div');
   overlay.id = 'ia-informe-email-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2147483646;display:flex;align-items:center;justify-content:center';
 
-  overlay.innerHTML = `<div style="background:#fff;border-radius:.7rem;padding:1.3rem 1.4rem;width:min(92vw,440px);box-shadow:0 8px 30px rgba(0,0,0,.18)">
+  overlay.innerHTML = `<div style="background:#fff;border-radius:.75rem;padding:1.4rem 1.5rem;width:min(92vw,440px);box-shadow:0 12px 40px rgba(0,0,0,.25);position:relative;z-index:2147483647">
+    <button type="button" id="ia-informe-email-close-x" style="position:absolute;top:.6rem;right:.7rem;background:none;border:none;font-size:1.1rem;cursor:pointer;color:#94a3b8;line-height:1" title="Cerrar">&times;</button>
     <div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.8rem"><i class="fas fa-envelope"></i> Enviar Informe por Email</div>
     <label style="font-size:.78rem;color:#475569;display:block;margin-bottom:.2rem">Destinatario</label>
     <input id="ia-informe-email-to" type="email" placeholder="email@ejemplo.com" style="width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:.4rem;font-size:.82rem;box-sizing:border-box;margin-bottom:.55rem"/>
@@ -703,12 +704,20 @@ function mostrarModalEmail() {
 
   document.body.appendChild(overlay);
 
-  overlay.querySelector('#ia-informe-email-cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('#ia-informe-email-send').addEventListener('click', () => void enviarEmail(overlay));
+  function cerrarModal() { overlay.remove(); document.removeEventListener('keydown', onEsc); }
+  function onEsc(e) { if (e.key === 'Escape') cerrarModal(); }
+  document.addEventListener('keydown', onEsc);
+
+  overlay.querySelector('#ia-informe-email-close-x').addEventListener('click', cerrarModal);
+  overlay.querySelector('#ia-informe-email-cancel').addEventListener('click', cerrarModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cerrarModal(); });
+  overlay.querySelector('#ia-informe-email-send').addEventListener('click', () => void enviarEmail(overlay, cerrarModal));
+
+  overlay.querySelector('#ia-informe-email-to').focus();
 }
 
-async function enviarEmail(overlay) {
+async function enviarEmail(overlay, cerrarModal) {
+  const close = typeof cerrarModal === 'function' ? cerrarModal : () => overlay.remove();
   const toInput = overlay.querySelector('#ia-informe-email-to');
   const subjectInput = overlay.querySelector('#ia-informe-email-subject');
   const msgDiv = overlay.querySelector('#ia-informe-email-msg');
@@ -735,7 +744,7 @@ async function enviarEmail(overlay) {
         html_body: construirHtmlInformeCompleto(),
       });
       if (typeof window.toast === 'function') window.toast('Email enviado correctamente.', 'success');
-      overlay.remove();
+      close();
       return;
     }
 
@@ -749,7 +758,7 @@ async function enviarEmail(overlay) {
     const url = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = url;
 
-    setTimeout(() => overlay.remove(), 600);
+    setTimeout(close, 600);
   } catch (err) {
     console.error('[ia-informe-email]', err);
     if (msgDiv) { msgDiv.textContent = 'Error al preparar el email. Intenta descargar el PDF manualmente.'; msgDiv.style.color = '#dc2626'; }

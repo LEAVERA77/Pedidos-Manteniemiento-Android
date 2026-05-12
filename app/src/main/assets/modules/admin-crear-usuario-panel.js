@@ -60,7 +60,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         return;
     }
     if (telefono && !esTelefonoWhatsappValido(telefono)) {
-        d.toast('Teléfono inválido. Usá formato +543434540250', 'error');
+        d.toast('Teléfono inválido. Usá formato +543434123456', 'error');
         return;
     }
 
