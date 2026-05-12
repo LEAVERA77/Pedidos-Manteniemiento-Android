@@ -1,11 +1,13 @@
 /**
  * Boton "Ordenar por prioridad IA" en toolbar de pedidos (#bp2).
- * Calcula puntaje de urgencia y reordena la lista de pendientes.
+ * Calcula puntaje de urgencia y reordena la lista de pendientes en tiempo real.
  * made by leavera77
  */
 
 let _wired = false;
 let _priorizacionActiva = false;
+let _refreshTimer = null;
+const REFRESH_INTERVAL_MS = 30_000;
 
 const PESO_HORAS = 2;
 const PESO_PRIORIDAD = 3;
@@ -46,20 +48,33 @@ function calcularPuntaje(p) {
   return (horas * PESO_HORAS) + (prio * PESO_PRIORIDAD) + (critico * PESO_TIPO_CRITICO);
 }
 
+function _startRefresh() {
+  _stopRefresh();
+  _refreshTimer = setInterval(() => {
+    if (!_priorizacionActiva) { _stopRefresh(); return; }
+    if (typeof window.render === 'function') window.render();
+  }, REFRESH_INTERVAL_MS);
+}
+
+function _stopRefresh() {
+  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+}
+
 function togglePriorizacion() {
   _priorizacionActiva = !_priorizacionActiva;
   const btn = document.getElementById('btn-ia-priorizar-bp2');
   if (btn) {
     btn.style.background = _priorizacionActiva ? '#059669' : '#7c3aed';
     btn.title = _priorizacionActiva
-      ? 'Priorización IA activa (click para desactivar)'
+      ? 'Priorización IA activa — se actualiza cada 30 s (click para desactivar)'
       : 'Ordenar pedidos pendientes por prioridad IA';
   }
+  if (_priorizacionActiva) _startRefresh();
+  else _stopRefresh();
   if (typeof window.render === 'function') window.render();
 }
 
 if (typeof window !== 'undefined') {
-  const origSort = window._gnPriorizarPedidosBp2;
   window._gnPriorizarPedidosBp2 = function (pedidos) {
     if (!_priorizacionActiva || !Array.isArray(pedidos)) return pedidos;
     return [...pedidos].sort((a, b) => calcularPuntaje(b) - calcularPuntaje(a));
