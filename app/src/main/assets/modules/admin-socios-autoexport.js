@@ -41,7 +41,7 @@ async function doExport() {
         const url = URL.createObjectURL(blob);
         const disposition = resp.headers.get('Content-Disposition') || '';
         const match = disposition.match(/filename="?([^";\s]+)"?/);
-        const filename = match ? match[1] : `socios_${new Date().toISOString().slice(0, 10)}.csv`;
+        const filename = match ? match[1] : `socios_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
         const a = document.createElement('a');
         a.href = url;
