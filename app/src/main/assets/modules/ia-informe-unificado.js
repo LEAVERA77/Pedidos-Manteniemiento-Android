@@ -731,26 +731,13 @@ async function enviarEmail(overlay, cerrarModal) {
   }
 
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparando…';
+  sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparando PDF…';
   if (msgDiv) { msgDiv.textContent = ''; msgDiv.style.color = '#64748b'; }
 
   try {
-    const cfg = window.APP_CONFIG?.emailjs;
-    if (cfg?.publicKey && cfg?.serviceId && cfg?.templateId && typeof window.emailjs !== 'undefined') {
-      sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando…';
-      await window.emailjs.send(cfg.serviceId, cfg.templateId, {
-        to_email: toEmail,
-        subject: subject,
-        html_body: construirHtmlInformeCompleto(),
-      });
-      if (typeof window.toast === 'function') window.toast('Email enviado correctamente.', 'success');
-      close();
-      return;
-    }
-
     const result = await exportarPdf();
     if (result && typeof window.toast === 'function') {
-      window.toast('PDF descargado. Adjuntalo al email que se abrira.', 'info');
+      window.toast('PDF descargado. Adjuntalo al email.', 'info');
     }
 
     const plain = _buildPlainTextInforme();
