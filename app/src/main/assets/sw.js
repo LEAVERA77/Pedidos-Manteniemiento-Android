@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v115';
-const SW_VERSION  = '1.8.1';
+const CACHE_SHELL = 'pmg-shell-v116';
+const SW_VERSION  = '1.8.2';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -510,5 +510,6 @@ self.addEventListener('fetch', event => {
     path.endsWith('/') ||
     /\/index(\.min)?\.html$/i.test(path);
 
-  event.respondWith(isHtml ? networkFirstShell(req) : cacheFirstShell(req));
+  const isMainJs = path.endsWith('/app.js') || path.endsWith('/sw.js');
+  event.respondWith((isHtml || isMainJs) ? networkFirstShell(req) : cacheFirstShell(req));
 });
