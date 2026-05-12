@@ -407,12 +407,27 @@ function sociosImportTelefonoCanon54(digitsWithOptionalMobile9) {
 }
 
 /**
+ * Convierte notación científica europea/inglesa (ej. `5,43435E+11`, `5.43E11`)
+ * a string entero. Cubre teléfonos y NIS exportados por Excel como número.
+ * Si no es notación científica, devuelve el valor sin cambios.
+ */
+function _desnotacionCientifica(v) {
+    if (v == null) return v;
+    const s = String(v).trim();
+    if (/^\d[.,]\d+[eE][+\-]?\d{1,3}$/.test(s)) {
+        const n = parseFloat(s.replace(',', '.'));
+        if (Number.isFinite(n) && n >= 1) return Math.round(n).toString();
+    }
+    return s;
+}
+
+/**
  * Normaliza a dígitos E.164 Argentina (54 + área + abonado, sin 9 móvil tras el 54).
  * Usa tabla codigos_area_argentina si el número viene solo con prefijo 15 y localidad/provincia.
  */
 function normalizarTelefonoArgentinaImportSociosSync(raw, localidad, provincia) {
     const P54M = '54' + '9';
-    const orig = String(raw || '').trim();
+    const orig = _desnotacionCientifica(raw);
     let d = orig.replace(/\D/g, '');
     if (!d || d.length < 6) return orig || null;
     d = sociosCatalogoTelefonoColapsar15Repetido(d);
@@ -1334,15 +1349,29 @@ async function aplicarInferenciaCpNominatimABulkImportSocios(payloads) {
         const k = clave(p);
         if (!unicos.has(k)) unicos.set(k, { calle: p.calle, loc: p.loc, provincia: p.provincia });
     }
+    if (!unicos.size) return 0;
+    const TIMEOUT_MS = 12000;
+    const MAX_CONSEC_FAIL = 3;
     const cpPorClave = new Map();
     let idx = 0;
+    let consecFail = 0;
     const total = unicos.size;
     for (const [k, { calle, loc, provincia }] of unicos) {
-        if (total > 0 && idx % 6 === 0) {
-            req().actualizarOverlayImportacion(`Código postal (Nominatim)… ${idx + 1} / ${total} direcciones distintas`);
+        req().actualizarOverlayImportacion(`Código postal (Nominatim)… ${idx + 1} / ${total} direcciones distintas`);
+        const cp = await Promise.race([
+            inferirCodigoPostalImportSociosNominatim(calle, loc, provincia),
+            new Promise((r) => setTimeout(() => r(null), TIMEOUT_MS)),
+        ]);
+        if (cp) {
+            cpPorClave.set(k, cp);
+            consecFail = 0;
+        } else {
+            consecFail++;
+            if (consecFail >= MAX_CONSEC_FAIL) {
+                console.warn(`[import-socios] Nominatim: ${MAX_CONSEC_FAIL} fallos consecutivos, abortando inferencia CP`);
+                break;
+            }
         }
-        const cp = await inferirCodigoPostalImportSociosNominatim(calle, loc, provincia);
-        if (cp) cpPorClave.set(k, cp);
         idx++;
         if (idx < total) await new Promise((r) => setTimeout(r, 1100));
     }
@@ -1911,7 +1940,7 @@ async function importarExcelSocios(event) {
             }
             const areaImp = sociosCatalogoResolverCodigoAreaArgentina(loc, provinciaSoc);
             if (areaImp.aviso) registrarAvisoGeoTel(`Fila ${filaN}: ${areaImp.aviso}`);
-            const digTelPre = String(
+            const digTelPre = _desnotacionCientifica(
                 valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular') || ''
             ).replace(/\D/g, '');
             if (/^15\d{6,10}$/.test(digTelPre) && !areaImp.cod) {
