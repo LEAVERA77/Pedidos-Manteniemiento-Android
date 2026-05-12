@@ -161,6 +161,9 @@ import './modules/ia-analisis-reclamos.js';
 import './modules/ia-kpi-sugeridos.js';
 import './modules/ia-informe-unificado.js';
 import './modules/ia-analisis-pedidos-bp2.js';
+import './modules/ia-priorizacion-bp2.js';
+import './modules/panel-clima.js';
+import './modules/ia-duplicados-pedido.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
@@ -1534,7 +1537,7 @@ function normalizarWhatsappInternacionalDesdeInput(raw) {
 }
 
 function actualizarBotonesWhatsappDerivacionesUi() {
-    ['energia', 'agua', 'gas', 'tel'].forEach((slot) => {
+    ['energia', 'agua', 'gas', 'tel', 'policia'].forEach((slot) => {
         const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
         if (!btn) return;
         const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
@@ -1581,7 +1584,7 @@ let _cfgDerivWaInputBound = false;
 function bindDerivacionesFormInputsOnce() {
     if (_cfgDerivWaInputBound) return;
     _cfgDerivWaInputBound = true;
-    ['energia', 'agua', 'gas', 'tel'].forEach((slot) => {
+    ['energia', 'agua', 'gas', 'tel', 'policia'].forEach((slot) => {
         const el = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
         if (el) el.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
         const nm = document.getElementById(`cfg-deriv-${slot}-nombre`);
@@ -1597,6 +1600,7 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     let agua = { activo: false, nombre: '', whatsapp: '' };
     let gas = { activo: false, nombre: '', whatsapp: '' };
     let tel = { activo: false, nombre: '', whatsapp: '' };
+    let policia = { activo: false, nombre: '', whatsapp: '' };
     if (dr && typeof dr === 'object' && (dr.empresa_energia || dr.cooperativa_agua)) {
         const ee = dr.empresa_energia || {};
         const ca = dr.cooperativa_agua || {};
@@ -1622,6 +1626,12 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
             nombre: String(tlf.nombre != null ? tlf.nombre : ''),
             whatsapp: String(tlf.whatsapp != null ? tlf.whatsapp : ''),
         };
+        const pol = dr.policia || {};
+        policia = {
+            activo: !!(pol.whatsapp || pol.nombre),
+            nombre: String(pol.nombre != null ? pol.nombre : ''),
+            whatsapp: String(pol.whatsapp != null ? pol.whatsapp : ''),
+        };
     } else {
         const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
         const e = der.energia || {};
@@ -1642,6 +1652,7 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
         { key: 'agua', s: agua },
         { key: 'gas', s: gas },
         { key: 'tel', s: tel },
+        { key: 'policia', s: policia },
     ];
     slots.forEach(({ key, s }) => {
         const ca = document.getElementById(`cfg-deriv-${key}-activo`);
@@ -12406,6 +12417,7 @@ function render() {
             .sort((a, b) => tsResolucionPedidoMs(b) - tsResolucionPedidoMs(a))
             .slice(0, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS);
     }
+    if (app.tab === 'p' && typeof window._gnPriorizarPedidosBp2 === 'function') fl = window._gnPriorizarPedidosBp2(fl);
     const c = document.getElementById('pl');
     c.innerHTML = '';
     

@@ -252,6 +252,8 @@ export async function crearPedidoDesdeWhatsappBot({
   correlationId,
   /** Una URL Cloudinary (misma convención que fotos de app/web: columna `foto_urls`). */
   fotoUrlOpcionalWhatsapp = null,
+  prioridadOverride = null,
+  notaAdicional = null,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   let de = String(descripcion || "").trim();
@@ -261,6 +263,9 @@ export async function crearPedidoDesdeWhatsappBot({
       : "";
   if (notaInt && !de.includes(notaInt)) {
     de = `${de}\n\n${notaInt}`;
+  }
+  if (notaAdicional && !de.includes(notaAdicional)) {
+    de = `${de}\n\n${notaAdicional}`;
   }
   if (!tt || !de) {
     throw new Error("tipo_y_descripcion_requeridos");
@@ -453,7 +458,7 @@ export async function crearPedidoDesdeWhatsappBot({
     null,
     tt,
     de,
-    prioridadPredeterminadaPorTipoTrabajo(tt),
+    prioridadOverride || prioridadPredeterminadaPorTipoTrabajo(tt),
     "Pendiente",
     0,
     latFinal,

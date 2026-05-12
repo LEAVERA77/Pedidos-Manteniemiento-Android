@@ -597,6 +597,16 @@
               <div id="cfg-deriv-tv-rows"></div>
               <button type="button" class="btn-sm" style="margin-top:.35rem;background:var(--bg);border:1px solid var(--bo)" onclick="agregarFilaDerivacionLista('tv')"><i class="fas fa-plus"></i> Agregar empresa de TV</button>
             </div>
+            <div class="full" style="padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+                <input type="checkbox" id="cfg-deriv-policia-activo" aria-describedby="cfg-deriv-policia-help">
+                <label for="cfg-deriv-policia-activo" style="margin:0;font-weight:600">Policía</label>
+              </div>
+              <p id="cfg-deriv-policia-help" style="font-size:.72rem;color:var(--tl);margin:0 0 .5rem">Para casos de Orden público o situaciones que requieran intervención policial. Activo implica WhatsApp al guardar.</p>
+              <div><label for="cfg-deriv-policia-nombre">Nombre visible</label><input id="cfg-deriv-policia-nombre" type="text" maxlength="120" autocomplete="organization" placeholder="Ej. Comisaría Cerrito"></div>
+              <div><label for="cfg-deriv-policia-whatsapp">WhatsApp internacional</label><input id="cfg-deriv-policia-whatsapp" type="tel" inputmode="tel" autocomplete="tel" placeholder="+543434123456" aria-describedby="cfg-deriv-wa-format" oninput="try{setDerivacionesInlineError('')}catch(_){}"></div>
+              <button type="button" class="btn-sm primary" id="cfg-deriv-policia-btn-wa" style="margin-top:.45rem" onclick="abrirWhatsappDerivacionForm('policia')">Abrir WhatsApp</button>
+            </div>
           </div>
           <p id="cfg-deriv-wa-format" style="font-size:.72rem;color:var(--tm);margin:0 0 .45rem">Formato: <strong>+</strong> y solo dígitos después (8 a 22 dígitos totales sin el +), ej. <code style="font-size:.7rem">+543434123456</code>.</p>
           <p id="cfg-deriv-inline-error" class="admin-derivacion-inline-error" style="display:none;margin:0 0 .65rem" role="alert"></p>

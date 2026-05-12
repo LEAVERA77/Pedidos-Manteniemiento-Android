@@ -451,4 +451,61 @@ router.post("/explicar-kpis", authWithTenantHost, adminOnly, async (req, res) =>
   }
 });
 
+/**
+ * POST /api/ia/detectar-duplicados
+ * Body: { tipo_trabajo, descripcion, barrio?, lat?, lng? }
+ * Busca pedidos abiertos similares en los ultimos 7 dias.
+ */
+router.post("/detectar-duplicados", authWithTenantHost, async (req, res) => {
+  try {
+    const tid = req.tenantId;
+    const tt = String(req.body?.tipo_trabajo || "").trim();
+    const desc = String(req.body?.descripcion || "").trim();
+    const barrio = String(req.body?.barrio || "").trim();
+    const lat = parseFloat(req.body?.lat);
+    const lng = parseFloat(req.body?.lng);
+    if (!tt) return res.status(400).json({ ok: false, error: "tipo_trabajo requerido" });
+
+    const hasTid = await pedidosTableHasTenantIdColumn();
+    const params = [];
+    let base = `SELECT id, numero_pedido, tipo_trabajo, descripcion, estado, barrio, lat, lng, fecha_creacion
+                FROM pedidos WHERE estado NOT IN ('Cerrado','Desestimado','Derivado externo')
+                AND fecha_creacion >= NOW() - INTERVAL '7 days'`;
+    if (hasTid) {
+      params.push(tid);
+      base += ` AND tenant_id = $${params.length}`;
+    }
+    params.push(tt);
+    base += ` AND LOWER(TRIM(tipo_trabajo)) = LOWER(TRIM($${params.length}))`;
+    base += ` ORDER BY fecha_creacion DESC LIMIT 10`;
+
+    const r = await query(base, params);
+    const candidatos = (r.rows || []).map((p) => {
+      let score = 60;
+      if (barrio && p.barrio && barrio.toLowerCase() === String(p.barrio).toLowerCase()) score += 20;
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(parseFloat(p.lat)) && Number.isFinite(parseFloat(p.lng))) {
+        const dLat = lat - parseFloat(p.lat);
+        const dLng = lng - parseFloat(p.lng);
+        const distKm = Math.sqrt(dLat * dLat + dLng * dLng) * 111;
+        if (distKm < 0.5) score += 25;
+        else if (distKm < 1) score += 15;
+        else if (distKm < 2) score += 5;
+      }
+      if (desc && p.descripcion) {
+        const w1 = new Set(desc.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+        const w2 = new Set(String(p.descripcion).toLowerCase().split(/\s+/).filter(w => w.length > 3));
+        let overlap = 0;
+        for (const w of w1) { if (w2.has(w)) overlap++; }
+        if (w1.size > 0) score += Math.round((overlap / w1.size) * 15);
+      }
+      return { ...p, score };
+    }).filter((p) => p.score >= 75);
+
+    return res.json({ ok: true, duplicados: candidatos });
+  } catch (e) {
+    console.error("[ia/detectar-duplicados]", e);
+    return res.status(500).json({ ok: false, error: "error_interno" });
+  }
+});
+
 export default router;

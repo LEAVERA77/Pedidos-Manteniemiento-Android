@@ -37,6 +37,7 @@ import {
   tipoReclamoWhatsappFlujoSoloNis,
   tipoReclamoElectricoPideSuministroWhatsapp,
   SUBTIPOS_TRANSITO_MUNICIPIO,
+  SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO,
 } from "./tiposReclamo.js";
 import {
   mensajePedirIdentificadorMisReclamos,
@@ -216,6 +217,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_wa_foto_opcional",
   "awaiting_wa_foto_upload",
   "awaiting_municipio_transito_subtipo",
+  "awaiting_municipio_orden_publico_subtipo",
   "awaiting_mis_reclamos_id",
   "awaiting_mis_reclamos_operador",
 ]);
@@ -1323,6 +1325,8 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       notaUbicacionInterna: notaInt || null,
       correlationId,
       fotoUrlOpcionalWhatsapp: fotoWaUrl,
+      prioridadOverride: sess.forzarPrioridadAlta ? "Alta" : null,
+      notaAdicional: sess.notaOrdenPublico || null,
     });
     sessions.delete(sk);
     const notaSinMapa =
@@ -1906,6 +1910,49 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   });
 }
 
+const _CONSULTA_ESTADO_RE = /c[oó]mo\s+(va|est[aá]|sigue)|estado\s+(de\s+)?mi|mi\s+reclamo|mi\s+pedido|averiguar\s+reclamo|consultar\s+reclamo|saber\s+(de|sobre)\s+mi|qu[eé]\s+pas[oó]\s+con/i;
+
+function _esConsultaEstadoAutoWa(lower) {
+  return _CONSULTA_ESTADO_RE.test(lower);
+}
+
+async function _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx) {
+  try {
+    const dig = String(phone || "").replace(/\D/g, "");
+    if (dig.length < 8) return false;
+    const r = await query(
+      `SELECT numero_pedido, tipo_trabajo, estado, fecha_creacion
+       FROM pedidos
+       WHERE tenant_id = $1 AND estado NOT IN ('Cerrado','Desestimado','Derivado externo')
+         AND (telefono_contacto = $2
+              OR regexp_replace(COALESCE(telefono_contacto,''),'\\D','','g') LIKE '%' || $3)
+       ORDER BY fecha_creacion DESC LIMIT 3`,
+      [Number(tid), phone, dig.slice(-10)]
+    );
+    if (!r.rows?.length) {
+      await reply(
+        phone,
+        "No encontramos reclamos abiertos asociados a tu número.\n\n" +
+          "Podés escribir *0* para buscar por NIS/nombre, o *menú* para ver opciones.",
+        tid,
+        phoneNumberId
+      );
+      return true;
+    }
+    let msg = "📋 *Tus reclamos abiertos:*\n\n";
+    for (const p of r.rows) {
+      const fecha = p.fecha_creacion ? new Date(p.fecha_creacion).toLocaleDateString("es-AR") : "";
+      msg += `• *${p.numero_pedido || "#"}* — ${p.tipo_trabajo || "Sin tipo"}\n  Estado: *${p.estado}* (${fecha})\n\n`;
+    }
+    msg += "_Escribí *menú* para más opciones._";
+    await reply(phone, msg, tid, phoneNumberId);
+    return true;
+  } catch (e) {
+    console.warn("[wa-auto-status]", e?.message || e);
+    return false;
+  }
+}
+
 export async function handleInboundMetaWhatsAppPayload(body) {
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
@@ -2258,6 +2305,23 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
       phoneNumberId: wpid,
     });
     await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
+    return;
+  }
+  if (tipo.startsWith("Orden público") && normalizarRubroCliente(ctx.tipo) === "municipio") {
+    sessions.set(sk, {
+      step: "awaiting_municipio_orden_publico_subtipo",
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: wpid,
+    });
+    const sub = SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.map((s, i) => `*${i + 1})* ${s}`).join("\n");
+    await reply(
+      phone,
+      `*Orden público* — elegí el tipo:\n\n${sub}\n\n_(*menú* = salir · *atrás* = volver al menú principal)_`,
+      tid,
+      phoneNumberId
+    );
     return;
   }
   sessions.set(sk, {
@@ -3526,6 +3590,47 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     return;
   }
 
+  if (sess && sess.step === "awaiting_municipio_orden_publico_subtipo") {
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (esComandoAtras(text)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    const nop = parseInt(String(text || "").trim(), 10);
+    if (!Number.isFinite(nop) || nop < 1 || nop > SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.length) {
+      await reply(
+        phone,
+        `Respondé con un número del *1* al *${SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.length}* según la lista de *Orden público*, o *menú* para salir.`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const tipoOp = SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO[nop - 1];
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_desc",
+      tipo: tipoOp,
+      forzarPrioridadAlta: true,
+      notaOrdenPublico: "⚠️ Evaluar derivación a la Policía si corresponde.",
+      phoneNumberId: sess.phoneNumberId || wpid,
+    });
+    await reply(
+      phone,
+      `Elegiste: *${tipoOp}* (Orden público, prioridad *Alta*).\n\n` +
+        `Ahora escribí una *breve descripción* de la situación.\n\n` +
+        `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "awaiting_mis_reclamos_id") {
     if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
       sessions.delete(sk);
@@ -3632,6 +3737,10 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       );
       return;
     }
+    if (_esConsultaEstadoAutoWa(lower)) {
+      const handled = await _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx);
+      if (handled) return;
+    }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const tipoSel = ctx.tipos[n - 1];
@@ -3648,6 +3757,23 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
           phoneNumberId: wpid,
         });
         await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
+        return;
+      }
+      if (tipoSel.startsWith("Orden público") && normalizarRubroCliente(ctx.tipo) === "municipio") {
+        sessions.set(sk, {
+          step: "awaiting_municipio_orden_publico_subtipo",
+          tenantId: tid,
+          tipoCliente: ctx.tipo,
+          contactName: contactName || null,
+          phoneNumberId: wpid,
+        });
+        const sub = SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.map((s, i) => `*${i + 1})* ${s}`).join("\n");
+        await reply(
+          phone,
+          `*Orden público* — elegí el tipo:\n\n${sub}\n\n_(*menú* = salir · *atrás* = volver al menú principal)_`,
+          tid,
+          phoneNumberId
+        );
         return;
       }
       if (ctx.whatsappBloqueoReclamos) {

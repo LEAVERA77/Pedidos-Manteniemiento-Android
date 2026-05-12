@@ -82,6 +82,7 @@ export function construirDerivacionReclamosDesdeFormularioDerivacionesCompleto(n
     pushSlotSimple(out, 'agua', 'cooperativa_agua', 'Cooperativa de agua', normalizarWhatsappInternacionalDesdeInput);
     pushSlotSimple(out, 'gas', 'empresa_gas_natural', 'Gas natural', normalizarWhatsappInternacionalDesdeInput);
     pushSlotSimple(out, 'tel', 'empresa_telefonia', 'Telefonía', normalizarWhatsappInternacionalDesdeInput);
+    pushSlotSimple(out, 'policia', 'policia', 'Policía', normalizarWhatsappInternacionalDesdeInput);
     const internet = readListFromDom('internet', normalizarWhatsappInternacionalDesdeInput);
     const tv = readListFromDom('tv', normalizarWhatsappInternacionalDesdeInput);
     out.empresa_internet = internet;

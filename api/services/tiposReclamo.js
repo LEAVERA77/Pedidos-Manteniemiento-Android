@@ -17,6 +17,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Tránsito (incluye señalización y semáforos)",
     "Ruidos molestos / Perturbación",
     "Animales sueltos / Mascotas",
+    "Orden público (vandalismo, disturbios, etc.)",
     "Otros",
   ],
   cooperativa_agua: [
@@ -53,6 +54,15 @@ export const SUBTIPOS_TRANSITO_MUNICIPIO = [
   "Calle cortada sin aviso",
   "Semaforo fuera de sincronización",
   "Otro problema de tránsito",
+];
+
+/** Subtipos de *Orden público* (municipio): menú WA 14 → 1–5; prioridad Alta forzada. */
+export const SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO = [
+  "Vandalismo",
+  "Disturbios",
+  "Violencia de género",
+  "Desorden en la vía pública",
+  "Otro problema de orden público",
 ];
 
 /** Lista histórica (antes de rubros); solo lectura / compatibilidad en UI. */
@@ -194,6 +204,7 @@ export function tipoTrabajoPermitidoParaNuevoPedido(tipoTrabajo, tipoCliente) {
   if (!tt) return false;
   const rubro = normalizarRubroCliente(tipoCliente);
   if (rubro === "municipio" && SUBTIPOS_TRANSITO_MUNICIPIO.includes(tt)) return true;
+  if (rubro === "municipio" && SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.includes(tt)) return true;
   const permitidos = rubro
     ? TIPOS_RECLAMO_POR_RUBRO[rubro] || tiposReclamoParaClienteTipo(null)
     : tiposReclamoParaClienteTipo(null);
