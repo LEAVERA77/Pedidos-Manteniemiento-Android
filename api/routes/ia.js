@@ -9,6 +9,7 @@ import { analizarReclamosConGroq } from "../services/groqAnalisisReclamos.js";
 import { sugerirKpisConGroq } from "../services/groqKpiSugeridos.js";
 import { generarInformeConGroq } from "../services/groqGenerarInforme.js";
 import { explicarKpisConGroq } from "../services/groqExplicarKpis.js";
+import { generarMensajeDerivacionConGroq } from "../services/groqMensajeDerivacion.js";
 import { parsePeriod } from "../utils/helpers.js";
 
 const router = express.Router();
@@ -505,6 +506,39 @@ router.post("/detectar-duplicados", authWithTenantHost, async (req, res) => {
   } catch (e) {
     console.error("[ia/detectar-duplicados]", e);
     return res.status(500).json({ ok: false, error: "error_interno" });
+  }
+});
+
+/**
+ * POST /api/ia/generar-mensaje-derivacion
+ * Admin: genera un mensaje profesional para derivar un reclamo a un tercero.
+ */
+router.post("/generar-mensaje-derivacion", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const { destinatario, tipo_reclamo, direccion, barrio, descripcion, prioridad, telefono_contacto } = req.body || {};
+    if (!destinatario) return res.status(400).json({ ok: false, error: "destinatario requerido" });
+
+    let nombre_tenant = "";
+    try {
+      const r = await query("SELECT nombre FROM clientes WHERE id = $1 LIMIT 1", [req.tenantId]);
+      nombre_tenant = r.rows?.[0]?.nombre || "";
+    } catch (_) {}
+
+    const mensaje = await generarMensajeDerivacionConGroq({
+      destinatario: String(destinatario).trim(),
+      tipo_reclamo: String(tipo_reclamo || "").trim(),
+      direccion: String(direccion || "").trim(),
+      barrio: String(barrio || "").trim(),
+      descripcion: String(descripcion || "").trim().slice(0, 500),
+      prioridad: String(prioridad || "").trim(),
+      telefono_contacto: String(telefono_contacto || "").trim(),
+      nombre_tenant,
+    });
+
+    return res.json({ ok: true, mensaje });
+  } catch (e) {
+    console.error("[ia/generar-mensaje-derivacion]", e?.message || e);
+    return res.status(500).json({ ok: false, error: "No se pudo generar el mensaje" });
   }
 });
 

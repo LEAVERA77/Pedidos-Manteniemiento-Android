@@ -164,6 +164,7 @@ import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/ia-priorizacion-bp2.js';
 import './modules/panel-clima.js';
 import './modules/ia-duplicados-pedido.js';
+import './modules/ia-derivacion-mensaje.js';
 import './modules/suggest-change-creds.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
@@ -12186,7 +12187,8 @@ async function detalle(p, opts = {}) {
             <select id="admin-derivar-destino" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo)">${opts}</select></div>
             <div style="margin-bottom:.55rem"><label for="admin-derivar-motivo" style="font-size:.78rem;font-weight:600">Observaciones para el tercero <span style="font-weight:500;color:var(--tl)">(obligatorias si no hubo texto del técnico)</span></label>
             ${bloqueMotivoTecnicoDer}
-            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${motivoAdminTa}</textarea></div>
+            <textarea id="admin-derivar-motivo" rows="4" maxlength="2000" style="width:100%;margin-top:.25rem;padding:.45rem;border-radius:.45rem;border:1px solid var(--bo);resize:vertical;white-space:pre-wrap" placeholder="Si el técnico cargó una solicitud, el texto aparece acá para que lo revises o completes.">${motivoAdminTa}</textarea>
+            <button type="button" class="btn-sm" id="ia-generar-derivacion" style="margin-top:.35rem;background:linear-gradient(135deg,#4285f4,#34a853);color:#fff;border:none;border-radius:.35rem;padding:.3rem .65rem;font-size:.76rem;cursor:pointer" onclick="window._gnGenerarMensajeDerivacionIA&&window._gnGenerarMensajeDerivacionIA('${pidEsc}')" title="Generar mensaje con IA">✨ Generar mensaje</button></div>
             <button type="button" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E" onclick="abrirModalRevisionDerivacionAdmin('${pidEsc}')"><i class="fab fa-whatsapp"></i> Revisar y enviar (servidor)</button>
         </div>`;
     }
