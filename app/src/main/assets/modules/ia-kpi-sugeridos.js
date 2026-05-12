@@ -40,6 +40,29 @@ function buildBtn() {
   return btn;
 }
 
+function renderBarrios(barrios) {
+  if (!barrios || !barrios.length) return '';
+  const lbl = typeof window.etiquetaZonaPedido === 'function' ? window.etiquetaZonaPedido() : 'Barrio / Zona';
+  let h = `<div style="margin-bottom:.85rem;padding:.65rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;border-left:4px solid #7c3aed">`;
+  h += `<div style="font-weight:700;font-size:.84rem;color:#1e1b4b;margin-bottom:.45rem"><i class="fas fa-map-marked-alt" style="color:#7c3aed"></i> Reclamos por ${escHtml(lbl)}</div>`;
+  h += '<table style="width:100%;font-size:.78rem;border-collapse:collapse">';
+  h += `<tr style="background:#f1f5f9"><th style="text-align:left;padding:.25rem .35rem">${escHtml(lbl)}</th><th style="text-align:right;padding:.25rem .35rem">Total</th><th style="text-align:right;padding:.25rem .35rem">Pend.</th><th style="text-align:right;padding:.25rem .35rem">T.cierre</th><th style="text-align:left;padding:.25rem .35rem">Tipo principal</th></tr>`;
+  for (const b of barrios) {
+    const tipoPrin = b.top_tipos && b.top_tipos.length ? b.top_tipos[0].tipo : '—';
+    const horasLbl = b.horas_prom != null ? `${b.horas_prom}h` : '—';
+    const pendColor = b.pendientes > 3 ? 'color:#dc2626;font-weight:700' : '';
+    h += `<tr style="border-bottom:1px solid #e2e8f0">`;
+    h += `<td style="padding:.25rem .35rem;font-weight:600">${escHtml(b.zona)}</td>`;
+    h += `<td style="text-align:right;padding:.25rem .35rem;font-weight:600">${b.total}</td>`;
+    h += `<td style="text-align:right;padding:.25rem .35rem;${pendColor}">${b.pendientes}</td>`;
+    h += `<td style="text-align:right;padding:.25rem .35rem">${horasLbl}</td>`;
+    h += `<td style="padding:.25rem .35rem;font-size:.74rem;color:#475569">${escHtml(tipoPrin)}</td>`;
+    h += `</tr>`;
+  }
+  h += '</table></div>';
+  return h;
+}
+
 function renderCard(kpi, idx) {
   const alertBorder = kpi.alerta ? 'border-left:4px solid #ef4444' : 'border-left:4px solid #22c55e';
   return `<div class="ia-kpi-card" data-idx="${idx}" style="padding:.75rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;${alertBorder};margin-bottom:.65rem">
@@ -135,6 +158,9 @@ async function sugerirKpis() {
     let html = '<div style="font-size:.85rem;font-weight:700;color:#5b21b6;margin-bottom:.5rem"><i class="fas fa-brain"></i> KPIs sugeridos por IA — últimos 30 días</div>';
     if (data.metricas) {
       html += `<div style="font-size:.75rem;color:#64748b;margin-bottom:.65rem">Total reclamos: ${data.metricas.total_reclamos || 0} · Cerrados: ${data.metricas.cerrados || 0} · Tiempo prom. cierre: ${data.metricas.horas_promedio_cierre != null ? data.metricas.horas_promedio_cierre + 'h' : '—'}</div>`;
+    }
+    if (data.barrios && data.barrios.length) {
+      html += renderBarrios(data.barrios);
     }
     kpis.forEach((k, i) => { html += renderCard(k, i); });
     container.innerHTML = html;

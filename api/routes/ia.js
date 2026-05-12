@@ -155,23 +155,46 @@ router.post("/sugerir-kpis", authWithTenantHost, adminOnly, async (req, res) => 
 
     const base = `FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${bt}`;
 
-    const r = await query(
-      `SELECT
-         COUNT(*)::INT AS total,
-         COUNT(*) FILTER (WHERE estado='Cerrado')::INT AS cerrados,
-         COUNT(*) FILTER (WHERE estado='Pendiente')::INT AS pendientes,
-         COUNT(*) FILTER (WHERE estado='En ejecución')::INT AS en_ejecucion,
-         AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600)
-           FILTER (WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL) AS horas_prom_cierre,
-         COUNT(*) FILTER (WHERE estado='Cerrado'
-           AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 48)::INT AS cerrados_48h,
-         COUNT(*) FILTER (WHERE estado='Cerrado'
-           AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 24)::INT AS cerrados_24h,
-         COUNT(*) FILTER (WHERE estado='Cerrado'
-           AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 4)::INT AS cerrados_4h
-       ${base}`,
-      [...params]
-    );
+    const [r, topBarrios, barrioStats] = await Promise.all([
+      query(
+        `SELECT
+           COUNT(*)::INT AS total,
+           COUNT(*) FILTER (WHERE estado='Cerrado')::INT AS cerrados,
+           COUNT(*) FILTER (WHERE estado='Pendiente')::INT AS pendientes,
+           COUNT(*) FILTER (WHERE estado='En ejecución')::INT AS en_ejecucion,
+           AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600)
+             FILTER (WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL) AS horas_prom_cierre,
+           COUNT(*) FILTER (WHERE estado='Cerrado'
+             AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 48)::INT AS cerrados_48h,
+           COUNT(*) FILTER (WHERE estado='Cerrado'
+             AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 24)::INT AS cerrados_24h,
+           COUNT(*) FILTER (WHERE estado='Cerrado'
+             AND EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600 <= 4)::INT AS cerrados_4h
+         ${base}`,
+        [...params]
+      ),
+      query(
+        `SELECT COALESCE(NULLIF(TRIM(barrio),''), NULLIF(TRIM(distribuidor),'')) AS zona,
+                COUNT(*)::INT AS total,
+                COUNT(*) FILTER (WHERE estado='Pendiente')::INT AS pendientes,
+                COUNT(*) FILTER (WHERE estado='Cerrado')::INT AS cerrados,
+                ROUND(AVG(EXTRACT(EPOCH FROM (fecha_cierre - fecha_creacion))/3600)
+                  FILTER (WHERE estado='Cerrado' AND fecha_cierre IS NOT NULL))::INT AS horas_prom
+         ${base}
+           AND COALESCE(NULLIF(TRIM(barrio),''), NULLIF(TRIM(distribuidor),'')) IS NOT NULL
+         GROUP BY zona ORDER BY total DESC LIMIT 8`,
+        [...params]
+      ).catch(() => ({ rows: [] })),
+      query(
+        `SELECT COALESCE(NULLIF(TRIM(barrio),''), NULLIF(TRIM(distribuidor),'')) AS zona,
+                tipo_trabajo, COUNT(*)::INT AS total
+         ${base}
+           AND COALESCE(NULLIF(TRIM(barrio),''), NULLIF(TRIM(distribuidor),'')) IS NOT NULL
+           AND COALESCE(TRIM(tipo_trabajo),'') != ''
+         GROUP BY zona, tipo_trabajo ORDER BY total DESC LIMIT 20`,
+        [...params]
+      ).catch(() => ({ rows: [] })),
+    ]);
 
     const row = r.rows[0] || {};
     const total = Number(row.total) || 0;
@@ -181,6 +204,23 @@ router.post("/sugerir-kpis", authWithTenantHost, adminOnly, async (req, res) => 
     const pct48h = cerrados > 0 ? Math.round((Number(row.cerrados_48h) / cerrados) * 1000) / 10 : 0;
     const pct24h = cerrados > 0 ? Math.round((Number(row.cerrados_24h) / cerrados) * 1000) / 10 : 0;
     const pct4h = cerrados > 0 ? Math.round((Number(row.cerrados_4h) / cerrados) * 1000) / 10 : 0;
+
+    const barrios = (topBarrios.rows || []).map((b) => {
+      const zona = String(b.zona || "").trim();
+      const tiposPorZona = (barrioStats.rows || [])
+        .filter((s) => String(s.zona || "").trim() === zona)
+        .sort((a, b2) => (Number(b2.total) || 0) - (Number(a.total) || 0))
+        .slice(0, 3)
+        .map((s) => ({ tipo: s.tipo_trabajo, total: Number(s.total) || 0 }));
+      return {
+        zona,
+        total: Number(b.total) || 0,
+        pendientes: Number(b.pendientes) || 0,
+        cerrados: Number(b.cerrados) || 0,
+        horas_prom: b.horas_prom != null ? Number(b.horas_prom) : null,
+        top_tipos: tiposPorZona,
+      };
+    });
 
     const metricas = {
       periodo_dias: periodDias,
@@ -213,6 +253,7 @@ router.post("/sugerir-kpis", authWithTenantHost, adminOnly, async (req, res) => 
       ok: true,
       metricas,
       kpis: kpis.length ? kpis : null,
+      barrios: barrios.length ? barrios : null,
     });
   } catch (error) {
     console.error("[ia/sugerir-kpis]", error);
