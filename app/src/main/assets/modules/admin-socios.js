@@ -1334,55 +1334,89 @@ async function inferirCodigoPostalImportSociosNominatim(calle, loc, provincia) {
  */
 async function aplicarInferenciaCpNominatimABulkImportSocios(payloads) {
     if (!Array.isArray(payloads) || !payloads.length) return 0;
-    const clave = (p) =>
-        `${String(p.calle || '')
-            .trim()
-            .toLowerCase()}\u0001${String(p.loc || '')
-            .trim()
-            .toLowerCase()}\u0001${String(p.provincia || '')
-            .trim()
-            .toLowerCase()}`;
-    const unicos = new Map();
-    for (const p of payloads) {
-        if (p.codigo_postal && String(p.codigo_postal).trim()) continue;
-        if (!p.calle || !p.loc || !p.provincia) continue;
-        const k = clave(p);
-        if (!unicos.has(k)) unicos.set(k, { calle: p.calle, loc: p.loc, provincia: p.provincia });
-    }
-    if (!unicos.size) return 0;
     const TIMEOUT_MS = 12000;
     const MAX_CONSEC_FAIL = 3;
-    const cpPorClave = new Map();
-    let idx = 0;
-    let consecFail = 0;
-    const total = unicos.size;
-    for (const [k, { calle, loc, provincia }] of unicos) {
-        req().actualizarOverlayImportacion(`Código postal (Nominatim)… ${idx + 1} / ${total} direcciones distintas`);
+    const sinCp = payloads.filter(
+        (p) => !p.codigo_postal && p.calle && p.loc && p.provincia
+    );
+    if (!sinCp.length) return 0;
+
+    const locGroups = new Map();
+    for (const p of sinCp) {
+        const lk = `${String(p.loc).trim().toLowerCase()}\u0001${String(p.provincia).trim().toLowerCase()}`;
+        if (!locGroups.has(lk)) locGroups.set(lk, { loc: p.loc, provincia: p.provincia });
+    }
+
+    req().actualizarOverlayImportacion(`CP (Nominatim): buscando por localidad (${locGroups.size} ciudades)…`);
+    const cpPorLoc = new Map();
+    let locIdx = 0;
+    for (const [lk, { loc, provincia }] of locGroups) {
         const cp = await Promise.race([
-            inferirCodigoPostalImportSociosNominatim(calle, loc, provincia),
+            inferirCodigoPostalImportSociosNominatim(loc, loc, provincia),
             new Promise((r) => setTimeout(() => r(null), TIMEOUT_MS)),
         ]);
-        if (cp) {
-            cpPorClave.set(k, cp);
-            consecFail = 0;
-        } else {
-            consecFail++;
-            if (consecFail >= MAX_CONSEC_FAIL) {
-                console.warn(`[import-socios] Nominatim: ${MAX_CONSEC_FAIL} fallos consecutivos, abortando inferencia CP`);
-                break;
-            }
-        }
-        idx++;
-        if (idx < total) await new Promise((r) => setTimeout(r, 1100));
+        if (cp) cpPorLoc.set(lk, cp);
+        locIdx++;
+        if (locIdx < locGroups.size) await new Promise((r) => setTimeout(r, 1100));
     }
+
+    let cpInfCiudad = 0;
+    const pendientes = [];
+    for (const p of sinCp) {
+        const lk = `${String(p.loc).trim().toLowerCase()}\u0001${String(p.provincia).trim().toLowerCase()}`;
+        const cpC = cpPorLoc.get(lk);
+        if (cpC) {
+            p.codigo_postal = cpC;
+            cpInfCiudad++;
+        } else {
+            pendientes.push(p);
+        }
+    }
+
+    if (cpInfCiudad > 0) {
+        console.info(`[import-socios] CP por localidad: ${cpInfCiudad} filas resueltas en ${locGroups.size} consultas`);
+    }
+
+    if (pendientes.length) {
+        const clave = (p) =>
+            `${String(p.calle || '').trim().toLowerCase()}\u0001${String(p.loc || '').trim().toLowerCase()}\u0001${String(p.provincia || '').trim().toLowerCase()}`;
+        const unicos = new Map();
+        for (const p of pendientes) {
+            const k = clave(p);
+            if (!unicos.has(k)) unicos.set(k, { calle: p.calle, loc: p.loc, provincia: p.provincia });
+        }
+        const cpPorCalle = new Map();
+        let idx = 0;
+        let consecFail = 0;
+        const total = unicos.size;
+        for (const [k, { calle, loc, provincia }] of unicos) {
+            req().actualizarOverlayImportacion(`CP (Nominatim): ${idx + 1} / ${total} calles restantes…`);
+            const cp = await Promise.race([
+                inferirCodigoPostalImportSociosNominatim(calle, loc, provincia),
+                new Promise((r) => setTimeout(() => r(null), TIMEOUT_MS)),
+            ]);
+            if (cp) {
+                cpPorCalle.set(k, cp);
+                consecFail = 0;
+            } else {
+                consecFail++;
+                if (consecFail >= MAX_CONSEC_FAIL) {
+                    console.warn(`[import-socios] Nominatim: ${MAX_CONSEC_FAIL} fallos consecutivos, abortando`);
+                    break;
+                }
+            }
+            idx++;
+            if (idx < total) await new Promise((r) => setTimeout(r, 1100));
+        }
+        for (const p of pendientes) {
+            const cpx = cpPorCalle.get(clave(p));
+            if (cpx) p.codigo_postal = cpx;
+        }
+    }
+
     let cpInf = 0;
-    for (const p of payloads) {
-        if (p.codigo_postal && String(p.codigo_postal).trim()) continue;
-        if (!p.calle || !p.loc || !p.provincia) continue;
-        const cpx = cpPorClave.get(clave(p));
-        if (cpx) {
-            p.codigo_postal = cpx;
-            cpInf++;
+    for (const p of sinCp) {
+        if (p.codigo_postal && String(p.codigo_postal).trim()) cpInf++;
         }
     }
     return cpInf;
@@ -1949,6 +1983,11 @@ async function importarExcelSocios(event) {
                 );
             }
             let telefono = valorSociosPorEncabezados(row, mapNormAOriginal, 'telefono', 'tel', 'celular');
+            if (telefono && /^\d[.,]\d+[eE][+\-]?\d{1,3}$/.test(String(telefono).trim())) {
+                registrarAvisoGeoTel(
+                    `Fila ${filaN}: telefono en notacion cientifica (${String(telefono).trim()}) -- Excel trunco digitos. Usa .xlsx en vez de .txt/.tsv para conservar la precision.`
+                );
+            }
             if (telefono && String(telefono).trim()) {
                 const tn = normalizarTelefonoArgentinaImportSociosSync(telefono, loc, provinciaSoc);
                 if (tn) telefono = tn;
