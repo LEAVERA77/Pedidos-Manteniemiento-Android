@@ -155,6 +155,8 @@ import {
 
 import './modules/login-biometric-android.js';
 import './modules/ia-sugerir-reclamo.js';
+import './modules/ia-analisis-reclamos.js';
+import './modules/ia-kpi-sugeridos.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
@@ -2507,6 +2509,7 @@ function esAndroidWebViewMapa() {
 }
 
 if (typeof window !== 'undefined') window.esAdmin = esAdmin;
+if (typeof window !== 'undefined') { window._gnSqlSimple = sqlSimple; window._gnEsc = esc; }
 
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
 function esAdminSesionWebPublica() {
