@@ -31,6 +31,7 @@ import incidenciasRoutes from "./routes/incidencias.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
 import iaRoutes from "./routes/ia.js";
+import sociosExportRoutes from "./routes/sociosExport.js";
 import {
   authLoginLimiter,
   authVerifyPasswordLimiter,
@@ -163,6 +164,7 @@ export function createHttpApp() {
   app.use("/api/whatsapp/human-chat", whatsappHumanChatRoutes);
   app.use("/api/webhooks/whatsapp", webhooksWhatsappRoutes);
   app.use("/api/ia", iaRoutes);
+  app.use("/api/socios", sociosExportRoutes);
 
   app.get("/api/app-version", async (_req, res) => {
     try {

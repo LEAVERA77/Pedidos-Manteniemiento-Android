@@ -346,17 +346,13 @@ export function initCommunityBroadcastFab(deps) {
   <div style="background:var(--pa,#fff);color:var(--tx,#111);max-width:420px;width:100%;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 12px 40px rgba(0,0,0,.25)">
     <h3 style="margin:0 0 .5rem;font-size:1rem">Aviso masivo (WhatsApp)</h3>
     <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
-    <label style="font-size:.78rem;font-weight:600">Título</label>
-    <input id="gn-bc-titulo" type="text" style="width:100%;margin:.2rem 0 .5rem;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" />
-    <label style="font-size:.78rem;font-weight:600">Mensaje <span style="color:#64748b">({ciudad} {fecha} {horario} {direccion} {telefono})</span></label>
-    <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1"></textarea>
-    <label style="font-size:.78rem;display:flex;align-items:center;gap:.35rem"><input type="checkbox" id="gn-bc-corte" /> Corte programado (solo electricidad/agua)</label>
-    <div id="gn-bc-corte-fields" style="display:none;margin-top:.45rem;font-size:.78rem">
-      <input id="gn-bc-zona" placeholder="Zona afectada" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
-      <input id="gn-bc-fi" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
-      <input id="gn-bc-ff" type="datetime-local" style="width:100%;margin:.25rem 0;padding:.35rem" />
-      <input id="gn-bc-mot" placeholder="Motivo" style="width:100%;margin:.25rem 0;padding:.35rem;border-radius:6px;border:1px solid #cbd5e1" />
+    <label style="font-size:.78rem;font-weight:600">Título del aviso</label>
+    <div style="display:flex;gap:.35rem;align-items:center;margin:.2rem 0 .5rem">
+      <input id="gn-bc-titulo" type="text" style="flex:1;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="120" placeholder="Ej: Inundaciones, Corte de agua…" />
+      <button type="button" id="gn-bc-ia" title="Generar mensaje con IA" style="flex-shrink:0;padding:.4rem .65rem;border-radius:8px;border:1px solid #a78bfa;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:.82rem;font-weight:600;display:flex;align-items:center;gap:.25rem">✨ IA</button>
     </div>
+    <label style="font-size:.78rem;font-weight:600">Mensaje</label>
+    <textarea id="gn-bc-msg" rows="5" style="width:100%;margin:.2rem 0 .5rem;padding:.45rem;border-radius:8px;border:1px solid #cbd5e1" placeholder="Escribí o generá con IA…"></textarea>
     <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.6rem">
       <button type="button" id="gn-bc-cancel" class="ba2" style="background:#e2e8f0;border-color:#cbd5e1;color:#334155">Cancelar</button>
       <button type="button" id="gn-bc-send" class="ba2" style="background:#128C7E;color:#fff;border-color:#128C7E">Enviar</button>
@@ -445,11 +441,43 @@ export function initCommunityBroadcastFab(deps) {
     modal.onclick = (e) => {
         if (e.target === modal) closeModal();
     };
-    const chkCorte = modal.querySelector('#gn-bc-corte');
-    const corteFields = modal.querySelector('#gn-bc-corte-fields');
-    chkCorte.addEventListener('change', () => {
-        corteFields.style.display = chkCorte.checked ? 'block' : 'none';
-    });
+    modal.querySelector('#gn-bc-ia').onclick = async () => {
+        const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
+        if (!titulo) {
+            toast('Escribí un título primero (ej: Inundaciones)', 'warning');
+            modal.querySelector('#gn-bc-titulo').focus();
+            return;
+        }
+        const btnIa = modal.querySelector('#gn-bc-ia');
+        btnIa.disabled = true;
+        btnIa.textContent = '⏳…';
+        try {
+            await asegurarJwtApiRest();
+            const tok = getApiToken();
+            if (!tok) throw new Error('Sin sesión');
+            const tipo_negocio = (window.EMPRESA_CFG && window.EMPRESA_CFG.tipo) || 'municipio';
+            const r = await fetch(apiUrl('/api/ia/generar-aviso'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+                body: JSON.stringify({ titulo, tipo_negocio }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+            const telCfg = document.getElementById('cfg-telefono');
+            let msg = d.mensaje || '';
+            if (telCfg && telCfg.value) {
+                msg = msg.replace(/\{telefono\}/g, telCfg.value.trim());
+            }
+            modal.querySelector('#gn-bc-msg').value = msg;
+            toast('Mensaje generado. Editalo si hace falta.', 'success');
+        } catch (e) {
+            toast('IA: ' + String(e.message || e), 'error');
+        } finally {
+            btnIa.disabled = false;
+            btnIa.innerHTML = '✨ IA';
+        }
+    };
+
     modal.querySelector('#gn-bc-send').onclick = async () => {
         const titulo = (modal.querySelector('#gn-bc-titulo').value || '').trim();
         const mensaje = (modal.querySelector('#gn-bc-msg').value || '').trim();
@@ -467,37 +495,14 @@ export function initCommunityBroadcastFab(deps) {
         const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` };
         const business_type = businessTypeBroadcast();
         try {
-            if (chkCorte.checked) {
-                const zona = (modal.querySelector('#gn-bc-zona').value || '').trim();
-                const motivo = (modal.querySelector('#gn-bc-mot').value || '').trim();
-                const fi = modal.querySelector('#gn-bc-fi').value;
-                const ff = modal.querySelector('#gn-bc-ff').value;
-                const r = await fetch(apiUrl('/api/whatsapp/broadcast/corte-programado'), {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
-                        confirm: true,
-                        business_type,
-                        zona_afectada: zona,
-                        motivo,
-                        fecha_inicio: fi || null,
-                        fecha_fin: ff || null,
-                        mensaje,
-                    }),
-                });
-                const d = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
-                toast('Corte programado enviado', 'success');
-            } else {
-                const r = await fetch(apiUrl('/api/whatsapp/broadcast/community'), {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({ confirm: true, titulo, mensaje, business_type }),
-                });
-                const d = await r.json().catch(() => ({}));
-                if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
-                toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
-            }
+            const r = await fetch(apiUrl('/api/whatsapp/broadcast/community'), {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ confirm: true, titulo, mensaje, business_type }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
+            toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
             closeModal();
         } catch (e) {
             toast(String(e.message || e), 'error');

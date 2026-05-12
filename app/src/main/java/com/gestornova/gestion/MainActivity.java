@@ -258,6 +258,7 @@ public class MainActivity extends AppCompatActivity {
         webView.setHorizontalScrollBarEnabled(false);
 
         webView.addJavascriptInterface(new AndroidPrintBridge(), "AndroidPrint");
+        webView.addJavascriptInterface(new AndroidImageShareBridge(), "AndroidImageShare");
         webView.addJavascriptInterface(new LocalNotifyBridge(), "AndroidLocalNotify");
         webView.addJavascriptInterface(new AndroidConfigBridge(), "AndroidConfig");
         webView.addJavascriptInterface(new AndroidMapLocationBridge(), "AndroidInterface");
@@ -998,6 +999,78 @@ public class MainActivity extends AppCompatActivity {
                 PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter(jobName);
                 pm.print(jobName, adapter, new PrintAttributes.Builder().build());
             });
+        }
+    }
+
+    /** Descarga y comparte imágenes del pedido desde el WebView (window.AndroidImageShare). */
+    private class AndroidImageShareBridge {
+        @JavascriptInterface
+        public void downloadImage(String url) {
+            if (url == null || url.isEmpty()) return;
+            runOnUiThread(() -> {
+                try {
+                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                    if (dm == null) return;
+                    Uri uri = Uri.parse(url);
+                    String filename = "GestorNova_" + System.currentTimeMillis() + ".jpg";
+                    DownloadManager.Request request = new DownloadManager.Request(uri);
+                    request.setTitle(filename);
+                    request.setDescription("Descargando imagen del pedido");
+                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "GestorNova/" + filename);
+                    dm.enqueue(request);
+                    Toast.makeText(MainActivity.this, "Descargando imagen…", Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Error al descargar: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void shareImage(String url) {
+            if (url == null || url.isEmpty()) return;
+            new Thread(() -> {
+                try {
+                    java.net.URL imgUrl = new java.net.URL(url);
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) imgUrl.openConnection();
+                    conn.setDoInput(true);
+                    conn.connect();
+                    InputStream in = conn.getInputStream();
+                    byte[] data = readAllBytes(in);
+                    in.close();
+
+                    File cacheDir = new File(getCacheDir(), "shared_images");
+                    if (!cacheDir.exists()) cacheDir.mkdirs();
+                    File imgFile = new File(cacheDir, "compartir_" + System.currentTimeMillis() + ".jpg");
+                    FileOutputStream fos = new FileOutputStream(imgFile);
+                    fos.write(data);
+                    fos.close();
+
+                    Uri contentUri = FileProvider.getUriForFile(
+                            MainActivity.this,
+                            getApplicationContext().getPackageName() + ".fileprovider",
+                            imgFile);
+
+                    runOnUiThread(() -> {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("image/jpeg");
+                        shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(shareIntent, "Compartir imagen"));
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() ->
+                            Toast.makeText(MainActivity.this, "Error al compartir: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                }
+            }).start();
+        }
+
+        private byte[] readAllBytes(InputStream in) throws Exception {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) buffer.write(buf, 0, n);
+            return buffer.toByteArray();
         }
     }
 

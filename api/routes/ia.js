@@ -1,6 +1,7 @@
 import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
 import { clasificarReclamoConGroq } from "../services/groqClassifier.js";
+import { generarMensajeBroadcast } from "../services/groqBroadcastGenerator.js";
 
 const router = express.Router();
 
@@ -27,6 +28,29 @@ router.post("/clasificar-reclamo", authWithTenantHost, async (req, res) => {
   } catch (error) {
     console.error("[ia/clasificar-reclamo]", error);
     return res.status(500).json({ ok: false, error: "Error interno al clasificar reclamo" });
+  }
+});
+
+/**
+ * POST /api/ia/generar-aviso
+ * Body: { titulo, tipo_negocio }
+ * Genera un mensaje de aviso masivo con IA.
+ */
+router.post("/generar-aviso", authWithTenantHost, async (req, res) => {
+  try {
+    const titulo = String(req.body?.titulo || "").trim();
+    const tipo_negocio = String(req.body?.tipo_negocio || "").trim();
+    if (!titulo) {
+      return res.status(400).json({ ok: false, error: "titulo es requerido" });
+    }
+    const result = await generarMensajeBroadcast({ titulo, tipo_negocio });
+    if (!result.ok) {
+      return res.status(502).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error("[ia/generar-aviso]", error);
+    return res.status(500).json({ ok: false, error: "Error interno al generar aviso" });
   }
 });
 

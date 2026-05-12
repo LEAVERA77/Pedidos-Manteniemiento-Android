@@ -155,6 +155,8 @@ import {
 
 import './modules/login-biometric-android.js';
 import './modules/ia-sugerir-reclamo.js';
+import './modules/android-image-share.js';
+import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -1494,6 +1496,9 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
         }
         try {
             initCommunityBroadcastFab();
+        } catch (_) {}
+        try {
+            initAdminSociosAutoExport();
         } catch (_) {}
     } catch (_) {}
 }

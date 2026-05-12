@@ -14,4 +14,6 @@
     <files-path name="internal_files" path="." />
     <!-- APK OTA copiado desde content:// del DownloadManager (Android 10+) -->
     <cache-path name="gn_apk_cache" path="apk_updates/" />
+    <!-- Imágenes temporales para compartir desde el visor de fotos -->
+    <cache-path name="shared_images" path="shared_images/" />
 </paths>
