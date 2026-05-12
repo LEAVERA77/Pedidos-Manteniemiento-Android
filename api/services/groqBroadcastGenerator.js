@@ -164,9 +164,10 @@ function buildBroadcastSystemPrompt(tipoNegocio, titulo, nombreTenant) {
 
   let firmaLabel = nombreTenant || "";
   if (firmaLabel) {
-    if (tipoNegocio === "municipio") firmaLabel = `Municipalidad de ${firmaLabel}`;
-    else if (tipoNegocio === "cooperativa_agua") firmaLabel = `Cooperativa de Agua ${firmaLabel}`;
-    else if (tipoNegocio === "cooperativa_electrica") firmaLabel = `Cooperativa Eléctrica ${firmaLabel}`;
+    const fl = firmaLabel.toLowerCase();
+    if (tipoNegocio === "municipio" && !fl.startsWith("municipalidad")) firmaLabel = `Municipalidad de ${firmaLabel}`;
+    else if (tipoNegocio === "cooperativa_agua" && !fl.startsWith("cooperativa")) firmaLabel = `Cooperativa de Agua ${firmaLabel}`;
+    else if (tipoNegocio === "cooperativa_electrica" && !fl.startsWith("cooperativa")) firmaLabel = `Cooperativa Eléctrica ${firmaLabel}`;
   }
 
   return [

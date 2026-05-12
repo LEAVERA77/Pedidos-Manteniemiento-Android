@@ -425,10 +425,11 @@ export function initCommunityBroadcastFab(deps) {
         const cfg = window.EMPRESA_CFG || {};
         const nombre = String(cfg.nombre || '').trim();
         if (!nombre) return '';
+        const low = nombre.toLowerCase();
         const rub = normalizarRubroCfg(cfg.tipo);
-        if (rub === 'municipio') return `Municipalidad de ${nombre}`;
-        if (rub === 'cooperativa_agua') return `Cooperativa de Agua ${nombre}`;
-        if (rub === 'cooperativa_electrica') return `Cooperativa Eléctrica ${nombre}`;
+        if (rub === 'municipio') return low.startsWith('municipalidad') ? nombre : `Municipalidad de ${nombre}`;
+        if (rub === 'cooperativa_agua') return low.startsWith('cooperativa') ? nombre : `Cooperativa de Agua ${nombre}`;
+        if (rub === 'cooperativa_electrica') return low.startsWith('cooperativa') ? nombre : `Cooperativa Eléctrica ${nombre}`;
         return nombre;
     }
 
