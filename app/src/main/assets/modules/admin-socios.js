@@ -518,6 +518,83 @@ function sociosCatalogoHtmlExtrasDatosExtra(s, keys, escCell) {
     return h;
 }
 
+/**
+ * Detecta separador CSV (`,` o `;`) según la primera línea (el que más aparece gana).
+ * Si ambos empatan, prefiere `;` (estándar europeo / argentino).
+ */
+function detectarSeparadorCsv(texto) {
+    const primeraLinea = texto.split(/\r?\n/)[0] || '';
+    const comas = (primeraLinea.match(/,/g) || []).length;
+    const puntoyComa = (primeraLinea.match(/;/g) || []).length;
+    return puntoyComa >= comas ? ';' : ',';
+}
+
+/**
+ * Parsea una línea CSV respetando campos entre comillas dobles.
+ * Soporta comillas escapadas ("") dentro de campos entrecomillados.
+ */
+function parsearLineaCsv(linea, sep) {
+    const campos = [];
+    let actual = '';
+    let dentroComillas = false;
+    for (let i = 0; i < linea.length; i++) {
+        const c = linea[i];
+        if (dentroComillas) {
+            if (c === '"') {
+                if (i + 1 < linea.length && linea[i + 1] === '"') {
+                    actual += '"';
+                    i++;
+                } else {
+                    dentroComillas = false;
+                }
+            } else {
+                actual += c;
+            }
+        } else if (c === '"') {
+            dentroComillas = true;
+        } else if (c === sep) {
+            campos.push(actual);
+            actual = '';
+        } else {
+            actual += c;
+        }
+    }
+    campos.push(actual);
+    return campos;
+}
+
+/**
+ * Parsea texto CSV a array de objetos (misma estructura que XLSX.utils.sheet_to_json).
+ * Primera fila = encabezados. Detecta separador automáticamente. Maneja comillas dobles.
+ */
+function parsearCsvARowsComoExcel(texto) {
+    const limpio = texto.replace(/^\ufeff/, '');
+    const sep = detectarSeparadorCsv(limpio);
+    const lineas = limpio.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lineas.length < 2) return [];
+    const encabezados = parsearLineaCsv(lineas[0], sep).map((h) => h.trim());
+    const rows = [];
+    for (let i = 1; i < lineas.length; i++) {
+        const campos = parsearLineaCsv(lineas[i], sep);
+        const obj = {};
+        let tieneAlgo = false;
+        for (let j = 0; j < encabezados.length; j++) {
+            const h = encabezados[j];
+            if (!h) continue;
+            const v = j < campos.length ? campos[j].trim() : '';
+            obj[h] = v || null;
+            if (v) tieneAlgo = true;
+        }
+        if (tieneAlgo) rows.push(obj);
+    }
+    return rows;
+}
+
+function _esArchivoCsv(file) {
+    const name = String(file?.name || '').toLowerCase();
+    return name.endsWith('.csv');
+}
+
 function escCsvCeldaSocios(v) {
     const s = v == null ? '' : String(v);
     if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -773,7 +850,7 @@ async function cargarListaSociosAdmin() {
         );
         const rows = r.rows || [];
         if (!rows.length) {
-            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel.</p>';
+            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel o CSV.</p>';
             window._sociosVirtualRows = null;
             window._sociosDatosExtraColumnKeys = [];
             window._sociosDatosExtraColCount = 0;
@@ -1583,20 +1660,28 @@ async function inferirCrsSociosExcelAntesImport(file) {
 async function onInputExcelSociosConInferencia(event) {
     const file = event && event.target && event.target.files && event.target.files[0];
     if (!file) return;
-    if (typeof XLSX === 'undefined') {
+    const esCsv = _esArchivoCsv(file);
+    if (!esCsv && typeof XLSX === 'undefined') {
         toast('Librería Excel no cargada', 'error');
         event.target.value = '';
         return;
     }
-    try {
-        await inferirCrsSociosExcelAntesImport(file);
-    } catch (e) {
-        console.warn('[socios] inferir CRS Excel', e);
-        const msgEl = document.getElementById('socios-import-detect-msg');
-        if (msgEl) {
-            msgEl.textContent =
-                'No se pudo analizar el archivo; revisá manualmente el sistema de coordenadas y la faja.';
+    if (!esCsv) {
+        try {
+            await inferirCrsSociosExcelAntesImport(file);
+        } catch (e) {
+            console.warn('[socios] inferir CRS Excel', e);
+            const msgEl = document.getElementById('socios-import-detect-msg');
+            if (msgEl) {
+                msgEl.textContent =
+                    'No se pudo analizar el archivo; revisá manualmente el sistema de coordenadas y la faja.';
+            }
         }
+    } else {
+        const msgEl = document.getElementById('socios-import-detect-msg');
+        if (msgEl) msgEl.textContent = 'Archivo CSV detectado. Se usa WGS84 como sistema de coordenadas por defecto.';
+        const crsSel = document.getElementById('socios-import-crs');
+        if (crsSel) crsSel.value = 'wgs84';
     }
     try {
         if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
@@ -1608,7 +1693,8 @@ window.onInputExcelSociosConInferencia = onInputExcelSociosConInferencia;
 async function importarExcelSocios(event) {
     const file = event.target.files[0];
     if (!file) return;
-    if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
+    const esCsv = _esArchivoCsv(file);
+    if (!esCsv && typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
     try {
         if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
     } catch (_) {}
@@ -1623,24 +1709,28 @@ async function importarExcelSocios(event) {
                 return;
             }
         }
-        req().mostrarOverlayImportacion('Leyendo Excel de socios…');
+        req().mostrarOverlayImportacion(esCsv ? 'Leyendo CSV de socios…' : 'Leyendo Excel de socios…');
         const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
         if (reemplazar) {
             req().actualizarOverlayImportacion('Vaciando catálogo (preservando coordenadas corregidas manualmente)…');
-            // NO borrar filas con ubicacion_manual = TRUE (son correcciones del admin que deben persistir)
             const hasSocTDel = await req().sociosCatalogoTieneTenantId();
             const tfDel = hasSocTDel ? ` AND tenant_id = ${esc(req().tenantIdActual())}` : '';
             await req().sqlSimple(`DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE${tfDel}`);
             console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
         }
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        /* raw:false conserva teléfonos como texto; coords se parsean en leerCoordExcelSocios */
-        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false, blankrows: false });
+        let rawRows;
+        if (esCsv) {
+            const texto = await file.text();
+            rawRows = parsearCsvARowsComoExcel(texto);
+        } else {
+            const buf = await file.arrayBuffer();
+            const wb = XLSX.read(buf, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            rawRows = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false, blankrows: false });
+        }
         if (!rawRows.length) {
             req().ocultarOverlayImportacion();
-            toast('Excel vacío o sin filas de datos', 'error');
+            toast(esCsv ? 'CSV vacío o sin filas de datos' : 'Excel vacío o sin filas de datos', 'error');
             event.target.value = '';
             return;
         }
@@ -1740,7 +1830,7 @@ async function importarExcelSocios(event) {
                 }
             }
             if (filaN % 2500 === 0) {
-                req().actualizarOverlayImportacion(`Analizando Excel… ${filaN} / ${rawRows.length}`);
+                req().actualizarOverlayImportacion(`Analizando archivo… ${filaN} / ${rawRows.length}`);
                 await new Promise((r) => setTimeout(r, 0));
             }
             const nombre = nombreTitularDesdeFilaExcelSocios(row, mapNormAOriginal);
@@ -1963,7 +2053,7 @@ async function importarExcelSocios(event) {
         } catch (_) {}
     } catch (e) {
         req().ocultarOverlayImportacion();
-        toastError('import-excel-socios', e, 'Error al leer el Excel.');
+        toastError('import-excel-socios', e, 'Error al leer el archivo.');
         alert('Error al importar socios.\n\n' + mensajeErrorUsuario(e));
     }
     event.target.value = '';
