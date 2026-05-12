@@ -898,7 +898,7 @@ function normalizarEncabezadoExcelSocios(k) {
         .trim()
         .toLowerCase();
     try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
-    const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
     if (n === 'pcia' || n === 'provincia') return 'provincia';
     if (n === 'estado' || n === 'state') return 'provincia';
     if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
@@ -1171,6 +1171,9 @@ const SOCIOS_EXCEL_CLAVES_RESERVADAS = new Set([
     'n',
     'y',
     'norte_m',
+    'datos_extra',
+    'activo',
+    'id',
 ]);
 
 function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
