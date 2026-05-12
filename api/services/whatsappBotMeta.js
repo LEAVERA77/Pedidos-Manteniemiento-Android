@@ -218,12 +218,14 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_mis_reclamos_operador",
 ]);
 
-/** En estos pasos *0* es dato (puerta sin número / omitir ID), no «salir al menú». */
+/** En estos pasos *0* es dato (puerta sin número / omitir fotos / omitir ID), no «salir al menú». */
 const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
   "awaiting_addr_numero",
   "awaiting_opcional_id",
   "awaiting_mis_reclamos_id",
   "awaiting_mis_reclamos_operador",
+  "awaiting_wa_foto_opcional",
+  "awaiting_wa_foto_upload",
 ]);
 
 /**
