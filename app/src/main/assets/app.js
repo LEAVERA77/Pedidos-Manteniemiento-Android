@@ -160,6 +160,7 @@ import './modules/ia-sugerir-reclamo.js';
 import './modules/ia-analisis-reclamos.js';
 import './modules/ia-kpi-sugeridos.js';
 import './modules/ia-informe-unificado.js';
+import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
@@ -1029,8 +1030,9 @@ function debeOcultarTabClientesAfectadosInfraAdmin() {
     return r === 'municipio' || r === 'cooperativa_agua';
 }
 
-/** Pestaña catálogo zona (Distribuidores / Barrios / Ramales): solo si el admin marca ocultar módulos de red eléctrica. */
+/** Pestaña catálogo zona (Distribuidores / Barrios / Ramales): municipio la oculta (barrios vienen de Nominatim). */
 function debeOcultarTabDistribuidoresAdmin() {
+    if (esMunicipioRubro()) return true;
     const cfg = window.EMPRESA_CFG || {};
     const o = cfg.ocultar_modulos_redes;
     return o === true || o === 1 || String(o).toLowerCase() === 'true' || String(o) === '1';
@@ -1299,6 +1301,21 @@ async function reverseNominatimNuevoPedidoCore(lat, lng) {
         if (dr && refExtra) {
             const prev = String(dr.value || '').trim();
             dr.value = prev ? `${prev} (${refExtra})` : refExtra;
+        }
+        if (esMunicipioRubro()) {
+            const barrio = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
+            const di2 = document.getElementById('di2');
+            if (di2 && barrio) {
+                const bTrim = String(barrio).trim();
+                let opt = Array.from(di2.options).find(o => o.value === bTrim);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = bTrim;
+                    opt.textContent = bTrim;
+                    di2.appendChild(opt);
+                }
+                di2.value = bTrim;
+            }
         }
     } catch (_) {
         toast('No se pudo consultar la dirección en ese punto.', 'error');
