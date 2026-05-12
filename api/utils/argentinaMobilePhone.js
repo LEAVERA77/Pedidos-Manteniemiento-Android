@@ -1,12 +1,9 @@
 /**
- * Normalización de teléfonos argentinos para envíos WhatsApp (solo **móvil**).
- * Los fijos (p. ej. 0343-4890532 → 54 343 … sin el 9 móvil) se rechazan explícitamente.
- *
- * Referencia: E.164 móvil AR = 54 + 9 + código de área (sin 0) + abonado (sin el 15 nacional).
+ * Normalización de teléfonos argentinos para envíos WhatsApp.
+ * Acepta TODO número que empiece con 54 y tenga largo suficiente.
+ * No filtra fijos: el proveedor (Whapi) decide si puede enviar.
+ * made by leavera77
  */
-
-/** Prefijo internacional móvil AR (54 + dígito 9 móvil). */
-const AR_MOB = "54" + "9";
 
 /** @param {unknown} s */
 export function digitsOnly(s) {
@@ -14,53 +11,34 @@ export function digitsOnly(s) {
 }
 
 /**
- * Número internacional argentino que **no** es móvil (54 + área sin el 9).
- * Post-reforma 2019 y con catálogos que guardan móviles como 54+area+subscriber (sin el 9),
- * NO descartamos automáticamente: devolvemos false para que se intente insertar el 9.
- * Solo rechazamos patrones que son inequívocamente fijos (números muy cortos o muy largos).
- * @param {string} d solo dígitos
+ * Ya no se usa para descartar. Siempre devuelve false.
+ * @param {string} _d solo dígitos
  */
-export function isLikelyArgentinaInternationalLandline(d) {
-  if (!d || d.length < 10 || !d.startsWith("54")) return false;
-  if (d.startsWith(AR_MOB)) return false;
-  if (d.charAt(2) === "9") return false;
+export function isLikelyArgentinaInternationalLandline(_d) {
   return false;
 }
 
 /**
- * Algunos catálogos guardan el 15 nacional dentro del bloque móvil internacional; lo quitamos una vez.
+ * Si el número tiene formato 549+area+15+subscriber, quita el 15 espurio.
  * @param {string} d
  */
-function stripSpurious15AfterMobilePrefix(d) {
+function strip15FromMobile(d) {
+  if (!d.startsWith("549")) return d;
+  const body = d.slice(3);
   for (const n of [4, 3, 2]) {
-    const m = d.match(new RegExp(`^${AR_MOB}(\\d{${n}})15(\\d{6,9})$`));
-    if (m) return `${AR_MOB}${m[1]}${m[2]}`;
+    const m = body.match(new RegExp(`^(\\d{${n}})15(\\d{6,9})$`));
+    if (m) return `549${m[1]}${m[2]}`;
   }
   return d;
 }
 
 /**
- * @param {string} body dígitos sin el 0 inicial del plan de numeración nacional
- * @returns {{ area: string, subscriber: string } | null}
- */
-function extractNationalMobile15(body) {
-  if (!body) return null;
-  const mBa = body.match(/^11(15)(\d{6,9})$/);
-  if (mBa) return { area: "11", subscriber: mBa[2] };
-  const m4 = body.match(/^(\d{4})(15)(\d{6,8})$/);
-  if (m4) return { area: m4[1], subscriber: m4[3] };
-  const m3 = body.match(/^(\d{3})(15)(\d{6,8})$/);
-  if (m3) return { area: m3[1], subscriber: m3[3] };
-  const m2 = body.match(/^(?!11)(\d{2})(15)(\d{6,8})$/);
-  if (m2) return { area: m2[1], subscriber: m2[3] };
-  return null;
-}
-
-/**
- * Convierte texto libre a dígitos E.164 móvil AR (54 + 9 + área + abonado) o null si parece fijo / inválido.
+ * Normaliza un teléfono argentino para envío por WhatsApp.
+ * Regla principal: si empieza con 54 y tiene 12-15 dígitos, se acepta.
+ * Limpia el "15" espurio si detecta formato 549+area+15+abonado.
  *
  * @param {unknown} raw
- * @param {{ defaultAreaDigits?: string }} [opts] — si el valor es solo "15…" sin característica, se antepone `defaultAreaDigits` (p. ej. "343").
+ * @param {{ defaultAreaDigits?: string }} [opts]
  * @returns {string | null}
  */
 export function normalizeArgentinaMobileWhatsappDigits(raw, opts = {}) {
@@ -72,50 +50,32 @@ export function normalizeArgentinaMobileWhatsappDigits(raw, opts = {}) {
   if (!d) return null;
   while (d.startsWith("00")) d = d.slice(2);
 
-  if (isLikelyArgentinaInternationalLandline(d)) return null;
-
-  if (d.startsWith(AR_MOB)) {
-    d = stripSpurious15AfterMobilePrefix(d);
-    if (d.length >= 12 && d.length <= 15) return d;
-    return null;
-  }
-
-  if (d.startsWith("54") && d.charAt(2) === "9") {
-    d = stripSpurious15AfterMobilePrefix(d);
-    if (d.length >= 12 && d.length <= 15) return d;
-    return null;
-  }
-
-  if (d.startsWith("54") && !d.startsWith(AR_MOB)) {
-    const rest = d.slice(2);
-    if (rest.length >= 10 && rest.length <= 12) {
-      const candidate = `${AR_MOB}${rest}`;
-      if (candidate.length >= 12 && candidate.length <= 15) return candidate;
-    }
-    return null;
+  if (d.startsWith("54") && d.length >= 12 && d.length <= 15) {
+    return strip15FromMobile(d);
   }
 
   if (d.startsWith("9") && d.length >= 10 && d.length <= 13) {
-    const rest = d.slice(1);
-    if (/^11\d{8,9}$/.test(rest)) return `${AR_MOB}${rest}`;
-    const m3 = rest.match(/^(\d{3})(\d{6,8})$/);
-    if (m3) return `${AR_MOB}${m3[1]}${m3[2]}`;
-  }
-
-  const m15only = d.match(/^15(\d{6,8})$/);
-  if (m15only && defaultArea.length >= 2) {
-    return `${AR_MOB}${defaultArea}${m15only[1]}`;
+    return strip15FromMobile(`54${d}`);
   }
 
   if (d.startsWith("0")) {
     const body = d.slice(1);
-    const mob = extractNationalMobile15(body);
-    if (mob) return `${AR_MOB}${mob.area}${mob.subscriber}`;
+    const m15 = body.match(/^(\d{2,4})15(\d{6,8})$/);
+    if (m15) return `549${m15[1]}${m15[2]}`;
+    if (body.length >= 10 && body.length <= 12) {
+      return `54${body}`;
+    }
     return null;
   }
 
-  const mob2 = extractNationalMobile15(d);
-  if (mob2) return `${AR_MOB}${mob2.area}${mob2.subscriber}`;
+  const m15only = d.match(/^15(\d{6,8})$/);
+  if (m15only && defaultArea.length >= 2) {
+    return `549${defaultArea}${m15only[1]}`;
+  }
+
+  if (d.length >= 10 && d.length <= 12) {
+    return `54${d}`;
+  }
 
   return null;
 }

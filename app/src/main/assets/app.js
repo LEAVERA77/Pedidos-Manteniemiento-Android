@@ -16017,12 +16017,16 @@ function adminTab(tab) {
     if (idx >= 0 && tabs[idx]) tabs[idx].classList.add('active');
     const sec = document.getElementById('admin-' + tab);
     if (sec) sec.classList.add('active');
-    if (tab === 'estadisticas') cargarEstadisticas();
+    if (tab === 'estadisticas') {
+        cargarEstadisticas();
+        try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
+    }
     if (tab === 'kpi') {
         try {
             syncKpiAdminRubroDom();
         } catch (_) {}
         void cargarKpiSnapshotsAdmin();
+        try { if (typeof window._gnInitBotonSugerirKpis === 'function') window._gnInitBotonSugerirKpis(); } catch (_) {}
     }
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
@@ -16033,6 +16037,7 @@ function adminTab(tab) {
         try {
             if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
         } catch (_) {}
+        try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
         cargarListaSociosAdmin();
         try {
             syncHistorialNisBusquedaDom();

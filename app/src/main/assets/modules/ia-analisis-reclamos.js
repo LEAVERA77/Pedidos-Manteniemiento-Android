@@ -1,11 +1,11 @@
 /**
- * Botón "Analizar con IA" en la sección Socios (admin).
- * Llama a POST /api/ia/analizar-reclamos y renderiza resultados
- * en #historial-apellido-result.
+ * Botón "Analizar con IA" en Vecinos y Estadísticas (admin).
+ * Llama a POST /api/ia/analizar-reclamos y renderiza resultados.
  * made by leavera77
  */
 
-let _wired = false;
+let _wiredSocios = false;
+let _wiredEstadisticas = false;
 
 function tipoNegocioActual() {
   const t = String(window.EMPRESA_CFG?.tipo || '').trim().toLowerCase();
@@ -21,14 +21,14 @@ function esc(s) {
   return d.innerHTML;
 }
 
-function buildBtn() {
+function buildBtn(id) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.id = 'btn-ia-analizar-reclamos';
+  btn.id = id;
   btn.className = 'btn-sm primary';
   btn.style.cssText = 'padding:.55rem 1.1rem;font-weight:600;background:#7c3aed;border-color:#7c3aed;white-space:nowrap';
   btn.innerHTML = '<i class="fas fa-brain"></i> Analizar con IA';
-  btn.addEventListener('click', () => void analizarConIA());
+  btn.addEventListener('click', () => void analizarConIA(id));
   return btn;
 }
 
@@ -38,11 +38,9 @@ function renderTabla(titulo, rows, colKey, colLabel) {
   html += '<table style="width:100%;margin-top:.3rem;font-size:.8rem;border-collapse:collapse">';
   html += `<tr style="background:#f1f5f9"><th style="text-align:left;padding:.25rem .4rem">${esc(colLabel)}</th><th style="text-align:right;padding:.25rem .4rem">Cantidad</th></tr>`;
   for (const r of rows) {
-    const val = r[colKey] || '(sin dato)';
-    const cnt = r.total ?? r.veces ?? 0;
-    html += `<tr style="border-bottom:1px solid #e2e8f0;cursor:pointer" data-filtro-val="${esc(val)}" data-filtro-col="${esc(colKey)}">`;
-    html += `<td style="padding:.25rem .4rem">${esc(val)}</td>`;
-    html += `<td style="text-align:right;padding:.25rem .4rem;font-weight:600">${cnt}</td></tr>`;
+    html += `<tr style="border-bottom:1px solid #e2e8f0">`;
+    html += `<td style="padding:.25rem .4rem">${esc(r[colKey] || '')}</td>`;
+    html += `<td style="text-align:right;padding:.25rem .4rem;font-weight:600">${r.count || r.cantidad || 0}</td></tr>`;
   }
   html += '</table></div>';
   return html;
@@ -50,7 +48,7 @@ function renderTabla(titulo, rows, colKey, colLabel) {
 
 function renderRepetidos(rows) {
   if (!rows || !rows.length) return '';
-  let html = '<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">Reclamos repetidos (mismo vecino + tipo ≥2)</strong>';
+  let html = '<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">Reclamos repetidos (mismo vecino, mismo tipo)</strong>';
   html += '<table style="width:100%;margin-top:.3rem;font-size:.8rem;border-collapse:collapse">';
   html += '<tr style="background:#fef3c7"><th style="text-align:left;padding:.25rem .4rem">Vecino</th><th style="text-align:left;padding:.25rem .4rem">Tipo</th><th style="text-align:right;padding:.25rem .4rem">Veces</th></tr>';
   for (const r of rows) {
@@ -63,9 +61,24 @@ function renderRepetidos(rows) {
   return html;
 }
 
-async function analizarConIA() {
-  const btn = document.getElementById('btn-ia-analizar-reclamos');
-  const out = document.getElementById('historial-apellido-result');
+function getOrCreateOutput(btnId) {
+  if (btnId === 'btn-ia-analizar-reclamos') {
+    return document.getElementById('historial-apellido-result');
+  }
+  let c = document.getElementById('ia-analisis-est-output');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'ia-analisis-est-output';
+    c.style.cssText = 'margin-top:.75rem;max-height:min(50vh,420px);overflow-y:auto';
+    const sec = document.getElementById('admin-estadisticas');
+    if (sec) sec.appendChild(c);
+  }
+  return c;
+}
+
+async function analizarConIA(btnId) {
+  const btn = document.getElementById(btnId);
+  const out = getOrCreateOutput(btnId);
   if (!btn || !out) return;
 
   const token = typeof window.getApiToken === 'function' ? window.getApiToken() : null;
@@ -119,28 +132,41 @@ async function analizarConIA() {
 }
 
 export function initBotonAnalizarIA() {
-  if (_wired) return;
-  const wrap = document.getElementById('socios-nis-busqueda-wrap');
-  if (!wrap) return;
   if (!window.esAdmin || !window.esAdmin()) return;
-  _wired = true;
 
-  const existing = document.getElementById('btn-ia-analizar-reclamos');
-  if (existing) return;
+  if (!_wiredSocios) {
+    const wrap = document.getElementById('socios-nis-busqueda-wrap');
+    if (wrap && !document.getElementById('btn-ia-analizar-reclamos')) {
+      const row = wrap.querySelector('div[style*="display:flex"]');
+      if (row) row.appendChild(buildBtn('btn-ia-analizar-reclamos'));
+      else wrap.appendChild(buildBtn('btn-ia-analizar-reclamos'));
+      _wiredSocios = true;
+    }
+  }
 
-  const row = wrap.querySelector('div[style*="display:flex"]');
-  if (row) {
-    row.appendChild(buildBtn());
-  } else {
-    wrap.appendChild(buildBtn());
+  if (!_wiredEstadisticas) {
+    const sec = document.getElementById('admin-estadisticas');
+    if (sec && !document.getElementById('btn-ia-analizar-est')) {
+      const barCtrl = sec.querySelector('div[style*="display:flex"]');
+      if (barCtrl) barCtrl.appendChild(buildBtn('btn-ia-analizar-est'));
+      else sec.insertBefore(buildBtn('btn-ia-analizar-est'), sec.firstChild);
+      _wiredEstadisticas = true;
+    }
   }
 }
 
+if (typeof window !== 'undefined') window._gnInitBotonAnalizarIA = initBotonAnalizarIA;
+
 (function autoInit() {
   if (typeof document === 'undefined') return;
+  function tryInit() {
+    if (_wiredSocios && _wiredEstadisticas) return;
+    initBotonAnalizarIA();
+    if (!_wiredSocios || !_wiredEstadisticas) setTimeout(tryInit, 2000);
+  }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBotonAnalizarIA);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 500));
   } else {
-    setTimeout(initBotonAnalizarIA, 200);
+    setTimeout(tryInit, 500);
   }
 })();
