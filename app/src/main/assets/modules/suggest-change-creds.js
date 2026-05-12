@@ -1,7 +1,7 @@
 /**
  * Sugiere cambio de usuario/contraseña si se inició sesión con credenciales por defecto (admin/admin).
- * La bandera se persiste en el servidor (clientes.configuracion.default_creds_changed) para
- * que no reaparezca al limpiar cache del navegador.
+ * El flag default_creds_changed se persiste en el servidor (clientes.configuracion) desde PATCH /me
+ * y también al descartar. No depende de localStorage.
  * made by leavera77
  */
 
@@ -48,11 +48,10 @@ function _token() {
   return typeof window.getApiToken === 'function' ? window.getApiToken() : null;
 }
 
-async function _marcarCredsChangedEnServidor() {
+async function _marcarEnServidor() {
   try {
     const tok = _token();
     if (!tok) return;
-    if (typeof window.asegurarJwtApiRest === 'function') await window.asegurarJwtApiRest();
     await fetch(_apiUrl('/api/clientes/mi-configuracion'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
@@ -92,23 +91,19 @@ async function guardarCreds() {
       if (err) { err.textContent = d.error || 'Error al guardar.'; err.style.display = 'block'; }
       return;
     }
-    await _marcarCredsChangedEnServidor();
     document.getElementById('gn-creds-suggest-overlay')?.remove();
     const nuevoUser = user || 'admin';
-    const nuevaPass = pass || 'admin';
     if (typeof window.toast === 'function') {
       window.toast(`Credenciales actualizadas. Ingresá con: ${nuevoUser}`, 'success');
     }
-    setTimeout(() => {
-      try { window.location.reload(); } catch (_) {}
-    }, 2200);
+    setTimeout(() => { try { window.location.reload(); } catch (_) {} }, 2200);
   } catch (e) {
     if (err) { err.textContent = 'Error de conexión.'; err.style.display = 'block'; }
   }
 }
 
 async function dismiss() {
-  await _marcarCredsChangedEnServidor();
+  await _marcarEnServidor();
   document.getElementById('gn-creds-suggest-overlay')?.remove();
 }
 

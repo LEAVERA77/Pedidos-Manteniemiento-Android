@@ -178,6 +178,19 @@ router.patch("/me", authMiddleware, async (req, res) => {
       `UPDATE usuarios SET email = $2, nombre = $3, password_hash = $4 WHERE id = $1 RETURNING id, email, nombre, rol`,
       [req.user.id, nextEmail, nextNombre, nextHash]
     );
+
+    if (String(row.email || "").toLowerCase() === "admin" && passwordActual === "admin") {
+      try {
+        const tid = await getUserTenantId(req.user.id);
+        if (tid) {
+          await query(
+            `UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || '{"default_creds_changed":true}'::jsonb WHERE id = $1`,
+            [tid]
+          );
+        }
+      } catch (_) {}
+    }
+
     return res.json({ ok: true, user: up.rows[0] });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar el perfil", detail: error.message });
