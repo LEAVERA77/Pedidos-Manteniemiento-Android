@@ -2509,7 +2509,7 @@ function esAndroidWebViewMapa() {
 }
 
 if (typeof window !== 'undefined') window.esAdmin = esAdmin;
-if (typeof window !== 'undefined') { window._gnSqlSimple = sqlSimple; window._gnEsc = esc; }
+if (typeof window !== 'undefined') { window._gnSqlSimple = sqlSimple; window._gnEsc = esc; window._gnTenantId = () => tenantIdActual(); }
 
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
 function esAdminSesionWebPublica() {

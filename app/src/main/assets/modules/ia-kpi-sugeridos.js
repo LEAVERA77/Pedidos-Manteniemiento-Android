@@ -22,9 +22,11 @@ function escHtml(s) {
 }
 
 function tid() {
-  const u = window.app?.u;
-  const n = Number(u?.tenant_id ?? u?.tenantId);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  if (typeof window._gnTenantId === 'function') {
+    const n = window._gnTenantId();
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function buildBtn() {
@@ -63,8 +65,15 @@ async function guardarKpiCard(kpi) {
     if (typeof window.toast === 'function') window.toast('Sin tenant activo.', 'error');
     return false;
   }
-  const u = window.app?.u;
-  const uid = u?.id != null && Number.isFinite(Number(u.id)) ? escSql(Number(u.id)) : 'NULL';
+  let uid = 'NULL';
+  try {
+    const tok = typeof window.getApiToken === 'function' ? window.getApiToken() : null;
+    if (tok) {
+      const pl = JSON.parse(atob(tok.split('.')[1]));
+      const n = Number(pl.userId ?? pl.sub);
+      if (Number.isFinite(n) && n > 0) uid = escSql(n);
+    }
+  } catch (_) {}
   const rawMetrica = String(kpi.metrica || kpi.nombre || '').slice(0, 80);
   const metrica = rawMetrica.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9._-]/g, '');
   const unidad = String(kpi.unidad || '').slice(0, 32);
