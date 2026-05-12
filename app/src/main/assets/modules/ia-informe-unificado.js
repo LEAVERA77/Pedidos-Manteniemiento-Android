@@ -257,9 +257,13 @@ async function generarInforme() {
     const container = getOrCreateContainer();
     container.innerHTML = renderInforme(data);
 
-    document.getElementById('ia-informe-btn-pdf')?.addEventListener('click', () => void exportarPdf());
-    document.getElementById('ia-informe-btn-print')?.addEventListener('click', () => void imprimirInforme());
-    document.getElementById('ia-informe-btn-email')?.addEventListener('click', () => void mostrarModalEmail());
+    container.onclick = (e) => {
+      const btn = e.target.closest('button[id^="ia-informe-btn-"]');
+      if (!btn) return;
+      if (btn.id === 'ia-informe-btn-pdf') void exportarPdf();
+      else if (btn.id === 'ia-informe-btn-print') void imprimirInforme();
+      else if (btn.id === 'ia-informe-btn-email') void mostrarModalEmail();
+    };
 
     if (typeof window.toast === 'function') window.toast('Informe generado correctamente.', 'success');
   } catch (err) {
@@ -273,26 +277,52 @@ async function generarInforme() {
 
 /* ── Exportar PDF (jsPDF) ── */
 
+function _pdfBuildDoc() {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) return null;
+  return new jsPDF({ unit: 'mm', format: 'a4' });
+}
+
+function _pdfEstrellas(pdf, x, yC, promedio) {
+  const n = Math.round(promedio || 0);
+  const r = 1.8;
+  const gap = 5;
+  for (let i = 0; i < 5; i++) {
+    const cx = x + i * gap + r;
+    if (i < n) {
+      pdf.setFillColor(245, 158, 11);
+      pdf.circle(cx, yC, r, 'F');
+    } else {
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setLineWidth(0.25);
+      pdf.circle(cx, yC, r, 'S');
+    }
+  }
+  return x + 5 * gap + r + 2;
+}
+
 async function exportarPdf() {
   if (!_lastData) return;
-  const { jsPDF } = window.jspdf || {};
-  if (!jsPDF) {
+  const pdf = _pdfBuildDoc();
+  if (!pdf) {
     if (typeof window.toast === 'function') window.toast('jsPDF no disponible.', 'error');
     return;
   }
 
   try {
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 14;
-    const maxW = pageW - 2 * margin;
+    const ML = 16;
+    const MR = 16;
+    const MB = 18;
+    const contentW = pageW - ML - MR;
     const empresa = nombreEmpresa();
     const fecha = fechaHoy();
+    let pageNum = 1;
 
-    let y = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, 10, {
+    let y = await pdfEncabezadoEmpresaBloque(pdf, ML, pageW, 10, {
       variante: 'kpi',
-      lineaContexto: `Informe de Gestión IA — ${fecha}`,
+      lineaContexto: `Informe de Gestion IA -- ${fecha}`,
     });
 
     const a = _lastData.analisis || {};
@@ -300,126 +330,208 @@ async function exportarPdf() {
     const ia = _lastData.informe_ia || {};
     const kpis = ia.seccion_kpis || [];
 
+    function pageFooter() {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6.5);
+      pdf.setCharSpace(0);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text(`Generado por GestorNova  --  ${empresa}`, ML, pageH - 8);
+      pdf.text(`Pagina ${pageNum}`, pageW - MR, pageH - 8, { align: 'right' });
+    }
+
     function checkPage(need) {
-      if (y + need > pageH - 15) {
+      if (y + need > pageH - MB) {
+        pageFooter();
         pdf.addPage();
-        y = 15;
+        pageNum++;
+        y = 14;
       }
+    }
+
+    function setFont(style, size, color) {
+      pdf.setFont('helvetica', style);
+      pdf.setFontSize(size);
+      pdf.setCharSpace(0);
+      pdf.setTextColor(...color);
     }
 
     function pdfText(text, opts) {
       const o = opts || {};
-      const italic = o.italic ? 'italic' : 'normal';
-      const style = o.bold ? (o.italic ? 'bolditalic' : 'bold') : italic;
-      pdf.setFont('helvetica', style);
-      pdf.setFontSize(o.size || 8.5);
-      pdf.setTextColor(...(o.color || [30, 41, 59]));
-      const effW = maxW - (o.indent || 0);
+      const style = o.bold && o.italic ? 'bolditalic' : o.bold ? 'bold' : o.italic ? 'italic' : 'normal';
+      const sz = o.size || 9;
+      const color = o.color || [30, 41, 59];
+      const indent = o.indent || 0;
+      const effW = contentW - indent;
+      setFont(style, sz, color);
       const lines = pdf.splitTextToSize(String(text), effW);
-      const lineH = (o.size || 8.5) * 0.45;
+      const lineH = sz * 0.42;
       checkPage(lines.length * lineH + 2);
-      pdf.text(lines, margin + (o.indent || 0), y);
-      y += lines.length * lineH + (o.gap || 2.5);
+      for (let i = 0; i < lines.length; i++) {
+        pdf.text(lines[i], ML + indent, y);
+        y += lineH;
+      }
+      y += (o.gap != null ? o.gap : 2);
     }
 
     function pdfSectionTitle(text) {
-      checkPage(12);
-      y += 2;
-      pdf.setDrawColor(30, 58, 138);
-      pdf.setLineWidth(0.5);
-      pdf.line(margin, y, margin + 40, y);
+      checkPage(14);
       y += 3;
-      pdfText(text, { bold: true, size: 11, color: [30, 58, 138], gap: 3.5 });
+      pdf.setFillColor(30, 58, 138);
+      pdf.rect(ML, y, contentW, 0.6, 'F');
+      y += 4;
+      setFont('bold', 12, [30, 58, 138]);
+      pdf.text(text, ML, y);
+      y += 6;
     }
 
-    // Sección reclamos
-    pdfSectionTitle(`Análisis de Reclamos — últimos ${a.periodo_dias || 30} días`);
-    pdfText(`Total: ${m.total_reclamos || 0}  |  Cerrados: ${m.cerrados || 0}  |  Pendientes: ${m.pendientes || 0}  |  En ejecución: ${m.en_ejecucion || 0}  |  Cierre: ${m.pct_cierre || 0}%  |  T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}`, { size: 8, color: [71, 85, 105], gap: 3 });
+    function pdfSubTitle(text) {
+      checkPage(8);
+      setFont('bold', 9.5, [30, 58, 138]);
+      pdf.text(text, ML + 2, y);
+      y += 4.5;
+    }
+
+    function pdfAiBlock(label, text, color, bgColor) {
+      checkPage(12);
+      setFont('normal', 8.5, color);
+      const lines = pdf.splitTextToSize(String(text), contentW - 10);
+      const blockH = lines.length * 3.8 + 6;
+      checkPage(blockH + 2);
+      pdf.setFillColor(...bgColor);
+      pdf.roundedRect(ML + 2, y - 1, contentW - 4, blockH, 1.5, 1.5, 'F');
+      y += 2;
+      if (label) {
+        setFont('bold', 8, color);
+        pdf.text(label, ML + 5, y);
+        y += 3.5;
+      }
+      setFont('normal', 8.5, [30, 41, 59]);
+      for (const line of lines) {
+        pdf.text(line, ML + 5, y);
+        y += 3.8;
+      }
+      y += 3;
+    }
+
+    // -- Seccion 1: Reclamos --
+    pdfSectionTitle(`Analisis de Reclamos -- ultimos ${a.periodo_dias || 30} dias`);
+
+    const stats = [
+      `Total: ${m.total_reclamos || 0}`,
+      `Cerrados: ${m.cerrados || 0}`,
+      `Pendientes: ${m.pendientes || 0}`,
+      `En ejecucion: ${m.en_ejecucion || 0}`,
+      `Cierre: ${m.pct_cierre || 0}%`,
+      `T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '--'}`,
+    ].join('   |   ');
+    pdfText(stats, { size: 8.5, color: [71, 85, 105], gap: 4 });
 
     function pdfTabla(titulo, rows, colKey) {
       if (!rows || !rows.length) return;
-      checkPage(10);
-      pdfText(titulo, { bold: true, size: 9, color: [30, 58, 138], gap: 2 });
+      pdfSubTitle(titulo);
+      const colW = 14;
       for (const r of rows) {
         const val = r.total || r.count || r.cantidad || r.veces || 0;
         checkPage(5);
-        pdfText(`${r[colKey] || '—'}:  ${val}`, { size: 8, indent: 4, gap: 1.5 });
+        setFont('normal', 8.5, [51, 65, 85]);
+        pdf.text(String(r[colKey] || '--'), ML + 6, y);
+        setFont('bold', 8.5, [30, 41, 59]);
+        pdf.text(String(val), ML + contentW - colW, y, { align: 'right' });
+        y += 4;
       }
       y += 2;
     }
 
     pdfTabla('Top vecinos', a.top_vecinos, 'cliente_nombre');
+    pdfTabla('Tipos mas frecuentes', a.top_tipos, 'tipo_trabajo');
     pdfTabla('Top barrios / zonas', a.top_barrios, 'distribuidor');
-    pdfTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo');
 
     if (a.repetidos?.length) {
-      checkPage(10);
-      pdfText('Reclamos repetidos', { bold: true, size: 9, color: [30, 58, 138], gap: 2 });
+      pdfSubTitle('Reclamos repetidos');
       for (const r of a.repetidos) {
         checkPage(5);
-        pdfText(`${r.cliente_nombre || '—'}  /  ${r.tipo_trabajo || '—'}:  ${r.veces || 0} veces`, { size: 8, indent: 4, gap: 1.5 });
+        setFont('normal', 8.5, [51, 65, 85]);
+        pdf.text(`${r.cliente_nombre || '--'}  /  ${r.tipo_trabajo || '--'}`, ML + 6, y);
+        setFont('bold', 8.5, [30, 41, 59]);
+        pdf.text(`${r.veces || 0}x`, ML + contentW - 14, y, { align: 'right' });
+        y += 4;
       }
       y += 2;
     }
 
     if (ia.recomendacion_reclamos) {
-      checkPage(10);
-      pdfText('Recomendación IA:', { bold: true, size: 9, color: [109, 40, 217], gap: 2 });
-      pdfText(ia.recomendacion_reclamos, { size: 8.5, color: [51, 65, 85], indent: 2, gap: 4 });
+      pdfAiBlock('Recomendacion IA', ia.recomendacion_reclamos, [109, 40, 217], [250, 245, 255]);
     }
 
-    // Sección KPIs
+    // -- Seccion 2: KPIs --
     if (kpis.length) {
-      pdfSectionTitle('KPIs con análisis IA');
+      pdfSectionTitle('KPIs con analisis IA');
       for (const k of kpis) {
-        checkPage(18);
-        const tendLabel = k.tendencia === 'mejora' ? '▲ mejora' : k.tendencia === 'empeora' ? '▼ empeora' : '— estable';
-        pdfText(`${k.nombre || '—'}:  ${k.valor ?? ''} ${k.unidad || ''}   [${tendLabel}]`, { bold: true, size: 9, gap: 1.5 });
-        if (k.explicacion) pdfText(k.explicacion, { size: 8.5, color: [51, 65, 85], indent: 3, gap: 1.5 });
-        if (k.recomendacion) pdfText(`→  ${k.recomendacion}`, { size: 8, italic: true, color: [109, 40, 217], indent: 3, gap: 3.5 });
+        checkPage(22);
+        const tendLabel = k.tendencia === 'mejora' ? 'mejora' : k.tendencia === 'empeora' ? 'empeora' : 'estable';
+        const tendColor = k.tendencia === 'mejora' ? [5, 150, 105] : k.tendencia === 'empeora' ? [220, 38, 38] : [100, 116, 139];
+
+        setFont('bold', 9.5, [30, 27, 75]);
+        pdf.text(`${k.nombre || '--'}:  ${k.valor ?? ''} ${k.unidad || ''}`, ML + 2, y);
+        setFont('bold', 8, tendColor);
+        pdf.text(`[${tendLabel}]`, ML + contentW - 14, y, { align: 'right' });
+        y += 4.5;
+
+        if (k.explicacion) {
+          pdfText(k.explicacion, { size: 8.5, color: [51, 65, 85], indent: 4, gap: 1.5 });
+        }
+        if (k.recomendacion) {
+          pdfText(k.recomendacion, { size: 8, italic: true, color: [109, 40, 217], indent: 4, gap: 3 });
+        }
+        y += 1;
       }
     }
 
-    // Sección Valoración WhatsApp
+    // -- Seccion 3: Valoracion WhatsApp --
     const sat = _lastData.satisfaccion || {};
     const satIa = ia.satisfaccion_ia || {};
-    pdfSectionTitle('Valoración WhatsApp del Vecino');
+    pdfSectionTitle('Valoracion WhatsApp del Vecino');
     if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
-      pdfText('Sin valoraciones recibidas en el período.', { size: 8.5, color: [100, 116, 139], gap: 3 });
+      pdfText('Sin valoraciones recibidas en el periodo.', { size: 9, color: [100, 116, 139], gap: 4 });
     } else {
-      pdfText(`${renderEstrellas(sat.promedio_estrellas)}   ${sat.promedio_estrellas} / 5`, { bold: true, size: 12, color: [30, 41, 59], gap: 2 });
-      pdfText(`Satisfacción: ${sat.porcentaje}%   |   Respuestas: ${sat.cantidad_respuestas}   |   Tendencia: ${sat.tendencia || 'estable'}${sat.periodo_anterior_porcentaje != null ? '  (anterior: ' + sat.periodo_anterior_porcentaje + '%)' : ''}`, { size: 8.5, color: [71, 85, 105], gap: 3 });
+      checkPage(18);
+      const starEndX = _pdfEstrellas(pdf, ML + 2, y + 1, sat.promedio_estrellas);
+      setFont('bold', 14, [30, 41, 59]);
+      pdf.text(`${sat.promedio_estrellas} / 5`, starEndX + 2, y + 2.5);
+      y += 8;
+      pdfText(`Satisfaccion: ${sat.porcentaje}%   |   Respuestas: ${sat.cantidad_respuestas}   |   Tendencia: ${sat.tendencia || 'estable'}${sat.periodo_anterior_porcentaje != null ? '  (anterior: ' + sat.periodo_anterior_porcentaje + '%)' : ''}`, { size: 8.5, color: [71, 85, 105], gap: 3 });
     }
     if (satIa.explicacion) {
-      pdfText(satIa.alerta ? '⚠  ' + satIa.explicacion : satIa.explicacion, { size: 8.5, color: satIa.alerta ? [220, 38, 38] : [5, 120, 85], indent: 2, gap: 2 });
+      const alerta = satIa.alerta;
+      pdfAiBlock(
+        alerta ? 'Alerta IA' : 'Analisis IA',
+        satIa.explicacion,
+        alerta ? [220, 38, 38] : [5, 120, 85],
+        alerta ? [254, 242, 242] : [240, 253, 244],
+      );
     }
     if (satIa.recomendacion) {
-      pdfText(`→  ${satIa.recomendacion}`, { size: 8, italic: true, color: [109, 40, 217], indent: 2, gap: 4 });
+      pdfAiBlock(null, satIa.recomendacion, [109, 40, 217], [250, 245, 255]);
     }
 
-    // Resumen ejecutivo
+    // -- Seccion 4: Resumen ejecutivo --
     if (ia.resumen_ejecutivo) {
       pdfSectionTitle('Resumen Ejecutivo');
       pdfText(ia.resumen_ejecutivo, { size: 9, color: [30, 41, 59], gap: 4 });
     }
 
-    // Pie
-    checkPage(8);
-    pdf.setDrawColor(226, 232, 240);
-    pdf.setLineWidth(0.3);
-    pdf.line(margin, y, pageW - margin, y);
-    y += 3;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(6.5);
-    pdf.setTextColor(100, 116, 139);
-    pdf.text('Generado por GestorNova — https://leavera77.github.io/Pedidos-MG/', margin, y);
+    // -- Footer ultima pagina --
+    pageFooter();
 
     const tenant = String(window.EMPRESA_CFG?.slug || empresa).replace(/[^a-zA-Z0-9_-]/g, '_');
-    pdf.save(`informe-gestion-${tenant}-${fecha.replace(/\//g, '-')}.pdf`);
+    const filename = `informe-gestion-${tenant}-${fecha.replace(/\//g, '-')}.pdf`;
+    pdf.save(filename);
     if (typeof window.toast === 'function') window.toast('PDF descargado.', 'success');
+    return { pdf, filename };
   } catch (err) {
     console.error('[ia-informe-pdf]', err);
     if (typeof window.toast === 'function') window.toast('Error al generar PDF.', 'error');
+    return null;
   }
 }
 
@@ -541,26 +653,47 @@ function imprimirInforme() {
   setTimeout(() => { try { w.print(); } catch (_) {} }, 500);
 }
 
-/* ── Enviar por email (EmailJS) ── */
+/* ── Enviar por email ── */
+
+function _buildPlainTextInforme() {
+  if (!_lastData) return '';
+  const ia = _lastData.informe_ia || {};
+  const m = _lastData.metricas || {};
+  const sat = _lastData.satisfaccion || {};
+  let t = `Informe de Gestion -- ${nombreEmpresa()} -- ${fechaHoy()}\n\n`;
+  t += `Total: ${m.total_reclamos || 0} | Cerrados: ${m.cerrados || 0} | Pendientes: ${m.pendientes || 0} | Cierre: ${m.pct_cierre || 0}%\n`;
+  if (m.horas_promedio_cierre != null) t += `Tiempo promedio cierre: ${m.horas_promedio_cierre}h\n`;
+  if (sat.promedio_estrellas != null && sat.cantidad_respuestas > 0) {
+    t += `\nSatisfaccion vecino: ${sat.promedio_estrellas}/5 (${sat.porcentaje}%) -- ${sat.cantidad_respuestas} respuestas\n`;
+  }
+  if (ia.resumen_ejecutivo) t += `\nResumen ejecutivo:\n${ia.resumen_ejecutivo}\n`;
+  if (ia.recomendacion_reclamos) t += `\nRecomendacion IA:\n${ia.recomendacion_reclamos}\n`;
+  t += '\n--\nGenerado por GestorNova';
+  return t;
+}
 
 function mostrarModalEmail() {
-  if (!_lastData) return;
+  if (!_lastData) {
+    if (typeof window.toast === 'function') window.toast('Genera el informe primero.', 'error');
+    return;
+  }
   if (document.getElementById('ia-informe-email-overlay')) return;
+
+  const empresa = nombreEmpresa();
+  const fecha = fechaHoy();
+  const asuntoDefault = `Informe de Gestion -- ${empresa} -- ${fecha}`;
 
   const overlay = document.createElement('div');
   overlay.id = 'ia-informe-email-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
 
-  const empresa = nombreEmpresa();
-  const fecha = fechaHoy();
-  const asuntoDefault = `Informe de Gestión — ${empresa} — ${fecha}`;
-
-  overlay.innerHTML = `<div style="background:#fff;border-radius:.6rem;padding:1.2rem;width:min(92vw,420px);box-shadow:0 8px 30px rgba(0,0,0,.18)">
-    <div style="font-size:.92rem;font-weight:700;color:#1e3a8a;margin-bottom:.7rem"><i class="fas fa-envelope"></i> Enviar Informe por Email</div>
+  overlay.innerHTML = `<div style="background:#fff;border-radius:.7rem;padding:1.3rem 1.4rem;width:min(92vw,440px);box-shadow:0 8px 30px rgba(0,0,0,.18)">
+    <div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.8rem"><i class="fas fa-envelope"></i> Enviar Informe por Email</div>
     <label style="font-size:.78rem;color:#475569;display:block;margin-bottom:.2rem">Destinatario</label>
-    <input id="ia-informe-email-to" type="email" placeholder="email@ejemplo.com" style="width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:.35rem;font-size:.82rem;box-sizing:border-box;margin-bottom:.55rem"/>
+    <input id="ia-informe-email-to" type="email" placeholder="email@ejemplo.com" style="width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:.4rem;font-size:.82rem;box-sizing:border-box;margin-bottom:.55rem"/>
     <label style="font-size:.78rem;color:#475569;display:block;margin-bottom:.2rem">Asunto</label>
-    <input id="ia-informe-email-subject" type="text" value="${esc(asuntoDefault)}" style="width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:.35rem;font-size:.82rem;box-sizing:border-box;margin-bottom:.65rem"/>
+    <input id="ia-informe-email-subject" type="text" value="${esc(asuntoDefault)}" style="width:100%;padding:.45rem .6rem;border:1px solid #cbd5e1;border-radius:.4rem;font-size:.82rem;box-sizing:border-box;margin-bottom:.65rem"/>
+    <p style="font-size:.72rem;color:#64748b;margin:0 0 .6rem;line-height:1.4">Se descargara el PDF y se abrira tu cliente de correo para adjuntarlo.</p>
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
       <button type="button" id="ia-informe-email-cancel" class="btn-sm" style="padding:.4rem .8rem;font-size:.78rem">Cancelar</button>
       <button type="button" id="ia-informe-email-send" class="btn-sm primary" style="padding:.4rem .8rem;font-size:.78rem;background:#9333ea;border-color:#9333ea"><i class="fas fa-paper-plane"></i> Enviar</button>
@@ -570,75 +703,59 @@ function mostrarModalEmail() {
 
   document.body.appendChild(overlay);
 
-  document.getElementById('ia-informe-email-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#ia-informe-email-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  document.getElementById('ia-informe-email-send').addEventListener('click', () => void enviarEmail(overlay));
+  overlay.querySelector('#ia-informe-email-send').addEventListener('click', () => void enviarEmail(overlay));
 }
 
 async function enviarEmail(overlay) {
-  const toInput = document.getElementById('ia-informe-email-to');
-  const subjectInput = document.getElementById('ia-informe-email-subject');
-  const msgDiv = document.getElementById('ia-informe-email-msg');
-  const sendBtn = document.getElementById('ia-informe-email-send');
+  const toInput = overlay.querySelector('#ia-informe-email-to');
+  const subjectInput = overlay.querySelector('#ia-informe-email-subject');
+  const msgDiv = overlay.querySelector('#ia-informe-email-msg');
+  const sendBtn = overlay.querySelector('#ia-informe-email-send');
   const toEmail = (toInput?.value || '').trim();
   const subject = (subjectInput?.value || '').trim();
 
   if (!toEmail || !toEmail.includes('@')) {
-    if (msgDiv) { msgDiv.textContent = 'Ingresá un email válido.'; msgDiv.style.color = '#dc2626'; }
-    return;
-  }
-
-  const cfg = window.APP_CONFIG?.emailjs;
-  if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) {
-    fallbackMailto(toEmail, subject);
-    overlay?.remove();
+    if (msgDiv) { msgDiv.textContent = 'Ingresa un email valido.'; msgDiv.style.color = '#dc2626'; }
     return;
   }
 
   sendBtn.disabled = true;
-  sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando…';
+  sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparando…';
   if (msgDiv) { msgDiv.textContent = ''; msgDiv.style.color = '#64748b'; }
 
   try {
-    if (typeof window.emailjs === 'undefined') {
-      fallbackMailto(toEmail, subject);
-      overlay?.remove();
+    const cfg = window.APP_CONFIG?.emailjs;
+    if (cfg?.publicKey && cfg?.serviceId && cfg?.templateId && typeof window.emailjs !== 'undefined') {
+      sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando…';
+      await window.emailjs.send(cfg.serviceId, cfg.templateId, {
+        to_email: toEmail,
+        subject: subject,
+        html_body: construirHtmlInformeCompleto(),
+      });
+      if (typeof window.toast === 'function') window.toast('Email enviado correctamente.', 'success');
+      overlay.remove();
       return;
     }
 
-    await window.emailjs.send(cfg.serviceId, cfg.templateId, {
-      to_email: toEmail,
-      subject: subject,
-      html_body: construirHtmlInformeCompleto(),
-    });
+    const result = await exportarPdf();
+    if (result && typeof window.toast === 'function') {
+      window.toast('PDF descargado. Adjuntalo al email que se abrira.', 'info');
+    }
 
-    if (typeof window.toast === 'function') window.toast('Email enviado correctamente.', 'success');
-    overlay?.remove();
+    const plain = _buildPlainTextInforme();
+    const body = plain + '\n\n(El PDF del informe se descargo a tu carpeta de descargas. Adjuntalo a este email.)';
+    const url = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = url;
+
+    setTimeout(() => overlay.remove(), 600);
   } catch (err) {
     console.error('[ia-informe-email]', err);
-    if (msgDiv) { msgDiv.textContent = 'Error al enviar. Intentando con mailto…'; msgDiv.style.color = '#dc2626'; }
-    setTimeout(() => {
-      fallbackMailto(toEmail, subject);
-      overlay?.remove();
-    }, 1200);
+    if (msgDiv) { msgDiv.textContent = 'Error al preparar el email. Intenta descargar el PDF manualmente.'; msgDiv.style.color = '#dc2626'; }
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
   }
-}
-
-function fallbackMailto(to, subject) {
-  if (!_lastData) return;
-  const ia = _lastData.informe_ia || {};
-  const m = _lastData.metricas || {};
-  const sat = _lastData.satisfaccion || {};
-  let plain = `Informe de Gestión — ${nombreEmpresa()}\n\n`;
-  plain += `Total: ${m.total_reclamos || 0} | Cerrados: ${m.cerrados || 0} | Cierre: ${m.pct_cierre || 0}%\n`;
-  if (sat.promedio_estrellas != null && sat.cantidad_respuestas > 0) {
-    plain += `Satisfacción vecino: ${sat.promedio_estrellas}/5 (${sat.porcentaje}%) — ${sat.cantidad_respuestas} respuestas\n`;
-  }
-  if (ia.resumen_ejecutivo) plain += `\nResumen: ${ia.resumen_ejecutivo}\n`;
-  if (ia.recomendacion_reclamos) plain += `\nRecomendación: ${ia.recomendacion_reclamos}\n`;
-  plain += '\nGenerado por GestorNova';
-  const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(plain)}`;
-  window.open(url, '_self');
 }
 
 /* ── Init ── */
