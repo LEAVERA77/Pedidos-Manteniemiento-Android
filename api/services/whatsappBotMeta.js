@@ -1086,7 +1086,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*. Elegí la *provincia* con un número del *1* al *24*:\n\n" + MSG_ADDR_PROVINCIA,
+      "✅ Recibimos tu *ubicación GPS*.\n\nElegí la *provincia* con un número del *1* al *24*:\n\n" + MSG_ADDR_PROVINCIA,
       tid,
       wpid
     );
@@ -1128,7 +1128,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*, pero no pudimos inferir calle y ciudad automáticamente. Seguí con los mensajes de texto del paso anterior.",
+      "✅ Recibimos tu *ubicación GPS*, pero no pudimos inferir calle y ciudad automáticamente.\n\nSeguí con los mensajes de texto del paso anterior.",
       tid,
       wpid
     );
@@ -1139,7 +1139,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *GPS*. Completá con *texto* lo que falte según el paso anterior.",
+      "✅ Recibimos tu *ubicación GPS*.\n\nCompletá con *texto* lo que falte según el paso anterior.",
       tid,
       wpid
     );
@@ -1458,7 +1458,7 @@ async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, conta
   const bodyText =
     `¿Querés adjuntar *foto(s)* del problema?\n\n` +
     `Podés enviar hasta *2 fotos* desde la galería o la cámara (📎 → Imagen).\n\n` +
-    `_Cuando termines, tocá *Sin foto* o seguí el resumen._`;
+    `Escribí *0* para continuar sin fotos.`;
 
   const pid = String(wpid || "").trim();
   let accessToken = "";
@@ -1492,8 +1492,8 @@ async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, conta
   await reply(
     phone,
     `${bodyText}\n\n` +
-      `Si querés mandar foto: escribí *1* y después enviá la imagen con 📎.\n` +
-      `Si no: escribí *3* u *omitir*.` +
+      `Si querés mandar foto: enviá la imagen directamente con 📎.\n` +
+      `Si no: escribí *0* para continuar sin fotos.` +
       MSG_SALIR_ATRAS,
     tid,
     wpid
@@ -1701,7 +1701,13 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   try {
     const prevList = waSessionFotoUrls(sess);
     if (!soloReemplazarFoto && prevList.length >= 2) {
-      await reply(phone, "Ya enviaste 2 fotos.", sess.tenantId, phoneNumberId);
+      await reply(
+        phone,
+        "Ya recibimos *2 fotos*, que es el máximo. Continuamos con el reclamo…",
+        sess.tenantId,
+        phoneNumberId
+      );
+      await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctxOk, phoneNumberId);
       return;
     }
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
@@ -1710,7 +1716,7 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     if (!secureUrl) {
       await reply(
         phone,
-        "No pudimos subir la imagen al servidor. Podés *intentar otra foto* o *seguir sin foto* (omitir).",
+        "No pudimos subir la imagen al servidor. Podés *intentar otra foto* o enviar *0* para continuar sin más fotos.",
         sess.tenantId,
         phoneNumberId
       );
@@ -1727,22 +1733,33 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
     sess.waPedidoFotoUploadFallback = !!usedFallback || !!sess.waPedidoFotoUploadFallback;
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
-    await reply(
-      phone,
-      soloReemplazarFoto
-        ? "Listo, *actualizamos la foto* del reclamo. Te reenviamos el *resumen*."
-        : "Listo, *guardamos tu foto*. Te mostramos el *resumen* para confirmar el reclamo.",
-      sess.tenantId,
-      phoneNumberId
-    );
-    await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctxOk, phoneNumberId);
+
+    if (soloReemplazarFoto) {
+      await reply(phone, "Listo, *actualizamos la foto* del reclamo. Te reenviamos el *resumen*.", sess.tenantId, phoneNumberId);
+      await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctxOk, phoneNumberId);
+      return;
+    }
+
+    const count = nextList.length;
+    if (count >= 2) {
+      await reply(phone, `✅ *Foto ${count}* recibida. Ya tenés el máximo de 2 fotos. Continuamos…`, sess.tenantId, phoneNumberId);
+      await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctxOk, phoneNumberId);
+    } else {
+      sess.step = "awaiting_wa_foto_upload";
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        `✅ *Foto ${count}* recibida.\n\nPodés enviar *una foto más* (máximo 2) o escribí *0* para continuar sin más fotos.`,
+        sess.tenantId,
+        phoneNumberId
+      );
+    }
   } catch (e) {
     console.error("[whatsapp-bot-meta] subida foto WA", e?.message || e);
     await reply(
       phone,
       "❌ No pudimos procesar la imagen.\n\n" +
-        "¿Querés *intentar de nuevo* enviando otra foto con 📎, o *seguir sin foto*?\n\n" +
-        "Escribí *1* para reintentar (mandá otra imagen), *2* u *omitir* para ir al resumen sin foto, o *atrás* para volver al paso anterior.",
+        "Podés *intentar de nuevo* enviando otra foto con 📎, o escribí *0* para continuar sin foto.",
       sess.tenantId,
       phoneNumberId
     );
@@ -2032,7 +2049,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     }
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa. Ahora escribí la *descripción* del problema (texto).\n\n" +
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\nAhora escribí la *descripción* del problema (texto).\n\n" +
         `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
       tid,
       phoneNumberId
@@ -2040,13 +2057,28 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
-  if (stepAddr === "awaiting_identificacion_modo" || stepAddr === "awaiting_opcional_id") {
+  if (stepAddr === "awaiting_identificacion_modo") {
+    sess.ubicacionGpsPin = { lat, lng };
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    const ctx2 = await loadTenantBotContext(tid);
+    await reply(
+      phone,
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n" +
+        "Ahora respondé con *1* o *2*:\n\n" +
+        mensajeMenuIdentificacion(ctx2 || { tipo: sess.tipoCliente, nombre: "" }),
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+  if (stepAddr === "awaiting_opcional_id") {
     sess.ubicacionGpsPin = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*; la usaremos más adelante para el mapa. Seguí con el paso anterior en *texto*.\n\n" +
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\nAhora escribí tu *identificador* (NIS / medidor / número de vecino) o *2* para seguir sin él.\n\n" +
         `_*menú* = salir · *atrás* = paso anterior_`,
       tid,
       phoneNumberId
@@ -2060,7 +2092,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n¿Cuál es tu *nombre y apellido* (o del titular)?" +
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n¿Cuál es tu *nombre y apellido* (o del titular)?" +
         MSG_SALIR_ATRAS,
       tid,
       phoneNumberId
@@ -2074,7 +2106,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sessions.set(sk, sess);
     await reply(
       phone,
-      "Recibimos tu *ubicación GPS*; la usaremos más adelante para el mapa. Seguí eligiendo en *texto* el número de la lista o *1*/*2* en la confirmación.\n\n" +
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\nSeguí eligiendo en *texto* el número de la lista o *1*/*2* en la confirmación.\n\n" +
         `_*menú* = salir · *atrás* = paso anterior_`,
       tid,
       phoneNumberId
@@ -2086,13 +2118,13 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sess.userSharedGps = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
-    let hint = "Recibimos tu *ubicación GPS*. ";
+    let hint = "✅ Recibimos tu *ubicación GPS*.\n\n";
     if (stepAddr === "awaiting_suministro_fases") {
-      hint += "Respondé *1* (monofásico) o *2* (trifásico) en texto.";
+      hint += "Ahora respondé *1* (monofásico) o *2* (trifásico).";
     } else {
-      hint += "Respondé *1* (aéreo) o *2* (subterráneo) en texto.";
+      hint += "Ahora respondé *1* (aéreo) o *2* (subterráneo).";
     }
-    hint += " _(*menú* = salir · *atrás* = paso anterior)_";
+    hint += "\n\n_(*menú* = salir · *atrás* = paso anterior)_";
     await reply(phone, hint, tid, phoneNumberId);
     return;
   }
@@ -2147,7 +2179,7 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
     return;
   }
-  if (tipo === "Tránsito" && normalizarRubroCliente(ctx.tipo) === "municipio") {
+  if (tipo.startsWith("Tránsito") && normalizarRubroCliente(ctx.tipo) === "municipio") {
     sessions.set(sk, {
       step: "awaiting_municipio_transito_subtipo",
       tenantId: tid,
@@ -2160,7 +2192,7 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   }
   sessions.set(sk, {
     step: "awaiting_desc",
-    tipo,
+    tipo: tipo.startsWith("Tránsito") ? "Tránsito" : tipo,
     tenantId: tid,
     tipoCliente: ctx.tipo,
     contactName: contactName || null,
@@ -2521,6 +2553,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       lower === "omitir" ||
       lower === "sin foto" ||
       lower === "no foto" ||
+      t === "0" ||
       t === "3"
     ) {
       await limpiarFotoOpcionalWhatsappEnSesion(sess);
@@ -2537,26 +2570,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       sess.step = "awaiting_wa_foto_upload";
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      const hintCamara =
-        replyBtnId === WA_PEDIDO_FOTO_BTN_CAMARA ||
-        /\bcamara\b|\bfoto\b.*\bsacar\b/i.test(t + lower);
-      const hint = hintCamara
-        ? "Abrí 📎 → *Cámara*, sacá *una* foto y enviala."
-        : "Abrí 📎 → *Galería* o *Cámara*, elegí *una* imagen y enviala.";
-    await reply(
-      phone,
-        `Perfecto. ${hint}\n\n` +
-        `_Podés mandar hasta *2 fotos* por reclamo (JPG o PNG)._ ` +
-        `Si preferís no mandar foto, escribí *omitir*, *2* o *3* según el paso.` +
-        MSG_SALIR_ATRAS,
-      tid,
-      phoneNumberId
-    );
+      await reply(
+        phone,
+        "Perfecto. Enviá tu foto con 📎 → *Galería* o *Cámara* (máximo *2 fotos*, JPG o PNG).\n\n" +
+          "Escribí *0* en cualquier momento para continuar sin fotos." +
+          MSG_SALIR_ATRAS,
+        tid,
+        phoneNumberId
+      );
       return;
     }
     await reply(
       phone,
-      "Usá los *botones* del mensaje anterior, o escribí *1* para adjuntar foto, *3* u *omitir* si no querés foto.",
+      "Enviá una *foto* con 📎, o escribí *0* para continuar sin foto.\n\nTambién podés usar los *botones* del mensaje anterior.",
       tid,
       phoneNumberId
     );
@@ -2579,29 +2605,25 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (
+      t === "0" ||
       lower === "omitir" ||
       lower === "sin foto" ||
-      lower === "no foto" ||
-      t === "2" ||
-      t === "3"
+      lower === "no foto"
     ) {
-      await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      const nFotos = waSessionFotoUrls(sess).length;
+      if (nFotos === 0) {
+        await limpiarFotoOpcionalWhatsappEnSesion(sess);
+      }
       sessions.set(sk, sess);
       await pedirConfirmacionResumenReclamoWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
       return;
     }
-    if (t === "1") {
-      await reply(
-        phone,
-        "Listo. Enviá *hasta 2 imágenes* con 📎 (galería o cámara). Si cambiás de idea: *2*, *3* u *omitir*.",
-        tid,
-        phoneNumberId
-      );
-      return;
-    }
+    const nActual = waSessionFotoUrls(sess).length;
     await reply(
       phone,
-        "En este paso enviá *fotos* con 📎 (máximo 2) o escribí *2*, *3* u *omitir* para seguir sin foto.",
+      nActual > 0
+        ? `Ya tenés *${nActual}* foto${nActual > 1 ? "s" : ""}. Enviá otra foto con 📎 o escribí *0* para continuar.`
+        : "Enviá una *foto* con 📎 (máximo 2) o escribí *0* para continuar sin fotos.",
       tid,
       phoneNumberId
     );
@@ -3485,7 +3507,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
         return;
       }
-      if (tipoSel === "Tránsito" && normalizarRubroCliente(ctx.tipo) === "municipio") {
+      if (tipoSel.startsWith("Tránsito") && normalizarRubroCliente(ctx.tipo) === "municipio") {
         sessions.set(sk, {
           step: "awaiting_municipio_transito_subtipo",
           tenantId: tid,
@@ -3502,7 +3524,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       }
       sessions.set(sk, {
         step: "awaiting_desc",
-        tipo: tipoSel,
+        tipo: tipoSel.startsWith("Tránsito") ? "Tránsito" : tipoSel,
         tenantId: tid,
         tipoCliente: ctx.tipo,
         contactName: contactName || null,

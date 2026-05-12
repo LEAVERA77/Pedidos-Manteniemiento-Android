@@ -9,13 +9,12 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Bacheo y Pavimento",
     "Recolección/Poda",
     "Espacios Verdes",
-    "Señalización/Semáforos",
     "Alcantarillas tapadas",
     "Recolección (otros)",
     "Obstrucción de Cloaca",
     "Limpieza de Zanjas",
     "Rotura de Caño de cloacas",
-    "Tránsito",
+    "Tránsito (incluye señalización y semáforos)",
     "Ruidos molestos / Perturbación",
     "Animales sueltos / Mascotas",
     "Otros",
@@ -75,7 +74,7 @@ export const TIPOS_RECLAMO_LEGACY = [
 
 /** Gravedad sugerida por tipo (alineado con estadísticas / mapa: Crítica, Alta, Media, Baja). */
 export const PRIORIDAD_RECLAMO_POR_TIPO = {
-  // municipio (menú 14 + subtránsito)
+  // municipio (menú 13 + subtránsito)
   "Obstrucción de Cloaca": "Crítica",
   "Rotura de Caño de cloacas": "Crítica",
   "Semáforo apagado/intermitente": "Crítica",
