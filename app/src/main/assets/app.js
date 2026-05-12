@@ -157,6 +157,7 @@ import './modules/login-biometric-android.js';
 import './modules/ia-sugerir-reclamo.js';
 import './modules/ia-analisis-reclamos.js';
 import './modules/ia-kpi-sugeridos.js';
+import './modules/ia-informe-unificado.js';
 import './modules/android-image-share.js';
 import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
@@ -16020,6 +16021,7 @@ function adminTab(tab) {
     if (tab === 'estadisticas') {
         cargarEstadisticas();
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
+        try { if (typeof window._gnInitBotonInformeUnificado === 'function') window._gnInitBotonInformeUnificado(); } catch (_) {}
     }
     if (tab === 'kpi') {
         try {
