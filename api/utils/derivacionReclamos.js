@@ -11,6 +11,7 @@ const SLOT_KEYS_SINGLE = [
   "cooperativa_agua",
   "empresa_gas_natural",
   "empresa_telefonia",
+  "policia",
 ];
 
 const SLOT_KEYS_LIST = ["empresa_internet", "empresa_tv_cable"];
@@ -318,6 +319,7 @@ export const ETIQUETA_DESTINO_DERIVACION = {
   empresa_tv_cable: "Empresa de televisión por cable",
   empresa_internet: "Empresa de internet",
   empresa_telefonia: "Empresa de telefonía",
+  policia: "Policía",
   otro: "Otro (contacto manual)",
   otro_personalizado: "Otro (contacto manual)",
 };

@@ -262,6 +262,11 @@ export const TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA = [
   "Alumbrado Público (Mantenimiento)",
   "Riesgo en la vía pública",
   "Corrimiento de poste/columna",
+  "Vandalismo",
+  "Disturbios",
+  "Violencia de género",
+  "Desorden en la vía pública",
+  "Otro problema de orden público",
 ];
 
 function normTipoDerivacionApi(tt) {
@@ -290,5 +295,6 @@ export function tipoPermiteSolicitudDerivacionTerceroCoopElectrica(tt) {
   if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
   if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
   if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
+  if (/\borden\s*public\w*\b/.test(n) || /\bvandalismo\b/.test(n) || /\bdisturbio\b/.test(n) || /\bviolencia\b/.test(n)) return true;
   return false;
 }

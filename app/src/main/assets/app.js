@@ -1716,6 +1716,11 @@ const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
     'riesgo en la vía pública',
     'riesgo vía pública',
     'corrimiento de poste/columna',
+    'vandalismo',
+    'disturbios',
+    'violencia de género',
+    'desorden en la vía pública',
+    'otro problema de orden público',
 ]);
 
 function _gnNormTipoDerivacion(tt) {
@@ -1742,6 +1747,7 @@ function tipoPermiteSolicitudDerivacionTercero(tt) {
     if (/\balumbrado\b/.test(n) && (/\bpublic\w*\b/.test(n) || /\bmantenim\w*\b/.test(n) || /\bluz\b/.test(n))) return true;
     if (/\briesgo\b/.test(n) && (/\bvia\b/.test(n) || /\bpublic\w*\b/.test(n) || /\bcalle\b/.test(n))) return true;
     if (/\bcorrimiento\b/.test(n) && (/\bposte\b/.test(n) || /\bcolumna\b/.test(n))) return true;
+    if (/\borden\s*public\w*\b/.test(n) || /\bvandalismo\b/.test(n) || /\bdisturbio\b/.test(n) || /\bviolencia\b/.test(n)) return true;
     return false;
 }
 
@@ -11316,6 +11322,7 @@ function construirOpcionesDerivacionAdminHtml(escFn) {
     one('cooperativa_agua', 'Cooperativa de agua');
     one('empresa_gas_natural', 'Gas natural');
     one('empresa_telefonia', 'Telefonía');
+    one('policia', 'Policía');
     [['empresa_internet', 'Internet'], ['empresa_tv_cable', 'TV cable']].forEach(([k, shortLab]) => {
         const arr = Array.isArray(dr[k]) ? dr[k] : [];
         arr.forEach((slot, i) => {
@@ -11557,6 +11564,8 @@ async function ejecutarDerivacionExternaAdmin(pid, override) {
     try {
         const body = { destino: destinoSel.destino, motivo: motivo || undefined, mensaje_final: mensajeFinal || undefined };
         if (destinoSel.idxStr !== '') body.fila_index = destinoSel.fila_index;
+        const pRowChk = app.p.find((x) => String(x.id) === String(pidNum));
+        if (pRowChk && normalizarEstadoPedidoUi(pRowChk.es) === 'Pendiente') body.desde_alta_pedido_nuevo = true;
         const esOtroApi = destinoSel.destino === 'otro' || destinoSel.destino === 'otro_personalizado';
         if (esOtroApi) {
             const wt = String(dataModal.whatsapp_tercero || '').trim();
@@ -12131,10 +12140,11 @@ async function detalle(p, opts = {}) {
         !modoOffline &&
         NEON_OK &&
         _sql &&
-        (p.es === 'Asignado' || p.es === 'En ejecución') &&
+        (p.es === 'Pendiente' || p.es === 'Asignado' || p.es === 'En ejecución') &&
         !pedidoEsDerivadoFuera(p) &&
         debeMostrarBotonDerivacion(p)
     ) {
+        const esPendienteDerivAdmin = p.es === 'Pendiente';
         const opts = construirOpcionesDerivacionAdminHtml(escDet);
         const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         let motivoAdminTa = p.sdm ? escDet(p.sdm) : '';
