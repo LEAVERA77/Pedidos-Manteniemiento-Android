@@ -12,8 +12,9 @@ describe("argentinaMobilePhone", () => {
     expect(digitsOnly("+54 9 343 454-0250")).toBe(`${M}3434540250`);
   });
 
-  it("detecta fijo internacional (54 sin 9)", () => {
-    expect(isLikelyArgentinaInternationalLandline("543434890532")).toBe(true);
+  it("no descarta 54+area+subscriber (catálogos sin el 9)", () => {
+    expect(isLikelyArgentinaInternationalLandline("543434890532")).toBe(false);
+    expect(isLikelyArgentinaInternationalLandline("543434540250")).toBe(false);
     expect(isLikelyArgentinaInternationalLandline(`${M}3434540250`)).toBe(false);
   });
 
@@ -27,7 +28,7 @@ describe("argentinaMobilePhone", () => {
     expect(normalizeArgentinaMobileWhatsappDigits("0343154540250")).toBe(`${M}3434540250`);
   });
 
-  it("rechaza fijo nacional Cerrito 0343-4890532", () => {
+  it("nacional con 0 sin 15 se rechaza (no hay suficiente info)", () => {
     expect(normalizeArgentinaMobileWhatsappDigits("03434890532")).toBeNull();
     expect(normalizeArgentinaMobileWhatsappDigits("0343 489 0532")).toBeNull();
   });
@@ -38,8 +39,9 @@ describe("argentinaMobilePhone", () => {
     );
   });
 
-  it("rechaza internacional ya formateado como fijo", () => {
-    expect(normalizeArgentinaMobileWhatsappDigits("+54 343 4890532")).toBeNull();
+  it("internacional sin 9 se convierte a móvil (insertar 9)", () => {
+    expect(normalizeArgentinaMobileWhatsappDigits("+54 343 4890532")).toBe(`${M}3434890532`);
+    expect(normalizeArgentinaMobileWhatsappDigits("543434540250")).toBe(`${M}3434540250`);
   });
 
   it("móvil sin +54 inicial (9 + área)", () => {

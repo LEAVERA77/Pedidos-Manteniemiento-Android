@@ -15,14 +15,16 @@ export function digitsOnly(s) {
 
 /**
  * Número internacional argentino que **no** es móvil (54 + área sin el 9).
- * Ej.: 543434890532 (Cerrito fijo 0343-4890532).
+ * Post-reforma 2019 y con catálogos que guardan móviles como 54+area+subscriber (sin el 9),
+ * NO descartamos automáticamente: devolvemos false para que se intente insertar el 9.
+ * Solo rechazamos patrones que son inequívocamente fijos (números muy cortos o muy largos).
  * @param {string} d solo dígitos
  */
 export function isLikelyArgentinaInternationalLandline(d) {
   if (!d || d.length < 10 || !d.startsWith("54")) return false;
   if (d.startsWith(AR_MOB)) return false;
   if (d.charAt(2) === "9") return false;
-  return d.length >= 11;
+  return false;
 }
 
 /**
@@ -84,7 +86,14 @@ export function normalizeArgentinaMobileWhatsappDigits(raw, opts = {}) {
     return null;
   }
 
-  if (d.startsWith("54")) return null;
+  if (d.startsWith("54") && !d.startsWith(AR_MOB)) {
+    const rest = d.slice(2);
+    if (rest.length >= 10 && rest.length <= 12) {
+      const candidate = `${AR_MOB}${rest}`;
+      if (candidate.length >= 12 && candidate.length <= 15) return candidate;
+    }
+    return null;
+  }
 
   if (d.startsWith("9") && d.length >= 10 && d.length <= 13) {
     const rest = d.slice(1);

@@ -6,18 +6,27 @@ import { tableHasColumn } from "../utils/tenantScope.js";
 
 const router = express.Router();
 
-const COL_LABELS = {
-  nis_medidor: "NIS / Medidor",
-  nombre: "Nombre",
-  direccion: "Dirección",
-  telefono: "Teléfono",
-  localidad: "Localidad",
-  medidor: "Medidor",
-};
+const ALL_COLS = [
+  { key: "nis_medidor", label: "NIS / Medidor", width: 16 },
+  { key: "medidor", label: "Medidor", width: 14 },
+  { key: "nombre", label: "Nombre", width: 28 },
+  { key: "localidad", label: "Localidad", width: 18 },
+  { key: "provincia", label: "Provincia", width: 16 },
+  { key: "codigo_postal", label: "Cód. postal", width: 10 },
+  { key: "barrio", label: "Barrio", width: 16 },
+  { key: "calle", label: "Calle", width: 24 },
+  { key: "numero", label: "Nº", width: 8 },
+  { key: "telefono", label: "Teléfono", width: 16 },
+  { key: "lat", label: "Lat", width: 12 },
+  { key: "lng", label: "Lon", width: 12 },
+  { key: "activo", label: "Estado", width: 10 },
+  { key: "distribuidor", label: "Distribuidor", width: 16 },
+  { key: "datos_extra", label: "Datos extra", width: 30 },
+];
 
 /**
  * GET /api/socios/exportar
- * Devuelve archivo Excel (.xlsx) con los socios del tenant.
+ * Devuelve archivo Excel (.xlsx) con TODAS las columnas de socios del tenant.
  */
 router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
   try {
@@ -25,17 +34,17 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     const params = hasTenant ? [req.tenantId] : [];
     const where = hasTenant ? "WHERE tenant_id = $1" : "";
 
-    const cols = ["nis_medidor", "nombre", "direccion", "telefono", "localidad", "medidor"];
     const existing = [];
-    for (const c of cols) {
-      if (await tableHasColumn("socios_catalogo", c)) existing.push(c);
+    for (const c of ALL_COLS) {
+      if (await tableHasColumn("socios_catalogo", c.key)) existing.push(c);
     }
 
     if (!existing.length) {
       return res.status(404).json({ ok: false, error: "Tabla socios_catalogo sin columnas exportables" });
     }
 
-    const sql = `SELECT ${existing.join(", ")} FROM socios_catalogo ${where} ORDER BY nombre ASC NULLS LAST`;
+    const selectCols = existing.map((c) => c.key).join(", ");
+    const sql = `SELECT ${selectCols} FROM socios_catalogo ${where} ORDER BY nombre ASC NULLS LAST`;
     const result = await query(sql, params);
 
     const wb = new ExcelJS.Workbook();
@@ -44,18 +53,26 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
 
     const ws = wb.addWorksheet("Socios");
 
-    ws.columns = existing.map((col) => ({
-      header: COL_LABELS[col] || col,
-      key: col,
-      width: col === "nombre" || col === "direccion" ? 30 : 18,
+    ws.columns = existing.map((c) => ({
+      header: c.label,
+      key: c.key,
+      width: c.width,
     }));
 
-    ws.getRow(1).font = { bold: true };
-    ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
     ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
 
     for (const row of result.rows) {
-      ws.addRow(existing.map((col) => row[col] ?? ""));
+      const values = existing.map((c) => {
+        if (c.key === "activo") {
+          return row[c.key] === false ? "Inactivo" : "Activo";
+        }
+        if (c.key === "datos_extra" && row[c.key] && typeof row[c.key] === "object") {
+          return JSON.stringify(row[c.key]);
+        }
+        return row[c.key] ?? "";
+      });
+      ws.addRow(values);
     }
 
     const fecha = new Date().toISOString().slice(0, 10);
