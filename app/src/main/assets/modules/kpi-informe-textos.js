@@ -3,6 +3,22 @@
  * made by leavera77
  */
 
+/**
+ * Convierte una clave de métrica cruda (ej. "pct_cerrados_24h") a etiqueta legible ("% Cerrados 24h").
+ */
+export function formatearMetricaKeyLegible(key) {
+    const s = String(key || '').trim();
+    if (!s) return '—';
+    let label = s
+        .replace(/^pct_/i, '% ')
+        .replace(/_pct$/i, ' %')
+        .replace(/_pct_/i, ' % ')
+        .replace(/_/g, ' ');
+    label = label.replace(/\b\w/g, (c) => c.toUpperCase());
+    label = label.replace(/(\d+)\s*h\b/gi, '$1h');
+    return label.trim();
+}
+
 function parseValorJsonRow(row) {
     let v = row && row.valor_json;
     if (v == null) return {};
@@ -93,7 +109,7 @@ export function lineasNarrativaMetricaKpiPdf(metricaKey, filas, deps) {
             ? 'Satisfacción (WhatsApp 1–5★)'
             : KPI_METRICA_ETIQUETAS && KPI_METRICA_ETIQUETAS[mk]
               ? KPI_METRICA_ETIQUETAS[mk]
-              : mk;
+              : formatearMetricaKeyLegible(mk);
     const { fi, ff } = periodoMinMaxFilas(fs, fmtFechaCorta || (() => '—'));
     const nPeriodos = fs.length;
     const lineas = [];

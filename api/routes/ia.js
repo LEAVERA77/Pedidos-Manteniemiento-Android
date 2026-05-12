@@ -8,6 +8,7 @@ import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 import { analizarReclamosConGroq } from "../services/groqAnalisisReclamos.js";
 import { sugerirKpisConGroq } from "../services/groqKpiSugeridos.js";
 import { generarInformeConGroq } from "../services/groqGenerarInforme.js";
+import { explicarKpisConGroq } from "../services/groqExplicarKpis.js";
 import { parsePeriod } from "../utils/helpers.js";
 
 const router = express.Router();
@@ -385,6 +386,26 @@ router.post("/generar-informe", authWithTenantHost, adminOnly, async (req, res) 
   } catch (error) {
     console.error("[ia/generar-informe]", error);
     return res.status(500).json({ ok: false, error: "Error interno al generar informe" });
+  }
+});
+
+/**
+ * POST /api/ia/explicar-kpis
+ * Body: { kpis: [{metrica, valor_numero, unidad, periodo_inicio, periodo_fin}], tipo_negocio }
+ * Returns IA explanations for each KPI metric.
+ */
+router.post("/explicar-kpis", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const kpis = Array.isArray(req.body?.kpis) ? req.body.kpis : [];
+    const tipo_negocio = String(req.body?.tipo_negocio || "").trim();
+    if (!kpis.length) {
+      return res.json({ ok: true, explicaciones: {} });
+    }
+    const result = await explicarKpisConGroq({ kpis, tipo_negocio });
+    return res.json(result);
+  } catch (error) {
+    console.error("[ia/explicar-kpis]", error);
+    return res.status(500).json({ ok: false, error: "Error interno" });
   }
 });
 

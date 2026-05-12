@@ -44,7 +44,9 @@ import {
 } from './modules/normalizar-telefono.js';
 import { kpiPdfMiniChartDataUrl } from './modules/kpi-pdf-charts.js';
 import { pdfEncabezadoEmpresaBloque, construirDomicilioEmpresaLinea } from './modules/empresa-encabezado-pdf.js';
-import { introInformeKpiPdfLegible, legibleFuenteKpi, lineasNarrativaMetricaKpiPdf } from './modules/kpi-informe-textos.js';
+import { introInformeKpiPdfLegible, legibleFuenteKpi, lineasNarrativaMetricaKpiPdf, formatearMetricaKeyLegible } from './modules/kpi-informe-textos.js';
+import { obtenerExplicacionesKpiIA } from './modules/kpi-pdf-explicacion-ia.js';
+import { kpiPdfRenderIaBlock } from './modules/kpi-pdf-ia-render.js';
 import { abrirPdfBlobParaImpresion } from './modules/pdf-blob-open.js';
 import { openAdminUsuarioWhatsappModal } from './modules/admin-usuarios-whatsapp.js';
 import {
@@ -15015,15 +15017,21 @@ const KPI_ADMIN_PRESET_META = {
 };
 
 const KPI_METRICA_ETIQUETAS = {
-    pct_cierres_con_foto: '% cierres con foto',
+    horas_promedio_cierre: 'Horas promedio de cierre',
+    pct_cerrados_24h: '% Cerrados en 24 h',
+    pct_cerrados_48h: '% Cerrados en 48 h',
+    pct_cierre: '% de Cierre',
+    total_reclamos: 'Total de reclamos',
+    pct_cierres_con_foto: '% Cierres con foto',
     reclamos_cerrados_count: 'Reclamos cerrados',
     reclamos_recibidos_count: 'Reclamos recibidos',
     tiempo_respuesta_medio_horas: 'Tiempo medio respuesta (h)',
     satisfaccion_pct: 'Satisfacción (WA 1–5★ → %)',
+    avance_medio_pct: '% Avance medio',
     saifi_indice: 'SAIFI (índice)',
     saidi_minutos: 'SAIDI (minutos)',
-    pct_bacheo_resuelto_48h: '% bacheo resuelto <48 h',
-    pct_alumbrado_repuesto_24h: '% alumbrado repuesto <24 h',
+    pct_bacheo_resuelto_48h: '% Bacheo resuelto <48 h',
+    pct_alumbrado_repuesto_24h: '% Alumbrado repuesto <24 h',
 };
 
 function normalizarUnidadKpiParaGuardar(raw) {
@@ -15860,7 +15868,8 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         return;
     }
     try {
-        toast('Generando informe…', 'info');
+        toast('Generando informe con IA…', 'info');
+        const iaMapPromise = obtenerExplicacionesKpiIA(rows).catch(() => new Map());
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
         const pageW = pdf.internal.pageSize.getWidth();
@@ -15873,96 +15882,95 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             lineaContexto: lineaGen,
         });
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
+        pdf.setFontSize(8.5);
         pdf.setTextColor(51, 65, 85);
         const intro = introInformeKpiPdfLegible(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
-        const lineH = 3.35;
+        const lineH = 3.5;
         for (let li = 0; li < introLines.length; li++) {
-            if (y + lineH > pageH - 14) {
-                pdf.addPage();
-                y = margin;
-            }
+            if (y + lineH > pageH - 14) { pdf.addPage(); y = margin; }
             pdf.text(introLines[li], margin, y);
             y += lineH;
         }
+        y += 4;
+        pdf.setDrawColor(30, 58, 138);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, y, margin + 42, y);
         y += 3;
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(9);
+        pdf.setFontSize(11);
         pdf.setTextColor(30, 58, 138);
-        if (y + 8 > pageH - 14) {
-            pdf.addPage();
-            y = margin;
-        }
+        if (y + 8 > pageH - 14) { pdf.addPage(); y = margin; }
         pdf.text('Indicadores por tipo', margin, y);
-        y += 5;
+        y += 6;
         pdf.setFont('helvetica', 'normal');
         const porMetrica = kpiAgruparSnapshotsNumericosPorMetrica(rows);
         const keysOrden = [...porMetrica.keys()].sort((a, b) => a.localeCompare(b));
         const hMmMax = 88;
+        const iaMap = await iaMapPromise;
         for (const mk of keysOrden) {
             const filasM = porMetrica.get(mk);
             const pts = kpiPuntosDesdeFilasSnapshot(filasM);
             if (!pts.length) continue;
+            const labelLegible = KPI_METRICA_ETIQUETAS[mk] || formatearMetricaKeyLegible(mk);
             const narr = lineasNarrativaMetricaKpiPdf(mk, filasM, {
                 fmtFechaCorta: fmtFechaKpiSnapshotCorta,
                 KPI_METRICA_ETIQUETAS,
             });
-            pdf.setTextColor(55, 65, 81);
+            pdf.setTextColor(30, 41, 59);
             narr.forEach((nl, idx) => {
-                if (nl == null || !String(nl).trim()) {
-                    y += 1.2;
-                    return;
-                }
+                if (nl == null || !String(nl).trim()) { y += 1.5; return; }
                 const t = String(nl);
                 const isIt = t.startsWith('*') && t.endsWith('*') && t.length > 2;
                 const raw = isIt ? t.slice(1, -1) : t;
                 const tituloBloque = idx === 0 && !isIt;
                 pdf.setFont('helvetica', tituloBloque ? 'bold' : isIt ? 'italic' : 'normal');
-                pdf.setFontSize(tituloBloque ? 8.5 : 7.7);
+                pdf.setFontSize(tituloBloque ? 9.5 : 8.5);
+                if (tituloBloque) pdf.setTextColor(30, 58, 138);
+                else pdf.setTextColor(51, 65, 85);
                 const split = pdf.splitTextToSize(raw, maxW);
                 split.forEach((line) => {
-                    if (y + lineH > pageH - 14) {
-                        pdf.addPage();
-                        y = margin;
-                    }
+                    if (y + lineH > pageH - 14) { pdf.addPage(); y = margin; }
                     pdf.text(line, margin, y);
                     y += lineH;
                 });
             });
             y += 2;
-            const dataUrl = await kpiPdfMiniChartDataUrl(KPI_METRICA_ETIQUETAS[mk] || mk, pts);
+            const dataUrl = await kpiPdfMiniChartDataUrl(labelLegible, pts);
             if (!dataUrl) continue;
             let hMm = Math.min(hMmMax, Math.max(24, 10 + pts.length * 4.6));
             let wMm = Math.min(maxW, 190);
-            if (y + hMm + 3.5 > pageH - 14) {
-                pdf.addPage();
-                y = margin;
-            }
+            if (y + hMm + 3.5 > pageH - 14) { pdf.addPage(); y = margin; }
             try {
                 pdf.addImage(dataUrl, 'PNG', margin, y, wMm, hMm);
             } catch (_) {
                 pdf.setFontSize(7.5);
                 pdf.setTextColor(100, 116, 139);
-                pdf.text(`(No se pudo embeber el gráfico «${kpiPdfTruncCell(KPI_METRICA_ETIQUETAS[mk] || mk, 40)}»)`, margin, y + 4);
+                pdf.text(`(No se pudo embeber el gráfico «${kpiPdfTruncCell(labelLegible, 40)}»)`, margin, y + 4);
                 hMm = 6;
             }
-            y += hMm + 3.5;
+            y += hMm + 3;
+            y = kpiPdfRenderIaBlock(pdf, iaMap.get(mk), { y, margin, maxW, pageH });
+            y += 2;
         }
         if (y + 14 > pageH - 14) {
             pdf.addPage();
             y = margin;
         }
+        pdf.setDrawColor(30, 58, 138);
+        pdf.setLineWidth(0.5);
+        pdf.line(margin, y, margin + 42, y);
+        y += 3;
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(9);
+        pdf.setFontSize(11);
         pdf.setTextColor(30, 58, 138);
         pdf.text('Detalle por periodo', margin, y);
-        y += 5;
+        y += 6;
         y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
         for (let ri = 0; ri < rows.length; ri++) {
             const row = rows[ri];
-            const labM = KPI_METRICA_ETIQUETAS[row.metrica] || row.metrica;
+            const labM = KPI_METRICA_ETIQUETAS[row.metrica] || formatearMetricaKeyLegible(row.metrica);
             const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
             const al = splitFechaHoraExportAR(row.created_at);
             const cells = [
