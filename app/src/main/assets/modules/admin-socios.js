@@ -1417,7 +1417,6 @@ async function aplicarInferenciaCpNominatimABulkImportSocios(payloads) {
     let cpInf = 0;
     for (const p of sinCp) {
         if (p.codigo_postal && String(p.codigo_postal).trim()) cpInf++;
-        }
     }
     return cpInf;
 }

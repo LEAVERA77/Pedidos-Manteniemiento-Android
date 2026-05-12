@@ -568,16 +568,13 @@ public class MainActivity extends AppCompatActivity {
                 drainUbic);
         if (webView != null) {
             webView.onResume();
+            final long BG_RELOAD_THRESHOLD_MS = 5L * 60_000L;
             final boolean resumeFromBackground =
                     !isChangingConfigurations()
                             && gnWebMainDocumentReady
                             && gnLastPauseMillis > 0L
-                            && (System.currentTimeMillis() - gnLastPauseMillis) > 1500L;
+                            && (System.currentTimeMillis() - gnLastPauseMillis) > BG_RELOAD_THRESHOLD_MS;
             if (resumeFromBackground) {
-                try {
-                    webView.clearCache(true);
-                } catch (Exception ignored) {
-                }
                 try {
                     Uri base = Uri.parse(BuildConfig.WEB_APP_URL);
                     Uri.Builder b = base.buildUpon();
