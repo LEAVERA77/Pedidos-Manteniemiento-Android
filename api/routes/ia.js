@@ -235,7 +235,9 @@ router.post("/generar-informe", authWithTenantHost, adminOnly, async (req, res) 
     const since = `NOW() - INTERVAL '${periodDias} days'`;
     const base = `FROM pedidos WHERE fecha_creacion >= ${since}${tsql}${bt}`;
 
-    const [topVecinos, topBarrios, topTipos, repetidos, metricasResult, snapshotsResult] = await Promise.all([
+    const sincePrev = `NOW() - INTERVAL '${periodDias * 2} days'`;
+
+    const [topVecinos, topBarrios, topTipos, repetidos, metricasResult, snapshotsResult, satisfaccionResult, satisfaccionPrevResult] = await Promise.all([
       query(
         `SELECT cliente_nombre, COUNT(*)::INT AS total
          FROM pedidos
@@ -293,6 +295,27 @@ router.post("/generar-informe", authWithTenantHost, adminOnly, async (req, res) 
             [tid]
           ).catch(() => ({ rows: [] }))
         : Promise.resolve({ rows: [] }),
+      query(
+        `SELECT
+           AVG(opinion_cliente_estrellas)::NUMERIC(3,2) AS promedio_estrellas,
+           COUNT(opinion_cliente_estrellas)::INT AS cantidad_respuestas
+         FROM pedidos
+         WHERE fecha_opinion_cliente >= ${since}${tsql}${bt}
+           AND opinion_cliente_estrellas IS NOT NULL
+           AND opinion_cliente_estrellas BETWEEN 1 AND 5`,
+        [...params]
+      ).catch(() => ({ rows: [{}] })),
+      query(
+        `SELECT
+           AVG(opinion_cliente_estrellas)::NUMERIC(3,2) AS promedio_estrellas_prev,
+           COUNT(opinion_cliente_estrellas)::INT AS cantidad_prev
+         FROM pedidos
+         WHERE fecha_opinion_cliente >= ${sincePrev}${tsql}${bt}
+           AND fecha_opinion_cliente < ${since}
+           AND opinion_cliente_estrellas IS NOT NULL
+           AND opinion_cliente_estrellas BETWEEN 1 AND 5`,
+        [...params]
+      ).catch(() => ({ rows: [{}] })),
     ]);
 
     const row = metricasResult.rows[0] || {};
@@ -326,14 +349,36 @@ router.post("/generar-informe", authWithTenantHost, adminOnly, async (req, res) 
       tipo_negocio: String(req.body?.tipo_negocio || "").trim(),
     };
 
+    const satRow = satisfaccionResult.rows[0] || {};
+    const satPrevRow = satisfaccionPrevResult.rows[0] || {};
+    const promEstrellas = satRow.promedio_estrellas != null ? Math.round(Number(satRow.promedio_estrellas) * 100) / 100 : null;
+    const cantRespuestas = Number(satRow.cantidad_respuestas) || 0;
+    const pctSatisfaccion = promEstrellas != null ? Math.round((promEstrellas / 5) * 1000) / 10 : null;
+    const promPrev = satPrevRow.promedio_estrellas_prev != null ? Math.round(Number(satPrevRow.promedio_estrellas_prev) * 100) / 100 : null;
+    const pctPrev = promPrev != null ? Math.round((promPrev / 5) * 1000) / 10 : null;
+    let tendenciaSat = 'estable';
+    if (pctSatisfaccion != null && pctPrev != null) {
+      if (pctSatisfaccion > pctPrev + 2) tendenciaSat = 'mejora';
+      else if (pctSatisfaccion < pctPrev - 2) tendenciaSat = 'empeora';
+    }
+
+    const satisfaccion = {
+      promedio_estrellas: promEstrellas,
+      porcentaje: pctSatisfaccion,
+      cantidad_respuestas: cantRespuestas,
+      periodo_anterior_porcentaje: pctPrev,
+      tendencia: tendenciaSat,
+    };
+
     const groqResult = await generarInformeConGroq({
-      datos: { analisis, metricas, kpi_snapshots: snapshotsResult.rows },
+      datos: { analisis, metricas, kpi_snapshots: snapshotsResult.rows, satisfaccion },
     });
 
     return res.json({
       ok: true,
       analisis,
       metricas,
+      satisfaccion,
       kpi_snapshots: snapshotsResult.rows,
       informe_ia: groqResult.informe_ia || null,
     });

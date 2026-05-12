@@ -84,6 +84,70 @@ function renderKpiCard(kpi) {
   </div>`;
 }
 
+function renderEstrellas(promedio) {
+  const n = Math.round(promedio || 0);
+  let s = '';
+  for (let i = 1; i <= 5; i++) s += i <= n ? '★' : '☆';
+  return s;
+}
+
+function renderSatisfaccion(data) {
+  const sat = data.satisfaccion || {};
+  const ia = (data.informe_ia || {}).satisfaccion_ia || {};
+  const prom = sat.promedio_estrellas;
+  const pct = sat.porcentaje;
+  const cant = sat.cantidad_respuestas || 0;
+  const tend = sat.tendencia || 'estable';
+  const pctPrev = sat.periodo_anterior_porcentaje;
+  const alertaIa = ia.alerta;
+
+  const tendColor = tend === 'mejora' ? '#059669' : tend === 'empeora' ? '#dc2626' : '#64748b';
+  const tendIcon = tend === 'mejora' ? 'fa-arrow-up' : tend === 'empeora' ? 'fa-arrow-down' : 'fa-minus';
+  const borderColor = alertaIa ? '#dc2626' : pct != null && pct < 50 ? '#f59e0b' : '#25d366';
+
+  let h = `<div style="margin-bottom:1rem">`;
+  h += `<div style="font-size:.88rem;font-weight:700;color:#1e3a8a;margin-bottom:.5rem"><i class="fab fa-whatsapp" style="color:#25d366"></i> Valoración WhatsApp del Vecino</div>`;
+
+  if (prom == null || cant === 0) {
+    h += `<div style="padding:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;font-size:.8rem;color:#64748b">Sin valoraciones recibidas en el período.</div>`;
+  } else {
+    h += `<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem">`;
+    h += `<div style="flex:1;min-width:120px;padding:.55rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;text-align:center">
+      <div style="font-size:1.3rem;color:#f59e0b;letter-spacing:2px">${renderEstrellas(prom)}</div>
+      <div style="font-size:1.1rem;font-weight:800;color:#1e1b4b">${prom} / 5</div>
+      <div style="font-size:.7rem;color:#64748b">Promedio</div>
+    </div>`;
+    h += `<div style="flex:1;min-width:100px;padding:.55rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;text-align:center">
+      <div style="font-size:1.1rem;font-weight:800;color:${borderColor}">${pct}%</div>
+      <div style="font-size:.7rem;color:#64748b">Satisfacción</div>
+    </div>`;
+    h += `<div style="flex:1;min-width:100px;padding:.55rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;text-align:center">
+      <div style="font-size:1.1rem;font-weight:800;color:#1e1b4b">${cant}</div>
+      <div style="font-size:.7rem;color:#64748b">Respuestas</div>
+    </div>`;
+    h += `<div style="flex:1;min-width:100px;padding:.55rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;text-align:center">
+      <div style="font-size:.85rem;font-weight:700;color:${tendColor}"><i class="fas ${tendIcon}"></i> ${esc(tend)}</div>
+      <div style="font-size:.7rem;color:#64748b">Tendencia${pctPrev != null ? ` (ant: ${pctPrev}%)` : ''}</div>
+    </div>`;
+    h += `</div>`;
+  }
+
+  if (ia.explicacion) {
+    h += `<div style="padding:.5rem;background:#fff;border-radius:.4rem;border:1px solid ${alertaIa ? '#fca5a5' : '#bbf7d0'};margin-bottom:.35rem">
+      <div style="font-size:.76rem;font-weight:600;color:${alertaIa ? '#dc2626' : '#059669'};margin-bottom:.15rem">${alertaIa ? '<i class="fas fa-exclamation-triangle"></i> Alerta' : '<i class="fas fa-check-circle"></i> Análisis'} IA</div>
+      <div style="font-size:.78rem;line-height:1.4;color:#1e1b4b">${esc(ia.explicacion)}</div>
+    </div>`;
+  }
+  if (ia.recomendacion) {
+    h += `<div style="padding:.45rem;background:#faf5ff;border:1px solid #ddd6fe;border-radius:.4rem">
+      <div style="font-size:.72rem;color:#7c3aed"><i class="fas fa-lightbulb"></i> ${esc(ia.recomendacion)}</div>
+    </div>`;
+  }
+
+  h += '</div>';
+  return h;
+}
+
 function renderInforme(data) {
   const a = data.analisis || {};
   const m = data.metricas || {};
@@ -123,7 +187,10 @@ function renderInforme(data) {
     html += '</div>';
   }
 
-  // Sección 3: Resumen ejecutivo
+  // Sección 3: Valoración WhatsApp
+  html += renderSatisfaccion(data);
+
+  // Sección 4: Resumen ejecutivo
   if (ia.resumen_ejecutivo) {
     html += `<div style="padding:.65rem;background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border:1px solid #93c5fd;border-radius:.5rem">
       <div style="font-size:.85rem;font-weight:700;color:#1e40af;margin-bottom:.3rem"><i class="fas fa-clipboard-list"></i> Resumen Ejecutivo</div>
@@ -296,6 +363,23 @@ async function exportarPdf() {
       }
     }
 
+    // Sección Valoración WhatsApp
+    const sat = _lastData.satisfaccion || {};
+    const satIa = ia.satisfaccion_ia || {};
+    checkPage(14);
+    pdfText('Valoración WhatsApp del Vecino', { bold: true, size: 10, color: [30, 58, 138], gap: 3 });
+    if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
+      pdfText('Sin valoraciones recibidas en el período.', { size: 8, color: [100, 116, 139], gap: 2 });
+    } else {
+      pdfText(`${renderEstrellas(sat.promedio_estrellas)}  ${sat.promedio_estrellas} / 5  —  Satisfacción: ${sat.porcentaje}%  —  Respuestas: ${sat.cantidad_respuestas}  —  Tendencia: ${sat.tendencia || 'estable'}${sat.periodo_anterior_porcentaje != null ? ' (ant: ' + sat.periodo_anterior_porcentaje + '%)' : ''}`, { size: 8, gap: 2 });
+    }
+    if (satIa.explicacion) {
+      pdfText(satIa.alerta ? '⚠ ' + satIa.explicacion : satIa.explicacion, { size: 7.5, color: satIa.alerta ? [220, 38, 38] : [5, 150, 105], gap: 1 });
+    }
+    if (satIa.recomendacion) {
+      pdfText(`→ ${satIa.recomendacion}`, { size: 7.2, color: [124, 58, 237], gap: 3 });
+    }
+
     // Resumen ejecutivo
     if (ia.resumen_ejecutivo) {
       checkPage(12);
@@ -391,6 +475,31 @@ function construirHtmlInformeCompleto() {
       if (k.recomendacion) body += `<div style="font-size:8px;color:#7c3aed;margin-top:1px">→ ${esc(k.recomendacion)}</div>`;
       body += '</div>';
     }
+  }
+
+  // Sección Valoración WhatsApp
+  const sat = _lastData.satisfaccion || {};
+  const satIa = (ia.satisfaccion_ia) || {};
+  body += '<h2 style="font-size:12px;color:#1e3a8a;margin:.7rem 0 .3rem">Valoración WhatsApp del Vecino</h2>';
+  if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
+    body += '<p style="font-size:9px;color:#64748b;margin:0 0 .4rem">Sin valoraciones recibidas en el período.</p>';
+  } else {
+    body += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:.4rem">`;
+    body += `<div style="flex:1;min-width:80px;padding:5px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;text-align:center"><div style="font-size:14px;color:#f59e0b;letter-spacing:1px">${renderEstrellas(sat.promedio_estrellas)}</div><div style="font-size:11px;font-weight:800">${sat.promedio_estrellas} / 5</div><div style="font-size:7px;color:#64748b">Promedio</div></div>`;
+    body += `<div style="flex:1;min-width:60px;padding:5px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;text-align:center"><div style="font-size:11px;font-weight:800;color:#25d366">${sat.porcentaje}%</div><div style="font-size:7px;color:#64748b">Satisfacción</div></div>`;
+    body += `<div style="flex:1;min-width:60px;padding:5px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;text-align:center"><div style="font-size:11px;font-weight:800">${sat.cantidad_respuestas}</div><div style="font-size:7px;color:#64748b">Respuestas</div></div>`;
+    const tc2 = sat.tendencia === 'mejora' ? '#059669' : sat.tendencia === 'empeora' ? '#dc2626' : '#64748b';
+    body += `<div style="flex:1;min-width:60px;padding:5px;background:#fff;border:1px solid #e2e8f0;border-radius:4px;text-align:center"><div style="font-size:10px;font-weight:700;color:${tc2}">${esc(sat.tendencia || 'estable')}</div><div style="font-size:7px;color:#64748b">Tendencia${sat.periodo_anterior_porcentaje != null ? ` (ant: ${sat.periodo_anterior_porcentaje}%)` : ''}</div></div>`;
+    body += '</div>';
+  }
+  if (satIa.explicacion) {
+    const bgSat = satIa.alerta ? '#fef2f2' : '#f0fdf4';
+    const bdSat = satIa.alerta ? '#fca5a5' : '#bbf7d0';
+    const clSat = satIa.alerta ? '#dc2626' : '#059669';
+    body += `<div style="padding:5px;background:${bgSat};border:1px solid ${bdSat};border-radius:4px;margin-bottom:.3rem"><p style="font-size:9px;font-weight:600;color:${clSat};margin:0 0 2px">${satIa.alerta ? '⚠ Alerta IA' : '✓ Análisis IA'}</p><p style="font-size:9px;margin:0">${esc(satIa.explicacion)}</p></div>`;
+  }
+  if (satIa.recomendacion) {
+    body += `<div style="padding:4px;background:#faf5ff;border:1px solid #ddd6fe;border-radius:4px"><p style="font-size:8px;color:#7c3aed;margin:0">→ ${esc(satIa.recomendacion)}</p></div>`;
   }
 
   if (ia.resumen_ejecutivo) {
@@ -503,8 +612,12 @@ function fallbackMailto(to, subject) {
   if (!_lastData) return;
   const ia = _lastData.informe_ia || {};
   const m = _lastData.metricas || {};
+  const sat = _lastData.satisfaccion || {};
   let plain = `Informe de Gestión — ${nombreEmpresa()}\n\n`;
   plain += `Total: ${m.total_reclamos || 0} | Cerrados: ${m.cerrados || 0} | Cierre: ${m.pct_cierre || 0}%\n`;
+  if (sat.promedio_estrellas != null && sat.cantidad_respuestas > 0) {
+    plain += `Satisfacción vecino: ${sat.promedio_estrellas}/5 (${sat.porcentaje}%) — ${sat.cantidad_respuestas} respuestas\n`;
+  }
   if (ia.resumen_ejecutivo) plain += `\nResumen: ${ia.resumen_ejecutivo}\n`;
   if (ia.recomendacion_reclamos) plain += `\nRecomendación: ${ia.recomendacion_reclamos}\n`;
   plain += '\nGenerado por GestorNova';
