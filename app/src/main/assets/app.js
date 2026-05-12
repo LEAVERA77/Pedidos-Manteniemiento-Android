@@ -15552,7 +15552,7 @@ async function cargarKpiSnapshotsAdmin() {
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Fuente</th>' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta (fecha)</th>' +
             '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)">Alta (hora)</th>' +
-            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)"></th></tr></thead><tbody>';
+            '<th style="padding:.45rem .5rem;border-bottom:1px solid var(--bo)"><button type="button" class="btn-sm" style="padding:.2rem .45rem;font-size:.7rem;background:#dc2626;color:#fff;border:1px solid #dc2626;border-radius:.35rem" onclick="eliminarTodosKpiSnapshotsAdmin()">Eliminar todos</button></th></tr></thead><tbody>';
         const body = rows
             .map(row => {
                 const vj = row.valor_json != null ? JSON.stringify(row.valor_json) : '{}';
@@ -15731,6 +15731,23 @@ async function eliminarKpiSnapshotAdmin(id) {
     }
 }
 window.eliminarKpiSnapshotAdmin = eliminarKpiSnapshotAdmin;
+
+async function eliminarTodosKpiSnapshotsAdmin() {
+    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) return;
+    const rows = window.__kpiAdminLastRows;
+    if (!Array.isArray(rows) || !rows.length) { toast('No hay registros para eliminar.', 'info'); return; }
+    if (!confirm(`¿Eliminar TODOS los ${rows.length} registros de KPI? Esta acción no se puede deshacer.`)) return;
+    if (!(await adminKpiSnapshotsTablaExiste(true))) return;
+    const tid = tenantIdActual();
+    try {
+        await sqlSimple(`DELETE FROM kpi_snapshots WHERE tenant_id = ${esc(tid)}`);
+        toast('Todos los registros eliminados.', 'success');
+        await cargarKpiSnapshotsAdmin();
+    } catch (e) {
+        toastError('kpi-snapshot-eliminar-todos', e, 'No se pudo eliminar.');
+    }
+}
+window.eliminarTodosKpiSnapshotsAdmin = eliminarTodosKpiSnapshotsAdmin;
 
 /** Puntos ordenados para la métrica elegida en el selector del gráfico (misma lógica que el chart). */
 function kpiAdminPuntosTendencia(rows, metrica) {
