@@ -1602,7 +1602,7 @@ function poblarFormDerivacionesDesdeEmpresaCfg() {
     let gas = { activo: false, nombre: '', whatsapp: '' };
     let tel = { activo: false, nombre: '', whatsapp: '' };
     let policia = { activo: false, nombre: '', whatsapp: '' };
-    if (dr && typeof dr === 'object' && (dr.empresa_energia || dr.cooperativa_agua)) {
+    if (dr && typeof dr === 'object' && !Array.isArray(dr)) {
         const ee = dr.empresa_energia || {};
         const ca = dr.cooperativa_agua || {};
         energia = {
