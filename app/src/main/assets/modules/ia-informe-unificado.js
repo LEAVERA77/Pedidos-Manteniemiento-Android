@@ -73,14 +73,17 @@ function renderRepetidos(rows) {
 function renderKpiCard(kpi) {
   const tendColor = kpi.tendencia === 'mejora' ? '#059669' : kpi.tendencia === 'empeora' ? '#dc2626' : '#64748b';
   const tendIcon = kpi.tendencia === 'mejora' ? 'fa-arrow-up' : kpi.tendencia === 'empeora' ? 'fa-arrow-down' : 'fa-minus';
-  return `<div style="padding:.65rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;border-left:4px solid ${tendColor};margin-bottom:.55rem">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.3rem">
-      <div style="font-weight:700;font-size:.83rem;color:#1e1b4b">${esc(kpi.nombre || '')}</div>
-      <div style="font-size:1rem;font-weight:800;color:${tendColor}">${esc(String(kpi.valor ?? ''))} <span style="font-size:.72rem;font-weight:400;color:#64748b">${esc(kpi.unidad || '')}</span></div>
+  const tendBg = kpi.tendencia === 'mejora' ? '#f0fdf4' : kpi.tendencia === 'empeora' ? '#fef2f2' : '#f8fafc';
+  return `<div style="padding:.85rem 1rem;background:#fff;border:1px solid #e2e8f0;border-radius:.6rem;border-left:5px solid ${tendColor};margin-bottom:.75rem;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem;margin-bottom:.45rem">
+      <div style="font-weight:700;font-size:.92rem;color:#1e1b4b;line-height:1.3">${esc(kpi.nombre || '')}</div>
+      <div style="font-size:1.1rem;font-weight:800;color:${tendColor}">${esc(String(kpi.valor ?? ''))} <span style="font-size:.78rem;font-weight:500;color:#64748b">${esc(kpi.unidad || '')}</span></div>
     </div>
-    ${kpi.explicacion ? `<div style="font-size:.76rem;color:#475569;margin-top:.3rem;line-height:1.35">${esc(kpi.explicacion)}</div>` : ''}
-    <div style="margin-top:.25rem;font-size:.72rem;color:${tendColor};font-weight:600"><i class="fas ${tendIcon}"></i> Tendencia: ${esc(kpi.tendencia || 'estable')}</div>
-    ${kpi.recomendacion ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:.2rem"><i class="fas fa-lightbulb"></i> ${esc(kpi.recomendacion)}</div>` : ''}
+    ${kpi.explicacion ? `<div style="font-size:.84rem;color:#334155;margin-bottom:.45rem;line-height:1.55;padding:.4rem .55rem;background:#f8fafc;border-radius:.35rem">${esc(kpi.explicacion)}</div>` : ''}
+    <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap">
+      <div style="font-size:.78rem;color:${tendColor};font-weight:600;padding:.2rem .5rem;background:${tendBg};border-radius:.25rem"><i class="fas ${tendIcon}"></i> Tendencia: ${esc(kpi.tendencia || 'estable')}</div>
+      ${kpi.recomendacion ? `<div style="font-size:.8rem;color:#6d28d9;line-height:1.45"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> ${esc(kpi.recomendacion)}</div>` : ''}
+    </div>
   </div>`;
 }
 
@@ -105,8 +108,8 @@ function renderSatisfaccion(data) {
   const tendIcon = tend === 'mejora' ? 'fa-arrow-up' : tend === 'empeora' ? 'fa-arrow-down' : 'fa-minus';
   const borderColor = alertaIa ? '#dc2626' : pct != null && pct < 50 ? '#f59e0b' : '#25d366';
 
-  let h = `<div style="margin-bottom:1rem">`;
-  h += `<div style="font-size:.88rem;font-weight:700;color:#1e3a8a;margin-bottom:.5rem"><i class="fab fa-whatsapp" style="color:#25d366"></i> Valoración WhatsApp del Vecino</div>`;
+  let h = `<div style="margin-bottom:1.2rem">`;
+  h += `<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.6rem;padding-bottom:.3rem;border-bottom:2px solid #bbf7d0"><i class="fab fa-whatsapp" style="color:#25d366"></i> Valoración WhatsApp del Vecino</div>`;
 
   if (prom == null || cant === 0) {
     h += `<div style="padding:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;font-size:.8rem;color:#64748b">Sin valoraciones recibidas en el período.</div>`;
@@ -133,14 +136,14 @@ function renderSatisfaccion(data) {
   }
 
   if (ia.explicacion) {
-    h += `<div style="padding:.5rem;background:#fff;border-radius:.4rem;border:1px solid ${alertaIa ? '#fca5a5' : '#bbf7d0'};margin-bottom:.35rem">
-      <div style="font-size:.76rem;font-weight:600;color:${alertaIa ? '#dc2626' : '#059669'};margin-bottom:.15rem">${alertaIa ? '<i class="fas fa-exclamation-triangle"></i> Alerta' : '<i class="fas fa-check-circle"></i> Análisis'} IA</div>
-      <div style="font-size:.78rem;line-height:1.4;color:#1e1b4b">${esc(ia.explicacion)}</div>
+    h += `<div style="padding:.65rem .8rem;background:${alertaIa ? '#fef2f2' : '#f0fdf4'};border-radius:.45rem;border:1px solid ${alertaIa ? '#fca5a5' : '#bbf7d0'};margin-bottom:.45rem">
+      <div style="font-size:.84rem;font-weight:700;color:${alertaIa ? '#dc2626' : '#059669'};margin-bottom:.25rem">${alertaIa ? '<i class="fas fa-exclamation-triangle"></i> Alerta' : '<i class="fas fa-check-circle"></i> Análisis'} IA</div>
+      <div style="font-size:.84rem;line-height:1.55;color:#1e293b">${esc(ia.explicacion)}</div>
     </div>`;
   }
   if (ia.recomendacion) {
-    h += `<div style="padding:.45rem;background:#faf5ff;border:1px solid #ddd6fe;border-radius:.4rem">
-      <div style="font-size:.72rem;color:#7c3aed"><i class="fas fa-lightbulb"></i> ${esc(ia.recomendacion)}</div>
+    h += `<div style="padding:.55rem .75rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #ddd6fe;border-radius:.45rem">
+      <div style="font-size:.82rem;line-height:1.5;color:#6d28d9"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> ${esc(ia.recomendacion)}</div>
     </div>`;
   }
 
@@ -164,25 +167,25 @@ function renderInforme(data) {
   </div>`;
 
   // Sección 1: Reclamos
-  html += '<div style="margin-bottom:1rem">';
-  html += `<div style="font-size:.88rem;font-weight:700;color:#1e3a8a;margin-bottom:.5rem"><i class="fas fa-chart-bar"></i> Análisis de Reclamos — últimos ${a.periodo_dias || 30} días</div>`;
-  html += `<div style="font-size:.75rem;color:#64748b;margin-bottom:.5rem">Total: ${m.total_reclamos || 0} · Cerrados: ${m.cerrados || 0} · Pendientes: ${m.pendientes || 0} · En ejecución: ${m.en_ejecucion || 0} · Cierre: ${m.pct_cierre || 0}% · T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}</div>`;
+  html += '<div style="margin-bottom:1.2rem">';
+  html += `<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.55rem;padding-bottom:.3rem;border-bottom:2px solid #dbeafe"><i class="fas fa-chart-bar"></i> Análisis de Reclamos — últimos ${a.periodo_dias || 30} días</div>`;
+  html += `<div style="font-size:.8rem;color:#475569;margin-bottom:.6rem;line-height:1.5">Total: ${m.total_reclamos || 0} · Cerrados: ${m.cerrados || 0} · Pendientes: ${m.pendientes || 0} · En ejecución: ${m.en_ejecucion || 0} · Cierre: ${m.pct_cierre || 0}% · T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}</div>`;
   html += renderTabla('Top vecinos con más reclamos', a.top_vecinos, 'cliente_nombre', 'Vecino');
   html += renderTabla('Top barrios / zonas', a.top_barrios, 'distribuidor', 'Barrio / zona');
   html += renderTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo', 'Tipo de trabajo');
   html += renderRepetidos(a.repetidos);
   if (ia.recomendacion_reclamos) {
-    html += `<div style="padding:.55rem;background:#fff;border-radius:.4rem;border:1px solid #ddd6fe;margin-top:.4rem">
-      <div style="font-size:.76rem;font-weight:600;color:#7c3aed;margin-bottom:.2rem"><i class="fas fa-lightbulb"></i> Recomendación IA</div>
-      <div style="font-size:.78rem;line-height:1.45;color:#1e1b4b;white-space:pre-wrap">${esc(ia.recomendacion_reclamos)}</div>
+    html += `<div style="padding:.7rem .85rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:.5rem;border:1px solid #ddd6fe;margin-top:.6rem">
+      <div style="font-size:.84rem;font-weight:700;color:#6d28d9;margin-bottom:.35rem"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> Recomendación IA</div>
+      <div style="font-size:.84rem;line-height:1.6;color:#1e1b4b;white-space:pre-wrap">${esc(ia.recomendacion_reclamos)}</div>
     </div>`;
   }
   html += '</div>';
 
   // Sección 2: KPIs
   if (kpis.length) {
-    html += '<div style="margin-bottom:1rem">';
-    html += '<div style="font-size:.88rem;font-weight:700;color:#1e3a8a;margin-bottom:.5rem"><i class="fas fa-tachometer-alt"></i> KPIs con análisis IA</div>';
+    html += '<div style="margin-bottom:1.2rem">';
+    html += '<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.6rem;padding-bottom:.3rem;border-bottom:2px solid #dbeafe"><i class="fas fa-tachometer-alt"></i> KPIs con análisis IA</div>';
     kpis.forEach(k => { html += renderKpiCard(k); });
     html += '</div>';
   }
@@ -192,9 +195,9 @@ function renderInforme(data) {
 
   // Sección 4: Resumen ejecutivo
   if (ia.resumen_ejecutivo) {
-    html += `<div style="padding:.65rem;background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border:1px solid #93c5fd;border-radius:.5rem">
-      <div style="font-size:.85rem;font-weight:700;color:#1e40af;margin-bottom:.3rem"><i class="fas fa-clipboard-list"></i> Resumen Ejecutivo</div>
-      <div style="font-size:.8rem;line-height:1.5;color:#1e293b;white-space:pre-wrap">${esc(ia.resumen_ejecutivo)}</div>
+    html += `<div style="padding:.85rem 1rem;background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%);border:1px solid #93c5fd;border-radius:.6rem;box-shadow:0 1px 4px rgba(30,64,175,.08)">
+      <div style="font-size:.95rem;font-weight:700;color:#1e40af;margin-bottom:.45rem;padding-bottom:.25rem;border-bottom:1px solid #bfdbfe"><i class="fas fa-clipboard-list"></i> Resumen Ejecutivo</div>
+      <div style="font-size:.88rem;line-height:1.65;color:#1e293b;white-space:pre-wrap">${esc(ia.resumen_ejecutivo)}</div>
     </div>`;
   }
 
@@ -306,30 +309,43 @@ async function exportarPdf() {
 
     function pdfText(text, opts) {
       const o = opts || {};
-      pdf.setFont('helvetica', o.bold ? 'bold' : 'normal');
-      pdf.setFontSize(o.size || 8);
+      const italic = o.italic ? 'italic' : 'normal';
+      const style = o.bold ? (o.italic ? 'bolditalic' : 'bold') : italic;
+      pdf.setFont('helvetica', style);
+      pdf.setFontSize(o.size || 8.5);
       pdf.setTextColor(...(o.color || [30, 41, 59]));
-      const lines = pdf.splitTextToSize(text, maxW);
-      const lineH = (o.size || 8) * 0.42;
+      const effW = maxW - (o.indent || 0);
+      const lines = pdf.splitTextToSize(String(text), effW);
+      const lineH = (o.size || 8.5) * 0.45;
       checkPage(lines.length * lineH + 2);
-      pdf.text(lines, margin, y);
-      y += lines.length * lineH + (o.gap || 2);
+      pdf.text(lines, margin + (o.indent || 0), y);
+      y += lines.length * lineH + (o.gap || 2.5);
+    }
+
+    function pdfSectionTitle(text) {
+      checkPage(12);
+      y += 2;
+      pdf.setDrawColor(30, 58, 138);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, y, margin + 40, y);
+      y += 3;
+      pdfText(text, { bold: true, size: 11, color: [30, 58, 138], gap: 3.5 });
     }
 
     // Sección reclamos
-    pdfText(`Análisis de Reclamos — últimos ${a.periodo_dias || 30} días`, { bold: true, size: 10, color: [30, 58, 138], gap: 3 });
-    pdfText(`Total: ${m.total_reclamos || 0} | Cerrados: ${m.cerrados || 0} | Pendientes: ${m.pendientes || 0} | En ejecución: ${m.en_ejecucion || 0} | Cierre: ${m.pct_cierre || 0}% | T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}`, { size: 7.5, color: [71, 85, 105] });
+    pdfSectionTitle(`Análisis de Reclamos — últimos ${a.periodo_dias || 30} días`);
+    pdfText(`Total: ${m.total_reclamos || 0}  |  Cerrados: ${m.cerrados || 0}  |  Pendientes: ${m.pendientes || 0}  |  En ejecución: ${m.en_ejecucion || 0}  |  Cierre: ${m.pct_cierre || 0}%  |  T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}`, { size: 8, color: [71, 85, 105], gap: 3 });
 
     function pdfTabla(titulo, rows, colKey) {
       if (!rows || !rows.length) return;
-      checkPage(8);
-      pdfText(titulo, { bold: true, size: 8.5, color: [30, 58, 138], gap: 1.5 });
+      checkPage(10);
+      pdfText(titulo, { bold: true, size: 9, color: [30, 58, 138], gap: 2 });
       for (const r of rows) {
         const val = r.total || r.count || r.cantidad || r.veces || 0;
-        checkPage(4);
-        pdfText(`  ${r[colKey] || '—'}: ${val}`, { size: 7.5, gap: 1 });
+        checkPage(5);
+        pdfText(`${r[colKey] || '—'}:  ${val}`, { size: 8, indent: 4, gap: 1.5 });
       }
-      y += 1.5;
+      y += 2;
     }
 
     pdfTabla('Top vecinos', a.top_vecinos, 'cliente_nombre');
@@ -337,54 +353,54 @@ async function exportarPdf() {
     pdfTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo');
 
     if (a.repetidos?.length) {
-      checkPage(8);
-      pdfText('Reclamos repetidos', { bold: true, size: 8.5, color: [30, 58, 138], gap: 1.5 });
+      checkPage(10);
+      pdfText('Reclamos repetidos', { bold: true, size: 9, color: [30, 58, 138], gap: 2 });
       for (const r of a.repetidos) {
-        checkPage(4);
-        pdfText(`  ${r.cliente_nombre || '—'} / ${r.tipo_trabajo || '—'}: ${r.veces || 0} veces`, { size: 7.5, gap: 1 });
+        checkPage(5);
+        pdfText(`${r.cliente_nombre || '—'}  /  ${r.tipo_trabajo || '—'}:  ${r.veces || 0} veces`, { size: 8, indent: 4, gap: 1.5 });
       }
-      y += 1.5;
+      y += 2;
     }
 
     if (ia.recomendacion_reclamos) {
-      pdfText('Recomendación IA:', { bold: true, size: 8, color: [124, 58, 237], gap: 1 });
-      pdfText(ia.recomendacion_reclamos, { size: 7.5, gap: 3 });
+      checkPage(10);
+      pdfText('Recomendación IA:', { bold: true, size: 9, color: [109, 40, 217], gap: 2 });
+      pdfText(ia.recomendacion_reclamos, { size: 8.5, color: [51, 65, 85], indent: 2, gap: 4 });
     }
 
     // Sección KPIs
     if (kpis.length) {
-      checkPage(10);
-      pdfText('KPIs con análisis IA', { bold: true, size: 10, color: [30, 58, 138], gap: 3 });
+      pdfSectionTitle('KPIs con análisis IA');
       for (const k of kpis) {
-        checkPage(14);
-        pdfText(`${k.nombre || '—'}: ${k.valor ?? ''} ${k.unidad || ''}  [${k.tendencia || 'estable'}]`, { bold: true, size: 8, gap: 1 });
-        if (k.explicacion) pdfText(k.explicacion, { size: 7.5, color: [71, 85, 105], gap: 1 });
-        if (k.recomendacion) pdfText(`→ ${k.recomendacion}`, { size: 7.2, color: [124, 58, 237], gap: 2 });
+        checkPage(18);
+        const tendLabel = k.tendencia === 'mejora' ? '▲ mejora' : k.tendencia === 'empeora' ? '▼ empeora' : '— estable';
+        pdfText(`${k.nombre || '—'}:  ${k.valor ?? ''} ${k.unidad || ''}   [${tendLabel}]`, { bold: true, size: 9, gap: 1.5 });
+        if (k.explicacion) pdfText(k.explicacion, { size: 8.5, color: [51, 65, 85], indent: 3, gap: 1.5 });
+        if (k.recomendacion) pdfText(`→  ${k.recomendacion}`, { size: 8, italic: true, color: [109, 40, 217], indent: 3, gap: 3.5 });
       }
     }
 
     // Sección Valoración WhatsApp
     const sat = _lastData.satisfaccion || {};
     const satIa = ia.satisfaccion_ia || {};
-    checkPage(14);
-    pdfText('Valoración WhatsApp del Vecino', { bold: true, size: 10, color: [30, 58, 138], gap: 3 });
+    pdfSectionTitle('Valoración WhatsApp del Vecino');
     if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
-      pdfText('Sin valoraciones recibidas en el período.', { size: 8, color: [100, 116, 139], gap: 2 });
+      pdfText('Sin valoraciones recibidas en el período.', { size: 8.5, color: [100, 116, 139], gap: 3 });
     } else {
-      pdfText(`${renderEstrellas(sat.promedio_estrellas)}  ${sat.promedio_estrellas} / 5  —  Satisfacción: ${sat.porcentaje}%  —  Respuestas: ${sat.cantidad_respuestas}  —  Tendencia: ${sat.tendencia || 'estable'}${sat.periodo_anterior_porcentaje != null ? ' (ant: ' + sat.periodo_anterior_porcentaje + '%)' : ''}`, { size: 8, gap: 2 });
+      pdfText(`${renderEstrellas(sat.promedio_estrellas)}   ${sat.promedio_estrellas} / 5`, { bold: true, size: 12, color: [30, 41, 59], gap: 2 });
+      pdfText(`Satisfacción: ${sat.porcentaje}%   |   Respuestas: ${sat.cantidad_respuestas}   |   Tendencia: ${sat.tendencia || 'estable'}${sat.periodo_anterior_porcentaje != null ? '  (anterior: ' + sat.periodo_anterior_porcentaje + '%)' : ''}`, { size: 8.5, color: [71, 85, 105], gap: 3 });
     }
     if (satIa.explicacion) {
-      pdfText(satIa.alerta ? '⚠ ' + satIa.explicacion : satIa.explicacion, { size: 7.5, color: satIa.alerta ? [220, 38, 38] : [5, 150, 105], gap: 1 });
+      pdfText(satIa.alerta ? '⚠  ' + satIa.explicacion : satIa.explicacion, { size: 8.5, color: satIa.alerta ? [220, 38, 38] : [5, 120, 85], indent: 2, gap: 2 });
     }
     if (satIa.recomendacion) {
-      pdfText(`→ ${satIa.recomendacion}`, { size: 7.2, color: [124, 58, 237], gap: 3 });
+      pdfText(`→  ${satIa.recomendacion}`, { size: 8, italic: true, color: [109, 40, 217], indent: 2, gap: 4 });
     }
 
     // Resumen ejecutivo
     if (ia.resumen_ejecutivo) {
-      checkPage(12);
-      pdfText('Resumen Ejecutivo', { bold: true, size: 10, color: [30, 58, 138], gap: 2 });
-      pdfText(ia.resumen_ejecutivo, { size: 8, gap: 3 });
+      pdfSectionTitle('Resumen Ejecutivo');
+      pdfText(ia.resumen_ejecutivo, { size: 9, color: [30, 41, 59], gap: 4 });
     }
 
     // Pie
