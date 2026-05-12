@@ -1,5 +1,5 @@
 import express from "express";
-import { authWithTenantHost } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { clasificarReclamoConGroq } from "../services/groqClassifier.js";
 import { generarMensajeBroadcast } from "../services/groqBroadcastGenerator.js";
 import { query } from "../db/neon.js";
@@ -42,7 +42,7 @@ router.post("/clasificar-reclamo", authWithTenantHost, async (req, res) => {
  * Body: { titulo, tipo_negocio }
  * Genera un mensaje de aviso masivo con IA.
  */
-router.post("/generar-aviso", authWithTenantHost, async (req, res) => {
+router.post("/generar-aviso", authWithTenantHost, adminOnly, async (req, res) => {
   try {
     const titulo = String(req.body?.titulo || "").trim();
     const tipo_negocio = String(req.body?.tipo_negocio || "").trim();
@@ -65,7 +65,7 @@ router.post("/generar-aviso", authWithTenantHost, async (req, res) => {
  * Body: { tipo_negocio, periodo_dias? }
  * Ejecuta agregaciones SQL y opcionalmente pide recomendaciones a Groq.
  */
-router.post("/analizar-reclamos", authWithTenantHost, async (req, res) => {
+router.post("/analizar-reclamos", authWithTenantHost, adminOnly, async (req, res) => {
   try {
     const periodDias = Math.min(Math.max(Number(req.body?.periodo_dias) || 30, 1), 365);
     const hasT = await pedidosTableHasTenantIdColumn();
@@ -139,7 +139,7 @@ router.post("/analizar-reclamos", authWithTenantHost, async (req, res) => {
  * Body: { tipo_negocio, periodo_dias? }
  * Calcula métricas reales via SQL y pide a Groq nombres + interpretación.
  */
-router.post("/sugerir-kpis", authWithTenantHost, async (req, res) => {
+router.post("/sugerir-kpis", authWithTenantHost, adminOnly, async (req, res) => {
   try {
     const periodDias = Math.min(Math.max(Number(req.body?.periodo_dias) || 30, 1), 365);
     const hasT = await pedidosTableHasTenantIdColumn();
