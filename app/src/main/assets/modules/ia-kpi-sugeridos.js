@@ -85,7 +85,7 @@ async function guardarKpiCard(kpi) {
   try {
     await sqlSimple(
       `INSERT INTO kpi_snapshots (tenant_id, metrica, periodo_inicio, periodo_fin, valor_numero, valor_json, unidad, fuente, notas, created_by_usuario_id)
-       VALUES (${escSql(t)}, ${escSql(metrica)}, ${escSql(desde)}::date, ${escSql(hasta)}::date, ${escSql(valor)}, '{}'::jsonb, ${escSql(unidad)}, ${escSql('ia_sugerido')}, ${escSql(notas)}, ${uid})`
+       VALUES (${escSql(t)}, ${escSql(metrica)}, ${escSql(desde)}::date, ${escSql(hasta)}::date, ${escSql(valor)}, '{}'::jsonb, ${escSql(unidad)}, ${escSql('computed_batch')}, ${escSql(notas)}, ${uid})`
     );
     return true;
   } catch (e) {
@@ -141,20 +141,21 @@ async function sugerirKpis() {
 
     container.querySelectorAll('.ia-kpi-guardar-btn').forEach((b) => {
       b.addEventListener('click', async (e) => {
-        const idx = Number(e.currentTarget.dataset.kpiIdx);
+        const btn = e.currentTarget;
+        const idx = Number(btn.dataset.kpiIdx);
         const kpi = _lastKpis[idx];
         if (!kpi) return;
-        e.currentTarget.disabled = true;
-        e.currentTarget.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando…';
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando…';
         const ok = await guardarKpiCard(kpi);
         if (ok) {
-          e.currentTarget.innerHTML = '<i class="fas fa-check"></i> Guardado';
-          e.currentTarget.style.background = '#16a34a';
+          btn.innerHTML = '<i class="fas fa-check"></i> Guardado';
+          btn.style.background = '#16a34a';
           if (typeof window.toast === 'function') window.toast(`KPI "${kpi.nombre || kpi.metrica}" guardado.`, 'success');
           if (typeof window.cargarKpiSnapshotsAdmin === 'function') window.cargarKpiSnapshotsAdmin();
         } else {
-          e.currentTarget.disabled = false;
-          e.currentTarget.innerHTML = '<i class="fas fa-save"></i> Guardar este KPI';
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-save"></i> Guardar este KPI';
           if (typeof window.toast === 'function') window.toast('No se pudo guardar el KPI.', 'error');
         }
       });
