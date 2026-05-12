@@ -774,7 +774,10 @@ export function initBotonInformeUnificado() {
   else sec.insertBefore(buildBtn(), sec.firstChild);
 }
 
-if (typeof window !== 'undefined') window._gnInitBotonInformeUnificado = initBotonInformeUnificado;
+if (typeof window !== 'undefined') {
+  window._gnInitBotonInformeUnificado = initBotonInformeUnificado;
+  window._gnGenerarInformeIA = generarInforme;
+}
 
 (function autoInit() {
   if (typeof document === 'undefined') return;

@@ -153,6 +153,9 @@ async function sugerirKpis() {
           btn.style.background = '#16a34a';
           if (typeof window.toast === 'function') window.toast(`KPI "${kpi.nombre || kpi.metrica}" guardado.`, 'success');
           if (typeof window.cargarKpiSnapshotsAdmin === 'function') window.cargarKpiSnapshotsAdmin();
+          if (document.getElementById('ia-informe-unificado-output') && typeof window._gnGenerarInformeIA === 'function') {
+            window._gnGenerarInformeIA();
+          }
         } else {
           btn.disabled = false;
           btn.innerHTML = '<i class="fas fa-save"></i> Guardar este KPI';
