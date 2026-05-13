@@ -40,11 +40,21 @@ function _gnInstallLoginSubmitWrap() {
     _gnLoginWrapInstalled = true;
 }
 
+function _gnUserDeclinedBiometricSave() {
+    const B = window.AndroidBiometric;
+    try {
+        return typeof B?.hasUserDeclinedBiometricSave === 'function' && !!B.hasUserDeclinedBiometricSave();
+    } catch (_) {
+        return false;
+    }
+}
+
 function _gnOfferSaveBiometricIfNeeded(em, pw) {
     if (!em || !pw) return;
     const B = window.AndroidBiometric;
     if (!B || typeof B.isAvailable !== 'function' || !B.isAvailable()) return;
     if (typeof B.hasSavedLogin === 'function' && B.hasSavedLogin()) return;
+    if (_gnUserDeclinedBiometricSave()) return;
     if (typeof B.saveLoginWithBiometric !== 'function') return;
     try {
         B.saveLoginWithBiometric(em, pw);
@@ -89,10 +99,18 @@ function _gnMountLoginBiometricUi() {
         return;
     }
     wrap.style.display = 'flex';
+    const declined = _gnUserDeclinedBiometricSave();
     wrap.innerHTML = `
       <button type="button" class="btn-sm primary" id="gn-bio-login-btn" style="max-width:18rem">Entrar con huella</button>
-      <span style="font-size:.68rem;color:rgba(255,255,255,.82);line-height:1.35">Tras un ingreso correcto te pedimos huella o rostro para guardar el acceso en este dispositivo (podés cancelar).</span>
-      <button type="button" class="btn-sm" id="gn-bio-save-btn" style="max-width:18rem;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);color:#e2e8f0">Guardar acceso para huella</button>`;
+      <span id="gn-bio-hint" style="font-size:.68rem;color:rgba(255,255,255,.82);line-height:1.35"></span>
+      <button type="button" class="btn-sm" id="gn-bio-save-btn" style="max-width:18rem;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);color:#e2e8f0">Guardar acceso para huella</button>
+      <button type="button" class="btn-sm" id="gn-bio-decline-btn" style="max-width:18rem;background:transparent;border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.88)">No quiero guardar huella en este dispositivo</button>`;
+    const hint = document.getElementById('gn-bio-hint');
+    if (hint) {
+        hint.textContent = declined
+            ? 'Podés guardar el acceso con huella cuando quieras con el botón de abajo, o seguir sin guardar.'
+            : 'Tras un ingreso correcto te pedimos huella o rostro para guardar el acceso. Si falla o cancelás, podés reintentar hasta lograrlo o elegir «No quiero guardar».';
+    }
     const has =
         typeof B.hasSavedLogin === 'function' &&
         (() => {
@@ -104,8 +122,15 @@ function _gnMountLoginBiometricUi() {
         })();
     const loginBtn = document.getElementById('gn-bio-login-btn');
     const saveBtn = document.getElementById('gn-bio-save-btn');
+    const declineBtn = document.getElementById('gn-bio-decline-btn');
     if (loginBtn) loginBtn.style.display = has ? '' : 'none';
     if (saveBtn) saveBtn.style.display = '';
+    if (declineBtn) {
+        declineBtn.style.display = has ? 'none' : '';
+        declineBtn.disabled = declined;
+        if (declined) declineBtn.style.opacity = '0.55';
+        else declineBtn.style.opacity = '';
+    }
     loginBtn?.addEventListener('click', () => {
         try {
             if (typeof B.loginWithBiometric === 'function') B.loginWithBiometric();
@@ -126,6 +151,13 @@ function _gnMountLoginBiometricUi() {
             if (typeof B.saveLoginWithBiometric === 'function') B.saveLoginWithBiometric(em, pw);
         } catch (e) {
             console.warn('[bio-save]', e);
+        }
+    });
+    declineBtn?.addEventListener('click', () => {
+        try {
+            if (typeof B.declineSaveLoginBiometricOffer === 'function') B.declineSaveLoginBiometricOffer();
+        } catch (e) {
+            console.warn('[bio-decline]', e);
         }
     });
 }
