@@ -64,21 +64,6 @@ function leerUltimaUbicacionLs() {
   return null;
 }
 
-function leerVerTodosPedidosTecnicoLocal() {
-  if (!esTecnicoPanel()) return false;
-  try {
-    const chk = document.getElementById('toggle-ver-todos-pedidos');
-    if (chk && chk.checked) return true;
-    const sel = document.getElementById('sel-android-pedidos-scope');
-    if (sel && sel.value === 'todos') return true;
-  } catch (_) {}
-  try {
-    return localStorage.getItem('pmg_tecnico_ver_todos') === '1';
-  } catch (_) {
-    return false;
-  }
-}
-
 function uidTecnicoActualNum() {
   const u = window.app?.u;
   if (!u) return null;
@@ -124,7 +109,7 @@ function taiNumPedido(p) {
   return null;
 }
 
-/** Con «Ver todos», el pedido debe ser del técnico actual (tai vs id numérico o texto). */
+/** El pedido debe estar asignado al técnico actual (`tai` vs id numérico o texto). */
 function taiCoincideConTecnicoLogueado(p) {
   const uid = uidTecnicoActualNum();
   if (uid != null) {
@@ -156,18 +141,15 @@ function esAsignadoOEnEjecucionUi(p) {
 }
 
 /**
- * Pedidos Asignado / En ejecución del técnico logueado.
- * Fuente: `pedidosVisiblesEnUI()` (misma base que el panel #pl: rubro, derivados, etc.).
- * Sin «Todos»: Neon ya limitó `app.p` al técnico — no hace falta cruzar tai.
- * Con «Todos»: filtrar por técnico asignado = usuario actual (numérico o string).
+ * Pedidos Asignado / En ejecución asignados al técnico logueado.
+ * No usa el checkbox «Todos»: siempre cruza con `tai` / id de sesión (igual que la carga SQL «solo míos»).
+ * Base: `pedidosVisiblesEnUI()` cuando exista (rubro, derivados, etc.).
  */
 function pedidosAsignadosAMi() {
   const visFn = typeof window.pedidosVisiblesEnUI === 'function' ? window.pedidosVisiblesEnUI : null;
   const raw = visFn ? visFn() : Array.isArray(window.app?.p) ? window.app.p : [];
-  const verTodos = leerVerTodosPedidosTecnicoLocal();
   return raw.filter((p) => {
     if (!esAsignadoOEnEjecucionUi(p)) return false;
-    if (!verTodos) return true;
     return taiCoincideConTecnicoLogueado(p);
   });
 }
