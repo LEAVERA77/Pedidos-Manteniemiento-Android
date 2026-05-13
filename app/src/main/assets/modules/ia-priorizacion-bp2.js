@@ -97,17 +97,30 @@ if (typeof window !== 'undefined') {
       return [...pedidos].sort((a, b) => calcularPuntaje(b) - calcularPuntaje(a));
     }
     if (tec) {
-      if (tab === 'p') return pedidos;
-      if (tab === 'a') {
-        return [...pedidos].sort((a, b) => {
-          const sb = calcularPuntaje(b);
-          const sa = calcularPuntaje(a);
-          if (sb !== sa) return sb - sa;
-          const ta = a.f ? new Date(a.f).getTime() : 0;
-          const tb = b.f ? new Date(b.f).getTime() : 0;
-          return ta - tb;
-        });
-      }
+      const isOpen = (p) => {
+        if (!p) return false;
+        const raw = p.es != null && String(p.es).trim() !== '' ? p.es : p.estado;
+        try {
+          if (typeof window !== 'undefined' && typeof window.normalizarEstadoPedidoUi === 'function') {
+            const e = window.normalizarEstadoPedidoUi(raw);
+            return e === 'Asignado' || e === 'En ejecución';
+          }
+        } catch (_) {}
+        const s = String(raw ?? '').trim().toLowerCase();
+        return s === 'asignado' || s === 'en ejecución' || s === 'en ejecucion';
+      };
+      const asg = pedidos.filter(isOpen);
+      const rest = pedidos.filter((p) => !isOpen(p));
+      if (!asg.length) return pedidos;
+      const sorted = [...asg].sort((a, b) => {
+        const sb = calcularPuntaje(b);
+        const sa = calcularPuntaje(a);
+        if (sb !== sa) return sb - sa;
+        const ta = a.f ? new Date(a.f).getTime() : 0;
+        const tb = b.f ? new Date(b.f).getTime() : 0;
+        return ta - tb;
+      });
+      return [...sorted, ...rest];
     }
     return pedidos;
   };

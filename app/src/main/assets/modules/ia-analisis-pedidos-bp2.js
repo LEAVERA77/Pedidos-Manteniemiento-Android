@@ -80,7 +80,8 @@ function leerVerTodosPedidosTecnicoLocal() {
 }
 
 function uidTecnicoActualNum() {
-  const raw = window.app?.u?.id ?? window.app?.u?.userId;
+  const u = window.app?.u;
+  const raw = u?.id ?? u?.userId ?? u?.user_id ?? u?.usuario_id;
   const n = parseInt(String(raw ?? '').trim(), 10);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
@@ -91,7 +92,11 @@ function taiNumPedido(p) {
     const t = parseInt(String(p.tai).trim(), 10);
     if (Number.isFinite(t)) return t;
   }
-  const alt = p.tecnico_asignado_id ?? p.tecnicoAsignadoId ?? p.TECNICO_ASIGNADO_ID;
+  const alt =
+    p.tecnico_asignado_id ??
+    p.tecnicoAsignadoId ??
+    p.TECNICO_ASIGNADO_ID ??
+    p.tecnico_asignado;
   if (alt != null && alt !== '') {
     const t = parseInt(String(alt).trim(), 10);
     if (Number.isFinite(t)) return t;
@@ -99,19 +104,31 @@ function taiNumPedido(p) {
   return null;
 }
 
+/** Misma semántica que el panel (norm + legacy `estado` crudo). */
+function esAsignadoOEnEjecucionUi(p) {
+  if (!p) return false;
+  const raw = p.es != null && String(p.es).trim() !== '' ? p.es : p.estado;
+  try {
+    if (typeof window.normalizarEstadoPedidoUi === 'function') {
+      const e = window.normalizarEstadoPedidoUi(raw);
+      return e === 'Asignado' || e === 'En ejecución';
+    }
+  } catch (_) {}
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'asignado' || s === 'en ejecución' || s === 'en ejecucion';
+}
+
 /**
- * Pedidos Asignado / En ejecución del técnico.
- * Sin «Todos»: `app.p` ya viene filtrada por `tecnico_asignado_id` en Neon → no exigir `tai` en fila.
- * Con «Todos»: acotar por `tai` = usuario actual.
+ * Pedidos Asignado / En ejecución del técnico logueado.
+ * Fuente: `app.p` (Neon ya acota por técnico si no hay «Todos»).
+ * Con «Todos»: filtrar por `tai` = usuario actual.
  */
 function pedidosAsignadosAMi() {
-  const pedidos = Array.isArray(window.app?.p) ? window.app.p : [];
-  const visFn = typeof window.pedidosVisiblesEnUI === 'function' ? window.pedidosVisiblesEnUI : null;
-  const vis = visFn ? visFn() : pedidos;
+  const raw = Array.isArray(window.app?.p) ? window.app.p : [];
   const verTodos = leerVerTodosPedidosTecnicoLocal();
   const uid = uidTecnicoActualNum();
-  return vis.filter((p) => {
-    if (p.es !== 'Asignado' && p.es !== 'En ejecución') return false;
+  return raw.filter((p) => {
+    if (!esAsignadoOEnEjecucionUi(p)) return false;
     if (!verTodos) return true;
     if (uid == null) return false;
     const t = taiNumPedido(p);
