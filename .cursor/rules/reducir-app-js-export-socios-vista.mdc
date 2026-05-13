@@ -1,0 +1,14 @@
+---
+description: Objetivo de reducir app.js y export socios fiel a la tabla admin
+alwaysApply: false
+---
+
+# Reducir `app.js` y export socios (vista admin)
+
+- **Meta:** que `app/src/main/assets/app.js` **no crezca**; nueva lógica en `modules/*.js` con imports mínimos desde `app.js` cuando haga falta. Cuando se toque código que aún vive en `app.js` y sea seguro, **extraer** a módulos en la misma tarea o en una dedicada de refactor pequeño.
+- **Export socios (CSV, XLSX cliente, GET `/api/socios/exportar`):** debe reflejar la **tabla admin del tenant y rubro/línea de negocio vigentes**, no un volcado de todas las columnas físicas de `socios_catalogo` salvo respaldo explícito.
+  - **Vista por defecto:** columnas y etiquetas alineadas a `api/services/sociosCatalogoExportVistaAdmin.js` / `modules/socios-catalogo-export-vista.js`.
+  - **Respaldo técnico completo (todas las columnas BD):** solo `GET /api/socios/exportar?completo=1` (admin).
+- **Paridad repos:** cambios en `modules/` o `api/` → sync/commit según reglas del proyecto (`commit-push-nexxo-y-pedidos-mg`, `pedidos-mg-web-repo`).
+
+made by leavera77

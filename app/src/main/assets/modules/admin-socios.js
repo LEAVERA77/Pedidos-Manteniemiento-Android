@@ -6,6 +6,12 @@
 
 import { esc, parseDecimalODmsCoord, validarWgs84Import } from './utils.js';
 import { andFragmentSociosCatalogoSesionNeon } from './socios-catalogo-filtro-sesion.js';
+import {
+    filtrarSociosFilasExportVista,
+    rubroSociosExportDesdeCfg,
+    sociosActivoTexto,
+    sociosVistaExportSpec,
+} from './socios-catalogo-export-vista.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
 import {
@@ -663,55 +669,48 @@ function escCsvCeldaSocios(v) {
     return s;
 }
 
-/** CSV UTF-8 con BOM (compatible Excel) con columnas de la planilla actual, incl. teléfonos. */
+/** CSV UTF-8 con BOM: mismas columnas que la tabla admin del rubro (sin mezclar tenants / línea de negocio). */
 export function descargarPlanillaSociosCsvExport() {
-    const rows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
+    const rawRows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
+    const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
+    const abt = String(typeof window !== 'undefined' ? window.EMPRESA_CFG?.active_business_type || '' : '')
+        .trim()
+        .toLowerCase();
+    const rows = filtrarSociosFilasExportVista(rawRows || [], tid, abt);
     if (!Array.isArray(rows) || !rows.length) {
-        toastError('No hay datos cargados. Abrí Socios y esperá a que cargue la lista.');
+        toastError('No hay datos para exportar. Abrí Socios y esperá a que cargue la lista (o revisá tenant / línea de negocio).');
         return;
     }
     const extraKeys = Array.isArray(window._sociosDatosExtraColumnKeys) ? window._sociosDatosExtraColumnKeys : [];
-    const baseHeaders = [
-        'id',
-        'nis_medidor',
-        'nis',
-        'medidor',
-        'nombre',
-        'calle',
-        'numero',
-        'barrio',
-        'telefono',
-        'distribuidor_codigo',
-        'localidad',
-        'provincia',
-        'codigo_postal',
-        'tipo_tarifa',
-        'urbano_rural',
-        'transformador',
-        'tipo_conexion',
-        'fases',
-        'latitud',
-        'longitud',
-        'activo',
-    ];
-    const headers = [...baseHeaders, ...extraKeys.map((k) => `extra_${k}`)];
-    const lines = [headers.join(',')];
+    const spec = sociosVistaExportSpec(rubroSociosExportDesdeCfg());
+    let fieldKeys = [...spec.keys];
+    const labels = [...spec.labels];
+    if (rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'tenant_id')) && !fieldKeys.includes('tenant_id')) {
+        fieldKeys.push('tenant_id');
+        labels.push('tenant_id');
+    }
+    const headers = [...labels, ...extraKeys.map((k) => `extra:${k}`)];
+    const lines = [headers.map((h) => escCsvCeldaSocios(h)).join(',')];
     for (const r of rows) {
-        const cells = headers.map((h) => {
-            if (h.startsWith('extra_')) {
-                const k = h.slice(6);
-                const o = sociosCatalogoParseObjetoDatosExtra(r.datos_extra);
-                return escCsvCeldaSocios(o && o[k] != null ? o[k] : '');
-            }
-            return escCsvCeldaSocios(r[h]);
-        });
+        const cells = [];
+        for (let i = 0; i < fieldKeys.length; i++) {
+            const fk = fieldKeys[i];
+            let v;
+            if (fk === 'activo') v = sociosActivoTexto(r.activo);
+            else v = r[fk];
+            cells.push(escCsvCeldaSocios(v));
+        }
+        for (const ek of extraKeys) {
+            const o = sociosCatalogoParseObjetoDatosExtra(r.datos_extra);
+            cells.push(escCsvCeldaSocios(o && o[ek] != null ? o[ek] : ''));
+        }
         lines.push(cells.join(','));
     }
     const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `socios_catalogo_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `socios_catalogo_vista_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -904,6 +903,10 @@ async function cargarListaSociosAdmin() {
     try {
         const hasDEList = await req().sociosCatalogoTieneDatosExtra();
         const hasSocTList = await req().sociosCatalogoTieneTenantId();
+        const rBt = await req().sqlSimple(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
+        );
+        const hasBtList = !!(rBt.rows && rBt.rows.length);
         const andSoc = await andFragmentSociosCatalogoSesionNeon({
             sqlSimple: req().sqlSimple,
             esc,
@@ -912,8 +915,9 @@ async function cargarListaSociosAdmin() {
         });
         const colDe = hasDEList ? ', datos_extra' : '';
         const colTid = hasSocTList ? ', tenant_id' : '';
+        const colBt = hasBtList ? ', business_type' : '';
         const r = await req().sqlSimpleSelectAllPages(
-            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe}${colTid} FROM socios_catalogo WHERE 1=1${andSoc}`,
+            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe}${colTid}${colBt} FROM socios_catalogo WHERE 1=1${andSoc}`,
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];
@@ -949,7 +953,7 @@ async function cargarListaSociosAdmin() {
 <div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
 <button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
 </details>
-<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Las columnas extra salen del Excel (<code>datos_extra</code>). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja del encabezado.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnExportSociosExcelCompleto&&window._gnExportSociosExcelCompleto()" title="Descarga .xlsx con todas las columnas de BD, datos_extra en JSON y columnas extra desglosadas, coordenadas y proyección si aplica"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
+<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Las columnas extra salen del Excel (<code>datos_extra</code>). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja del encabezado.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnExportSociosExcelCompleto&&window._gnExportSociosExcelCompleto()" title="Descarga .xlsx con las columnas de la tabla admin (rubro actual), sin mezclar tenants ni otras líneas de negocio; incluye datos_extra y proyección si los usás en la vista"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
         bindSociosCatalogoVirtualScroll();
         sociosCatalogoRenderPanelPreferenciasColumnas();
         renderSociosCatalogoVirtual();
