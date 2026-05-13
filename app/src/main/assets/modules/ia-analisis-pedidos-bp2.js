@@ -81,9 +81,29 @@ function leerVerTodosPedidosTecnicoLocal() {
 
 function uidTecnicoActualNum() {
   const u = window.app?.u;
-  const raw = u?.id ?? u?.userId ?? u?.user_id ?? u?.usuario_id;
-  const n = parseInt(String(raw ?? '').trim(), 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  if (!u) return null;
+  const keys = ['id', 'userId', 'user_id', 'usuario_id'];
+  for (const k of keys) {
+    const raw = u[k];
+    if (raw == null || raw === '') continue;
+    const n = parseInt(String(raw).trim(), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+/** Id de sesión como string (útil si `parseInt(id)` falla pero `tai` coincide como texto). */
+function uidTecnicoActualStr() {
+  const u = window.app?.u;
+  if (!u) return '';
+  const keys = ['id', 'userId', 'user_id', 'usuario_id'];
+  for (const k of keys) {
+    const raw = u[k];
+    if (raw == null || raw === '') continue;
+    const s = String(raw).trim();
+    if (s) return s;
+  }
+  return '';
 }
 
 function taiNumPedido(p) {
@@ -104,6 +124,23 @@ function taiNumPedido(p) {
   return null;
 }
 
+/** Con «Ver todos», el pedido debe ser del técnico actual (tai vs id numérico o texto). */
+function taiCoincideConTecnicoLogueado(p) {
+  const uid = uidTecnicoActualNum();
+  if (uid != null) {
+    const t = taiNumPedido(p);
+    return t != null && t === uid;
+  }
+  const idStr = uidTecnicoActualStr();
+  if (!idStr) return false;
+  const tRaw = p.tai ?? p.tecnico_asignado_id ?? p.tecnicoAsignadoId ?? p.tecnico_asignado;
+  if (tRaw == null || tRaw === '') return false;
+  if (String(tRaw).trim() === idStr) return true;
+  const tn = parseInt(String(tRaw).trim(), 10);
+  const un = parseInt(idStr, 10);
+  return Number.isFinite(tn) && Number.isFinite(un) && tn === un;
+}
+
 /** Misma semántica que el panel (norm + legacy `estado` crudo). */
 function esAsignadoOEnEjecucionUi(p) {
   if (!p) return false;
@@ -120,19 +157,18 @@ function esAsignadoOEnEjecucionUi(p) {
 
 /**
  * Pedidos Asignado / En ejecución del técnico logueado.
- * Fuente: `app.p` (Neon ya acota por técnico si no hay «Todos»).
- * Con «Todos»: filtrar por `tai` = usuario actual.
+ * Fuente: `pedidosVisiblesEnUI()` (misma base que el panel #pl: rubro, derivados, etc.).
+ * Sin «Todos»: Neon ya limitó `app.p` al técnico — no hace falta cruzar tai.
+ * Con «Todos»: filtrar por técnico asignado = usuario actual (numérico o string).
  */
 function pedidosAsignadosAMi() {
-  const raw = Array.isArray(window.app?.p) ? window.app.p : [];
+  const visFn = typeof window.pedidosVisiblesEnUI === 'function' ? window.pedidosVisiblesEnUI : null;
+  const raw = visFn ? visFn() : Array.isArray(window.app?.p) ? window.app.p : [];
   const verTodos = leerVerTodosPedidosTecnicoLocal();
-  const uid = uidTecnicoActualNum();
   return raw.filter((p) => {
     if (!esAsignadoOEnEjecucionUi(p)) return false;
     if (!verTodos) return true;
-    if (uid == null) return false;
-    const t = taiNumPedido(p);
-    return t != null && t === uid;
+    return taiCoincideConTecnicoLogueado(p);
   });
 }
 

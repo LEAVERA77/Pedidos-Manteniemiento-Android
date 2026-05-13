@@ -14600,6 +14600,7 @@ function pedidosVisiblesEnUI() {
         return true;
     });
 }
+if (typeof window !== 'undefined') window.pedidosVisiblesEnUI = pedidosVisiblesEnUI;
 
 function aplicarEtiquetasPorTipo(tipo) {
     const esMunicipio = String(tipo || '').toLowerCase() === 'municipio';
