@@ -73,6 +73,7 @@ import {
   setGlobalBotActiveDb,
   isPhoneWhatsappHumanChatDirect,
 } from "./globalBotState.js";
+import { inferirIntencionBotWhatsappGroq } from "./groqWhatsappBotIntent.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
@@ -3795,6 +3796,50 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(phone, introIdle + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
       return;
     }
+
+    const rawIaIdle = String(text || "").trim();
+    if (rawIaIdle.length >= 3 && rawIaIdle.length <= 600) {
+      try {
+        const iaIdle = await inferirIntencionBotWhatsappGroq({
+          texto: rawIaIdle,
+          tipoCliente: ctx.tipo,
+          nombreEntidad: ctx.nombre || "",
+        });
+        if (iaIdle.ok && iaIdle.intencion) {
+          if (iaIdle.intencion === "identificador_cuenta_mis_pedidos") {
+            sessions.set(sk, {
+              step: "awaiting_mis_reclamos_id",
+              tenantId: tid,
+              tipoCliente: ctx.tipo,
+              contactName: contactName || null,
+              phoneNumberId: wpid,
+            });
+            await reply(
+              phone,
+              `${mensajePedirIdentificadorMisReclamos(ctx.tipo)}\n\n_Escribí *menú* para volver._`,
+              tid,
+              phoneNumberId
+            );
+            return;
+          }
+          if (iaIdle.intencion === "estado_seguimiento_whatsapp") {
+            const handledIa = await _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx);
+            if (handledIa) return;
+          }
+          if (iaIdle.intencion === "menu_cargar_reclamo") {
+            if (ctx.whatsappBloqueoReclamos) {
+              await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+              return;
+            }
+            await replyListaTiposReclamo(phone, ctx, phoneNumberId);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[whatsapp-bot-meta] inferir intención idle (IA)", e?.message || e);
+      }
+    }
+
     await reply(
       phone,
       `No reconocí el mensaje.\n\n` + textoBienvenidaYAyuda(ctx),
