@@ -12,13 +12,19 @@ export const WHATSAPP_LIST_ROW_MIS_RECLAMOS = "Mis reclamos";
 
 export function mensajePedirIdentificadorMisReclamos(tipoCliente) {
   const r = normalizarRubroCliente(tipoCliente);
+  let idLine = "Ingresá el dato de tu cuenta (como figura en la factura o credencial):";
   if (r === "municipio") {
-    return "Ingresá tu *ID Vecino* (el dato que figure en tu cuenta o credencial):";
+    idLine = "Ingresá tu *ID Vecino* (el dato que figure en tu cuenta o credencial):";
+  } else if (r === "cooperativa_agua") {
+    idLine = "Ingresá tu *N° de Socio* o *medidor* (el dato en tu cuenta):";
+  } else {
+    idLine = "Ingresá tu *NIS* o *medidor* (el dato en tu cuenta):";
   }
-  if (r === "cooperativa_agua") {
-    return "Ingresá tu *N° de Socio* o *medidor* (el dato en tu cuenta):";
-  }
-  return "Ingresá tu *NIS* o *medidor* (el dato en tu cuenta):";
+  return (
+    `${idLine}\n\n` +
+    "Si *no tenés* ese dato a mano, escribí tu *nombre y apellido* o *solo nombre*: buscaremos *coincidencias aproximadas* en reclamos vigentes y te pediremos que elijas con un *número*.\n\n" +
+    "_También podés escribir *operador* en cualquier momento para hablar con una persona._"
+  );
 }
 
 export function textoSubmenuTransitoMunicipio() {
@@ -121,15 +127,208 @@ export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, ra
   }
 }
 
+/** Distancia de Levenshtein (texto corto; nombres en WhatsApp). */
+export function distanciaLevenshtein(a, b) {
+  const s = String(a || "");
+  const t = String(b || "");
+  const m = s.length;
+  const n = t.length;
+  if (!m) return n;
+  if (!n) return m;
+  const v0 = new Array(n + 1);
+  const v1 = new Array(n + 1);
+  for (let j = 0; j <= n; j++) v0[j] = j;
+  for (let i = 0; i < m; i++) {
+    v1[0] = i + 1;
+    for (let j = 0; j < n; j++) {
+      const cost = s.charCodeAt(i) === t.charCodeAt(j) ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= n; j++) v0[j] = v1[j];
+  }
+  return v0[n];
+}
+
+function nombreCanonVecino(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9áéíóúüñ\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function puntajeNombreBusqueda(queryCanon, nombreFila) {
+  const q = queryCanon;
+  const n = nombreCanonVecino(nombreFila);
+  if (!q.length || !n.length) return 999;
+  if (n.includes(q) || q.includes(n)) return 0;
+  const d = distanciaLevenshtein(q, n);
+  const maxL = Math.max(q.length, n.length) || 1;
+  const ratio = d / maxL;
+  if (ratio <= 0.38 || d <= 3) return d + ratio * 0.01;
+  const tokens = n.split(" ").filter((x) => x.length > 2);
+  let best = 999;
+  for (const tok of tokens) {
+    const d2 = distanciaLevenshtein(q, tok);
+    const mx2 = Math.max(q.length, tok.length) || 1;
+    const r2 = d2 / mx2;
+    if (r2 <= 0.42 || d2 <= 2) best = Math.min(best, d2 + r2 * 0.01);
+  }
+  return best < 999 ? best + 0.5 : 999;
+}
+
+/**
+ * Pedidos abiertos cuyo `telefono_contacto` coincide con el WhatsApp del vecino (dígitos).
+ */
+export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, phoneDigits) {
+  const tid = Number(tenantId);
+  const dig = soloDigitos(phoneDigits);
+  if (!Number.isFinite(tid) || tid < 1 || dig.length < 8) return [];
+  const chk = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'pedidos'`
+  );
+  const cols = new Set((chk.rows || []).map((r) => r.column_name));
+  if (!cols.has("tenant_id") || !cols.has("telefono_contacto")) return [];
+
+  const hasDdn = cols.has("derivado_destino_nombre");
+  const suf = dig.length >= 10 ? dig.slice(-10) : dig.slice(-8);
+  const sql = `
+    SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion
+    ${hasDdn ? ", TRIM(COALESCE(derivado_destino_nombre::text,'')) AS derivado_destino_nombre" : ", NULL::text AS derivado_destino_nombre"}
+    FROM pedidos
+    WHERE tenant_id = $1
+      AND (${normalizarEstadoNoCerradoSql()})
+      AND LENGTH(TRIM(COALESCE(telefono_contacto::text,''))) > 6
+      AND (
+        regexp_replace(COALESCE(telefono_contacto::text,''),'\\D','','g') = $2
+        OR regexp_replace(COALESCE(telefono_contacto::text,''),'\\D','','g') LIKE '%' || $3 || '%'
+      )
+    ORDER BY fecha_creacion DESC NULLS LAST
+    LIMIT 12`;
+  try {
+    const r = await query(sql, [tid, dig, suf]);
+    return (r.rows || []).map((row) => ({
+      id: row.id,
+      numero_pedido: row.numero_pedido != null ? String(row.numero_pedido) : null,
+      tipo_trabajo: row.tipo_trabajo != null ? String(row.tipo_trabajo) : null,
+      estado: row.estado != null ? String(row.estado) : null,
+      fecha_creacion: row.fecha_creacion != null ? String(row.fecha_creacion) : null,
+      derivado_destino_nombre:
+        row.derivado_destino_nombre != null ? String(row.derivado_destino_nombre).trim() || null : null,
+    }));
+  } catch (e) {
+    console.warn("[whatsapp-mis-reclamos] telefono", e?.message || e);
+    return [];
+  }
+}
+
+/**
+ * Coincidencias por nombre/apellido en reclamos vigentes (Levenshtein y subcadenas).
+ */
+export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, rawQ) {
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return [];
+  const q0 = String(rawQ || "").trim();
+  if (q0.length < 2 || q0.length > 80) return [];
+  const q = nombreCanonVecino(q0);
+  if (q.length < 2 || !/[a-záéíóúüñ]/.test(q)) return [];
+
+  const chk = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'pedidos'`
+  );
+  const cols = new Set((chk.rows || []).map((r) => r.column_name));
+  if (!cols.has("tenant_id")) return [];
+  const hasCn = cols.has("cliente_nombre");
+  const hasCl = cols.has("cliente");
+  if (!hasCn && !hasCl) return [];
+
+  const nameSql = hasCn && hasCl
+    ? "NULLIF(TRIM(BOTH ' ' FROM CONCAT_WS(' ', NULLIF(TRIM(COALESCE(cliente_nombre::text,'')),''), NULLIF(TRIM(COALESCE(cliente::text,'')),''))), '')"
+    : hasCn
+      ? "NULLIF(TRIM(COALESCE(cliente_nombre::text,'')),'')"
+      : "NULLIF(TRIM(COALESCE(cliente::text,'')),'')";
+
+  const hasDdn = cols.has("derivado_destino_nombre");
+  const sql = `
+    SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion,
+    ${hasDdn ? "TRIM(COALESCE(derivado_destino_nombre::text,'')) AS derivado_destino_nombre" : "NULL::text AS derivado_destino_nombre"},
+    ${nameSql} AS nombre_reclamante
+    FROM pedidos
+    WHERE tenant_id = $1
+      AND (${normalizarEstadoNoCerradoSql()})
+      AND LENGTH(${nameSql}) > 2
+    ORDER BY fecha_creacion DESC NULLS LAST
+    LIMIT 120`;
+
+  try {
+    const r = await query(sql, [tid]);
+    const scored = [];
+    for (const row of r.rows || []) {
+      const nom = row.nombre_reclamante != null ? String(row.nombre_reclamante).trim() : "";
+      const sc = puntajeNombreBusqueda(q, nom);
+      if (sc >= 999) continue;
+      scored.push({
+        score: sc,
+        id: row.id,
+        numero_pedido: row.numero_pedido != null ? String(row.numero_pedido) : null,
+        tipo_trabajo: row.tipo_trabajo != null ? String(row.tipo_trabajo) : null,
+        estado: row.estado != null ? String(row.estado) : null,
+        fecha_creacion: row.fecha_creacion != null ? String(row.fecha_creacion) : null,
+        derivado_destino_nombre:
+          row.derivado_destino_nombre != null ? String(row.derivado_destino_nombre).trim() || null : null,
+        nombre_reclamante: nom || null,
+      });
+    }
+    scored.sort((a, b) => a.score - b.score || String(b.fecha_creacion || "").localeCompare(String(a.fecha_creacion || "")));
+    const out = [];
+    const seen = new Set();
+    for (const it of scored) {
+      if (seen.has(it.id)) continue;
+      seen.add(it.id);
+      out.push({
+        id: it.id,
+        numero_pedido: it.numero_pedido,
+        tipo_trabajo: it.tipo_trabajo,
+        estado: it.estado,
+        fecha_creacion: it.fecha_creacion,
+        derivado_destino_nombre: it.derivado_destino_nombre,
+      });
+      if (out.length >= 8) break;
+    }
+    return out;
+  } catch (e) {
+    console.warn("[whatsapp-mis-reclamos] nombre", e?.message || e);
+    return [];
+  }
+}
+
+/**
+ * Orden de búsqueda: identificador de cuenta → teléfono del reclamo → nombre aproximado.
+ * @returns {{ rows: Array<any>, origen: 'id'|'tel'|'nombre'|'vacío' }}
+ */
+export async function resolverBusquedaMisReclamosWhatsapp(tenantId, idTxt, phoneDigitsVecino) {
+  const rowsId = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, idTxt);
+  if (rowsId.length) return { rows: rowsId, origen: "id" };
+  const dig = soloDigitos(phoneDigitsVecino);
+  if (dig.length >= 8) {
+    const rowsTel = await buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, dig);
+    if (rowsTel.length) return { rows: rowsTel, origen: "tel" };
+  }
+  const rowsNom = await buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, idTxt);
+  if (rowsNom.length) return { rows: rowsNom, origen: "nombre" };
+  return { rows: [], origen: "vacío" };
+}
+
 export function mensajeNoEncontramosMisReclamos(tipoCliente) {
-  const r = normalizarRubroCliente(tipoCliente);
-  if (r === "municipio") {
-    return "No encontramos *reclamos vigentes* con ese *ID Vecino*. Revisá el dato o escribí *menú*.";
-  }
-  if (r === "cooperativa_agua") {
-    return "No encontramos *reclamos vigentes* con ese *N° de Socio* o *medidor*. Revisá el dato o escribí *menú*.";
-  }
-  return "No encontramos *reclamos vigentes* con ese *NIS* o *medidor*. Revisá el dato o escribí *menú*.";
+  const ay = textoAyudaMisReclamosMenuInicial(tipoCliente);
+  return (
+    `No encontramos *reclamos vigentes* con ese dato (${ay}, nombre o teléfono cargado en el reclamo). ` +
+    "Revisá la información o escribí *operador* para ayuda humana. *Menú* para volver."
+  );
 }
 
 /** Texto corto para el menú de bienvenida (rubro). */

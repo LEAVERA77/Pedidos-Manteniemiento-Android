@@ -596,7 +596,8 @@ router.post("/detectar-duplicados", authWithTenantHost, async (req, res) => {
  */
 router.post("/generar-mensaje-derivacion", authWithTenantHost, adminOnly, async (req, res) => {
   try {
-    const { destinatario, tipo_reclamo, direccion, barrio, descripcion, prioridad, telefono_contacto } = req.body || {};
+    const { destinatario, tipo_reclamo, direccion, barrio, descripcion, prioridad, telefono_contacto, mensaje_borrador } =
+      req.body || {};
     if (!destinatario) return res.status(400).json({ ok: false, error: "destinatario requerido" });
 
     let nombre_tenant = "";
@@ -614,6 +615,7 @@ router.post("/generar-mensaje-derivacion", authWithTenantHost, adminOnly, async 
       prioridad: String(prioridad || "").trim(),
       telefono_contacto: String(telefono_contacto || "").trim(),
       nombre_tenant,
+      mensaje_borrador: String(mensaje_borrador || "").trim(),
     });
 
     return res.json({ ok: true, mensaje });

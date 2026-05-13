@@ -18,11 +18,12 @@ function bumpMoZ(el) {
     bumpStackedFront(el);
 }
 
-/** Visor de foto ampliada o preview de impresión: mismo contador que `.mo` para quedar al frente del detalle #dm. */
+/** Visor de foto, impresión o avance de pedido: mismo contador que `.mo` para quedar al frente del detalle #dm. */
 function bumpPedidoSuboverlayIfShown(el) {
     if (!el || !el.classList) return;
     if (el.id === 'modal-foto-ampliada' && el.classList.contains('active')) bumpStackedFront(el);
     else if (el.id === 'print-container' && el.classList.contains('printing')) bumpStackedFront(el);
+    else if (el.id === 'avance-modal' && el.classList.contains('active')) bumpStackedFront(el);
 }
 
 /**
@@ -41,7 +42,7 @@ export function initGnModalZIndexStack() {
                 if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
                 const t = m.target;
                 if (!t || !t.classList) continue;
-                if (t.id === 'modal-foto-ampliada' || t.id === 'print-container') {
+                if (t.id === 'modal-foto-ampliada' || t.id === 'print-container' || t.id === 'avance-modal') {
                     bumpPedidoSuboverlayIfShown(t);
                     continue;
                 }
@@ -52,5 +53,6 @@ export function initGnModalZIndexStack() {
         document.querySelectorAll('.mo.active').forEach(bumpMoZ);
         bumpPedidoSuboverlayIfShown(document.getElementById('modal-foto-ampliada'));
         bumpPedidoSuboverlayIfShown(document.getElementById('print-container'));
+        bumpPedidoSuboverlayIfShown(document.getElementById('avance-modal'));
     } catch (_) {}
 }

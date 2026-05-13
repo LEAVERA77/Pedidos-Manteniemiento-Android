@@ -74,6 +74,8 @@ async function generarMensajeDerivacionIA(pid) {
 
     const base = typeof window.apiUrl === 'function' ? window.apiUrl('/api/ia/generar-mensaje-derivacion') : '/api/ia/generar-mensaje-derivacion';
 
+    const borrador = String(ta.value || '').trim();
+
     const resp = await fetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -85,6 +87,7 @@ async function generarMensajeDerivacionIA(pid) {
         descripcion: desc || undefined,
         prioridad: pri || undefined,
         telefono_contacto: tel || undefined,
+        mensaje_borrador: borrador || undefined,
       }),
     });
 

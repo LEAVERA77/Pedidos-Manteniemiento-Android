@@ -8397,7 +8397,12 @@ window._a = (a, id) => {
         void iniciar(id);
         return;
     }
-    closeAll();
+    const dm = document.getElementById('dm');
+    if (dm?.classList.contains('active')) {
+        cerrarModalesMoSalvo(['dm']);
+    } else {
+        closeAll();
+    }
     if (a === 'av') abrirAvance(id);
     else void abrirCierre(id);
 };
@@ -8413,7 +8418,12 @@ window._zm = id => {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
         }
-        closeAll();
+        const dm = document.getElementById('dm');
+        if (dm?.classList.contains('active')) {
+            cerrarModalesMoSalvo(['dm']);
+        } else {
+            closeAll();
+        }
         setTimeout(() => {
             if (!app.map) return;
             app.map.invalidateSize({ animate: false });
@@ -10097,16 +10107,12 @@ async function updPedido(id, campos, usuarioId) {
     render();
 }
 
-/** WebView Android: tras «Poner en ejecución» el técnico sigue en #dm; en web se cierra el modal como antes. */
+/** WebView y web: tras «Poner en ejecución» mantener el detalle abierto y refrescar datos. */
 function _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(pedidoId) {
     try {
-        if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
-            const p2 = app.p.find((p) => String(p.id) === String(pedidoId));
-            if (p2) void detalle(p2, { skipBackgroundRefetch: true });
-            else closeAll();
-        } else {
-            closeAll();
-        }
+        const p2 = app.p.find((p) => String(p.id) === String(pedidoId));
+        if (p2) void detalle(p2, { skipBackgroundRefetch: true });
+        else closeAll();
     } catch (_) {
         closeAll();
     }
@@ -12477,6 +12483,18 @@ function limpiarFotosYPreviewNuevoPedido() {
     try { actualizarVistaPreviaFotos(); } catch (_) {}
 }
 
+/** Cierra modales `.mo` excepto los ids indicados (p. ej. detalle `#dm` abierto detrás de avance/cierre). */
+function cerrarModalesMoSalvo(keepIds) {
+    const keep = new Set((keepIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+    const forzarPw = document.getElementById('modal-forzar-cambio-pw');
+    document.querySelectorAll('.mo').forEach((m) => {
+        const id = m.id || '';
+        if (keep.has(id)) return;
+        if (m === forzarPw && window._pendingAndroidPasswordChange) return;
+        m.classList.remove('active');
+    });
+}
+
 function closeAll() {
     const dmAntes = document.getElementById('dm')?.classList.contains('active');
     const forzarPw = document.getElementById('modal-forzar-cambio-pw');
@@ -12982,8 +13000,21 @@ document.getElementById('eb').addEventListener('click', () => {
 
 
 
-document.querySelectorAll('.cm').forEach(b => b.addEventListener('click', closeAll));
-document.querySelectorAll('.cm2').forEach(b => b.addEventListener('click', closeAll));
+function _gnOnClickCloseModalButton(ev) {
+    const b = ev.currentTarget;
+    const mo = b && b.closest ? b.closest('.mo') : null;
+    const idMo = mo && mo.id ? String(mo.id) : '';
+    const dm = document.getElementById('dm');
+    const dmOpen = !!dm?.classList.contains('active');
+    if (idMo === 'cm2' && dmOpen) {
+        document.getElementById('cm2')?.classList.remove('active');
+        return;
+    }
+    closeAll();
+}
+
+document.querySelectorAll('.cm').forEach(b => b.addEventListener('click', _gnOnClickCloseModalButton));
+document.querySelectorAll('.cm2').forEach(b => b.addEventListener('click', _gnOnClickCloseModalButton));
 
 document.getElementById('de').addEventListener('input', function() {
     document.getElementById('dc').textContent = this.value.length;

@@ -1,6 +1,7 @@
 /**
  * Marcadores de pedidos en Leaflet: agrupa reclamos abiertos (misma celda WGS84 redondeada)
- * en un solo popup con lista ordenada (Pendiente → Asignado → En ejecución).
+ * Varios reclamos abiertos en la misma celda: un marcador por pedido (dispersión en anillo)
+ * con popup individual para asignar o ver detalle de a uno.
  *
  * Punto único de render de markers desde `app.js`: `renderMkPedidosEnMapa` (no duplicar
  * lógica de clusters/popup en otros archivos; estado `app.map` / `app.mk` lo orquesta app.js).
@@ -53,29 +54,36 @@ function _popupHtmlUno(p, ctx) {
             </div>`;
 }
 
-function _popupHtmlMultiples(grupo, ctx) {
-    const sorted = _sortAbiertosMismaCelda(grupo);
-    let inner = `<div style="min-width:200px;font-family:system-ui;font-size:11px">
-      <div style="font-weight:700;color:#0f172a;margin-bottom:6px">${sorted.length} reclamos abiertos en este punto</div>
-      <div style="max-height:min(50vh,260px);overflow-y:auto;padding-right:2px">`;
-    for (const it of sorted) {
-        const p = it.p;
-        const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        inner += `<div style="border-bottom:1px solid #e2e8f0;padding:7px 0">
-        <b style="color:#1e3a8a">#${npEsc}</b> · <span style="color:#475569">${p.pr}</span><br/>
-        <span style="color:#334155">${String(p.tt || '')}</span><br/>
-        <span style="font-weight:600;color:#0f172a">${p.es}</span> · Av. ${p.av}%<br/>
-        <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">
-          <button type="button" style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
-          <button type="button" style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
-          ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
-          ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button type="button" style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
-          ${ctx.esAdmin() && ctx.puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !ctx.pedidoEsDerivadoFuera(p) ? `<button type="button" style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
-        </div>
-      </div>`;
+/**
+ * Centro aproximado del grupo (promedio de coordenadas reales de cada pedido).
+ */
+function _cellCenterLatLng(grupo) {
+    let sLa = 0;
+    let sLn = 0;
+    const arr = grupo || [];
+    for (const it of arr) {
+        sLa += it.la;
+        sLn += it.ln;
     }
-    inner += '</div></div>';
-    return inner;
+    const n = arr.length || 1;
+    return { la: sLa / n, ln: sLn / n };
+}
+
+/**
+ * Desplaza cada marcador en anillo (metros) para un pin por reclamo; corrige desplazamiento en lng según latitud.
+ */
+function _spiderLatLng(la, ln, i, n, radiusM) {
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return { la, ln };
+    if (n <= 1) return { la, ln };
+    const Rm = radiusM || 22;
+    const a = (2 * Math.PI * i) / n;
+    const north = Rm * Math.cos(a);
+    const east = Rm * Math.sin(a);
+    const dlat = north / 111320;
+    const cosLat = Math.cos((la * Math.PI) / 180);
+    const scale = Math.abs(cosLat) < 0.02 ? 0.02 : cosLat;
+    const dlng = east / (111320 * scale);
+    return { la: la + dlat, ln: ln + dlng };
 }
 
 /**
@@ -133,16 +141,49 @@ export function renderMkPedidosEnMapa(ctx) {
     items.forEach((it) => {
         const { p, la, ln, cer, col, npEsc } = it;
         const k = _keyCoord(la, ln);
-        let html;
         if (_esAbiertoMapa(p) && multiKeys.has(k)) {
             if (usadoMulti.has(k)) return;
             usadoMulti.add(k);
-            const grupo = gruposAbiertos.get(k) || [it];
-            html = _popupHtmlMultiples(grupo, ctx);
-        } else {
-            html = _popupHtmlUno(p, ctx);
+            const grupo = _sortAbiertosMismaCelda(gruposAbiertos.get(k) || [it]);
+            const { la: cLa, ln: cLn } = _cellCenterLatLng(grupo);
+            const n = grupo.length;
+            grupo.forEach((gIt, idx) => {
+                const pos = _spiderLatLng(cLa, cLn, idx, n);
+                const html = _popupHtmlUno(gIt.p, ctx);
+                const gcol = gIt.col;
+                const gnpEsc = gIt.npEsc;
+                let m;
+                if (showNp && !pinsLigerosAndroid) {
+                    const icon = L.divIcon({
+                        className: '',
+                        html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+                    <div style="margin-bottom:2px;background:${gcol};color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.85)">#${gnpEsc}</div>
+                    <div style="width:13px;height:13px;background:${gcol};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>
+                </div>`,
+                        iconSize: [100, 36],
+                        iconAnchor: [50, 36],
+                    });
+                    const mkOpt = { icon, zIndexOffset: gIt.cer ? 200 : 500 };
+                    if (panePed) mkOpt.pane = panePed;
+                    m = L.marker([pos.la, pos.ln], mkOpt).addTo(app.map);
+                } else {
+                    const cmOpt = {
+                        radius: gIt.cer ? 6 : 9,
+                        fillColor: gcol,
+                        color: '#fff',
+                        weight: 2,
+                        fillOpacity: gIt.cer ? 0.5 : 0.9,
+                    };
+                    if (panePed) cmOpt.pane = panePed;
+                    m = L.circleMarker([pos.la, pos.ln], cmOpt).addTo(app.map);
+                }
+                m.bindPopup(html, { maxWidth: 280 });
+                app.mk.push(m);
+            });
+            return;
         }
 
+        const html = _popupHtmlUno(p, ctx);
         let m;
         if (showNp && !pinsLigerosAndroid) {
             const icon = L.divIcon({

@@ -42,13 +42,13 @@ import {
 import {
   mensajePedirIdentificadorMisReclamos,
   textoSubmenuTransitoMunicipio,
-  buscarPedidosAbiertosPorIdentificadorWhatsapp,
   interpretaRespuestaSiOperadorWhatsapp,
   notificarAdminsChatOperadorSolicitadoWhatsapp,
   WHATSAPP_LIST_ROW_MIS_RECLAMOS,
   mensajeNoEncontramosMisReclamos,
   formatoLineaPedidoVigenteMisReclamos,
   textoAyudaMisReclamosMenuInicial,
+  resolverBusquedaMisReclamosWhatsapp,
 } from "./whatsappBotMisReclamos.js";
 import { tryAttachWhatsappImageToPedidoEvidenciaInsuficiente } from "./pedidoFotoEvidenciaInbound.js";
 import { textoClienteNuevaFotoRecibida, loadActiveBusinessTypeForTenant } from "./pedidoFotoValidacionWa.js";
@@ -221,6 +221,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_municipio_transito_subtipo",
   "awaiting_municipio_orden_publico_subtipo",
   "awaiting_mis_reclamos_id",
+  "awaiting_mis_reclamos_pick_name",
   "awaiting_mis_reclamos_operador",
 ]);
 
@@ -229,6 +230,7 @@ const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
   "awaiting_addr_numero",
   "awaiting_opcional_id",
   "awaiting_mis_reclamos_id",
+  "awaiting_mis_reclamos_pick_name",
   "awaiting_mis_reclamos_operador",
   "awaiting_wa_foto_opcional",
   "awaiting_wa_foto_upload",
@@ -3685,6 +3687,43 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     return;
   }
 
+  if (sess && sess.step === "awaiting_mis_reclamos_pick_name") {
+    if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
+      sessions.delete(sk);
+      await reply(phone, textoBienvenidaYAyuda(ctx), tid, phoneNumberId);
+      return;
+    }
+    const opts = Array.isArray(sess.misReclamosNombreOpciones) ? sess.misReclamosNombreOpciones : [];
+    const nPick = parseInt(String(text || "").trim(), 10);
+    if (!Number.isFinite(nPick) || nPick < 1 || nPick > opts.length) {
+      await reply(
+        phone,
+        `Respondé con el *número* del *1* al *${opts.length || 1}* para elegir el reclamo, o *menú*.`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    const chosen = opts[nPick - 1];
+    sessions.set(sk, {
+      ...sess,
+      step: "awaiting_mis_reclamos_operador",
+      misReclamosPedidosPreview: [chosen],
+      misReclamosNombreOpciones: null,
+      phoneNumberId: sess.phoneNumberId || wpid,
+    });
+    const line = formatoLineaPedidoVigenteMisReclamos(chosen);
+    await reply(
+      phone,
+      `Elegiste:\n*${line}*\n\n` +
+        `📋 ¿Querés hablar con un *operador* sobre este reclamo? Respondé *SI*.` +
+        `\n\n_Si no, escribí *no* o *menú*._`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
   if (sess && sess.step === "awaiting_mis_reclamos_id") {
     if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
       sessions.delete(sk);
@@ -3696,9 +3735,48 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await reply(phone, "Escribí un dato de búsqueda (hasta 120 caracteres) o *menú* para salir.", tid, phoneNumberId);
       return;
     }
-    const rows = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tid, idTxt);
+    const lowTxt = idTxt.toLowerCase();
+    if (
+      /\boperador\b|\bhumano\b|\batenci[oó]n\b/i.test(lowTxt) &&
+      lowTxt.length < 48
+    ) {
+      const nom = String(contactName || sess.contactName || "").trim() || "Vecino";
+      await notificarAdminsChatOperadorSolicitadoWhatsapp({
+        tenantId: tid,
+        nombreVecino: nom,
+        telefonoVecino: phone,
+      });
+      await reply(
+        phone,
+        "Te derivamos a un *operador humano*. Aguardá un momento…\n\n_Si querés buscar un reclamo por nombre o ID, enviá el dato después o escribí *menú*._",
+        tid,
+        phoneNumberId
+      );
+      await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
+      return;
+    }
+    const { rows, origen } = await resolverBusquedaMisReclamosWhatsapp(tid, idTxt, phone);
     if (!rows.length) {
       await reply(phone, mensajeNoEncontramosMisReclamos(ctx.tipo), tid, phoneNumberId);
+      return;
+    }
+    if (origen === "nombre" && rows.length > 1) {
+      const maxShow = Math.min(rows.length, 6);
+      const slice = rows.slice(0, maxShow);
+      const lines = slice.map((r, i) => `*${i + 1})* ${formatoLineaPedidoVigenteMisReclamos(r)}`);
+      sessions.set(sk, {
+        ...sess,
+        step: "awaiting_mis_reclamos_pick_name",
+        misReclamosNombreOpciones: slice,
+        phoneNumberId: sess.phoneNumberId || wpid,
+      });
+      await reply(
+        phone,
+        `📋 Encontramos *varias coincidencias* por nombre. Elegí el *número* del reclamo:\n\n${lines.join("\n")}\n\n` +
+          `_Para *operador humano* sin elegir, escribí *operador*. *Menú* para salir._`,
+        tid,
+        phoneNumberId
+      );
       return;
     }
     const lines = rows.map((r) => formatoLineaPedidoVigenteMisReclamos(r));
@@ -3710,14 +3788,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     });
     await reply(
       phone,
-      `📋 *Tus reclamos vigentes:*\n\n${lines.join("\n")}\n\n¿Querés hablar con un *operador*? Respondé *SI*.` +
-        `\n\n_Si no querés, escribí *no* o *menú*._`,
+      `📋 *Tus reclamos vigentes:*\n\n${lines.join("\n")}\n\n` +
+        `¿Querés hablar con un *operador*? Respondé *SI*.` +
+        `\n\n_Si querés precisión sobre *un* reclamo y ves varios, decinos el *número de pedido* (#…). Si no querés operador, escribí *no* o *menú*._`,
       tid,
       phoneNumberId
     );
     return;
   }
-
   if (sess && sess.step === "awaiting_mis_reclamos_operador") {
     if (debeSalirAlMenuPrincipalWhatsApp(lower, sess)) {
       sessions.delete(sk);

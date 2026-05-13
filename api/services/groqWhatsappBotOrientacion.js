@@ -50,6 +50,7 @@ export async function generarRespuestaOrientacionWhatsappGroq(opts) {
     "El vecino escribió algo que no encaja en un menú fijo: puede estar confundido, con errores de tipeo o haciendo preguntas generales.",
     "Tu tarea: responder en español rioplatense, tono cordial y breve (máximo unas 8 líneas cortas).",
     "Indicá de forma concreta:",
+    "- Si el mensaje describe un problema equivalente a alguno de los tipos numerados de la lista (ej.: vehículo mal estacionado, semáforo, bache, pérdida de agua, corte de luz), decí con claridad qué *número de opción* le conviene al vecino y cómo se llama ese tipo en el menú.",
     "- Cómo iniciar un reclamo nuevo (elegir el número del 1 al N según el tipo, o pedir *menú* para ver la lista).",
     "- Que puede usar *0* o la opción «Mis reclamos» para consultar reclamos vigentes con su dato de cuenta cuando corresponda.",
     "- Que puede escribir *menú* en cualquier momento para volver al inicio.",
