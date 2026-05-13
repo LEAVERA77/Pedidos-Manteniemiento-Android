@@ -18,7 +18,12 @@ router.post("/login", async (req, res) => {
     const params = [loginId];
     let sql = `SELECT id, email, nombre, rol, password_hash, activo FROM usuarios
        WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))`;
-    if (col && Number.isFinite(hintTid) && hintTid > 0) {
+    if (col) {
+      if (!Number.isFinite(hintTid) || hintTid < 1) {
+        return res.status(400).json({
+          error: "tenant_id requerido en el cuerpo del login (clientes.id del tenant elegido).",
+        });
+      }
       sql += ` AND ${col} = $2`;
       params.push(hintTid);
     }

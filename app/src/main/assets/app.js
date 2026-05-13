@@ -195,6 +195,7 @@ import {
 import './modules/gn-tenant-force-sync-android-boot.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
+import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -2069,7 +2070,7 @@ async function loginApiJwt(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario: email, password }),
+            body: authLoginJsonBody(email, password),
             signal: ctl.signal
         });
         if (!resp.ok) return null;
@@ -2118,7 +2119,7 @@ async function authLoginApiRetornarTokenUser(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario: em, password: pw }),
+            body: authLoginJsonBody(em, pw),
             signal: ctl.signal,
         });
         if (!resp.ok) return null;
@@ -2187,7 +2188,7 @@ async function verificarLoginSoloAdminSinPersistir(email, password) {
         const resp = await fetch(apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ usuario: String(email || '').trim(), password: String(password || '') }),
+            body: authLoginJsonBody(String(email || '').trim(), String(password || '')),
             signal: ctl.signal
         });
         if (!resp.ok) return { ok: false, error: 'Usuario o contraseña incorrectos' };
@@ -3704,7 +3705,15 @@ const gnLoginSubmitHandler = async e => {
         // Login Neon: igualdad literal password_hash = contraseña (legado). Si la clave está en bcrypt (alta vía API),
         // no hay fila y se reintenta con JWT en /api/auth/login (misma contraseña).
         // Recuperación texto plano: docs/NEON_ops_insertar_admin_emergencia.sql (solo pruebas).
-        const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}`;
+        let tenantFrag = '';
+        try {
+            const colU = await sqlColumnaTenantUsuariosNeonSync();
+            const tid = tenantIdActual();
+            if (colU && Number.isFinite(tid) && tid > 0) {
+                tenantFrag = ` AND ${colU} = ${esc(tid)}`;
+            }
+        } catch (_) {}
+        const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}${tenantFrag}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         const loginOrd = ' ORDER BY id ASC';
         // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
@@ -3788,11 +3797,9 @@ const gnLoginSubmitHandler = async e => {
                 toast('La API (JWT) no respondió: el setup SaaS y datos del tenant pueden no cargar hasta que revises API_BASE_URL o la red.', 'warning');
             }
             const rolL = normalizarRolStr(u.rol);
-            const forzarCambioAndroid =
-                u.must_change_password &&
-                esAndroidWebViewMapa() &&
-                rolL === 'tecnico';
-            if (forzarCambioAndroid) {
+            const forzarCambioPw =
+                u.must_change_password && (rolL === 'tecnico' || rolL === 'supervisor');
+            if (forzarCambioPw) {
                 window._pendingAndroidPasswordChange = { u, passwordActual: pw };
                 document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
                 lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
@@ -19377,6 +19384,7 @@ if ('serviceWorker' in navigator) {
             cargarListaUsuarios,
             refrescarUsuariosCacheDesdeNeon,
         });
+        initAuthLoginApiTenantResolver(() => tenantIdActual());
         (function showAndroidExportsBtn() {
             const b = document.getElementById('btn-android-descargas');
             if (b && window.AndroidDevice && typeof window.AndroidDevice.openExportsFolder === 'function') {
