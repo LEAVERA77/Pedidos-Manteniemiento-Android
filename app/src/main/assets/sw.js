@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v153';
+const CACHE_SHELL = 'pmg-shell-v154';
 const SW_VERSION  = '1.8.31';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
@@ -47,6 +47,7 @@ function shellAssetUrls() {
     j('modules/etiqueta-identificador-pedido.js'),
     j('modules/est-csv-tipo-filtro.js'),
     j('modules/pedido-dm-pm-drag.js'),
+    j('modules/pedido-detalle-html-helpers.js'),
     j('modules/utils.js'),
     j('modules/ui-utils.js'),
     j('modules/export-excel.js'),

@@ -17,9 +17,32 @@ html.gn-android-shell #dm input[type="number"] {
     font-size: 16px;
 }
 
+/* #dm / #pm: sin backdrop-filter (repintado caro del mapa/lista al hacer scroll del contenido). */
+html.gn-android-shell #dm.mo,
+html.gn-android-shell #pm.mo {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(15, 23, 42, 0.78);
+}
+
+/* Sombras más livianas que .mc genérico (menos capas de blur/sombra compuestas). */
+html.gn-android-shell #dm .mc,
+html.gn-android-shell #pm .mc {
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+html.gn-android-shell #dm .gn-dm-actions-bar {
+    box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.06);
+}
+
+html.gn-android-shell #pm.mo > .mc {
+    touch-action: pan-y;
+}
+
 html.gn-android-shell #dm .gn-dm-detail-scroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
+    touch-action: pan-y;
 }
 
 /* Modal cierre (#cm2): mismo criterio que #dm para evitar zoom en foco */

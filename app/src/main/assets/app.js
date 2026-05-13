@@ -172,6 +172,7 @@ import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-parida
 import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z-index-stack.js';
 import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
+import { gnDetalleImgAttrs } from './modules/pedido-detalle-html-helpers.js';
 import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
@@ -12007,7 +12008,7 @@ async function detalle(p, opts = {}) {
         .join('');
     const htmlBloqueCambiosAuditoria =
         htmlLineaTiempoPedido || _auditLineas
-            ? `<div class="ds"><h4>🕐 Últimos cambios y auditoría</h4>${
+            ? `<details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">🕐 Últimos cambios y auditoría</summary><div class="ds">${
                   htmlLineaTiempoPedido
                       ? `<div style="font-size:.72rem;font-weight:600;color:var(--tm);margin:0 0 .25rem">Línea de tiempo</div>${htmlLineaTiempoPedido}`
                       : ''
@@ -12019,7 +12020,7 @@ async function detalle(p, opts = {}) {
                   _auditLineas
                       ? `<div style="font-size:.72rem;font-weight:600;color:var(--tm);margin:0 0 .25rem">Usuarios (auditoría)</div>${_auditLineas}`
                       : ''
-              }</div>`
+              }</div></details>`
             : '';
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
@@ -12036,14 +12037,16 @@ async function detalle(p, opts = {}) {
         }
     } catch (_) {}
     
-    
+    const fotosCount = Array.isArray(p.fotos) ? p.fotos.filter(Boolean).length : 0;
+
     let fotosHtml = '';
     if (p.fotos && p.fotos.length > 0) {
         fotosHtml = '<div class="fotos-container">';
+        const imgLazy = gnDetalleImgAttrs();
         p.fotos.forEach((foto, idx) => {
             if (foto) {
                 const ctxStr = JSON.stringify({ tipo: 'pedido_fotos', id: p.id, idx }).replace(/"/g, '&quot;');
-                fotosHtml += `<img src="${foto}" class="foto-miniatura" onclick="verFotoAmpliada(this.src, JSON.parse(this.dataset.ctx))" data-ctx="${ctxStr}">`;
+                fotosHtml += `<img src="${foto}" class="foto-miniatura"${imgLazy} onclick="verFotoAmpliada(this.src, JSON.parse(this.dataset.ctx))" data-ctx="${ctxStr}">`;
             }
         });
         fotosHtml += '</div>';
@@ -12210,9 +12213,9 @@ async function detalle(p, opts = {}) {
             ${fc ? `<div class="dr"><span class="dl">Fecha cierre</span><span class="dv">${fc}</span></div>` : ''}
             ${p.tc ? `<div class="dr"><span class="dl">Técnico</span><span class="dv">${p.tc}</span></div>` : ''}
             ${p.tr ? `<div class="dr" style="flex-direction:column;gap:.3rem"><span class="dl">Trabajo</span><div class="trb">${p.tr}</div></div>` : ''}
-            ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura" style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
+            ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura"${gnDetalleImgAttrs()} style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
             ${chkResumen}
-            ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura" style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
+            ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura"${gnDetalleImgAttrs()} style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
         </div>` : ''}
 
         ${esTipoPedidoFactibilidad(p.tt) || !incluirBloqueMaterialesEnDetallePedido(p) ? '' : `
@@ -12238,10 +12241,7 @@ async function detalle(p, opts = {}) {
         
         ${htmlBloqueCambiosAuditoria}
         ${fotosHtml ? `
-        <div class="ds">
-            <h4>📸 Fotos del trabajo</h4>
-            ${fotosHtml}
-        </div>` : ''}
+        <details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>` : ''}
         </div>
         <div class="gn-dm-actions-bar">
         <div class="da">

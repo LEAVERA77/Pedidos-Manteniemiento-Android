@@ -30,6 +30,19 @@ Medir y documentar el comportamiento **antes y después** de extraer código de 
 
 **Nativo (opcional en plan):** `MainActivity` usa `LOAD_CACHE_ELSE_NETWORK` solo si no hay red (`ConnectivityManager`); con red sigue `LOAD_DEFAULT`.
 
+## Scroll modal detalle `#dm` (Android shell)
+
+| | Antes | Después (re-medir en DevTools) |
+|---|--------|----------------------------------|
+| **Overlay** | `.mo` con `backdrop-filter: blur(2px)` (repintado del mapa al scroll) | `html.gn-android-shell` `#dm`/`#pm`: sin backdrop, fondo rgba más opaco |
+| **Sombras** | Sombra fuerte en `.mc` y barra de acciones | Sombras más livianas solo en shell Android |
+| **Scroll** | Solo `-webkit-overflow-scrolling` | `touch-action: pan-y` en `.gn-dm-detail-scroll` y `#pm > .mc` |
+| **Imágenes** | `<img>` sin hints | `loading="lazy" decoding="async" fetchpriority="low"` vía [`modules/pedido-detalle-html-helpers.js`](../app/src/main/assets/modules/pedido-detalle-html-helpers.js) |
+| **DOM inicial** | Auditoría y fotos siempre expandidos | `<details>` colapsado por defecto (línea de tiempo + auditoría; bloque fotos con contador en summary) |
+| **Medición** | — | Performance: grabar scroll continuo en detalle con pedido largo + fotos; anotar long tasks / FPS; commit + `CACHE_SHELL` bump en `sw.js` |
+
+**Regresión:** abrir detalle, expandir «Últimos cambios y auditoría» y «Fotos del trabajo»; tap en miniatura; cierre con foto/firma; derivación con textarea.
+
 ## Notas de arquitectura (`js/core.js` vs `modules/`)
 
 - **`js/core.js`**: estado mínimo (`app`, `NEON_OK`, `esAndroidWebViewMapa`, etc.) pensado para módulos bajo `js/` (p. ej. `pedidos.js`). No duplicar allí lógica de UI que ya vive en `modules/ui-utils.js` (`toast` unificado del panel).
