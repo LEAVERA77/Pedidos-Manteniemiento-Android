@@ -12,6 +12,14 @@ function bumpMoZ(el) {
     } catch (_) {}
 }
 
+/**
+ * Fuerza un modal `.mo` por encima de paneles con z-index alto (p. ej. #admin-panel)
+ * aunque ya tuviera `.active` y el MutationObserver no dispare.
+ */
+export function gnForceModalZFront(el) {
+    bumpMoZ(el);
+}
+
 export function initGnModalZIndexStack() {
     if (typeof MutationObserver === 'undefined' || !document.body) return;
     try {

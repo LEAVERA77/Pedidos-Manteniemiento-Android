@@ -149,7 +149,7 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     const fecha = new Date().toISOString().slice(0, 10);
     const tidPart = Number.isFinite(authTid) && authTid > 0 ? `_t${authTid}` : "";
     const suf = modoCompleto ? "_completo" : "_vista";
-    const filename = `socios_catalogo${suf}${tidPart}_${fecha}.xlsx`;
+    const filename = modoCompleto ? `socios_catalogo${suf}${tidPart}_${fecha}.xlsx` : `socios_catalogo${suf}_${fecha}.xlsx`;
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

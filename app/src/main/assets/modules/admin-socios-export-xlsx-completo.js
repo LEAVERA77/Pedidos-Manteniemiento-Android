@@ -1,56 +1,12 @@
 /**
- * Exporta socios a .xlsx (SheetJS) alineado a la **tabla admin** del rubro actual:
- * mismas columnas que la vista (municipio / eléctrica / agua), sin columnas legacy de otros rubros.
- * Incluye datos_extra y proyección solo si aplica (como la tabla virtual).
+ * Exporta socios a .xlsx (SheetJS) — misma matriz WYSIWYG que la tabla admin y el CSV.
  * made by leavera77
  */
 
-import {
-    buildCtxProyeccionSociosExport,
-    proyeccionSociosExportHeaderLabels,
-    proyeccionSociosExportValores,
-} from './socios-catalogo-export-proyeccion.js';
-import {
-    filtrarSociosFilasExportVista,
-    rubroSociosExportDesdeCfg,
-    sociosActivoTexto,
-    sociosVistaExportSpec,
-} from './socios-catalogo-export-vista.js';
-
-function _datosExtraJsonCelda(raw) {
-    if (raw == null || raw === '') return '';
-    if (typeof raw === 'string') return raw;
-    try {
-        return JSON.stringify(raw);
-    } catch (_) {
-        return String(raw);
-    }
-}
-
-function _parseDatosExtra(val) {
-    if (val == null) return null;
-    if (typeof val === 'object' && !Array.isArray(val)) return val;
-    if (typeof val === 'string') {
-        try {
-            const p = JSON.parse(val);
-            return p && typeof p === 'object' && !Array.isArray(p) ? p : null;
-        } catch (_) {}
-    }
-    return null;
-}
-
-function _unionExtraKeys(rows) {
-    const k = new Set();
-    for (const row of rows) {
-        const o = _parseDatosExtra(row.datos_extra);
-        if (!o) continue;
-        for (const key of Object.keys(o)) {
-            const nk = String(key || '').trim();
-            if (nk) k.add(nk);
-        }
-    }
-    return [...k].sort();
-}
+import { filtrarSociosFilasExportVista } from './socios-catalogo-export-vista.js';
+import { leerPrefsVistaProyeccionSociosCatalogo } from './socios-catalogo-export-proyeccion.js';
+import { normalizarRubroEmpresa } from '../js/core.js';
+import { sociosCatalogoBuildWysiwygExport, leerSociosColvisSetParaExport } from './socios-catalogo-export-wysiwyg.js';
 
 function _applyColWidths(ws) {
     const XLSX = window.XLSX;
@@ -69,23 +25,6 @@ function _applyColWidths(ws) {
     }
     ws['!cols'] = cols;
     ws['!autofilter'] = { ref: ws['!ref'] };
-}
-
-function _numOrEmpty(v) {
-    if (v == null || v === '') return '';
-    const n = Number(v);
-    return Number.isFinite(n) ? n : '';
-}
-
-function _keysYLabelsVista(rows) {
-    const spec = sociosVistaExportSpec(rubroSociosExportDesdeCfg());
-    let keys = [...spec.keys];
-    let labels = [...spec.labels];
-    if (rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'tenant_id')) && !keys.includes('tenant_id')) {
-        keys = [...keys, 'tenant_id'];
-        labels = [...labels, 'tenant_id'];
-    }
-    return { keys, labels };
 }
 
 export function exportarSociosExcelCompletoDesdeMemoria() {
@@ -124,57 +63,26 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
         return;
     }
 
-    const { keys: baseKeysExport, labels: baseLabels } = _keysYLabelsVista(rows);
+    const extraKeys = Array.isArray(window._sociosDatosExtraColumnKeys) ? window._sociosDatosExtraColumnKeys : [];
+    const vis = leerSociosColvisSetParaExport();
+    const prefs = leerPrefsVistaProyeccionSociosCatalogo();
+    const esMunicipio = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) === 'municipio';
+    const { headers, matrix } = sociosCatalogoBuildWysiwygExport({
+        rows,
+        visCols: vis,
+        extraKeys,
+        esMunicipio,
+        prefsVistaProy: prefs,
+    });
 
-    const extraKeys = _unionExtraKeys(rows);
-    const incluirDeJson = rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'datos_extra'));
-    const ctx = buildCtxProyeccionSociosExport();
-    const proyHeaders = proyeccionSociosExportHeaderLabels(ctx);
-
-    const headers = [
-        ...baseLabels,
-        ...(incluirDeJson ? ['datos_extra (JSON)'] : []),
-        ...extraKeys.map((k) => `extra:${k}`),
-        ...proyHeaders,
-    ];
-
-    const aoa = [headers];
-
-    for (const r of rows) {
-        const de = _parseDatosExtra(r.datos_extra);
-        const line = [];
-        for (const k of baseKeysExport) {
-            if (k === 'latitud' || k === 'longitud') {
-                line.push(_numOrEmpty(r[k]));
-                continue;
-            }
-            if (k === 'activo') {
-                line.push(sociosActivoTexto(r.activo));
-                continue;
-            }
-            const raw = r[k];
-            line.push(raw == null ? '' : String(raw));
-        }
-        if (incluirDeJson) {
-            line.push(_datosExtraJsonCelda(r.datos_extra));
-        }
-        for (const ek of extraKeys) {
-            const v = de && de[ek] != null ? de[ek] : '';
-            line.push(v == null ? '' : String(v));
-        }
-        for (const pv of proyeccionSociosExportValores(r.latitud, r.longitud, ctx)) {
-            line.push(pv === '' ? '' : pv);
-        }
-        aoa.push(line);
-    }
+    const aoa = [headers, ...matrix];
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     _applyColWidths(ws);
     XLSX.utils.book_append_sheet(wb, ws, 'Socios');
     const day = new Date().toISOString().slice(0, 10);
-    const tidPart = Number.isFinite(tid) && tid > 0 ? `_t${tid}` : '';
-    XLSX.writeFile(wb, `socios_catalogo_vista${tidPart}_${day}.xlsx`);
+    XLSX.writeFile(wb, `socios_catalogo_vista_${day}.xlsx`);
     try {
         window.toast?.(`Excel descargado (${rows.length.toLocaleString('es-AR')} filas).`, 'success');
     } catch (_) {}

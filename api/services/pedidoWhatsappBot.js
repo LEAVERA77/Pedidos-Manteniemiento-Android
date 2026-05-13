@@ -26,6 +26,7 @@ import { resolverCoordenadasCandidatoWhatsapp } from "./pipelineGeocodificacionP
 import {
   geocodeCalleNumeroLocalidadArgentina,
   geocodeDomicilioSimpleQArgentina,
+  reverseGeocodeArgentina,
 } from "./nominatimClient.js";
 import { coordenadasPlausiblesParaLocalidadTenant } from "./tenantLocalidades.js";
 import {
@@ -421,6 +422,23 @@ export async function crearPedidoDesdeWhatsappBot({
     (geoRes.provincia_persistencia != null && String(geoRes.provincia_persistencia).trim()) ||
     (provinciaIn != null && String(provinciaIn).trim()) ||
     null;
+  let barrioDesdeSesionOInferido =
+    barrio != null && String(barrio).trim() ? String(barrio).trim() : "";
+  if (
+    rubroCliente === "municipio" &&
+    !barrioDesdeSesionOInferido &&
+    coordsValidasWgs84(latFinal, lngFinal) &&
+    !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal)
+  ) {
+    try {
+      const rev = await reverseGeocodeArgentina(latFinal, lngFinal);
+      if (rev?.barrio) barrioDesdeSesionOInferido = String(rev.barrio).trim();
+    } catch (e) {
+      try {
+        console.warn("[pedido-whatsapp-bot] reverse barrio municipio", e?.message || e);
+      } catch (_) {}
+    }
+  }
   const cpFromGeo = geoRes.codigo_postal_persistencia;
   const cpMerge =
     cpFromGeo && String(cpFromGeo).replace(/\D/g, "").length >= 4 && String(cpFromGeo).replace(/\D/g, "").length <= 8
@@ -542,8 +560,8 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const barrioT =
-    rubroCliente === "municipio" && barrio != null && String(barrio).trim()
-      ? String(barrio).trim().slice(0, 200)
+    rubroCliente === "municipio" && barrioDesdeSesionOInferido
+      ? String(barrioDesdeSesionOInferido).slice(0, 200)
       : null;
   if (pCols.has("barrio") && barrioT) {
     cols.push("barrio");
@@ -771,6 +789,7 @@ export async function crearPedidoDesdeWhatsappBot({
       await upsertTelefonoSociosCatalogoDesdePedidoWa({
         pedido: pedidoRow,
         tenantId: tid,
+        barrioCatalogo: barrioT,
       }).catch((e) => console.warn("[pedido-whatsapp-bot] socios_catalogo tel WA", e?.message || e));
 
       const enriquecerCoords = (la, lo) =>

@@ -627,12 +627,16 @@ function latLngPedidoMinimasParaCatalogo(la, ln) {
  * Si no hay fila: INSERT con `nis_medidor` sintético `WA-{solo_dígitos}` y ON CONFLICT alineado al panel (tenant + nis_medidor o solo nis_medidor).
  * No lanza: errores → `console.warn` con tenant y pedido.
  *
- * @param {{ pedido: object, tenantId: number }} opts
+ * @param {{ pedido: object, tenantId: number, barrioCatalogo?: string|null }} opts
  */
 export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
   const pedido = opts.pedido;
   const tenantId = Number(opts.tenantId);
   if (!pedido || !Number.isFinite(tenantId) || tenantId < 1) return { ok: false, reason: "parametros" };
+  const barrioCatalogo =
+    opts.barrioCatalogo != null && String(opts.barrioCatalogo).trim()
+      ? String(opts.barrioCatalogo).trim().slice(0, 200)
+      : null;
 
   const raw = pedido.telefono_contacto != null ? String(pedido.telefono_contacto) : "";
   const phoneDigits = raw.replace(/\D/g, "");
@@ -651,6 +655,7 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
     const hasNombre = cols.has("nombre");
     const latLng = pickLatLngColumns(cols);
     const hasDatosExtra = cols.has("datos_extra");
+    const hasBarrio = cols.has("barrio");
     const datosExtraPendienteJson = JSON.stringify({
       estado_padron: "pendiente_completar",
       origen: "whatsapp",
@@ -766,7 +771,20 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
     }
 
     if (ids.length === 1) {
-      await query(`UPDATE socios_catalogo SET telefono = $1 WHERE id = $2`, [telefonoVal, ids[0]]);
+      if (hasBarrio && barrioCatalogo) {
+        await query(
+          `UPDATE socios_catalogo SET telefono = $1,
+            barrio = CASE
+              WHEN socios_catalogo.barrio IS NULL OR TRIM(COALESCE(socios_catalogo.barrio::text, '')) = ''
+              THEN $3::text
+              ELSE socios_catalogo.barrio
+            END
+           WHERE id = $2`,
+          [telefonoVal, ids[0], barrioCatalogo]
+        );
+      } else {
+        await query(`UPDATE socios_catalogo SET telefono = $1 WHERE id = $2`, [telefonoVal, ids[0]]);
+      }
       console.info("[wa→socios telefono] actualizado socio id=%s (pedido %s)", ids[0], pedido.id);
       return { ok: true, sociosId: ids[0], accion: "update" };
     }
@@ -916,6 +934,29 @@ export async function upsertTelefonoSociosCatalogoDesdePedidoWa(opts) {
           ? [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal, datosExtraPendienteJson]
           : [nisMedidorKey, nisP || null, medP || null, nombre, calle, num, loc, prov, cp, telefonoVal];
         await query(sqlIns, paramsIns);
+      }
+      if (hasBarrio && barrioCatalogo) {
+        try {
+          if (hasTenant) {
+            await query(
+              `UPDATE socios_catalogo SET barrio = CASE
+                 WHEN socios_catalogo.barrio IS NULL OR TRIM(COALESCE(socios_catalogo.barrio::text, '')) = '' THEN $1::text
+                 ELSE socios_catalogo.barrio END
+               WHERE tenant_id = $2 AND TRIM(COALESCE(nis_medidor::text,'')) = TRIM($3) AND COALESCE(activo, TRUE) = TRUE`,
+              [barrioCatalogo, tenantId, nisMedidorKey]
+            );
+          } else {
+            await query(
+              `UPDATE socios_catalogo SET barrio = CASE
+                 WHEN socios_catalogo.barrio IS NULL OR TRIM(COALESCE(socios_catalogo.barrio::text, '')) = '' THEN $1::text
+                 ELSE socios_catalogo.barrio END
+               WHERE TRIM(COALESCE(nis_medidor::text,'')) = TRIM($2) AND COALESCE(activo, TRUE) = TRUE`,
+              [barrioCatalogo, nisMedidorKey]
+            );
+          }
+        } catch (e) {
+          console.warn("[wa→socios barrio] patch post-upsert", e?.message || e);
+        }
       }
       console.info("[wa→socios telefono] upsert nis_medidor=%s pedido=%s tenant=%s", nisMedidorKey, pedido.id, tenantId);
       return { ok: true, accion: "upsert", nis_medidor: nisMedidorKey };

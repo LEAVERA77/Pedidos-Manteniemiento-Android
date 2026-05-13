@@ -1,0 +1,171 @@
+/**
+ * Marcadores de pedidos en Leaflet: agrupa reclamos abiertos (misma celda WGS84 redondeada)
+ * en un solo popup con lista ordenada (Pendiente → Asignado → En ejecución).
+ * made by leavera77
+ */
+
+function _esCerradoMapa(es) {
+    return es === 'Cerrado' || es === 'Derivado externo';
+}
+
+function _esAbiertoMapa(p) {
+    const es = p?.es || '';
+    return !_esCerradoMapa(es) && es !== 'Desestimado';
+}
+
+function _keyCoord(la, ln) {
+    return `${Number(la).toFixed(5)},${Number(ln).toFixed(5)}`;
+}
+
+function _ordenEstadoMapa(es) {
+    if (es === 'Pendiente') return 0;
+    if (es === 'Asignado') return 1;
+    if (es === 'En ejecución') return 2;
+    return 9;
+}
+
+function _sortAbiertosMismaCelda(arr) {
+    return [...arr].sort((a, b) => {
+        const oa = _ordenEstadoMapa(a.p.es);
+        const ob = _ordenEstadoMapa(b.p.es);
+        if (oa !== ob) return oa - ob;
+        return String(a.p.np || '').localeCompare(String(b.p.np || ''), undefined, { numeric: true });
+    });
+}
+
+function _popupHtmlUno(p, ctx) {
+    const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `
+            <div style="min-width:160px;font-family:system-ui">
+                <b style="color:#1e3a8a">#${npEsc}</b> · <span style="font-size:11px;color:#475569">${p.pr}</span><br>
+                <span style="font-size:11px;color:#334155">${p.tt}</span><br>
+                <span style="font-size:11px;font-weight:600;color:#0f172a">${p.es}</span>${p.es !== 'Cerrado' ? ` · Av. ${p.av}%` : ''}<br>
+                <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+                    <button style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
+                    <button style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
+                    ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
+                    ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
+                    ${ctx.esAdmin() && ctx.puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !ctx.pedidoEsDerivadoFuera(p) ? `<button style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
+                </div>
+            </div>`;
+}
+
+function _popupHtmlMultiples(grupo, ctx) {
+    const sorted = _sortAbiertosMismaCelda(grupo);
+    let inner = `<div style="min-width:200px;font-family:system-ui;font-size:11px">
+      <div style="font-weight:700;color:#0f172a;margin-bottom:6px">${sorted.length} reclamos abiertos en este punto</div>
+      <div style="max-height:min(50vh,260px);overflow-y:auto;padding-right:2px">`;
+    for (const it of sorted) {
+        const p = it.p;
+        const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        inner += `<div style="border-bottom:1px solid #e2e8f0;padding:7px 0">
+        <b style="color:#1e3a8a">#${npEsc}</b> · <span style="color:#475569">${p.pr}</span><br/>
+        <span style="color:#334155">${String(p.tt || '')}</span><br/>
+        <span style="font-weight:600;color:#0f172a">${p.es}</span> · Av. ${p.av}%<br/>
+        <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap">
+          <button type="button" style="flex:1;min-width:72px;padding:4px;background:#1e3a8a;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_d('${p.id}')">Detalle</button>
+          <button type="button" style="flex:1;min-width:72px;padding:4px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-size:11px" onclick="_z('${p.id}')">Zoom</button>
+          ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai == null) ? `<button type="button" style="flex:1;min-width:72px;padding:4px;background:#059669;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Asignar</button>` : ''}
+          ${ctx.esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && (p.tai != null) ? `<button type="button" style="flex:1;min-width:72px;padding:4px;background:#ea580c;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_assignMapa('${p.id}')">Reasignar</button><button type="button" style="flex:1;min-width:72px;padding:4px;background:#64748b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px" onclick="_desasignarMapa('${p.id}')">Desasignar</button>` : ''}
+          ${ctx.esAdmin() && ctx.puedeEnviarApiRestPedidos() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && !ctx.pedidoEsDerivadoFuera(p) ? `<button type="button" style="flex:1;min-width:100%;padding:4px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer;font-size:11px;margin-top:4px" onclick="_moverUbicMapa('${p.id}')"><i class="fas fa-arrows-alt"></i> Corregir posición</button>` : ''}
+        </div>
+      </div>`;
+    }
+    inner += '</div></div>';
+    return inner;
+}
+
+/**
+ * @param {object} ctx
+ * @param {object} ctx.app
+ * @param {object} ctx.L
+ * @param {() => any[]} ctx.pedidosParaMarcadoresMapa
+ * @param {(p: any) => { la: number, ln: number }} ctx.coordsEfectivasPedidoMapa
+ * @param {() => boolean} ctx.esAdmin
+ * @param {() => boolean} ctx.esAndroidWebViewMapa
+ * @param {(p: any) => boolean} ctx.pedidoEsDerivadoFuera
+ * @param {() => boolean} ctx.puedeEnviarApiRestPedidos
+ */
+export function renderMkPedidosEnMapa(ctx) {
+    const { app, L, pedidosParaMarcadoresMapa, coordsEfectivasPedidoMapa, esAdmin, esAndroidWebViewMapa } = ctx;
+    if (!app.map || !L) return;
+    app.mk.forEach((m) => m.remove());
+    app.mk = [];
+
+    const fill = {
+        Crítica: '#ef4444',
+        Alta: '#f97316',
+        Media: '#eab308',
+        Baja: '#3b82f6',
+    };
+    const panePed = app.map.getPane && app.map.getPane('gnPanePedidos') ? 'gnPanePedidos' : undefined;
+
+    const chkNp = document.getElementById('mapa-chk-label-np');
+    const showNp = chkNp ? chkNp.checked : localStorage.getItem('pmg_map_labels_np') === '1';
+    const pinsLigerosAndroid = esAndroidWebViewMapa();
+
+    const items = [];
+    pedidosParaMarcadoresMapa().forEach((p) => {
+        const { la, ln } = coordsEfectivasPedidoMapa(p);
+        if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
+        const cer = _esCerradoMapa(p.es);
+        const col = cer ? '#94a3b8' : fill[p.pr] || '#3b82f6';
+        const npEsc = String(p.np || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        items.push({ p, la, ln, cer, col, npEsc });
+    });
+
+    const gruposAbiertos = new Map();
+    for (const it of items) {
+        if (!_esAbiertoMapa(it.p)) continue;
+        const k = _keyCoord(it.la, it.ln);
+        if (!gruposAbiertos.has(k)) gruposAbiertos.set(k, []);
+        gruposAbiertos.get(k).push(it);
+    }
+    const multiKeys = new Set();
+    for (const [k, arr] of gruposAbiertos) {
+        if (arr.length >= 2) multiKeys.add(k);
+    }
+    const usadoMulti = new Set();
+
+    items.forEach((it) => {
+        const { p, la, ln, cer, col, npEsc } = it;
+        const k = _keyCoord(la, ln);
+        let html;
+        if (_esAbiertoMapa(p) && multiKeys.has(k)) {
+            if (usadoMulti.has(k)) return;
+            usadoMulti.add(k);
+            const grupo = gruposAbiertos.get(k) || [it];
+            html = _popupHtmlMultiples(grupo, ctx);
+        } else {
+            html = _popupHtmlUno(p, ctx);
+        }
+
+        let m;
+        if (showNp && !pinsLigerosAndroid) {
+            const icon = L.divIcon({
+                className: '',
+                html: `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+                    <div style="margin-bottom:2px;background:${col};color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(255,255,255,.85)">#${npEsc}</div>
+                    <div style="width:13px;height:13px;background:${col};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.35)"></div>
+                </div>`,
+                iconSize: [100, 36],
+                iconAnchor: [50, 36],
+            });
+            const mkOpt = { icon, zIndexOffset: cer ? 200 : 500 };
+            if (panePed) mkOpt.pane = panePed;
+            m = L.marker([la, ln], mkOpt).addTo(app.map);
+        } else {
+            const cmOpt = {
+                radius: cer ? 6 : 9,
+                fillColor: col,
+                color: '#fff',
+                weight: 2,
+                fillOpacity: cer ? 0.5 : 0.9,
+            };
+            if (panePed) cmOpt.pane = panePed;
+            m = L.circleMarker([la, ln], cmOpt).addTo(app.map);
+        }
+        m.bindPopup(html, { maxWidth: 280 });
+        app.mk.push(m);
+    });
+}

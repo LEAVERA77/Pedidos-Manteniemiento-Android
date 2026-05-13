@@ -8,9 +8,6 @@ import { esc, parseDecimalODmsCoord, validarWgs84Import } from './utils.js';
 import { andFragmentSociosCatalogoSesionNeon } from './socios-catalogo-filtro-sesion.js';
 import {
     filtrarSociosFilasExportVista,
-    rubroSociosExportDesdeCfg,
-    sociosActivoTexto,
-    sociosVistaExportSpec,
 } from './socios-catalogo-export-vista.js';
 import {
     LS_SOC_VISTA_PROY,
@@ -19,11 +16,11 @@ import {
     obtenerZonaImportSociosProyectadas,
     obtenerZonaVistaSociosCatalogo,
     buildCtxProyeccionSociosExport,
-    proyeccionSociosExportHeaderLabels,
-    proyeccionSociosExportValores,
 } from './socios-catalogo-export-proyeccion.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
+import { SOCIOS_CATALOGO_OPTS_PRE_CALLE, SOCIOS_CATALOGO_OPT_DISTRIB } from './socios-catalogo-col-defs.js';
+import { sociosCatalogoBuildWysiwygExport } from './socios-catalogo-export-wysiwyg.js';
 import {
     fajaArgentinaPorLongitud,
     convertirProyectadasARGaWgs84,
@@ -70,17 +67,6 @@ function actualizarUiSociosImportCrs() {
 }
 window.actualizarUiSociosImportCrs = actualizarUiSociosImportCrs;
 
-/** Columnas opcionales del listado (entre Provincia y Calle, salvo Dist. que va después de Tel.). */
-const SOCIOS_CATALOGO_OPTS_PRE_CALLE = [
-    { id: 'codigo_postal', th: 'Cód. postal', field: 'codigo_postal' },
-    { id: 'barrio', th: 'Barrio', field: 'barrio' },
-    { id: 'transformador', th: 'Transf.', field: 'transformador' },
-    { id: 'tipo_tarifa', th: 'Tarifa', field: 'tipo_tarifa' },
-    { id: 'urbano_rural', th: 'U/R', field: 'urbano_rural' },
-    { id: 'tipo_conexion', th: 'Conex.', field: 'tipo_conexion' },
-    { id: 'fases', th: 'Fases', field: 'fases' },
-];
-const SOCIOS_CATALOGO_OPT_DISTRIB = { id: 'distribuidor_codigo', th: 'Dist.', field: 'distribuidor_codigo' };
 const LS_SOC_COLVIS = 'pmg_socios_colvis_v1';
 
 function sociosCatalogoRubroActualParaColumnas() {
@@ -665,7 +651,7 @@ function escCsvCeldaSocios(v) {
     return s;
 }
 
-/** CSV UTF-8 con BOM: mismas columnas que la tabla admin del rubro (sin mezclar tenants / línea de negocio). */
+/** CSV UTF-8 con BOM: mismas columnas y orden que la tabla admin (WYSIWYG). */
 export function descargarPlanillaSociosCsvExport() {
     const rawRows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
     const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
@@ -678,34 +664,19 @@ export function descargarPlanillaSociosCsvExport() {
         return;
     }
     const extraKeys = Array.isArray(window._sociosDatosExtraColumnKeys) ? window._sociosDatosExtraColumnKeys : [];
-    const spec = sociosVistaExportSpec(rubroSociosExportDesdeCfg());
-    let fieldKeys = [...spec.keys];
-    const labels = [...spec.labels];
-    if (rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'tenant_id')) && !fieldKeys.includes('tenant_id')) {
-        fieldKeys.push('tenant_id');
-        labels.push('tenant_id');
-    }
-    const ctx = buildCtxProyeccionSociosExport();
-    const proyHeaders = proyeccionSociosExportHeaderLabels(ctx);
-    const headers = [...labels, ...extraKeys.map((k) => `extra:${k}`), ...proyHeaders];
+    const vis = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+    const prefs = leerPrefsVistaProyeccionSociosCatalogo();
+    const esMunicipio = req().esMunicipioRubro();
+    const { headers, matrix } = sociosCatalogoBuildWysiwygExport({
+        rows,
+        visCols: vis,
+        extraKeys,
+        esMunicipio,
+        prefsVistaProy: prefs,
+    });
     const lines = [headers.map((h) => escCsvCeldaSocios(h)).join(',')];
-    for (const r of rows) {
-        const cells = [];
-        for (let i = 0; i < fieldKeys.length; i++) {
-            const fk = fieldKeys[i];
-            let v;
-            if (fk === 'activo') v = sociosActivoTexto(r.activo);
-            else v = r[fk];
-            cells.push(escCsvCeldaSocios(v));
-        }
-        for (const ek of extraKeys) {
-            const o = sociosCatalogoParseObjetoDatosExtra(r.datos_extra);
-            cells.push(escCsvCeldaSocios(o && o[ek] != null ? o[ek] : ''));
-        }
-        for (const pv of proyeccionSociosExportValores(r.latitud, r.longitud, ctx)) {
-            cells.push(escCsvCeldaSocios(pv));
-        }
-        lines.push(cells.join(','));
+    for (const cells of matrix) {
+        lines.push(cells.map((c) => escCsvCeldaSocios(c)).join(','));
     }
     const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -735,7 +706,12 @@ function guardarPrefsVistaProyeccionSociosCatalogo(p) {
 
 function obtenerNumColsTablaSociosAdmin() {
     const p = leerPrefsVistaProyeccionSociosCatalogo();
-    const nProy = p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
+    const data = window._sociosVirtualRows;
+    const algunWgs =
+        Array.isArray(data) &&
+        data.some((r) => Number.isFinite(Number(r?.latitud)) && Number.isFinite(Number(r?.longitud)));
+    const nProy =
+        algunWgs && p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
     const vis = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
     let opt = 0;
     for (const o of SOCIOS_CATALOGO_OPTS_PRE_CALLE) {
@@ -747,9 +723,9 @@ function obtenerNumColsTablaSociosAdmin() {
     return base + opt + nProy + nExtra;
 }
 
-function armarHeadExtraProyeccionSociosHtml() {
+function armarHeadExtraProyeccionSociosHtml(algunFilaTieneWgs84) {
     const prefs = leerPrefsVistaProyeccionSociosCatalogo();
-    if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
+    if (!algunFilaTieneWgs84 || prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
     const z = obtenerZonaVistaSociosCatalogo();
     const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
     let h = '';
@@ -768,7 +744,7 @@ function htmlCeldasProyeccionSociosDesdeLatLng(lat, lon) {
     const lo = Number(lon);
     const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) {
-        return orden.map(() => '<td>—</td><td>—</td>').join('');
+        return orden.map(() => '<td></td><td></td>').join('');
     }
     const z = obtenerZonaVistaSociosCatalogo();
     let out = '';
@@ -782,7 +758,7 @@ function htmlCeldasProyeccionSociosDesdeLatLng(lat, lon) {
             const yn = pr.n.toFixed(1).replace('.', ',');
             out += `<td align="right" title="${tip}">${xe}</td><td align="right" title="${tip}">${yn}</td>`;
         } else {
-            out += '<td>—</td><td>—</td>';
+            out += '<td></td><td></td>';
         }
     }
     return out;
@@ -899,7 +875,10 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRows = rows;
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
-        const headExtra = armarHeadExtraProyeccionSociosHtml();
+        const algunWgsRows = rows.some(
+            (r) => Number.isFinite(Number(r.latitud)) && Number.isFinite(Number(r.longitud))
+        );
+        const headExtra = armarHeadExtraProyeccionSociosHtml(algunWgsRows);
         const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
         const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
         const thDist = sociosCatalogoHtmlThDistrib(visCols);

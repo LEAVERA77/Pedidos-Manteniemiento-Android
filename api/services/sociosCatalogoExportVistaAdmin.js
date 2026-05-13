@@ -168,9 +168,6 @@ export async function buildSociosVistaExportSelectPlan(rubro) {
     const k = spec.keys[i];
     if (allTableCols.has(k)) pairs.push({ key: k, label: spec.labels[i] });
   }
-  if (allTableCols.has("tenant_id") && !pairs.some((p) => p.key === "tenant_id")) {
-    pairs.push({ key: "tenant_id", label: "tenant_id" });
-  }
   return {
     keys: pairs.map((p) => p.key),
     labels: pairs.map((p) => p.label),
