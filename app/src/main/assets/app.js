@@ -164,6 +164,7 @@ import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/ia-priorizacion-bp2.js';
 import './modules/panel-clima.js';
 import './modules/ia-duplicados-pedido.js';
+import './modules/admin-socios-export-xlsx-completo.js';
 import './modules/ia-derivacion-mensaje.js';
 import './modules/suggest-change-creds.js';
 import './modules/android-image-share.js';
