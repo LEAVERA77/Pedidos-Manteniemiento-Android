@@ -160,8 +160,8 @@ import './modules/ia-sugerir-reclamo.js';
 import './modules/ia-analisis-reclamos.js';
 import './modules/ia-kpi-sugeridos.js';
 import './modules/ia-informe-unificado.js';
-import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/ia-priorizacion-bp2.js';
+import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/panel-clima.js';
 import './modules/ia-duplicados-pedido.js';
 import './modules/admin-socios-export-xlsx-completo.js';
@@ -3940,7 +3940,16 @@ const norm = p => ({
     ccp: (p.codigo_postal || '').trim(),
     stc: (p.suministro_tipo_conexion || '').trim(),
     sfs: (p.suministro_fases || '').trim(),
-    tai: p.tecnico_asignado_id != null ? parseInt(p.tecnico_asignado_id, 10) : null,
+    tai: (() => {
+        const v =
+            p.tecnico_asignado_id ??
+            p.tecnicoAsignadoId ??
+            p.TECNICO_ASIGNADO_ID ??
+            p.tecnico_asignado;
+        if (v == null || v === '') return null;
+        const n = parseInt(String(v).trim(), 10);
+        return Number.isFinite(n) ? n : null;
+    })(),
     fasi: p.fecha_asignacion || null,
     firma: p.firma_cliente || null,
     chkl: p.checklist_seguridad || null,

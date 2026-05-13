@@ -201,6 +201,9 @@ router.post("/analizar-asignados-tecnico", authWithTenantHost, tecnicoSupervisor
           km_desde_gps: Number.isFinite(Number(p.km_desde_gps)) ? Math.round(Number(p.km_desde_gps) * 100) / 100 : null,
           tiene_coord: !!p.tiene_coord,
           direccion_resumen: String(p.direccion_resumen ?? "").slice(0, 160),
+          puntaje_urgencia: Number.isFinite(Number(p.puntaje_urgencia))
+            ? Math.round(Number(p.puntaje_urgencia) * 100) / 100
+            : null,
         };
       }),
       distancias_pares,

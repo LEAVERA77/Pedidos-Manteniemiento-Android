@@ -64,17 +64,59 @@ function leerUltimaUbicacionLs() {
   return null;
 }
 
-/** Pedidos Asignado / En ejecución asignados al usuario actual (lista ya filtrada por visibilidad). */
+function leerVerTodosPedidosTecnicoLocal() {
+  if (!esTecnicoPanel()) return false;
+  try {
+    const chk = document.getElementById('toggle-ver-todos-pedidos');
+    if (chk && chk.checked) return true;
+    const sel = document.getElementById('sel-android-pedidos-scope');
+    if (sel && sel.value === 'todos') return true;
+  } catch (_) {}
+  try {
+    return localStorage.getItem('pmg_tecnico_ver_todos') === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function uidTecnicoActualNum() {
+  const raw = window.app?.u?.id ?? window.app?.u?.userId;
+  const n = parseInt(String(raw ?? '').trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function taiNumPedido(p) {
+  if (!p) return null;
+  if (p.tai != null && p.tai !== '') {
+    const t = parseInt(String(p.tai).trim(), 10);
+    if (Number.isFinite(t)) return t;
+  }
+  const alt = p.tecnico_asignado_id ?? p.tecnicoAsignadoId ?? p.TECNICO_ASIGNADO_ID;
+  if (alt != null && alt !== '') {
+    const t = parseInt(String(alt).trim(), 10);
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
+}
+
+/**
+ * Pedidos Asignado / En ejecución del técnico.
+ * Sin «Todos»: `app.p` ya viene filtrada por `tecnico_asignado_id` en Neon → no exigir `tai` en fila.
+ * Con «Todos»: acotar por `tai` = usuario actual.
+ */
 function pedidosAsignadosAMi() {
-  const uid = String(window.app?.u?.id ?? '');
-  if (!uid) return [];
   const pedidos = Array.isArray(window.app?.p) ? window.app.p : [];
   const visFn = typeof window.pedidosVisiblesEnUI === 'function' ? window.pedidosVisiblesEnUI : null;
   const vis = visFn ? visFn() : pedidos;
-  return vis.filter(
-    (p) =>
-      (p.es === 'Asignado' || p.es === 'En ejecución') && p.tai != null && String(p.tai) === uid
-  );
+  const verTodos = leerVerTodosPedidosTecnicoLocal();
+  const uid = uidTecnicoActualNum();
+  return vis.filter((p) => {
+    if (p.es !== 'Asignado' && p.es !== 'En ejecución') return false;
+    if (!verTodos) return true;
+    if (uid == null) return false;
+    const t = taiNumPedido(p);
+    return t != null && t === uid;
+  });
 }
 
 /**
@@ -97,6 +139,10 @@ function construirResumenTecnicoAndroidParaApi() {
       if (tiene && pos) km = haversineKm(pos.lat, pos.lon, la, ln);
     }
     const hd = horasDesdeIso(p.f);
+    const puntaje =
+      typeof window._gnCalcularPuntajeBp2 === 'function'
+        ? Math.round(window._gnCalcularPuntajeBp2(p) * 100) / 100
+        : null;
     return {
       np: p.np,
       prioridad: p.pr,
@@ -106,6 +152,7 @@ function construirResumenTecnicoAndroidParaApi() {
       km_desde_gps: km != null ? Math.round(km * 100) / 100 : null,
       tiene_coord: tiene,
       direccion_resumen: String(p.dis || '').slice(0, 200),
+      puntaje_urgencia: puntaje,
     };
   });
   const distancias_pares = [];
@@ -150,13 +197,15 @@ function renderResumenTecnicoAsignados(pack) {
   } else {
     h += '<div style="font-size:.76rem;color:#92400e;margin-bottom:.45rem">Sin posición GPS reciente en el dispositivo: las distancias pueden faltar.</div>';
   }
+  h +=
+    '<div style="font-size:.72rem;color:#64748b;margin:.35rem 0 .5rem">Distancias en línea recta (WGS84). Nominatim geocodifica direcciones; no calcula rutas de navegación calle a calle.</div>';
   if (n && Array.isArray(pack.pedidos_asignados)) {
     h += '<table style="width:100%;font-size:.76rem;border-collapse:collapse;margin-top:.35rem">';
-    h += '<tr style="border-bottom:1px solid #e2e8f0;text-align:left"><th style="padding:.2rem">#</th><th style="padding:.2rem">Pr.</th><th style="padding:.2rem">h</th><th style="padding:.2rem">km GPS</th></tr>';
+    h += '<tr style="border-bottom:1px solid #e2e8f0;text-align:left"><th style="padding:.2rem">#</th><th style="padding:.2rem">Pr.</th><th style="padding:.2rem">h</th><th style="padding:.2rem">Punt.</th><th style="padding:.2rem">km GPS</th></tr>';
     for (const row of pack.pedidos_asignados.slice(0, 12)) {
-      h += `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:.2rem">${esc(String(row.np ?? ''))}</td><td style="padding:.2rem">${esc(String(row.prioridad ?? ''))}</td><td style="padding:.2rem;text-align:right">${row.horas_abierto != null ? esc(String(row.horas_abierto)) : '—'}</td><td style="padding:.2rem;text-align:right">${row.km_desde_gps != null ? esc(String(row.km_desde_gps)) : '—'}</td></tr>`;
+      h += `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:.2rem">${esc(String(row.np ?? ''))}</td><td style="padding:.2rem">${esc(String(row.prioridad ?? ''))}</td><td style="padding:.2rem;text-align:right">${row.horas_abierto != null ? esc(String(row.horas_abierto)) : '—'}</td><td style="padding:.2rem;text-align:right">${row.puntaje_urgencia != null ? esc(String(row.puntaje_urgencia)) : '—'}</td><td style="padding:.2rem;text-align:right">${row.km_desde_gps != null ? esc(String(row.km_desde_gps)) : '—'}</td></tr>`;
     }
-    if (n > 12) h += `<tr><td colspan="4" style="padding:.25rem;color:#64748b">… y ${n - 12} más</td></tr>`;
+    if (n > 12) h += `<tr><td colspan="5" style="padding:.25rem;color:#64748b">… y ${n - 12} más</td></tr>`;
     h += '</table>';
   }
   return h;

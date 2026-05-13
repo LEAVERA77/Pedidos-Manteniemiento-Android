@@ -112,6 +112,7 @@ if (typeof window !== 'undefined') {
     return pedidos;
   };
   window._gnPriorizacionActiva = () => _priorizacionActiva;
+  window._gnCalcularPuntajeBp2 = calcularPuntaje;
 }
 
 function initPriorizacion() {
