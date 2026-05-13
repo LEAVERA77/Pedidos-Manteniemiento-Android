@@ -1,5 +1,6 @@
 import { query } from "../db/neon.js";
 import { sendTenantWhatsAppText } from "./whatsappService.js";
+import { getBroadcastPacingConfig, sleepAfterOutgoingMessage } from "../utils/whatsappBroadcastPacing.js";
 
 const queue = [];
 let running = false;
@@ -49,7 +50,10 @@ async function processJob(job) {
   let err = 0;
   let reintentosTotal = 0;
   const erroresDetalle = [];
-  for (const to of job.telefonos) {
+  const cfg = getBroadcastPacingConfig();
+  const list = Array.isArray(job.telefonos) ? job.telefonos : [];
+  for (let i = 0; i < list.length; i++) {
+    const to = list[i];
     let sent = false;
     let attempts = 0;
     let lastErr = null;
@@ -77,7 +81,9 @@ async function processJob(job) {
       err += 1;
       erroresDetalle.push({ telefono: to, error: String(lastErr || "error") });
     }
-    await sleep(job.perMessageDelayMs);
+    if (i < list.length - 1) {
+      await sleepAfterOutgoingMessage(cfg, i);
+    }
   }
   const result = {
     ok,
@@ -116,7 +122,8 @@ export function enqueueBroadcastJob({
   avisoId = null,
   maxRetries = 2,
   retryDelayMs = 650,
-  perMessageDelayMs = 110,
+  /** Solo si el proveedor no es Whapi (Whapi usa jitter desde whatsappBroadcastPacing). */
+  perMessageDelayMs = 800,
 }) {
   return new Promise((resolve, reject) => {
     queue.push({

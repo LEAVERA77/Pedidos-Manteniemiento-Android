@@ -5,6 +5,38 @@
 
 import { toast } from './ui-utils.js';
 
+/**
+ * Consulta GET /api/whatsapp/broadcast/status/:id hasta que termine (envío en segundo plano).
+ * made by leavera77
+ */
+async function pollBroadcastJobStatus(comunicacionId) {
+    const apiUrl = typeof window.apiUrl === 'function' ? window.apiUrl : (p) => p;
+    const getToken = () => (typeof window.getApiToken === 'function' ? window.getApiToken() : null);
+    const max = 400;
+    const delayMs = 10000;
+    for (let i = 0; i < max; i++) {
+        await new Promise((r) => setTimeout(r, delayMs));
+        const tok = getToken();
+        if (!tok) break;
+        try {
+            const r = await fetch(apiUrl(`/api/whatsapp/broadcast/status/${comunicacionId}`), {
+                headers: { Authorization: `Bearer ${tok}` },
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) continue;
+            const st = d.broadcast_status;
+            if (st === 'done' || st === 'error') {
+                toast(
+                    `Aviso masivo finalizado: ${d.enviados_ok ?? 0} enviados, ${d.enviados_error ?? 0} error(es).`,
+                    st === 'error' ? 'warning' : 'success'
+                );
+                return;
+            }
+        } catch (_) {}
+    }
+    toast('El envío masivo puede seguir en curso (ritmo lento anti-bloqueo). Revisá más tarde.', 'info');
+}
+
 const DOCK_ID = 'gn-minimized-panels-dock';
 const DOCK_HOST_CLUSTER = 'gn-map-dock-extras';
 
@@ -574,6 +606,15 @@ export function initCommunityBroadcastFab(deps) {
             });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(d.error || d.detail || `HTTP ${r.status}`);
+            if (r.status === 202 && d.async && d.comunicacion_id) {
+                toast(
+                    `Envío masivo iniciado en segundo plano (${d.destinatarios} destinatarios, ritmo seguro). Te avisamos al terminar.`,
+                    'success'
+                );
+                closeModal();
+                void pollBroadcastJobStatus(Number(d.comunicacion_id));
+                return;
+            }
             toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
             closeModal();
         } catch (e) {
