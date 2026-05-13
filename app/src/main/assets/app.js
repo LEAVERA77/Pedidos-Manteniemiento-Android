@@ -161,7 +161,6 @@ import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
 import './modules/ia-derivacion-mensaje.js';
 import './modules/suggest-change-creds.js';
 import './modules/android-image-share.js';
-import { initAdminSociosAutoExport } from './modules/admin-socios-autoexport.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -1506,7 +1505,6 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             initCommunityBroadcastFab();
         } catch (_) {}
         try {
-            initAdminSociosAutoExport();
         } catch (_) {}
     } catch (_) {}
 }
@@ -12817,13 +12815,6 @@ async function logoutYLimpiarClienteTrasRubroPersistidoEnServidor() {
         }
     } catch (_) {}
     try {
-        if (NEON_OK && typeof sqlSimple === 'function' && esAdmin()) {
-            try {
-                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
-            } catch (e) {
-                console.warn('[rubro-logout] vaciar socios_catalogo', e);
-            }
-        }
     } catch (_) {}
     try {
         ejecutarCerrarSesion();
@@ -16426,13 +16417,6 @@ async function guardarConfigEmpresa() {
     const firmaNueva = firmaIdentidadTenant(campos.nombre, campos.tipo);
     const firmaGuardada = leerFirmaIdentidadAlmacenada();
     if (firmaNueva !== firmaGuardada && esAdmin()) {
-        if (NEON_OK && typeof sqlSimple === 'function') {
-            try {
-                await vaciarCoordenadasSociosCatalogo({ skipConfirm: true, silent: true, allowNeonRowsDelete: true });
-            } catch (e) {
-                console.warn('[empresa] vaciar socios_catalogo tras cambio identidad', e);
-            }
-        }
         vaciarDerivacionesTercerosFormularioAdmin();
         try {
             invalidarCachesTrasCambioIdentidadTenant();

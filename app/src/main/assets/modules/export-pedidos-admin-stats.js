@@ -73,6 +73,7 @@ export async function exportarPedidosExcelAdmin() {
         return;
     }
     const tsql = await d.pedidosFiltroTenantSql();
+    /* tsql acota por tenant_id y business_type de sesión (Neon) cuando existen esas columnas — no exporta otros negocios. */
     const { condFecha } = await d.resolveCondicionFechaPedidosStats(tsql);
     const estadoSel = (document.getElementById('est-csv-estado')?.value || '').trim();
     const tipoFilt = (document.getElementById('est-csv-tipo')?.value || '').trim();
@@ -133,8 +134,17 @@ export async function exportarPedidosExcelAdmin() {
         const tid = typeof d.tenantIdActual === 'function' ? d.tenantIdActual() : 0;
         const tidStr = Number.isFinite(tid) && tid > 0 ? String(tid) : 'tenant';
         const day = new Date().toISOString().slice(0, 10);
-        XLSX.writeFile(wb, `pedidos_${tidStr}_${day}.xlsx`);
-        d.toast(`Exportados ${rows.length} pedidos (Excel)`, 'success');
+        const abtRaw = String(
+            (typeof window !== 'undefined' && window.EMPRESA_CFG && window.EMPRESA_CFG.active_business_type) || ''
+        )
+            .trim()
+            .toLowerCase();
+        const abtSlug =
+            abtRaw === 'electricidad' || abtRaw === 'agua' || abtRaw === 'municipio'
+                ? abtRaw
+                : (abtRaw ? abtRaw.replace(/[^a-z0-9_-]/g, '').slice(0, 24) || 'linea' : 'linea');
+        XLSX.writeFile(wb, `pedidos_t${tidStr}_${abtSlug}_${day}.xlsx`);
+        d.toast(`Exportados ${rows.length} pedidos (tenant ${tidStr}, línea ${abtSlug})`, 'success');
     } catch (e) {
         d.toastError('export-pedidos-excel-admin', e);
     }

@@ -40,6 +40,7 @@ $files = @(
     'gestornova-logo.png',
     'styles.css',
     'admin-web-responsive.css',
+    'gn-android-shell-perf.css',
     'app.js',
     'map.js',
     'map-view.js',

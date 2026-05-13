@@ -54,6 +54,117 @@ function req() {
     return _sociosDeps;
 }
 
+function abrirModalAltaSocioManual() {
+    const m = document.getElementById('modal-alta-socio-manual');
+    if (!m) return;
+    m.classList.add('active');
+    try {
+        const mw = document.getElementById('soc-man-medidor-wrap');
+        if (mw) mw.style.display = req().esMunicipioRubro() ? 'none' : '';
+    } catch (_) {}
+    try {
+        if (typeof window.gnForceModalZFront === 'function') window.gnForceModalZFront(m);
+    } catch (_) {}
+    const nf = document.getElementById('soc-man-nis');
+    if (nf) nf.focus();
+}
+function cerrarModalAltaSocioManual() {
+    const m = document.getElementById('modal-alta-socio-manual');
+    if (!m) return;
+    m.classList.remove('active');
+}
+async function guardarModalAltaSocioManualCatalogo() {
+    if (!req().esAdmin()) {
+        toast('Solo administradores.', 'error');
+        return;
+    }
+    const gv = (id) => (document.getElementById(id)?.value || '').trim();
+    let nisPart = gv('soc-man-nis');
+    const medPart = gv('soc-man-medidor');
+    const nombre = gv('soc-man-nombre');
+    const calle = gv('soc-man-calle');
+    const numero = gv('soc-man-numero');
+    let loc = gv('soc-man-loc');
+    let provinciaSoc = gv('soc-man-prov');
+    const dist = gv('soc-man-dist') || null;
+    let telefono = gv('soc-man-tel') || null;
+    const ecCfg = window.EMPRESA_CFG || {};
+    if ((!loc || !String(loc).trim()) && sociosCatalogoRubroActualParaColumnas() === 'municipio') {
+        const fl = String(ecCfg.localidad || ecCfg.ciudad || ecCfg.municipio || '').trim();
+        if (fl.length >= 2) loc = fl;
+    }
+    if (!provinciaSoc || !String(provinciaSoc).trim()) {
+        const fp = String(ecCfg.provincia || ecCfg.state || ecCfg.provincia_nominatim || '').trim();
+        if (fp.length >= 2) provinciaSoc = fp;
+    }
+    let nis_medidor = null;
+    if (nisPart && medPart) nis_medidor = `${nisPart}-${medPart}`;
+    else nis_medidor = nisPart || medPart || null;
+    if (!nisPart && nis_medidor) {
+        const nm = String(nis_medidor).trim();
+        const ix = nm.indexOf('-');
+        nisPart = ix > 0 ? nm.slice(0, ix).trim() : nm;
+    }
+    const rubroImp = req().normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
+    const faltan = validarAnclasImportSociosPorRubro(rubroImp, {
+        nisPart,
+        medPart,
+        nombre,
+        calle,
+        loc,
+        provinciaSoc,
+        identificadorSintetico: false,
+    });
+    if (faltan.length) {
+        toast('Revisá los datos: ' + faltan.join(', '), 'warning');
+        return;
+    }
+    if (telefono) {
+        const tn = normalizarTelefonoArgentinaImportSociosSync(telefono, loc, provinciaSoc);
+        if (tn) telefono = tn;
+    }
+    const payload = {
+        nis_medidor,
+        nis: nisPart || null,
+        medidor: medPart || null,
+        nombre,
+        calle,
+        numero: numero || null,
+        barrioSoc: null,
+        telefono,
+        dist,
+        loc,
+        provincia: provinciaSoc || null,
+        codigo_postal: null,
+        tar: null,
+        ur: null,
+        transf: null,
+        tcon: null,
+        fas: null,
+        latitud: null,
+        longitud: null,
+        datos_extra: {},
+        activo: true,
+    };
+    try {
+        req().mostrarOverlayImportacion('Guardando socio en Neon…');
+        await ejecutarBulkInsertSociosCatalogo([payload]);
+        req().ocultarOverlayImportacion();
+        toast('Cliente agregado o actualizado en el catálogo (fusión por NIS).', 'success');
+        cerrarModalAltaSocioManual();
+        try {
+            ['soc-man-nis', 'soc-man-medidor', 'soc-man-nombre', 'soc-man-calle', 'soc-man-numero', 'soc-man-loc', 'soc-man-prov', 'soc-man-dist', 'soc-man-tel'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        } catch (_) {}
+        await cargarListaSociosAdmin();
+    } catch (e) {
+        req().ocultarOverlayImportacion();
+        toastError('alta-manual-socio', e, 'No se pudo guardar el socio.');
+    }
+}
+
 /**
  * @param {object} deps
  */
@@ -63,6 +174,9 @@ export function initAdminSocios(deps) {
         window.actualizarUiSociosVistaProyeccion = actualizarUiSociosVistaProyeccion;
         window.descargarPlanillaSociosCsvExport = descargarPlanillaSociosCsvExport;
         window._gnSociosExportCtxProy = buildCtxProyeccionSociosExport;
+        window.abrirModalAltaSocioManual = abrirModalAltaSocioManual;
+        window.cerrarModalAltaSocioManual = cerrarModalAltaSocioManual;
+        window.guardarModalAltaSocioManualCatalogo = guardarModalAltaSocioManualCatalogo;
     } catch (_) {}
 }
 
@@ -879,7 +993,7 @@ async function cargarListaSociosAdmin() {
         );
         const rows = r.rows || [];
         if (!rows.length) {
-            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios. Importá un Excel o CSV.</p>';
+            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios en esta vista. Podés <strong>agregar un cliente manualmente</strong>, o importar un Excel/CSV (se fusiona con lo que ya hay en el servidor).</p>';
             window._sociosVirtualRows = null;
             window._sociosDatosExtraColumnKeys = [];
             window._sociosDatosExtraColCount = 0;
@@ -1509,23 +1623,57 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const hasT = await req().sociosCatalogoTieneTenantId();
     const hasDE = await req().sociosCatalogoTieneDatosExtra();
+    const rBtIns = await req().sqlSimple(
+        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name = 'business_type' LIMIT 1`
+    );
+    const hasBtIns = !!(rBtIns.rows && rBtIns.rows.length);
+    const abtRaw = String(window.EMPRESA_CFG?.active_business_type || '')
+        .trim()
+        .toLowerCase();
+    const abtSql =
+        abtRaw === 'electricidad' || abtRaw === 'agua' || abtRaw === 'municipio' ? abtRaw : 'electricidad';
     const tidEsc = esc(req().tenantIdActual());
     const coreCols = `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo`;
-    const colList = hasT ? `${coreCols}, tenant_id` : coreCols;
+    let colList = coreCols;
+    if (hasT) colList += ', tenant_id';
+    if (hasBtIns) colList += ', business_type';
     const colListFull = hasDE ? `${colList}, datos_extra` : colList;
     const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
     const vals = lote
         .map((p) => {
             const deObj = p.datos_extra && typeof p.datos_extra === 'object' && !Array.isArray(p.datos_extra) ? p.datos_extra : {};
-            const deSql = hasDE ? `, ${esc(JSON.stringify(deObj))}::jsonb` : '';
-            const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}, ${esc(!!p.activo)})`;
-            const tail = hasT ? `${base}, ${tidEsc}${hasDE ? deSql : ''})` : `${base}${hasDE ? deSql : ''})`;
-            return tail;
+            const parts = [
+                esc(p.nis_medidor),
+                esc(p.nis),
+                esc(p.medidor),
+                esc(p.nombre),
+                esc(p.calle),
+                esc(p.numero),
+                esc(p.barrioSoc),
+                esc(p.telefono),
+                esc(p.dist),
+                esc(p.loc),
+                esc(p.provincia),
+                esc(p.codigo_postal),
+                esc(p.tar),
+                esc(p.ur),
+                esc(p.transf),
+                esc(p.tcon),
+                esc(p.fas),
+                esc(p.latitud),
+                esc(p.longitud),
+                esc(!!p.activo),
+            ];
+            if (hasT) parts.push(tidEsc);
+            if (hasBtIns) parts.push(esc(abtSql));
+            if (hasDE) parts.push(`${esc(JSON.stringify(deObj))}::jsonb`);
+            return `(${parts.join(', ')})`;
         })
         .join(',');
     const mergeDe = hasDE
         ? `, datos_extra = COALESCE(socios_catalogo.datos_extra, '{}'::jsonb) || COALESCE(EXCLUDED.datos_extra, '{}'::jsonb)`
         : '';
+    const mergeBt = hasBtIns ? `, business_type = EXCLUDED.business_type` : '';
     await req().sqlSimple(
         `INSERT INTO socios_catalogo(${colListFull})
          VALUES ${vals}
@@ -1543,7 +1691,7 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
              WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud 
              ELSE EXCLUDED.longitud 
            END,
-           activo = EXCLUDED.activo${mergeDe}`
+           activo = EXCLUDED.activo${mergeDe}${mergeBt}`
     );
 }
 
@@ -1810,14 +1958,6 @@ async function importarExcelSocios(event) {
             }
         }
         req().mostrarOverlayImportacion(esCsv ? 'Leyendo CSV de socios…' : 'Leyendo Excel de socios…');
-        const reemplazar = document.getElementById('socios-import-reemplazar')?.checked;
-        if (reemplazar) {
-            req().actualizarOverlayImportacion('Vaciando catálogo (preservando coordenadas corregidas manualmente)…');
-            const hasSocTDel = await req().sociosCatalogoTieneTenantId();
-            const tfDel = hasSocTDel ? ` AND tenant_id = ${esc(req().tenantIdActual())}` : '';
-            await req().sqlSimple(`DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE${tfDel}`);
-            console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
-        }
         let rawRows;
         if (esCsv) {
             const texto = await _leerTextoConEncodingCsv(file);
@@ -2155,10 +2295,6 @@ async function importarExcelSocios(event) {
             );
         }
         cargarListaSociosAdmin();
-        try {
-            const chk = document.getElementById('socios-import-reemplazar');
-            if (chk) chk.checked = false;
-        } catch (_) {}
     } catch (e) {
         req().ocultarOverlayImportacion();
         toastError('import-excel-socios', e, 'Error al leer el archivo.');
@@ -2167,70 +2303,15 @@ async function importarExcelSocios(event) {
     event.target.value = '';
 }
 
-/** Borra filas en `socios_catalogo` en Neon para el tenant (con doble confirmación salvo `skipConfirm`). No usar en cambio de sesión liviana: para eso vale `invalidarCachesMultitenantSesionYOAdminUI` + listado filtrado, sin DELETE. */
+/** Política: el catálogo vive en Neon y se enriquece con WhatsApp; no se borra desde la UI. */
 async function vaciarCoordenadasSociosCatalogo(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
-    const skipConfirm = !!o.skipConfirm;
     const silent = !!o.silent;
-    if (skipConfirm && silent && !o.allowNeonRowsDelete) {
-        console.warn(
-            '[socios] vaciarCoordenadasSociosCatalogo omitido: con skipConfirm+silent debe pasarse allowNeonRowsDelete:true (evita borrados accidentales al cambiar tenant o sesión).'
+    if (!silent) {
+        toast(
+            'El catálogo de socios no se puede vaciar desde la aplicación: los datos se guardan en el servidor y se fusionan con importaciones y con el bot de WhatsApp. Usá «Importar» para altas o actualizaciones por filas.',
+            'info'
         );
-        return;
-    }
-    if (!req().esAdmin()) {
-        toast('Operación solo para administradores', 'error');
-        return;
-    }
-    const hasSocTVaciar = await req().sociosCatalogoTieneTenantId();
-    if (!skipConfirm) {
-        const confirmar = confirm(
-            '⚠️ ¿ELIMINAR TODOS LOS REGISTROS del catálogo de socios?\n\n' +
-                (hasSocTVaciar
-                    ? 'Se borrarán todos los socios de ESTA empresa/sede (tenant actual) solamente.\n'
-                    : 'Se borrarán TODOS los datos de TODOS los socios (NIS, nombre, dirección, coordenadas, TODO).\n') +
-                'Esta acción NO se puede deshacer.\n\n' +
-                '¿Continuar?'
-        );
-        if (!confirmar) return;
-
-        const confirmar2 = confirm(
-            '⚠️⚠️ ÚLTIMA CONFIRMACIÓN ⚠️⚠️\n\n' +
-                (hasSocTVaciar
-                    ? 'Vas a BORRAR el catálogo de socios de esta empresa/sede.\n\n¿Estás SEGURO/A?'
-                    : 'Vas a BORRAR TODA LA TABLA de socios_catalogo.\n' +
-                      'Se perderán todos los NIS, nombres, direcciones y coordenadas.\n\n' +
-                      '¿Estás SEGURO/A?')
-        );
-        if (!confirmar2) return;
-    }
-
-    try {
-        req().mostrarOverlayImportacion('Eliminando registros del catálogo...');
-        if (hasSocTVaciar) {
-            await req().sqlSimple(`DELETE FROM socios_catalogo WHERE tenant_id = ${esc(req().tenantIdActual())}`);
-        } else {
-            await req().sqlSimple(`DELETE FROM socios_catalogo`);
-        }
-
-        req().ocultarOverlayImportacion();
-
-        // Recargar lista
-        if (typeof listarSociosAdmin === 'function') {
-            await listarSociosAdmin();
-        }
-
-        if (!silent) {
-            toast(
-                hasSocTVaciar ? '✓ Catálogo de socios vaciado para esta empresa' : '✓ Tabla de socios eliminada completamente',
-                'success'
-            );
-        }
-    } catch (e) {
-        req().ocultarOverlayImportacion();
-        console.error('[vaciar-tabla-socios]', e);
-        if (!silent) toast('Error al vaciar tabla: ' + (e?.message || e), 'error');
-        throw e;
     }
 }
 // Exponer globalmente para onclick

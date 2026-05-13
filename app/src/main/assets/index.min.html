@@ -23,6 +23,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link rel="stylesheet" href="styles.css"/>
 <link rel="stylesheet" href="admin-web-responsive.css"/>
+<link rel="stylesheet" href="gn-android-shell-perf.css"/>
 </head>
 <body>
 <div id="app">
@@ -752,19 +753,43 @@
         <h3 id="admin-socios-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:0">Catálogo de socios (NIS / medidor)</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel / CSV<input type="file" id="input-excel-socios" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
+          <button type="button" class="btn-sm primary" style="background:#1d4ed8;color:#fff;border:none" onclick="if(typeof abrirModalAltaSocioManual==='function')abrirModalAltaSocioManual()" title="Alta o fusión por NIS en el tenant y línea de negocio actuales"><i class="fas fa-user-plus"></i> Agregar cliente</button>
           <button type="button" class="btn-sm primary" style="background:#0d9488;color:#fff;border:none" onclick="if(typeof descargarPlanillaSociosCsvExport==='function')descargarPlanillaSociosCsvExport()" title="CSV con las mismas columnas que la tabla Socios (rubro y tenant actuales), sin mezclar otras líneas de negocio"><i class="fas fa-download"></i> Descargar Excel (CSV)</button>
           <button type="button" class="btn-sm warning" onclick="mostrarFormatoExcelSocios()"><i class="fas fa-question-circle"></i> Formato</button>
-          <button type="button" class="btn-sm" onclick="vaciarCoordenadasSociosCatalogo()" style="background:#dc2626;color:#fff;border:none" title="Elimina TODOS los registros de la tabla (100%)"><i class="fas fa-trash-alt"></i> Vaciar tabla</button>
-          <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
-            <input type="checkbox" id="socios-import-reemplazar"> Vaciar catálogo antes de importar
-          </label>
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;max-width:min(44rem,100%);line-height:1.35" title="Desactivado por defecto: import instantáneo. Si lo activás, se consulta Nominatim una vez por cada calle+localidad+provincia distintas (~1 s entre consultas).">
             <input type="checkbox" id="socios-import-cp-nominatim"> Inferir CP (Nominatim) si falta en el Excel — opcional, puede ser lento.
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> Revisá el botón <strong>Formato</strong> para columnas obligatorias, sinónimos y ejemplos por rubro.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> La importación <strong>fusiona</strong> con el catálogo ya guardado en el servidor (no borra datos en bloque). Revisá el botón <strong>Formato</strong> para columnas obligatorias por rubro.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
+      <div id="modal-alta-socio-manual" class="mo" role="dialog" aria-modal="true" aria-labelledby="soc-man-titulo">
+        <div class="mc" style="max-width:min(32rem,96vw)">
+          <div class="mh"><h3 id="soc-man-titulo"><i class="fas fa-user-plus"></i> Agregar cliente al catálogo</h3><button type="button" class="cm" onclick="if(typeof cerrarModalAltaSocioManual==='function')cerrarModalAltaSocioManual()" aria-label="Cerrar"><i class="fas fa-times"></i></button></div>
+          <p style="font-size:.78rem;color:var(--tl);margin:0 0 .75rem;line-height:1.4">Se guarda en el servidor (Neon) para el <strong>tenant</strong> y la <strong>línea de negocio</strong> actuales. Si el NIS ya existe, se <strong>fusionan</strong> los datos como en la importación Excel.</p>
+          <div class="fr" style="gap:.5rem">
+            <div class="fg hf"><label for="soc-man-nis">NIS / identificador *</label><input id="soc-man-nis" type="text" maxlength="80" autocomplete="off" enterkeyhint="next"></div>
+            <div class="fg hf" id="soc-man-medidor-wrap"><label for="soc-man-medidor">Medidor</label><input id="soc-man-medidor" type="text" maxlength="80" autocomplete="off" enterkeyhint="next"></div>
+          </div>
+          <div class="fg"><label for="soc-man-nombre">Nombre y apellido *</label><input id="soc-man-nombre" type="text" maxlength="200" autocomplete="name" enterkeyhint="next"></div>
+          <div class="fr" style="gap:.5rem">
+            <div class="fg hf"><label for="soc-man-calle">Calle *</label><input id="soc-man-calle" type="text" maxlength="200" autocomplete="address-line1" enterkeyhint="next"></div>
+            <div class="fg hf"><label for="soc-man-numero">Número</label><input id="soc-man-numero" type="text" maxlength="30" enterkeyhint="next"></div>
+          </div>
+          <div class="fr" style="gap:.5rem">
+            <div class="fg hf"><label for="soc-man-loc">Localidad *</label><input id="soc-man-loc" type="text" maxlength="120" autocomplete="address-level2" enterkeyhint="next"></div>
+            <div class="fg hf"><label for="soc-man-prov">Provincia *</label><input id="soc-man-prov" type="text" maxlength="80" autocomplete="address-level1" enterkeyhint="next"></div>
+          </div>
+          <div class="fr" style="gap:.5rem">
+            <div class="fg hf"><label for="soc-man-dist">Código distribuidor</label><input id="soc-man-dist" type="text" maxlength="40" enterkeyhint="next"></div>
+            <div class="fg hf"><label for="soc-man-tel">Teléfono</label><input id="soc-man-tel" type="tel" maxlength="40" autocomplete="tel" enterkeyhint="done"></div>
+          </div>
+          <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap;justify-content:flex-end">
+            <button type="button" class="btn-sm" style="border:1px solid var(--bo)" onclick="if(typeof cerrarModalAltaSocioManual==='function')cerrarModalAltaSocioManual()">Cancelar</button>
+            <button type="button" class="btn-sm primary" onclick="if(typeof guardarModalAltaSocioManualCatalogo==='function')void guardarModalAltaSocioManualCatalogo()"><i class="fas fa-save"></i> Guardar en catálogo</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="admin-estadisticas" class="admin-section">
       <input type="hidden" id="est-mes-filtro" value="" aria-hidden="true">
@@ -805,7 +830,7 @@
           <label style="font-size:.78rem;color:var(--tm);min-width:160px">Tipo reclamo (contiene)
             <input id="est-csv-tipo" type="text" placeholder="Opcional (* ? comodines)" autocomplete="off" list="est-csv-tipo-datalist" style="display:block;margin-top:.2rem;width:100%;max-width:220px;padding:.35rem .5rem;border:1px solid var(--bo);border-radius:.4rem;font-size:.82rem">
           </label>
-          <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosExcelAdmin()"><i class="fas fa-file-excel"></i> Descargar Excel</button>
+          <button type="button" class="btn-sm primary" style="margin-top:1.1rem" onclick="exportarPedidosExcelAdmin()" title="Solo pedidos del tenant y línea de negocio actuales (mismos filtros que arriba); no mezcla con otros negocios"><i class="fas fa-file-excel"></i> Descargar Excel</button>
         </div>
       </div>
       <div id="enre-marco" class="gn-enre-marco" role="note" aria-live="polite"></div>
