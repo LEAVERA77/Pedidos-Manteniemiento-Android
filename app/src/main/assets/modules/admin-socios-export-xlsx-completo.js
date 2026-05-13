@@ -5,7 +5,11 @@
  * made by leavera77
  */
 
-import { proyectarWgs84AFamiliaFaja, etiquetaFamiliaProyeccionCorta } from '../map.js';
+import {
+    buildCtxProyeccionSociosExport,
+    proyeccionSociosExportHeaderLabels,
+    proyeccionSociosExportValores,
+} from './socios-catalogo-export-proyeccion.js';
 import {
     filtrarSociosFilasExportVista,
     rubroSociosExportDesdeCfg,
@@ -124,21 +128,8 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
 
     const extraKeys = _unionExtraKeys(rows);
     const incluirDeJson = rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'datos_extra'));
-    const ctxFn = typeof window._gnSociosExportCtxProy === 'function' ? window._gnSociosExportCtxProy : null;
-    const ctx = ctxFn ? ctxFn() : null;
-    const prefs = ctx?.prefs || { modo: 'solo_wgs', familias: [], familia_primaria: '' };
-    const zona = ctx?.zona != null ? ctx.zona : 3;
-    const ordenarFam = ctx?.ordenarFamilias;
-    const famOrder =
-        prefs.modo === 'extra_proy' && Array.isArray(prefs.familias) && prefs.familias.length && typeof ordenarFam === 'function'
-            ? ordenarFam(prefs.familias, prefs.familia_primaria)
-            : [];
-
-    const proyHeaders = [];
-    for (const fam of famOrder) {
-        const ab = etiquetaFamiliaProyeccionCorta(fam);
-        proyHeaders.push(`Este_m_${ab}`, `Norte_m_${ab}`);
-    }
+    const ctx = buildCtxProyeccionSociosExport();
+    const proyHeaders = proyeccionSociosExportHeaderLabels(ctx);
 
     const headers = [
         ...baseLabels,
@@ -171,19 +162,8 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
             const v = de && de[ek] != null ? de[ek] : '';
             line.push(v == null ? '' : String(v));
         }
-        const la = Number(r.latitud);
-        const lo = Number(r.longitud);
-        for (const fam of famOrder) {
-            if (!Number.isFinite(la) || !Number.isFinite(lo)) {
-                line.push('', '');
-                continue;
-            }
-            const pr = proyectarWgs84AFamiliaFaja(la, lo, fam, zona);
-            if (pr) {
-                line.push(Number(pr.e.toFixed(3)), Number(pr.n.toFixed(3)));
-            } else {
-                line.push('', '');
-            }
+        for (const pv of proyeccionSociosExportValores(r.latitud, r.longitud, ctx)) {
+            line.push(pv === '' ? '' : pv);
         }
         aoa.push(line);
     }

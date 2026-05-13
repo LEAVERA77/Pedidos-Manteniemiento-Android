@@ -12,11 +12,20 @@ import {
     sociosActivoTexto,
     sociosVistaExportSpec,
 } from './socios-catalogo-export-vista.js';
+import {
+    LS_SOC_VISTA_PROY,
+    leerPrefsVistaProyeccionSociosCatalogo,
+    ordenarFamiliasVistaProy,
+    obtenerZonaImportSociosProyectadas,
+    obtenerZonaVistaSociosCatalogo,
+    buildCtxProyeccionSociosExport,
+    proyeccionSociosExportHeaderLabels,
+    proyeccionSociosExportValores,
+} from './socios-catalogo-export-proyeccion.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
 import {
     fajaArgentinaPorLongitud,
-    resolverFajaProyeccion,
     convertirProyectadasARGaWgs84,
     proyectarWgs84AFamiliaFaja,
     PMG_FAMILIAS_PROYECCION_LIST,
@@ -40,11 +49,7 @@ export function initAdminSocios(deps) {
     try {
         window.actualizarUiSociosVistaProyeccion = actualizarUiSociosVistaProyeccion;
         window.descargarPlanillaSociosCsvExport = descargarPlanillaSociosCsvExport;
-        window._gnSociosExportCtxProy = () => ({
-            prefs: leerPrefsVistaProyeccionSociosCatalogo(),
-            zona: obtenerZonaVistaSociosCatalogo(),
-            ordenarFamilias: ordenarFamiliasVistaProy,
-        });
+        window._gnSociosExportCtxProy = buildCtxProyeccionSociosExport;
     } catch (_) {}
 }
 
@@ -64,15 +69,6 @@ function actualizarUiSociosImportCrs() {
     } catch (_) {}
 }
 window.actualizarUiSociosImportCrs = actualizarUiSociosImportCrs;
-
-function obtenerZonaImportSociosProyectadas() {
-    const sel = document.getElementById('socios-import-faja')?.value || 'auto';
-    if (/^[1-7]$/.test(sel)) return parseInt(sel, 10);
-    const cfg = window.EMPRESA_CFG || {};
-    const lo = Number(cfg.lng_base);
-    if (Number.isFinite(lo)) return resolverFajaProyeccion('instal', lo);
-    return fajaArgentinaPorLongitud(-64);
-}
 
 /** Columnas opcionales del listado (entre Provincia y Calle, salvo Dist. que va después de Tel.). */
 const SOCIOS_CATALOGO_OPTS_PRE_CALLE = [
@@ -689,7 +685,9 @@ export function descargarPlanillaSociosCsvExport() {
         fieldKeys.push('tenant_id');
         labels.push('tenant_id');
     }
-    const headers = [...labels, ...extraKeys.map((k) => `extra:${k}`)];
+    const ctx = buildCtxProyeccionSociosExport();
+    const proyHeaders = proyeccionSociosExportHeaderLabels(ctx);
+    const headers = [...labels, ...extraKeys.map((k) => `extra:${k}`), ...proyHeaders];
     const lines = [headers.map((h) => escCsvCeldaSocios(h)).join(',')];
     for (const r of rows) {
         const cells = [];
@@ -703,6 +701,9 @@ export function descargarPlanillaSociosCsvExport() {
         for (const ek of extraKeys) {
             const o = sociosCatalogoParseObjetoDatosExtra(r.datos_extra);
             cells.push(escCsvCeldaSocios(o && o[ek] != null ? o[ek] : ''));
+        }
+        for (const pv of proyeccionSociosExportValores(r.latitud, r.longitud, ctx)) {
+            cells.push(escCsvCeldaSocios(pv));
         }
         lines.push(cells.join(','));
     }
@@ -720,29 +721,6 @@ export function descargarPlanillaSociosCsvExport() {
     } catch (_) {}
 }
 
-const LS_SOC_VISTA_PROY = 'pmg_socios_vista_proy';
-
-function leerPrefsVistaProyeccionSociosCatalogo() {
-    try {
-        const raw = localStorage.getItem(LS_SOC_VISTA_PROY);
-        if (raw) {
-            const o = JSON.parse(raw);
-            if (o && typeof o === 'object' && (o.modo === 'solo_wgs' || o.modo === 'extra_proy')) {
-                const fams = Array.isArray(o.familias)
-                    ? o.familias.filter((f) => PMG_FAMILIAS_PROYECCION_LIST.includes(f))
-                    : [];
-                const fp = String(o.familia_primaria || '').trim();
-                return {
-                    modo: o.modo,
-                    familias: fams,
-                    familia_primaria: PMG_FAMILIAS_PROYECCION_LIST.includes(fp) ? fp : ''
-                };
-            }
-        }
-    } catch (_) {}
-    return { modo: 'solo_wgs', familias: [], familia_primaria: '' };
-}
-
 function guardarPrefsVistaProyeccionSociosCatalogo(p) {
     try {
         const prev = leerPrefsVistaProyeccionSociosCatalogo();
@@ -753,14 +731,6 @@ function guardarPrefsVistaProyeccionSociosCatalogo(p) {
         };
         localStorage.setItem(LS_SOC_VISTA_PROY, JSON.stringify(next));
     } catch (_) {}
-}
-
-/** Orden de columnas X/Y: la familia «principal» va primero si está entre las elegidas. */
-function ordenarFamiliasVistaProy(fams, primaria) {
-    const arr = Array.isArray(fams) ? fams.filter((f) => PMG_FAMILIAS_PROYECCION_LIST.includes(f)) : [];
-    const p = String(primaria || '').trim();
-    if (!p || !arr.includes(p)) return arr;
-    return [p, ...arr.filter((f) => f !== p)];
 }
 
 function obtenerNumColsTablaSociosAdmin() {
@@ -775,11 +745,6 @@ function obtenerNumColsTablaSociosAdmin() {
     const nExtra = Number(window._sociosDatosExtraColCount || 0) || 0;
     const base = req().esMunicipioRubro() ? 10 : 11;
     return base + opt + nProy + nExtra;
-}
-
-/** Misma regla que import Este/Norte: faja Auto según longitud de la central (`lng_base`). */
-function obtenerZonaVistaSociosCatalogo() {
-    return obtenerZonaImportSociosProyectadas();
 }
 
 function armarHeadExtraProyeccionSociosHtml() {

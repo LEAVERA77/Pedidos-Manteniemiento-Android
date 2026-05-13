@@ -9,6 +9,6 @@ alwaysApply: false
 - **Export socios (CSV, XLSX cliente, GET `/api/socios/exportar`):** debe reflejar la **tabla admin del tenant y rubro/línea de negocio vigentes**, no un volcado de todas las columnas físicas de `socios_catalogo` salvo respaldo explícito.
   - **Vista por defecto:** columnas y etiquetas alineadas a `api/services/sociosCatalogoExportVistaAdmin.js` / `modules/socios-catalogo-export-vista.js`.
   - **Respaldo técnico completo (todas las columnas BD):** solo `GET /api/socios/exportar?completo=1` (admin).
-- **Paridad repos:** cambios en `modules/` o `api/` → sync/commit según reglas del proyecto (`commit-push-nexxo-y-pedidos-mg`, `pedidos-mg-web-repo`).
+- **Proyección «extra_proy»:** columnas X/Y deben salir en CSV y XLSX cliente usando `modules/socios-catalogo-export-proyeccion.js` (mismos prefs LS, faja y orden de familias que la tabla).
 
 made by leavera77
