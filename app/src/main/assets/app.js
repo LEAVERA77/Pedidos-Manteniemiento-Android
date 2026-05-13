@@ -188,6 +188,7 @@ import {
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import './modules/gn-tenant-force-sync-android-boot.js';
+import './modules/gn-android-shell-perf.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
@@ -6874,6 +6875,12 @@ function mostrarToastWaHumanChatNuevo(s) {
 }
 
 function traerAlFrenteVentanaWaHc(floatEl) {
+    try {
+        if (typeof window.gnBumpOverlayElement === 'function') {
+            window.gnBumpOverlayElement(floatEl);
+            return;
+        }
+    } catch (_) {}
     _waHcFloatZ++;
     floatEl.style.zIndex = String(_waHcFloatZ);
 }
@@ -8366,6 +8373,7 @@ window._moverUbicMapa = function (pedidoId) {
         const mk = L.marker([la, ln], { draggable: true, zIndexOffset: 900 }).addTo(app.map);
         app.map.panTo([la, ln], { animate: true });
         const bar = document.createElement('div');
+        bar.id = 'gn-mover-ubic-float-bar';
         bar.setAttribute('role', 'toolbar');
         bar.style.cssText =
             'position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:12000;background:#1e293b;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.35);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:min(96vw,28rem)';
@@ -8374,6 +8382,9 @@ window._moverUbicMapa = function (pedidoId) {
             '<button type="button" style="background:#059669;color:#fff;border:none;padding:6px 12px;border-radius:8px;cursor:pointer;font-weight:600">Confirmar</button>' +
             '<button type="button" style="background:#64748b;color:#fff;border:none;padding:6px 12px;border-radius:8px;cursor:pointer">Cancelar</button>';
         document.body.appendChild(bar);
+        try {
+            if (typeof window.gnBumpOverlayElement === 'function') window.gnBumpOverlayElement(bar);
+        } catch (_) {}
         const [btnOk, btnCan] = bar.querySelectorAll('button');
         btnOk.addEventListener('click', () => void confirmarMoverUbicacionMapa());
         btnCan.addEventListener('click', () => {

@@ -34,9 +34,20 @@ export function gnForceModalZFront(el) {
     bumpMoZ(el);
 }
 
+/**
+ * Sube cualquier overlay (float WA, barra fija, etc.) al mismo contador que los modales `.mo`.
+ * Expuesto en `window` para pegamento mínimo en `app.js` (p. ej. barra mover ubicación).
+ */
+export function gnBumpOverlayElement(el) {
+    bumpStackedFront(el);
+}
+
 export function initGnModalZIndexStack() {
     if (typeof MutationObserver === 'undefined' || !document.body) return;
     try {
+        try {
+            window.gnBumpOverlayElement = gnBumpOverlayElement;
+        } catch (_) {}
         const obs = new MutationObserver((mutations) => {
             for (const m of mutations) {
                 if (m.type !== 'attributes' || m.attributeName !== 'class') continue;

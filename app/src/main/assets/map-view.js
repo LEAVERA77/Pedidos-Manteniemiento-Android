@@ -575,6 +575,9 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     const maxZ = androidWv ? (ligero ? 17 : 18) : ligero ? 17 : 19;
     const keepBuf = androidWv ? 1 : ligero ? 0 : 1;
     const zoomWhile = androidWv ? false : !ligero;
+    /** Tesela neutra si falla la red (mejor que icono roto en WebView lento / sin señal). */
+    const errTile =
+        'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const capaEsri = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
         {
@@ -586,7 +589,8 @@ export function gnAttachBaseMapLayers(mapa, opts) {
             crossOrigin: true,
             updateWhenIdle: true,
             updateWhenZooming: zoomWhile,
-            keepBuffer: keepBuf
+            keepBuffer: keepBuf,
+            errorTileUrl: errTile
         }
     );
     const capaCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -599,12 +603,50 @@ export function gnAttachBaseMapLayers(mapa, opts) {
         crossOrigin: true,
         updateWhenIdle: true,
         updateWhenZooming: zoomWhile,
-        keepBuffer: keepBuf
+        keepBuffer: keepBuf,
+        errorTileUrl: errTile
+    });
+    const capaOsm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: maxZ,
+        maxNativeZoom: maxZ,
+        tileSize: 256,
+        crossOrigin: true,
+        updateWhenIdle: true,
+        updateWhenZooming: zoomWhile,
+        keepBuffer: keepBuf,
+        errorTileUrl: errTile
     });
     mapa._gnCapaCartoBase = capaCarto;
     mapa._gnCapaEsriBase = capaEsri;
+    mapa._gnCapaOsmBase = capaOsm;
     mapa._gnBaseRasterLayer = capaCarto;
     let nErr = 0;
+    let nErrEsri = 0;
+    capaEsri.on('tileerror', () => {
+        if (!mapa._gnUsandoEsriFallback || mapa._gnUsandoOsmFallback) return;
+        try {
+            if (!mapa.hasLayer(capaEsri)) return;
+        } catch (_) {
+            return;
+        }
+        nErrEsri++;
+        if (nErrEsri >= 5 && !mapa._gnUsandoOsmFallback) {
+            mapa._gnUsandoOsmFallback = true;
+            try {
+                mapa.removeLayer(capaEsri);
+            } catch (_) {}
+            try {
+                capaOsm.addTo(mapa);
+                mapa._gnBaseRasterLayer = capaOsm;
+                if (applyOsm) gnApplyBaseMapVisibilityFromStorage(mapa);
+            } catch (_) {}
+            if (!mapa._gnOsmFallbackToastShown && ctx.toast) {
+                mapa._gnOsmFallbackToastShown = true;
+                ctx.toast('Mapa: capa Esri inestable — usando OpenStreetMap', 'info');
+            }
+        }
+    });
     capaCarto.on('tileerror', () => {
         nErr++;
         if (nErr >= 4 && !mapa._gnUsandoEsriFallback) {

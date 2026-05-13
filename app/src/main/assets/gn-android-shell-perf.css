@@ -1,0 +1,23 @@
+/**
+ * Rendimiento y tacto en WebView Android (clase gn-android-shell en <html>).
+ * made by leavera77
+ */
+
+/* Pan/zoom del mapa: menos fricción con gestos en capas lentas */
+html.gn-android-shell #mc.leaflet-container {
+    touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* Detalle de pedido: texto legible sin micro-zoom al enfocar (WKWebView / algunos WebView) */
+html.gn-android-shell #dm textarea,
+html.gn-android-shell #dm input[type="text"],
+html.gn-android-shell #dm input[type="search"],
+html.gn-android-shell #dm input[type="tel"],
+html.gn-android-shell #dm input[type="number"] {
+    font-size: 16px;
+}
+
+html.gn-android-shell #dm .gn-dm-detail-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+}
