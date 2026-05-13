@@ -91,6 +91,16 @@ async function refreshBroadcastComplianceBanner(modal, { asegurarJwtApiRest, get
                 `⚠️ Ratio de respuestas bajo (promedio 7d: ${d.metrics_avg_ratio_7d ?? '—'}%). Mejorá interacción o pausá campañas.`
             );
         }
+        if (d.guards?.local_window && d.guards.in_window === false) {
+            parts.push(
+                `⏱️ Fuera de la ventana horaria de masivos (${d.guards.local_window}, ${d.guards.local_tz}). Hora local: ${d.guards.local_time_hhmm}.`
+            );
+        }
+        if (d.guards?.block_on_low_ratio) {
+            parts.push(
+                '🔒 El servidor puede bloquear nuevos masivos si el ratio sigue bajo (WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO).'
+            );
+        }
         const guia = d.guide_url || 'https://support.whapi.cloud/help-desk/blocking/how-to-do-mailings-without-the-risk-of-being-blocked';
         parts.push(`📖 Guía anti-baneo Whapi: ${guia}`);
         if (parts.length) {

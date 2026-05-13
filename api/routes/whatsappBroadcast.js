@@ -15,7 +15,12 @@ import {
   sleepAfterOutgoingMessage,
 } from "../utils/whatsappBroadcastPacing.js";
 import { bumpBroadcastMessagesSent, getBroadcastMetricsReport } from "../services/broadcastReplyMetrics.js";
+import { filterPhonesNotBlocklisted, applyBroadcastSendResultsToFailures } from "../services/broadcastPhoneFailures.js";
 import { evaluateWarmupForBroadcast, getWarmupStatusPayload } from "../utils/whatsappBroadcastWarmup.js";
+import {
+  assertAllBroadcastAntiBanGuards,
+  getBroadcastGuardsSummary,
+} from "../utils/whatsappBroadcastGuards.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -104,9 +109,11 @@ async function resolveBroadcastPhones(tenantId, businessType) {
   if (!warm.allowed) {
     return { ok: false, error: warm.error, telefonos: [], warmup: warm, requested: rawTels.length };
   }
+  let telefonos = rawTels.slice(0, warm.cap);
+  telefonos = await filterPhonesNotBlocklisted(tenantId, telefonos);
   return {
     ok: true,
-    telefonos: rawTels.slice(0, warm.cap),
+    telefonos,
     warmup: warm,
     requested: rawTels.length,
   };
@@ -291,6 +298,18 @@ async function runCommunityBroadcastJob(comunicacionId) {
   }
   const telefonos = resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
+  const guardJob = await assertAllBroadcastAntiBanGuards(row.tenant_id, telefonos.length, bodyText);
+  if (!guardJob.ok) {
+    await finalizeComunicacionBroadcast(comunicacionId, {
+      ok: 0,
+      err: 0,
+      erroresDetalle: [{ error: guardJob.error }],
+      duracionMs: Date.now() - t0,
+      status: "error",
+      abortReason: guardJob.error,
+    });
+    return;
+  }
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
     telefonos,
@@ -303,6 +322,9 @@ async function runCommunityBroadcastJob(comunicacionId) {
     ...result,
     status: "done",
   });
+  await applyBroadcastSendResultsToFailures(row.tenant_id, telefonos, result.erroresDetalle).catch((e) =>
+    console.warn("[whatsappBroadcast] phone-failures community", e?.message || e)
+  );
   await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
   console.log("[whatsappBroadcast] community job done", {
     id: comunicacionId,
@@ -358,6 +380,18 @@ async function runCorteBroadcastJob(comunicacionId) {
   }
   const telefonos = resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
+  const guardJob = await assertAllBroadcastAntiBanGuards(row.tenant_id, telefonos.length, bodyText);
+  if (!guardJob.ok) {
+    await finalizeComunicacionBroadcast(comunicacionId, {
+      ok: 0,
+      err: 0,
+      erroresDetalle: [{ error: guardJob.error }],
+      duracionMs: Date.now() - t0,
+      status: "error",
+      abortReason: guardJob.error,
+    });
+    return;
+  }
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
     telefonos,
@@ -370,6 +404,10 @@ async function runCorteBroadcastJob(comunicacionId) {
     ...result,
     status: "done",
   });
+
+  await applyBroadcastSendResultsToFailures(row.tenant_id, telefonos, result.erroresDetalle).catch((e) =>
+    console.warn("[whatsappBroadcast] phone-failures corte", e?.message || e)
+  );
 
   await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
 
@@ -429,13 +467,15 @@ router.get("/status/:id", async (req, res) => {
 
 router.get("/metrics", async (req, res) => {
   try {
-    const [warmup, rep] = await Promise.all([
+    const [warmup, rep, guards] = await Promise.all([
       getWarmupStatusPayload(req.tenantId),
       getBroadcastMetricsReport(req.tenantId, { days: 7, lowRatioPct: 20, consecutiveRequired: 3 }),
+      getBroadcastGuardsSummary(req.tenantId),
     ]);
     return res.json({
       ok: true,
       warmup,
+      guards,
       metrics_avg_ratio_7d: rep.avg_ratio_7d,
       low_ratio_alert: rep.low_ratio_alert,
       consecutive_low_days: rep.consecutive_low_days,
@@ -476,7 +516,19 @@ router.post("/community", async (req, res) => {
     }
     const tels = resolved.telefonos;
     const warmupWarning = resolved.warmup?.warning || null;
+
+    const antiBan = await assertAllBroadcastAntiBanGuards(req.tenantId, tels.length, cuerpo);
+    if (!antiBan.ok) {
+      return res.status(400).json({ error: antiBan.error });
+    }
+
     if (!tels.length) {
+      if (resolved.requested > 0) {
+        return res.status(400).json({
+          error:
+            "No quedan destinatarios para este masivo: los números pueden estar en pausa por fallos repetidos de envío (Whapi) o excluidos por STOP. Revisá el padrón o la tabla broadcast_phone_failures tras migrar.",
+        });
+      }
       return res.status(400).json({
         error:
           "No hay teléfonos móviles válidos en pedidos ni en el catálogo de socios (se excluyen fijos y números mal cargados). En Empresa podés cargar característica por localidad (343 vs 3438, etc.) y un respaldo para números 15… incompletos.",
@@ -562,6 +614,10 @@ router.post("/community", async (req, res) => {
       userId: req.user?.id,
     });
 
+    await applyBroadcastSendResultsToFailures(req.tenantId, tels, result.erroresDetalle).catch((e) =>
+      console.warn("[whatsappBroadcast] phone-failures community sync", e?.message || e)
+    );
+
     await bumpBroadcastMessagesSent(req.tenantId, result.ok);
 
     return res.json({
@@ -616,7 +672,19 @@ router.post("/corte-programado", async (req, res) => {
     }
     const tels = resolved.telefonos;
     const warmupWarning = resolved.warmup?.warning || null;
+
+    const antiBan = await assertAllBroadcastAntiBanGuards(req.tenantId, tels.length, cuerpo);
+    if (!antiBan.ok) {
+      return res.status(400).json({ error: antiBan.error });
+    }
+
     if (!tels.length) {
+      if (resolved.requested > 0) {
+        return res.status(400).json({
+          error:
+            "No quedan destinatarios para este aviso: números en pausa por fallos repetidos o excluidos por STOP. Revisá padrón o broadcast_phone_failures.",
+        });
+      }
       return res.status(400).json({
         error:
           "No hay teléfonos móviles en pedidos ni en socios para avisar (WhatsApp solo a celulares; los fijos se omiten). Revisá teléfonos en reclamos y padrón, y en Empresa la característica por localidad o la lista de prefijos (3438,343,…).",
@@ -711,6 +779,10 @@ router.post("/corte-programado", async (req, res) => {
       meta: { kind: "corte_programado", broadcast_status: "done", sync: true },
       userId: req.user?.id,
     });
+
+    await applyBroadcastSendResultsToFailures(req.tenantId, tels, result.erroresDetalle).catch((e) =>
+      console.warn("[whatsappBroadcast] phone-failures corte sync", e?.message || e)
+    );
 
     await bumpBroadcastMessagesSent(req.tenantId, result.ok);
 

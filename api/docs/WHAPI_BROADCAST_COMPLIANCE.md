@@ -33,6 +33,28 @@ Ejecutar en Neon el archivo:
 
 `api/db/migrations/whapi_broadcast_compliance.sql`
 
+Además (lista de pausa por fallos de envío):
+
+`api/db/migrations/broadcast_antiban_phone_failures.sql`
+
+## Guardas extra (opcionales, desactivadas por defecto)
+
+| Variable | Default | Efecto |
+|----------|---------|--------|
+| `WHAPI_BROADCAST_LOCAL_WINDOW` | vacío | Ej. `08:00-21:59` — solo permitir POST masivos en esa franja (zona `WHAPI_BROADCAST_LOCAL_TZ`). |
+| `WHAPI_BROADCAST_LOCAL_TZ` | `America/Argentina/Buenos_Aires` | Zona para la ventana. |
+| `WHAPI_BROADCAST_MIN_HOURS_BETWEEN` | `0` | Horas mínimas entre masivos **terminados** (`done`). |
+| `WHAPI_BROADCAST_MAX_RECIPIENTS_WEEK` | `0` | Tope de destinatarios sumados en masivos `done` en rolling 7 días. |
+| `WHAPI_BROADCAST_CIRCUIT_LOOKBACK` | `0` | Número de masivos recientes a mirar; con `3` y ratio de error alto → bloqueo. |
+| `WHAPI_BROADCAST_CIRCUIT_MIN_DEST` | `10` | Mínimo destinatarios por envío para contar en el circuit breaker. |
+| `WHAPI_BROADCAST_CIRCUIT_ERROR_RATIO` | `0.35` | Si fracción `errores/total` &gt; esto en los últimos N envíos → bloqueo. |
+| `WHAPI_BROADCAST_BLOCKLIST_FAIL_THRESHOLD` | `3` | Tras N fallos seguidos por número, se excluye del siguiente masivo (fila en `broadcast_phone_failures`). |
+| `WHAPI_BROADCAST_REJECT_CAPS_PCT` | `0` | Si &gt; 0 (ej. `70`), rechaza textos con demasiadas mayúsculas. |
+| `WHAPI_BROADCAST_BLOCK_SUBSTRINGS` | vacío | Lista separada por comas; si un substring aparece ≥ `WHAPI_BROADCAST_BLOCK_SUBSTRING_MAX` (default 4) veces → rechazo. |
+| `WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO` | `0` | Si `1`, bloquea nuevos masivos cuando la métrica ya marcó ratio bajo sostenido. |
+
+Resumen en `GET /api/whatsapp/broadcast/metrics` → campo `guards`.
+
 ## Warm-up del número
 
 Variables:
