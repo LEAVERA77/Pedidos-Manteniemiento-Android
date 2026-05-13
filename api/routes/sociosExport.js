@@ -18,6 +18,19 @@ const router = express.Router();
  */
 router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
   try {
+    const authTid = Number(req.tenantId);
+    const claimed = Number(req.query?.tenant_id);
+    if (Number.isFinite(claimed) && claimed > 0 && Number.isFinite(authTid) && authTid > 0 && claimed !== authTid) {
+      console.warn("[socios/exportar] tenant_id en query distinto de sesión API", { claimed, authTid });
+      return res.status(409).json({
+        ok: false,
+        error:
+          "El tenant indicado no coincide con la sesión del servidor. Recargá la página o volvé a iniciar sesión.",
+        tenant_sesion: authTid,
+        tenant_solicitado: claimed,
+      });
+    }
+
     const { where, params } = await sociosCatalogoWhereForApi(req);
 
     const colNames = await listSociosCatalogoColumnNamesOrdered();
@@ -30,6 +43,18 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     const sql = `SELECT ${selectList} FROM socios_catalogo${where} ORDER BY ${orderCol} ASC NULLS LAST`;
     const result = await query(sql, params);
 
+    let rows = result.rows || [];
+    if (colNames.includes("tenant_id") && Number.isFinite(authTid) && authTid > 0) {
+      const out = rows.filter((row) => Number(row.tenant_id) === authTid);
+      if (out.length < rows.length) {
+        console.warn("[socios/exportar] se descartaron filas con tenant_id distinto al de sesión", {
+          authTid,
+          descartadas: rows.length - out.length,
+        });
+      }
+      rows = out;
+    }
+
     const wb = new ExcelJS.Workbook();
     wb.creator = "GestorNova";
     wb.created = new Date();
@@ -40,7 +65,7 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
     ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
 
-    for (const row of result.rows) {
+    for (const row of rows) {
       ws.addRow(colNames.map((k) => stringifySociosExportCell(row[k])));
     }
 
@@ -50,7 +75,8 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     });
 
     const fecha = new Date().toISOString().slice(0, 10);
-    const filename = `socios_catalogo_completo_${fecha}.xlsx`;
+    const tidPart = Number.isFinite(authTid) && authTid > 0 ? `_t${authTid}` : "";
+    const filename = `socios_catalogo_completo${tidPart}_${fecha}.xlsx`;
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

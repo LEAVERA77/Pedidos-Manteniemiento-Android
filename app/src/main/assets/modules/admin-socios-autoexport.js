@@ -39,9 +39,14 @@ async function doExport() {
     try {
         const token = typeof window.getApiToken === 'function' ? window.getApiToken() : null;
         if (!token) return;
-        const apiUrl = typeof window.apiUrl === 'function' ? window.apiUrl('/api/socios/exportar') : '/api/socios/exportar';
-
-        const resp = await fetch(apiUrl, {
+        const apiUrlFn = typeof window.apiUrl === 'function' ? window.apiUrl : (p) => p;
+        const tid =
+            typeof window.tenantIdActual === 'function' ? Number(window.tenantIdActual()) : NaN;
+        const q =
+            Number.isFinite(tid) && tid > 0
+                ? `?tenant_id=${encodeURIComponent(String(tid))}`
+                : '';
+        const resp = await fetch(apiUrlFn(`/api/socios/exportar${q}`), {
             headers: { Authorization: `Bearer ${token}` },
         });
         if (!resp.ok) return;

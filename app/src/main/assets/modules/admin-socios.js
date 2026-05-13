@@ -903,6 +903,7 @@ async function cargarListaSociosAdmin() {
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
         const hasDEList = await req().sociosCatalogoTieneDatosExtra();
+        const hasSocTList = await req().sociosCatalogoTieneTenantId();
         const andSoc = await andFragmentSociosCatalogoSesionNeon({
             sqlSimple: req().sqlSimple,
             esc,
@@ -910,8 +911,9 @@ async function cargarListaSociosAdmin() {
             empresaCfg: typeof window !== 'undefined' ? window.EMPRESA_CFG : {},
         });
         const colDe = hasDEList ? ', datos_extra' : '';
+        const colTid = hasSocTList ? ', tenant_id' : '';
         const r = await req().sqlSimpleSelectAllPages(
-            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe} FROM socios_catalogo WHERE 1=1${andSoc}`,
+            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe}${colTid} FROM socios_catalogo WHERE 1=1${andSoc}`,
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];

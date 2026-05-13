@@ -38,9 +38,10 @@ function renderTabla(titulo, rows, colKey, colLabel) {
   html += '<table style="width:100%;margin-top:.3rem;font-size:.8rem;border-collapse:collapse">';
   html += `<tr style="background:#f1f5f9"><th style="text-align:left;padding:.25rem .4rem">${esc(colLabel)}</th><th style="text-align:right;padding:.25rem .4rem">Cantidad</th></tr>`;
   for (const r of rows) {
+    const n = r.count ?? r.cantidad ?? r.total ?? 0;
     html += `<tr style="border-bottom:1px solid #e2e8f0">`;
     html += `<td style="padding:.25rem .4rem">${esc(r[colKey] || '')}</td>`;
-    html += `<td style="text-align:right;padding:.25rem .4rem;font-weight:600">${r.count || r.cantidad || 0}</td></tr>`;
+    html += `<td style="text-align:right;padding:.25rem .4rem;font-weight:600">${n}</td></tr>`;
   }
   html += '</table></div>';
   return html;
@@ -100,10 +101,15 @@ async function analizarConIA(btnId) {
 
   try {
     const url = typeof window.apiUrl === 'function' ? window.apiUrl('/api/ia/analizar-reclamos') : '/api/ia/analizar-reclamos';
+    const tid =
+      typeof window.tenantIdActual === 'function' ? Number(window.tenantIdActual()) : NaN;
+    const body = { tipo_negocio: tipoNegocioActual(), periodo_dias: 30 };
+    if (Number.isFinite(tid) && tid > 0) body.tenant_id = tid;
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tipo_negocio: tipoNegocioActual(), periodo_dias: 30 }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) {

@@ -72,6 +72,13 @@ router.post("/generar-aviso", authWithTenantHost, adminOnly, async (req, res) =>
 router.post("/analizar-reclamos", authWithTenantHost, adminOnly, async (req, res) => {
   try {
     const periodDias = Math.min(Math.max(Number(req.body?.periodo_dias) || 30, 1), 365);
+    const bodyTid = Number(req.body?.tenant_id);
+    if (Number.isFinite(bodyTid) && bodyTid > 0 && bodyTid !== Number(req.tenantId)) {
+      console.warn("[ia/analizar-reclamos] body.tenant_id no coincide con sesión; se ignora", {
+        bodyTid,
+        auth: req.tenantId,
+      });
+    }
     const hasT = await pedidosTableHasTenantIdColumn();
     const tid = req.tenantId;
 

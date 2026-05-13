@@ -95,9 +95,37 @@ function _activoTxt(v) {
   return 'Activo';
 }
 
+/** Solo filas del tenant en pantalla (defensa si hubo datos mezclados en memoria). */
+function _filtrarSociosRowsPorTenantActual(rows) {
+  const tid =
+    typeof window !== 'undefined' && typeof window.tenantIdActual === 'function'
+      ? Number(window.tenantIdActual())
+      : NaN;
+  if (!Array.isArray(rows) || !rows.length || !Number.isFinite(tid) || tid < 1) return rows;
+  const hasCol = rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'tenant_id'));
+  if (!hasCol) return rows;
+  const out = rows.filter((r) => Number(r.tenant_id) === tid);
+  if (out.length < rows.length) {
+    try {
+      window.toast?.(
+        `Excel: se omitieron ${(rows.length - out).toLocaleString('es-AR')} filas de otro tenant (solo tenant ${tid}).`,
+        'warning'
+      );
+    } catch (_) {}
+  }
+  return out;
+}
+
 export function exportarSociosExcelCompletoDesdeMemoria() {
-  const rows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
+  const rawRows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
+  const rows = _filtrarSociosRowsPorTenantActual(rawRows);
   if (!Array.isArray(rows) || !rows.length) {
+    if (Array.isArray(rawRows) && rawRows.length) {
+      try {
+        window.toast?.('No hay filas de socios para el tenant actual tras validar tenant_id.', 'warning');
+      } catch (_) {}
+      return;
+    }
     try {
       window.toast?.('No hay socios cargados. Abrí la pestaña Socios y esperá a que termine la carga.', 'warning');
     } catch (_) {}
@@ -112,6 +140,9 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
     try { window.toast?.('Excel (SheetJS) aún no cargó — esperá unos segundos y reintentá.', 'error'); } catch (_) {}
     return;
   }
+
+  const includeTid = rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'tenant_id'));
+  const baseKeysExport = includeTid ? [BASE_KEYS[0], 'tenant_id', ...BASE_KEYS.slice(1)] : BASE_KEYS;
 
   const extraKeys = _unionExtraKeys(rows);
   const incluirDeJson = rows.some((r) => Object.prototype.hasOwnProperty.call(r, 'datos_extra'));
@@ -132,7 +163,7 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
   }
 
   const headers = [
-    ...BASE_KEYS,
+    ...baseKeysExport,
     ...(incluirDeJson ? ['datos_extra (JSON)'] : []),
     ...extraKeys.map((k) => `extra:${k}`),
     ...proyHeaders,
@@ -144,7 +175,7 @@ export function exportarSociosExcelCompletoDesdeMemoria() {
   for (const r of rows) {
     const de = _parseDatosExtra(r.datos_extra);
     const line = [];
-    for (const k of BASE_KEYS) {
+    for (const k of baseKeysExport) {
       if (k === 'latitud' || k === 'longitud') {
         line.push(_numOrEmpty(r[k]));
         continue;
