@@ -196,6 +196,7 @@ import './modules/gn-tenant-force-sync-android-boot.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
+import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -3751,15 +3752,17 @@ const gnLoginSubmitHandler = async e => {
             try {
                 const apiData = await loginApiJwt(em, pw);
                 if (apiData?.user?.id) {
-                    let must = false;
-                    try {
-                        const mr = await sqlSimple(
-                            `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
-                                apiData.user.id
-                            )} LIMIT 1`
-                        );
-                        must = !!(mr.rows?.[0]?.must_change_password);
-                    } catch (_) {}
+                    let must = !!apiData.must_change_password;
+                    if (!must) {
+                        try {
+                            const mr = await sqlSimple(
+                                `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
+                                    apiData.user.id
+                                )} LIMIT 1`
+                            );
+                            must = !!(mr.rows?.[0]?.must_change_password);
+                        } catch (_) {}
+                    }
                     usuario = {
                         id: apiData.user.id,
                         email: apiData.user.email,
@@ -3796,9 +3799,7 @@ const gnLoginSubmitHandler = async e => {
             if (!getApiToken()) {
                 toast('La API (JWT) no respondió: el setup SaaS y datos del tenant pueden no cargar hasta que revises API_BASE_URL o la red.', 'warning');
             }
-            const rolL = normalizarRolStr(u.rol);
-            const forzarCambioPw =
-                u.must_change_password && (rolL === 'tecnico' || rolL === 'supervisor');
+            const forzarCambioPw = !!u.must_change_password;
             if (forzarCambioPw) {
                 window._pendingAndroidPasswordChange = { u, passwordActual: pw };
                 document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
@@ -3809,7 +3810,7 @@ const gnLoginSubmitHandler = async e => {
             }
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
-            if (typeof window._gnCheckDefaultCreds === 'function') window._gnCheckDefaultCreds(loginJwtPayload);
+            if (typeof window._gnCheckDefaultCreds === 'function') window._gnCheckDefaultCreds(loginJwtPayload, pw);
         } else {
             if (le) le.textContent = 'Usuario o contraseña incorrectos.';
         }
@@ -16722,19 +16723,16 @@ async function confirmarCambioPasswordObligatorioAndroid() {
     }
     const n1 = document.getElementById('forzar-cambio-pw-nueva')?.value || '';
     const n2 = document.getElementById('forzar-cambio-pw-nueva2')?.value || '';
-    if (!n1 || !n2) {
+    const v = validarParPasswordNuevoConfirmacionGestornova(n1, n2);
+    if (!v.ok) {
+        if (msg) msg.textContent = v.error;
+        return;
+    }
+    if (v.skipped) {
         if (msg) msg.textContent = 'Completá ambos campos.';
         return;
     }
-    if (n1 !== n2) {
-        if (msg) msg.textContent = 'Las contraseñas nuevas no coinciden.';
-        return;
-    }
-    const n1t = n1.trim();
-    if (n1t.length < 4) {
-        if (msg) msg.textContent = 'La contraseña debe tener al menos 4 caracteres.';
-        return;
-    }
+    const n1t = v.nueva;
     if (n1t === pend.passwordActual) {
         if (msg) msg.textContent = 'La nueva contraseña debe ser distinta de la provisional.';
         return;

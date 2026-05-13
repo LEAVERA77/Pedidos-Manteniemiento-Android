@@ -49,7 +49,16 @@ async function pickUniqueAdminLogin(client, slugBase, tenantCol, tenantId) {
  * Inserta usuario admin para un tenant recién creado (misma transacción que clientes).
  * @param {import("pg").PoolClient} client
  */
-export async function crearUsuarioAdminBootstrap({ client, col, hasBt, hasTw, tenantId, nombreTenant, telefono }) {
+export async function crearUsuarioAdminBootstrap({
+  client,
+  col,
+  hasBt,
+  hasTw,
+  tenantId,
+  nombreTenant,
+  telefono,
+  hasMustChangePassword = false,
+}) {
   const nombreTrim = String(nombreTenant || "").trim();
   const nombreCompleto = `Administrador del ${nombreTrim}`;
   const login = await pickUniqueAdminLogin(client, nombreTrim, col, Number(tenantId));
@@ -58,18 +67,19 @@ export async function crearUsuarioAdminBootstrap({ client, col, hasBt, hasTw, te
   const rol = "admin";
   const tid = Number(tenantId);
   const tel = telefono != null && String(telefono).trim() !== "" ? String(telefono).trim() : null;
+  const M = hasMustChangePassword ? { cols: ", must_change_password", vals: ", TRUE" } : { cols: "", vals: "" };
 
   if (!col) {
     if (hasBt) {
       await client.query(
-        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, business_type)
-         VALUES ($1,$2,$3,$4,TRUE,NULL)`,
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, business_type${M.cols})
+         VALUES ($1,$2,$3,$4,TRUE,NULL${M.vals})`,
         [login, nombreCompleto, rol, hash]
       );
     } else {
       await client.query(
-        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo)
-         VALUES ($1,$2,$3,$4,TRUE)`,
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo${M.cols})
+         VALUES ($1,$2,$3,$4,TRUE${M.vals})`,
         [login, nombreCompleto, rol, hash]
       );
     }
@@ -79,27 +89,27 @@ export async function crearUsuarioAdminBootstrap({ client, col, hasBt, hasTw, te
   if (hasBt) {
     if (hasTw && tel) {
       await client.query(
-        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type, telefono, telefono_whatsapp, whatsapp_notificaciones)
-         VALUES ($1,$2,$3,$4,TRUE,$5,NULL,$6,$6,TRUE)`,
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type, telefono, telefono_whatsapp, whatsapp_notificaciones${M.cols})
+         VALUES ($1,$2,$3,$4,TRUE,$5,NULL,$6,$6,TRUE${M.vals})`,
         [login, nombreCompleto, rol, hash, tid, tel]
       );
     } else {
       await client.query(
-        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type)
-         VALUES ($1,$2,$3,$4,TRUE,$5,NULL)`,
+        `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, business_type${M.cols})
+         VALUES ($1,$2,$3,$4,TRUE,$5,NULL${M.vals})`,
         [login, nombreCompleto, rol, hash, tid]
       );
     }
   } else if (hasTw && tel) {
     await client.query(
-      `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, telefono, telefono_whatsapp, whatsapp_notificaciones)
-       VALUES ($1,$2,$3,$4,TRUE,$5,$6,$6,TRUE)`,
+      `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}, telefono, telefono_whatsapp, whatsapp_notificaciones${M.cols})
+       VALUES ($1,$2,$3,$4,TRUE,$5,$6,$6,TRUE${M.vals})`,
       [login, nombreCompleto, rol, hash, tid, tel]
     );
   } else {
     await client.query(
-      `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col})
-       VALUES ($1,$2,$3,$4,TRUE,$5)`,
+      `INSERT INTO usuarios (email, nombre, rol, password_hash, activo, ${col}${M.cols})
+       VALUES ($1,$2,$3,$4,TRUE,$5${M.vals})`,
       [login, nombreCompleto, rol, hash, tid]
     );
   }

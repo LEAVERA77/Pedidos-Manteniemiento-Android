@@ -12,6 +12,7 @@ vi.mock("../utils/tenantScope.js", async (importOriginal) => {
   return {
     ...actual,
     usuariosTenantColumnName: vi.fn(() => Promise.resolve(null)),
+    tableHasColumn: vi.fn(() => Promise.resolve(false)),
   };
 });
 

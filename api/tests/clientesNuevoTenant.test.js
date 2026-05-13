@@ -30,6 +30,9 @@ function mockNeonForNuevoTenant({ clienteId = 21, dupNombre = false, emailTaken 
     if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "telefono_whatsapp") {
       return { rows: [{ ok: 1 }] };
     }
+    if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "must_change_password") {
+      return { rows: [{ ok: 1 }] };
+    }
     if (q.includes("lower(trim(nombre))")) {
       return dupNombre ? { rows: [{ id: 1 }] } : { rows: [] };
     }
@@ -133,6 +136,9 @@ describe("POST /api/clientes/nuevo", () => {
       }
       if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "telefono_whatsapp") {
         return { rows: [] };
+      }
+      if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "must_change_password") {
+        return { rows: [{ ok: 1 }] };
       }
       if (q.includes("lower(trim(nombre))")) return { rows: [] };
       return { rows: [] };

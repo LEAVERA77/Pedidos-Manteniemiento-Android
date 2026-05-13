@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { query } from "../db/neon.js";
 import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
-import { usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 
 const router = express.Router();
 
@@ -14,9 +14,12 @@ router.post("/login", async (req, res) => {
     if (!loginId || !password) return res.status(400).json({ error: "Usuario y contraseña requeridos" });
 
     const col = await usuariosTenantColumnName();
+    const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
     const hintTid = Number(req.body?.tenant_id);
     const params = [loginId];
-    let sql = `SELECT id, email, nombre, rol, password_hash, activo FROM usuarios
+    let sql = `SELECT id, email, nombre, rol, password_hash, activo${
+      hasMustCol ? ", COALESCE(must_change_password, false) AS must_change_password" : ""
+    } FROM usuarios
        WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))`;
     if (col) {
       if (!Number.isFinite(hintTid) || hintTid < 1) {
@@ -61,10 +64,12 @@ router.post("/login", async (req, res) => {
         isDefault = true;
       }
     }
+    const mustChange = !!(hasMustCol && u.must_change_password);
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
       is_default_credentials: isDefault || undefined,
+      must_change_password: mustChange || undefined,
     });
   } catch (error) {
     return res.status(500).json({ error: "Error en login", detail: error.message });
@@ -189,10 +194,11 @@ router.patch("/me", authMiddleware, async (req, res) => {
           [req.user.id, nextEmail, nextNombre, nextHash]
         );
 
-    if (String(row.email || "").toLowerCase() === "admin" && passwordActual === "admin") {
+    if (passwordNueva) {
       try {
         const tid = await getUserTenantId(req.user.id);
-        if (tid) {
+        const rol = String(row.rol || "").toLowerCase();
+        if (tid && (rol === "admin" || rol === "administrador")) {
           await query(
             `UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || '{"default_creds_changed":true}'::jsonb WHERE id = $1`,
             [tid]

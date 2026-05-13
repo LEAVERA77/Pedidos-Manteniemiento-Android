@@ -288,6 +288,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
     const uCol = await usuariosTenantColumnName();
     const hasBt = await tableHasColumn("usuarios", "business_type");
     const hasTw = await tableHasColumn("usuarios", "telefono_whatsapp");
+    const hasMustPw = await tableHasColumn("usuarios", "must_change_password");
     const telefonoOpt = String(req.body?.telefono || req.body?.whatsapp || "").trim() || null;
 
     const { row, admin_creado } = await withTransaction(async (client) => {
@@ -317,6 +318,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         tenantId: tid,
         nombreTenant: nombreRaw,
         telefono: telefonoOpt,
+        hasMustChangePassword: hasMustPw,
       });
       return { row: row0, admin_creado: admin_creado0 };
     });
