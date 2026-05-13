@@ -8,19 +8,21 @@
  * @param {{
  *   sqlSimple: (q: string) => Promise<{ rows?: { column_name?: string }[] }>;
  *   esc: (v: unknown) => string;
- *   tenantIdActual: number | string;
+ *   tenantIdActual: number | string | (() => number | string);
  *   empresaCfg?: { active_business_type?: string } | null;
  * }} deps
  * @returns {Promise<string>} fragmento con espacio inicial, p. ej. ` AND tenant_id = 1`, o cadena vacía
  */
 export async function andFragmentSociosCatalogoSesionNeon(deps) {
+    const tidRaw =
+        typeof deps.tenantIdActual === 'function' ? deps.tenantIdActual() : deps.tenantIdActual;
     const r = await deps.sqlSimple(
         `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'socios_catalogo' AND column_name IN ('tenant_id','business_type')`
     );
     const set = new Set((r.rows || []).map((x) => String(x.column_name || '')));
     const parts = [];
     if (set.has('tenant_id')) {
-        parts.push(`tenant_id = ${deps.esc(deps.tenantIdActual())}`);
+        parts.push(`tenant_id = ${deps.esc(tidRaw)}`);
     }
     if (set.has('business_type')) {
         const bt = String(deps.empresaCfg?.active_business_type || '')

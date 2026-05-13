@@ -18587,6 +18587,9 @@ async function ejecutarRefrescoDatosTrasCambioTenantMultitenant() {
                 try {
                     await cargarEstadisticas();
                 } catch (_) {}
+                try {
+                    if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
+                } catch (_) {}
             }
             try {
                 await refrescarUsuariosCacheDesdeNeon();

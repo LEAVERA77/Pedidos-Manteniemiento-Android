@@ -1,0 +1,10 @@
+---
+description: Socios/catálogo — módulos nuevos, no borrar datos por cambio de tenant, cuidado con app.js.
+alwaysApply: false
+---
+
+# Socios / catálogo y `app.js`
+
+- **Nueva lógica** de import/export, columnas, filtros tenant o backups Excel → **módulos nuevos** bajo `app/src/main/assets/modules/` (y `api/` en archivos dedicados). **No** pegar bloques grandes en `app.js`.
+- **Reducir `app.js`** solo con cambios **mínimos** probados (p. ej. una llamada o `import` + hook); antes de mover código masivo: `Run` / flujo manual en admin Socios.
+- **Borrado en Neon** de `socios_catalogo` solo con acción explícita del admin (p. ej. «Vaciar tabla» / import con «reemplazar»), **no** desde cambio liviano de tenant o invalidación de caché UI.
