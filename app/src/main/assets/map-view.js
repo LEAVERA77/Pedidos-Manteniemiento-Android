@@ -238,7 +238,10 @@ function gnAttachCursorCoordsControl(L, map) {
                         : 16;
                     mapInstance.setView([lat, lng], Math.max(z || 16, 16), { animate: true });
                     if (typeof ctx.window.abrirNuevoPedidoEnCoordenadas === 'function') {
-                        ctx.window.abrirNuevoPedidoEnCoordenadas(lat, lng, null);
+                        void ctx.window.abrirNuevoPedidoEnCoordenadas(lat, lng, null);
+                        if (typeof ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function') {
+                            ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng);
+                        }
                     }
                 } catch (_) {}
             };

@@ -8111,34 +8111,21 @@ async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
 window.abrirNuevoPedidoEnCoordenadas = abrirNuevoPedidoEnCoordenadas;
 
 async function nuevoPedidoDesdeUbicacionActual() {
-    await ensureMapReady();
-    if (ultimaUbicacion && Number.isFinite(ultimaUbicacion.lat) && Number.isFinite(ultimaUbicacion.lon)) {
-        await abrirNuevoPedidoEnCoordenadas(ultimaUbicacion.lat, ultimaUbicacion.lon, ultimaUbicacion.acc);
-        return;
-    }
-    if (!navigator.geolocation) {
-        toast('GPS no disponible en este dispositivo', 'error');
-        return;
-    }
-    try {
-        const pos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: true,
-                timeout: 14000,
-                maximumAge: 0
-            });
-        });
-        const { latitude, longitude, accuracy } = pos.coords;
-        registrarFajaInstalacionSiFalta(longitude);
-        const accR = Math.round(accuracy || 0);
-        ultimaUbicacion = { lat: latitude, lon: longitude, acc: accR };
-        try {
-            localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion));
-        } catch (_) {}
-        await abrirNuevoPedidoEnCoordenadas(latitude, longitude, accR);
-    } catch (_) {
-        toast('No se pudo obtener la ubicación. Probá «Ir a mi ubicación» primero.', 'error');
-    }
+    const { ejecutarNuevoPedidoDesdeUbicacionActual } = await import('./modules/nuevo-pedido-desde-gps-mapa.js');
+    return ejecutarNuevoPedidoDesdeUbicacionActual({
+        ensureMapReady,
+        getUltimaUbicacion: () => ultimaUbicacion,
+        setUltimaUbicacion: (u) => {
+            ultimaUbicacion = u;
+            try {
+                localStorage.setItem('ultima_ubicacion', JSON.stringify(u));
+            } catch (_) {}
+        },
+        abrirNuevoPedidoEnCoordenadas,
+        registrarFajaInstalacionSiFalta,
+        toast,
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa,
+    });
 }
 window.nuevoPedidoDesdeUbicacionActual = nuevoPedidoDesdeUbicacionActual;
 
