@@ -877,6 +877,69 @@ html.gn-android-webview #modal-foto-ampliada #gn-reclamo-foto-nav{
   .btn-mapa-armar-nuevo{bottom:9.1rem;left:1rem}
   .hl{display:none}
 }
+/* Panel pedidos bp2: pantalla completa + cuadrícula de tarjetas angostas */
+#ms .bp2.bp2-panel-maximized #pl{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(min(100%,168px),1fr));
+  gap:.45rem;
+  align-content:start;
+  padding:.45rem .55rem .65rem;
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+#ms .bp2.bp2-panel-maximized #pl .pi{
+  margin-bottom:0;
+  min-width:0;
+}
+#ms .bp2.bp2-panel-maximized .pc{
+  flex:1;
+  min-height:0;
+}
+@media(min-width:1024px){
+  #ms .bp2.bp2-panel-maximized{
+    left:.45rem!important;
+    right:.45rem!important;
+    top:calc(var(--app-header-h,58px) + .45rem)!important;
+    bottom:.45rem!important;
+    width:auto!important;
+    max-height:none!important;
+    height:auto!important;
+    transform:none!important;
+    border-radius:12px!important;
+    z-index:10028!important;
+  }
+  #ms .bp2.bp2-panel-maximized.col{
+    transform:none!important;
+  }
+}
+@media(max-width:1023px){
+  #ms .bp2.bp2-panel-maximized{
+    position:fixed!important;
+    left:max(.35rem,env(safe-area-inset-left,0px))!important;
+    right:max(.35rem,env(safe-area-inset-right,0px))!important;
+    top:calc(var(--app-header-h,58px) + .35rem)!important;
+    bottom:max(.35rem,env(safe-area-inset-bottom,0px))!important;
+    max-height:none!important;
+    height:auto!important;
+    z-index:10028!important;
+    border-radius:12px!important;
+    width:auto!important;
+  }
+  #ms .bp2.bp2-panel-maximized.col{
+    transform:none!important;
+  }
+}
+html.gn-android-webview #ms .bp2.bp2-panel-maximized{
+  top:calc(var(--app-header-h,58px) + .3rem)!important;
+  bottom:max(.35rem,env(safe-area-inset-bottom,0px))!important;
+  left:max(.3rem,env(safe-area-inset-left,0px))!important;
+  right:max(.3rem,env(safe-area-inset-right,0px))!important;
+  max-height:none!important;
+  height:auto!important;
+  z-index:12055!important;
+}
 @keyframes pulse-gps{
   0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}
   70%{box-shadow:0 0 0 10px rgba(16,185,129,0)}
