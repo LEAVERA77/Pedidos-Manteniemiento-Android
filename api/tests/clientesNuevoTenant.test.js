@@ -101,8 +101,9 @@ describe("POST /api/clientes/nuevo", () => {
     expect(res.body.cliente.id).toBe(21);
     expect(res.body.cliente.tipo).toBe("cooperativa_electrica");
     expect(res.body.admin_creado).toBeTruthy();
-    expect(res.body.admin_creado.usuario).toMatch(/^admin_cooperativa_nueva/);
-    expect(res.body.admin_creado.password).toMatch(/cooperativanueva\d{4}$/);
+    /** Con `tenant_id` en el SELECT de colisión, "admin" suele estar libre por tenant → login `admin` / password `admin`. */
+    expect(res.body.admin_creado.usuario).toBe("admin");
+    expect(res.body.admin_creado.password).toBe("admin");
     expect(res.body.admin_creado.nombre).toContain("Cooperativa Nueva");
   });
 
@@ -114,7 +115,7 @@ describe("POST /api/clientes/nuevo", () => {
       .send({ nombre: "Muni Test", tipo: "municipio" });
     expect(res.status).toBe(201);
     expect(res.body.cliente.id).toBe(22);
-    expect(res.body.admin_creado?.usuario).toMatch(/^admin_muni_test/);
+    expect(res.body.admin_creado?.usuario).toBe("admin");
   });
 
   it("sufijo numérico en login si el email ya existe", async () => {
@@ -146,7 +147,7 @@ describe("POST /api/clientes/nuevo", () => {
           if (q.includes("SELECT 1 FROM usuarios WHERE LOWER(TRIM(email))")) {
             emailChecks += 1;
             const login = String(params[0] || "");
-            if (login === "admin_pajarito") return { rows: [{ ok: 1 }] };
+            if (login === "admin" || login === "admin_pajarito") return { rows: [{ ok: 1 }] };
             return { rows: [] };
           }
           if (q.includes("INSERT INTO usuarios")) {

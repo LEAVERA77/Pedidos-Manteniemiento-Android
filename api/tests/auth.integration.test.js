@@ -6,6 +6,15 @@ vi.mock("../db/neon.js", () => ({
   query: vi.fn(),
 }));
 
+/** Login llama `usuariosTenantColumnName()` antes del SELECT; sin esto el primer mock se consume en information_schema y queda 500. */
+vi.mock("../utils/tenantScope.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    usuariosTenantColumnName: vi.fn(() => Promise.resolve(null)),
+  };
+});
+
 vi.mock("../utils/tenantUser.js", () => ({
   getUserTenantId: vi.fn().mockResolvedValue(1),
 }));

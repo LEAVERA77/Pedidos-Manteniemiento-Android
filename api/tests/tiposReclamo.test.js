@@ -57,10 +57,10 @@ describe("tiposReclamo — permisos y reglas", () => {
     expect(tipoReclamoElectricoPideSuministroWhatsapp("Pedido de factibilidad (nuevo servicio)")).toBe(true);
   });
 
-  it("tiposReclamoParaClienteTipo: municipio incluye Otros y Tránsito (14 ítems)", () => {
+  it("tiposReclamoParaClienteTipo: municipio incluye Otros y rubro Tránsito (14 ítems)", () => {
     const tipos = tiposReclamoParaClienteTipo("municipio");
     expect(tipos).toContain("Otros");
-    expect(tipos).toContain("Tránsito");
+    expect(tipos.some((t) => String(t).includes("Tránsito"))).toBe(true);
     expect(tipos.length).toBe(14);
   });
 

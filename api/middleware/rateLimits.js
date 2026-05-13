@@ -9,7 +9,10 @@ const windowMsGeneral = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 10
 const maxGeneral = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
 
 const windowMsAuth = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS) || 15 * 60 * 1000;
-const maxAuth = Number(process.env.RATE_LIMIT_AUTH_MAX) || 5;
+/** En Vitest el suite completo comparte IP/limitador; subir tope para no 429 entre archivos. */
+const maxAuth =
+  Number(process.env.RATE_LIMIT_AUTH_MAX) ||
+  (process.env.VITEST === "true" ? 50_000 : 5);
 
 const windowMsGeocode = Number(process.env.RATE_LIMIT_GEOCODE_WINDOW_MS) || 60 * 1000;
 const maxGeocode = Number(process.env.RATE_LIMIT_GEOCODE_MAX) || 30;
