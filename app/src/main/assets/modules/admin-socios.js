@@ -5,6 +5,7 @@
  */
 
 import { esc, parseDecimalODmsCoord, validarWgs84Import } from './utils.js';
+import { andFragmentSociosCatalogoSesionNeon } from './socios-catalogo-filtro-sesion.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
 import {
@@ -901,12 +902,16 @@ async function cargarListaSociosAdmin() {
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
     try {
-        const hasSocTList = await req().sociosCatalogoTieneTenantId();
         const hasDEList = await req().sociosCatalogoTieneDatosExtra();
-        const wf = hasSocTList ? ` WHERE tenant_id = ${esc(req().tenantIdActual())}` : '';
+        const andSoc = await andFragmentSociosCatalogoSesionNeon({
+            sqlSimple: req().sqlSimple,
+            esc,
+            tenantIdActual: req().tenantIdActual(),
+            empresaCfg: typeof window !== 'undefined' ? window.EMPRESA_CFG : {},
+        });
         const colDe = hasDEList ? ', datos_extra' : '';
         const r = await req().sqlSimpleSelectAllPages(
-            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe} FROM socios_catalogo${wf}`,
+            `SELECT id, nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo${colDe} FROM socios_catalogo WHERE 1=1${andSoc}`,
             'ORDER BY nis_medidor'
         );
         const rows = r.rows || [];

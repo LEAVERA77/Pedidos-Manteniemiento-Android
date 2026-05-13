@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
+import { sociosCatalogoWhereForApi } from "../utils/sociosCatalogScope.js";
 
 const router = express.Router();
 
@@ -26,13 +27,11 @@ const ALL_COLS = [
 
 /**
  * GET /api/socios/exportar
- * Devuelve archivo Excel (.xlsx) con TODAS las columnas de socios del tenant.
+ * Excel (.xlsx) del catálogo acotado al tenant de sesión (y línea de negocio activa si aplica en BD), paridad con el listado admin.
  */
 router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
   try {
-    const hasTenant = await tableHasColumn("socios_catalogo", "tenant_id");
-    const params = hasTenant ? [req.tenantId] : [];
-    const where = hasTenant ? "WHERE tenant_id = $1" : "";
+    const { where, params } = await sociosCatalogoWhereForApi(req);
 
     const existing = [];
     for (const c of ALL_COLS) {
@@ -44,7 +43,7 @@ router.get("/exportar", authWithTenantHost, adminOnly, async (req, res) => {
     }
 
     const selectCols = existing.map((c) => c.key).join(", ");
-    const sql = `SELECT ${selectCols} FROM socios_catalogo ${where} ORDER BY nombre ASC NULLS LAST`;
+    const sql = `SELECT ${selectCols} FROM socios_catalogo${where} ORDER BY nombre ASC NULLS LAST`;
     const result = await query(sql, params);
 
     const wb = new ExcelJS.Workbook();
