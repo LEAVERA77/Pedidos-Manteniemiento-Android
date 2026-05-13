@@ -74,6 +74,7 @@ import {
   isPhoneWhatsappHumanChatDirect,
 } from "./globalBotState.js";
 import { inferirIntencionBotWhatsappGroq } from "./groqWhatsappBotIntent.js";
+import { generarRespuestaOrientacionWhatsappGroq } from "./groqWhatsappBotOrientacion.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
@@ -847,31 +848,51 @@ function waMeUrlFromInternational(wa) {
 }
 
 /**
- * Opción B (spec): menú / comando *Otros servicios* para orientar vecinos (coop. eléctrica).
+ * Mensaje del bot con contactos de derivación (agua, energía, gas, teléfono, policía, listas).
+ * Misma estructura para todos los rubros que invoquen esta función.
  */
 function formatDerivacionBotMessage(ctx) {
   const dr = ctx.derivacionReclamos;
   if (!dr) return "";
   const parts = [];
-  parts.push("*Otros servicios (agua / energía)*");
-  parts.push("");
-  parts.push("Este canal gestiona reclamos de *energía eléctrica*.");
-  parts.push("");
-  if (dr.cooperativa_agua) {
-    const n = dr.cooperativa_agua.nombre || "Cooperativa de agua";
-    const u = dr.cooperativa_agua.whatsapp ? waMeUrlFromInternational(dr.cooperativa_agua.whatsapp) : null;
-    parts.push(`*Agua potable:* ${n}`);
+  const pushSlot = (titulo, slot) => {
+    if (!slot || typeof slot !== "object") return;
+    const n = slot.nombre != null ? String(slot.nombre).trim() : "";
+    const u = slot.whatsapp ? waMeUrlFromInternational(slot.whatsapp) : null;
+    const label = n || titulo;
+    parts.push(`*${titulo}:* ${label}`);
     parts.push(u || "_(WhatsApp no configurado)_");
     parts.push("");
-  }
-  if (dr.empresa_energia) {
-    const n = dr.empresa_energia.nombre || "Empresa de energía";
-    const u = dr.empresa_energia.whatsapp ? waMeUrlFromInternational(dr.empresa_energia.whatsapp) : null;
-    parts.push(`*Otra distribuidora / energía:* ${n}`);
-    parts.push(u || "_(WhatsApp no configurado)_");
+  };
+  const pushLista = (titulo, arr) => {
+    if (!Array.isArray(arr) || !arr.length) return;
+    parts.push(`*${titulo}*`);
+    arr.forEach((slot, idx) => {
+      if (!slot || typeof slot !== "object") return;
+      const n = slot.nombre != null ? String(slot.nombre).trim() : "";
+      const u = slot.whatsapp ? waMeUrlFromInternational(slot.whatsapp) : null;
+      parts.push(`${idx + 1}) ${n || "Contacto"}`);
+      parts.push(u || "_(WhatsApp no configurado)_");
+    });
     parts.push("");
-  }
+  };
+
+  parts.push("*Otros contactos y servicios*");
+  parts.push("");
+  parts.push(
+    "Si tu consulta corresponde a otro organismo o empresa, podés usar los enlaces de WhatsApp que figuren abajo (cuando estén configurados)."
+  );
+  parts.push("");
+  pushSlot("Agua potable", dr.cooperativa_agua);
+  pushSlot("Otra distribuidora / energía", dr.empresa_energia);
+  pushSlot("Gas natural", dr.empresa_gas_natural);
+  pushSlot("Telefonía", dr.empresa_telefonia);
+  pushSlot("Policía / fuerzas de seguridad", dr.policia);
+  pushLista("Proveedores de internet", dr.empresa_internet);
+  pushLista("Empresas de TV / cable", dr.empresa_tv_cable);
+
   let s = parts.join("\n").trim();
+  if (s.length <= 40) return "";
   if (s.length > META_DERIVACION_MAX_CHARS) {
     s = `${s.slice(0, META_DERIVACION_MAX_CHARS - 1)}…`;
   }
@@ -2631,7 +2652,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       lower === "derivar" ||
       lower === "agua potable" ||
       lower === "otra energia" ||
-      lower === "otra empresa";
+      lower === "otra empresa" ||
+      lower.includes("policia") ||
+      lower.includes("policía") ||
+      lower.includes("gas natural") ||
+      lower.includes("telefonia") ||
+      lower.includes("telefonía");
     if (esOtrosServicios) {
       const msg = formatDerivacionBotMessage(ctx);
       if (msg) {
@@ -2640,7 +2666,34 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       }
       await reply(
         phone,
-        "Para consultas de *agua* u *otra empresa eléctrica*, todavía no hay contactos configurados en el sistema. Escribí *menú* para reclamos de energía de esta cooperativa.",
+        "Para consultas de *agua*, *energía*, *gas*, *telefonía* o *Policía*, todavía no hay contactos configurados en el sistema. Escribí *menú* para reclamos de energía de esta cooperativa.",
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+  }
+
+  if (normalizarRubroCliente(ctx.tipo) === "municipio" || normalizarRubroCliente(ctx.tipo) === "cooperativa_agua") {
+    const pideDerivaciones =
+      lower === "derivar" ||
+      lower === "otros servicios" ||
+      lower.includes("policia") ||
+      lower.includes("policía") ||
+      lower.includes("gas natural") ||
+      lower.includes("telefonia") ||
+      lower.includes("telefonía") ||
+      (lower.includes("internet") && (lower.includes("contacto") || lower.includes("deriv"))) ||
+      (lower.includes("cable") && lower.includes("tv"));
+    if (pideDerivaciones) {
+      const msg = formatDerivacionBotMessage(ctx);
+      if (msg) {
+        await reply(phone, msg, tid, phoneNumberId);
+        return;
+      }
+      await reply(
+        phone,
+        "Todavía no hay *contactos de derivación* cargados para este servicio. Escribí *menú* para ver los reclamos disponibles.",
         tid,
         phoneNumberId
       );
@@ -3825,6 +3878,32 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
           if (iaIdle.intencion === "estado_seguimiento_whatsapp") {
             const handledIa = await _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx);
             if (handledIa) return;
+            if (ctx.whatsappBloqueoReclamos) {
+              await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+              return;
+            }
+            await replyListaTiposReclamo(phone, ctx, phoneNumberId);
+            return;
+          }
+          if (iaIdle.intencion === "orientacion_chat") {
+            const tiposResumen = (ctx.tipos || [])
+              .map((t, i) => `${i + 1}. ${t}`)
+              .join("\n");
+            const ori = await generarRespuestaOrientacionWhatsappGroq({
+              texto: rawIaIdle,
+              nombreEntidad: ctx.nombre || "",
+              tipoCliente: ctx.tipo,
+              tiposReclamoResumen: tiposResumen,
+            });
+            if (ori.ok && ori.mensaje) {
+              await reply(
+                phone,
+                `${ori.mensaje}\n\n_Escribí *menú* para ver la lista de tipos de reclamo._`,
+                tid,
+                phoneNumberId
+              );
+              return;
+            }
             if (ctx.whatsappBloqueoReclamos) {
               await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
               return;

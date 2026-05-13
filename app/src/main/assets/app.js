@@ -138,7 +138,7 @@ import {
     syncAyudaDistribuidoresExcelHint,
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
-import { initCommunityBroadcastFab as initGnCommunityBroadcastFab } from './modules/gn-panel-docks.js';
+import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
@@ -5793,6 +5793,9 @@ function setBp2PanelHidden(hidden) {
     }
     try { localStorage.setItem('pmg_bp2_hidden', hidden ? '1' : '0'); } catch (_) {}
     if (hidden) queueLazyInitMap();
+    try {
+        syncPedidosDockChip();
+    } catch (_) {}
 }
 
 /** Android: al abrir el detalle (#dm) guardamos si el panel inferior estaba visible para restaurarlo al cerrar. */
@@ -12492,6 +12495,14 @@ function closeAll() {
                 } catch (_) {}
             });
         } catch (_) {}
+        try {
+            const ap = document.getElementById('admin-panel');
+            const tab = window.__gnAdminReopenTabTrasDetalle;
+            if (ap && ap.classList.contains('active') && tab && typeof window !== 'undefined' && typeof window.adminTab === 'function') {
+                window.__gnAdminReopenTabTrasDetalle = null;
+                window.adminTab(tab);
+            }
+        } catch (_) {}
     }
     app.cid = null;
     try {
@@ -15807,6 +15818,7 @@ function kpiPdfDibujarFilaTablaKpi(pdf, margin, y, cols, opts) {
     pdf.setFont('helvetica', bold ? 'bold' : 'normal');
     pdf.setFontSize(fontSize);
     pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
+    pdf.setCharSpace(0);
     let x = margin;
     let maxLines = 1;
     const bloques = cols.map((c) => {
@@ -15978,6 +15990,9 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             }
             y += hMm + 3;
             y = K.kpiPdfRenderIaBlock(pdf, iaMap.get(mk), { y, margin, maxW, pageH });
+            try {
+                pdf.setCharSpace(0);
+            } catch (_) {}
             y += 2;
         }
         if (y + 14 > pageH - 14) {

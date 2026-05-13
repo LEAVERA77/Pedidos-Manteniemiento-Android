@@ -11,6 +11,7 @@ const MODEL = "llama-3.3-70b-versatile";
 const INTENCIONES = [
   "identificador_cuenta_mis_pedidos",
   "estado_seguimiento_whatsapp",
+  "orientacion_chat",
   "menu_cargar_reclamo",
 ];
 
@@ -38,20 +39,23 @@ function buildSystemPrompt() {
     "Recibirás un mensaje breve del ciudadano y el contexto del tipo de entidad.",
     "",
     "Debés responder SOLO un JSON con una clave:",
-    `  "intencion": una de estas tres cadenas EXACTAS (sin comillas extra, sin markdown):`,
+    `  "intencion": una de estas cuatro cadenas EXACTAS (sin comillas extra, sin markdown):`,
     `  "${INTENCIONES[0]}"`,
     `  "${INTENCIONES[1]}"`,
     `  "${INTENCIONES[2]}"`,
+    `  "${INTENCIONES[3]}"`,
     "",
     "Significado:",
     `- "${INTENCIONES[0]}": quiere ver sus reclamos vigentes (no cerrados) y está alineado a consultar con dato de cuenta del padrón (NIS, medidor, ID vecino, número de socio, etc.) o pide explícitamente listado "mis reclamos" vinculado a ese tipo de dato.`,
     `- "${INTENCIONES[1]}": pregunta por estado, avance, cómo va, qué pasó, seguimiento, reclamos pendientes o abiertos en sentido general, sin dejar listo un identificador de cuenta; también frases tipo "mis reclamos", "mis pedidos", "qué tengo pendiente" si suena a seguimiento general (el sistema puede responder con lo asociado al mismo número de WhatsApp).`,
-    `- "${INTENCIONES[2]}": quiere cargar un reclamo nuevo, saluda sin pedir seguimiento, texto irrelevante (clima, chiste), insultos sin pedido claro, o cualquier cosa que NO sea claramente una consulta sobre reclamos ya existentes.`,
+    `- "${INTENCIONES[2]}": hace preguntas de uso (cómo cargo, no entiendo el menú, qué número elijo, escribió con errores pero pide ayuda), saludo con duda, consulta general que no sea seguimiento de un pedido ni dato de cuenta.`,
+    `- "${INTENCIONES[3]}": quiere explícitamente iniciar un reclamo nuevo (elige tipo, dice "quiero reclamar", "nuevo reclamo", tema irrelevante sin pedir ayuda ni seguimiento) o texto tan corto/vago que lo más seguro es mostrarle el menú de tipos.`,
     "",
     "Reglas:",
     "- Si hay duda entre las dos primeras y el mensaje es muy genérico tipo solo 'mis reclamos' o 'mis pedidos', preferí estado_seguimiento_whatsapp.",
     "- Si menciona NIS, medidor, ID vecino, número de socio o similar para consultar, preferí identificador_cuenta_mis_pedidos.",
-    "- Nunca inventes otra intención: solo las tres cadenas permitidas.",
+    "- Si pide ayuda para usar el bot o no sabe cómo seguir, preferí orientacion_chat antes que menu_cargar_reclamo.",
+    "- Nunca inventes otra intención: solo las cuatro cadenas permitidas.",
     "- Respondé SOLO el JSON, sin texto adicional.",
   ].join("\n");
 }
@@ -99,7 +103,7 @@ export async function inferirIntencionBotWhatsappGroq(opts) {
       { role: "user", content: userBlock },
     ],
     temperature: 0,
-    max_tokens: 80,
+    max_tokens: 100,
   };
 
   try {

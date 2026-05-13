@@ -1,8 +1,21 @@
 /**
  * Renderiza bloques de explicación IA en el PDF de KPI snapshots.
- * Diseño ejecutivo: fuente legible, colores profesionales, línea decorativa.
+ * Diseño ejecutivo: fuente legible, sin espaciado anómalo entre letras (jsPDF).
  * made by leavera77
  */
+
+/**
+ * Normaliza texto de la API (evita caracteres invisibles o espacios raros que rompen el PDF).
+ * @param {string} s
+ */
+export function kpiPdfNormalizarTextoIa(s) {
+  return String(s || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\u200b\ufeff\u200c\u200d\u2060]/g, '')
+    .replace(/[\u00a0\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /**
  * Dibuja la explicación + recomendación IA debajo de un chart de KPI.
@@ -19,7 +32,7 @@ export function kpiPdfRenderIaBlock(pdf, iaData, ctx) {
   let { y } = ctx;
   const { margin, maxW, pageH } = ctx;
   const footerH = 14;
-  const lineH = 3.6;
+  const lineH = 3.65;
 
   function checkPage(need) {
     if (y + need > pageH - footerH) {
@@ -30,6 +43,8 @@ export function kpiPdfRenderIaBlock(pdf, iaData, ctx) {
 
   checkPage(14);
 
+  pdf.setCharSpace(0);
+
   pdf.setDrawColor(109, 40, 217);
   pdf.setLineWidth(0.3);
   pdf.line(margin + 2, y, margin + 22, y);
@@ -37,15 +52,18 @@ export function kpiPdfRenderIaBlock(pdf, iaData, ctx) {
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8);
+  pdf.setCharSpace(0);
   pdf.setTextColor(109, 40, 217);
   pdf.text('Análisis IA', margin + 2, y);
   y += 3.5;
 
   if (explicacion) {
+    const ex = kpiPdfNormalizarTextoIa(explicacion);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8.5);
+    pdf.setCharSpace(0);
     pdf.setTextColor(30, 41, 59);
-    const lines = pdf.splitTextToSize(String(explicacion), maxW - 6);
+    const lines = pdf.splitTextToSize(ex, Math.max(24, maxW - 6));
     for (const line of lines) {
       checkPage(lineH + 1);
       pdf.text(line, margin + 3, y);
@@ -55,10 +73,12 @@ export function kpiPdfRenderIaBlock(pdf, iaData, ctx) {
   }
 
   if (recomendacion) {
+    const rec = kpiPdfNormalizarTextoIa(recomendacion);
     pdf.setFont('helvetica', 'italic');
     pdf.setFontSize(8);
+    pdf.setCharSpace(0);
     pdf.setTextColor(109, 40, 217);
-    const recLines = pdf.splitTextToSize('\u2192  ' + String(recomendacion), maxW - 6);
+    const recLines = pdf.splitTextToSize(rec, Math.max(24, maxW - 6));
     for (const line of recLines) {
       checkPage(lineH + 1);
       pdf.text(line, margin + 3, y);
@@ -67,5 +87,7 @@ export function kpiPdfRenderIaBlock(pdf, iaData, ctx) {
     y += 2;
   }
 
+  pdf.setCharSpace(0);
+  pdf.setFont('helvetica', 'normal');
   return y;
 }

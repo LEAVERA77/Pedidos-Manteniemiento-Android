@@ -363,7 +363,11 @@ async function exportarPdf() {
       const indent = o.indent || 0;
       const effW = contentW - indent;
       setFont(style, sz, color);
-      const lines = pdf.splitTextToSize(String(text), effW);
+      const raw = String(text ?? '')
+        .replace(/[\u200b\ufeff\u200c\u200d\u2060]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const lines = pdf.splitTextToSize(raw, effW);
       const lineH = sz * 0.42;
       checkPage(lines.length * lineH + 2);
       for (let i = 0; i < lines.length; i++) {
@@ -393,8 +397,13 @@ async function exportarPdf() {
 
     function pdfAiBlock(label, text, color, bgColor) {
       checkPage(12);
+      const rawT = String(text || '')
+        .replace(/[\u200b\ufeff\u200c\u200d\u2060]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
       setFont('normal', 8.5, color);
-      const lines = pdf.splitTextToSize(String(text), contentW - 10);
+      pdf.setCharSpace(0);
+      const lines = pdf.splitTextToSize(rawT, contentW - 10);
       const blockH = lines.length * 3.8 + 6;
       checkPage(blockH + 2);
       pdf.setFillColor(...bgColor);

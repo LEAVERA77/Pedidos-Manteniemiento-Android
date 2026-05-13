@@ -15,6 +15,7 @@ const SYSTEM_PROMPT = [
   "- Si el valor es un porcentaje > 85%, destacalo positivamente. Si < 50%, señalá que requiere atención.",
   "- Si es tiempo (horas), < 24h es bueno, > 48h requiere atención.",
   "- Adaptá el lenguaje al tipo de negocio recibido (municipio, cooperativa eléctrica, cooperativa de agua).",
+  "- Escribí explicacion y recomendacion en prosa normal: sin espacios entre cada letra, sin listas con un carácter por línea, sin signos de exclamación repetidos.",
   "- No inventes datos; basate solo en lo que recibís.",
   "- Respondé SOLO con el JSON, sin texto antes ni después, sin markdown.",
 ].join("\n");

@@ -1,0 +1,16 @@
+---
+description: Rendimiento y UX en WebView Android (modales, panel pedidos, datos)
+alwaysApply: false
+---
+
+# WebView Android — prioridad rendimiento fluido
+
+Al tocar **UI compartida** (`app/src/main/assets/`) que impacte **técnicos en la app Android (WebView)**:
+
+1. **Objetivo:** interacción fluida, **poco consumo de datos móviles** y **cargas rápidas** en el flujo habitual (lista de pedidos, **modal de detalle** `#dm`, formularios de cierre, mapa).
+2. **Preferir:** módulos bajo `js/` o `modules/` ya cargados por el service worker; evitar requests redundantes al abrir/cerrar modales; **no** repintar DOM masivo si un `dataset` o actualización puntual alcanza.
+3. **Modales:** mantener scroll interno estable (`overscroll-behavior`, contenedores con `min-height:0`); evitar listeners duplicados al reabrir `#dm`.
+4. **Imágenes / adjuntos:** tamaños razonables, lazy donde ya exista el patrón; no añadir librerías pesadas solo para cosmética.
+5. **Panel de pedidos `#bp2`:** respetar chip dock / FAB para recuperar la lista; no ocultar caminos de UI que dejen al usuario sin forma de volver al panel en **WebView**.
+
+Si un cambio contradice rendimiento en WebView, **documentar en el commit** la razón y el alcance (solo admin escritorio, etc.).

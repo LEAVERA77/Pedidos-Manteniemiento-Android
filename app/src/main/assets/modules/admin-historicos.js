@@ -326,7 +326,10 @@ export function initAdminHistoricosPanel(deps) {
 
     const onRowClick = (p) => {
         try {
-            if (typeof cerrarAdminPanel === 'function') cerrarAdminPanel();
+            const ap = document.getElementById('admin-panel');
+            if (ap && ap.classList.contains('active')) {
+                window.__gnAdminReopenTabTrasDetalle = 'historicos';
+            }
         } catch (_) {}
         try {
             if (typeof window.detalle === 'function') void window.detalle(p);
