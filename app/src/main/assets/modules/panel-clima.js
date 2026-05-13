@@ -172,17 +172,3 @@ function initClima() {
 }
 
 export { initClima };
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wired) return;
-    initClima();
-    if (!_wired) setTimeout(tryInit, 3000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 1500));
-  } else {
-    setTimeout(tryInit, 1500);
-  }
-})();

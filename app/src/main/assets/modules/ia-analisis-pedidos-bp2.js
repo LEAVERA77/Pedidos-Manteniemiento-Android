@@ -543,17 +543,3 @@ function initBp2IA() {
 export { initBp2IA };
 
 if (typeof window !== 'undefined') window._gnInitBp2IA = initBp2IA;
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wired) return;
-    initBp2IA();
-    if (!_wired) setTimeout(tryInit, 2000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 500));
-  } else {
-    setTimeout(tryInit, 500);
-  }
-})();

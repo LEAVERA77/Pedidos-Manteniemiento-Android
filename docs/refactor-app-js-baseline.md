@@ -17,6 +17,19 @@ Medir y documentar el comportamiento **antes y después** de extraer código de 
 | Técnico Android | Login → mapa → lista pedidos → abrir detalle → foto / imprimir |
 | Admin web | Login → abrir admin → empresa → estadísticas → export Excel (si aplica) |
 
+## Fluidez Android / WebView — fase 2 (lazy IA + clima tras mapa)
+
+| | Antes (referencia) | Después (2026-05-13) |
+|---|---------------------|----------------------|
+| **Commit** | (baseline previo: `app-admin-panel-deferred`, refactor app.js) | Nexxo: clima vía `import()` desde `map-view.js`; pack IA en `gn-lazy-optional-ui-bootstrap.js` (idle + gesto #pm/admin/#dm); credenciales por defecto con `import()` en login; `sw.js` `CACHE_SHELL` v153 |
+| **Parse inicial `app.js`** | Imports estáticos de ~10 módulos IA/clima/compartir | Una línea al bootstrap lazy + `login-biometric` + `map-pedidos-markers` |
+| **Clima** | `panel-clima.js` al cargar `app.js` (autoInit + interval) | Solo tras `runInitMap` (mapa listo) |
+| **Medición** | Ver sección «Cómo medir» arriba | Re-ejecutar Performance + Network (JS) en emulador técnico y anotar long tasks / tamaño descargas |
+
+**Regresión extra (fase 2):** mapa + widget clima; «Sugerir con IA» en `#pm`; botones IA en admin/KPI/estadísticas/BP2; duplicados al guardar pedido nuevo; ✨ mensaje derivación en detalle; compartir/descargar foto ampliada; login con credenciales por defecto abre modal de cambio.
+
+**Nativo (opcional en plan):** `MainActivity` usa `LOAD_CACHE_ELSE_NETWORK` solo si no hay red (`ConnectivityManager`); con red sigue `LOAD_DEFAULT`.
+
 ## Notas de arquitectura (`js/core.js` vs `modules/`)
 
 - **`js/core.js`**: estado mínimo (`app`, `NEON_OK`, `esAndroidWebViewMapa`, etc.) pensado para módulos bajo `js/` (p. ej. `pedidos.js`). No duplicar allí lógica de UI que ya vive en `modules/ui-utils.js` (`toast` unificado del panel).

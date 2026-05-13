@@ -16,6 +16,15 @@ export function setMapViewContext(c) {
     ctx = c;
 }
 
+/** Clima en mapa: carga perezosa tras Leaflet (no parse en arranque de `app.js`). */
+function gnSchedulePanelClimaAfterMap() {
+    try {
+        void import('./modules/panel-clima.js').then((mod) => {
+            if (typeof mod.initClima === 'function') mod.initClima();
+        });
+    } catch (_) {}
+}
+
 async function resolveMapCenterLatLngZoom() {
     if (!ctx) return null;
     const tid = ctx.tenantIdActual ? Number(ctx.tenantIdActual()) : 1;
@@ -711,6 +720,7 @@ export async function runInitMap() {
             gnApplyAdminOsmOverlaysFromStorage(ctx.app.map);
             gnApplyBaseMapVisibilityFromStorage(ctx.app.map);
         } catch (_) {}
+        gnSchedulePanelClimaAfterMap();
         return;
     }
 
@@ -1012,6 +1022,7 @@ export async function runInitMap() {
             }
         });
     } catch (_) {}
+    gnSchedulePanelClimaAfterMap();
 
     const gnBumpMapLayout = () => {
         try {

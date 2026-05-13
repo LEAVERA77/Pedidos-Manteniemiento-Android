@@ -4,11 +4,16 @@
  * made by leavera77
  */
 
-(function initFotoCompartir() {
+let _wired = false;
+
+export function initAndroidImageShare() {
+    if (_wired) return;
     const btnCompartir = document.getElementById('foto-compartir');
     const btnDescargar = document.getElementById('foto-guardar');
     const img = document.getElementById('foto-ampliada');
     if (!btnCompartir || !img) return;
+
+    _wired = true;
 
     const isAndroid = typeof window.AndroidImageShare !== 'undefined';
 
@@ -67,4 +72,4 @@
     if (modal) {
         observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
     }
-})();
+}

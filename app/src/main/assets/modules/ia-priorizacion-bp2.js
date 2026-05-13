@@ -155,17 +155,3 @@ function initPriorizacion() {
 }
 
 export { initPriorizacion, calcularPuntaje };
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wired) return;
-    initPriorizacion();
-    if (!_wired) setTimeout(tryInit, 2000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 500));
-  } else {
-    setTimeout(tryInit, 500);
-  }
-})();

@@ -65,17 +65,3 @@ function hookCrearPedido() {
 }
 
 export { hookCrearPedido, detectarDuplicados };
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wired) return;
-    hookCrearPedido();
-    if (!_wired) setTimeout(tryInit, 2500);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 1000));
-  } else {
-    setTimeout(tryInit, 1000);
-  }
-})();

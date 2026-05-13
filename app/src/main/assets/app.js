@@ -149,18 +149,8 @@ import {
 } from './js/pedidos-toolbar-filtros-exclusivos.js';
 
 import './modules/login-biometric-android.js';
-import './modules/ia-sugerir-reclamo.js';
-import './modules/ia-analisis-reclamos.js';
-import './modules/ia-kpi-sugeridos.js';
-import './modules/ia-informe-unificado.js';
-import './modules/ia-priorizacion-bp2.js';
-import './modules/ia-analisis-pedidos-bp2.js';
-import './modules/panel-clima.js';
-import './modules/ia-duplicados-pedido.js';
+import './modules/gn-lazy-optional-ui-bootstrap.js';
 import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
-import './modules/ia-derivacion-mensaje.js';
-import './modules/suggest-change-creds.js';
-import './modules/android-image-share.js';
 
 import {
   asegurarDefsProyeccionesARG,
@@ -3787,6 +3777,11 @@ const gnLoginSubmitHandler = async e => {
             }
             entrarConUsuario(u, false);
             toast('Bienvenido ' + u.nombre, 'success');
+            try {
+                if (typeof window._gnCheckDefaultCreds !== 'function') {
+                    await import('./modules/suggest-change-creds.js');
+                }
+            } catch (_) {}
             if (typeof window._gnCheckDefaultCreds === 'function') window._gnCheckDefaultCreds(loginJwtPayload, pw);
         } else {
             if (le) le.textContent = 'Usuario o contraseña incorrectos.';

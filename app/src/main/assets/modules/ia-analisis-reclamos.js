@@ -169,17 +169,3 @@ export function initBotonAnalizarIA() {
 }
 
 if (typeof window !== 'undefined') window._gnInitBotonAnalizarIA = initBotonAnalizarIA;
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wiredSocios && _wiredEstadisticas) return;
-    initBotonAnalizarIA();
-    if (!_wiredSocios || !_wiredEstadisticas) setTimeout(tryInit, 2000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 500));
-  } else {
-    setTimeout(tryInit, 500);
-  }
-})();

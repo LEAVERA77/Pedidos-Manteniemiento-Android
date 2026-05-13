@@ -783,17 +783,3 @@ if (typeof window !== 'undefined') {
   window._gnInitBotonInformeUnificado = initBotonInformeUnificado;
   window._gnGenerarInformeIA = generarInforme;
 }
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  function tryInit() {
-    if (_wired) return;
-    initBotonInformeUnificado();
-    if (!_wired) setTimeout(tryInit, 2000);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(tryInit, 500));
-  } else {
-    setTimeout(tryInit, 500);
-  }
-})();

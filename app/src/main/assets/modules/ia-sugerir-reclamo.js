@@ -163,12 +163,3 @@ export function initIASugerirReclamo() {
     btn.addEventListener('click', () => void sugerirConIA());
   }
 }
-
-(function autoInit() {
-  if (typeof document === 'undefined') return;
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initIASugerirReclamo);
-  } else {
-    initIASugerirReclamo();
-  }
-})();

@@ -20,7 +20,9 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.media.MediaScannerConnection;
-import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -224,6 +226,20 @@ public class MainActivity extends AppCompatActivity {
                 || hw.contains("ranchu");
     }
 
+    /** Sin red activa: permite arrancar la shell desde caché (riesgo: datos API viejos hasta que vuelva la red). */
+    private boolean gnIsNetworkLikelyOnline() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return true;
+            Network n = cm.getActiveNetwork();
+            if (n == null) return false;
+            NetworkCapabilities caps = cm.getNetworkCapabilities(n);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private void configurarWebView() {
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -238,8 +254,8 @@ public class MainActivity extends AppCompatActivity {
         s.setGeolocationEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
-        // DEFAULT respeta Cache-Control de GitHub Pages; pull-to-refresh no está en WebView estándar.
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // DEFAULT con red; sin red se prefiere shell en caché (assets / SW) para fluidez en arranque.
+        s.setCacheMode(gnIsNetworkLikelyOnline() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
