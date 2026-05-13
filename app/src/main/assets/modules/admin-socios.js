@@ -31,6 +31,21 @@ import {
     etiquetaFamiliaProyeccionLarga
 } from '../map.js';
 
+if (typeof window !== 'undefined' && typeof window._gnLazyExportSociosXlsx !== 'function') {
+    window._gnLazyExportSociosXlsx = async function _gnLazyExportSociosXlsx() {
+        try {
+            const m = await import('./admin-socios-export-xlsx-completo.js');
+            if (typeof m.exportarSociosExcelCompletoDesdeMemoria === 'function') {
+                m.exportarSociosExcelCompletoDesdeMemoria();
+            }
+        } catch (e) {
+            try {
+                toast('No se pudo cargar la exportación Excel', 'error');
+            } catch (_) {}
+        }
+    };
+}
+
 /** @type {Record<string, unknown> | null} */
 let _sociosDeps = null;
 
@@ -898,7 +913,7 @@ async function cargarListaSociosAdmin() {
 <div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
 <button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
 </details>
-<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Las columnas extra salen del Excel (<code>datos_extra</code>). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja del encabezado.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnExportSociosExcelCompleto&&window._gnExportSociosExcelCompleto()" title="Descarga .xlsx con las columnas de la tabla admin (rubro actual), sin mezclar tenants ni otras líneas de negocio; incluye datos_extra y proyección si los usás en la vista"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
+<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Las columnas extra salen del Excel (<code>datos_extra</code>). Lat/Lon = datos en BD (EPSG:4326). Columnas X/Y (si las activaste): Este/Norte en metros según familia y faja del encabezado.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnLazyExportSociosXlsx&&window._gnLazyExportSociosXlsx()" title="Descarga .xlsx con las columnas de la tabla admin (rubro actual), sin mezclar tenants ni otras líneas de negocio; incluye datos_extra y proyección si los usás en la vista"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
         bindSociosCatalogoVirtualScroll();
         sociosCatalogoRenderPanelPreferenciasColumnas();
         renderSociosCatalogoVirtual();

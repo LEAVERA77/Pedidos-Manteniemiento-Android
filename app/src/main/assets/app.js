@@ -10,6 +10,8 @@ import {
   verificarUsuarioOffline
 } from './offline.js';
 
+import './modules/canvas-2d-willread-patch.js';
+
 import {
   resolverTenantIdPostLoginNeon,
   usuarioSesionParaEntrar,
@@ -42,13 +44,9 @@ import {
     normalizarTelefonoWhatsapp,
     esTelefonoWhatsappValido,
 } from './modules/normalizar-telefono.js';
-import { kpiPdfMiniChartDataUrl } from './modules/kpi-pdf-charts.js';
-import { pdfEncabezadoEmpresaBloque, construirDomicilioEmpresaLinea } from './modules/empresa-encabezado-pdf.js';
-import { introInformeKpiPdfLegible, legibleFuenteKpi, lineasNarrativaMetricaKpiPdf, formatearMetricaKeyLegible } from './modules/kpi-informe-textos.js';
-import { obtenerExplicacionesKpiIA } from './modules/kpi-pdf-explicacion-ia.js';
-import { kpiPdfRenderIaBlock } from './modules/kpi-pdf-ia-render.js';
-import { abrirPdfBlobParaImpresion } from './modules/pdf-blob-open.js';
-import { openAdminUsuarioWhatsappModal } from './modules/admin-usuarios-whatsapp.js';
+import { pdfEncabezadoEmpresaBloque } from './modules/empresa-encabezado-pdf.js';
+import { construirHtmlEncabezadoInformeEmpresa } from './modules/informe-empresa-html-encabezado.js';
+import { loadKpiInformePdfDeps } from './modules/app-kpi-informe-pdf-loaders.js';
 import {
     ESTADO_DONUT_COLORS,
     DONUT_FALLBACK_SEQUENCE,
@@ -56,13 +54,10 @@ import {
     datasetsMensualCreadosCerrados
 } from './modules/graficos-colores.js';
 import {
-    initDerivacionesReclamosAdminBindings,
     construirDerivacionReclamosDesdeFormularioDerivacionesCompleto,
     poblarDerivacionesListasDesdeCfg,
     refreshDerivacionListaWaButtons,
 } from './modules/derivaciones-reclamos-admin.js';
-import { initAdminHistoricosPanel } from './modules/admin-historicos.js';
-import { cargarListaUsuariosTodosTenantsNeon } from './modules/admin-lista-usuarios-neon.js';
 import { initDashboardGerenciaModalDrag } from './modules/dashboard-gerencia.js';
 import { syncKpiAdminRubroDom } from './modules/kpi-admin-rubro-ui.js';
 import { bp2OcultarHistoricosResueltosActivo } from './modules/vaciado-quincenal.js';
@@ -84,14 +79,12 @@ import {
     toggleMapaCoordsConverterBody
 } from './modules/filtros-estado.js';
 import { etiquetaIdentificadorPedidoLista, tituloResumenReferenciaEstadisticas } from './modules/etiqueta-identificador-pedido.js';
-import { appendTipoTrabajoFilterToWhere, initEstCsvTipoAutocomplete } from './modules/est-csv-tipo-filtro.js';
 import {
     arrayBufferToBase64,
     escapeCsvCeldaPedidos,
     runExportPedidosExcelCsv,
     splitFechaHoraExportAR
 } from './modules/export-excel.js';
-import { initExportPedidosAdminStats, exportarPedidosExcelAdmin } from './modules/export-pedidos-admin-stats.js';
 import {
     initAdminWizard,
     initSetupWizardBindings,
@@ -164,7 +157,6 @@ import './modules/ia-priorizacion-bp2.js';
 import './modules/ia-analisis-pedidos-bp2.js';
 import './modules/panel-clima.js';
 import './modules/ia-duplicados-pedido.js';
-import './modules/admin-socios-export-xlsx-completo.js';
 import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
 import './modules/ia-derivacion-mensaje.js';
 import './modules/suggest-change-creds.js';
@@ -189,6 +181,8 @@ import {
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z-index-stack.js';
+import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
+import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
 import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
@@ -209,25 +203,6 @@ if (typeof window !== 'undefined') {
     window.procesarRespuestaBot = procesarRespuestaBot;
     window.gnAbrirAsistenteDesdeWizardOLogin = gnAbrirAsistenteDesdeWizardOLogin;
 }
-
-/** Evita avisos del navegador al capturar con html2canvas (getImageData / readback). */
-(function installCanvas2DWillReadFrequently() {
-  if (typeof HTMLCanvasElement === 'undefined') return;
-  const proto = HTMLCanvasElement.prototype;
-  if (proto.__gestornovaWillReadPatch) return;
-  const orig = proto.getContext;
-  proto.getContext = function (type, attrib) {
-    if (type === '2d') {
-      const a =
-        attrib && typeof attrib === 'object'
-          ? { ...attrib, willReadFrequently: true }
-          : { willReadFrequently: true };
-      return orig.call(this, type, a);
-    }
-    return orig.call(this, type, attrib);
-  };
-  proto.__gestornovaWillReadPatch = true;
-})();
 
 // stripGestornovaDicePrefix, gnDice → modules/utils.js
 
@@ -12272,9 +12247,7 @@ async function detalle(p, opts = {}) {
 
     const dmEl = document.getElementById('dm');
     dmEl.classList.add('active');
-    try {
-        gnForceModalZFront(dmEl);
-    } catch (_) {}
+    pedidoDetalleTraerModalAlFrente(dmEl, gnForceModalZFront);
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p)) refrescarMaterialesEnDetalle(p);
     });
@@ -15921,7 +15894,8 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
     }
     try {
         toast('Generando informe con IA…', 'info');
-        const iaMapPromise = obtenerExplicacionesKpiIA(rows).catch(() => new Map());
+        const K = await loadKpiInformePdfDeps();
+        const iaMapPromise = K.obtenerExplicacionesKpiIA(rows).catch(() => new Map());
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
         const pageW = pdf.internal.pageSize.getWidth();
@@ -15936,7 +15910,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8.5);
         pdf.setTextColor(51, 65, 85);
-        const intro = introInformeKpiPdfLegible(rows);
+        const intro = K.introInformeKpiPdfLegible(rows);
         const introRaw = pdf.splitTextToSize(intro, maxW);
         const introLines = Array.isArray(introRaw) ? introRaw : String(introRaw || '').split('\n').filter(Boolean);
         const lineH = 3.5;
@@ -15965,8 +15939,8 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
             const filasM = porMetrica.get(mk);
             const pts = kpiPuntosDesdeFilasSnapshot(filasM);
             if (!pts.length) continue;
-            const labelLegible = KPI_METRICA_ETIQUETAS[mk] || formatearMetricaKeyLegible(mk);
-            const narr = lineasNarrativaMetricaKpiPdf(mk, filasM, {
+            const labelLegible = KPI_METRICA_ETIQUETAS[mk] || K.formatearMetricaKeyLegible(mk);
+            const narr = K.lineasNarrativaMetricaKpiPdf(mk, filasM, {
                 fmtFechaCorta: fmtFechaKpiSnapshotCorta,
                 KPI_METRICA_ETIQUETAS,
             });
@@ -15989,7 +15963,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 });
             });
             y += 2;
-            const dataUrl = await kpiPdfMiniChartDataUrl(labelLegible, pts);
+            const dataUrl = await K.kpiPdfMiniChartDataUrl(labelLegible, pts);
             if (!dataUrl) continue;
             let hMm = Math.min(hMmMax, Math.max(24, 10 + pts.length * 4.6));
             let wMm = Math.min(maxW, 190);
@@ -16003,7 +15977,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 hMm = 6;
             }
             y += hMm + 3;
-            y = kpiPdfRenderIaBlock(pdf, iaMap.get(mk), { y, margin, maxW, pageH });
+            y = K.kpiPdfRenderIaBlock(pdf, iaMap.get(mk), { y, margin, maxW, pageH });
             y += 2;
         }
         if (y + 14 > pageH - 14) {
@@ -16022,7 +15996,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         y = kpiPdfDibujarCabeceraTabla(pdf, margin, y);
         for (let ri = 0; ri < rows.length; ri++) {
             const row = rows[ri];
-            const labM = KPI_METRICA_ETIQUETAS[row.metrica] || formatearMetricaKeyLegible(row.metrica);
+            const labM = KPI_METRICA_ETIQUETAS[row.metrica] || K.formatearMetricaKeyLegible(row.metrica);
             const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
             const al = splitFechaHoraExportAR(row.created_at);
             const cells = [
@@ -16031,7 +16005,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
                 { w: 19, t: fmtFechaKpiSnapshotCorta(row.periodo_fin) || '—' },
                 { w: 13, t: vn },
                 { w: 17, t: formatearUnidadKpiVista(row.unidad) || '—' },
-                { w: 20, t: legibleFuenteKpi(row.fuente) },
+                { w: 20, t: K.legibleFuenteKpi(row.fuente) },
                 { w: 22, t: al.fecha || '' },
                 { w: 22, t: al.hora || '' },
             ];
@@ -16054,7 +16028,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         }
         kpiPdfPiePaginas(pdf);
         const blob = pdf.output('blob');
-        const modo = abrirPdfBlobParaImpresion(blob, `informe-kpi-${tenantIdActual()}.pdf`);
+        const modo = K.abrirPdfBlobParaImpresion(blob, `informe-kpi-${tenantIdActual()}.pdf`);
         if (modo === 'ventana') {
             toast('Informe listo — se abrió la vista de impresión.', 'success');
         } else if (modo === 'descarga') {
@@ -16071,6 +16045,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
 };
 
 function adminTab(tab) {
+    try {
+        const ap = document.getElementById('admin-panel');
+        if (ap && ap.classList.contains('active')) {
+            void ensureAdminPanelDeferredBindings(() => _depsAdminPanelDeferred());
+        }
+    } catch (_) {}
     document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
     const tabs = document.querySelectorAll('#admin-panel .admin-tab');
@@ -16148,6 +16128,28 @@ function cerrarAdminPanel() {
     syncAdminPanelMaxButtons();
 }
 window.cerrarAdminPanel = cerrarAdminPanel;
+
+function _depsAdminPanelDeferred() {
+    return {
+        esAdmin,
+        toast,
+        toastError,
+        gnCerrarModalPedidoDetalleSiAbierto,
+        neonOk: () => NEON_OK,
+        sqlReady: () => typeof _sql !== 'undefined' && !!_sql,
+        modoOffline: () => !!modoOffline,
+        sqlSimple,
+        pedidosFiltroTenantSql,
+        resolveCondicionFechaPedidosStats,
+        esc,
+        tenantIdActual,
+        normalizarWhatsappInternacionalDesdeInput,
+        setDerivacionesInlineError,
+        actualizarBotonesWhatsappDerivacionesUi,
+        refrescarPedidos: () => cargarPedidos({ silent: true }),
+        cerrarAdminPanel,
+    };
+}
 
 function syncAdminPanelMaxButtons() {
     const p = document.getElementById('admin-panel');
@@ -16589,7 +16591,8 @@ async function guardarConfigEmpresa() {
 
 // ── Usuarios admin ────────────────────────────────────────────
 async function cargarListaUsuarios() {
-    return cargarListaUsuariosTodosTenantsNeon({
+    const mod = await import('./modules/admin-lista-usuarios-neon.js');
+    return mod.cargarListaUsuariosTodosTenantsNeon({
         sqlSimple,
         neonOk: !!(NEON_OK && _sql),
         modoOffline,
@@ -16623,6 +16626,7 @@ function escJs(v) {
 }
 
 async function editarTelefonoWhatsappUsuario(id, telefonoWhatsappActual, telefonoContactoLegacy, habilitadoActual) {
+    const { openAdminUsuarioWhatsappModal } = await import('./modules/admin-usuarios-whatsapp.js');
     await openAdminUsuarioWhatsappModal({
         userId: id,
         telefonoWhatsapp: telefonoWhatsappActual || '',
@@ -17153,43 +17157,6 @@ function lineaPeriodoInformeEstadisticas() {
     const fd = fechaDesde.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
     const gen = new Date().toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'medium' });
     return `Período analizado: ${ph} · desde ${fd} · Generado ${gen}`;
-}
-
-function escInformePdfTexto(s) {
-    return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-function construirHtmlEncabezadoInformeEmpresa(lineaPeriodo) {
-    const ec = window.EMPRESA_CFG || {};
-    const nombre = String(ec.nombre || 'GestorNova').trim() || 'GestorNova';
-    const dom = construirDomicilioEmpresaLinea(ec);
-    const tel = String(ec.telefono_contacto || ec.telefono || '').trim();
-    const mail = String(ec.email_contacto || ec.email || '').trim();
-    const logo = String(ec.logo_url || '').trim();
-    const logoSrc = escInformePdfTexto(logo || 'gestornova-logo.png');
-    const lp = lineaPeriodo
-        ? `<div style="margin-top:6px;font-size:9px;color:#64748b;line-height:1.35">${escInformePdfTexto(lineaPeriodo)}</div>`
-        : '';
-    const domHtml = dom
-        ? `<div style="font-size:10px;color:#475569;margin-top:4px;line-height:1.35">${escInformePdfTexto(dom)}</div>`
-        : '';
-    const telHtml = tel
-        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(`Tel: ${tel}`)}</div>`
-        : '';
-    const mailHtml = mail
-        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${escInformePdfTexto(`Email: ${mail}`)}</div>`
-        : '';
-    return (
-        `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px 12px;background:linear-gradient(180deg,#fff,#f8fafc);border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(15,23,42,.06)">` +
-        `<img src="${logoSrc}" alt="" width="48" height="48" style="width:48px;height:48px;object-fit:contain;border-radius:8px;flex-shrink:0" crossorigin="anonymous"/>` +
-        `<div style="min-width:0;flex:1"><div style="font-size:16px;font-weight:800;color:#1e3a8a;letter-spacing:-.02em">${escInformePdfTexto(nombre)}</div>` +
-        `${domHtml}${telHtml}${mailHtml}` +
-        `${lp}</div></div>`
-    );
 }
 
 async function exportInformeMensualExcel() {
@@ -19464,46 +19431,7 @@ try {
     });
 } catch (_) {}
 
-try {
-    initEstCsvTipoAutocomplete();
-} catch (_) {}
-
-try {
-    initExportPedidosAdminStats({
-        esAdmin,
-        toast,
-        toastError,
-        gnCerrarModalPedidoDetalleSiAbierto,
-        neonOk: () => NEON_OK,
-        sqlReady: () => typeof _sql !== 'undefined' && !!_sql,
-        modoOffline: () => !!modoOffline,
-        sqlSimple,
-        pedidosFiltroTenantSql,
-        resolveCondicionFechaPedidosStats,
-        appendTipoTrabajoFilterToWhere,
-        esc,
-        tenantIdActual,
-    });
-} catch (_) {}
-
-try {
-    initDerivacionesReclamosAdminBindings({
-        normalizarWhatsappInternacionalDesdeInput,
-        toast,
-        setDerivacionesInlineError,
-        onUiRefresh: actualizarBotonesWhatsappDerivacionesUi,
-    });
-} catch (_) {}
-
-try {
-    initAdminHistoricosPanel({
-        toast,
-        refrescarPedidos: () => cargarPedidos({ silent: true }),
-        cerrarAdminPanel,
-        sqlSimple,
-        neonOk: () => NEON_OK,
-    });
-} catch (_) {}
+// Inits admin pesados (export estadísticas, CSV tipo, derivaciones onclick, históricos): ver ensureAdminPanelDeferredBindings al abrir admin.
 
 // ── Exponer funciones admin al scope global ────────────
 if (typeof adminTab !== "undefined") window.adminTab = adminTab;
@@ -19535,10 +19463,9 @@ if (typeof descargarPlantillaCsvSociosRubro !== "undefined") window.descargarPla
 if (typeof buscarHistorialPorNIS !== "undefined") window.buscarHistorialPorNIS = buscarHistorialPorNIS;
 if (typeof generarInformeMensualENRE !== "undefined") window.generarInformeMensualENRE = generarInformeMensualENRE;
 if (typeof exportInformeMensualExcel !== "undefined") window.exportInformeMensualExcel = exportInformeMensualExcel;
-if (typeof exportarPedidosExcelAdmin !== "undefined") {
-    window.exportarPedidosExcelAdmin = exportarPedidosExcelAdmin;
-    window.exportarPedidosCsvAdmin = exportarPedidosExcelAdmin;
-}
+window.exportarPedidosExcelAdmin = window.exportarPedidosCsvAdmin = async function () {
+    return exportarPedidosExcelAdminDeferred(() => _depsAdminPanelDeferred());
+};
 if (typeof imprimirInformeConGraficos !== "undefined") window.imprimirInformeConGraficos = imprimirInformeConGraficos;
 if (typeof generarPdfEstadisticasMultipaginaENRE !== "undefined") window.generarPdfEstadisticasMultipaginaENRE = generarPdfEstadisticasMultipaginaENRE;
 if (typeof abrirModalDashboardGerencia !== "undefined") window.abrirModalDashboardGerencia = abrirModalDashboardGerencia;

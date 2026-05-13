@@ -1,6 +1,9 @@
 /**
  * Marcadores de pedidos en Leaflet: agrupa reclamos abiertos (misma celda WGS84 redondeada)
  * en un solo popup con lista ordenada (Pendiente → Asignado → En ejecución).
+ *
+ * Punto único de render de markers desde `app.js`: `renderMkPedidosEnMapa` (no duplicar
+ * lógica de clusters/popup en otros archivos; estado `app.map` / `app.mk` lo orquesta app.js).
  * made by leavera77
  */
 
