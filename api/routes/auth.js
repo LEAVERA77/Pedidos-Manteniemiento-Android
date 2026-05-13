@@ -16,38 +16,81 @@ router.post("/login", async (req, res) => {
     const col = await usuariosTenantColumnName();
     const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
     const hintTid = Number(req.body?.tenant_id);
-    const params = [loginId];
-    let sql = `SELECT id, email, nombre, rol, password_hash, activo${
-      hasMustCol ? ", COALESCE(must_change_password, false) AS must_change_password" : ""
-    } FROM usuarios
-       WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))`;
-    if (col) {
-      if (!Number.isFinite(hintTid) || hintTid < 1) {
-        return res.status(400).json({
-          error: "tenant_id requerido en el cuerpo del login (clientes.id del tenant elegido).",
-        });
-      }
-      sql += ` AND ${col} = $2`;
-      params.push(hintTid);
-    }
-    sql += ` ORDER BY id ASC`;
-    const r = await query(sql, params);
-    if (!r.rows.length) return res.status(401).json({ error: "Credenciales inválidas" });
+    const mustSel = hasMustCol ? ", COALESCE(must_change_password, false) AS must_change_password" : "";
+    /** `col` solo puede ser tenant_id o cliente_id (validado en tenantScope). */
+    const tidExpr = col ? `, ${col}::int AS _login_tid` : "";
 
-    let u = null;
-    for (const row of r.rows) {
-      const hash = String(row.password_hash || "");
-      let ok = false;
-      if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
-        ok = await bcrypt.compare(password, hash);
-      } else {
-        ok = password === hash;
+    const unscopedSql = `SELECT id, email, nombre, rol, password_hash, activo${mustSel}${tidExpr} FROM usuarios
+         WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))
+         ORDER BY id ASC`;
+
+    /** @param {import("pg").QueryResultRow[]} rows */
+    async function rowsMatchingPassword(rows) {
+      const out = [];
+      for (const row of rows) {
+        const hash = String(row.password_hash || "");
+        let ok = false;
+        if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
+          ok = await bcrypt.compare(password, hash);
+        } else {
+          ok = password === hash;
+        }
+        if (ok) out.push(row);
       }
-      if (ok) {
-        u = row;
-        break;
-      }
+      return out;
     }
+
+    let candidateRows = [];
+    if (col && Number.isFinite(hintTid) && hintTid >= 1) {
+      const rScoped = await query(
+        `SELECT id, email, nombre, rol, password_hash, activo${mustSel}${tidExpr} FROM usuarios
+         WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1)) AND ${col} = $2
+         ORDER BY id ASC`,
+        [loginId, hintTid]
+      );
+      candidateRows = rScoped.rows;
+    } else if (col) {
+      const rAll = await query(unscopedSql, [loginId]);
+      candidateRows = rAll.rows;
+    } else {
+      const r0 = await query(
+        `SELECT id, email, nombre, rol, password_hash, activo${mustSel} FROM usuarios
+         WHERE activo = TRUE AND LOWER(TRIM(email)) = LOWER(TRIM($1))
+         ORDER BY id ASC`,
+        [loginId]
+      );
+      candidateRows = r0.rows;
+    }
+
+    let matches = await rowsMatchingPassword(candidateRows);
+
+    /** `tenant_id` del body puede estar desfasado (JWT/localStorage). Si no hubo coincidencia en ese tenant, buscar en todos. */
+    if (col && Number.isFinite(hintTid) && hintTid >= 1 && matches.length === 0) {
+      const rWide = await query(unscopedSql, [loginId]);
+      matches = await rowsMatchingPassword(rWide.rows);
+    }
+
+    if (!matches.length) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
+
+    if (col && matches.length > 1) {
+      const tids = [
+        ...new Set(
+          matches
+            .map((row) => Number(row._login_tid))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        ),
+      ];
+      return res.status(400).json({
+        error:
+          "Hay más de un usuario con ese nombre en distintos tenants. Indicá tenant_id en el cuerpo del login (clientes.id del tenant).",
+        code: "login_tenant_ambiguous",
+        tenant_ids: tids,
+      });
+    }
+
+    const u = matches[0] || null;
     if (!u) return res.status(401).json({ error: "Credenciales inválidas" });
     if (!u.activo) return res.status(403).json({ error: "Usuario inactivo" });
 

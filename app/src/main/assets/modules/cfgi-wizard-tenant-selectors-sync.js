@@ -7,6 +7,7 @@ import {
     normalizarTipoNeonASelectValue,
     aplicarTipoInferidoEnSelectCfgiTipo,
 } from './cfgi-wizard-tenant-select.js';
+import { setAuthLoginTenantHint } from './auth-login-api-body.js';
 
 /** @type {Array<{ id?: unknown, nombre?: unknown, tipo?: unknown }>} */
 let _cache = [];
@@ -65,6 +66,7 @@ export function syncCfgiSelectorsFromTechTenantSel() {
             const te = row ? normalizarTipoNeonASelectValue(String(row.tipo || '')) : '';
             if (te) tipo.value = te;
         }
+        setAuthLoginTenantHint(tid);
     } finally {
         _syncing = false;
     }
@@ -92,6 +94,7 @@ export function syncCfgiSelectorsFromNombreSel() {
             tech.value = String(tid);
         }
         aplicarTipoInferidoEnSelectCfgiTipo(nom, tipo);
+        setAuthLoginTenantHint(tid);
     } finally {
         _syncing = false;
     }
