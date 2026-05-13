@@ -6314,7 +6314,7 @@ function aplicarUIMapaPlataforma() {
             if (esTecnicoOSupervisor()) {
                 try {
                     if (localStorage.getItem('pmg_tecnico_ver_todos') === null) {
-                        localStorage.setItem('pmg_tecnico_ver_todos', '0');
+                        localStorage.setItem('pmg_tecnico_ver_todos', '1');
                     }
                 } catch (_) {}
             }
