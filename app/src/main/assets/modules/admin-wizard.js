@@ -39,7 +39,6 @@ let _setupMarker = null;
 let _setupLogoDataUrl = '';
 let _setupLat = null;
 let _setupLng = null;
-let _setupGeoIntentado = false;
 
 function configInicialIncompleta(cfg) {
     const nombre = String(cfg?.nombre || '').trim();
@@ -162,26 +161,68 @@ function inicializarMapaSetupWizard() {
     document.getElementById('cfgi-lat').textContent = Number(_setupLat).toFixed(6);
     document.getElementById('cfgi-lng').textContent = Number(_setupLng).toFixed(6);
 }
+function _geoErrorMensaje(err) {
+    const code = err && typeof err.code === 'number' ? err.code : -1;
+    if (code === 1) {
+        return 'Ubicación denegada en el navegador. Permití el permiso en la barra de direcciones o en Ajustes de Windows → Privacidad → Ubicación para el navegador.';
+    }
+    if (code === 2) {
+        return 'Ubicación no disponible (sin señal o hardware). Probá de nuevo o fijá el punto en el mapa del paso 3.';
+    }
+    if (code === 3) {
+        return 'Tiempo de espera agotado al pedir la ubicación. En PC suele tardar más sin GPS: reintentá o usá el mapa para clicar la oficina.';
+    }
+    return err && err.message ? String(err.message) : 'No se pudo obtener la ubicación.';
+}
+
 function usarUbicacionAutomaticaSetupWizard() {
-    if (!navigator.geolocation) return;
-    if (_setupGeoIntentado && _setupWizardStep !== 3) return;
-    _setupGeoIntentado = true;
+    if (_setupWizardStep !== 3) {
+        toast('Primero avanzá al paso 3 (Ubicación base) del asistente.', 'warning');
+        return;
+    }
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+        toast(
+            'La geolocalización del navegador solo funciona en HTTPS o en localhost. Abrí el panel desde una URL segura (p. ej. GitHub Pages o la app).',
+            'warning'
+        );
+        return;
+    }
+    if (!navigator.geolocation) {
+        toast('Este navegador no expone geolocalización. Marcá la oficina con un clic en el mapa del paso 3.', 'warning');
+        return;
+    }
+    const opts = {
+        enableHighAccuracy: false,
+        timeout: 22000,
+        maximumAge: 300000,
+    };
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             const lat = Number(pos.coords.latitude);
             const lng = Number(pos.coords.longitude);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                toast('Coordenadas inválidas. Probá de nuevo o usá el mapa.', 'warning');
+                return;
+            }
             _setupLat = lat;
             _setupLng = lng;
             inicializarMapaSetupWizard();
             if (_setupMap) _setupMap.setView([lat, lng], 15);
             if (_setupMarker) _setupMarker.setLatLng([lat, lng]);
-            document.getElementById('cfgi-lat').textContent = lat.toFixed(6);
-            document.getElementById('cfgi-lng').textContent = lng.toFixed(6);
-            toast('Ubicación automática detectada', 'success');
+            const la = document.getElementById('cfgi-lat');
+            const ln = document.getElementById('cfgi-lng');
+            if (la) la.textContent = lat.toFixed(6);
+            if (ln) ln.textContent = lng.toFixed(6);
+            toast('Ubicación detectada', 'success');
         },
-        () => {},
-        { enableHighAccuracy: true, timeout: 7000, maximumAge: 120000 }
+        (err) => {
+            const msg = _geoErrorMensaje(err);
+            try {
+                logErrorWeb('setup-wizard-geolocation', err);
+            } catch (_) {}
+            toast(msg, 'error');
+        },
+        opts
     );
 }
 
@@ -426,7 +467,6 @@ function mostrarModalConfigInicial() {
     const btnCerrar = document.getElementById('cfgi-btn-cerrar');
     if (btnCerrar) btnCerrar.style.display = (esAdm && _setupWizardContextoManual) ? '' : 'none';
     _setupWizardStep = 1;
-    _setupGeoIntentado = false;
     actualizarStepWizard();
     modal.classList.add('active');
 }
