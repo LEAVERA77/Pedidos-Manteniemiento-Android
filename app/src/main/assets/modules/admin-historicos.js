@@ -1,5 +1,5 @@
 /**
- * Admin → pestaña Históricos: reclamos resueltos de todos los tenants (Neon),
+ * Admin → pestaña Históricos: reclamos resueltos del tenant actual (Neon),
  * filtros solo refinan la lista ya cargada; enlace a detalle (#dm).
  */
 import {
@@ -7,9 +7,13 @@ import {
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
-import { fetchHistoricosResueltosTodosTenants, LIM_HIST_GLOBAL } from './admin-historicos-neon-fetch.js';
+import { fetchHistoricosResueltosTenant, LIM_HIST_GLOBAL } from './admin-historicos-neon-fetch.js';
 
 function _tidTenant() {
+    if (typeof window._gnTenantId === 'function') {
+        const n = Number(window._gnTenantId());
+        if (Number.isFinite(n) && n > 0) return n;
+    }
     const u = window.app?.u;
     const n = Number(u?.tenant_id ?? u?.tenantId);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -29,20 +33,20 @@ function _labelsHistoricosRubro() {
     const r = _rubroHist();
     if (r === 'municipio') {
         return {
-            idFiltro: 'NIS / ID / N° pedido / tenant',
+            idFiltro: 'NIS / ID / N° pedido',
             colId: 'ID vecino',
             tipoPh: 'Ej. Alumbrado*',
         };
     }
     if (r === 'cooperativa_agua') {
         return {
-            idFiltro: 'N° socio / medidor / N° pedido / tenant',
+            idFiltro: 'N° socio / medidor / N° pedido',
             colId: 'N° Socio / Medidor',
             tipoPh: 'Ej. Rotura de cañería*',
         };
     }
     return {
-        idFiltro: 'NIS / medidor / N° pedido / tenant',
+        idFiltro: 'NIS / medidor / N° pedido',
         colId: 'NIS / Medidor',
         tipoPh: 'Ej. Corte de Energía*',
     };
@@ -274,7 +278,7 @@ export function initAdminHistoricosPanel(deps) {
     const L = _labelsHistoricosRubro();
     root.innerHTML = `
       <p style="font-size:.78rem;color:var(--tl);margin:0 0 .75rem;line-height:1.45">
-        Listado global desde <strong>Neon</strong>: reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> de <strong>todos los tenants</strong> (hasta <strong>${LIM_HIST_GLOBAL}</strong> más recientes por fecha de derivación / cierre). Los filtros solo <strong>acotan</strong> esa lista ya cargada. Tocá <strong>Recargar lista</strong> para volver a leer la base.
+        Listado desde <strong>Neon</strong> solo del <strong>tenant en sesión</strong>: reclamos <strong>cerrados</strong>, <strong>desestimados</strong> o <strong>derivados a terceros</strong> (hasta <strong>${LIM_HIST_GLOBAL}</strong> más recientes por fecha de derivación / cierre). Los filtros <strong>acotan</strong> esa lista ya cargada. Tocá <strong>Recargar lista</strong> para volver a leer la base.
       </p>
       <div id="gn-hist-aviso" style="display:none;margin:0 0 .55rem;padding:.45rem .55rem;font-size:.76rem;line-height:1.45;color:#1e40af;background:#eff6ff;border:1px solid #93c5fd;border-radius:.4rem"></div>
       <div class="gn-admin-hist-filtros" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
@@ -293,7 +297,7 @@ export function initAdminHistoricosPanel(deps) {
         <div style="flex:1;min-width:11rem"><label for="gn-hist-nombre" style="font-size:.72rem;color:var(--tm)">Nombre / vecino (fuzzy)</label><br><input type="text" id="gn-hist-nombre" placeholder="Ej. Garcia" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
-        <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a cargar históricos desde Neon (todos los tenants)"><i class="fas fa-sync"></i> Recargar lista</button>
+        <button type="button" class="btn-sm" id="gn-hist-refrescar" style="background:var(--bg);border:1px solid var(--bo)" title="Vuelve a cargar históricos desde Neon (solo este tenant)"><i class="fas fa-sync"></i> Recargar lista</button>
         <button type="button" class="btn-sm" id="gn-hist-mostrar-bp2" style="background:var(--bg);border:1px solid var(--bo);color:var(--tm)" title="Vuelve a mostrar cerrados/desestimados/derivados en el panel de pedidos">Mostrar históricos en panel pedidos</button>
       </div>
       <div style="overflow:auto;max-height:min(62vh,560px);border:1px solid var(--bo);border-radius:.5rem">
@@ -348,7 +352,8 @@ export function initAdminHistoricosPanel(deps) {
                     '). Los más viejos no aparecen hasta que acotes con filtros o uses consultas en Neon.';
             } else if (base.length > 0) {
                 avisoEl.style.display = 'block';
-                avisoEl.textContent = 'Cargados ' + base.length + ' reclamo(s) histórico(s) de todos los tenants. Usá los filtros para buscar entre ellos.';
+                avisoEl.textContent =
+                    'Cargados ' + base.length + ' reclamo(s) histórico(s) de este tenant. Usá los filtros para buscar entre ellos.';
             } else {
                 avisoEl.style.display = 'none';
                 avisoEl.textContent = '';
@@ -382,11 +387,21 @@ export function initAdminHistoricosPanel(deps) {
     const render = () => {
         const gen = ++_renderGen;
         if (!tbody) return;
+        const tid = _tidTenant();
+        if (!tid) {
+            _histCacheNeon = null;
+            _pintarMensajeTabla(
+                tbody,
+                'No hay <strong>tenant</strong> en sesión para cargar históricos. Iniciá sesión de nuevo o recargá la página.',
+                true
+            );
+            return;
+        }
         if (!neonOk() || typeof sqlSimple !== 'function') {
             _histCacheNeon = null;
             _pintarMensajeTabla(
                 tbody,
-                'Históricos globales requieren <strong>Neon conectado</strong> y <code>sqlSimple</code>. Revisá la conexión o el modo offline.',
+                'Históricos requieren <strong>Neon conectado</strong> y <code>sqlSimple</code>. Revisá la conexión o el modo offline.',
                 true
             );
             return;
@@ -400,12 +415,20 @@ export function initAdminHistoricosPanel(deps) {
             return;
         }
         if (_histCargando) {
-            _pintarMensajeTabla(tbody, '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (todos los tenants)…', false);
+            _pintarMensajeTabla(
+                tbody,
+                '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (tenant actual)…',
+                false
+            );
             return;
         }
         _histCargando = true;
-        _pintarMensajeTabla(tbody, '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (todos los tenants)…', false);
-        void fetchHistoricosResueltosTodosTenants({ sqlSimple })
+        _pintarMensajeTabla(
+            tbody,
+            '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (tenant actual)…',
+            false
+        );
+        void fetchHistoricosResueltosTenant({ sqlSimple }, tid)
             .then((rows) => {
                 if (gen !== _renderGen) return;
                 _histCacheNeon = rows;
@@ -484,6 +507,9 @@ export function initAdminHistoricosPanel(deps) {
         runQuincenaHistCheck(toast);
         const tidNow = String(_tidTenant());
         if (root.dataset.gnHistTid !== tidNow) {
+            _histCacheNeon = null;
+            _histErrorCarga = null;
+            _histCargando = false;
             root.dataset.gnHistTid = tidNow;
         }
         const L2 = _labelsHistoricosRubro();

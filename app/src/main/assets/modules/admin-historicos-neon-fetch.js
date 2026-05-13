@@ -1,6 +1,6 @@
 /**
  * Carga reclamos históricos (cerrados / desestimados / derivados) desde Neon
- * para todos los tenants con `pedidos.tenant_id`. Sin tocar app.js salvo deps.
+ * solo para el `tenant_id` indicado (requiere columna `pedidos.tenant_id`).
  * made by leavera77
  */
 
@@ -25,32 +25,32 @@ async function neonPedidosTieneTenantId(d) {
 }
 
 /**
+ * Históricos resueltos solo del tenant actual (nunca cruza otros `tenant_id`).
  * @param {{ sqlSimple: Function }} d
+ * @param {number} tenantId
  * @returns {Promise<Record<string, unknown>[]>}
  */
-export async function fetchHistoricosResueltosTodosTenants(d) {
+export async function fetchHistoricosResueltosTenant(d, tenantId) {
+    const tid = Math.floor(Number(tenantId));
+    if (!Number.isFinite(tid) || tid <= 0) return [];
+
     const hasT = await neonPedidosTieneTenantId(d);
     const norm = typeof window !== 'undefined' && typeof window.gnNormPedidoDesdeApi === 'function' ? window.gnNormPedidoDesdeApi : null;
     if (!norm) throw new Error('Mapa de pedidos no disponible (gnNormPedidoDesdeApi)');
-
-    const sql = hasT
-        ? `SELECT p.*, COALESCE(c.nombre, '') AS _gn_hist_tenant_nom
-           FROM pedidos p
-           LEFT JOIN clientes c ON c.id = p.tenant_id
-           WHERE (
-               p.estado IN ('Cerrado', 'Desestimado', 'Derivado externo')
-               OR COALESCE(p.derivado_externo, false) = true
-             )
-           ORDER BY COALESCE(p.fecha_derivacion, p.fecha_cierre, p.fecha_creacion) DESC NULLS LAST
-           LIMIT ${LIM_HIST_GLOBAL}`
-        : `SELECT p.*, ''::text AS _gn_hist_tenant_nom
-           FROM pedidos p
-           WHERE (
-               p.estado IN ('Cerrado', 'Desestimado', 'Derivado externo')
-               OR COALESCE(p.derivado_externo, false) = true
-             )
-           ORDER BY COALESCE(p.fecha_derivacion, p.fecha_cierre, p.fecha_creacion) DESC NULLS LAST
-           LIMIT ${LIM_HIST_GLOBAL}`;
+    if (!hasT) {
+        console.warn('[admin-historicos-neon-fetch] pedidos sin tenant_id: no se listan históricos');
+        return [];
+    }
+    const sql = `SELECT p.*, COALESCE(c.nombre, '') AS _gn_hist_tenant_nom
+       FROM pedidos p
+       LEFT JOIN clientes c ON c.id = p.tenant_id
+       WHERE p.tenant_id = ${tid}
+         AND (
+             p.estado IN ('Cerrado', 'Desestimado', 'Derivado externo')
+             OR COALESCE(p.derivado_externo, false) = true
+           )
+       ORDER BY COALESCE(p.fecha_derivacion, p.fecha_cierre, p.fecha_creacion) DESC NULLS LAST
+       LIMIT ${LIM_HIST_GLOBAL}`;
 
     const r = await d.sqlSimple(sql);
     const rows = r.rows || [];
@@ -66,6 +66,15 @@ export async function fetchHistoricosResueltosTodosTenants(d) {
         }
     }
     return out;
+}
+
+/** @deprecated Usar fetchHistoricosResueltosTenant; conservado por compat. */
+export async function fetchHistoricosResueltosTodosTenants(d) {
+    const tid =
+        typeof window !== 'undefined' && typeof window._gnTenantId === 'function'
+            ? Number(window._gnTenantId())
+            : 0;
+    return fetchHistoricosResueltosTenant(d, tid);
 }
 
 export { LIM_HIST_GLOBAL };
