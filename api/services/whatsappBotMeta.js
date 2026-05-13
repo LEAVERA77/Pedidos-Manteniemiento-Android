@@ -3825,6 +3825,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
           if (iaIdle.intencion === "estado_seguimiento_whatsapp") {
             const handledIa = await _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx);
             if (handledIa) return;
+            if (ctx.whatsappBloqueoReclamos) {
+              await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+              return;
+            }
+            await replyListaTiposReclamo(phone, ctx, phoneNumberId);
+            return;
           }
           if (iaIdle.intencion === "menu_cargar_reclamo") {
             if (ctx.whatsappBloqueoReclamos) {
