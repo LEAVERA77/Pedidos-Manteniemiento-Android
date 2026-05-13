@@ -916,8 +916,12 @@ function normalizarEncabezadoExcelSocios(k) {
         .toLowerCase();
     try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
     const n = s.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (n === 'lat_wgs84' || n === 'latitud_wgs84' || n === 'latwgs84') return 'latitud';
+    if (n === 'lon_wgs84' || n === 'longitud_wgs84' || n === 'lonwgs84' || n === 'lng_wgs84') return 'longitud';
+    if (n === 'cod_postal') return 'codigo_postal';
+    if (n === 'estado') return 'activo';
     if (n === 'pcia' || n === 'provincia') return 'provincia';
-    if (n === 'estado' || n === 'state') return 'provincia';
+    if (n === 'state') return 'provincia';
     if (n === 'abonado' || n === 'n_abonado' || n === 'numero_abonado' || n === 'nro_abonado' || n === 'num_abonado') {
         return 'nis';
     }
@@ -1015,7 +1019,7 @@ function normalizarEncabezadoExcelSocios(k) {
 /** Une sinónimos de encabezado ya normalizados a la clave canónica `provincia`. */
 function aliasEncabezadosProvinciaSocios(mapNormAOriginal) {
     if (!mapNormAOriginal || typeof mapNormAOriginal !== 'object') return;
-    const keys = ['pcia', 'estado', 'state'];
+    const keys = ['pcia', 'state'];
     for (const k of keys) {
         if (mapNormAOriginal[k] && !mapNormAOriginal.provincia) {
             mapNormAOriginal.provincia = mapNormAOriginal[k];
@@ -1207,6 +1211,15 @@ function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
         out[key] = typeof v === 'number' && Number.isFinite(v) ? String(v) : String(v).trim();
     }
     return out;
+}
+
+/** Celda «Estado» plantilla Municipio (Activo/Baja, vacío = Activo). */
+function parseActivoCeldaImportSocios(val) {
+    if (val == null || String(val).trim() === '') return true;
+    const s = String(val).trim().toLowerCase();
+    if (/^(1|si|s|true|activo|habilitado|ok|v|verdadero)$/.test(s)) return true;
+    if (/^(0|no|n|false|baja|inactivo|suspendido|falso)$/.test(s)) return false;
+    return true;
 }
 
 /** Nombre en BD: columna nombre completo o apellido + nombres. */
@@ -1482,7 +1495,7 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
     const hasT = await req().sociosCatalogoTieneTenantId();
     const hasDE = await req().sociosCatalogoTieneDatosExtra();
     const tidEsc = esc(req().tenantIdActual());
-    const coreCols = `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud`;
+    const coreCols = `nis_medidor, nis, medidor, nombre, calle, numero, barrio, telefono, distribuidor_codigo, localidad, provincia, codigo_postal, tipo_tarifa, urbano_rural, transformador, tipo_conexion, fases, latitud, longitud, activo`;
     const colList = hasT ? `${coreCols}, tenant_id` : coreCols;
     const colListFull = hasDE ? `${colList}, datos_extra` : colList;
     const onConf = hasT ? `(tenant_id, nis_medidor)` : `(nis_medidor)`;
@@ -1490,7 +1503,7 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
         .map((p) => {
             const deObj = p.datos_extra && typeof p.datos_extra === 'object' && !Array.isArray(p.datos_extra) ? p.datos_extra : {};
             const deSql = hasDE ? `, ${esc(JSON.stringify(deObj))}::jsonb` : '';
-            const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}`;
+            const base = `(${esc(p.nis_medidor)}, ${esc(p.nis)}, ${esc(p.medidor)}, ${esc(p.nombre)}, ${esc(p.calle)}, ${esc(p.numero)}, ${esc(p.barrioSoc)}, ${esc(p.telefono)}, ${esc(p.dist)}, ${esc(p.loc)}, ${esc(p.provincia)}, ${esc(p.codigo_postal)}, ${esc(p.tar)}, ${esc(p.ur)}, ${esc(p.transf)}, ${esc(p.tcon)}, ${esc(p.fas)}, ${esc(p.latitud)}, ${esc(p.longitud)}, ${esc(!!p.activo)})`;
             const tail = hasT ? `${base}, ${tidEsc}${hasDE ? deSql : ''})` : `${base}${hasDE ? deSql : ''})`;
             return tail;
         })
@@ -1514,7 +1527,8 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.longitud
              WHEN socios_catalogo.longitud IS NOT NULL AND ABS(socios_catalogo.longitud::numeric) > 1e-8 THEN socios_catalogo.longitud 
              ELSE EXCLUDED.longitud 
-           END${mergeDe}`
+           END,
+           activo = EXCLUDED.activo${mergeDe}`
     );
 }
 
@@ -1958,6 +1972,8 @@ async function importarExcelSocios(event) {
                 codigoPostalSoc = d.length >= 4 && d.length <= 8 ? d : null;
             }
             const barrioSoc = valorSociosPorEncabezados(row, mapNormAOriginal, 'barrio', 'vecindario', 'zona');
+            const rawActivo = valorSociosPorEncabezados(row, mapNormAOriginal, 'activo');
+            const activoSoc = parseActivoCeldaImportSocios(rawActivo);
             const tar = valorSociosPorEncabezados(row, mapNormAOriginal, 'tipo_tarifa', 'tarifa', 'tipo_de_tarifa');
             const ur = valorSociosPorEncabezados(row, mapNormAOriginal, 'urbano_rural', 'zona', 'tipo_ubicacion');
             const transf = valorSociosPorEncabezados(row, mapNormAOriginal, 'transformador', 'trafo', 'transformador_codigo');
@@ -2040,6 +2056,7 @@ async function importarExcelSocios(event) {
                 latitud: latitud != null ? latitud : null,
                 longitud: longitud != null ? longitud : null,
                 datos_extra: datosExtra,
+                activo: activoSoc,
             });
         }
         if (omitidas.length) {
@@ -2224,12 +2241,28 @@ function tituloNegocioFormatoSocios() {
     return 'Cooperativa eléctrica';
 }
 
+/** Encabezados plantilla CSV Municipio = mismos títulos que el listado admin (import reconoce sinónimos vía normalizarEncabezadoExcelSocios). */
+const PLANTILLA_CSV_HEADERS_MUNICIPIO = [
+    'ID vecino',
+    'Nombre',
+    'Localidad',
+    'Provincia',
+    'Cód. postal',
+    'Barrio',
+    'Calle',
+    'Nº',
+    'Tel.',
+    'Lat (WGS84)',
+    'Lon (WGS84)',
+    'Estado',
+];
+
 /** Plantilla CSV vacía con columnas ancla + innegociables (UTF-8 BOM para Excel). */
 function descargarPlantillaCsvSociosRubro() {
     const r = req().normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
     const post = ['provincia', 'localidad', 'direccion', 'numero', 'codigo_postal', 'telefono', 'latitud', 'longitud'];
     let head = [];
-    if (r === 'municipio') head = ['vecino', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
+    if (r === 'municipio') head = [...PLANTILLA_CSV_HEADERS_MUNICIPIO];
     else if (r === 'cooperativa_agua') head = ['abonado', 'medidor', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
     else head = ['nis', 'medidor', 'apellido', 'nombres', ...post, 'mi_columna_libre'];
     const bom = '\ufeff';
@@ -2253,12 +2286,13 @@ function mostrarFormatoExcelSocios() {
     let ejemplo = '';
     if (r === 'municipio') {
         obligHtml =
-            '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>ID vecino</strong> (sinónimos: vecino, nº de vecino, Socio…), <strong>nombre y apellido</strong> (o apellido+nombres), <strong>calle o dirección</strong>, <strong>nº de puerta</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>. No se exige medidor.</p>' +
+            '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>ID vecino</strong> (sinónimos: vecino, nº de vecino…), <strong>nombre</strong> (completo o apellido+nombres en columnas aparte), <strong>calle o dirección</strong>, <strong>Nº</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>. No se exige medidor. La <strong>plantilla CSV</strong> usa los mismos encabezados que el listado admin (incl. Lat/Lon WGS84 y Estado Activo/Baja).</p>' +
             '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
             '<li>Columnas libres: cualquier otro encabezado se guarda en <code>datos_extra</code> y aparece como columna extra en el listado del catálogo.</li></ul>';
         ejemplo =
-            '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">vecino;apellido;nombres;direccion;numero;localidad;provincia;codigo_postal;telefono;latitud;longitud\n' +
-            '1201;Pérez;Juan;San Martín;;Paraná;Entre Ríos;;;;</pre>';
+            '<pre style="font-size:.72rem;overflow:auto;margin:.4rem 0;padding:.45rem;background:var(--bg);border:1px solid var(--bo);border-radius:.4rem">' +
+            PLANTILLA_CSV_HEADERS_MUNICIPIO.join(';') +
+            '\n1201;Juan Pérez;Paraná;Entre Ríos;;Centro;San Martín;;3435551234;;;;Activo</pre>';
     } else if (r === 'cooperativa_agua') {
         obligHtml =
             '<p style="margin:0 0 .45rem;font-size:.82rem;line-height:1.5;color:var(--tm)">Tu Excel debe incluir obligatoriamente: <strong>ID socio / abonado</strong>, <strong>medidor</strong>, <strong>nombre y apellido</strong>, <strong>calle o dirección</strong>, <strong>nº de puerta</strong> (puede ir vacío), <strong>ciudad / localidad</strong> y <strong>provincia</strong>.</p>' +
