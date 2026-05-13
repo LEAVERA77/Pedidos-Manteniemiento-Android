@@ -87,5 +87,15 @@ export function adminOrTecnicoIncidencias(req, res, next) {
   return next();
 }
 
+/** IA panel técnico (asignados): no admin — el análisis global de reclamos sigue en rutas adminOnly. */
+export function tecnicoSupervisorOnly(req, res, next) {
+  const rol = String(req.user?.rol || "").toLowerCase().trim();
+  if (rol === "admin" || rol === "administrador") {
+    return res.status(403).json({ ok: false, error: "Los administradores usan el análisis general del panel." });
+  }
+  if (rol === "tecnico" || rol === "técnico" || rol === "supervisor") return next();
+  return res.status(403).json({ ok: false, error: "Requiere rol técnico o supervisor" });
+}
+
 /** Autenticación + (opcional) validación host vs JWT cuando ENFORCE_TENANT_HOST=true */
 export const authWithTenantHost = [authMiddleware, tenantHostMiddleware, businessContextMiddleware];

@@ -2553,6 +2553,7 @@ function esAndroidWebViewMapa() {
 }
 
 if (typeof window !== 'undefined') window.esAdmin = esAdmin;
+if (typeof window !== 'undefined') window.esTecnicoOSupervisor = esTecnicoOSupervisor;
 if (typeof window !== 'undefined') { window._gnSqlSimple = sqlSimple; window._gnEsc = esc; window._gnTenantId = () => tenantIdActual(); }
 
 /** Admin en navegador (GitHub Pages / PWA), no en WebView empaquetado. */
@@ -12411,7 +12412,9 @@ function render() {
             .sort((a, b) => tsResolucionPedidoMs(b) - tsResolucionPedidoMs(a))
             .slice(0, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS);
     }
-    if (app.tab === 'p' && typeof window._gnPriorizarPedidosBp2 === 'function') fl = window._gnPriorizarPedidosBp2(fl);
+    if ((app.tab === 'p' || app.tab === 'a') && typeof window._gnPriorizarPedidosBp2 === 'function') {
+        fl = window._gnPriorizarPedidosBp2(fl);
+    }
     const c = document.getElementById('pl');
     c.innerHTML = '';
     

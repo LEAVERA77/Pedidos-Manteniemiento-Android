@@ -60,6 +60,18 @@ function _stopRefresh() {
   if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
 }
 
+function tituloPriorizarIdle() {
+  try {
+    if (typeof window.esAdmin === 'function' && window.esAdmin()) {
+      return 'Ordenar pedidos pendientes por prioridad IA';
+    }
+    if (typeof window.esTecnicoOSupervisor === 'function' && window.esTecnicoOSupervisor()) {
+      return 'Ordenar asignados/en ejecución: prioridad y más antiguos primero';
+    }
+  } catch (_) {}
+  return 'Ordenar pedidos pendientes por prioridad IA';
+}
+
 function togglePriorizacion() {
   _priorizacionActiva = !_priorizacionActiva;
   const btn = document.getElementById('btn-ia-priorizar-bp2');
@@ -67,7 +79,7 @@ function togglePriorizacion() {
     btn.style.background = _priorizacionActiva ? '#059669' : '#7c3aed';
     btn.title = _priorizacionActiva
       ? 'Priorización IA activa — se actualiza cada 30 s (click para desactivar)'
-      : 'Ordenar pedidos pendientes por prioridad IA';
+      : tituloPriorizarIdle();
   }
   if (_priorizacionActiva) _startRefresh();
   else _stopRefresh();
@@ -77,7 +89,27 @@ function togglePriorizacion() {
 if (typeof window !== 'undefined') {
   window._gnPriorizarPedidosBp2 = function (pedidos) {
     if (!_priorizacionActiva || !Array.isArray(pedidos)) return pedidos;
-    return [...pedidos].sort((a, b) => calcularPuntaje(b) - calcularPuntaje(a));
+    const tab = window.app?.tab;
+    const adm = typeof window.esAdmin === 'function' && window.esAdmin();
+    const tec = typeof window.esTecnicoOSupervisor === 'function' && window.esTecnicoOSupervisor();
+    if (adm) {
+      if (tab !== 'p') return pedidos;
+      return [...pedidos].sort((a, b) => calcularPuntaje(b) - calcularPuntaje(a));
+    }
+    if (tec) {
+      if (tab === 'p') return pedidos;
+      if (tab === 'a') {
+        return [...pedidos].sort((a, b) => {
+          const sb = calcularPuntaje(b);
+          const sa = calcularPuntaje(a);
+          if (sb !== sa) return sb - sa;
+          const ta = a.f ? new Date(a.f).getTime() : 0;
+          const tb = b.f ? new Date(b.f).getTime() : 0;
+          return ta - tb;
+        });
+      }
+    }
+    return pedidos;
   };
   window._gnPriorizacionActiva = () => _priorizacionActiva;
 }
@@ -90,7 +122,7 @@ function initPriorizacion() {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = 'btn-ia-priorizar-bp2';
-  btn.title = 'Ordenar pedidos pendientes por prioridad IA';
+  btn.title = tituloPriorizarIdle();
   btn.innerHTML = '<i class="fas fa-sort-amount-down"></i>';
   btn.style.cssText =
     'background:#7c3aed;color:#fff;border:none;border-radius:.35rem;width:28px;height:28px;' +

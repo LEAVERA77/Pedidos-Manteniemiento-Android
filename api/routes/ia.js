@@ -1,11 +1,12 @@
 import express from "express";
-import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly, tecnicoSupervisorOnly } from "../middleware/auth.js";
 import { clasificarReclamoConGroq } from "../services/groqClassifier.js";
 import { generarMensajeBroadcast } from "../services/groqBroadcastGenerator.js";
 import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 import { analizarReclamosConGroq } from "../services/groqAnalisisReclamos.js";
+import { analizarAsignadosTecnicoConGroq } from "../services/groqAnalisisTecnicoAsignados.js";
 import { sugerirKpisConGroq } from "../services/groqKpiSugeridos.js";
 import { generarInformeConGroq } from "../services/groqGenerarInforme.js";
 import { explicarKpisConGroq } from "../services/groqExplicarKpis.js";
@@ -142,6 +143,76 @@ router.post("/analizar-reclamos", authWithTenantHost, adminOnly, async (req, res
   } catch (error) {
     console.error("[ia/analizar-reclamos]", error);
     return res.status(500).json({ ok: false, error: "Error interno al analizar reclamos" });
+  }
+});
+
+/**
+ * POST /api/ia/analizar-asignados-tecnico
+ * Body: { resumen: object } — agregado en cliente (solo pedidos asignados al técnico, sin pendientes).
+ * Auth: técnico o supervisor (no admin).
+ */
+router.post("/analizar-asignados-tecnico", authWithTenantHost, tecnicoSupervisorOnly, async (req, res) => {
+  try {
+    const raw = req.body?.resumen;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return res.status(400).json({ ok: false, error: "resumen (objeto) es requerido" });
+    }
+    const pedidos = Array.isArray(raw.pedidos_asignados) ? raw.pedidos_asignados : [];
+    if (pedidos.length > 40) {
+      return res.status(400).json({ ok: false, error: "Demasiados pedidos en resumen (máx. 40)" });
+    }
+    if (!pedidos.length) {
+      return res.json({
+        ok: true,
+        recomendacion_ia: "No hay pedidos asignados o en ejecución en el panel para analizar.",
+      });
+    }
+    const posRaw = raw.posicion_tecnico_wgs84;
+    let posicion_tecnico_wgs84 = null;
+    if (posRaw && typeof posRaw === "object") {
+      const la = Number(posRaw.lat);
+      const lo = Number(posRaw.lon);
+      if (Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+        posicion_tecnico_wgs84 = { lat: la, lon: lo };
+      }
+    }
+    const distRaw = Array.isArray(raw.distancias_pares) ? raw.distancias_pares : [];
+    const distancias_pares = distRaw.slice(0, 42).map((d) => {
+      if (!d || typeof d !== "object") return null;
+      return {
+        de_np: String(d.de_np ?? "").slice(0, 24),
+        a_np: String(d.a_np ?? "").slice(0, 24),
+        km: Number.isFinite(Number(d.km)) ? Math.round(Number(d.km) * 100) / 100 : null,
+      };
+    }).filter(Boolean);
+
+    const resumen = {
+      modo: String(raw.modo || "tecnico_asignados").slice(0, 64),
+      posicion_tecnico_wgs84,
+      cantidad: pedidos.length,
+      pedidos_asignados: pedidos.map((p) => {
+        if (!p || typeof p !== "object") return {};
+        return {
+          np: String(p.np ?? "").slice(0, 24),
+          prioridad: String(p.prioridad ?? "").slice(0, 24),
+          estado: String(p.estado ?? "").slice(0, 32),
+          tipo: String(p.tipo ?? "").slice(0, 120),
+          horas_abierto: Number.isFinite(Number(p.horas_abierto)) ? Number(p.horas_abierto) : null,
+          km_desde_gps: Number.isFinite(Number(p.km_desde_gps)) ? Math.round(Number(p.km_desde_gps) * 100) / 100 : null,
+          tiene_coord: !!p.tiene_coord,
+          direccion_resumen: String(p.direccion_resumen ?? "").slice(0, 160),
+        };
+      }),
+      distancias_pares,
+    };
+    const groqResult = await analizarAsignadosTecnicoConGroq({ resumen });
+    return res.json({
+      ok: true,
+      recomendacion_ia: groqResult.recomendacion_ia || null,
+    });
+  } catch (error) {
+    console.error("[ia/analizar-asignados-tecnico]", error);
+    return res.status(500).json({ ok: false, error: "Error interno al analizar asignados" });
   }
 });
 

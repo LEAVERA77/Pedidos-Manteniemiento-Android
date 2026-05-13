@@ -21,6 +21,147 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function esAdminPanel() {
+  return typeof window.esAdmin === 'function' && window.esAdmin();
+}
+
+function esTecnicoPanel() {
+  return typeof window.esTecnicoOSupervisor === 'function' && window.esTecnicoOSupervisor();
+}
+
+function tituloAnalisisIaBp2() {
+  if (esAdminPanel()) return 'Analizar pedidos visibles con IA';
+  if (esTecnicoPanel()) return 'IA: prioridades y ruta sobre tus pedidos asignados (sin pendientes)';
+  return 'Analizar pedidos visibles con IA';
+}
+
+function haversineKm(la1, lo1, la2, lo2) {
+  const r = 6371;
+  const dLat = ((la2 - la1) * Math.PI) / 180;
+  const dLon = ((lo2 - lo1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((la1 * Math.PI) / 180) * Math.cos((la2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return r * c;
+}
+
+function horasDesdeIso(fechaIso) {
+  if (!fechaIso) return 0;
+  const diff = Date.now() - new Date(fechaIso).getTime();
+  return Math.max(0, diff / 3600000);
+}
+
+function leerUltimaUbicacionLs() {
+  try {
+    const raw = localStorage.getItem('ultima_ubicacion');
+    if (!raw) return null;
+    const j = JSON.parse(raw);
+    if (j && Number.isFinite(Number(j.lat)) && Number.isFinite(Number(j.lon))) {
+      return { lat: Number(j.lat), lon: Number(j.lon) };
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** Pedidos Asignado / En ejecución asignados al usuario actual (lista ya filtrada por visibilidad). */
+function pedidosAsignadosAMi() {
+  const uid = String(window.app?.u?.id ?? '');
+  if (!uid) return [];
+  const pedidos = Array.isArray(window.app?.p) ? window.app.p : [];
+  const visFn = typeof window.pedidosVisiblesEnUI === 'function' ? window.pedidosVisiblesEnUI : null;
+  const vis = visFn ? visFn() : pedidos;
+  return vis.filter(
+    (p) =>
+      (p.es === 'Asignado' || p.es === 'En ejecución') && p.tai != null && String(p.tai) === uid
+  );
+}
+
+/**
+ * Resumen solo asignados al técnico + distancias (GPS último conocido y pares entre pedidos con coords).
+ */
+function construirResumenTecnicoAndroidParaApi() {
+  const list = pedidosAsignadosAMi();
+  const pos = leerUltimaUbicacionLs();
+  const coordsFn = typeof window.coordsEfectivasPedidoMapa === 'function' ? window.coordsEfectivasPedidoMapa : null;
+  const pedidos_asignados = list.map((p) => {
+    let km = null;
+    let tiene = false;
+    let la = null;
+    let ln = null;
+    if (coordsFn) {
+      const c = coordsFn(p);
+      la = c.la;
+      ln = c.ln;
+      tiene = Number.isFinite(la) && Number.isFinite(ln);
+      if (tiene && pos) km = haversineKm(pos.lat, pos.lon, la, ln);
+    }
+    const hd = horasDesdeIso(p.f);
+    return {
+      np: p.np,
+      prioridad: p.pr,
+      estado: p.es,
+      tipo: p.tt,
+      horas_abierto: Math.round(hd * 10) / 10,
+      km_desde_gps: km != null ? Math.round(km * 100) / 100 : null,
+      tiene_coord: tiene,
+      direccion_resumen: String(p.dis || '').slice(0, 200),
+    };
+  });
+  const distancias_pares = [];
+  const n = list.length;
+  if (coordsFn && n >= 2 && n <= 14) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const ca = coordsFn(list[i]);
+        const cb = coordsFn(list[j]);
+        if (
+          Number.isFinite(ca.la) &&
+          Number.isFinite(ca.ln) &&
+          Number.isFinite(cb.la) &&
+          Number.isFinite(cb.ln)
+        ) {
+          distancias_pares.push({
+            de_np: list[i].np,
+            a_np: list[j].np,
+            km: Math.round(haversineKm(ca.la, ca.ln, cb.la, cb.ln) * 100) / 100,
+          });
+        }
+      }
+    }
+  }
+  return {
+    modo: 'tecnico_asignados_panel',
+    posicion_tecnico_wgs84: pos ? { lat: pos.lat, lon: pos.lon } : null,
+    cantidad: pedidos_asignados.length,
+    pedidos_asignados,
+    distancias_pares: distancias_pares.slice(0, 42),
+  };
+}
+
+function renderResumenTecnicoAsignados(pack) {
+  const n = pack.cantidad || 0;
+  let h = '';
+  h += `<div style="font-size:.84rem;color:#475569;margin-bottom:.6rem">`;
+  h += `<strong>${n}</strong> pedido(s) <strong>asignados a vos</strong> (Pendientes no entran en este análisis)`;
+  h += '</div>';
+  if (pack.posicion_tecnico_wgs84) {
+    h += `<div style="font-size:.76rem;color:#64748b;margin-bottom:.45rem">Última posición conocida (GPS): lat ${esc(String(pack.posicion_tecnico_wgs84.lat))}, lon ${esc(String(pack.posicion_tecnico_wgs84.lon))}</div>`;
+  } else {
+    h += '<div style="font-size:.76rem;color:#92400e;margin-bottom:.45rem">Sin posición GPS reciente en el dispositivo: las distancias pueden faltar.</div>';
+  }
+  if (n && Array.isArray(pack.pedidos_asignados)) {
+    h += '<table style="width:100%;font-size:.76rem;border-collapse:collapse;margin-top:.35rem">';
+    h += '<tr style="border-bottom:1px solid #e2e8f0;text-align:left"><th style="padding:.2rem">#</th><th style="padding:.2rem">Pr.</th><th style="padding:.2rem">h</th><th style="padding:.2rem">km GPS</th></tr>';
+    for (const row of pack.pedidos_asignados.slice(0, 12)) {
+      h += `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:.2rem">${esc(String(row.np ?? ''))}</td><td style="padding:.2rem">${esc(String(row.prioridad ?? ''))}</td><td style="padding:.2rem;text-align:right">${row.horas_abierto != null ? esc(String(row.horas_abierto)) : '—'}</td><td style="padding:.2rem;text-align:right">${row.km_desde_gps != null ? esc(String(row.km_desde_gps)) : '—'}</td></tr>`;
+    }
+    if (n > 12) h += `<tr><td colspan="4" style="padding:.25rem;color:#64748b">… y ${n - 12} más</td></tr>`;
+    h += '</table>';
+  }
+  return h;
+}
+
 /* ── Panel flotante ─────────────────────────────────────── */
 
 const PANEL_ID = 'gn-ia-bp2-float';
@@ -200,38 +341,72 @@ async function analizarPedidosBp2() {
 
   panel.style.display = 'flex';
 
-  const resumen = resumenPedidosVisibles();
-  body.innerHTML =
-    '<div style="padding:.5rem;text-align:center;color:#7c3aed"><i class="fas fa-spinner fa-spin"></i> Analizando pedidos…</div>';
+  const techFlujoAsignados = !esAdminPanel() && esTecnicoPanel();
 
-  let localHtml = renderResumenLocal(resumen);
+  body.innerHTML =
+    '<div style="padding:.5rem;text-align:center;color:#7c3aed"><i class="fas fa-spinner fa-spin"></i> Analizando…</div>';
+
+  let localHtml = '';
+  let packTec = null;
+  if (techFlujoAsignados) {
+    packTec = construirResumenTecnicoAndroidParaApi();
+    localHtml = renderResumenTecnicoAsignados(packTec);
+  } else {
+    localHtml = renderResumenLocal(resumenPedidosVisibles());
+  }
 
   btn.disabled = true;
   const origHTML = btn.innerHTML;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
   try {
-    const url = typeof window.apiUrl === 'function' ? window.apiUrl('/api/ia/analizar-reclamos') : '/api/ia/analizar-reclamos';
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tipo_negocio: tipoNegocio(), periodo_dias: 30 }),
-    });
-    const data = await resp.json().catch(() => ({}));
-
     let iaHtml = '';
-    if (resp.ok && data.ok && data.recomendacion_ia) {
-      iaHtml =
-        '<div style="margin-top:.65rem;padding:.55rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:.45rem;border:1px solid #ddd6fe">' +
-        '<div style="font-size:.8rem;font-weight:700;color:#6d28d9;margin-bottom:.3rem"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> Recomendacion IA</div>' +
-        `<div style="font-size:.8rem;line-height:1.55;color:#1e1b4b;white-space:pre-wrap">${esc(data.recomendacion_ia)}</div>` +
-        '</div>';
+    if (techFlujoAsignados) {
+      const url =
+        typeof window.apiUrl === 'function'
+          ? window.apiUrl('/api/ia/analizar-asignados-tecnico')
+          : '/api/ia/analizar-asignados-tecnico';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ resumen: packTec }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.ok && data.recomendacion_ia) {
+        iaHtml =
+          '<div style="margin-top:.65rem;padding:.55rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:.45rem;border:1px solid #ddd6fe">' +
+          '<div style="font-size:.8rem;font-weight:700;color:#6d28d9;margin-bottom:.3rem"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> Recomendacion IA (tus asignados)</div>' +
+          `<div style="font-size:.8rem;line-height:1.55;color:#1e1b4b;white-space:pre-wrap">${esc(data.recomendacion_ia)}</div>` +
+          '</div>';
+      } else if (!resp.ok) {
+        iaHtml =
+          '<div style="margin-top:.5rem;padding:.4rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:.35rem;font-size:.78rem;color:#991b1b">' +
+          esc(data.error || `Error ${resp.status} al consultar la IA.`) +
+          '</div>';
+      }
+    } else {
+      const url =
+        typeof window.apiUrl === 'function' ? window.apiUrl('/api/ia/analizar-reclamos') : '/api/ia/analizar-reclamos';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tipo_negocio: tipoNegocio(), periodo_dias: 30 }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.ok && data.recomendacion_ia) {
+        iaHtml =
+          '<div style="margin-top:.65rem;padding:.55rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:.45rem;border:1px solid #ddd6fe">' +
+          '<div style="font-size:.8rem;font-weight:700;color:#6d28d9;margin-bottom:.3rem"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> Recomendacion IA</div>' +
+          `<div style="font-size:.8rem;line-height:1.55;color:#1e1b4b;white-space:pre-wrap">${esc(data.recomendacion_ia)}</div>` +
+          '</div>';
+      }
     }
 
     body.innerHTML = localHtml + iaHtml;
   } catch (err) {
     console.error('[ia-bp2]', err);
-    body.innerHTML = localHtml +
+    body.innerHTML =
+      localHtml +
       '<div style="margin-top:.5rem;padding:.4rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:.35rem;font-size:.78rem;color:#991b1b">Error de red al consultar la IA.</div>';
   } finally {
     btn.disabled = false;
@@ -249,7 +424,7 @@ function initBp2IA() {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = 'btn-ia-bp2';
-  btn.title = 'Analizar pedidos visibles con IA';
+  btn.title = tituloAnalisisIaBp2();
   btn.innerHTML = '<i class="fas fa-brain"></i>';
   btn.style.cssText =
     'background:#7c3aed;color:#fff;border:none;border-radius:.35rem;width:28px;height:28px;' +
