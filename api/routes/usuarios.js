@@ -38,7 +38,11 @@ router.post("/", async (req, res) => {
     const loginTrim = String(req.body?.usuario || req.body?.email || "").trim();
     const { nombre, rol = "tecnico", password, telefono } = req.body || {};
     if (!loginTrim || !password) return res.status(400).json({ error: "Usuario y contraseña son requeridos" });
-    const hash = await bcrypt.hash(String(password), 10);
+    const pwStr = String(password).trim();
+    if (pwStr.length < 4) {
+      return res.status(400).json({ error: "La contraseña debe tener al menos 4 caracteres" });
+    }
+    const hash = await bcrypt.hash(pwStr, 10);
     const rolOperador = String(req.user?.rol || "").toLowerCase();
     const bodyTid = Number(req.body?.tenant_id);
     let insertTenantId = req.tenantId;
@@ -143,6 +147,51 @@ router.post("/", async (req, res) => {
       });
     }
     res.status(500).json({ error: "No se pudo crear usuario", detail: msg });
+  }
+});
+
+/** Admin: clave aleatoria en texto (solo en la respuesta), guardada con bcrypt; marca must_change_password. */
+router.post("/:id/clave-provisoria", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "ID inválido" });
+    const col = await usuariosTenantColumnName();
+    const r0 = col
+      ? await query(
+          `SELECT id, email, nombre, rol FROM usuarios WHERE id = $1 AND ${col} = $2 AND activo = TRUE LIMIT 1`,
+          [id, req.tenantId]
+        )
+      : await query(`SELECT id, email, nombre, rol FROM usuarios WHERE id = $1 AND activo = TRUE LIMIT 1`, [id]);
+    if (!r0.rows.length) return res.status(404).json({ error: "Usuario no encontrado" });
+    const u = r0.rows[0];
+    const rol = String(u.rol || "").toLowerCase();
+    if (rol !== "tecnico" && rol !== "supervisor") {
+      return res.status(400).json({ error: "Solo aplica a técnicos o supervisores" });
+    }
+    const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let pwd = "";
+    for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+    const hash = await bcrypt.hash(pwd, 10);
+    const rUp = col
+      ? await query(
+          `UPDATE usuarios SET password_hash = $1, must_change_password = TRUE, reset_token = NULL, reset_expiry = NULL
+           WHERE id = $2 AND ${col} = $3 RETURNING id`,
+          [hash, id, req.tenantId]
+        )
+      : await query(
+          `UPDATE usuarios SET password_hash = $1, must_change_password = TRUE, reset_token = NULL, reset_expiry = NULL
+           WHERE id = $2 RETURNING id`,
+          [hash, id]
+        );
+    if (!rUp.rows.length) return res.status(404).json({ error: "Usuario no encontrado" });
+    res.json({
+      ok: true,
+      email: u.email,
+      nombre: u.nombre,
+      provisional_password: pwd,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo generar clave provisoria", detail: error.message });
   }
 });
 

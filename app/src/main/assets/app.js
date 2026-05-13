@@ -194,6 +194,7 @@ import {
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import './modules/gn-tenant-force-sync-android-boot.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
+import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
@@ -3700,8 +3701,9 @@ const gnLoginSubmitHandler = async e => {
 
         
         let resultado = null;
-        // Login directo Neon: igualdad literal password_hash = contraseña (no bcrypt en SQL).
-        // Recuperación: ver docs/NEON_ops_insertar_admin_emergencia.sql (texto plano solo pruebas).
+        // Login Neon: igualdad literal password_hash = contraseña (legado). Si la clave está en bcrypt (alta vía API),
+        // no hay fila y se reintenta con JWT en /api/auth/login (misma contraseña).
+        // Recuperación texto plano: docs/NEON_ops_insertar_admin_emergencia.sql (solo pruebas).
         const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
         const loginOrd = ' ORDER BY id ASC';
@@ -3735,7 +3737,31 @@ const gnLoginSubmitHandler = async e => {
             return;
         }
 
-        const usuario = resultado.rows?.[0];
+        let usuario = resultado.rows?.[0];
+        if (!usuario) {
+            try {
+                const apiData = await loginApiJwt(em, pw);
+                if (apiData?.user?.id) {
+                    let must = false;
+                    try {
+                        const mr = await sqlSimple(
+                            `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
+                                apiData.user.id
+                            )} LIMIT 1`
+                        );
+                        must = !!(mr.rows?.[0]?.must_change_password);
+                    } catch (_) {}
+                    usuario = {
+                        id: apiData.user.id,
+                        email: apiData.user.email,
+                        nombre: apiData.user.nombre,
+                        rol: apiData.user.rol,
+                        tenant_id: apiData.user.tenant_id,
+                        must_change_password: must,
+                    };
+                }
+            } catch (_) {}
+        }
         if (usuario) {
             const tidLogin = await resolverTenantIdPostLoginNeon({
                 usuario,
@@ -16680,47 +16706,6 @@ async function leerEmailContactoEmpresaNeon() {
     }
 }
 
-/** Solo admin: genera clave aleatoria, marca must_change_password (Android pedirá cambio al ingresar). */
-async function adminGenerarClaveProvisionalUsuario(userId) {
-    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
-        toast('Sin permisos o sin conexión.', 'error');
-        return;
-    }
-    const id = Number(userId);
-    if (!Number.isFinite(id) || id <= 0) return;
-    try {
-        const r = await sqlSimple(
-            `SELECT id, email, nombre, rol FROM usuarios WHERE id = ${esc(id)} LIMIT 1`
-        );
-        const u = r.rows?.[0];
-        if (!u) {
-            toast('Usuario no encontrado.', 'error');
-            return;
-        }
-        const rol = normalizarRolStr(u.rol || '');
-        if (rol !== 'tecnico' && rol !== 'supervisor') {
-            toast('Solo aplica a técnicos o supervisores.', 'warning');
-            return;
-        }
-        const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let pwd = '';
-        for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
-        await sqlSimple(`UPDATE usuarios SET password_hash = ${esc(pwd)}, must_change_password = TRUE, reset_token = NULL, reset_expiry = NULL WHERE id = ${esc(id)}`);
-        window.prompt(
-            `Clave provisoria para ${u.nombre || u.email} — copiá y entregála al técnico (en Android deberá cambiarla al ingresar):`,
-            pwd
-        );
-        toast('Clave provisional generada.', 'success');
-        await cargarListaUsuarios();
-        try {
-            await refrescarUsuariosCacheDesdeNeon();
-        } catch (_) {}
-    } catch (e) {
-        toastError('clave-provisoria', e);
-    }
-}
-window.adminGenerarClaveProvisionalUsuario = adminGenerarClaveProvisionalUsuario;
-
 async function confirmarCambioPasswordObligatorioAndroid() {
     const pend = window._pendingAndroidPasswordChange;
     const msg = document.getElementById('forzar-cambio-pw-msg');
@@ -16738,34 +16723,55 @@ async function confirmarCambioPasswordObligatorioAndroid() {
         if (msg) msg.textContent = 'Las contraseñas nuevas no coinciden.';
         return;
     }
-    if (n1.length < 4) {
+    const n1t = n1.trim();
+    if (n1t.length < 4) {
         if (msg) msg.textContent = 'La contraseña debe tener al menos 4 caracteres.';
         return;
     }
-    if (n1 === pend.passwordActual) {
+    if (n1t === pend.passwordActual) {
         if (msg) msg.textContent = 'La nueva contraseña debe ser distinta de la provisional.';
         return;
     }
     try {
-        const r = await sqlSimple(
-            `UPDATE usuarios SET password_hash = ${esc(n1)}, must_change_password = FALSE, reset_token = NULL, reset_expiry = NULL
-             WHERE id = ${esc(pend.u.id)} AND password_hash = ${esc(pend.passwordActual)}
-             RETURNING id`
-        );
-        if (!(r.rows || []).length) {
-            if (msg) msg.textContent = 'No se pudo actualizar (revisá la clave actual).';
-            return;
+        const tok = getApiToken();
+        const base = getApiBaseUrl();
+        if (tok && base) {
+            const resp = await fetch(apiUrl('/api/auth/me'), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+                body: JSON.stringify({
+                    usuario: pend.u.email,
+                    nombre: pend.u.nombre,
+                    password_actual: pend.passwordActual,
+                    password_nueva: n1t,
+                }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar la contraseña.';
+                return;
+            }
+        } else {
+            const r = await sqlSimple(
+                `UPDATE usuarios SET password_hash = ${esc(n1t)}, must_change_password = FALSE, reset_token = NULL, reset_expiry = NULL
+                 WHERE id = ${esc(pend.u.id)} AND password_hash = ${esc(pend.passwordActual)}
+                 RETURNING id`
+            );
+            if (!(r.rows || []).length) {
+                if (msg) msg.textContent = 'No se pudo actualizar (revisá la clave actual).';
+                return;
+            }
         }
         document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
-        ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach(id => {
+        ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach((id) => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
         if (msg) msg.textContent = '';
         const u = { ...pend.u, must_change_password: false };
         delete window._pendingAndroidPasswordChange;
-        guardarUsuarioOffline(u, n1);
-        await loginApiJwt(u.email, n1);
+        guardarUsuarioOffline(u, n1t);
+        await loginApiJwt(u.email, n1t);
         entrarConUsuario(u, false);
         toast('Contraseña actualizada. Bienvenido ' + u.nombre, 'success');
     } catch (e) {
@@ -19359,6 +19365,17 @@ if ('serviceWorker' in navigator) {
             mensajeErrorUsuario,
             toast,
             ejecutarCerrarSesion,
+        });
+        initAdminClaveProvisoria({
+            esAdmin,
+            getModoOffline: () => modoOffline,
+            getApiToken,
+            apiUrl: getApiBaseUrl,
+            asegurarJwtApiRest,
+            toast,
+            toastError,
+            cargarListaUsuarios,
+            refrescarUsuariosCacheDesdeNeon,
         });
         (function showAndroidExportsBtn() {
             const b = document.getElementById('btn-android-descargas');

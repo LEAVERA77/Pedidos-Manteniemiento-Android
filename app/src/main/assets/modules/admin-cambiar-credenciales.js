@@ -3,6 +3,8 @@
  * Cambios de usuario/contraseña vía PUT /api/auth/cambiar-credenciales (Neon + JWT nuevo).
  */
 
+import { validarParPasswordNuevoConfirmacionGestornova } from './password-policy-gestornova.js';
+
 /** @type {Record<string, unknown> | null} */
 let _ctx = null;
 
@@ -60,21 +62,18 @@ export async function cambiarContrasena() {
     const cambiaUsuario = usuarioNuevo.toLowerCase() !== usuarioActual.toLowerCase();
     const cambiaNombre = nombreNuevo !== nombreActual;
 
+    if (!actual && !nueva && !confirmar && !cambiaUsuario && !cambiaNombre) {
+        setErr('Completá los campos: contraseña actual (obligatoria); nueva y confirmación si cambiás la clave.');
+        return;
+    }
     if (!actual) {
         setErr('Ingresá la contraseña actual');
         return;
     }
     if (cambiaPw) {
-        if (!nueva || !confirmar) {
-            setErr('Completá nueva contraseña y confirmación, o dejá ambas vacías si solo cambiás usuario o nombre');
-            return;
-        }
-        if (nueva !== confirmar) {
-            setErr('Las contraseñas nuevas no coinciden');
-            return;
-        }
-        if (nueva.length < 4) {
-            setErr('La contraseña debe tener al menos 4 caracteres');
+        const v = validarParPasswordNuevoConfirmacionGestornova(nueva, confirmar);
+        if (!v.ok) {
+            setErr(v.error);
             return;
         }
     }

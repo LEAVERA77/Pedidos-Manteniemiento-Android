@@ -174,10 +174,15 @@ router.patch("/me", authMiddleware, async (req, res) => {
     let nextHash = hash;
     if (passwordNueva) nextHash = await bcrypt.hash(passwordNueva, 10);
 
-    const up = await query(
-      `UPDATE usuarios SET email = $2, nombre = $3, password_hash = $4 WHERE id = $1 RETURNING id, email, nombre, rol`,
-      [req.user.id, nextEmail, nextNombre, nextHash]
-    );
+    const up = passwordNueva
+      ? await query(
+          `UPDATE usuarios SET email = $2, nombre = $3, password_hash = $4, must_change_password = FALSE, reset_token = NULL, reset_expiry = NULL WHERE id = $1 RETURNING id, email, nombre, rol`,
+          [req.user.id, nextEmail, nextNombre, nextHash]
+        )
+      : await query(
+          `UPDATE usuarios SET email = $2, nombre = $3, password_hash = $4 WHERE id = $1 RETURNING id, email, nombre, rol`,
+          [req.user.id, nextEmail, nextNombre, nextHash]
+        );
 
     if (String(row.email || "").toLowerCase() === "admin" && passwordActual === "admin") {
       try {

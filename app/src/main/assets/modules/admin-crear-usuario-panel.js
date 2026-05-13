@@ -1,46 +1,15 @@
 /**
- * Alta de usuario desde el panel admin: API (bcrypt) si hay JWT + base URL; si no, Neon SQL.
+ * Alta de usuario desde el panel admin: solo vía API (bcrypt), misma política que Cuenta → Contraseña.
  * Incluye business_type para técnicos/supervisores (CHECK chk_usuarios_business_type_role en Neon).
  * made by leavera77
  */
 import { normalizarTelefonoWhatsapp, esTelefonoWhatsappValido } from './normalizar-telefono.js';
-
-const NEON_COL_WHITELIST = new Set(['business_type', 'telefono_whatsapp']);
-
-async function neonUsuariosTieneColumna(sqlSimple, esc, colName) {
-    if (!NEON_COL_WHITELIST.has(colName)) return false;
-    try {
-        const r = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = ${esc(
-                colName
-            )} LIMIT 1`
-        );
-        return !!(r.rows && r.rows.length);
-    } catch {
-        return false;
-    }
-}
-
-function inferirLineaNegocioUsuarioDesdeEmpresaCfg() {
-    const bt = String((typeof window !== 'undefined' && window.EMPRESA_CFG?.active_business_type) || '')
-        .trim()
-        .toLowerCase();
-    if (bt === 'electricidad' || bt === 'agua' || bt === 'municipio') return bt;
-    const tipo = String((typeof window !== 'undefined' && window.EMPRESA_CFG?.tipo) || '')
-        .trim()
-        .toLowerCase();
-    if (tipo.includes('agua') || tipo === 'cooperativa_agua') return 'agua';
-    if (tipo.includes('municipio')) return 'municipio';
-    return 'electricidad';
-}
+import { validarParPasswordNuevoConfirmacionGestornova } from './password-policy-gestornova.js';
 
 /**
  * @param {{
  *   toast: (msg: string, tipo?: string) => void;
  *   toastError: (tag: string, err: unknown, prefijo?: string) => void;
- *   sqlSimple: (q: string) => Promise<{ rows?: unknown[] }>;
- *   esc: (v: unknown) => string;
- *   sqlFiltroUsuariosPorTenant: () => Promise<string>;
  *   tenantIdActual: () => number;
  *   getApiToken: () => string | null | undefined;
  *   apiUrl: () => string;
@@ -52,13 +21,20 @@ function inferirLineaNegocioUsuarioDesdeEmpresaCfg() {
 export async function ejecutarCrearUsuarioAdminPanel(d) {
     const usuarioLogin = document.getElementById('nu-email')?.value?.trim() || '';
     const nombre = document.getElementById('nu-nombre')?.value?.trim() || '';
-    const pw = document.getElementById('nu-pw')?.value?.trim() || '';
+    const pw = document.getElementById('nu-pw')?.value || '';
+    const pw2 = document.getElementById('nu-pw-confirm')?.value || '';
     const rol = document.getElementById('nu-rol')?.value || '';
     const telefono = normalizarTelefonoWhatsapp(document.getElementById('nu-telefono')?.value || '');
-    if (!usuarioLogin || !nombre || !pw) {
+    if (!usuarioLogin || !nombre || !String(pw).trim()) {
         d.toast('Completá todos los campos', 'error');
         return;
     }
+    const vPw = validarParPasswordNuevoConfirmacionGestornova(pw, pw2);
+    if (!vPw.ok) {
+        d.toast(vPw.error, 'error');
+        return;
+    }
+    const pwTrim = vPw.skipped ? String(pw).trim() : vPw.nueva;
     if (telefono && !esTelefonoWhatsappValido(telefono)) {
         d.toast('Teléfono inválido. Usá formato +543434123456', 'error');
         return;
@@ -76,7 +52,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
             const body = {
                 usuario: usuarioLogin,
                 nombre,
-                password: pw,
+                password: pwTrim,
                 rol,
                 telefono: telefono || undefined,
             };
@@ -141,7 +117,7 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
             }
             d.toast('Usuario creado: ' + nombre, 'success');
             document.getElementById('form-usuario').style.display = 'none';
-            ['nu-email', 'nu-nombre', 'nu-pw', 'nu-telefono'].forEach((id) => {
+            ['nu-email', 'nu-nombre', 'nu-pw', 'nu-pw-confirm', 'nu-telefono'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
             });
@@ -160,54 +136,8 @@ export async function ejecutarCrearUsuarioAdminPanel(d) {
         return;
     }
 
-    try {
-        d.toast('Guardando usuario…', 'info', 2800);
-        const wfU = await d.sqlFiltroUsuariosPorTenant();
-        const colT = wfU.includes('tenant_id') ? 'tenant_id' : wfU.includes('cliente_id') ? 'cliente_id' : null;
-        const hasBt = await neonUsuariosTieneColumna(d.sqlSimple, d.esc, 'business_type');
-        const hasTw = await neonUsuariosTieneColumna(d.sqlSimple, d.esc, 'telefono_whatsapp');
-        const rl = String(rol || '').toLowerCase();
-        const esAdminRol = rl === 'admin' || rl === 'administrador';
-        const btSql = hasBt && !esAdminRol ? `, business_type` : hasBt && esAdminRol ? `, business_type` : '';
-        const btValSql =
-            hasBt && !esAdminRol ? `, ${d.esc(inferirLineaNegocioUsuarioDesdeEmpresaCfg())}` : hasBt && esAdminRol ? `, NULL` : '';
-        const twSql = hasTw ? `, telefono_whatsapp` : '';
-        const twValSql = hasTw ? `, ${d.esc(telefono || null)}` : '';
-
-        if (colT) {
-            const tidIns = d.tenantIdActual();
-            const dupN = await d.sqlSimple(
-                `SELECT id FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${d.esc(usuarioLogin)})) AND ${colT} = ${d.esc(tidIns)} LIMIT 1`
-            );
-            if (dupN.rows?.length) {
-                d.toast('Ese nombre de usuario ya existe en este tenant.', 'error');
-                return;
-            }
-            await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql}, ${colT})
-                VALUES(${d.esc(usuarioLogin)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql}, ${d.esc(
-                    tidIns
-                )})`);
-        } else {
-            await d.sqlSimple(`INSERT INTO usuarios(email, nombre, password_hash, rol, telefono, whatsapp_notificaciones, must_change_password, activo${btSql}${twSql})
-                VALUES(${d.esc(usuarioLogin)}, ${d.esc(nombre)}, ${d.esc(pw)}, ${d.esc(rol)}, ${d.esc(telefono || null)}, TRUE, FALSE, TRUE${btValSql}${twValSql})`);
-        }
-        d.toast('Usuario creado: ' + nombre, 'success');
-        document.getElementById('form-usuario').style.display = 'none';
-        ['nu-email', 'nu-nombre', 'nu-pw', 'nu-telefono'].forEach((id) => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-        await d.cargarListaUsuarios();
-        try {
-            await d.refrescarUsuariosCacheDesdeNeon();
-        } catch (_) {}
-    } catch (e) {
-        const low = String(e && e.message ? e.message : e).toLowerCase();
-        if (low.includes('unique') || low.includes('duplicate'))
-            d.toast(
-                'Ese nombre de usuario ya está registrado en este tenant (o falta migración única por tenant en Neon).',
-                'error'
-            );
-        else d.toastError('crear-usuario', e);
-    }
+    d.toast(
+        'Para crear usuarios con la misma seguridad que en Cuenta → Contraseña (contraseña cifrada), necesitás sesión API activa y la URL del servidor configurada. Volvé a iniciar sesión o revisá API_BASE_URL.',
+        'error'
+    );
 }
