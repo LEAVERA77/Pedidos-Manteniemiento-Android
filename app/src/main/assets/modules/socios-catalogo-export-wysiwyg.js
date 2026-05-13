@@ -8,6 +8,7 @@ import { SOCIOS_CATALOGO_OPTS_PRE_CALLE, SOCIOS_CATALOGO_OPT_DISTRIB } from './s
 import {
     ordenarFamiliasVistaProy,
     obtenerZonaVistaSociosCatalogo,
+    sociosCatalogoTieneWgs84ParaProyeccion,
 } from './socios-catalogo-export-proyeccion.js';
 import { proyectarWgs84AFamiliaFaja, etiquetaFamiliaProyeccionCorta } from '../map.js';
 import { sociosActivoTexto } from './socios-catalogo-export-vista.js';
@@ -83,7 +84,7 @@ function parseDatosExtra(val) {
 function algunaFilaTieneWgs84(rows) {
     return (
         Array.isArray(rows) &&
-        rows.some((r) => Number.isFinite(Number(r?.latitud)) && Number.isFinite(Number(r?.longitud)))
+        rows.some((r) => sociosCatalogoTieneWgs84ParaProyeccion(r?.latitud, r?.longitud))
     );
 }
 
@@ -102,16 +103,16 @@ function proyHeadersYOrden(prefs, algunaWgs) {
 }
 
 function valoresProyeccionFila(lat, lon, orden, zona) {
-    const la = Number(lat);
-    const lo = Number(lon);
     const vals = [];
     if (!orden.length) return vals;
-    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+    if (!sociosCatalogoTieneWgs84ParaProyeccion(lat, lon)) {
         for (let i = 0; i < orden.length; i++) {
             vals.push('', '');
         }
         return vals;
     }
+    const la = Number(lat);
+    const lo = Number(lon);
     for (const fam of orden) {
         const pr = proyectarWgs84AFamiliaFaja(la, lo, fam, zona);
         if (pr) {

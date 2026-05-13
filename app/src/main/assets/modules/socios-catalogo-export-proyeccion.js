@@ -57,6 +57,21 @@ export function obtenerZonaVistaSociosCatalogo() {
 }
 
 /**
+ * True solo si hay WGS84 real para proyectar (evita `Number(null) === 0`).
+ * Alineado con las celdas Lat/Lon del listado admin (null/vacío → sin conversión).
+ */
+export function sociosCatalogoTieneWgs84ParaProyeccion(lat, lon) {
+    if (lat == null || lon == null) return false;
+    if (typeof lat === 'string' && String(lat).trim() === '') return false;
+    if (typeof lon === 'string' && String(lon).trim() === '') return false;
+    const la = Number(lat);
+    const lo = Number(lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+    if (Math.abs(la) > 90 || Math.abs(lo) > 180) return false;
+    return true;
+}
+
+/**
  * Contexto para export (misma fuente que `_gnSociosExportCtxProy` previo).
  * @returns {{ prefs: { modo: string, familias: string[], familia_primaria: string }, zona: number, ordenarFamilias: typeof ordenarFamiliasVistaProy }}
  */
@@ -97,7 +112,7 @@ export function proyeccionSociosExportValores(lat, lon, ctx) {
     const lo = Number(lon);
     const z = ctx.zona;
     const vals = [];
-    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+    if (!sociosCatalogoTieneWgs84ParaProyeccion(lat, lon)) {
         for (let i = 0; i < orden.length; i++) {
             vals.push('', '');
         }

@@ -16,6 +16,7 @@ import {
     obtenerZonaImportSociosProyectadas,
     obtenerZonaVistaSociosCatalogo,
     buildCtxProyeccionSociosExport,
+    sociosCatalogoTieneWgs84ParaProyeccion,
 } from './socios-catalogo-export-proyeccion.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
@@ -709,7 +710,7 @@ function obtenerNumColsTablaSociosAdmin() {
     const data = window._sociosVirtualRows;
     const algunWgs =
         Array.isArray(data) &&
-        data.some((r) => Number.isFinite(Number(r?.latitud)) && Number.isFinite(Number(r?.longitud)));
+        data.some((r) => sociosCatalogoTieneWgs84ParaProyeccion(r?.latitud, r?.longitud));
     const nProy =
         algunWgs && p.modo === 'extra_proy' && p.familias.length ? p.familias.length * 2 : 0;
     const vis = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
@@ -740,12 +741,12 @@ function armarHeadExtraProyeccionSociosHtml(algunFilaTieneWgs84) {
 function htmlCeldasProyeccionSociosDesdeLatLng(lat, lon) {
     const prefs = leerPrefsVistaProyeccionSociosCatalogo();
     if (prefs.modo !== 'extra_proy' || !prefs.familias.length) return '';
+    const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
+    if (!sociosCatalogoTieneWgs84ParaProyeccion(lat, lon)) {
+        return orden.map(() => '<td align="right">—</td><td align="right">—</td>').join('');
+    }
     const la = Number(lat);
     const lo = Number(lon);
-    const orden = ordenarFamiliasVistaProy(prefs.familias, prefs.familia_primaria);
-    if (!Number.isFinite(la) || !Number.isFinite(lo)) {
-        return orden.map(() => '<td></td><td></td>').join('');
-    }
     const z = obtenerZonaVistaSociosCatalogo();
     let out = '';
     for (const fam of orden) {
@@ -875,8 +876,8 @@ async function cargarListaSociosAdmin() {
         window._sociosVirtualRows = rows;
         window._sociosVirtualRowHeight = 31;
         window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
-        const algunWgsRows = rows.some(
-            (r) => Number.isFinite(Number(r.latitud)) && Number.isFinite(Number(r.longitud))
+        const algunWgsRows = rows.some((r) =>
+            sociosCatalogoTieneWgs84ParaProyeccion(r.latitud, r.longitud)
         );
         const headExtra = armarHeadExtraProyeccionSociosHtml(algunWgsRows);
         const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
