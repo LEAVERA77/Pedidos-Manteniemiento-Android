@@ -599,6 +599,12 @@ body:has(#admin-panel.active) #pm.mo.active{z-index:100120!important}
 body:has(#dm.mo.active) #avance-modal.avance-modal.active{z-index:200010!important}
 body:has(#dm.mo.active) #print-container.printing{z-index:200020!important}
 body:has(#dm.mo.active) #print-container.printing .print-preview-toolbar{z-index:200021!important;position:fixed}
+/* Cierre (#cm2) con detalle abierto: mismo criterio que avance / impresión */
+body:has(#dm.mo.active) #cm2.mo.active{z-index:200027!important;position:fixed!important;inset:0}
+body:has(#dm.mo.active) #pm.mo.active{z-index:200028!important;position:fixed!important;inset:0}
+/* Cola offline visible mientras hay modal de pedido (técnico sin señal) */
+body:has(#dm.mo.active) #offline-banner.visible,
+body:has(#dm.mo.active) #offline-toggle.visible{z-index:200040!important}
 /* Modales pedido (.mo): scroll en .mc (no en body; el mapa sigue usando html/body overflow:hidden). */
 .mc{background:white;border-radius:1rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:0 25px 60px rgba(0,0,0,.35);animation:mIn .2s ease}
 .mc.lg{max-width:680px}

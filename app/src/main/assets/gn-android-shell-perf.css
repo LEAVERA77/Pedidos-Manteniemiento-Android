@@ -21,3 +21,15 @@ html.gn-android-shell #dm .gn-dm-detail-scroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
 }
+
+/* Modal cierre (#cm2): mismo criterio que #dm para evitar zoom en foco */
+html.gn-android-shell #cm2 textarea,
+html.gn-android-shell #cm2 input[type="text"],
+html.gn-android-shell #cm2 input[type="tel"] {
+    font-size: 16px;
+}
+
+html.gn-android-shell #cm2 .mb {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+}

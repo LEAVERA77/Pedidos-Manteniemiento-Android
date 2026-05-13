@@ -1,7 +1,6 @@
 /**
  * Apila modales (.mo) al frente: cada vez que un modal gana .active, sube z-index por encima del resto.
- * También sube `#modal-foto-ampliada` (visor de fotos) y `#print-container` en modo impresión, que no son `.mo`
- * pero deben quedar por encima de `#dm` tras `gnForceModalZFront` (base ya > 300000 en CSS fijo).
+ * También sube `#modal-foto-ampliada`, `#cm2` (cierre), impresión y avance por encima de `#dm` cuando corresponde.
  */
 let _gnModalZBase = 300000;
 
@@ -18,12 +17,13 @@ function bumpMoZ(el) {
     bumpStackedFront(el);
 }
 
-/** Visor de foto, impresión o avance de pedido: mismo contador que `.mo` para quedar al frente del detalle #dm. */
+/** Visor de foto, cierre (#cm2), impresión o avance: contador global por encima de `#dm` cuando están visibles. */
 function bumpPedidoSuboverlayIfShown(el) {
     if (!el || !el.classList) return;
     if (el.id === 'modal-foto-ampliada' && el.classList.contains('active')) bumpStackedFront(el);
     else if (el.id === 'print-container' && el.classList.contains('printing')) bumpStackedFront(el);
     else if (el.id === 'avance-modal' && el.classList.contains('active')) bumpStackedFront(el);
+    else if (el.id === 'cm2' && el.classList.contains('active') && el.classList.contains('mo')) bumpStackedFront(el);
 }
 
 /**
@@ -53,7 +53,7 @@ export function initGnModalZIndexStack() {
                 if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
                 const t = m.target;
                 if (!t || !t.classList) continue;
-                if (t.id === 'modal-foto-ampliada' || t.id === 'print-container' || t.id === 'avance-modal') {
+                if (t.id === 'modal-foto-ampliada' || t.id === 'print-container' || t.id === 'avance-modal' || t.id === 'cm2') {
                     bumpPedidoSuboverlayIfShown(t);
                     continue;
                 }
@@ -65,5 +65,6 @@ export function initGnModalZIndexStack() {
         bumpPedidoSuboverlayIfShown(document.getElementById('modal-foto-ampliada'));
         bumpPedidoSuboverlayIfShown(document.getElementById('print-container'));
         bumpPedidoSuboverlayIfShown(document.getElementById('avance-modal'));
+        bumpPedidoSuboverlayIfShown(document.getElementById('cm2'));
     } catch (_) {}
 }

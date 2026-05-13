@@ -188,6 +188,7 @@ import {
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
 import './modules/gn-tenant-force-sync-android-boot.js';
 import './modules/gn-android-shell-perf.js';
+import './modules/gn-offline-shell-refresh.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
