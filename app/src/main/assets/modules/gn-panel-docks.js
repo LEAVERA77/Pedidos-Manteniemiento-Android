@@ -12,6 +12,8 @@ import { toast } from './ui-utils.js';
 async function pollBroadcastJobStatus(comunicacionId) {
     const apiUrl = typeof window.apiUrl === 'function' ? window.apiUrl : (p) => p;
     const getToken = () => (typeof window.getApiToken === 'function' ? window.getApiToken() : null);
+    const asegurar =
+        typeof window.asegurarJwtApiRest === 'function' ? window.asegurarJwtApiRest : async () => {};
     const max = 400;
     const delayMs = 10000;
     for (let i = 0; i < max; i++) {
@@ -30,11 +32,72 @@ async function pollBroadcastJobStatus(comunicacionId) {
                     `Aviso masivo finalizado: ${d.enviados_ok ?? 0} enviados, ${d.enviados_error ?? 0} error(es).`,
                     st === 'error' ? 'warning' : 'success'
                 );
+                void maybeToastBroadcastMetricsLow(apiUrl, asegurar, getToken);
                 return;
             }
         } catch (_) {}
     }
     toast('El envío masivo puede seguir en curso (ritmo lento anti-bloqueo). Revisá más tarde.', 'info');
+}
+
+async function maybeToastBroadcastMetricsLow(apiUrl, asegurarJwtApiRest, getApiToken) {
+    try {
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) return;
+        const r = await fetch(apiUrl('/api/whatsapp/broadcast/metrics'), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) return;
+        if (d.low_ratio_alert) {
+            toast(
+                `Atención: ratio de respuestas bajo varios días (promedio 7d: ${d.metrics_avg_ratio_7d ?? '—'}%). Revisá contenido y frecuencia. Guía: ${d.guide_url || ''}`,
+                'warning'
+            );
+        }
+    } catch (_) {}
+}
+
+async function refreshBroadcastComplianceBanner(modal, { asegurarJwtApiRest, getApiToken, apiUrl }) {
+    const el = modal.querySelector('#gn-bc-compliance');
+    if (!el) return;
+    try {
+        el.style.display = 'none';
+        el.textContent = '';
+        await asegurarJwtApiRest();
+        const tok = getApiToken();
+        if (!tok) return;
+        const r = await fetch(apiUrl('/api/whatsapp/broadcast/metrics'), {
+            headers: { Authorization: `Bearer ${tok}` },
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) return;
+        const parts = [];
+        if (d.warmup?.is_warming) {
+            parts.push(
+                `⚠️ Warm-up Whapi: día ${d.warmup.days_since_activation ?? '?'}/${d.warmup.days_required}. Evitá mailings agresivos hasta completar el período.`
+            );
+            try {
+                window._gnBcWarmupConfirm = `Warm-up activo (${d.warmup.days_since_activation ?? '?'}/${d.warmup.days_required} días). Confirmá solo si el mensaje es necesario y acotado.`;
+            } catch (_) {}
+        } else {
+            try {
+                window._gnBcWarmupConfirm = '';
+            } catch (_) {}
+        }
+        if (d.low_ratio_alert) {
+            parts.push(
+                `⚠️ Ratio de respuestas bajo (promedio 7d: ${d.metrics_avg_ratio_7d ?? '—'}%). Mejorá interacción o pausá campañas.`
+            );
+        }
+        const guia = d.guide_url || 'https://support.whapi.cloud/help-desk/blocking/how-to-do-mailings-without-the-risk-of-being-blocked';
+        parts.push(`📖 Guía anti-baneo Whapi: ${guia}`);
+        if (parts.length) {
+            el.innerHTML = parts.map((p) => `<div style="margin:.2rem 0">${p}</div>`).join('');
+            el.style.display = 'block';
+        }
+    } catch (_) {}
 }
 
 const DOCK_ID = 'gn-minimized-panels-dock';
@@ -340,6 +403,10 @@ function syncCommunityDock(root, st, modal) {
             bindGnDockChipDrag(chip, () => {
                 st.minimized = false;
                 modal.style.display = 'flex';
+                try {
+                    const fn = root.__gnCommunityOnShow;
+                    if (typeof fn === 'function') fn();
+                } catch (_) {}
                 syncCommunityDock(root, st, modal);
                 try {
                     modal.querySelector('#gn-bc-msg')?.focus?.();
@@ -381,6 +448,7 @@ export function initCommunityBroadcastFab(deps) {
       <span style="font-size:.7rem;color:var(--tm,#94a3b8);letter-spacing:.03em">Arrastrá para mover</span>
     </div>
     <p style="font-size:.78rem;margin:0 0 .65rem;color:var(--tm,#64748b)">Se envía a los teléfonos de contacto de <strong>pedidos</strong> del tenant y línea activa. Máx. ~10 msg/s. Requiere confirmación.</p>
+    <div id="gn-bc-compliance" style="display:none;font-size:.74rem;margin:0 0 .65rem;padding:.5rem .55rem;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;color:#334155"></div>
     <label style="font-size:.78rem;font-weight:600">Estilo del aviso</label>
     <div style="display:flex;gap:.35rem;align-items:center;margin:.2rem 0 .5rem">
       <input id="gn-bc-titulo" type="text" style="flex:1;padding:.4rem;border-radius:8px;border:1px solid #cbd5e1" maxlength="500" placeholder="Ej: Inundaciones, Corte de agua, Fiesta patronal…" />
@@ -407,11 +475,14 @@ export function initCommunityBroadcastFab(deps) {
         syncCommunityDock(root, st, modal);
     };
 
-    const openModal = () => {
+    function openModal() {
         modal.style.display = 'block';
-        actualizarFirmaPreview();
+        try {
+            const fn = root.__gnCommunityOnShow;
+            if (typeof fn === 'function') fn();
+        } catch (_) {}
         syncCommunityDock(root, st, modal);
-    };
+    }
 
     /* --- Drag del panel interior (como otros paneles) --- */
     let panelDrag = null;
@@ -471,6 +542,11 @@ export function initCommunityBroadcastFab(deps) {
         const firma = obtenerFirmaTenant();
         el.textContent = firma ? `Firma automática al final: ${firma}` : '';
     }
+
+    root.__gnCommunityOnShow = () => {
+        actualizarFirmaPreview();
+        void refreshBroadcastComplianceBanner(modal, { asegurarJwtApiRest, getApiToken, apiUrl });
+    };
 
     /** Arrastre con coordenadas correctas (fixed + right/bottom); clic sin movimiento abre modal. */
     let ptrDrag = null;
@@ -589,7 +665,11 @@ export function initCommunityBroadcastFab(deps) {
         if (firma && !mensaje.includes(firma)) {
             mensaje = mensaje + '\n\n' + firma;
         }
-        if (!confirm('¿Confirmás el envío masivo por WhatsApp a los contactos de pedidos?')) return;
+        const warmExtra =
+            typeof window._gnBcWarmupConfirm === 'string' && window._gnBcWarmupConfirm.trim()
+                ? '\n\n' + window._gnBcWarmupConfirm.trim()
+                : '';
+        if (!confirm('¿Confirmás el envío masivo por WhatsApp a los contactos de pedidos?' + warmExtra)) return;
         await asegurarJwtApiRest();
         const tok = getApiToken();
         if (!tok) {
@@ -611,12 +691,15 @@ export function initCommunityBroadcastFab(deps) {
                     `Envío masivo iniciado en segundo plano (${d.destinatarios} destinatarios, ritmo seguro). Te avisamos al terminar.`,
                     'success'
                 );
+                if (d.warmup_warning) toast(String(d.warmup_warning), 'warning');
                 closeModal();
                 void pollBroadcastJobStatus(Number(d.comunicacion_id));
                 return;
             }
             toast(`Enviado: ok ${d.enviados_ok}, error ${d.enviados_error}`, 'success');
+            if (d.warmup_warning) toast(String(d.warmup_warning), 'warning');
             closeModal();
+            void maybeToastBroadcastMetricsLow(apiUrl, asegurarJwtApiRest, getApiToken);
         } catch (e) {
             toast(String(e.message || e), 'error');
         }

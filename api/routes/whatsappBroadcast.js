@@ -14,6 +14,8 @@ import {
   getBroadcastSyncMaxRecipients,
   sleepAfterOutgoingMessage,
 } from "../utils/whatsappBroadcastPacing.js";
+import { bumpBroadcastMessagesSent, getBroadcastMetricsReport } from "../services/broadcastReplyMetrics.js";
+import { evaluateWarmupForBroadcast, getWarmupStatusPayload } from "../utils/whatsappBroadcastWarmup.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
@@ -65,7 +67,11 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
     const hasLocS = await tableHasColumn("socios_catalogo", "localidad");
     if (hasTS) {
       const paramsS = [tenantId];
+      const hasAcepta = await tableHasColumn("socios_catalogo", "acepta_avisos");
       let whS = `tenant_id = $1 AND COALESCE(activo, TRUE) AND telefono IS NOT NULL AND TRIM(telefono::text) <> ''`;
+      if (hasAcepta) {
+        whS += ` AND COALESCE(acepta_avisos, TRUE) = TRUE`;
+      }
       if (hasBtS && businessType) {
         paramsS.push(businessType);
         whS += ` AND (business_type = $${paramsS.length} OR business_type IS NULL OR TRIM(business_type::text) = '')`;
@@ -90,6 +96,20 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
     if (norm && norm.length >= 12) out.add(norm);
   }
   return [...out];
+}
+
+async function resolveBroadcastPhones(tenantId, businessType) {
+  const rawTels = await telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType);
+  const warm = await evaluateWarmupForBroadcast(tenantId, rawTels.length);
+  if (!warm.allowed) {
+    return { ok: false, error: warm.error, telefonos: [], warmup: warm, requested: rawTels.length };
+  }
+  return {
+    ok: true,
+    telefonos: rawTels.slice(0, warm.cap),
+    warmup: warm,
+    requested: rawTels.length,
+  };
 }
 
 async function sumDestinatariosBroadcastHoy(tenantId) {
@@ -257,7 +277,19 @@ async function runCommunityBroadcastJob(comunicacionId) {
     return;
   }
 
-  const telefonos = await telefonosMovilesPedidosYSociosTenantBusiness(row.tenant_id, row.business_type);
+  const resolved = await resolveBroadcastPhones(row.tenant_id, row.business_type);
+  if (!resolved.ok) {
+    await finalizeComunicacionBroadcast(comunicacionId, {
+      ok: 0,
+      err: 0,
+      erroresDetalle: [{ error: resolved.error }],
+      duracionMs: Date.now() - t0,
+      status: "error",
+      abortReason: resolved.error,
+    });
+    return;
+  }
+  const telefonos = resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
@@ -271,6 +303,7 @@ async function runCommunityBroadcastJob(comunicacionId) {
     ...result,
     status: "done",
   });
+  await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
   console.log("[whatsappBroadcast] community job done", {
     id: comunicacionId,
     ms: Date.now() - t0,
@@ -311,7 +344,19 @@ async function runCorteBroadcastJob(comunicacionId) {
   const fi = meta.fecha_inicio ?? null;
   const ff = meta.fecha_fin ?? null;
 
-  const telefonos = await telefonosMovilesPedidosYSociosTenantBusiness(row.tenant_id, row.business_type);
+  const resolved = await resolveBroadcastPhones(row.tenant_id, row.business_type);
+  if (!resolved.ok) {
+    await finalizeComunicacionBroadcast(comunicacionId, {
+      ok: 0,
+      err: 0,
+      erroresDetalle: [{ error: resolved.error }],
+      duracionMs: Date.now() - t0,
+      status: "error",
+      abortReason: resolved.error,
+    });
+    return;
+  }
+  const telefonos = resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
@@ -325,6 +370,8 @@ async function runCorteBroadcastJob(comunicacionId) {
     ...result,
     status: "done",
   });
+
+  await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
 
   try {
     await query(
@@ -380,6 +427,26 @@ router.get("/status/:id", async (req, res) => {
   }
 });
 
+router.get("/metrics", async (req, res) => {
+  try {
+    const [warmup, rep] = await Promise.all([
+      getWarmupStatusPayload(req.tenantId),
+      getBroadcastMetricsReport(req.tenantId, { days: 7, lowRatioPct: 20, consecutiveRequired: 3 }),
+    ]);
+    return res.json({
+      ok: true,
+      warmup,
+      metrics_avg_ratio_7d: rep.avg_ratio_7d,
+      low_ratio_alert: rep.low_ratio_alert,
+      consecutive_low_days: rep.consecutive_low_days,
+      daily: rep.rows,
+      guide_url: warmup.guide_url,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.post("/community", async (req, res) => {
   try {
     if (req.body?.confirm !== true && String(req.body?.confirm).toLowerCase() !== "true") {
@@ -403,7 +470,12 @@ router.post("/community", async (req, res) => {
     cuerpo = appendBroadcastFooter(cuerpo);
 
     const cfg = getBroadcastPacingConfig();
-    const tels = await telefonosMovilesPedidosYSociosTenantBusiness(req.tenantId, bt);
+    const resolved = await resolveBroadcastPhones(req.tenantId, bt);
+    if (!resolved.ok) {
+      return res.status(400).json({ error: resolved.error });
+    }
+    const tels = resolved.telefonos;
+    const warmupWarning = resolved.warmup?.warning || null;
     if (!tels.length) {
       return res.status(400).json({
         error:
@@ -459,6 +531,7 @@ router.post("/community", async (req, res) => {
         comunicacion_id: comunicacionId,
         destinatarios: tels.length,
         business_type: bt,
+        warmup_warning: warmupWarning,
         message:
           "Envío masivo iniciado en segundo plano con intervalos seguros (anti-bloqueo). Consultá GET /api/whatsapp/broadcast/status/:id para el progreso.",
       });
@@ -489,6 +562,8 @@ router.post("/community", async (req, res) => {
       userId: req.user?.id,
     });
 
+    await bumpBroadcastMessagesSent(req.tenantId, result.ok);
+
     return res.json({
       ok: true,
       async: false,
@@ -496,6 +571,7 @@ router.post("/community", async (req, res) => {
       enviados_ok: result.ok,
       enviados_error: result.err,
       business_type: bt,
+      warmup_warning: warmupWarning,
     });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo completar el envío masivo", detail: e.message });
@@ -534,7 +610,12 @@ router.post("/corte-programado", async (req, res) => {
     cuerpo = appendBroadcastFooter(cuerpo);
 
     const cfg = getBroadcastPacingConfig();
-    const tels = await telefonosMovilesPedidosYSociosTenantBusiness(req.tenantId, bt);
+    const resolved = await resolveBroadcastPhones(req.tenantId, bt);
+    if (!resolved.ok) {
+      return res.status(400).json({ error: resolved.error });
+    }
+    const tels = resolved.telefonos;
+    const warmupWarning = resolved.warmup?.warning || null;
     if (!tels.length) {
       return res.status(400).json({
         error:
@@ -593,6 +674,7 @@ router.post("/corte-programado", async (req, res) => {
         async: true,
         comunicacion_id: comunicacionId,
         destinatarios: tels.length,
+        warmup_warning: warmupWarning,
         message:
           "Aviso de corte iniciado en segundo plano. Consultá GET /api/whatsapp/broadcast/status/:id para el progreso.",
       });
@@ -630,12 +712,15 @@ router.post("/corte-programado", async (req, res) => {
       userId: req.user?.id,
     });
 
+    await bumpBroadcastMessagesSent(req.tenantId, result.ok);
+
     return res.json({
       ok: true,
       async: false,
       destinatarios: tels.length,
       enviados_ok: result.ok,
       enviados_error: result.err,
+      warmup_warning: warmupWarning,
     });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo registrar el corte programado", detail: e.message });

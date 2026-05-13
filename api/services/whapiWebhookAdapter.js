@@ -206,3 +206,23 @@ export function whapiWebhookToMetaShapedPayload(whapiBody) {
     ],
   };
 }
+
+/**
+ * Texto entrante privado (no grupos, no from_me) — p. ej. STOP aunque el adaptador Meta devuelva null.
+ * @param {object} whapiBody
+ * @param {(info: { digits: string, text: string }) => void} fn
+ */
+export function forEachWhapiInboundUserText(whapiBody, fn) {
+  if (!whapiBody || typeof whapiBody !== "object" || typeof fn !== "function") return;
+  const rawMessages = Array.isArray(whapiBody.messages) ? whapiBody.messages : [];
+  for (const m of rawMessages) {
+    if (!m || typeof m !== "object" || m.from_me === true) continue;
+    const chatId = String(m.chat_id || "");
+    if (chatId.endsWith("@g.us")) continue;
+    const digits = senderDigitsFromWhapiMessage(m);
+    if (!digits || digits.length < 8) continue;
+    const text = extractWhapiTextBody(m);
+    if (!text) continue;
+    fn({ digits, text });
+  }
+}

@@ -19,6 +19,7 @@ import setupTechnicianTenantsPublic from "./routes/setupTechnicianTenantsPublic.
 import setupWizardRoutes from "./routes/setupWizard.js";
 import whatsappHumanChatRoutes from "./routes/whatsappHumanChat.js";
 import webhooksWhatsappRoutes from "./routes/webhooksWhatsapp.js";
+import webhooksWhapiAliasRoutes from "./routes/webhooks/whapi.js";
 import webhooksMetaRoutes from "./routes/webhooksMeta.js";
 import configUbicacionRoutes from "./routes/configUbicacion.js";
 import whatsappGeocodeRoutes from "./routes/whatsappGeocode.js";
@@ -163,6 +164,7 @@ export function createHttpApp() {
   app.use("/api/whatsapp", whatsappRoutes);
   app.use("/api/whatsapp/human-chat", whatsappHumanChatRoutes);
   app.use("/api/webhooks/whatsapp", webhooksWhatsappRoutes);
+  app.use("/api/webhooks/whapi", webhooksWhapiAliasRoutes);
   app.use("/api/ia", iaRoutes);
   app.use("/api/socios", sociosExportRoutes);
 

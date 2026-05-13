@@ -8,7 +8,8 @@
  *
  * Whapi.cloud: POST → /api/webhooks/whatsapp/whapi
  *   URL pública: https://<host>/api/webhooks/whatsapp/whapi (opcional ?token=WHATSAPP_WEBHOOK_TOKEN)
- *   Auth: query token, Bearer WHATSAPP_WEBHOOK_TOKEN, o Bearer WHAPI_API_KEY (Whapi envía el token del canal).
+ *   Alias: POST /api/webhooks/whapi/message (mismo cuerpo y auth).
+ *   Auth: query token, Bearer WHATSAPP_WEBHOOK_TOKEN, Bearer WHAPI_API_KEY, X-Api-Key, o WHAPI_WEBHOOK_SECRET (header X-Whapi-Webhook-Secret o Bearer).
  *
  * Variables sugeridas (.env):
  *   WHATSAPP_WEBHOOK_TOKEN=secreto-largo-compartido-con-evolution
@@ -24,6 +25,7 @@ import { resolveTenantIdByMetaPhoneNumberId } from "../services/metaTenantWhatsa
 import { logWhatsappMensajeRecibido } from "../services/whatsappNotificacionesLog.js";
 import { wahaWebhookToMetaShapedPayload } from "../services/wahaWebhookAdapter.js";
 import { whapiWebhookToMetaShapedPayload } from "../services/whapiWebhookAdapter.js";
+import { processWhapiBroadcastComplianceMessages } from "../services/whapiBroadcastComplianceInbound.js";
 
 const router = express.Router();
 
@@ -87,6 +89,8 @@ function checkWebhookToken(req) {
  * Whapi: Bearer (case-insensitive), ?token=, X-Api-Key, o cuerpo con channel_id = WHAPI_CHANNEL_ID.
  */
 function checkWhapiWebhookToken(req) {
+  const hookSecret = String(process.env.WHAPI_WEBHOOK_SECRET || "").trim();
+  const hookHdr = String(req.get("x-whapi-webhook-secret") || "").trim();
   const shared = String(process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
   const apiKey = String(process.env.WHAPI_API_KEY || "").trim();
   const hdrRaw = String(req.get("authorization") || "").trim();
@@ -94,6 +98,8 @@ function checkWhapiWebhookToken(req) {
   const xApi = String(req.get("x-api-key") || "").trim();
   const bearer = /^Bearer\s+(.+)$/i.exec(hdrRaw);
   const bearerToken = bearer ? bearer[1].trim() : "";
+
+  if (hookSecret && (hookHdr === hookSecret || bearerToken === hookSecret)) return true;
 
   if (!shared) return true;
   if (bearerToken === shared || q === shared) return true;
@@ -113,8 +119,9 @@ router.get("/whapi", (req, res) => {
   res.json({
     ok: true,
     path: "POST /api/webhooks/whatsapp/whapi",
+    path_alias: "POST /api/webhooks/whapi/message",
     hint:
-      "Whapi.cloud usa POST. Auth: ?token=, Bearer WHATSAPP_WEBHOOK_TOKEN o Bearer WHAPI_API_KEY.",
+      "Whapi.cloud usa POST. Auth: ?token=, Bearer WHATSAPP_WEBHOOK_TOKEN, Bearer WHAPI_API_KEY, o WHAPI_WEBHOOK_SECRET (X-Whapi-Webhook-Secret / Bearer).",
   });
 });
 
@@ -143,7 +150,7 @@ router.post("/waha", express.json({ limit: "2mb" }), async (req, res) => {
   }
 });
 
-router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
+export async function handleWhapiCloudWebhookPost(req, res) {
   try {
     const body = req.body || {};
     if (!checkWhapiWebhookToken(req)) {
@@ -172,13 +179,12 @@ router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
     });
 
     if (!metaShaped) {
-      console.log("[webhook-whapi] skipped (adapter devolvió null: sin texto entrante o solo from_me / grupos)", {
+      console.log("[webhook-whapi] adapter null (sin texto útil para bot); igual se procesa STOP/warm-up si aplica)", {
         hasMessages: Array.isArray(body.messages) ? body.messages.length : 0,
         eventType: ev?.type,
         eventEvent: ev?.event,
         channel_id: body.channel_id,
       });
-      return res.json({ ok: true, skipped: true });
     }
 
     res.json({ ok: true, received: true });
@@ -192,10 +198,16 @@ router.post("/whapi", express.json({ limit: "2mb" }), async (req, res) => {
     console.error("[webhook-whapi]", e);
     return res.status(500).json({ ok: false, error: e.message });
   }
-});
+}
+
+router.post("/whapi", express.json({ limit: "2mb" }), handleWhapiCloudWebhookPost);
 
 async function processWhapiInboundAsync(metaShaped, rawWhapi) {
   try {
+    await processWhapiBroadcastComplianceMessages(rawWhapi).catch((e) =>
+      console.error("[webhook-whapi] broadcast-compliance", e)
+    );
+
     const channelId = String(rawWhapi?.channel_id ?? rawWhapi?.channel?.id ?? "").trim();
     applyWhapiChannelIdToMetaShapedPayload(metaShaped, channelId);
     const effectivePid = channelId || readPhoneNumberIdFromMetaShaped(metaShaped);
@@ -230,8 +242,10 @@ async function processWhapiInboundAsync(metaShaped, rawWhapi) {
         }
       }
     }
-    await handleInboundMetaWhatsAppPayload(metaShaped);
-    console.log("[webhook-whapi] handleInboundMetaWhatsAppPayload terminó OK");
+    if (metaShaped) {
+      await handleInboundMetaWhatsAppPayload(metaShaped);
+      console.log("[webhook-whapi] handleInboundMetaWhatsAppPayload terminó OK");
+    }
   } catch (e) {
     console.error("[webhook-whapi] bot", e);
   }
