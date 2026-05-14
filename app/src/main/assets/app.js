@@ -174,6 +174,7 @@ import {
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z-index-stack.js';
+import { gnAndroidCerrarUiEncimaDelMapaParaZoomPedido } from './modules/gn-android-cerrar-ui-para-mapa-zoom.js';
 import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
 import { gnDetalleImgAttrs } from './modules/pedido-detalle-html-helpers.js';
@@ -8427,6 +8428,12 @@ window._zm = id => {
         if (!Number.isFinite(la) || !Number.isFinite(ln)) {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
+        }
+        if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) {
+            gnAndroidCerrarUiEncimaDelMapaParaZoomPedido();
+            try {
+                cancelarMoverUbicacionMapa();
+            } catch (_) {}
         }
         // Cerrar #dm y demás modales: cerrarModalesMoSalvo(['dm']) dejaba el detalle abierto (keep = mantener).
         closeAll();
