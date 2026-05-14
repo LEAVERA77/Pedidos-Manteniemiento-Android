@@ -218,7 +218,7 @@ function gnAttachCursorCoordsControl(L, map) {
             gotoWrap.appendChild(inLng);
             gotoWrap.appendChild(btnGo);
             const gotoHint = L.DomUtil.create('div', 'gn-cursor-goto-hint', body);
-            gotoHint.textContent = 'Tras «Ir»: tocá el punto verde (o clic derecho) para copiar, compartir o quitar.';
+            gotoHint.textContent = 'Tras «Ir»: tocá el punto verde — Copiar / Maps / Nuevo reclamo / WA, o clic derecho para el menú.';
             gotoHint.style.cssText =
                 'font-size:10px;opacity:.78;margin-top:6px;line-height:1.3;max-width:15rem;color:var(--tl,#64748b)';
 

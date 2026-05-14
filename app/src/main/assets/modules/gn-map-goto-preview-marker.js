@@ -1,6 +1,6 @@
 /**
  * Marcador verde (misma estética que GPS en app) al ir a Lat/Lng desde el panel de coordenadas.
- * No abre #pm; menú contextual (clic derecho), Escape, auto-oculta ~12 min, evento `gn-clear-goto-preview-marker`.
+ * Tras «Ir»: marcador verde; menú contextual; opción Nuevo reclamo (#pm) con mismo flujo que el mapa.
  * made by leavera77
  */
 
@@ -71,6 +71,34 @@ function armGlobalKeys(map) {
 }
 
 /**
+ * Abre #pm con el mismo flujo que `abrirNuevoPedidoEnCoordenadas` (formulario, tipos, NIS, etc.)
+ * y programa reverse Nominatim si aplica (cualquier rubro con sesión/API).
+ */
+async function abrirModalNuevoPedidoDesdeGoto(lat, lng) {
+    try {
+        if (typeof window !== 'undefined') window._gnSuppressMapClickUntil = Date.now() + 500;
+    } catch (_) {}
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+    try {
+        if (typeof window.abrirNuevoPedidoEnCoordenadas === 'function') {
+            await window.abrirNuevoPedidoEnCoordenadas(la, lo, null);
+        }
+    } catch (_) {}
+    try {
+        const fakeE = { latlng: { lat: la, lng: lo }, originalEvent: {} };
+        if (
+            typeof window.debeReverseNominatimAdminMapTap === 'function' &&
+            window.debeReverseNominatimAdminMapTap(fakeE) &&
+            typeof window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function'
+        ) {
+            window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(la, lo);
+        }
+    } catch (_) {}
+}
+
+/**
  * Menú contextual junto al cursor: compartir / copiar / quitar.
  * @param {import('leaflet').Map} map
  */
@@ -91,8 +119,10 @@ function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
     const left = Math.max(8, Math.min(x, vw - menuW - 8));
     const top = Math.max(8, Math.min(y, vh - 200));
 
-    const enc = encodeURIComponent(shareText);
     const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
+    const lat6m = Number(lat).toFixed(6);
+    const lng6m = Number(lng).toFixed(6);
+    const copyLineCoords = `${lat6m}, ${lng6m}\n${gmaps}`;
 
     const el = document.createElement('div');
     el.className = 'gn-goto-ctx-menu';
@@ -119,8 +149,11 @@ function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
 
     el.innerHTML =
         `<div style="padding:.25rem .65rem .4rem;font-size:.72rem;color:#64748b;font-weight:600">Punto de consulta</div>` +
-        mkItem('📋 Copiar texto (coords + mapa)') +
-        mkItem('🗺 Abrir en Google Maps') +
+        mkItem('📋 Copiar coordenadas') +
+        mkItem('🗺 Abrir Google Maps (nueva pestaña)') +
+        (typeof window !== 'undefined' && typeof window.abrirNuevoPedidoEnCoordenadas === 'function'
+            ? mkItem('📝 Nuevo reclamo en este punto', ';border-top:1px solid #e2e8f0;margin-top:.2rem;padding-top:.55rem;font-weight:600')
+            : '') +
         `<a role="menuitem" class="gn-goto-ctx-item gn-goto-ctx-link" href="${waHref}" target="_blank" rel="noopener noreferrer" style="display:block;padding:.5rem .85rem;text-decoration:none;color:inherit;background:transparent;border-radius:0">💬 WhatsApp</a>` +
         (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
             ? mkItem('📤 Compartir…', ';border-top:1px solid #e2e8f0;margin-top:.2rem;padding-top:.55rem')
@@ -143,17 +176,22 @@ function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
         if (!btn) return;
         ev.preventDefault();
         const lab = String(btn.textContent || '');
-        if (lab.includes('Copiar')) {
-            if (typeof window.copiarTexto === 'function') window.copiarTexto(shareText);
-            else if (navigator.clipboard && navigator.clipboard.writeText) void navigator.clipboard.writeText(shareText);
+        if (lab.includes('Copiar coordenadas') || (lab.includes('Copiar') && lab.includes('coord'))) {
+            if (typeof window.copiarTexto === 'function') window.copiarTexto(copyLineCoords);
+            else if (navigator.clipboard && navigator.clipboard.writeText) void navigator.clipboard.writeText(copyLineCoords);
             toastOk('Copiado');
             closeGotoContextMenu();
             return;
         }
-        if (lab.includes('Google Maps')) {
+        if (lab.includes('Google Maps') || lab.includes('Maps')) {
             try {
                 window.open(gmaps, '_blank', 'noopener,noreferrer');
             } catch (_) {}
+            closeGotoContextMenu();
+            return;
+        }
+        if (lab.includes('Nuevo reclamo')) {
+            void abrirModalNuevoPedidoDesdeGoto(lat, lng);
             closeGotoContextMenu();
             return;
         }
@@ -264,25 +302,31 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
     const shareText = `📍 ${lat6}, ${lng6}\nhttps://www.google.com/maps?q=${lat},${lng}`;
     const enc = encodeURIComponent(shareText);
     const waHref = `https://wa.me/?text=${enc}`;
+    const gmapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    const copyClipboardLine = `${lat6}, ${lng6}\n${gmapsUrl}`;
+    const encCopy = encodeURIComponent(copyClipboardLine);
 
+    const btnCompact = 'font-size:.64rem;padding:.2rem .32rem;line-height:1.15;border-radius:.32rem;font-weight:600';
     const popupHtml =
-        `<div class="gn-goto-preview-popup" style="font-family:system-ui;min-width:200px">` +
-        `<b style="color:#059669">📍 Punto en el mapa</b><br>` +
+        `<div class="gn-goto-preview-popup" style="font-family:system-ui;min-width:188px;max-width:min(92vw,272px)">` +
+        `<b style="color:#059669;font-size:.84rem">📍 Punto en el mapa</b><br>` +
         `<span style="font-size:10px;color:#94a3b8">${lat6}, ${lng6}</span>` +
-        `<p style="font-size:.72rem;color:#64748b;margin:.45rem 0 .35rem;line-height:1.35">` +
-        `<strong>Tocá o clic</strong> en el punto verde: este panel o menú. <strong>Clic derecho</strong>: menú rápido. <strong>Escape</strong> quita el punto.` +
+        `<p style="font-size:.68rem;color:#64748b;margin:.38rem 0 .28rem;line-height:1.32">` +
+        `<strong>Maps</strong> abre Google en pestaña nueva. <strong>Nuevo reclamo</strong> = mismo alta que el mapa (dirección automática si aplica).` +
         `</p>` +
-        `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center">` +
-        `<button type="button" class="bp gn-goto-preview-copy" data-gn-copy="${enc}">Copiar texto</button>` +
-        `<a class="ba2" style="font-size:.78rem;padding:.25rem .55rem;text-decoration:none;display:inline-flex;align-items:center;gap:.25rem;background:#128C7E;color:#fff;border-color:#128C7E;border-radius:2rem" href="${waHref}" target="_blank" rel="noopener noreferrer"><i class="fab fa-whatsapp"></i> WhatsApp</a>` +
-        `<button type="button" class="sec gn-goto-preview-share" style="display:none;font-size:.78rem;padding:.25rem .5rem">Compartir…</button>` +
-        `<button type="button" class="sec gn-goto-preview-remove" style="font-size:.78rem;padding:.25rem .5rem;color:#b91c1c;border-color:#fecaca" onclick="event.preventDefault();event.stopPropagation();try{window.dispatchEvent(new CustomEvent('gn-clear-goto-preview-marker'));}catch(_){}return false;">Quitar</button>` +
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:2px;width:100%;align-items:stretch">` +
+        `<button type="button" class="bp gn-goto-preview-copy" data-gn-copy="${encCopy}" style="${btnCompact}">Copiar coords</button>` +
+        `<a class="gn-goto-preview-gmaps" href="${gmapsUrl}" target="_blank" rel="noopener noreferrer" style="${btnCompact};text-align:center;text-decoration:none;border:1.5px solid #cbd5e1;color:#1d4ed8;background:#fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box">Maps</a>` +
+        `<button type="button" class="bp gn-goto-preview-nuevo" style="grid-column:1/-1;font-size:.72rem;padding:.34rem .45rem;border-radius:.35rem;font-weight:700;background:#2563eb;color:#fff;border:none;cursor:pointer;line-height:1.2;margin-top:1px">Nuevo reclamo</button>` +
+        `<a class="ba2 gn-goto-preview-wa" href="${waHref}" target="_blank" rel="noopener noreferrer" style="font-size:.62rem;padding:.22rem .4rem;border-radius:.35rem;display:inline-flex;align-items:center;justify-content:center;gap:.25rem"><i class="fab fa-whatsapp"></i> WA</a>` +
+        `<button type="button" class="sec gn-goto-preview-share" style="display:none;font-size:.62rem;padding:.2rem .28rem">Compartir</button>` +
+        `<button type="button" class="sec gn-goto-preview-remove" style="grid-column:1/-1;font-size:.62rem;padding:.22rem .35rem;color:#b91c1c;border-color:#fecaca;border-radius:.32rem;margin-top:1px" onclick="event.preventDefault();event.stopPropagation();try{window.dispatchEvent(new CustomEvent('gn-clear-goto-preview-marker'));}catch(_){}return false;">Quitar</button>` +
         `</div></div>`;
 
-    _marker = L.marker([lat, lng], mkOpt).addTo(map).bindPopup(popupHtml, { maxWidth: 300 });
+    _marker = L.marker([lat, lng], mkOpt).addTo(map).bindPopup(popupHtml, { maxWidth: 292 });
     _gotoMapRef = map;
     try {
-        _marker.bindTooltip('Tocá o clic: opciones · Clic derecho: menú · Esc quita · ~12 min', {
+        _marker.bindTooltip('Copiar / Maps / Nuevo reclamo · clic derecho menú · Esc quita', {
             direction: 'top',
             sticky: true,
             opacity: 0.95,
@@ -348,6 +392,33 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
                 if (attempt < 5) setTimeout(() => tryBind(attempt + 1), 25);
                 return;
             }
+            const nuevo = scope.querySelector('.gn-goto-preview-nuevo');
+            if (nuevo) {
+                if (typeof window.abrirNuevoPedidoEnCoordenadas !== 'function') {
+                    try {
+                        nuevo.style.display = 'none';
+                    } catch (_) {}
+                } else {
+                    nuevo.addEventListener(
+                        'click',
+                        async (ev) => {
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            try {
+                                if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+                            } catch (_) {}
+                            try {
+                                if (typeof window !== 'undefined') window._gnSuppressMapClickUntil = Date.now() + 500;
+                            } catch (_) {}
+                            try {
+                                map.closePopup();
+                            } catch (_) {}
+                            await abrirModalNuevoPedidoDesdeGoto(lat, lng);
+                        },
+                        { capture: true, once: true }
+                    );
+                }
+            }
             const copyB = scope.querySelector('.gn-goto-preview-copy');
             if (copyB) {
                 copyB.addEventListener(
@@ -383,7 +454,7 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
                     { once: true }
                 );
             }
-            /** Quitar: onclick en HTML + evento global; acá refuerzo (Leaflet/WebView). */
+            /** Quitar: onclick en HTML + refuerzo (Leaflet/WebView). */
             const rm = scope.querySelector('.gn-goto-preview-remove');
             if (rm) {
                 const onRm = (ev) => {
