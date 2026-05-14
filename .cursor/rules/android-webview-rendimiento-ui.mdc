@@ -3,6 +3,8 @@ description: Rendimiento y UX en WebView Android (modales, panel pedidos, datos)
 alwaysApply: false
 ---
 
+**Gama media / FPS:** ver también la regla **`android-gama-media-fps-webview`** (siempre aplicada).
+
 # WebView Android — prioridad rendimiento fluido
 
 Al tocar **UI compartida** (`app/src/main/assets/`) que impacte **técnicos en la app Android (WebView)**:

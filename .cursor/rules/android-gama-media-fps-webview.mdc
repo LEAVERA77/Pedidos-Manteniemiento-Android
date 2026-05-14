@@ -1,0 +1,26 @@
+---
+description: FPS y WebView en Android gama media (shell, mapa, modales; sin inflar app.js)
+alwaysApply: true
+---
+
+# Android gama media — fluidez FPS y WebView (Nexxo / assets compartidos)
+
+## Prioridad
+
+- Tratar **Samsung A16 y similares** como referencia: **pocos FPS de sobra**, GPU limitada, WebView sensible a **repintado** y **DOM grande**.
+- Cambios en `app/src/main/assets/` que afecten **técnicos en campo** deben **preservar o mejorar** scroll/lista/modal sin añadir peso innecesario.
+
+## Patrones ya establecidos (no regresar)
+
+- **`html.gn-android-shell`:** optimizaciones en [`gn-android-shell-perf.css`](app/src/main/assets/gn-android-shell-perf.css) (overlay sin `backdrop-filter` en `#dm`/`#pm`, sombras livianas, `touch-action`, `content-visibility` / `contain` donde aplique).
+- **Mapa con detalle abierto:** [`modules/gn-map-throttle-when-modal.js`](app/src/main/assets/modules/gn-map-throttle-when-modal.js) suprime pintura/interacción de Leaflet mientras `#dm` está activo; al cerrar se restaura.
+- **No inflar [`app.js`](app/src/main/assets/app.js):** nueva lógica en `modules/*.js` o `js/*.js` + **pegamento mínimo** (import + una llamada). Ver reglas `assets-app-js-no-crecer` / `no-agrandar-app-js`.
+
+## Modal detalle `#dm` — “Ver en mapa (zoom máximo)”
+
+- El handler global **`window._zm`** debe **cerrar el modal de detalle** (`closeAll()` o flujo equivalente que dispare cierre de `#dm` y restauración del mapa) **antes** de `setView` / zoom. **Nunca** usar `cerrarModalesMoSalvo(['dm'])` para este botón: ese helper **conserva** los ids listados y **dejaría `#dm` abierto** por error.
+
+## Regresión mínima
+
+- Desde `#dm`: botón zoom máximo → mapa visible, pedido centrado, **sin** modal tapando.
+- Cerrar `#dm` por otros medios → mapa y lista coherentes con `gn-map-throttle-when-modal` y observers de imagen.

@@ -8428,12 +8428,8 @@ window._zm = id => {
             toast('Este pedido no tiene coordenadas en el mapa (sin GPS ni geocódigo de calle).', 'warning');
             return;
         }
-        const dm = document.getElementById('dm');
-        if (dm?.classList.contains('active')) {
-            cerrarModalesMoSalvo(['dm']);
-        } else {
-            closeAll();
-        }
+        // Cerrar #dm y demás modales: cerrarModalesMoSalvo(['dm']) dejaba el detalle abierto (keep = mantener).
+        closeAll();
         setTimeout(() => {
             if (!app.map) return;
             app.map.invalidateSize({ animate: false });
