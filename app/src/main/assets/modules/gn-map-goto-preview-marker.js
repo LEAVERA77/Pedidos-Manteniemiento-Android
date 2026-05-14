@@ -171,7 +171,7 @@ function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
             return;
         }
         if (lab.includes('Quitar')) {
-            gnClearMapGotoPreviewMarker(map);
+            gnRequestClearGotoPreviewMarker();
         }
     });
 
@@ -212,7 +212,7 @@ export function gnInstallGotoPreviewClearOnEvent() {
     _listenerInstalled = true;
     window.addEventListener('gn-clear-goto-preview-marker', () => {
         try {
-            const m = window.app && window.app.map;
+            const m = (window.app && window.app.map) || _gotoMapRef;
             if (m) gnClearMapGotoPreviewMarker(m);
         } catch (_) {}
     });
@@ -276,7 +276,7 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
         `<button type="button" class="bp gn-goto-preview-copy" data-gn-copy="${enc}">Copiar texto</button>` +
         `<a class="ba2" style="font-size:.78rem;padding:.25rem .55rem;text-decoration:none;display:inline-flex;align-items:center;gap:.25rem;background:#128C7E;color:#fff;border-color:#128C7E;border-radius:2rem" href="${waHref}" target="_blank" rel="noopener noreferrer"><i class="fab fa-whatsapp"></i> WhatsApp</a>` +
         `<button type="button" class="sec gn-goto-preview-share" style="display:none;font-size:.78rem;padding:.25rem .5rem">Compartir…</button>` +
-        `<button type="button" class="sec gn-goto-preview-remove" style="font-size:.78rem;padding:.25rem .5rem;color:#b91c1c;border-color:#fecaca">Quitar</button>` +
+        `<button type="button" class="sec gn-goto-preview-remove" style="font-size:.78rem;padding:.25rem .5rem;color:#b91c1c;border-color:#fecaca" onclick="event.preventDefault();event.stopPropagation();try{window.dispatchEvent(new CustomEvent('gn-clear-goto-preview-marker'));}catch(_){}return false;">Quitar</button>` +
         `</div></div>`;
 
     _marker = L.marker([lat, lng], mkOpt).addTo(map).bindPopup(popupHtml, { maxWidth: 300 });
@@ -339,58 +339,68 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
     }, 200);
 
     const bindPopupUi = () => {
-        const wrap = _marker.getPopup && _marker.getPopup().getElement && _marker.getPopup().getElement();
-        if (!wrap) return;
-        const copyB = wrap.querySelector('.gn-goto-preview-copy');
-        if (copyB) {
-            copyB.addEventListener(
-                'click',
-                (ev) => {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    const raw = decodeURIComponent(String(copyB.getAttribute('data-gn-copy') || ''));
-                    if (typeof window.copiarTexto === 'function') window.copiarTexto(raw);
-                    else if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-                        void navigator.clipboard.writeText(raw).catch(() => {});
-                    }
-                },
-                { once: true }
-            );
-        }
-        const sh = wrap.querySelector('.gn-goto-preview-share');
-        if (sh && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-            sh.style.display = 'inline-flex';
-            sh.addEventListener(
-                'click',
-                async (ev) => {
+        const tryBind = (attempt) => {
+            const pu = _marker && _marker.getPopup && _marker.getPopup();
+            const root = pu && pu.getElement && pu.getElement();
+            const scope =
+                (root && root.querySelector && root.querySelector('.leaflet-popup-content')) || root;
+            if (!scope || !scope.querySelector || !scope.querySelector('.gn-goto-preview-remove')) {
+                if (attempt < 5) setTimeout(() => tryBind(attempt + 1), 25);
+                return;
+            }
+            const copyB = scope.querySelector('.gn-goto-preview-copy');
+            if (copyB) {
+                copyB.addEventListener(
+                    'click',
+                    (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        const raw = decodeURIComponent(String(copyB.getAttribute('data-gn-copy') || ''));
+                        if (typeof window.copiarTexto === 'function') window.copiarTexto(raw);
+                        else if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                            void navigator.clipboard.writeText(raw).catch(() => {});
+                        }
+                    },
+                    { once: true }
+                );
+            }
+            const sh = scope.querySelector('.gn-goto-preview-share');
+            if (sh && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                sh.style.display = 'inline-flex';
+                sh.addEventListener(
+                    'click',
+                    async (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        try {
+                            await navigator.share({
+                                title: 'Coordenadas',
+                                text: shareText,
+                                url: `https://www.google.com/maps?q=${lat},${lng}`,
+                            });
+                        } catch (_) {}
+                    },
+                    { once: true }
+                );
+            }
+            /** Quitar: onclick en HTML + evento global; acá refuerzo (Leaflet/WebView). */
+            const rm = scope.querySelector('.gn-goto-preview-remove');
+            if (rm) {
+                const onRm = (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
                     try {
-                        await navigator.share({
-                            title: 'Coordenadas',
-                            text: shareText,
-                            url: `https://www.google.com/maps?q=${lat},${lng}`,
-                        });
+                        if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
                     } catch (_) {}
-                },
-                { once: true }
-            );
-        }
-        const rm = wrap.querySelector('.gn-goto-preview-remove');
-        if (rm) {
-            rm.addEventListener(
-                'click',
-                (ev) => {
-                    ev.preventDefault();
-                    ev.stopPropagation();
                     try {
                         map.closePopup();
                     } catch (_) {}
-                    gnClearMapGotoPreviewMarker(map);
-                },
-                { once: true }
-            );
-        }
+                    gnRequestClearGotoPreviewMarker();
+                };
+                rm.addEventListener('click', onRm, { capture: true });
+            }
+        };
+        tryBind(1);
     };
 
     _marker.on('popupopen', bindPopupUi);
