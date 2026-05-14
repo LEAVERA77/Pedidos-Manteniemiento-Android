@@ -142,7 +142,11 @@ import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDo
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
-import { guardarRotacionReclamoDesdeFotoAmpliada } from './modules/pedido-ver-imagen.js';
+import {
+  gnMapThrottleOnDetallePedidoOpened,
+  gnMapThrottleOnDetallePedidoClosed,
+} from './modules/gn-map-throttle-when-modal.js';
+import { guardarRotacionReclamoDesdeFotoAmpliada, installPedidoVerImagenDetalleObserver, disconnectPedidoVerImagenDetalleObserver } from './modules/pedido-ver-imagen.js';
 import {
     initPedidosToolbarFiltrosExclusivos,
     syncPedidosToolbarFiltrosExclusivosFromLs,
@@ -11670,6 +11674,12 @@ async function solicitarDerivacionTerceroDesdeTecnico(pid) {
             if (dm) {
                 dm.classList.remove('active');
                 try {
+                    gnMapThrottleOnDetallePedidoClosed();
+                } catch (_) {}
+                try {
+                    disconnectPedidoVerImagenDetalleObserver();
+                } catch (_) {}
+                try {
                     delete dm.dataset.detallePedidoId;
                 } catch (_) {}
             }
@@ -12171,6 +12181,9 @@ async function detalle(p, opts = {}) {
         </div>`;
     }
     
+    try {
+        installPedidoVerImagenDetalleObserver();
+    } catch (_) {}
     document.getElementById('dmc').innerHTML = `
         <div class="gn-dm-detail-scroll">
         <div class="ds">
@@ -12262,6 +12275,9 @@ async function detalle(p, opts = {}) {
     const dmEl = document.getElementById('dm');
     dmEl.classList.add('active');
     pedidoDetalleTraerModalAlFrente(dmEl, gnForceModalZFront);
+    try {
+        gnMapThrottleOnDetallePedidoOpened();
+    } catch (_) {}
     requestAnimationFrame(() => {
         if (!esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p)) refrescarMaterialesEnDetalle(p);
     });
@@ -12511,13 +12527,15 @@ function closeAll() {
     });
     if (dmAntes) {
         try {
-            _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
-            requestAnimationFrame(() => {
-                try {
-                    if (app.map) app.map.invalidateSize({ animate: false });
-                } catch (_) {}
-            });
+            gnMapThrottleOnDetallePedidoClosed();
         } catch (_) {}
+        try {
+            disconnectPedidoVerImagenDetalleObserver();
+        } catch (_) {}
+        try {
+            _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
+        } catch (_) {}
+    }
         try {
             const ap = document.getElementById('admin-panel');
             const tab = window.__gnAdminReopenTabTrasDetalle;

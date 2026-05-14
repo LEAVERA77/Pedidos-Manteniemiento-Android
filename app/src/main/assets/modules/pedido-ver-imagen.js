@@ -780,29 +780,43 @@ function obtenerPedidoParaImagenDetalle() {
 let _moDetallePedidoImg = null;
 let _rafDetallePedidoImg = null;
 
+/** Libera observer y rAF pendiente (p. ej. al cerrar #dm). */
+export function disconnectPedidoVerImagenDetalleObserver() {
+    if (_rafDetallePedidoImg != null) {
+        try {
+            cancelAnimationFrame(_rafDetallePedidoImg);
+        } catch (_) {}
+        _rafDetallePedidoImg = null;
+    }
+    if (_moDetallePedidoImg) {
+        try {
+            _moDetallePedidoImg.disconnect();
+        } catch (_) {}
+        _moDetallePedidoImg = null;
+    }
+}
+
 /**
  * Tras `detalle()`, `app.js` asigna `dmc.innerHTML` (reemplaza hijos directos de `#dmc`).
  * `installPedidoVolverPendiente` envuelve `detalle` en `_deps` pero la app sigue llamando al `detalle` original,
  * por eso aquí observamos `#dmc` y ejecutamos el inject en el siguiente frame.
+ * Se puede llamar de nuevo tras `disconnectPedidoVerImagenDetalleObserver()` (reabrir detalle).
  */
 export function installPedidoVerImagenDetalleObserver() {
-    if (typeof document === 'undefined' || _moDetallePedidoImg) return;
-    const boot = () => {
-        const dmc = document.getElementById('dmc');
-        if (!dmc) return;
-        _moDetallePedidoImg = new MutationObserver(() => {
-            if (_rafDetallePedidoImg != null) cancelAnimationFrame(_rafDetallePedidoImg);
-            _rafDetallePedidoImg = requestAnimationFrame(() => {
-                _rafDetallePedidoImg = null;
-                const ped = obtenerPedidoParaImagenDetalle();
-                if (!ped?.id || String(ped.id).startsWith('off_')) return;
-                void injectPedidoVerImagenReclamo(ped);
-            });
+    if (typeof document === 'undefined') return;
+    disconnectPedidoVerImagenDetalleObserver();
+    const dmc = document.getElementById('dmc');
+    if (!dmc) return;
+    _moDetallePedidoImg = new MutationObserver(() => {
+        if (_rafDetallePedidoImg != null) cancelAnimationFrame(_rafDetallePedidoImg);
+        _rafDetallePedidoImg = requestAnimationFrame(() => {
+            _rafDetallePedidoImg = null;
+            const ped = obtenerPedidoParaImagenDetalle();
+            if (!ped?.id || String(ped.id).startsWith('off_')) return;
+            void injectPedidoVerImagenReclamo(ped);
         });
-        _moDetallePedidoImg.observe(dmc, { childList: true });
-    };
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-    else boot();
+    });
+    _moDetallePedidoImg.observe(dmc, { childList: true });
 }
 
 if (typeof window !== 'undefined') {

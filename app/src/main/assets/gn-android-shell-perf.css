@@ -45,6 +45,31 @@ html.gn-android-shell #dm .gn-dm-detail-scroll {
     touch-action: pan-y;
 }
 
+/* Detalle abierto: no rasterizar el mapa debajo (clase puesta por gn-map-throttle-when-modal.js). */
+html.gn-android-shell.gn-shell-map-suppressed-for-detalle #mc {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Menos layout/pintura por bloque al hacer scroll en el detalle. */
+html.gn-android-shell #dm .gn-dm-detail-scroll > .ds,
+html.gn-android-shell #dm .gn-dm-detail-scroll details.gn-dm-section-collapsible {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 160px;
+    contain: layout paint;
+}
+
+/* Lista de pedidos: scroll más barato en shell. */
+html.gn-android-shell .pl.pedidos-panel-scroll .pi {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 72px;
+    contain: layout paint;
+}
+
+html.gn-android-shell .pl.pedidos-panel-scroll {
+    touch-action: pan-y;
+}
+
 /* Modal cierre (#cm2): mismo criterio que #dm para evitar zoom en foco */
 html.gn-android-shell #cm2 textarea,
 html.gn-android-shell #cm2 input[type="text"],

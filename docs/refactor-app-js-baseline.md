@@ -43,6 +43,17 @@ Medir y documentar el comportamiento **antes y después** de extraer código de 
 
 **Regresión:** abrir detalle, expandir «Últimos cambios y auditoría» y «Fotos del trabajo»; tap en miniatura; cierre con foto/firma; derivación con textarea.
 
+## Perfil gama media (p. ej. Samsung A16)
+
+| Paso | Qué hacer |
+|------|-----------|
+| 1 | Activar **Depuración USB** y en Chrome del PC `chrome://inspect` → WebView de la app. |
+| 2 | **Performance**: grabar ~5 s de scroll continuo dentro de `#dm` (pedido largo + fotos expandidas) y en la lista `#pl`. |
+| 3 | Anotar: **long tasks** (>50 ms), proporción **Main** vs **Raster**, sensación de FPS. |
+| 4 | Repetir tras cambios en [`gn-android-shell-perf.css`](../app/src/main/assets/gn-android-shell-perf.css), [`gn-map-throttle-when-modal.js`](../app/src/main/assets/modules/gn-map-throttle-when-modal.js) y commits asociados. |
+
+**Cambios recientes (gama media):** con `html.gn-android-shell`, mientras `#dm` está activo se añade `gn-shell-map-suppressed-for-detalle` (mapa `#mc` oculto a pintura + interacciones Leaflet deshabilitadas); al cerrar se restaura e `invalidateSize`. En detalle y lista: `content-visibility` + `contain` en `.ds` / `details` y filas `.pi`. Observer de imagen en detalle: `disconnect` al cerrar y `install` antes de cada `innerHTML` de `#dmc`.
+
 ## Notas de arquitectura (`js/core.js` vs `modules/`)
 
 - **`js/core.js`**: estado mínimo (`app`, `NEON_OK`, `esAndroidWebViewMapa`, etc.) pensado para módulos bajo `js/` (p. ej. `pedidos.js`). No duplicar allí lógica de UI que ya vive en `modules/ui-utils.js` (`toast` unificado del panel).
