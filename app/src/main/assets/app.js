@@ -12535,7 +12535,6 @@ function closeAll() {
         try {
             _gnRestaurarPanelPedidosTrasCerrarDetalleAndroid();
         } catch (_) {}
-    }
         try {
             const ap = document.getElementById('admin-panel');
             const tab = window.__gnAdminReopenTabTrasDetalle;
