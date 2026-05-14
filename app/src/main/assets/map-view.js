@@ -2,6 +2,12 @@
  * Mapa Leaflet (capa base + init): se carga con import() la primera vez que hace falta.
  * Centro: API → caché Android → EMPRESA_CFG; en WebView Android sin centro: mensaje y reintentar (sin coords fijas de ciudad).
  */
+import {
+    gnShowMapGotoPreviewMarker,
+    gnInstallGotoPreviewClearOnEvent,
+    gnRequestClearGotoPreviewMarker,
+} from './modules/gn-map-goto-preview-marker.js';
+
 let ctx = null;
 
 /** Marcador fijo de la ubicación central del tenant (admin). */
@@ -242,16 +248,15 @@ function gnAttachCursorCoordsControl(L, map) {
                     return;
                 }
                 try {
-                    const z = typeof ctx.mostrarMarcadorUbicacion === 'function'
-                        ? ctx.mostrarMarcadorUbicacion(lat, lng, null)
-                        : 16;
-                    mapInstance.setView([lat, lng], Math.max(z || 16, 16), { animate: true });
-                    if (typeof ctx.window.abrirNuevoPedidoEnCoordenadas === 'function') {
-                        void ctx.window.abrirNuevoPedidoEnCoordenadas(lat, lng, null);
-                        if (typeof ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function') {
-                            ctx.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng);
+                    gnShowMapGotoPreviewMarker(mapInstance, ctx.L, lat, lng);
+                    const zMax = typeof mapInstance.getMaxZoom === 'function' ? mapInstance.getMaxZoom() : 19;
+                    mapInstance.setView([lat, lng], zMax, { animate: true });
+                    try {
+                        const zEl = ctx.document.getElementById('zoom-altura');
+                        if (zEl && typeof ctx.calcularEscalaReal === 'function') {
+                            zEl.textContent = ctx.calcularEscalaReal(mapInstance.getZoom());
                         }
-                    }
+                    } catch (_) {}
                 } catch (_) {}
             };
 
@@ -699,6 +704,7 @@ async function waitForLeafletOnWindow(win, maxMs = 20000) {
 
 export async function runInitMap() {
     if (!ctx) return;
+    gnInstallGotoPreviewClearOnEvent();
     if (ctx.mapaInicializado && ctx.app.map) {
         ctx.app.map.invalidateSize();
         try {
@@ -919,6 +925,7 @@ export async function runInitMap() {
         } catch (_) {}
 
         if (ctx._modoFijarUbicacionAdmin) {
+            gnRequestClearGotoPreviewMarker();
             ctx._modoFijarUbicacionAdmin = false;
             ctx.document.body.classList.remove('modo-fijar-ubicacion');
             ctx.registrarUbicacionManualAdmin(e.latlng.lat, e.latlng.lng);
@@ -981,6 +988,7 @@ export async function runInitMap() {
 
         ctx.app.sel = e.latlng;
         _gnTapsHintNuevoPedidoMapa = 0;
+        gnRequestClearGotoPreviewMarker();
         ctx.limpiarFotosYPreviewNuevoPedido();
         ctx.document.getElementById('li').value = e.latlng.lat;
         ctx.document.getElementById('gi').value = e.latlng.lng;

@@ -175,6 +175,7 @@ import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z-index-stack.js';
 import { installGnClipboardCopy } from './modules/gn-clipboard-copy.js';
+import { gnRequestClearGotoPreviewMarker } from './modules/gn-map-goto-preview-marker.js';
 import { gnAndroidCerrarUiEncimaDelMapaParaZoomPedido } from './modules/gn-android-cerrar-ui-para-mapa-zoom.js';
 import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
@@ -3081,8 +3082,12 @@ function mapTapNuevoPedidoArmadoSesion() {
 }
 function setMapTapNuevoPedidoArmado(armed) {
     try {
-        if (armed) sessionStorage.setItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY, '1');
-        else sessionStorage.removeItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY);
+        if (armed) {
+            sessionStorage.setItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY, '1');
+            try {
+                gnRequestClearGotoPreviewMarker();
+            } catch (_) {}
+        } else sessionStorage.removeItem(MAP_TAP_NUEVO_PEDIDO_ARMED_KEY);
     } catch (_) {}
     try {
         syncMapTapNuevoPedidoArmedUi();
@@ -7674,8 +7679,9 @@ let _mejorPrecision  = Infinity;
 
 function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
     if (!app.map) return;
-
-    
+    try {
+        gnRequestClearGotoPreviewMarker();
+    } catch (_) {}
     if (marcadorUbicacion) {
         try { app.map.removeLayer(marcadorUbicacion); } catch(_) {}
         marcadorUbicacion = null;
@@ -8065,6 +8071,9 @@ async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
         toast('No se pudo cargar el mapa', 'error');
         return;
     }
+    try {
+        gnRequestClearGotoPreviewMarker();
+    } catch (_) {}
     const latN = Number(lat);
     const lngN = Number(lng);
     if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
@@ -11786,6 +11795,9 @@ async function refetchPedidoFilaParaDetalle(pedidoId) {
 }
 
 async function detalle(p, opts = {}) {
+    try {
+        gnRequestClearGotoPreviewMarker();
+    } catch (_) {}
     const skipBgRefetch = !!opts.skipBackgroundRefetch;
     if (!skipBgRefetch && p?.id != null && !String(p.id).startsWith('off_') && !modoOffline) {
         const okRol =
@@ -12507,6 +12519,9 @@ function cerrarModalesMoSalvo(keepIds) {
 }
 
 function closeAll() {
+    try {
+        gnRequestClearGotoPreviewMarker();
+    } catch (_) {}
     const dmAntes = document.getElementById('dm')?.classList.contains('active');
     const forzarPw = document.getElementById('modal-forzar-cambio-pw');
     document.getElementById('modal-dashboard-gerencia')?.classList.remove('modal-dash--maximized');
