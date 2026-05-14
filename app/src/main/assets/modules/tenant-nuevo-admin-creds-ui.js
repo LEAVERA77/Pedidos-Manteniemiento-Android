@@ -4,6 +4,7 @@
  */
 
 import { toast } from './ui-utils.js';
+import { copiarTextoContenido } from './gn-clipboard-copy.js';
 
 function credsTexto({ usuario, password }) {
   return (
@@ -39,13 +40,9 @@ export function mostrarModalCredencialesAdminNuevoTenant({ usuario, password, no
       resolve();
     };
     const onCopy = async () => {
-      const t = credsTexto({ usuario, password });
-      try {
-        await navigator.clipboard.writeText(t);
-        toast('Credenciales copiadas al portapapeles.', 'success');
-      } catch (_) {
-        toast('No se pudo copiar. Seleccioná el texto manualmente.', 'error');
-      }
+      await copiarTextoContenido(credsTexto({ usuario, password }), {
+        okMessage: 'Credenciales copiadas al portapapeles.',
+      });
     };
     const onCont = async () => {
       done();

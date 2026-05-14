@@ -174,6 +174,7 @@ import {
 import { generarMenuBot, procesarRespuestaBot } from './modules/bot-menus.js';
 import { gnAbrirAsistenteDesdeWizardOLogin } from './modules/gn-asistente-paridad-magic-mt.js';
 import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z-index-stack.js';
+import { installGnClipboardCopy } from './modules/gn-clipboard-copy.js';
 import { gnAndroidCerrarUiEncimaDelMapaParaZoomPedido } from './modules/gn-android-cerrar-ui-para-mapa-zoom.js';
 import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
@@ -200,6 +201,7 @@ if (typeof window !== 'undefined') {
     window.procesarRespuestaBot = procesarRespuestaBot;
     window.gnAbrirAsistenteDesdeWizardOLogin = gnAbrirAsistenteDesdeWizardOLogin;
 }
+installGnClipboardCopy();
 
 // stripGestornovaDicePrefix, gnDice → modules/utils.js
 
@@ -12287,22 +12289,6 @@ async function detalle(p, opts = {}) {
     });
 }
 
-
-window.copiarTexto = function(texto) {
-    const t = String(texto ?? '');
-    if (window.AndroidDevice && typeof window.AndroidDevice.copyText === 'function') {
-        try {
-            window.AndroidDevice.copyText(t);
-            toast('Copiado al portapapeles', 'success');
-            return;
-        } catch (_) {}
-    }
-    navigator.clipboard.writeText(t).then(() => {
-        toast('Copiado al portapapeles', 'success');
-    }).catch(() => {
-        toast('Error al copiar', 'error');
-    });
-};
 
 // Movido a modules/export-excel.js: arrayBufferToBase64, textToBase64, guardarArchivoAndroid, dl, exportarCSV, runExportPedidosExcelCsv.
 
