@@ -1,19 +1,194 @@
 /**
  * Marcador verde (misma estética que GPS en app) al ir a Lat/Lng desde el panel de coordenadas.
- * No abre #pm; se limpia con el evento global `gn-clear-goto-preview-marker`.
+ * No abre #pm; menú contextual (clic derecho), Escape, auto-oculta ~12 min, evento `gn-clear-goto-preview-marker`.
  * made by leavera77
  */
 
+const GOTO_AUTO_HIDE_MS = 12 * 60 * 1000;
+
 let _marker = null;
+let _gotoMapRef = null;
 let _listenerInstalled = false;
+let _autoHideTimer = null;
+let _ctxMenuEl = null;
+let _onDocPointerDown = null;
+let _onKeyEscape = null;
+
+function closeGotoContextMenu() {
+    if (_onDocPointerDown) {
+        try {
+            document.removeEventListener('pointerdown', _onDocPointerDown, true);
+        } catch (_) {}
+        _onDocPointerDown = null;
+    }
+    if (_ctxMenuEl) {
+        try {
+            _ctxMenuEl.remove();
+        } catch (_) {}
+        _ctxMenuEl = null;
+    }
+}
+
+function detachGlobalKeys() {
+    if (_onKeyEscape) {
+        try {
+            document.removeEventListener('keydown', _onKeyEscape, true);
+        } catch (_) {}
+        _onKeyEscape = null;
+    }
+}
+
+function armGlobalKeys(map) {
+    detachGlobalKeys();
+    _onKeyEscape = (e) => {
+        if (e.key !== 'Escape') return;
+        if (_ctxMenuEl) {
+            closeGotoContextMenu();
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if (_marker && map && map.hasLayer && map.hasLayer(_marker)) {
+            gnClearMapGotoPreviewMarker(map);
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
+    document.addEventListener('keydown', _onKeyEscape, true);
+}
+
+/**
+ * Menú contextual junto al cursor: compartir / copiar / quitar.
+ * @param {import('leaflet').Map} map
+ */
+function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
+    closeGotoContextMenu();
+    try {
+        map.closePopup();
+    } catch (_) {}
+
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 800;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 600;
+    const x = domEv && Number.isFinite(domEv.clientX) ? domEv.clientX : vw / 2;
+    const y = domEv && Number.isFinite(domEv.clientY) ? domEv.clientY : vh / 2;
+    const menuW = 220;
+    const left = Math.max(8, Math.min(x, vw - menuW - 8));
+    const top = Math.max(8, Math.min(y, vh - 200));
+
+    const enc = encodeURIComponent(shareText);
+    const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
+
+    const el = document.createElement('div');
+    el.className = 'gn-goto-ctx-menu';
+    el.setAttribute('role', 'menu');
+    el.style.cssText = [
+        'position:fixed',
+        'z-index:100090',
+        `left:${left}px`,
+        `top:${top}px`,
+        'min-width:200px',
+        'max-width:min(92vw,280px)',
+        'background:#fff',
+        'border:1px solid #cbd5e1',
+        'border-radius:.5rem',
+        'box-shadow:0 12px 36px rgba(15,23,42,.25)',
+        'padding:.35rem 0',
+        'font-family:system-ui,sans-serif',
+        'font-size:.82rem',
+        'color:#0f172a',
+    ].join(';');
+
+    const mkItem = (label, extraStyle = '') =>
+        `<button type="button" role="menuitem" class="gn-goto-ctx-item" style="display:block;width:100%;text-align:left;padding:.5rem .85rem;border:none;background:transparent;cursor:pointer;font:inherit;color:inherit${extraStyle}">${label}</button>`;
+
+    el.innerHTML =
+        `<div style="padding:.25rem .65rem .4rem;font-size:.72rem;color:#64748b;font-weight:600">Punto de consulta</div>` +
+        mkItem('📋 Copiar texto (coords + mapa)') +
+        mkItem('🗺 Abrir en Google Maps') +
+        `<a role="menuitem" class="gn-goto-ctx-item gn-goto-ctx-link" href="${waHref}" target="_blank" rel="noopener noreferrer" style="display:block;padding:.5rem .85rem;text-decoration:none;color:inherit;background:transparent;border-radius:0">💬 WhatsApp</a>` +
+        (typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+            ? mkItem('📤 Compartir…', ';border-top:1px solid #e2e8f0;margin-top:.2rem;padding-top:.55rem')
+            : '') +
+        mkItem('✕ Quitar punto del mapa', ';margin-top:.25rem;border-top:1px solid #e2e8f0;color:#b91c1c;font-weight:600');
+
+    document.body.appendChild(el);
+    _ctxMenuEl = el;
+
+    const toastOk = (msg) => {
+        try {
+            if (typeof window.toast === 'function') window.toast(msg, 'success');
+        } catch (_) {}
+    };
+
+    el.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (!t || !t.closest) return;
+        const btn = t.closest('button.gn-goto-ctx-item');
+        if (!btn) return;
+        ev.preventDefault();
+        const lab = String(btn.textContent || '');
+        if (lab.includes('Copiar')) {
+            if (typeof window.copiarTexto === 'function') window.copiarTexto(shareText);
+            else if (navigator.clipboard && navigator.clipboard.writeText) void navigator.clipboard.writeText(shareText);
+            toastOk('Copiado');
+            closeGotoContextMenu();
+            return;
+        }
+        if (lab.includes('Google Maps')) {
+            try {
+                window.open(gmaps, '_blank', 'noopener,noreferrer');
+            } catch (_) {}
+            closeGotoContextMenu();
+            return;
+        }
+        if (lab.includes('Compartir')) {
+            void (async () => {
+                try {
+                    await navigator.share({
+                        title: 'Coordenadas',
+                        text: shareText,
+                        url: gmaps,
+                    });
+                } catch (_) {}
+            })();
+            closeGotoContextMenu();
+            return;
+        }
+        if (lab.includes('Quitar')) {
+            gnClearMapGotoPreviewMarker(map);
+        }
+    });
+
+    _onDocPointerDown = (ev) => {
+        if (_ctxMenuEl && !_ctxMenuEl.contains(ev.target)) closeGotoContextMenu();
+    };
+    document.addEventListener('pointerdown', _onDocPointerDown, true);
+
+    try {
+        if (L && L.DomEvent && typeof L.DomEvent.preventDefault === 'function') L.DomEvent.preventDefault(domEv);
+    } catch (_) {}
+    try {
+        if (domEv && typeof domEv.preventDefault === 'function') domEv.preventDefault();
+    } catch (_) {}
+}
 
 export function gnClearMapGotoPreviewMarker(map) {
-    if (_marker && map) {
+    const m = map || _gotoMapRef;
+    closeGotoContextMenu();
+    detachGlobalKeys();
+    if (_autoHideTimer) {
         try {
-            map.removeLayer(_marker);
+            clearTimeout(_autoHideTimer);
+        } catch (_) {}
+        _autoHideTimer = null;
+    }
+    if (_marker && m) {
+        try {
+            m.removeLayer(_marker);
         } catch (_) {}
     }
     _marker = null;
+    _gotoMapRef = null;
 }
 
 export function gnInstallGotoPreviewClearOnEvent() {
@@ -72,13 +247,32 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
         `<div class="gn-goto-preview-popup" style="font-family:system-ui;min-width:200px">` +
         `<b style="color:#059669">📍 Punto en el mapa</b><br>` +
         `<span style="font-size:10px;color:#94a3b8">${lat6}, ${lng6}</span>` +
-        `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">` +
+        `<p style="font-size:.72rem;color:#64748b;margin:.45rem 0 .35rem;line-height:1.35">` +
+        `<strong>Clic derecho</strong> en el punto: menú (compartir / quitar). <strong>Escape</strong> lo oculta.` +
+        `</p>` +
+        `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center">` +
         `<button type="button" class="bp gn-goto-preview-copy" data-gn-copy="${enc}">Copiar texto</button>` +
         `<a class="ba2" style="font-size:.78rem;padding:.25rem .55rem;text-decoration:none;display:inline-flex;align-items:center;gap:.25rem;background:#128C7E;color:#fff;border-color:#128C7E;border-radius:2rem" href="${waHref}" target="_blank" rel="noopener noreferrer"><i class="fab fa-whatsapp"></i> WhatsApp</a>` +
         `<button type="button" class="sec gn-goto-preview-share" style="display:none;font-size:.78rem;padding:.25rem .5rem">Compartir…</button>` +
+        `<button type="button" class="sec gn-goto-preview-remove" style="font-size:.78rem;padding:.25rem .5rem;color:#b91c1c;border-color:#fecaca">Quitar</button>` +
         `</div></div>`;
 
     _marker = L.marker([lat, lng], mkOpt).addTo(map).bindPopup(popupHtml, { maxWidth: 300 });
+    _gotoMapRef = map;
+    try {
+        _marker.bindTooltip('Consulta: clic · clic derecho menú · Esc quita · ~12 min solo', {
+            direction: 'top',
+            sticky: true,
+            opacity: 0.95,
+        });
+    } catch (_) {}
+
+    _marker.on('contextmenu', (e) => {
+        try {
+            const oe = e.originalEvent;
+            openGotoContextMenu(map, L, lat, lng, shareText, waHref, oe);
+        } catch (_) {}
+    });
 
     const bindPopupUi = () => {
         const wrap = _marker.getPopup && _marker.getPopup().getElement && _marker.getPopup().getElement();
@@ -118,7 +312,34 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
                 { once: true }
             );
         }
+        const rm = wrap.querySelector('.gn-goto-preview-remove');
+        if (rm) {
+            rm.addEventListener(
+                'click',
+                (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    try {
+                        map.closePopup();
+                    } catch (_) {}
+                    gnClearMapGotoPreviewMarker(map);
+                },
+                { once: true }
+            );
+        }
     };
 
     _marker.on('popupopen', bindPopupUi);
+
+    armGlobalKeys(map);
+
+    _autoHideTimer = setTimeout(() => {
+        _autoHideTimer = null;
+        if (_marker && map && map.hasLayer(_marker)) {
+            gnClearMapGotoPreviewMarker(map);
+            try {
+                if (typeof window.toast === 'function') window.toast('Marcador de consulta oculto (tiempo máximo).', 'info');
+            } catch (_) {}
+        }
+    }, GOTO_AUTO_HIDE_MS);
 }
