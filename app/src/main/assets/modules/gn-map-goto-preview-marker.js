@@ -5,6 +5,8 @@
  */
 
 const GOTO_AUTO_HIDE_MS = 12 * 60 * 1000;
+/** Pane dedicado: z-index entre marcadores (~600) y popup (700). */
+const GOTO_PREVIEW_PANE = 'gnPaneGotoPreview';
 
 let _marker = null;
 let _gotoMapRef = null;
@@ -38,6 +40,17 @@ function detachGlobalKeys() {
     }
 }
 
+function ensureGotoPreviewPane(map) {
+    if (!map || !map.createPane || !map.getPane) return GOTO_PREVIEW_PANE;
+    if (!map.getPane(GOTO_PREVIEW_PANE)) {
+        map.createPane(GOTO_PREVIEW_PANE);
+        const p = map.getPane(GOTO_PREVIEW_PANE);
+        p.style.zIndex = 665;
+        p.style.pointerEvents = 'auto';
+    }
+    return GOTO_PREVIEW_PANE;
+}
+
 function armGlobalKeys(map) {
     detachGlobalKeys();
     _onKeyEscape = (e) => {
@@ -63,6 +76,9 @@ function armGlobalKeys(map) {
  */
 function openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv) {
     closeGotoContextMenu();
+    try {
+        if (typeof window !== 'undefined') window._gnSuppressMapClickUntil = Date.now() + 500;
+    } catch (_) {}
     try {
         map.closePopup();
     } catch (_) {}
@@ -219,23 +235,29 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
     gnClearMapGotoPreviewMarker(map);
     if (!map || !L || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-    const paneGps = map.getPane && map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
+    const hit = 48;
     const svgIcon = L.divIcon({
-        className: '',
-        html: `<div style="
-            width:16px;height:16px;
-            background:#10b981;
-            border:3px solid white;
-            border-radius:50%;
-            box-shadow:0 0 0 3px rgba(16,185,129,.4);
-            position:relative;
-        "></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-        popupAnchor: [0, -10],
+        className: 'gn-goto-preview-hit',
+        html: `<div class="gn-goto-preview-hit-inner" style="
+            width:${hit}px;height:${hit}px;
+            display:flex;align-items:center;justify-content:center;
+            pointer-events:auto;cursor:pointer;
+            touch-action:manipulation;
+        "><span style="
+            display:block;width:18px;height:18px;
+            background:#10b981;border:3px solid #fff;border-radius:50%;
+            box-shadow:0 0 0 3px rgba(16,185,129,.45);
+        "></span></div>`,
+        iconSize: [hit, hit],
+        iconAnchor: [hit / 2, hit / 2],
+        popupAnchor: [0, -14],
     });
-    const mkOpt = { icon: svgIcon, zIndexOffset: 205 };
-    if (paneGps) mkOpt.pane = paneGps;
+    const mkOpt = {
+        icon: svgIcon,
+        zIndexOffset: 5000,
+        bubblingMouseEvents: false,
+        pane: ensureGotoPreviewPane(map),
+    };
 
     const lat6 = lat.toFixed(6);
     const lng6 = lng.toFixed(6);
@@ -248,7 +270,7 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
         `<b style="color:#059669">📍 Punto en el mapa</b><br>` +
         `<span style="font-size:10px;color:#94a3b8">${lat6}, ${lng6}</span>` +
         `<p style="font-size:.72rem;color:#64748b;margin:.45rem 0 .35rem;line-height:1.35">` +
-        `<strong>Clic derecho</strong> en el punto: menú (compartir / quitar). <strong>Escape</strong> lo oculta.` +
+        `<strong>Tocá o clic</strong> en el punto verde: este panel o menú. <strong>Clic derecho</strong>: menú rápido. <strong>Escape</strong> quita el punto.` +
         `</p>` +
         `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center">` +
         `<button type="button" class="bp gn-goto-preview-copy" data-gn-copy="${enc}">Copiar texto</button>` +
@@ -260,19 +282,61 @@ export function gnShowMapGotoPreviewMarker(map, L, lat, lng) {
     _marker = L.marker([lat, lng], mkOpt).addTo(map).bindPopup(popupHtml, { maxWidth: 300 });
     _gotoMapRef = map;
     try {
-        _marker.bindTooltip('Consulta: clic · clic derecho menú · Esc quita · ~12 min solo', {
+        _marker.bindTooltip('Tocá o clic: opciones · Clic derecho: menú · Esc quita · ~12 min', {
             direction: 'top',
             sticky: true,
             opacity: 0.95,
         });
     } catch (_) {}
 
-    _marker.on('contextmenu', (e) => {
+    const onLeafletContextMenu = (e) => {
         try {
-            const oe = e.originalEvent;
+            const oe = e && e.originalEvent;
             openGotoContextMenu(map, L, lat, lng, shareText, waHref, oe);
         } catch (_) {}
+    };
+    _marker.on('contextmenu', onLeafletContextMenu);
+
+    /** Leaflet a veces no recibe contextmenu en WebView; el DOM sí. */
+    const bindDomHitLayer = () => {
+        requestAnimationFrame(() => {
+            const el = _marker.getElement && _marker.getElement();
+            if (!el) return;
+            el.style.pointerEvents = 'auto';
+            el.style.cursor = 'pointer';
+            const onDomContextMenu = (domEv) => {
+                try {
+                    domEv.preventDefault();
+                    domEv.stopPropagation();
+                } catch (_) {}
+                openGotoContextMenu(map, L, lat, lng, shareText, waHref, domEv);
+            };
+            el.addEventListener('contextmenu', onDomContextMenu, true);
+        });
+    };
+    _marker.on('add', bindDomHitLayer);
+
+    /** Un toque / clic abre el popup (móvil); no burbujea al mapa (evita #pm / limpiar marcador). */
+    _marker.on('click', (e) => {
+        try {
+            if (typeof window !== 'undefined') window._gnSuppressMapClickUntil = Date.now() + 500;
+        } catch (_) {}
+        try {
+            if (L.DomEvent && typeof L.DomEvent.stopPropagation === 'function') L.DomEvent.stopPropagation(e);
+        } catch (_) {}
+        try {
+            if (e && e.originalEvent && typeof e.originalEvent.stopPropagation === 'function') e.originalEvent.stopPropagation();
+        } catch (_) {}
+        try {
+            _marker.openPopup();
+        } catch (_) {}
     });
+
+    setTimeout(() => {
+        try {
+            if (_marker && map.hasLayer(_marker)) _marker.openPopup();
+        } catch (_) {}
+    }, 200);
 
     const bindPopupUi = () => {
         const wrap = _marker.getPopup && _marker.getPopup().getElement && _marker.getPopup().getElement();
