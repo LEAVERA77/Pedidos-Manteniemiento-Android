@@ -56,11 +56,11 @@ export const SUBTIPOS_TRANSITO_MUNICIPIO = [
   "Otro problema de tránsito",
 ];
 
-/** Subtipos de *Orden público* (municipio): menú WA 14 → 1–5; prioridad Alta forzada. */
+/** Subtipos de *Orden público* (municipio): tras opción *13* del menú principal → elegir *1–5*; prioridad Alta en WA. */
 export const SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO = [
   "Vandalismo",
   "Disturbios",
-  "Violencia de género",
+  "Violencia doméstica / intrafamiliar (incluye violencia de género)",
   "Desorden en la vía pública",
   "Otro problema de orden público",
 ];
@@ -205,6 +205,8 @@ export function tipoTrabajoPermitidoParaNuevoPedido(tipoTrabajo, tipoCliente) {
   const rubro = normalizarRubroCliente(tipoCliente);
   if (rubro === "municipio" && SUBTIPOS_TRANSITO_MUNICIPIO.includes(tt)) return true;
   if (rubro === "municipio" && SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.includes(tt)) return true;
+  /** Histórico: subtipo renombrado en menú WA (misma opción Orden público). */
+  if (rubro === "municipio" && tt === "Violencia de género") return true;
   const permitidos = rubro
     ? TIPOS_RECLAMO_POR_RUBRO[rubro] || tiposReclamoParaClienteTipo(null)
     : tiposReclamoParaClienteTipo(null);
@@ -264,7 +266,7 @@ export const TIPOS_SOLICITUD_DERIVACION_TERCERO_COOP_ELECTRICA = [
   "Corrimiento de poste/columna",
   "Vandalismo",
   "Disturbios",
-  "Violencia de género",
+  "Violencia doméstica / intrafamiliar (incluye violencia de género)",
   "Desorden en la vía pública",
   "Otro problema de orden público",
 ];
