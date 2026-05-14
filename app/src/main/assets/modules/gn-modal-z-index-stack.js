@@ -12,8 +12,33 @@ function bumpStackedFront(el) {
     } catch (_) {}
 }
 
+/**
+ * Capas que deben quedar por encima de `#dm` mientras están visibles (visor foto, avance, impresión, cierre, #pm, asignar técnico).
+ * Si `#dm` recibe `gnForceModalZFront` o mutaciones de clase, no debe subir el z-index por encima de estas.
+ */
+export function gnHaySuboverlaySobreDetallePedido() {
+    try {
+        const foto = document.getElementById('modal-foto-ampliada');
+        if (foto && foto.classList.contains('active')) return true;
+        const printEl = document.getElementById('print-container');
+        if (printEl && printEl.classList.contains('printing')) return true;
+        const av = document.getElementById('avance-modal');
+        if (av && av.classList.contains('active')) return true;
+        const cm2 = document.getElementById('cm2');
+        if (cm2 && cm2.classList.contains('active') && cm2.classList.contains('mo')) return true;
+        const pm = document.getElementById('pm');
+        if (pm && pm.classList.contains('active') && pm.classList.contains('mo')) return true;
+        const asig = document.getElementById('modal-asignar-tecnico');
+        if (asig && asig.classList.contains('active') && asig.classList.contains('mo')) return true;
+        return false;
+    } catch (_) {
+        return false;
+    }
+}
+
 function bumpMoZ(el) {
     if (!el || !el.classList || !el.classList.contains('mo')) return;
+    if (el.id === 'dm' && gnHaySuboverlaySobreDetallePedido()) return;
     bumpStackedFront(el);
 }
 
@@ -55,9 +80,19 @@ export function initGnModalZIndexStack() {
                 if (!t || !t.classList) continue;
                 if (t.id === 'modal-foto-ampliada' || t.id === 'print-container' || t.id === 'avance-modal' || t.id === 'cm2') {
                     bumpPedidoSuboverlayIfShown(t);
+                    if (!gnHaySuboverlaySobreDetallePedido()) {
+                        const dm = document.getElementById('dm');
+                        if (dm && dm.classList.contains('mo') && dm.classList.contains('active')) bumpMoZ(dm);
+                    }
                     continue;
                 }
                 if (t.classList.contains('mo') && t.classList.contains('active')) bumpMoZ(t);
+                else if (t.classList.contains('mo') && (t.id === 'pm' || t.id === 'modal-asignar-tecnico')) {
+                    if (!gnHaySuboverlaySobreDetallePedido()) {
+                        const dm = document.getElementById('dm');
+                        if (dm && dm.classList.contains('mo') && dm.classList.contains('active')) bumpMoZ(dm);
+                    }
+                }
             }
         });
         obs.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
