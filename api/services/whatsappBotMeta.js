@@ -75,6 +75,7 @@ import {
 } from "./globalBotState.js";
 import { inferirIntencionBotWhatsappGroq } from "./groqWhatsappBotIntent.js";
 import { generarRespuestaOrientacionWhatsappGroq } from "./groqWhatsappBotOrientacion.js";
+import { inferirTipoReclamoBotWhatsappGroq } from "./groqWhatsappBotTipoReclamo.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
@@ -1751,6 +1752,82 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     console.log("[webhook-meta-whatsapp] outbound_list", { to: String(phoneDigits || "").replace(/\D/g, "").slice(0, 4) + "…", ok: true });
   }
   return r;
+}
+
+function mensajeIaPedirMasDetalleTipoReclamo(ctx) {
+  const max = ctx.tipos?.length || 0;
+  const ejemplo =
+    ctx.tipos?.length > 0 ? ctx.tipos.slice(0, Math.min(5, ctx.tipos.length)).map((t, i) => `${i + 1}) ${t}`).join("\n") : "";
+  return (
+    "No pudimos identificar con claridad el *tipo de reclamo* a partir de tu mensaje.\n\n" +
+    "Escribí de nuevo *explicando el problema* (qué falló, dónde, desde cuándo si aplica). " +
+    (max
+      ? `También podés enviar solo el *número* del *1* al *${max}* según la guía del mensaje de bienvenida.\n\n` +
+        (ejemplo ? `Primeras opciones:\n${ejemplo}\n\n` : "")
+      : "") +
+    "_Escribí *menú* para repetir la lista completa._"
+  );
+}
+
+/**
+ * Elección por índice 1-based en el menú principal de tipos (sesión idle).
+ * @returns {Promise<boolean>} true si aplicó una rama conocida
+ */
+async function aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, n, ctx, tid, phoneNumberId, contactName) {
+  if (n == null || !Number.isFinite(Number(n))) return false;
+  const ni = Number(n);
+  if (ni < 1 || ni > (ctx.tipos?.length || 0)) return false;
+  const tipoSel = ctx.tipos[ni - 1];
+  if (tipoSel === "Pérdida en Vereda/Calle") {
+    await iniciarFlujoOtrosHumano(phone, tid, phoneNumberId, contactName, ctx);
+    return true;
+  }
+  if (tipoSel.startsWith("Tránsito") && normalizarRubroCliente(ctx.tipo) === "municipio") {
+    sessions.set(sk, {
+      step: "awaiting_municipio_transito_subtipo",
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: phoneNumberId || null,
+    });
+    await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
+    return true;
+  }
+  if (tipoSel.startsWith("Orden público") && normalizarRubroCliente(ctx.tipo) === "municipio") {
+    sessions.set(sk, {
+      step: "awaiting_municipio_orden_publico_subtipo",
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: phoneNumberId || null,
+    });
+    const sub = SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.map((s, i) => `*${i + 1})* ${s}`).join("\n");
+    await reply(
+      phone,
+      `*Orden público* — elegí el tipo:\n\n${sub}\n\n_(*menú* = salir · *atrás* = volver al menú principal)_`,
+      tid,
+      phoneNumberId
+    );
+    return true;
+  }
+  if (ctx.whatsappBloqueoReclamos) {
+    await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
+    return true;
+  }
+  sessions.set(sk, {
+    step: "awaiting_desc",
+    tipo: tipoSel.startsWith("Tránsito") ? "Tránsito" : tipoSel,
+    tenantId: tid,
+    tipoCliente: ctx.tipo,
+    contactName: contactName || null,
+    phoneNumberId: phoneNumberId || null,
+  });
+  const introIdle =
+    tipoSel === TIPO_RECLAMO_OTROS
+      ? `Elegiste: *${tipoSel}*.\n\nDescribí tu reclamo (máximo *${WA_OTROS_DESCRIPCION_MAX}* caracteres):\n\n`
+      : `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n`;
+  await reply(phone, introIdle + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
+  return true;
 }
 
 async function aplicarImagenRecibidaFlujoPedidoWa(
@@ -3875,57 +3952,39 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     const n = enteroMenuPrincipalDesdeTextoLibre(text);
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
-      const tipoSel = ctx.tipos[n - 1];
-      if (tipoSel === "Pérdida en Vereda/Calle") {
-        await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
-        return;
-      }
-      if (tipoSel.startsWith("Tránsito") && normalizarRubroCliente(ctx.tipo) === "municipio") {
-        sessions.set(sk, {
-          step: "awaiting_municipio_transito_subtipo",
-          tenantId: tid,
+      const handledN = await aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, n, ctx, tid, phoneNumberId, contactName);
+      if (handledN) return;
+    }
+
+    const rawTipoIa = String(text || "").trim();
+    if (
+      rawTipoIa.length >= 8 &&
+      rawTipoIa.length <= 900 &&
+      n == null &&
+      (ctx.tipos?.length || 0) > 0 &&
+      !ctx.whatsappBloqueoReclamos
+    ) {
+      try {
+        const tr = await inferirTipoReclamoBotWhatsappGroq({
+          texto: rawTipoIa,
+          tipos: ctx.tipos,
           tipoCliente: ctx.tipo,
-          contactName: contactName || null,
-          phoneNumberId: wpid,
+          nombreEntidad: ctx.nombre || "",
         });
-        await reply(phone, textoSubmenuTransitoMunicipio(), tid, phoneNumberId);
-        return;
+        if (tr.ok && tr.confiable && tr.indice != null) {
+          const hi = Number(tr.indice);
+          if (hi >= 1 && hi <= ctx.tipos.length) {
+            const handledT = await aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, hi, ctx, tid, phoneNumberId, contactName);
+            if (handledT) return;
+          }
+        }
+        if (tr.ok && tr.intento_descripcion_reclamo && (!tr.confiable || tr.indice == null)) {
+          await reply(phone, mensajeIaPedirMasDetalleTipoReclamo(ctx), tid, phoneNumberId);
+          return;
+        }
+      } catch (e) {
+        console.warn("[whatsapp-bot-meta] inferir tipo reclamo (IA)", e?.message || e);
       }
-      if (tipoSel.startsWith("Orden público") && normalizarRubroCliente(ctx.tipo) === "municipio") {
-        sessions.set(sk, {
-          step: "awaiting_municipio_orden_publico_subtipo",
-          tenantId: tid,
-          tipoCliente: ctx.tipo,
-          contactName: contactName || null,
-          phoneNumberId: wpid,
-        });
-        const sub = SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO.map((s, i) => `*${i + 1})* ${s}`).join("\n");
-        await reply(
-          phone,
-          `*Orden público* — elegí el tipo:\n\n${sub}\n\n_(*menú* = salir · *atrás* = volver al menú principal)_`,
-          tid,
-          phoneNumberId
-        );
-        return;
-      }
-      if (ctx.whatsappBloqueoReclamos) {
-        await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
-        return;
-      }
-      sessions.set(sk, {
-        step: "awaiting_desc",
-        tipo: tipoSel.startsWith("Tránsito") ? "Tránsito" : tipoSel,
-        tenantId: tid,
-        tipoCliente: ctx.tipo,
-        contactName: contactName || null,
-        phoneNumberId: wpid,
-      });
-      const introIdle =
-        tipoSel === TIPO_RECLAMO_OTROS
-          ? `Elegiste: *${tipoSel}*.\n\nDescribí tu reclamo (máximo *${WA_OTROS_DESCRIPCION_MAX}* caracteres):\n\n`
-          : `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n`;
-      await reply(phone, introIdle + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
-      return;
     }
 
     const rawIaIdle = String(text || "").trim();
