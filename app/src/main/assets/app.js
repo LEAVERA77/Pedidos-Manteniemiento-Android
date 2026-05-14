@@ -6293,7 +6293,8 @@ function aplicarUIMapaPlataforma() {
             if (esTecnicoOSupervisor()) {
                 try {
                     if (localStorage.getItem('pmg_tecnico_ver_todos') === null) {
-                        localStorage.setItem('pmg_tecnico_ver_todos', '1');
+                        /* Android operador: por defecto solo asignados (checkbox destildado). Escritorio: ver todos. */
+                        localStorage.setItem('pmg_tecnico_ver_todos', esAndroidWebViewMapa() ? '0' : '1');
                     }
                 } catch (_) {}
             }

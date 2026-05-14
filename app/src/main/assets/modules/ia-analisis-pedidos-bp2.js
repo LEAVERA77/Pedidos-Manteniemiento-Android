@@ -268,16 +268,27 @@ function renderResumenTecnicoAsignados(pack) {
 
 const PANEL_ID = 'gn-ia-bp2-float';
 
+function esIaBp2LayoutAndroid() {
+  try {
+    return document.documentElement.classList.contains('gn-android-webview');
+  } catch (_) {
+    return false;
+  }
+}
+
 function getOrCreatePanel() {
   let p = document.getElementById(PANEL_ID);
+  const wantAndroid = esIaBp2LayoutAndroid();
+  if (p) {
+    const isAndroid = p.classList.contains('gn-ia-bp2--android-root');
+    if (wantAndroid !== isAndroid) {
+      try {
+        p.remove();
+      } catch (_) {}
+      p = null;
+    }
+  }
   if (p) return p;
-
-  p = document.createElement('div');
-  p.id = PANEL_ID;
-  p.style.cssText =
-    'position:fixed;width:min(380px,calc(100vw - 1rem));max-height:min(72vh,560px);display:none;flex-direction:column;' +
-    'background:#fff;border-radius:.75rem;box-shadow:0 14px 44px rgba(15,23,42,.3);border:1px solid var(--bo);' +
-    'z-index:10060;overflow:hidden;top:4.5rem;right:.5rem;color:var(--td,#1e293b)';
 
   const hd = document.createElement('div');
   hd.className = 'gn-ia-bp2-float-hd';
@@ -303,15 +314,41 @@ function getOrCreatePanel() {
     return b;
   };
 
-  actions.appendChild(mkBtn('fa-times', 'Cerrar', () => { p.style.display = 'none'; }));
-  hd.appendChild(actions);
-  p.appendChild(hd);
-
   const body = document.createElement('div');
   body.id = 'gn-ia-bp2-float-body';
   body.style.cssText = 'flex:1 1 auto;overflow-y:auto;padding:.65rem;font-size:.82rem;line-height:1.5;-webkit-overflow-scrolling:touch';
-  p.appendChild(body);
 
+  p = document.createElement('div');
+  p.id = PANEL_ID;
+
+  if (wantAndroid) {
+    p.className = 'gn-ia-bp2--android-root';
+    p.style.display = 'none';
+    const rootClose = () => {
+      p.style.display = 'none';
+    };
+    actions.appendChild(mkBtn('fa-times', 'Cerrar', rootClose));
+    hd.appendChild(actions);
+    if (wantAndroid) hd.style.cursor = 'default';
+    const inner = document.createElement('div');
+    inner.className = 'gn-ia-bp2-float-card';
+    inner.appendChild(hd);
+    inner.appendChild(body);
+    p.appendChild(inner);
+    document.body.appendChild(p);
+    return p;
+  }
+
+  p.style.cssText =
+    'position:fixed;width:min(380px,calc(100vw - 1rem));max-height:min(72vh,560px);display:none;flex-direction:column;' +
+    'background:#fff;border-radius:.75rem;box-shadow:0 14px 44px rgba(15,23,42,.3);border:1px solid var(--bo);' +
+    'z-index:10060;overflow:hidden;top:4.5rem;right:.5rem;color:var(--td,#1e293b)';
+  actions.appendChild(mkBtn('fa-times', 'Cerrar', () => {
+    p.style.display = 'none';
+  }));
+  hd.appendChild(actions);
+  p.appendChild(hd);
+  p.appendChild(body);
   document.body.appendChild(p);
   setupDrag(p, hd);
   return p;
@@ -442,6 +479,9 @@ async function analizarPedidosBp2() {
   if (!body) return;
 
   panel.style.display = 'flex';
+  try {
+    if (esIaBp2LayoutAndroid() && typeof window.gnBumpOverlayElement === 'function') window.gnBumpOverlayElement(panel);
+  } catch (_) {}
 
   const techFlujoAsignados = !esAdminPanel() && esTecnicoPanel();
 

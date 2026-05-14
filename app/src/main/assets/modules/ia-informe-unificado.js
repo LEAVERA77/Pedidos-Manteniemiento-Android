@@ -208,6 +208,56 @@ function renderInforme(data) {
 
 let _lastData = null;
 
+/** WebView Android: informe en overlay centrado al frente hasta Cerrar. */
+function promoteInformeIaAndroidOverlay(container) {
+  if (!container || !document.documentElement.classList.contains('gn-android-webview')) return;
+  let ov = document.getElementById('gn-ia-informe-android-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'gn-ia-informe-android-overlay';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.style.cssText =
+      'position:fixed;inset:0;z-index:250002;display:none;flex-direction:column;align-items:center;justify-content:center;' +
+      'padding:max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) max(.75rem, env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left));' +
+      'background:rgba(15,23,42,.55);box-sizing:border-box';
+    const head = document.createElement('div');
+    head.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;width:min(32rem,calc(100vw - 1.5rem));max-width:100%;margin-bottom:.4rem;flex-shrink:0;gap:.5rem';
+    const t = document.createElement('span');
+    t.style.cssText = 'font-weight:700;color:#fff;font-size:.95rem;text-shadow:0 1px 2px rgba(0,0,0,.35)';
+    t.textContent = 'Informe IA';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = 'Cerrar';
+    x.style.cssText =
+      'padding:.4rem .85rem;border-radius:.4rem;border:none;background:#fff;color:#1e293b;font-weight:600;cursor:pointer;flex-shrink:0';
+    x.addEventListener('click', () => {
+      ov.style.display = 'none';
+    });
+    head.appendChild(t);
+    head.appendChild(x);
+    const wrap = document.createElement('div');
+    wrap.className = 'gn-ia-informe-android-card';
+    wrap.style.cssText =
+      'width:min(32rem, 100%);max-height:min(86vh, 820px);overflow:auto;-webkit-overflow-scrolling:touch;border-radius:.65rem;' +
+      'background:linear-gradient(135deg,#f5f3ff 0%,#ede9fe 100%);border:1px solid #c4b5fd;box-shadow:0 18px 48px rgba(0,0,0,.35)';
+    ov.appendChild(head);
+    ov.appendChild(wrap);
+    document.body.appendChild(ov);
+  }
+  const wrap = ov.querySelector('.gn-ia-informe-android-card');
+  if (!wrap) return;
+  if (container.parentNode !== wrap) wrap.appendChild(container);
+  try {
+    container.style.marginTop = '0';
+  } catch (_) {}
+  ov.style.display = 'flex';
+  try {
+    if (typeof window.gnBumpOverlayElement === 'function') window.gnBumpOverlayElement(ov);
+  } catch (_) {}
+}
+
 function getOrCreateContainer() {
   let c = document.getElementById('ia-informe-unificado-output');
   if (!c) {
@@ -256,6 +306,9 @@ async function generarInforme() {
     _lastData = data;
     const container = getOrCreateContainer();
     container.innerHTML = renderInforme(data);
+    try {
+      promoteInformeIaAndroidOverlay(container);
+    } catch (_) {}
 
     container.onclick = (e) => {
       const btn = e.target.closest('button[id^="ia-informe-btn-"]');
