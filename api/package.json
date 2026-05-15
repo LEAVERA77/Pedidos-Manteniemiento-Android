@@ -31,7 +31,8 @@
     "preload:street-geometries": "node scripts/preload-street-geometries.mjs",
     "generar:localidades-ar": "node scripts/generate-localidades-argentinas-sql.mjs",
     "normalize:socios-telefonos": "node scripts/normalizeSociosCatalogoTelefonos.mjs",
-    "create:tenant-admin": "node scripts/createTenantAdmin.mjs"
+    "create:tenant-admin": "node scripts/createTenantAdmin.mjs",
+    "socios:asignar-distrib-aleatorio": "node scripts/asignarDistribuidoresAleatoriosSociosExcel.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
