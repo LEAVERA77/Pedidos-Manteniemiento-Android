@@ -17,8 +17,6 @@ function escCell(s) {
  * @param {{
  *   getApiToken: () => string | null | undefined;
  *   apiUrl: (path: string) => string;
- *   esCooperativaElectricaRubro: () => boolean;
- *   debeOcultarTabDistribuidoresAdmin: () => boolean;
  *   toast: (msg: string, type?: string, ms?: number) => void;
  *   toastError: (tag: string, err: unknown, pref?: string) => void;
  * }} d
@@ -137,11 +135,13 @@ export async function cargarListaRedElectricaInfra(d) {
 }
 
 /**
- * @param {{ esCooperativaElectricaRubro: () => boolean; debeOcultarTabDistribuidoresAdmin: () => boolean }} d
+ * Pestaña «Red Eléctrica»: visible en cooperativa eléctrica aunque el admin oculte
+ * catálogo Distribuidores / métricas SAIDI (cfg `ocultar_modulos_redes`), porque acá se carga infra para estadísticas.
+ * @param {{ esCooperativaElectricaRubro: () => boolean }} d
  */
 export function syncAdminRedElectricaTabVisibility(d) {
   const tab = document.getElementById("admin-tab-red-electrica");
   if (!tab) return;
-  const show = d.esCooperativaElectricaRubro() && !d.debeOcultarTabDistribuidoresAdmin();
+  const show = typeof d.esCooperativaElectricaRubro === "function" && d.esCooperativaElectricaRubro();
   tab.style.display = show ? "" : "none";
 }

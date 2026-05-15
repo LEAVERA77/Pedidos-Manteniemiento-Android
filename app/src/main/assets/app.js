@@ -1038,10 +1038,7 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
             esCooperativaElectricaRubro,
             debeOcultarTabDistribuidoresAdmin,
         });
-        syncAdminRedElectricaTabVisibility({
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
-        });
+        syncAdminRedElectricaTabVisibility({ esCooperativaElectricaRubro });
     } catch (_) {}
     try {
         syncOcultarModulosRedesRowVisibility();
@@ -14693,6 +14690,7 @@ function aplicarEtiquetasPorTipo(tipo) {
             esCooperativaElectricaRubro,
             debeOcultarTabDistribuidoresAdmin,
         });
+        syncAdminRedElectricaTabVisibility({ esCooperativaElectricaRubro });
     } catch (_) {}
     try {
         syncKpiAdminRubroDom();
@@ -19484,8 +19482,6 @@ if ('serviceWorker' in navigator) {
         initAdminRedElectricaInfra({
             getApiToken,
             apiUrl,
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
             toast,
             toastError,
         });
