@@ -1142,6 +1142,12 @@ function normalizarEncabezadoExcelSocios(k) {
     ) {
         return 'codigo_postal';
     }
+    /* Vista export / Excel: abreviaturas con punto o «U/R» → columnas fijas del catálogo (no datos_extra). */
+    if (n === 'dist') return 'distribuidor_codigo';
+    if (n === 'transf') return 'transformador';
+    if (n === 'conex') return 'tipo_conexion';
+    if (n === 'ur') return 'urbano_rural';
+    if (n === 'conexion') return 'tipo_conexion';
     return n;
 }
 
@@ -1326,6 +1332,17 @@ const SOCIOS_EXCEL_CLAVES_RESERVADAS = new Set([
     'id',
 ]);
 
+/** Quita de datos_extra claves que en realidad mapean a columnas físicas (evita duplicar Dist./Transf. en tabla). */
+function sociosDatosExtraEliminarClavesQueMapeanAColumnasFijas(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+    const out = { ...obj };
+    for (const key of Object.keys(out)) {
+        const nk = normalizarEncabezadoExcelSocios(key);
+        if (nk && SOCIOS_EXCEL_CLAVES_RESERVADAS.has(nk)) delete out[key];
+    }
+    return out;
+}
+
 function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
     void mapNormAOriginal;
     const out = {};
@@ -1339,7 +1356,7 @@ function recolectarDatosExtraExcelSocios(row, mapNormAOriginal) {
         if (!key) continue;
         out[key] = typeof v === 'number' && Number.isFinite(v) ? String(v) : String(v).trim();
     }
-    return out;
+    return sociosDatosExtraEliminarClavesQueMapeanAColumnasFijas(out);
 }
 
 /** Celda «Estado» plantilla Municipio (Activo/Baja, vacío = Activo). */
@@ -1670,8 +1687,12 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
             return `(${parts.join(', ')})`;
         })
         .join(',');
+    /** Al fusionar, sacar del JSON viejo claves duplicadas de la vista export (mismas columnas que la tabla admin). */
     const mergeDe = hasDE
-        ? `, datos_extra = COALESCE(socios_catalogo.datos_extra, '{}'::jsonb) || COALESCE(EXCLUDED.datos_extra, '{}'::jsonb)`
+        ? `, datos_extra = (
+            COALESCE(socios_catalogo.datos_extra, '{}'::jsonb)
+            - ARRAY['Dist.','Transf.','Conex.','U/R','dist','transf','conex','ur','Conexion','Distribuidor','Transformador','Tipo conexion','Urbano rural','Tel.']
+          ) || COALESCE(EXCLUDED.datos_extra, '{}'::jsonb)`
         : '';
     const mergeBt = hasBtIns ? `, business_type = EXCLUDED.business_type` : '';
     await req().sqlSimple(
