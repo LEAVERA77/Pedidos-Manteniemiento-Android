@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v168';
+const CACHE_SHELL = 'pmg-shell-v167';
 const SW_VERSION  = '1.8.31';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
@@ -47,7 +47,6 @@ function shellAssetUrls() {
     j('modules/etiqueta-identificador-pedido.js'),
     j('modules/est-csv-tipo-filtro.js'),
     j('modules/pedido-dm-pm-drag.js'),
-    j('modules/pedido-detalle-modal-activo.js'),
     j('modules/pedido-detalle-html-helpers.js'),
     j('modules/utils.js'),
     j('modules/ui-utils.js'),
@@ -70,8 +69,6 @@ function shellAssetUrls() {
     j('modules/ia-analisis-reclamos.js'),
     j('modules/ia-kpi-sugeridos.js'),
     j('modules/ia-informe-unificado.js'),
-    j('modules/informe-empresa-html-encabezado.js'),
-    j('modules/informes-estadisticas-pdf-capture.js'),
     j('modules/android-image-share.js'),
     j('modules/cfgi-wizard-tenant-select.js'),
     j('modules/admin-socios.js'),
@@ -88,6 +85,7 @@ function shellAssetUrls() {
     j('modules/pedido-form-labels-rubro.js'),
     j('modules/pedido-alta-derivacion-api.js'),
     j('modules/admin-distribuidores-formato.js'),
+    j('modules/admin-saidi-distrib-excel.js'),
     j('modules/gn-panel-docks.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-volver-pendiente.js'),

@@ -1,168 +1,252 @@
-/**
- * Import Excel métricas SAIDI/SAIFI por distribuidor (cooperativa eléctrica).
- * Columnas típicas: ID Distribuidor | Nombre | Localidad | Nivel de tensión | Trafos | KVA | Clientes
- * made by leavera77
- */
 import XLSX from "xlsx";
 
-function normKey(s) {
-  return String(s || "")
-    .toLowerCase()
+function normHeaderKey(k) {
+  return String(k || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ")
-    .trim();
-}
-
-function buildHeaderMap(row) {
-  const m = {};
-  for (const [k, v] of Object.entries(row || {})) {
-    m[normKey(k)] = v;
-  }
-  return m;
-}
-
-function pick(m, ...aliases) {
-  for (const a of aliases) {
-    const v = m[normKey(a)];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-  }
-  return "";
+    .trim()
+    .toLowerCase();
 }
 
 /**
- * @param {Record<string, unknown>} raw — fila sheet_to_json
+ * @param {Record<string, unknown>} row
+ * @returns {{ canon: Record<string, string>, provided: Set<string> }}
  */
-export function parseDistribuidorSaidiRow(raw) {
-  const m = buildHeaderMap(raw);
-  const cod = String(pick(m, "id distribuidor", "id_distribuidor", "codigo", "id", "cod") || "")
-    .trim()
-    .toUpperCase();
-  if (!cod) return null;
-  const nombre = String(pick(m, "nombre", "nombre distribuidor") || "").trim() || null;
-  const localidad = String(pick(m, "localidad", "ciudad") || "").trim() || null;
-  const tensionRaw = pick(m, "nivel de tension", "nivel tension", "nivel_tension", "tension", "kv");
-  const tension = tensionRaw != null && String(tensionRaw).trim() !== "" ? String(tensionRaw).trim() : null;
-  const trN = parseInt(String(pick(m, "trafos", "transformadores", "cantidad trafos", "trasformadores") || "").replace(/\D/g, ""), 10);
-  const trafos = Number.isFinite(trN) ? trN : null;
-  const kvaN = Number(String(pick(m, "kva", "potencia", "potencia kva") || "").replace(",", "."));
-  const kva_saidi = Number.isFinite(kvaN) ? kvaN : null;
-  const clN = parseInt(String(pick(m, "clientes", "clientes conectados", "socios") || "").replace(/\D/g, ""), 10);
-  const clientes_saidi = Number.isFinite(clN) ? clN : null;
-  return { codigo: cod, nombre, localidad, tension, trafos, kva_saidi, clientes_saidi };
+function canonicalizeExcelRow(row) {
+  /** @type {Record<string, string>} */
+  const canon = {};
+  const provided = new Set();
+
+  for (const [rawKey, val] of Object.entries(row)) {
+    const nk = normHeaderKey(rawKey);
+    if (!nk) continue;
+    const s = val != null && String(val).trim() !== "" ? String(val).trim() : "";
+    let target = null;
+    if (nk === "codigo" || nk === "id distribuidor" || nk === "id_distribuidor" || (nk.startsWith("id") && nk.includes("distribuidor"))) {
+      target = "codigo";
+    } else if (nk === "nombre") {
+      target = "nombre";
+    } else if (nk === "localidad") {
+      target = "localidad";
+    } else if ((nk.includes("nivel") && nk.includes("tension")) || nk === "nivel de tension" || nk === "nivel de tensión") {
+      target = "nivel_tension";
+    } else if (nk === "tension" || nk === "tensión") {
+      target = "tension_raw";
+    } else if (nk === "trafos" || nk === "trafo" || nk === "transformadores") {
+      target = "trafos";
+    } else if (nk === "kva" || nk.startsWith("kva")) {
+      target = "kva_saidi";
+    } else if (nk === "clientes" || nk.includes("cliente")) {
+      target = "clientes_saidi";
+    }
+    if (!target) continue;
+    canon[target] = s;
+    if (s) provided.add(target);
+  }
+  return { canon, provided };
 }
 
-function sameMetricRow(a, b) {
+function parseIntLoose(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const n = parseInt(String(v).replace(/\./g, "").replace(/,/g, ".").split(".")[0], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseNumLoose(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const s = String(v).trim().replace(/\s/g, "");
+  let n;
+  if (s.includes(",") && s.includes(".")) {
+    n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  } else {
+    n = parseFloat(s.replace(",", "."));
+  }
+  return Number.isFinite(n) ? n : null;
+}
+
+function tensionDesdeCanon(canon) {
+  const rawT = canon.tension_raw;
+  if (rawT && String(rawT).trim()) return String(rawT).trim();
+  const nv = parseIntLoose(canon.nivel_tension);
+  if (nv != null) return `${nv} V`;
+  return null;
+}
+
+/**
+ * @param {Record<string, string>} canon
+ * @param {Set<string>} provided
+ */
+function buildPayload(canon, provided) {
+  const codigo = String(canon.codigo || "").trim().toUpperCase();
+  if (!codigo) return null;
+  const nombre = canon.nombre && String(canon.nombre).trim() ? String(canon.nombre).trim() : codigo;
+  const localidad = canon.localidad && String(canon.localidad).trim() ? String(canon.localidad).trim() : null;
+  const tension = tensionDesdeCanon(canon);
+  const trafos = parseIntLoose(canon.trafos);
+  const kvaRaw = parseNumLoose(canon.kva_saidi);
+  const kva_saidi = kvaRaw != null ? Math.round(kvaRaw * 1000) / 1000 : null;
+  const clientes_saidi = parseIntLoose(canon.clientes_saidi);
+  return { codigo, nombre, localidad, tension, trafos, kva_saidi, clientes_saidi, provided };
+}
+
+function normTxt(x) {
+  if (x == null || x === "") return null;
+  return String(x).trim();
+}
+
+function normInt(x) {
+  if (x == null || x === "") return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normKva(x) {
+  if (x == null || x === "") return null;
+  return Math.round(Number(x) * 1000) / 1000;
+}
+
+function mergedNextRow(cur, p) {
+  const prov = p.provided;
+  return {
+    nombre: prov.has("nombre") ? p.nombre : cur.nombre,
+    localidad: prov.has("localidad") ? p.localidad : cur.localidad,
+    tension: prov.has("tension_raw") || prov.has("nivel_tension") ? p.tension : cur.tension,
+    trafos: prov.has("trafos") ? p.trafos : cur.trafos,
+    kva_saidi: prov.has("kva_saidi") ? p.kva_saidi : cur.kva_saidi,
+    clientes_saidi: prov.has("clientes_saidi") ? p.clientes_saidi : cur.clientes_saidi,
+  };
+}
+
+function rowEquals(cur, next) {
   return (
-    String(a?.nombre ?? "") === String(b?.nombre ?? "") &&
-    String(a?.localidad ?? "") === String(b?.localidad ?? "") &&
-    String(a?.tension ?? "") === String(b?.tension ?? "") &&
-    Number(a?.trafos ?? NaN) === Number(b?.trafos ?? NaN) &&
-    Number(a?.kva_saidi ?? NaN) === Number(b?.kva_saidi ?? NaN) &&
-    Number(a?.clientes_saidi ?? NaN) === Number(b?.clientes_saidi ?? NaN)
+    normTxt(cur.nombre) === normTxt(next.nombre) &&
+    normTxt(cur.localidad) === normTxt(next.localidad) &&
+    normTxt(cur.tension) === normTxt(next.tension) &&
+    normInt(cur.trafos) === normInt(next.trafos) &&
+    normKva(cur.kva_saidi) === normKva(next.kva_saidi) &&
+    normInt(cur.clientes_saidi) === normInt(next.clientes_saidi)
   );
 }
 
 /**
  * @param {Buffer} buffer
  * @param {number} tenantId
- * @param {{ query: (sql: string, p?: unknown[]) => Promise<{ rows: unknown[] }> }} db
- * @param {{ hasTenantId: boolean, hasTrafos: boolean, hasKva: boolean, hasCli: boolean }} cols
+ * @param {import("pg").PoolClient} client
+ * @param {{ hasTenantId: boolean, hasTrafos: boolean, hasKva: boolean, hasCli: boolean }} _flags
  */
-export async function mergeDistribuidoresSaidiFromExcelBuffer(buffer, tenantId, db, cols) {
+export async function mergeDistribuidoresSaidiFromExcelBuffer(buffer, tenantId, client, _flags) {
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) throw new Error("tenant_id inválido");
+
   const wb = XLSX.read(buffer, { type: "buffer" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  const parsed = [];
-  for (const r of rawRows) {
-    const p = parseDistribuidorSaidiRow(r);
-    if (p) parsed.push(p);
-  }
-  parsed.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
 
+  /** @type {NonNullable<ReturnType<typeof buildPayload>>[]} */
+  const payloads = [];
+  let skippedInvalid = 0;
+  for (const raw of rawRows) {
+    const { canon, provided } = canonicalizeExcelRow(raw);
+    const p = buildPayload(canon, provided);
+    if (!p) {
+      skippedInvalid += 1;
+      continue;
+    }
+    payloads.push(p);
+  }
+
+  payloads.sort((a, b) => a.codigo.localeCompare(b.codigo, "es"));
+
+  let unchanged = 0;
   let inserted = 0;
   let updated = 0;
-  let unchanged = 0;
 
-  for (const p of parsed) {
-    const nombreSeguro = (p.nombre && String(p.nombre).trim()) || p.codigo;
-    if (!cols.hasTenantId) {
-      throw new Error("distribuidores sin tenant_id");
-    }
-    const ex = await db.query(
-      `SELECT id, nombre, tension, localidad, trafos, kva_saidi, clientes_saidi
-       FROM distribuidores WHERE UPPER(TRIM(codigo::text)) = $1 AND tenant_id = $2 LIMIT 1`,
-      [p.codigo, tenantId]
+  for (const p of payloads) {
+    const ex = await client.query(
+      `SELECT id, codigo, nombre, tension, localidad, trafos, kva_saidi, clientes_saidi
+       FROM distribuidores WHERE tenant_id = $1 AND UPPER(TRIM(codigo)) = UPPER(TRIM($2)) LIMIT 1`,
+      [tid, p.codigo]
     );
-    const row = ex.rows?.[0];
-    const target = {
-      nombre: nombreSeguro,
-      localidad: p.localidad,
-      tension: p.tension,
-      trafos: cols.hasTrafos ? p.trafos : null,
-      kva_saidi: cols.hasKva ? p.kva_saidi : null,
-      clientes_saidi: cols.hasCli ? p.clientes_saidi : null,
-    };
-    if (!row) {
-      const fields = ["codigo", "nombre", "tension", "localidad", "activo", "tenant_id"];
-      const vals = [p.codigo, nombreSeguro, p.tension, p.localidad, true, tenantId];
-      let ph = "$1,$2,$3,$4,$5,$6";
-      let n = 6;
-      if (cols.hasTrafos) {
-        n += 1;
-        fields.push("trafos");
-        vals.push(p.trafos);
-        ph += `,$${n}`;
-      }
-      if (cols.hasKva) {
-        n += 1;
-        fields.push("kva_saidi");
-        vals.push(p.kva_saidi);
-        ph += `,$${n}`;
-      }
-      if (cols.hasCli) {
-        n += 1;
-        fields.push("clientes_saidi");
-        vals.push(p.clientes_saidi);
-        ph += `,$${n}`;
-      }
-      await db.query(`INSERT INTO distribuidores (${fields.join(",")}) VALUES (${ph})`, vals);
+
+    if (!ex.rows.length) {
+      await client.query(
+        `INSERT INTO distribuidores (codigo, nombre, tension, localidad, trafos, kva_saidi, clientes_saidi, activo, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8)`,
+        [p.codigo, p.nombre, p.tension, p.localidad, p.trafos, p.kva_saidi, p.clientes_saidi, tid]
+      );
       inserted += 1;
       continue;
     }
+
+    const row = ex.rows[0];
     const cur = {
       nombre: row.nombre,
       localidad: row.localidad,
       tension: row.tension,
-      trafos: cols.hasTrafos ? row.trafos : null,
-      kva_saidi: cols.hasKva ? row.kva_saidi : null,
-      clientes_saidi: cols.hasCli ? row.clientes_saidi : null,
+      trafos: row.trafos,
+      kva_saidi: row.kva_saidi != null ? Number(row.kva_saidi) : null,
+      clientes_saidi: row.clientes_saidi,
     };
-    if (sameMetricRow(cur, target)) {
+    const next = mergedNextRow(cur, p);
+
+    if (rowEquals(cur, next)) {
       unchanged += 1;
       continue;
     }
-    const sets = ["nombre = $2", "tension = $3", "localidad = $4", "activo = TRUE"];
-    const params = [row.id, nombreSeguro, p.tension, p.localidad];
-    let idx = 5;
-    if (cols.hasTrafos) {
-      sets.push(`trafos = $${idx}`);
-      params.push(p.trafos);
-      idx += 1;
+
+    /** @type {string[]} */
+    const sets = [];
+    /** @type {unknown[]} */
+    const vals = [row.id, tid];
+    let i = 3;
+    if (normTxt(cur.nombre) !== normTxt(next.nombre)) {
+      sets.push(`nombre = $${i}`);
+      vals.push(next.nombre);
+      i += 1;
     }
-    if (cols.hasKva) {
-      sets.push(`kva_saidi = $${idx}`);
-      params.push(p.kva_saidi);
-      idx += 1;
+    if (normTxt(cur.localidad) !== normTxt(next.localidad)) {
+      sets.push(`localidad = $${i}`);
+      vals.push(next.localidad);
+      i += 1;
     }
-    if (cols.hasCli) {
-      sets.push(`clientes_saidi = $${idx}`);
-      params.push(p.clientes_saidi);
-      idx += 1;
+    if (normTxt(cur.tension) !== normTxt(next.tension)) {
+      sets.push(`tension = $${i}`);
+      vals.push(next.tension);
+      i += 1;
     }
-    await db.query(`UPDATE distribuidores SET ${sets.join(", ")} WHERE id = $1`, params);
+    if (normInt(cur.trafos) !== normInt(next.trafos)) {
+      sets.push(`trafos = $${i}`);
+      vals.push(next.trafos);
+      i += 1;
+    }
+    if (normKva(cur.kva_saidi) !== normKva(next.kva_saidi)) {
+      sets.push(`kva_saidi = $${i}`);
+      vals.push(next.kva_saidi);
+      i += 1;
+    }
+    if (normInt(cur.clientes_saidi) !== normInt(next.clientes_saidi)) {
+      sets.push(`clientes_saidi = $${i}`);
+      vals.push(next.clientes_saidi);
+      i += 1;
+    }
+
+    if (!sets.length) {
+      unchanged += 1;
+      continue;
+    }
+    sets.push("activo = TRUE");
+    await client.query(`UPDATE distribuidores SET ${sets.join(", ")} WHERE id = $1 AND tenant_id = $2`, vals);
     updated += 1;
   }
 
-  return { ok: true, filas_excel: rawRows.length, parseadas: parsed.length, inserted, updated, unchanged };
+  return {
+    ok: true,
+    tenant_id: tid,
+    total_excel: payloads.length,
+    skipped_invalid: skippedInvalid,
+    unchanged,
+    inserted,
+    updated,
+  };
 }

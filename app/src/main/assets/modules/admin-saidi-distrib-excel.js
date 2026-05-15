@@ -1,70 +1,87 @@
 /**
- * Pestaña admin: import Excel métricas SAIDI/SAIFI por distribuidor (solo cooperativa eléctrica).
+ * Pestaña admin «Métricas SAIDI/SAIFI» (cooperativa eléctrica): import Excel vía API Node.
  * made by leavera77
  */
 
+/** @type {boolean} */
 let _bound = false;
 
 /**
- * @param {{ toast: Function, toastError?: Function, getApiBaseUrl: () => string, getApiToken: () => string, cargarListaDistribuidoresAdmin?: () => void }} ctx
+ * @param {{
+ *   getApiToken: () => string | null | undefined;
+ *   apiUrl: (path: string) => string;
+ *   esCooperativaElectricaRubro: () => boolean;
+ *   debeOcultarTabDistribuidoresAdmin: () => boolean;
+ *   toast: (msg: string, type?: string, ms?: number) => void;
+ *   toastError: (tag: string, err: unknown, pref?: string) => void;
+ * }} d
  */
-export function initAdminSaidiDistribExcelBindings(ctx) {
+export function initAdminSaidiDistribExcel(d) {
   if (_bound) return;
-  const inp = document.getElementById('saidi-dist-file');
-  const btn = document.getElementById('saidi-dist-btn-upload');
-  const out = document.getElementById('saidi-dist-result');
-  if (!inp || !btn) return;
   _bound = true;
 
-  btn.addEventListener('click', async () => {
-    const file = inp.files && inp.files[0];
-    if (!file) {
-      ctx.toast('Elegí un archivo .xlsx o .xls', 'warning');
+  const btn = document.getElementById("admin-saidi-excel-btn");
+  const inp = document.getElementById("admin-saidi-excel-file");
+  const out = document.getElementById("admin-saidi-excel-result");
+  if (!btn || !inp) return;
+
+  btn.addEventListener("click", async () => {
+    const f = inp.files && inp.files[0];
+    if (!f) {
+      d.toast("Elegí un archivo Excel (.xlsx o .xls)", "warning");
       return;
     }
-    const base = String(ctx.getApiBaseUrl?.() || '').replace(/\/+$/, '');
-    const tok = String(ctx.getApiToken?.() || '').trim();
-    if (!base || !tok) {
-      ctx.toast('Iniciá sesión con API (token) para subir el archivo.', 'error');
+    const tok = d.getApiToken?.();
+    if (!tok) {
+      d.toast("Iniciá sesión con API (token) para importar", "error");
       return;
     }
+    const fd = new FormData();
+    fd.append("file", f, f.name);
+    btn.disabled = true;
     if (out) {
-      out.textContent = 'Subiendo e importando…';
-      out.style.color = 'var(--tm)';
+      out.textContent = "Procesando…";
+      out.style.display = "block";
     }
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const r = await fetch(`${base}/api/distribuidores/import-saidi-excel`, {
-        method: 'POST',
+      const url = String(d.apiUrl("/api/distribuidores/import-saidi-excel") || "").replace(/\/+$/, "");
+      const r = await fetch(url, {
+        method: "POST",
         headers: { Authorization: `Bearer ${tok}` },
         body: fd,
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        throw new Error(j.error || j.detail || `HTTP ${r.status}`);
+        const msg = [j.error, j.hint, j.detail].filter(Boolean).join(" — ");
+        throw new Error(msg || `HTTP ${r.status}`);
       }
-      const msg = `Listo: nuevas ${j.inserted ?? 0}, actualizadas ${j.updated ?? 0}, sin cambios ${j.unchanged ?? 0} (filas con código: ${j.parseadas ?? 0}).`;
-      ctx.toast(msg, 'success');
-      if (out) {
-        out.textContent = msg;
-        out.style.color = '#166534';
-      }
+      if (out) out.textContent = JSON.stringify(j, null, 2);
+      d.toast(
+        `Listo: +${j.inserted || 0} nuevos, ${j.updated || 0} actualizados, ${j.unchanged || 0} sin cambios.`,
+        "success",
+        5000
+      );
       try {
-        ctx.cargarListaDistribuidoresAdmin?.();
+        if (typeof window.cargarListaDistribuidoresAdmin === "function") void window.cargarListaDistribuidoresAdmin();
       } catch (_) {}
-      inp.value = '';
-    } catch (e) {
-      const m = e && e.message ? e.message : String(e);
-      if (out) {
-        out.textContent = m;
-        out.style.color = 'var(--re)';
-      }
       try {
-        ctx.toastError?.('saidi-excel', e);
-      } catch (_) {
-        ctx.toast(m, 'error');
-      }
+        if (typeof window.cargarDistribuidores === "function") void window.cargarDistribuidores();
+      } catch (_) {}
+    } catch (e) {
+      d.toastError("admin-saidi-excel", e, "No se pudo importar");
+      if (out) out.textContent = String(e && e.message ? e.message : e);
+    } finally {
+      btn.disabled = false;
     }
   });
+}
+
+/**
+ * @param {{ esCooperativaElectricaRubro: () => boolean; debeOcultarTabDistribuidoresAdmin: () => boolean }} d
+ */
+export function syncAdminSaidiDistribTabVisibility(d) {
+  const tab = document.getElementById("admin-tab-saidi-excel");
+  if (!tab) return;
+  const show = d.esCooperativaElectricaRubro() && !d.debeOcultarTabDistribuidoresAdmin();
+  tab.style.display = show ? "" : "none";
 }

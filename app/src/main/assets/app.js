@@ -46,6 +46,7 @@ import {
 } from './modules/normalizar-telefono.js';
 import { pdfEncabezadoEmpresaBloque } from './modules/empresa-encabezado-pdf.js';
 import { construirHtmlEncabezadoInformeEmpresa } from './modules/informe-empresa-html-encabezado.js';
+import { loadKpiInformePdfDeps } from './modules/app-kpi-informe-pdf-loaders.js';
 import {
     ESTADO_DONUT_COLORS,
     DONUT_FALLBACK_SEQUENCE,
@@ -57,6 +58,7 @@ import {
     poblarDerivacionesListasDesdeCfg,
     refreshDerivacionListaWaButtons,
 } from './modules/derivaciones-reclamos-admin.js';
+import { initDashboardGerenciaModalDrag } from './modules/dashboard-gerencia.js';
 import { syncKpiAdminRubroDom } from './modules/kpi-admin-rubro-ui.js';
 import { bp2OcultarHistoricosResueltosActivo } from './modules/vaciado-quincenal.js';
 import {
@@ -128,10 +130,6 @@ import {
     etiquetaNisDetalleModalPedido,
     syncHistorialNisBusquedaDom,
 } from './modules/pedido-form-labels-rubro.js';
-import {
-    syncPedidoBarrioAuxWrapperVisibility,
-    aplicarBarrioNominatimEnFormularioNuevoPedido,
-} from './modules/pedido-nuevo-barrio-nominatim.js';
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import { resolverPedidoParaDerivacionRevisionAdmin } from './modules/derivacion-revision-admin-modal.js';
 import { runNeonAppVersionCheckAndroid } from './modules/android-app-update-neon.js';
@@ -140,6 +138,7 @@ import {
     syncAyudaDistribuidoresExcelHint,
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
+import { initAdminSaidiDistribExcel, syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -193,16 +192,7 @@ import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credencial
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
-import {
-    setInformesEstadisticasPdfCaptureDeps,
-    pdfMmAjustarImagen,
-    escAttrPrint,
-    prepararVistaCapturaEstadisticasPdf,
-    coleccionSeccionesPdfEstadisticas,
-    capturaPdfBloqueResumenEstadisticas,
-    html2canvasCapturaElemento,
-} from './modules/informes-estadisticas-pdf-capture.js';
-import { sincronizarPedidoDetalleModalActivo } from './modules/pedido-detalle-modal-activo.js';
+import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
     aplicarMascaraEmpresaAdminTrasCambioTenant,
@@ -1038,11 +1028,12 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     const hideDist = debeOcultarTabDistribuidoresAdmin();
     const d = document.getElementById('admin-tab-distribuidores');
     if (d) d.style.display = hideDist ? 'none' : '';
-    const s = document.getElementById('admin-tab-saidi-dist');
-    if (s) {
-        const rub = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-        s.style.display = rub === 'cooperativa_electrica' && !hideDist ? '' : 'none';
-    }
+    try {
+        syncAdminSaidiDistribTabVisibility({
+            esCooperativaElectricaRubro,
+            debeOcultarTabDistribuidoresAdmin,
+        });
+    } catch (_) {}
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
@@ -1303,9 +1294,21 @@ async function reverseNominatimNuevoPedidoCore(lat, lng) {
             const prev = String(dr.value || '').trim();
             dr.value = prev ? `${prev} (${refExtra})` : refExtra;
         }
-        try {
-            aplicarBarrioNominatimEnFormularioNuevoPedido(addr);
-        } catch (_) {}
+        if (esMunicipioRubro()) {
+            const barrio = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
+            const di2 = document.getElementById('di2');
+            if (di2 && barrio) {
+                const bTrim = String(barrio).trim();
+                let opt = Array.from(di2.options).find(o => o.value === bTrim);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = bTrim;
+                    opt.textContent = bTrim;
+                    di2.appendChild(opt);
+                }
+                di2.value = bTrim;
+            }
+        }
     } catch (_) {
         toast('No se pudo consultar la dirección en ese punto.', 'error');
     }
@@ -6357,14 +6360,7 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-capas-osm'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-coords-converter'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
-    if (esAdmin()) {
-        void (async () => {
-            try {
-                const { initDashboardGerenciaModalDrag } = await import('./modules/dashboard-gerencia.js');
-                initDashboardGerenciaModalDrag();
-            } catch (_) {}
-        })();
-    }
+    try { initDashboardGerenciaModalDrag(); } catch (_) {}
     try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaCapasOsmCheckboxesFromStorage(); } catch (_) {}
     try { initAdminOsmCapasPanelBindings(); } catch (_) {}
@@ -8223,7 +8219,7 @@ function queueLazyInitMap() {
     _mapLazyQueued = true;
     const run = () => {
         void initMap().finally(() => {
-            runRenderMkPostMapInit();
+            try { renderMk(); } catch (_) {}
             scheduleGnMapLayoutBumpsTrasLogin();
         });
     };
@@ -8251,7 +8247,7 @@ async function ensureMapReady() {
     if (mapaInicializado && app.map) return;
     _mapLazyQueued = true;
     await initMap();
-    runRenderMkPostMapInit();
+    try { renderMk(); } catch (_) {}
 }
 window.ensureMapReady = ensureMapReady;
 
@@ -8259,13 +8255,6 @@ const btnMapaIrGps = document.getElementById('btn-mapa-ir-gps');
 if (btnMapaIrGps) btnMapaIrGps.addEventListener('click', () => irAMiUbicacionEnMapa());
 const btnMapaNuevoGps = document.getElementById('btn-mapa-nuevo-gps');
 if (btnMapaNuevoGps) btnMapaNuevoGps.addEventListener('click', () => void nuevoPedidoDesdeUbicacionActual());
-
-/** Post-init mapa: un solo hook para `renderMk` (cola idle + ensureMapReady). */
-function runRenderMkPostMapInit() {
-    try {
-        renderMk();
-    } catch (_) {}
-}
 
 function renderMk() {
     renderMkPedidosEnMapa({
@@ -9798,16 +9787,12 @@ document.getElementById('pf').addEventListener('submit', async e => {
             if (!tieneNisMed) {
                 trafoVal = '';
             }
-            const bAux = (document.getElementById('ped-cli-barrio')?.value || '').trim();
-            barrioVal = bAux || null;
         } else if (esMunicipioRubro()) {
             barrioVal = disVal || null;
             disVal = '';
             trafoVal = '';
         } else if (esCooperativaAguaRubro()) {
             trafoVal = '';
-            const bAuxA = (document.getElementById('ped-cli-barrio')?.value || '').trim();
-            barrioVal = bAuxA || null;
         }
         if (
             esCooperativaElectricaRubro() &&
@@ -11846,7 +11831,14 @@ async function detalle(p, opts = {}) {
     try {
         gnGeocodePrecargarWhatsappRegeoLog(p);
     } catch (_) {}
-    const pidKey = sincronizarPedidoDetalleModalActivo(p);
+    const pidKey = String(p.id);
+    try {
+        const dmRoot = document.getElementById('dm');
+        if (dmRoot) dmRoot.dataset.detallePedidoId = pidKey;
+    } catch (_) {}
+    try {
+        window.__gnDetallePedidoActivo = p;
+    } catch (_) {}
     try {
         if (esAdmin() && p?.id != null) {
             const ob = document.getElementById('admin-banner-opinion-cliente');
@@ -14686,28 +14678,19 @@ function aplicarEtiquetasPorTipo(tipo) {
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
+        syncAdminSaidiDistribTabVisibility({
+            esCooperativaElectricaRubro,
+            debeOcultarTabDistribuidoresAdmin,
+        });
     } catch (_) {}
     try {
         syncKpiAdminRubroDom();
     } catch (_) {}
-    const tabSaidi = document.getElementById('admin-tab-saidi-dist');
-    if (tabSaidi) {
-        const rub = normalizarRubroEmpresa(tipo);
-        let hideDist = false;
-        try {
-            hideDist = debeOcultarTabDistribuidoresAdmin();
-        } catch (_) {}
-        const showSaidi = rub === 'cooperativa_electrica' && !hideDist;
-        tabSaidi.style.display = showSaidi ? '' : 'none';
-    }
 }
 
 function syncZonaPedidoFormLabels() {
     try {
         syncPedidoFormZonaDistribuidorLabels();
-    } catch (_) {}
-    try {
-        syncPedidoBarrioAuxWrapperVisibility();
     } catch (_) {}
     const trafoW = document.getElementById('trafo-pedido')?.closest('.fg');
     if (trafoW) trafoW.style.display = esCooperativaElectricaRubro() ? '' : 'none';
@@ -15021,7 +15004,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-dist','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -15985,7 +15968,6 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
     }
     try {
         toast('Generando informe con IA…', 'info');
-        const { loadKpiInformePdfDeps } = await import('./modules/app-kpi-informe-pdf-loaders.js');
         const K = await loadKpiInformePdfDeps();
         const iaMapPromise = K.obtenerExplicacionesKpiIA(rows).catch(() => new Map());
         const { jsPDF } = window.jspdf;
@@ -16167,13 +16149,9 @@ function adminTab(tab) {
     }
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
-    if (tab === 'saidi-dist') {
-        try {
-            void ensureAdminPanelDeferredBindings(() => _depsAdminPanelDeferred());
-        } catch (_) {}
-        try {
-            cargarListaDistribuidoresAdmin();
-        } catch (_) {}
+    if (tab === 'saidi-excel') {
+        const pre = document.getElementById('admin-saidi-excel-result');
+        if (pre && !pre.textContent.trim()) pre.style.display = 'none';
     }
     if (tab === 'socios') {
         try {
@@ -16251,9 +16229,6 @@ function _depsAdminPanelDeferred() {
         actualizarBotonesWhatsappDerivacionesUi,
         refrescarPedidos: () => cargarPedidos({ silent: true }),
         cerrarAdminPanel,
-        getApiBaseUrl,
-        getApiToken,
-        cargarListaDistribuidoresAdmin,
     };
 }
 
@@ -16705,7 +16680,6 @@ function abrirFormUsuario() {
 }
 
 async function crearUsuario() {
-    const { ejecutarCrearUsuarioAdminPanel } = await import('./modules/admin-crear-usuario-panel.js');
     return ejecutarCrearUsuarioAdminPanel({
         toast,
         toastError,
@@ -17305,6 +17279,197 @@ async function exportInformeMensualExcel() {
     } catch (e) { toastError('export-excel-pedidos', e); }
 }
 
+function tituloChartEstadisticas(el) {
+    const h4 = el?.querySelector?.('h4');
+    const t = (h4?.textContent || '').replace(/\s+/g, ' ').trim();
+    return t || 'Gráfico';
+}
+
+/** Altura visible real (evita scrollHeight inflado por flex/grid del panel admin). */
+function alturaContenidoCaptura(el) {
+    if (!el) return 40;
+    const r0 = el.getBoundingClientRect();
+    let maxB = r0.top;
+    const walk = (n) => {
+        if (!n || n.nodeType !== 1) return;
+        const st = window.getComputedStyle(n);
+        if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) return;
+        const br = n.getBoundingClientRect();
+        if (br.width >= 1 && br.height >= 1) maxB = Math.max(maxB, br.bottom);
+        for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
+    };
+    walk(el);
+    const h = Math.ceil(maxB - r0.top + 12);
+    const mx = Math.min(Math.max(el.scrollHeight, el.offsetHeight, 40), 3200);
+    return Math.max(40, Math.min(h, mx));
+}
+
+function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
+    const ar = cw / ch;
+    let iw = maxWmm;
+    let ih = iw / ar;
+    if (ih > maxHmm) {
+        ih = maxHmm;
+        iw = ih * ar;
+    }
+    return { iw, ih };
+}
+
+let _chartDataSnapshotForPdf = null;
+
+function adminEstadisticasSetCaptureCompact(on) {
+    const root = document.getElementById('admin-estadisticas');
+    if (root) root.classList.toggle('gn-stats-capture-compact', !!on);
+    if (typeof window !== 'undefined') window.__gnStatsInkSave = !!on;
+}
+
+function aplicarEstadisticasInkSaveCharts(activar) {
+    /** PDF / impresión: conservar los mismos colores pasteles que en pantalla (sin escala de grises). */
+    if (activar) {
+        if (_chartDataSnapshotForPdf) return;
+        _chartDataSnapshotForPdf = { _noop: true };
+        Object.values(_charts).forEach((chart) => {
+            try {
+                chart.update('none');
+            } catch (_) {}
+        });
+    } else {
+        _chartDataSnapshotForPdf = null;
+        Object.values(_charts).forEach((chart) => {
+            try {
+                chart.update('none');
+            } catch (_) {}
+        });
+    }
+}
+
+async function prepararVistaCapturaEstadisticasPdf(activar) {
+    adminEstadisticasSetCaptureCompact(!!activar);
+    aplicarEstadisticasInkSaveCharts(!!activar);
+    Object.values(_charts).forEach(ch => {
+        try {
+            ch.resize();
+        } catch (_) {}
+    });
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, activar ? 220 : 90));
+}
+
+function coleccionSeccionesPdfEstadisticas() {
+    const root = document.getElementById('admin-estadisticas');
+    if (!root) return [];
+    const out = [{ type: 'resumen' }];
+    root.querySelectorAll('.chart-wrap').forEach(w => {
+        try {
+            if (window.getComputedStyle(w).display === 'none') return;
+            out.push({ type: 'chart', el: w, title: tituloChartEstadisticas(w) });
+        } catch (_) {}
+    });
+    return out;
+}
+
+async function capturaPdfBloqueResumenEstadisticas() {
+    const marco = document.getElementById('enre-marco');
+    const cards = document.getElementById('stats-cards');
+    const wrap = document.createElement('div');
+    wrap.setAttribute('style', 'position:fixed;left:-12000px;top:0;width:720px;padding:12px 14px;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif');
+    const headDiv = document.createElement('div');
+    headDiv.innerHTML = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
+    wrap.appendChild(headDiv);
+    if (marco) {
+        const m = marco.cloneNode(true);
+        m.querySelectorAll('a').forEach(a => {
+            a.setAttribute('href', '#');
+            a.style.textDecoration = 'none';
+            a.style.color = '#1e40af';
+        });
+        wrap.appendChild(m);
+    }
+    if (cards) wrap.appendChild(cards.cloneNode(true));
+    const pdfDes = document.getElementById('stats-desestimados-pdf-block');
+    if (pdfDes && pdfDes.innerHTML && pdfDes.innerHTML.trim()) {
+        wrap.appendChild(pdfDes.cloneNode(true));
+    }
+    document.body.appendChild(wrap);
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await new Promise(r => setTimeout(r, 70));
+    let canvas = null;
+    try {
+        const sh = Math.max(alturaContenidoCaptura(wrap), wrap.offsetHeight, 48);
+        canvas = await html2canvas(wrap, {
+            scale: 1.12,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#f8fafc',
+            width: 720,
+            height: sh,
+            windowWidth: 720,
+            windowHeight: sh,
+        });
+    } catch (e) {
+        console.warn('[pdf-resumen]', e);
+    }
+    document.body.removeChild(wrap);
+    return canvas;
+}
+
+async function html2canvasCapturaElemento(el, opts = {}) {
+    if (!el || typeof html2canvas !== 'function') return null;
+    const delayAfterResize = typeof opts.delayAfterResize === 'number' ? opts.delayAfterResize : 200;
+    const statsExport = !!opts.statsExport;
+    try {
+        Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await new Promise(r => setTimeout(r, delayAfterResize));
+        const sw = Math.max(el.offsetWidth, el.clientWidth, 120);
+        const rawSh =
+            opts.useFullScrollHeight || statsExport
+                ? Math.max(el.scrollHeight, el.offsetHeight, 40)
+                : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
+        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
+        const scale = statsExport
+            ? Math.min(2.65, 2700 / Math.max(sw, 260))
+            : Math.min(1.2, 1850 / Math.max(sw, 380));
+        return await html2canvas(el, {
+            scale,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            width: sw,
+            height: sh,
+            windowWidth: sw,
+            windowHeight: sh,
+            scrollX: 0,
+            scrollY: 0,
+            onclone: (_doc, node) => {
+                try {
+                    node.classList.add('gn-capture-pdf');
+                    node.style.overflow = 'visible';
+                    node.style.height = 'auto';
+                    node.style.minHeight = '0';
+                    node.style.maxHeight = 'none';
+                    node.style.alignSelf = 'flex-start';
+                    node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
+                } catch (_) {}
+            }
+        });
+    } catch (e) {
+        console.warn('html2canvas elemento', e);
+        return null;
+    }
+}
+
+async function html2canvasCapturaEstadisticasCompleta(el) {
+    return html2canvasCapturaElemento(el, { delayAfterResize: 400 });
+}
+
+function escAttrPrint(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
 async function imprimirInformeConGraficos() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
@@ -17808,10 +17973,6 @@ async function generarInformeMensualENRE() {
     });
 })();
 let _charts = {};
-setInformesEstadisticasPdfCaptureDeps({
-    getCharts: () => _charts,
-    lineaPeriodoInformeEstadisticas,
-});
 async function cargarEstadisticas() {
     try {
         actualizarMarcoReferenciaEstadisticasAdmin();
@@ -19211,6 +19372,14 @@ if ('serviceWorker' in navigator) {
             mensajeErrorUsuario,
             toast,
             ejecutarCerrarSesion,
+        });
+        initAdminSaidiDistribExcel({
+            getApiToken,
+            apiUrl,
+            esCooperativaElectricaRubro,
+            debeOcultarTabDistribuidoresAdmin,
+            toast,
+            toastError,
         });
         initAdminClaveProvisoria({
             esAdmin,
