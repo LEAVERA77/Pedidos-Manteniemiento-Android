@@ -70,7 +70,7 @@ import {
     renderBloquePdfDesestimados,
 } from './modules/estadisticas-desestimados.js';
 import { pintarCaptionsGraficosEstadisticasAdmin } from './modules/estadisticas-chart-captions.js';
-import { pedidosBaseMapaSinToolbarBp2 } from './modules/filtros-checkboxes.js';
+import { pedidosBaseMapaSinToolbarBp2, pedidoPasaFiltroRubroSiAsignadoAOperador } from './modules/filtros-checkboxes.js';
 import {
     toggleMapaCardSlideoff,
     syncMapSlideTabsFromStorage,
@@ -139,6 +139,11 @@ import {
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
 import { initAdminSaidiDistribExcel, syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
+import {
+    initAdminRedElectricaInfra,
+    syncAdminRedElectricaTabVisibility,
+    cargarListaRedElectricaInfra,
+} from './modules/admin-red-electrica-infra.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -1030,6 +1035,10 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     if (d) d.style.display = hideDist ? 'none' : '';
     try {
         syncAdminSaidiDistribTabVisibility({
+            esCooperativaElectricaRubro,
+            debeOcultarTabDistribuidoresAdmin,
+        });
+        syncAdminRedElectricaTabVisibility({
             esCooperativaElectricaRubro,
             debeOcultarTabDistribuidoresAdmin,
         });
@@ -5574,6 +5583,7 @@ function pedidosParaMarcadoresMapa() {
         relaxRubroMapa,
         pedidoVisibleSegunRubro,
         mostrarDerivadoExternoEnMapa,
+        operadorId: esTecnicoOSupervisor() ? app.u?.id : undefined,
     });
     const chk = (id) => {
         const el = document.getElementById(id);
@@ -5646,6 +5656,7 @@ function llenarSelectsFiltroMapa() {
         relaxRubroMapa,
         pedidoVisibleSegunRubro,
         mostrarDerivadoExternoEnMapa,
+        operadorId: esTecnicoOSupervisor() ? app.u?.id : undefined,
     });
     const prevU = selU.value;
     const prevA = selA.value;
@@ -14631,7 +14642,7 @@ function pedidosVisiblesEnUI() {
         esAdmin() && document.getElementById('chk-lista-mostrar-desestimados')?.checked;
     const ocultarHistBp2 = esAdmin() && bp2OcultarHistoricosResueltosActivo();
     return (app.p || []).filter((p) => {
-        if (!relaxRubroLista && !pedidoVisibleSegunRubro(p)) return false;
+        if (!pedidoPasaFiltroRubroSiAsignadoAOperador({ relax: relaxRubroLista, pedido: p, pedidoVisibleSegunRubro, operadorId: esTecnicoOSupervisor() ? app.u?.id : undefined })) return false;
         if (!mostrarPedidoDerivadoFueraEnListasYMapa(p)) return false;
         if (String(p.es || '') === 'Desestimado' && !chkDes) return false;
         if (ocultarHistBp2) {
@@ -15004,7 +15015,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','red-electrica','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -16152,6 +16163,15 @@ function adminTab(tab) {
     if (tab === 'saidi-excel') {
         const pre = document.getElementById('admin-saidi-excel-result');
         if (pre && !pre.textContent.trim()) pre.style.display = 'none';
+    }
+    if (tab === 'red-electrica') {
+        const pre = document.getElementById('admin-red-electrica-result');
+        if (pre && !pre.textContent.trim()) pre.style.display = 'none';
+        void cargarListaRedElectricaInfra({
+            getApiToken,
+            apiUrl,
+            toast,
+        });
     }
     if (tab === 'socios') {
         try {
@@ -18006,8 +18026,10 @@ async function cargarEstadisticas() {
         const showConf = esCooperativaElectricaRubro();
         const socTieneTStats = await sociosCatalogoTieneTenantId();
         const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
+        const tiposConfSql =
+            "('Corte de Energía','Cables Caídos/Peligro','Problemas de Tensión','Poste Inclinado/Dañado','Consumo elevado','Riesgo en la vía pública','Corrimiento de poste/columna','Falla de Línea','Avería en Transformador','Corte Programado','Emergencia')";
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rMotivos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
-            rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfMes] = await Promise.all([
+            rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfDist, datosRedPack, rConfMes] = await Promise.all([
             // Resumen general
             statSql(`SELECT
                 COUNT(*) AS total,
@@ -19374,6 +19396,14 @@ if ('serviceWorker' in navigator) {
             ejecutarCerrarSesion,
         });
         initAdminSaidiDistribExcel({
+            getApiToken,
+            apiUrl,
+            esCooperativaElectricaRubro,
+            debeOcultarTabDistribuidoresAdmin,
+            toast,
+            toastError,
+        });
+        initAdminRedElectricaInfra({
             getApiToken,
             apiUrl,
             esCooperativaElectricaRubro,
