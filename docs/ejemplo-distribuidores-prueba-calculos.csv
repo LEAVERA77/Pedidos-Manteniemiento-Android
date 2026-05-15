@@ -1,0 +1,41 @@
+ID Distribuidor;Nombre;Localidad;Nivel de tensión (kV);Trafos;KVA;Clientes
+D101;Red Norte Gilbert;Gilbert;13,2;4;630;1180
+D102;Red Sur Ubajay;Ubajay;13,2;3;400;890
+D103;Red Este Federal;Federal;13,2;5;800;1420
+D104;Red Oeste Larroque;Larroque;13,2;2;250;560
+D105;Red Central Santa Anita;Santa Anita;13,2;6;1000;1680
+D106;Red Hasenkamp Norte;Hasenkamp;13,2;3;500;720
+D107;Red Yerúa Delta;Estación Yerúa;13,2;4;630;1050
+D108;Red Raíces Campo;Estación Raíces;13,2;2;315;480
+D109;Red Charrúas Oeste;Los Charrúas;13,2;5;800;1310
+D110;Red Basavilbaso Sur;Basavilbaso;13,2;3;400;940
+D111;Red Villa Elisa Este;Villa Elisa;13,2;4;630;1120
+D112;Red San Jaime Norte;San Jaime de la Frontera;13,2;2;250;410
+D113;Red Gobernador Echagüe;Gobernador Echagüe;13,2;6;1250;1890
+D114;Red María Grande;María Grande;13,2;3;500;770
+D115;Red Seguí Campo;Seguí;13,2;4;630;990
+D116;Red Santa Elena Oeste;Santa Elena;13,2;2;315;520
+D117;Red San Pedro Norte;San Pedro;13,2;5;800;1240
+D118;Red Rosario del Tala Sur;Rosario del Tala;13,2;4;630;1080
+D119;Red Mansilla;Mansilla;13,2;3;400;650
+D120;Red Gualeguaycito;Gualeguaycito;13,2;2;250;380
+D121;Red Urdinarrain;Urdinarrain;13,2;5;1000;1520
+D122;Red La Criolla Norte;La Criolla;13,2;4;630;1010
+D123;Red Perdices;Perdices;13,2;3;500;740
+D124;Red Sauce Sur;Sauce;13,2;6;1250;1760
+D125;Red Libertador;Libertador;13,2;2;315;450
+D126;Red General Alvear;General Alvear;13,2;4;800;1190
+D127;Red Lucas Sur;Lucas González;13,2;3;400;680
+D128;Red Jubileo;Jubileo;13,2;5;630;1280
+D129;Red Enrique Berduc;Enrique Berduc;13,2;2;250;395
+D130;Red Estación Lazo;Estación Lazo;13,2;4;630;1060
+D201;AT Gilbert Este;Gilbert;33;8;5000;2100
+D202;AT Federal Sur;Federal;33;10;8000;3400
+D203;AT Ubajay Norte;Ubajay;33;7;6300;2800
+D204;AT Larroque Oeste;Larroque;33;9;10000;3900
+D205;AT Santa Anita Central;Santa Anita;33;6;5600;2500
+D206;AT Hasenkamp Campo;Hasenkamp;33;8;7200;3100
+D207;AT Basavilbaso Delta;Basavilbaso;33;7;6300;2650
+D208;AT Villa Elisa Norte;Villa Elisa;33;9;9000;3600
+D209;AT Gobernador Echagüe Sur;Gobernador Echagüe;33;10;10000;4100
+D210;AT María Grande Este;María Grande;33;8;8000;2950
