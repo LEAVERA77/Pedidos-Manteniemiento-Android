@@ -68,29 +68,3 @@ Medir y documentar el comportamiento **antes y después** de extraer código de 
 - [x] Export socios Excel completo: carga perezosa del módulo SheetJS al pulsar el botón.
 
 Próximas iteraciones: ver plan en `.cursor/plans/` (refactor por fases).
-
-## Auditoría de imports estáticos en `app.js` (2026-05-13)
-
-Referencia rápida: cabecera del módulo (~65 `import`). Criterios: **T** = técnico/campo también; **A** = principalmente admin; **P** = pesado (charts/PDF/SQL masivo); candidato **`import()`** = puede aplazarse al primer uso admin o acción concreta.
-
-| Módulo / área | Uso | Notas |
-|---------------|-----|--------|
-| `offline.js`, `tenant*`, `utils`, `ui-utils`, `normalizar-telefono` | T | Núcleo sesión/Neon |
-| `canvas-2d-willread-patch` | T+A | Ligero |
-| `empresa-encabezado-pdf`, `informe-empresa-html-encabezado` | A | PDF informes |
-| `app-kpi-informe-pdf-loaders` | A | `import()` dentro de `imprimirInformeKpiPiloto` (2026-05-13) |
-| `graficos-colores` | A | Stats |
-| `derivaciones-reclamos-admin` (helpers, no init) | A | Config empresa |
-| `dashboard-gerencia` | A | `import()` + `esAdmin()` desde `aplicarUIMapaPlataforma` (2026-05-13) |
-| `kpi-admin-rubro-ui`, `estadisticas-desestimados`, `estadisticas-chart-captions` | A | Stats/KPI |
-| `filtros-*`, `etiqueta-identificador-pedido` | T+A | Mapa + listas |
-| `export-excel` | T+A | Export CSV/material |
-| `admin-wizard`, `admin-socios`, `admin-distribuidores-formato` | A | |
-| `catalogoReclamoPorRubro`, `derivaciones-terceros`, `pedido-form-labels-*` | T+A | |
-| `admin-crear-usuario-panel` | A | `import()` en `crearUsuario()` (2026-05-13) |
-| `informes-estadisticas-pdf-capture` | A | Captura html2canvas estadísticas; deps `getCharts` + `lineaPeriodoInformeEstadisticas` |
-| `map.js`, `map-pedidos-markers`, `gn-map-*` | T | Mapa |
-| `app-admin-panel-deferred` | A | Ya lazy |
-| `pedido-ver-imagen`, `pedido-volver-pendiente` | T | |
-
-Ver también la sección **Notas de arquitectura (`js/core.js` vs `modules/`)** más arriba en este documento.

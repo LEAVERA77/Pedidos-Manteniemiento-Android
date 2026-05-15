@@ -21,8 +21,8 @@ public final class NeonJdbc {
 
     static {
         /*
-         * Refuerzo antes de cargar el driver: en algunos runtimes Android el parser de maxResultBuffer
-         * sigue consultando ManagementFactory si no hay hint global.
+         * Refuerzo antes de cargar el driver: en runtimes Android, pgjdbc 42.2.10+ puede tocar
+         * java.lang.management al interpretar maxResultBuffer si queda implícito.
          * Varias claves por versiones de pgjdbc / rutas de parseo.
          */
         try {
@@ -233,8 +233,8 @@ public final class NeonJdbc {
         p.setProperty("socketTimeout", "25");
         /*
          * Android no incluye java.lang.management.ManagementFactory en el classpath del app process.
-         * pgjdbc 42.x usa ManagementFactory al ajustar el buffer de resultados si maxResultBuffer queda
-         * implícito. Forzar un valor fijo evita PGPropertyMaxResultBufferParser.adjustResultSize → NoClassDefFoundError.
+         * pgjdbc 42.2.10+ usa ManagementFactory al interpretar maxResultBuffer en algunos casos.
+         * Forzar "0" + driver 42.2.8 evita PGPropertyMaxResultBufferParser → NoClassDefFoundError.
          */
         if (!p.containsKey("maxResultBuffer") && !parsed.jdbcUrl.contains("maxResultBuffer")) {
             p.setProperty("maxResultBuffer", "0");

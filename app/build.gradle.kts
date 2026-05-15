@@ -97,8 +97,12 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.work:work-runtime:2.9.1")
-    // minSdk 24: 42.7.x falla en D8 (MethodHandle / min-api 26). 42.2.x + NeonJdbc (maxResultBuffer=0) evita ManagementFactory.
-    implementation("org.postgresql:postgresql:42.2.29")
+    /*
+     * Android no expone java.lang.management.ManagementFactory. pgjdbc >=42.2.10 añade maxResultBuffer
+     * y rutas que resuelven esa clase al conectar → NoClassDefFoundError en WorkManager (PedidoPollWorker).
+     * 42.2.8 (previo a ese cambio) + props en NeonJdbc.static cubre Neon TLS sin tocar app.js.
+     */
+    implementation("org.postgresql:postgresql:42.2.8")
 
     // MVP técnico nativo (Compose + Retrofit)
     val composeBom = platform(libs.compose.bom)

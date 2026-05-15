@@ -25,7 +25,6 @@ function sociosColumnasOpcionalesDefectoPorRubro(rubro) {
     const all = new Set([...SOCIOS_CATALOGO_OPTS_PRE_CALLE.map((o) => o.id), SOCIOS_CATALOGO_OPT_DISTRIB.id]);
     if (r === 'cooperativa_electrica') return all;
     if (r === 'cooperativa_agua') return new Set(['codigo_postal', 'barrio', 'distribuidor_codigo']);
-    if (r === 'cooperativa_electrica') return new Set(['codigo_postal', 'barrio', 'distribuidor_codigo']);
     if (r === 'municipio') return new Set(['codigo_postal', 'barrio']);
     return all;
 }

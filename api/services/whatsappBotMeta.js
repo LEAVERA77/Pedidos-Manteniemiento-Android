@@ -1104,11 +1104,7 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   sess.lat = lat;
   sess.lng = lng;
   if (rev?.displayName) sess.direccionTexto = rev.displayName;
-  if (
-    rev?.barrio &&
-    ["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(normalizarRubroCliente(sess.tipoCliente)) &&
-    !sess.barrio
-  ) {
+  if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio" && !sess.barrio) {
     sess.barrio = rev.barrio;
   }
   if (wpid) sess.phoneNumberId = wpid;
@@ -1212,11 +1208,7 @@ async function inferirDireccionDesdeGpsYGeocodificarAnonimo(
   sess.modoAnonimo = true;
   sess.contactName = "Vecino anónimo";
   if (rev?.displayName) sess.direccionTexto = rev.displayName;
-  if (
-    rev?.barrio &&
-    ["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(normalizarRubroCliente(sess.tipoCliente)) &&
-    !sess.barrio
-  ) {
+  if (rev?.barrio && normalizarRubroCliente(sess.tipoCliente) === "municipio" && !sess.barrio) {
     sess.barrio = rev.barrio;
   }
   if (wpid) sess.phoneNumberId = wpid;
@@ -1266,10 +1258,9 @@ async function intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, cont
   return true;
 }
 
-/** Completa `sess.barrio` con Nominatim reverse (municipio, cooperativa eléctrica y agua). */
-async function enrichBarrioDesdeReverseSiRubroConBarrio(sess) {
-  const rub = normalizarRubroCliente(sess?.tipoCliente);
-  if (!["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(rub)) return;
+/** Municipio: completa `sess.barrio` con Nominatim reverse si aún no está (p. ej. flujo calle/número). */
+async function enrichBarrioDesdeReverseSiMunicipio(sess) {
+  if (normalizarRubroCliente(sess?.tipoCliente) !== "municipio") return;
   if (sess.barrio != null && String(sess.barrio).trim()) return;
   const la = sess.lat != null ? Number(sess.lat) : NaN;
   const lo = sess.lng != null ? Number(sess.lng) : NaN;
@@ -1282,7 +1273,7 @@ async function enrichBarrioDesdeReverseSiRubroConBarrio(sess) {
 
 async function finalizePedidoFromSession(phone, sess, contactName) {
   const sk = sessionKey(phone, sess.tenantId);
-  await enrichBarrioDesdeReverseSiRubroConBarrio(sess);
+  await enrichBarrioDesdeReverseSiMunicipio(sess);
   let descripcionFinal = String(sess.descripcion || "").trim();
   if (!descripcionFinal) {
     sessions.delete(sk);

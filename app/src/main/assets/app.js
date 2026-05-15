@@ -138,7 +138,6 @@ import {
     syncAyudaDistribuidoresExcelHint,
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
-import { initAdminSaidiDistribExcel, syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -1028,12 +1027,6 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     const hideDist = debeOcultarTabDistribuidoresAdmin();
     const d = document.getElementById('admin-tab-distribuidores');
     if (d) d.style.display = hideDist ? 'none' : '';
-    try {
-        syncAdminSaidiDistribTabVisibility({
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
-        });
-    } catch (_) {}
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
@@ -14678,10 +14671,6 @@ function aplicarEtiquetasPorTipo(tipo) {
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
-        syncAdminSaidiDistribTabVisibility({
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
-        });
     } catch (_) {}
     try {
         syncKpiAdminRubroDom();
@@ -15004,7 +14993,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -16149,10 +16138,6 @@ function adminTab(tab) {
     }
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
-    if (tab === 'saidi-excel') {
-        const pre = document.getElementById('admin-saidi-excel-result');
-        if (pre && !pre.textContent.trim()) pre.style.display = 'none';
-    }
     if (tab === 'socios') {
         try {
             if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
@@ -19372,14 +19357,6 @@ if ('serviceWorker' in navigator) {
             mensajeErrorUsuario,
             toast,
             ejecutarCerrarSesion,
-        });
-        initAdminSaidiDistribExcel({
-            getApiToken,
-            apiUrl,
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
-            toast,
-            toastError,
         });
         initAdminClaveProvisoria({
             esAdmin,
