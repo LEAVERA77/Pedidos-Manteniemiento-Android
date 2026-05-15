@@ -498,6 +498,7 @@
       <button class="admin-tab" onclick="adminTab('usuarios')"><i class="fas fa-users"></i> Usuarios</button>
       <button type="button" class="admin-tab" id="admin-tab-distribuidores" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
       <button type="button" class="admin-tab" id="admin-tab-saidi-excel" onclick="adminTab('saidi-excel')" style="display:none"><i class="fas fa-bolt"></i> Métricas SAIDI/SAIFI</button>
+      <button type="button" class="admin-tab" id="admin-tab-red-electrica" onclick="adminTab('red-electrica')" style="display:none"><i class="fas fa-charging-station"></i> Red Eléctrica</button>
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
@@ -684,6 +685,28 @@
       </div>
       <pre id="admin-saidi-excel-result" style="display:none;white-space:pre-wrap;font-size:.72rem;background:var(--bg2,#f8fafc);border:1px solid var(--bo);border-radius:.45rem;padding:.65rem;max-height:min(40vh,280px);overflow:auto;margin:0"></pre>
     </div>
+    <div id="admin-red-electrica" class="admin-section">
+      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Carga de red eléctrica (infraestructura)</h3>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Datos para <strong>SAIDI / SAIFI</strong> en Estadísticas: se guardan en la tabla <code style="font-size:.75rem">distribuidores_red</code> (separada de <code style="font-size:.72rem">distribuidores</code> y de la pestaña «Métricas SAIDI/SAIFI»). Migración Neon: <code style="font-size:.72rem">api/db/migrations/distribuidores_red.sql</code>.</p>
+      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem"><strong>Fila 1 — encabezados:</strong> <code style="font-size:.72rem">ID Distribuidor</code> · <code style="font-size:.72rem">Nombre</code> · <code style="font-size:.72rem">Localidad</code> · <code style="font-size:.72rem">Nivel de tensión</code> · <code style="font-size:.72rem">Trafos</code> · <code style="font-size:.72rem">KVA</code> · <code style="font-size:.72rem">Clientes</code>. Filas idénticas a la base no se reescriben; códigos duplicados en el mismo Excel: prevalece la última fila.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.65rem;align-items:flex-end;margin-bottom:.75rem">
+        <div>
+          <label for="admin-red-electrica-file" style="font-size:.76rem;font-weight:600;color:var(--tm);display:block">Archivo Excel</label>
+          <input type="file" id="admin-red-electrica-file" accept=".xlsx,.xls" style="margin-top:.25rem;font-size:.8rem;max-width:min(100%,22rem)">
+        </div>
+        <button type="button" class="btn-sm primary" id="admin-red-electrica-btn"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon (API)</button>
+        <button type="button" class="btn-sm" id="admin-red-electrica-refresh" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-sync"></i> Actualizar lista</button>
+      </div>
+      <pre id="admin-red-electrica-result" style="display:none;white-space:pre-wrap;font-size:.72rem;background:var(--bg2,#f8fafc);border:1px solid var(--bo);border-radius:.45rem;padding:.65rem;max-height:min(28vh,220px);overflow:auto;margin:0 0 .75rem"></pre>
+      <div style="overflow:auto;border:1px solid var(--bo);border-radius:.45rem">
+        <table class="admin-table" style="margin:0;min-width:640px">
+          <thead><tr>
+            <th>Código</th><th>Nombre</th><th>Localidad</th><th style="text-align:right">Nivel tensión</th><th style="text-align:right">Trafos</th><th style="text-align:right">KVA</th><th style="text-align:right">Clientes</th><th>Actualizado</th>
+          </tr></thead>
+          <tbody id="admin-red-electrica-tbody"><tr><td colspan="8" style="color:var(--tl);font-size:.78rem">Abrí esta pestaña con sesión API para cargar la lista.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
     <div id="admin-socios" class="admin-section">
       <div id="socios-nis-busqueda-wrap" style="margin-bottom:1.15rem;padding:1rem 1.1rem;background:linear-gradient(135deg,#eff6ff 0%,#f0fdf4 100%);border:2px solid #3b82f6;border-radius:.75rem;box-shadow:0 4px 14px rgba(37,99,235,.12)">
         <div style="display:flex;align-items:flex-start;gap:.65rem;flex-wrap:wrap;justify-content:space-between">
@@ -850,6 +873,7 @@
       <div id="enre-marco" class="gn-enre-marco" role="note" aria-live="polite"></div>
       <div id="stats-cards" class="stat-grid"></div>
       <div id="stats-desestimados-pdf-block" style="display:none" aria-hidden="true"></div>
+      <div id="estad-red-infra-aviso" style="display:none;font-size:.76rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:.45rem;padding:.55rem .7rem;margin:.35rem 0 .65rem;line-height:1.4" role="status"></div>
       <div id="chart-wrap-confiabilidad" class="chart-wrap" style="display:none;margin:.5rem 0 0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.35rem">
           <h4 style="margin:0">Confiabilidad eléctrica (estimación interna)</h4>

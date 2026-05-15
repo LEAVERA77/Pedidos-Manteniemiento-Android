@@ -65,12 +65,13 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             });
         } catch (_) {}
         try {
-            saidiDist.initAdminSaidiDistribExcelBindings({
+            saidiDist.initAdminSaidiDistribExcel({
                 toast: ctx.toast,
                 toastError: ctx.toastError,
-                getApiBaseUrl: ctx.getApiBaseUrl,
                 getApiToken: ctx.getApiToken,
-                cargarListaDistribuidoresAdmin: ctx.cargarListaDistribuidoresAdmin,
+                apiUrl: ctx.apiUrl,
+                esCooperativaElectricaRubro: ctx.esCooperativaElectricaRubro,
+                debeOcultarTabDistribuidoresAdmin: ctx.debeOcultarTabDistribuidoresAdmin,
             });
         } catch (_) {}
         _done = true;

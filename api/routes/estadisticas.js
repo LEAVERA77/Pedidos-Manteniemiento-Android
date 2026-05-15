@@ -1,14 +1,14 @@
 import express from "express";
-import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly, adminOrTecnicoIncidencias } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { parsePeriod } from "../utils/helpers.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
 
 const router = express.Router();
-router.use(authWithTenantHost, adminOnly);
+router.use(authWithTenantHost);
 
-router.get("/resumen", async (req, res) => {
+router.get("/resumen", adminOnly, async (req, res) => {
   try {
     const since = parsePeriod(req.query.periodo);
     const hasT = await pedidosTableHasTenantIdColumn();
@@ -49,7 +49,7 @@ router.get("/resumen", async (req, res) => {
   }
 });
 
-router.get("/graficos", async (req, res) => {
+router.get("/graficos", adminOnly, async (req, res) => {
   try {
     const since = parsePeriod(req.query.periodo);
     const hasT = await pedidosTableHasTenantIdColumn();
@@ -116,6 +116,37 @@ router.get("/graficos", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "No se pudieron obtener gráficos", detail: error.message });
+  }
+});
+
+/** Infraestructura por distribuidor (Excel admin) para denominadores SAIDI/SAIFI en front. */
+router.get("/datos-red", adminOrTecnicoIncidencias, async (req, res) => {
+  try {
+    const ex = await query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'distribuidores_red' LIMIT 1`
+    );
+    if (!(ex.rows || []).length) {
+      return res.json({ disponible: false, datos: {} });
+    }
+    const tid = req.tenantId;
+    const r = await query(
+      `SELECT codigo, trafos, kva, clientes FROM distribuidores_red WHERE tenant_id = $1 ORDER BY codigo`,
+      [tid]
+    );
+    /** @type {Record<string, { trafos: number; kva: number; clientes: number }>} */
+    const datos = {};
+    for (const row of r.rows || []) {
+      const c = String(row.codigo || "").trim().toUpperCase();
+      if (!c) continue;
+      datos[c] = {
+        trafos: Number(row.trafos) || 0,
+        kva: Number(row.kva) || 0,
+        clientes: Number(row.clientes) || 0,
+      };
+    }
+    res.json({ disponible: true, datos });
+  } catch (error) {
+    res.status(500).json({ error: "No se pudieron obtener datos de red", detail: error.message });
   }
 });
 
