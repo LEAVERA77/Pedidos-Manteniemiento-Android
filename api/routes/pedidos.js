@@ -556,14 +556,20 @@ router.post("/", async (req, res) => {
       } else if (rubro === "cooperativa_agua") {
         distribuidorFinal = distribuidorBody || lk.distribuidor || null;
         trafoFinal = null;
+        barrioFinal = barrioBody || null;
       } else {
         distribuidorFinal = lk.distribuidor;
         trafoFinal = lk.trafo;
+        barrioFinal = barrioBody || null;
       }
     } else if (rubro === "municipio") {
       barrioFinal = barrioBody || distribuidorBody || null;
+    } else if (rubro === "cooperativa_agua") {
+      distribuidorFinal = distribuidorBody || null;
+      barrioFinal = barrioBody || null;
     } else {
       distribuidorFinal = distribuidorBody || null;
+      barrioFinal = barrioBody || null;
     }
 
     if (rubro === "cooperativa_electrica" && tieneNisOMedidor && (distribuidorFinal || trafoFinal)) {

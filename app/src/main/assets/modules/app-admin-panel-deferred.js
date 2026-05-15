@@ -20,11 +20,12 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
     }
     _inFlight = (async () => {
         const ctx = typeof getDeps === 'function' ? getDeps() : {};
-        const [estCsv, exportStats, deriv, historicos] = await Promise.all([
+        const [estCsv, exportStats, deriv, historicos, saidiDist] = await Promise.all([
             import('./est-csv-tipo-filtro.js'),
             import('./export-pedidos-admin-stats.js'),
             import('./derivaciones-reclamos-admin.js'),
             import('./admin-historicos.js'),
+            import('./admin-saidi-distrib-excel.js'),
         ]);
         try {
             estCsv.initEstCsvTipoAutocomplete();
@@ -61,6 +62,15 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
                 cerrarAdminPanel: ctx.cerrarAdminPanel,
                 sqlSimple: ctx.sqlSimple,
                 neonOk: ctx.neonOk,
+            });
+        } catch (_) {}
+        try {
+            saidiDist.initAdminSaidiDistribExcelBindings({
+                toast: ctx.toast,
+                toastError: ctx.toastError,
+                getApiBaseUrl: ctx.getApiBaseUrl,
+                getApiToken: ctx.getApiToken,
+                cargarListaDistribuidoresAdmin: ctx.cargarListaDistribuidoresAdmin,
             });
         } catch (_) {}
         _done = true;

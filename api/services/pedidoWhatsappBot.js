@@ -424,8 +424,12 @@ export async function crearPedidoDesdeWhatsappBot({
     null;
   let barrioDesdeSesionOInferido =
     barrio != null && String(barrio).trim() ? String(barrio).trim() : "";
+  const rubroInfBarrio =
+    rubroCliente === "municipio" ||
+    rubroCliente === "cooperativa_electrica" ||
+    rubroCliente === "cooperativa_agua";
   if (
-    rubroCliente === "municipio" &&
+    rubroInfBarrio &&
     !barrioDesdeSesionOInferido &&
     coordsValidasWgs84(latFinal, lngFinal) &&
     !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal)
@@ -435,7 +439,7 @@ export async function crearPedidoDesdeWhatsappBot({
       if (rev?.barrio) barrioDesdeSesionOInferido = String(rev.barrio).trim();
     } catch (e) {
       try {
-        console.warn("[pedido-whatsapp-bot] reverse barrio municipio", e?.message || e);
+        console.warn("[pedido-whatsapp-bot] reverse barrio", e?.message || e);
       } catch (_) {}
     }
   }
@@ -560,7 +564,10 @@ export async function crearPedidoDesdeWhatsappBot({
   }
 
   const barrioT =
-    rubroCliente === "municipio" && barrioDesdeSesionOInferido
+    (rubroCliente === "municipio" ||
+      rubroCliente === "cooperativa_electrica" ||
+      rubroCliente === "cooperativa_agua") &&
+    barrioDesdeSesionOInferido
       ? String(barrioDesdeSesionOInferido).slice(0, 200)
       : null;
   if (pCols.has("barrio") && barrioT) {

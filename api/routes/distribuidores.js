@@ -4,6 +4,7 @@ import XLSX from "xlsx";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
+import { mergeDistribuidoresSaidiFromExcelBuffer } from "../services/distribuidoresSaidiExcelMerge.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -156,6 +157,38 @@ router.post("/import-excel", adminOnly, upload.single("file"), async (req, res) 
     res.json({ ok: true, importados: ok });
   } catch (error) {
     res.status(500).json({ error: "No se pudo importar Excel", detail: error.message });
+  }
+});
+
+router.post("/import-saidi-excel", adminOnly, upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
+    const hasTid = await distribuidoresTieneTenantId();
+    const hasTrafos = await tableHasColumn("distribuidores", "trafos");
+    const hasKva = await tableHasColumn("distribuidores", "kva_saidi");
+    const hasCli = await tableHasColumn("distribuidores", "clientes_saidi");
+    if (!hasTid) {
+      return res.status(400).json({ error: "La tabla distribuidores no tiene tenant_id; no se puede importar." });
+    }
+    if (!hasTrafos || !hasKva || !hasCli) {
+      return res.status(503).json({
+        error: "Faltan columnas en Neon",
+        hint: "Ejecutá en la base la migración api/db/migrations/distribuidores_saidi_metrics.sql (trafos, kva_saidi, clientes_saidi).",
+      });
+    }
+    const tenantId = req.tenantId;
+    let out;
+    await withTransaction(async (client) => {
+      out = await mergeDistribuidoresSaidiFromExcelBuffer(req.file.buffer, tenantId, client, {
+        hasTenantId: true,
+        hasTrafos,
+        hasKva,
+        hasCli,
+      });
+    });
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo importar Excel SAIDI/SAIFI", detail: error.message });
   }
 });
 

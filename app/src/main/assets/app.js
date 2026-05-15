@@ -130,6 +130,10 @@ import {
     etiquetaNisDetalleModalPedido,
     syncHistorialNisBusquedaDom,
 } from './modules/pedido-form-labels-rubro.js';
+import {
+    syncPedidoBarrioAuxWrapperVisibility,
+    aplicarBarrioNominatimEnFormularioNuevoPedido,
+} from './modules/pedido-nuevo-barrio-nominatim.js';
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import { resolverPedidoParaDerivacionRevisionAdmin } from './modules/derivacion-revision-admin-modal.js';
 import { runNeonAppVersionCheckAndroid } from './modules/android-app-update-neon.js';
@@ -1027,6 +1031,11 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     const hideDist = debeOcultarTabDistribuidoresAdmin();
     const d = document.getElementById('admin-tab-distribuidores');
     if (d) d.style.display = hideDist ? 'none' : '';
+    const s = document.getElementById('admin-tab-saidi-dist');
+    if (s) {
+        const rub = normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
+        s.style.display = rub === 'cooperativa_electrica' && !hideDist ? '' : 'none';
+    }
     try {
         syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
@@ -1287,21 +1296,9 @@ async function reverseNominatimNuevoPedidoCore(lat, lng) {
             const prev = String(dr.value || '').trim();
             dr.value = prev ? `${prev} (${refExtra})` : refExtra;
         }
-        if (esMunicipioRubro()) {
-            const barrio = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
-            const di2 = document.getElementById('di2');
-            if (di2 && barrio) {
-                const bTrim = String(barrio).trim();
-                let opt = Array.from(di2.options).find(o => o.value === bTrim);
-                if (!opt) {
-                    opt = document.createElement('option');
-                    opt.value = bTrim;
-                    opt.textContent = bTrim;
-                    di2.appendChild(opt);
-                }
-                di2.value = bTrim;
-            }
-        }
+        try {
+            aplicarBarrioNominatimEnFormularioNuevoPedido(addr);
+        } catch (_) {}
     } catch (_) {
         toast('No se pudo consultar la dirección en ese punto.', 'error');
     }
@@ -9780,12 +9777,16 @@ document.getElementById('pf').addEventListener('submit', async e => {
             if (!tieneNisMed) {
                 trafoVal = '';
             }
+            const bAux = (document.getElementById('ped-cli-barrio')?.value || '').trim();
+            barrioVal = bAux || null;
         } else if (esMunicipioRubro()) {
             barrioVal = disVal || null;
             disVal = '';
             trafoVal = '';
         } else if (esCooperativaAguaRubro()) {
             trafoVal = '';
+            const bAuxA = (document.getElementById('ped-cli-barrio')?.value || '').trim();
+            barrioVal = bAuxA || null;
         }
         if (
             esCooperativaElectricaRubro() &&
@@ -14675,11 +14676,24 @@ function aplicarEtiquetasPorTipo(tipo) {
     try {
         syncKpiAdminRubroDom();
     } catch (_) {}
+    const tabSaidi = document.getElementById('admin-tab-saidi-dist');
+    if (tabSaidi) {
+        const rub = normalizarRubroEmpresa(tipo);
+        let hideDist = false;
+        try {
+            hideDist = debeOcultarTabDistribuidoresAdmin();
+        } catch (_) {}
+        const showSaidi = rub === 'cooperativa_electrica' && !hideDist;
+        tabSaidi.style.display = showSaidi ? '' : 'none';
+    }
 }
 
 function syncZonaPedidoFormLabels() {
     try {
         syncPedidoFormZonaDistribuidorLabels();
+    } catch (_) {}
+    try {
+        syncPedidoBarrioAuxWrapperVisibility();
     } catch (_) {}
     const trafoW = document.getElementById('trafo-pedido')?.closest('.fg');
     if (trafoW) trafoW.style.display = esCooperativaElectricaRubro() ? '' : 'none';
@@ -14993,7 +15007,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-dist','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;
@@ -16138,6 +16152,14 @@ function adminTab(tab) {
     }
     if (tab === 'usuarios') cargarListaUsuarios();
     if (tab === 'distribuidores') cargarListaDistribuidoresAdmin();
+    if (tab === 'saidi-dist') {
+        try {
+            void ensureAdminPanelDeferredBindings(() => _depsAdminPanelDeferred());
+        } catch (_) {}
+        try {
+            cargarListaDistribuidoresAdmin();
+        } catch (_) {}
+    }
     if (tab === 'socios') {
         try {
             if (typeof actualizarUiSociosImportCrs === 'function') actualizarUiSociosImportCrs();
@@ -16214,6 +16236,9 @@ function _depsAdminPanelDeferred() {
         actualizarBotonesWhatsappDerivacionesUi,
         refrescarPedidos: () => cargarPedidos({ silent: true }),
         cerrarAdminPanel,
+        getApiBaseUrl,
+        getApiToken,
+        cargarListaDistribuidoresAdmin,
     };
 }
 

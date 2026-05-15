@@ -12,6 +12,7 @@ import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.j
 import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantIdentity.js";
 import { requireTechnicianTenantKey, technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
 import { getOrCreateAdminUidForTechnicianAttach, defaultAdminEmailForTenant } from "../services/defaultTenantAdminForAttach.js";
+import { createBootstrapAdminForNewTenant } from "../services/bootstrapTenantAdmin.js";
 
 const router = express.Router();
 
@@ -601,6 +602,13 @@ router.post("/wizard", async (req, res) => {
       fallbackUserId: req.user?.id ?? null,
     });
 
+    let bootstrap_admin = null;
+    try {
+      bootstrap_admin = await createBootstrapAdminForNewTenant(newTenantId);
+    } catch (e) {
+      console.warn("[setup/wizard] bootstrap_admin", e?.message || e);
+    }
+
     const token = signToken({
       userId: req.user.id,
       rol: req.user.rol,
@@ -618,6 +626,7 @@ router.post("/wizard", async (req, res) => {
       nueva_instancia: true,
       require_logout_reload: true,
       token,
+      bootstrap_admin,
       message:
         "Se creó una nueva instancia (nuevo tenant). Cerrá sesión en todos los dispositivos si hace falta; ya recibís un token para el nuevo tenant.",
     });
