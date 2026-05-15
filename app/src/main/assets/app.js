@@ -147,8 +147,12 @@ import {
 import {
     fetchDatosRedParaEstadisticas,
     denominadorClientesConfiabilidad,
+    buildMapaSociosPorCodigoDistribuidor,
 } from './modules/estadisticas-datos-red-saifi.js';
-import { sincronizarChartsSaifiSaidiConfiabilidad } from './modules/estadisticas-saifi-saidi-charts.js';
+import {
+    crearGraficosSaifiSaidi,
+    pintarCaptionConfiabilidadSaifiSaidi,
+} from './modules/estadisticas-saifi-saidi-charts.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -18036,7 +18040,7 @@ async function cargarEstadisticas() {
         const tiposConfSql =
             "('Corte de Energía','Cables Caídos/Peligro','Problemas de Tensión','Poste Inclinado/Dañado','Consumo elevado','Riesgo en la vía pública','Corrimiento de poste/columna','Falla de Línea','Avería en Transformador','Corte Programado','Emergencia')";
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rMotivos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
-            rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfDist, datosRedPack, rConfMes] = await Promise.all([
+            rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfDist, rSociosDist, datosRedPack, rConfMes] = await Promise.all([
             // Resumen general
             statSql(`SELECT
                 COUNT(*) AS total,
@@ -18112,6 +18116,16 @@ async function cargarEstadisticas() {
                       'confDist'
                   )
                 : Promise.resolve({ rows: [] }),
+            showConf
+                ? statSql(
+                      `SELECT COALESCE(NULLIF(TRIM(distribuidor_codigo), ''), '') AS dist_raw, COUNT(*)::int AS n
+                FROM socios_catalogo
+                WHERE COALESCE(activo, TRUE)${socTsqlStats}
+                  AND COALESCE(NULLIF(TRIM(distribuidor_codigo), ''), '') <> ''
+                GROUP BY 1`,
+                      'sociosDist'
+                  )
+                : Promise.resolve({ rows: [] }),
             showConf && !modoOffline
                 ? fetchDatosRedParaEstadisticas({
                       getApiToken,
@@ -18173,6 +18187,7 @@ async function cargarEstadisticas() {
             datosPack: datosRedPack,
             distRawRows: rConfDist.rows || [],
             nSociosCat,
+            sociosPorCodigo: buildMapaSociosPorCodigoDistribuidor(rSociosDist.rows || []),
         });
         const denomEff = denomMeta.n;
         const saifiPeriodo = showConf && denomEff ? evConfTot / denomEff : null;
@@ -18196,10 +18211,15 @@ async function cargarEstadisticas() {
                     av.style.display = '';
                     av.textContent =
                         '✓ Denominador según clientes de la pestaña «Red Eléctrica» (suma por distribuidores con interrupciones en el período).';
+                } else if (denomMeta.fuente === 'socios_catalogo') {
+                    av.style.display = '';
+                    av.textContent =
+                        '✓ Denominador: socios activos del catálogo (columna Dist.) por cada distribuidor con reclamos de red en el período' +
+                        (denomMeta.parcial ? ' (algunos distribuidores sin socios cargados con ese código).' : '.');
                 } else {
                     av.style.display = '';
                     av.textContent =
-                        '📊 Sin suma útil de clientes por distribuidor afectado; se usa el catálogo de socios.';
+                        '📊 Sin suma útil de clientes por distribuidor afectado; se usa el total de socios activos del catálogo.';
                 }
             }
         } catch (_) {}
@@ -18212,7 +18232,9 @@ async function cargarEstadisticas() {
                 const den =
                     denomMeta.fuente === 'red'
                         ? 'Denominador: <strong>clientes cargados en «Red Eléctrica»</strong> (suma de distribuidores con esos cierres en el período). Complementar con mediciones oficiales.'
-                        : 'Denominador: socios activos en <code style="font-size:.7rem">socios_catalogo</code> (mín. 1). Complementar con mediciones oficiales de red.';
+                        : denomMeta.fuente === 'socios_catalogo'
+                          ? 'Denominador: <strong>socios activos por Dist.</strong> en <code style="font-size:.7rem">socios_catalogo</code> (Neon, tenant actual). Complementar con mediciones oficiales.'
+                          : 'Denominador: total socios activos en <code style="font-size:.7rem">socios_catalogo</code> (mín. 1). Complementar con mediciones oficiales de red.';
                 pd.innerHTML = base + den;
             }
         } catch (_) {}
@@ -18402,6 +18424,17 @@ async function cargarEstadisticas() {
             crearGraficoMotivosDesestimacion(crearChart, rMotivos.rows || []);
         } catch (_) {}
 
+        try {
+            crearGraficosSaifiSaidi(crearChart, {
+                showConf,
+                confRows: rConfMes.rows || [],
+                denomEff,
+                saifiPeriodo,
+                saidiPeriodo,
+                denomMeta,
+            });
+        } catch (_) {}
+
         // ── Gráfico distribuidor / ramal / barrio: barras con % cierre ─
         crearChart('chart-distribuidores', 'bar',
             rDist.rows.map(r => r.distribuidor),
@@ -18501,25 +18534,18 @@ async function cargarEstadisticas() {
             rUsuarios: rUsuarios || { rows: [] },
             rTecnicos: rTecnicos || { rows: [] },
         });
-
         try {
-            sincronizarChartsSaifiSaidiConfiabilidad({
-                crearChart,
-                destruirChartPorId: (id) => {
-                    if (_charts[id]) {
-                        try {
-                            _charts[id].destroy();
-                        } catch (_) {}
-                        delete _charts[id];
-                    }
-                },
-                showConf,
+            pintarCaptionConfiabilidadSaifiSaidi({
+                scap,
+                confRows: rConfMes.rows || [],
                 denomEff,
-                confMesRows: rConfMes.rows || [],
+                saifiPeriodo,
+                saidiPeriodo,
+                denomMeta,
+                evConfTot,
+                minConfTot,
             });
-        } catch (e) {
-            logErrorWeb('charts-saifi-saidi', e);
-        }
+        } catch (_) {}
 
         requestAnimationFrame(() => {
             Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
