@@ -980,10 +980,19 @@ async function guardarConfiguracionInicialObligatoria() {
         const ok = await verificarConfiguracionInicialObligatoria();
         if (ok) {
             try {
+                let msgBootstrap = '';
+                if (wiz?.bootstrap_admin?.usuario && wiz?.bootstrap_admin?.password) {
+                    msgBootstrap =
+                        '\n\n——— Administrador del nuevo tenant ———\n' +
+                        `Usuario: ${wiz.bootstrap_admin.usuario}\n` +
+                        `Contraseña (guardala ya; no se repite): ${wiz.bootstrap_admin.password}\n` +
+                        'En el primer inicio de sesión deberá cambiar la contraseña (obligatorio).\n';
+                }
                 alert(
                     (wiz && wiz.nueva_instancia
                         ? 'Se creó una nueva instancia (nuevo tenant). Cerrá otras pestañas si las tenías abiertas.\n\n'
                         : '') +
+                        msgBootstrap +
                         'Configuración inicial guardada en el servidor.\n\n' +
                         'La página se va a recargar por completo para aplicar aislamiento, marca y evitar datos mezclados.'
                 );

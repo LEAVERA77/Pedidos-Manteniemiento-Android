@@ -497,6 +497,7 @@
       <button class="admin-tab active" onclick="adminTab('empresa')"><i class="fas fa-building"></i> Empresa</button>
       <button class="admin-tab" onclick="adminTab('usuarios')"><i class="fas fa-users"></i> Usuarios</button>
       <button type="button" class="admin-tab" id="admin-tab-distribuidores" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
+      <button type="button" class="admin-tab" id="admin-tab-saidi-excel" onclick="adminTab('saidi-excel')" style="display:none"><i class="fas fa-bolt"></i> Métricas SAIDI/SAIFI</button>
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
@@ -669,6 +670,19 @@
           <button class="btn-sm" onclick="document.getElementById('form-distribuidor').style.display='none'" style="background:var(--bg);border:1px solid var(--bo)">Cancelar</button>
         </div>
       </div>
+    </div>
+    <div id="admin-saidi-excel" class="admin-section">
+      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Métricas por distribuidor (SAIDI / SAIFI)</h3>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Importá un Excel con los datos de red por distribuidor. Se fusionan con la tabla <code style="font-size:.75rem">distribuidores</code> en Neon: filas idénticas no se reescriben; filas nuevas se insertan ordenadas por código; si cambian solo valores numéricos o textos, se actualizan esos campos. Requiere migración <code style="font-size:.72rem">api/db/migrations/distribuidores_saidi_metrics.sql</code> (columnas <code style="font-size:.72rem">trafos</code>, <code style="font-size:.72rem">kva_saidi</code>, <code style="font-size:.72rem">clientes_saidi</code>).</p>
+      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem"><strong>Fila 1 — encabezados</strong> (nombres flexibles): <code style="font-size:.72rem">ID Distribuidor</code> o <code style="font-size:.72rem">codigo</code> · <code style="font-size:.72rem">Nombre</code> · <code style="font-size:.72rem">Localidad</code> · <code style="font-size:.72rem">Nivel de tensión</code> (número, opcional si ya mandás <code style="font-size:.72rem">tension</code> como texto) · <code style="font-size:.72rem">Trafos</code> · <code style="font-size:.72rem">KVA</code> · <code style="font-size:.72rem">Clientes</code>.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.65rem;align-items:flex-end;margin-bottom:.75rem">
+        <div>
+          <label for="admin-saidi-excel-file" style="font-size:.76rem;font-weight:600;color:var(--tm);display:block">Archivo Excel</label>
+          <input type="file" id="admin-saidi-excel-file" accept=".xlsx,.xls" style="margin-top:.25rem;font-size:.8rem;max-width:min(100%,22rem)">
+        </div>
+        <button type="button" class="btn-sm primary" id="admin-saidi-excel-btn"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon (API)</button>
+      </div>
+      <pre id="admin-saidi-excel-result" style="display:none;white-space:pre-wrap;font-size:.72rem;background:var(--bg2,#f8fafc);border:1px solid var(--bo);border-radius:.45rem;padding:.65rem;max-height:min(40vh,280px);overflow:auto;margin:0"></pre>
     </div>
     <div id="admin-socios" class="admin-section">
       <div id="socios-nis-busqueda-wrap" style="margin-bottom:1.15rem;padding:1rem 1.1rem;background:linear-gradient(135deg,#eff6ff 0%,#f0fdf4 100%);border:2px solid #3b82f6;border-radius:.75rem;box-shadow:0 4px 14px rgba(37,99,235,.12)">

@@ -3,8 +3,9 @@
  * Varios reclamos abiertos en la misma celda: un marcador por pedido (dispersión en anillo)
  * con popup individual para asignar o ver detalle de a uno.
  *
- * Punto único de render de markers desde `app.js`: `renderMkPedidosEnMapa` (no duplicar
- * lógica de clusters/popup en otros archivos; estado `app.map` / `app.mk` lo orquesta app.js).
+ * Punto único de render de markers desde `app.js`: `renderMkPedidosEnMapa` vía `renderMk()` /
+ * `runRenderMkPostMapInit()` (no duplicar lógica de clusters/popup en otros archivos; estado
+ * `app.map` / `app.mk` lo orquesta este módulo + `app.js`).
  * made by leavera77
  */
 
