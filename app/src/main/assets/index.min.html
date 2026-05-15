@@ -796,9 +796,12 @@
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;max-width:min(44rem,100%);line-height:1.35" title="Desactivado por defecto: import instantáneo. Si lo activás, se consulta Nominatim una vez por cada calle+localidad+provincia distintas (~1 s entre consultas).">
             <input type="checkbox" id="socios-import-cp-nominatim"> Inferir CP (Nominatim) si falta en el Excel — opcional, puede ser lento.
           </label>
+          <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;max-width:min(44rem,100%);line-height:1.35" title="Elimina en Neon las filas del catálogo sin ubicación manual (no borra correcciones hechas a mano en el mapa). Luego importa el archivo.">
+            <input type="checkbox" id="socios-import-reemplazar"> Vaciar catálogo antes de importar (fusiona por defecto si no marcás)
+          </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> La importación <strong>fusiona</strong> con el catálogo ya guardado en el servidor (no borra datos en bloque). Revisá el botón <strong>Formato</strong> para columnas obligatorias por rubro.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> Por defecto la importación <strong>fusiona</strong> con el catálogo en el servidor. Si marcás <strong>Vaciar catálogo antes de importar</strong>, se borran primero las filas sin corrección manual y luego se cargan las del archivo. Revisá <strong>Formato</strong> para columnas obligatorias por rubro.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="modal-alta-socio-manual" class="mo" role="dialog" aria-modal="true" aria-labelledby="soc-man-titulo">
         <div class="mc" style="max-width:min(32rem,96vw)">

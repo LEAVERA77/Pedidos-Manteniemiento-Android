@@ -1974,6 +1974,21 @@ async function importarExcelSocios(event) {
             event.target.value = '';
             return;
         }
+        const reemplazar =
+            document.getElementById('socios-import-reemplazar')?.checked === true;
+        if (reemplazar) {
+            req().actualizarOverlayImportacion(
+                'Vaciando catálogo (preservando coordenadas corregidas manualmente)…'
+            );
+            const hasSocTDel = await req().sociosCatalogoTieneTenantId();
+            const tfDel = hasSocTDel ? ` AND tenant_id = ${esc(req().tenantIdActual())}` : '';
+            await req().sqlSimple(
+                `DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE${tfDel}`
+            );
+            try {
+                console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
+            } catch (_) {}
+        }
         const primera = rawRows[0];
         const mapNormAOriginal = {};
         Object.keys(primera).forEach(orig => {
@@ -2295,6 +2310,10 @@ async function importarExcelSocios(event) {
             );
         }
         cargarListaSociosAdmin();
+        try {
+            const chk = document.getElementById('socios-import-reemplazar');
+            if (chk) chk.checked = false;
+        } catch (_) {}
     } catch (e) {
         req().ocultarOverlayImportacion();
         toastError('import-excel-socios', e, 'Error al leer el archivo.');
@@ -2410,6 +2429,7 @@ function mostrarFormatoExcelSocios() {
         '<ul style="margin:.35rem 0;padding-left:1.15rem;line-height:1.45;font-size:.82rem;color:var(--tm)">' +
         '<li>En base de datos siempre existen las columnas fijas del catálogo; <strong>código postal, teléfono, lat/lon, barrio</strong> pueden venir vacíos en el Excel.</li>' +
         '<li>Al importar: se intenta inferir el CP con Nominatim (opcional, casilla en pantalla) y se <strong>normaliza el teléfono</strong> a 54… (sin el 9 móvil tras el país; incluye 0/0343, 15 y variantes) usando la tabla de características por localidad. <strong>Localidad y provincia</strong> se comparan sin tildes y con tolerancia a errores de escritura; si hay duda, se muestra un aviso al terminar.</li>' +
+        '<li>Opcional: <strong>Vaciar catálogo antes de importar</strong> borra en servidor las filas sin <code>ubicacion_manual</code> del tenant actual y luego inserta el Excel; si no la marcás, se <strong>fusiona</strong> por NIS/medidor.</li>' +
         '</ul>';
     const wrap = document.createElement('div');
     wrap.id = 'modal-formato-excel-socios';

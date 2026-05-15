@@ -88,7 +88,6 @@ function shellAssetUrls() {
     j('modules/admin-saidi-distrib-excel.js'),
     j('modules/admin-red-electrica-infra.js'),
     j('modules/estadisticas-datos-red-saifi.js'),
-    j('modules/estadisticas-saifi-saidi-charts.js'),
     j('modules/gn-panel-docks.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-volver-pendiente.js'),
