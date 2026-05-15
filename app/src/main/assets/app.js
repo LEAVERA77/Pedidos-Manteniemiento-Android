@@ -144,6 +144,10 @@ import {
     syncAdminRedElectricaTabVisibility,
     cargarListaRedElectricaInfra,
 } from './modules/admin-red-electrica-infra.js';
+import {
+    fetchDatosRedParaEstadisticas,
+    denominadorClientesConfiabilidad,
+} from './modules/estadisticas-datos-red-saifi.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -18108,15 +18112,11 @@ async function cargarEstadisticas() {
                   )
                 : Promise.resolve({ rows: [] }),
             showConf && !modoOffline
-                ? import('./modules/estadisticas-datos-red-saifi.js')
-                      .then((m) =>
-                          m.fetchDatosRedParaEstadisticas({
-                              getApiToken,
-                              apiUrl,
-                              asegurarJwtApiRest,
-                          })
-                      )
-                      .catch(() => null)
+                ? fetchDatosRedParaEstadisticas({
+                      getApiToken,
+                      apiUrl,
+                      asegurarJwtApiRest,
+                  }).catch(() => null)
                 : Promise.resolve(null),
             showConf
                 ? statSql(
@@ -18168,8 +18168,7 @@ async function cargarEstadisticas() {
         const confRows = rConfMes.rows || [];
         const evConfTot = confRows.reduce((s, r) => s + parseInt(r.ev || 0, 10), 0);
         const minConfTot = confRows.reduce((s, r) => s + parseFloat(r.min_tot || 0), 0);
-        const redSaifi = await import('./modules/estadisticas-datos-red-saifi.js');
-        const denomMeta = redSaifi.denominadorClientesConfiabilidad({
+        const denomMeta = denominadorClientesConfiabilidad({
             datosPack: datosRedPack,
             distRawRows: rConfDist.rows || [],
             nSociosCat,

@@ -6,8 +6,14 @@
 /** @type {boolean} */
 let _bound = false;
 
+function numFallback(a, b) {
+  const v = a != null ? a : b;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function escCell(s) {
-  return String(s ?? "")
+  return String(s != null ? s : "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
@@ -23,13 +29,14 @@ function escCell(s) {
  */
 export function initAdminRedElectricaInfra(d) {
   if (_bound) return;
-  _bound = true;
 
   const btn = document.getElementById("admin-red-electrica-btn");
   const inp = document.getElementById("admin-red-electrica-file");
   const out = document.getElementById("admin-red-electrica-result");
   const ref = document.getElementById("admin-red-electrica-refresh");
   if (!btn || !inp) return;
+
+  _bound = true;
 
   btn.addEventListener("click", async () => {
     const f = inp.files && inp.files[0];
@@ -63,7 +70,7 @@ export function initAdminRedElectricaInfra(d) {
       }
       if (out) out.textContent = JSON.stringify(j, null, 2);
       d.toast(
-        `Red eléctrica: +${j.insertados ?? j.inserted ?? 0} nuevos, ${j.actualizados ?? j.updated ?? 0} actualizados, ${j.sin_cambios ?? j.unchanged ?? 0} sin cambios.`,
+        `Red eléctrica: +${numFallback(j.insertados, j.inserted)} nuevos, ${numFallback(j.actualizados, j.updated)} actualizados, ${numFallback(j.sin_cambios, j.unchanged)} sin cambios.`,
         "success",
         5000
       );
