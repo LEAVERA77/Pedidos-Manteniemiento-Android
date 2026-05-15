@@ -5,6 +5,7 @@
  */
 
 import { fetchTenantOperativoDesdeApi } from './tenantPrincipalApi.js';
+import { setAuthLoginTenantHint } from './auth-login-api-body.js';
 
 const GUARD_KEY = 'pmg_gn_tenant_force_reload_ts';
 const GUARD_MS = 14000;
@@ -152,6 +153,9 @@ async function runTenantVerifyCore() {
             log('[gn-tenant-boot] tenant remoto inválido');
             return;
         }
+        try {
+            setAuthLoginTenantHint(remote);
+        } catch (_) {}
 
         const local = readTenantFromPmg();
         const stale = !!row.jwt_claim_stale;

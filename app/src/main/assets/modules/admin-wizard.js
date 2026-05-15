@@ -21,6 +21,7 @@ import {
 } from './gn-tenant-acceso-tecnico-unificado.js';
 import { gnMostrarVeilRecargaTenant } from './gn-tenant-reload-veil.js';
 import { initWizardNuevoTenantTecnico, syncWizardNuevoTenantBlockVisibility } from './wizard-nuevo-tenant-tecnico.js';
+import { setAuthLoginTenantHint } from './auth-login-api-body.js';
 
 /** @type {Record<string, unknown> | null} */
 let _wizardDeps = null;
@@ -369,6 +370,9 @@ async function wizardTecnicoVincularTenantSeleccionado() {
                 } catch (_) {}
             }
             try {
+                setAuthLoginTenantHint(tidOk);
+            } catch (_) {}
+            try {
                 if (req().app?.u) localStorage.setItem('pmg', JSON.stringify(req().app.u));
             } catch (_) {}
             try {
@@ -551,6 +555,9 @@ async function verificarConfiguracionInicialObligatoria() {
                         } catch (_) {}
                         try {
                             localStorage.setItem('pmg', JSON.stringify(req().app.u));
+                        } catch (_) {}
+                        try {
+                            setAuthLoginTenantHint(apiTid);
                         } catch (_) {}
                     } catch (_) {}
                     try {
@@ -839,6 +846,9 @@ async function guardarConfiguracionInicialObligatoria() {
                 try {
                     localStorage.setItem('pmg', JSON.stringify(req().app.u));
                 } catch (_) {}
+                try {
+                    setAuthLoginTenantHint(tenantIdSinJwt);
+                } catch (_) {}
             }
         } else {
             authToken = token;
@@ -871,6 +881,9 @@ async function guardarConfiguracionInicialObligatoria() {
                     } catch (_) {}
                     try {
                         localStorage.setItem('pmg', JSON.stringify(req().app.u));
+                    } catch (_) {}
+                    try {
+                        setAuthLoginTenantHint(Number(wiz.tenant_id));
                     } catch (_) {}
                 }
                 req().limpiarLocalStorageContadoresPedido();

@@ -36,6 +36,16 @@ export function authLoginJsonBody(usuario, password) {
             if (Number.isFinite(h) && h > 0) tid = h;
         } catch (_) {}
         if (!Number.isFinite(tid) || tid < 1) {
+            try {
+                const raw = localStorage.getItem('pmg');
+                if (raw) {
+                    const ju = JSON.parse(raw);
+                    const lt = Number(ju?.tenant_id ?? ju?.tenantId);
+                    if (Number.isFinite(lt) && lt > 0) tid = lt;
+                }
+            } catch (_) {}
+        }
+        if (!Number.isFinite(tid) || tid < 1) {
             tid = Number(_tenantIdResolver());
         }
         if (Number.isFinite(tid) && tid > 0) o.tenant_id = tid;

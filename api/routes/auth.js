@@ -64,12 +64,10 @@ router.post("/login", async (req, res) => {
 
     let matches = await rowsMatchingPassword(candidateRows);
 
-    /** `tenant_id` del body puede estar desfasado (JWT/localStorage). Si no hubo coincidencia en ese tenant, buscar en todos. */
-    if (col && Number.isFinite(hintTid) && hintTid >= 1 && matches.length === 0) {
-      const rWide = await query(unscopedSql, [loginId]);
-      matches = await rowsMatchingPassword(rWide.rows);
-    }
-
+    /**
+     * Con multitenant (`tenant_id` en body): solo se valida en ese tenant.
+     * Mismo usuario/contraseña en otro tenant no debe autenticar si el técnico eligió otro contexto (wizard / selector).
+     */
     if (!matches.length) {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
@@ -84,7 +82,7 @@ router.post("/login", async (req, res) => {
       ];
       return res.status(400).json({
         error:
-          "Hay más de un usuario con ese nombre en distintos tenants. Indicá tenant_id en el cuerpo del login (clientes.id del tenant).",
+          "Hay más de un usuario con ese nombre de usuario en distintos tenants. Elegí el tenant en el asistente (o enviá tenant_id en el login: clientes.id del tenant).",
         code: "login_tenant_ambiguous",
         tenant_ids: tids,
       });

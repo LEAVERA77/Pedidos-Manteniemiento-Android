@@ -1,8 +1,12 @@
 /**
  * Crea un usuario administrador en un tenant (clientes.id).
  *
- * Uso (desde carpeta api, con .env o DATABASE_URL):
+ * Uso: primero `cd` a esta carpeta api (donde está package.json), luego:
  *   node scripts/createTenantAdmin.mjs --tenant-id=1 --email=admin@miempresa.com --password=MiClaveSegura
+ *   node scripts/createTenantAdmin.mjs --tenant-id=1 --usuario=admin_segui --password=MiClaveSegura
+ *
+ * `--usuario=` es alias de `--email=` (misma columna `email` en BD).
+ * Login: email válido o texto 2–120 caracteres sin espacios (como POST /api/usuarios).
  *
  * Opcional: --nombre="Administrador"
  *
@@ -18,10 +22,18 @@ function parseArgs() {
   for (const a of process.argv.slice(2)) {
     if (a.startsWith("--tenant-id=")) out.tenantId = Number(a.split("=")[1]);
     else if (a.startsWith("--email=")) out.email = String(a.split("=").slice(1).join("=")).trim();
+    else if (a.startsWith("--usuario=")) out.email = String(a.split("=").slice(1).join("=")).trim();
     else if (a.startsWith("--password=")) out.password = String(a.split("=").slice(1).join("="));
     else if (a.startsWith("--nombre=")) out.nombre = String(a.split("=").slice(1).join("=")).trim() || "Administrador";
   }
   return out;
+}
+
+function loginIdValido(loginTrim) {
+  const t = String(loginTrim || "").trim().toLowerCase();
+  if (!t) return false;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return true;
+  return t.length >= 2 && t.length <= 120 && !/\s/.test(t);
 }
 
 async function main() {
@@ -31,8 +43,8 @@ async function main() {
     process.exit(1);
   }
   const loginTrim = email.trim().toLowerCase();
-  if (!loginTrim || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginTrim)) {
-    console.error("Indicá un --email= válido (se usa como login en el panel).");
+  if (!loginIdValido(loginTrim)) {
+    console.error("Indicá --email= o --usuario= válido (email o texto 2–120 caracteres sin espacios; login en el panel).");
     process.exit(1);
   }
   const pwStr = String(password || "").trim();
