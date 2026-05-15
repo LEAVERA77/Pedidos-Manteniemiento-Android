@@ -69,11 +69,22 @@ export function initAdminRedElectricaInfra(d) {
         throw new Error(msg || `HTTP ${r.status}`);
       }
       if (out) out.textContent = JSON.stringify(j, null, 2);
-      d.toast(
-        `Red eléctrica: +${numFallback(j.insertados, j.inserted)} nuevos, ${numFallback(j.actualizados, j.updated)} actualizados, ${numFallback(j.sin_cambios, j.unchanged)} sin cambios.`,
-        "success",
-        5000
-      );
+      const ins = numFallback(j.insertados, j.inserted);
+      const act = numFallback(j.actualizados, j.updated);
+      const unc = numFallback(j.sin_cambios, j.unchanged);
+      const totalReportado = numFallback(j.total, j.total_excel_filas);
+      const totalInferido = totalReportado > 0 ? totalReportado : ins + act + unc;
+      let toastMsg;
+      if (ins === 0 && act === 0 && unc > 0) {
+        if (totalInferido > 0 && unc >= totalInferido) {
+          toastMsg = `Red eléctrica: importación correcta. Las ${unc} fila(s) del Excel ya coinciden con la base (sin cambios). No se insertó ni actualizó nada. Si esperabas cambios, revisá códigos o valores en el archivo.`;
+        } else {
+          toastMsg = `Red eléctrica: +0 nuevos, 0 actualizados, ${unc} sin cambios.`;
+        }
+      } else {
+        toastMsg = `Red eléctrica: +${ins} nuevos, ${act} actualizados, ${unc} sin cambios.`;
+      }
+      d.toast(toastMsg, "success", ins + act === 0 && unc > 0 ? 8500 : 5000);
       await cargarListaRedElectricaInfra(d);
     } catch (e) {
       d.toastError("admin-red-electrica", e, "No se pudo importar");
