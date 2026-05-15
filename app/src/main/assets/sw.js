@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v173';
+const CACHE_SHELL = 'pmg-shell-v174';
 const SW_VERSION  = '1.8.31';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
@@ -88,6 +88,7 @@ function shellAssetUrls() {
     j('modules/admin-saidi-distrib-excel.js'),
     j('modules/admin-red-electrica-infra.js'),
     j('modules/estadisticas-datos-red-saifi.js'),
+    j('modules/estadisticas-saifi-saidi-charts.js'),
     j('modules/gn-panel-docks.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-volver-pendiente.js'),

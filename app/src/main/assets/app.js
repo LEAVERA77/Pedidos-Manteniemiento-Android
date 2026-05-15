@@ -148,6 +148,7 @@ import {
     fetchDatosRedParaEstadisticas,
     denominadorClientesConfiabilidad,
 } from './modules/estadisticas-datos-red-saifi.js';
+import { sincronizarChartsSaifiSaidiConfiabilidad } from './modules/estadisticas-saifi-saidi-charts.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -18500,6 +18501,25 @@ async function cargarEstadisticas() {
             rUsuarios: rUsuarios || { rows: [] },
             rTecnicos: rTecnicos || { rows: [] },
         });
+
+        try {
+            sincronizarChartsSaifiSaidiConfiabilidad({
+                crearChart,
+                destruirChartPorId: (id) => {
+                    if (_charts[id]) {
+                        try {
+                            _charts[id].destroy();
+                        } catch (_) {}
+                        delete _charts[id];
+                    }
+                },
+                showConf,
+                denomEff,
+                confMesRows: rConfMes.rows || [],
+            });
+        } catch (e) {
+            logErrorWeb('charts-saifi-saidi', e);
+        }
 
         requestAnimationFrame(() => {
             Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
