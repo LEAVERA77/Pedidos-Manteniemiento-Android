@@ -127,6 +127,7 @@ router.post("/analizar-reclamos", authWithTenantHost, adminOnly, async (req, res
 
     const analisis = {
       periodo_dias: periodDias,
+      tipo_negocio: String(req.body?.tipo_negocio || "").trim(),
       top_vecinos: topVecinos.rows,
       top_barrios: topBarrios.rows,
       top_tipos: topTipos.rows,
@@ -454,6 +455,7 @@ router.post("/generar-informe", authWithTenantHost, adminOnly, async (req, res) 
 
     const analisis = {
       periodo_dias: periodDias,
+      tipo_negocio: String(req.body?.tipo_negocio || "").trim(),
       top_vecinos: topVecinos.rows,
       top_barrios: topBarrios.rows,
       top_tipos: topTipos.rows,

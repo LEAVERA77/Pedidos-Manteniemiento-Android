@@ -5,6 +5,12 @@
  */
 
 import { pdfEncabezadoEmpresaBloque } from './empresa-encabezado-pdf.js';
+import {
+  labelsIaReclamosTablas,
+  htmlContextoIaEstadisticasElectrica,
+  btnInformeIaElectrico,
+  tituloSatisfaccionWhatsappIa,
+} from './ia-reclamos-copy-by-negocio.js';
 
 let _wired = false;
 
@@ -38,7 +44,13 @@ function buildBtn() {
   btn.id = 'btn-ia-informe-unificado';
   btn.className = 'btn-sm primary';
   btn.style.cssText = 'padding:.45rem .9rem;font-weight:600;background:#7c3aed;border-color:#7c3aed;white-space:nowrap;margin-left:.5rem';
-  btn.innerHTML = '<i class="fas fa-file-alt"></i> Generar Informe IA';
+  if (tipoNegocioActual() === 'cooperativa_electrica') {
+    const b = btnInformeIaElectrico();
+    btn.innerHTML = b.html;
+    btn.title = b.title;
+  } else {
+    btn.innerHTML = '<i class="fas fa-file-alt"></i> Generar Informe IA';
+  }
   btn.addEventListener('click', () => void generarInforme());
   return btn;
 }
@@ -58,11 +70,12 @@ function renderTabla(titulo, rows, colKey, colLabel) {
   return h;
 }
 
-function renderRepetidos(rows) {
+function renderRepetidos(rows, lbl) {
   if (!rows || !rows.length) return '';
-  let h = '<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">Reclamos repetidos (mismo vecino, mismo tipo)</strong>';
+  const L = lbl || labelsIaReclamosTablas(tipoNegocioActual());
+  let h = `<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">${esc(L.repetidosTitle)}</strong>`;
   h += '<table style="width:100%;margin-top:.3rem;font-size:.8rem;border-collapse:collapse">';
-  h += '<tr style="background:#fef3c7"><th style="text-align:left;padding:.25rem .4rem">Vecino</th><th style="text-align:left;padding:.25rem .4rem">Tipo</th><th style="text-align:right;padding:.25rem .4rem">Veces</th></tr>';
+  h += `<tr style="background:#fef3c7"><th style="text-align:left;padding:.25rem .4rem">${esc(L.repetidosActorCol)}</th><th style="text-align:left;padding:.25rem .4rem">Tipo</th><th style="text-align:right;padding:.25rem .4rem">Veces</th></tr>`;
   for (const r of rows) {
     h += `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:.25rem .4rem">${esc(r.cliente_nombre || '')}</td><td style="padding:.25rem .4rem">${esc(r.tipo_trabajo || '')}</td><td style="text-align:right;padding:.25rem .4rem;font-weight:600">${r.veces || 0}</td></tr>`;
   }
@@ -103,13 +116,15 @@ function renderSatisfaccion(data) {
   const tend = sat.tendencia || 'estable';
   const pctPrev = sat.periodo_anterior_porcentaje;
   const alertaIa = ia.alerta;
+  const tipoSat = String(data.metricas?.tipo_negocio || tipoNegocioActual() || '').trim() || tipoNegocioActual();
+  const tituloSatWh = tituloSatisfaccionWhatsappIa(tipoSat);
 
   const tendColor = tend === 'mejora' ? '#059669' : tend === 'empeora' ? '#dc2626' : '#64748b';
   const tendIcon = tend === 'mejora' ? 'fa-arrow-up' : tend === 'empeora' ? 'fa-arrow-down' : 'fa-minus';
   const borderColor = alertaIa ? '#dc2626' : pct != null && pct < 50 ? '#f59e0b' : '#25d366';
 
   let h = `<div style="margin-bottom:1.2rem">`;
-  h += `<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.6rem;padding-bottom:.3rem;border-bottom:2px solid #bbf7d0"><i class="fab fa-whatsapp" style="color:#25d366"></i> Valoración WhatsApp del Vecino</div>`;
+  h += `<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.6rem;padding-bottom:.3rem;border-bottom:2px solid #bbf7d0"><i class="fab fa-whatsapp" style="color:#25d366"></i> ${esc(tituloSatWh)}</div>`;
 
   if (prom == null || cant === 0) {
     h += `<div style="padding:.6rem;background:#fff;border:1px solid #e2e8f0;border-radius:.5rem;font-size:.8rem;color:#64748b">Sin valoraciones recibidas en el período.</div>`;
@@ -156,6 +171,8 @@ function renderInforme(data) {
   const m = data.metricas || {};
   const ia = data.informe_ia || {};
   const kpis = ia.seccion_kpis || [];
+  const tipo = String(m.tipo_negocio || tipoNegocioActual() || '').trim() || tipoNegocioActual();
+  const L = labelsIaReclamosTablas(tipo);
 
   let html = '';
 
@@ -170,10 +187,13 @@ function renderInforme(data) {
   html += '<div style="margin-bottom:1.2rem">';
   html += `<div style="font-size:.95rem;font-weight:700;color:#1e3a8a;margin-bottom:.55rem;padding-bottom:.3rem;border-bottom:2px solid #dbeafe"><i class="fas fa-chart-bar"></i> Análisis de Reclamos — últimos ${a.periodo_dias || 30} días</div>`;
   html += `<div style="font-size:.8rem;color:#475569;margin-bottom:.6rem;line-height:1.5">Total: ${m.total_reclamos || 0} · Cerrados: ${m.cerrados || 0} · Pendientes: ${m.pendientes || 0} · En ejecución: ${m.en_ejecucion || 0} · Cierre: ${m.pct_cierre || 0}% · T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}</div>`;
-  html += renderTabla('Top vecinos con más reclamos', a.top_vecinos, 'cliente_nombre', 'Vecino');
-  html += renderTabla('Top barrios / zonas', a.top_barrios, 'distribuidor', 'Barrio / zona');
+  if (tipo === 'cooperativa_electrica') {
+    html += htmlContextoIaEstadisticasElectrica();
+  }
+  html += renderTabla(L.topActorTitle, a.top_vecinos, 'cliente_nombre', L.actorCol);
+  html += renderTabla(L.zonaTitle, a.top_barrios, 'distribuidor', L.zonaCol);
   html += renderTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo', 'Tipo de trabajo');
-  html += renderRepetidos(a.repetidos);
+  html += renderRepetidos(a.repetidos, L);
   if (ia.recomendacion_reclamos) {
     html += `<div style="padding:.7rem .85rem;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border-radius:.5rem;border:1px solid #ddd6fe;margin-top:.6rem">
       <div style="font-size:.84rem;font-weight:700;color:#6d28d9;margin-bottom:.35rem"><i class="fas fa-lightbulb" style="color:#a78bfa"></i> Recomendación IA</div>
@@ -381,6 +401,9 @@ async function exportarPdf() {
     const a = _lastData.analisis || {};
     const m = _lastData.metricas || {};
     const ia = _lastData.informe_ia || {};
+    const tipoInf = String(m.tipo_negocio || tipoNegocioActual() || '').trim() || tipoNegocioActual();
+    const Lpdf = labelsIaReclamosTablas(tipoInf);
+    const titSatPdf = tituloSatisfaccionWhatsappIa(tipoInf);
     const kpis = ia.seccion_kpis || [];
 
     function pageFooter() {
@@ -487,6 +510,12 @@ async function exportarPdf() {
       `T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '--'}`,
     ].join('   |   ');
     pdfText(stats, { size: 8.5, color: [71, 85, 105], gap: 4 });
+    if (tipoInf === 'cooperativa_electrica') {
+      pdfText(
+        'Cooperativa electrica: Distribuidor = zona de red (Dist. en Socios/NIS). SAIFI/SAIDI del panel son estimaciones segun reclamos de red cerrados y denominador catalogo o Red Electrica.',
+        { size: 7.5, color: [91, 33, 182], gap: 3 },
+      );
+    }
 
     function pdfTabla(titulo, rows, colKey) {
       if (!rows || !rows.length) return;
@@ -504,12 +533,12 @@ async function exportarPdf() {
       y += 2;
     }
 
-    pdfTabla('Top vecinos', a.top_vecinos, 'cliente_nombre');
+    pdfTabla(Lpdf.topActorTitle, a.top_vecinos, 'cliente_nombre');
     pdfTabla('Tipos mas frecuentes', a.top_tipos, 'tipo_trabajo');
-    pdfTabla('Top barrios / zonas', a.top_barrios, 'distribuidor');
+    pdfTabla(Lpdf.zonaTitle, a.top_barrios, 'distribuidor');
 
     if (a.repetidos?.length) {
-      pdfSubTitle('Reclamos repetidos');
+      pdfSubTitle(Lpdf.repetidosTitle);
       for (const r of a.repetidos) {
         checkPage(5);
         setFont('normal', 8.5, [51, 65, 85]);
@@ -552,7 +581,7 @@ async function exportarPdf() {
     // -- Seccion 3: Valoracion WhatsApp --
     const sat = _lastData.satisfaccion || {};
     const satIa = ia.satisfaccion_ia || {};
-    pdfSectionTitle('Valoracion WhatsApp del Vecino');
+    pdfSectionTitle(titSatPdf);
     if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
       pdfText('Sin valoraciones recibidas en el periodo.', { size: 9, color: [100, 116, 139], gap: 4 });
     } else {
@@ -605,6 +634,9 @@ function construirHtmlInformeCompleto() {
   const m = _lastData.metricas || {};
   const ia = _lastData.informe_ia || {};
   const kpis = ia.seccion_kpis || [];
+  const tipoP = String(m.tipo_negocio || tipoNegocioActual() || '').trim() || tipoNegocioActual();
+  const Lp = labelsIaReclamosTablas(tipoP);
+  const titPrintSat = tituloSatisfaccionWhatsappIa(tipoP);
   const empresa = nombreEmpresa();
   const fecha = fechaHoy();
   const ec = window.EMPRESA_CFG || {};
@@ -623,6 +655,9 @@ function construirHtmlInformeCompleto() {
 
   body += `<h2 style="font-size:12px;color:#1e3a8a;margin:.6rem 0 .3rem">Análisis de Reclamos — últimos ${a.periodo_dias || 30} días</h2>`;
   body += `<p style="font-size:9px;color:#475569;margin:0 0 .4rem">Total: ${m.total_reclamos || 0} · Cerrados: ${m.cerrados || 0} · Pendientes: ${m.pendientes || 0} · Cierre: ${m.pct_cierre || 0}% · T.prom: ${m.horas_promedio_cierre != null ? m.horas_promedio_cierre + 'h' : '—'}</p>`;
+  if (tipoP === 'cooperativa_electrica') {
+    body += htmlContextoIaEstadisticasElectrica();
+  }
 
   function printTabla(titulo, rows, colKey, colLabel) {
     if (!rows?.length) return '';
@@ -637,14 +672,14 @@ function construirHtmlInformeCompleto() {
     return t;
   }
 
-  body += printTabla('Top vecinos', a.top_vecinos, 'cliente_nombre', 'Vecino');
-  body += printTabla('Top barrios / zonas', a.top_barrios, 'distribuidor', 'Barrio / zona');
+  body += printTabla(Lp.topActorTitle, a.top_vecinos, 'cliente_nombre', Lp.actorCol);
+  body += printTabla(Lp.zonaTitle, a.top_barrios, 'distribuidor', Lp.zonaCol);
   body += printTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo', 'Tipo de trabajo');
 
   if (a.repetidos?.length) {
-    body += '<p style="font-size:10px;font-weight:700;margin:.4rem 0 .15rem">Reclamos repetidos</p>';
+    body += `<p style="font-size:10px;font-weight:700;margin:.4rem 0 .15rem">${esc(Lp.repetidosTitle)}</p>`;
     body += '<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:.4rem">';
-    body += '<tr style="background:#fef3c7"><th style="text-align:left;padding:2px 4px;border:1px solid #e2e8f0">Vecino</th><th style="text-align:left;padding:2px 4px;border:1px solid #e2e8f0">Tipo</th><th style="text-align:right;padding:2px 4px;border:1px solid #e2e8f0">Veces</th></tr>';
+    body += `<tr style="background:#fef3c7"><th style="text-align:left;padding:2px 4px;border:1px solid #e2e8f0">${esc(Lp.repetidosActorCol)}</th><th style="text-align:left;padding:2px 4px;border:1px solid #e2e8f0">Tipo</th><th style="text-align:right;padding:2px 4px;border:1px solid #e2e8f0">Veces</th></tr>`;
     for (const r of a.repetidos) {
       body += `<tr><td style="padding:2px 4px;border:1px solid #e2e8f0">${esc(r.cliente_nombre || '')}</td><td style="padding:2px 4px;border:1px solid #e2e8f0">${esc(r.tipo_trabajo || '')}</td><td style="text-align:right;padding:2px 4px;border:1px solid #e2e8f0;font-weight:600">${r.veces || 0}</td></tr>`;
     }
@@ -670,7 +705,7 @@ function construirHtmlInformeCompleto() {
   // Sección Valoración WhatsApp
   const sat = _lastData.satisfaccion || {};
   const satIa = (ia.satisfaccion_ia) || {};
-  body += '<h2 style="font-size:12px;color:#1e3a8a;margin:.7rem 0 .3rem">Valoración WhatsApp del Vecino</h2>';
+  body += `<h2 style="font-size:12px;color:#1e3a8a;margin:.7rem 0 .3rem">${esc(titPrintSat)}</h2>`;
   if (sat.promedio_estrellas == null || (sat.cantidad_respuestas || 0) === 0) {
     body += '<p style="font-size:9px;color:#64748b;margin:0 0 .4rem">Sin valoraciones recibidas en el período.</p>';
   } else {
@@ -722,11 +757,13 @@ function _buildPlainTextInforme() {
   const ia = _lastData.informe_ia || {};
   const m = _lastData.metricas || {};
   const sat = _lastData.satisfaccion || {};
+  const tipoT = String(m.tipo_negocio || tipoNegocioActual() || '').trim() || tipoNegocioActual();
   let t = `Informe de Gestion -- ${nombreEmpresa()} -- ${fechaHoy()}\n\n`;
   t += `Total: ${m.total_reclamos || 0} | Cerrados: ${m.cerrados || 0} | Pendientes: ${m.pendientes || 0} | Cierre: ${m.pct_cierre || 0}%\n`;
   if (m.horas_promedio_cierre != null) t += `Tiempo promedio cierre: ${m.horas_promedio_cierre}h\n`;
   if (sat.promedio_estrellas != null && sat.cantidad_respuestas > 0) {
-    t += `\nSatisfaccion vecino: ${sat.promedio_estrellas}/5 (${sat.porcentaje}%) -- ${sat.cantidad_respuestas} respuestas\n`;
+    const labSat = tipoT === 'cooperativa_electrica' ? 'Satisfaccion socio/usuario' : 'Satisfaccion vecino';
+    t += `\n${labSat}: ${sat.promedio_estrellas}/5 (${sat.porcentaje}%) -- ${sat.cantidad_respuestas} respuestas\n`;
   }
   if (ia.resumen_ejecutivo) t += `\nResumen ejecutivo:\n${ia.resumen_ejecutivo}\n`;
   if (ia.recomendacion_reclamos) t += `\nRecomendacion IA:\n${ia.recomendacion_reclamos}\n`;

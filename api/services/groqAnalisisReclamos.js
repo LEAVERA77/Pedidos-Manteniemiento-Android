@@ -5,14 +5,28 @@ function getApiKey() {
   return String(process.env.GROQ_API_KEY || "").trim();
 }
 
-const SYSTEM_PROMPT = [
+const SYSTEM_PROMPT_BASE = [
   "Eres un analista de datos de servicios públicos en Argentina.",
   "Se te dará un resumen numérico con las métricas reales de reclamos de un período.",
   "Tu tarea es generar recomendaciones accionables en español (máximo 3 párrafos cortos).",
-  "Sé concreto: mencioná barrios, tipos de reclamo y vecinos si los datos lo permiten.",
+  "Sé concreto: mencioná tipos de reclamo y las entidades que figuren en los datos (nombres en top_vecinos, valores en top_barrios según el rubro, repetidos).",
   "No inventes datos: basate solo en lo que recibís.",
   "Terminá con una prioridad sugerida de acción (qué atender primero).",
 ].join("\n");
+
+const COOP_ELECTRICA_EXTRA = [
+  "Rubro cooperativa eléctrica (tipo_negocio cooperativa_electrica): top_barrios lista DISTRIBUIDORES / zonas de red eléctrica, no barrios urbanos.",
+  "Los nombres en top_vecinos suelen ser socios o titulares del suministro; hablá de socios/usuarios, no de 'vecinos' salvo que el dato lo sugiera.",
+  "Priorizá acciones por distribuidor (zona de red) y por tipo de trabajo recurrente.",
+].join("\n");
+
+function buildSystemPrompt(resumen) {
+  const tipo = String(resumen?.tipo_negocio || "").trim();
+  if (tipo === "cooperativa_electrica") {
+    return `${SYSTEM_PROMPT_BASE}\n\n${COOP_ELECTRICA_EXTRA}`;
+  }
+  return SYSTEM_PROMPT_BASE;
+}
 
 /**
  * Envía un resumen de métricas a Groq y recibe recomendaciones en lenguaje natural.
@@ -29,7 +43,7 @@ export async function analizarReclamosConGroq({ resumen }) {
   const body = {
     model: MODEL,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt(resumen) },
       { role: "user", content: JSON.stringify(resumen) },
     ],
     temperature: 0.3,

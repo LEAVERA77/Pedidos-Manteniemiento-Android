@@ -4,6 +4,12 @@
  * made by leavera77
  */
 
+import {
+  labelsIaReclamosTablas,
+  htmlContextoIaEstadisticasElectrica,
+  btnAnalizarEstadisticasIaElectrica,
+} from './ia-reclamos-copy-by-negocio.js';
+
 let _wiredSocios = false;
 let _wiredEstadisticas = false;
 
@@ -27,7 +33,18 @@ function buildBtn(id) {
   btn.id = id;
   btn.className = 'btn-sm primary';
   btn.style.cssText = 'padding:.55rem 1.1rem;font-weight:600;background:#7c3aed;border-color:#7c3aed;white-space:nowrap';
-  btn.innerHTML = '<i class="fas fa-brain"></i> Analizar con IA';
+  const electric = tipoNegocioActual() === 'cooperativa_electrica';
+  if (electric && id === 'btn-ia-analizar-est') {
+    const b = btnAnalizarEstadisticasIaElectrica();
+    btn.innerHTML = b.html;
+    btn.title = b.title;
+  } else {
+    btn.innerHTML = '<i class="fas fa-brain"></i> Analizar con IA';
+    if (electric) {
+      btn.title =
+        'Análisis IA de reclamos (30 días): socios, distribuidor/zona de red y tipos de trabajo.';
+    }
+  }
   btn.addEventListener('click', () => void analizarConIA(id));
   return btn;
 }
@@ -47,11 +64,12 @@ function renderTabla(titulo, rows, colKey, colLabel) {
   return html;
 }
 
-function renderRepetidos(rows) {
+function renderRepetidos(rows, lbl) {
   if (!rows || !rows.length) return '';
-  let html = '<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">Reclamos repetidos (mismo vecino, mismo tipo)</strong>';
+  const L = lbl || labelsIaReclamosTablas(tipoNegocioActual());
+  let html = `<div style="margin-bottom:.75rem"><strong style="font-size:.82rem">${esc(L.repetidosTitle)}</strong>`;
   html += '<table style="width:100%;margin-top:.3rem;font-size:.8rem;border-collapse:collapse">';
-  html += '<tr style="background:#fef3c7"><th style="text-align:left;padding:.25rem .4rem">Vecino</th><th style="text-align:left;padding:.25rem .4rem">Tipo</th><th style="text-align:right;padding:.25rem .4rem">Veces</th></tr>';
+  html += `<tr style="background:#fef3c7"><th style="text-align:left;padding:.25rem .4rem">${esc(L.repetidosActorCol)}</th><th style="text-align:left;padding:.25rem .4rem">Tipo</th><th style="text-align:right;padding:.25rem .4rem">Veces</th></tr>`;
   for (const r of rows) {
     html += `<tr style="border-bottom:1px solid #e2e8f0">`;
     html += `<td style="padding:.25rem .4rem">${esc(r.cliente_nombre || '')}</td>`;
@@ -118,13 +136,18 @@ async function analizarConIA(btnId) {
     }
 
     const a = data.analisis || {};
+    const tipo = tipoNegocioActual();
+    const L = labelsIaReclamosTablas(tipo);
     let html = '<div style="padding:.65rem;background:linear-gradient(135deg,#f5f3ff 0%,#ede9fe 100%);border:1px solid #c4b5fd;border-radius:.5rem;margin-top:.5rem">';
     html += `<div style="font-size:.85rem;font-weight:700;color:#5b21b6;margin-bottom:.5rem"><i class="fas fa-brain"></i> Análisis IA — últimos ${a.periodo_dias || 30} días</div>`;
+    if (tipo === 'cooperativa_electrica' && btnId === 'btn-ia-analizar-est') {
+      html += htmlContextoIaEstadisticasElectrica();
+    }
 
-    html += renderTabla('Top vecinos con más reclamos', a.top_vecinos, 'cliente_nombre', 'Vecino');
-    html += renderTabla('Top barrios / zonas', a.top_barrios, 'distribuidor', 'Barrio / zona');
+    html += renderTabla(L.topActorTitle, a.top_vecinos, 'cliente_nombre', L.actorCol);
+    html += renderTabla(L.zonaTitle, a.top_barrios, 'distribuidor', L.zonaCol);
     html += renderTabla('Tipos más frecuentes', a.top_tipos, 'tipo_trabajo', 'Tipo de trabajo');
-    html += renderRepetidos(a.repetidos);
+    html += renderRepetidos(a.repetidos, L);
 
     if (data.recomendacion_ia) {
       html += '<div style="margin-top:.65rem;padding:.6rem;background:#fff;border-radius:.4rem;border:1px solid #ddd6fe">';
