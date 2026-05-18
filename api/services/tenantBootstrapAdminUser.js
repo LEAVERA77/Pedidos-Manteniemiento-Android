@@ -80,9 +80,7 @@ export async function crearUsuarioAdminBootstrap({
     login = await pickUniqueAdminLogin(client, nombreTrim);
   }
   const passwordPlain =
-    pref || login !== "admin"
-      ? temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim))
-      : "admin";
+    login === "admin" ? "admin" : temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim));
   const hash = await bcrypt.hash(String(passwordPlain), 10);
   const rol = "admin";
   const tid = Number(tenantId);

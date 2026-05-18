@@ -18,6 +18,10 @@ function tokenAdmin(userId, tenantId) {
   return jwt.sign({ userId, tenant_id: tenantId }, process.env.JWT_SECRET || "dev_secret", { expiresIn: "1h" });
 }
 
+function tokenTecnico(userId, tenantId) {
+  return jwt.sign({ userId, tenant_id: tenantId }, process.env.JWT_SECRET || "dev_secret", { expiresIn: "1h" });
+}
+
 describe("Setup wizard — técnico tenant", () => {
   const prevKey = process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY;
 
@@ -137,11 +141,38 @@ describe("Setup wizard — técnico tenant", () => {
     expect(res.body.clientes.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("200 attach tenant devuelve token", async () => {
+  it("200 attach tenant devuelve token (Bearer técnico + clave)", async () => {
+    vi.mocked(query).mockImplementation(async (sql, params = []) => {
+      const q = String(sql);
+      if (q.includes("SELECT id, email, nombre, rol, activo FROM usuarios WHERE id = $1 LIMIT 1")) {
+        return {
+          rows: [{ id: Number(params[0]), email: "tec@t.com", nombre: "Técnico", rol: "tecnico", activo: true }],
+        };
+      }
+      if (q.includes("information_schema.columns") && q.includes("usuarios")) {
+        return { rows: [{ column_name: "tenant_id" }] };
+      }
+      if (q.includes("lower(trim(coalesce(email,''))) AS e")) {
+        return { rows: [{ e: "tec@t.com" }] };
+      }
+      if (q.includes("FROM clientes WHERE id = $1") && q.includes("nombre")) {
+        return { rows: [{ id: 7, nombre: "Coop X" }] };
+      }
+      if (q.includes("FROM usuarios") && q.includes("tenant_id = $1") && q.includes("id <> $2")) {
+        return { rows: [] };
+      }
+      if (q.includes("UPDATE usuarios") && q.includes("WHERE id = $2")) {
+        return { rows: [], rowCount: 1 };
+      }
+      if (q.includes("::int AS tid FROM usuarios WHERE id =")) {
+        return { rows: [{ tid: 7 }] };
+      }
+      return { rows: [] };
+    });
     const app = createHttpApp();
     const res = await request(app)
       .post("/api/setup/technician/attach-tenant")
-      .set("Authorization", `Bearer ${tokenAdmin(1, 2)}`)
+      .set("Authorization", `Bearer ${tokenTecnico(1, 2)}`)
       .set("Content-Type", "application/json")
       .set("X-GestorNova-Technician-Key", "clave_tecnico_test")
       .send({ tenant_id: 7 })
