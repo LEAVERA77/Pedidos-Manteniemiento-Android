@@ -4,6 +4,7 @@ import { technicianTenantKeyOk, requireTechnicianTenantKey } from "../middleware
 import { query, withTransaction } from "../db/neon.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { crearUsuarioAdminBootstrap } from "../services/tenantBootstrapAdminUser.js";
+import { loginExistsGlobally, normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
@@ -290,6 +291,21 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
     const hasTw = await tableHasColumn("usuarios", "telefono_whatsapp");
     const hasMustPw = await tableHasColumn("usuarios", "must_change_password");
     const telefonoOpt = String(req.body?.telefono || req.body?.whatsapp || "").trim() || null;
+    const loginAdmin = normalizeLoginId(
+      req.body?.nombre_usuario ?? req.body?.usuario_admin ?? req.body?.login_admin ?? ""
+    );
+    if (!loginAdmin || loginAdmin.length < 2 || loginAdmin.length > 120 || /\s/.test(loginAdmin)) {
+      return res.status(400).json({
+        error: "nombre_usuario del administrador es obligatorio (2–120 caracteres, sin espacios)",
+      });
+    }
+    if (await loginExistsGlobally(loginAdmin)) {
+      return res.status(409).json({
+        error: "Ese nombre de usuario ya existe en el sistema",
+        code: "login_duplicado",
+      });
+    }
+    const hasEsDefault = await tableHasColumn("usuarios", "es_usuario_default");
 
     const { row, admin_creado } = await withTransaction(async (client) => {
       let r;
@@ -319,6 +335,8 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         nombreTenant: nombreRaw,
         telefono: telefonoOpt,
         hasMustChangePassword: hasMustPw,
+        loginPreferido: loginAdmin,
+        hasEsUsuarioDefault: hasEsDefault,
       });
       return { row: row0, admin_creado: admin_creado0 };
     });
@@ -334,6 +352,9 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
       admin_creado,
     });
   } catch (error) {
+    if (error?.code === "LOGIN_YA_EXISTE") {
+      return res.status(409).json({ error: "Ese nombre de usuario ya existe en el sistema", code: "login_duplicado" });
+    }
     console.error("[clientes/nuevo]", error);
     return res.status(500).json({ error: "No se pudo crear el tenant", detail: error.message });
   }

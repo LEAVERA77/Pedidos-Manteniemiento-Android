@@ -67,6 +67,110 @@ router.get("/pedido-map", async (req, res) => {
   }
 });
 
+async function tenantEsCooperativaElectrica(tenantId) {
+  try {
+    const r = await query(`SELECT lower(trim(coalesce(tipo, ''))) AS t FROM clientes WHERE id = $1 LIMIT 1`, [
+      tenantId,
+    ]);
+    const t = String(r.rows[0]?.t || "");
+    return t.includes("electric") || t.includes("eléctrica");
+  } catch (_) {
+    return false;
+  }
+}
+
+function normInfraVal(v) {
+  return String(v || "").trim();
+}
+
+/**
+ * GET /api/incidencias/sugerir-por-infra?pedido_id=
+ * Cooperativa eléctrica: candidatos abiertos con mismo trafo o distribuidor (sin incidencia previa).
+ */
+router.get("/sugerir-por-infra", adminOrTecnicoIncidencias, async (req, res) => {
+  try {
+    if (!(await incidenciasFeatureAvailable()) || !(await pedidosTieneIncidenciaColumn())) {
+      return res.status(503).json({
+        error: "Incidencias no disponibles en BD",
+        detail: "Ejecutá docs/NEON_incidencias.sql en Neon",
+      });
+    }
+    if (!(await tenantEsCooperativaElectrica(req.tenantId))) {
+      return res.status(403).json({
+        error: "La asociación por transformador/distribuidor solo aplica a cooperativas eléctricas",
+      });
+    }
+    const pedidoId = Number(req.query.pedido_id);
+    if (!Number.isFinite(pedidoId) || pedidoId < 1) {
+      return res.status(400).json({ error: "pedido_id requerido" });
+    }
+    const hasT = await pedidosTableHasTenantIdColumn();
+    const pparams = hasT ? [pedidoId, req.tenantId] : [pedidoId];
+    const bt0 = await pushPedidoBusinessFilter(req, pparams);
+    const pr = await query(
+      hasT
+        ? `SELECT id, numero_pedido, estado, cliente_nombre, trafo, distribuidor, tipo_trabajo, incidencia_id
+           FROM pedidos WHERE id = $1 AND tenant_id = $2${bt0} LIMIT 1`
+        : `SELECT id, numero_pedido, estado, cliente_nombre, trafo, distribuidor, tipo_trabajo, incidencia_id
+           FROM pedidos WHERE id = $1${bt0} LIMIT 1`,
+      pparams
+    );
+    if (!pr.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+    const ref = pr.rows[0];
+    const trafo = normInfraVal(ref.trafo);
+    const dist = normInfraVal(ref.distribuidor);
+    let criterio = "";
+    let valor = "";
+    if (trafo) {
+      criterio = "transformador";
+      valor = trafo;
+    } else if (dist) {
+      criterio = "distribuidor";
+      valor = dist;
+    } else {
+      return res.status(400).json({
+        error: "El pedido no tiene transformador ni distribuidor para agrupar",
+      });
+    }
+
+    const params = hasT ? [req.tenantId, valor, pedidoId] : [valor, pedidoId];
+    const bt = await pushPedidoBusinessFilter(req, params);
+    const col = criterio === "transformador" ? "trafo" : "distribuidor";
+    const sql = hasT
+      ? `SELECT id, numero_pedido, estado, cliente_nombre, trafo, distribuidor, tipo_trabajo, fecha_creacion, incidencia_id
+         FROM pedidos
+         WHERE tenant_id = $1
+           AND id <> $3
+           AND incidencia_id IS NULL
+           AND estado NOT IN ('Cerrado', 'Derivado externo', 'Desestimado')
+           AND trim(coalesce(${col}, '')) = trim($2::text)${bt}
+         ORDER BY fecha_creacion DESC
+         LIMIT 80`
+      : `SELECT id, numero_pedido, estado, cliente_nombre, trafo, distribuidor, tipo_trabajo, fecha_creacion, incidencia_id
+         FROM pedidos
+         WHERE id <> $2
+           AND incidencia_id IS NULL
+           AND estado NOT IN ('Cerrado', 'Derivado externo', 'Desestimado')
+           AND trim(coalesce(${col}, '')) = trim($1::text)${bt}
+         ORDER BY fecha_creacion DESC
+         LIMIT 80`;
+    const cr = await query(sql, params);
+    const candidatos = cr.rows;
+    const pedido_ids = [ref.id, ...candidatos.map((r) => r.id)];
+    return res.json({
+      ok: true,
+      criterio_agrupacion: criterio,
+      valor_criterio: valor,
+      pedido_referencia: ref,
+      candidatos,
+      pedido_ids: [...new Set(pedido_ids)],
+      total: pedido_ids.length,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo sugerir agrupación", detail: error.message });
+  }
+});
+
 router.post("/", adminOrTecnicoIncidencias, async (req, res) => {
   try {
     if (!(await incidenciasFeatureAvailable()) || !(await pedidosTieneIncidenciaColumn())) {

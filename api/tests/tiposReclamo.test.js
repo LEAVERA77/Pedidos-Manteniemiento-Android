@@ -5,6 +5,7 @@ import {
   prioridadPredeterminadaPorTipoTrabajo,
   tipoTrabajoPermitidoParaNuevoPedido,
   tipoReclamoRequiereNisYCliente,
+  tipoReclamoWhatsappFlujoSoloNis,
   tipoReclamoElectricoPideSuministroWhatsapp,
   tiposReclamoParaClienteTipo,
   SUBTIPOS_TRANSITO_MUNICIPIO,
@@ -51,6 +52,10 @@ describe("tiposReclamo — permisos y reglas", () => {
 
   it("tipoReclamoRequiereNisYCliente: factibilidad sí", () => {
     expect(tipoReclamoRequiereNisYCliente("Pedido de factibilidad (nuevo servicio)")).toBe(true);
+  });
+
+  it("tipoReclamoWhatsappFlujoSoloNis: Problemas de Tensión usa menú 1/2/3 (no salto directo a NIS)", () => {
+    expect(tipoReclamoWhatsappFlujoSoloNis("Problemas de Tensión")).toBe(false);
   });
 
   it("tipoReclamoElectricoPideSuministroWhatsapp: factibilidad sí", () => {

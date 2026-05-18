@@ -1176,7 +1176,7 @@ function closeModalAssoc() {
     if (_modalAssoc) _modalAssoc.classList.remove('active');
 }
 
-async function openModalAsociar() {
+async function openModalAsociar(preset = null) {
     if (!puedeGestionarIncidencias()) return;
     await prefetchPedidosParaIncidencias(true);
     const peds = [..._selectedNp]
@@ -1216,6 +1216,25 @@ async function openModalAsociar() {
     };
     selC.onchange = syncVal;
     syncVal();
+    if (preset && typeof preset === 'object') {
+        const crit = String(preset.criterio_agrupacion || preset.criterio || '').trim();
+        const val = String(preset.valor_criterio || preset.valor || '').trim();
+        if (crit && [...selC.options].some((o) => o.value === crit)) {
+            selC.value = crit;
+            syncVal();
+            if (val) {
+                const hasOpt = [...selV.options].some((o) => o.value === val);
+                if (!hasOpt && selV.options.length) {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    selV.appendChild(opt);
+                }
+                selV.value = val;
+            }
+        }
+        if (preset.nombre) inpNombre.value = String(preset.nombre);
+    }
 
     const confirmBtn = m.querySelector('#gn-inc-confirm');
     if (!confirmBtn) {
@@ -1483,11 +1502,40 @@ function bootObserver() {
     _moPl.observe(pl, { childList: true });
 }
 
+/** Cooperativa eléctrica: preselección por ids + abrir modal de asociación (reutiliza incidencias). */
+export async function incidenciasAbrirAsociacionPorIds(pedidoIds, preset = null) {
+    if (!puedeGestionarIncidencias()) return;
+    if (rubroPanel() !== 'cooperativa_electrica') {
+        toast('Solo disponible para cooperativas eléctricas.', 'info');
+        return;
+    }
+    await prefetchPedidosParaIncidencias(true);
+    _selectedNp.clear();
+    const ids = [...new Set((pedidoIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))];
+    for (const id of ids) {
+        for (const [, px] of _pedidosByNp) {
+            if (px && Number(px.id) === id && px.np) {
+                if (puedeSeleccionarPedidoParaIncidencias(px)) _selectedNp.add(String(px.np));
+                break;
+            }
+        }
+    }
+    if (countSelectableSelectedNp() < 2) {
+        toast('No hay suficientes reclamos seleccionables para asociar.', 'error');
+        return;
+    }
+    updateFab();
+    await openModalAsociar(preset);
+}
+
 export function installIncidenciasUI() {
     try {
         window.__gnIncidenciasInit = true;
         window.__gnIncidenciasRefresh = debouncedEnhance;
         window.__gnIncidenciasInvalidateCache = invalidatePedidosIncidenciasCache;
+        window.__gnIncidenciasAbrirAsociacionPorIds = incidenciasAbrirAsociacionPorIds;
+        window.__gnIncidenciasOpenAssoc = () => openModalAsociar();
+        window.__gnIncidenciasOpenVista = (incId) => void openVistaIncidencia(incId);
         window.puedeGestionarIncidencias = puedeGestionarIncidencias;
         window.puedeSeleccionarPedidoParaIncidencias = puedeSeleccionarPedidoParaIncidencias;
         window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;

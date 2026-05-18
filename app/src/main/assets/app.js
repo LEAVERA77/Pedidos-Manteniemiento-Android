@@ -199,12 +199,23 @@ import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
+import {
+    initGnTenantSoloTecnicoUI,
+    hydrateBrandingLoginSinTenantAjeno,
+    actualizarBotonMtSegunRol,
+} from './modules/gn-tenant-solo-tecnico-ui.js';
 import './modules/gn-tenant-force-sync-android-boot.js';
 import './modules/gn-android-shell-perf.js';
 import './modules/gn-offline-shell-refresh.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
-import { initAuthLoginApiTenantResolver, authLoginJsonBody } from './modules/auth-login-api-body.js';
+import {
+    initAuthLoginApiTenantResolver,
+    authLoginJsonBody,
+    beginLoginAttempt,
+    endLoginAttempt,
+    buildNeonLoginTenantSqlFrag,
+} from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
@@ -2071,9 +2082,11 @@ async function loginApiJwt(email, password) {
             body: authLoginJsonBody(email, password),
             signal: ctl.signal
         });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        if (!data?.token) return null;
+        const data = await resp.json().catch(() => ({}));
+        if (resp.status === 403 && data?.code === 'must_change_password') {
+            return { must_change_password: true, user_id: data.user_id, user: data };
+        }
+        if (!resp.ok || !data?.token) return null;
         app.apiToken = String(data.token);
         try {
             localStorage.setItem('pmg_api_token', app.apiToken);
@@ -2703,6 +2716,13 @@ function pintarCabeceraLoginWizardGenerica() {
 
 /** Pantalla de login o post-logout: restaurar marca guardada (API o última sesión). */
 function hydrateBrandingForPublicScreen() {
+    hydrateBrandingLoginSinTenantAjeno({
+        sesionCompleta: sesionCompletaParaMarcaLogin,
+        pintarGenerica: pintarCabeceraLoginWizardGenerica,
+        hydrateOriginal: () => hydrateBrandingForPublicScreenCore(),
+    });
+}
+function hydrateBrandingForPublicScreenCore() {
     let c = loadTenantBrandingCache();
     if (app?.u && c) {
         const tid = Number(app.u.tenant_id ?? app.u.tenantId);
@@ -3518,14 +3538,15 @@ const gnLoginSubmitHandler = async e => {
     try {
         e.preventDefault();
     } catch (_) {}
-    try {
-        console.log('[GN] login');
-    } catch (_) {}
     const emEl = document.getElementById('em');
     const pwEl = document.getElementById('pw');
     const le = document.getElementById('le');
     const lb = document.getElementById('lb');
     if (!emEl || !pwEl || !lb) return;
+    if (!beginLoginAttempt()) return;
+    try {
+        console.log('[GN] login');
+    } catch (_) {}
 
     const em = emEl.value.trim();
     const pw = pwEl.value;
@@ -3577,13 +3598,9 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
         const btnDash = document.getElementById('btn-dashboard-gerencia');
         if (btnDash) btnDash.style.display = esAdmin() ? 'flex' : 'none';
-        const mtBtn = document.getElementById('mt');
-        if (mtBtn) {
-            mtBtn.innerHTML = '<i class="fas fa-list"></i>';
-            mtBtn.title = esAdmin()
-                ? 'Marca, logo y ubicación base (solicita contraseña de administrador)'
-                : 'Panel de pedidos';
-        }
+        try {
+            actualizarBotonMtSegunRol({ rolApp });
+        } catch (_) {}
         const btnDerivPend = document.getElementById('btn-derivaciones-pendientes');
         if (btnDerivPend) btnDerivPend.style.display = esAdmin() ? 'inline-flex' : 'none';
         const mapDashCard = document.getElementById('mapa-card-dashboard');
@@ -3710,11 +3727,7 @@ const gnLoginSubmitHandler = async e => {
         // Recuperación texto plano: docs/NEON_ops_insertar_admin_emergencia.sql (solo pruebas).
         let tenantFrag = '';
         try {
-            const colU = await sqlColumnaTenantUsuariosNeonSync();
-            const tid = tenantIdActual();
-            if (colU && Number.isFinite(tid) && tid > 0) {
-                tenantFrag = ` AND ${colU} = ${esc(tid)}`;
-            }
+            tenantFrag = await buildNeonLoginTenantSqlFrag(esc, sqlColumnaTenantUsuariosNeonSync);
         } catch (_) {}
         const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}${tenantFrag}`;
         const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
@@ -3792,6 +3805,24 @@ const gnLoginSubmitHandler = async e => {
             };
             guardarUsuarioOffline(u, pw);
             const loginJwtPayload = await loginApiJwt(em, pw);
+            if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id) {
+                window._pendingAndroidPasswordChange = {
+                    u: {
+                        id: loginJwtPayload.user_id,
+                        email: loginJwtPayload.user?.email || em,
+                        nombre: loginJwtPayload.user?.nombre || 'Usuario',
+                        rol: loginJwtPayload.user?.rol || 'admin',
+                        must_change_password: true,
+                    },
+                    passwordActual: pw,
+                    primeraContrasenaApi: true,
+                };
+                document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
+                lb.disabled = false;
+                toast('Debés definir una nueva contraseña para continuar.', 'info');
+                return;
+            }
             try {
                 const apiTidLogin = Number(loginJwtPayload?.user?.tenant_id);
                 if (Number.isFinite(apiTidLogin) && apiTidLogin > 0) {
@@ -3827,6 +3858,7 @@ const gnLoginSubmitHandler = async e => {
             if (le) le.textContent = 'Error inesperado. Intentá de nuevo.';
         }
     } finally {
+        endLoginAttempt();
         lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
         lb.disabled = false;
     }
@@ -12313,6 +12345,9 @@ async function detalle(p, opts = {}) {
     try {
         syncPedidoVolverPendienteButton(p);
     } catch (_) {}
+    try {
+        if (typeof window.__gnIncidenciasInfraDetalleHook === 'function') window.__gnIncidenciasInfraDetalleHook(p);
+    } catch (_) {}
 
     const dmEl = document.getElementById('dm');
     dmEl.classList.add('active');
@@ -12629,21 +12664,11 @@ function togglePanel() {
  * otros roles → panel de pedidos (togglePanel).
  */
 async function abrirWizardMarcaEmpresaManual() {
-    if (!esAdmin()) {
-        togglePanel();
+    if (typeof window.__gnAbrirHerramientaTenantSegunRol === 'function') {
+        await window.__gnAbrirHerramientaTenantSegunRol();
         return;
     }
-    if (typeof window.gnAbrirWizardTenantUnificado === 'function') {
-        void window.gnAbrirWizardTenantUnificado();
-        return;
-    }
-    if (typeof window.gnSolicitarAccesoTecnicoYAbrirWizardConfig === 'function') {
-        void window.gnSolicitarAccesoTecnicoYAbrirWizardConfig();
-        return;
-    }
-    const inp = document.getElementById('admin-verify-pw-setup-saas-input');
-    if (inp) inp.value = '';
-    document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.add('active');
+    togglePanel();
 }
 window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
 
@@ -13777,6 +13802,9 @@ async function cargarConfigEmpresa() {
         } catch (_) {}
         try {
             persistTenantBrandingCache({ subtitulo: (window.EMPRESA_CFG || {}).subtitulo });
+        } catch (_) {}
+        try {
+            if (typeof window._gnInitIncidenciasInfraElectrica === 'function') window._gnInitIncidenciasInfraElectrica();
         } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
@@ -16805,6 +16833,29 @@ async function confirmarCambioPasswordObligatorioAndroid() {
         return;
     }
     try {
+        if (pend.primeraContrasenaApi) {
+            const resp = await fetch(apiUrl('/api/auth/cambiar-primera-contrasena'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: pend.u.id,
+                    password_actual: pend.passwordActual,
+                    nueva_password: n1t,
+                    confirmar_password: n1t,
+                }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar la contraseña.';
+                return;
+            }
+            if (data.token) {
+                app.apiToken = String(data.token);
+                try {
+                    localStorage.setItem('pmg_api_token', app.apiToken);
+                } catch (_) {}
+            }
+        } else {
         const tok = getApiToken();
         const base = getApiBaseUrl();
         if (tok && base) {
@@ -16834,6 +16885,7 @@ async function confirmarCambioPasswordObligatorioAndroid() {
                 return;
             }
         }
+        }
         document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
         ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach((id) => {
             const el = document.getElementById(id);
@@ -16841,9 +16893,10 @@ async function confirmarCambioPasswordObligatorioAndroid() {
         });
         if (msg) msg.textContent = '';
         const u = { ...pend.u, must_change_password: false };
+        const fuePrimeraApi = !!pend.primeraContrasenaApi;
         delete window._pendingAndroidPasswordChange;
         guardarUsuarioOffline(u, n1t);
-        await loginApiJwt(u.email, n1t);
+        if (!fuePrimeraApi) await loginApiJwt(u.email, n1t);
         entrarConUsuario(u, false);
         toast('Contraseña actualizada. Bienvenido ' + u.nombre, 'success');
     } catch (e) {
@@ -19500,6 +19553,15 @@ if ('serviceWorker' in navigator) {
         initGnTenantAccesoTecnicoUnificado({
             apiSetupTechnicianFetchTenants,
             abrirWizardMarcaEmpresaManualTrasPassword,
+        });
+        initGnTenantSoloTecnicoUI({
+            rolApp,
+            esAdmin,
+            togglePanel,
+            abrirWizardTenant: () =>
+                typeof window.gnAbrirWizardTenantUnificado === 'function'
+                    ? window.gnAbrirWizardTenantUnificado()
+                    : undefined,
         });
         initSetupWizardBindings();
         initAdminCambiarCredenciales({

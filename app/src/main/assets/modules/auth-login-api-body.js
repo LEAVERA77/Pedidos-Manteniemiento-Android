@@ -1,16 +1,18 @@
 /**
- * Cuerpo JSON unificado para POST /api/auth/login (incluye tenant_id de sesión en multitenant).
+ * Cuerpo JSON unificado para POST /api/auth/login (multitenant).
+ * En pantalla de login NO usar tenant de JWT/pmg/config: solo hint explícito del wizard.
  * made by leavera77
  */
 
 let _tenantIdResolver = () => NaN;
+let _loginInFlight = false;
 
-/** @param {() => number} fn — típicamente `() => tenantIdActual()` */
+/** @param {() => number} fn — legacy; el login ya no envía tenant desde el resolver. */
 export function initAuthLoginApiTenantResolver(fn) {
     _tenantIdResolver = typeof fn === 'function' ? fn : () => NaN;
 }
 
-/** Clave sessionStorage: último tenant elegido en el wizard (login puede mandar tenant_id viejo). */
+/** Clave sessionStorage: tenant elegido en asistente / selector (única fuente para acotar login). */
 export const AUTH_LOGIN_TENANT_HINT_KEY = 'pmg_login_tenant_hint';
 
 /** @param {number|string|null|undefined} tenantId — clientes.id */
@@ -23,32 +25,46 @@ export function setAuthLoginTenantHint(tenantId) {
     } catch (_) {}
 }
 
+/** Tenant solo si el usuario lo eligió en wizard/selector (no sesión anterior ni config.json). */
+export function getExplicitLoginTenantHint() {
+    try {
+        const s = sessionStorage.getItem(AUTH_LOGIN_TENANT_HINT_KEY);
+        const h = Number(s);
+        if (Number.isFinite(h) && h > 0) return h;
+    } catch (_) {}
+    return null;
+}
+
+/**
+ * Fragmento SQL ` AND col = tid` para login Neon legado; solo con hint explícito.
+ * @param {(v: string|number) => string} escFn
+ * @param {() => Promise<string|null>} getColFn
+ */
+export async function buildNeonLoginTenantSqlFrag(escFn, getColFn) {
+    const hint = getExplicitLoginTenantHint();
+    if (hint == null) return '';
+    const colU = typeof getColFn === 'function' ? await getColFn() : null;
+    if (!colU || hint < 1) return '';
+    return ` AND ${colU} = ${escFn(hint)}`;
+}
+
+/** Evita doble envío (click + Enter / doble tap) que mostraba «contraseña incorrecta» y luego entraba. */
+export function beginLoginAttempt() {
+    if (_loginInFlight) return false;
+    _loginInFlight = true;
+    return true;
+}
+
+export function endLoginAttempt() {
+    _loginInFlight = false;
+}
+
 /** @param {string} usuario @param {string} password */
 export function authLoginJsonBody(usuario, password) {
     const u = String(usuario || '').trim();
     const p = String(password ?? '');
     const o = { usuario: u, password: p };
-    try {
-        let tid = NaN;
-        try {
-            const s = sessionStorage.getItem(AUTH_LOGIN_TENANT_HINT_KEY);
-            const h = Number(s);
-            if (Number.isFinite(h) && h > 0) tid = h;
-        } catch (_) {}
-        if (!Number.isFinite(tid) || tid < 1) {
-            try {
-                const raw = localStorage.getItem('pmg');
-                if (raw) {
-                    const ju = JSON.parse(raw);
-                    const lt = Number(ju?.tenant_id ?? ju?.tenantId);
-                    if (Number.isFinite(lt) && lt > 0) tid = lt;
-                }
-            } catch (_) {}
-        }
-        if (!Number.isFinite(tid) || tid < 1) {
-            tid = Number(_tenantIdResolver());
-        }
-        if (Number.isFinite(tid) && tid > 0) o.tenant_id = tid;
-    } catch (_) {}
+    const tid = getExplicitLoginTenantHint();
+    if (tid != null) o.tenant_id = tid;
     return JSON.stringify(o);
 }

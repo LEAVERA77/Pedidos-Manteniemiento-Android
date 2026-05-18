@@ -106,14 +106,88 @@ router.post("/login", async (req, res) => {
       }
     }
     const mustChange = !!(hasMustCol && u.must_change_password);
+    if (mustChange) {
+      return res.status(403).json({
+        error: "Debe cambiar la contraseña antes de continuar",
+        code: "must_change_password",
+        user_id: u.id,
+        email: u.email,
+        nombre: u.nombre,
+        rol: u.rol,
+        tenant_id,
+      });
+    }
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
       is_default_credentials: isDefault || undefined,
-      must_change_password: mustChange || undefined,
     });
   } catch (error) {
     return res.status(500).json({ error: "Error en login", detail: error.message });
+  }
+});
+
+/**
+ * Primer login con usuario bootstrap (must_change_password): sin JWT previo.
+ * Body: { user_id, password_actual, nueva_password, confirmar_password }
+ */
+router.post("/cambiar-primera-contrasena", async (req, res) => {
+  try {
+    const userId = Number(req.body?.user_id);
+    const passwordActual = String(req.body?.password_actual || req.body?.password || "").trim();
+    const nueva = String(req.body?.nueva_password || "").trim();
+    const confirmar = String(req.body?.confirmar_password || req.body?.nueva_password || "").trim();
+    if (!Number.isFinite(userId) || userId < 1) {
+      return res.status(400).json({ error: "user_id requerido" });
+    }
+    if (!passwordActual || !nueva) {
+      return res.status(400).json({ error: "Contraseña actual y nueva requeridas" });
+    }
+    if (nueva !== confirmar) {
+      return res.status(400).json({ error: "La confirmación no coincide" });
+    }
+    if (nueva.length < 6) {
+      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 6 caracteres" });
+    }
+    const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
+    if (!hasMustCol) {
+      return res.status(503).json({ error: "Esquema sin must_change_password" });
+    }
+    const hasDefCol = await tableHasColumn("usuarios", "es_usuario_default");
+    const r0 = await query(
+      `SELECT id, email, nombre, rol, password_hash, activo, must_change_password FROM usuarios WHERE id = $1 LIMIT 1`,
+      [userId]
+    );
+    if (!r0.rows.length) return res.status(404).json({ error: "Usuario no encontrado" });
+    const row = r0.rows[0];
+    if (!row.activo) return res.status(403).json({ error: "Usuario inactivo" });
+    if (!row.must_change_password) {
+      return res.status(403).json({ error: "Este usuario no requiere cambio de contraseña inicial" });
+    }
+    const hash = String(row.password_hash || "");
+    let okPw = false;
+    if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
+      okPw = await bcrypt.compare(passwordActual, hash);
+    } else {
+      okPw = passwordActual === hash;
+    }
+    if (!okPw) return res.status(401).json({ error: "Contraseña actual incorrecta" });
+    const nextHash = await bcrypt.hash(nueva, 10);
+    const defSet = hasDefCol ? ", es_usuario_default = FALSE" : "";
+    const up = await query(
+      `UPDATE usuarios SET password_hash = $2, must_change_password = FALSE${defSet}, reset_token = NULL, reset_expiry = NULL WHERE id = $1 RETURNING id, email, nombre, rol`,
+      [userId, nextHash]
+    );
+    const u = up.rows[0];
+    const tenant_id = await getUserTenantId(u.id);
+    const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
+    return res.json({
+      ok: true,
+      token,
+      user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo cambiar la contraseña", detail: error.message });
   }
 });
 

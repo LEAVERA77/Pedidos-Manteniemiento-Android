@@ -1,6 +1,6 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import { authWithTenantHost, adminOnly, adminOrTechnicianWizardKey, signToken } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly, adminOrTechnicianWizardKey, signToken, tecnicoSoporteOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import {
   normalizeBusinessTypeInput,
@@ -160,7 +160,7 @@ router.post(
     }
   },
   ...authWithTenantHost,
-  adminOnly,
+  tecnicoSoporteOnly,
   requireTechnicianTenantKey,
   async (req, res) => {
     try {

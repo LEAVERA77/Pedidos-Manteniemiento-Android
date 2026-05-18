@@ -94,6 +94,7 @@ function shellAssetUrls() {
     j('modules/pedido-volver-pendiente.js'),
     j('modules/pedido-ver-imagen.js'),
     j('modules/incidencias.js'),
+    j('modules/incidencias-infra-electrica.js'),
     j('modules/pedido-manual-foto.js'),
     j('modules/kpi-pdf-charts.js'),
     j('modules/kpi-pdf-explicacion-ia.js'),

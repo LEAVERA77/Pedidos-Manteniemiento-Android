@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
 
 /**
  * Slug para login admin_<slug> (fallback si "admin" ya existe).
@@ -27,19 +28,18 @@ export function temporaryPasswordFromSlug(slug) {
   return `${base || "tenant"}${y}`;
 }
 
-/** Default: "admin". Si colisiona (multi-tenant BD compartida), admin_<slug>, admin_<slug>2… */
-async function pickUniqueAdminLogin(client, slugBase, tenantCol, tenantId) {
+/** Default: "admin". Si colisiona en toda la BD, admin_<slug>, admin_<slug>2… */
+async function pickUniqueAdminLogin(client, slugBase) {
   const candidates = ["admin"];
   const base = slugFromTenantNombre(slugBase);
   for (let i = 0; i < 200; i++) {
     candidates.push(i === 0 ? `admin_${base}` : `admin_${base}${i + 1}`);
   }
   for (const c of candidates) {
-    const where = tenantCol
-      ? `LOWER(TRIM(email)) = LOWER(TRIM($1)) AND ${tenantCol} = $2`
-      : `LOWER(TRIM(email)) = LOWER(TRIM($1))`;
-    const params = tenantCol ? [c, tenantId] : [c];
-    const r = await client.query(`SELECT 1 FROM usuarios WHERE ${where} LIMIT 1`, params);
+    const r = await client.query(
+      `SELECT 1 FROM usuarios WHERE lower(btrim(email)) = lower(btrim($1::text)) LIMIT 1`,
+      [c]
+    );
     if (!r.rows.length) return c;
   }
   throw new Error("No se pudo generar un usuario administrador único");
@@ -58,16 +58,40 @@ export async function crearUsuarioAdminBootstrap({
   nombreTenant,
   telefono,
   hasMustChangePassword = false,
+  loginPreferido = null,
+  hasEsUsuarioDefault = false,
 }) {
   const nombreTrim = String(nombreTenant || "").trim();
   const nombreCompleto = `Administrador del ${nombreTrim}`;
-  const login = await pickUniqueAdminLogin(client, nombreTrim, col, Number(tenantId));
-  const passwordPlain = login === "admin" ? "admin" : temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim));
+  const pref = normalizeLoginId(loginPreferido);
+  let login;
+  if (pref) {
+    const r = await client.query(
+      `SELECT 1 FROM usuarios WHERE lower(btrim(email)) = lower(btrim($1::text)) LIMIT 1`,
+      [pref]
+    );
+    if (r.rows.length) {
+      const err = new Error("LOGIN_YA_EXISTE");
+      err.code = "LOGIN_YA_EXISTE";
+      throw err;
+    }
+    login = pref;
+  } else {
+    login = await pickUniqueAdminLogin(client, nombreTrim);
+  }
+  const passwordPlain =
+    pref || login !== "admin"
+      ? temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim))
+      : "admin";
   const hash = await bcrypt.hash(String(passwordPlain), 10);
   const rol = "admin";
   const tid = Number(tenantId);
   const tel = telefono != null && String(telefono).trim() !== "" ? String(telefono).trim() : null;
-  const M = hasMustChangePassword ? { cols: ", must_change_password", vals: ", TRUE" } : { cols: "", vals: "" };
+  const mustFrag = hasMustChangePassword ? ", must_change_password" : "";
+  const mustVal = hasMustChangePassword ? ", TRUE" : "";
+  const defFrag = hasEsUsuarioDefault ? ", es_usuario_default" : "";
+  const defVal = hasEsUsuarioDefault ? ", TRUE" : "";
+  const M = { cols: `${mustFrag}${defFrag}`, vals: `${mustVal}${defVal}` };
 
   if (!col) {
     if (hasBt) {

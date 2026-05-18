@@ -87,6 +87,15 @@ export function adminOrTecnicoIncidencias(req, res, next) {
   return next();
 }
 
+/** Cambio de tenant operativo (attach): solo rol técnico de soporte GestorNova + clave en rutas públicas. */
+export function tecnicoSoporteOnly(req, res, next) {
+  const rol = String(req.user?.rol || "").toLowerCase().trim();
+  if (rol === "tecnico" || rol === "técnico") return next();
+  return res.status(403).json({
+    error: "Solo usuarios con rol técnico de soporte pueden usar esta herramienta de tenant",
+  });
+}
+
 /** IA panel técnico (asignados): no admin — el análisis global de reclamos sigue en rutas adminOnly. */
 export function tecnicoSupervisorOnly(req, res, next) {
   const rol = String(req.user?.rol || "").toLowerCase().trim();

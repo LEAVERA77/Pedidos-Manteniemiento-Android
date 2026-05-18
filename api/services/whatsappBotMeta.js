@@ -34,7 +34,6 @@ import {
 import {
   tiposReclamoParaClienteTipo,
   normalizarRubroCliente,
-  tipoReclamoWhatsappFlujoSoloNis,
   tipoReclamoElectricoPideSuministroWhatsapp,
   SUBTIPOS_TRANSITO_MUNICIPIO,
   SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO,
@@ -452,7 +451,7 @@ function mensajeMenuIdentificacion(ctx) {
   const r = normalizarRubroCliente(ctx.tipo);
   const base =
     `Ya tenemos la *descripción* del problema. Ahora necesitamos *identificar* y *ubicar* el reclamo.\n\n` +
-    `Elegí *una opción* respondiendo con *1* o *2*:\n\n`;
+    `Elegí *una opción* respondiendo con *1*, *2* o *3*:\n\n`;
   const opt3 = `*3)* Solo *dirección* (sin datos personales).\n\n`;
   if (r === "cooperativa_electrica") {
     return (
@@ -2969,6 +2968,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (choice === 1) {
+      if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica") {
+        sessions.set(sk, {
+          ...sess,
+          step: "awaiting_nis_whatsapp",
+          phoneNumberId: sess.phoneNumberId || wpid,
+        });
+        await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
+        return;
+      }
       sessions.set(sk, {
         ...sess,
         step: "awaiting_opcional_id",
@@ -3337,16 +3345,11 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
 
   if (sess && sess.step === "awaiting_nis_whatsapp") {
     if (esComandoAtras(text)) {
-      sess.step = "awaiting_desc";
+      sess.step = "awaiting_identificacion_modo";
       delete sess.addrOrigenPaso;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(
-        phone,
-        `Volvimos al paso anterior.\n\nAhora escribí de nuevo una *breve descripción* del problema (una o varias líneas).`,
-        tid,
-        phoneNumberId
-      );
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
       return;
     }
     const raw = String(text || "").trim();
@@ -4134,16 +4137,6 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         phoneNumberId: sess.phoneNumberId || wpid,
       });
       await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
-      return;
-    }
-    if (tipoReclamoWhatsappFlujoSoloNis(sess.tipo)) {
-      sessions.set(sk, {
-        ...sess,
-        step: "awaiting_nis_whatsapp",
-        descripcion: desc,
-        phoneNumberId: sess.phoneNumberId || wpid,
-      });
-      await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
       return;
     }
     sessions.set(sk, {

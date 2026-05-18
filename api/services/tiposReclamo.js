@@ -235,10 +235,12 @@ export function tipoReclamoRequiereNombreClienteEnFormulario(tipoTrabajo) {
   return tipoReclamoRequiereNisYCliente(tipoTrabajo) && !tipoReclamoSoloNisSinNombreCliente(tipoTrabajo);
 }
 
-/** Flujo WhatsApp: tras la descripción, pedir NIS y saltar menú nombre/dirección (no aplica a Consumo elevado: flujo domicilio). */
-export function tipoReclamoWhatsappFlujoSoloNis(tipoTrabajo) {
-  const v = String(tipoTrabajo || "").trim();
-  return v === "Problemas de Tensión";
+/**
+ * Flujo WhatsApp: antes Problemas de Tensión iba directo a NIS; ahora siempre menú 1/2/3 (identificación).
+ * @deprecated Siempre false; se mantiene el export por compatibilidad con imports existentes.
+ */
+export function tipoReclamoWhatsappFlujoSoloNis(_tipoTrabajo) {
+  return false;
 }
 
 /** Cooperativa eléctrica (WhatsApp / formulario): estos tipos exigen tipo de conexión y fases si no vienen del padrón. */
