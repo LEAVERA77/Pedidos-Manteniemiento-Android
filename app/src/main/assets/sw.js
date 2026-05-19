@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v176';
-const SW_VERSION  = '1.8.31';
+const CACHE_SHELL = 'pmg-shell-v179';
+const SW_VERSION  = '1.8.33';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -89,11 +89,20 @@ function shellAssetUrls() {
     j('modules/admin-red-electrica-infra.js'),
     j('modules/estadisticas-datos-red-saifi.js'),
     j('modules/estadisticas-saifi-saidi-charts.js'),
+    j('modules/estadisticas-chart-plugins.js'),
+    j('modules/informes-estadisticas-pdf-capture.js'),
+    j('modules/informes-estadisticas-print.js'),
+    j('modules/admin-empresa-whatsapp-derivaciones.js'),
+    j('modules/whatsapp-human-chat-admin.js'),
+    j('modules/gn-wa-geo-ops-panel.js'),
+    j('modules/pedido-detalle-derivacion-html.js'),
+    j('modules/app-admin-panel-deferred.js'),
     j('modules/gn-panel-docks.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-volver-pendiente.js'),
     j('modules/pedido-ver-imagen.js'),
     j('modules/incidencias.js'),
+    j('modules/incidencias-coop-electrica-reglas.js'),
     j('modules/incidencias-infra-electrica.js'),
     j('modules/pedido-manual-foto.js'),
     j('modules/kpi-pdf-charts.js'),

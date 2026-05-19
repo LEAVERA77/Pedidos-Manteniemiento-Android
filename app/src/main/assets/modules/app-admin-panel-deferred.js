@@ -20,12 +20,14 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
     }
     _inFlight = (async () => {
         const ctx = typeof getDeps === 'function' ? getDeps() : {};
-        const [estCsv, exportStats, deriv, historicos, saidiDist] = await Promise.all([
+        const [estCsv, exportStats, deriv, historicos, saidiDist, sociosMod, redInfra] = await Promise.all([
             import('./est-csv-tipo-filtro.js'),
             import('./export-pedidos-admin-stats.js'),
             import('./derivaciones-reclamos-admin.js'),
             import('./admin-historicos.js'),
             import('./admin-saidi-distrib-excel.js'),
+            import('./admin-socios.js'),
+            import('./admin-red-electrica-infra.js'),
         ]);
         try {
             estCsv.initEstCsvTipoAutocomplete();
@@ -72,6 +74,30 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
                 apiUrl: ctx.apiUrl,
                 esCooperativaElectricaRubro: ctx.esCooperativaElectricaRubro,
                 debeOcultarTabDistribuidoresAdmin: ctx.debeOcultarTabDistribuidoresAdmin,
+            });
+        } catch (_) {}
+        try {
+            sociosMod.initAdminSocios({
+                sociosCatalogoTieneTenantId: ctx.sociosCatalogoTieneTenantId,
+                sociosCatalogoTieneDatosExtra: ctx.sociosCatalogoTieneDatosExtra,
+                sqlSimple: ctx.sqlSimple,
+                sqlSimpleSelectAllPages: ctx.sqlSimpleSelectAllPages,
+                tenantIdActual: ctx.tenantIdActual,
+                normalizarRubroEmpresa: ctx.normalizarRubroEmpresa,
+                esMunicipioRubro: ctx.esMunicipioRubro,
+                esAdmin: ctx.esAdmin,
+                mostrarOverlayImportacion: ctx.mostrarOverlayImportacion,
+                actualizarOverlayImportacion: ctx.actualizarOverlayImportacion,
+                ocultarOverlayImportacion: ctx.ocultarOverlayImportacion,
+                nominatimFetchSearch: ctx.nominatimFetchSearch,
+            });
+        } catch (_) {}
+        try {
+            redInfra.initAdminRedElectricaInfra({
+                getApiToken: ctx.getApiToken,
+                apiUrl: ctx.apiUrl,
+                toast: ctx.toast,
+                toastError: ctx.toastError,
             });
         } catch (_) {}
         _done = true;

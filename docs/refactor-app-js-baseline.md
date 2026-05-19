@@ -67,7 +67,29 @@ Medir y documentar el comportamiento **antes y después** de extraer código de 
 - [x] Aplazar lista usuarios multitenant y modal WhatsApp usuario hasta uso.
 - [x] Export socios Excel completo: carga perezosa del módulo SheetJS al pulsar el botón.
 
-Próximas iteraciones: ver plan en `.cursor/plans/` (refactor por fases).
+## Métricas fase 2 — completada (2026-05-19)
+
+| Métrica | Antes | Después |
+|---------|--------|---------|
+| Líneas `app.js` | ~18.795 | **~17.380** (−~1.415) |
+| Imports estáticos | ~69 | **~63** |
+| `sw.js` `CACHE_SHELL` | v178 | **v179** |
+
+**Módulos nuevos / cableados:**
+
+| Módulo | Rol |
+|--------|-----|
+| [`informes-estadisticas-print.js`](../app/src/main/assets/modules/informes-estadisticas-print.js) | Impresión + PDF multipágina estadísticas |
+| [`informes-estadisticas-pdf-capture.js`](../app/src/main/assets/modules/informes-estadisticas-pdf-capture.js) | html2canvas (deps `getCharts`) |
+| [`admin-empresa-whatsapp-derivaciones.js`](../app/src/main/assets/modules/admin-empresa-whatsapp-derivaciones.js) | Áreas WA AR + form derivaciones empresa |
+| [`whatsapp-human-chat-admin.js`](../app/src/main/assets/modules/whatsapp-human-chat-admin.js) | Poll y ventanas chat humano (solo admin) |
+| [`gn-wa-geo-ops-panel.js`](../app/src/main/assets/modules/gn-wa-geo-ops-panel.js) | Panel operaciones geocod WA |
+| [`estadisticas-chart-plugins.js`](../app/src/main/assets/modules/estadisticas-chart-plugins.js) | Plugins Chart % (al abrir estadísticas) |
+| [`pedido-detalle-derivacion-html.js`](../app/src/main/assets/modules/pedido-detalle-derivacion-html.js) | HTML derivación en `#dm` |
+
+**Lazy / diferido:** `initAdminSocios`, `initAdminSaidiDistribExcel`, `initAdminRedElectricaInfra` → [`app-admin-panel-deferred.js`](../app/src/main/assets/modules/app-admin-panel-deferred.js); SAIFI/red con `import()` al cargar estadísticas (coop. eléctrica); conversor coords con `import()` en `initWebCoordsConverterBar`; KPI PDF / dashboard drag / crear usuario ya con `import()` en uso.
+
+**Pendiente (fase 3):** reducir cuerpo de `detalle()` y de `cargarEstadisticas()` (orquestación SQL + cards); no mover `app`/`NEON_OK` a `js/core.js` hasta grafo estable.
 
 ## Auditoría de imports estáticos en `app.js` (2026-05-13)
 
@@ -88,7 +110,9 @@ Referencia rápida: cabecera del módulo (~65 `import`). Criterios: **T** = téc
 | `admin-wizard`, `admin-socios`, `admin-distribuidores-formato` | A | |
 | `catalogoReclamoPorRubro`, `derivaciones-terceros`, `pedido-form-labels-*` | T+A | |
 | `admin-crear-usuario-panel` | A | `import()` en `crearUsuario()` (2026-05-13) |
-| `informes-estadisticas-pdf-capture` | A | Captura html2canvas estadísticas; deps `getCharts` + `lineaPeriodoInformeEstadisticas` |
+| `informes-estadisticas-pdf-capture` | A | Existe en repo; **re-cablear** (código duplicado aún en `app.js` hasta entrega 2) |
+| `admin-socios`, `admin-saidi-distrib-excel`, `admin-red-electrica-infra` | A | **Diferir** init desde `iniciarApp` → `app-admin-panel-deferred` (fase 2) |
+| `estadisticas-datos-red-saifi`, `estadisticas-saifi-saidi-charts` | A | Cooperativa eléctrica; candidato `import()` al abrir estadísticas |
 | `map.js`, `map-pedidos-markers`, `gn-map-*` | T | Mapa |
 | `app-admin-panel-deferred` | A | Ya lazy |
 | `pedido-ver-imagen`, `pedido-volver-pendiente` | T | |

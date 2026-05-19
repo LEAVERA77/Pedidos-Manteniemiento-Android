@@ -30,7 +30,6 @@ import {
     parseDecimalODmsCoord,
     validarWgs84Import
 } from './modules/utils.js';
-import { installWebCoordsConverterBar } from './modules/conversor-coordenadas.js';
 import {
     logErrorWeb,
     mensajeErrorUsuario,
@@ -46,7 +45,6 @@ import {
 } from './modules/normalizar-telefono.js';
 import { pdfEncabezadoEmpresaBloque } from './modules/empresa-encabezado-pdf.js';
 import { construirHtmlEncabezadoInformeEmpresa } from './modules/informe-empresa-html-encabezado.js';
-import { loadKpiInformePdfDeps } from './modules/app-kpi-informe-pdf-loaders.js';
 import {
     ESTADO_DONUT_COLORS,
     DONUT_FALLBACK_SEQUENCE,
@@ -58,7 +56,18 @@ import {
     poblarDerivacionesListasDesdeCfg,
     refreshDerivacionListaWaButtons,
 } from './modules/derivaciones-reclamos-admin.js';
-import { initDashboardGerenciaModalDrag } from './modules/dashboard-gerencia.js';
+import {
+    parseWhatsappArAreasPorLocalidadTextarea,
+    parseWhatsappArAreaPrefixesInput,
+    sincronizarCamposWhatsappArAreaDesdeEmpresaCfg,
+    normalizarWhatsappInternacionalDesdeInput,
+    bindDerivacionesFormInputsOnce,
+    poblarFormDerivacionesDesdeEmpresaCfg,
+    digitosWhatsAppDerivacionEmpresaCfg,
+    obtenerWaMeUrlDerivacionEmpresaCfg,
+    setAdminEmpresaWhatsappDerivacionesDeps,
+    wireAbrirWhatsappDerivacionFormWindow,
+} from './modules/admin-empresa-whatsapp-derivaciones.js';
 import { syncKpiAdminRubroDom } from './modules/kpi-admin-rubro-ui.js';
 import { bp2OcultarHistoricosResueltosActivo } from './modules/vaciado-quincenal.js';
 import {
@@ -96,7 +105,6 @@ import {
 } from './modules/admin-wizard.js';
 
 import {
-    initAdminSocios,
     vaciarCoordenadasSociosCatalogo,
     cargarListaSociosAdmin,
     importarExcelSocios,
@@ -138,21 +146,11 @@ import {
     syncAyudaDistribuidoresExcelHint,
     syncOcultarModulosRedesRowVisibility,
 } from './modules/admin-distribuidores-formato.js';
-import { initAdminSaidiDistribExcel, syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
+import { syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
 import {
-    initAdminRedElectricaInfra,
     syncAdminRedElectricaTabVisibility,
     cargarListaRedElectricaInfra,
 } from './modules/admin-red-electrica-infra.js';
-import {
-    fetchDatosRedParaEstadisticas,
-    denominadorClientesConfiabilidad,
-    buildMapaSociosPorCodigoDistribuidor,
-} from './modules/estadisticas-datos-red-saifi.js';
-import {
-    crearGraficosSaifiSaidi,
-    pintarCaptionConfiabilidadSaifiSaidi,
-} from './modules/estadisticas-saifi-saidi-charts.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
@@ -193,6 +191,31 @@ import { installGnClipboardCopy } from './modules/gn-clipboard-copy.js';
 import { gnRequestClearGotoPreviewMarker } from './modules/gn-map-goto-preview-marker.js';
 import { gnAndroidCerrarUiEncimaDelMapaParaZoomPedido } from './modules/gn-android-cerrar-ui-para-mapa-zoom.js';
 import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
+import { setInformesEstadisticasPdfCaptureDeps } from './modules/informes-estadisticas-pdf-capture.js';
+import {
+    setInformesEstadisticasPrintDeps,
+    imprimirInformeConGraficos,
+    generarPdfEstadisticasMultipaginaENRE,
+} from './modules/informes-estadisticas-print.js';
+import {
+    gnWaGeoOpsRefresh,
+    gnWaGeoOpsStartPoll,
+    gnWaGeoOpsStopPoll,
+    gnWaGeoOpsBindControlsOnce,
+    setGnWaGeoOpsPanelDeps,
+} from './modules/gn-wa-geo-ops-panel.js';
+import {
+    iniciarPollWhatsappHumanChat,
+    detenerPollWhatsappHumanChat,
+    destruirTodasVentanasWaHc,
+    setWhatsappHumanChatAdminDeps,
+    wireWhatsappHumanChatAdminWindow,
+} from './modules/whatsapp-human-chat-admin.js';
+import {
+    htmlSolicitudDerivacionCoopElectricaTecnico,
+    htmlDerivacionTercerosPedidoDetalle,
+    setPedidoDetalleDerivacionHtmlDeps,
+} from './modules/pedido-detalle-derivacion-html.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
 import { gnDetalleImgAttrs } from './modules/pedido-detalle-html-helpers.js';
 import {
@@ -211,13 +234,13 @@ import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credencial
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import {
     initAuthLoginApiTenantResolver,
-    authLoginJsonBody,
     beginLoginAttempt,
     endLoginAttempt,
     buildNeonLoginTenantSqlFrag,
+    fetchAuthLoginApi,
+    clearAuthLoginTenantHint,
 } from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
-import { ejecutarCrearUsuarioAdminPanel } from './modules/admin-crear-usuario-panel.js';
 import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
     aplicarMascaraEmpresaAdminTrasCambioTenant,
@@ -1066,69 +1089,6 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
     } catch (_) {}
 }
 
-/** Mapa localidad → característica (solo dígitos de área) para normalizar móviles AR en difusiones. */
-function parseWhatsappArAreasPorLocalidadTextarea(text) {
-    const out = {};
-    for (const line0 of String(text || '').split(/\r?\n/)) {
-        const line = line0.trim();
-        if (!line || line.startsWith('#')) continue;
-        let loc = '';
-        let area = '';
-        const tab = line.indexOf('\t');
-        if (tab !== -1) {
-            loc = line.slice(0, tab).trim();
-            area = (line.slice(tab + 1).trim().match(/^\d+/) || [''])[0];
-        } else if (line.includes('|')) {
-            const pipe = line.indexOf('|');
-            loc = line.slice(0, pipe).trim();
-            area = (line.slice(pipe + 1).trim().match(/^\d+/) || [''])[0];
-        } else {
-            const m = line.match(/^(.+?)[\s,]+(\d{2,6})\s*$/);
-            if (m) {
-                loc = m[1].trim();
-                area = m[2];
-            }
-        }
-        if (loc && area) out[loc] = area;
-    }
-    return out;
-}
-
-function serializeWhatsappArAreasPorLocalidadTextarea(obj) {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return '';
-    return Object.entries(obj)
-        .map(([k, v]) => `${String(k).trim()}\t${String(v).trim().replace(/\D/g, '')}`)
-        .filter((row) => row.length > 1)
-        .join('\n');
-}
-
-function parseWhatsappArAreaPrefixesInput(text) {
-    return String(text || '')
-        .split(/[,;\s]+/)
-        .map((s) => s.replace(/\D/g, ''))
-        .filter((s) => s.length >= 2);
-}
-
-function sincronizarCamposWhatsappArAreaDesdeEmpresaCfg() {
-    const ec = window.EMPRESA_CFG || {};
-    const d = document.getElementById('cfg-wa-ar-default-area');
-    if (d) {
-        const v = ec.whatsapp_ar_default_area != null ? ec.whatsapp_ar_default_area : ec.ar_default_area;
-        d.value = String(v != null ? v : '')
-            .replace(/\D/g, '')
-            .slice(0, 6);
-    }
-    const p = document.getElementById('cfg-wa-ar-area-prefixes');
-    if (p) {
-        const raw = ec.whatsapp_ar_area_prefixes;
-        p.value = Array.isArray(raw) ? raw.join(', ') : typeof raw === 'string' ? raw : '';
-    }
-    const ta = document.getElementById('cfg-wa-ar-areas-por-localidad');
-    if (ta) {
-        const m = ec.whatsapp_ar_areas_por_localidad;
-        ta.value = m && typeof m === 'object' && !Array.isArray(m) ? serializeWhatsappArAreasPorLocalidadTextarea(m) : '';
-    }
-}
 
 function aplicarConfiguracionJsonClienteEnEmpresaCfg(conf) {
     if (!conf || typeof conf !== 'object') return;
@@ -1542,184 +1502,6 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
     } catch (_) {}
 }
 
-function normalizarWhatsappInternacionalDesdeInput(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return '';
-    const digits = quitarMovil9Tras54Digitos(s.replace(/\D/g, ''));
-    if (!digits) return '';
-    return `+${digits}`;
-}
-
-function actualizarBotonesWhatsappDerivacionesUi() {
-    ['energia', 'agua', 'gas', 'tel', 'policia'].forEach((slot) => {
-        const btn = document.getElementById(`cfg-deriv-${slot}-btn-wa`);
-        if (!btn) return;
-        const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-        const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
-        const w = normalizarWhatsappInternacionalDesdeInput(raw);
-        const ok = /^\+\d{8,22}$/.test(w);
-        btn.disabled = !(act && ok);
-    });
-    try {
-        refreshDerivacionListaWaButtons(normalizarWhatsappInternacionalDesdeInput);
-    } catch (_) {}
-}
-
-let _cfgDerivWaInputBound = false;
-(function bindPersistenciaTextosDerivacion() {
-    try {
-        document.addEventListener(
-            'input',
-            (ev) => {
-                const t = ev.target;
-                if (!t || !t.id) return;
-                if (t.id === 'admin-derivar-motivo') {
-                    const dm = document.getElementById('dm');
-                    const pid = dm?.dataset?.detallePedidoId;
-                    if (pid) {
-                        try {
-                            sessionStorage.setItem('gn-admin-deriv-motivo-' + pid, t.value);
-                        } catch (_) {}
-                    }
-                    return;
-                }
-                if (String(t.id).startsWith('tec-sol-deriv-motivo-')) {
-                    const pid = String(t.id).replace('tec-sol-deriv-motivo-', '');
-                    try {
-                        sessionStorage.setItem('gn-tec-deriv-motivo-' + pid, t.value);
-                    } catch (_) {}
-                }
-            },
-            true
-        );
-    } catch (_) {}
-})();
-
-function bindDerivacionesFormInputsOnce() {
-    if (_cfgDerivWaInputBound) return;
-    _cfgDerivWaInputBound = true;
-    ['energia', 'agua', 'gas', 'tel', 'policia'].forEach((slot) => {
-        const el = document.getElementById(`cfg-deriv-${slot}-whatsapp`);
-        if (el) el.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
-        const nm = document.getElementById(`cfg-deriv-${slot}-nombre`);
-        if (nm) nm.addEventListener('input', () => actualizarBotonesWhatsappDerivacionesUi());
-        const ac = document.getElementById(`cfg-deriv-${slot}-activo`);
-        if (ac) ac.addEventListener('change', () => actualizarBotonesWhatsappDerivacionesUi());
-    });
-}
-
-function poblarFormDerivacionesDesdeEmpresaCfg() {
-    const dr = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivacion_reclamos) || null;
-    let energia = { activo: false, nombre: '', whatsapp: '' };
-    let agua = { activo: false, nombre: '', whatsapp: '' };
-    let gas = { activo: false, nombre: '', whatsapp: '' };
-    let tel = { activo: false, nombre: '', whatsapp: '' };
-    let policia = { activo: false, nombre: '', whatsapp: '' };
-    if (dr && typeof dr === 'object' && !Array.isArray(dr)) {
-        const ee = dr.empresa_energia || {};
-        const ca = dr.cooperativa_agua || {};
-        energia = {
-            activo: !!(ee.whatsapp || ee.nombre),
-            nombre: String(ee.nombre != null ? ee.nombre : ''),
-            whatsapp: String(ee.whatsapp != null ? ee.whatsapp : ''),
-        };
-        agua = {
-            activo: !!(ca.whatsapp || ca.nombre),
-            nombre: String(ca.nombre != null ? ca.nombre : ''),
-            whatsapp: String(ca.whatsapp != null ? ca.whatsapp : ''),
-        };
-        const gsn = dr.empresa_gas_natural || {};
-        const tlf = dr.empresa_telefonia || {};
-        gas = {
-            activo: !!(gsn.whatsapp || gsn.nombre),
-            nombre: String(gsn.nombre != null ? gsn.nombre : ''),
-            whatsapp: String(gsn.whatsapp != null ? gsn.whatsapp : ''),
-        };
-        tel = {
-            activo: !!(tlf.whatsapp || tlf.nombre),
-            nombre: String(tlf.nombre != null ? tlf.nombre : ''),
-            whatsapp: String(tlf.whatsapp != null ? tlf.whatsapp : ''),
-        };
-        const pol = dr.policia || {};
-        policia = {
-            activo: !!(pol.whatsapp || pol.nombre),
-            nombre: String(pol.nombre != null ? pol.nombre : ''),
-            whatsapp: String(pol.whatsapp != null ? pol.whatsapp : ''),
-        };
-    } else {
-        const der = (window.EMPRESA_CFG && window.EMPRESA_CFG.derivaciones) || {};
-        const e = der.energia || {};
-        const a = der.agua || {};
-        energia = {
-            activo: !!e.activo,
-            nombre: String(e.nombre != null ? e.nombre : ''),
-            whatsapp: String(e.whatsapp != null ? e.whatsapp : ''),
-        };
-        agua = {
-            activo: !!a.activo,
-            nombre: String(a.nombre != null ? a.nombre : ''),
-            whatsapp: String(a.whatsapp != null ? a.whatsapp : ''),
-        };
-    }
-    const slots = [
-        { key: 'energia', s: energia },
-        { key: 'agua', s: agua },
-        { key: 'gas', s: gas },
-        { key: 'tel', s: tel },
-        { key: 'policia', s: policia },
-    ];
-    slots.forEach(({ key, s }) => {
-        const ca = document.getElementById(`cfg-deriv-${key}-activo`);
-        const cn = document.getElementById(`cfg-deriv-${key}-nombre`);
-        const cw = document.getElementById(`cfg-deriv-${key}-whatsapp`);
-        if (ca) ca.checked = !!s.activo;
-        if (cn) cn.value = s.nombre;
-        if (cw) cw.value = s.whatsapp;
-    });
-    try {
-        poblarDerivacionesListasDesdeCfg(dr && typeof dr === 'object' ? dr : {}, {
-            normalizarWhatsappInternacionalDesdeInput,
-            toast,
-            setDerivacionesInlineError,
-            onChange: actualizarBotonesWhatsappDerivacionesUi,
-        });
-    } catch (_) {}
-    const om = document.getElementById('cfg-ocultar-modulos-redes');
-    if (om) om.checked = !!(window.EMPRESA_CFG && window.EMPRESA_CFG.ocultar_modulos_redes);
-    actualizarBotonesWhatsappDerivacionesUi();
-}
-
-function abrirWhatsappDerivacionForm(slot) {
-    const act = !!document.getElementById(`cfg-deriv-${slot}-activo`)?.checked;
-    const raw = (document.getElementById(`cfg-deriv-${slot}-whatsapp`)?.value || '').trim();
-    const w = normalizarWhatsappInternacionalDesdeInput(raw);
-    if (!act) {
-        toast('Activá la derivación para usar WhatsApp.', 'info');
-        return;
-    }
-    if (!w || !/^\+\d{8,22}$/.test(w)) {
-        toast('WhatsApp no válido: usá formato internacional con + (8 a 22 dígitos).', 'error');
-        return;
-    }
-    window.open(`https://wa.me/${w.slice(1)}`, '_blank', 'noopener,noreferrer');
-}
-window.abrirWhatsappDerivacionForm = abrirWhatsappDerivacionForm;
-
-/** Dígitos wa.me desde `EMPRESA_CFG.derivaciones` (+ opcional o solo dígitos). */
-function digitosWhatsAppDerivacionEmpresaCfg(slot) {
-    const d = (window.EMPRESA_CFG?.derivaciones || {})[slot];
-    if (!d || !d.activo) return '';
-    const raw = String(d.whatsapp || '').trim();
-    if (!raw) return '';
-    const dg = raw.replace(/\D/g, '');
-    if (dg.length >= 10 && dg.length <= 15) return dg;
-    return '';
-}
-
-function obtenerWaMeUrlDerivacionEmpresaCfg(slot) {
-    const dg = digitosWhatsAppDerivacionEmpresaCfg(slot);
-    return dg ? `https://wa.me/${dg}` : '';
-}
 
 const TIPOS_RECLAMO_SOLICITUD_DERIVACION_TERCERO = new Set([
     'cables caídos/peligro',
@@ -1782,68 +1564,6 @@ function debeMostrarBotonDerivacion(pOrTipo) {
 window.debeMostrarBotonDerivacion = debeMostrarBotonDerivacion;
 
 /** Técnico/supervisor asignado: solicitud de derivación (todos los rubros cuando el tipo encaja). */
-function htmlSolicitudDerivacionCoopElectricaTecnico(p) {
-    if (!esTecnicoOSupervisor() || esAdmin()) return '';
-    if (!debeMostrarBotonDerivacion(p)) return '';
-    if (pedidoEsDerivadoFuera(p)) return '';
-    const esN = normalizarEstadoPedidoUi(p?.es);
-    const esOk = esN === 'Asignado' || esN === 'En ejecución';
-    if (!esOk) return '';
-    const uid = String(app.u?.id ?? '');
-    if (p.tai == null || String(p.tai) !== uid) return '';
-    const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const pidEsc = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    let borradorTec = '';
-    try {
-        borradorTec = sessionStorage.getItem('gn-tec-deriv-motivo-' + p.id) || '';
-    } catch (_) {}
-    const taIniTec = borradorTec ? escD(borradorTec) : '';
-    if (p.sdpen) {
-        const fxs = p.sdf ? fmtInformeFecha(p.sdf) : '—';
-        return `<div class="ds" style="border-left:4px solid #f59e0b">
-            <h4>⏳ Derivación a terceros — solicitud enviada</h4>
-            <p style="font-size:.8rem;color:var(--tm);margin:0;line-height:1.45">El administrador debe aprobar la derivación operativa. Mientras tanto no podés cargar materiales en este pedido.</p>
-            <p style="font-size:.76rem;color:var(--tl);margin:.45rem 0 0">${escD(p.sdm || 'Sin motivo breve')}</p>
-            <p style="font-size:.72rem;color:var(--tl);margin:.35rem 0 0">Pedida: ${escD(fxs)}</p>
-        </div>`;
-    }
-    return `<div class="ds" style="border-left:4px solid #6366f1">
-        <h4>🛠 Solicitar derivación a terceros</h4>
-        <p style="font-size:.78rem;color:var(--tm);margin:0 0 .55rem;line-height:1.45">Si el reclamo corresponde a otra empresa (gas, agua, etc.), pedí la derivación. El <strong>administrador</strong> la confirma y arma el mismo texto que se envía por WhatsApp al contacto configurado.</p>
-        <label style="font-size:.76rem;font-weight:600">Observaciones de campo <span style="color:var(--re)">*</span> <span style="font-weight:500;color:var(--tl)">(mín. 8 caracteres)</span></label>
-        <textarea id="tec-sol-deriv-motivo-${p.id}" rows="3" maxlength="2000" style="width:100%;margin:.25rem 0 .55rem;padding:.45rem;border:1px solid var(--bo);border-radius:.45rem;resize:vertical" placeholder="Obligatorio: qué viste en visita y por qué corresponde derivar (ej.: cable de otra distribuidora, riesgo en vía pública a cargo de otro organismo…).">${taIniTec}</textarea>
-        <button type="button" class="ba2 p2" onclick="solicitarDerivacionTerceroDesdeTecnico('${pidEsc}')"><i class="fas fa-paper-plane"></i> Enviar solicitud al administrador</button>
-    </div>`;
-}
-
-/** Bloque en detalle de pedido: enlaces wa.me a terceros (municipio, agua, eléctrica); admin y supervisor. */
-function htmlDerivacionTercerosPedidoDetalle() {
-    if (!(esAdmin() || esTecnicoOSupervisor())) return '';
-    const escD = (t) => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const slots = [
-        { key: 'energia', def: 'Empresa de energía' },
-        { key: 'agua', def: 'Cooperativa de agua' },
-    ];
-    const links = [];
-    for (const { key, def } of slots) {
-        const url = obtenerWaMeUrlDerivacionEmpresaCfg(key);
-        if (!url) continue;
-        const nom = String((window.EMPRESA_CFG?.derivaciones || {})[key]?.nombre || '').trim() || def;
-        const href = String(url).replace(/"/g, '&quot;');
-        links.push(
-            `<a class="ba2" style="display:inline-block;margin:.25rem .5rem .25rem 0;text-decoration:none" target="_blank" rel="noopener noreferrer" href="${href}"><i class="fab fa-whatsapp"></i> Contactar ${escD(nom)}</a>`
-        );
-    }
-    // No exigir rubro normalizado: si `tipo` en BD quedó legacy tras el wizard, igual mostramos contactos configurados.
-    if (!links.length) return '';
-    const labPer = escD(etiquetaFirmaPersona());
-    return `<div class="ds gn-deriv-terceros-pedido">
-            <h4>📞 Derivación a terceros</h4>
-            <p style="font-size:.76rem;color:var(--tm);margin:0 0 .5rem;line-height:1.4">Contactos configurados en <strong>Admin → Empresa</strong> para orientar al ${labPer}. <strong>No</strong> son el número Meta del bot.</p>
-            ${links.join('')}
-        </div>`;
-}
-
 /** Distribuidor (eléctrica) | Ramal (agua) | Barrio (municipio). */
 function etiquetaZonaPedido() {
     if (esMunicipioRubro()) return 'Barrio';
@@ -2072,21 +1792,28 @@ async function notificarAltaReclamoWhatsappApi(pedidoId) {
     }
 }
 async function loginApiJwt(email, password) {
-    const ms = 28000;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), ms);
     try {
-        const resp = await fetch(apiUrl('/api/auth/login'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: authLoginJsonBody(email, password),
-            signal: ctl.signal
-        });
-        const data = await resp.json().catch(() => ({}));
+        const { resp, data } = await fetchAuthLoginApi(email, password, apiUrl, fetch);
         if (resp.status === 403 && data?.code === 'must_change_password') {
             return { must_change_password: true, user_id: data.user_id, user: data };
         }
-        if (!resp.ok || !data?.token) return null;
+        if (!resp.ok || !data?.token) {
+            try {
+                console.warn(
+                    '[login] API',
+                    resp.status,
+                    data?.code || '',
+                    (data?.error || '').slice(0, 120)
+                );
+            } catch (_) {}
+            return {
+                _loginFailed: true,
+                status: resp.status,
+                code: data?.code,
+                message: data?.error,
+                tenant_ids: data?.tenant_ids,
+            };
+        }
         app.apiToken = String(data.token);
         try {
             localStorage.setItem('pmg_api_token', app.apiToken);
@@ -2111,10 +1838,13 @@ async function loginApiJwt(email, password) {
         /** Devuelve `data` para que el login (p. ej. técnico Android) fusione `user.tenant_id` antes de `entrarConUsuario`. La API usa getUserTenantId (BD), misma fuente que el admin web. */
         return data;
     } catch (e) {
-        if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms — continuando sin token');
-        return null;
-    } finally {
-        clearTimeout(t);
+        if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout — continuando sin token');
+        else {
+            try {
+                console.warn('[login] API red:', e && e.message ? e.message : e);
+            } catch (_) {}
+        }
+        return { _loginFailed: true, network: true, message: e && e.message ? e.message : 'red' };
     }
 }
 
@@ -2123,24 +1853,12 @@ async function authLoginApiRetornarTokenUser(email, password) {
     const em = String(email || '').trim();
     const pw = String(password || '');
     if (!em || !pw) return null;
-    const ms = 28000;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), ms);
     try {
-        const resp = await fetch(apiUrl('/api/auth/login'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: authLoginJsonBody(em, pw),
-            signal: ctl.signal,
-        });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        if (!data?.token || !data?.user) return null;
+        const { resp, data } = await fetchAuthLoginApi(em, pw, apiUrl, fetch);
+        if (!resp.ok || !data?.token || !data?.user) return null;
         return { token: String(data.token), user: data.user };
     } catch (_) {
         return null;
-    } finally {
-        clearTimeout(t);
     }
 }
 
@@ -2192,26 +1910,17 @@ function wizardPoblarSelectTenantsClientes(selEl, clientes) {
 
 /** Login vía API sin guardar token ni tocar `app.u` (p. ej. reabrir asistente con credenciales de admin). */
 async function verificarLoginSoloAdminSinPersistir(email, password) {
-    const ms = 28000;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), ms);
+    const em = String(email || '').trim();
+    const pw = String(password || '');
     try {
-        const resp = await fetch(apiUrl('/api/auth/login'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: authLoginJsonBody(String(email || '').trim(), String(password || '')),
-            signal: ctl.signal
-        });
+        const { resp, data } = await fetchAuthLoginApi(em, pw, apiUrl, fetch);
         if (!resp.ok) return { ok: false, error: 'Usuario o contraseña incorrectos' };
-        const data = await resp.json();
         const rol = normalizarRolStr(data.user?.rol || '');
         if (rol !== 'admin') return { ok: false, error: 'Solo un administrador puede reabrir el asistente.' };
         return { ok: true };
     } catch (e) {
         if (e && e.name === 'AbortError') return { ok: false, error: 'Tiempo de espera agotado' };
         return { ok: false, error: 'No se pudo verificar con el servidor' };
-    } finally {
-        clearTimeout(t);
     }
 }
 
@@ -3530,7 +3239,9 @@ function resetPreferenciasPanelesInicioCerrados() {
 }
 
 function initWebCoordsConverterBar() {
-    installWebCoordsConverterBar(esAndroidWebViewMapa);
+    void import('./modules/conversor-coordenadas.js').then(({ installWebCoordsConverterBar: install }) =>
+        install(esAndroidWebViewMapa)
+    );
 }
 
 const lfLogin = document.getElementById('lf');
@@ -3720,75 +3431,97 @@ const gnLoginSubmitHandler = async e => {
             return;
         }
 
-        
-        let resultado = null;
-        // Login Neon: igualdad literal password_hash = contraseña (legado). Si la clave está en bcrypt (alta vía API),
-        // no hay fila y se reintenta con JWT en /api/auth/login (misma contraseña).
-        // Recuperación texto plano: docs/NEON_ops_insertar_admin_emergencia.sql (solo pruebas).
-        let tenantFrag = '';
+        let usuario = null;
+        let loginJwtPayload = null;
+        let loginApiFallo = null;
+
+        /** 1) API primero (bcrypt y login global); reintento sin tenant si hint sessionStorage obsoleto. */
         try {
-            tenantFrag = await buildNeonLoginTenantSqlFrag(esc, sqlColumnaTenantUsuariosNeonSync);
-        } catch (_) {}
-        const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}${tenantFrag}`;
-        const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
-        const loginOrd = ' ORDER BY id ASC';
-        // Preferir filas con tenant: si la primera consulta no trae tenant_id, el filtro de pedidos usaría
-        // tenantIdActual() (p. ej. 1 desde config) y el listado queda vacío aunque el login sea válido.
-        // Primero `tenant_id`: muchas BDs no tienen `cliente_id` y la 1ª variante fallaba en consola Android.
-        const loginSqlAttempts = [
-            `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}${loginOrd}`,
-            `SELECT id, email, nombre, rol, cliente_id AS tenant_id${mustCol} ${loginWhere}${loginOrd}`,
-            `SELECT id, email, nombre, rol${mustCol} ${loginWhere}${loginOrd}`,
-        ];
-        try {
-            let lastErr = null;
-            for (const sel of loginSqlAttempts) {
+            loginJwtPayload = await loginApiJwt(em, pw);
+            if (loginJwtPayload?._loginFailed) {
+                loginApiFallo = loginJwtPayload;
+                loginJwtPayload = null;
+            } else if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id) {
+                /* se maneja abajo con loginJwtPayload */
+            } else if (loginJwtPayload?.user?.id) {
+                let must = false;
                 try {
-                    resultado = await conTimeout(sqlSimple(sel), 8000, 'timeout login');
-                    break;
-                } catch (err) {
-                    lastErr = err;
-                    console.warn('[login] variante SQL:', err && err.message ? err.message : err);
+                    const mr = await sqlSimple(
+                        `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
+                            loginJwtPayload.user.id
+                        )} LIMIT 1`
+                    );
+                    must = !!(mr.rows?.[0]?.must_change_password);
+                } catch (_) {}
+                usuario = {
+                    id: loginJwtPayload.user.id,
+                    email: loginJwtPayload.user.email,
+                    nombre: loginJwtPayload.user.nombre,
+                    rol: loginJwtPayload.user.rol,
+                    tenant_id: loginJwtPayload.user.tenant_id,
+                    must_change_password: must,
+                };
+            }
+        } catch (_) {}
+
+        /** 2) Fallback Neon solo si la API no autenticó (contraseña legado en texto plano en BD). */
+        if (!usuario && !loginJwtPayload?.must_change_password) {
+            let tenantFrag = '';
+            try {
+                tenantFrag = await buildNeonLoginTenantSqlFrag(esc, sqlColumnaTenantUsuariosNeonSync);
+            } catch (_) {}
+            const loginWhere = `FROM usuarios WHERE LOWER(TRIM(email)) = LOWER(TRIM(${esc(em)})) AND password_hash = ${esc(pw)}${tenantFrag}`;
+            const mustCol = ', COALESCE(must_change_password, false) AS must_change_password';
+            const loginOrd = ' ORDER BY id ASC';
+            const loginSqlAttempts = [
+                `SELECT id, email, nombre, rol, tenant_id${mustCol} ${loginWhere}${loginOrd}`,
+                `SELECT id, email, nombre, rol, cliente_id AS tenant_id${mustCol} ${loginWhere}${loginOrd}`,
+                `SELECT id, email, nombre, rol${mustCol} ${loginWhere}${loginOrd}`,
+            ];
+            try {
+                let lastErr = null;
+                let resultado = null;
+                for (const sel of loginSqlAttempts) {
+                    try {
+                        resultado = await conTimeout(sqlSimple(sel), 8000, 'timeout login');
+                        break;
+                    } catch (err) {
+                        lastErr = err;
+                        console.warn('[login] variante SQL:', err && err.message ? err.message : err);
+                    }
                 }
+                if (!resultado) throw lastErr || new Error('Login SQL no disponible');
+                usuario = resultado.rows?.[0] || null;
+                if (usuario && !loginJwtPayload) {
+                    loginJwtPayload = await loginApiJwt(em, pw);
+                }
+            } catch (netErr) {
+                console.warn('Login: red caída, usando cache:', netErr.message);
+                setModoOffline(true);
+                if (!intentarOffline()) {
+                    if (le) le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
+                }
+                return;
             }
-            if (!resultado) throw lastErr || new Error('Login SQL no disponible');
-        } catch (netErr) {
-            
-            console.warn('Login: red caída, usando cache:', netErr.message);
-            setModoOffline(true);
-            if (!intentarOffline()) {
-                if (le) le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
-            }
+        }
+
+        if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id && !usuario) {
+            window._pendingAndroidPasswordChange = {
+                u: {
+                    id: loginJwtPayload.user_id,
+                    email: loginJwtPayload.user?.email || em,
+                    nombre: loginJwtPayload.user?.nombre || 'Usuario',
+                    rol: loginJwtPayload.user?.rol || 'admin',
+                    must_change_password: true,
+                },
+                passwordActual: pw,
+                primeraContrasenaApi: true,
+            };
+            document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+            toast('Debés definir una nueva contraseña para continuar.', 'info');
             return;
         }
 
-        let usuario = resultado.rows?.[0];
-        if (!usuario) {
-            try {
-                const apiData = await loginApiJwt(em, pw);
-                if (apiData?.user?.id) {
-                    let must = !!apiData.must_change_password;
-                    if (!must) {
-                        try {
-                            const mr = await sqlSimple(
-                                `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
-                                    apiData.user.id
-                                )} LIMIT 1`
-                            );
-                            must = !!(mr.rows?.[0]?.must_change_password);
-                        } catch (_) {}
-                    }
-                    usuario = {
-                        id: apiData.user.id,
-                        email: apiData.user.email,
-                        nombre: apiData.user.nombre,
-                        rol: apiData.user.rol,
-                        tenant_id: apiData.user.tenant_id,
-                        must_change_password: must,
-                    };
-                }
-            } catch (_) {}
-        }
         if (usuario) {
             const tidLogin = await resolverTenantIdPostLoginNeon({
                 usuario,
@@ -3804,7 +3537,11 @@ const gnLoginSubmitHandler = async e => {
                 must_change_password: !!usuario.must_change_password
             };
             guardarUsuarioOffline(u, pw);
-            const loginJwtPayload = await loginApiJwt(em, pw);
+            if (!loginJwtPayload) {
+                const jwt2 = await loginApiJwt(em, pw);
+                if (jwt2?._loginFailed) loginApiFallo = jwt2;
+                else loginJwtPayload = jwt2;
+            }
             if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id) {
                 window._pendingAndroidPasswordChange = {
                     u: {
@@ -3850,7 +3587,24 @@ const gnLoginSubmitHandler = async e => {
             } catch (_) {}
             if (typeof window._gnCheckDefaultCreds === 'function') window._gnCheckDefaultCreds(loginJwtPayload, pw);
         } else {
-            if (le) le.textContent = 'Usuario o contraseña incorrectos.';
+            if (loginApiFallo?.code === 'login_tenant_ambiguous') {
+                if (le) {
+                    le.textContent =
+                        'Hay más de una cuenta con ese usuario en distintos tenants. Usá el asistente de configuración o contactá al administrador.';
+                }
+            } else if (!getApiBaseUrl()) {
+                if (le) {
+                    le.textContent =
+                        'Falta api.baseUrl en config.json. Las contraseñas seguras solo validan por la API.';
+                }
+            } else if (loginApiFallo?.network) {
+                if (le) {
+                    le.textContent =
+                        'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
+                }
+            } else if (le) {
+                le.textContent = 'Usuario o contraseña incorrectos.';
+            }
         }
     } catch (error) {
         console.error('Error inesperado en login:', error);
@@ -4199,136 +3953,6 @@ let _gnGeocodeUiLogDepth = 0;
 let _gnGeocodeLogLines = [];
 let _gnGeocodeLogPersistTimer = null;
 let _gnGeocodeLogDockBound = false;
-/** Polling lista operaciones geocod WA (panel admin abierto). */
-let _gnWaGeoOpsPollTimer = null;
-/** Usuario pausó explícitamente el auto-refresh. */
-let _gnWaGeoOpsUserPaused = false;
-
-function _gnWaGeoOpsListHasOpenDetails(listEl) {
-    if (!listEl) return false;
-    try {
-        return !!listEl.querySelector('details.gn-wa-geo-op[open]');
-    } catch (_) {
-        return false;
-    }
-}
-
-function _gnWaGeoOpsShouldSkipAutoRefresh(listEl) {
-    return _gnWaGeoOpsUserPaused || _gnWaGeoOpsListHasOpenDetails(listEl);
-}
-
-function _gnWaGeoOpsSyncPauseButtonUi() {
-    const btn = document.getElementById('gn-wa-geo-ops-pause');
-    if (!btn) return;
-    const paused = _gnWaGeoOpsUserPaused;
-    btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
-    btn.textContent = paused ? 'Reanudar auto' : 'Pausar auto';
-    btn.title = paused ? 'Reanudar actualización automática cada ~2,5 s' : 'Pausar el refresco automático (podés seguir leyendo o copiando)';
-}
-
-function _gnEscWaHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-/**
- * Admin: GET /api/admin/geocod-wa-operaciones (últimas N filas del tenant).
- * @param {boolean} [force] — si true, ignora pausa y `<details open>` (p. ej. "Actualizar ahora").
- */
-function gnWaGeoOpsRefresh(force) {
-    const wrap = document.getElementById('gn-wa-geo-ops-list');
-    if (!wrap) return;
-    if (typeof esAdmin !== 'function' || !esAdmin()) {
-        wrap.innerHTML = '';
-        return;
-    }
-    if (modoOffline) {
-        wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">No disponible en modo offline.</p>';
-        return;
-    }
-    const tok = getApiToken();
-    if (!tok) {
-        wrap.innerHTML = '<p class="gn-wa-geo-ops-msg">Iniciá sesión para ver operaciones del servidor.</p>';
-        return;
-    }
-    if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) {
-        return;
-    }
-    (async () => {
-        try {
-            const r = await fetch(apiUrl('/api/admin/geocod-wa-operaciones?limit=15'), {
-                headers: { Authorization: `Bearer ${tok}` },
-            });
-            if (!r.ok) {
-                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
-                wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(`No se pudo cargar (${r.status}).`)}</p>`;
-                return;
-            }
-            const j = await r.json();
-            const items = j.items || [];
-            if (!items.length) {
-                if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
-                wrap.innerHTML =
-                    '<p class="gn-wa-geo-ops-msg">Sin operaciones recientes (o migración <code>geocod_wa_operaciones</code> pendiente en la API).</p>';
-                return;
-            }
-            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
-            wrap.innerHTML = items
-                .map((row) => {
-                    const st = String(row.estado || '');
-                    const cid = String(row.correlation_id || '');
-                    const pasos = Array.isArray(row.pasos) ? row.pasos : [];
-                    const last = pasos.length ? pasos[pasos.length - 1] : null;
-                    const lastSlug = last && last.slug ? last.slug : '—';
-                    const phone = row.telefono_masked || '—';
-                    const t0 = row.started_at ? new Date(row.started_at).toLocaleString('es-AR') : '';
-                    let badge = 'En curso';
-                    let badgeClass = 'gn-wa-badge-run';
-                    if (st === 'ok') {
-                        badge = 'OK';
-                        badgeClass = 'gn-wa-badge-ok';
-                    } else if (st === 'error') {
-                        badge = 'Error';
-                        badgeClass = 'gn-wa-badge-err';
-                    }
-                    const fuente = row.fuente_final ? _gnEscWaHtml(String(row.fuente_final)) : '';
-                    const errBlock = row.mensaje_error
-                        ? `<p class="gn-wa-geo-op-err">${_gnEscWaHtml(String(row.mensaje_error).slice(0, 2000))}</p>`
-                        : '';
-                    const preLines = pasos
-                        .slice(-40)
-                        .map((p) => _gnEscWaHtml(JSON.stringify(p)))
-                        .join('\n');
-                    const ms = last && last.ms != null ? ` · ${last.ms} ms` : '';
-                    const pedidoLine =
-                        row.numero_pedido || row.pedido_id
-                            ? `<p class="gn-wa-geo-op-last">Pedido: ${_gnEscWaHtml(String(row.numero_pedido || row.pedido_id || ''))}</p>`
-                            : '';
-                    return `<details class="gn-wa-geo-op"><summary><span class="${badgeClass}">${_gnEscWaHtml(badge)}</span> · ${_gnEscWaHtml(phone)} · <code>${_gnEscWaHtml(cid)}</code> · ${_gnEscWaHtml(t0)}${fuente ? ` · ${fuente}` : ''}</summary><div class="gn-wa-geo-op-body"><p class="gn-wa-geo-op-last">Último paso: <code>${_gnEscWaHtml(String(lastSlug))}</code>${_gnEscWaHtml(ms)}</p>${pedidoLine}<pre class="gn-wa-geo-op-pre">${preLines}</pre>${errBlock}</div></details>`;
-                })
-                .join('');
-        } catch (e) {
-            if (!force && _gnWaGeoOpsShouldSkipAutoRefresh(wrap)) return;
-            wrap.innerHTML = `<p class="gn-wa-geo-ops-msg">${_gnEscWaHtml(String(e && e.message ? e.message : e))}</p>`;
-        }
-    })();
-}
-
-function gnWaGeoOpsStartPoll() {
-    gnWaGeoOpsStopPoll();
-    gnWaGeoOpsRefresh(true);
-    _gnWaGeoOpsPollTimer = setInterval(() => gnWaGeoOpsRefresh(false), 2500);
-}
-
-function gnWaGeoOpsStopPoll() {
-    if (_gnWaGeoOpsPollTimer) {
-        clearInterval(_gnWaGeoOpsPollTimer);
-        _gnWaGeoOpsPollTimer = null;
-    }
-}
 
 function _gnGeocodeLogTs() {
     try {
@@ -4484,13 +4108,7 @@ function gnGeocodeAdminLogBindDockOnce() {
         if (typeof toast === 'function') toast('Registro de geocodificación vaciado.', 'info');
     });
     document.getElementById('gn-geocode-log-copy')?.addEventListener('click', gnGeocodeUiLogCopyAll);
-    document.getElementById('gn-wa-geo-ops-refresh')?.addEventListener('click', () => gnWaGeoOpsRefresh(true));
-    document.getElementById('gn-wa-geo-ops-pause')?.addEventListener('click', () => {
-        _gnWaGeoOpsUserPaused = !_gnWaGeoOpsUserPaused;
-        _gnWaGeoOpsSyncPauseButtonUi();
-        if (!_gnWaGeoOpsUserPaused) gnWaGeoOpsRefresh(false);
-    });
-    _gnWaGeoOpsSyncPauseButtonUi();
+    gnWaGeoOpsBindControlsOnce();
     try {
         const raw = sessionStorage.getItem(GN_GEOCODE_LOG_STORAGE_KEY);
         const arr = raw ? JSON.parse(raw) : null;
@@ -6409,7 +6027,14 @@ function aplicarUIMapaPlataforma() {
     try { initMouiCardDraggable('mapa-card-capas-osm'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-coords-converter'); } catch (_) {}
     try { initMouiCardDraggable('mapa-card-dashboard'); } catch (_) {}
-    try { initDashboardGerenciaModalDrag(); } catch (_) {}
+    if (esAdmin()) {
+        void (async () => {
+            try {
+                const { initDashboardGerenciaModalDrag } = await import('./modules/dashboard-gerencia.js');
+                initDashboardGerenciaModalDrag();
+            } catch (_) {}
+        })();
+    }
     try { bindMouiCardHeaderToggles(); } catch (_) {}
     try { syncMapaCapasOsmCheckboxesFromStorage(); } catch (_) {}
     try { initAdminOsmCapasPanelBindings(); } catch (_) {}
@@ -6835,488 +6460,6 @@ async function pollCierresGerencia() {
     } catch (_) {}
 }
 
-let _waHcPollInterval = null;
-let _waHcKnownSessionIds = new Set();
-let _waHcPollPrimed = false;
-/** @type {Map<string, { root: HTMLElement, visible: boolean, dockChip: HTMLElement|null, metaEl: HTMLElement, msgBox: HTMLElement, ta: HTMLTextAreaElement, titleEl: HTMLElement }>} */
-let _waHcWindows = new Map();
-let _waHcMessagePollInterval = null;
-/** Por encima de pestañas fijas del mapa (≈9600); coincide con .wa-hc-float en styles.css */
-let _waHcFloatZ = 10060;
-
-function detenerRefrescoMensajesWaHcVentanas() {
-    if (_waHcMessagePollInterval) {
-        clearInterval(_waHcMessagePollInterval);
-        _waHcMessagePollInterval = null;
-    }
-}
-
-function asegurarRefrescoMensajesWaHcVentanas() {
-    if (_waHcMessagePollInterval || _waHcWindows.size === 0) return;
-    _waHcMessagePollInterval = setInterval(() => {
-        for (const [sid, st] of _waHcWindows) {
-            if (st.visible) refrescarMensajesWaHcVentana(Number(sid));
-        }
-    }, 3500);
-}
-
-function destruirTodasVentanasWaHc() {
-    for (const st of _waHcWindows.values()) {
-        try { st.root.remove(); } catch (_) {}
-        try { if (st.dockChip && st.dockChip.parentElement) st.dockChip.remove(); } catch (_) {}
-    }
-    _waHcWindows.clear();
-    const dock = document.getElementById('wa-human-chat-dock');
-    if (dock) dock.innerHTML = '';
-    detenerRefrescoMensajesWaHcVentanas();
-}
-
-function detenerPollWhatsappHumanChat() {
-    if (_waHcPollInterval) {
-        clearInterval(_waHcPollInterval);
-        _waHcPollInterval = null;
-    }
-}
-
-function iniciarPollWhatsappHumanChat() {
-    detenerPollWhatsappHumanChat();
-    if (!esAdmin()) return;
-    _waHcPollPrimed = false;
-    _waHcKnownSessionIds.clear();
-    const tick = () => { pollWhatsappHumanChatCola(); };
-    tick();
-    _waHcPollInterval = setInterval(tick, 5000);
-}
-
-async function pollWhatsappHumanChatCola() {
-    if (!app.u || !esAdmin() || modoOffline || !puedeEnviarApiRestPedidos()) return;
-    try {
-        await asegurarJwtApiRest();
-        const tok = getApiToken();
-        if (!tok) return;
-        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
-            headers: { Authorization: `Bearer ${tok}` }
-        });
-        if (!r.ok) return;
-        const data = await r.json();
-        const list = data.sessions || [];
-        const idsNow = new Set(list.map(s => String(s.id)));
-        for (const k of [..._waHcKnownSessionIds]) {
-            if (!idsNow.has(k)) _waHcKnownSessionIds.delete(k);
-        }
-        if (!_waHcPollPrimed) {
-            _waHcPollPrimed = true;
-            for (const s of list) {
-                const id = String(s.id);
-                _waHcKnownSessionIds.add(id);
-                mostrarToastWaHumanChatNuevo(s);
-            }
-            return;
-        }
-        for (const s of list) {
-            const id = String(s.id);
-            if (_waHcKnownSessionIds.has(id)) continue;
-            _waHcKnownSessionIds.add(id);
-            mostrarToastWaHumanChatNuevo(s);
-        }
-    } catch (_) {}
-}
-
-function mostrarToastWaHumanChatNuevo(s) {
-    const host = document.getElementById('wa-human-chat-toast-host');
-    if (!host) return;
-    const el = document.createElement('div');
-    el.className = 'wa-human-chat-toast';
-    const name = String(s.contact_name || '').trim() || 'Cliente';
-    const ph = String(s.phone_canonical || '');
-    el.innerHTML = `<strong><i class="fas fa-comments"></i> Cliente pide chat</strong><br>${_escOpt(name)} · ${_escOpt(ph)}<br><span style="font-size:.76rem;opacity:.9">Tocá para abrir</span>`;
-    el.onclick = () => {
-        try { el.remove(); } catch (_) {}
-        abrirModalWhatsappHumanChat(Number(s.id));
-    };
-    host.appendChild(el);
-    setTimeout(() => { try { if (el.parentElement) el.remove(); } catch (_) {} }, 45000);
-}
-
-function traerAlFrenteVentanaWaHc(floatEl) {
-    try {
-        if (typeof window.gnBumpOverlayElement === 'function') {
-            window.gnBumpOverlayElement(floatEl);
-            return;
-        }
-    } catch (_) {}
-    _waHcFloatZ++;
-    floatEl.style.zIndex = String(_waHcFloatZ);
-}
-
-function attachWaHcDrag(headerEl, floatEl) {
-    headerEl.addEventListener('mousedown', (e) => {
-        if (e.target.closest('button')) return;
-        e.preventDefault();
-        const r = floatEl.getBoundingClientRect();
-        const ox = r.left;
-        const oy = r.top;
-        const sx = e.clientX;
-        const sy = e.clientY;
-        traerAlFrenteVentanaWaHc(floatEl);
-        const onMove = (ev) => {
-            floatEl.style.left = (ox + ev.clientX - sx) + 'px';
-            floatEl.style.top = (oy + ev.clientY - sy) + 'px';
-            floatEl.style.right = 'auto';
-            floatEl.style.bottom = 'auto';
-        };
-        const onEnd = () => {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onEnd);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onEnd);
-    });
-    headerEl.addEventListener('touchstart', (e) => {
-        if (e.target.closest('button')) return;
-        const t0 = e.touches[0];
-        if (!t0) return;
-        const r = floatEl.getBoundingClientRect();
-        const ox = r.left;
-        const oy = r.top;
-        const sx = t0.clientX;
-        const sy = t0.clientY;
-        traerAlFrenteVentanaWaHc(floatEl);
-        const onMove = (ev) => {
-            const t = ev.touches[0];
-            if (!t) return;
-            floatEl.style.left = (ox + t.clientX - sx) + 'px';
-            floatEl.style.top = (oy + t.clientY - sy) + 'px';
-            floatEl.style.right = 'auto';
-            floatEl.style.bottom = 'auto';
-        };
-        const onEnd = () => {
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onEnd);
-            document.removeEventListener('touchcancel', onEnd);
-        };
-        document.addEventListener('touchmove', onMove, { passive: true });
-        document.addEventListener('touchend', onEnd);
-        document.addEventListener('touchcancel', onEnd);
-    }, { passive: true });
-}
-
-function actualizarTituloYChipDockWaHc(sidStr, titulo) {
-    const st = _waHcWindows.get(sidStr);
-    if (!st) return;
-    const t = String(titulo || '').trim() || ('Chat #' + sidStr);
-    st.titleEl.textContent = t;
-    if (st.dockChip && st.dockChip.isConnected) {
-        const short = t.length > 40 ? t.slice(0, 38) + '…' : t;
-        st.dockChip.textContent = short;
-    }
-}
-
-function ensureDockChipWaHc(sidStr, st) {
-    if (st.dockChip && st.dockChip.isConnected) return;
-    const dock = document.getElementById('wa-human-chat-dock');
-    if (!dock) return;
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'wa-hc-dock-chip';
-    chip.setAttribute('aria-label', 'Volver al chat de WhatsApp');
-    const t = String(st.titleEl.textContent || 'Chat').trim() || ('Chat #' + sidStr);
-    chip.textContent = t.length > 40 ? t.slice(0, 38) + '…' : t;
-    chip.onclick = () => restaurarVentanaWaHc(sidStr);
-    dock.appendChild(chip);
-    st.dockChip = chip;
-}
-
-function minimizarVentanaWaHc(sidStr) {
-    const st = _waHcWindows.get(sidStr);
-    if (!st) return;
-    st.root.style.display = 'none';
-    st.visible = false;
-    ensureDockChipWaHc(sidStr, st);
-}
-
-function restaurarVentanaWaHc(sidStr) {
-    const st = _waHcWindows.get(sidStr);
-    if (!st) return;
-    st.root.style.display = 'flex';
-    st.visible = true;
-    if (st.dockChip) {
-        try { st.dockChip.remove(); } catch (_) {}
-        st.dockChip = null;
-    }
-    traerAlFrenteVentanaWaHc(st.root);
-    refrescarMensajesWaHcVentana(Number(sidStr));
-    asegurarRefrescoMensajesWaHcVentanas();
-}
-
-function crearVentanaFlotanteWaHc(sidNum) {
-    const sidStr = String(sidNum);
-    const idx = _waHcWindows.size;
-    const root = document.createElement('div');
-    root.className = 'wa-hc-float';
-    root.style.left = 'auto';
-    root.style.right = (10 + (idx % 3) * 14) + 'px';
-    root.style.top = (70 + (idx % 5) * 34) + 'px';
-    root.dataset.waHcSession = sidStr;
-
-    const header = document.createElement('div');
-    header.className = 'wa-hc-float-h';
-    const titleEl = document.createElement('span');
-    titleEl.style.flex = '1';
-    titleEl.style.minWidth = '0';
-    titleEl.style.overflow = 'hidden';
-    titleEl.style.textOverflow = 'ellipsis';
-    titleEl.style.whiteSpace = 'nowrap';
-    titleEl.textContent = 'Chat #' + sidStr;
-
-    const actions = document.createElement('div');
-    actions.className = 'wa-hc-float-actions';
-
-    const btnMin = document.createElement('button');
-    btnMin.type = 'button';
-    btnMin.title = 'Minimizar: el chat sigue a la izquierda';
-    btnMin.setAttribute('aria-label', 'Minimizar chat');
-    btnMin.textContent = '–';
-    btnMin.onclick = (e) => { e.stopPropagation(); minimizarVentanaWaHc(sidStr); };
-
-    const btnClose = document.createElement('button');
-    btnClose.type = 'button';
-    btnClose.title = 'Cerrar ventana: el chat no se pierde; tocá el aviso a la izquierda';
-    btnClose.setAttribute('aria-label', 'Cerrar ventana del chat');
-    btnClose.innerHTML = '<i class="fas fa-times"></i>';
-    btnClose.onclick = (e) => { e.stopPropagation(); minimizarVentanaWaHc(sidStr); };
-
-    actions.appendChild(btnMin);
-    actions.appendChild(btnClose);
-    header.appendChild(titleEl);
-    header.appendChild(actions);
-
-    const body = document.createElement('div');
-    body.className = 'wa-hc-float-body';
-    const metaEl = document.createElement('div');
-    metaEl.className = 'wa-hc-float-meta';
-    metaEl.textContent = 'Cargando…';
-    const msgBox = document.createElement('div');
-    msgBox.className = 'wa-hc-thread';
-    const ta = document.createElement('textarea');
-    ta.className = 'wa-hc-float-ta';
-    ta.rows = 3;
-    ta.placeholder = 'Respuesta… Enter envía · Shift+Enter nueva línea';
-    ta.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' || e.shiftKey) return;
-        if (e.ctrlKey || e.altKey || e.metaKey) return;
-        e.preventDefault();
-        enviarMensajeWaHcDesdeVentana(sidNum);
-    });
-
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:.45rem;flex-wrap:wrap;align-items:center';
-    const btnSend = document.createElement('button');
-    btnSend.type = 'button';
-    btnSend.className = 'bp btn-sm';
-    btnSend.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
-    btnSend.onclick = () => enviarMensajeWaHcDesdeVentana(sidNum);
-
-    const btnDeact = document.createElement('button');
-    btnDeact.type = 'button';
-    btnDeact.className = 'btn-sm warning';
-    btnDeact.textContent = 'Desactivar chat';
-    btnDeact.title = 'Cierra la sesión humana: el bot vuelve a atender solo';
-    btnDeact.onclick = () => desactivarChatWaHc(sidNum);
-
-    row.appendChild(btnSend);
-    row.appendChild(btnDeact);
-    body.appendChild(metaEl);
-    body.appendChild(msgBox);
-    body.appendChild(ta);
-    body.appendChild(row);
-
-    root.appendChild(header);
-    root.appendChild(body);
-    document.body.appendChild(root);
-
-    attachWaHcDrag(header, root);
-    traerAlFrenteVentanaWaHc(root);
-
-    const st = { root, visible: true, dockChip: null, metaEl, msgBox, ta, titleEl };
-    _waHcWindows.set(sidStr, st);
-    return st;
-}
-
-/** Etiqueta legible para teléfonos guardados como dígitos (WhatsApp / Meta). */
-function fmtTelWaMeta(digits) {
-    const d = String(digits || '').replace(/\D/g, '');
-    if (!d) return '—';
-    if (d.startsWith('54')) return '+' + d;
-    return '+' + d;
-}
-
-async function refrescarMensajesWaHcVentana(sidNum) {
-    const sidStr = String(sidNum);
-    const st = _waHcWindows.get(sidStr);
-    if (!st || !st.visible) return;
-    const tok = getApiToken();
-    if (!tok) return;
-    try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/messages`), {
-            headers: { Authorization: `Bearer ${tok}` }
-        });
-        if (!r.ok) {
-            if (r.status === 404) toast('Conversación no encontrada', 'error');
-            return;
-        }
-        const data = await r.json();
-        if (data.session) {
-            const cn = String(data.session.contact_name || '').trim();
-            const line = (cn ? cn + ' · ' : '') +
-                'Tel: ' + fmtTelWaMeta(data.session.phone_canonical) +
-                ' · Estado: ' + (data.session.estado || '');
-            st.metaEl.textContent = line;
-            actualizarTituloYChipDockWaHc(sidStr, cn || ('Chat · ' + fmtTelWaMeta(data.session.phone_canonical)));
-        }
-        if (Array.isArray(data.messages)) {
-            st.msgBox.innerHTML = data.messages.map(m =>
-                `<div class="${m.direction === 'in' ? 'wa-hc-bubble-in' : 'wa-hc-bubble-out'}">${_escOpt(m.body)}</div>`
-            ).join('');
-            st.msgBox.scrollTop = st.msgBox.scrollHeight;
-        }
-    } catch (_) {}
-}
-
-async function enviarMensajeWaHcDesdeVentana(sidNum) {
-    const sidStr = String(sidNum);
-    const st = _waHcWindows.get(sidStr);
-    if (!st) return;
-    const text = String(st.ta?.value || '').trim();
-    if (!text) return;
-    await asegurarJwtApiRest();
-    const tok = getApiToken();
-    if (!tok) return;
-    try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/send`), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
-        });
-        if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            throw new Error(err.error || 'HTTP ' + r.status);
-        }
-        st.ta.value = '';
-        await refrescarMensajesWaHcVentana(sidNum);
-        toast('Mensaje enviado', 'success');
-    } catch (e) {
-        toastError('wa-hc-enviar', e, 'No se pudo enviar el mensaje.');
-    }
-}
-
-async function desactivarChatWaHc(sidNum) {
-    const sidStr = String(sidNum);
-    if (!confirm('¿Desactivar este chat? El bot volverá a atender al cliente solo.')) return;
-    await asegurarJwtApiRest();
-    const tok = getApiToken();
-    if (!tok) return;
-    try {
-        const r = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${sidNum}/close`), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
-        });
-        if (!r.ok) throw new Error('close');
-        _waHcKnownSessionIds.delete(sidStr);
-        const st = _waHcWindows.get(sidStr);
-        if (st) {
-            try { st.dockChip?.remove(); } catch (_) {}
-            try { st.root.remove(); } catch (_) {}
-            _waHcWindows.delete(sidStr);
-        }
-        if (_waHcWindows.size === 0) detenerRefrescoMensajesWaHcVentanas();
-        toast('Chat desactivado', 'success');
-    } catch (e) {
-        toast('No se pudo desactivar el chat', 'error');
-    }
-}
-
-function cerrarModalWaHumanChat() {
-    for (const sidStr of [..._waHcWindows.keys()]) {
-        minimizarVentanaWaHc(sidStr);
-    }
-}
-
-async function abrirModalWhatsappHumanChat(prefSessionId) {
-    if (!puedeEnviarApiRestPedidos()) {
-        toast('Sin conexión a la API para el chat', 'warning');
-        return;
-    }
-    await asegurarJwtApiRest();
-    const tok = getApiToken();
-    if (!tok) return;
-    const prefNum = prefSessionId != null ? Number(prefSessionId) : NaN;
-    if (Number.isFinite(prefNum)) {
-        const k = String(prefNum);
-        if (_waHcWindows.has(k)) {
-            try {
-                await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${prefNum}/activate`), {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
-                });
-            } catch (_) {}
-            restaurarVentanaWaHc(k);
-            await refrescarMensajesWaHcVentana(prefNum);
-            asegurarRefrescoMensajesWaHcVentanas();
-            return;
-        }
-    }
-    try {
-        const r = await fetch(apiUrl('/api/whatsapp/human-chat/sessions'), {
-            headers: { Authorization: `Bearer ${tok}` }
-        });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        let data = await r.json();
-        let list = data.sessions || [];
-        let useId = null;
-        if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
-            useId = Number(prefSessionId);
-        } else if (list[0]) {
-            useId = Number(list[0].id);
-        } else if (prefSessionId) {
-            useId = Number(prefSessionId);
-        }
-        if (!useId || !Number.isFinite(useId)) {
-            toast('No hay conversaciones en cola para abrir', 'info');
-            return;
-        }
-        const ar = await fetch(apiUrl(`/api/whatsapp/human-chat/sessions/${useId}/activate`), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }
-        });
-        if (!ar.ok) {
-            const err = await ar.json().catch(() => ({}));
-            toast(err.error || ('No se pudo activar la sesión (' + ar.status + ')'), 'warning');
-        }
-        if (!_waHcWindows.has(String(useId))) crearVentanaFlotanteWaHc(useId);
-        else restaurarVentanaWaHc(String(useId));
-        await refrescarMensajesWaHcVentana(useId);
-        asegurarRefrescoMensajesWaHcVentanas();
-    } catch (e) {
-        toastError('wa-hc-abrir', e, 'No se pudo abrir el chat.');
-    }
-}
-
-function onWaHcPickerChange() {}
-
-async function enviarMensajeWaHumanChatAdmin() {
-    toast('Abrí el chat desde el aviso o el panel flotante.', 'info');
-}
-
-async function finalizarChatWaHumanChatAdmin() {
-    toast('Usá «Desactivar chat» en la ventana de esa conversación.', 'info');
-}
-
-window.cerrarModalWaHumanChat = cerrarModalWaHumanChat;
-window.abrirModalWhatsappHumanChat = abrirModalWhatsappHumanChat;
-window.onWaHcPickerChange = onWaHcPickerChange;
-window.enviarMensajeWaHumanChatAdmin = enviarMensajeWaHumanChatAdmin;
-window.finalizarChatWaHumanChatAdmin = finalizarChatWaHumanChatAdmin;
 
 function mostrarToastCierreGerencia(row) {
     const host = document.getElementById('cierre-toast-host');
@@ -12345,9 +11488,6 @@ async function detalle(p, opts = {}) {
     try {
         syncPedidoVolverPendienteButton(p);
     } catch (_) {}
-    try {
-        if (typeof window.__gnIncidenciasInfraDetalleHook === 'function') window.__gnIncidenciasInfraDetalleHook(p);
-    } catch (_) {}
 
     const dmEl = document.getElementById('dm');
     dmEl.classList.add('active');
@@ -12802,6 +11942,9 @@ function ejecutarCerrarSesion() {
     limpiarEstadoMapaSesion();
     localStorage.removeItem('pmg');
     localStorage.removeItem('pmg_api_token');
+    try {
+        clearAuthLoginTenantHint();
+    } catch (_) {}
     try {
         localStorage.removeItem(PMG_LAST_ACTIVITY_TS_KEY);
     } catch (_) {}
@@ -13802,9 +12945,6 @@ async function cargarConfigEmpresa() {
         } catch (_) {}
         try {
             persistTenantBrandingCache({ subtitulo: (window.EMPRESA_CFG || {}).subtitulo });
-        } catch (_) {}
-        try {
-            if (typeof window._gnInitIncidenciasInfraElectrica === 'function') window._gnInitIncidenciasInfraElectrica();
         } catch (_) {}
     } catch(e) {
         console.warn('Config empresa no cargada:', e.message);
@@ -16014,6 +15154,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
     }
     try {
         toast('Generando informe con IA…', 'info');
+        const { loadKpiInformePdfDeps } = await import('./modules/app-kpi-informe-pdf-loaders.js');
         const K = await loadKpiInformePdfDeps();
         const iaMapPromise = K.obtenerExplicacionesKpiIA(rows).catch(() => new Map());
         const { jsPDF } = window.jspdf;
@@ -16182,6 +15323,7 @@ function adminTab(tab) {
     const sec = document.getElementById('admin-' + tab);
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') {
+        void import('./modules/estadisticas-chart-plugins.js').then((m) => m.initGNChartPercentPlugins()).catch(() => {});
         cargarEstadisticas();
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
         try { if (typeof window._gnInitBotonInformeUnificado === 'function') window._gnInitBotonInformeUnificado(); } catch (_) {}
@@ -16275,10 +15417,13 @@ function _depsAdminPanelDeferred() {
         sqlReady: () => typeof _sql !== 'undefined' && !!_sql,
         modoOffline: () => !!modoOffline,
         sqlSimple,
+        sqlSimpleSelectAllPages,
         pedidosFiltroTenantSql,
         resolveCondicionFechaPedidosStats,
         esc,
         tenantIdActual,
+        normalizarRubroEmpresa,
+        esMunicipioRubro,
         normalizarWhatsappInternacionalDesdeInput,
         setDerivacionesInlineError,
         actualizarBotonesWhatsappDerivacionesUi,
@@ -16288,6 +15433,12 @@ function _depsAdminPanelDeferred() {
         apiUrl,
         esCooperativaElectricaRubro,
         debeOcultarTabDistribuidoresAdmin,
+        sociosCatalogoTieneTenantId,
+        sociosCatalogoTieneDatosExtra,
+        mostrarOverlayImportacion,
+        actualizarOverlayImportacion,
+        ocultarOverlayImportacion,
+        nominatimFetchSearch: _nominatimFetchSearch,
     };
 }
 
@@ -16739,6 +15890,7 @@ function abrirFormUsuario() {
 }
 
 async function crearUsuario() {
+    const { ejecutarCrearUsuarioAdminPanel } = await import('./modules/admin-crear-usuario-panel.js');
     return ejecutarCrearUsuarioAdminPanel({
         toast,
         toastError,
@@ -17363,518 +16515,6 @@ async function exportInformeMensualExcel() {
     } catch (e) { toastError('export-excel-pedidos', e); }
 }
 
-function tituloChartEstadisticas(el) {
-    const h4 = el?.querySelector?.('h4');
-    const t = (h4?.textContent || '').replace(/\s+/g, ' ').trim();
-    return t || 'Gráfico';
-}
-
-/** Altura visible real (evita scrollHeight inflado por flex/grid del panel admin). */
-function alturaContenidoCaptura(el) {
-    if (!el) return 40;
-    const r0 = el.getBoundingClientRect();
-    let maxB = r0.top;
-    const walk = (n) => {
-        if (!n || n.nodeType !== 1) return;
-        const st = window.getComputedStyle(n);
-        if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) return;
-        const br = n.getBoundingClientRect();
-        if (br.width >= 1 && br.height >= 1) maxB = Math.max(maxB, br.bottom);
-        for (let i = 0; i < n.children.length; i++) walk(n.children[i]);
-    };
-    walk(el);
-    const h = Math.ceil(maxB - r0.top + 12);
-    const mx = Math.min(Math.max(el.scrollHeight, el.offsetHeight, 40), 3200);
-    return Math.max(40, Math.min(h, mx));
-}
-
-function pdfMmAjustarImagen(cw, ch, maxWmm, maxHmm) {
-    const ar = cw / ch;
-    let iw = maxWmm;
-    let ih = iw / ar;
-    if (ih > maxHmm) {
-        ih = maxHmm;
-        iw = ih * ar;
-    }
-    return { iw, ih };
-}
-
-let _chartDataSnapshotForPdf = null;
-
-function adminEstadisticasSetCaptureCompact(on) {
-    const root = document.getElementById('admin-estadisticas');
-    if (root) root.classList.toggle('gn-stats-capture-compact', !!on);
-    if (typeof window !== 'undefined') window.__gnStatsInkSave = !!on;
-}
-
-function aplicarEstadisticasInkSaveCharts(activar) {
-    /** PDF / impresión: conservar los mismos colores pasteles que en pantalla (sin escala de grises). */
-    if (activar) {
-        if (_chartDataSnapshotForPdf) return;
-        _chartDataSnapshotForPdf = { _noop: true };
-        Object.values(_charts).forEach((chart) => {
-            try {
-                chart.update('none');
-            } catch (_) {}
-        });
-    } else {
-        _chartDataSnapshotForPdf = null;
-        Object.values(_charts).forEach((chart) => {
-            try {
-                chart.update('none');
-            } catch (_) {}
-        });
-    }
-}
-
-async function prepararVistaCapturaEstadisticasPdf(activar) {
-    adminEstadisticasSetCaptureCompact(!!activar);
-    aplicarEstadisticasInkSaveCharts(!!activar);
-    Object.values(_charts).forEach(ch => {
-        try {
-            ch.resize();
-        } catch (_) {}
-    });
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise(r => setTimeout(r, activar ? 220 : 90));
-}
-
-function coleccionSeccionesPdfEstadisticas() {
-    const root = document.getElementById('admin-estadisticas');
-    if (!root) return [];
-    const out = [{ type: 'resumen' }];
-    root.querySelectorAll('.chart-wrap').forEach(w => {
-        try {
-            if (window.getComputedStyle(w).display === 'none') return;
-            out.push({ type: 'chart', el: w, title: tituloChartEstadisticas(w) });
-        } catch (_) {}
-    });
-    return out;
-}
-
-async function capturaPdfBloqueResumenEstadisticas() {
-    const marco = document.getElementById('enre-marco');
-    const cards = document.getElementById('stats-cards');
-    const wrap = document.createElement('div');
-    wrap.setAttribute('style', 'position:fixed;left:-12000px;top:0;width:720px;padding:12px 14px;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;font-family:system-ui,Segoe UI,sans-serif');
-    const headDiv = document.createElement('div');
-    headDiv.innerHTML = construirHtmlEncabezadoInformeEmpresa(lineaPeriodoInformeEstadisticas());
-    wrap.appendChild(headDiv);
-    if (marco) {
-        const m = marco.cloneNode(true);
-        m.querySelectorAll('a').forEach(a => {
-            a.setAttribute('href', '#');
-            a.style.textDecoration = 'none';
-            a.style.color = '#1e40af';
-        });
-        wrap.appendChild(m);
-    }
-    if (cards) wrap.appendChild(cards.cloneNode(true));
-    const pdfDes = document.getElementById('stats-desestimados-pdf-block');
-    if (pdfDes && pdfDes.innerHTML && pdfDes.innerHTML.trim()) {
-        wrap.appendChild(pdfDes.cloneNode(true));
-    }
-    document.body.appendChild(wrap);
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise(r => setTimeout(r, 70));
-    let canvas = null;
-    try {
-        const sh = Math.max(alturaContenidoCaptura(wrap), wrap.offsetHeight, 48);
-        canvas = await html2canvas(wrap, {
-            scale: 1.12,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#f8fafc',
-            width: 720,
-            height: sh,
-            windowWidth: 720,
-            windowHeight: sh,
-        });
-    } catch (e) {
-        console.warn('[pdf-resumen]', e);
-    }
-    document.body.removeChild(wrap);
-    return canvas;
-}
-
-async function html2canvasCapturaElemento(el, opts = {}) {
-    if (!el || typeof html2canvas !== 'function') return null;
-    const delayAfterResize = typeof opts.delayAfterResize === 'number' ? opts.delayAfterResize : 200;
-    const statsExport = !!opts.statsExport;
-    try {
-        Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        await new Promise(r => setTimeout(r, delayAfterResize));
-        const sw = Math.max(el.offsetWidth, el.clientWidth, 120);
-        const rawSh =
-            opts.useFullScrollHeight || statsExport
-                ? Math.max(el.scrollHeight, el.offsetHeight, 40)
-                : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
-        const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
-        const scale = statsExport
-            ? Math.min(2.65, 2700 / Math.max(sw, 260))
-            : Math.min(1.2, 1850 / Math.max(sw, 380));
-        return await html2canvas(el, {
-            scale,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-            width: sw,
-            height: sh,
-            windowWidth: sw,
-            windowHeight: sh,
-            scrollX: 0,
-            scrollY: 0,
-            onclone: (_doc, node) => {
-                try {
-                    node.classList.add('gn-capture-pdf');
-                    node.style.overflow = 'visible';
-                    node.style.height = 'auto';
-                    node.style.minHeight = '0';
-                    node.style.maxHeight = 'none';
-                    node.style.alignSelf = 'flex-start';
-                    node.querySelectorAll('button').forEach(b => { b.style.visibility = 'hidden'; });
-                } catch (_) {}
-            }
-        });
-    } catch (e) {
-        console.warn('html2canvas elemento', e);
-        return null;
-    }
-}
-
-async function html2canvasCapturaEstadisticasCompleta(el) {
-    return html2canvasCapturaElemento(el, { delayAfterResize: 400 });
-}
-
-function escAttrPrint(s) {
-    return String(s || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/"/g, '&quot;');
-}
-
-async function imprimirInformeConGraficos() {
-    if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
-    if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
-    if (typeof html2canvas !== 'function') { toast('html2canvas no disponible', 'error'); return; }
-    document.getElementById('admin-panel')?.classList.add('active');
-    adminTab('estadisticas');
-    await cargarEstadisticas();
-    await new Promise(r => setTimeout(r, 500));
-    const secciones = coleccionSeccionesPdfEstadisticas();
-    if (!secciones.length) { toast('No hay secciones para imprimir', 'error'); return; }
-    const urls = [];
-    const liberarUrls = () => {
-        urls.forEach(u => {
-            try {
-                URL.revokeObjectURL(u);
-            } catch (_) {}
-        });
-    };
-    await prepararVistaCapturaEstadisticasPdf(true);
-    try {
-        toast('Generando vista para imprimir…', 'info');
-        const canvasToUrl = canvas =>
-            new Promise((res, rej) => {
-                try {
-                    canvas.toBlob(
-                        b => {
-                            if (!b) return rej(new Error('toBlob'));
-                            const u = URL.createObjectURL(b);
-                            urls.push(u);
-                            res(u);
-                        },
-                        'image/png'
-                    );
-                } catch (e) {
-                    rej(e);
-                }
-            });
-        const pageBlocks = [];
-        const chartBuf = [];
-        const flushChartsFullRows = () => {
-            while (chartBuf.length >= 4) {
-                pageBlocks.push({
-                    kind: 'grid4',
-                    items: chartBuf.splice(0, 4).map(it => ({ url: it.url, title: it.title })),
-                });
-            }
-        };
-        for (const sec of secciones) {
-            if (sec.type === 'resumen') {
-                flushChartsFullRows();
-                if (chartBuf.length) {
-                    pageBlocks.push({
-                        kind: 'grid4',
-                        items: chartBuf.splice(0, chartBuf.length).map(it => ({ url: it.url, title: it.title })),
-                    });
-                }
-                const canvas = await capturaPdfBloqueResumenEstadisticas();
-                if (canvas) {
-                    const u = await canvasToUrl(canvas);
-                    pageBlocks.push({ kind: 'resumen', url: u, title: tituloResumenReferenciaEstadisticas() });
-                }
-            } else if (sec.type === 'chart') {
-                const canvas = await html2canvasCapturaElemento(sec.el, {
-                    delayAfterResize: 120,
-                    statsExport: true,
-                    maxHeightPx: 2800,
-                });
-                if (canvas) {
-                    const u = await canvasToUrl(canvas);
-                    chartBuf.push({ url: u, title: sec.title });
-                    flushChartsFullRows();
-                }
-            }
-        }
-        if (chartBuf.length) {
-            pageBlocks.push({
-                kind: 'grid4',
-                items: chartBuf.map(it => ({ url: it.url, title: it.title })),
-            });
-        }
-        if (!pageBlocks.length) {
-            toast('No se pudo capturar el panel', 'error');
-            return;
-        }
-        const w = window.open('', '_blank');
-        if (!w) {
-            liberarUrls();
-            toast('Permití ventanas emergentes para imprimir', 'error');
-            return;
-        }
-        const ent = String(window.EMPRESA_CFG?.nombre || 'GestorNova').trim() || 'GestorNova';
-        const subt = lineaPeriodoInformeEstadisticas();
-        const totalPag = pageBlocks.length;
-        const notaPie =
-            '<p class="gn-print-nota">Documento para gestión interna. Desactivá «Encabezado y pie de página» del navegador al imprimir para evitar URLs en el borde.</p>';
-        const hdrHtml = construirHtmlEncabezadoInformeEmpresa(subt);
-        const bloques = pageBlocks
-            .map((bl, pi) => {
-                const pnum = pi + 1;
-                const pie = `<footer class="gn-print-footer">Página ${pnum} / ${totalPag} · ${escAttrPrint(ent)}</footer>`;
-                const notaUlt = pi === totalPag - 1 ? notaPie : '';
-                if (bl.kind === 'resumen') {
-                    return (
-                        `<section class="gn-print-page gn-print-page--first">` +
-                        `<div class="gn-print-empresa-head">${hdrHtml}</div>` +
-                        `<h1 class="gn-print-h1">${escAttrPrint(bl.title)}</h1>` +
-                        `<p class="gn-print-sub">${escAttrPrint(subt)}</p>` +
-                        `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div>${pie}${notaUlt}</section>`
-                    );
-                }
-                const cells = bl.items
-                    .map(
-                        (it, idx) =>
-                            `<div class="gn-print-cell">` +
-                            `<h2 class="gn-print-h2cell">${escAttrPrint(it.title || 'Gráfico ' + (idx + 1))}</h2>` +
-                            `<div class="gn-print-imgwrap gn-print-imgwrap--cell"><img src="${it.url}" alt=""/></div></div>`
-                    )
-                    .join('');
-                return (
-                    `<section class="gn-print-page gn-print-page--grid">` +
-                    `<p class="gn-print-sub gn-print-sub--tight">${escAttrPrint(subt)}</p>` +
-                    `<div class="gn-print-grid4">${cells}</div>${pie}${notaUlt}</section>`
-                );
-            })
-            .join('');
-        const css =
-            '@page{size:A4;margin:10mm}' +
-            '*{box-sizing:border-box}' +
-            'body{margin:0;background:#fff;font-family:system-ui,Segoe UI,sans-serif;color:#0f172a}' +
-            '.gn-print-page{page-break-after:always;break-after:page;padding:0 0 4mm}' +
-            '.gn-print-page:last-child{page-break-after:auto;break-after:auto}' +
-            '.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}' +
-            '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
-            '.gn-print-sub--tight{margin-bottom:2mm}' +
-            '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
-            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
-            '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
-            '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
-            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
-            '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
-            '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
-            '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
-        w.document.write(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' +
-                escAttrPrint(ent) +
-                ' — Estadísticas</title><style>' +
-                css +
-                '</style></head><body>' + bloques + '</body></html>'
-        );
-        w.document.close();
-        w.focus();
-        setTimeout(() => {
-            try {
-                w.print();
-            } catch (_) {}
-        }, 500);
-        setTimeout(liberarUrls, 120000);
-    } catch (e) {
-        liberarUrls();
-        toastError('imprimir-stats-graficos', e);
-    } finally {
-        await prepararVistaCapturaEstadisticasPdf(false);
-    }
-}
-
-async function generarPdfEstadisticasMultipaginaENRE() {
-    if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
-    if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }
-    if (typeof html2canvas !== 'function' || !window.jspdf?.jsPDF) { toast('Faltan librerías (html2canvas / jsPDF)', 'error'); return; }
-    document.getElementById('admin-panel')?.classList.add('active');
-    adminTab('estadisticas');
-    await cargarEstadisticas();
-    await new Promise(r => setTimeout(r, 500));
-    const secciones = coleccionSeccionesPdfEstadisticas();
-    if (!secciones.length) { toast('No hay contenido para el PDF', 'error'); return; }
-    await prepararVistaCapturaEstadisticasPdf(true);
-    try {
-        toast('Generando PDF…', 'info');
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        const margin = 11;
-        const tsqlPdf = await pedidosFiltroTenantSql();
-        const { periodo, fechaDesde } = await resolveCondicionFechaPedidosStats(tsqlPdf);
-        const lineaPer = lineaPeriodoInformeEstadisticas();
-        let nPag = 0;
-        const addCanvasPage = async (canvas, chartTitle) => {
-            if (!canvas || !canvas.width) return;
-            const maxW = pageW - 2 * margin;
-            if (nPag > 0) pdf.addPage();
-            nPag++;
-            pdf.setFillColor(252, 252, 253);
-            pdf.rect(0, 0, pageW, pageH, 'F');
-            let y0 = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaPer);
-            if (chartTitle) {
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(8.4);
-                pdf.setTextColor(51, 65, 85);
-                pdf.text(String(chartTitle).slice(0, 72), margin, y0 + 2.5);
-                y0 += 5;
-            }
-            const imgData = canvas.toDataURL('image/jpeg', 0.9);
-            const maxH = Math.max(40, pageH - y0 - margin - 2);
-            const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, maxH);
-            const x0 = margin + (maxW - iw) / 2;
-            pdf.addImage(imgData, 'JPEG', x0, y0 + 1, iw, ih, undefined, 'FAST');
-        };
-        const addChartsPageCombined = async (entries) => {
-            const list = (entries || []).filter((e) => e?.canvas?.width);
-            if (!list.length) return;
-            if (nPag > 0) pdf.addPage();
-            nPag++;
-            pdf.setFillColor(252, 252, 253);
-            pdf.rect(0, 0, pageW, pageH, 'F');
-            let y0 = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaPer);
-            y0 += 1.5;
-            const gap = 3;
-            const maxW = pageW - 2 * margin;
-            const maxH = pageH - y0 - margin - 2;
-            const titleH = 4.2;
-            const drawTitle = (title, x, y) => {
-                if (!title) return;
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(7);
-                pdf.setTextColor(71, 85, 105);
-                pdf.text(String(title).slice(0, 56), x, y);
-            };
-            const placeImg = (canvas, x, y, wBox, hBox) => {
-                const imgData = canvas.toDataURL('image/jpeg', 0.87);
-                const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, Math.max(20, wBox - 1), Math.max(24, hBox));
-                const xi = x + (wBox - iw) / 2;
-                const yi = y + (hBox - ih) / 2;
-                pdf.addImage(imgData, 'JPEG', xi, yi, iw, ih, undefined, 'FAST');
-            };
-            const n = list.length;
-            if (n === 1) {
-                const e = list[0];
-                drawTitle(e.title, margin, y0 + 2.8);
-                placeImg(e.canvas, margin, y0 + titleH, maxW, maxH - titleH - 1);
-                return;
-            }
-            if (n === 2) {
-                const cellW = (maxW - gap) / 2;
-                const imgH = maxH - titleH - 2;
-                list.forEach((e, i) => {
-                    const xCell = margin + i * (cellW + gap);
-                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
-                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH);
-                });
-                return;
-            }
-            if (n === 3) {
-                const row1H = maxH * 0.56;
-                const row2H = maxH - row1H - gap;
-                const cellW = (maxW - gap) / 2;
-                const imgH1 = Math.max(28, row1H - titleH - 1.5);
-                for (let i = 0; i < 2; i++) {
-                    const e = list[i];
-                    const xCell = margin + i * (cellW + gap);
-                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
-                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH1);
-                }
-                const e = list[2];
-                const w3 = Math.min(maxW * 0.78, maxW);
-                const x3 = margin + (maxW - w3) / 2;
-                const y2 = y0 + row1H + gap;
-                drawTitle(e.title, x3 + 0.5, y2 + 2.5);
-                placeImg(e.canvas, x3, y2 + titleH, w3, row2H - titleH - 1);
-                return;
-            }
-            const cellW = (maxW - gap) / 2;
-            const cellH = (maxH - gap) / 2;
-            const imgMaxH = Math.max(28, cellH - titleH - 1.5);
-            list.forEach((e, i) => {
-                const row = Math.floor(i / 2);
-                const col = i % 2;
-                const xCell = margin + col * (cellW + gap);
-                const yCell = y0 + row * (cellH + gap);
-                drawTitle(e.title, xCell + 0.5, yCell + 2.8);
-                placeImg(e.canvas, xCell, yCell + titleH, cellW, imgMaxH);
-            });
-        };
-        const chartQueue = [];
-        const flushChartRows = async () => {
-            while (chartQueue.length >= 4) {
-                await addChartsPageCombined(chartQueue.splice(0, 4));
-            }
-        };
-        for (const sec of secciones) {
-            if (sec.type === 'resumen') {
-                await flushChartRows();
-                if (chartQueue.length) await addChartsPageCombined(chartQueue.splice(0, chartQueue.length));
-                await addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
-            } else if (sec.type === 'chart') {
-                const c = await html2canvasCapturaElemento(sec.el, {
-                    delayAfterResize: 120,
-                    statsExport: true,
-                    maxHeightPx: 2800,
-                });
-                if (c) {
-                    chartQueue.push({ canvas: c, title: sec.title });
-                    await flushChartRows();
-                }
-            }
-        }
-        if (chartQueue.length) await addChartsPageCombined(chartQueue);
-        if (nPag === 0) {
-            toast('No se pudo generar ninguna página', 'error');
-            return;
-        }
-        kpiPdfPiePaginas(pdf);
-        const slug = String(window.EMPRESA_CFG?.nombre || 'GestorNova').replace(/[^\w\-]+/g, '_').slice(0, 48);
-        pdf.save(`${slug}_estadisticas_A4_${periodo}_${fechaDesde.toISOString().slice(0, 10)}.pdf`);
-        toast('PDF listo', 'success');
-    } catch (e) {
-        toastError('pdf-estadisticas-enre', e, 'Error al generar el PDF.');
-    } finally {
-        await prepararVistaCapturaEstadisticasPdf(false);
     }
 }
 
@@ -17915,152 +16555,43 @@ async function generarInformeMensualENRE() {
 }
 
 // ── Estadísticas con Chart.js ─────────────────────────────────
-(function initGNChartPercentPlugins() {
-    if (window.__gnChartPctPlugins || typeof Chart === 'undefined') return;
-    window.__gnChartPctPlugins = true;
-    Chart.register({
-        id: 'gestornovaPctDoughnut',
-        afterDatasetsDraw(chart) {
-            if (chart.config.type !== 'doughnut') return;
-            const ds = chart.data.datasets[0];
-            if (!ds?.data?.length) return;
-            const total = ds.data.reduce((s, v) => s + Number(v || 0), 0);
-            if (!total) return;
-            const ctx = chart.ctx;
-            const meta = chart.getDatasetMeta(0);
-            ctx.save();
-            ctx.font = '600 9.5px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            meta.data.forEach((arc, i) => {
-                const v = Number(ds.data[i] || 0);
-                if (!v) return;
-                const pct = Math.round(1000 * v / total) / 10;
-                const { x, y } = arc.tooltipPosition();
-                const ink = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                ctx.lineWidth = ink ? 0 : 4;
-                ctx.strokeStyle = 'rgba(255,255,255,.95)';
-                ctx.fillStyle = '#0f172a';
-                const t = pct + '%';
-                if (!ink) ctx.strokeText(t, x, y);
-                ctx.fillText(t, x, y);
-            });
-            ctx.restore();
-        }
-    });
-    Chart.register({
-        id: 'gestornovaStatsBarLabels',
-        afterDatasetsDraw(chart) {
-            const cid = chart.canvas?.id;
-            const ctx = chart.ctx;
-            const area = chart.chartArea;
-            if (!ctx || !area) return;
-            ctx.save();
-            const drawPctVertical = (data, meta0) => {
-                if (!data?.length || !meta0?.data?.length || meta0.hidden) return;
-                const total = data.reduce((s, v) => s + Number(v || 0), 0);
-                if (!total) return;
-                ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
-                ctx.textAlign = 'center';
-                meta0.data.forEach((bar, i) => {
-                    const v = Number(data[i] || 0);
-                    if (!v) return;
-                    const pct = Math.round(1000 * v / total) / 10;
-                    const p = typeof bar.getProps === 'function' ? bar.getProps(['x', 'y', 'base'], true) : null;
-                    const x = p?.x ?? bar.x;
-                    const yv = p?.y ?? bar.y;
-                    const bs = p?.base ?? bar.base;
-                    if (x == null || yv == null || bs == null) return;
-                    const top = Math.min(yv, bs);
-                    const bot = Math.max(yv, bs);
-                    const h = bot - top;
-                    let ty = top - 5;
-                    ctx.textBaseline = 'bottom';
-                    if (ty < area.top + 14) {
-                        ty = top + h / 2;
-                        ctx.textBaseline = 'middle';
-                    }
-                    if (ctx.textBaseline === 'bottom' && ty > area.bottom - 10) {
-                        ty = top + h / 2;
-                        ctx.textBaseline = 'middle';
-                    }
-                    const t = pct + '%';
-                    const inkP = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                    ctx.lineWidth = inkP ? 0 : 3;
-                    ctx.strokeStyle = 'rgba(255,255,255,.95)';
-                    ctx.fillStyle = '#0f172a';
-                    if (!inkP) ctx.strokeText(t, x, ty);
-                    ctx.fillText(t, x, ty);
-                });
-            };
-            if (cid === 'chart-mensual' && chart.config.type === 'bar' && chart.options.indexAxis !== 'y') {
-                chart.data.datasets.forEach((ds, di) => {
-                    const meta = chart.getDatasetMeta(di);
-                    if (meta.hidden || !meta?.data?.length) return;
-                    meta.data.forEach((bar, i) => {
-                        const v = Number(ds.data[i] || 0);
-                        if (!v) return;
-                        const cp = typeof bar.getCenterPoint === 'function' ? bar.getCenterPoint() : null;
-                        const x = cp?.x ?? bar.x;
-                        const y = cp?.y ?? bar.y;
-                        if (x == null || y == null) return;
-                        const inkM = typeof window !== 'undefined' && window.__gnStatsInkSave;
-                        ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.lineWidth = inkM ? 0 : 3;
-                        ctx.strokeStyle = 'rgba(255,255,255,.92)';
-                        ctx.fillStyle = '#0f172a';
-                        const t = String(v);
-                        if (!inkM) ctx.strokeText(t, x, y);
-                        ctx.fillText(t, x, y);
-                    });
-                });
-                ctx.restore();
-                return;
-            }
-            if (cid === 'chart-tipos' && chart.config.type === 'bar' && chart.options.indexAxis === 'y') {
-                const dsets = chart.data.datasets || [];
-                const metaLast = chart.getDatasetMeta(dsets.length - 1);
-                if (!metaLast?.data?.length) {
-                    ctx.restore();
-                    return;
-                }
-                ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
-                ctx.fillStyle = '#0f172a';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'middle';
-                metaLast.data.forEach((bar, i) => {
-                    let sum = 0;
-                    dsets.forEach((ds) => {
-                        sum += Number(ds.data?.[i] || 0);
-                    });
-                    if (!sum) return;
-                    const p = typeof bar.getProps === 'function' ? bar.getProps(['x', 'y', 'base'], true) : null;
-                    const xv = p?.x ?? bar.x;
-                    const yv = p?.y ?? bar.y;
-                    const bs = p?.base ?? bar.base;
-                    if (xv == null || yv == null || bs == null) return;
-                    const right = Math.max(xv, bs);
-                    const tx = Math.min(right + 6, area.right - 4);
-                    ctx.fillText(String(sum), tx, yv);
-                });
-                ctx.restore();
-                return;
-            }
-            const pctCharts = { 'chart-usuarios': true, 'chart-tecnicos': true };
-            if (pctCharts[cid] && chart.config.type === 'bar' && chart.options.indexAxis !== 'y') {
-                drawPctVertical(chart.data.datasets[0]?.data, chart.getDatasetMeta(0));
-            }
-            ctx.restore();
-        }
-    });
-})();
+/** @type {Promise<typeof import('./modules/estadisticas-datos-red-saifi.js') & typeof import('./modules/estadisticas-saifi-saidi-charts.js')> | null} */
+let _estadisticasRedSaifiMods = null;
+async function ensureEstadisticasRedSaifiModules() {
+    if (!_estadisticasRedSaifiMods) {
+        const [red, charts] = await Promise.all([
+            import('./modules/estadisticas-datos-red-saifi.js'),
+            import('./modules/estadisticas-saifi-saidi-charts.js'),
+        ]);
+        _estadisticasRedSaifiMods = Promise.resolve({ ...red, ...charts });
+    }
+    return _estadisticasRedSaifiMods;
+}
+
 let _charts = {};
+setInformesEstadisticasPdfCaptureDeps({
+    getCharts: () => _charts,
+    lineaPeriodoInformeEstadisticas,
+});
+setInformesEstadisticasPrintDeps({
+    esAdmin,
+    modoOffline: () => modoOffline,
+    neonOk: () => NEON_OK,
+    toast,
+    toastError,
+    adminTab,
+    cargarEstadisticas,
+    lineaPeriodoInformeEstadisticas,
+    tituloResumenReferenciaEstadisticas,
+    pedidosFiltroTenantSql,
+    resolveCondicionFechaPedidosStats,
+    kpiPdfPiePaginas,
+});
 async function cargarEstadisticas() {
     try {
         actualizarMarcoReferenciaEstadisticasAdmin();
     } catch (_) {}
+    void import('./modules/estadisticas-chart-plugins.js').then((m) => m.initGNChartPercentPlugins()).catch(() => {});
     const tsql = await pedidosFiltroTenantSql();
     const tsqlP = tsql
         ? tsql.replace(/\btenant_id\b/g, 'p.tenant_id').replace(/\bbusiness_type\b/g, 'p.business_type')
@@ -18092,6 +16623,7 @@ async function cargarEstadisticas() {
         const socTsqlStats = socTieneTStats ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
         const tiposConfSql =
             "('Corte de Energía','Cables Caídos/Peligro','Problemas de Tensión','Poste Inclinado/Dañado','Consumo elevado','Riesgo en la vía pública','Corrimiento de poste/columna','Falla de Línea','Avería en Transformador','Corte Programado','Emergencia')";
+        const redSaifiMods = showConf ? await ensureEstadisticasRedSaifiModules() : null;
         const [rTotal, rEstados, rPrior, rMensual, rTipos, rMotivos, rDist, rTiempos, rTecnicos, rAvance, rUsuarios,
             rTecCalle, rAsig, rCrit24, rBarT, rSocios, rConfDist, rSociosDist, datosRedPack, rConfMes] = await Promise.all([
             // Resumen general
@@ -18179,12 +16711,14 @@ async function cargarEstadisticas() {
                       'sociosDist'
                   )
                 : Promise.resolve({ rows: [] }),
-            showConf && !modoOffline
-                ? fetchDatosRedParaEstadisticas({
-                      getApiToken,
-                      apiUrl,
-                      asegurarJwtApiRest,
-                  }).catch(() => null)
+            showConf && !modoOffline && redSaifiMods
+                ? redSaifiMods
+                      .fetchDatosRedParaEstadisticas({
+                          getApiToken,
+                          apiUrl,
+                          asegurarJwtApiRest,
+                      })
+                      .catch(() => null)
                 : Promise.resolve(null),
             showConf
                 ? statSql(
@@ -18236,12 +16770,14 @@ async function cargarEstadisticas() {
         const confRows = rConfMes.rows || [];
         const evConfTot = confRows.reduce((s, r) => s + parseInt(r.ev || 0, 10), 0);
         const minConfTot = confRows.reduce((s, r) => s + parseFloat(r.min_tot || 0), 0);
-        const denomMeta = denominadorClientesConfiabilidad({
-            datosPack: datosRedPack,
-            distRawRows: rConfDist.rows || [],
-            nSociosCat,
-            sociosPorCodigo: buildMapaSociosPorCodigoDistribuidor(rSociosDist.rows || []),
-        });
+        const denomMeta = redSaifiMods
+            ? redSaifiMods.denominadorClientesConfiabilidad({
+                  datosPack: datosRedPack,
+                  distRawRows: rConfDist.rows || [],
+                  nSociosCat,
+                  sociosPorCodigo: redSaifiMods.buildMapaSociosPorCodigoDistribuidor(rSociosDist.rows || []),
+              })
+            : { n: nSociosCat, sinDatosRed: true, fuente: 'socios_catalogo', parcial: false };
         const denomEff = denomMeta.n;
         const saifiPeriodo = showConf && denomEff ? evConfTot / denomEff : null;
         const saidiPeriodo = showConf && denomEff ? minConfTot / denomEff : null;
@@ -18478,14 +17014,16 @@ async function cargarEstadisticas() {
         } catch (_) {}
 
         try {
-            crearGraficosSaifiSaidi(crearChart, {
-                showConf,
-                confRows: rConfMes.rows || [],
-                denomEff,
-                saifiPeriodo,
-                saidiPeriodo,
-                denomMeta,
-            });
+            if (redSaifiMods) {
+                redSaifiMods.crearGraficosSaifiSaidi(crearChart, {
+                    showConf,
+                    confRows: rConfMes.rows || [],
+                    denomEff,
+                    saifiPeriodo,
+                    saidiPeriodo,
+                    denomMeta,
+                });
+            }
         } catch (_) {}
 
         // ── Gráfico distribuidor / ramal / barrio: barras con % cierre ─
@@ -18588,16 +17126,18 @@ async function cargarEstadisticas() {
             rTecnicos: rTecnicos || { rows: [] },
         });
         try {
-            pintarCaptionConfiabilidadSaifiSaidi({
-                scap,
-                confRows: rConfMes.rows || [],
-                denomEff,
-                saifiPeriodo,
-                saidiPeriodo,
-                denomMeta,
-                evConfTot,
-                minConfTot,
-            });
+            if (redSaifiMods) {
+                redSaifiMods.pintarCaptionConfiabilidadSaifiSaidi({
+                    scap,
+                    confRows: rConfMes.rows || [],
+                    denomEff,
+                    saifiPeriodo,
+                    saidiPeriodo,
+                    denomMeta,
+                    evConfTot,
+                    minConfTot,
+                });
+            }
         } catch (_) {}
 
         requestAnimationFrame(() => {
@@ -19490,21 +18030,42 @@ if ('serviceWorker' in navigator) {
 (async function iniciarApp() {
     try {
         window.__GESTORNOVA_APP_BOOT_TS = Date.now();
-        initAdminSocios({
-            sociosCatalogoTieneTenantId,
-            sociosCatalogoTieneDatosExtra,
-            sqlSimple,
-            sqlSimpleSelectAllPages,
-            tenantIdActual,
-            normalizarRubroEmpresa,
-            esMunicipioRubro,
-            esAdmin,
-            mostrarOverlayImportacion,
-            actualizarOverlayImportacion,
-            ocultarOverlayImportacion,
-            nominatimFetchSearch: _nominatimFetchSearch
-        });
         initGnModalZIndexStack();
+        setAdminEmpresaWhatsappDerivacionesDeps({
+            toast,
+            setDerivacionesInlineError,
+        });
+        setGnWaGeoOpsPanelDeps({
+            esAdmin,
+            modoOffline: () => modoOffline,
+            getApiToken,
+            apiUrl,
+        });
+        setWhatsappHumanChatAdminDeps({
+            esAdmin,
+            toast,
+            toastError,
+            getApiToken,
+            apiUrl,
+            asegurarJwtApiRest,
+            puedeEnviarApiRestPedidos,
+            modoOffline: () => modoOffline,
+            getAppUser: () => app?.u,
+            escOpt: _escOpt,
+        });
+        wireWhatsappHumanChatAdminWindow();
+        wireAbrirWhatsappDerivacionFormWindow();
+        setPedidoDetalleDerivacionHtmlDeps({
+            esTecnicoOSupervisor,
+            esAdmin,
+            debeMostrarBotonDerivacion,
+            pedidoEsDerivadoFuera,
+            normalizarEstadoPedidoUi,
+            fmtInformeFecha,
+            obtenerWaMeUrlDerivacionEmpresaCfg,
+            etiquetaFirmaPersona,
+            getAppUser: () => app?.u,
+        });
         initAdminWizard({
             app,
             getApiToken,
@@ -19577,20 +18138,6 @@ if ('serviceWorker' in navigator) {
             mensajeErrorUsuario,
             toast,
             ejecutarCerrarSesion,
-        });
-        initAdminSaidiDistribExcel({
-            getApiToken,
-            apiUrl,
-            esCooperativaElectricaRubro,
-            debeOcultarTabDistribuidoresAdmin,
-            toast,
-            toastError,
-        });
-        initAdminRedElectricaInfra({
-            getApiToken,
-            apiUrl,
-            toast,
-            toastError,
         });
         initAdminClaveProvisoria({
             esAdmin,
