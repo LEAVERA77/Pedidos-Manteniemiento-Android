@@ -1,0 +1,29 @@
+---
+description: Cooperativa eléctrica — incidencias solo asociación manual por administrador (sin automática).
+alwaysApply: true
+---
+
+# Cooperativa eléctrica — asociación de reclamos (incidencias)
+
+## Regla de producto
+
+En rubro **cooperativa eléctrica** (`cooperativa_electrica` / tipo que incluya «electric» o «eléctrica»):
+
+1. **No** asociación automática de reclamos, **por ningún motivo** (trafo, distribuidor, NIS, zona, API `sugerir-por-infra`, preselección de candidatos, etc.).
+2. **Solo el administrador** puede **asociar** reclamos en incidencias, de forma **manual** (selección explícita en UI + confirmación en modal).
+3. Técnicos/supervisores **no** deben ver checkboxes de selección, FAB «Asociar reclamos» ni botones «Asociar por transformador» en coop. eléctrica. Pueden seguir **viendo** badges de incidencia y operar cierre masivo de pedidos ya agrupados si el producto lo permite.
+
+## Dónde vive la lógica (no inflar `app.js`)
+
+| Archivo | Rol |
+|---------|-----|
+| `app/src/main/assets/modules/incidencias-coop-electrica-reglas.js` | `esCooperativaElectricaRubroInc()`, `puedeAsociarReclamosIncidenciasManual()` |
+| `app/src/main/assets/modules/incidencias.js` | UI manual (checkboxes, FAB, modal); usar reglas del módulo anterior |
+| `app/src/main/assets/modules/incidencias-infra-electrica.js` | **No-op** (no reactivar sugerencias por infra) |
+| `api/routes/incidencias.js` | `POST /`, `desasociar`, `GET sugerir-por-infra` → admin si tenant es coop. eléctrica |
+
+## Al cambiar incidencias
+
+- **No** volver a cargar flujos que sugieren o preseleccionan pedidos por trafo/distribuidor en coop. eléctrica.
+- Permisos nuevos → módulo `incidencias-coop-electrica-reglas.js`; en `app.js` solo imports/hooks mínimos si hiciera falta.
+- Paridad: sync assets a **Pedidos-MG** y API en ambos repos si se toca `api/routes/incidencias.js`.
