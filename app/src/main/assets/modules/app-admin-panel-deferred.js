@@ -10,6 +10,47 @@ let _done = false;
 let _inFlight = null;
 
 /**
+ * @param {import('./admin-socios.js')} sociosMod
+ * @param {Record<string, unknown>} ctx
+ */
+function bindAdminSociosModule(sociosMod, ctx) {
+    sociosMod.initAdminSocios({
+        sociosCatalogoTieneTenantId: ctx.sociosCatalogoTieneTenantId,
+        sociosCatalogoTieneDatosExtra: ctx.sociosCatalogoTieneDatosExtra,
+        sqlSimple: ctx.sqlSimple,
+        sqlSimpleSelectAllPages: ctx.sqlSimpleSelectAllPages,
+        tenantIdActual: ctx.tenantIdActual,
+        normalizarRubroEmpresa: ctx.normalizarRubroEmpresa,
+        esMunicipioRubro: ctx.esMunicipioRubro,
+        esAdmin: ctx.esAdmin,
+        mostrarOverlayImportacion: ctx.mostrarOverlayImportacion,
+        actualizarOverlayImportacion: ctx.actualizarOverlayImportacion,
+        ocultarOverlayImportacion: ctx.ocultarOverlayImportacion,
+        nominatimFetchSearch: ctx.nominatimFetchSearch,
+    });
+}
+
+/**
+ * Garantiza init de socios aunque el batch diferido falló o aún no terminó (carrera con adminTab).
+ * @param {() => Record<string, unknown>} getDeps
+ */
+export async function ensureAdminSociosInitialized(getDeps) {
+    const sociosMod = await import('./admin-socios.js');
+    if (sociosMod.isAdminSociosInitialized()) return;
+    await ensureAdminPanelDeferredBindings(getDeps);
+    if (sociosMod.isAdminSociosInitialized()) return;
+    const ctx = typeof getDeps === 'function' ? getDeps() : {};
+    try {
+        bindAdminSociosModule(sociosMod, ctx);
+    } catch (e) {
+        console.warn('[admin-deferred] init socios (retry)', e);
+    }
+    if (!sociosMod.isAdminSociosInitialized()) {
+        throw new Error('No se pudo inicializar el módulo socios');
+    }
+}
+
+/**
  * @param {() => Record<string, unknown>} getDeps - debe devolver refs actuales (toast, sqlSimple, …)
  */
 export async function ensureAdminPanelDeferredBindings(getDeps) {
@@ -77,21 +118,10 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             });
         } catch (_) {}
         try {
-            sociosMod.initAdminSocios({
-                sociosCatalogoTieneTenantId: ctx.sociosCatalogoTieneTenantId,
-                sociosCatalogoTieneDatosExtra: ctx.sociosCatalogoTieneDatosExtra,
-                sqlSimple: ctx.sqlSimple,
-                sqlSimpleSelectAllPages: ctx.sqlSimpleSelectAllPages,
-                tenantIdActual: ctx.tenantIdActual,
-                normalizarRubroEmpresa: ctx.normalizarRubroEmpresa,
-                esMunicipioRubro: ctx.esMunicipioRubro,
-                esAdmin: ctx.esAdmin,
-                mostrarOverlayImportacion: ctx.mostrarOverlayImportacion,
-                actualizarOverlayImportacion: ctx.actualizarOverlayImportacion,
-                ocultarOverlayImportacion: ctx.ocultarOverlayImportacion,
-                nominatimFetchSearch: ctx.nominatimFetchSearch,
-            });
-        } catch (_) {}
+            bindAdminSociosModule(sociosMod, ctx);
+        } catch (e) {
+            console.warn('[admin-deferred] init socios', e);
+        }
         try {
             redInfra.initAdminRedElectricaInfra({
                 getApiToken: ctx.getApiToken,

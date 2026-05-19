@@ -15370,6 +15370,7 @@ function _depsAdminPanelDeferred() {
         nominatimFetchSearch: _nominatimFetchSearch,
     };
 }
+if (typeof window !== 'undefined') window.__gnDepsAdminPanelDeferred = _depsAdminPanelDeferred;
 
 function syncAdminPanelMaxButtons() {
     const p = document.getElementById('admin-panel');

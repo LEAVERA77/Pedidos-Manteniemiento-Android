@@ -49,6 +49,29 @@ if (typeof window !== 'undefined' && typeof window._gnLazyExportSociosXlsx !== '
 /** @type {Record<string, unknown> | null} */
 let _sociosDeps = null;
 
+/** @returns {boolean} */
+export function isAdminSociosInitialized() {
+    return !!_sociosDeps;
+}
+
+async function ensureSociosDepsReady() {
+    if (_sociosDeps) return;
+    const getDeps =
+        typeof window !== 'undefined' && typeof window.__gnDepsAdminPanelDeferred === 'function'
+            ? window.__gnDepsAdminPanelDeferred
+            : null;
+    if (!getDeps) {
+        throw new Error(
+            'initAdminSocios: abrí el panel de administración al menos una vez antes de usar Socios.'
+        );
+    }
+    const { ensureAdminSociosInitialized } = await import('./app-admin-panel-deferred.js');
+    await ensureAdminSociosInitialized(getDeps);
+    if (!_sociosDeps) {
+        throw new Error('initAdminSocios debe llamarse antes de usar el módulo socios');
+    }
+}
+
 function req() {
     if (!_sociosDeps) throw new Error('initAdminSocios debe llamarse antes de usar el módulo socios');
     return _sociosDeps;
@@ -783,6 +806,11 @@ function escCsvCeldaSocios(v) {
 
 /** CSV UTF-8 con BOM: mismas columnas y orden que la tabla admin (WYSIWYG). */
 export function descargarPlanillaSociosCsvExport() {
+    void descargarPlanillaSociosCsvExportAsync();
+}
+
+async function descargarPlanillaSociosCsvExportAsync() {
+    await ensureSociosDepsReady();
     const rawRows = typeof window !== 'undefined' ? window._sociosVirtualRows : null;
     const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
     const abt = String(typeof window !== 'undefined' ? window.EMPRESA_CFG?.active_business_type || '' : '')
@@ -968,6 +996,7 @@ function onCambioFamiliaPrimariaSociosCatalogo() {
 window.onCambioFamiliaPrimariaSociosCatalogo = onCambioFamiliaPrimariaSociosCatalogo;
 
 async function cargarListaSociosAdmin() {
+    await ensureSociosDepsReady();
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
     cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
@@ -1960,6 +1989,7 @@ async function onInputExcelSociosConInferencia(event) {
 window.onInputExcelSociosConInferencia = onInputExcelSociosConInferencia;
 
 async function importarExcelSocios(event) {
+    await ensureSociosDepsReady();
     const file = event.target.files[0];
     if (!file) return;
     const esCsv = _esArchivoCsvOTsv(file);
@@ -2395,6 +2425,11 @@ const PLANTILLA_CSV_HEADERS_MUNICIPIO = [
 
 /** Plantilla CSV vacía con columnas ancla + innegociables (UTF-8 BOM para Excel). */
 function descargarPlantillaCsvSociosRubro() {
+    void descargarPlantillaCsvSociosRubroAsync();
+}
+
+async function descargarPlantillaCsvSociosRubroAsync() {
+    await ensureSociosDepsReady();
     const r = req().normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
     const post = ['provincia', 'localidad', 'direccion', 'numero', 'codigo_postal', 'telefono', 'latitud', 'longitud'];
     let head = [];
@@ -2415,6 +2450,11 @@ function descargarPlantillaCsvSociosRubro() {
 }
 
 function mostrarFormatoExcelSocios() {
+    void mostrarFormatoExcelSociosAsync();
+}
+
+async function mostrarFormatoExcelSociosAsync() {
+    await ensureSociosDepsReady();
     cerrarModalFormatoExcelSocios();
     const r = req().normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo) || 'cooperativa_electrica';
     const tNeg = tituloNegocioFormatoSocios();
