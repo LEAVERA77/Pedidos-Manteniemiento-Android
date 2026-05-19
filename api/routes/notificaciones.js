@@ -2,6 +2,7 @@ import express from "express";
 import { authWithTenantHost } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { usuarioPerteneceATenant } from "../utils/tenantScope.js";
+import { upsertFcmToken } from "../services/fcmPush.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -25,6 +26,30 @@ router.post("/enviar-push", async (req, res) => {
     res.status(201).json(r.rows[0]);
   } catch (error) {
     res.status(500).json({ error: "No se pudo crear notificación", detail: error.message });
+  }
+});
+
+router.post("/fcm-token", async (req, res) => {
+  try {
+    const fcmToken = String(req.body?.fcm_token || req.body?.token || "").trim();
+    if (fcmToken.length < 20) {
+      return res.status(400).json({ error: "fcm_token inválido" });
+    }
+    const ok = await upsertFcmToken({
+      usuarioId: req.user.id,
+      tenantId: req.tenantId,
+      fcmToken,
+      plataforma: req.body?.plataforma || "android",
+    });
+    if (!ok) {
+      return res.status(503).json({
+        error: "Tabla usuario_fcm_token no existe",
+        hint: "docs/NEON_fcm_reportes_sla.sql",
+      });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo guardar token", detail: error.message });
   }
 });
 

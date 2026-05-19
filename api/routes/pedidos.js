@@ -1821,6 +1821,17 @@ router.put("/:id", async (req, res) => {
       estadoParam === "Cerrado" && estadoAntesNorm !== "Cerrado";
     let avanceParam = avance ?? null;
     if (cerrandoOperativo) avanceParam = 100;
+    if (avanceParam !== null && avanceParam !== undefined && !cerrandoOperativo) {
+      const avNue = Number(avanceParam);
+      const avAnt = Number(pedido.avance ?? 0);
+      if (Number.isFinite(avNue) && Number.isFinite(avAnt) && avNue < avAnt) {
+        return res.status(400).json({
+          error: `El avance no puede ser menor a ${Math.round(avAnt)}% (ya registrado).`,
+          code: "avance_no_retrocede",
+          avance_minimo: Math.round(avAnt),
+        });
+      }
+    }
     const hasTUp = await pedidosTableHasTenantIdColumn();
     const upParams = [
       id,

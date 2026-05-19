@@ -242,6 +242,28 @@ import {
 } from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import {
+    abrirModalAvancePedido,
+    initPedidoAvanceModalUI,
+    validarAvanceNoRetrocede,
+    aplicarMinimoAvanceEnCamposPedido,
+    bodyIniciarEjecucionSinBajarAvance,
+    avanceEnteroPedido,
+} from './modules/pedido-avance-no-retroceder.js';
+import {
+    htmlOperativaTop3Section,
+    mountPedidoOperativaTop3UI,
+    verificarGeocercaAntesIniciarPedido,
+} from './modules/pedido-operativa-top3-ui.js';
+import {
+    materialesDetalleDebeOmitirRecarga,
+    materialesDetalleMarcarEstable,
+    materialesDetalleIniciarCarga,
+    materialesDetalleFinCarga,
+} from './modules/pedido-materiales-detalle-guard.js';
+import { pollBannerOpinionClienteMejorado, setOpinionBannerWatermarkIso } from './modules/admin-opinion-banner-realtime.js';
+import { registrarFcmTokenSiDisponible } from './modules/fcm-token-registro.js';
+import { initGnFeaturesAdminMounts, refrescarRankingSlaEstadisticas } from './modules/gn-features-bootstrap.js';
+import {
     registrarOnboardingCompletadoTrasVinculoTenantMtt,
     aplicarMascaraEmpresaAdminTrasCambioTenant,
 } from './modules/ocultar-datos-tenant.js';
@@ -335,7 +357,6 @@ let _gpsRecibidoEstaSesion = false;
 const MAP_SEED_SESSION_KEY = 'pmg_map_seed_done';
 /** Android WebView: el toque en el mapa solo abre «Nuevo pedido» si el usuario armó antes con el botón dedicado. */
 const MAP_TAP_NUEVO_PEDIDO_ARMED_KEY = 'pmg_map_tap_nuevo_pedido_armed';
-let pedidoActualParaAvance = null;
 let modoOffline = false;      
 
 
@@ -3302,6 +3323,10 @@ const gnLoginSubmitHandler = async e => {
         iniciarTracking();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
+        try {
+            initGnFeaturesAdminMounts({ esAdmin, toast, apiUrl, getApiToken });
+        } catch (_) {}
+        void registrarFcmTokenSiDisponible({ apiUrl, getApiToken });
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
         try {
@@ -6402,7 +6427,7 @@ function iniciarPedidosActividadPollAdmin() {
     pollPedidosActividadAdmin();
     _pollPedidosActividadInterval = setInterval(pollPedidosActividadAdmin, 8000);
     void pollBannerOpinionCliente();
-    setInterval(() => void pollBannerOpinionCliente(), 15000);
+    setInterval(() => void pollBannerOpinionCliente(), 8000);
 }
 
 function detenerTecnicosMapaPrincipalPoll() {
@@ -7616,7 +7641,14 @@ window._moverUbicMapa = function (pedidoId) {
 
 window._a = (a, id) => {
     if (a === 'i') {
-        void iniciar(id);
+        void (async () => {
+            const geo = await verificarGeocercaAntesIniciarPedido(id);
+            if (!geo.ok) {
+                toast(geo.message || 'Geocerca: no podés iniciar lejos del reclamo', 'warning');
+                return;
+            }
+            await iniciar(id);
+        })();
         return;
     }
     const dm = document.getElementById('dm');
@@ -8863,43 +8895,13 @@ function actualizarVistaPreviaFotos() {
 
 
 function abrirAvance(id) {
-    const pedido = app.p.find(x => String(x.id) === String(id));
-    if (!pedido) return;
-    
-    pedidoActualParaAvance = id;
-    const slider = document.getElementById('avance-slider');
-    const input = document.getElementById('avance-input');
-    slider.value = pedido.av;
-    input.value = pedido.av;
-    
-    document.getElementById('avance-modal').classList.add('active');
+    abrirModalAvancePedido(id, (pid) => app.p.find((x) => String(x.id) === String(pid)));
 }
 
-document.getElementById('avance-slider').addEventListener('input', (e) => {
-    document.getElementById('avance-input').value = e.target.value;
-});
-
-document.getElementById('avance-input').addEventListener('input', (e) => {
-    let val = parseInt(e.target.value);
-    if (isNaN(val)) val = 0;
-    if (val < 0) val = 0;
-    if (val > 100) val = 100;
-    e.target.value = val;
-    document.getElementById('avance-slider').value = val;
-});
-
-document.getElementById('guardar-avance').addEventListener('click', async () => {
-    if (!pedidoActualParaAvance) return;
-    
-    const avance = parseInt(document.getElementById('avance-input').value);
-    await actualizarAvance(pedidoActualParaAvance, avance);
-    document.getElementById('avance-modal').classList.remove('active');
-    pedidoActualParaAvance = null;
-});
-
-document.getElementById('cancelar-avance').addEventListener('click', () => {
-    document.getElementById('avance-modal').classList.remove('active');
-    pedidoActualParaAvance = null;
+initPedidoAvanceModalUI({
+    findPedido: (id) => app.p.find((p) => String(p.id) === String(id)),
+    onGuardar: (id, avance) => actualizarAvance(id, avance),
+    toast,
 });
 
 
@@ -9189,7 +9191,13 @@ async function actualizarAvance(id, avance) {
     try {
         const now = new Date().toISOString();
         const idx0 = app.p.findIndex(p => String(p.id) === String(id));
-        const avPrev = idx0 !== -1 ? Number(app.p[idx0].av) : null;
+        const avPrev = idx0 !== -1 ? app.p[idx0] : null;
+        const valAv = validarAvanceNoRetrocede(avance, avPrev);
+        if (!valAv.ok) {
+            toast(valAv.mensaje, 'warning');
+            return;
+        }
+        avance = valAv.valor;
 
         const apiRow = await pedidoPutApi(id, { avance: avance });
         if (apiRow) {
@@ -9212,7 +9220,7 @@ async function actualizarAvance(id, avance) {
             app.p[idx].fa = now;
         }
 
-        if (puedeEnviarApiRestPedidos() && avPrev !== Number(avance)) {
+        if (puedeEnviarApiRestPedidos() && avanceEnteroPedido(avPrev) !== Number(avance)) {
             const pidNum = parseInt(id, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'avance');
         }
@@ -9230,6 +9238,8 @@ async function updPedido(id, campos, usuarioId) {
     const prevRow = idxPre !== -1 ? app.p[idxPre] : null;
     const estadoAntesUpd = prevRow ? String(prevRow.es || '') : '';
     const taiAsignado = prevRow != null && prevRow.tai != null ? prevRow.tai : null;
+
+    if (prevRow && campos.avance !== undefined) aplicarMinimoAvanceEnCamposPedido(campos, prevRow);
 
     // Agregar auditoría si corresponde
     if (usuarioId && app.u) {
@@ -9344,8 +9354,16 @@ function _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(pedidoId) {
 
 async function iniciar(id) {
     try {
+        const geo = await verificarGeocercaAntesIniciarPedido(id);
+        if (!geo.ok) {
+            toast(geo.message || 'Geocerca: acercate al reclamo para iniciar', 'warning');
+            return;
+        }
         const now = new Date().toISOString();
-        const apiRow = await pedidoPutApi(id, { estado: 'En ejecución', avance: 0 });
+        const prevIni = app.p.find((p) => String(p.id) === String(id));
+        const bodyIni = bodyIniciarEjecucionSinBajarAvance(prevIni);
+        if (prevIni && (parseInt(prevIni.av, 10) || 0) === 0) bodyIni.fecha_avance = now;
+        const apiRow = await pedidoPutApi(id, bodyIni);
         if (apiRow) {
             const idx = app.p.findIndex(p => String(p.id) === String(id));
             if (idx !== -1) app.p[idx] = norm(apiRow);
@@ -9358,11 +9376,9 @@ async function iniciar(id) {
             _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(id);
             return;
         }
-        await updPedido(id, {
-            estado: 'En ejecución',
-            avance: 0,
-            fecha_avance: now
-        }, app.u?.id);
+        const camposIni = { estado: 'En ejecución', fecha_avance: now };
+        if (!prevIni || (parseInt(prevIni.av, 10) || 0) === 0) camposIni.avance = 0;
+        await updPedido(id, camposIni, app.u?.id);
         if (puedeEnviarApiRestPedidos()) {
             const pidNum = parseInt(id, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
@@ -9537,21 +9553,8 @@ async function refrescarMaterialesEnDetalle(p) {
     if (!body) return;
     if (esTipoPedidoFactibilidad(p.tt)) return;
     const pid = parseInt(p.id, 10);
-    
-    // GUARD MEJORADO: si el pedido está cerrado y ya hay materiales renderizados, NO recargar
-    // Esto previene el parpadeo cuando se llama recursivamente a detalle()
-    if (p.es === 'Cerrado') {
-        const yaRenderizado = body.dataset.stableMatPid === String(pid);
-        const tieneTabla = body.querySelector('table.mat-det-table');
-        if (yaRenderizado && tieneTabla) {
-            console.debug('[materiales-detalle] Pedido cerrado ya renderizado, skip reload', pid);
-            return;
-        }
-        // Si no tiene tabla pero dice stable, limpiar el estado
-        if (yaRenderizado && !tieneTabla) {
-            delete body.dataset.stableMatPid;
-        }
-    }
+    if (materialesDetalleDebeOmitirRecarga(p, body)) return;
+    if (!materialesDetalleIniciarCarga(pid)) return;
     
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
@@ -9576,7 +9579,7 @@ async function refrescarMaterialesEnDetalle(p) {
             });
             html += '</tbody></table>';
             body.innerHTML = html;
-            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
+            if (p.es === 'Cerrado') materialesDetalleMarcarEstable(body, pid);
         } catch (e) {
             logErrorWeb('materiales-detalle-readonly', e);
             body.innerHTML =
@@ -9625,10 +9628,10 @@ async function refrescarMaterialesEnDetalle(p) {
         if (!_materialesDetalleSigueSiendoPedidoActual(p)) return;
         if (!rows.length && !puedeAgregar) {
             body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
-            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
+            if (p.es === 'Cerrado') materialesDetalleMarcarEstable(body, pid);
         } else {
             body.innerHTML = html;
-            if (p.es === 'Cerrado') body.dataset.stableMatPid = String(pid);
+            if (p.es === 'Cerrado') materialesDetalleMarcarEstable(body, pid);
         }
     } catch (e) {
         logErrorWeb('materiales-detalle', e);
@@ -9638,6 +9641,8 @@ async function refrescarMaterialesEnDetalle(p) {
             '</p><p style="margin-top:.45rem"><button type="button" class="btn-sm primary" onclick="refrescarMaterialesDetallePorPid(' +
             pid +
             ')">Reintentar</button></p>';
+    } finally {
+        materialesDetalleFinCarga(pid);
     }
 }
 
@@ -11469,6 +11474,7 @@ async function detalle(p, opts = {}) {
             ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}
         </div>
         
+        ${htmlOperativaTop3Section()}
         ${htmlBloqueCambiosAuditoria}
         ${fotosHtml ? `
         <details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>` : ''}
@@ -11496,8 +11502,18 @@ async function detalle(p, opts = {}) {
         gnMapThrottleOnDetallePedidoOpened();
     } catch (_) {}
     requestAnimationFrame(() => {
-        if (!esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p)) refrescarMaterialesEnDetalle(p);
+        const bodyMat = document.getElementById('materiales-detalle-body');
+        if (
+            !esTipoPedidoFactibilidad(p.tt) &&
+            incluirBloqueMaterialesEnDetallePedido(p) &&
+            !(p.es === 'Cerrado' && materialesDetalleDebeOmitirRecarga(p, bodyMat))
+        ) {
+            refrescarMaterialesEnDetalle(p);
+        }
     });
+    try {
+        mountPedidoOperativaTop3UI(p, { ed, esAdmin: esAdmin(), toast });
+    } catch (_) {}
 }
 
 
@@ -13444,8 +13460,10 @@ async function iniciarWatermarkBannerOpinionCliente() {
         );
         const m = r.rows?.[0]?.m;
         _adminBannerOpinionWatermarkIso = m ? new Date(m).toISOString() : new Date(0).toISOString();
+        setOpinionBannerWatermarkIso(_adminBannerOpinionWatermarkIso);
     } catch (_) {
         _adminBannerOpinionWatermarkIso = new Date().toISOString();
+        setOpinionBannerWatermarkIso(_adminBannerOpinionWatermarkIso);
     }
 }
 
@@ -13568,108 +13586,19 @@ async function pollBannerNuevoReclamoCliente() {
 }
 
 async function pollBannerOpinionCliente() {
-    if (!esAdmin() || modoOffline || !NEON_OK || !_sql) {
-        console.debug('[poll-banner-opinion] Skip: no admin o offline o sin Neon');
-        return;
-    }
-    const box = document.getElementById('admin-banner-opinion-cliente');
-    if (!box) {
-        console.debug('[poll-banner-opinion] Skip: elemento banner no existe');
-        return;
-    }
-    try {
-        const col = await sqlSimple(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'pedidos' AND column_name = 'fecha_opinion_cliente' LIMIT 1`
-        );
-        if (!col.rows?.length) {
-            console.warn('[poll-banner-opinion] Columna fecha_opinion_cliente no existe');
-            return;
-        }
-        const tsql = await pedidosFiltroTenantSql();
-        let r;
-        try {
-            r = await sqlSimple(
-                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente,
-                        telefono_contacto, opinion_cliente_estrellas
-                 FROM pedidos
-                 WHERE fecha_opinion_cliente IS NOT NULL
-                 AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas < 3
-                 AND COALESCE(opinion_banner_admin_descartado, FALSE) = FALSE
-                 ${tsql}
-                 ORDER BY fecha_opinion_cliente DESC LIMIT 1`
-            );
-        } catch (_e) {
-            console.warn('[poll-banner-opinion] Query principal falló, intentando fallback sin tsql');
-            r = await sqlSimple(
-                `SELECT id, numero_pedido, tipo_trabajo, opinion_cliente, fecha_opinion_cliente,
-                        telefono_contacto, opinion_cliente_estrellas
-                 FROM pedidos
-                 WHERE fecha_opinion_cliente IS NOT NULL
-                 AND opinion_cliente_estrellas IS NOT NULL
-                 AND opinion_cliente_estrellas < 3
-                 AND COALESCE(opinion_banner_admin_descartado, FALSE) = FALSE
-                 ${tsql}
-                 ORDER BY fecha_opinion_cliente DESC LIMIT 1`
-            );
-        }
-        const row = r.rows?.[0];
-        if (!row) {
-            console.debug('[poll-banner-opinion] No hay pedidos con calificación baja');
-            if (box.dataset.visible === '1') {
-                box.style.display = 'none';
-                delete box.dataset.visible;
-                delete box.dataset.pedidoId;
-            }
-            return;
-        }
-        const nid = Number(row.id);
-        const dismissKey = `${tenantIdActual()}:${nid}`;
-        if (_persistedOpinionBannerDismissedKeys().has(dismissKey)) {
-            console.debug('[poll-banner-opinion] Pedido %s descartado permanentemente (localStorage)', nid);
-            return;
-        }
-        if (_sessionOpinionBannerDismissedIds().has(String(nid))) {
-            console.debug('[poll-banner-opinion] Pedido %s ya fue descartado en esta sesión', nid);
-            return;
-        }
-        console.info('[poll-banner-opinion] ✓ Mostrando banner para pedido %s (estrellas: %s)', nid, row.opinion_cliente_estrellas);
-        const fop = row.fecha_opinion_cliente;
-        const opin = String(row.opinion_cliente || '').trim();
-        const snip = opin.length > 140 ? `${opin.slice(0, 137)}…` : opin;
-        const rawEst = row.opinion_cliente_estrellas;
-        const estrellas = rawEst != null && rawEst !== '' ? Number(rawEst) : NaN;
-        const tieneE = Number.isFinite(estrellas) && estrellas >= 1 && estrellas <= 5;
-        const wTel = normalizarWhatsappInternacionalDesdeInput(row.telefono_contacto || '');
-        const waOk = /^\+\d{8,22}$/.test(wTel);
-        const btnHc = document.getElementById('admin-banner-opinion-hc');
-        if (btnHc) {
-            const baja = tieneE && estrellas < 3;
-            const apiOk = typeof puedeEnviarApiRestPedidos === 'function' && puedeEnviarApiRestPedidos();
-            btnHc.style.display = baja && apiOk && waOk ? 'inline-flex' : 'none';
-        }
-        box.dataset.waTelE164 = waOk ? wTel : '';
-        box.dataset.estrellasOpinion = tieneE ? String(estrellas) : '';
-        const txt = document.getElementById('admin-banner-opinion-cliente-txt');
-        if (txt) {
-            const np = row.numero_pedido || nid;
-            const tit = (row.tipo_trabajo || '').trim();
-            const sfxStar = tieneE ? ` · ${estrellas}/5` : '';
-            const avisoBaja =
-                tieneE && estrellas < 3
-                    ? 'Calificación baja — conviene hablar con el cliente. '
-                    : '';
-            txt.textContent = `${avisoBaja}Observación del cliente${sfxStar} · #${np}${tit ? ` · ${tit}` : ''}${
-                snip ? ` — «${snip}»` : ''
-            }`;
-        }
-        box.style.display = 'flex';
-        box.dataset.visible = '1';
-        box.dataset.pedidoId = String(nid);
-        if (fop) box.dataset.fechaOpinionIso = new Date(fop).toISOString();
-    } catch (e) {
-        console.error('[poll-banner-opinion] Error:', e?.message || e);
-    }
+    return pollBannerOpinionClienteMejorado({
+        esAdmin,
+        modoOffline: () => modoOffline,
+        neonOk: () => NEON_OK && !!_sql,
+        pedidosFiltroTenantSql,
+        sqlSimple,
+        esc,
+        tenantIdActual,
+        persistedDismissKeys: _persistedOpinionBannerDismissedKeys,
+        sessionDismissIds: _sessionOpinionBannerDismissedIds,
+        normalizarTel: normalizarWhatsappInternacionalDesdeInput,
+        puedeApiRest: puedeEnviarApiRestPedidos,
+    });
 }
 
 function adminBannerOpinionClickWhatsapp() {
@@ -17140,6 +17069,10 @@ async function cargarEstadisticas() {
         requestAnimationFrame(() => {
             Object.values(_charts).forEach(ch => { try { ch.resize(); } catch (_) {} });
         });
+
+        try {
+            void refrescarRankingSlaEstadisticas({ esAdmin, apiUrl, getApiToken });
+        } catch (_) {}
 
     } catch(e) {
         logErrorWeb('cargar-estadisticas', e);

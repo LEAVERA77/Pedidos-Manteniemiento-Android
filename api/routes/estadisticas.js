@@ -4,6 +4,7 @@ import { query } from "../db/neon.js";
 import { parsePeriod } from "../utils/helpers.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter } from "../utils/businessScope.js";
+import { calcularAlertasSla, rankingTecnicos } from "../services/slaAlertas.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -147,6 +148,25 @@ router.get("/datos-red", adminOrTecnicoIncidencias, async (req, res) => {
     res.json({ disponible: true, datos });
   } catch (error) {
     res.status(500).json({ error: "No se pudieron obtener datos de red", detail: error.message });
+  }
+});
+
+router.get("/ranking-tecnicos", adminOnly, async (req, res) => {
+  try {
+    const periodo = String(req.query.periodo || "30d");
+    const data = await rankingTecnicos(req, periodo);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo obtener ranking", detail: error.message });
+  }
+});
+
+router.get("/sla-alertas", adminOnly, async (req, res) => {
+  try {
+    const data = await calcularAlertasSla(req);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudieron calcular alertas", detail: error.message });
   }
 });
 

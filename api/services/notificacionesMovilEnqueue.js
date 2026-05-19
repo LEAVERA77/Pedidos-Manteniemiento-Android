@@ -4,6 +4,7 @@
  */
 
 import { query } from "../db/neon.js";
+import { sendFcmToUsuario } from "./fcmPush.js";
 
 let _tableChecked = false;
 let _hasTable = false;
@@ -48,6 +49,7 @@ export async function enqueueNotificacionPedidoCerradoParaTecnico({
        VALUES ($1, $2, $3, $4, FALSE)`,
       [tid, pid, titulo, cuerpo]
     );
+    void sendFcmToUsuario(tid, { titulo, cuerpo, pedidoId: pid });
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] cierre técnico", e.message);
   }
@@ -92,6 +94,7 @@ export async function enqueueNotificacionChatInternoPedido({
            VALUES ($1, $2, $3, $4, FALSE)`,
           [tech, pid, titulo, cuerpo]
         );
+        void sendFcmToUsuario(tech, { titulo, cuerpo, pedidoId: pid });
       }
       return;
     }
@@ -119,6 +122,7 @@ export async function enqueueNotificacionChatInternoPedido({
          VALUES ($1, $2, $3, $4, FALSE)`,
         [uid, pid, titulo, cuerpo]
       );
+      void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
     }
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] chat interno", e.message);

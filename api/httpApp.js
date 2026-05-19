@@ -34,6 +34,7 @@ import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
 import iaRoutes from "./routes/ia.js";
 import sociosExportRoutes from "./routes/sociosExport.js";
+import reportesProgramadosRoutes from "./routes/reportesProgramados.js";
 import {
   authLoginLimiter,
   authVerifyPasswordLimiter,
@@ -169,6 +170,7 @@ export function createHttpApp() {
   app.use("/api/webhooks/whapi", webhooksWhapiAliasRoutes);
   app.use("/api/ia", iaRoutes);
   app.use("/api/socios", sociosExportRoutes);
+  app.use("/api/reportes-programados", reportesProgramadosRoutes);
 
   app.get("/api/app-version", async (_req, res) => {
     try {

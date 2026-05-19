@@ -278,6 +278,7 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new AndroidSessionBridge(), "AndroidSession");
         webView.addJavascriptInterface(new AndroidDeviceBridge(), "AndroidDevice");
         webView.addJavascriptInterface(new AndroidBiometricBridge(this, webView), "AndroidBiometric");
+        webView.addJavascriptInterface(new FcmTokenBridge(webView, this), "AndroidFcm");
 
         webView.setWebChromeClient(new WebChromeClient() {
 
