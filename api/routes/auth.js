@@ -49,6 +49,11 @@ router.post("/login", async (req, res) => {
         [loginId, hintTid]
       );
       candidateRows = rScoped.rows;
+      /** Hint obsoleto (wizard/sessionStorage): si no hay filas en ese tenant, buscar sin acotar. */
+      if (!candidateRows.length) {
+        const rAll = await query(unscopedSql, [loginId]);
+        candidateRows = rAll.rows;
+      }
     } else if (col) {
       const rAll = await query(unscopedSql, [loginId]);
       candidateRows = rAll.rows;

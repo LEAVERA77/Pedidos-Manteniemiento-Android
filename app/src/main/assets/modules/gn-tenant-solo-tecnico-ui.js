@@ -58,34 +58,25 @@ export function hydrateBrandingLoginSinTenantAjeno(o) {
   } catch (_) {}
 }
 
+import { fetchAuthLoginApi } from './auth-login-api-body.js';
+
 /**
- * @param {{ apiUrl: (p: string) => string, authLoginJsonBody: (e: string, p: string) => string }} ctx
+ * @param {{ apiUrl: (p: string) => string }} ctx
  */
 export async function loginApiJwtConMustChange(ctx, email, password) {
   const em = String(email || '').trim();
   const pw = String(password || '');
   if (!em || !pw) return null;
-  const ms = 28000;
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), ms);
   try {
-    const resp = await fetch(ctx.apiUrl('/api/auth/login'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: ctx.authLoginJsonBody(em, pw),
-      signal: ctl.signal,
-    });
-    const data = await resp.json().catch(() => ({}));
+    const { resp, data } = await fetchAuthLoginApi(em, pw, ctx.apiUrl, fetch);
     if (resp.status === 403 && data?.code === 'must_change_password') {
       return { must_change_password: true, user_id: data.user_id, user: data };
     }
     if (!resp.ok || !data?.token) return null;
     return data;
   } catch (e) {
-    if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout', ms + 'ms');
+    if (e && e.name === 'AbortError') console.warn('[login] API JWT timeout');
     return null;
-  } finally {
-    clearTimeout(t);
   }
 }
 

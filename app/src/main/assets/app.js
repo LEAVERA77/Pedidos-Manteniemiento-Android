@@ -16515,9 +16515,6 @@ async function exportInformeMensualExcel() {
     } catch (e) { toastError('export-excel-pedidos', e); }
 }
 
-    }
-}
-
 async function generarInformeMensualENRE() {
     if (!esAdmin()) { toast('Solo administrador', 'error'); return; }
     if (modoOffline || !NEON_OK) { toast('Requiere conexión', 'error'); return; }

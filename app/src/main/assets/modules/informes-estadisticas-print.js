@@ -191,6 +191,7 @@ export async function imprimirInformeConGraficos() {
     } finally {
         await prepararVistaCapturaEstadisticasPdf(false);
     }
+}
 
 export async function generarPdfEstadisticasMultipaginaENRE() {
     if (!ctx().esAdmin?.()) { ctx().toast?.('Solo administrador', 'error'); return; }
@@ -346,3 +347,5 @@ export async function generarPdfEstadisticasMultipaginaENRE() {
         ctx().toastError?.('pdf-estadisticas-enre', e, 'Error al generar el PDF.');
     } finally {
         await prepararVistaCapturaEstadisticasPdf(false);
+    }
+}

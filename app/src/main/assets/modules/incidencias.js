@@ -5,6 +5,11 @@
  */
 
 import { toast } from './ui-utils.js';
+import {
+    puedeAsociarReclamosIncidenciasManual,
+    esCooperativaElectricaRubroInc,
+    MSG_ASOCIACION_SOLO_ADMIN_COOP,
+} from './incidencias-coop-electrica-reglas.js';
 
 /** @type {Record<string, number>} */
 let _mapPedidoIncidencia = {};
@@ -130,9 +135,17 @@ function esTecnicoOSupervisorIncModule() {
     return r === 'tecnico' || r === 'supervisor';
 }
 
-/** Checkboxes, FAB asociar, badges, vista/cierre masivo y desasociar (admin + técnico/supervisor). */
+/** Vista incidencia, cierre masivo, desasociar (admin + técnico/supervisor en rubros no eléctricos). */
 function puedeGestionarIncidencias() {
     return esAdminIncModule() || esTecnicoOSupervisorIncModule();
+}
+
+/** Crear/asociar reclamos: coop. eléctrica → solo admin; otros rubros → admin o técnico/supervisor. */
+function puedeAsociarReclamos() {
+    return puedeAsociarReclamosIncidenciasManual({
+        esAdmin: esAdminIncModule,
+        esTecnicoOSupervisor: esTecnicoOSupervisorIncModule,
+    });
 }
 
 /**
@@ -207,7 +220,7 @@ function taiPedidoInc(p) {
  * - Técnico/supervisor: solo Asignado o En ejecución, asignados a sí mismo; nunca Pendiente ni Cerrado ni derivado externo.
  */
 function puedeSeleccionarPedidoParaIncidencias(p) {
-    if (!p || !puedeGestionarIncidencias()) return false;
+    if (!p || !puedeAsociarReclamos()) return false;
     const es = estadoPedidoInc(p);
     if (es === 'Cerrado') return false;
     if (esAdminIncModule()) return true;
@@ -929,7 +942,7 @@ function onMasterSelectAllChange(ev) {
 }
 
 function ensureSelectAllBar(pl) {
-    if (!puedeGestionarIncidencias()) {
+    if (!puedeAsociarReclamos()) {
         try {
             pl.querySelector('#gn-inc-select-all-wrap')?.remove();
         } catch (_) {}
@@ -983,7 +996,7 @@ function ensureSelectAllBar(pl) {
 function updateFab() {
     const fab = ensureFab();
     const n = countSelectableSelectedNp();
-    if (!puedeGestionarIncidencias() || n < 2) {
+    if (!puedeAsociarReclamos() || n < 2) {
         fab.style.display = 'none';
         return;
     }
@@ -1001,7 +1014,7 @@ function enhanceListaPedidosInner() {
         const np = parseNpFromRow(row);
         const p = findPedidoForIncidenciasUi(np);
         const wantCb =
-            puedeGestionarIncidencias() &&
+            puedeAsociarReclamos() &&
             p &&
             estadoPedidoInc(p) === 'Pendiente' &&
             puedeSeleccionarPedidoParaIncidencias(p) &&
@@ -1177,7 +1190,12 @@ function closeModalAssoc() {
 }
 
 async function openModalAsociar(preset = null) {
-    if (!puedeGestionarIncidencias()) return;
+    if (!puedeAsociarReclamos()) {
+        if (esCooperativaElectricaRubroInc() && !esAdminIncModule()) {
+            toast(MSG_ASOCIACION_SOLO_ADMIN_COOP, 'info');
+        }
+        return;
+    }
     await prefetchPedidosParaIncidencias(true);
     const peds = [..._selectedNp]
         .map((np) => findPedidoForIncidenciasUi(np))
@@ -1502,13 +1520,13 @@ function bootObserver() {
     _moPl.observe(pl, { childList: true });
 }
 
-/** Cooperativa eléctrica: preselección por ids + abrir modal de asociación (reutiliza incidencias). */
+/** Legacy: ya no se usa asociación automática por infra en coop. eléctrica. */
 export async function incidenciasAbrirAsociacionPorIds(pedidoIds, preset = null) {
-    if (!puedeGestionarIncidencias()) return;
-    if (rubroPanel() !== 'cooperativa_electrica') {
-        toast('Solo disponible para cooperativas eléctricas.', 'info');
+    if (esCooperativaElectricaRubroInc()) {
+        toast(MSG_ASOCIACION_SOLO_ADMIN_COOP, 'info');
         return;
     }
+    if (!puedeAsociarReclamos()) return;
     await prefetchPedidosParaIncidencias(true);
     _selectedNp.clear();
     const ids = [...new Set((pedidoIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))];
@@ -1537,7 +1555,9 @@ export function installIncidenciasUI() {
         window.__gnIncidenciasOpenAssoc = () => openModalAsociar();
         window.__gnIncidenciasOpenVista = (incId) => void openVistaIncidencia(incId);
         window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.puedeAsociarReclamosIncidencias = puedeAsociarReclamos;
         window.puedeSeleccionarPedidoParaIncidencias = puedeSeleccionarPedidoParaIncidencias;
+        window.esCooperativaElectricaRubroInc = esCooperativaElectricaRubroInc;
         window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
     } catch (_) {}
     void fetchPedidoMap().then(() => debouncedEnhance());
@@ -1557,7 +1577,9 @@ export function installIncidenciasUI() {
 if (typeof window !== 'undefined') {
     try {
         window.puedeGestionarIncidencias = puedeGestionarIncidencias;
+        window.puedeAsociarReclamosIncidencias = puedeAsociarReclamos;
         window.puedeSeleccionarPedidoParaIncidencias = puedeSeleccionarPedidoParaIncidencias;
+        window.esCooperativaElectricaRubroInc = esCooperativaElectricaRubroInc;
         window.obtenerRolUsuarioParaIncidencias = obtenerRolUsuarioParaIncidencias;
     } catch (_) {}
     const run = () => {
