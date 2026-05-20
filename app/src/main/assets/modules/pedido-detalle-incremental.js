@@ -1,7 +1,8 @@
 /**
- * Repintado incremental del modal #dm (sin innerHTML completo de #dmc).
+ * Repintado incremental del modal #dm (info, opinión, acciones) sobre shell #dmc.
  * made by leavera77
  */
+import { GN_DM_SHELL_ATTR } from './pedido-detalle-shell.js';
 import {
     buildDetalleInfoBlockInner,
     buildDetalleAccionesBarHtml,
@@ -13,6 +14,8 @@ export function puedePatchIncrementalDetalle(p, opts, deps) {
     const dm = document.getElementById('dm');
     if (!dm?.classList.contains('active')) return false;
     if (String(dm.dataset.detallePedidoId || '') !== String(p?.id ?? '')) return false;
+    const dmc = document.getElementById('dmc');
+    if (!dmc || dmc.getAttribute(GN_DM_SHELL_ATTR) !== '1') return false;
     if (!dm.querySelector('.gn-dm-detail-scroll [data-gn-dm-block="info"]')) return false;
     const prev = dm.dataset.detalleEstructuraSig || '';
     if (!prev) return false;

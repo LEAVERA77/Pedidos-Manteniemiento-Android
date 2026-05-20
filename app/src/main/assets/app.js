@@ -223,12 +223,10 @@ import {
 } from './modules/pedido-detalle-derivacion-html.js';
 import { pedidoDetalleTraerModalAlFrente } from './modules/pedido-detalle-modal-z.js';
 import { gnDetalleImgAttrs } from './modules/pedido-detalle-html-helpers.js';
-import { buildDetallePedidoDmcHtml } from './modules/pedido-detalle-render.js';
 import {
     puedePatchIncrementalDetalle,
-    patchDetallePedidoIncremental,
-    guardarDetalleEstructuraSig,
 } from './modules/pedido-detalle-incremental.js';
+import { hydrateDetallePedido } from './modules/pedido-detalle-hydrate.js';
 import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
@@ -11239,27 +11237,26 @@ async function detalle(p, opts = {}) {
     }
 
     const deps = getDetalleRenderDeps();
-    if (puedePatchIncrementalDetalle(p, opts, deps)) {
-        patchDetallePedidoIncremental(p, deps);
-        finalizarDetallePedidoPatch(p);
-        return;
-    }
-
-    const dmcEl = document.getElementById('dmc');
     const dmAbierto = document.getElementById('dm');
+    const dmcEl = document.getElementById('dmc');
     const restaurarScrollDetalle =
         dmAbierto?.classList.contains('active') &&
         String(dmAbierto.dataset.detallePedidoId || '') === pidKey
             ? dmcEl?.querySelector('.gn-dm-detail-scroll')?.scrollTop ?? 0
             : 0;
-    dmcEl.innerHTML = buildDetallePedidoDmcHtml(p, deps);
-    guardarDetalleEstructuraSig(p, deps);
-    if (restaurarScrollDetalle > 0) {
-        requestAnimationFrame(() => {
-            const sc = document.querySelector('#dm .gn-dm-detail-scroll');
-            if (sc) sc.scrollTop = restaurarScrollDetalle;
-        });
+
+    if (puedePatchIncrementalDetalle(p, opts, deps)) {
+        hydrateDetallePedido(p, deps, { mode: 'patch' });
+        finalizarDetallePedidoPatch(p);
+        return;
     }
+
+    hydrateDetallePedido(p, deps, {
+        mode: 'full',
+        preserveScroll: restaurarScrollDetalle > 0,
+        scrollTop: restaurarScrollDetalle,
+        forceFullRender: !!opts.forceFullRender,
+    });
     finalizarDetallePedidoAbierto(p);
 }
 

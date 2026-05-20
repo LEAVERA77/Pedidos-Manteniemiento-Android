@@ -446,31 +446,20 @@ function buildDetalleRenderParts(p, deps) {
             <button type="button" class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
             <button type="button" class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>`;
 
-    const html = `
-        <div class="gn-dm-detail-scroll">
-        <div class="ds gn-dm-block-info" data-gn-dm-block="info">
-            <h4>📋 Información General</h4>
-            ${infoRowsHtml}
-        </div>
-        
-        <div class="ds">
-            <h4>🏢 Datos del Trabajo</h4>
+    const sectionInfo = `<h4>📋 Información General</h4>${infoRowsHtml}`;
+
+    const sectionTrabajo = `<h4>🏢 Datos del Trabajo</h4>
             <div class="dr"><span class="dl">${etiquetaZonaPedido()}</span><span class="dv">${valorZonaPedidoUI(p) || (esMunicipioRubro() ? 'Sin barrio indicado' : esCooperativaAguaRubro() ? 'Sin ramal indicado' : '—')}</span></div>
             ${esCooperativaElectricaRubro() && String(p.trf || '').trim() ? `<div class="dr"><span class="dl">Trafo</span><span class="dv">${escDet(p.trf)}</span></div>` : ''}
             ${htmlDatosCliente}
             ${p.tel ? `<div class="dr"><span class="dl">Tel. contacto (WA)</span><span class="dv">${String(p.tel).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span></div>` : ''}
-            <div class="dr"><span class="dl">Descripción</span><span class="dv">${escDet(sanitizarTextoDescripcionPedidoVista(p.de))}</span></div>
-        </div>
-        
-        <div id="dm-opinion-cliente-host">${htmlOpinionCliente}</div>
-        
-        ${htmlDerivacionTercerosPedidoDetalle()}
-        ${htmlSolicitudDerivacionCoopElectricaTecnico(p)}
-        ${htmlDerivacionCoopElectrica}
-        ${htmlDerivacionAdminExterna}
-        
-        ${p.es === 'Cerrado' ? `
-        <div class="ds">
+            <div class="dr"><span class="dl">Descripción</span><span class="dv">${escDet(sanitizarTextoDescripcionPedidoVista(p.de))}</span></div>`;
+
+    const sectionDerivacion = `${htmlDerivacionTercerosPedidoDetalle()}${htmlSolicitudDerivacionCoopElectricaTecnico(p)}${htmlDerivacionCoopElectrica}${htmlDerivacionAdminExterna}`;
+
+    const sectionCierre =
+        p.es === 'Cerrado'
+            ? `<div class="ds">
             <h4>✅ Cierre del Pedido</h4>
             ${fc ? `<div class="dr"><span class="dl">Fecha cierre</span><span class="dv">${fc}</span></div>` : ''}
             ${p.tc ? `<div class="dr"><span class="dl">Técnico</span><span class="dv">${p.tc}</span></div>` : ''}
@@ -478,17 +467,13 @@ function buildDetalleRenderParts(p, deps) {
             ${p.foto_cierre ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">📸 Foto del cierre</div><img src="${p.foto_cierre}" class="foto-miniatura"${gnDetalleImgAttrs()} style="width:100%;max-height:200px;object-fit:contain;border-radius:.5rem;cursor:pointer;border:1px solid #e2e8f0" onclick="verFotoAmpliada(this.src, {tipo:'pedido_cierre',id:'${p.id}'})"></div>` : ''}
             ${chkResumen}
             ${p.firma ? `<div style="margin-top:.6rem"><div style="font-size:.8rem;color:#475569;margin-bottom:.35rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em">✍️ Firma del ${labFirmaDet}</div><img src="${p.firma}" class="foto-miniatura"${gnDetalleImgAttrs()} style="width:100%;max-height:180px;object-fit:contain;border-radius:.5rem;border:1px solid #e2e8f0" alt="Firma"></div>` : ''}
-        </div>` : ''}
+        </div>`
+            : '';
 
-        ${esTipoPedidoFactibilidad(p.tt) || !incluirBloqueMaterialesEnDetallePedido(p) ? '' : `
-        <div class="ds" id="materiales-detalle-wrap" data-pid="${p.id}">
-            <h4>🔧 Materiales</h4>
-            <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
-        </div>
-        `}
-        
-        <div class="ds">
-            <h4>📍 Ubicación</h4>
+    const showMateriales =
+        !esTipoPedidoFactibilidad(p.tt) && incluirBloqueMaterialesEnDetallePedido(p);
+
+    const sectionUbicacion = `<h4>📍 Ubicación</h4>
             ${htmlBadgeUbicModo}
             ${htmlWgeoWa}
             ${bannerSinPinAdmin}
@@ -498,19 +483,56 @@ function buildDetalleRenderParts(p, deps) {
             <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${laM != null && lnM != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
-            ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}
-        </div>
-        
-        ${htmlOperativaTop3Section()}
-        ${htmlBloqueCambiosAuditoria}
-        ${fotosSectionHtml}
+            ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}`;
+
+    let sectionTop3 = htmlOperativaTop3Section();
+    if (shellAndroid) {
+        sectionTop3 = sectionTop3.replace(/\s+open(?=[\s>])/i, '');
+    }
+
+    const sections = {
+        info: sectionInfo,
+        trabajo: sectionTrabajo,
+        opinion: htmlOpinionCliente,
+        derivacion: sectionDerivacion,
+        cierre: sectionCierre,
+        showMateriales,
+        ubicacion: sectionUbicacion,
+        top3: sectionTop3,
+        auditoria: htmlBloqueCambiosAuditoria,
+        fotos: fotosSectionHtml,
+        acciones: accionesBarHtml,
+    };
+
+    const html = assembleDetalleHtmlFromSections(sections);
+
+    return { html, infoRowsHtml, accionesBarHtml, htmlOpinionCliente, sections };
+}
+
+function assembleDetalleHtmlFromSections(sections) {
+    const mat = sections.showMateriales
+        ? `<div class="ds" id="materiales-detalle-wrap" data-pid="">
+            <h4>🔧 Materiales</h4>
+            <div id="materiales-detalle-body"><p style="font-size:.8rem;color:var(--tl)">Cargando…</p></div>
+        </div>`
+        : '';
+    return `
+        <div class="gn-dm-detail-scroll">
+        <div class="ds gn-dm-block-info" data-gn-dm-block="info">${sections.info}</div>
+        <div class="ds">${sections.trabajo}</div>
+        <div id="dm-opinion-cliente-host">${sections.opinion}</div>
+        ${sections.derivacion}
+        ${sections.cierre}
+        ${mat}
+        <div class="ds">${sections.ubicacion}</div>
+        ${sections.top3}
+        ${sections.auditoria}
+        ${sections.fotos}
         </div>
         <div class="gn-dm-actions-bar">
-        <div class="da">${accionesBarHtml}</div>
+        <div class="da">${sections.acciones}</div>
         </div>
     `;
-
-    return { html, infoRowsHtml, accionesBarHtml, htmlOpinionCliente };
 }
 
 export function buildDetalleInfoBlockInner(p, deps) {
@@ -523,4 +545,9 @@ export function buildDetalleAccionesBarHtml(p, deps) {
 
 export function buildDetallePedidoDmcHtml(p, deps) {
     return buildDetalleRenderParts(p, deps).html;
+}
+
+/** Secciones para hidratación del shell persistente (#dmc). */
+export function buildDetalleSections(p, deps) {
+    return buildDetalleRenderParts(p, deps).sections;
 }
