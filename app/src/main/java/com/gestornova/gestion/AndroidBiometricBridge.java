@@ -1,6 +1,7 @@
 package com.gestornova.gestion;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,6 +20,8 @@ import androidx.lifecycle.Lifecycle;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Opcional: guardar usuario/contraseña tras BiometricPrompt y rellenar el login en WebView.
@@ -30,9 +33,15 @@ import java.nio.charset.StandardCharsets;
 public final class AndroidBiometricBridge {
 
     private static final String PREFS = "gn_bio_login_v1";
+    private static final String PREFS_META = "gn_bio_login_meta_v1";
     private static final String K_EM = "em";
     private static final String K_PW = "pw";
     private static final String K_DECLINED = "declined_save";
+    /** Tenant y línea de negocio con la que se guardó el acceso (multitenant / rubros). */
+    private static final String K_SCOPE_TENANT = "scope_tenant_id";
+    private static final String K_SCOPE_BIZ = "scope_business_type";
+    private static final String K_META_VC = "app_version_code";
+    private static final String K_META_INSTALL = "install_instance_id";
     private static final int SAVE_PROMPT_DELAY_MS = 450;
     private static final int JS_LOGIN_HANDLER_MAX_ATTEMPTS = 100;
     private static final String JS_PREPARE_LOGIN_SCREEN =
@@ -50,6 +59,82 @@ public final class AndroidBiometricBridge {
     public AndroidBiometricBridge(MainActivity activity, WebView webView) {
         this.activity = activity;
         this.webView = webView;
+        ensureFreshInstallOrAppUpgrade();
+    }
+
+    /** Llamado desde {@link MainActivity} cuando el tenant activo cambia en sesión. */
+    public static void clearSavedLoginIfTenantChanged(Context context, int newTenantId) {
+        if (context == null || newTenantId < 1) {
+            return;
+        }
+        try {
+            SharedPreferences p =
+                    context.getApplicationContext()
+                            .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String em = p.getString(K_EM, "");
+            if (em == null || em.trim().isEmpty()) {
+                return;
+            }
+            int stored = p.getInt(K_SCOPE_TENANT, -1);
+            if (stored >= 1 && stored != newTenantId) {
+                p.edit().clear().apply();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private android.content.SharedPreferences metaPrefs() {
+        return ctx().getSharedPreferences(PREFS_META, Context.MODE_PRIVATE);
+    }
+
+    private static String normalizeBusinessType(String businessType) {
+        return businessType != null ? businessType.trim().toLowerCase(Locale.ROOT) : "";
+    }
+
+    private void wipeBiometricCredentialsInternal(boolean refreshUi) {
+        try {
+            ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+            if (refreshUi) {
+                activity.runOnUiThread(() -> webView.post(this::postRefreshLoginBiometricJs));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Nueva instalación, datos restaurados o APK distinta: no reutilizar huella de otro contexto. */
+    private void ensureFreshInstallOrAppUpgrade() {
+        try {
+            SharedPreferences meta = metaPrefs();
+            int vc = BuildConfig.VERSION_CODE;
+            int prevVc = meta.getInt(K_META_VC, -1);
+            String installId = meta.getString(K_META_INSTALL, "");
+            boolean firstRun = installId == null || installId.isEmpty();
+            boolean vcChanged = prevVc >= 0 && prevVc != vc;
+            if (firstRun || vcChanged) {
+                wipeBiometricCredentialsInternal(false);
+                if (firstRun) {
+                    installId = UUID.randomUUID().toString();
+                }
+                meta.edit().putString(K_META_INSTALL, installId).putInt(K_META_VC, vc).apply();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private boolean storedScopeMatches(int tenantId, String businessType) {
+        try {
+            SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String em = p.getString(K_EM, "");
+            if (em == null || em.trim().isEmpty()) {
+                return false;
+            }
+            int st = p.getInt(K_SCOPE_TENANT, -1);
+            String sb = normalizeBusinessType(p.getString(K_SCOPE_BIZ, ""));
+            int tid = tenantId > 0 ? tenantId : 1;
+            return st == tid && sb.equals(normalizeBusinessType(businessType));
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private Context ctx() {
@@ -158,14 +243,31 @@ public final class AndroidBiometricBridge {
 
     @JavascriptInterface
     public void clearSavedLogin() {
+        wipeBiometricCredentialsInternal(true);
+    }
+
+    /**
+     * Alinea el acceso biométrico con el tenant y la línea de negocio actuales (login / cambio de tenant).
+     * Si hay credenciales de otro ámbito, las borra.
+     */
+    @JavascriptInterface
+    public void syncBiometricLoginScope(int tenantId, String businessType) {
+        ensureFreshInstallOrAppUpgrade();
+        int tid = tenantId > 0 ? tenantId : 1;
+        String bt = normalizeBusinessType(businessType);
         try {
-            ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .edit()
-                    .remove(K_EM)
-                    .remove(K_PW)
-                    .remove(K_DECLINED)
-                    .apply();
-            activity.runOnUiThread(() -> webView.post(this::postRefreshLoginBiometricJs));
+            SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (!p.getString(K_EM, "").trim().isEmpty() && !storedScopeMatches(tid, bt)) {
+                wipeBiometricCredentialsInternal(true);
+                activity.runOnUiThread(
+                        () ->
+                                Toast.makeText(
+                                                activity,
+                                                "El acceso con huella era de otro tenant o tipo de negocio. "
+                                                        + "Guardalo de nuevo para este contexto.",
+                                                Toast.LENGTH_LONG)
+                                        .show());
+            }
         } catch (Throwable ignored) {
         }
     }
@@ -173,11 +275,25 @@ public final class AndroidBiometricBridge {
     @JavascriptInterface
     public boolean hasSavedLogin() {
         try {
-            String em = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_EM, "");
-            return em != null && !em.trim().isEmpty();
+            SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String em = p.getString(K_EM, "");
+            if (em == null || em.trim().isEmpty()) {
+                return false;
+            }
+            int st = p.getInt(K_SCOPE_TENANT, -1);
+            if (st < 1) {
+                return false;
+            }
+            return true;
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** Compatibilidad: guarda sin ámbito explícito (no recomendado). */
+    @JavascriptInterface
+    public void saveLoginWithBiometric(String email, String password) {
+        saveLoginWithBiometric(email, password, 1, "");
     }
 
     /** El usuario eligió no guardar el acceso con huella en este dispositivo (no volver a pedir en automático). */
@@ -208,7 +324,8 @@ public final class AndroidBiometricBridge {
     }
 
     @JavascriptInterface
-    public void saveLoginWithBiometric(String email, String password) {
+    public void saveLoginWithBiometric(
+            String email, String password, int tenantId, String businessType) {
         String em = email != null ? email.trim() : "";
         String pw = password != null ? password : "";
         if (em.isEmpty() || pw.isEmpty()) {
@@ -218,26 +335,33 @@ public final class AndroidBiometricBridge {
                                     .show());
             return;
         }
+        final int tid = tenantId > 0 ? tenantId : 1;
+        final String bt = normalizeBusinessType(businessType);
         activity.runOnUiThread(
                 () ->
                         mainHandler.postDelayed(
                                 () -> {
                                     if (!canShowBiometricPromptNow()) {
                                         mainHandler.postDelayed(
-                                                () -> showBiometricSavePrompt(em, pw), SAVE_PROMPT_DELAY_MS);
+                                                () -> showBiometricSavePrompt(em, pw, tid, bt),
+                                                SAVE_PROMPT_DELAY_MS);
                                         return;
                                     }
-                                    showBiometricSavePrompt(em, pw);
+                                    showBiometricSavePrompt(em, pw, tid, bt);
                                 },
                                 SAVE_PROMPT_DELAY_MS));
     }
 
-    private void persistCredentialsAfterBiometricOk(String em, String pw) {
+    private void persistCredentialsAfterBiometricOk(
+            String em, String pw, int tenantId, String businessType) {
         try {
+            int tid = tenantId > 0 ? tenantId : 1;
             ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     .edit()
                     .putString(K_EM, em)
                     .putString(K_PW, pw)
+                    .putInt(K_SCOPE_TENANT, tid)
+                    .putString(K_SCOPE_BIZ, normalizeBusinessType(businessType))
                     .remove(K_DECLINED)
                     .apply();
             Toast.makeText(activity, "Listo: podés usar «Entrar con huella».", Toast.LENGTH_SHORT).show();
@@ -247,9 +371,10 @@ public final class AndroidBiometricBridge {
         }
     }
 
-    private void showBiometricSavePrompt(String em, String pw) {
+    private void showBiometricSavePrompt(String em, String pw, int tenantId, String businessType) {
         if (!canShowBiometricPromptNow()) {
-            mainHandler.postDelayed(() -> showBiometricSavePrompt(em, pw), SAVE_PROMPT_DELAY_MS);
+            mainHandler.postDelayed(
+                    () -> showBiometricSavePrompt(em, pw, tenantId, businessType), SAVE_PROMPT_DELAY_MS);
             return;
         }
         if (biometricStatusMessage() != null) {
@@ -261,7 +386,7 @@ public final class AndroidBiometricBridge {
                     @Override
                     public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
                         try {
-                            persistCredentialsAfterBiometricOk(em, pw);
+                            persistCredentialsAfterBiometricOk(em, pw, tenantId, businessType);
                         } catch (Throwable t) {
                             Toast.makeText(activity, "Error al aplicar el acceso.", Toast.LENGTH_SHORT).show();
                         }
@@ -280,7 +405,7 @@ public final class AndroidBiometricBridge {
                     public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
                         if (errorCode == BiometricPrompt.ERROR_USER_CANCELED
                                 || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                            showRetryOrDeclineSaveDialog(em, pw);
+                            showRetryOrDeclineSaveDialog(em, pw, tenantId, businessType);
                             return;
                         }
                         if (errorCode != BiometricPrompt.ERROR_CANCELED) {
@@ -292,7 +417,7 @@ public final class AndroidBiometricBridge {
                                             Toast.LENGTH_SHORT)
                                     .show();
                         }
-                        showRetryOrDeclineSaveDialog(em, pw);
+                        showRetryOrDeclineSaveDialog(em, pw, tenantId, businessType);
                     }
                 };
         BiometricPrompt prompt =
@@ -308,7 +433,7 @@ public final class AndroidBiometricBridge {
         prompt.authenticate(b.build());
     }
 
-    private void showRetryOrDeclineSaveDialog(String em, String pw) {
+    private void showRetryOrDeclineSaveDialog(String em, String pw, int tenantId, String businessType) {
         new AlertDialog.Builder(activity)
                 .setTitle("Guardar acceso")
                 .setMessage(
@@ -320,7 +445,7 @@ public final class AndroidBiometricBridge {
                         "Reintentar",
                         (d, w) -> {
                             d.dismiss();
-                            showBiometricSavePrompt(em, pw);
+                            showBiometricSavePrompt(em, pw, tenantId, businessType);
                         })
                 .setNegativeButton(
                         "No quiero guardar",
@@ -347,10 +472,22 @@ public final class AndroidBiometricBridge {
 
     @JavascriptInterface
     public void loginWithBiometric() {
-        if (!hasSavedLogin()) {
+        loginWithBiometric(1, "");
+    }
+
+    @JavascriptInterface
+    public void loginWithBiometric(int tenantId, String businessType) {
+        ensureFreshInstallOrAppUpgrade();
+        int tid = tenantId > 0 ? tenantId : 1;
+        String bt = normalizeBusinessType(businessType);
+        if (!storedScopeMatches(tid, bt) || !hasSavedLogin()) {
             activity.runOnUiThread(
                     () ->
-                            Toast.makeText(activity, "Primero guardá el acceso con huella.", Toast.LENGTH_SHORT)
+                            Toast.makeText(
+                                            activity,
+                                            "No hay acceso con huella para este tenant y tipo de negocio. "
+                                                    + "Ingresá y guardalo de nuevo.",
+                                            Toast.LENGTH_LONG)
                                     .show());
             return;
         }

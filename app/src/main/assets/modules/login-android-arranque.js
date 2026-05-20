@@ -124,13 +124,39 @@ function instalarPreservacionCamposLogin() {
         });
     } catch (_) {}
     try {
+        let teniaSesion = document.body?.classList.contains('gn-sesion-activa');
         const mo = new MutationObserver(() => {
-            if (document.body?.classList.contains('gn-sesion-activa')) {
+            const activa = document.body?.classList.contains('gn-sesion-activa');
+            if (activa) {
                 sessionStorage.removeItem(DRAFT_EM);
                 sessionStorage.removeItem(DRAFT_PW);
+            } else if (teniaSesion) {
+                try {
+                    if (typeof window.__gnPurgarHuellaAlCerrarSesion === 'function') {
+                        window.__gnPurgarHuellaAlCerrarSesion();
+                    }
+                } catch (_) {}
             }
+            teniaSesion = activa;
         });
         mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    } catch (_) {}
+}
+
+/** Nueva APK / reinstalación: el puente nativo ya purga; esto refuerza tras actualizar WebView. */
+function purgarHuellaSiCambioVersionApk() {
+    if (!esShellAndroidGestorNova()) return;
+    const B = window.AndroidBiometric;
+    if (!B || typeof B.clearSavedLogin !== 'function') return;
+    try {
+        if (typeof window.AndroidConfig?.getVersionCode !== 'function') return;
+        const vc = String(window.AndroidConfig.getVersionCode());
+        const key = 'pmg_bio_bound_vc';
+        const prev = localStorage.getItem(key);
+        if (prev != null && prev !== '' && prev !== vc) {
+            B.clearSavedLogin();
+        }
+        localStorage.setItem(key, vc);
     } catch (_) {}
 }
 
@@ -149,6 +175,7 @@ function suprimirToastInactividadArranque() {
 }
 
 prepararStorageSesionObsoletaArranqueAndroid();
+purgarHuellaSiCambioVersionApk();
 suprimirToastInactividadArranque();
 
 if (typeof document !== 'undefined') {

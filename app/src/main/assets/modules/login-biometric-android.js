@@ -1,8 +1,11 @@
 /**
  * Login con huella en Android WebView (puente nativo AndroidBiometric).
  * Engancha {@code window.__gnEjecutarLogin} sin tocar app.js: tras login OK ofrece guardar con biométrica.
+ * El acceso guardado queda ligado a tenant + línea de negocio; se purga en instalación/APK distinta.
  * made by leavera77
  */
+
+import { tenantIdDesdeAppConfig, TENANT_ID_MONOTENANT_FALLBACK } from './tenantResolver.js';
 
 function _gnIsAndroidGestorNovaShell() {
     try {
@@ -78,6 +81,38 @@ function _gnInstallLoginHandlerTrap() {
     }
 }
 
+function _gnBioScopeActual() {
+    let tid = TENANT_ID_MONOTENANT_FALLBACK;
+    try {
+        if (typeof window.tenantIdActual === 'function') {
+            const n = Number(window.tenantIdActual());
+            if (Number.isFinite(n) && n > 0) tid = n;
+        } else {
+            const cfgT = tenantIdDesdeAppConfig(window.APP_CONFIG || {});
+            if (Number.isFinite(cfgT) && cfgT > 0) tid = cfgT;
+        }
+    } catch (_) {}
+    let bt = '';
+    try {
+        const cfg = window.EMPRESA_CFG || {};
+        bt = String(cfg.active_business_type || cfg.tipo || '')
+            .trim()
+            .toLowerCase();
+    } catch (_) {}
+    return { tid, bt };
+}
+
+function _gnSyncBiometricLoginScope() {
+    const B = window.AndroidBiometric;
+    if (!B || typeof B.syncBiometricLoginScope !== 'function') return;
+    const { tid, bt } = _gnBioScopeActual();
+    try {
+        B.syncBiometricLoginScope(tid, bt);
+    } catch (e) {
+        console.warn('[bio-login] sync scope', e);
+    }
+}
+
 function _gnUserDeclinedBiometricSave() {
     const B = window.AndroidBiometric;
     try {
@@ -91,11 +126,13 @@ function _gnOfferSaveBiometricIfNeeded(em, pw) {
     if (!em || !pw) return;
     const B = window.AndroidBiometric;
     if (!B || typeof B.isAvailable !== 'function' || !B.isAvailable()) return;
+    _gnSyncBiometricLoginScope();
     if (typeof B.hasSavedLogin === 'function' && B.hasSavedLogin()) return;
     if (_gnUserDeclinedBiometricSave()) return;
     if (typeof B.saveLoginWithBiometric !== 'function') return;
+    const { tid, bt } = _gnBioScopeActual();
     try {
-        B.saveLoginWithBiometric(em, pw);
+        B.saveLoginWithBiometric(em, pw, tid, bt);
     } catch (e) {
         console.warn('[bio-login] save offer', e);
     }
@@ -142,8 +179,12 @@ function _gnBioUiClick(ev) {
     const B = window.AndroidBiometric;
     if (!B) return;
     if (t.id === 'gn-bio-login-btn') {
+        const { tid, bt } = _gnBioScopeActual();
+        _gnSyncBiometricLoginScope();
         try {
-            if (typeof B.loginWithBiometric === 'function') B.loginWithBiometric();
+            if (typeof B.loginWithBiometric === 'function') {
+                B.loginWithBiometric(tid, bt);
+            }
         } catch (e) {
             console.warn('[bio-login]', e);
         }
@@ -161,8 +202,12 @@ function _gnBioUiClick(ev) {
             } catch (_) {}
             return;
         }
+        const { tid, bt } = _gnBioScopeActual();
+        _gnSyncBiometricLoginScope();
         try {
-            if (typeof B.saveLoginWithBiometric === 'function') B.saveLoginWithBiometric(em, pw);
+            if (typeof B.saveLoginWithBiometric === 'function') {
+                B.saveLoginWithBiometric(em, pw, tid, bt);
+            }
         } catch (e) {
             console.warn('[bio-save]', e);
         }
@@ -178,6 +223,7 @@ function _gnBioUiClick(ev) {
 }
 
 function _gnMountLoginBiometricUi() {
+    _gnSyncBiometricLoginScope();
     const wrap = document.getElementById('gn-login-bio-android');
     const B = typeof window !== 'undefined' ? window.AndroidBiometric : null;
     if (!wrap || !B || typeof B.isAvailable !== 'function' || !B.isAvailable()) {
@@ -223,8 +269,20 @@ function _gnMountLoginBiometricUi() {
     }
 }
 
+function _gnPurgarHuellaAlCerrarSesion() {
+    const B = window.AndroidBiometric;
+    if (!B || typeof B.clearSavedLogin !== 'function') return;
+    try {
+        B.clearSavedLogin();
+    } catch (_) {}
+}
+
 if (typeof window !== 'undefined') {
     window.__gnRefreshLoginBiometricUi = _gnMountLoginBiometricUi;
+    window.__gnPurgarHuellaAlCerrarSesion = _gnPurgarHuellaAlCerrarSesion;
+    try {
+        window.addEventListener('gestornova-app-ready', () => _gnSyncBiometricLoginScope());
+    } catch (_) {}
     _gnInstallLoginHandlerTrap();
     _gnScheduleWrapPoll();
     _gnMountLoginListenerForLsVisibility();

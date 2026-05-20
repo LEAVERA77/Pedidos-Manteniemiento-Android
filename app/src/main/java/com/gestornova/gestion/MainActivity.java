@@ -1114,6 +1114,11 @@ public class MainActivity extends AppCompatActivity {
             getSharedPreferences(UbicacionWorker.PREFS_SESSION, Context.MODE_PRIVATE).edit()
                     .putInt(UbicacionWorker.KEY_TENANT_ID, tenantId)
                     .apply();
+            try {
+                AndroidBiometricBridge.clearSavedLoginIfTenantChanged(
+                        MainActivity.this.getApplicationContext(), tenantId);
+            } catch (Throwable ignored) {
+            }
         }
 
         @JavascriptInterface
