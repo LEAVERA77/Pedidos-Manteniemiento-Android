@@ -1238,7 +1238,6 @@ public class MainActivity extends AppCompatActivity {
                 if (cm == null) return;
                 ClipData clip = ClipData.newPlainText("GestorNova", text != null ? text : "");
                 cm.setPrimaryClip(clip);
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Copiado al portapapeles", Toast.LENGTH_SHORT).show());
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "No se pudo copiar", Toast.LENGTH_SHORT).show());
             }

@@ -61,7 +61,7 @@ function shellAssetUrls() {
     j('modules/pedido-detalle-shell.js'),
     j('modules/pedido-detalle-hydrate.js'),
     j('modules/pedido-detalle-incremental.js'),
-    j('modules/pedido-detalle-fotos-lazy-android.js'),
+    j('modules/pedido-fotos-campo-android.js'),
     j('modules/gn-android-cerrar-ui-para-mapa-zoom.js'),
     j('modules/gn-map-throttle-when-modal.js'),
     j('modules/gn-modal-z-index-stack.js'),

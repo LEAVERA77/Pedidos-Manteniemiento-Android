@@ -443,6 +443,25 @@
   </div>
 </div>
 
+<!-- MODAL FOTOS CAMPO (técnico Android: ejecución / avance) -->
+<div id="gn-modal-fotos-campo" class="mo">
+  <div class="mc">
+    <div class="mh"><h3 id="gn-fotos-campo-titulo"><i class="fas fa-camera"></i> Fotos del trabajo</h3><button type="button" class="cm gn-fotos-campo-cerrar"><i class="fas fa-times"></i></button></div>
+    <div class="mb">
+      <p style="font-size:.85rem;color:var(--tm);margin:0 0 .65rem;line-height:1.45">Podés sacar hasta <strong>2 fotos</strong> con la cámara del celular. Se comprimen automáticamente. También podés continuar sin fotos.</p>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+        <button type="button" id="gn-fotos-campo-camara" class="btn-foto"><i class="fas fa-camera"></i> Tomar foto</button>
+      </div>
+      <input type="file" id="gn-fotos-campo-input" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <div id="gn-fotos-campo-preview" class="fotos-container"></div>
+      <div class="fa2" style="padding:1rem 0 0">
+        <button type="button" class="sec" id="gn-fotos-campo-saltar">Continuar sin fotos</button>
+        <button type="button" class="bp" id="gn-fotos-campo-confirmar"><i class="fas fa-check"></i> Continuar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL AVANCE -->
 <div id="avance-modal" class="avance-modal">
   <div class="avance-content">

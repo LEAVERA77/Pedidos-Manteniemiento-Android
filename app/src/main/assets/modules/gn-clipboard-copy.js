@@ -4,6 +4,10 @@
  * made by leavera77
  */
 
+let _copiarToastTimer = null;
+let _copiarUltimoTexto = '';
+let _copiarUltimoTs = 0;
+
 function copiarTextoFallbackDOM(text) {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -29,6 +33,18 @@ function copiarTextoFallbackDOM(text) {
  * @param {{ okMessage?: string }} [opts]
  * @returns {Promise<void>}
  */
+function mostrarToastCopiaUnaVez(okMsg, tipo, dur, toastFn) {
+    const now = Date.now();
+    if (okMsg === _copiarUltimoTexto && now - _copiarUltimoTs < 900) return;
+    _copiarUltimoTexto = okMsg;
+    _copiarUltimoTs = now;
+    clearTimeout(_copiarToastTimer);
+    _copiarToastTimer = setTimeout(() => {
+        _copiarUltimoTexto = '';
+    }, 900);
+    toastFn(okMsg, tipo, dur);
+}
+
 export async function copiarTextoContenido(raw, opts = {}) {
     const t = String(raw ?? '');
     const okMsg = opts.okMessage || 'Copiado al portapapeles';
@@ -36,12 +52,15 @@ export async function copiarTextoContenido(raw, opts = {}) {
         typeof window !== 'undefined' && typeof window.toast === 'function'
             ? window.toast
             : () => {};
-    const dur = opts.durationMs != null ? opts.durationMs : 2800;
+    const dur = opts.durationMs != null ? opts.durationMs : 2200;
+    const silenciarToastNativo = !!opts.silenciarToastNativo;
 
     if (typeof window !== 'undefined' && window.AndroidDevice && typeof window.AndroidDevice.copyText === 'function') {
         try {
             window.AndroidDevice.copyText(t);
-            toastFn(okMsg, 'success', dur);
+            if (!silenciarToastNativo) {
+                mostrarToastCopiaUnaVez(okMsg, 'success', dur, toastFn);
+            }
             return;
         } catch (_) {}
     }
@@ -49,20 +68,20 @@ export async function copiarTextoContenido(raw, opts = {}) {
     if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         try {
             await navigator.clipboard.writeText(t);
-            toastFn(okMsg, 'success', dur);
+            mostrarToastCopiaUnaVez(okMsg, 'success', dur, toastFn);
             return;
         } catch (_) {
             if (copiarTextoFallbackDOM(t)) {
-                toastFn(okMsg, 'success', dur);
+                mostrarToastCopiaUnaVez(okMsg, 'success', dur, toastFn);
                 return;
             }
-            toastFn('Error al copiar', 'error', dur);
+            mostrarToastCopiaUnaVez('Error al copiar', 'error', dur, toastFn);
             return;
         }
     }
 
-    if (copiarTextoFallbackDOM(t)) toastFn(okMsg, 'success', dur);
-    else toastFn('Error al copiar', 'error', dur);
+    if (copiarTextoFallbackDOM(t)) mostrarToastCopiaUnaVez(okMsg, 'success', dur, toastFn);
+    else mostrarToastCopiaUnaVez('Error al copiar', 'error', dur, toastFn);
 }
 
 export function installGnClipboardCopy() {

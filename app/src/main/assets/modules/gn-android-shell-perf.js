@@ -3,7 +3,6 @@
  * made by leavera77
  */
 import './gn-dm-modal-perf-android.js';
-import './pedido-detalle-fotos-lazy-android.js';
 
 (function initGnAndroidShellPerf() {
     try {

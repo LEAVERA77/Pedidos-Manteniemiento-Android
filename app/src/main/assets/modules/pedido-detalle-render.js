@@ -293,14 +293,9 @@ function buildDetalleRenderParts(p, deps) {
         fotosHtml += '</div>';
     }
 
-    const shellAndroid =
-        typeof document !== 'undefined' && document.documentElement.classList.contains('gn-android-shell');
-    const fotosSectionHtml =
-        fotosCount > 0 && shellAndroid
-            ? `<details class="gn-dm-section-collapsible gn-dm-fotos-lazy"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds gn-dm-fotos-lazy-host"><p style="font-size:.8rem;color:var(--tl);margin:0">Tocá para ver las fotos</p></div></details>`
-            : fotosHtml
-              ? `<details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>`
-              : '';
+    const fotosSectionHtml = fotosHtml
+        ? `<details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>`
+        : '';
     
     
     const { la: laM, ln: lnM } = coordsEfectivasPedidoMapa(p);
@@ -480,7 +475,7 @@ function buildDetalleRenderParts(p, deps) {
             <div class="dr"><span class="dl">Provincia</span><span class="dv">${escDet(String(p.cpcia || '').trim() || '—')}</span></div>
             <div class="dr"><span class="dl">Código postal</span><span class="dv">${escDet(String(p.ccp || '').trim() || '—')}</span></div>
             ${usadaInferida ? '<p style="font-size:.76rem;color:#b45309;margin:0 0 .35rem;line-height:1.35">Ubicación aproximada por calle y número (el cliente no compartió GPS).</p>' : ''}
-            <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${laM != null && lnM != null ? ` <span class="dv-copy" onclick="copiarTexto('${latFormateada}')"><i class="fas fa-copy"></i> lat</span> <span class="dv-copy" onclick="copiarTexto('${lngFormateada}')"><i class="fas fa-copy"></i> lng</span>` : ''}</span></div>
+            <div class="dr"><span class="dl">WGS84</span><span class="dv">${wgs84UnaLinea}${laM != null && lnM != null ? ` <span class="dv-copy" onclick="event.stopPropagation();copiarTexto('${latFormateada}, ${lngFormateada}')"><i class="fas fa-copy"></i> Copiar</span>` : ''}</span></div>
             ${filasProyectadas}
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
             ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}`;

@@ -264,6 +264,12 @@ import {
     verificarGeocercaAntesIniciarPedido,
 } from './modules/pedido-operativa-top3-ui.js';
 import {
+    initPedidoFotosCampoAndroid,
+    solicitarFotosCampoOpcional,
+    tomarFotosAvanceTemp,
+    resetFotosAvanceSesion,
+} from './modules/pedido-fotos-campo-android.js';
+import {
     materialesDetalleDebeOmitirRecarga,
     materialesDetalleMarcarEstable,
     materialesDetalleIniciarCarga,
@@ -8765,10 +8771,17 @@ function comprimirImagen(file, opts = {}) {
 })(); 
 
 
+initPedidoFotosCampoAndroid({
+    comprimirImagen,
+    toast,
+    abrirCamara,
+    esAndroidShell: () => document.documentElement.classList.contains('gn-android-shell'),
+    mergeFotosBase64EnPedido,
+});
+
 async function procesarFotoSeleccionada(file, opts = {}) {
     if (!file) return;
     try {
-        toast('Procesando imagen...', 'info');
         const compressedImage = await comprimirImagen(file, opts);
         fotosTemporales.push(compressedImage);
         actualizarVistaPreviaFotos();
@@ -8922,12 +8935,17 @@ function actualizarVistaPreviaFotos() {
 
 
 function abrirAvance(id) {
+    resetFotosAvanceSesion();
     abrirModalAvancePedido(id, (pid) => app.p.find((x) => String(x.id) === String(pid)));
 }
 
 initPedidoAvanceModalUI({
     findPedido: (id) => app.p.find((p) => String(p.id) === String(id)),
-    onGuardar: (id, avance) => actualizarAvance(id, avance),
+    onGuardar: async (id, avance) => {
+        await actualizarAvance(id, avance);
+        const fotosAv = tomarFotosAvanceTemp();
+        if (fotosAv.length) await mergeFotosBase64EnPedido(id, fotosAv);
+    },
     toast,
 });
 
@@ -9379,6 +9397,24 @@ function _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(pedidoId) {
     }
 }
 
+async function mergeFotosBase64EnPedido(id, nuevasDataUrls) {
+    const arr = Array.isArray(nuevasDataUrls) ? nuevasDataUrls.filter(Boolean) : [];
+    if (!arr.length) return;
+    const prev = app.p.find((p) => String(p.id) === String(id));
+    const exist = Array.isArray(prev?.fotos) ? prev.fotos.filter(Boolean) : [];
+    const merged = [...exist, ...arr].slice(0, 12);
+    const cadena = merged.join('||');
+    const apiRow = await pedidoPutApi(id, { foto_base64: cadena });
+    if (apiRow) {
+        const idx = app.p.findIndex((p) => String(p.id) === String(id));
+        if (idx !== -1) app.p[idx] = norm(apiRow);
+        offlinePedidosSave(app.p);
+        render();
+        return;
+    }
+    await updPedido(id, { foto_base64: cadena }, app.u?.id);
+}
+
 async function iniciar(id) {
     try {
         const geo = await verificarGeocercaAntesIniciarPedido(id);
@@ -9386,10 +9422,15 @@ async function iniciar(id) {
             toast(geo.message || 'Geocerca: acercate al reclamo para iniciar', 'warning');
             return;
         }
+        const fotosCampo = await solicitarFotosCampoOpcional(id, 'Al poner en ejecución');
         const now = new Date().toISOString();
         const prevIni = app.p.find((p) => String(p.id) === String(id));
         const bodyIni = bodyIniciarEjecucionSinBajarAvance(prevIni);
         if (prevIni && (parseInt(prevIni.av, 10) || 0) === 0) bodyIni.fecha_avance = now;
+        if (fotosCampo.length) {
+            const exist = Array.isArray(prevIni?.fotos) ? prevIni.fotos.filter(Boolean) : [];
+            bodyIni.foto_base64 = [...exist, ...fotosCampo].join('||');
+        }
         const apiRow = await pedidoPutApi(id, bodyIni);
         if (apiRow) {
             const idx = app.p.findIndex(p => String(p.id) === String(id));
@@ -9406,6 +9447,7 @@ async function iniciar(id) {
         const camposIni = { estado: 'En ejecución', fecha_avance: now };
         if (!prevIni || (parseInt(prevIni.av, 10) || 0) === 0) camposIni.avance = 0;
         await updPedido(id, camposIni, app.u?.id);
+        if (fotosCampo.length) await mergeFotosBase64EnPedido(id, fotosCampo);
         if (puedeEnviarApiRestPedidos()) {
             const pidNum = parseInt(id, 10);
             if (Number.isFinite(pidNum) && pidNum > 0) void notificarWhatsappClienteEventoApi(pidNum, 'inicio');
