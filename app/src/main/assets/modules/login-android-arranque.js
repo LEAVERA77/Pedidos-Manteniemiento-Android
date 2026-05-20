@@ -130,7 +130,7 @@ function instalarPreservacionCamposLogin() {
             if (activa) {
                 sessionStorage.removeItem(DRAFT_EM);
                 sessionStorage.removeItem(DRAFT_PW);
-            } else if (teniaSesion) {
+            } else if (teniaSesion && !window.__gnBiometricLoginFlow) {
                 try {
                     if (typeof window.__gnPurgarHuellaAlCerrarSesion === 'function') {
                         window.__gnPurgarHuellaAlCerrarSesion();

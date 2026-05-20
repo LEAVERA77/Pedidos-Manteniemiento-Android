@@ -21,27 +21,32 @@ let _gnLoginWrapInstalled = false;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let _gnBioOfferTimer = null;
 
+function _gnScheduleOfferSaveBiometricAfterLogin(em0, pw0) {
+    if (!_gnIsAndroidGestorNovaShell() || !em0 || !pw0) return;
+    const offer = () => {
+        try {
+            if (!document.body?.classList.contains('gn-sesion-activa')) return;
+            _gnOfferSaveBiometricIfNeeded(em0, pw0);
+        } catch (_) {}
+    };
+    if (_gnBioOfferTimer) clearTimeout(_gnBioOfferTimer);
+    _gnBioOfferTimer = setTimeout(() => {
+        _gnBioOfferTimer = null;
+        offer();
+    }, 650);
+    setTimeout(offer, 120);
+    setTimeout(offer, 900);
+}
+
 function _gnWrapLoginHandler(fn) {
     if (typeof fn !== 'function' || fn._gnBioLoginWrap) return fn;
     const wrapped = async function (e) {
         const em0 = (document.getElementById('em')?.value || '').trim();
         const pw0 = document.getElementById('pw')?.value || '';
-        let loginOk = false;
         try {
             return await fn.apply(this, arguments);
         } finally {
-            try {
-                loginOk = !!document.body?.classList.contains('gn-sesion-activa');
-            } catch (_) {}
-            if (loginOk && _gnIsAndroidGestorNovaShell() && em0 && pw0) {
-                if (_gnBioOfferTimer) clearTimeout(_gnBioOfferTimer);
-                _gnBioOfferTimer = setTimeout(() => {
-                    _gnBioOfferTimer = null;
-                    try {
-                        _gnOfferSaveBiometricIfNeeded(em0, pw0);
-                    } catch (_) {}
-                }, 650);
-            }
+            _gnScheduleOfferSaveBiometricAfterLogin(em0, pw0);
         }
     };
     wrapped._gnBioLoginWrap = true;
@@ -173,20 +178,38 @@ function _gnScheduleWrapPoll() {
     }, 150);
 }
 
+function _gnSetBiometricFlowActive(on) {
+    try {
+        window.__gnBiometricLoginFlow = !!on;
+    } catch (_) {}
+}
+
 function _gnBioUiClick(ev) {
     const t = ev.target;
     if (!t || !t.id) return;
     const B = window.AndroidBiometric;
     if (!B) return;
     if (t.id === 'gn-bio-login-btn') {
+        if (typeof B.hasSavedLogin === 'function' && !B.hasSavedLogin()) {
+            try {
+                window.toast?.(
+                    'Primero ingresá con usuario y contraseña y guardá el acceso con huella.',
+                    'info'
+                );
+            } catch (_) {}
+            return;
+        }
         const { tid, bt } = _gnBioScopeActual();
         _gnSyncBiometricLoginScope();
+        _gnSetBiometricFlowActive(true);
         try {
             if (typeof B.loginWithBiometric === 'function') {
                 B.loginWithBiometric(tid, bt);
             }
         } catch (e) {
             console.warn('[bio-login]', e);
+        } finally {
+            setTimeout(() => _gnSetBiometricFlowActive(false), 8000);
         }
         return;
     }
@@ -204,12 +227,15 @@ function _gnBioUiClick(ev) {
         }
         const { tid, bt } = _gnBioScopeActual();
         _gnSyncBiometricLoginScope();
+        _gnSetBiometricFlowActive(true);
         try {
             if (typeof B.saveLoginWithBiometric === 'function') {
                 B.saveLoginWithBiometric(em, pw, tid, bt);
             }
         } catch (e) {
             console.warn('[bio-save]', e);
+        } finally {
+            setTimeout(() => _gnSetBiometricFlowActive(false), 12000);
         }
         return;
     }

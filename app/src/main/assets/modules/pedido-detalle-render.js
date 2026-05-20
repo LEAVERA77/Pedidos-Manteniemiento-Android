@@ -485,10 +485,7 @@ function buildDetalleRenderParts(p, deps) {
             <button class="ba2" style="margin-top:.5rem" onclick="_zm('${p.id}')"><i class="fas fa-search-location"></i> Ver en mapa (zoom máximo)</button>
             ${esAdmin() ? `<button class="ba2" id="btn-regeocodificar" style="margin-top:.5rem;background:#0891b2;color:#fff;border-color:#0891b2" onclick="regeocodificarPedido('${p.id}')"><i class="fas fa-map-marker-alt"></i> Re-geocodificar</button>` : ''}`;
 
-    let sectionTop3 = htmlOperativaTop3Section();
-    if (shellAndroid) {
-        sectionTop3 = sectionTop3.replace(/\s+open(?=[\s>])/i, '');
-    }
+    const sectionTop3 = htmlOperativaTop3Section();
 
     const sections = {
         info: sectionInfo,

@@ -3642,20 +3642,25 @@ const gnLoginSubmitHandler = async e => {
         lb.disabled = false;
     }
 };
+/** Expuesto para index.html (#lb) y login biométrico; el trap en login-biometric-android.js lo envuelve. */
+window.__gnEjecutarLogin = gnLoginSubmitHandler;
 if (lfLogin) {
-    lfLogin.addEventListener('submit', gnLoginSubmitHandler);
+    const _gnDispatchLogin = (e) => {
+        const fn = window.__gnEjecutarLogin;
+        if (typeof fn === 'function') return fn(e);
+        return gnLoginSubmitHandler(e);
+    };
+    lfLogin.addEventListener('submit', _gnDispatchLogin);
     for (const id of ['em', 'pw']) {
         document.getElementById(id)?.addEventListener('keydown', e => {
             if (e.key !== 'Enter') return;
             try {
                 e.preventDefault();
             } catch (_) {}
-            gnLoginSubmitHandler(e);
+            _gnDispatchLogin(e);
         });
     }
 }
-/** Expuesto para el script inline de index.html (click en #lb antes de que el módulo termine). */
-window.__gnEjecutarLogin = gnLoginSubmitHandler;
 
 (function wrapConfirmGestorNova() {
     if (typeof window === 'undefined' || window.__gnConfirmWrapped) return;

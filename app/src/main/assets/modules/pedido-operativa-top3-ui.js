@@ -1,5 +1,6 @@
 /**
- * UI detalle pedido: geocerca, chat interno, fotos antes/después (Top 3 cooperativa).
+ * UI detalle pedido: geocerca y chat interno (cooperativa).
+ * Fotos del trabajo: bloque clásico en detalle (p.fotos), no galería antes/después aquí.
  * made by leavera77
  */
 
@@ -10,9 +11,9 @@ const esc = (t) =>
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 
-/** HTML placeholder en detalle (#dmc). */
+/** HTML placeholder en detalle (#dmc). Colapsado por defecto (mejor scroll en Android). */
 export function htmlOperativaTop3Section() {
-    return `<details class="gn-dm-section-collapsible gn-operativa-top3-wrap" id="gn-operativa-top3-wrap" open>
+    return `<details class="gn-dm-section-collapsible gn-operativa-top3-wrap" id="gn-operativa-top3-wrap">
 <summary class="gn-dm-section-collapsible-sum"><i class="fas fa-hard-hat"></i> Coordinación en campo</summary>
 <div id="gn-operativa-top3-host" class="gn-operativa-top3-host ds" style="margin-top:.35rem"></div>
 </details>`;
@@ -24,6 +25,14 @@ function hostEl() {
 
 function wrapEl() {
     return document.getElementById('gn-operativa-top3-wrap');
+}
+
+function esAndroidShell() {
+    try {
+        return document.documentElement.classList.contains('gn-android-shell');
+    } catch (_) {
+        return false;
+    }
 }
 
 async function obtenerUbicacionDispositivo() {
@@ -115,26 +124,6 @@ async function cargarChat(pid) {
     }
 }
 
-async function cargarFotos(pid) {
-    const grid = document.getElementById('gn-op-fotos-grid');
-    if (!grid || typeof window.gnOperativaFotosListar !== 'function') return;
-    try {
-        const rows = await window.gnOperativaFotosListar(pid);
-        if (!rows?.length) {
-            grid.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin fotos clasificadas.</p>';
-            return;
-        }
-        grid.innerHTML = rows
-            .map(
-                (f) =>
-                    `<a href="${esc(f.url_cloudinary)}" target="_blank" rel="noopener" style="display:block"><img src="${esc(f.url_cloudinary)}" alt="${esc(f.tipo)}" loading="lazy" decoding="async" style="width:100%;max-height:120px;object-fit:cover;border-radius:.35rem;border:1px solid var(--bo)"/><span style="font-size:.7rem;color:var(--tl)">${esc(f.tipo)} #${(f.orden ?? 0) + 1}</span></a>`
-            )
-            .join('');
-    } catch (e) {
-        grid.innerHTML = `<p style="color:var(--re);font-size:.8rem">${esc(e.message || 'Error')}</p>`;
-    }
-}
-
 async function cargarEventosGeocerca(pid, esAdmin) {
     const el = document.getElementById('gn-op-geocerca-log');
     if (!el || !esAdmin || typeof window.gnOperativaGeocercaEventos !== 'function') return;
@@ -161,28 +150,38 @@ async function cargarEventosGeocerca(pid, esAdmin) {
     }
 }
 
-function leerArchivosComoBase64(fileList, max = 6) {
-    const files = Array.from(fileList || []).slice(0, max);
-    return Promise.all(
-        files.map(
-            (file) =>
-                new Promise((resolve, reject) => {
-                    const r = new FileReader();
-                    r.onload = () => resolve(String(r.result || ''));
-                    r.onerror = () => reject(new Error('No se pudo leer imagen'));
-                    r.readAsDataURL(file);
-                })
-        )
-    );
-}
-
 /**
  * @param {object} p pedido normalizado
  * @param {{ ed: boolean, esAdmin: boolean, toast?: Function }} ctx
  */
 export function mountPedidoOperativaTop3UI(p, ctx = {}) {
-    if (typeof document !== 'undefined' && document.documentElement.classList.contains('gn-android-shell')) {
-        requestAnimationFrame(() => requestAnimationFrame(() => mountPedidoOperativaTop3UINow(p, ctx)));
+    const wrap = wrapEl();
+    if (!wrap || !p?.id) return;
+    const pidKey = String(p.id);
+    if (!Number.isFinite(parseInt(p.id, 10)) || pidKey.startsWith('off_')) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = '';
+
+    if (esAndroidShell()) {
+        if (wrap.dataset.gnOpMountedPid === pidKey && hostEl()?.dataset?.gnOpReady === '1') {
+            return;
+        }
+        if (wrap._gnOpToggleHandler) {
+            try {
+                wrap.removeEventListener('toggle', wrap._gnOpToggleHandler);
+            } catch (_) {}
+        }
+        wrap.dataset.gnOpMountedPid = pidKey;
+        wrap._gnOpToggleHandler = () => {
+            if (!wrap.open) return;
+            mountPedidoOperativaTop3UINow(p, ctx);
+        };
+        wrap.addEventListener('toggle', wrap._gnOpToggleHandler);
+        if (wrap.open) {
+            mountPedidoOperativaTop3UINow(p, ctx);
+        }
         return;
     }
     mountPedidoOperativaTop3UINow(p, ctx);
@@ -202,6 +201,7 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
     const esAdmin = !!ctx.esAdmin;
     const toastFn = typeof ctx.toast === 'function' ? ctx.toast : () => {};
 
+    host.dataset.gnOpReady = '1';
     host.innerHTML = `
 <div class="gn-op-block">
   <h4 style="margin:0 0 .4rem;font-size:.9rem"><i class="fas fa-map-pin"></i> Geocerca</h4>
@@ -219,27 +219,9 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
   </div>`
           : ''
   }
-</div>
-<div class="gn-op-block" style="margin-top:.75rem">
-  <h4 style="margin:0 0 .4rem;font-size:.9rem"><i class="fas fa-images"></i> Fotos antes / después</h4>
-  <div id="gn-op-fotos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.4rem"></div>
-  ${
-      ed && p.es === 'En ejecución'
-          ? `<div style="margin-top:.45rem;display:flex;flex-wrap:wrap;gap:.35rem;align-items:center">
-    <select id="gn-op-foto-tipo" style="padding:.35rem;border:1px solid var(--bo);border-radius:.4rem">
-      <option value="antes">Antes</option>
-      <option value="despues">Después</option>
-      <option value="otro">Otro</option>
-    </select>
-    <input type="file" id="gn-op-foto-files" accept="image/*" multiple style="max-width:12rem;font-size:.75rem">
-    <button type="button" class="btn-sm primary" id="gn-op-foto-subir">Subir</button>
-  </div>`
-          : ''
-  }
 </div>`;
 
     void cargarChat(pid);
-    void cargarFotos(pid);
     void cargarEventosGeocerca(pid, esAdmin);
 
     document.getElementById('gn-op-chat-send')?.addEventListener('click', async () => {
@@ -253,24 +235,6 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
             await cargarChat(pid);
         } catch (e) {
             toastFn(e.message || 'No se pudo enviar', 'error');
-        }
-    });
-
-    document.getElementById('gn-op-foto-subir')?.addEventListener('click', async () => {
-        const tipo = document.getElementById('gn-op-foto-tipo')?.value || 'otro';
-        const files = document.getElementById('gn-op-foto-files')?.files;
-        if (!files?.length) {
-            toastFn('Elegí al menos una imagen', 'warning');
-            return;
-        }
-        try {
-            const b64 = await leerArchivosComoBase64(files);
-            await window.gnOperativaFotosSubir(pid, tipo, b64);
-            toastFn('Fotos subidas', 'success');
-            document.getElementById('gn-op-foto-files').value = '';
-            await cargarFotos(pid);
-        } catch (e) {
-            toastFn(e.message || 'Error al subir', 'error');
         }
     });
 }

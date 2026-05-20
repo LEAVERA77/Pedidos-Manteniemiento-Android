@@ -200,7 +200,12 @@ public final class AndroidBiometricBridge {
     }
 
     private void prepareLoginScreenInWebView() {
-        webView.post(() -> webView.evaluateJavascript(JS_PREPARE_LOGIN_SCREEN, null));
+        webView.post(
+                () ->
+                        webView.evaluateJavascript(
+                                "(function(){try{window.__gnBiometricLoginFlow=true;}catch(x){}})();"
+                                        + JS_PREPARE_LOGIN_SCREEN,
+                                null));
     }
 
     private void waitForJsLoginHandlerThen(Runnable onReady) {
@@ -236,7 +241,8 @@ public final class AndroidBiometricBridge {
         webView.post(
                 () ->
                         webView.evaluateJavascript(
-                                "try{if(typeof window.__gnRefreshLoginBiometricUi==='function')"
+                                "try{window.__gnBiometricLoginFlow=false;"
+                                        + "if(typeof window.__gnRefreshLoginBiometricUi==='function')"
                                         + "window.__gnRefreshLoginBiometricUi();}catch(e){}",
                                 null));
     }
@@ -257,7 +263,10 @@ public final class AndroidBiometricBridge {
         String bt = normalizeBusinessType(businessType);
         try {
             SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            if (!p.getString(K_EM, "").trim().isEmpty() && !storedScopeMatches(tid, bt)) {
+            String emStored = p.getString(K_EM, "");
+            if (emStored != null
+                    && !emStored.trim().isEmpty()
+                    && !storedScopeMatches(tid, bt)) {
                 wipeBiometricCredentialsInternal(true);
                 activity.runOnUiThread(
                         () ->
@@ -427,10 +436,14 @@ public final class AndroidBiometricBridge {
                         .setTitle("Guardar acceso")
                         .setSubtitle("Confirmá con huella o rostro para guardar en este dispositivo.")
                         .setNegativeButtonText("Cancelar");
+        applyAllowedAuthenticators(b);
+        prompt.authenticate(b.build());
+    }
+
+    private void applyAllowedAuthenticators(BiometricPrompt.PromptInfo.Builder b) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             b.setAllowedAuthenticators(allowedBiometricAuthenticators());
         }
-        prompt.authenticate(b.build());
     }
 
     private void showRetryOrDeclineSaveDialog(String em, String pw, int tenantId, String businessType) {
@@ -480,7 +493,17 @@ public final class AndroidBiometricBridge {
         ensureFreshInstallOrAppUpgrade();
         int tid = tenantId > 0 ? tenantId : 1;
         String bt = normalizeBusinessType(businessType);
-        if (!storedScopeMatches(tid, bt) || !hasSavedLogin()) {
+        if (!hasSavedLogin()) {
+            activity.runOnUiThread(
+                    () ->
+                            Toast.makeText(
+                                            activity,
+                                            "Primero ingresá con usuario y contraseña y guardá el acceso con huella.",
+                                            Toast.LENGTH_LONG)
+                                    .show());
+            return;
+        }
+        if (!storedScopeMatches(tid, bt)) {
             activity.runOnUiThread(
                     () ->
                             Toast.makeText(
@@ -521,7 +544,7 @@ public final class AndroidBiometricBridge {
             String b64 =
                     Base64.encodeToString(o.toString().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
             String js =
-                    "(function(){try{var o=JSON.parse(atob('"
+                    "(function(){try{window.__gnBiometricLoginFlow=false;var o=JSON.parse(atob('"
                             + b64
                             + "'));var e=document.getElementById('em');var p=document.getElementById('pw');"
                             + "if(e)e.value=o.em||'';if(p)p.value=o.pw||'';"
@@ -580,9 +603,7 @@ public final class AndroidBiometricBridge {
                         .setTitle(title)
                         .setSubtitle(subtitle)
                         .setNegativeButtonText("Cancelar");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            b.setAllowedAuthenticators(allowedBiometricAuthenticators());
-        }
+        applyAllowedAuthenticators(b);
         prompt.authenticate(b.build());
     }
 }
