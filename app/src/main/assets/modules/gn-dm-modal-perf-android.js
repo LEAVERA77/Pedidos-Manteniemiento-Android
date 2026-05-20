@@ -15,6 +15,10 @@ let _scrollEndTimer = null;
 let _moDm = null;
 /** @type {MutationObserver | null} */
 let _moDmc = null;
+/** @type {{ p: object, opts: object } | null} */
+let _detalleRepintadoEncolado = null;
+/** @type {boolean} */
+let _detalleWrapIntentado = false;
 
 function isAndroidShellDoc() {
     try {
@@ -34,6 +38,38 @@ export function gnDmDetalleEstaDesplazandose() {
     }
 }
 
+/** Repintado diferido (refetch / opinión) mientras el usuario desplaza el detalle. */
+export function gnDmDebeDiferirRepintadoDetalle() {
+    if (!isAndroidShellDoc()) return false;
+    const dm = document.getElementById('dm');
+    return !!(dm && dm.classList.contains('active') && gnDmDetalleEstaDesplazandose());
+}
+
+export function gnDmEncolarRepintadoDetalle(p, opts = {}) {
+    if (!p) return;
+    _detalleRepintadoEncolado = { p, opts: opts || {} };
+    try {
+        window.__gnDetallePedidoActivo = p;
+    } catch (_) {}
+    try {
+        const pid = p.id != null ? String(p.id) : '';
+        const list = window.app?.p;
+        if (pid && Array.isArray(list)) {
+            const ix = list.findIndex((x) => x && String(x.id) === pid);
+            if (ix >= 0) list[ix] = p;
+        }
+    } catch (_) {}
+}
+
+function vaciarRepintadoEncolado() {
+    if (!_detalleRepintadoEncolado) return;
+    const q = _detalleRepintadoEncolado;
+    _detalleRepintadoEncolado = null;
+    const orig = window.__gnDetalleSinPerf || window.detalle;
+    if (typeof orig !== 'function') return;
+    void Promise.resolve(orig(q.p, q.opts)).catch(() => {});
+}
+
 function obtenerScrollDetalle() {
     const dmc = document.getElementById('dmc');
     if (!dmc) return null;
@@ -44,6 +80,7 @@ function marcarFinScroll() {
     const dm = document.getElementById('dm');
     if (!dm) return;
     dm.classList.remove(SCROLLING_CLASS);
+    requestAnimationFrame(vaciarRepintadoEncolado);
 }
 
 function onScrollDetalle() {
@@ -75,6 +112,13 @@ function alCambiarEstadoDm() {
     if (!dm) return;
     if (dm.classList.contains('active')) {
         requestAnimationFrame(vincularScrollDetalle);
+        void import('./pedido-ver-imagen.js')
+            .then((m) => {
+                try {
+                    m.installPedidoVerImagenDetalleObserver?.();
+                } catch (_) {}
+            })
+            .catch(() => {});
     } else {
         if (_scrollEndTimer != null) {
             clearTimeout(_scrollEndTimer);
@@ -107,14 +151,73 @@ function observarDm() {
     alCambiarEstadoDm();
 }
 
+function envolverDetalleGlobal() {
+    if (_detalleWrapIntentado && window.detalle?.__gnDmPerfWrap) return true;
+    const orig = window.detalle;
+    if (typeof orig !== 'function' || orig.__gnDmPerfWrap) return !!orig?.__gnDmPerfWrap;
+    window.__gnDetalleSinPerf = orig;
+
+    async function detalleConPerf(p, opts = {}) {
+        const optsSafe = opts || {};
+        const dm = document.getElementById('dm');
+        const pidOpen = dm?.dataset?.detallePedidoId;
+        const pid = p?.id != null ? String(p.id) : '';
+        const mismoPedidoAbierto =
+            !!dm?.classList.contains('active') && pidOpen != null && pid && String(pidOpen) === pid;
+        const soloActualizacion = !!optsSafe.skipBackgroundRefetch;
+
+        if (
+            isAndroidShellDoc() &&
+            mismoPedidoAbierto &&
+            soloActualizacion &&
+            gnDmDetalleEstaDesplazandose()
+        ) {
+            gnDmEncolarRepintadoDetalle(p, optsSafe);
+            return;
+        }
+
+        const scroll = obtenerScrollDetalle();
+        const scrollTop = mismoPedidoAbierto && scroll ? scroll.scrollTop : 0;
+
+        await orig(p, optsSafe);
+
+        if (scrollTop > 0) {
+            requestAnimationFrame(() => {
+                const sc = obtenerScrollDetalle();
+                if (sc) sc.scrollTop = scrollTop;
+            });
+        }
+    }
+
+    detalleConPerf.__gnDmPerfWrap = true;
+    window.detalle = detalleConPerf;
+    _detalleWrapIntentado = true;
+    return true;
+}
+
+function asegurarEnvoltorioDetalle() {
+    if (!isAndroidShellDoc()) return;
+    if (envolverDetalleGlobal()) return;
+    let n = 0;
+    const tick = () => {
+        n += 1;
+        if (envolverDetalleGlobal() || n > 80) return;
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+}
+
 export function installGnDmModalPerfAndroid() {
     if (!isAndroidShellDoc()) return;
     observarDm();
     observarDmc();
+    asegurarEnvoltorioDetalle();
 }
 
 if (typeof window !== 'undefined') {
     window.gnDmDetalleEstaDesplazandose = gnDmDetalleEstaDesplazandose;
+    window.gnDmDebeDiferirRepintadoDetalle = gnDmDebeDiferirRepintadoDetalle;
+    window.gnDmEncolarRepintadoDetalle = gnDmEncolarRepintadoDetalle;
     const boot = () => {
         try {
             installGnDmModalPerfAndroid();

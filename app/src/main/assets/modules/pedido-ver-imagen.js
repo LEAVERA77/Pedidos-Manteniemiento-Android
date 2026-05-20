@@ -841,7 +841,7 @@ export function disconnectPedidoVerImagenDetalleObserver() {
  */
 export function installPedidoVerImagenDetalleObserver() {
     if (typeof document === 'undefined') return;
-    disconnectPedidoVerImagenDetalleObserver();
+    if (_moDetallePedidoImg) return;
     const dmc = document.getElementById('dmc');
     if (!dmc) return;
     _moDetallePedidoImg = new MutationObserver(() => {

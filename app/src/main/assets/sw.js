@@ -57,6 +57,8 @@ function shellAssetUrls() {
     j('modules/gn-offline-shell-refresh.js'),
     j('modules/gn-android-shell-perf.js'),
     j('modules/gn-dm-modal-perf-android.js'),
+    j('modules/pedido-detalle-render.js'),
+    j('modules/pedido-detalle-incremental.js'),
     j('modules/gn-android-cerrar-ui-para-mapa-zoom.js'),
     j('modules/gn-map-throttle-when-modal.js'),
     j('modules/gn-modal-z-index-stack.js'),
