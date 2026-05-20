@@ -166,6 +166,7 @@ import {
 } from './js/pedidos-toolbar-filtros-exclusivos.js';
 
 import './modules/login-biometric-android.js';
+import './modules/login-android-arranque.js';
 import './modules/gn-lazy-optional-ui-bootstrap.js';
 import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
 
@@ -2969,15 +2970,6 @@ function habilitarBotonIngresarLogin() {
 }
 habilitarBotonIngresarLogin();
 actualizarBadgeOffline();
-(function limpiarLoginSinPersistenciaUsuario() {
-    try {
-        localStorage.removeItem('gestornova_saved_login');
-        const em = document.getElementById('em');
-        const pw = document.getElementById('pw');
-        if (em) em.value = '';
-        if (pw) pw.value = '';
-    } catch (_) {}
-})();
 (function antiAutofillCredencialesLogin() {
     const em = document.getElementById('em');
     const pw = document.getElementById('pw');
