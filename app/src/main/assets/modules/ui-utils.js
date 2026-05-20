@@ -70,6 +70,19 @@ export function toastError(tag, err, prefijo) {
     toast(msg, 'error');
 }
 
+/** Por encima de modales apilados (#dm, visor foto, etc.). */
+const GN_TOAST_Z_INDEX = '2147483646';
+
+export function toastAsegurarAlFrente(el) {
+    if (!el) return;
+    try {
+        if (el.parentNode !== document.body) document.body.appendChild(el);
+        el.style.setProperty('position', 'fixed', 'important');
+        el.style.setProperty('z-index', GN_TOAST_Z_INDEX, 'important');
+        el.style.setProperty('pointer-events', 'none', 'important');
+    } catch (_) {}
+}
+
 export function toast(msg, tipo = 'info', durationMs) {
     let el = document.getElementById('toast');
     if (!el) {
@@ -77,6 +90,7 @@ export function toast(msg, tipo = 'info', durationMs) {
         el.id = 'toast';
         document.body.appendChild(el);
     }
+    toastAsegurarAlFrente(el);
     let s = gnDice(String(msg ?? ''));
     const isRich = s.includes('<div') || s.includes('<p');
     const maxLen = tipo === 'error' ? (isRich ? 12000 : 600) : 2200;

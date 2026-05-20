@@ -292,6 +292,15 @@ function buildDetalleRenderParts(p, deps) {
         });
         fotosHtml += '</div>';
     }
+
+    const shellAndroid =
+        typeof document !== 'undefined' && document.documentElement.classList.contains('gn-android-shell');
+    const fotosSectionHtml =
+        fotosCount > 0 && shellAndroid
+            ? `<details class="gn-dm-section-collapsible gn-dm-fotos-lazy"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds gn-dm-fotos-lazy-host"><p style="font-size:.8rem;color:var(--tl);margin:0">Tocá para ver las fotos</p></div></details>`
+            : fotosHtml
+              ? `<details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>`
+              : '';
     
     
     const { la: laM, ln: lnM } = coordsEfectivasPedidoMapa(p);
@@ -494,8 +503,7 @@ function buildDetalleRenderParts(p, deps) {
         
         ${htmlOperativaTop3Section()}
         ${htmlBloqueCambiosAuditoria}
-        ${fotosHtml ? `
-        <details class="gn-dm-section-collapsible"><summary class="gn-dm-section-collapsible-sum">📸 Fotos del trabajo (${fotosCount})</summary><div class="ds">${fotosHtml}</div></details>` : ''}
+        ${fotosSectionHtml}
         </div>
         <div class="gn-dm-actions-bar">
         <div class="da">${accionesBarHtml}</div>

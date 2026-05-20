@@ -106,8 +106,28 @@ html.gn-android-shell #dm .gn-dm-detail-scroll > .ds {
     box-shadow: none;
 }
 
-html.gn-android-shell #dm.mo.active > .mc {
-    contain: layout style;
+html.gn-android-shell #dm .gn-dm-actions-bar .ba2,
+html.gn-android-shell #dm .gn-dm-detail-scroll .ba2,
+html.gn-android-shell #dm .dv-copy {
+    touch-action: manipulation;
+}
+
+html.gn-android-shell #modal-foto-ampliada.modal-foto {
+    contain: strict;
+    touch-action: none;
+}
+
+html.gn-android-shell #modal-foto-ampliada.gn-foto-panning #img-container,
+html.gn-android-shell #modal-foto-ampliada.gn-foto-panning #foto-ampliada {
+    will-change: transform;
+}
+
+html.gn-android-shell #modal-foto-ampliada #foto-ampliada {
+    transition: none !important;
+}
+
+html.gn-android-shell #modal-foto-ampliada .img-container {
+    contain: layout paint;
 }
 
 html.gn-android-shell #dm.gn-dm-is-scrolling .gn-dm-detail-scroll img,

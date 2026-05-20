@@ -519,7 +519,11 @@ function insertarImagenReclamoEnDOM(srcOrSources, meta = {}) {
     img.src = srcActivo();
     img.alt = 'Foto del reclamo';
     img.draggable = false;
-    img.style.cssText = `max-width:min(100%,96vw);width:auto;height:auto;max-height:min(38vh,380px);object-fit:contain;border-radius:8px;cursor:zoom-in;display:block;transform-origin:center center;transform:rotate(${rotPreview}deg)`;
+    const maxHPreview =
+        typeof document !== 'undefined' && document.documentElement.classList.contains('gn-android-shell')
+            ? 'min(28vh,260px)'
+            : 'min(38vh,380px)';
+    img.style.cssText = `max-width:min(100%,96vw);width:auto;height:auto;max-height:${maxHPreview};object-fit:contain;border-radius:8px;cursor:zoom-in;display:block;transform-origin:center center;transform:rotate(${rotPreview}deg)`;
 
     img.addEventListener('click', (ev) => {
         ev.preventDefault();

@@ -8387,12 +8387,32 @@ function comprimirImagen(file, opts = {}) {
     let lastX = 0, lastY = 0;
     
     let lastDist = 0;
+    let rafTransform = null;
+    let transformPendingAnimate = false;
 
     function applyTransform(animate) {
         img.style.transition = animate ? 'transform .2s' : 'none';
-        img.style.transform  = `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rot}deg)`;
+        img.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale}) rotate(${rot}deg)`;
         info.textContent = Math.round(scale * 100) + '%';
         cont.style.cursor = scale > 1 ? 'grab' : 'zoom-in';
+    }
+
+    function scheduleTransform(animate) {
+        transformPendingAnimate = transformPendingAnimate || !!animate;
+        if (rafTransform != null) return;
+        rafTransform = requestAnimationFrame(() => {
+            rafTransform = null;
+            const anim = transformPendingAnimate;
+            transformPendingAnimate = false;
+            applyTransform(anim);
+        });
+    }
+
+    function setFotoPanning(on) {
+        try {
+            if (on) modal.classList.add('gn-foto-panning');
+            else modal.classList.remove('gn-foto-panning');
+        } catch (_) {}
     }
 
     function clampTranslation() {
@@ -8428,16 +8448,9 @@ function comprimirImagen(file, opts = {}) {
             ty -= oy * (scale / prev - 1);
         }
         clampTranslation();
-        applyTransform(false);
+        scheduleTransform(false);
     }
 
-    
-    
-    
-    
-    
-    
-    
     window._fotoCtx = null; 
     window.verFotoAmpliada = function(src, ctx) {
         img.src = src;
@@ -8669,10 +8682,12 @@ function comprimirImagen(file, opts = {}) {
     
     let hasMoved = false;
     cont.addEventListener('mousedown', e => {
-        if (scale < 1.05) return; 
+        if (scale < 1.05) return;
         isDragging = true;
         hasMoved = false;
-        lastX = e.clientX; lastY = e.clientY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        setFotoPanning(true);
         cont.style.cursor = 'grabbing';
         e.preventDefault();
     });
@@ -8684,17 +8699,18 @@ function comprimirImagen(file, opts = {}) {
         tx += dx; ty += dy;
         lastX = e.clientX; lastY = e.clientY;
         clampTranslation();
-        applyTransform(false);
+        scheduleTransform(false);
     });
     document.addEventListener('mouseup', () => {
         if (!isDragging) return;
         isDragging = false;
-        
+        setFotoPanning(false);
         cont.style.cursor = scale > 1.05 ? 'grab' : 'zoom-in';
     });
 
     
     cont.addEventListener('touchstart', e => {
+        setFotoPanning(true);
         if (e.touches.length === 2) {
             lastDist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
@@ -8718,13 +8734,14 @@ function comprimirImagen(file, opts = {}) {
             const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
             if (lastDist > 0) zoomBy(dist / lastDist, cx, cy);
             lastDist = dist;
+            scheduleTransform(false);
         } else if (e.touches.length === 1 && isDragging) {
             tx += e.touches[0].clientX - lastX;
             ty += e.touches[0].clientY - lastY;
             lastX = e.touches[0].clientX;
             lastY = e.touches[0].clientY;
             clampTranslation();
-            applyTransform(false);
+            scheduleTransform(false);
         }
         e.preventDefault();
     }, { passive: false });
@@ -8733,8 +8750,13 @@ function comprimirImagen(file, opts = {}) {
         if (e.touches.length < 2) lastDist = 0;
         if (e.touches.length === 0) {
             isDragging = false;
-            
+            setFotoPanning(false);
         }
+    });
+
+    cont.addEventListener('touchcancel', () => {
+        isDragging = false;
+        setFotoPanning(false);
     });
 
 })(); 

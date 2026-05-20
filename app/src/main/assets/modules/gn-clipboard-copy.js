@@ -32,12 +32,16 @@ function copiarTextoFallbackDOM(text) {
 export async function copiarTextoContenido(raw, opts = {}) {
     const t = String(raw ?? '');
     const okMsg = opts.okMessage || 'Copiado al portapapeles';
-    const toastFn = typeof window !== 'undefined' && typeof window.toast === 'function' ? window.toast : () => {};
+    const toastFn =
+        typeof window !== 'undefined' && typeof window.toast === 'function'
+            ? window.toast
+            : () => {};
+    const dur = opts.durationMs != null ? opts.durationMs : 2800;
 
     if (typeof window !== 'undefined' && window.AndroidDevice && typeof window.AndroidDevice.copyText === 'function') {
         try {
             window.AndroidDevice.copyText(t);
-            toastFn(okMsg, 'success');
+            toastFn(okMsg, 'success', dur);
             return;
         } catch (_) {}
     }
@@ -45,20 +49,20 @@ export async function copiarTextoContenido(raw, opts = {}) {
     if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         try {
             await navigator.clipboard.writeText(t);
-            toastFn(okMsg, 'success');
+            toastFn(okMsg, 'success', dur);
             return;
         } catch (_) {
             if (copiarTextoFallbackDOM(t)) {
-                toastFn(okMsg, 'success');
+                toastFn(okMsg, 'success', dur);
                 return;
             }
-            toastFn('Error al copiar', 'error');
+            toastFn('Error al copiar', 'error', dur);
             return;
         }
     }
 
-    if (copiarTextoFallbackDOM(t)) toastFn(okMsg, 'success');
-    else toastFn('Error al copiar', 'error');
+    if (copiarTextoFallbackDOM(t)) toastFn(okMsg, 'success', dur);
+    else toastFn('Error al copiar', 'error', dur);
 }
 
 export function installGnClipboardCopy() {
