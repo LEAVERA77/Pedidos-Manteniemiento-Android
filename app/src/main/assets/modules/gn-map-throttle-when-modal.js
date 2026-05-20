@@ -38,6 +38,12 @@ export function gnMapThrottleOnDetallePedidoOpened() {
     } catch (_) {}
 
     const map = getAppMap();
+    if (map) {
+        try {
+            if (typeof map.stop === 'function') map.stop();
+        } catch (_) {}
+    }
+
     if (!map) return;
 
     _leafletHandlers = {};

@@ -780,6 +780,43 @@ function obtenerPedidoParaImagenDetalle() {
 let _moDetallePedidoImg = null;
 let _rafDetallePedidoImg = null;
 
+function dmDetalleEstaDesplazandose() {
+    try {
+        if (typeof window.gnDmDetalleEstaDesplazandose === 'function') {
+            return window.gnDmDetalleEstaDesplazandose();
+        }
+    } catch (_) {}
+    const dm = document.getElementById('dm');
+    return !!(dm && dm.classList.contains('gn-dm-is-scrolling'));
+}
+
+function esShellAndroidDoc() {
+    try {
+        return document.documentElement.classList.contains('gn-android-shell');
+    } catch (_) {
+        return false;
+    }
+}
+
+function programarInjectDetalleImagen(fn) {
+    const run = () => {
+        if (dmDetalleEstaDesplazandose()) {
+            _rafDetallePedidoImg = requestAnimationFrame(run);
+            return;
+        }
+        fn();
+    };
+    if (esShellAndroidDoc() && typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => run(), { timeout: 380 });
+        return;
+    }
+    if (esShellAndroidDoc()) {
+        setTimeout(run, 100);
+        return;
+    }
+    _rafDetallePedidoImg = requestAnimationFrame(run);
+}
+
 /** Libera observer y rAF pendiente (p. ej. al cerrar #dm). */
 export function disconnectPedidoVerImagenDetalleObserver() {
     if (_rafDetallePedidoImg != null) {
@@ -808,8 +845,13 @@ export function installPedidoVerImagenDetalleObserver() {
     const dmc = document.getElementById('dmc');
     if (!dmc) return;
     _moDetallePedidoImg = new MutationObserver(() => {
-        if (_rafDetallePedidoImg != null) cancelAnimationFrame(_rafDetallePedidoImg);
-        _rafDetallePedidoImg = requestAnimationFrame(() => {
+        if (_rafDetallePedidoImg != null) {
+            try {
+                cancelAnimationFrame(_rafDetallePedidoImg);
+            } catch (_) {}
+            _rafDetallePedidoImg = null;
+        }
+        programarInjectDetalleImagen(() => {
             _rafDetallePedidoImg = null;
             const ped = obtenerPedidoParaImagenDetalle();
             if (!ped?.id || String(ped.id).startsWith('off_')) return;

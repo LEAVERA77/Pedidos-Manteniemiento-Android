@@ -43,12 +43,56 @@ html.gn-android-shell #dm .gn-dm-detail-scroll {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-y;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    isolation: isolate;
+}
+
+/* Sin animación de entrada en detalle (menos jank al abrir en A16). */
+html.gn-android-shell #dm.mo.active > .mc {
+    animation: none;
 }
 
 /* Detalle abierto: no rasterizar el mapa debajo (clase puesta por gn-map-throttle-when-modal.js). */
 html.gn-android-shell.gn-shell-map-suppressed-for-detalle #mc {
+    display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
+    content-visibility: hidden;
+}
+
+/* Mientras el usuario desplaza el contenido: menos sombras, gradientes y transiciones. */
+html.gn-android-shell #dm.gn-dm-is-scrolling .gn-dm-detail-scroll {
+    will-change: scroll-position;
+}
+
+html.gn-android-shell #dm.gn-dm-is-scrolling .gn-dm-detail-scroll > .ds,
+html.gn-android-shell #dm.gn-dm-is-scrolling .gn-dm-detail-scroll details.gn-dm-section-collapsible {
+    box-shadow: none;
+    transition: none;
+}
+
+html.gn-android-shell #dm.gn-dm-is-scrolling .gn-dm-actions-bar {
+    box-shadow: none;
+    background: #fff;
+}
+
+html.gn-android-shell #dm.gn-dm-is-scrolling .mh {
+    box-shadow: none;
+}
+
+html.gn-android-shell #dm.gn-dm-is-scrolling .foto-miniatura,
+html.gn-android-shell #dm.gn-dm-is-scrolling #gn-pedido-imagen-reclamo img {
+    transition: none;
+    transform: none;
+}
+
+html.gn-android-shell #dm .foto-miniatura {
+    transition: none;
+}
+
+html.gn-android-shell #dm .foto-miniatura:hover {
+    transform: none;
 }
 
 /* Menos layout/pintura por bloque al hacer scroll en el detalle. */

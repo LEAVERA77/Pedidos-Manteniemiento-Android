@@ -181,6 +181,14 @@ function leerArchivosComoBase64(fileList, max = 6) {
  * @param {{ ed: boolean, esAdmin: boolean, toast?: Function }} ctx
  */
 export function mountPedidoOperativaTop3UI(p, ctx = {}) {
+    if (typeof document !== 'undefined' && document.documentElement.classList.contains('gn-android-shell')) {
+        requestAnimationFrame(() => requestAnimationFrame(() => mountPedidoOperativaTop3UINow(p, ctx)));
+        return;
+    }
+    mountPedidoOperativaTop3UINow(p, ctx);
+}
+
+function mountPedidoOperativaTop3UINow(p, ctx = {}) {
     const host = hostEl();
     const wrap = wrapEl();
     if (!host || !p?.id) return;
