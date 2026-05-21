@@ -39,6 +39,17 @@ import {
   SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO,
 } from "./tiposReclamo.js";
 import {
+  STEP_FINALIZING_PEDIDO,
+  MSG_REGISTRANDO_PEDIDO,
+  MSG_YA_FINALIZANDO,
+  MSG_DURANTE_FINALIZACION,
+  MSG_MENU_DURANTE_FINALIZACION,
+  esPasoFinalizandoPedido,
+  marcarSesionFinalizandoPedido,
+  restaurarSesionTrasErrorFinalizacion,
+  mensajeErrorFinalizacionPorCodigo,
+} from "./whatsapp-bot-flow-continuity.js";
+import {
   mensajePedirIdentificadorMisReclamos,
   textoSubmenuTransitoMunicipio,
   interpretaRespuestaSiOperadorWhatsapp,
@@ -216,6 +227,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_opcional_id",
   "awaiting_nis_whatsapp",
   "awaiting_confirmar_resumen",
+  STEP_FINALIZING_PEDIDO,
   "awaiting_wa_foto_opcional",
   "awaiting_wa_foto_upload",
   "awaiting_municipio_transito_subtipo",
@@ -241,6 +253,7 @@ const WHATSAPP_PASOS_CERO_ES_DATO = new Set([
  * No deben ejecutarse antes que los pasos del flujo cuando el texto es parte del reclamo.
  */
 function debeSalirAlMenuPrincipalWhatsApp(lower, sess) {
+  if (sess && esPasoFinalizandoPedido(sess.step)) return false;
   if (sess && sess.step === "human_chat") return false;
   if (lower === "menú" || lower === "menu" || lower === "inicio" || lower === "ayuda") return true;
   if (lower === "volver") {
@@ -1279,8 +1292,8 @@ async function enrichBarrioDesdeReverseSiRubroConBarrio(sess) {
   } catch (_) {}
 }
 
-async function finalizePedidoFromSession(phone, sess, contactName) {
-  const sk = sessionKey(phone, sess.tenantId);
+/** INSERT en BD + aviso al vecino (puede tardar; no bloquea el hilo de webhook). */
+async function ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk) {
   await enrichBarrioDesdeReverseSiRubroConBarrio(sess);
   let descripcionFinal = String(sess.descripcion || "").trim();
   if (!descripcionFinal) {
@@ -1428,23 +1441,37 @@ async function finalizePedidoFromSession(phone, sess, contactName) {
       }
       return;
     }
-    sessions.delete(sk);
-    if (m === "sin_usuario_admin_tenant" || m === "sin_usuario_para_pedido_whatsapp") {
-      await reply(
-        phone,
-        "No pudimos asociar el reclamo a un usuario del sistema (falta personal cargado o configuración). Avisá a la cooperativa/municipio.",
-        sess.tenantId,
-        sess.phoneNumberId
-      );
-    } else {
-      await reply(
-        phone,
-        "No pudimos registrar el pedido. Intentá de nuevo o llamá a la oficina.",
-        sess.tenantId,
-        sess.phoneNumberId
-      );
+    restaurarSesionTrasErrorFinalizacion(sess, sk, sessions);
+    try {
+      await reply(phone, mensajeErrorFinalizacionPorCodigo(m), sess.tenantId, sess.phoneNumberId);
+    } catch (re) {
+      console.error("[whatsapp-bot-meta] finalize error reply", re?.message || re);
     }
   }
+}
+
+/** Confirmación SI: aviso inmediato y alta en segundo plano (no corta la conversación). */
+async function finalizePedidoFromSession(phone, sess, contactName) {
+  const sk = sessionKey(phone, sess.tenantId);
+  if (!String(sess.descripcion || "").trim()) {
+    sessions.delete(sk);
+    await reply(
+      phone,
+      "Faltan datos del pedido. Escribí *menú* para empezar de nuevo.",
+      sess.tenantId,
+      sess.phoneNumberId
+    );
+    return;
+  }
+  if (marcarSesionFinalizandoPedido(sess, sk, sessions)) {
+    await reply(phone, MSG_YA_FINALIZANDO, sess.tenantId, sess.phoneNumberId);
+    return;
+  }
+  await reply(phone, MSG_REGISTRANDO_PEDIDO, sess.tenantId, sess.phoneNumberId);
+  void ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk).catch((err) => {
+    console.error("[whatsapp-bot-meta] ejecutarFinalizacionPedidoCore", err?.message || err);
+    restaurarSesionTrasErrorFinalizacion(sess, sk, sessions);
+  });
 }
 
 /** URLs Cloudinary acumuladas en sesión (varias fotos con `||` al confirmar). */
@@ -1962,6 +1989,11 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
       tid,
       phoneNumberId
     );
+    return;
+  }
+
+  if (sess && esPasoFinalizandoPedido(sess.step)) {
+    await reply(phone, MSG_DURANTE_FINALIZACION, tid, phoneNumberId);
     return;
   }
 
@@ -2732,6 +2764,31 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+
+  const sessFinalizingEarly = sessions.get(sk);
+  if (sessFinalizingEarly && esPasoFinalizandoPedido(sessFinalizingEarly.step)) {
+    if (
+      lower === "menú" ||
+      lower === "menu" ||
+      lower === "inicio" ||
+      lower === "ayuda" ||
+      lower === "cancelar" ||
+      lower === "cancel" ||
+      lower === "volver" ||
+      lower === "0"
+    ) {
+      sessions.delete(sk);
+      await reply(
+        phone,
+        MSG_MENU_DURANTE_FINALIZACION + menuTextoNumerado(ctx),
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    await reply(phone, MSG_DURANTE_FINALIZACION, tid, phoneNumberId);
+    return;
+  }
 
   if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica") {
     const esOtrosServicios =
