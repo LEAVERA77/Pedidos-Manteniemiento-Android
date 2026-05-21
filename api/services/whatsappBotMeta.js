@@ -37,7 +37,17 @@ import {
   tipoReclamoElectricoPideSuministroWhatsapp,
   SUBTIPOS_TRANSITO_MUNICIPIO,
   SUBTIPOS_ORDEN_PUBLICO_MUNICIPIO,
+  TIPO_DENUNCIA_FRAUDE_ANONIMA_COOPERATIVA,
 } from "./tiposReclamo.js";
+import {
+  esTipoDenunciaFraudeAnonimaCoopElectrica,
+  permiteOpcionSoloDireccionSinIdentidad,
+  nombreContactoAnonimoWhatsapp,
+  mensajeMenuIdentificacionPorRubro,
+  mensajeOpcion3NoDisponibleCoop,
+  mensajeIntroDescripcionDenunciaFraudeAnonima,
+  pieMenuTiposCooperativaElectrica,
+} from "./whatsapp-bot-anonimato-cooperativa.js";
 import {
   STEP_FINALIZING_PEDIDO,
   MSG_REGISTRANDO_PEDIDO,
@@ -465,50 +475,7 @@ function esPedidoFactibilidadNuevoServicioWhatsapp(tipo) {
 }
 
 function mensajeMenuIdentificacion(ctx) {
-  const r = normalizarRubroCliente(ctx.tipo);
-  const base =
-    `Ya tenemos la *descripción* del problema. Ahora necesitamos *identificar* y *ubicar* el reclamo.\n\n` +
-    `Elegí *una opción* respondiendo con *1*, *2* o *3*:\n\n`;
-  const opt3 =
-    `*3)* Solo *dirección* (sin datos personales): *provincia*, *ciudad*, *calle* y *número*.\n\n`;
-  if (r === "cooperativa_electrica") {
-    return (
-      base +
-      `*1)* Tengo *NIS* o *número de medidor* (dato de la cooperativa eléctrica).\n` +
-      `*2)* Prefiero con *nombre y dirección* (sin datos de cuenta).\n` +
-      opt3 +
-      `En cualquier momento podés enviar *GPS* con *Adjuntar* (📎) → *Ubicación*.\n` +
-      `*atrás* = corregir la descripción · *menú* = salir.`
-    );
-  }
-  if (r === "cooperativa_agua") {
-    return (
-      base +
-      `*1)* Tengo *ID de usuario* o *número de medidor* del servicio de agua.\n` +
-      `*2)* Prefiero con *nombre y dirección*.\n` +
-      opt3 +
-      `También podés mandar *ubicación GPS* con *Adjuntar* → *Ubicación*.\n` +
-      `*atrás* = corregir la descripción · *menú* = salir.`
-    );
-  }
-  if (r === "municipio") {
-    return (
-      base +
-      `*1)* Tengo mi *número de vecino* (credencial / cuenta municipal).\n` +
-      `*2)* Prefiero con *nombre y dirección*.\n` +
-      opt3 +
-      `Podés adjuntar *ubicación* en cualquier momento (📎 → *Ubicación*).\n` +
-      `*atrás* = corregir la descripción · *menú* = salir.`
-    );
-  }
-  return (
-    base +
-    `*1)* Datos del servicio (*NIS*, medidor, ID o número de vecino).\n` +
-    `*2)* *Nombre y dirección* sin datos de cuenta.\n` +
-    opt3 +
-    `Podés enviar *GPS* con *Adjuntar* → *Ubicación*.\n` +
-      `*atrás* = corregir la descripción · *menú* = salir.`
-  );
+  return mensajeMenuIdentificacionPorRubro(ctx);
 }
 
 function msgOpcionalIdentificadorPorRubro(ctx) {
@@ -746,6 +713,7 @@ function trimOrNullWhatsapp(v) {
 
 function necesitaCapturarSuministroElectrico(sess) {
   if (normalizarRubroCliente(sess?.tipoCliente) !== "cooperativa_electrica") return false;
+  if (esTipoDenunciaFraudeAnonimaCoopElectrica(sess?.tipo, sess?.tipoCliente)) return false;
   if (!tipoReclamoElectricoPideSuministroWhatsapp(sess?.tipo)) return false;
   return !trimOrNullWhatsapp(sess?.suministroTipoConexion) || !trimOrNullWhatsapp(sess?.suministroFases);
 }
@@ -948,6 +916,10 @@ function menuTextoNumerado(ctx) {
     lineas.push(`${i + 1}) ${t}`);
   });
   lineas.push("");
+  if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica") {
+    lineas.push(pieMenuTiposCooperativaElectrica().trim());
+    lineas.push("");
+  }
   lineas.push("Para *salir* o repetir este menú: *menú*.");
   return lineas.join("\n");
 }
@@ -1214,7 +1186,8 @@ async function inferirDireccionDesdeGpsYGeocodificar(
 async function iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId) {
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
   sess.modoAnonimo = true;
-  sess.contactName = "Vecino anónimo";
+  sess.contactName = nombreContactoAnonimoWhatsapp(sess.tipo, ctx.tipo);
+  sess.esDenunciaFraudeAnonima = esTipoDenunciaFraudeAnonimaCoopElectrica(sess.tipo, ctx.tipo);
   sess.addrOrigenPaso = "solo_direccion";
   if (wpid) sess.phoneNumberId = wpid;
   sessions.set(sk, sess);
@@ -1223,7 +1196,10 @@ async function iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contact
   }
   sess.step = "awaiting_addr_provincia";
   sessions.set(sk, sess);
-  await reply(phone, MSG_INTRO_DIRECCION_ESTRUCTURADA + MSG_ADDR_PROVINCIA, tid, phoneNumberId);
+  const introDir = sess.esDenunciaFraudeAnonima
+    ? "Indicá la *zona del hecho* (no guardamos tu nombre). " + MSG_INTRO_DIRECCION_ESTRUCTURADA
+    : MSG_INTRO_DIRECCION_ESTRUCTURADA;
+  await reply(phone, introDir + MSG_ADDR_PROVINCIA, tid, phoneNumberId);
 }
 
 /**
@@ -1276,6 +1252,11 @@ async function ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk) {
   if (sess.waPedidoFotoUploadFallback) {
     descripcionFinal +=
       "\n\n_(Nota sistema: la foto del reclamo se subió sin optimización estándar por un fallo temporal al procesarla.)_";
+  }
+  if (sess.esDenunciaFraudeAnonima) {
+    descripcionFinal =
+      `_[${TIPO_DENUNCIA_FRAUDE_ANONIMA_COOPERATIVA} — sin nombre ni NIS del denunciante en el pedido]_\n\n` +
+      descripcionFinal;
   }
   const _waFotos = waSessionFotoUrls(sess);
   const fotoWaUrl = _waFotos.length ? _waFotos.join("||") : null;
@@ -1813,6 +1794,23 @@ async function aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, n, ctx, tid, ph
     await reply(phone, ctx.whatsappBloqueoMensaje, tid, phoneNumberId);
     return true;
   }
+  if (esTipoDenunciaFraudeAnonimaCoopElectrica(tipoSel, ctx.tipo)) {
+    sessions.set(sk, {
+      step: "awaiting_desc",
+      tipo: tipoSel,
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: phoneNumberId || null,
+    });
+    await reply(
+      phone,
+      mensajeIntroDescripcionDenunciaFraudeAnonima() + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
+      tid,
+      phoneNumberId
+    );
+    return true;
+  }
   sessions.set(sk, {
     step: "awaiting_desc",
     tipo: tipoSel.startsWith("Tránsito") ? "Tránsito" : tipoSel,
@@ -2303,7 +2301,8 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
 
   if (stepAddr === "awaiting_addr_solo_direccion") {
     sess.modoAnonimo = true;
-    sess.contactName = "Vecino anónimo";
+    sess.contactName = nombreContactoAnonimoWhatsapp(sess.tipo, ctxOk.tipo);
+    sess.esDenunciaFraudeAnonima = esTipoDenunciaFraudeAnonimaCoopElectrica(sess.tipo, ctxOk.tipo);
     sess.addrOrigenPaso = sess.addrOrigenPaso || "solo_direccion";
     sess.step = "awaiting_addr_provincia";
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
@@ -2438,6 +2437,23 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
     await reply(
       phone,
       `*Orden público* — elegí el tipo:\n\n${sub}\n\n_(*menú* = salir · *atrás* = volver al menú principal)_`,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+  if (esTipoDenunciaFraudeAnonimaCoopElectrica(tipo, ctx.tipo)) {
+    sessions.set(sk, {
+      step: "awaiting_desc",
+      tipo,
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      contactName: contactName || null,
+      phoneNumberId: wpid,
+    });
+    await reply(
+      phone,
+      mensajeIntroDescripcionDenunciaFraudeAnonima() + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
       tid,
       phoneNumberId
     );
@@ -3021,15 +3037,18 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (choice === 3) {
+      if (!permiteOpcionSoloDireccionSinIdentidad(ctx.tipo)) {
+        await reply(phone, mensajeOpcion3NoDisponibleCoop(ctx), tid, phoneNumberId);
+        return;
+      }
       await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
       return;
     }
-    await reply(
-      phone,
-      "Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *3* (solo dirección).",
-      tid,
-      phoneNumberId
-    );
+    const hintIdent =
+      normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica"
+        ? "Respondé con *1* (NIS o medidor) o *2* (nombre y apellido + domicilio)."
+        : "Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *3* (solo dirección).";
+    await reply(phone, hintIdent, tid, phoneNumberId);
     return;
   }
 
@@ -3136,10 +3155,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     if (esComandoAtras(t)) {
       sess.step = "awaiting_identificacion_modo";
       delete sess.modoAnonimo;
+      delete sess.esDenunciaFraudeAnonima;
       delete sess.addrOrigenPaso;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
       await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (!permiteOpcionSoloDireccionSinIdentidad(ctx.tipo)) {
+      await reply(phone, mensajeOpcion3NoDisponibleCoop(ctx), tid, phoneNumberId);
       return;
     }
     await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
@@ -4142,6 +4166,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         phoneNumberId: sess.phoneNumberId || wpid,
       });
       await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      return;
+    }
+    if (esTipoDenunciaFraudeAnonimaCoopElectrica(sess.tipo, ctx.tipo)) {
+      sess.descripcion = desc;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Recibimos tu relato. Ahora indicá *dónde ocurrió* (podés usar una zona aproximada; no guardamos tu nombre).\n\n",
+        tid,
+        phoneNumberId
+      );
+      await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
       return;
     }
     sessions.set(sk, {

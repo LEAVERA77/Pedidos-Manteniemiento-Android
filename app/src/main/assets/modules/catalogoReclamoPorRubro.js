@@ -65,6 +65,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
         'Riesgo en la vía pública',
         'Corrimiento de poste/columna',
         'Pedido de factibilidad (nuevo servicio)',
+        'Denuncia de fraude (anónima)',
         'Otros',
     ],
 };
@@ -177,6 +178,7 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
     'Riesgo en la vía pública': 'Crítica',
     'Corrimiento de poste/columna': 'Crítica',
     'Pedido de factibilidad (nuevo servicio)': 'Baja',
+    'Denuncia de fraude (anónima)': 'Alta',
     'Riesgo vía pública': 'Crítica',
     'Mantenimiento preventivo': 'Baja',
     'Material averiado': 'Media',

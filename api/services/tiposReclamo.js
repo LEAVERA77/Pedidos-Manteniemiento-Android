@@ -42,6 +42,7 @@ export const TIPOS_RECLAMO_POR_RUBRO = {
     "Riesgo en la vía pública",
     "Corrimiento de poste/columna",
     "Pedido de factibilidad (nuevo servicio)",
+    "Denuncia de fraude (anónima)",
     "Otros",
   ],
 };
@@ -130,6 +131,7 @@ export const PRIORIDAD_RECLAMO_POR_TIPO = {
   "Riesgo en la vía pública": "Crítica",
   "Corrimiento de poste/columna": "Crítica",
   "Pedido de factibilidad (nuevo servicio)": "Baja",
+  "Denuncia de fraude (anónima)": "Alta",
   // legacy / histórico
   "Riesgo vía pública": "Crítica",
   "Mantenimiento preventivo": "Baja",
@@ -160,6 +162,9 @@ export function normalizarPrioridadPedido(prioridad, tipoTrabajoFallback) {
   if (s && PRIORIDADES_VALIDAS.has(s)) return s;
   return prioridadPredeterminadaPorTipoTrabajo(tipoTrabajoFallback);
 }
+
+/** Único tipo de reclamo WA en cooperativa eléctrica que no exige nombre/NIS del vecino. */
+export const TIPO_DENUNCIA_FRAUDE_ANONIMA_COOPERATIVA = "Denuncia de fraude (anónima)";
 
 export function normalizarRubroCliente(tipoCliente) {
   const t = String(tipoCliente || "")
