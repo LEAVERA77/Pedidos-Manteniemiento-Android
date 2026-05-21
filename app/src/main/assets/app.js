@@ -288,7 +288,11 @@ import {
     aplicarMascaraEmpresaAdminTrasCambioTenant,
 } from './modules/ocultar-datos-tenant.js';
 import { restaurarDatosCompletosTrasCambioTenant } from './modules/restaurar-datos-tenant.js';
-import { marcarListaSociosPendienteRecarga, recargarSociosAdminTrasCambioTenant } from './modules/admin-socios-carga-tenant.js';
+import {
+    marcarListaSociosPendienteRecarga,
+    recargarSociosAdminTrasCambioTenant,
+} from './modules/admin-socios-carga-tenant.js';
+import { resetSociosCatalogoSchemaCache } from './modules/socios-catalogo-schema-cache.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -15068,14 +15072,7 @@ function adminTab(tab) {
             if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
         } catch (_) {}
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
-        void (async () => {
-            try {
-                await ensureAdminPanelDeferredBindings(() => _depsAdminPanelDeferred());
-                await cargarListaSociosAdmin();
-            } catch (e) {
-                console.warn('[adminTab socios]', e?.message || e);
-            }
-        })();
+        void cargarListaSociosAdmin();
         try {
             syncHistorialNisBusquedaDom();
         } catch (_) {}
@@ -17260,6 +17257,7 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
     } catch (_) {}
     try {
         _sociosCatalogoTieneTenantIdCache = null;
+        resetSociosCatalogoSchemaCache();
     } catch (_) {}
     try {
         _sociosCatalogoTieneDatosExtraCache = null;

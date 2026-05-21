@@ -122,6 +122,8 @@ function shellAssetUrls() {
     j('modules/admin-clave-provisoria.js'),
     j('modules/auth-login-api-body.js'),
     j('modules/socios-catalogo-filtro-sesion.js'),
+    j('modules/socios-catalogo-schema-cache.js'),
+    j('modules/socios-catalogo-listado-fetch.js'),
     j('modules/socios-catalogo-export-vista.js'),
     j('modules/socios-catalogo-export-proyeccion.js'),
     j('modules/password-policy-gestornova.js'),

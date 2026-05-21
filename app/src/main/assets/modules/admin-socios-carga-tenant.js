@@ -2,11 +2,15 @@
  * Recarga del listado admin de socios tras cambio de tenant / invalidación de caché.
  * made by leavera77
  */
+import { resetSociosCatalogoSchemaCache } from './socios-catalogo-schema-cache.js';
 
 /**
  * Placeholder en #lista-socios-admin (no confundir con "sin filas en SQL").
  */
 export function marcarListaSociosPendienteRecarga() {
+    try {
+        resetSociosCatalogoSchemaCache();
+    } catch (_) {}
     const ls = document.getElementById('lista-socios-admin');
     if (!ls) return;
     const tid =
@@ -14,6 +18,11 @@ export function marcarListaSociosPendienteRecarga() {
             ? window._gnTenantId()
             : window.app?.u?.tenant_id ?? window.app?.u?.tenantId ?? '—';
     ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando catálogo del tenant <strong>${String(tid)}</strong>…</div>`;
+}
+
+/** @returns {boolean} */
+export function adminSociosTabEstaActiva() {
+    return !!document.getElementById('admin-socios')?.classList.contains('active');
 }
 
 /**
@@ -37,7 +46,7 @@ export function pintarErrorListaSociosAdmin(err) {
 }
 
 /**
- * Tras invalidar multitenant: config empresa + init módulo socios + listado.
+ * Tras invalidar multitenant: solo recarga pesada si la pestaña Socios está visible.
  */
 export async function recargarSociosAdminTrasCambioTenant() {
     if (!window.app?.u) return;
@@ -47,13 +56,18 @@ export async function recargarSociosAdminTrasCambioTenant() {
         marcarListaSociosSoloAdmin();
         return;
     }
+    if (!adminSociosTabEstaActiva()) {
+        marcarListaSociosPendienteRecarga();
+        return;
+    }
     marcarListaSociosPendienteRecarga();
-    try {
-        if (typeof window.cargarConfigEmpresa === 'function') {
-            await window.cargarConfigEmpresa();
+    if (typeof window.cargarListaSociosAdmin === 'function') {
+        try {
+            await window.cargarListaSociosAdmin();
+        } catch (e) {
+            pintarErrorListaSociosAdmin(e);
         }
-    } catch (e) {
-        console.warn('[admin-socios-carga] cargarConfigEmpresa', e?.message || e);
+        return;
     }
     const getDeps =
         typeof window.__gnDepsAdminPanelDeferred === 'function'
@@ -68,13 +82,5 @@ export async function recargarSociosAdminTrasCambioTenant() {
             return;
         }
     }
-    if (typeof window.cargarListaSociosAdmin !== 'function') {
-        pintarErrorListaSociosAdmin(new Error('Módulo de socios no disponible. Recargá la página.'));
-        return;
-    }
-    try {
-        await window.cargarListaSociosAdmin();
-    } catch (e) {
-        pintarErrorListaSociosAdmin(e);
-    }
+    pintarErrorListaSociosAdmin(new Error('Módulo de socios no disponible. Recargá la página.'));
 }

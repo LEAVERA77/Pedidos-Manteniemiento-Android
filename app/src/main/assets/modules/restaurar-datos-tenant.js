@@ -1,4 +1,7 @@
-import { recargarSociosAdminTrasCambioTenant } from './admin-socios-carga-tenant.js';
+import {
+    recargarSociosAdminTrasCambioTenant,
+    adminSociosTabEstaActiva,
+} from './admin-socios-carga-tenant.js';
 
 /**
  * Tras cambiar el tenant operativo (misma sesión): recarga config empresa, formulario admin,
@@ -15,7 +18,7 @@ export async function restaurarDatosCompletosTrasCambioTenant(opts = {}) {
         if (typeof window.cargarFormEmpresa === 'function') {
             await window.cargarFormEmpresa();
         }
-        if (typeof window.esAdmin === 'function' && window.esAdmin()) {
+        if (typeof window.esAdmin === 'function' && window.esAdmin() && adminSociosTabEstaActiva()) {
             await recargarSociosAdminTrasCambioTenant();
             if (typeof window.cargarListaUsuarios === 'function') {
                 try {
