@@ -208,7 +208,7 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
                 : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
         const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
         const scale = statsExport
-            ? Math.min(wide ? 2.2 : 2.65, (wide ? 2400 : 2700) / Math.max(sw, 260))
+            ? Math.min(wide ? 2.05 : 2.35, (wide ? 2200 : 2500) / Math.max(sw, 280))
             : Math.min(1.2, 1850 / Math.max(sw, 380));
         return await html2canvas(el, {
             scale,

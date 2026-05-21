@@ -180,16 +180,16 @@ export async function imprimirInformeConGraficos() {
             '.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}' +
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
-            '.gn-print-grid2{display:grid;grid-template-columns:1fr 1fr;gap:4mm;align-content:start;align-items:start}' +
-            '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:128mm}' +
+            '.gn-print-grid2{display:grid;grid-template-columns:1fr 1fr;gap:5mm;align-content:start;align-items:start}' +
+            '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:4mm;align-content:start;align-items:start}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
             '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1.5mm;padding:0;border:none;width:100%;text-align:center;line-height:1.25}' +
             '.gn-print-h1--chart{font-size:10pt;margin:0 0 3mm}' +
             '.gn-print-imgwrap{display:flex;justify-content:center;align-items:flex-start}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
-            '.gn-print-imgwrap--fullchart img{display:block;width:100%;max-width:100%;height:auto;max-height:248mm;object-fit:contain}' +
-            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0;overflow:visible}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:120mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--fullchart img{display:block;width:100%;max-width:100%;height:auto;max-height:232mm;object-fit:contain;object-position:center top}' +
+            '.gn-print-imgwrap--cell{flex:0 1 auto;width:100%;min-height:0;overflow:hidden;display:flex;justify-content:center;align-items:flex-start}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:108mm;width:auto;height:auto;margin:0 auto;object-fit:contain;object-position:center top}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';

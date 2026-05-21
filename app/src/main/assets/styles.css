@@ -1090,9 +1090,9 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
 /* PDF / impresión: 4 gráficos por hoja A4 (altura reducida, sin deformar el layout) */
 #admin-estadisticas.gn-stats-capture-compact .chart-container,
 #admin-estadisticas.gn-stats-capture-compact .chart-container--tall{
-  height:190px;
-  min-height:190px;
-  max-height:190px;
+  height:204px;
+  min-height:204px;
+  max-height:204px;
 }
 #admin-estadisticas.gn-stats-capture-compact .chart-wrap{
   padding:.45rem .55rem;
@@ -1119,9 +1119,10 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
 }
 #admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide{
   width:100%;
-  max-width:none;
+  max-width:100%;
   overflow:visible!important;
   page-break-inside:avoid;
+  align-self:flex-start;
 }
 #admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide .chart-container,
 #admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide .chart-container--tall{
