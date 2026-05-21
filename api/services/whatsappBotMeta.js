@@ -104,6 +104,12 @@ import {
   mensajeNombreSinCoincidenciaPadron,
   extraerApellidoProbableBusquedaNombre,
 } from "./whatsapp-bot-microcopy.js";
+import {
+  construirInferenciaUbicacionDesdeReverse,
+  esInferenciaUbicacionSuficienteParaConfirmar,
+  msgConfirmarUbicacionGpsInferida,
+  MSG_INTRO_DIRECCION_CON_GPS_RAPIDO,
+} from "./whatsapp-bot-gps-ubicacion.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
@@ -136,9 +142,7 @@ const MSG_ADDR_CIUDAD =
   "_Al enviar ubicación GPS, aceptás que se use únicamente para ubicar el reclamo en el mapa._" +
   MSG_SALIR_ATRAS;
 
-const MSG_INTRO_DIRECCION_ESTRUCTURADA =
-  "Indicá la *dirección del reclamo* en estos pasos: *provincia*, *ciudad/localidad*, *calle* y *número*.\n\n" +
-  "También podés enviar *ubicación GPS* (📎 → *Ubicación*) en cualquier momento.\n\n";
+const MSG_INTRO_DIRECCION_ESTRUCTURADA = MSG_INTRO_DIRECCION_CON_GPS_RAPIDO;
 
 /** 24 jurisdicciones (Nominatim / Argentina). */
 const PROVINCIAS_ARG_BOT = [
@@ -225,6 +229,7 @@ const WHATSAPP_STEPS_ADJUNTAR_GPS = new Set([
   "awaiting_addr_provincia",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
+  "awaiting_gps_ubicacion_confirmar",
   "awaiting_suministro_conexion",
   "awaiting_suministro_fases",
 ]);
@@ -242,6 +247,7 @@ const WHATSAPP_PASOS_VOLVER_ES_ATRAS = new Set([
   "awaiting_addr_provincia",
   "awaiting_addr_calle",
   "awaiting_addr_numero",
+  "awaiting_gps_ubicacion_confirmar",
   "awaiting_suministro_conexion",
   "awaiting_suministro_fases",
   "awaiting_opcional_id",
@@ -1107,6 +1113,120 @@ export function extractLocationFromMetaMessage(msg) {
   return { lat: la, lng: lo };
 }
 
+function interpretaConfirmarUbicacionGps(text) {
+  const t = String(text || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (t === "1" || t === "si" || t === "s" || t === "ok" || t === "dale" || t.startsWith("1)")) return 1;
+  if (t === "2" || t === "no" || t === "n" || t.startsWith("2)")) return 2;
+  return null;
+}
+
+/**
+ * Ofrece confirmar domicilio inferido desde GPS (reverse geocoding). No hace INSERT.
+ * @returns {Promise<boolean>}
+ */
+async function ofrecerConfirmacionUbicacionGpsSiInferible(
+  phone,
+  sess,
+  sk,
+  contactName,
+  ctx,
+  wpid,
+  lat,
+  lng,
+  opts = {}
+) {
+  const tid = sess.tenantId;
+  let rev = opts.rev ?? null;
+  if (!rev) {
+    try {
+      rev = await reverseGeocodeArgentina(lat, lng);
+    } catch (_) {}
+  }
+  let inf = construirInferenciaUbicacionDesdeReverse(rev, lat, lng, provinciaBotDesdeTextoOsm);
+  const pre = opts.prefill && typeof opts.prefill === "object" ? opts.prefill : {};
+  if (inf && pre.ciudad) {
+    inf = {
+      ...inf,
+      ciudad: String(pre.ciudad || inf.ciudad || "").trim() || inf.ciudad,
+      calle: String(pre.calle || inf.calle || "").trim() || inf.calle,
+      numero: pre.numero != null ? String(pre.numero) : inf.numero,
+      provincia: pre.provincia || inf.provincia,
+    };
+  }
+  if (!esInferenciaUbicacionSuficienteParaConfirmar(inf)) return false;
+
+  sess.userSharedGps = { lat, lng };
+  sess.lat = lat;
+  sess.lng = lng;
+  if (rev?.displayName) sess.direccionTexto = rev.displayName;
+  if (
+    inf.barrio &&
+    ["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(normalizarRubroCliente(sess.tipoCliente)) &&
+    !sess.barrio
+  ) {
+    sess.barrio = inf.barrio;
+  }
+  if (inf.provincia && !trimOrNullWhatsapp(sess.addrProvincia)) sess.addrProvincia = inf.provincia;
+  sess.gpsInferido = inf;
+  sess.step = "awaiting_gps_ubicacion_confirmar";
+  if (wpid) sess.phoneNumberId = wpid;
+  sessions.set(sk, sess);
+
+  let msg = msgConfirmarUbicacionGpsInferida(inf);
+  try {
+    const ia = await lineaMicrocopyOpcional({
+      paso: "ubicacion_gps_confirmar",
+      tipoCliente: sess.tipoCliente,
+      nombreEntidad: ctx?.nombre || "",
+      contexto: String(inf.displayName || "").slice(0, 220),
+    });
+    if (ia.ok && ia.linea) msg += `\n\n_${ia.linea}_`;
+  } catch (_) {}
+  msg += MSG_SALIR_ATRAS;
+  await reply(phone, msg, tid, wpid);
+  return true;
+}
+
+async function aplicarUbicacionGpsConfirmada(phone, sess, sk, contactName, ctx, wpid) {
+  const inf = sess.gpsInferido;
+  delete sess.gpsInferido;
+  if (!inf || !esInferenciaUbicacionSuficienteParaConfirmar(inf)) {
+    sess.step = "awaiting_addr_provincia";
+    sessions.set(sk, sess);
+    await reply(phone, MSG_INTRO_DIRECCION_ESTRUCTURADA + MSG_ADDR_PROVINCIA, sess.tenantId, wpid);
+    return;
+  }
+  sess.userSharedGps = { lat: inf.lat, lng: inf.lng };
+  sess.lat = inf.lat;
+  sess.lng = inf.lng;
+  if (inf.displayName) sess.direccionTexto = inf.displayName;
+  if (inf.provincia) sess.addrProvincia = inf.provincia;
+  if (
+    inf.barrio &&
+    ["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(normalizarRubroCliente(sess.tipoCliente)) &&
+    !sess.barrio
+  ) {
+    sess.barrio = inf.barrio;
+  }
+  sessions.set(sk, sess);
+  await geocodeStructuredAddressAndFinalizePedido(
+    phone,
+    sess,
+    sk,
+    contactName,
+    ctx,
+    wpid,
+    inf.ciudad,
+    inf.calle,
+    inf.numero,
+    { stateOrProvince: inf.provincia || sess.addrProvincia || ctx?.geocodeState }
+  );
+}
+
 /** Ciudad / calle / número desde Nominatim reverse (`addressdetails`). */
 function extraerCiudadCalleNumeroDesdeReverse(rev) {
   if (!rev?.address || typeof rev.address !== "object") return null;
@@ -1165,6 +1285,19 @@ async function inferirDireccionDesdeGpsYGeocodificar(
     sess.barrio = rev.barrio;
   }
   if (wpid) sess.phoneNumberId = wpid;
+
+  const ofrecidoTemprano = await ofrecerConfirmacionUbicacionGpsSiInferible(
+    phone,
+    sess,
+    sk,
+    contactName,
+    ctx,
+    wpid,
+    lat,
+    lng,
+    { rev }
+  );
+  if (ofrecidoTemprano) return;
 
   if (stepAddr === "awaiting_addr_provincia" && rev?.address?.state) {
     const pBot = provinciaBotDesdeTextoOsm(String(rev.address.state).trim());
@@ -1241,9 +1374,19 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   }
 
   sessions.set(sk, sess);
-  await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
-    stateOrProvince: sess.addrProvincia || ctx?.geocodeState,
+  const ofrecido = await ofrecerConfirmacionUbicacionGpsSiInferible(phone, sess, sk, contactName, ctx, wpid, lat, lng, {
+    prefill: {
+      ciudad,
+      calle,
+      numero,
+      provincia: sess.addrProvincia || (rev?.address?.state ? provinciaBotDesdeTextoOsm(String(rev.address.state).trim()) : null),
+    },
   });
+  if (!ofrecido) {
+    await geocodeStructuredAddressAndFinalizePedido(phone, sess, sk, contactName, ctx, wpid, ciudad, calle, numero, {
+      stateOrProvince: sess.addrProvincia || ctx?.geocodeState,
+    });
+  }
 }
 
 /** Opción 3 (solo dirección, sin datos personales): flujo provincia → ciudad → calle → número. */
@@ -1276,6 +1419,17 @@ async function intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, cont
   if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return false;
   const { lat, lng } = pin;
   delete sess.ubicacionGpsPin;
+  const ofrecido = await ofrecerConfirmacionUbicacionGpsSiInferible(
+    phone,
+    sess,
+    sk,
+    contactName,
+    ctx,
+    wpid,
+    lat,
+    lng
+  );
+  if (ofrecido) return true;
   sess.step = "awaiting_addr_provincia";
   sessions.set(sk, sess);
   await inferirDireccionDesdeGpsYGeocodificar(phone, sess, sk, contactName, ctx, wpid, lat, lng, "awaiting_addr_provincia");
@@ -2385,6 +2539,28 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
       lng,
       "awaiting_addr_provincia"
     );
+    return;
+  }
+
+  if (stepAddr === "awaiting_gps_ubicacion_confirmar") {
+    const ofrecido = await ofrecerConfirmacionUbicacionGpsSiInferible(
+      phone,
+      sess,
+      sk,
+      contactName,
+      ctxOk,
+      phoneNumberId,
+      lat,
+      lng
+    );
+    if (!ofrecido) {
+      await reply(
+        phone,
+        "Recibimos la *ubicación*, pero no pudimos inferir una dirección clara. Elegí *2* en el mensaje anterior o cargá el domicilio manualmente.",
+        tid,
+        phoneNumberId
+      );
+    }
     return;
   }
 
@@ -3516,6 +3692,75 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       phone,
       `Registramos el *NIS*. Para ubicar el reclamo en el mapa, primero indicá la *provincia*${nuevoNombre ? ` (titular: *${nuevoNombre}*)` : ""}.\n\n` +
         MSG_ADDR_PROVINCIA,
+      tid,
+      phoneNumberId
+    );
+    return;
+  }
+
+  if (sess && sess.step === "awaiting_gps_ubicacion_confirmar") {
+    const t = String(text || "").trim();
+    if (esComandoAtras(t)) {
+      delete sess.gpsInferido;
+      delete sess.userSharedGps;
+      const orig = sess.addrOrigenPaso;
+      if (orig === "nombre") {
+        sess.step = "awaiting_nombre_persona";
+        delete sess.addrOrigenPaso;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
+        return;
+      }
+      if (orig === "opcional") {
+        sess.step = "awaiting_opcional_id";
+        delete sess.addrOrigenPaso;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, await msgOpcionalIdentificadorEnriquecido(ctx), tid, phoneNumberId);
+        return;
+      }
+      if (orig === "solo_direccion") {
+        sess.step = "awaiting_identificacion_modo";
+        delete sess.addrOrigenPaso;
+        delete sess.modoAnonimo;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+        return;
+      }
+      sess.step = "awaiting_identificacion_modo";
+      delete sess.addrOrigenPaso;
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+      return;
+    }
+    const opt = interpretaConfirmarUbicacionGps(t);
+    if (opt === 1) {
+      await aplicarUbicacionGpsConfirmada(phone, sess, sk, contactName, ctx, phoneNumberId || wpid);
+      return;
+    }
+    if (opt === 2) {
+      delete sess.gpsInferido;
+      delete sess.userSharedGps;
+      delete sess.lat;
+      delete sess.lng;
+      delete sess.direccionTexto;
+      sess.step = "awaiting_addr_provincia";
+      if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+      sessions.set(sk, sess);
+      await reply(
+        phone,
+        "Perfecto. Cargá el domicilio *paso a paso*:\n\n" + MSG_INTRO_DIRECCION_ESTRUCTURADA + MSG_ADDR_PROVINCIA,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
+    await reply(
+      phone,
+      "Respondé con *1* (sí, usar esta ubicación) o *2* (cargar domicilio manualmente). También podés reenviar *ubicación GPS*.",
       tid,
       phoneNumberId
     );

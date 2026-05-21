@@ -43,6 +43,8 @@ const PROMPTS_PASO = {
     "No hubo coincidencia en el padrón con el nombre que escribió. Agregá UNA frase que sugiera probar solo el apellido, sin dar ejemplos inventados de nombres.",
   confundido_identificacion:
     "El vecino no eligió bien entre opciones 1/2/3 del menú de identificación. Agregá UNA frase clara que repita las opciones en lenguaje simple.",
+  ubicacion_gps_confirmar:
+    "El vecino recibió una dirección inferida desde la ubicación GPS de su celular y debe confirmar si es correcta. Agregá UNA frase breve que lo invite a revisar el pin en el mapa mentalmente (sin inventar direcciones).",
 };
 
 /**
