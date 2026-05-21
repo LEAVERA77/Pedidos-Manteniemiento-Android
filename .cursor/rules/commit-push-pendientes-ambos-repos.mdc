@@ -1,0 +1,54 @@
+---
+description: Al pedir commit/push o al cerrar implementación — subir TODO lo pendiente a Pedidos-Manteniemiento-Android y Pedidos-MG (con sync).
+alwaysApply: true
+---
+
+# Commit y push de cambios pendientes (ambos repos)
+
+Cuando el usuario pida **commit**, **push**, **subir cambios**, **dejar en GitHub** o equivalente — o al **cerrar una tarea con código modificado** salvo que diga explícitamente **sin commit** / **solo local**:
+
+## Repos (siempre estos remotos, rama `main`)
+
+| Repo local habitual | GitHub |
+|---------------------|--------|
+| `AndroidStudioProjects/Nexxo` | **https://github.com/LEAVERA77/Pedidos-Manteniemiento-Android** |
+| `AndroidStudioProjects/Pedidos-MG` | **https://github.com/LEAVERA77/Pedidos-MG** |
+
+## Qué incluir en el commit
+
+- **Todo** lo pendiente del agente en la sesión: `git add -A` (o archivos tocados), sin secretos (`.env`, `config.json` con credenciales).
+- No dejar cambios locales sin commitear si el usuario pidió subir.
+
+## Orden obligatorio
+
+1. **Nexxo** (`Pedidos-Manteniemiento-Android`):
+   - `git status` → `git add -A` → `git commit` → `git push origin main`
+2. Si hubo cambios en `app/src/main/assets/**`, `api/**` o `docs/**` compartidos:
+   - Desde raíz de Nexxo: `.\scripts\sync-assets-to-pedidos-mg.ps1` (clon hermano `Pedidos-MG` o `-PedidosMgRoot` si aplica).
+   - Si también se editó `api/` en Nexxo: copiar `api/` al clon de Pedidos-MG (sin `node_modules`, sin `.env`).
+3. **Pedidos-MG**:
+   - `git status` → `git add -A` → `git commit` → `git push origin main`
+
+Si **solo** se tocó Kotlin/Gradle/Android nativo **sin** `api/` ni assets compartidos: basta commit+push en **Nexxo**; no hacer commit vacío en Pedidos-MG.
+
+## Mensaje de commit
+
+Formato del proyecto + última línea:
+
+```
+made by leavera77
+```
+
+Tipos: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, etc.
+
+## Al terminar
+
+Informar al usuario:
+
+- Hash o mensaje del commit en **cada** repo que se subió.
+- Si hubo **sync** a Pedidos-MG.
+- Si el **push falló**, mostrar el error (no afirmar éxito).
+
+## Relación
+
+- Detalle de arquitectura y excepciones: **commit-push-nexxo-y-pedidos-mg**, **pedidos-mg-web-repo**, **git-workflow-cli**.
