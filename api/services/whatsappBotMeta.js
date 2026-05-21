@@ -96,10 +96,19 @@ import {
 import { inferirIntencionBotWhatsappGroq } from "./groqWhatsappBotIntent.js";
 import { generarRespuestaOrientacionWhatsappGroq } from "./groqWhatsappBotOrientacion.js";
 import { inferirTipoReclamoBotWhatsappGroq } from "./groqWhatsappBotTipoReclamo.js";
+import { lineaMicrocopyOpcional } from "./groqWhatsappBotMicrocopy.js";
+import {
+  mensajePedirNombrePersonaEstatico,
+  mensajeOpcionalIdentificadorConsejoIa,
+  mensajeIntroDescripcionReclamoEstatico,
+  mensajeNombreSinCoincidenciaPadron,
+  extraerApellidoProbableBusquedaNombre,
+} from "./whatsapp-bot-microcopy.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
   catalogoNombreRowToIdentidadRes,
+  normalizarTextoBusquedaNombreWa,
 } from "../modules/busqueda-nombre-bot.js";
 
 const sessions = new Map();
@@ -199,9 +208,6 @@ const MSG_SUMINISTRO_CONEXION =
 
 const MSG_SUMINISTRO_FASES =
   "¿La instalación es *1)* *Monofásica* o *2)* *Trifásica*?" + MSG_SALIR_ATRAS;
-
-const MSG_NOMBRE_PERSONA =
-  "¿Cuál es tu *nombre y apellido* (o nombre del titular del reclamo)?" + MSG_SALIR_ATRAS;
 
 const BLOQUEO_RECLAMOS_MSG_DEFAULT =
   "Por el momento no podemos registrar reclamos por WhatsApp. Pedimos disculpas; comunicate por los canales habituales de la empresa.";
@@ -476,6 +482,64 @@ function esPedidoFactibilidadNuevoServicioWhatsapp(tipo) {
 
 function mensajeMenuIdentificacion(ctx) {
   return mensajeMenuIdentificacionPorRubro(ctx);
+}
+
+async function armarMensajeConMicrocopyIaOpcional(base, groqOpts) {
+  try {
+    const ia = await lineaMicrocopyOpcional(groqOpts);
+    if (ia.ok && ia.linea) return `${base}\n\n_${ia.linea}_`;
+  } catch (e) {
+    console.warn("[whatsapp-bot-meta] microcopy IA", e?.message || e);
+  }
+  return base;
+}
+
+async function mensajePedirNombrePersonaFinal(ctx) {
+  const base = mensajePedirNombrePersonaEstatico(ctx) + MSG_SALIR_ATRAS;
+  return armarMensajeConMicrocopyIaOpcional(base, {
+    paso: "pedir_nombre",
+    tipoCliente: ctx?.tipo,
+    nombreEntidad: ctx?.nombre || "",
+  });
+}
+
+async function replyPedirNombrePersona(phone, ctx, tid, phoneNumberId) {
+  const msg = await mensajePedirNombrePersonaFinal(ctx);
+  await reply(phone, msg, tid, phoneNumberId);
+}
+
+async function msgOpcionalIdentificadorEnriquecido(ctx) {
+  const base = msgOpcionalIdentificadorPorRubro(ctx) + mensajeOpcionalIdentificadorConsejoIa(ctx);
+  return armarMensajeConMicrocopyIaOpcional(base, {
+    paso: "pedir_identificador",
+    tipoCliente: ctx?.tipo,
+    nombreEntidad: ctx?.nombre || "",
+  });
+}
+
+/**
+ * @param {number} tid
+ * @param {string} texto
+ */
+async function buscarNombreEnPadronConFallbackApellido(tid, texto) {
+  let busc = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: texto });
+  if (busc.kind !== "normal" || !busc.sinCoincidenciaPadron) {
+    return { busc, textoBusqueda: texto, fallbackApellido: false };
+  }
+  const ap = extraerApellidoProbableBusquedaNombre(texto);
+  if (!ap || ap.length < 3) return { busc, textoBusqueda: texto, fallbackApellido: false };
+  if (normalizarTextoBusquedaNombreWa(ap) === normalizarTextoBusquedaNombreWa(texto)) {
+    return { busc, textoBusqueda: texto, fallbackApellido: false };
+  }
+  try {
+    const busc2 = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: ap });
+    if (busc2.kind === "confirm_one" || busc2.kind === "pick_list") {
+      return { busc: busc2, textoBusqueda: ap, fallbackApellido: true };
+    }
+  } catch (e) {
+    console.warn("[whatsapp-bot-meta] fallback apellido padrón", e?.message || e);
+  }
+  return { busc, textoBusqueda: texto, fallbackApellido: false };
 }
 
 function msgOpcionalIdentificadorPorRubro(ctx) {
@@ -1819,10 +1883,13 @@ async function aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, n, ctx, tid, ph
     contactName: contactName || null,
     phoneNumberId: phoneNumberId || null,
   });
-  const introIdle =
-    tipoSel === TIPO_RECLAMO_OTROS
-      ? `Elegiste: *${tipoSel}*.\n\nDescribí tu reclamo (máximo *${WA_OTROS_DESCRIPCION_MAX}* caracteres):\n\n`
-      : `Elegiste: *${tipoSel}*.\n\nAhora escribí una *breve descripción* del problema (una o varias líneas).\n\n`;
+  let introIdle = mensajeIntroDescripcionReclamoEstatico(tipoSel, WA_OTROS_DESCRIPCION_MAX);
+  introIdle = await armarMensajeConMicrocopyIaOpcional(introIdle, {
+    paso: "pedir_descripcion",
+    tipoCliente: ctx?.tipo,
+    nombreEntidad: ctx?.nombre || "",
+    contexto: `Tipo de reclamo: ${tipoSel}`,
+  });
   await reply(phone, introIdle + `_(*menú* = salir · *atrás* = cancelar este reclamo)_`, tid, phoneNumberId);
   return true;
 }
@@ -2327,8 +2394,8 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sessions.set(sk, sess);
     await reply(
       phone,
-      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n¿Cuál es tu *nombre y apellido* (o del titular)?" +
-        MSG_SALIR_ATRAS,
+      "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n" +
+        (await mensajePedirNombrePersonaFinal(ctxOk || { tipo: sess.tipoCliente, nombre: "" })),
       tid,
       phoneNumberId
     );
@@ -3015,7 +3082,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         step: "awaiting_nombre_persona",
         phoneNumberId: sess.phoneNumberId || wpid,
       });
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     if (choice === 1) {
@@ -3033,7 +3100,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         step: "awaiting_opcional_id",
         phoneNumberId: sess.phoneNumberId || wpid,
       });
-      await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
+      await reply(phone, await msgOpcionalIdentificadorEnriquecido(ctx), tid, phoneNumberId);
       return;
     }
     if (choice === 3) {
@@ -3044,10 +3111,15 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
       return;
     }
-    const hintIdent =
+    const hintIdentBase =
       normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica"
         ? "Respondé con *1* (NIS o medidor) o *2* (nombre y apellido + domicilio)."
         : "Respondé con *1* (datos del servicio), *2* (nombre y dirección) o *3* (solo dirección).";
+    const hintIdent = await armarMensajeConMicrocopyIaOpcional(hintIdentBase, {
+      paso: "confundido_identificacion",
+      tipoCliente: ctx?.tipo,
+      nombreEntidad: ctx?.nombre || "",
+    });
     await reply(phone, hintIdent, tid, phoneNumberId);
     return;
   }
@@ -3059,7 +3131,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       sess.step = "awaiting_nombre_persona";
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     const opt = interpretaUnoDosCatalogoNombreConfirm(t);
@@ -3069,7 +3141,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         limpiarEstadoBusquedaNombreCatalogo(sess);
         sess.step = "awaiting_nombre_persona";
         sessions.set(sk, sess);
-        await reply(phone, "No pudimos recuperar la fila del padrón. Escribí de nuevo tu *nombre y apellido*.", tid, phoneNumberId);
+        await reply(phone, "No pudimos recuperar la fila del padrón. Probá de nuevo:", tid, phoneNumberId);
+        await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
         return;
       }
       await aplicarMatchCatalogoNombreDesdeRow(phone, sess, sk, contactName, ctx, phoneNumberId || wpid, tid, row);
@@ -3105,7 +3178,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       sess.step = "awaiting_nombre_persona";
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     const ning = Number(sess.waNombreCatalogoNingunaNumero);
@@ -3180,7 +3253,12 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (t.length < 2) {
-      await reply(phone, "Escribí al menos *2 caracteres* para el nombre.", tid, phoneNumberId);
+      await reply(
+        phone,
+        "Escribí al menos *2 caracteres*. Con solo el *apellido* alcanza para buscar en el padrón.",
+        tid,
+        phoneNumberId
+      );
       return;
     }
     if (t.length > 200) {
@@ -3188,13 +3266,18 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     let busc = { kind: "normal", nombreLibre: t, sinCoincidenciaPadron: false };
+    let textoBusqueda = t;
+    let fallbackApellido = false;
     try {
-      busc = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: t });
+      const pack = await buscarNombreEnPadronConFallbackApellido(tid, t);
+      busc = pack.busc;
+      textoBusqueda = pack.textoBusqueda;
+      fallbackApellido = pack.fallbackApellido;
     } catch (e) {
       console.error("[whatsapp-bot-meta] busqueda nombre socios catálogo", e?.message || e);
     }
     if (busc.kind === "confirm_one" && busc.row) {
-      sess.waNombreCatalogoLibre = t;
+      sess.waNombreCatalogoLibre = textoBusqueda;
       sess.waNombreCatalogoCandidatos = [busc.row];
       sess.waNombreCatalogoModo = "confirm_one";
       sess.step = "awaiting_catalogo_nombre_confirm";
@@ -3204,13 +3287,16 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (busc.kind === "pick_list" && busc.rows?.length) {
-      sess.waNombreCatalogoLibre = t;
+      sess.waNombreCatalogoLibre = textoBusqueda;
       sess.waNombreCatalogoCandidatos = busc.rows;
       sess.waNombreCatalogoNingunaNumero = busc.ningunaNumero;
       sess.step = "awaiting_catalogo_nombre_elegir";
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
-      await reply(phone, msgElegirCatalogoNombreLista(busc.rows, busc.ningunaNumero), tid, phoneNumberId);
+      const prefLista = fallbackApellido
+        ? `Con el apellido *${waEscapeBoldFragment(textoBusqueda)}* encontramos estas coincidencias en el padrón:\n\n`
+        : "";
+      await reply(phone, prefLista + msgElegirCatalogoNombreLista(busc.rows, busc.ningunaNumero), tid, phoneNumberId);
       return;
     }
     sess.contactName = t;
@@ -3222,7 +3308,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
     sess.step = "awaiting_addr_provincia";
     sessions.set(sk, sess);
-    const introNoPadron = busc.kind === "normal" && busc.sinCoincidenciaPadron ? "No encontré *tus datos* en el padrón con ese nombre.\n\n" : "";
+    const introNoPadron =
+      busc.kind === "normal" && busc.sinCoincidenciaPadron ? mensajeNombreSinCoincidenciaPadron(t) : "";
     await reply(phone, introNoPadron + MSG_ADDR_PROVINCIA, tid, phoneNumberId);
     return;
   }
@@ -3243,7 +3330,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         step: "awaiting_nombre_persona",
         phoneNumberId: sess.phoneNumberId || wpid,
       });
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw);
@@ -3253,7 +3340,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         step: "awaiting_nombre_persona",
         phoneNumberId: sess.phoneNumberId || wpid,
       });
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     if (!res.ok) {
@@ -3445,7 +3532,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         delete sess.addrProvincia;
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
-        await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+        await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
         return;
       }
       if (orig === "opcional") {
@@ -3454,7 +3541,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         delete sess.addrProvincia;
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
-        await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
+        await reply(phone, await msgOpcionalIdentificadorEnriquecido(ctx), tid, phoneNumberId);
         return;
       }
       if (orig === "nis_solo") {
@@ -4156,7 +4243,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
           descripcion: desc,
           phoneNumberId: sess.phoneNumberId || wpid,
         });
-        await reply(phone, msgOpcionalIdentificadorPorRubro(ctx), tid, phoneNumberId);
+        await reply(phone, await msgOpcionalIdentificadorEnriquecido(ctx), tid, phoneNumberId);
         return;
       }
       sessions.set(sk, {
@@ -4165,7 +4252,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         descripcion: desc,
         phoneNumberId: sess.phoneNumberId || wpid,
       });
-      await reply(phone, MSG_NOMBRE_PERSONA, tid, phoneNumberId);
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
     if (esTipoDenunciaFraudeAnonimaCoopElectrica(sess.tipo, ctx.tipo)) {
