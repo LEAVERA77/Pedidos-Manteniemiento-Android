@@ -112,10 +112,14 @@ function fireUpsertTelefonoInboundCatalogo(tenantId, phoneDigits, sess) {
 
 const MSG_ADDR_CIUDAD =
   "¿En qué *ciudad o localidad* está el reclamo? (ej: *Hasenkamp*, *Rosario*).\n\n" +
-  "Lo más preciso es *ubicación GPS*: *Adjuntar* (📎) → *Ubicación*. " +
-  "Si no podés, escribí bien la *localidad* y luego *calle y número*.\n\n" +
+  "Después te pediremos *calle* y *número de puerta* por separado.\n\n" +
+  "Si podés, lo más preciso es *ubicación GPS*: *Adjuntar* (📎) → *Ubicación*.\n\n" +
   "_Al enviar ubicación GPS, aceptás que se use únicamente para ubicar el reclamo en el mapa._" +
   MSG_SALIR_ATRAS;
+
+const MSG_INTRO_DIRECCION_ESTRUCTURADA =
+  "Indicá la *dirección del reclamo* en estos pasos: *provincia*, *ciudad/localidad*, *calle* y *número*.\n\n" +
+  "También podés enviar *ubicación GPS* (📎 → *Ubicación*) en cualquier momento.\n\n";
 
 /** 24 jurisdicciones (Nominatim / Argentina). */
 const PROVINCIAS_ARG_BOT = [
@@ -465,7 +469,8 @@ function mensajeMenuIdentificacion(ctx) {
   const base =
     `Ya tenemos la *descripción* del problema. Ahora necesitamos *identificar* y *ubicar* el reclamo.\n\n` +
     `Elegí *una opción* respondiendo con *1*, *2* o *3*:\n\n`;
-  const opt3 = `*3)* Solo *dirección* (sin datos personales).\n\n`;
+  const opt3 =
+    `*3)* Solo *dirección* (sin datos personales): *provincia*, *ciudad*, *calle* y *número*.\n\n`;
   if (r === "cooperativa_electrica") {
     return (
       base +
@@ -1205,61 +1210,20 @@ async function inferirDireccionDesdeGpsYGeocodificar(
   });
 }
 
-/**
- * Opcion 3 (solo direccion): GPS recibido → reverse geocode, armar sesion anonima y pasar a fotos/confirmacion.
- */
-async function inferirDireccionDesdeGpsYGeocodificarAnonimo(
-  phone, sess, sk, contactName, ctx, phoneNumberId, lat, lng
-) {
-  const tid = sess.tenantId;
+/** Opción 3 (solo dirección, sin datos personales): flujo provincia → ciudad → calle → número. */
+async function iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId) {
   const wpid = phoneNumberId ? String(phoneNumberId).trim() : sess.phoneNumberId || null;
-  let rev = null;
-  try {
-    rev = await reverseGeocodeArgentina(lat, lng);
-  } catch (_) {}
-
-  sess.userSharedGps = { lat, lng };
-  sess.lat = lat;
-  sess.lng = lng;
   sess.modoAnonimo = true;
   sess.contactName = "Vecino anónimo";
-  if (rev?.displayName) sess.direccionTexto = rev.displayName;
-  if (
-    rev?.barrio &&
-    ["municipio", "cooperativa_electrica", "cooperativa_agua"].includes(normalizarRubroCliente(sess.tipoCliente)) &&
-    !sess.barrio
-  ) {
-    sess.barrio = rev.barrio;
-  }
+  sess.addrOrigenPaso = "solo_direccion";
   if (wpid) sess.phoneNumberId = wpid;
-
-  const ext = extraerCiudadCalleNumeroDesdeReverse(rev);
-  if (ext && ext.ciudad.length >= 2 && ext.calle.length >= 2) {
-    sess.addrCiudad = ext.ciudad;
-    sess.addrCalle = ext.calle;
-    sess.addrNumero = ext.numero || "0";
-    if (rev?.address?.state) {
-      const pBot = provinciaBotDesdeTextoOsm(String(rev.address.state).trim());
-      if (pBot) sess.addrProvincia = pBot;
-    }
-    sessions.set(sk, sess);
-    await geocodeStructuredAddressAndFinalizePedido(
-      phone, sess, sk, contactName, ctx, wpid,
-      ext.ciudad, ext.calle, ext.numero || "0",
-      { stateOrProvince: sess.addrProvincia || ctx?.geocodeState }
-    );
+  sessions.set(sk, sess);
+  if (await intentarGeocodificarConUbicacionGpsPinSiHay(phone, sess, sk, contactName, ctx, wpid)) {
     return;
   }
-
+  sess.step = "awaiting_addr_provincia";
   sessions.set(sk, sess);
-  await reply(
-    phone,
-    "✅ Recibimos tu *ubicación GPS*, pero no pudimos inferir la calle automáticamente.\n\n" +
-      "Escribí la *dirección* del problema (calle y número, o una referencia)." +
-      MSG_SALIR_ATRAS,
-    tid,
-    wpid
-  );
+  await reply(phone, MSG_INTRO_DIRECCION_ESTRUCTURADA + MSG_ADDR_PROVINCIA, tid, phoneNumberId);
 }
 
 /**
@@ -2338,8 +2302,22 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   }
 
   if (stepAddr === "awaiting_addr_solo_direccion") {
-    await inferirDireccionDesdeGpsYGeocodificarAnonimo(
-      phone, sess, sk, contactName, ctxOk, phoneNumberId, lat, lng
+    sess.modoAnonimo = true;
+    sess.contactName = "Vecino anónimo";
+    sess.addrOrigenPaso = sess.addrOrigenPaso || "solo_direccion";
+    sess.step = "awaiting_addr_provincia";
+    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+    sessions.set(sk, sess);
+    await inferirDireccionDesdeGpsYGeocodificar(
+      phone,
+      sess,
+      sk,
+      contactName,
+      ctxOk,
+      phoneNumberId,
+      lat,
+      lng,
+      "awaiting_addr_provincia"
     );
     return;
   }
@@ -3043,20 +3021,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     if (choice === 3) {
-      sessions.set(sk, {
-        ...sess,
-        step: "awaiting_addr_solo_direccion",
-        modoAnonimo: true,
-        phoneNumberId: sess.phoneNumberId || wpid,
-      });
-      await reply(
-        phone,
-        "Escribí la *dirección del problema* (calle y número, o una referencia).\n\n" +
-          "También podés enviar tu *ubicación GPS* (📎 → *Ubicación*) para que infiramos la dirección automáticamente." +
-          MSG_SALIR_ATRAS,
-        tid,
-        phoneNumberId
-      );
+      await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
       return;
     }
     await reply(
@@ -3171,43 +3136,13 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     if (esComandoAtras(t)) {
       sess.step = "awaiting_identificacion_modo";
       delete sess.modoAnonimo;
+      delete sess.addrOrigenPaso;
       if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
       sessions.set(sk, sess);
       await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
       return;
     }
-    if (t.length < 3) {
-      await reply(phone, "Escribí al menos *3 caracteres* para la dirección.", tid, phoneNumberId);
-      return;
-    }
-    if (t.length > 300) {
-      await reply(phone, "La dirección es muy larga. Acortala un poco.", tid, phoneNumberId);
-      return;
-    }
-    sess.modoAnonimo = true;
-    sess.contactName = "Vecino anónimo";
-    sess.addrCalle = t;
-    sess.addrNumero = "0";
-    const ciudadFallback =
-      String(sess.addrCiudad || "").trim() ||
-      String(ctx?.localidad || ctx?.ciudad || "").trim() ||
-      "";
-    if (ciudadFallback) sess.addrCiudad = ciudadFallback;
-    sess.direccionDeclaradaUsuario = t;
-    if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
-
-    if (sess.ubicacionGpsPin && Number.isFinite(sess.ubicacionGpsPin.lat)) {
-      sess.userSharedGps = sess.ubicacionGpsPin;
-      sess.lat = sess.ubicacionGpsPin.lat;
-      sess.lng = sess.ubicacionGpsPin.lng;
-      delete sess.ubicacionGpsPin;
-    }
-
-    sess.direccionTexto = ciudadFallback
-      ? `Dirección indicada: ${t}, ${ciudadFallback}. (Reclamo anónimo, solo dirección.)`
-      : `Dirección indicada: ${t}. (Reclamo anónimo, solo dirección.)`;
-    sessions.set(sk, sess);
-    await pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, contactName, ctx, phoneNumberId);
+    await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
     return;
   }
 
@@ -3505,6 +3440,19 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
         if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
         sessions.set(sk, sess);
         await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
+        return;
+      }
+      if (orig === "solo_direccion") {
+        sess.step = "awaiting_identificacion_modo";
+        delete sess.addrOrigenPaso;
+        delete sess.addrProvincia;
+        delete sess.addrCiudad;
+        delete sess.addrCalle;
+        delete sess.addrNumero;
+        delete sess.modoAnonimo;
+        if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
+        sessions.set(sk, sess);
+        await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
         return;
       }
       sess.step = "awaiting_identificacion_modo";
