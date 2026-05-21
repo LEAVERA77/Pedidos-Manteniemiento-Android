@@ -48,7 +48,7 @@ function extraerClavesDatosExtraMuestra(rows, maxKeys = 28) {
 /**
  * @param {{
  *   sqlSimple: (q: string) => Promise<{ rows?: unknown[] }>,
- *   sqlSimpleSelectAllPages: (sel: string, ord: string) => Promise<{ rows?: unknown[] }>,
+ *   sqlSimpleSelectAllPages?: (sel: string, ord: string) => Promise<{ rows?: unknown[] }>,
  *   esc: (v: unknown) => string,
  *   tenantIdActual: number | string | (() => number | string),
  *   empresaCfg?: { active_business_type?: string } | null,
@@ -69,10 +69,14 @@ export async function fetchSociosCatalogoListadoAdmin(deps) {
 
     deps.onProgress?.('Leyendo socios del tenant…');
 
-    const r = await deps.sqlSimpleSelectAllPages(
-        `SELECT ${COLS_LISTADO}${colTid}${colBt} FROM socios_catalogo WHERE 1=1${andSoc}`,
-        'ORDER BY nis_medidor'
-    );
+    const baseSql = `SELECT ${COLS_LISTADO}${colTid}${colBt} FROM socios_catalogo WHERE 1=1${andSoc}`;
+    const orderSql = 'ORDER BY nis_medidor';
+    let r;
+    if (typeof deps.sqlSimpleSelectAllPages === 'function') {
+        r = await deps.sqlSimpleSelectAllPages(baseSql, orderSql);
+    } else {
+        r = await sqlSimple(`${baseSql} ${orderSql}`);
+    }
     const rows = r.rows || [];
 
     let extraKeys = [];

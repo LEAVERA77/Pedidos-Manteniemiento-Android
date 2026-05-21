@@ -31,11 +31,27 @@ function bindAdminSociosModule(sociosMod, ctx) {
 }
 
 /**
- * Garantiza init de socios aunque el batch diferido falló o aún no terminó (carrera con adminTab).
+ * Solo módulo socios (sin cargar históricos/export/derivaciones). Para pestaña Socios al abrir.
  * @param {() => Record<string, unknown>} getDeps
  */
+export async function ensureAdminSociosInitializedFast(getDeps) {
+    const sociosMod = await import('./admin-socios.js');
+    if (sociosMod.isAdminSociosInitialized()) return;
+    const ctx = typeof getDeps === 'function' ? getDeps() : {};
+    try {
+        bindAdminSociosModule(sociosMod, ctx);
+    } catch (e) {
+        console.warn('[admin-deferred] init socios fast', e);
+    }
+    if (!sociosMod.isAdminSociosInitialized()) {
+        throw new Error('No se pudo inicializar el módulo socios');
+    }
+}
+
 export async function ensureAdminSociosInitialized(getDeps) {
     const sociosMod = await import('./admin-socios.js');
+    if (sociosMod.isAdminSociosInitialized()) return;
+    await ensureAdminSociosInitializedFast(getDeps);
     if (sociosMod.isAdminSociosInitialized()) return;
     await ensureAdminPanelDeferredBindings(getDeps);
     if (sociosMod.isAdminSociosInitialized()) return;

@@ -17,7 +17,7 @@ export function marcarListaSociosPendienteRecarga() {
         typeof window._gnTenantId === 'function'
             ? window._gnTenantId()
             : window.app?.u?.tenant_id ?? window.app?.u?.tenantId ?? '—';
-    ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando catálogo del tenant <strong>${String(tid)}</strong>…</div>`;
+    ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)">Catálogo del tenant <strong>${String(tid)}</strong>. Abrí <strong>Admin → Socios / NIS</strong> para cargar la tabla (mismo método que Red Eléctrica).</div>`;
 }
 
 /** @returns {boolean} */
@@ -75,8 +75,8 @@ export async function recargarSociosAdminTrasCambioTenant() {
             : null;
     if (getDeps) {
         try {
-            const { ensureAdminSociosInitialized } = await import('./app-admin-panel-deferred.js');
-            await ensureAdminSociosInitialized(getDeps);
+            const { ensureAdminSociosInitializedFast } = await import('./app-admin-panel-deferred.js');
+            await ensureAdminSociosInitializedFast(getDeps);
         } catch (e) {
             pintarErrorListaSociosAdmin(e);
             return;

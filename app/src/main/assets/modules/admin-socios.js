@@ -6,7 +6,7 @@
 
 import { esc, parseDecimalODmsCoord, validarWgs84Import } from './utils.js';
 import { andFragmentSociosCatalogoSesionNeon } from './socios-catalogo-filtro-sesion.js';
-import { fetchSociosCatalogoListadoAdmin } from './socios-catalogo-listado-fetch.js';
+import { cargarListaSociosAdminRapido } from './admin-socios-listado-api.js';
 import {
     filtrarSociosFilasExportVista,
 } from './socios-catalogo-export-vista.js';
@@ -66,8 +66,8 @@ async function ensureSociosDepsReady() {
             'initAdminSocios: abrí el panel de administración al menos una vez antes de usar Socios.'
         );
     }
-    const { ensureAdminSociosInitialized } = await import('./app-admin-panel-deferred.js');
-    await ensureAdminSociosInitialized(getDeps);
+    const { ensureAdminSociosInitializedFast } = await import('./app-admin-panel-deferred.js');
+    await ensureAdminSociosInitializedFast(getDeps);
     if (!_sociosDeps) {
         throw new Error('initAdminSocios debe llamarse antes de usar el módulo socios');
     }
@@ -1002,80 +1002,57 @@ function _spinnerSociosAdminHtml(tid, sub) {
     return `<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando catálogo del tenant <strong>${t}</strong>…${s}</div>`;
 }
 
-async function cargarListaSociosAdmin() {
-    await ensureSociosDepsReady();
+/**
+ * Pinta la tabla virtual de socios (tras API o Neon).
+ * @param {unknown[]} rows
+ * @param {string[]} extraKeys
+ */
+export function pintarListaSociosAdminDesdeFilas(rows, extraKeys) {
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
     const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
-    const gen = ++_cargaSociosAdminGen;
-    cont.innerHTML = _spinnerSociosAdminHtml(tid, '');
-
-    const run = async () => {
-        try {
-            const cfg = typeof window !== 'undefined' ? window.EMPRESA_CFG : {};
-            if (
-                typeof window !== 'undefined' &&
-                typeof window.cargarConfigEmpresa === 'function' &&
-                (!cfg?.active_business_type || !Object.keys(cfg).length)
-            ) {
-                try {
-                    await window.cargarConfigEmpresa();
-                } catch (_) {}
-            }
-            const { rows, extraKeys } = await fetchSociosCatalogoListadoAdmin({
-                sqlSimple: req().sqlSimple,
-                sqlSimpleSelectAllPages: req().sqlSimpleSelectAllPages,
-                esc,
-                tenantIdActual: req().tenantIdActual,
-                empresaCfg: typeof window !== 'undefined' ? window.EMPRESA_CFG : {},
-                onProgress: (msg) => {
-                    if (gen !== _cargaSociosAdminGen) return;
-                    cont.innerHTML = _spinnerSociosAdminHtml(tid, msg);
-                },
-            });
-            if (gen !== _cargaSociosAdminGen) return;
-            if (!rows.length) {
-            const tidShow = Number.isFinite(tid) ? tid : '—';
-            const bt = String(
-                (typeof window !== 'undefined' && window.EMPRESA_CFG?.active_business_type) || ''
-            )
-                .trim()
-                .toLowerCase();
-            const filtroBt =
-                bt === 'electricidad' || bt === 'agua' || bt === 'municipio'
-                    ? ` y rubro activo «${bt}»`
-                    : '';
-            cont.innerHTML = `<p style="color:var(--tl);font-size:.85rem;line-height:1.45">No hay socios en esta vista para el <strong>tenant ${tidShow}</strong>${filtroBt}. Si en Neon los registros tienen <code>tenant_id</code> vacío o otro número, no aparecen aquí. Podés <strong>agregar un cliente manualmente</strong> o importar Excel/CSV (se asocia al tenant de la sesión).</p>`;
-            window._sociosVirtualRows = null;
-            window._sociosDatosExtraColumnKeys = [];
-            window._sociosDatosExtraColCount = 0;
-                return;
-            }
-            window._sociosDatosExtraColumnKeys = extraKeys;
-            window._sociosDatosExtraColCount = extraKeys.length;
-            window._sociosVirtualRows = rows;
-            window._sociosVirtualRowHeight = 31;
-            window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
-            const algunWgsRows = rows.some((r) =>
-                sociosCatalogoTieneWgs84ParaProyeccion(r.latitud, r.longitud)
-            );
-            const headExtra = armarHeadExtraProyeccionSociosHtml(algunWgsRows);
-            const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
-            const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
-            const thDist = sociosCatalogoHtmlThDistrib(visCols);
-            const thNis = req().esMunicipioRubro() ? 'ID vecino' : 'NIS';
-            const thMedidor = req().esMunicipioRubro() ? '' : '<th align="left">Medidor</th>';
-            const thExtras =
-                extraKeys.length > 0
-                    ? extraKeys
-                          .map(
-                              (k) =>
-                                  `<th title="Columna extra (datos_extra)" style="max-width:7rem">${escHtmlPrint(k)}</th>`
-                          )
-                          .join('')
-                    : '';
-            cont.innerHTML =
-            `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
+    if (!rows.length) {
+        const tidShow = Number.isFinite(tid) ? tid : '—';
+        const bt = String(
+            (typeof window !== 'undefined' && window.EMPRESA_CFG?.active_business_type) || ''
+        )
+            .trim()
+            .toLowerCase();
+        const filtroBt =
+            bt === 'electricidad' || bt === 'agua' || bt === 'municipio'
+                ? ` y rubro activo «${bt}»`
+                : '';
+        cont.innerHTML = `<p style="color:var(--tl);font-size:.85rem;line-height:1.45">No hay socios en esta vista para el <strong>tenant ${tidShow}</strong>${filtroBt}. Si en Neon los registros tienen <code>tenant_id</code> vacío o otro número, no aparecen aquí. Podés <strong>agregar un cliente manualmente</strong> o importar Excel/CSV (se asocia al tenant de la sesión).</p>`;
+        window._sociosVirtualRows = null;
+        window._sociosDatosExtraColumnKeys = [];
+        window._sociosDatosExtraColCount = 0;
+        return;
+    }
+    window._sociosDatosExtraColumnKeys = extraKeys;
+    window._sociosDatosExtraColCount = extraKeys.length;
+    window._sociosVirtualRows = rows;
+    window._sociosVirtualRowHeight = 31;
+    window._sociosTablaColCount = obtenerNumColsTablaSociosAdmin();
+    const algunWgsRows = rows.some((r) =>
+        sociosCatalogoTieneWgs84ParaProyeccion(r.latitud, r.longitud)
+    );
+    const headExtra = armarHeadExtraProyeccionSociosHtml(algunWgsRows);
+    const visCols = sociosCatalogoLeerSetColumnasOpcionalesVisibles();
+    const thPre = sociosCatalogoHtmlThOpcionalesPreCalle(visCols);
+    const thDist = sociosCatalogoHtmlThDistrib(visCols);
+    const thNis = req().esMunicipioRubro() ? 'ID vecino' : 'NIS';
+    const thMedidor = req().esMunicipioRubro() ? '' : '<th align="left">Medidor</th>';
+    const thExtras =
+        extraKeys.length > 0
+            ? extraKeys
+                  .map(
+                      (k) =>
+                          `<th title="Columna extra (datos_extra)" style="max-width:7rem">${escHtmlPrint(k)}</th>`
+                  )
+                  .join('')
+            : '';
+    cont.innerHTML =
+        `<div style="overflow-x:auto"><div id="lista-socios-admin-scroll" style="max-height:min(60vh,560px);overflow:auto;border:1px solid var(--bo);border-radius:.5rem;position:relative">
 <table class="gn-soc-admin-table" style="width:100%;font-size:.8rem;border-collapse:collapse;table-layout:auto"><thead style="position:sticky;top:0;background:var(--bg);z-index:2;box-shadow:0 1px 0 var(--bo)"><tr><th align="left">${thNis}</th>${thMedidor}<th>Nombre</th><th>Localidad</th><th>Provincia</th>${thPre}<th>Calle</th><th>Nº</th><th>Tel.</th>${thDist}<th align="right" class="gn-soc-coord gn-soc-lat" title="Latitud · WGS84 (EPSG:4326), valor almacenado en BD">Lat (WGS84)</th><th align="right" class="gn-soc-coord gn-soc-lon" title="Longitud · WGS84 (EPSG:4326)">Lon (WGS84)</th>${thExtras}${headExtra}<th>Estado</th></tr></thead><tbody id="lista-socios-vtbody"></tbody></table></div>
 <details id="socios-catalogo-colprefs" style="font-size:.76rem;margin:.5rem 0 0;color:var(--tm);max-width:52rem">
 <summary style="cursor:pointer;font-weight:600">Columnas opcionales del listado</summary>
@@ -1083,14 +1060,50 @@ async function cargarListaSociosAdmin() {
 <div id="socios-colprefs-cbs" style="display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.25rem 0 .5rem;align-items:center"></div>
 <button type="button" class="btn-sm" style="font-size:.72rem" onclick="if(typeof sociosCatalogoRestaurarColumnasOpcionalesPorRubro==='function')sociosCatalogoRestaurarColumnasOpcionalesPorRubro()">Restaurar predeterminadas del rubro</button>
 </details>
-<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Carga rápida sin <code>datos_extra</code> en memoria; valores de columnas extra: <strong>Excel completo</strong>. Lat/Lon = WGS84 en BD.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnLazyExportSociosXlsx&&window._gnLazyExportSociosXlsx()" title="Descarga .xlsx con las columnas de la tabla admin (rubro actual), sin mezclar tenants ni otras líneas de negocio; incluye datos_extra y proyección si los usás en la vista"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
-            bindSociosCatalogoVirtualScroll();
-            sociosCatalogoRenderPanelPreferenciasColumnas();
-            renderSociosCatalogoVirtual();
+<div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:.5rem;margin:.35rem 0 0"><p style="font-size:.72rem;color:var(--tl);margin:0;flex:1;min-width:12rem">${rows.length.toLocaleString('es-AR')} socios — vista virtual (solo filas visibles). Carga vía API del tenant. Columnas <code>datos_extra</code>: ver <strong>Excel completo</strong>.</p><button type="button" class="btn-sm success" style="flex-shrink:0;font-size:.72rem" onclick="window._gnLazyExportSociosXlsx&&window._gnLazyExportSociosXlsx()" title="Descarga .xlsx con las columnas de la tabla admin (rubro actual), sin mezclar tenants ni otras líneas de negocio; incluye datos_extra y proyección si los usás en la vista"><i class="fas fa-file-excel"></i> Excel completo</button></div></div>`;
+    bindSociosCatalogoVirtualScroll();
+    sociosCatalogoRenderPanelPreferenciasColumnas();
+    renderSociosCatalogoVirtual();
+}
+
+async function cargarListaSociosAdmin() {
+    const cont = document.getElementById('lista-socios-admin');
+    if (!cont) return;
+    const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
+    const gen = ++_cargaSociosAdminGen;
+
+    const run = async () => {
+        try {
+            await cargarListaSociosAdminRapido({
+                getApiToken:
+                    typeof window !== 'undefined' && typeof window.getApiToken === 'function'
+                        ? window.getApiToken
+                        : undefined,
+                apiUrl:
+                    typeof window !== 'undefined' && typeof window.apiUrl === 'function'
+                        ? window.apiUrl
+                        : req().apiUrl,
+                toast,
+                ensureDeps: ensureSociosDepsReady,
+                pintarFilas: (rows, extraKeys) => {
+                    if (gen !== _cargaSociosAdminGen) return;
+                    pintarListaSociosAdminDesdeFilas(rows, extraKeys);
+                },
+                spinnerHtml: (sub) => {
+                    if (gen !== _cargaSociosAdminGen) return '';
+                    return _spinnerSociosAdminHtml(tid, sub);
+                },
+                esc,
+                sqlSimple: req().sqlSimple,
+                sqlSimpleSelectAllPages: req().sqlSimpleSelectAllPages,
+                tenantIdActual: req().tenantIdActual,
+                empresaCfg: () => (typeof window !== 'undefined' ? window.EMPRESA_CFG : {}),
+            });
         } catch (e) {
             if (gen !== _cargaSociosAdminGen) return;
             logErrorWeb('lista-socios-admin', e);
-            cont.innerHTML = '<p style="color:var(--re);font-size:.85rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
+            cont.innerHTML =
+                '<p style="color:var(--re);font-size:.85rem">' + escHtmlPrint(mensajeErrorUsuario(e)) + '</p>';
         }
     };
 

@@ -1,0 +1,36 @@
+---
+description: Tablas admin grandes — cargar vía API Node (no inflar app.js)
+alwaysApply: true
+---
+
+# Tablas admin: carga rápida vía API (todos los tenants y rubros)
+
+## Patrón obligatorio (referencia: Red Eléctrica)
+
+Para listados admin con **cientos o miles de filas** (socios, infraestructura, catálogos por tenant):
+
+1. **Backend** en `api/routes/*.js` + `api/services/*.js`: `GET /api/admin/...` con `authWithTenantHost`, `adminOnly`, filtro por `req.tenantId` y rubro (`req.activeBusinessType` / `req.businessTypeFilterEnabled` vía `businessContextMiddleware`).
+2. **Front** en `app/src/main/assets/modules/admin-*-listado-api.js` (o `admin-*-infra.js`): un `fetch` con `getApiToken` + `apiUrl`, pintar filas en el DOM (o delegar en `pintar*DesdeFilas` del módulo de dominio).
+3. **Fallback** solo si no hay token: una query Neon (`sqlSimple` o paginado), nunca bloquear la UI cargando todo el panel admin diferido antes del listado.
+
+**No** usar spinner infinito en `#lista-socios-admin` si la pestaña Socios no está activa: mensaje estático “Abrí Admin → Socios / NIS…” (`admin-socios-carga-tenant.js`).
+
+## Init socios sin panel completo
+
+- Usar `ensureAdminSociosInitializedFast` (solo `initAdminSocios`), **no** `ensureAdminPanelDeferredBindings` completo al abrir Socios.
+- `ensureAdminPanelDeferredBindings` queda para históricos, export masivo, derivaciones, etc.
+
+## `app.js` — norma dura
+
+- **No agrandar** `app/src/main/assets/app.js` (ni la copia en Pedidos-MG).
+- Nueva lógica → `modules/*.js` o `js/*.js` + import/pegamento mínimo en `app.js`.
+- Listado socios: `modules/admin-socios-listado-api.js` + API `GET /api/admin/socios-catalogo`.
+
+## Paridad repos
+
+Tras tocar `api/` o `app/src/main/assets/modules/**`: sync a **Pedidos-MG** (`scripts/sync-assets-to-pedidos-mg.ps1` + copiar `api/`), commit/push según reglas del proyecto.
+
+## Socios — detalle técnico
+
+- Listado **sin** `datos_extra` en el SELECT masivo; claves extra opcionales con muestra acotada en API.
+- Aplica a **cualquier tenant** y rubro (`electricidad`, `agua`, `municipio`) con el mismo filtro que `andFragmentSociosCatalogoDesdeSchema` en el front.
