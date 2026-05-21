@@ -1,6 +1,5 @@
 /**
- * Herramienta de cambio de tenant: solo rol técnico (soporte GestorNova).
- * Admin: #mt abre/cierra panel de pedidos, no wizard de tenant.
+ * Botón #mt (fa-list): siempre abre cambio de tenant con clave GESTORNOVA_TECHNICIAN_TENANT_KEY.
  * Login sin sesión: sin marca de tenant ajena (caché localStorage).
  * made by leavera77
  */
@@ -12,26 +11,23 @@ export function esRolTecnicoSoporteGn(rolApp) {
 }
 
 /**
- * @param {{
- *   rolApp: () => string,
- *   esAdmin: () => boolean,
- *   togglePanel: () => void,
- *   abrirWizardTenant: () => void | Promise<void>,
- * }} deps
+ * #mt y `abrirWizardMarcaEmpresaManual`: modal de clave técnica + wizard (cualquier rol con sesión).
+ * @param {{ abrirWizardTenant?: () => void | Promise<void> }} deps
  */
-export async function abrirHerramientaTenantSegunRol(deps) {
-  const { rolApp, esAdmin, togglePanel, abrirWizardTenant } = deps;
-  if (esRolTecnicoSoporteGn(rolApp)) {
-    if (typeof abrirWizardTenant === 'function') await abrirWizardTenant();
+export async function abrirBotonMtCambioTenant(deps) {
+  const open =
+    typeof deps?.abrirWizardTenant === 'function'
+      ? deps.abrirWizardTenant
+      : typeof window !== 'undefined' && typeof window.gnAbrirWizardTenantUnificado === 'function'
+        ? window.gnAbrirWizardTenantUnificado
+        : null;
+  if (open) {
+    await open();
     return;
   }
-  if (typeof togglePanel === 'function') togglePanel();
-  if (esAdmin?.() && typeof window.toast === 'function') {
-    window.toast(
-      'El cambio de tenant operativo es solo para usuarios técnico de soporte (clave GESTORNOVA_TECHNICIAN_TENANT_KEY).',
-      'info',
-    );
-  }
+  try {
+    window.toast?.('El asistente de tenant aún no está listo. Recargá la página.', 'error');
+  } catch (_) {}
 }
 
 /** Oculta el botón magic del onboarding (#gw) que abría el wizard de tenant sin rol. */
@@ -80,20 +76,39 @@ export async function loginApiJwtConMustChange(ctx, email, password) {
   }
 }
 
-/** @param {{ rolApp: () => string }} deps */
-export function actualizarBotonMtSegunRol(deps) {
+const MT_TITLE =
+  'Cambiar tenant operativo (clave técnica GESTORNOVA_TECHNICIAN_TENANT_KEY del servidor)';
+
+/** @param {{ rolApp?: () => string }} _deps */
+export function actualizarBotonMtSegunRol(_deps) {
   const mtBtn = document.getElementById('mt');
   if (!mtBtn) return;
-  if (esRolTecnicoSoporteGn(deps.rolApp)) {
-    mtBtn.innerHTML = '<i class="fas fa-list"></i>';
-    mtBtn.title = 'Cambiar tenant operativo (técnico soporte — clave del servidor)';
-    return;
-  }
   mtBtn.innerHTML = '<i class="fas fa-list"></i>';
-  mtBtn.title = 'Panel de pedidos';
+  mtBtn.title = MT_TITLE;
 }
 
+/**
+ * @param {{
+ *   rolApp: () => string,
+ *   esAdmin: () => boolean,
+ *   togglePanel: () => void,
+ *   abrirWizardTenant: () => void | Promise<void>,
+ * }} deps
+ */
 export function initGnTenantSoloTecnicoUI(deps) {
   ocultarAsistenteMagicOnboarding();
-  window.__gnAbrirHerramientaTenantSegunRol = () => abrirHerramientaTenantSegunRol(deps);
+  actualizarBotonMtSegunRol(deps);
+
+  const onMt = () => abrirBotonMtCambioTenant(deps);
+  window.__gnAbrirBotonMtTenant = onMt;
+  window.abrirWizardMarcaEmpresaManual = onMt;
+  window.__gnAbrirHerramientaTenantSegunRol = onMt;
+
+  const mtBtn = document.getElementById('mt');
+  if (mtBtn && mtBtn.dataset.gnMtClick !== '1') {
+    mtBtn.dataset.gnMtClick = '1';
+    mtBtn.addEventListener('click', () => {
+      void onMt();
+    });
+  }
 }

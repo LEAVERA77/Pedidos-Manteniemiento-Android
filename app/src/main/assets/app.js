@@ -195,7 +195,12 @@ import { initGnModalZIndexStack, gnForceModalZFront } from './modules/gn-modal-z
 import { installGnClipboardCopy } from './modules/gn-clipboard-copy.js';
 import { gnRequestClearGotoPreviewMarker } from './modules/gn-map-goto-preview-marker.js';
 import { gnAndroidCerrarUiEncimaDelMapaParaZoomPedido } from './modules/gn-android-cerrar-ui-para-mapa-zoom.js';
-import { ensureAdminPanelDeferredBindings, exportarPedidosExcelAdminDeferred } from './modules/app-admin-panel-deferred.js';
+import {
+    ensureAdminPanelDeferredBindings,
+    ensureAdminHistoricosTabReady,
+    exportarPedidosExcelAdminDeferred,
+} from './modules/app-admin-panel-deferred.js';
+import { gnResetUsuarioNombresMap } from './modules/gn-usuario-nombres.js';
 import { setInformesEstadisticasPdfCaptureDeps } from './modules/informes-estadisticas-pdf-capture.js';
 import {
     setInformesEstadisticasPrintDeps,
@@ -283,6 +288,7 @@ import {
     aplicarMascaraEmpresaAdminTrasCambioTenant,
 } from './modules/ocultar-datos-tenant.js';
 import { restaurarDatosCompletosTrasCambioTenant } from './modules/restaurar-datos-tenant.js';
+import { marcarListaSociosPendienteRecarga, recargarSociosAdminTrasCambioTenant } from './modules/admin-socios-carga-tenant.js';
 if (typeof window !== 'undefined') {
     window.generarMenuBot = generarMenuBot;
     window.procesarRespuestaBot = procesarRespuestaBot;
@@ -11606,18 +11612,7 @@ function togglePanel() {
     document.getElementById('bp2').classList.toggle('col');
 }
 
-/**
- * Listado (#mt, esquina): admin → modal de contraseña y wizard marca/logo/ubicación;
- * otros roles → panel de pedidos (togglePanel).
- */
-async function abrirWizardMarcaEmpresaManual() {
-    if (typeof window.__gnAbrirHerramientaTenantSegunRol === 'function') {
-        await window.__gnAbrirHerramientaTenantSegunRol();
-        return;
-    }
-    togglePanel();
-}
-window.abrirWizardMarcaEmpresaManual = abrirWizardMarcaEmpresaManual;
+/** #mt / abrirWizardMarcaEmpresaManual: ver modules/gn-tenant-solo-tecnico-ui.js */
 
 async function confirmarPasswordYAbrirSetupSaaSWizard() {
     document.getElementById('modal-admin-verify-pw-setup-saas')?.classList.remove('active');
@@ -11687,11 +11682,6 @@ function switchTab(t) {
 }
 
 
-document.getElementById('mt').addEventListener('click', () => {
-    abrirWizardMarcaEmpresaManual().catch((e) => {
-        console.warn('[wizard-marca-manual]', e?.message || e);
-    });
-});
 document.querySelector('#ph .gn-bp2-plegar-trigger')?.addEventListener('click', (e) => {
     if (e.target.closest('button')) return;
     if (window.__bp2DragJustEnded) return;
@@ -15078,7 +15068,14 @@ function adminTab(tab) {
             if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
         } catch (_) {}
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
-        cargarListaSociosAdmin();
+        void (async () => {
+            try {
+                await ensureAdminPanelDeferredBindings(() => _depsAdminPanelDeferred());
+                await cargarListaSociosAdmin();
+            } catch (e) {
+                console.warn('[adminTab socios]', e?.message || e);
+            }
+        })();
         try {
             syncHistorialNisBusquedaDom();
         } catch (_) {}
@@ -15108,9 +15105,7 @@ function adminTab(tab) {
     }
     if (tab === 'mapa-usuarios') iniciarMapaUsuariosAdmin();
     if (tab === 'historicos') {
-        try {
-            if (typeof window.__gnAdminTabHistoricos === 'function') window.__gnAdminTabHistoricos();
-        } catch (_) {}
+        void ensureAdminHistoricosTabReady(() => _depsAdminPanelDeferred());
     }
     if (tab === 'contrasena') {
         try {
@@ -15161,7 +15156,17 @@ function _depsAdminPanelDeferred() {
         nominatimFetchSearch: _nominatimFetchSearch,
     };
 }
-if (typeof window !== 'undefined') window.__gnDepsAdminPanelDeferred = _depsAdminPanelDeferred;
+if (typeof window !== 'undefined') {
+    window.__gnDepsAdminPanelDeferred = _depsAdminPanelDeferred;
+    window.__gnUsuarioNombresDeps = () => ({
+        neonOk: () => NEON_OK,
+        modoOffline: () => !!modoOffline,
+        sqlReady: () => typeof _sql !== 'undefined' && !!_sql,
+        sqlSimple,
+        esc,
+        sqlFiltroUsuariosPorTenant,
+    });
+}
 
 function syncAdminPanelMaxButtons() {
     const p = document.getElementById('admin-panel');
@@ -17045,8 +17050,10 @@ async function ejecutarRefrescoDatosTrasCambioTenantMultitenant() {
                     await cargarEstadisticas();
                 } catch (_) {}
                 try {
-                    if (document.getElementById('admin-socios')?.classList.contains('active')) void cargarListaSociosAdmin();
-                } catch (_) {}
+                    await recargarSociosAdminTrasCambioTenant();
+                } catch (e) {
+                    console.warn('[refresco-multitenant] socios', e?.message || e);
+                }
             }
             try {
                 await refrescarUsuariosCacheDesdeNeon();
@@ -17273,11 +17280,13 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
         }
     } catch (_) {}
     try {
-        const ls = document.getElementById('lista-socios-admin');
-        if (ls) {
-            ls.innerHTML =
-                '<div class="ll2" style="padding:.75rem;color:var(--tm)">Sin socios en pantalla hasta cargar el catálogo del tenant actual…</div>';
-        }
+        try {
+            marcarListaSociosPendienteRecarga();
+        } catch (_) {}
+        try {
+            app.usuariosCache = null;
+            gnResetUsuarioNombresMap();
+        } catch (_) {}
         const listaUb = document.getElementById('lista-ubicaciones');
         if (listaUb)
             listaUb.innerHTML =

@@ -527,4 +527,12 @@ export function initAdminHistoricosPanel(deps) {
         } catch (_) {}
         render();
     };
+
+    if (document.getElementById('admin-historicos')?.classList.contains('active')) {
+        try {
+            window.__gnAdminTabHistoricos?.();
+        } catch (_) {
+            render();
+        }
+    }
 }

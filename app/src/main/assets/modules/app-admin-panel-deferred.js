@@ -53,6 +53,17 @@ export async function ensureAdminSociosInitialized(getDeps) {
 /**
  * @param {() => Record<string, unknown>} getDeps - debe devolver refs actuales (toast, sqlSimple, …)
  */
+/**
+ * Históricos admin: garantiza init del panel y dispara carga (evita carrera con import diferido).
+ * @param {() => Record<string, unknown>} getDeps
+ */
+export async function ensureAdminHistoricosTabReady(getDeps) {
+    await ensureAdminPanelDeferredBindings(getDeps);
+    if (typeof window.__gnAdminTabHistoricos === 'function') {
+        window.__gnAdminTabHistoricos();
+    }
+}
+
 export async function ensureAdminPanelDeferredBindings(getDeps) {
     if (_done) return;
     if (_inFlight) {
@@ -130,8 +141,20 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
                 toastError: ctx.toastError,
             });
         } catch (_) {}
+        if (!sociosMod.isAdminSociosInitialized()) {
+            throw new Error(
+                'No se pudo inicializar el catálogo de socios (admin). Recargá la página o abrí Admin → Socios de nuevo.'
+            );
+        }
         _done = true;
-    })();
+    })()
+        .catch((e) => {
+            _inFlight = null;
+            throw e;
+        })
+        .finally(() => {
+            if (_done) _inFlight = null;
+        });
     await _inFlight;
 }
 

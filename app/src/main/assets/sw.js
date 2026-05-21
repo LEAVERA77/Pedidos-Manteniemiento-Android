@@ -60,6 +60,8 @@ function shellAssetUrls() {
     j('modules/pedido-detalle-render.js'),
     j('modules/pedido-detalle-shell.js'),
     j('modules/pedido-detalle-hydrate.js'),
+    j('modules/gn-usuario-nombres.js'),
+    j('modules/gn-usuario-nombres-detalle-patch.js'),
     j('modules/pedido-detalle-incremental.js'),
     j('modules/pedido-fotos-campo-android.js'),
     j('modules/gn-android-cerrar-ui-para-mapa-zoom.js'),

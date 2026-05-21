@@ -3,6 +3,7 @@
  * made by leavera77
  */
 import { gnDetalleImgAttrs } from './pedido-detalle-html-helpers.js';
+import { gnNombreUsuarioDisplay } from './gn-usuario-nombres.js';
 
 export function computeDetalleEstructuraSig(p, deps) {
     const fotosCount = Array.isArray(p.fotos) ? p.fotos.filter(Boolean).length : 0;
@@ -130,16 +131,12 @@ function buildDetalleRenderParts(p, deps) {
     /** En WebView Android el usuario suele buscar la acción como «Ejecutar»; en web se mantiene el texto largo. */
     const lblPonerEnEjecucion =
         typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa() ? 'Ejecutar' : 'Poner en ejecución';
-    const findUser = id => {
-        if (!id) return null;
-        const u = app.usuariosCache?.find(u => String(u.id) === String(id));
-        return u ? u.nombre : null;
-    };
+    const findUser = (id) => gnNombreUsuarioDisplay(id);
     const _auditLineas = [
-        p.uc  ? '<div class="dr"><span class="dl">Creado por</span><span class="dv">'  + (findUser(p.uc)  || 'id:'+p.uc)  + '</span></div>' : '',
-        p.ui2 ? '<div class="dr"><span class="dl">Iniciado por</span><span class="dv">' + (findUser(p.ui2) || 'id:'+p.ui2) + '</span></div>' : '',
-        p.uav ? '<div class="dr"><span class="dl">Últ avance</span><span class="dv">'   + (findUser(p.uav) || 'id:'+p.uav) + '</span></div>' : '',
-        p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + (findUser(p.uci) || 'id:'+p.uci) + '</span></div>' : '',
+        p.uc  ? '<div class="dr"><span class="dl">Creado por</span><span class="dv">'  + findUser(p.uc)  + '</span></div>' : '',
+        p.ui2 ? '<div class="dr"><span class="dl">Iniciado por</span><span class="dv">' + findUser(p.ui2) + '</span></div>' : '',
+        p.uav ? '<div class="dr"><span class="dl">Últ avance</span><span class="dv">'   + findUser(p.uav) + '</span></div>' : '',
+        p.uci ? '<div class="dr"><span class="dl">Cerrado por</span><span class="dv">'  + findUser(p.uci) + '</span></div>' : '',
     ].filter(Boolean).join('');
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const nombreClienteDet = String((p.cnom || p.cl || '')).trim();
@@ -266,7 +263,7 @@ function buildDetalleRenderParts(p, deps) {
     const uAsig = (app.usuariosCache || []).find(u => String(u.id) === String(p.tai));
     const rolAsig = uAsig ? normalizarRolStr(uAsig.rol) : '';
     const nAsig = (p.tai != null)
-        ? `${findUser(p.tai) || ('id ' + p.tai)}${rolAsig ? ' · ' + rolAsig : ''}`
+        ? `${findUser(p.tai)}${rolAsig ? ' · ' + rolAsig : ''}`
         : 'Sin asignar';
     const fasiStr = p.fasi ? new Date(p.fasi).toLocaleString('es-AR', {...tz, hour12:false}) : '';
     const labFirmaDet = etiquetaFirmaPersona();
@@ -348,7 +345,7 @@ function buildDetalleRenderParts(p, deps) {
     let htmlDerivacionAdminExterna = '';
     if (esAdmin() && pedidoEsDerivadoFuera(p)) {
         const fdx = p.fder ? new Date(p.fder).toLocaleString('es-AR', { ...tz, hour12: false }) : '—';
-        const who = findUser(p.uider) || (p.uider != null ? 'id:' + p.uider : '—');
+        const who = findUser(p.uider);
         htmlDerivacionAdminExterna = `<div class="ds" style="border-left:4px solid #64748b">
             <h4>➡️ Derivado a tercero</h4>
             <p style="font-size:.78rem;margin:0 0 .5rem;line-height:1.4">Este reclamo ya no está en la operativa habitual del tenant. Para verlo en el panel de pedidos, activá <strong>Derivados fuera</strong> en la barra del listado.</p>
@@ -383,7 +380,7 @@ function buildDetalleRenderParts(p, deps) {
             : '';
         let pendienteSolicitudHtml = '';
         if (p.sdpen) {
-            const whoTec = findUser(p.sduid) || (p.sduid != null ? 'id:' + p.sduid : '—');
+            const whoTec = findUser(p.sduid);
             const fxs = p.sdf
                 ? new Date(p.sdf).toLocaleString('es-AR', { ...tz, hour12: false })
                 : '—';

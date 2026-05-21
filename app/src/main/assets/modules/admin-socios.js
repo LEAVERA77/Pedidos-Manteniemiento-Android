@@ -999,8 +999,18 @@ async function cargarListaSociosAdmin() {
     await ensureSociosDepsReady();
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
-    cont.innerHTML = '<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div>';
+    const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
+    cont.innerHTML = `<div class="ll2"><i class="fas fa-circle-notch fa-spin"></i> Cargando socios del tenant <strong>${Number.isFinite(tid) ? tid : '—'}</strong>…</div>`;
     try {
+        if (
+            typeof window !== 'undefined' &&
+            typeof window.cargarConfigEmpresa === 'function' &&
+            (!window.EMPRESA_CFG || !Object.keys(window.EMPRESA_CFG).length)
+        ) {
+            try {
+                await window.cargarConfigEmpresa();
+            } catch (_) {}
+        }
         const hasDEList = await req().sociosCatalogoTieneDatosExtra();
         const hasSocTList = await req().sociosCatalogoTieneTenantId();
         const rBt = await req().sqlSimple(
@@ -1022,7 +1032,17 @@ async function cargarListaSociosAdmin() {
         );
         const rows = r.rows || [];
         if (!rows.length) {
-            cont.innerHTML = '<p style="color:var(--tl);font-size:.85rem">Sin socios en esta vista. Podés <strong>agregar un cliente manualmente</strong>, o importar un Excel/CSV (se fusiona con lo que ya hay en el servidor).</p>';
+            const tidShow = Number.isFinite(tid) ? tid : '—';
+            const bt = String(
+                (typeof window !== 'undefined' && window.EMPRESA_CFG?.active_business_type) || ''
+            )
+                .trim()
+                .toLowerCase();
+            const filtroBt =
+                bt === 'electricidad' || bt === 'agua' || bt === 'municipio'
+                    ? ` y rubro activo «${bt}»`
+                    : '';
+            cont.innerHTML = `<p style="color:var(--tl);font-size:.85rem;line-height:1.45">No hay socios en esta vista para el <strong>tenant ${tidShow}</strong>${filtroBt}. Si en Neon los registros tienen <code>tenant_id</code> vacío o otro número, no aparecen aquí. Podés <strong>agregar un cliente manualmente</strong> o importar Excel/CSV (se asocia al tenant de la sesión).</p>`;
             window._sociosVirtualRows = null;
             window._sociosDatosExtraColumnKeys = [];
             window._sociosDatosExtraColCount = 0;

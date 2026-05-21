@@ -1,3 +1,5 @@
+import { recargarSociosAdminTrasCambioTenant } from './admin-socios-carga-tenant.js';
+
 /**
  * Tras cambiar el tenant operativo (misma sesión): recarga config empresa, formulario admin,
  * socios y usuarios — complementa invalidarCaches + refrescarEmpresa sin duplicar lógica en app.js.
@@ -14,11 +16,7 @@ export async function restaurarDatosCompletosTrasCambioTenant(opts = {}) {
             await window.cargarFormEmpresa();
         }
         if (typeof window.esAdmin === 'function' && window.esAdmin()) {
-            if (typeof window.cargarListaSociosAdmin === 'function') {
-                try {
-                    await window.cargarListaSociosAdmin();
-                } catch (_) {}
-            }
+            await recargarSociosAdminTrasCambioTenant();
             if (typeof window.cargarListaUsuarios === 'function') {
                 try {
                     await window.cargarListaUsuarios();

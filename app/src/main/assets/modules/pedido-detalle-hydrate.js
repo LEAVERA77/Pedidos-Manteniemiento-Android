@@ -8,6 +8,8 @@ import {
     patchDetallePedidoIncremental,
     guardarDetalleEstructuraSig,
 } from './pedido-detalle-incremental.js';
+import { gnPrefetchNombresPedidoDetalle } from './gn-usuario-nombres.js';
+import { gnParchAuditoriaDetalleTrasNombres } from './gn-usuario-nombres-detalle-patch.js';
 
 function isAndroidShell() {
     try {
@@ -143,6 +145,14 @@ export function hydrateDetallePedido(p, deps, opts = {}) {
     applyDetalleSectionsToShell(p, sections, deps);
     guardarDetalleEstructuraSig(p, deps);
     restoreScroll(scroll, scrollTop);
+
+    void gnPrefetchNombresPedidoDetalle(p).then(() => {
+        try {
+            const dm = document.getElementById('dm');
+            if (!dm?.classList.contains('active')) return;
+            gnParchAuditoriaDetalleTrasNombres(p, buildDetalleSections, deps);
+        } catch (_) {}
+    });
 
     return { mode: 'full' };
 }
