@@ -5,6 +5,10 @@
  */
 
 import { construirHtmlEncabezadoInformeEmpresa } from './informe-empresa-html-encabezado.js';
+import {
+    aplicarChartsLayoutExportPdf,
+    chartWrapNecesitaPaginaCompleta,
+} from './informes-estadisticas-pdf-charts-layout.js';
 
 /** @type {{ getCharts: () => Record<string, unknown>; lineaPeriodoInformeEstadisticas: () => string } | null} */
 let _deps = null;
@@ -91,13 +95,24 @@ export function aplicarEstadisticasInkSaveCharts(activar) {
 export async function prepararVistaCapturaEstadisticasPdf(activar) {
     adminEstadisticasSetCaptureCompact(!!activar);
     aplicarEstadisticasInkSaveCharts(!!activar);
+    try {
+        aplicarChartsLayoutExportPdf(() => {
+            const m = _deps?.getCharts?.();
+            if (m && typeof m === 'object' && typeof window !== 'undefined') {
+                window.__gnChartsEstadisticas = m;
+            }
+            return m && typeof m === 'object' ? m : {};
+        }, !!activar);
+    } catch (e) {
+        console.warn('[pdf-charts-layout]', e);
+    }
     chartValues().forEach((ch) => {
         try {
             ch.resize();
         } catch (_) {}
     });
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise((r) => setTimeout(r, activar ? 220 : 90));
+    await new Promise((r) => setTimeout(r, activar ? 320 : 90));
 }
 
 export function coleccionSeccionesPdfEstadisticas() {
@@ -107,7 +122,12 @@ export function coleccionSeccionesPdfEstadisticas() {
     root.querySelectorAll('.chart-wrap').forEach((w) => {
         try {
             if (window.getComputedStyle(w).display === 'none') return;
-            out.push({ type: 'chart', el: w, title: tituloChartEstadisticas(w) });
+            out.push({
+                type: 'chart',
+                el: w,
+                title: tituloChartEstadisticas(w),
+                fullPage: chartWrapNecesitaPaginaCompleta(w),
+            });
         } catch (_) {}
     });
     return out;
@@ -174,14 +194,21 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
         });
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         await new Promise((r) => setTimeout(r, delayAfterResize));
-        const sw = Math.max(el.offsetWidth, el.clientWidth, 120);
+        const wide = statsExport && chartWrapNecesitaPaginaCompleta(el);
+        const sw = Math.max(
+            wide ? 720 : 0,
+            el.offsetWidth,
+            el.clientWidth,
+            el.scrollWidth,
+            120
+        );
         const rawSh =
             opts.useFullScrollHeight || statsExport
                 ? Math.max(el.scrollHeight, el.offsetHeight, 40)
                 : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
         const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
         const scale = statsExport
-            ? Math.min(2.65, 2700 / Math.max(sw, 260))
+            ? Math.min(wide ? 2.2 : 2.65, (wide ? 2400 : 2700) / Math.max(sw, 260))
             : Math.min(1.2, 1850 / Math.max(sw, 380));
         return await html2canvas(el, {
             scale,
@@ -204,6 +231,17 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
                     node.style.alignSelf = 'flex-start';
                     node.querySelectorAll('button').forEach((b) => {
                         b.style.visibility = 'hidden';
+                    });
+                    if (wide) {
+                        node.style.width = `${sw}px`;
+                        node.style.maxWidth = 'none';
+                        node.style.overflow = 'visible';
+                    }
+                    node.querySelectorAll('.chart-legend-caption').forEach((cap) => {
+                        cap.style.fontSize = '11px';
+                        cap.style.lineHeight = '1.45';
+                        cap.style.overflow = 'visible';
+                        cap.style.maxHeight = 'none';
                     });
                 } catch (_) {}
             },

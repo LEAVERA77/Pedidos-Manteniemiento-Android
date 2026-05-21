@@ -35,7 +35,7 @@ export function datasetsTiposTrabajoConDesestimados(rTiposRows) {
 export function opcionesChartTiposApilados() {
     return {
         indexAxis: 'y',
-        layout: { padding: { top: 4, bottom: 4, left: 4, right: 36 } },
+        layout: { padding: { top: 8, bottom: 8, left: 12, right: 44 } },
         plugins: {
             legend: { display: true, position: 'top' },
             tooltip: {

@@ -1117,6 +1117,23 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
   overflow:visible!important;
   max-height:none!important;
 }
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide{
+  width:100%;
+  max-width:none;
+  overflow:visible!important;
+  page-break-inside:avoid;
+}
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide .chart-container,
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide .chart-container--tall{
+  height:var(--gn-pdf-chart-h, 320px);
+  min-height:var(--gn-pdf-chart-h, 320px);
+  max-height:none;
+  overflow:visible!important;
+}
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-export-wide .chart-legend-caption{
+  font-size:.7rem!important;
+  line-height:1.42!important;
+}
 .kpi-neon-calc-panel{
   background:linear-gradient(135deg,#ecfeff,#f0fdf4);
   border:1px solid #a7f3d0;border-radius:.6rem;padding:.75rem 1rem;

@@ -16730,6 +16730,9 @@ async function cargarEstadisticas() {
             datasetsTiposTrabajoConDesestimados(rTipos.rows),
             opcionesChartTiposApilados()
         );
+        if (_charts['chart-tipos']) {
+            _charts['chart-tipos']._gnLabelsFull = rTipos.rows.map((r) => String(r.tipo || ''));
+        }
         try {
             crearGraficoMotivosDesestimacion(crearChart, rMotivos.rows || []);
         } catch (_) {}
@@ -16792,10 +16795,19 @@ async function cargarEstadisticas() {
                     scales: { x: { beginAtZero: true, title: { display: true, text: 'Horas' } } },
                 }
             );
+            if (_charts['chart-barrios-tiempo']) {
+                _charts['chart-barrios-tiempo']._gnLabelsFull = rBarT.rows.map((r) =>
+                    String(r.barrio || '')
+                );
+            }
         } else if (_charts['chart-barrios-tiempo']) {
             _charts['chart-barrios-tiempo'].destroy();
             delete _charts['chart-barrios-tiempo'];
         }
+
+        try {
+            window.__gnChartsEstadisticas = _charts;
+        } catch (_) {}
 
         // ── Gráfico técnicos de cierre ────────────────────────
         // ── Gráfico por usuario creador ──────────────────────

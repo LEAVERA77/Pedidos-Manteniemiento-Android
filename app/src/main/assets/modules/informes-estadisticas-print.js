@@ -65,23 +65,26 @@ export async function imprimirInformeConGraficos() {
             });
         const pageBlocks = [];
         const chartBuf = [];
-        const flushChartsFullRows = () => {
-            while (chartBuf.length >= 4) {
+        const flushChartsGrid = () => {
+            while (chartBuf.length >= 2) {
                 pageBlocks.push({
-                    kind: 'grid4',
-                    items: chartBuf.splice(0, 4).map(it => ({ url: it.url, title: it.title })),
+                    kind: 'grid2',
+                    items: chartBuf.splice(0, 2).map((it) => ({ url: it.url, title: it.title })),
                 });
             }
         };
+        const flushChartsGridRest = () => {
+            if (!chartBuf.length) return;
+            const items = chartBuf.splice(0, chartBuf.length).map((it) => ({ url: it.url, title: it.title }));
+            pageBlocks.push({
+                kind: items.length === 1 ? 'chartFull' : 'grid2',
+                items,
+            });
+        };
         for (const sec of secciones) {
             if (sec.type === 'resumen') {
-                flushChartsFullRows();
-                if (chartBuf.length) {
-                    pageBlocks.push({
-                        kind: 'grid4',
-                        items: chartBuf.splice(0, chartBuf.length).map(it => ({ url: it.url, title: it.title })),
-                    });
-                }
+                flushChartsGrid();
+                flushChartsGridRest();
                 const canvas = await capturaPdfBloqueResumenEstadisticas();
                 if (canvas) {
                     const u = await canvasToUrl(canvas);
@@ -89,23 +92,28 @@ export async function imprimirInformeConGraficos() {
                 }
             } else if (sec.type === 'chart') {
                 const canvas = await html2canvasCapturaElemento(sec.el, {
-                    delayAfterResize: 120,
+                    delayAfterResize: 160,
                     statsExport: true,
-                    maxHeightPx: 2800,
+                    maxHeightPx: 3200,
                 });
                 if (canvas) {
                     const u = await canvasToUrl(canvas);
-                    chartBuf.push({ url: u, title: sec.title });
-                    flushChartsFullRows();
+                    if (sec.fullPage) {
+                        flushChartsGrid();
+                        flushChartsGridRest();
+                        pageBlocks.push({
+                            kind: 'chartFull',
+                            items: [{ url: u, title: sec.title }],
+                        });
+                    } else {
+                        chartBuf.push({ url: u, title: sec.title });
+                        flushChartsGrid();
+                    }
                 }
             }
         }
-        if (chartBuf.length) {
-            pageBlocks.push({
-                kind: 'grid4',
-                items: chartBuf.map(it => ({ url: it.url, title: it.title })),
-            });
-        }
+        flushChartsGrid();
+        flushChartsGridRest();
         if (!pageBlocks.length) {
             ctx().toast?.('No se pudo capturar el panel', 'error');
             return;
@@ -136,7 +144,18 @@ export async function imprimirInformeConGraficos() {
                         `<div class="gn-print-imgwrap gn-print-imgwrap--full"><img src="${bl.url}" alt=""/></div>${pie}${notaUlt}</section>`
                     );
                 }
-                const cells = bl.items
+                if (bl.kind === 'chartFull') {
+                    const it = bl.items?.[0] || bl;
+                    const tit = it.title || bl.title || 'Gráfico';
+                    const url = it.url || bl.url;
+                    return (
+                        `<section class="gn-print-page gn-print-page--chart-full">` +
+                        `<p class="gn-print-sub gn-print-sub--tight">${escAttrPrint(subt)}</p>` +
+                        `<h2 class="gn-print-h1 gn-print-h1--chart">${escAttrPrint(tit)}</h2>` +
+                        `<div class="gn-print-imgwrap gn-print-imgwrap--fullchart"><img src="${url}" alt=""/></div>${pie}${notaUlt}</section>`
+                    );
+                }
+                const cells = (bl.items || [])
                     .map(
                         (it, idx) =>
                             `<div class="gn-print-cell">` +
@@ -144,10 +163,11 @@ export async function imprimirInformeConGraficos() {
                             `<div class="gn-print-imgwrap gn-print-imgwrap--cell"><img src="${it.url}" alt=""/></div></div>`
                     )
                     .join('');
+                const gridCls = bl.kind === 'grid2' ? 'gn-print-grid2' : 'gn-print-grid4';
                 return (
                     `<section class="gn-print-page gn-print-page--grid">` +
                     `<p class="gn-print-sub gn-print-sub--tight">${escAttrPrint(subt)}</p>` +
-                    `<div class="gn-print-grid4">${cells}</div>${pie}${notaUlt}</section>`
+                    `<div class="${gridCls}">${cells}</div>${pie}${notaUlt}</section>`
                 );
             })
             .join('');
@@ -160,13 +180,16 @@ export async function imprimirInformeConGraficos() {
             '.gn-print-h1{font-size:11pt;font-weight:700;color:#1e3a8a;margin:0 0 2mm;letter-spacing:.02em;border-bottom:1px solid #e2e8f0;padding-bottom:2mm}' +
             '.gn-print-sub{font-size:7.5pt;color:#64748b;margin:0 0 3mm;line-height:1.35}' +
             '.gn-print-sub--tight{margin-bottom:2mm}' +
+            '.gn-print-grid2{display:grid;grid-template-columns:1fr 1fr;gap:4mm;align-content:start;align-items:start}' +
             '.gn-print-grid4{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:3mm;align-content:start;align-items:start}' +
-            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:hidden;max-height:118mm}' +
-            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1mm;padding:0;border:none;width:100%;text-align:center}' +
-            '.gn-print-imgwrap{display:flex;justify-content:center;align-items:center}' +
+            '.gn-print-cell{display:flex;flex-direction:column;align-items:center;min-height:0;overflow:visible;max-height:128mm}' +
+            '.gn-print-h2cell{font-size:8.5pt;font-weight:700;color:#334155;margin:0 0 1.5mm;padding:0;border:none;width:100%;text-align:center;line-height:1.25}' +
+            '.gn-print-h1--chart{font-size:10pt;margin:0 0 3mm}' +
+            '.gn-print-imgwrap{display:flex;justify-content:center;align-items:flex-start}' +
             '.gn-print-imgwrap--full img{display:block;max-width:100%;width:auto;height:auto;max-height:258mm;object-fit:contain}' +
-            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0}' +
-            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:112mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
+            '.gn-print-imgwrap--fullchart img{display:block;width:100%;max-width:100%;height:auto;max-height:248mm;object-fit:contain}' +
+            '.gn-print-imgwrap--cell{flex:1;width:100%;min-height:0;overflow:visible}' +
+            '.gn-print-imgwrap--cell img{display:block;max-width:100%;max-height:120mm;width:auto;height:auto;margin:0 auto;object-fit:contain}' +
             '.gn-print-footer{font-size:7pt;color:#64748b;text-align:center;margin-top:3mm;padding-top:2mm;border-top:1px solid #e2e8f0}' +
             '.gn-print-empresa-head{font-size:8.5pt;color:#334155;margin-bottom:4mm;break-inside:avoid}' +
             '.gn-print-nota{font-size:7pt;color:#94a3b8;margin:4mm 0 0;break-inside:avoid;page-break-inside:avoid}';
@@ -313,8 +336,8 @@ export async function generarPdfEstadisticasMultipaginaENRE() {
         };
         const chartQueue = [];
         const flushChartRows = async () => {
-            while (chartQueue.length >= 4) {
-                await addChartsPageCombined(chartQueue.splice(0, 4));
+            while (chartQueue.length >= 2) {
+                await addChartsPageCombined(chartQueue.splice(0, 2));
             }
         };
         for (const sec of secciones) {
@@ -324,13 +347,19 @@ export async function generarPdfEstadisticasMultipaginaENRE() {
                 await addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
             } else if (sec.type === 'chart') {
                 const c = await html2canvasCapturaElemento(sec.el, {
-                    delayAfterResize: 120,
+                    delayAfterResize: 160,
                     statsExport: true,
-                    maxHeightPx: 2800,
+                    maxHeightPx: 3200,
                 });
                 if (c) {
-                    chartQueue.push({ canvas: c, title: sec.title });
-                    await flushChartRows();
+                    if (sec.fullPage) {
+                        await flushChartRows();
+                        if (chartQueue.length) await addChartsPageCombined(chartQueue.splice(0, chartQueue.length));
+                        await addCanvasPage(c, sec.title);
+                    } else {
+                        chartQueue.push({ canvas: c, title: sec.title });
+                        await flushChartRows();
+                    }
                 }
             }
         }
