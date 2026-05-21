@@ -110,6 +110,7 @@ import {
   msgConfirmarUbicacionGpsInferida,
   MSG_INTRO_DIRECCION_CON_GPS_RAPIDO,
 } from "./whatsapp-bot-gps-ubicacion.js";
+import { enFlujoReclamoWhatsapp, esTextoSoloDigitoMenu } from "./whatsapp-bot-flujo-reclamo.js";
 // Catálogo socios_catalogo: nombre con tildes/mayúsculas y distancia Levenshtein (api/modules/busqueda-nombre-bot.js; migraciones fuzzystrmatch + unaccent).
 import {
   clasificarBusquedaNombreSociosParaBotWa,
@@ -4323,7 +4324,8 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       const handled = await _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx);
       if (handled) return;
     }
-    const n = enteroMenuPrincipalDesdeTextoLibre(text);
+    const n =
+      !enFlujoReclamoWhatsapp(sess) ? enteroMenuPrincipalDesdeTextoLibre(text) : null;
     if (n != null && n >= 1 && n <= ctx.tipos.length) {
       const handledN = await aplicarTipoSeleccionadoMenuPrincipalWa(phone, sk, n, ctx, tid, phoneNumberId, contactName);
       if (handledN) return;
@@ -4334,6 +4336,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       rawTipoIa.length >= 8 &&
       rawTipoIa.length <= 900 &&
       n == null &&
+      !enFlujoReclamoWhatsapp(sess) &&
       (ctx.tipos?.length || 0) > 0 &&
       !ctx.whatsappBloqueoReclamos
     ) {
@@ -4445,6 +4448,21 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
   }
 
   if (sess && sess.step === "awaiting_desc") {
+    const descRaw = String(text ?? "").trim();
+    if (
+      esTextoSoloDigitoMenu(descRaw) &&
+      String(sess.tipo || "").trim() &&
+      normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica"
+    ) {
+      await reply(
+        phone,
+        "Antes de elegir *1* o *2* de identificación, escribí en una frase *qué te pasa* (ej: *farola quemada* en tu cuadra).\n\n" +
+          `_(*menú* = salir · *atrás* = cancelar este reclamo)_`,
+        tid,
+        phoneNumberId
+      );
+      return;
+    }
     if (esComandoAtras(text)) {
       if (sess.factibilidadPostGpsRama === "servicio" || sess.factibilidadPostGpsRama === "nombre") {
         sess.step = "awaiting_factibilidad_post_gps";
@@ -4513,12 +4531,62 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await iniciarFlujoDireccionEstructuradaAnonima(phone, sess, sk, contactName, ctx, tid, phoneNumberId);
       return;
     }
-    sessions.set(sk, {
+    const nextIdent = {
       ...sess,
       step: "awaiting_identificacion_modo",
       descripcion: desc,
+      tenantId: tid,
+      tipoCliente: ctx.tipo,
+      tipo: sess.tipo,
       phoneNumberId: sess.phoneNumberId || wpid,
-    });
+    };
+    sessions.set(sk, nextIdent);
+    await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
+    return;
+  }
+
+  if (
+    sess &&
+    enFlujoReclamoWhatsapp(sess) &&
+    esTextoSoloDigitoMenu(text) &&
+    sess.step !== "awaiting_identificacion_modo" &&
+    sess.descripcion &&
+    String(sess.descripcion).trim().length >= 2
+  ) {
+    const recovered = { ...sess, step: "awaiting_identificacion_modo" };
+    sessions.set(sk, recovered);
+    const choice = interpretaMenuIdentificacion(text);
+    if (choice === 2) {
+      sessions.set(sk, {
+        ...recovered,
+        step: "awaiting_nombre_persona",
+        phoneNumberId: recovered.phoneNumberId || wpid,
+      });
+      await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
+      return;
+    }
+    if (choice === 1) {
+      if (normalizarRubroCliente(ctx.tipo) === "cooperativa_electrica") {
+        sessions.set(sk, {
+          ...recovered,
+          step: "awaiting_nis_whatsapp",
+          phoneNumberId: recovered.phoneNumberId || wpid,
+        });
+        await reply(phone, MSG_PEDIR_NIS_SOLO, tid, phoneNumberId);
+        return;
+      }
+      sessions.set(sk, {
+        ...recovered,
+        step: "awaiting_opcional_id",
+        phoneNumberId: recovered.phoneNumberId || wpid,
+      });
+      await reply(phone, await msgOpcionalIdentificadorEnriquecido(ctx), tid, phoneNumberId);
+      return;
+    }
+    if (choice === 3 && permiteOpcionSoloDireccionSinIdentidad(ctx.tipo)) {
+      await iniciarFlujoDireccionEstructuradaAnonima(phone, recovered, sk, contactName, ctx, tid, phoneNumberId);
+      return;
+    }
     await reply(phone, mensajeMenuIdentificacion(ctx), tid, phoneNumberId);
     return;
   }
