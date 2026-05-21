@@ -14,6 +14,11 @@ const _snap = new Map();
 
 const HBAR_IDS = new Set(['chart-tipos', 'chart-barrios-tiempo']);
 
+/** Barras verticales con leyenda arriba (necesitan más alto en captura PDF). */
+const CHART_BARRAS_LEYENDA_TOP = new Set(['chart-mensual', 'chart-distribuidores']);
+
+const ALTURA_CHART_BARRAS_LEYENDA_TOP_PX = 272;
+
 /**
  * @param {unknown} chart
  */
@@ -72,9 +77,68 @@ function aplicarOpcionesComunesExportPdf(chart, id) {
         chart.options.plugins.legend.position =
             chart.options.plugins.legend.position || 'bottom';
     }
-    if (id === 'chart-mensual' || id === 'chart-distribuidores') {
+    if (CHART_BARRAS_LEYENDA_TOP.has(id)) {
         chart.options.plugins.legend = chart.options.plugins.legend || {};
         chart.options.plugins.legend.display = true;
+        chart.options.plugins.legend.position = 'top';
+    }
+}
+
+/**
+ * Barras verticales agrupadas (pedidos por mes, distribuidores): espacio para leyenda y ejes visibles en PDF.
+ * @param {Record<string, unknown>} chart
+ * @param {string} id
+ * @param {HTMLElement} cont
+ * @param {HTMLElement | null | undefined} wrap
+ */
+function aplicarLayoutBarrasVerticalesLeyendaTopPdf(chart, id, cont, wrap) {
+    chart.options.animation = false;
+    chart.options.layout = chart.options.layout || {};
+    chart.options.layout.padding = { top: 4, bottom: 8, left: 10, right: 12 };
+    chart.options.plugins = chart.options.plugins || {};
+    chart.options.plugins.legend = {
+        display: true,
+        position: 'top',
+        labels: {
+            color: '#1e293b',
+            boxWidth: 14,
+            boxHeight: 9,
+            padding: 10,
+            font: { size: 10, weight: '600' },
+        },
+    };
+    chart.options.scales = {
+        x: {
+            grid: { display: false },
+            ticks: {
+                color: '#1e293b',
+                font: { size: 8.5, weight: '600' },
+                maxRotation: 42,
+                minRotation: 0,
+                autoSkip: false,
+            },
+        },
+        y: {
+            beginAtZero: true,
+            grace: '6%',
+            ticks: { color: '#334155', precision: 0, font: { size: 9, weight: '600' } },
+            grid: { color: 'rgba(15, 23, 42, 0.14)' },
+        },
+    };
+    (chart.data?.datasets || []).forEach((ds) => {
+        if (!ds || typeof ds !== 'object') return;
+        ds.barPercentage = 0.78;
+        ds.categoryPercentage = 0.82;
+        ds.minBarLength = 3;
+    });
+    const h = ALTURA_CHART_BARRAS_LEYENDA_TOP_PX;
+    cont.style.setProperty('--gn-pdf-chart-h', `${h}px`);
+    cont.style.height = `${h}px`;
+    cont.style.minHeight = `${h}px`;
+    cont.style.maxHeight = `${h}px`;
+    if (wrap) {
+        wrap.classList.add('gn-pdf-chart-legend-top');
+        wrap.style.overflow = 'visible';
     }
 }
 
@@ -98,6 +162,9 @@ export function aplicarChartsLayoutExportPdf(getCharts, activar) {
                         chart.options.layout.padding = { ...snap.padding };
                     }
                     if (snap.datasets) restoreChartDatasetColors(chart, snap.datasets);
+                    if (snap.animation !== undefined) {
+                        chart.options.animation = snap.animation;
+                    }
                     chart.update('none');
                 }
             } catch (_) {}
@@ -106,7 +173,7 @@ export function aplicarChartsLayoutExportPdf(getCharts, activar) {
             } catch (_) {}
             try {
                 if (wrap) {
-                    wrap.classList.remove('gn-pdf-export-wide');
+                    wrap.classList.remove('gn-pdf-export-wide', 'gn-pdf-chart-legend-top');
                     if (snap?.wrapClass != null) wrap.className = snap.wrapClass;
                     wrap.style.overflow = '';
                     wrap.style.minWidth = '';
@@ -133,9 +200,11 @@ export function aplicarChartsLayoutExportPdf(getCharts, activar) {
                 containerStyle: cont.getAttribute('style') || '',
                 wrapClass: wrap?.className || '',
                 datasets: snapChartDatasetColors(chart),
+                animation: chart.options?.animation,
             });
         }
 
+        chart.options.animation = false;
         applyChartGrayscalePrintTheme(chart, id);
         aplicarOpcionesComunesExportPdf(chart, id);
 
@@ -191,14 +260,16 @@ export function aplicarChartsLayoutExportPdf(getCharts, activar) {
                 wrap.style.minWidth = '';
                 wrap.style.maxWidth = '100%';
             }
+        } else if (chart.config?.type === 'bar' && CHART_BARRAS_LEYENDA_TOP.has(id)) {
+            aplicarLayoutBarrasVerticalesLeyendaTopPdf(chart, id, cont, wrap);
         } else if (chart.config?.type === 'bar') {
             chart.options.layout = chart.options.layout || {};
             const p = chart.options.layout.padding || {};
             chart.options.layout.padding = {
-                top: Math.max(p.top || 0, 16),
-                bottom: Math.max(p.bottom || 0, 44),
+                top: Math.max(p.top || 0, 14),
+                bottom: Math.max(p.bottom || 0, 28),
                 left: Math.max(p.left || 0, 12),
-                right: Math.max(p.right || 0, 16),
+                right: Math.max(p.right || 0, 14),
             };
             const scales = chart.options.scales || {};
             if (scales.x?.ticks) {

@@ -1135,6 +1135,12 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
   font-size:.7rem!important;
   line-height:1.42!important;
 }
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-chart-legend-top .chart-container,
+#admin-estadisticas.gn-stats-capture-compact .chart-wrap.gn-pdf-chart-legend-top .chart-container--tall{
+  height:var(--gn-pdf-chart-h, 272px);
+  min-height:var(--gn-pdf-chart-h, 272px);
+  max-height:var(--gn-pdf-chart-h, 272px);
+}
 .kpi-neon-calc-panel{
   background:linear-gradient(135deg,#ecfeff,#f0fdf4);
   border:1px solid #a7f3d0;border-radius:.6rem;padding:.75rem 1rem;

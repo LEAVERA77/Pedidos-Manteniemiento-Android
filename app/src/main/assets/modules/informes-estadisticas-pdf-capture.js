@@ -108,11 +108,21 @@ export async function prepararVistaCapturaEstadisticasPdf(activar) {
     }
     chartValues().forEach((ch) => {
         try {
+            if (activar) ch.options.animation = false;
             ch.resize();
+            ch.update('none');
         } catch (_) {}
     });
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise((r) => setTimeout(r, activar ? 320 : 90));
+    await new Promise((r) => setTimeout(r, activar ? 480 : 90));
+    if (activar) {
+        chartValues().forEach((ch) => {
+            try {
+                ch.update('none');
+            } catch (_) {}
+        });
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
 }
 
 export function coleccionSeccionesPdfEstadisticas() {

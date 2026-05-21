@@ -92,11 +92,11 @@ export function initGNChartPercentPlugins() {
                         ctx.font = '600 10px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        ctx.lineWidth = inkM ? 0 : 3;
-                        ctx.strokeStyle = 'rgba(255,255,255,.92)';
+                        ctx.lineWidth = inkM ? 1.5 : 3;
+                        ctx.strokeStyle = inkM ? 'rgba(255,255,255,.88)' : 'rgba(255,255,255,.92)';
                         ctx.fillStyle = '#0f172a';
                         const t = String(v);
-                        if (!inkM) ctx.strokeText(t, x, y);
+                        if (!inkM || v >= 1) ctx.strokeText(t, x, y);
                         ctx.fillText(t, x, y);
                     });
                 });
