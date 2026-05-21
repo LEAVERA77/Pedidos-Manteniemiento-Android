@@ -15072,7 +15072,7 @@ function adminTab(tab) {
             if (typeof actualizarUiSociosVistaProyeccion === 'function') actualizarUiSociosVistaProyeccion();
         } catch (_) {}
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
-        void cargarListaSociosAdmin();
+        void import('./modules/admin-socios-tab-load.js').then((m) => m.cargarListaSociosAdminAlAbrirTab());
         try {
             syncHistorialNisBusquedaDom();
         } catch (_) {}
@@ -17279,7 +17279,7 @@ function invalidarCachesMultitenantSesionYOAdminUI() {
     } catch (_) {}
     try {
         try {
-            marcarListaSociosPendienteRecarga();
+            marcarListaSociosPendienteRecarga({ soloSiTabInactiva: true });
         } catch (_) {}
         try {
             app.usuariosCache = null;

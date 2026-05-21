@@ -96,6 +96,7 @@ function shellAssetUrls() {
     j('modules/admin-saidi-distrib-excel.js'),
     j('modules/admin-red-electrica-infra.js'),
     j('modules/admin-socios-listado-api.js'),
+    j('modules/admin-socios-tab-load.js'),
     j('modules/estadisticas-datos-red-saifi.js'),
     j('modules/estadisticas-saifi-saidi-charts.js'),
     j('modules/estadisticas-chart-plugins.js'),

@@ -40,13 +40,17 @@ export async function cargarListaSociosAdminRapido(d) {
             return;
         } catch (e) {
             try {
-                d.toast?.(String(e?.message || e), 'warning');
+                d.toast?.(`API socios: ${String(e?.message || e)}. Usando Neon…`, 'warning');
             } catch (_) {}
         }
     }
 
     if (typeof d.sqlSimple !== 'function') {
-        throw new Error('Sin API ni Neon para cargar socios');
+        throw new Error(
+            tok
+                ? 'No se pudo cargar socios por API y no hay conexión Neon en el navegador.'
+                : 'Iniciá sesión con API o Neon para ver el catálogo de socios.'
+        );
     }
     const { rows, extraKeys } = await fetchSociosCatalogoListadoAdmin({
         sqlSimple: d.sqlSimple,

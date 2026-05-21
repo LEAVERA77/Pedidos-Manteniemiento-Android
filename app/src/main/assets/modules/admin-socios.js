@@ -1069,6 +1069,11 @@ export function pintarListaSociosAdminDesdeFilas(rows, extraKeys) {
 async function cargarListaSociosAdmin() {
     const cont = document.getElementById('lista-socios-admin');
     if (!cont) return;
+    while (_cargaSociosAdminInflight) {
+        try {
+            await _cargaSociosAdminInflight;
+        } catch (_) {}
+    }
     const tid = typeof req().tenantIdActual === 'function' ? Number(req().tenantIdActual()) : NaN;
     const gen = ++_cargaSociosAdminGen;
 
@@ -1107,10 +1112,6 @@ async function cargarListaSociosAdmin() {
         }
     };
 
-    if (_cargaSociosAdminInflight) {
-        await _cargaSociosAdminInflight;
-        return;
-    }
     _cargaSociosAdminInflight = run().finally(() => {
         _cargaSociosAdminInflight = null;
     });
@@ -2593,3 +2594,7 @@ export {
     cerrarModalFormatoExcelSocios,
     descargarPlantillaCsvSociosRubro,
 };
+
+if (typeof window !== 'undefined') {
+    window.cargarListaSociosAdmin = cargarListaSociosAdmin;
+}

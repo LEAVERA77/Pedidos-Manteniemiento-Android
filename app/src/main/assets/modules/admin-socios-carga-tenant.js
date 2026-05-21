@@ -6,18 +6,25 @@ import { resetSociosCatalogoSchemaCache } from './socios-catalogo-schema-cache.j
 
 /**
  * Placeholder en #lista-socios-admin (no confundir con "sin filas en SQL").
+ * @param {{ soloSiTabInactiva?: boolean }} [opts]
  */
-export function marcarListaSociosPendienteRecarga() {
+export function marcarListaSociosPendienteRecarga(opts) {
     try {
         resetSociosCatalogoSchemaCache();
     } catch (_) {}
     const ls = document.getElementById('lista-socios-admin');
     if (!ls) return;
+    if (opts?.soloSiTabInactiva && adminSociosTabEstaActiva()) return;
     const tid =
         typeof window._gnTenantId === 'function'
             ? window._gnTenantId()
             : window.app?.u?.tenant_id ?? window.app?.u?.tenantId ?? '—';
-    ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)">Catálogo del tenant <strong>${String(tid)}</strong>. Abrí <strong>Admin → Socios / NIS</strong> para cargar la tabla (mismo método que Red Eléctrica).</div>`;
+    const t = String(tid);
+    if (adminSociosTabEstaActiva()) {
+        ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando catálogo del tenant <strong>${t}</strong>…</div>`;
+        return;
+    }
+    ls.innerHTML = `<div class="ll2" style="padding:.75rem;color:var(--tm)">Catálogo del tenant <strong>${t}</strong>. Abrí <strong>Admin → Socios / NIS</strong> para cargar la tabla.</div>`;
 }
 
 /** @returns {boolean} */
@@ -57,13 +64,17 @@ export async function recargarSociosAdminTrasCambioTenant() {
         return;
     }
     if (!adminSociosTabEstaActiva()) {
-        marcarListaSociosPendienteRecarga();
+        marcarListaSociosPendienteRecarga({ soloSiTabInactiva: true });
         return;
     }
     marcarListaSociosPendienteRecarga();
-    if (typeof window.cargarListaSociosAdmin === 'function') {
+    const cargar =
+        typeof window.cargarListaSociosAdmin === 'function'
+            ? window.cargarListaSociosAdmin
+            : null;
+    if (cargar) {
         try {
-            await window.cargarListaSociosAdmin();
+            await cargar();
         } catch (e) {
             pintarErrorListaSociosAdmin(e);
         }
