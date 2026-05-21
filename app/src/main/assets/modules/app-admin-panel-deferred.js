@@ -87,7 +87,13 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
         return;
     }
     _inFlight = (async () => {
-        const ctx = typeof getDeps === 'function' ? getDeps() : {};
+        let ctx = {};
+        try {
+            ctx = typeof getDeps === 'function' ? getDeps() : {};
+        } catch (e) {
+            console.warn('[admin-deferred] getDeps', e);
+            throw e;
+        }
         const [estCsv, exportStats, deriv, historicos, saidiDist, sociosMod, redInfra] = await Promise.all([
             import('./est-csv-tipo-filtro.js'),
             import('./export-pedidos-admin-stats.js'),

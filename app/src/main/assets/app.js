@@ -61,6 +61,7 @@ import {
     parseWhatsappArAreaPrefixesInput,
     sincronizarCamposWhatsappArAreaDesdeEmpresaCfg,
     normalizarWhatsappInternacionalDesdeInput,
+    actualizarBotonesWhatsappDerivacionesUi,
     bindDerivacionesFormInputsOnce,
     poblarFormDerivacionesDesdeEmpresaCfg,
     digitosWhatsAppDerivacionEmpresaCfg,
