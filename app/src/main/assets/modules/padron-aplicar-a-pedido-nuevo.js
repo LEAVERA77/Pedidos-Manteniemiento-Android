@@ -4,12 +4,11 @@
  */
 
 import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-padron.js';
-import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { cargarFilaPadronCompletaDesdeBd } from './padron-fetch-socio-completo.js';
 import { seleccionarBarrioMunicipioDi2 } from './padron-barrio-municipio.js';
 import { rubroPadronActivo } from './padron-rubro-helpers.js';
 import {
     aplicarDistribuidorCoopDesdeSocioCatalogo,
-    codigoDistribuidorDesdeSocio,
 } from './padron-distribuidor-socio-di2.js';
 import { resolverDistribuidorCodigoSocio } from './padron-socio-campos-resolver.js';
 import { aplicarSuministroElectricoDesdePadron } from './pedido-nuevo-suministro-padron.js';
@@ -34,7 +33,7 @@ function txt(v) {
  * @param {Record<string, unknown>} row
  */
 export async function aplicarPadronAlPedidoNuevo(deps, row) {
-    let full = await completarFilaPadronDesdeBd(deps, row);
+    let full = await cargarFilaPadronCompletaDesdeBd(deps, row);
     full = { ...full, distribuidor_codigo: resolverDistribuidorCodigoSocio(full) || full.distribuidor_codigo };
     if (typeof deps.ensureDistribuidoresCargados === 'function') {
         try {
@@ -59,7 +58,6 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
     const ident = aplicarPadronAlFormularioNuevoPedido(full, opts);
 
     let distribuidorOk = true;
-    let distribuidorAviso = '';
 
     if (opts.esCooperativaElectrica) {
         const tf = document.getElementById('trafo-pedido');
@@ -74,15 +72,8 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
                 distribuidor_codigo: distTxt,
             });
             distribuidorOk = !!res.ok;
-            if (!res.ok) {
-                const cod = codigoDistribuidorDesdeSocio(distTxt);
-                distribuidorAviso = cod
-                    ? `Distribuidor «${cod}» del socio no coincide con la lista de red; elegilo en el desplegable.`
-                    : 'No se pudo asignar el distribuidor del socio.';
-            }
         } else {
             distribuidorOk = false;
-            distribuidorAviso = 'El socio no tiene Dist. en el catálogo; elegí el distribuidor manualmente.';
         }
         const barrioAux = document.getElementById('ped-cli-barrio');
         if (barrioAux && txt(full.barrio)) barrioAux.value = txt(full.barrio);
@@ -99,5 +90,5 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
         } catch (_) {}
     }
 
-    return { ident, distribuidorOk, distribuidorAviso };
+    return { ident, distribuidorOk, row: full };
 }

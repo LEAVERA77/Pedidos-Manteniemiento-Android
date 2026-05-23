@@ -5,7 +5,8 @@
 
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
-import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { notificarResultadoAplicarPadron } from './padron-aplicar-resultado-ui.js';
+import { cargarFilaPadronCompletaDesdeBd } from './padron-fetch-socio-completo.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
 import { toastPedidoPadron, resetToastPedidoPadronDedupe } from './pedido-nuevo-padron-toast.js';
@@ -126,7 +127,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         _aplicandoPadron = true;
         if (deps.neonOk() && typeof deps.sqlSimple === 'function') {
             try {
-                row = await enriquecerFilaPadronDesdeBd(
+                row = await cargarFilaPadronCompletaDesdeBd(
                     {
                         sqlSimple: deps.sqlSimple,
                         esc: deps.esc,
@@ -147,24 +148,17 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             if (out) out.innerHTML = '';
             if (identKey) _ultimoPadronIdentAplicado = identKey;
 
-            if (!mismoSocio) {
-                if (deps.esCooperativaElectricaRubro()) {
-                    if (res.distribuidorOk) {
-                        toastPedidoPadron('Socio cargado en el formulario.', 'success', null, `ok-${identKey}`);
-                    } else if (res.distribuidorAviso) {
-                        toastPedidoPadron(
-                            `Socio cargado. ${res.distribuidorAviso}`,
-                            'warning',
-                            null,
-                            `dist-${identKey}-${res.distribuidorAviso}`
-                        );
-                    } else {
-                        toastPedidoPadron('Socio cargado en el formulario.', 'success', null, `ok2-${identKey}`);
-                    }
-                } else {
-                    toastPedidoPadron('Datos del padrón aplicados.', 'success', null, `padron-${identKey}`);
-                }
-            }
+            notificarResultadoAplicarPadron({
+                row: res.row || row,
+                rubro: {
+                    esCooperativaElectrica: deps.esCooperativaElectricaRubro(),
+                    esMunicipio: deps.esMunicipioRubro(),
+                    esAgua: deps.esCooperativaAguaRubro(),
+                },
+                distribuidorOk: res.distribuidorOk,
+                identKey,
+                mismoSocio,
+            });
         } catch (e) {
             toastPedidoPadron('No se pudieron cargar los datos del padrón.', 'error');
             console.warn('[ped-padron-aplicar]', e?.message || e);

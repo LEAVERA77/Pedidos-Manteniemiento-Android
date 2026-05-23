@@ -3,9 +3,9 @@
  * made by leavera77
  */
 
-import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
+import { sqlWhereSocioExactoIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
-import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { cargarFilaPadronCompletaDesdeBd } from './padron-fetch-socio-completo.js';
 import { normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
 import { forEachModalPedidoNuevo } from './pedido-nuevo-padron-modales.js';
 import { toastPedidoPadron } from './pedido-nuevo-padron-toast.js';
@@ -141,13 +141,21 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
         try {
             const hasT = await deps.sociosCatalogoTieneTenantId();
             const wf = hasT ? ` AND tenant_id = ${deps.esc(tid)}` : '';
-            const idMatch = sqlWhereSocioCatalogoCoincideIdentificador(deps.esc, val, '');
+            const idMatch = sqlWhereSocioExactoIdentificador(deps.esc, val, '');
+            const eq = deps.esc(val);
             const rSc = await deps.sqlSimple(
                 `SELECT ${COLS_SOCIO}
                  FROM socios_catalogo
                  WHERE COALESCE(activo, TRUE) = TRUE${wf}
                    AND ${idMatch}
-                 ORDER BY id ASC
+                 ORDER BY
+                   CASE
+                     WHEN UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${eq})) THEN 0
+                     WHEN UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${eq})) THEN 1
+                     WHEN UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${eq})) THEN 2
+                     ELSE 3
+                   END,
+                   id ASC
                  LIMIT 12`
             );
             for (const row of rSc.rows || []) {
@@ -201,7 +209,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             try {
                 const enriquecidos = [];
                 for (const m of matches) {
-                    enriquecidos.push(await enriquecerFilaPadronDesdeBd(deps, m));
+                    enriquecidos.push(await cargarFilaPadronCompletaDesdeBd(deps, m));
                 }
                 matches = enriquecidos;
             } catch (e) {

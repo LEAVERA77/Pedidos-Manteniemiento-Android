@@ -120,18 +120,42 @@ export async function buscarPadronPorIdentificador(tenantId, q, limit = 12) {
     OR UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM($${identIdx}))
     OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM($${identIdx}))
   )`;
+  const orderIdent = `ORDER BY
+       CASE
+         WHEN UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM($${identIdx})) THEN 0
+         WHEN UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM($${identIdx})) THEN 1
+         WHEN UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM($${identIdx})) THEN 2
+         ELSE 3
+       END,
+       id ASC`;
+
+  const colsSocio = `id, nombre, nis, medidor, nis_medidor, calle, numero, localidad, barrio, telefono,
+              transformador, distribuidor_codigo, tipo_conexion, fases`;
 
   try {
-    const r = await query(
-      `SELECT id, nombre, nis, medidor, nis_medidor, calle, numero, localidad, barrio, telefono,
-              transformador, distribuidor_codigo, tipo_conexion, fases, datos_extra
-       FROM socios_catalogo
-       WHERE COALESCE(activo, TRUE) = TRUE${wf}
-         AND ${identMatch}
-       ORDER BY id ASC
-       LIMIT ${Math.min(limit, 15)}`,
-      params
-    );
+    let r;
+    try {
+      r = await query(
+        `SELECT ${colsSocio}, datos_extra
+         FROM socios_catalogo
+         WHERE COALESCE(activo, TRUE) = TRUE${wf}
+           AND ${identMatch}
+         ${orderIdent}
+         LIMIT ${Math.min(limit, 15)}`,
+        params
+      );
+    } catch (e1) {
+      if (!/datos_extra/i.test(String(e1?.message || e1))) throw e1;
+      r = await query(
+        `SELECT ${colsSocio}
+         FROM socios_catalogo
+         WHERE COALESCE(activo, TRUE) = TRUE${wf}
+           AND ${identMatch}
+         ${orderIdent}
+         LIMIT ${Math.min(limit, 15)}`,
+        params
+      );
+    }
     for (const row of r.rows || []) {
       pushUnique(mapSocioCatalogoRow(row, "socios_catalogo"));
       if (matches.length >= limit) break;
