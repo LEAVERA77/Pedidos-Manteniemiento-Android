@@ -135,6 +135,11 @@ export function textoResumenChecklistSeguridad(o) {
     return `${s[0]}: ${o.epp ? 'Sí' : '—'} · ${s[1]}: ${o.corte ? 'Sí' : '—'} · ${s[2]}: ${o.senal ? 'Sí' : '—'}`;
 }
 
+/** Denuncia anónima: sin NIS ni nombre obligatorio; fotos opcionales en campo. */
+export function tipoReclamoEsFraudeAnonimo(tipoTrabajo) {
+    return String(tipoTrabajo || '').trim() === 'Denuncia de fraude (anónima)';
+}
+
 export function tiposReclamoSeleccionables() {
     const key = rubroCatalogoTiposReclamo();
     if (TIPOS_RECLAMO_POR_RUBRO[key]) return [...TIPOS_RECLAMO_POR_RUBRO[key]];

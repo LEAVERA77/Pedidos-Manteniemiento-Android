@@ -332,6 +332,39 @@ async function ejecutarBusquedaFallbackLike(tenantId, needle) {
  * @param {{ tenantId: number, textoNombre: string }} p
  * @returns {Promise<ResultadoNombreBotNormal | ResultadoNombreBotConfirm | ResultadoNombreBotPick>}
  */
+/**
+ * Lista de socios por nombre/apellido (Levenshtein) para formulario de nuevo pedido / operador.
+ * @param {{ tenantId: number, textoNombre: string, limit?: number }} p
+ * @returns {Promise<CatalogoNombreRow[]>}
+ */
+export async function buscarFilasPorNombreSociosCatalogo(p) {
+  const tenantId = Number(p.tenantId);
+  const nombreLibre = String(p.textoNombre || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const limit = Math.min(25, Math.max(1, Number(p.limit) || 15));
+  if (!Number.isFinite(tenantId) || tenantId < 1 || nombreLibre.length < 2) return [];
+  if (!(await tableExists("socios_catalogo"))) return [];
+  if (!(await tableHasColumn("socios_catalogo", "tenant_id"))) return [];
+
+  let rows = [];
+  try {
+    rows = await ejecutarBusquedaSql(tenantId, nombreLibre);
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (/levenshtein|fuzzystrmatch|unaccent|42883|does not exist/i.test(msg)) {
+      try {
+        rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre);
+      } catch (_) {
+        return [];
+      }
+    } else {
+      return [];
+    }
+  }
+  return rows.slice(0, limit);
+}
+
 export async function clasificarBusquedaNombreSociosParaBotWa(p) {
   const tenantId = Number(p.tenantId);
   const nombreLibre = String(p.textoNombre || "")

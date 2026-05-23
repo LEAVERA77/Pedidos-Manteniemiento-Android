@@ -120,6 +120,7 @@ import {
     prioridadPredeterminadaPorTipoTrabajoUI,
     rubroCatalogoTiposReclamo,
     tiposReclamoSeleccionables,
+    tipoReclamoEsFraudeAnonimo,
     syncChecklistSeguridadCierreLabels,
     textoResumenChecklistSeguridad,
     TIPOS_TRABAJO_DERIVACION_SOLO_AGUA,
@@ -154,6 +155,7 @@ import {
 } from './modules/admin-red-electrica-infra.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
+import { initPedidoNuevoPadronBusqueda } from './modules/pedido-nuevo-padron-busqueda.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import {
@@ -12069,6 +12071,7 @@ function tipoTrabajoRequiereNisYCliente() {
 
 function tipoReclamoRequiereNisYCliente(tipoTrabajo) {
     const v = String(tipoTrabajo || '').trim();
+    if (tipoReclamoEsFraudeAnonimo(v)) return false;
     if (!v) return false;
     if (v === 'Reclamo de Cliente' || v === 'Conexión Nueva') return true;
     if (v.includes('Conexión Nueva')) return true;
@@ -12255,202 +12258,6 @@ function setDerivacionesInlineError(msg) {
     el.style.display = '';
 }
 window.setDerivacionesInlineError = setDerivacionesInlineError;
-
-let _nisPedidoCatalogoDebounceTimer = null;
-let _nisPedidoCatalogoCommitTimer = null;
-let _nisPedidoCatalogoUltimoValor = '';
-
-function rubroEmpresaParaAutofillIdentificadorPedido() {
-    return normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-}
-
-/** Municipio / cooperativa de agua: padrón en clientes_finales (NIS, medidor o número de socio). */
-async function rellenarPedidoDesdeClientesFinalesPorIdentificador(raw) {
-    const tid = tenantIdActual();
-    if (!Number.isFinite(tid)) return;
-    const r = await sqlSimple(
-        `SELECT nombre, apellido, calle, numero_puerta, barrio, localidad
-         FROM clientes_finales
-         WHERE activo = TRUE AND cliente_id = ${esc(tid)}
-           AND (
-             UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${esc(raw)}))
-             OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${esc(raw)}))
-             OR UPPER(TRIM(COALESCE(numero_cliente,''))) = UPPER(TRIM(${esc(raw)}))
-           )
-         LIMIT 1`
-    );
-    const row = r.rows?.[0];
-    if (!row) return;
-    _nisPedidoCatalogoUltimoValor = raw;
-    const cl = document.getElementById('cl');
-    const tel = document.getElementById('ped-tel-contacto');
-    const calleEl = document.getElementById('ped-cli-calle');
-    const numEl = document.getElementById('ped-cli-num');
-    const locEl = document.getElementById('ped-cli-loc');
-    const refEl = document.getElementById('ped-cli-ref');
-    const nom = [row.nombre, row.apellido]
-        .map(x => (x != null ? String(x).trim() : ''))
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-    if (cl && nom) cl.value = nom;
-    if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
-    if (numEl) numEl.value = row.numero_puerta != null ? String(row.numero_puerta).trim() : '';
-    if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
-    if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
-    if (tel) tel.value = '';
-}
-
-/**
- * Al salir del campo NIS / medidor / socio: completa domicilio desde padrón y deja el teléfono vacío para cargar uno nuevo.
- * Cooperativa eléctrica: socios_catalogo. Municipio y agua: clientes_finales.
- */
-async function rellenarPedidoDesdeSociosCatalogoPorNis(opts) {
-    const forzar = !!(opts && opts.forzar);
-    const rubro = rubroEmpresaParaAutofillIdentificadorPedido();
-    if (!rubro) return;
-    if (modoOffline || !NEON_OK) return;
-    const inpN = document.getElementById('nis');
-    if (!inpN) return;
-    const raw = (inpN.value || '').trim();
-    if (!raw) {
-        _nisPedidoCatalogoUltimoValor = '';
-        if (rubro === 'cooperativa_electrica') {
-            const tfC = document.getElementById('trafo-pedido');
-            if (tfC) tfC.value = '';
-            /* Sin NIS: no limpiar distribuidor ni conexión/fases (el usuario puede elegirlos a mano;
-               el focusin al pasar entre selects disparaba este código y borraba el otro campo). */
-        }
-        return;
-    }
-    if (!forzar && raw === _nisPedidoCatalogoUltimoValor) return;
-
-    if (rubro === 'municipio' || rubro === 'cooperativa_agua') {
-        try {
-            await rellenarPedidoDesdeClientesFinalesPorIdentificador(raw);
-        } catch (e) {
-            console.warn('[nis→clientes_finales]', e.message);
-        }
-        return;
-    }
-
-    if (rubro !== 'cooperativa_electrica') return;
-
-    try {
-        const hasSocTNis = await sociosCatalogoTieneTenantId();
-        const wfNis = hasSocTNis ? ` AND tenant_id = ${esc(tenantIdActual())}` : '';
-        const r = await sqlSimple(
-            `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases, calle, numero, localidad, barrio FROM socios_catalogo
-             WHERE activo = TRUE${wfNis} AND UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(raw)}))
-             LIMIT 1`
-        );
-        const row = r.rows?.[0];
-        if (!row) return;
-        _nisPedidoCatalogoUltimoValor = raw;
-        const cl = document.getElementById('cl');
-        const tel = document.getElementById('ped-tel-contacto');
-        const tf = document.getElementById('trafo-pedido');
-        const calleEl = document.getElementById('ped-cli-calle');
-        const numEl = document.getElementById('ped-cli-num');
-        const locEl = document.getElementById('ped-cli-loc');
-        const refEl = document.getElementById('ped-cli-ref');
-        if (tf && row.transformador != null && String(row.transformador).trim()) {
-            tf.value = String(row.transformador).trim();
-        }
-        if (cl && row.nombre != null && String(row.nombre).trim()) {
-            cl.value = String(row.nombre).trim();
-        }
-        if (tel) tel.value = '';
-        if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
-        if (numEl) numEl.value = row.numero != null ? String(row.numero).trim() : '';
-        if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
-        if (refEl) refEl.value = row.barrio != null ? String(row.barrio).trim() : '';
-        const di2 = document.getElementById('di2');
-        if (di2 && row.distribuidor_codigo != null && String(row.distribuidor_codigo).trim()) {
-            const cod = String(row.distribuidor_codigo).trim().toUpperCase();
-            const opt = Array.from(di2.options).find(o => (o.value || '').trim().toUpperCase() === cod);
-            if (opt) di2.value = opt.value;
-        }
-        const scEl = document.getElementById('ped-sum-conexion');
-        const sfEl = document.getElementById('ped-sum-fases');
-        if (scEl && row.tipo_conexion != null && String(row.tipo_conexion).trim()) {
-            const tx = String(row.tipo_conexion).trim().toLowerCase();
-            if (tx.includes('subter')) scEl.value = 'Subterráneo';
-            else if (tx.includes('aer') || tx.includes('éreo') || tx.includes('ereo')) scEl.value = 'Aéreo';
-        }
-        if (sfEl && row.fases != null && String(row.fases).trim()) {
-            const fx = String(row.fases).trim().toLowerCase();
-            if (fx.includes('tri')) sfEl.value = 'Trifásico';
-            else if (fx.includes('mono')) sfEl.value = 'Monofásico';
-        }
-    } catch (e) {
-        console.warn('[nis→socio]', e.message);
-    }
-}
-
-function programarRellenoSocioPorNisDebounced() {
-    if (!rubroEmpresaParaAutofillIdentificadorPedido()) return;
-    clearTimeout(_nisPedidoCatalogoDebounceTimer);
-    _nisPedidoCatalogoDebounceTimer = setTimeout(() => {
-        void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: false });
-    }, 480);
-}
-
-function onNisCommitRellenarDesdeSociosCatalogo() {
-    clearTimeout(_nisPedidoCatalogoDebounceTimer);
-    clearTimeout(_nisPedidoCatalogoCommitTimer);
-    _nisPedidoCatalogoCommitTimer = setTimeout(() => {
-        void rellenarPedidoDesdeSociosCatalogoPorNis({ forzar: true });
-    }, 90);
-}
-
-const nisPedidoInp = document.getElementById('nis');
-if (nisPedidoInp) {
-    nisPedidoInp.addEventListener('blur', onNisCommitRellenarDesdeSociosCatalogo);
-    nisPedidoInp.addEventListener('focusout', onNisCommitRellenarDesdeSociosCatalogo);
-    nisPedidoInp.addEventListener('input', programarRellenoSocioPorNisDebounced);
-    nisPedidoInp.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') {
-            ev.preventDefault();
-            onNisCommitRellenarDesdeSociosCatalogo();
-        }
-    });
-    /* WebView Android: el IME a veces solo dispara keyup con keyCode 13 */
-    nisPedidoInp.addEventListener('keyup', (ev) => {
-        if (ev.key === 'Enter' || ev.keyCode === 13) {
-            ev.preventDefault();
-            onNisCommitRellenarDesdeSociosCatalogo();
-        }
-    });
-}
-/** Al pasar a otro campo o tocar fuera del NIS (p. ej. Trafo readonly, mapa), WebView no siempre hace blur. */
-(function engancharNisAutofillAlSalirCampoModal() {
-    const pf = document.getElementById('pf');
-    const pm = document.getElementById('pm');
-    const nisEl = document.getElementById('nis');
-    if (!pf || !pm || !nisEl) return;
-    pf.addEventListener(
-        'focusin',
-        (ev) => {
-            const id = ev.target && ev.target.id;
-            if (!id || id === 'nis') return;
-            onNisCommitRellenarDesdeSociosCatalogo();
-        },
-        true
-    );
-    pm.addEventListener(
-        'pointerdown',
-        (ev) => {
-            try {
-                if (document.activeElement !== nisEl) return;
-                const t = ev.target;
-                if (t && (t === nisEl || nisEl.contains(t))) return;
-                onNisCommitRellenarDesdeSociosCatalogo();
-            } catch (_) {}
-        },
-        true
-    );
-})();
 
 // ── TRACKING DE UBICACIÓN (WebView ~2 min · navegador 15 min) — antes del restore de sesión ──
 let _trackingInterval = null;
@@ -17984,6 +17791,23 @@ function descargarGrafico(canvasId, nombre) {
     }
 }
 window.descargarGrafico = descargarGrafico;
+
+try {
+    initPedidoNuevoPadronBusqueda({
+        sqlSimple,
+        esc,
+        tenantIdActual,
+        sociosCatalogoTieneTenantId,
+        neonOk: () => !!NEON_OK,
+        modoOffline: () => !!modoOffline,
+        apiUrl,
+        getApiToken,
+        normalizarRubroEmpresa,
+        esCooperativaElectricaRubro,
+        esMunicipioRubro,
+        esCooperativaAguaRubro,
+    });
+} catch (_) {}
 
 try {
     installBusquedaApellidoHistorial({

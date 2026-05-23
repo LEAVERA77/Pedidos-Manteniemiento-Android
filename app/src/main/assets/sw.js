@@ -109,6 +109,8 @@ function shellAssetUrls() {
     j('modules/app-admin-panel-deferred.js'),
     j('modules/gn-panel-docks.js'),
     j('modules/busqueda-apellido.js'),
+    j('modules/pedido-nuevo-aplicar-padron.js'),
+    j('modules/pedido-nuevo-padron-busqueda.js'),
     j('modules/pedido-volver-pendiente.js'),
     j('modules/pedido-ver-imagen.js'),
     j('modules/incidencias.js'),

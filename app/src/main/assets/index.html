@@ -296,7 +296,15 @@
         </select>
       </div>
       <div class="fg"><label for="nis" id="lbl-nis">NIS / Medidor</label>
-        <input type="text" id="nis" maxlength="80" enterkeyhint="next" autocomplete="off" inputmode="text" placeholder="NIS, medidor o socio — al salir del campo se puede autocompletar domicilio desde padrón">
+        <input type="text" id="nis" maxlength="80" enterkeyhint="next" autocomplete="off" inputmode="text" placeholder="Opcional — NIS, medidor o N° socio; al salir busca en el padrón">
+      </div>
+      <div class="fg" id="ped-padron-busqueda-wrap">
+        <label for="ped-padron-apellido"><i class="fas fa-search"></i> Buscar titular en padrón (opcional)</label>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+          <input type="text" id="ped-padron-apellido" maxlength="120" enterkeyhint="search" autocomplete="off" placeholder="Apellido o nombre — tolera errores de tipeo" style="flex:1;min-width:10rem">
+          <button type="button" id="ped-padron-btn-buscar" class="btn-sm" style="white-space:nowrap"><i class="fas fa-search"></i> Buscar</button>
+        </div>
+        <div id="ped-padron-resultados" class="ped-padron-resultados" aria-live="polite"></div>
       </div>
       <div class="fg"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" readonly placeholder="Se completa con NIS en catálogo" style="background:var(--bg2,#f1f5f9);cursor:default"></div>
       <div class="fr">

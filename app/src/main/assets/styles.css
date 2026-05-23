@@ -1425,3 +1425,44 @@ body:not(.gn-sesion-activa) #gn-fab-community-btn {
 .leaflet-container#mc {
   touch-action: pan-x pan-y pinch-zoom;
 }
+
+/* Búsqueda padrón en modal nuevo pedido (#pm) */
+.ped-padron-resultados {
+  margin-top: 0.35rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ped-padron-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--bo, #e2e8f0);
+  border-radius: 0.4rem;
+  background: var(--bg, #fff);
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+.ped-padron-item:hover {
+  border-color: var(--bm, #2563eb);
+  background: #eff6ff;
+}
+.ped-padron-item-id {
+  color: var(--tm, #64748b);
+  font-weight: 500;
+}
+.ped-padron-item-dom {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--tm, #64748b);
+}
+.ped-padron-sin-resultados,
+.ped-padron-cargando {
+  font-size: 0.8rem;
+  color: var(--tm, #64748b);
+  margin: 0.2rem 0;
+}
