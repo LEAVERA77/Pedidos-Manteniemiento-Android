@@ -114,6 +114,7 @@ function shellAssetUrls() {
     j('modules/busqueda-apellido.js'),
     j('modules/gn-socio-catalogo-match-sql.js'),
     j('modules/padron-rubro-helpers.js'),
+    j('modules/pedido-nuevo-nominatim-padron-guard.js'),
     j('modules/pedido-nuevo-aplicar-padron.js'),
     j('modules/padron-distribuidor-resolver.js'),
     j('modules/padron-barrio-municipio.js'),

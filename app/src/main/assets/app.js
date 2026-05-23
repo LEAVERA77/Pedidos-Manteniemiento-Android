@@ -156,6 +156,7 @@ import {
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
+import { aplicarDireccionNominatimRespetandoPadron } from './modules/pedido-nuevo-nominatim-padron-guard.js';
 import { installAdminSociosHistorialPedidos } from './modules/admin-socios-historial-pedidos.js';
 import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqueda-padron.js';
 import { installAdminSociosUsarEnPedido } from './modules/admin-socios-usar-en-pedido.js';
@@ -1304,49 +1305,7 @@ async function reverseNominatimNuevoPedidoCore(lat, lng) {
             return;
         }
         const addr = j.result.address || {};
-        const nomVia =
-            addr.road || addr.pedestrian || addr.path || addr.residential || addr.neighbourhood || '';
-        const num = addr.house_number || '';
-        const loc =
-            addr.city ||
-            addr.town ||
-            addr.village ||
-            addr.municipality ||
-            addr.county ||
-            addr.state_district ||
-            '';
-        const prov = addr.state || '';
-        const cp = addr.postcode || '';
-        const refParts = [];
-        if (prov) refParts.push(prov);
-        if (cp) refParts.push(`CP ${cp}`);
-        const refExtra = refParts.length ? refParts.join(' · ') : '';
-        const dc = document.getElementById('ped-cli-calle');
-        const dn = document.getElementById('ped-cli-num');
-        const dl = document.getElementById('ped-cli-loc');
-        const dr = document.getElementById('ped-cli-ref');
-        if (dc) dc.value = nomVia ? String(nomVia).trim() : '';
-        if (dn) dn.value = num ? String(num).trim() : '';
-        if (dl) dl.value = loc ? String(loc).trim() : '';
-        if (dr && refExtra) {
-            const prev = String(dr.value || '').trim();
-            dr.value = prev ? `${prev} (${refExtra})` : refExtra;
-        }
-        if (esMunicipioRubro()) {
-            const barrio = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
-            const di2 = document.getElementById('di2');
-            if (di2 && barrio) {
-                const bTrim = String(barrio).trim();
-                let opt = Array.from(di2.options).find(o => o.value === bTrim);
-                if (!opt) {
-                    opt = document.createElement('option');
-                    opt.value = bTrim;
-                    opt.textContent = bTrim;
-                    di2.appendChild(opt);
-                }
-                di2.value = bTrim;
-            }
-        }
+        aplicarDireccionNominatimRespetandoPadron(addr, { esMunicipioRubro: () => esMunicipioRubro() });
     } catch (_) {
         toast('No se pudo consultar la dirección en ese punto.', 'error');
     }

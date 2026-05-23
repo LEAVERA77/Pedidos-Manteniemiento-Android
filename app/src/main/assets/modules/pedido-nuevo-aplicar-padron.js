@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { registrarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
+
 /**
  * @param {string} cod
  * @returns {{ raw: string, codePart: string, namePart: string, upper: string }}
@@ -239,5 +241,6 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
         if (sfEl && fa) sfEl.value = fa;
     }
 
+    registrarProteccionPadronPedidoNuevo(row, opts);
     return String(ident || '').trim();
 }

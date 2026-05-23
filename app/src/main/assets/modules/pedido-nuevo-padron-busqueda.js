@@ -9,6 +9,7 @@ import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-pad
 import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
 import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
+import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
 
 let _installed = false;
 let _nisUltimoValor = '';
@@ -291,6 +292,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         const val = (inpN.value || '').trim();
         if (!val) {
             _nisUltimoValor = '';
+            limpiarProteccionPadronPedidoNuevo();
             if (r === 'cooperativa_electrica') {
                 const tfC = document.getElementById('trafo-pedido');
                 if (tfC) tfC.value = '';
@@ -435,4 +437,5 @@ export function resetPadronNuevoPedidoNisTimers() {
     clearTimeout(_nisCommitTimer);
     _nisDebounce = null;
     _nisCommitTimer = null;
+    limpiarProteccionPadronPedidoNuevo();
 }
