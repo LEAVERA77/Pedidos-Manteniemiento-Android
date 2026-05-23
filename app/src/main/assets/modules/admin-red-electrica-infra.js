@@ -86,6 +86,12 @@ export function initAdminRedElectricaInfra(d) {
       }
       d.toast(toastMsg, "success", ins + act === 0 && unc > 0 ? 8500 : 5000);
       await cargarListaRedElectricaInfra(d);
+      try {
+        window.dispatchEvent(new CustomEvent("gn-red-electrica-actualizada"));
+      } catch (_) {}
+      try {
+        if (typeof window.cargarDistribuidores === "function") void window.cargarDistribuidores();
+      } catch (_) {}
     } catch (e) {
       d.toastError("admin-red-electrica", e, "No se pudo importar");
       if (out) out.textContent = String(e && e.message ? e.message : e);
@@ -144,6 +150,12 @@ export async function cargarListaRedElectricaInfra(d) {
 </tr>`
       )
       .join("");
+    try {
+      window.dispatchEvent(new CustomEvent("gn-red-electrica-actualizada"));
+    } catch (_) {}
+    try {
+      if (typeof window.cargarDistribuidores === "function") void window.cargarDistribuidores();
+    } catch (_) {}
   } catch (e) {
     tb.innerHTML = `<tr><td colspan="8" style="color:var(--re);font-size:.78rem">${escCell(String(e && e.message ? e.message : e))}</td></tr>`;
     try {

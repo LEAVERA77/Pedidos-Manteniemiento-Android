@@ -164,6 +164,7 @@ import {
     asegurarUbicacionAntesGuardarPedidoOficina,
     syncVisibilidadBotonPedidoOficina,
 } from './modules/pedido-nuevo-oficina.js';
+import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 
 try {
     mountPedidoFormularioEnDom();
@@ -12451,37 +12452,16 @@ document.head.appendChild(xscript);
 
 async function cargarDistribuidores() {
     try {
-        const wf = await sqlWhereDistribuidoresPorTenantOUsadosEnPedidos();
-        const r = await sqlSimpleSelectAllPages(
-            `SELECT d.codigo, d.nombre, d.tension FROM distribuidores d WHERE d.activo = TRUE${wf}`,
-            'ORDER BY d.codigo'
-        );
-        DIST = (r.rows || []).map(d => ({ v: d.codigo, l: d.codigo + ' - ' + d.nombre, g: d.tension || '' }));
-        const sd = document.getElementById('di2');
-        if (sd) {
-            const lbl = etiquetaZonaPedido();
-            sd.innerHTML = `<option value="">— Elegir ${lbl.toLowerCase()} —</option>`;
-            const lblEl = document.getElementById('lbl-di2-zona');
-            if (lblEl) lblEl.textContent = lbl;
-            const grupos = {};
-            DIST.forEach(d => {
-                const g = d.g || 'Sin clasificar';
-                if (!grupos[g]) grupos[g] = [];
-                grupos[g].push(d);
-            });
-            Object.entries(grupos).forEach(([g, items]) => {
-                const og = document.createElement('optgroup');
-                og.label = g;
-                items.forEach(d => {
-                    const o = document.createElement('option');
-                    o.value = d.v;
-                    o.textContent = d.l;
-                    og.appendChild(o);
-                });
-                sd.appendChild(og);
-            });
-        }
-    } catch(e) {
+        DIST = await cargarSelectDi2Distribuidores({
+            esCooperativaElectricaRubro,
+            etiquetaZonaPedido,
+            sqlSimpleSelectAllPages,
+            sqlSimple,
+            sqlWhereDistribuidoresPorTenantOUsadosEnPedidos,
+            tenantIdActual,
+            esc,
+        });
+    } catch (e) {
         console.warn('No se pudieron cargar distribuidores:', e.message);
     }
 }

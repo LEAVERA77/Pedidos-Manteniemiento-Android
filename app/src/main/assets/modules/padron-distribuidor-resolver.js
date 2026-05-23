@@ -1,5 +1,5 @@
 /**
- * Resuelve distribuidor del catálogo de socios (ej. "D123 - Red Perdices") al código del &lt;select id="di2"&gt; (DIS01C…).
+ * Resuelve distribuidor del catálogo de socios (ej. "D123 - Red Perdices") al código del &lt;select id="di2"&gt; (red eléctrica / distribuidores).
  * made by leavera77
  */
 
