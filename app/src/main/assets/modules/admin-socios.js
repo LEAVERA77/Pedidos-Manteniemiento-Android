@@ -1717,6 +1717,22 @@ function sociosCatalogoMedidorCelda(s) {
 /** Lotes más grandes = menos viajes a Neon (20k+ socios). */
 const SOCIOS_BULK_CHUNK = 1000;
 
+/**
+ * Unifica filas del Excel por clave de catálogo (tenant + nis_medidor): no duplica en el mismo archivo.
+ * @param {Array<Record<string, unknown>>} payloads
+ */
+function deduplicarPayloadsImportSocios(payloads) {
+    const map = new Map();
+    for (const p of payloads) {
+        const key = String(p.nis_medidor || '')
+            .trim()
+            .toUpperCase();
+        if (!key) continue;
+        map.set(key, p);
+    }
+    return [...map.values()];
+}
+
 async function ejecutarBulkInsertSociosCatalogo(lote) {
     if (!lote.length) return;
     const hasT = await req().sociosCatalogoTieneTenantId();
@@ -2080,21 +2096,7 @@ async function importarExcelSocios(event) {
             event.target.value = '';
             return;
         }
-        const reemplazar =
-            document.getElementById('socios-import-reemplazar')?.checked === true;
-        if (reemplazar) {
-            req().actualizarOverlayImportacion(
-                'Vaciando catálogo (preservando coordenadas corregidas manualmente)…'
-            );
-            const hasSocTDel = await req().sociosCatalogoTieneTenantId();
-            const tfDel = hasSocTDel ? ` AND tenant_id = ${esc(req().tenantIdActual())}` : '';
-            await req().sqlSimple(
-                `DELETE FROM socios_catalogo WHERE COALESCE(ubicacion_manual, FALSE) = FALSE${tfDel}`
-            );
-            try {
-                console.info('[import-socios] Catálogo vaciado preservando ubicaciones manuales');
-            } catch (_) {}
-        }
+        /** Política fija: nunca vaciar el catálogo al importar; solo UPSERT (fusionar con existentes). */
         const primera = rawRows[0];
         const mapNormAOriginal = {};
         Object.keys(primera).forEach(orig => {
@@ -2347,17 +2349,19 @@ async function importarExcelSocios(event) {
                 muestra: omitidas.slice(0, 15),
             });
         }
+        const payloadsUnicos = deduplicarPayloadsImportSocios(payloads);
+        const dupEnArchivo = payloads.length - payloadsUnicos.length;
         const inferirCpNominatim = document.getElementById('socios-import-cp-nominatim')?.checked === true;
         let cpInf = 0;
         if (inferirCpNominatim) {
             req().actualizarOverlayImportacion('Inferencia de códigos postales (Nominatim)…');
-            cpInf = await aplicarInferenciaCpNominatimABulkImportSocios(payloads);
+            cpInf = await aplicarInferenciaCpNominatimABulkImportSocios(payloadsUnicos);
         }
         let ok = 0;
         let fail = 0;
-        const totalPay = payloads.length;
+        const totalPay = payloadsUnicos.length;
         for (let i = 0; i < totalPay; i += SOCIOS_BULK_CHUNK) {
-            const chunk = payloads.slice(i, i + SOCIOS_BULK_CHUNK);
+            const chunk = payloadsUnicos.slice(i, i + SOCIOS_BULK_CHUNK);
             req().actualizarOverlayImportacion(`Importando socios… ${Math.min(i + chunk.length, totalPay)} / ${totalPay}`);
             try {
                 await ejecutarBulkInsertSociosCatalogo(chunk);
@@ -2376,7 +2380,8 @@ async function importarExcelSocios(event) {
             await new Promise((r) => setTimeout(r, 0));
         }
         req().ocultarOverlayImportacion();
-        const sufS = reemplazar ? ' (catálogo reemplazado)' : '';
+        const sufDup = dupEnArchivo > 0 ? ` · ${dupEnArchivo} fila(s) duplicadas en el archivo (última gana)` : '';
+        const sufS = ` · fusionado con catálogo existente${sufDup}`;
         if (fail && !ok) {
             toast(`Socios: 0 OK, ${fail} errores${sufS}`, 'error');
             alert('No se pudo completar la importación de socios.\n\n' + errMsgs.join('\n'));
@@ -2416,10 +2421,6 @@ async function importarExcelSocios(event) {
             );
         }
         cargarListaSociosAdmin();
-        try {
-            const chk = document.getElementById('socios-import-reemplazar');
-            if (chk) chk.checked = false;
-        } catch (_) {}
     } catch (e) {
         req().ocultarOverlayImportacion();
         toastError('import-excel-socios', e, 'Error al leer el archivo.');

@@ -113,6 +113,7 @@ function shellAssetUrls() {
     j('modules/pedido-nuevo-padron-busqueda.js'),
     j('modules/gn-abrir-detalle-pedido.js'),
     j('modules/admin-socios-historial-pedidos.js'),
+    j('modules/admin-historicos-filtros.js'),
     j('modules/pedido-volver-pendiente.js'),
     j('modules/pedido-ver-imagen.js'),
     j('modules/incidencias.js'),

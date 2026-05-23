@@ -7,6 +7,7 @@ import {
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
+import { historicoTipoCoincideFuzzy, historicoIdCoincideParcial } from './admin-historicos-filtros.js';
 import {
     fetchHistoricosResueltosTenant,
     historicosResueltosDesdeAppP,
@@ -131,59 +132,21 @@ function _fechaCreacion(p) {
     }
 }
 
-function _patronTipoWild(patRaw) {
-    const pat = String(patRaw || '').trim();
-    if (!pat) return null;
-    const escaped = pat
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.');
-    try {
-        return new RegExp(`^${escaped}$`, 'i');
-    } catch (_) {
-        return null;
-    }
-}
-
 function _filtrarLista(list, f) {
     const fd = f.fDesde ? new Date(f.fDesde + 'T00:00:00') : null;
     const fh = f.fHasta ? new Date(f.fHasta + 'T23:59:59') : null;
     const idQ = String(f.idTxt || '').trim().toLowerCase();
     const nomQ = String(f.nombreTxt || '').trim();
+    const tipoQ = String(f.tipoPat || '').trim();
     const st = String(f.estadoSel || 'todos');
-    const tipoRe = _patronTipoWild(f.tipoPat);
     const soloAg = !!f.soloAgrupados;
 
     return list.filter((p) => {
         if (!_esHistorico(p)) return false;
         if (soloAg && !(p.inci != null && Number(p.inci) > 0)) return false;
         if (st !== 'todos' && String(p.es || '') !== st) return false;
-        if (tipoRe && !tipoRe.test(String(p.tt || '').trim())) return false;
-        if (idQ) {
-            const hay =
-                String(p.id ?? '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p.nis || '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p.med || '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p.nis_med || '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p.np ?? '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p._histTenantNom || '')
-                    .toLowerCase()
-                    .includes(idQ) ||
-                String(p._histTenantId ?? '')
-                    .toLowerCase()
-                    .includes(idQ);
-            if (!hay) return false;
-        }
+        if (tipoQ && !historicoTipoCoincideFuzzy(tipoQ, String(p.tt || ''))) return false;
+        if (idQ && !historicoIdCoincideParcial(idQ, p)) return false;
         if (nomQ) {
             const nm = String(p.cnom || p.cl || '').trim();
             if (!nombreCoincideFuzzy(nomQ, nm)) return false;
@@ -289,7 +252,7 @@ export function initAdminHistoricosPanel(deps) {
       <div class="gn-admin-hist-filtros" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin-bottom:.75rem;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bo);border-radius:.5rem">
         <div><label for="gn-hist-f-desde" style="font-size:.72rem;color:var(--tm)">Fecha creación desde</label><br><input type="date" id="gn-hist-f-desde" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-f-hasta" style="font-size:.72rem;color:var(--tm)">Fecha creación hasta</label><br><input type="date" id="gn-hist-f-hasta" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
-        <div><label for="gn-hist-id" id="gn-hist-id-lbl" style="font-size:.72rem;color:var(--tm)">${_esc(L.idFiltro)}</label><br><input type="text" id="gn-hist-id" placeholder="Texto parcial" style="margin-top:.2rem;min-width:8rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div><label for="gn-hist-id" id="gn-hist-id-lbl" style="font-size:.72rem;color:var(--tm)">${_esc(L.idFiltro)}</label><br><input type="text" id="gn-hist-id" placeholder="Ej. 700000 o 56 (parcial)" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;min-width:8rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-estado" style="font-size:.72rem;color:var(--tm)">Estado</label><br>
           <select id="gn-hist-estado" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem">
             <option value="todos">Todos</option>
@@ -298,7 +261,7 @@ export function initAdminHistoricosPanel(deps) {
             <option value="Derivado externo">Derivado externo</option>
           </select>
         </div>
-        <div style="flex:1;min-width:10rem"><label for="gn-hist-tipo" style="font-size:.72rem;color:var(--tm)">Tipo reclamo (<code>*</code> <code>?</code>)</label><br><input type="text" id="gn-hist-tipo" placeholder="${_esc(L.tipoPh)}" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div style="flex:1;min-width:10rem"><label for="gn-hist-tipo" style="font-size:.72rem;color:var(--tm)">Tipo de reclamo (fuzzy)</label><br><input type="text" id="gn-hist-tipo" placeholder="Ej. Corte de Energía" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div style="flex:1;min-width:11rem"><label for="gn-hist-nombre" style="font-size:.72rem;color:var(--tm)">Nombre / vecino (fuzzy)</label><br><input type="text" id="gn-hist-nombre" placeholder="Ej. Garcia" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;width:100%;max-width:16rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;margin-bottom:.15rem"><input type="checkbox" id="gn-hist-solo-ag"> Solo agrupados (<code>inci</code>)</label>
         <button type="button" class="btn-sm primary" id="gn-hist-buscar"><i class="fas fa-search"></i> Buscar</button>
