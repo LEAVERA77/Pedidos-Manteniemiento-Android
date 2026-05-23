@@ -122,6 +122,7 @@ function shellAssetUrls() {
     j('modules/padron-aplicar-a-pedido-nuevo.js'),
     j('modules/admin-socios-usar-en-pedido.js'),
     j('modules/admin-socios-busqueda-limpieza.js'),
+    j('modules/pedido-nuevo-oficina.js'),
     j('modules/pedido-nuevo-nis-busqueda.js'),
     j('modules/pedido-nuevo-padron-busqueda.js'),
     j('modules/gn-abrir-detalle-pedido.js'),

@@ -157,6 +157,16 @@ import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDo
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
 import { aplicarDireccionNominatimRespetandoPadron } from './modules/pedido-nuevo-nominatim-padron-guard.js';
+import {
+    mountPedidoFormularioEnDom,
+    initPedidoNuevoOficina,
+    resetPedidoNuevoOficinaUi,
+    asegurarUbicacionAntesGuardarPedidoOficina,
+} from './modules/pedido-nuevo-oficina.js';
+
+try {
+    mountPedidoFormularioEnDom();
+} catch (_) {}
 import { installAdminSociosHistorialPedidos } from './modules/admin-socios-historial-pedidos.js';
 import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqueda-padron.js';
 import { installAdminSociosUsarEnPedido } from './modules/admin-socios-usar-en-pedido.js';
@@ -7297,10 +7307,17 @@ async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
     }
     app.sel = Lref.latLng(latN, lngN);
     limpiarFotosYPreviewNuevoPedido();
+    try {
+        resetPedidoNuevoOficinaUi();
+    } catch (_) {}
     const li = document.getElementById('li');
     const gi = document.getElementById('gi');
     const pm = document.getElementById('pm');
     if (!li || !gi || !pm) return;
+    mountPedidoFormularioEnDom();
+    const pfHome = document.getElementById('pm-form-home');
+    const pf = document.getElementById('pf');
+    if (pf && pfHome && pf.parentElement !== pfHome) pfHome.appendChild(pf);
     li.value = String(latN);
     gi.value = String(lngN);
     syncWrapCoordsDisplayNuevoPedido();
@@ -8925,10 +8942,29 @@ initPedidoAvanceModalUI({
 });
 
 
-document.getElementById('pf').addEventListener('submit', async e => {
+const _pfSubmitEl = () => document.getElementById('pf');
+function _bindPedidoFormSubmit() {
+    const pf = _pfSubmitEl();
+    if (!pf || pf.dataset.gnSubmitBound === '1') return;
+    pf.dataset.gnSubmitBound = '1';
+    pf.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
+
+    const okUbicOficina = await asegurarUbicacionAntesGuardarPedidoOficina({
+        nominatimFetchSearch: _nominatimFetchSearch,
+        htmlLineaUbicacionFormulario,
+        syncWrapCoordsDisplayNuevoPedido,
+        mostrarMarcadorUbicacion,
+        ensureMapReady,
+        parseEmpresaCfgLatLngBase,
+        resolverUbicacionCentralTenantParaMapa,
+    });
+    if (!okUbicOficina) {
+        btn.disabled = false;
+        return;
+    }
     
     if (!app.sel) {
         toast('Selecciona ubicación en el mapa', 'error');
@@ -9205,7 +9241,12 @@ document.getElementById('pf').addEventListener('submit', async e => {
     } finally {
         btn.disabled = false;
     }
-});
+    });
+}
+
+try {
+    _bindPedidoFormSubmit();
+} catch (_) {}
 
 async function actualizarAvance(id, avance) {
     try {
@@ -11545,6 +11586,9 @@ function closeAll() {
     limpiarFotosYPreviewNuevoPedido();
     try {
         resetPadronNuevoPedidoNisTimers();
+    } catch (_) {}
+    try {
+        resetPedidoNuevoOficinaUi();
     } catch (_) {}
     const nisEl = document.getElementById('nis');
     if (nisEl) nisEl.value = '';
@@ -17713,6 +17757,23 @@ function descargarGrafico(canvasId, nombre) {
     }
 }
 window.descargarGrafico = descargarGrafico;
+
+try {
+    initPedidoNuevoOficina({
+        esAdminSesionWebPublica,
+        limpiarFotosYPreviewNuevoPedido,
+        poblarSelectTiposReclamo,
+        syncNisClienteReclamoConexionUI,
+        cargarDistribuidores,
+        htmlLineaUbicacionFormulario,
+        syncWrapCoordsDisplayNuevoPedido,
+        mostrarMarcadorUbicacion,
+        ensureMapReady,
+        nominatimFetchSearch: _nominatimFetchSearch,
+        parseEmpresaCfgLatLngBase,
+        resolverUbicacionCentralTenantParaMapa,
+    });
+} catch (_) {}
 
 try {
     initPedidoNuevoPadronBusqueda({

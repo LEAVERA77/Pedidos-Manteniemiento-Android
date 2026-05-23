@@ -232,6 +232,9 @@
     </div>
   </div>
   
+  <button type="button" id="btn-mapa-nuevo-oficina" class="btn-mapa-nuevo-oficina gn-gps-fab" style="display:none" title="Pedido en oficina (sin tocar el mapa primero)" aria-label="Pedido en oficina">
+    <i class="fas fa-building"></i>
+  </button>
   <button type="button" id="btn-mapa-armar-nuevo" class="btn-mapa-armar-nuevo gn-gps-fab" onclick="toggleMapTapNuevoPedidoArmed()" title="Activar: luego tocá el mapa para elegir el punto del nuevo pedido" aria-pressed="false" aria-label="Activar nuevo pedido con toque en el mapa">
     <i class="fas fa-map-pin"></i>
   </button>
@@ -274,14 +277,37 @@
   <span id="offline-badge" style="position:absolute;bottom:10rem;right:.5rem;z-index:1003;display:none;background:#f97316;color:white;border-radius:50%;width:20px;height:20px;font-size:.65rem;font-weight:700;align-items:center;justify-content:center;border:2px solid white;pointer-events:none"></span>
 </div>
 
-<!-- MODAL NUEVO PEDIDO (con botón para fotos) -->
+<!-- MODAL NUEVO PEDIDO (mapa) -->
 <div id="pm" class="mo">
   <div class="mc">
     <div class="mh"><h3><i class="fas fa-plus-circle"></i> Nuevo Pedido</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+    <div id="pm-form-home" class="pm-form-home"></div>
+  </div>
+</div>
+
+<!-- MODAL NUEVO PEDIDO EN OFICINA (admin web; mismo formulario #pf) -->
+<div id="pm-oficina" class="mo">
+  <div class="mc">
+    <div class="mh"><h3><i class="fas fa-building"></i> Pedido en oficina</h3><button class="cm"><i class="fas fa-times"></i></button></div>
+    <div id="pm-oficina-form-home" class="pm-form-home"></div>
+  </div>
+</div>
+
+<template id="pm-form-template">
     <form id="pf">
-      <div class="fg"><label><i class="fas fa-map-marker-alt"></i> Ubicación en el mapa</label>
-        <div id="ui" class="ud"><i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar</div>
+      <div id="ped-oficina-ubicacion-wrap" class="fg gn-ped-oficina-only" style="display:none">
+        <label><i class="fas fa-map-marker-alt"></i> Ubicación del reclamo</label>
+        <p class="ped-oficina-hint" style="font-size:.78rem;color:var(--tl);margin:0 0 .45rem;line-height:1.4">Completá calle y localidad (o elegí un socio del padrón). Podés buscar coordenadas por dirección o marcar un punto aproximado en el mapa.</p>
+        <div id="ped-oficina-estado" class="ud" aria-live="polite"><i class="fas fa-info-circle"></i> Sin coordenadas aún — usá «Buscar dirección» o «Marcar en mapa».</div>
         <input type="hidden" id="li"><input type="hidden" id="gi">
+        <div class="ped-oficina-acciones" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.5rem">
+          <button type="button" id="ped-oficina-btn-geocode" class="btn-sm primary"><i class="fas fa-search-location"></i> Buscar dirección</button>
+          <button type="button" id="ped-oficina-btn-mapa" class="btn-sm" style="border:1px solid var(--bo);background:var(--bg)"><i class="fas fa-map-pin"></i> Marcar en mapa</button>
+        </div>
+      </div>
+      <div id="ped-mapa-ubicacion-wrap" class="fg gn-ped-mapa-only">
+        <label><i class="fas fa-map-marker-alt"></i> Ubicación en el mapa</label>
+        <div id="ui" class="ud"><i class="fas fa-crosshairs"></i> Hacé clic en el mapa para seleccionar</div>
       </div>
       <div class="fg" id="wrap-sel-coords-display" style="display:none">
         <label for="sel-coords-display">Formato de coordenadas</label>
@@ -387,8 +413,7 @@
         <button type="submit" class="bp"><i class="fas fa-save"></i> Guardar Pedido</button>
       </div>
     </form>
-  </div>
-</div>
+</template>
 
 <!-- MODAL DETALLE (con visualización de fotos) -->
 <div id="dm" class="mo">
