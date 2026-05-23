@@ -176,8 +176,8 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
 
     if (opts.esMunicipio || opts.esAgua) {
         if (refEl && row.barrio != null) refEl.value = String(row.barrio).trim();
-        if (opts.esMunicipio && di2 && row.barrio) {
-            const br = String(row.barrio).trim();
+        if (opts.esMunicipio && di2 && (row.barrio || row.distribuidor_codigo)) {
+            const br = String(row.barrio || row.distribuidor_codigo || '').trim();
             const opt = Array.from(di2.options).find(
                 (o) =>
                     (o.value || '').trim().toLowerCase() === br.toLowerCase() ||

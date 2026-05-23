@@ -7,7 +7,11 @@ import {
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
-import { historicoTipoCoincideFuzzy, historicoIdCoincideParcial } from './admin-historicos-filtros.js';
+import {
+    historicoTipoCoincideFuzzy,
+    historicoIdCoincideParcial,
+    historicoNumeroReclamoCoincide,
+} from './admin-historicos-filtros.js';
 import {
     fetchHistoricosResueltosTenant,
     historicosResueltosDesdeAppP,
@@ -147,6 +151,8 @@ function _filtrarLista(list, f) {
         if (st !== 'todos' && String(p.es || '') !== st) return false;
         if (tipoQ && !historicoTipoCoincideFuzzy(tipoQ, String(p.tt || ''))) return false;
         if (idQ && !historicoIdCoincideParcial(idQ, p)) return false;
+        const npQ = String(f.numeroReclamoTxt || '').trim();
+        if (npQ && !historicoNumeroReclamoCoincide(npQ, p)) return false;
         if (nomQ) {
             const nm = String(p.cnom || p.cl || '').trim();
             if (!nombreCoincideFuzzy(nomQ, nm)) return false;
@@ -171,7 +177,8 @@ function _hayFiltrosActivos(f) {
         (f.estadoSel && f.estadoSel !== 'todos') ||
         String(f.tipoPat || '').trim() ||
         f.soloAgrupados ||
-        String(f.nombreTxt || '').trim()
+        String(f.nombreTxt || '').trim() ||
+        String(f.numeroReclamoTxt || '').trim()
     );
 }
 
@@ -184,6 +191,7 @@ function _leerFiltrosDesdeDom(root) {
         tipoPat: root.querySelector('#gn-hist-tipo')?.value || '',
         nombreTxt: root.querySelector('#gn-hist-nombre')?.value || '',
         soloAgrupados: !!root.querySelector('#gn-hist-solo-ag')?.checked,
+        numeroReclamoTxt: root.querySelector('#gn-hist-np')?.value || '',
     };
 }
 
@@ -253,6 +261,7 @@ export function initAdminHistoricosPanel(deps) {
         <div><label for="gn-hist-f-desde" style="font-size:.72rem;color:var(--tm)">Fecha creación desde</label><br><input type="date" id="gn-hist-f-desde" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-f-hasta" style="font-size:.72rem;color:var(--tm)">Fecha creación hasta</label><br><input type="date" id="gn-hist-f-hasta" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
         <div><label for="gn-hist-id" id="gn-hist-id-lbl" style="font-size:.72rem;color:var(--tm)">${_esc(L.idFiltro)}</label><br><input type="text" id="gn-hist-id" placeholder="Ej. 700000 o 56 (parcial)" autocomplete="off" autocapitalize="off" style="margin-top:.2rem;min-width:8rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem"></div>
+        <div><label for="gn-hist-np" style="font-size:.72rem;color:var(--tm)">N° reclamo</label><br><input type="text" id="gn-hist-np" placeholder="Ej. 4521, 2025 o MG-2025-12" autocomplete="off" autocapitalize="off" inputmode="numeric" style="margin-top:.2rem;min-width:7.5rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem" title="Filtra en vivo al escribir: número parcial o año"></div>
         <div><label for="gn-hist-estado" style="font-size:.72rem;color:var(--tm)">Estado</label><br>
           <select id="gn-hist-estado" style="margin-top:.2rem;padding:.35rem;border:1px solid var(--bo);border-radius:.35rem">
             <option value="todos">Todos</option>
@@ -465,6 +474,7 @@ export function initAdminHistoricosPanel(deps) {
         });
     });
     root.querySelector('#gn-hist-id')?.addEventListener('input', scheduleRenderFiltros);
+    root.querySelector('#gn-hist-np')?.addEventListener('input', scheduleRenderFiltros);
     root.querySelector('#gn-hist-tipo')?.addEventListener('input', scheduleRenderFiltros);
     root.querySelector('#gn-hist-nombre')?.addEventListener('input', scheduleRenderFiltros);
 

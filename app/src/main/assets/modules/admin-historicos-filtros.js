@@ -45,3 +45,36 @@ export function historicoIdCoincideParcial(idQ, p) {
     }
     return false;
 }
+
+/**
+ * N° de reclamo (numero_pedido): parcial, solo dígitos o año (ej. 2025).
+ * @param {string} qRaw
+ * @param {Record<string, unknown>} p
+ */
+export function historicoNumeroReclamoCoincide(qRaw, p) {
+    const q = String(qRaw || '').trim().toLowerCase();
+    if (!q) return true;
+    const np = String(p.np ?? p.numero_pedido ?? '').trim().toLowerCase();
+    if (np && np.includes(q)) return true;
+    const digitsQ = q.replace(/\D/g, '');
+    if (digitsQ.length >= 1 && np) {
+        const dNp = np.replace(/\D/g, '');
+        if (dNp.includes(digitsQ)) return true;
+    }
+    if (/^\d{4}$/.test(digitsQ)) {
+        if (np.includes(digitsQ)) return true;
+        if (p.f) {
+            try {
+                const yr = new Date(String(p.f)).getFullYear();
+                if (String(yr) === digitsQ) return true;
+            } catch (_) {}
+        }
+        if (p.fc) {
+            try {
+                const yr = new Date(String(p.fc)).getFullYear();
+                if (String(yr) === digitsQ) return true;
+            } catch (_) {}
+        }
+    }
+    return false;
+}

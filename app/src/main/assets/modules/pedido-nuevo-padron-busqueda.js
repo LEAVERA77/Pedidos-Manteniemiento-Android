@@ -6,6 +6,7 @@
 import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-padron.js';
+import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 
 let _installed = false;
@@ -104,13 +105,31 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             btn.addEventListener('click', () => {
                 const idx = Number(btn.getAttribute('data-idx'));
                 const row = matches[idx];
-                if (row) onPick(row);
+                if (row) void onPick(row);
             });
         });
     }
 
-    function aplicarMatch(row) {
-        const ident = aplicarPadronAlFormularioNuevoPedido(row, padronOpts());
+    async function aplicarMatch(row) {
+        let full = row;
+        try {
+            full = await completarFilaPadronDesdeBd(
+                {
+                    sqlSimple: deps.sqlSimple,
+                    esc: deps.esc,
+                    tenantIdActual: deps.tenantIdActual,
+                    sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
+                    normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
+                },
+                row
+            );
+        } catch (_) {}
+        if (deps.ensureDistribuidoresCargados) {
+            try {
+                await deps.ensureDistribuidoresCargados();
+            } catch (_) {}
+        }
+        const ident = aplicarPadronAlFormularioNuevoPedido(full, padronOpts());
         _nisUltimoValor = ident || _nisUltimoValor;
         const out = document.getElementById('ped-padron-resultados');
         if (out) out.innerHTML = '';
@@ -137,7 +156,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             if (!matches.length && deps.neonOk() && typeof deps.sqlSimple === 'function') {
                 matches = await buscarNombreSqlLocal(raw);
             }
-            renderResultados(matches, aplicarMatch);
+            renderResultados(matches, (m) => void aplicarMatch(m));
         } catch (e) {
             if (out) out.innerHTML = '';
             toast('No se pudo buscar en el padrón', 'error');
@@ -312,11 +331,11 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             }
             if (!matches.length) return;
             if (matches.length > 1) {
-                renderResultados(matches, aplicarMatch);
+                renderResultados(matches, (m) => void aplicarMatch(m));
                 _nisUltimoValor = val;
                 return;
             }
-            aplicarMatch(matches[0]);
+            void aplicarMatch(matches[0]);
             _nisUltimoValor = val;
         } catch (e) {
             console.warn('[nis→socio]', e.message);

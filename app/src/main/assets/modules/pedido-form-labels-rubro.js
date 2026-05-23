@@ -52,6 +52,9 @@ export function etiquetaHistorialNisBusquedaAdmin() {
 export function syncHistorialNisBusquedaDom() {
     const lb = document.getElementById('historial-nis-label');
     if (lb) lb.textContent = etiquetaHistorialNisBusquedaAdmin();
+    try {
+        if (typeof window.syncSociosBusquedaPadronLabels === 'function') window.syncSociosBusquedaPadronLabels();
+    } catch (_) {}
 }
 
 export function placeholderNisCampo({ requerido }) {

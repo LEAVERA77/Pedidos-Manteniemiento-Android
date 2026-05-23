@@ -110,6 +110,8 @@ function shellAssetUrls() {
     j('modules/gn-panel-docks.js'),
     j('modules/gn-pedido-match-identificador.js'),
     j('modules/socios-busqueda-apellido-padron.js'),
+    j('modules/admin-socios-busqueda-padron.js'),
+    j('modules/padron-fila-completar.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-nuevo-aplicar-padron.js'),
     j('modules/pedido-nuevo-padron-busqueda.js'),

@@ -157,6 +157,7 @@ import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDo
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
 import { installAdminSociosHistorialPedidos } from './modules/admin-socios-historial-pedidos.js';
+import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqueda-padron.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import {
@@ -14886,6 +14887,9 @@ function adminTab(tab) {
         try {
             syncHistorialNisBusquedaDom();
         } catch (_) {}
+        try {
+            if (typeof window.syncSociosBusquedaPadronLabels === 'function') window.syncSociosBusquedaPadronLabels();
+        } catch (_) {}
         if (!document.getElementById('nis-historial-item-style')) {
             const st = document.createElement('style');
             st.id = 'nis-historial-item-style';
@@ -17794,6 +17798,23 @@ try {
             if (typeof esMunicipioRubro === 'function' && esMunicipioRubro()) return 'ID vecino';
             if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'ID socio';
             return 'NIS';
+        },
+    });
+} catch (_) {}
+
+try {
+    installAdminSociosBusquedaPadron({
+        sqlSimple,
+        pedidosFiltroTenantSql,
+        tenantIdActual,
+        neonOk: () => !!NEON_OK,
+        normalizarRubroEmpresa,
+        apiUrl,
+        getApiToken,
+        etiquetaNisSocio: () => {
+            if (typeof esMunicipioRubro === 'function' && esMunicipioRubro()) return 'ID vecino';
+            if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'N° socio';
+            return 'NIS o medidor';
         },
     });
 } catch (_) {}
