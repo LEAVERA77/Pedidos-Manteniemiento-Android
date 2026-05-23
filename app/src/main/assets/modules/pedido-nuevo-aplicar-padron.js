@@ -201,7 +201,11 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
     if (inpN && ident) inpN.value = String(ident).trim();
 
     if (cl && row.nombre) cl.value = String(row.nombre).trim();
-    if (limpiarTel && tel) tel.value = '';
+    if (tel) {
+        const telPadron = row.telefono != null ? String(row.telefono).trim() : '';
+        if (telPadron) tel.value = telPadron;
+        else if (limpiarTel) tel.value = '';
+    }
     if (calleEl && row.calle != null) calleEl.value = String(row.calle).trim();
     if (numEl && row.numero != null) numEl.value = String(row.numero).trim();
     if (locEl && row.localidad != null) locEl.value = String(row.localidad).trim();

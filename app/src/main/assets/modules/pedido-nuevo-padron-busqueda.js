@@ -5,17 +5,14 @@
 
 import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
-import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-padron.js';
 import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
-import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
-import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
+import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
 
 let _installed = false;
-let _nisUltimoValor = '';
-let _nisDebounce = null;
-let _nisCommitTimer = null;
 let _aplicandoPadron = false;
+/** @type {{ resetNisBusquedaState?: () => void } | null} */
+let _nisCtrl = null;
 
 function escHtml(s) {
     return String(s == null ? '' : s)
@@ -127,11 +124,13 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
         };
         try {
-            const ident = await aplicarPadronAlPedidoNuevo(padronDeps, row);
-            _nisUltimoValor = ident || _nisUltimoValor;
+            await aplicarPadronAlPedidoNuevo(padronDeps, row);
             const out = document.getElementById('ped-padron-resultados');
             if (out) out.innerHTML = '';
             toast('Datos del padrón aplicados al formulario', 'success');
+        } catch (e) {
+            toast('No se pudieron cargar los datos del padrón.', 'error');
+            console.warn('[ped-padron-aplicar]', e?.message || e);
         } finally {
             _aplicandoPadron = false;
         }
@@ -236,182 +235,12 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         return matches;
     }
 
-    async function rellenarDesdeClientesFinales(raw) {
-        const tid = deps.tenantIdActual();
-        if (!Number.isFinite(tid)) return;
-        const r = await deps.sqlSimple(
-            `SELECT nombre, apellido, calle, numero_puerta, barrio, localidad, nis, medidor, numero_cliente
-             FROM clientes_finales
-             WHERE activo = TRUE AND cliente_id = ${deps.esc(tid)}
-               AND (
-                 UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${deps.esc(raw)}))
-                 OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${deps.esc(raw)}))
-                 OR UPPER(TRIM(COALESCE(numero_cliente,''))) = UPPER(TRIM(${deps.esc(raw)}))
-               )
-             LIMIT 1`
-        );
-        const row = r.rows?.[0];
-        if (!row) return;
-        await aplicarPadronAlPedidoNuevo(
-            {
-                sqlSimple: deps.sqlSimple,
-                esc: deps.esc,
-                tenantIdActual: deps.tenantIdActual,
-                sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
-                normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
-                esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
-                esMunicipioRubro: deps.esMunicipioRubro,
-                esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
-                ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
-            },
-            {
-                nombre: [row.nombre, row.apellido]
-                    .map((x) => (x != null ? String(x).trim() : ''))
-                    .filter(Boolean)
-                    .join(' '),
-                nis: row.nis,
-                medidor: row.medidor,
-                nis_medidor: row.medidor || row.nis || row.numero_cliente,
-                numero_cliente: row.numero_cliente,
-                calle: row.calle,
-                numero: row.numero_puerta,
-                localidad: row.localidad,
-                barrio: row.barrio,
-            }
-        );
-        _nisUltimoValor = raw;
-    }
-
-    async function rellenarDesdeSociosCatalogo(raw, opts = {}) {
-        if (_aplicandoPadron) return;
-        const forzar = !!(opts && opts.forzar);
-        const r = rubro();
-        if (!r || deps.modoOffline() || !deps.neonOk()) return;
-        const inpN = document.getElementById('nis');
-        if (!inpN) return;
-        const val = (inpN.value || '').trim();
-        if (!val) {
-            _nisUltimoValor = '';
-            limpiarProteccionPadronPedidoNuevo();
-            if (r === 'cooperativa_electrica') {
-                const tfC = document.getElementById('trafo-pedido');
-                if (tfC) tfC.value = '';
-            }
-            return;
-        }
-        if (!forzar && val === _nisUltimoValor) return;
-
-        if (r === 'municipio' || r === 'cooperativa_agua') {
-            try {
-                await rellenarDesdeClientesFinales(val);
-            } catch (e) {
-                console.warn('[nis→clientes_finales]', e.message);
-            }
-            return;
-        }
-
-        if (r !== 'cooperativa_electrica') return;
-
-        try {
-            let matches = (await fetchPadronApi('/api/padron-pedido/buscar-identificador', val)) || [];
-            if (!matches.length) {
-                const hasSocTNis = await deps.sociosCatalogoTieneTenantId();
-                const wfNis = hasSocTNis ? ` AND tenant_id = ${deps.esc(deps.tenantIdActual())}` : '';
-                const idMatch = sqlWhereSocioCatalogoCoincideIdentificador(deps.esc, val, '');
-                const q = await deps.sqlSimple(
-                    `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
-                            calle, numero, localidad, barrio, nis, medidor, nis_medidor
-                     FROM socios_catalogo
-                     WHERE activo = TRUE${wfNis}
-                       AND ${idMatch}
-                     LIMIT 1`
-                );
-                const row = q.rows?.[0];
-                if (row) {
-                    matches = [
-                        {
-                            source: 'socios_catalogo',
-                            id: 0,
-                            nombre: row.nombre,
-                            identificador: row.nis_medidor || row.medidor || row.nis,
-                            ...row,
-                        },
-                    ];
-                }
-            }
-            if (!matches.length) return;
-            if (matches.length > 1) {
-                renderResultados(matches, (m) => void aplicarMatch(m));
-                _nisUltimoValor = val;
-                return;
-            }
-            await aplicarMatch(matches[0]);
-            _nisUltimoValor = val;
-        } catch (e) {
-            console.warn('[nis→socio]', e.message);
-        }
-    }
-
-    function programarRellenoDebounced() {
-        if (_aplicandoPadron || !rubro()) return;
-        clearTimeout(_nisDebounce);
-        _nisDebounce = setTimeout(() => {
-            void rellenarDesdeSociosCatalogo({ forzar: false });
-        }, 480);
-    }
-
-    function onNisCommit() {
-        clearTimeout(_nisDebounce);
-        clearTimeout(_nisCommitTimer);
-        _nisCommitTimer = setTimeout(() => {
-            void rellenarDesdeSociosCatalogo({ forzar: true });
-        }, 90);
-    }
-
-    const nisInp = document.getElementById('nis');
-    if (nisInp) {
-        nisInp.addEventListener('blur', onNisCommit);
-        nisInp.addEventListener('focusout', onNisCommit);
-        nisInp.addEventListener('input', programarRellenoDebounced);
-        nisInp.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                onNisCommit();
-            }
-        });
-        nisInp.addEventListener('keyup', (ev) => {
-            if (ev.key === 'Enter' || ev.keyCode === 13) {
-                ev.preventDefault();
-                onNisCommit();
-            }
-        });
-    }
-
-    const pf = document.getElementById('pf');
-    const pm = document.getElementById('pm');
-    if (pf && pm && nisInp) {
-        pf.addEventListener(
-            'focusin',
-            (ev) => {
-                const id = ev.target && ev.target.id;
-                if (!id || id === 'nis') return;
-                onNisCommit();
-            },
-            true
-        );
-        pm.addEventListener(
-            'pointerdown',
-            (ev) => {
-                try {
-                    if (document.activeElement !== nisInp) return;
-                    const t = ev.target;
-                    if (t && (t === nisInp || nisInp.contains(t))) return;
-                    onNisCommit();
-                } catch (_) {}
-            },
-            true
-        );
-    }
+    _nisCtrl = installPedidoNuevoNisBusqueda(deps, {
+        getRubro: rubro,
+        getAplicandoPadron: () => _aplicandoPadron,
+        aplicarMatch,
+        renderResultados,
+    });
 
     document.getElementById('ped-padron-btn-buscar')?.addEventListener('click', () => {
         void buscarPorApellidoDesdeUI();
@@ -432,10 +261,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
 
 /** Limpieza al cerrar modales (pegamento en app.js closeAll). */
 export function resetPadronNuevoPedidoNisTimers() {
-    _nisUltimoValor = '';
-    clearTimeout(_nisDebounce);
-    clearTimeout(_nisCommitTimer);
-    _nisDebounce = null;
-    _nisCommitTimer = null;
-    limpiarProteccionPadronPedidoNuevo();
+    try {
+        _nisCtrl?.resetNisBusquedaState?.();
+    } catch (_) {}
 }
