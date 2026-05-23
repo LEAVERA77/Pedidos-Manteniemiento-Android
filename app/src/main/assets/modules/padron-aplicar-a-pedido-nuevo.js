@@ -5,9 +5,12 @@
 
 import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-padron.js';
 import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
-import { resolverYSeleccionarDistribuidorDi2 } from './padron-distribuidor-resolver.js';
 import { seleccionarBarrioMunicipioDi2 } from './padron-barrio-municipio.js';
 import { rubroPadronActivo } from './padron-rubro-helpers.js';
+import {
+    aplicarDistribuidorCoopDesdeSocioCatalogo,
+    codigoDistribuidorDesdeSocio,
+} from './padron-distribuidor-socio-di2.js';
 
 /** @param {unknown} v */
 function txt(v) {
@@ -52,6 +55,9 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
 
     const ident = aplicarPadronAlFormularioNuevoPedido(full, opts);
 
+    let distribuidorOk = true;
+    let distribuidorAviso = '';
+
     if (opts.esCooperativaElectrica) {
         const tf = document.getElementById('trafo-pedido');
         const trafoTxt = txt(full.transformador);
@@ -60,12 +66,20 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             tf.removeAttribute('placeholder');
         }
         const distTxt = txt(full.distribuidor_codigo);
-        if (trafoTxt || distTxt) {
-            await resolverYSeleccionarDistribuidorDi2(deps, {
-                distribuidorCatalogo: full.distribuidor_codigo,
-                transformador: full.transformador,
-                localidad: full.localidad,
+        if (distTxt) {
+            const res = await aplicarDistribuidorCoopDesdeSocioCatalogo(deps, {
+                distribuidor_codigo: distTxt,
             });
+            distribuidorOk = !!res.ok;
+            if (!res.ok) {
+                const cod = codigoDistribuidorDesdeSocio(distTxt);
+                distribuidorAviso = cod
+                    ? `El socio tiene distribuidor «${cod}» pero no está en la lista de red. Elegilo manualmente.`
+                    : 'El socio no tiene distribuidor cargado en el catálogo.';
+            }
+        } else {
+            distribuidorOk = false;
+            distribuidorAviso = 'El socio no tiene columna Dist. en el catálogo; elegí el distribuidor a mano.';
         }
         const barrioAux = document.getElementById('ped-cli-barrio');
         if (barrioAux && txt(full.barrio)) barrioAux.value = txt(full.barrio);
@@ -81,5 +95,5 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
         } catch (_) {}
     }
 
-    return ident;
+    return { ident, distribuidorOk, distribuidorAviso };
 }

@@ -3,10 +3,11 @@
  * made by leavera77
  */
 
-import { toast } from './ui-utils.js';
 import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
 import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { forEachModalPedidoNuevo } from './pedido-nuevo-padron-modales.js';
+import { toastPedidoPadron } from './pedido-nuevo-padron-toast.js';
 
 const COLS_SOCIO = `id, nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
         calle, numero, localidad, barrio, nis, medidor, nis_medidor`;
@@ -236,18 +237,18 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
 
         if (val.length < 2) {
             if (!opts.silencioso) {
-                toast('Ingresá al menos 2 caracteres (NIS, medidor o número de cliente).', 'warning');
+                aviso('Ingresá al menos 2 caracteres (NIS, medidor o N° socio).', 'warning');
             }
             return;
         }
 
         if (deps.modoOffline()) {
-            toast('Sin conexión: no se puede buscar en el padrón.', 'warning');
+            aviso('Sin conexión: no se puede buscar en el padrón.', 'warning');
             return;
         }
 
         if (!deps.getApiToken() && !deps.neonOk()) {
-            toast('Iniciá sesión o activá la conexión a la base para buscar en el padrón.', 'error');
+            aviso('Iniciá sesión o activá la conexión a la base para buscar en el padrón.', 'error');
             return;
         }
 
@@ -267,7 +268,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
                     out.innerHTML = `<p class="ped-padron-sin-resultados">No hay coincidencias para «${val}» en el padrón.</p>`;
                 }
                 const extra = avisos.length ? ` ${avisos[0]}` : '';
-                toast(`No se encontró «${val}» en el padrón.${extra}`, 'warning');
+                aviso(`No se encontró «${val}» en el padrón.${extra}`, 'warning');
                 _nisUltimoValor = val;
                 return;
             }
@@ -275,7 +276,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             if (matches.length > 1) {
                 hooks.renderResultados(matches, (m) => void hooks.aplicarMatch(m));
                 _nisUltimoValor = val;
-                toast(`${matches.length} coincidencias: elegí la fila correcta.`, 'info');
+                aviso(`${matches.length} coincidencias: elegí la fila correcta.`, 'info', 3500);
                 return;
             }
 
@@ -284,7 +285,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             _nisUltimoValor = val;
         } catch (e) {
             if (out) out.innerHTML = '';
-            toast('Error al buscar en el padrón. Intentá de nuevo.', 'error');
+            aviso('Error al buscar en el padrón. Intentá de nuevo.', 'error');
             console.warn('[nis-busqueda]', e?.message || e);
         } finally {
             _nisBuscando = false;
@@ -323,8 +324,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
     }
 
     const pf = document.getElementById('pf');
-    const pm = document.getElementById('pm');
-    if (pf && pm && nisInp) {
+    if (pf && nisInp) {
         pf.addEventListener(
             'focusin',
             (ev) => {
@@ -334,18 +334,22 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             },
             true
         );
-        pm.addEventListener(
-            'pointerdown',
-            (ev) => {
-                try {
-                    if (document.activeElement !== nisInp) return;
-                    const t = ev.target;
-                    if (t && (t === nisInp || nisInp.contains(t))) return;
-                    onNisCommit();
-                } catch (_) {}
-            },
-            true
-        );
+        forEachModalPedidoNuevo((modal) => {
+            modal.addEventListener(
+                'pointerdown',
+                (ev) => {
+                    try {
+                        if (document.activeElement !== nisInp) return;
+                        const t = ev.target;
+                        if (t && (t === nisInp || nisInp.contains(t))) return;
+                        const btn = document.getElementById('ped-nis-btn-buscar');
+                        if (btn && (t === btn || btn.contains(t))) return;
+                        onNisCommit();
+                    } catch (_) {}
+                },
+                true
+            );
+        });
     }
 
     return {

@@ -1,18 +1,18 @@
 /**
- * Búsqueda en padrón al cargar pedido nuevo (#pm): NIS/socio + apellido (Levenshtein vía API).
+ * Búsqueda en padrón al cargar pedido nuevo (#pm / #pm-oficina): NIS, nombre y titular.
  * Admin web y técnico Android (misma UI). made by leavera77
  */
 
-import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
 import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
+import { toastPedidoPadron } from './pedido-nuevo-padron-toast.js';
 
 let _installed = false;
 let _aplicandoPadron = false;
-/** @type {{ resetNisBusquedaState?: () => void } | null} */
+/** @type {{ resetNisBusquedaState?: () => void, buscarNisDesdeInput?: (o?: object) => Promise<void> } | null} */
 let _nisCtrl = null;
 
 function escHtml(s) {
@@ -44,10 +44,15 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     _installed = true;
 
     const rubro = () => deps.normalizarRubroEmpresa(window.EMPRESA_CFG?.tipo);
-    const padronOpts = () => ({
-        esCooperativaElectrica: deps.esCooperativaElectricaRubro(),
-        esMunicipio: deps.esMunicipioRubro(),
-        esAgua: deps.esCooperativaAguaRubro(),
+    const padronDeps = () => ({
+        sqlSimple: deps.sqlSimple,
+        esc: deps.esc,
+        tenantIdActual: deps.tenantIdActual,
+        sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
+        normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
+        esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
+        esMunicipioRubro: deps.esMunicipioRubro,
+        esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
         ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
     });
 
@@ -87,7 +92,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         if (!out) return;
         if (!matches?.length) {
             out.innerHTML =
-                '<p class="ped-padron-sin-resultados">Sin coincidencias en el padrón. Podés cargar el reclamo igual (NIS/socio opcional).</p>';
+                '<p class="ped-padron-sin-resultados">Sin coincidencias. Podés completar el reclamo igual.</p>';
             return;
         }
         const items = matches
@@ -95,9 +100,13 @@ export function initPedidoNuevoPadronBusqueda(deps) {
                 const id = escHtml(m.identificador || '—');
                 const nom = escHtml(m.nombre || '');
                 const dom = [m.calle, m.numero, m.localidad].filter(Boolean).join(' ');
+                const dist =
+                    m.distribuidor_codigo != null && String(m.distribuidor_codigo).trim()
+                        ? `<span class="ped-padron-item-dist">${escHtml(String(m.distribuidor_codigo).trim())}</span>`
+                        : '';
                 const sub = dom ? `<span class="ped-padron-item-dom">${escHtml(dom)}</span>` : '';
                 return `<button type="button" class="ped-padron-item" data-idx="${i}">
-          <strong>${nom}</strong> <span class="ped-padron-item-id">${id}</span>${sub}
+          <strong>${nom}</strong> <span class="ped-padron-item-id">${id}</span>${dist}${sub}
         </button>`;
             })
             .join('');
@@ -126,56 +135,92 @@ export function initPedidoNuevoPadronBusqueda(deps) {
                 );
             } catch (_) {}
         }
-        const padronDeps = {
-            sqlSimple: deps.sqlSimple,
-            esc: deps.esc,
-            tenantIdActual: deps.tenantIdActual,
-            sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
-            normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
-            esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
-            esMunicipioRubro: deps.esMunicipioRubro,
-            esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
-            ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
-        };
         try {
-            await aplicarPadronAlPedidoNuevo(padronDeps, row);
+            const res = await aplicarPadronAlPedidoNuevo(padronDeps(), row);
             const out = document.getElementById('ped-padron-resultados');
             if (out) out.innerHTML = '';
-            toast('Datos del padrón aplicados al formulario', 'success');
+
+            if (deps.esCooperativaElectricaRubro()) {
+                if (res.distribuidorOk) {
+                    toastPedidoPadron('Socio cargado en el formulario.', 'success');
+                } else if (res.distribuidorAviso) {
+                    toastPedidoPadron(`Socio cargado. ${res.distribuidorAviso}`, 'warning');
+                } else {
+                    toastPedidoPadron('Socio cargado en el formulario.', 'success');
+                }
+            } else {
+                toastPedidoPadron('Datos del padrón aplicados.', 'success');
+            }
         } catch (e) {
-            toast('No se pudieron cargar los datos del padrón.', 'error');
+            toastPedidoPadron('No se pudieron cargar los datos del padrón.', 'error');
             console.warn('[ped-padron-aplicar]', e?.message || e);
         } finally {
             _aplicandoPadron = false;
         }
     }
 
-    async function buscarPorApellidoDesdeUI() {
-        const inp = document.getElementById('ped-padron-apellido');
-        const raw = (inp?.value || '').trim();
+  async function buscarNombreEnPadron(raw, opts = {}) {
+        const q = String(raw || '').trim();
         const out = document.getElementById('ped-padron-resultados');
-        if (!raw || raw.length < 2) {
-            toast('Ingresá al menos 2 letras del apellido', 'warning');
+        if (!q || q.length < 2) {
+            if (!opts.silencioso) {
+                toastPedidoPadron('Ingresá al menos 2 letras para buscar.', 'warning');
+            }
+            return;
+        }
+        if (deps.modoOffline()) {
+            toastPedidoPadron('Sin conexión: no se puede buscar en el padrón.', 'warning');
+            return;
+        }
+        if (!deps.getApiToken() && !deps.neonOk()) {
+            toastPedidoPadron('Iniciá sesión o activá la base para buscar en el padrón.', 'error');
             return;
         }
         if (out) {
             out.innerHTML =
-                '<div class="ped-padron-cargando"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</div>';
+                '<div class="ped-padron-cargando"><i class="fas fa-circle-notch fa-spin"></i> Buscando en el padrón…</div>';
         }
         try {
             let matches = [];
             if (deps.neonOk() && typeof deps.sqlSimple === 'function') {
-                matches = await buscarNombreSqlLocal(raw);
+                matches = await buscarNombreSqlLocal(q);
             }
             if (!matches.length && !deps.modoOffline()) {
-                matches = (await fetchPadronApi('/api/padron-pedido/buscar-nombre', raw)) || [];
+                matches = (await fetchPadronApi('/api/padron-pedido/buscar-nombre', q)) || [];
+            }
+            if (!matches.length) {
+                if (out) {
+                    out.innerHTML = `<p class="ped-padron-sin-resultados">No hay coincidencias para «${escHtml(q)}».</p>`;
+                }
+                if (!opts.silencioso) {
+                    toastPedidoPadron(`No se encontró «${q}» en el padrón.`, 'warning');
+                }
+                return;
+            }
+            if (matches.length === 1 && opts.autoAplicarUnico) {
+                if (out) out.innerHTML = '';
+                await aplicarMatch(matches[0]);
+                return;
             }
             renderResultados(matches, (m) => void aplicarMatch(m));
+            if (!opts.silencioso && matches.length > 1) {
+                toastPedidoPadron(`${matches.length} coincidencias: elegí la fila correcta.`, 'info', 3500);
+            }
         } catch (e) {
             if (out) out.innerHTML = '';
-            toast('No se pudo buscar en el padrón', 'error');
-            console.warn('[ped-padron-apellido]', e?.message || e);
+            toastPedidoPadron('No se pudo buscar en el padrón.', 'error');
+            console.warn('[ped-padron-nombre]', e?.message || e);
         }
+    }
+
+    async function buscarPorApellidoDesdeUI() {
+        const inp = document.getElementById('ped-padron-apellido');
+        await buscarNombreEnPadron(inp?.value || '', { silencioso: false });
+    }
+
+    async function buscarPorTitularDesdeUI() {
+        const inp = document.getElementById('cl');
+        await buscarNombreEnPadron(inp?.value || '', { silencioso: false });
     }
 
     async function buscarNombreSqlLocal(raw) {
@@ -239,6 +284,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
                 numero: row.numero,
                 localidad: row.localidad,
                 barrio: row.barrio,
+                telefono: row.telefono,
                 transformador: row.transformador,
                 distribuidor_codigo: row.distribuidor_codigo,
                 tipo_conexion: row.tipo_conexion,
@@ -254,15 +300,29 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         getAplicandoPadron: () => _aplicandoPadron,
         aplicarMatch,
         renderResultados,
+        toastPedidoPadron,
     });
 
+    document.getElementById('ped-nis-btn-buscar')?.addEventListener('click', () => {
+        void _nisCtrl?.buscarNisDesdeInput?.({ forzar: true, silencioso: false });
+    });
     document.getElementById('ped-padron-btn-buscar')?.addEventListener('click', () => {
         void buscarPorApellidoDesdeUI();
     });
+    document.getElementById('ped-cl-btn-buscar')?.addEventListener('click', () => {
+        void buscarPorTitularDesdeUI();
+    });
+
     document.getElementById('ped-padron-apellido')?.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') {
             ev.preventDefault();
             void buscarPorApellidoDesdeUI();
+        }
+    });
+    document.getElementById('cl')?.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            void buscarPorTitularDesdeUI();
         }
     });
 
@@ -271,11 +331,18 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     syncFraudeAnonimoUI();
 
     window.buscarPadronApellidoNuevoPedido = buscarPorApellidoDesdeUI;
+    window.buscarPadronTitularNuevoPedido = buscarPorTitularDesdeUI;
+    window.buscarPadronNisNuevoPedido = () =>
+        void _nisCtrl?.buscarNisDesdeInput?.({ forzar: true, silencioso: false });
 }
 
 /** Limpieza al cerrar modales (pegamento en app.js closeAll). */
 export function resetPadronNuevoPedidoNisTimers() {
     try {
         _nisCtrl?.resetNisBusquedaState?.();
+    } catch (_) {}
+    try {
+        const out = document.getElementById('ped-padron-resultados');
+        if (out) out.innerHTML = '';
     } catch (_) {}
 }
