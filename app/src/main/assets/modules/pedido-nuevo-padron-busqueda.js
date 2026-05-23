@@ -34,6 +34,7 @@ function escHtml(s) {
  *   esCooperativaElectricaRubro: () => boolean,
  *   esMunicipioRubro: () => boolean,
  *   esCooperativaAguaRubro: () => boolean,
+ *   ensureDistribuidoresCargados?: () => Promise<void>,
  * }} deps
  */
 export function initPedidoNuevoPadronBusqueda(deps) {
@@ -45,6 +46,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         esCooperativaElectrica: deps.esCooperativaElectricaRubro(),
         esMunicipio: deps.esMunicipioRubro(),
         esAgua: deps.esCooperativaAguaRubro(),
+        ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
     });
 
     function syncFraudeAnonimoUI() {

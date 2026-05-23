@@ -12473,6 +12473,7 @@ async function cargarDistribuidores() {
         console.warn('No se pudieron cargar distribuidores:', e.message);
     }
 }
+if (typeof window !== 'undefined') window.cargarDistribuidores = cargarDistribuidores;
 
 async function cargarConfigEmpresa() {
     try {
@@ -17763,6 +17764,11 @@ try {
         esCooperativaElectricaRubro,
         esMunicipioRubro,
         esCooperativaAguaRubro,
+        ensureDistribuidoresCargados: async () => {
+            try {
+                await cargarDistribuidores();
+            } catch (_) {}
+        },
     });
 } catch (_) {}
 
@@ -17783,6 +17789,7 @@ try {
         tenantIdActual,
         fmtInformeFecha,
         neonOk: () => !!NEON_OK,
+        normalizarRubroEmpresa,
         etiquetaNisSocio: () => {
             if (typeof esMunicipioRubro === 'function' && esMunicipioRubro()) return 'ID vecino';
             if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'ID socio';

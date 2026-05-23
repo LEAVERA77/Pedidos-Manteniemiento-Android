@@ -108,6 +108,8 @@ function shellAssetUrls() {
     j('modules/pedido-detalle-derivacion-html.js'),
     j('modules/app-admin-panel-deferred.js'),
     j('modules/gn-panel-docks.js'),
+    j('modules/gn-pedido-match-identificador.js'),
+    j('modules/socios-busqueda-apellido-padron.js'),
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-nuevo-aplicar-padron.js'),
     j('modules/pedido-nuevo-padron-busqueda.js'),

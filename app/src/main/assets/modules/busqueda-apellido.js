@@ -5,8 +5,9 @@
 
 import { esc } from './utils.js';
 import { toast } from './ui-utils.js';
-import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { abrirDetallePedidoPorId } from './gn-abrir-detalle-pedido.js';
+import { sqlPedidosCoincidenConPersona } from './gn-pedido-match-identificador.js';
+import { buscarPersonasPadronPorApellidoFuzzy } from './socios-busqueda-apellido-padron.js';
 
 let _installed = false;
 /** @type {{ html: string, q: string } | null} */
@@ -30,29 +31,6 @@ async function sociosWhereTenantSql(d, alias = 's') {
     return '';
 }
 
-/** Coincidencia pedidos ↔ fila socios (aliases tabla pedidos y socios). */
-function sqlPedidosCoincidenConSocio(aliasP, aliasS) {
-    const p = aliasP;
-    const s = aliasS;
-    return `(
-      (NULLIF(TRIM(${s}.nis_medidor),'') IS NOT NULL AND UPPER(TRIM(COALESCE(${p}.nis_medidor,''))) = UPPER(TRIM(COALESCE(${s}.nis_medidor,''))))
-      OR (NULLIF(TRIM(${s}.nis),'') IS NOT NULL AND UPPER(TRIM(COALESCE(${p}.nis_medidor,''))) = UPPER(TRIM(COALESCE(${s}.nis,''))))
-      OR (NULLIF(TRIM(${s}.medidor),'') IS NOT NULL AND UPPER(TRIM(COALESCE(${p}.nis_medidor,''))) = UPPER(TRIM(COALESCE(${s}.medidor,''))))
-    )`;
-}
-
-/** Coincidencia sobre tabla pedidos sola con valores del socio ya interpolados (esc). */
-function sqlPedidosCoincidenLiterales(socio) {
-    const nm = String(socio.nis_medidor || '').trim();
-    const n = String(socio.nis || '').trim();
-    const m = String(socio.medidor || '').trim();
-    const parts = [];
-    if (nm) parts.push(`UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(nm)}))`);
-    if (n) parts.push(`UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(n)}))`);
-    if (m) parts.push(`UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${esc(m)}))`);
-    return parts.length ? `(${parts.join(' OR ')})` : '(FALSE)';
-}
-
 function estadoEmoji(estado) {
     const e = String(estado || '').toLowerCase();
     if (e.includes('cerr') || e.includes('resuel')) return '✅';
@@ -70,6 +48,7 @@ function estadoEmoji(estado) {
  *   fmtInformeFecha: (v: unknown) => string,
  *   neonOk: () => boolean,
  *   etiquetaNisSocio: () => string,
+ *   normalizarRubroEmpresa?: () => string|null,
  * }} deps
  */
 export function installBusquedaApellidoHistorial(deps) {
@@ -94,38 +73,37 @@ export function installBusquedaApellidoHistorial(deps) {
         out.innerHTML =
             '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando socios…</div>';
         try {
-            const wSoc = await sociosWhereTenantSql(deps, 's');
             const tsql = await deps.pedidosFiltroTenantSql();
-            const matchPs = sqlPedidosCoincidenConSocio('p', 's');
-            const LIM_CAND = 3200;
-            const qBase = `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia
-                FROM socios_catalogo s
-                WHERE COALESCE(s.activo, TRUE) = TRUE
-                ${wSoc}
-                ORDER BY s.nombre NULLS LAST
-                LIMIT ${LIM_CAND}`;
-            const r = await deps.sqlSimple(qBase);
-            const candidatos = (r.rows || []).filter((row) => nombreCoincideFuzzy(raw, row.nombre)).slice(0, 80);
+            const candidatos = await buscarPersonasPadronPorApellidoFuzzy(
+                {
+                    sqlSimple: deps.sqlSimple,
+                    tenantIdActual: deps.tenantIdActual,
+                    esc,
+                    normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
+                },
+                raw
+            );
             if (!candidatos.length) {
-                out.innerHTML = `<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin socios en el catálogo que coincidan con «${escHtml(raw)}».</p>`;
+                out.innerHTML = `<p style="color:var(--tm);margin:.25rem 0;padding:.35rem .5rem;background:var(--bg);border-radius:.4rem;border:1px dashed var(--bo)">Sin socios o vecinos en el padrón que coincidan con «${escHtml(raw)}».</p>`;
                 return;
             }
-            const ids = candidatos.map((x) => Number(x.id)).filter((id) => Number.isFinite(id) && id > 0);
-            const idList = ids.map((id) => esc(id)).join(',');
-            const qCnt = `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia,
-                (
-                  SELECT COUNT(DISTINCT p.id)::int FROM pedidos p
-                  WHERE 1=1 ${tsql} AND ${matchPs}
-                ) AS reclamos_count
-                FROM socios_catalogo s
-                WHERE s.id IN (${idList})`;
-            const r2 = await deps.sqlSimple(qCnt);
-            const byId = new Map((r2.rows || []).map((row) => [Number(row.id), row]));
-            const rows = candidatos.map((c) => byId.get(Number(c.id)) || c);
-            const truncado = (r.rows || []).length >= LIM_CAND;
+            const rows = [];
+            for (const c of candidatos) {
+                const src = c.padronSource === 'clientes_finales' ? 'clientes_finales' : 'socios_catalogo';
+                const lit = sqlPedidosCoincidenConPersona(esc, c);
+                let reclamos_count = 0;
+                try {
+                    const cr = await deps.sqlSimple(
+                        `SELECT COUNT(DISTINCT id)::int AS c FROM pedidos WHERE 1=1 ${tsql} AND ${lit}`
+                    );
+                    reclamos_count = Number(cr.rows?.[0]?.c) || 0;
+                } catch (_) {}
+                rows.push({ ...c, padronSource: src, reclamos_count });
+            }
+            const truncado = candidatos.length >= 80;
             const lblNis = escHtml(deps.etiquetaNisSocio());
             const avisoLim = truncado
-                ? `<p style="font-size:.72rem;color:#b45309;margin:0 0 .4rem;line-height:1.35">Se evaluaron los primeros <strong>${LIM_CAND}</strong> socios del catálogo (orden alfabético). Si falta alguien, refiná la búsqueda o revisá el catálogo.</p>`
+                ? `<p style="font-size:.72rem;color:#b45309;margin:0 0 .4rem;line-height:1.35">Se alcanzó el límite de <strong>80</strong> resultados. Refiná la búsqueda si falta alguien.</p>`
                 : '';
             const head = `<div style="font-size:.78rem;color:var(--tm);margin-bottom:.45rem">${avisoLim}<strong>📋 ${rows.length}</strong> resultado(s) para «${escHtml(raw)}»</div>`;
             const cards = rows
@@ -144,9 +122,11 @@ export function installBusquedaApellidoHistorial(deps) {
                     );
                     const tel = escHtml(String(row.telefono || '').trim());
                     const cnt = Number(row.reclamos_count) || 0;
+                    const src = row.padronSource === 'clientes_finales' ? 'clientes_finales' : 'socios_catalogo';
+                    const srcJs = src.replace(/'/g, "\\'");
                     const btn =
                         Number.isFinite(id) && id > 0
-                            ? `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem" onclick="verReclamosSocio(${id})"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
+                            ? `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem" onclick="verReclamosSocio(${id},'${srcJs}')"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
                             : '';
                     return `<div style="padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin-bottom:.45rem;line-height:1.45">
   <div style="font-weight:700;color:var(--bd)">👤 ${nom}</div>
@@ -167,9 +147,10 @@ export function installBusquedaApellidoHistorial(deps) {
         }
     };
 
-    window.verReclamosSocio = async function verReclamosSocio(socioId) {
+    window.verReclamosSocio = async function verReclamosSocio(socioId, padronSource) {
         const out = outEl();
         const sid = Number(socioId);
+        const src = padronSource === 'clientes_finales' ? 'clientes_finales' : 'socios_catalogo';
         if (!out || !Number.isFinite(sid) || sid <= 0) return;
         if (!deps.neonOk() || typeof deps.sqlSimple !== 'function') {
             toast('Se requiere conexión a la base (Neon).', 'error');
@@ -178,18 +159,42 @@ export function installBusquedaApellidoHistorial(deps) {
         out.innerHTML =
             '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos…</div>';
         try {
-            const wSoc = await sociosWhereTenantSql(deps, 's');
-            const sr = await deps.sqlSimple(
-                `SELECT id, nis_medidor, nis, medidor, nombre FROM socios_catalogo s WHERE s.id = ${esc(sid)} ${wSoc} LIMIT 1`
-            );
-            const socio = sr.rows && sr.rows[0];
+            let socio = null;
+            if (src === 'clientes_finales') {
+                const tid = deps.tenantIdActual();
+                const sr = await deps.sqlSimple(
+                    `SELECT id, nis, medidor, numero_cliente, nombre, apellido
+                     FROM clientes_finales
+                     WHERE id = ${esc(sid)} AND cliente_id = ${esc(tid)} AND COALESCE(activo, TRUE) = TRUE
+                     LIMIT 1`
+                );
+                const row = sr.rows?.[0];
+                if (row) {
+                    socio = {
+                        nombre: [row.nombre, row.apellido]
+                            .map((x) => (x != null ? String(x).trim() : ''))
+                            .filter(Boolean)
+                            .join(' '),
+                        nis: row.nis,
+                        medidor: row.medidor,
+                        nis_medidor: row.medidor || row.nis || row.numero_cliente,
+                        numero_cliente: row.numero_cliente,
+                    };
+                }
+            } else {
+                const wSoc = await sociosWhereTenantSql(deps, 's');
+                const sr = await deps.sqlSimple(
+                    `SELECT id, nis_medidor, nis, medidor, nombre FROM socios_catalogo s WHERE s.id = ${esc(sid)} ${wSoc} LIMIT 1`
+                );
+                socio = sr.rows && sr.rows[0];
+            }
             if (!socio) {
                 out.innerHTML = '<span style="color:var(--re)">Socio no encontrado.</span>';
                 return;
             }
             const nombre = socio.nombre || 'Socio';
             const tsql = await deps.pedidosFiltroTenantSql();
-            const lit = sqlPedidosCoincidenLiterales(socio);
+            const lit = sqlPedidosCoincidenConPersona(esc, socio);
             const qr = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo
                 FROM pedidos
                 WHERE 1=1 ${tsql} AND ${lit}

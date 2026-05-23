@@ -5,6 +5,7 @@
 
 import { toast } from './ui-utils.js';
 import { abrirDetallePedidoPorId } from './gn-abrir-detalle-pedido.js';
+import { sqlWherePedidoCoincideIdentificador } from './gn-pedido-match-identificador.js';
 
 function escHtml(s) {
     return String(s == null ? '' : s)
@@ -39,16 +40,12 @@ export function installAdminSociosHistorialPedidos(deps) {
             '<div style="padding:.5rem;color:var(--tm)"><i class="fas fa-circle-notch fa-spin"></i> Buscando reclamos (incluye cerrados y resueltos)…</div>';
         try {
             const tsql = await deps.pedidosFiltroTenantSql();
-            const q = deps.esc(raw);
+            const idMatch = sqlWherePedidoCoincideIdentificador(deps.esc, raw);
             const r = await deps.sqlSimple(
                 `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo
                  FROM pedidos
                  WHERE 1=1 ${tsql}
-                   AND (
-                     UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${q}))
-                     OR UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${q}))
-                     OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${q}))
-                   )
+                   AND ${idMatch}
                  ORDER BY COALESCE(fecha_cierre, fecha_creacion) DESC NULLS LAST
                  LIMIT 200`
             );
