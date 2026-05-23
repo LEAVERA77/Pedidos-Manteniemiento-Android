@@ -6,6 +6,7 @@
 import { toast } from './ui-utils.js';
 import {
     aplicarCoordenadasPedidoOficina,
+    crearSeleccionMapaDesdeCoords,
     esPedidoNuevoModoOficina,
     geocodificarDireccionPedidoOficina,
     pedirUbicacionAproximadaEnMapaPromesa,
@@ -32,8 +33,8 @@ export function leerCoordenadasPedidoOficinaDesdeDom() {
     if (Number.isFinite(la) && Number.isFinite(lo)) return { lat: la, lng: lo };
 
     const est = document.getElementById('ped-oficina-estado');
-    if (est?.classList.contains('sel')) {
-        const text = est.textContent || '';
+    if (est) {
+        const text = est.textContent || est.innerText || '';
         const m = text.match(/(-?\d+[,.]\d+)\s*,\s*(-?\d+[,.]\d+)/);
         if (m) {
             const lat = parseCoordNum(m[1]);
@@ -42,6 +43,42 @@ export function leerCoordenadasPedidoOficinaDesdeDom() {
         }
     }
     return null;
+}
+
+/**
+ * Garantiza window.app.sel antes del INSERT (oficina puede tener #li/#gi sin Leaflet listo).
+ * @param {{ ok?: boolean, lat?: number, lng?: number }} [prep]
+ */
+export function asegurarAppSelParaGuardarPedido(prep) {
+    try {
+        if (window.app?.sel) {
+            const la = Number(window.app.sel.lat);
+            const lo = Number(window.app.sel.lng);
+            if (Number.isFinite(la) && Number.isFinite(lo)) return true;
+        }
+    } catch (_) {}
+
+    if (prep?.ok && Number.isFinite(prep.lat) && Number.isFinite(prep.lng)) {
+        const sel = crearSeleccionMapaDesdeCoords(prep.lat, prep.lng);
+        if (sel && window.app) {
+            window.app.sel = sel;
+            return true;
+        }
+    }
+
+    const c = leerCoordenadasPedidoOficinaDesdeDom();
+    if (c) {
+        const sel = crearSeleccionMapaDesdeCoords(c.lat, c.lng);
+        if (sel && window.app) {
+            window.app.sel = sel;
+            const li = document.getElementById('li');
+            const gi = document.getElementById('gi');
+            if (li) li.value = String(c.lat);
+            if (gi) gi.value = String(c.lng);
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -66,6 +103,7 @@ export async function prepararUbicacionSubmitPedidoOficina(deps) {
     let coords = leerCoordenadasPedidoOficinaDesdeDom();
     if (coords) {
         await aplicarCoordenadasPedidoOficina(deps, coords.lat, coords.lng, { silencioso: true });
+        asegurarAppSelParaGuardarPedido({ ok: true, lat: coords.lat, lng: coords.lng });
         return { ok: true, lat: coords.lat, lng: coords.lng, fuente: 'estado' };
     }
 
@@ -77,6 +115,7 @@ export async function prepararUbicacionSubmitPedidoOficina(deps) {
     coords = leerCoordenadasPedidoOficinaDesdeDom();
     if (coords) {
         await aplicarCoordenadasPedidoOficina(deps, coords.lat, coords.lng, { silencioso: true });
+        asegurarAppSelParaGuardarPedido({ ok: true, lat: coords.lat, lng: coords.lng });
         return { ok: true, lat: coords.lat, lng: coords.lng, fuente: 'estado' };
     }
 
@@ -88,6 +127,7 @@ export async function prepararUbicacionSubmitPedidoOficina(deps) {
 
     const pick = await pedirUbicacionAproximadaEnMapaPromesa(deps);
     if (pick?.ok && Number.isFinite(pick.lat) && Number.isFinite(pick.lng)) {
+        asegurarAppSelParaGuardarPedido({ ok: true, lat: pick.lat, lng: pick.lng });
         return { ok: true, lat: pick.lat, lng: pick.lng, fuente: 'mapa' };
     }
 

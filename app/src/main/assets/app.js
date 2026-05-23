@@ -167,6 +167,7 @@ import {
 import {
     prepararUbicacionSubmitPedidoOficina,
     finalizarPedidoOficinaTrasGuardar,
+    asegurarAppSelParaGuardarPedido,
 } from './modules/pedido-oficina-guardar-ubicacion.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 
@@ -8979,8 +8980,13 @@ function _bindPedidoFormSubmit() {
         btn.disabled = false;
         return;
     }
-    if (!app.sel) {
-        toast('Selecciona ubicación en el mapa', 'error');
+    if (!asegurarAppSelParaGuardarPedido(prepUbic)) {
+        toast(
+            eraPedidoOficina
+                ? 'Falta la ubicación: usá «Buscar dirección» o «Marcar en mapa».'
+                : 'Selecciona ubicación en el mapa',
+            'error'
+        );
         btn.disabled = false;
         return;
     }

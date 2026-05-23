@@ -30,7 +30,12 @@ export function mountPedidoFormularioEnDom() {
 }
 
 export function esPedidoNuevoModoOficina() {
-    return _modoOficina;
+    if (_modoOficina) return true;
+    try {
+        const mo = document.getElementById('pm-oficina');
+        if (mo?.classList.contains('active')) return true;
+    } catch (_) {}
+    return false;
 }
 
 function esEntornoWebPublico() {
@@ -138,15 +143,29 @@ function buildQueryDireccion() {
  * @param {number} lng
  * @param {{ silencioso?: boolean }} [opts]
  */
+/** @param {number} lat @param {number} lng */
+export function crearSeleccionMapaDesdeCoords(lat, lng) {
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return null;
+    const Lref = typeof window !== 'undefined' ? window.L : null;
+    if (Lref && typeof Lref.latLng === 'function') {
+        try {
+            return Lref.latLng(la, lo);
+        } catch (_) {}
+    }
+    return { lat: la, lng: lo };
+}
+
 export async function aplicarCoordenadasPedidoOficina(deps, lat, lng, opts = {}) {
     const la = Number(lat);
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
-    const Lref = typeof window !== 'undefined' ? window.L : null;
-    if (!Lref || typeof Lref.latLng !== 'function') return false;
 
+    const sel = crearSeleccionMapaDesdeCoords(la, lo);
+    if (!sel) return false;
     if (typeof window !== 'undefined' && window.app) {
-        window.app.sel = Lref.latLng(la, lo);
+        window.app.sel = sel;
     }
 
     const li = document.getElementById('li');
