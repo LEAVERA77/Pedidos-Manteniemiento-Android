@@ -7,6 +7,7 @@ import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-pad
 import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { resolverYSeleccionarDistribuidorDi2 } from './padron-distribuidor-resolver.js';
 import { seleccionarBarrioMunicipioDi2 } from './padron-barrio-municipio.js';
+import { rubroPadronActivo } from './padron-rubro-helpers.js';
 
 /**
  * @param {{
@@ -29,7 +30,7 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             await deps.ensureDistribuidoresCargados();
         } catch (_) {}
     }
-    const rubro = deps.normalizarRubroEmpresa?.() || null;
+    const rubro = rubroPadronActivo(deps);
     const opts = {
         esCooperativaElectrica:
             typeof deps.esCooperativaElectricaRubro === 'function'
@@ -48,11 +49,20 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
 
     if (opts.esCooperativaElectrica) {
         const tf = document.getElementById('trafo-pedido');
-        if (tf && full.transformador) tf.value = String(full.transformador).trim();
-        await resolverYSeleccionarDistribuidorDi2(deps, {
-            distribuidorCatalogo: full.distribuidor_codigo,
-            transformador: full.transformador,
-        });
+        const trafoTxt =
+            full.transformador != null && String(full.transformador).trim()
+                ? String(full.transformador).trim()
+                : '';
+        if (tf) {
+            tf.value = trafoTxt;
+            tf.removeAttribute('placeholder');
+        }
+        if (trafoTxt || full.distribuidor_codigo) {
+            await resolverYSeleccionarDistribuidorDi2(deps, {
+                distribuidorCatalogo: full.distribuidor_codigo,
+                transformador: full.transformador,
+            });
+        }
     }
 
     if (opts.esMunicipio) {

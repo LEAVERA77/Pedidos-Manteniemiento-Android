@@ -77,6 +77,12 @@ function buildSelectList(cols, distSqlExpr) {
     ? "NULLIF(TRIM(COALESCE(s.tipo_conexion::text,'')), '') AS tipo_conexion"
     : "NULL::text AS tipo_conexion";
   const fSel = cols.has("fases") ? "NULLIF(TRIM(COALESCE(s.fases::text,'')), '') AS fases" : "NULL::text AS fases";
+  const trSel = cols.has("transformador")
+    ? "NULLIF(TRIM(COALESCE(s.transformador::text,'')), '') AS transformador"
+    : "NULL::text AS transformador";
+  const distSel = cols.has("distribuidor_codigo")
+    ? "NULLIF(TRIM(COALESCE(s.distribuidor_codigo::text,'')), '') AS distribuidor_codigo"
+    : "NULL::text AS distribuidor_codigo";
   return `
         s.id,
         NULLIF(TRIM(COALESCE(s.nombre::text,'')), '') AS nombre,
@@ -94,7 +100,9 @@ function buildSelectList(cols, distSqlExpr) {
         ${medSel},
         ${nmSel},
         ${tcSel},
-        ${fSel}`;
+        ${fSel},
+        ${trSel},
+        ${distSel}`;
 }
 
 /**
@@ -168,6 +176,9 @@ function normalizeCatalogRow(x) {
     nis_medidor: x.nis_medidor != null ? String(x.nis_medidor).trim() || null : null,
     tipo_conexion: x.tipo_conexion != null ? String(x.tipo_conexion).trim() || null : null,
     fases: x.fases != null ? String(x.fases).trim() || null : null,
+    transformador: x.transformador != null ? String(x.transformador).trim() || null : null,
+    distribuidor_codigo:
+      x.distribuidor_codigo != null ? String(x.distribuidor_codigo).trim() || null : null,
   };
 }
 

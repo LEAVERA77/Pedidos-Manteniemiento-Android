@@ -14,6 +14,7 @@ let _installed = false;
 let _nisUltimoValor = '';
 let _nisDebounce = null;
 let _nisCommitTimer = null;
+let _aplicandoPadron = false;
 
 function escHtml(s) {
     return String(s == null ? '' : s)
@@ -112,6 +113,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     }
 
     async function aplicarMatch(row) {
+        _aplicandoPadron = true;
         const padronDeps = {
             sqlSimple: deps.sqlSimple,
             esc: deps.esc,
@@ -123,11 +125,15 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
             ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
         };
-        const ident = await aplicarPadronAlPedidoNuevo(padronDeps, row);
-        _nisUltimoValor = ident || _nisUltimoValor;
-        const out = document.getElementById('ped-padron-resultados');
-        if (out) out.innerHTML = '';
-        toast('Datos del padrón aplicados al formulario', 'success');
+        try {
+            const ident = await aplicarPadronAlPedidoNuevo(padronDeps, row);
+            _nisUltimoValor = ident || _nisUltimoValor;
+            const out = document.getElementById('ped-padron-resultados');
+            if (out) out.innerHTML = '';
+            toast('Datos del padrón aplicados al formulario', 'success');
+        } finally {
+            _aplicandoPadron = false;
+        }
     }
 
     async function buscarPorApellidoDesdeUI() {
@@ -144,11 +150,11 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         }
         try {
             let matches = [];
-            if (!deps.modoOffline() && deps.neonOk()) {
-                matches = (await fetchPadronApi('/api/padron-pedido/buscar-nombre', raw)) || [];
-            }
-            if (!matches.length && deps.neonOk() && typeof deps.sqlSimple === 'function') {
+            if (deps.neonOk() && typeof deps.sqlSimple === 'function') {
                 matches = await buscarNombreSqlLocal(raw);
+            }
+            if (!matches.length && !deps.modoOffline()) {
+                matches = (await fetchPadronApi('/api/padron-pedido/buscar-nombre', raw)) || [];
             }
             renderResultados(matches, (m) => void aplicarMatch(m));
         } catch (e) {
@@ -276,6 +282,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     }
 
     async function rellenarDesdeSociosCatalogo(raw, opts = {}) {
+        if (_aplicandoPadron) return;
         const forzar = !!(opts && opts.forzar);
         const r = rubro();
         if (!r || deps.modoOffline() || !deps.neonOk()) return;
@@ -344,7 +351,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     }
 
     function programarRellenoDebounced() {
-        if (!rubro()) return;
+        if (_aplicandoPadron || !rubro()) return;
         clearTimeout(_nisDebounce);
         _nisDebounce = setTimeout(() => {
             void rellenarDesdeSociosCatalogo({ forzar: false });
