@@ -742,9 +742,9 @@
           <div style="min-width:min(100%,220px)">
             <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.35rem">
               <span style="display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;background:#2563eb;color:#fff;border-radius:.5rem;font-size:1rem"><i class="fas fa-search-location"></i></span>
-              <strong style="color:var(--bd);font-size:.95rem">Reclamos por NIS o medidor</strong>
+              <strong style="color:var(--bd);font-size:.95rem">Padrón y reclamos</strong>
             </div>
-            <p style="font-size:.78rem;color:var(--tm);margin:0;line-height:1.45">Buscá y tocá un pedido para abrirlo en el mapa y operar (asignar técnico, avance, cierre, etc.). <kbd style="font-size:.7rem;padding:.1rem .25rem;border:1px solid var(--bo);border-radius:.2rem;background:var(--bg)">Enter</kbd> también ejecuta la búsqueda.</p>
+            <p style="font-size:.78rem;color:var(--tm);margin:0;line-height:1.45">Buscá por identificador (NIS, socio o vecino según rubro) o por apellido. Los reclamos se abren en el mapa. <kbd style="font-size:.7rem;padding:.1rem .25rem;border:1px solid var(--bo);border-radius:.2rem;background:var(--bg)">Enter</kbd> en el identificador ejecuta la búsqueda.</p>
           </div>
         </div>
         <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.75rem">
@@ -752,7 +752,8 @@
             <label for="historial-nis-input" id="historial-nis-label" style="font-size:.78rem;font-weight:600;color:var(--tm)">NIS o medidor</label>
             <input type="text" id="historial-nis-input" placeholder="Ej: 700000010" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem">
           </div>
-          <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()" style="padding:.55rem 1.1rem;font-weight:600"><i class="fas fa-search"></i> Buscar reclamos</button>
+          <button type="button" class="btn-sm primary" id="btn-buscar-padron-ident" onclick="buscarPadronPorIdentificador()" style="padding:.55rem 1.1rem;font-weight:600;background:#1d4ed8;border-color:#1d4ed8" title="Busca en el catálogo de socios o vecinos"><i class="fas fa-id-card"></i> Buscar en padrón</button>
+          <button type="button" class="btn-sm primary" onclick="buscarHistorialPorNIS()" style="padding:.55rem 1.1rem;font-weight:600"><i class="fas fa-list"></i> Ver reclamos</button>
         </div>
         <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.55rem;padding-top:.55rem;border-top:1px dashed #93c5fd">
           <div style="flex:1;min-width:220px">
@@ -761,6 +762,7 @@
             <p style="font-size:.72rem;color:var(--tl);margin:.25rem 0 0;line-height:1.35">Todos los rubros: catálogo de socios y, en municipio/agua, también clientes finales. Tolerancia a tildes y errores (Levenshtein).</p>
           </div>
           <button type="button" class="btn-sm primary" onclick="buscarPorApellido()" style="padding:.55rem 1.1rem;font-weight:600;background:#059669;border-color:#059669"><i class="fas fa-search"></i> Buscar por apellido</button>
+          <button type="button" class="btn-sm primary" id="btn-buscar-padron-ident-apellido" onclick="buscarPadronPorIdentificador()" style="padding:.55rem 1.1rem;font-weight:600;background:#1d4ed8;border-color:#1d4ed8" title="Usa el campo de identificador de arriba"><i class="fas fa-id-card"></i> <span class="btn-padron-ident-lbl">NIS o medidor</span></button>
         </div>
         <div id="historial-apellido-result" role="region" aria-label="Resultados de búsqueda por apellido" style="margin-top:.5rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
         <div id="historial-nis-result" role="region" aria-label="Resultados de reclamos" style="margin-top:.85rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
