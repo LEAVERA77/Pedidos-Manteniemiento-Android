@@ -128,7 +128,9 @@ export async function mergeDistribuidoresRedFromExcelBuffer(buffer, tenantId, cl
   const ordered = [...byCod.keys()].sort();
 
   for (const cod of ordered) {
-    const p = byCod.get(cod);
+    const p = /** @type {{ codigo: string, nombre: string, localidad: string|null, nivel_tension: number, trafos: number, kva: number, clientes: number }} */ (
+      byCod.get(cod)
+    );
     const ex = await client.query(`SELECT * FROM distribuidores_red WHERE tenant_id = $1 AND codigo = $2 LIMIT 1`, [
       tenantId,
       cod,
@@ -184,6 +186,29 @@ export async function mergeDistribuidoresRedFromExcelBuffer(buffer, tenantId, cl
     actualizados++;
   }
 
+  /** En BD pero no en el Excel: no se borran aquí; el admin confirma baja en el front. */
+  const ausentes_en_excel = [];
+  const dbAll = await client.query(
+    `SELECT codigo, nombre, localidad, nivel_tension, trafos, kva, clientes
+     FROM distribuidores_red WHERE tenant_id = $1 ORDER BY codigo`,
+    [tenantId]
+  );
+  for (const row of dbAll.rows || []) {
+    const c = String(row.codigo || "")
+      .trim()
+      .toUpperCase();
+    if (!c || byCod.has(c)) continue;
+    ausentes_en_excel.push({
+      codigo: row.codigo,
+      nombre: row.nombre,
+      localidad: row.localidad,
+      nivel_tension: row.nivel_tension,
+      trafos: row.trafos,
+      kva: row.kva,
+      clientes: row.clientes,
+    });
+  }
+
   return {
     insertados,
     actualizados,
@@ -191,5 +216,25 @@ export async function mergeDistribuidoresRedFromExcelBuffer(buffer, tenantId, cl
     errores,
     total: byCod.size,
     total_excel_filas: rows.length,
+    ausentes_en_excel,
+    eliminados: 0,
   };
+}
+
+/**
+ * Quita de distribuidores_red los códigos confirmados por el admin (dados de baja).
+ * @param {number} tenantId
+ * @param {string[]} codigos
+ * @param {import("pg").PoolClient} client
+ */
+export async function eliminarDistribuidoresRedPorCodigos(tenantId, codigos, client) {
+  const codes = [...new Set(codigos.map((c) => String(c || "").trim().toUpperCase()).filter(Boolean))];
+  if (!codes.length) return { eliminados: 0, codigos: [] };
+  const r = await client.query(
+    `DELETE FROM distribuidores_red
+     WHERE tenant_id = $1 AND UPPER(TRIM(codigo)) = ANY($2::text[])
+     RETURNING codigo`,
+    [tenantId, codes]
+  );
+  return { eliminados: (r.rows || []).length, codigos: (r.rows || []).map((x) => x.codigo) };
 }

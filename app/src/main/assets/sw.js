@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v186';
-const SW_VERSION  = '1.8.41';
+const CACHE_SHELL = 'pmg-shell-v187';
+const SW_VERSION  = '1.8.42';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -95,6 +95,7 @@ function shellAssetUrls() {
     j('modules/admin-distribuidores-formato.js'),
     j('modules/admin-saidi-distrib-excel.js'),
     j('modules/admin-red-electrica-infra.js'),
+    j('modules/admin-red-electrica-import-flow.js'),
     j('modules/admin-socios-listado-api.js'),
     j('modules/admin-socios-tab-load.js'),
     j('modules/estadisticas-datos-red-saifi.js'),

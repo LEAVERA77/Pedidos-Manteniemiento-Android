@@ -322,19 +322,27 @@
         </select>
       </div>
       <div class="fg"><label for="nis" id="lbl-nis">NIS / Medidor</label>
-        <input type="text" id="nis" maxlength="80" enterkeyhint="next" autocomplete="off" inputmode="text" placeholder="Opcional — NIS, medidor o N° socio; al salir busca en el padrón">
+        <div class="ped-campo-busqueda-row">
+          <input type="text" id="nis" maxlength="80" enterkeyhint="search" autocomplete="off" inputmode="text" placeholder="NIS, medidor o N° socio — Enter o Buscar">
+          <button type="button" id="ped-nis-btn-buscar" class="btn-sm ped-btn-buscar" title="Buscar en el padrón de socios"><i class="fas fa-search"></i> Buscar</button>
+        </div>
       </div>
       <div class="fg" id="ped-padron-busqueda-wrap">
-        <label for="ped-padron-apellido"><i class="fas fa-search"></i> Buscar titular en padrón (opcional)</label>
-        <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
-          <input type="text" id="ped-padron-apellido" maxlength="120" enterkeyhint="search" autocomplete="off" placeholder="Apellido o nombre — tolera errores de tipeo" style="flex:1;min-width:10rem">
-          <button type="button" id="ped-padron-btn-buscar" class="btn-sm" style="white-space:nowrap"><i class="fas fa-search"></i> Buscar</button>
+        <label for="ped-padron-apellido"><i class="fas fa-search"></i> Buscar por apellido o nombre (opcional)</label>
+        <div class="ped-campo-busqueda-row">
+          <input type="text" id="ped-padron-apellido" maxlength="120" enterkeyhint="search" autocomplete="off" placeholder="Apellido o nombre — tolera errores de tipeo">
+          <button type="button" id="ped-padron-btn-buscar" class="btn-sm ped-btn-buscar" title="Buscar en el padrón"><i class="fas fa-search"></i> Buscar</button>
         </div>
         <div id="ped-padron-resultados" class="ped-padron-resultados" aria-live="polite"></div>
       </div>
       <div class="fg"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" readonly placeholder="Se completa con NIS en catálogo" style="background:var(--bg2,#f1f5f9);cursor:default"></div>
       <div class="fr">
-        <div class="fg hf"><label for="cl" id="lbl-cl">Nombre y apellido</label><input type="text" id="cl" placeholder="Titular del reclamo"></div>
+        <div class="fg hf"><label for="cl" id="lbl-cl">Nombre y apellido</label>
+          <div class="ped-campo-busqueda-row">
+            <input type="text" id="cl" enterkeyhint="search" autocomplete="name" placeholder="Titular del reclamo — Enter o Buscar en padrón">
+            <button type="button" id="ped-cl-btn-buscar" class="btn-sm ped-btn-buscar" title="Buscar titular en el padrón"><i class="fas fa-search"></i> Buscar</button>
+          </div>
+        </div>
       </div>
       <div class="fr">
         <div class="fg hf"><label for="ped-cli-calle">Calle</label><input type="text" id="ped-cli-calle" maxlength="200" placeholder="Opcional"></div>

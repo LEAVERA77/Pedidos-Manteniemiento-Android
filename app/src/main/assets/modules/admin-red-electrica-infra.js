@@ -3,14 +3,10 @@
  * made by leavera77
  */
 
+import { importarExcelRedElectricaConConfirmacion } from "./admin-red-electrica-import-flow.js";
+
 /** @type {boolean} */
 let _bound = false;
-
-function numFallback(a, b) {
-  const v = a != null ? a : b;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function escCell(s) {
   return String(s != null ? s : "")
@@ -49,49 +45,9 @@ export function initAdminRedElectricaInfra(d) {
       d.toast("Iniciá sesión con API (token) para importar", "error");
       return;
     }
-    const fd = new FormData();
-    fd.append("file", f, f.name);
     btn.disabled = true;
-    if (out) {
-      out.textContent = "Procesando…";
-      out.style.display = "block";
-    }
     try {
-      const url = String(d.apiUrl("/api/admin/importar-red-electrica") || "").replace(/\/+$/, "");
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${tok}` },
-        body: fd,
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const msg = [j.error, j.hint, j.detail].filter(Boolean).join(" — ");
-        throw new Error(msg || `HTTP ${r.status}`);
-      }
-      if (out) out.textContent = JSON.stringify(j, null, 2);
-      const ins = numFallback(j.insertados, j.inserted);
-      const act = numFallback(j.actualizados, j.updated);
-      const unc = numFallback(j.sin_cambios, j.unchanged);
-      const totalReportado = numFallback(j.total, j.total_excel_filas);
-      const totalInferido = totalReportado > 0 ? totalReportado : ins + act + unc;
-      let toastMsg;
-      if (ins === 0 && act === 0 && unc > 0) {
-        if (totalInferido > 0 && unc >= totalInferido) {
-          toastMsg = `Red eléctrica: importación correcta. Las ${unc} fila(s) del Excel ya coinciden con la base (sin cambios). No se insertó ni actualizó nada. Si esperabas cambios, revisá códigos o valores en el archivo.`;
-        } else {
-          toastMsg = `Red eléctrica: +0 nuevos, 0 actualizados, ${unc} sin cambios.`;
-        }
-      } else {
-        toastMsg = `Red eléctrica: +${ins} nuevos, ${act} actualizados, ${unc} sin cambios.`;
-      }
-      d.toast(toastMsg, "success", ins + act === 0 && unc > 0 ? 8500 : 5000);
-      await cargarListaRedElectricaInfra(d);
-      try {
-        window.dispatchEvent(new CustomEvent("gn-red-electrica-actualizada"));
-      } catch (_) {}
-      try {
-        if (typeof window.cargarDistribuidores === "function") void window.cargarDistribuidores();
-      } catch (_) {}
+      await importarExcelRedElectricaConConfirmacion(d, f, out);
     } catch (e) {
       d.toastError("admin-red-electrica", e, "No se pudo importar");
       if (out) out.textContent = String(e && e.message ? e.message : e);

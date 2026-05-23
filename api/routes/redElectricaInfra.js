@@ -7,7 +7,10 @@ import express from "express";
 import multer from "multer";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
-import { mergeDistribuidoresRedFromExcelBuffer } from "../services/distribuidoresRedElectricaExcelMerge.js";
+import {
+  mergeDistribuidoresRedFromExcelBuffer,
+  eliminarDistribuidoresRedPorCodigos,
+} from "../services/distribuidoresRedElectricaExcelMerge.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -37,6 +40,28 @@ router.post("/importar-red-electrica", adminOnly, upload.single("file"), async (
     res.json(out);
   } catch (error) {
     res.status(500).json({ error: "No se pudo importar red eléctrica", detail: error.message });
+  }
+});
+
+router.post("/red-electrica/dar-de-baja", adminOnly, async (req, res) => {
+  try {
+    if (!(await tablaDistribuidoresRedExiste())) {
+      return res.status(503).json({
+        error: "Tabla distribuidores_red no existe",
+        hint: "Ejecutá en Neon: api/db/migrations/distribuidores_red.sql",
+      });
+    }
+    const codigos = Array.isArray(req.body?.codigos) ? req.body.codigos : [];
+    if (!codigos.length) {
+      return res.status(400).json({ error: "Indicá al menos un código en codigos[]" });
+    }
+    let out;
+    await withTransaction(async (client) => {
+      out = await eliminarDistribuidoresRedPorCodigos(req.tenantId, codigos, client);
+    });
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo dar de baja en red eléctrica", detail: error.message });
   }
 });
 

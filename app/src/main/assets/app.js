@@ -7315,6 +7315,9 @@ async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
     try {
         resetPedidoNuevoOficinaUi();
     } catch (_) {}
+    try {
+        resetPadronNuevoPedidoNisTimers();
+    } catch (_) {}
     const li = document.getElementById('li');
     const gi = document.getElementById('gi');
     const pm = document.getElementById('pm');

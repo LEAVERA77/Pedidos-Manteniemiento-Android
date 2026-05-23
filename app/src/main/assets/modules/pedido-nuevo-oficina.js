@@ -388,6 +388,9 @@ export async function abrirPedidoNuevoOficina(deps) {
         return;
     }
     mountPedidoFormularioEnDom();
+    try {
+        resetPadronNuevoPedidoNisTimers();
+    } catch (_) {}
     if (_mapPickHandler && window.app?.map) {
         try {
             window.app.map.off('click', _mapPickHandler);
