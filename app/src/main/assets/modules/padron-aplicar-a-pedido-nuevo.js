@@ -42,7 +42,7 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             typeof deps.esCooperativaAguaRubro === 'function'
                 ? deps.esCooperativaAguaRubro()
                 : rubro === 'cooperativa_agua',
-        ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
+        delegarZonaDi2: true,
     };
 
     const ident = aplicarPadronAlFormularioNuevoPedido(full, opts);
@@ -61,6 +61,7 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             await resolverYSeleccionarDistribuidorDi2(deps, {
                 distribuidorCatalogo: full.distribuidor_codigo,
                 transformador: full.transformador,
+                localidad: full.localidad,
             });
         }
     }

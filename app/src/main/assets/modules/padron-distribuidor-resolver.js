@@ -3,7 +3,7 @@
  * made by leavera77
  */
 
-import { seleccionarDistribuidorPorCodigo } from './pedido-nuevo-aplicar-padron.js';
+import { asegurarOpcionDi2, seleccionarDistribuidorPorCodigo } from './pedido-nuevo-aplicar-padron.js';
 
 /** @param {string} s */
 function norm(s) {
@@ -25,6 +25,18 @@ function partesDistribuidorCatalogo(catalogo) {
         codePart: (split[0] || '').trim(),
         namePart: split.slice(1).join(' - ').trim(),
     };
+}
+
+/** @param {string} trafo */
+function variantesCodigoTrafo(trafo) {
+    const t = String(trafo || '').trim();
+    if (!t) return [];
+    const out = [t];
+    const core = t.replace(/^TR-?/i, '').trim();
+    if (core && core !== t) {
+        out.push(`TR-${core}`, core);
+    }
+    return [...new Set(out)];
 }
 
 /**
@@ -73,12 +85,87 @@ function matchDi2PorNombreRed(di2, namePart) {
 }
 
 /**
+ * @param {HTMLSelectElement|null} di2
+ * @param {string} localidad
+ */
+function matchDi2PorLocalidadUnica(di2, localidad) {
+    if (!di2 || !localidad) return false;
+    const loc = norm(localidad);
+    if (!loc) return false;
+    const options = Array.from(di2.options).filter((o) => o.value);
+    const cands = options.filter((o) => {
+        const t = norm(o.textContent || '');
+        const after = t.includes(' - ') ? t.split(' - ').slice(1).join(' - ').trim() : t;
+        return after === loc;
+    });
+    if (cands.length === 1) {
+        di2.value = cands[0].value;
+        try {
+            di2.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (_) {}
+        return true;
+    }
+    return false;
+}
+
+/**
  * @param {{
  *   sqlSimple?: Function,
  *   esc?: (v: unknown) => string,
  *   tenantIdActual?: () => number,
  * }} deps
- * @param {{ distribuidorCatalogo?: string|null, transformador?: string|null, di2?: HTMLSelectElement|null }} p
+ * @param {string} trafo
+ */
+async function codigoDistribuidorPorTrafo(deps, trafo) {
+    if (!trafo || typeof deps.sqlSimple !== 'function' || typeof deps.esc !== 'function') return null;
+    const tid = deps.tenantIdActual?.();
+    const conTenant =
+        Number.isFinite(Number(tid)) && Number(tid) > 0
+            ? ` AND t.tenant_id = ${deps.esc(tid)}`
+            : '';
+    const variantes = variantesCodigoTrafo(trafo);
+    const intentos = conTenant ? [conTenant, ''] : [''];
+    for (const wf of intentos) {
+        for (const tv of variantes) {
+            try {
+                const r = await deps.sqlSimple(
+                    `SELECT d.codigo
+                     FROM infra_transformadores t
+                     INNER JOIN distribuidores d ON d.id = t.distribuidor_id
+                     WHERE COALESCE(t.activo, TRUE) = TRUE AND COALESCE(d.activo, TRUE) = TRUE${wf}
+                       AND UPPER(TRIM(t.codigo)) = UPPER(TRIM(${deps.esc(tv)}))
+                     LIMIT 1`
+                );
+                const cod = r.rows?.[0]?.codigo;
+                if (cod) return String(cod).trim();
+            } catch (_) {}
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {HTMLSelectElement|null} di2
+ * @param {string} catalogo
+ */
+function fijarDi2DesdeCatalogo(di2, catalogo) {
+    const { raw } = partesDistribuidorCatalogo(catalogo);
+    if (!raw) return false;
+    return asegurarOpcionDi2(di2, raw, raw);
+}
+
+/**
+ * @param {{
+ *   sqlSimple?: Function,
+ *   esc?: (v: unknown) => string,
+ *   tenantIdActual?: () => number,
+ * }} deps
+ * @param {{
+ *   distribuidorCatalogo?: string|null,
+ *   transformador?: string|null,
+ *   localidad?: string|null,
+ *   di2?: HTMLSelectElement|null,
+ * }} p
  * @returns {Promise<boolean>}
  */
 export async function resolverYSeleccionarDistribuidorDi2(deps, p) {
@@ -86,60 +173,46 @@ export async function resolverYSeleccionarDistribuidorDi2(deps, p) {
     if (!di2) return false;
     const cat = p.distribuidorCatalogo != null ? String(p.distribuidorCatalogo).trim() : '';
     const trafo = p.transformador != null ? String(p.transformador).trim() : '';
+    const localidad = p.localidad != null ? String(p.localidad).trim() : '';
 
     if (cat && fijarDi2(di2, cat)) return true;
 
     const { codePart, namePart } = partesDistribuidorCatalogo(cat);
 
-    if (typeof deps.sqlSimple === 'function' && typeof deps.esc === 'function') {
-        if (trafo) {
-            try {
-                const tid = deps.tenantIdActual?.();
-                const wf =
-                    Number.isFinite(Number(tid)) && Number(tid) > 0
-                        ? ` AND t.tenant_id = ${deps.esc(tid)}`
-                        : '';
-                const r = await deps.sqlSimple(
-                    `SELECT d.codigo
-                     FROM infra_transformadores t
-                     INNER JOIN distribuidores d ON d.id = t.distribuidor_id
-                     WHERE COALESCE(t.activo, TRUE) = TRUE AND COALESCE(d.activo, TRUE) = TRUE${wf}
-                       AND UPPER(TRIM(t.codigo)) = UPPER(TRIM(${deps.esc(trafo)}))
-                     LIMIT 1`
-                );
-                const cod = r.rows?.[0]?.codigo;
-                if (cod && fijarDi2(di2, String(cod))) return true;
-            } catch (_) {}
-        }
+    if (trafo) {
+        const codTrafo = await codigoDistribuidorPorTrafo(deps, trafo);
+        if (codTrafo && fijarDi2(di2, codTrafo)) return true;
+    }
 
-        if (cat) {
-            try {
-                const conds = [];
-                if (codePart) {
-                    conds.push(`UPPER(TRIM(codigo)) = UPPER(TRIM(${deps.esc(codePart)}))`);
+    if (typeof deps.sqlSimple === 'function' && typeof deps.esc === 'function' && cat) {
+        try {
+            const conds = [];
+            if (codePart) {
+                conds.push(`UPPER(TRIM(codigo)) = UPPER(TRIM(${deps.esc(codePart)}))`);
+            }
+            if (namePart) {
+                conds.push(`nombre ILIKE ${deps.esc(`%${namePart}%`)}`);
+                for (const w of namePart.split(/\s+/).filter((x) => x.length >= 4)) {
+                    conds.push(`nombre ILIKE ${deps.esc(`%${w}%`)}`);
                 }
-                if (namePart) {
-                    conds.push(`nombre ILIKE ${deps.esc(`%${namePart}%`)}`);
-                    for (const w of namePart.split(/\s+/).filter((x) => x.length >= 4)) {
-                        conds.push(`nombre ILIKE ${deps.esc(`%${w}%`)}`);
-                    }
+            }
+            if (conds.length) {
+                const r = await deps.sqlSimple(
+                    `SELECT codigo, nombre FROM distribuidores
+                     WHERE COALESCE(activo, TRUE) = TRUE AND (${conds.join(' OR ')})
+                     ORDER BY codigo LIMIT 8`
+                );
+                for (const row of r.rows || []) {
+                    if (fijarDi2(di2, row.codigo)) return true;
+                    if (row.nombre && matchDi2PorNombreRed(di2, row.nombre)) return true;
                 }
-                if (conds.length) {
-                    const r = await deps.sqlSimple(
-                        `SELECT codigo, nombre FROM distribuidores
-                         WHERE COALESCE(activo, TRUE) = TRUE AND (${conds.join(' OR ')})
-                         ORDER BY codigo LIMIT 8`
-                    );
-                    for (const row of r.rows || []) {
-                        if (fijarDi2(di2, row.codigo)) return true;
-                        if (row.nombre && matchDi2PorNombreRed(di2, row.nombre)) return true;
-                    }
-                }
-            } catch (_) {}
-        }
+            }
+        } catch (_) {}
     }
 
     if (namePart && matchDi2PorNombreRed(di2, namePart)) return true;
-    if (cat) return seleccionarDistribuidorPorCodigo(cat, di2, { retriesLeft: 8 });
+    if (localidad && matchDi2PorLocalidadUnica(di2, localidad)) return true;
+    if (cat && seleccionarDistribuidorPorCodigo(cat, di2, { retriesLeft: 2 })) return true;
+    if (cat) return fijarDi2DesdeCatalogo(di2, cat);
     return false;
 }

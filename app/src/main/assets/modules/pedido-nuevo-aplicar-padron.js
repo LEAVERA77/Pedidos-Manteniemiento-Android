@@ -100,6 +100,35 @@ export function seleccionarDistribuidorPorCodigo(cod, di2, opts = {}) {
 }
 
 /**
+ * Añade o selecciona una opción en #di2 (p. ej. barrio o "D120 - Red …" del padrón).
+ * @param {HTMLSelectElement|null} di2
+ * @param {string} value
+ * @param {string} [label]
+ */
+export function asegurarOpcionDi2(di2, value, label) {
+    if (!di2) return false;
+    const v = String(value || '').trim();
+    if (!v) return false;
+    const lbl = String(label || v).trim();
+    let opt = Array.from(di2.options).find((o) => String(o.value || '').trim() === v);
+    if (!opt) {
+        opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = lbl;
+        const firstOg = di2.querySelector('optgroup');
+        if (firstOg) di2.insertBefore(opt, firstOg);
+        else di2.appendChild(opt);
+    } else if (lbl && String(opt.textContent || '').trim() !== lbl) {
+        opt.textContent = lbl;
+    }
+    di2.value = v;
+    try {
+        di2.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (_) {}
+    return true;
+}
+
+/**
  * @param {string|null|undefined} tx
  */
 function mapearTipoConexion(tx) {
@@ -145,6 +174,7 @@ function mapearFases(fx) {
  *   esAgua?: boolean,
  *   limpiarTelefono?: boolean,
  *   ensureDistribuidoresCargados?: () => Promise<void>,
+ *   delegarZonaDi2?: boolean,
  * }} [opts]
  */
 export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
@@ -176,7 +206,7 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
 
     if (opts.esMunicipio || opts.esAgua) {
         if (refEl && row.barrio != null) refEl.value = String(row.barrio).trim();
-        if (opts.esMunicipio && di2 && (row.barrio || row.distribuidor_codigo)) {
+        if (!opts.delegarZonaDi2 && opts.esMunicipio && di2 && (row.barrio || row.distribuidor_codigo)) {
             const br = String(row.barrio || row.distribuidor_codigo || '').trim();
             const opt = Array.from(di2.options).find(
                 (o) =>
@@ -191,7 +221,7 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
 
     if (opts.esCooperativaElectrica) {
         if (tf && row.transformador) tf.value = String(row.transformador).trim();
-        if (row.distribuidor_codigo && di2) {
+        if (!opts.delegarZonaDi2 && row.distribuidor_codigo && di2) {
             const cod = row.distribuidor_codigo;
             const aplicarDist = () => seleccionarDistribuidorPorCodigo(cod, di2, { retriesLeft: 15 });
             if (typeof opts.ensureDistribuidoresCargados === 'function') {

@@ -3,7 +3,7 @@
  * made by leavera77
  */
 
-import { seleccionarDistribuidorPorCodigo } from './pedido-nuevo-aplicar-padron.js';
+import { asegurarOpcionDi2, seleccionarDistribuidorPorCodigo } from './pedido-nuevo-aplicar-padron.js';
 
 /** @param {string} s */
 function norm(s) {
@@ -22,12 +22,11 @@ export async function seleccionarBarrioMunicipioDi2(_deps, row) {
     const di2 = document.getElementById('di2');
     if (!di2) return false;
     let br = String(row.barrio || row.distribuidor_codigo || '').trim();
-    if (!br && typeof _deps.sqlSimple === 'function') return false;
+    if (!br) return false;
 
-    if (seleccionarDistribuidorPorCodigo(br, di2, { retriesLeft: 3 })) return true;
+    if (seleccionarDistribuidorPorCodigo(br, di2, { retriesLeft: 1 })) return true;
 
     const nbr = norm(br);
-    if (!nbr) return false;
     const opt = Array.from(di2.options).find((o) => {
         const v = norm(o.value);
         const t = norm(o.textContent);
@@ -40,5 +39,6 @@ export async function seleccionarBarrioMunicipioDi2(_deps, row) {
         } catch (_) {}
         return true;
     }
-    return false;
+
+    return asegurarOpcionDi2(di2, br, br);
 }
