@@ -8,6 +8,7 @@ import { toast } from './ui-utils.js';
 import { abrirDetallePedidoPorId } from './gn-abrir-detalle-pedido.js';
 import { sqlPedidosCoincidenConPersona } from './gn-pedido-match-identificador.js';
 import { buscarPersonasPadronPorApellidoFuzzy } from './socios-busqueda-apellido-padron.js';
+import { mostrarChipBusquedaApellidoSocios } from './admin-socios-busqueda-limpieza.js';
 
 let _installed = false;
 /** @type {{ html: string, q: string } | null} */
@@ -124,21 +125,27 @@ export function installBusquedaApellidoHistorial(deps) {
                     const cnt = Number(row.reclamos_count) || 0;
                     const src = row.padronSource === 'clientes_finales' ? 'clientes_finales' : 'socios_catalogo';
                     const srcJs = src.replace(/'/g, "\\'");
-                    const btn =
-                        Number.isFinite(id) && id > 0
-                            ? `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem" onclick="verReclamosSocio(${id},'${srcJs}')"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
-                            : '';
+                    const btns = [];
+                    if (Number.isFinite(id) && id > 0) {
+                        btns.push(
+                            `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem;margin-right:.35rem" onclick="verReclamosSocio(${id},'${srcJs}')"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
+                        );
+                        btns.push(
+                            `<button type="button" class="btn-sm" style="margin-top:.35rem;font-size:.76rem;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af" onclick="usarSocioEnPedidoNuevo(${id},'${srcJs}')" title="Si tenés un pedido nuevo abierto en el mapa"><i class="fas fa-map-marker-alt"></i> Cargar en pedido del mapa</button>`
+                        );
+                    }
                     return `<div style="padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin-bottom:.45rem;line-height:1.45">
   <div style="font-weight:700;color:var(--bd)">👤 ${nom}</div>
   <div style="font-size:.78rem;color:var(--tm);margin-top:.15rem"><strong>${lblNis}:</strong> ${nis}${loc ? ` — ${loc}` : ''}</div>
   ${calle ? `<div style="font-size:.76rem;color:var(--tl);margin-top:.12rem">📍 ${calle}</div>` : ''}
   ${tel ? `<div style="font-size:.76rem;color:var(--tl);margin-top:.08rem">📞 ${tel}</div>` : ''}
-  ${btn}
+  <div style="display:flex;flex-wrap:wrap;gap:.25rem">${btns.join('')}</div>
 </div>`;
                 })
                 .join('');
             out.innerHTML = `<div style="display:flex;flex-direction:column;gap:.2rem">${head}${cards}</div>`;
             _volverApellido = { html: out.innerHTML, q: raw };
+            mostrarChipBusquedaApellidoSocios(raw, rows.length);
         } catch (e) {
             const msg = String(e && e.message != null ? e.message : e)
                 .replace(/</g, '&lt;')

@@ -6,7 +6,8 @@
 import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { aplicarPadronAlFormularioNuevoPedido } from './pedido-nuevo-aplicar-padron.js';
-import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
+import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 
 let _installed = false;
@@ -111,25 +112,18 @@ export function initPedidoNuevoPadronBusqueda(deps) {
     }
 
     async function aplicarMatch(row) {
-        let full = row;
-        try {
-            full = await completarFilaPadronDesdeBd(
-                {
-                    sqlSimple: deps.sqlSimple,
-                    esc: deps.esc,
-                    tenantIdActual: deps.tenantIdActual,
-                    sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
-                    normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
-                },
-                row
-            );
-        } catch (_) {}
-        if (deps.ensureDistribuidoresCargados) {
-            try {
-                await deps.ensureDistribuidoresCargados();
-            } catch (_) {}
-        }
-        const ident = aplicarPadronAlFormularioNuevoPedido(full, padronOpts());
+        const padronDeps = {
+            sqlSimple: deps.sqlSimple,
+            esc: deps.esc,
+            tenantIdActual: deps.tenantIdActual,
+            sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
+            normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
+            esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
+            esMunicipioRubro: deps.esMunicipioRubro,
+            esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
+            ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
+        };
+        const ident = await aplicarPadronAlPedidoNuevo(padronDeps, row);
         _nisUltimoValor = ident || _nisUltimoValor;
         const out = document.getElementById('ped-padron-resultados');
         if (out) out.innerHTML = '';
@@ -251,7 +245,18 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         );
         const row = r.rows?.[0];
         if (!row) return;
-        aplicarPadronAlFormularioNuevoPedido(
+        await aplicarPadronAlPedidoNuevo(
+            {
+                sqlSimple: deps.sqlSimple,
+                esc: deps.esc,
+                tenantIdActual: deps.tenantIdActual,
+                sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
+                normalizarRubroEmpresa: deps.normalizarRubroEmpresa,
+                esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
+                esMunicipioRubro: deps.esMunicipioRubro,
+                esCooperativaAguaRubro: deps.esCooperativaAguaRubro,
+                ensureDistribuidoresCargados: deps.ensureDistribuidoresCargados,
+            },
             {
                 nombre: [row.nombre, row.apellido]
                     .map((x) => (x != null ? String(x).trim() : ''))
@@ -265,8 +270,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
                 numero: row.numero_puerta,
                 localidad: row.localidad,
                 barrio: row.barrio,
-            },
-            padronOpts()
+            }
         );
         _nisUltimoValor = raw;
     }
@@ -304,16 +308,13 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             if (!matches.length) {
                 const hasSocTNis = await deps.sociosCatalogoTieneTenantId();
                 const wfNis = hasSocTNis ? ` AND tenant_id = ${deps.esc(deps.tenantIdActual())}` : '';
+                const idMatch = sqlWhereSocioCatalogoCoincideIdentificador(deps.esc, val, '');
                 const q = await deps.sqlSimple(
                     `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
                             calle, numero, localidad, barrio, nis, medidor, nis_medidor
                      FROM socios_catalogo
                      WHERE activo = TRUE${wfNis}
-                       AND (
-                         UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${deps.esc(val)}))
-                         OR UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${deps.esc(val)}))
-                         OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${deps.esc(val)}))
-                       )
+                       AND ${idMatch}
                      LIMIT 1`
                 );
                 const row = q.rows?.[0];
@@ -335,7 +336,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
                 _nisUltimoValor = val;
                 return;
             }
-            void aplicarMatch(matches[0]);
+            await aplicarMatch(matches[0]);
             _nisUltimoValor = val;
         } catch (e) {
             console.warn('[nis→socio]', e.message);

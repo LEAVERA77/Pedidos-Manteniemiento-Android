@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
+
 /**
  * @param {{
  *   sqlSimple: Function,
@@ -61,21 +63,17 @@ export async function completarFilaPadronDesdeBd(deps, row) {
     }
 
     if (rubro !== 'cooperativa_electrica') return row;
-    if (row.transformador && row.distribuidor_codigo) return row;
 
     try {
         const hasT = await deps.sociosCatalogoTieneTenantId();
         const wf = hasT ? ` AND tenant_id = ${deps.esc(deps.tenantIdActual())}` : '';
+        const idMatch = sqlWhereSocioCatalogoCoincideIdentificador(deps.esc, ident, '');
         const r = await deps.sqlSimple(
             `SELECT nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
                     calle, numero, localidad, barrio, nis, medidor, nis_medidor
              FROM socios_catalogo
              WHERE COALESCE(activo, TRUE) = TRUE${wf}
-               AND (
-                 UPPER(TRIM(COALESCE(nis_medidor,''))) = UPPER(TRIM(${deps.esc(ident)}))
-                 OR UPPER(TRIM(COALESCE(nis,''))) = UPPER(TRIM(${deps.esc(ident)}))
-                 OR UPPER(TRIM(COALESCE(medidor,''))) = UPPER(TRIM(${deps.esc(ident)}))
-               )
+               AND ${idMatch}
              LIMIT 1`
         );
         const db = r.rows?.[0];

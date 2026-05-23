@@ -53,7 +53,8 @@ export async function buscarPersonasPadronPorApellidoFuzzy(deps, raw) {
     const LIM = 3200;
     try {
         const r = await deps.sqlSimple(
-            `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia
+            `SELECT s.id, s.nis_medidor, s.nis, s.medidor, s.nombre, s.calle, s.numero, s.barrio, s.telefono, s.localidad, s.provincia,
+                    s.transformador, s.distribuidor_codigo
              FROM socios_catalogo s
              WHERE COALESCE(s.activo, TRUE) = TRUE
              ${wSoc}

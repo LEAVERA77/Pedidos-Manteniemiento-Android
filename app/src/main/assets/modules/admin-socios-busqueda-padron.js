@@ -192,15 +192,20 @@ export function installAdminSociosBusquedaPadron(deps) {
                     [row.calle, row.numero].filter((x) => String(x || '').trim()).join(' ') || ''
                 );
                 const srcJs = src.replace(/'/g, "\\'");
-                const btn =
-                    Number.isFinite(id) && id > 0
-                        ? `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem" onclick="verReclamosSocio(${id},'${srcJs}')"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
-                        : '';
+                const btns = [];
+                if (Number.isFinite(id) && id > 0) {
+                    btns.push(
+                        `<button type="button" class="btn-sm primary" style="margin-top:.35rem;font-size:.76rem;margin-right:.35rem" onclick="verReclamosSocio(${id},'${srcJs}')"><i class="fas fa-list"></i> Ver reclamos (${cnt})</button>`
+                    );
+                    btns.push(
+                        `<button type="button" class="btn-sm" style="margin-top:.35rem;font-size:.76rem;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af" onclick="usarSocioEnPedidoNuevo(${id},'${srcJs}')"><i class="fas fa-map-marker-alt"></i> Cargar en pedido del mapa</button>`
+                    );
+                }
                 cards.push(`<div style="padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);margin-bottom:.45rem;line-height:1.45">
   <div style="font-weight:700;color:var(--bd)">👤 ${nom}</div>
   <div style="font-size:.78rem;color:var(--tm);margin-top:.15rem"><strong>${lblNis}:</strong> ${nis}${loc ? ` — ${loc}` : ''}</div>
   ${calle ? `<div style="font-size:.76rem;color:var(--tl);margin-top:.12rem">📍 ${calle}</div>` : ''}
-  ${btn}
+  <div style="display:flex;flex-wrap:wrap;gap:.25rem">${btns.join('')}</div>
 </div>`);
             }
             out.innerHTML = `<div style="font-size:.78rem;color:var(--tm);margin-bottom:.45rem"><strong>📋 ${cards.length}</strong> en padrón para «${escHtml(raw)}»</div>${cards.join('')}`;

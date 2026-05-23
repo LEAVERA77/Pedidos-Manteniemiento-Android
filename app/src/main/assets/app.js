@@ -158,6 +158,7 @@ import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
 import { installAdminSociosHistorialPedidos } from './modules/admin-socios-historial-pedidos.js';
 import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqueda-padron.js';
+import { installAdminSociosUsarEnPedido } from './modules/admin-socios-usar-en-pedido.js';
 import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import {
@@ -17816,6 +17817,25 @@ try {
             if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'N° socio';
             return 'NIS o medidor';
         },
+    });
+} catch (_) {}
+
+try {
+    installAdminSociosUsarEnPedido({
+        sqlSimple,
+        esc,
+        tenantIdActual,
+        sociosCatalogoTieneTenantId,
+        normalizarRubroEmpresa,
+        esCooperativaElectricaRubro,
+        esMunicipioRubro,
+        esCooperativaAguaRubro,
+        ensureDistribuidoresCargados: async () => {
+            try {
+                await cargarDistribuidores();
+            } catch (_) {}
+        },
+        neonOk: () => !!NEON_OK,
     });
 } catch (_) {}
 
