@@ -161,9 +161,13 @@ import {
     mountPedidoFormularioEnDom,
     initPedidoNuevoOficina,
     resetPedidoNuevoOficinaUi,
-    asegurarUbicacionAntesGuardarPedidoOficina,
+    esPedidoNuevoModoOficina,
     syncVisibilidadBotonPedidoOficina,
 } from './modules/pedido-nuevo-oficina.js';
+import {
+    prepararUbicacionSubmitPedidoOficina,
+    finalizarPedidoOficinaTrasGuardar,
+} from './modules/pedido-oficina-guardar-ubicacion.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 
 try {
@@ -8960,7 +8964,7 @@ function _bindPedidoFormSubmit() {
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
 
-    const okUbicOficina = await asegurarUbicacionAntesGuardarPedidoOficina({
+    const depsUbicOficina = {
         nominatimFetchSearch: _nominatimFetchSearch,
         htmlLineaUbicacionFormulario,
         syncWrapCoordsDisplayNuevoPedido,
@@ -8968,12 +8972,13 @@ function _bindPedidoFormSubmit() {
         ensureMapReady,
         parseEmpresaCfgLatLngBase,
         resolverUbicacionCentralTenantParaMapa,
-    });
-    if (!okUbicOficina) {
+    };
+    const eraPedidoOficina = esPedidoNuevoModoOficina();
+    const prepUbic = await prepararUbicacionSubmitPedidoOficina(depsUbicOficina);
+    if (!prepUbic.ok) {
         btn.disabled = false;
         return;
     }
-    
     if (!app.sel) {
         toast('Selecciona ubicación en el mapa', 'error');
         btn.disabled = false;
@@ -9233,10 +9238,33 @@ function _bindPedidoFormSubmit() {
 
         fotosTemporales = [];
         actualizarVistaPreviaFotos();
+        const latPedidoGuardado = app.sel?.lat;
+        const lngPedidoGuardado = app.sel?.lng;
         closeAll();
         app.sel = null;
         render();
         if (!modoOffline) cargarPedidos();
+        if (eraPedidoOficina && Number.isFinite(latPedidoGuardado) && Number.isFinite(lngPedidoGuardado)) {
+            void finalizarPedidoOficinaTrasGuardar(
+                {
+                    ...depsUbicOficina,
+                    esc,
+                    ejecutarSql: ejecutarSQLConReintentos,
+                    neonOk: NEON_OK,
+                    modoOffline,
+                    cargarPedidos,
+                    render,
+                },
+                {
+                    lat: latPedidoGuardado,
+                    lng: lngPedidoGuardado,
+                    numPedido,
+                    calleVal,
+                    numVal,
+                    locVal,
+                }
+            );
+        }
     } catch(e) {
         logErrorWeb('guardar-pedido', e);
         const low = String(e && e.message ? e.message : e || '').toLowerCase();

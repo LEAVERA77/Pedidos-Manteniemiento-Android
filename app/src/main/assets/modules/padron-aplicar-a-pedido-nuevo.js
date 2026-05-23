@@ -12,6 +12,7 @@ import {
 } from './padron-distribuidor-socio-di2.js';
 import { resolverDistribuidorCodigoSocio } from './padron-socio-campos-resolver.js';
 import { aplicarSuministroElectricoDesdePadron } from './pedido-nuevo-suministro-padron.js';
+import { aplicarCoordsPadronPedidoOficinaSiHay } from './pedido-nuevo-oficina.js';
 
 /** @param {unknown} v */
 function txt(v) {
@@ -89,6 +90,10 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             if (typeof window.syncSuministroElectricoUI === 'function') window.syncSuministroElectricoUI();
         } catch (_) {}
     }
+
+    try {
+        await aplicarCoordsPadronPedidoOficinaSiHay(full);
+    } catch (_) {}
 
     return { ident, distribuidorOk, row: full };
 }

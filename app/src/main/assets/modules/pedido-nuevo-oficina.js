@@ -8,9 +8,13 @@ import { resetPadronNuevoPedidoNisTimers } from './pedido-nuevo-padron-busqueda.
 
 let _modoOficina = false;
 let _mapPickHandler = null;
+/** @type {((r: { ok: boolean, lat?: number, lng?: number, cancelado?: boolean }) => void)|null} */
+let _mapPickResolver = null;
 let _formMontado = false;
 /** @type {Record<string, unknown>|null} */
 let _depsOficina = null;
+/** @type {Parameters<typeof aplicarCoordenadasPedidoOficina>[0]|null} */
+let _coordDepsRegistrados = null;
 
 /** Monta #pf desde &lt;template id="pm-form-template"&gt; en #pm-form-home. */
 export function mountPedidoFormularioEnDom() {
@@ -266,7 +270,45 @@ export async function geocodificarDireccionPedidoOficina(deps) {
  *   mostrarMarcadorUbicacion?: (lat: number, lng: number, acc?: unknown) => number,
  * }} deps
  */
-export async function pedirUbicacionAproximadaEnMapa(deps) {
+/**
+ * @param {Parameters<typeof aplicarCoordenadasPedidoOficina>[0]} deps
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {Promise<{ ok: boolean, lat?: number, lng?: number, cancelado?: boolean }>}
+ */
+export function pedirUbicacionAproximadaEnMapaPromesa(deps, opts = {}) {
+    return new Promise((resolve) => {
+        const timeoutMs = opts.timeoutMs ?? 120000;
+        let settled = false;
+        const finish = (r) => {
+            if (settled) return;
+            settled = true;
+            _mapPickResolver = null;
+            clearTimeout(timer);
+            resolve(r);
+        };
+
+        const timer = setTimeout(() => {
+            if (_mapPickHandler && window.app?.map) {
+                try {
+                    window.app.map.off('click', _mapPickHandler);
+                } catch (_) {}
+            }
+            _mapPickHandler = null;
+            const mo = document.getElementById('pm-oficina');
+            mo?.classList.remove('pm-oficina--elegir-mapa');
+            finish({ ok: false, cancelado: true });
+        }, timeoutMs);
+
+        _mapPickResolver = finish;
+        void pedirUbicacionAproximadaEnMapa(deps, { onResolved: finish });
+    });
+}
+
+/**
+ * @param {Parameters<typeof aplicarCoordenadasPedidoOficina>[0]} deps
+ * @param {{ onResolved?: (r: { ok: boolean, lat?: number, lng?: number }) => void }} [opts]
+ */
+export async function pedirUbicacionAproximadaEnMapa(deps, opts = {}) {
     try {
         if (typeof deps.ensureMapReady === 'function') await deps.ensureMapReady();
     } catch (_) {}
@@ -294,6 +336,7 @@ export async function pedirUbicacionAproximadaEnMapa(deps) {
     }
 
     _mapPickHandler = (e) => {
+        const handler = _mapPickHandler;
         _mapPickHandler = null;
         if (mo) {
             mo.classList.remove('pm-oficina--elegir-mapa');
@@ -301,27 +344,43 @@ export async function pedirUbicacionAproximadaEnMapa(deps) {
         }
         const la = Number(e?.latlng?.lat);
         const lo = Number(e?.latlng?.lng);
-        if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
-        void aplicarCoordenadasPedidoOficina(deps, la, lo);
+        if (!Number.isFinite(la) || !Number.isFinite(lo)) {
+            if (typeof opts.onResolved === 'function') opts.onResolved({ ok: false });
+            else if (_mapPickResolver) _mapPickResolver({ ok: false });
+            return;
+        }
+        void aplicarCoordenadasPedidoOficina(deps, la, lo).then(() => {
+            const res = { ok: true, lat: la, lng: lo };
+            if (typeof opts.onResolved === 'function') opts.onResolved(res);
+            else if (_mapPickResolver) _mapPickResolver(res);
+        });
     };
     map.once('click', _mapPickHandler);
+}
+
+/**
+ * Si el socio del padrón trae lat/lon, aplicarlas al pedido en oficina.
+ * @param {Record<string, unknown>} row
+ */
+export async function aplicarCoordsPadronPedidoOficinaSiHay(row) {
+    if (!esPedidoNuevoModoOficina() || !_coordDepsRegistrados || !row) return;
+    const la = Number(row.latitud ?? row.lat);
+    const lo = Number(row.longitud ?? row.lng ?? row.lon);
+    if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) < 1e-6 || Math.abs(lo) < 1e-6) {
+        return;
+    }
+    await aplicarCoordenadasPedidoOficina(_coordDepsRegistrados, la, lo, { silencioso: true });
 }
 
 /**
  * @param {Parameters<typeof geocodificarDireccionPedidoOficina>[0]} deps
  * @returns {Promise<boolean>}
  */
+/** @deprecated Usar prepararUbicacionSubmitPedidoOficina desde pedido-oficina-guardar-ubicacion.js */
 export async function asegurarUbicacionAntesGuardarPedidoOficina(deps) {
-    if (!_modoOficina) return true;
-    if (window.app?.sel) return true;
-    const ok = await geocodificarDireccionPedidoOficina(deps);
-    if (ok && window.app?.sel) return true;
-    if (window.app?.sel) return true;
-    toast(
-        'Falta la ubicación del reclamo. Usá «Buscar dirección» o «Marcar en mapa» antes de guardar.',
-        'error'
-    );
-    return false;
+    const { prepararUbicacionSubmitPedidoOficina } = await import('./pedido-oficina-guardar-ubicacion.js');
+    const r = await prepararUbicacionSubmitPedidoOficina(deps);
+    return r.ok;
 }
 
 export function resetPedidoNuevoOficinaUi() {
@@ -334,6 +393,10 @@ export function resetPedidoNuevoOficinaUi() {
         } catch (_) {}
     }
     _mapPickHandler = null;
+    if (_mapPickResolver) {
+        _mapPickResolver({ ok: false, cancelado: true });
+        _mapPickResolver = null;
+    }
     moverFormularioA('pm-form-home');
     const est = document.getElementById('ped-oficina-estado');
     if (est) {
@@ -361,6 +424,7 @@ export function resetPedidoNuevoOficinaUi() {
  */
 export function initPedidoNuevoOficina(deps) {
     _depsOficina = deps;
+    _coordDepsRegistrados = deps;
     mountPedidoFormularioEnDom();
     bindVisibilidadFabOficina(deps);
 
