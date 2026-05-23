@@ -162,6 +162,7 @@ import {
     initPedidoNuevoOficina,
     resetPedidoNuevoOficinaUi,
     asegurarUbicacionAntesGuardarPedidoOficina,
+    syncVisibilidadBotonPedidoOficina,
 } from './modules/pedido-nuevo-oficina.js';
 
 try {
@@ -3304,6 +3305,9 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
         try {
             actualizarVisibilidadBotonTenantTecnicoLogin();
+        } catch (_) {}
+        try {
+            syncVisibilidadBotonPedidoOficina();
         } catch (_) {}
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
@@ -12399,6 +12403,9 @@ try {
         } catch (_) {}
         try {
             actualizarVisibilidadBotonTenantTecnicoLogin();
+        } catch (_) {}
+        try {
+            syncVisibilidadBotonPedidoOficina();
         } catch (_) {}
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}

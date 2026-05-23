@@ -8,6 +8,8 @@ import { toast } from './ui-utils.js';
 let _modoOficina = false;
 let _mapPickHandler = null;
 let _formMontado = false;
+/** @type {Record<string, unknown>|null} */
+let _depsOficina = null;
 
 /** Monta #pf desde &lt;template id="pm-form-template"&gt; en #pm-form-home. */
 export function mountPedidoFormularioEnDom() {
@@ -26,13 +28,63 @@ export function esPedidoNuevoModoOficina() {
     return _modoOficina;
 }
 
-function esAdminWebPublico(deps) {
-    if (typeof deps.esAdminSesionWebPublica === 'function') return deps.esAdminSesionWebPublica();
+function esEntornoWebPublico() {
     try {
-        return typeof window.esAdmin === 'function' && window.esAdmin() && !/GestorNova\/|Nexxo\//i.test(navigator.userAgent);
+        if (/GestorNova\/|Nexxo\//i.test(navigator.userAgent)) return false;
+        if (window.location.protocol === 'file:') return false;
+        if (document.documentElement.classList.contains('gn-android-webview')) return false;
     } catch (_) {
         return false;
     }
+    return true;
+}
+
+function esAdminWebPublico(deps) {
+    const d = deps || _depsOficina || {};
+    if (typeof d.esAdminSesionWebPublica === 'function') return d.esAdminSesionWebPublica();
+    if (!esEntornoWebPublico()) return false;
+    try {
+        return typeof window.esAdmin === 'function' && window.esAdmin();
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * Muestra u oculta el FAB «Pedido en oficina» (tras login admin en web).
+ * @param {Parameters<typeof initPedidoNuevoOficina>[0]} [deps]
+ */
+export function syncVisibilidadBotonPedidoOficina(deps) {
+    const btn = document.getElementById('btn-mapa-nuevo-oficina');
+    if (!btn) return;
+    const show = esAdminWebPublico(deps);
+    btn.style.display = show ? 'flex' : 'none';
+    btn.hidden = !show;
+    btn.setAttribute('aria-hidden', show ? 'false' : 'true');
+}
+
+function bindVisibilidadFabOficina(deps) {
+    const sync = () => syncVisibilidadBotonPedidoOficina(deps);
+    try {
+        const obs = new MutationObserver(() => {
+            if (
+                document.body.classList.contains('gn-sesion-activa') ||
+                document.getElementById('ms')?.classList.contains('active')
+            ) {
+                sync();
+            }
+        });
+        obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        const ms = document.getElementById('ms');
+        if (ms) obs.observe(ms, { attributes: true, attributeFilter: ['class'] });
+    } catch (_) {}
+    try {
+        window.addEventListener('gn-empresa-cfg-actualizada', sync);
+        window.addEventListener('focus', sync);
+    } catch (_) {}
+    sync();
+    setTimeout(sync, 400);
+    setTimeout(sync, 2000);
 }
 
 function moverFormularioA(homeId) {
@@ -307,19 +359,16 @@ export function resetPedidoNuevoOficinaUi() {
  * }} deps
  */
 export function initPedidoNuevoOficina(deps) {
+    _depsOficina = deps;
     mountPedidoFormularioEnDom();
+    bindVisibilidadFabOficina(deps);
 
     const btnFab = document.getElementById('btn-mapa-nuevo-oficina');
-    const syncFab = () => {
-        if (!btnFab) return;
-        btnFab.style.display = esAdminWebPublico(deps) ? 'flex' : 'none';
-    };
-    syncFab();
-    try {
-        window.addEventListener('gn-empresa-cfg-actualizada', syncFab);
-    } catch (_) {}
-
     btnFab?.addEventListener('click', () => void abrirPedidoNuevoOficina(deps));
+    if (typeof window !== 'undefined') {
+        window.abrirPedidoNuevoOficina = () => void abrirPedidoNuevoOficina(deps);
+        window.syncVisibilidadBotonPedidoOficina = () => syncVisibilidadBotonPedidoOficina(deps);
+    }
 
     document.getElementById('ped-oficina-btn-geocode')?.addEventListener('click', () => {
         void geocodificarDireccionPedidoOficina(deps);
