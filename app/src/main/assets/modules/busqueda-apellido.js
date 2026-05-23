@@ -6,6 +6,7 @@
 import { esc } from './utils.js';
 import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
+import { abrirDetallePedidoPorId } from './gn-abrir-detalle-pedido.js';
 
 let _installed = false;
 /** @type {{ html: string, q: string } | null} */
@@ -192,7 +193,7 @@ export function installBusquedaApellidoHistorial(deps) {
             const qr = `SELECT id, numero_pedido, estado, prioridad, fecha_creacion, fecha_cierre, descripcion, tipo_trabajo
                 FROM pedidos
                 WHERE 1=1 ${tsql} AND ${lit}
-                ORDER BY fecha_creacion ASC NULLS LAST
+                ORDER BY COALESCE(fecha_cierre, fecha_creacion) DESC NULLS LAST
                 LIMIT 500`;
             const pr = await deps.sqlSimple(qr);
             const rows = pr.rows || [];
@@ -216,9 +217,9 @@ export function installBusquedaApellidoHistorial(deps) {
                     const est = escH(row.estado || '');
                     const emoji = estadoEmoji(row.estado);
                     const pid = Number(row.id);
-                    const safeClick =
-                        Number.isFinite(pid) && pid > 0 ? `onclick="cerrarModalDashYAbrirPedido(${pid})"` : '';
-                    return `<button type="button" class="nis-historial-item" ${safeClick} style="width:100%;text-align:left;cursor:pointer;padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);font:inherit;color:inherit;line-height:1.35;margin-bottom:.4rem">
+                    const dataPid =
+                        Number.isFinite(pid) && pid > 0 ? `data-pid="${pid}" class="gn-hist-pedido-open"` : '';
+                    return `<button type="button" class="nis-historial-item" ${dataPid} style="width:100%;text-align:left;cursor:pointer;padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);font:inherit;color:inherit;line-height:1.35;margin-bottom:.4rem">
   <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin-bottom:.2rem">
     <strong style="color:var(--bd);font-size:.88rem">#${np}</strong>
     <span style="font-size:.78rem;color:var(--tm)">${tipo}</span>
@@ -229,7 +230,18 @@ export function installBusquedaApellidoHistorial(deps) {
 </button>`;
                 })
                 .join('');
-            out.innerHTML = `<div style="font-size:.85rem;color:var(--bd);font-weight:700;margin-bottom:.25rem">📋 Reclamos de ${nomEsc} (${rows.length})</div>${back}<div style="display:flex;flex-direction:column">${lines}</div>`;
+            out.innerHTML = `<div style="font-size:.85rem;color:var(--bd);font-weight:700;margin-bottom:.25rem">📋 Reclamos de ${nomEsc} (${rows.length}) — tocá para abrir detalle</div>${back}<div style="display:flex;flex-direction:column" id="gn-reclamos-socio-list">${lines}</div>`;
+            out.querySelectorAll('.gn-hist-pedido-open').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const pid = Number(btn.getAttribute('data-pid'));
+                    void abrirDetallePedidoPorId(pid, {
+                        adminTab: 'socios',
+                        sqlSimple: deps.sqlSimple,
+                        esc,
+                        neonOk: deps.neonOk,
+                    });
+                });
+            });
         } catch (e) {
             const msg = String(e && e.message != null ? e.message : e)
                 .replace(/</g, '&lt;')

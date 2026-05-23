@@ -7,7 +7,12 @@ import {
     desactivarOcultarHistoricosResueltosBp2,
 } from './vaciado-quincenal.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
-import { fetchHistoricosResueltosTenant, LIM_HIST_GLOBAL } from './admin-historicos-neon-fetch.js';
+import {
+    fetchHistoricosResueltosTenant,
+    historicosResueltosDesdeAppP,
+    LIM_HIST_GLOBAL,
+} from './admin-historicos-neon-fetch.js';
+import { gnForceModalZFront } from './gn-modal-z-index-stack.js';
 
 function _tidTenant() {
     if (typeof window._gnTenantId === 'function') {
@@ -327,12 +332,19 @@ export function initAdminHistoricosPanel(deps) {
     const onRowClick = (p) => {
         try {
             const ap = document.getElementById('admin-panel');
-            if (ap && ap.classList.contains('active')) {
+            if (ap) {
+                ap.classList.add('active');
                 window.__gnAdminReopenTabTrasDetalle = 'historicos';
             }
         } catch (_) {}
         try {
-            if (typeof window.detalle === 'function') void window.detalle(p);
+            if (typeof window.detalle === 'function') {
+                void window.detalle(p).then(() => {
+                    try {
+                        gnForceModalZFront(document.getElementById('dm'));
+                    } catch (_) {}
+                });
+            }
         } catch (_) {
             if (typeof toast === 'function') toast('No se pudo abrir el detalle.', 'error');
         }
@@ -413,7 +425,7 @@ export function initAdminHistoricosPanel(deps) {
             _pintarMensajeTabla(tbody, _esc(String(_histErrorCarga)), true);
             return;
         }
-        if (_histCacheNeon !== null) {
+        if (_histCacheNeon !== null && !_histCargando) {
             pintarDesdeCache();
             return;
         }
@@ -425,13 +437,30 @@ export function initAdminHistoricosPanel(deps) {
             );
             return;
         }
+        const prefill = historicosResueltosDesdeAppP(tid);
+        if (prefill.length) {
+            _pintarTabla(tbody, prefill, onRowClick);
+            if (avisoEl) {
+                avisoEl.style.display = 'block';
+                avisoEl.textContent =
+                    'Mostrando ' +
+                    prefill.length +
+                    ' histórico(s) ya en memoria. Sincronizando el listado completo desde Neon…';
+            }
+        } else {
+            _pintarMensajeTabla(
+                tbody,
+                '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (tenant actual)…',
+                false
+            );
+        }
         _histCargando = true;
-        _pintarMensajeTabla(
-            tbody,
-            '<i class="fas fa-circle-notch fa-spin"></i> Cargando reclamos históricos desde Neon (tenant actual)…',
-            false
-        );
-        void fetchHistoricosResueltosTenant({ sqlSimple }, tid)
+        const timeoutMs = 90000;
+        const fetchP = fetchHistoricosResueltosTenant({ sqlSimple }, tid);
+        const timeoutP = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('La consulta tardó demasiado. Probá Recargar lista o acotá con filtros.')), timeoutMs);
+        });
+        void Promise.race([fetchP, timeoutP])
             .then((rows) => {
                 if (gen !== _renderGen) return;
                 _histCacheNeon = rows;
@@ -443,8 +472,15 @@ export function initAdminHistoricosPanel(deps) {
                 if (gen !== _renderGen) return;
                 _histErrorCarga = String(e && e.message ? e.message : e);
                 _histCargando = false;
-                _histCacheNeon = null;
-                _pintarMensajeTabla(tbody, _esc(_histErrorCarga), true);
+                if (!prefill.length) _histCacheNeon = null;
+                if (prefill.length) {
+                    pintarDesdeCache();
+                    if (typeof toast === 'function') {
+                        toast('No se pudo actualizar desde Neon; se muestran los históricos en memoria.', 'warning', 4500);
+                    }
+                } else {
+                    _pintarMensajeTabla(tbody, _esc(_histErrorCarga), true);
+                }
             });
     };
 

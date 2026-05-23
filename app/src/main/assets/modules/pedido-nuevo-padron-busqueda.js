@@ -398,3 +398,12 @@ export function initPedidoNuevoPadronBusqueda(deps) {
 
     window.buscarPadronApellidoNuevoPedido = buscarPorApellidoDesdeUI;
 }
+
+/** Limpieza al cerrar modales (pegamento en app.js closeAll). */
+export function resetPadronNuevoPedidoNisTimers() {
+    _nisUltimoValor = '';
+    clearTimeout(_nisDebounce);
+    clearTimeout(_nisCommitTimer);
+    _nisDebounce = null;
+    _nisCommitTimer = null;
+}

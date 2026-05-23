@@ -111,6 +111,8 @@ function shellAssetUrls() {
     j('modules/busqueda-apellido.js'),
     j('modules/pedido-nuevo-aplicar-padron.js'),
     j('modules/pedido-nuevo-padron-busqueda.js'),
+    j('modules/gn-abrir-detalle-pedido.js'),
+    j('modules/admin-socios-historial-pedidos.js'),
     j('modules/pedido-volver-pendiente.js'),
     j('modules/pedido-ver-imagen.js'),
     j('modules/incidencias.js'),
