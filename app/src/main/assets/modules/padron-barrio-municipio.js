@@ -1,5 +1,5 @@
 /**
- * Selección de barrio en #di2 para municipio desde padrón de socios / clientes finales.
+ * Selección de barrio (municipio) o ramal (agua) en #di2 desde padrón.
  * made by leavera77
  */
 

@@ -6,6 +6,7 @@
 import { toast } from './ui-utils.js';
 import { nombreCoincideFuzzy } from './gn-fuzzy-texto-levenshtein.js';
 import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
+import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
 
@@ -112,6 +113,19 @@ export function initPedidoNuevoPadronBusqueda(deps) {
 
     async function aplicarMatch(row) {
         _aplicandoPadron = true;
+        if (deps.neonOk() && typeof deps.sqlSimple === 'function') {
+            try {
+                row = await enriquecerFilaPadronDesdeBd(
+                    {
+                        sqlSimple: deps.sqlSimple,
+                        esc: deps.esc,
+                        tenantIdActual: deps.tenantIdActual,
+                        sociosCatalogoTieneTenantId: deps.sociosCatalogoTieneTenantId,
+                    },
+                    row
+                );
+            } catch (_) {}
+        }
         const padronDeps = {
             sqlSimple: deps.sqlSimple,
             esc: deps.esc,

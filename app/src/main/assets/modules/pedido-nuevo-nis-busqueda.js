@@ -6,6 +6,7 @@
 import { toast } from './ui-utils.js';
 import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
+import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
 
 const COLS_SOCIO = `id, nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
         calle, numero, localidad, barrio, nis, medidor, nis_medidor`;
@@ -191,6 +192,16 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             } catch (e) {
                 avisos.push('No se pudo consultar el padrón en la base local.');
                 console.warn('[nis-sql]', e?.message || e);
+            }
+        } else if (matches.length && deps.neonOk() && typeof deps.sqlSimple === 'function') {
+            try {
+                const enriquecidos = [];
+                for (const m of matches) {
+                    enriquecidos.push(await enriquecerFilaPadronDesdeBd(deps, m));
+                }
+                matches = enriquecidos;
+            } catch (e) {
+                console.warn('[nis-enriquecer]', e?.message || e);
             }
         }
 

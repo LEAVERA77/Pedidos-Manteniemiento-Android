@@ -226,7 +226,7 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
     }
 
     if (opts.esCooperativaElectrica) {
-        if (tf && row.transformador) tf.value = String(row.transformador).trim();
+        if (tf && row.transformador != null) tf.value = String(row.transformador).trim();
         if (!opts.delegarZonaDi2 && row.distribuidor_codigo && di2) {
             const cod = row.distribuidor_codigo;
             const aplicarDist = () => seleccionarDistribuidorPorCodigo(cod, di2, { retriesLeft: 15 });

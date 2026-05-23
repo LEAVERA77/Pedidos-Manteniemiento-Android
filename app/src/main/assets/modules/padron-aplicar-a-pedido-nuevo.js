@@ -1,5 +1,5 @@
 /**
- * Aplica padrón al modal #pm (admin / técnico Android) con trafo, distribuidor y barrio.
+ * Aplica padrón al modal #pm (admin / técnico Android) con trafo, distribuidor y barrio/ramal.
  * made by leavera77
  */
 
@@ -8,6 +8,11 @@ import { completarFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { resolverYSeleccionarDistribuidorDi2 } from './padron-distribuidor-resolver.js';
 import { seleccionarBarrioMunicipioDi2 } from './padron-barrio-municipio.js';
 import { rubroPadronActivo } from './padron-rubro-helpers.js';
+
+/** @param {unknown} v */
+function txt(v) {
+    return v != null ? String(v).trim() : '';
+}
 
 /**
  * @param {{
@@ -49,25 +54,31 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
 
     if (opts.esCooperativaElectrica) {
         const tf = document.getElementById('trafo-pedido');
-        const trafoTxt =
-            full.transformador != null && String(full.transformador).trim()
-                ? String(full.transformador).trim()
-                : '';
+        const trafoTxt = txt(full.transformador);
         if (tf) {
             tf.value = trafoTxt;
             tf.removeAttribute('placeholder');
         }
-        if (trafoTxt || full.distribuidor_codigo) {
+        const distTxt = txt(full.distribuidor_codigo);
+        if (trafoTxt || distTxt) {
             await resolverYSeleccionarDistribuidorDi2(deps, {
                 distribuidorCatalogo: full.distribuidor_codigo,
                 transformador: full.transformador,
                 localidad: full.localidad,
             });
         }
+        const barrioAux = document.getElementById('ped-cli-barrio');
+        if (barrioAux && txt(full.barrio)) barrioAux.value = txt(full.barrio);
     }
 
-    if (opts.esMunicipio) {
+    if (opts.esMunicipio || opts.esAgua) {
         await seleccionarBarrioMunicipioDi2(deps, full);
+    }
+
+    if (opts.esCooperativaElectrica) {
+        try {
+            if (typeof window.syncSuministroElectricoUI === 'function') window.syncSuministroElectricoUI();
+        } catch (_) {}
     }
 
     return ident;
