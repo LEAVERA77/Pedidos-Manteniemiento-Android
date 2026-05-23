@@ -13,6 +13,7 @@ import {
   normalizarTextoBusquedaNombreWa,
 } from "../modules/busqueda-nombre-bot.js";
 import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.js";
+import { normalizarFilaPadronSocio } from "./padronSocioCamposResolver.js";
 
 /** @typedef {'socios_catalogo'|'clientes_finales'} PadronSource */
 
@@ -21,6 +22,7 @@ import { buscarIdentidadParaReclamoWhatsApp } from "./whatsappReclamanteLookup.j
  * @param {PadronSource} source
  */
 function mapSocioCatalogoRow(row, source = "socios_catalogo") {
+  row = normalizarFilaPadronSocio(row);
   const nis = row?.nis != null && String(row.nis).trim() ? String(row.nis).trim() : null;
   const med = row?.medidor != null && String(row.medidor).trim() ? String(row.medidor).trim() : null;
   const nm = row?.nis_medidor != null && String(row.nis_medidor).trim() ? String(row.nis_medidor).trim() : null;
@@ -122,7 +124,7 @@ export async function buscarPadronPorIdentificador(tenantId, q, limit = 12) {
   try {
     const r = await query(
       `SELECT id, nombre, nis, medidor, nis_medidor, calle, numero, localidad, barrio, telefono,
-              transformador, distribuidor_codigo, tipo_conexion, fases
+              transformador, distribuidor_codigo, tipo_conexion, fases, datos_extra
        FROM socios_catalogo
        WHERE COALESCE(activo, TRUE) = TRUE${wf}
          AND ${identMatch}
@@ -166,7 +168,7 @@ export async function buscarPadronPorIdentificador(tenantId, q, limit = 12) {
         if (ident && hasTenant) {
           const r3 = await query(
             `SELECT id, nombre, nis, medidor, nis_medidor, calle, numero, localidad, barrio, telefono,
-                    transformador, distribuidor_codigo, tipo_conexion, fases
+                    transformador, distribuidor_codigo, tipo_conexion, fases, datos_extra
              FROM socios_catalogo
              WHERE COALESCE(activo, TRUE) = TRUE AND tenant_id = $1
                AND (

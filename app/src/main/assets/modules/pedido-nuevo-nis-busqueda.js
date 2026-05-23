@@ -6,11 +6,12 @@
 import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { limpiarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
 import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
+import { normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
 import { forEachModalPedidoNuevo } from './pedido-nuevo-padron-modales.js';
 import { toastPedidoPadron } from './pedido-nuevo-padron-toast.js';
 
 const COLS_SOCIO = `id, nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
-        calle, numero, localidad, barrio, nis, medidor, nis_medidor`;
+        calle, numero, localidad, barrio, nis, medidor, nis_medidor, datos_extra`;
 
 /**
  * @param {{
@@ -36,6 +37,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
     let _nisDebounce = null;
     let _nisCommitEnCurso = false;
     let _nisBuscando = false;
+    let _nisUltimoAplicado = '';
 
     function setNisEstadoUi(estado) {
         const inp = document.getElementById('nis');
@@ -149,7 +151,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
                  LIMIT 12`
             );
             for (const row of rSc.rows || []) {
-                push({
+                push(normalizarFilaPadronSocio({
                     source: 'socios_catalogo',
                     id: row.id,
                     nombre: row.nombre,
@@ -166,7 +168,8 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
                     distribuidor_codigo: row.distribuidor_codigo,
                     tipo_conexion: row.tipo_conexion,
                     fases: row.fases,
-                });
+                    datos_extra: row.datos_extra,
+                }));
             }
         } catch (e) {
             console.warn('[nis-sql] socios_catalogo', e?.message || e);
@@ -283,6 +286,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
             if (out) out.innerHTML = '';
             await hooks.aplicarMatch(matches[0]);
             _nisUltimoValor = val;
+            _nisUltimoAplicado = val;
         } catch (e) {
             if (out) out.innerHTML = '';
             aviso('Error al buscar en el padrón. Intentá de nuevo.', 'error');
@@ -295,6 +299,8 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
 
     function onNisCommit() {
         if (_nisCommitEnCurso) return;
+        const val = String(document.getElementById('nis')?.value || '').trim();
+        if (val && val === _nisUltimoAplicado) return;
         clearTimeout(_nisDebounce);
         _nisDebounce = null;
         _nisCommitEnCurso = true;
@@ -355,6 +361,7 @@ export function installPedidoNuevoNisBusqueda(deps, hooks) {
     return {
         resetNisBusquedaState() {
             _nisUltimoValor = '';
+            _nisUltimoAplicado = '';
             clearTimeout(_nisDebounce);
             _nisDebounce = null;
             _nisCommitEnCurso = false;

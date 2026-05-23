@@ -8,12 +8,14 @@ import { aplicarPadronAlPedidoNuevo } from './padron-aplicar-a-pedido-nuevo.js';
 import { enriquecerFilaPadronDesdeBd } from './padron-fila-completar.js';
 import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
-import { toastPedidoPadron } from './pedido-nuevo-padron-toast.js';
+import { toastPedidoPadron, resetToastPedidoPadronDedupe } from './pedido-nuevo-padron-toast.js';
+import { normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
 
 let _installed = false;
 let _aplicandoPadron = false;
 /** @type {{ resetNisBusquedaState?: () => void, buscarNisDesdeInput?: (o?: object) => Promise<void> } | null} */
 let _nisCtrl = null;
+let _ultimoPadronIdentAplicado = '';
 
 function escHtml(s) {
     return String(s == null ? '' : s)
@@ -136,20 +138,32 @@ export function initPedidoNuevoPadronBusqueda(deps) {
             } catch (_) {}
         }
         try {
+            const identKey = String(
+                row.nis_medidor || row.medidor || row.nis || row.identificador || ''
+            ).trim();
+            const mismoSocio = identKey && identKey === _ultimoPadronIdentAplicado;
             const res = await aplicarPadronAlPedidoNuevo(padronDeps(), row);
             const out = document.getElementById('ped-padron-resultados');
             if (out) out.innerHTML = '';
+            if (identKey) _ultimoPadronIdentAplicado = identKey;
 
-            if (deps.esCooperativaElectricaRubro()) {
-                if (res.distribuidorOk) {
-                    toastPedidoPadron('Socio cargado en el formulario.', 'success');
-                } else if (res.distribuidorAviso) {
-                    toastPedidoPadron(`Socio cargado. ${res.distribuidorAviso}`, 'warning');
+            if (!mismoSocio) {
+                if (deps.esCooperativaElectricaRubro()) {
+                    if (res.distribuidorOk) {
+                        toastPedidoPadron('Socio cargado en el formulario.', 'success', null, `ok-${identKey}`);
+                    } else if (res.distribuidorAviso) {
+                        toastPedidoPadron(
+                            `Socio cargado. ${res.distribuidorAviso}`,
+                            'warning',
+                            null,
+                            `dist-${identKey}-${res.distribuidorAviso}`
+                        );
+                    } else {
+                        toastPedidoPadron('Socio cargado en el formulario.', 'success', null, `ok2-${identKey}`);
+                    }
                 } else {
-                    toastPedidoPadron('Socio cargado en el formulario.', 'success');
+                    toastPedidoPadron('Datos del padrón aplicados.', 'success', null, `padron-${identKey}`);
                 }
-            } else {
-                toastPedidoPadron('Datos del padrón aplicados.', 'success');
             }
         } catch (e) {
             toastPedidoPadron('No se pudieron cargar los datos del padrón.', 'error');
@@ -264,7 +278,7 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         const wf = hasT ? ` AND tenant_id = ${deps.esc(tid)}` : '';
         const rSc = await deps.sqlSimple(
             `SELECT id, nombre, nis, medidor, nis_medidor, calle, numero, localidad, barrio, telefono,
-                    transformador, distribuidor_codigo, tipo_conexion, fases
+                    transformador, distribuidor_codigo, tipo_conexion, fases, datos_extra
              FROM socios_catalogo
              WHERE activo = TRUE${wf}
              ORDER BY nombre NULLS LAST
@@ -272,24 +286,27 @@ export function initPedidoNuevoPadronBusqueda(deps) {
         );
         for (const row of rSc.rows || []) {
             if (!nombreCoincideFuzzy(raw, row.nombre)) continue;
-            matches.push({
-                source: 'socios_catalogo',
-                id: row.id,
-                nombre: row.nombre,
-                identificador: row.nis_medidor || row.medidor || row.nis || '',
-                nis: row.nis,
-                medidor: row.medidor,
-                nis_medidor: row.nis_medidor,
-                calle: row.calle,
-                numero: row.numero,
-                localidad: row.localidad,
-                barrio: row.barrio,
-                telefono: row.telefono,
-                transformador: row.transformador,
-                distribuidor_codigo: row.distribuidor_codigo,
-                tipo_conexion: row.tipo_conexion,
-                fases: row.fases,
-            });
+            matches.push(
+                normalizarFilaPadronSocio({
+                    source: 'socios_catalogo',
+                    id: row.id,
+                    nombre: row.nombre,
+                    identificador: row.nis_medidor || row.medidor || row.nis || '',
+                    nis: row.nis,
+                    medidor: row.medidor,
+                    nis_medidor: row.nis_medidor,
+                    calle: row.calle,
+                    numero: row.numero,
+                    localidad: row.localidad,
+                    barrio: row.barrio,
+                    telefono: row.telefono,
+                    transformador: row.transformador,
+                    distribuidor_codigo: row.distribuidor_codigo,
+                    tipo_conexion: row.tipo_conexion,
+                    fases: row.fases,
+                    datos_extra: row.datos_extra,
+                })
+            );
             if (matches.length >= 15) break;
         }
         return matches;
@@ -344,5 +361,9 @@ export function resetPadronNuevoPedidoNisTimers() {
     try {
         const out = document.getElementById('ped-padron-resultados');
         if (out) out.innerHTML = '';
+    } catch (_) {}
+    _ultimoPadronIdentAplicado = '';
+    try {
+        resetToastPedidoPadronDedupe();
     } catch (_) {}
 }

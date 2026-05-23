@@ -4,6 +4,8 @@
  */
 
 import { registrarProteccionPadronPedidoNuevo } from './pedido-nuevo-nominatim-padron-guard.js';
+import { aplicarSuministroElectricoDesdePadron } from './pedido-nuevo-suministro-padron.js';
+import { resolverDistribuidorCodigoSocio, normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
 
 /**
  * @param {string} cod
@@ -180,6 +182,7 @@ function mapearFases(fx) {
  * }} [opts]
  */
 export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
+    row = normalizarFilaPadronSocio(row);
     const limpiarTel = opts.limpiarTelefono !== false;
     const inpN = document.getElementById('nis');
     const cl = document.getElementById('cl');
@@ -227,8 +230,9 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
 
     if (opts.esCooperativaElectrica) {
         if (tf && row.transformador != null) tf.value = String(row.transformador).trim();
-        if (!opts.delegarZonaDi2 && row.distribuidor_codigo && di2) {
-            const cod = row.distribuidor_codigo;
+        const distCod = resolverDistribuidorCodigoSocio(row) || row.distribuidor_codigo;
+        if (!opts.delegarZonaDi2 && distCod && di2) {
+            const cod = distCod;
             const aplicarDist = () => seleccionarDistribuidorPorCodigo(cod, di2, { retriesLeft: 15 });
             if (typeof opts.ensureDistribuidoresCargados === 'function') {
                 void opts.ensureDistribuidoresCargados().then(aplicarDist);
@@ -237,12 +241,7 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
             }
         }
         if (refEl && row.barrio != null) refEl.value = String(row.barrio).trim();
-        const scEl = document.getElementById('ped-sum-conexion');
-        const sfEl = document.getElementById('ped-sum-fases');
-        const tc = mapearTipoConexion(row.tipo_conexion);
-        const fa = mapearFases(row.fases);
-        if (scEl && tc) scEl.value = tc;
-        if (sfEl && fa) sfEl.value = fa;
+        if (!opts.delegarZonaDi2) aplicarSuministroElectricoDesdePadron(row);
     }
 
     registrarProteccionPadronPedidoNuevo(row, opts);

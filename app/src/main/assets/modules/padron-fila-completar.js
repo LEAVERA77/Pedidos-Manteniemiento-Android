@@ -5,9 +5,10 @@
 
 import { sqlWhereSocioCatalogoCoincideIdentificador } from './gn-socio-catalogo-match-sql.js';
 import { rubroPadronActivo } from './padron-rubro-helpers.js';
+import { normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
 
 const COLS_SOCIO = `id, nombre, telefono, transformador, distribuidor_codigo, tipo_conexion, fases,
-        calle, numero, localidad, barrio, nis, medidor, nis_medidor`;
+        calle, numero, localidad, barrio, nis, medidor, nis_medidor, datos_extra`;
 
 /** @param {string} v */
 function txt(v) {
@@ -72,7 +73,8 @@ async function fetchSocioCatalogoPorId(deps, socioId) {
          WHERE COALESCE(activo, TRUE) = TRUE AND id = ${deps.esc(sid)}${wf}
          LIMIT 1`
     );
-    return r.rows?.[0] || null;
+    const row = r.rows?.[0] || null;
+    return row ? normalizarFilaPadronSocio(row) : null;
 }
 
 /**
@@ -98,7 +100,8 @@ async function fetchSocioCatalogoPorIdentificador(deps, ident) {
          ORDER BY id ASC
          LIMIT 1`
     );
-    return r.rows?.[0] || null;
+    const row = r.rows?.[0] || null;
+    return row ? normalizarFilaPadronSocio(row) : null;
 }
 
 /**
@@ -181,7 +184,7 @@ async function enriquecerDesdeCatalogoSql(deps, row) {
     } catch (e) {
         console.warn('[padron-fila-completar]', e?.message || e);
     }
-    return out;
+    return normalizarFilaPadronSocio(out);
 }
 
 /**

@@ -11,6 +11,8 @@ import {
     aplicarDistribuidorCoopDesdeSocioCatalogo,
     codigoDistribuidorDesdeSocio,
 } from './padron-distribuidor-socio-di2.js';
+import { resolverDistribuidorCodigoSocio } from './padron-socio-campos-resolver.js';
+import { aplicarSuministroElectricoDesdePadron } from './pedido-nuevo-suministro-padron.js';
 
 /** @param {unknown} v */
 function txt(v) {
@@ -33,6 +35,7 @@ function txt(v) {
  */
 export async function aplicarPadronAlPedidoNuevo(deps, row) {
     let full = await completarFilaPadronDesdeBd(deps, row);
+    full = { ...full, distribuidor_codigo: resolverDistribuidorCodigoSocio(full) || full.distribuidor_codigo };
     if (typeof deps.ensureDistribuidoresCargados === 'function') {
         try {
             await deps.ensureDistribuidoresCargados();
@@ -65,7 +68,7 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             tf.value = trafoTxt;
             tf.removeAttribute('placeholder');
         }
-        const distTxt = txt(full.distribuidor_codigo);
+        const distTxt = txt(resolverDistribuidorCodigoSocio(full) || full.distribuidor_codigo);
         if (distTxt) {
             const res = await aplicarDistribuidorCoopDesdeSocioCatalogo(deps, {
                 distribuidor_codigo: distTxt,
@@ -74,15 +77,16 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
             if (!res.ok) {
                 const cod = codigoDistribuidorDesdeSocio(distTxt);
                 distribuidorAviso = cod
-                    ? `El socio tiene distribuidor «${cod}» pero no está en la lista de red. Elegilo manualmente.`
-                    : 'El socio no tiene distribuidor cargado en el catálogo.';
+                    ? `Distribuidor «${cod}» del socio no coincide con la lista de red; elegilo en el desplegable.`
+                    : 'No se pudo asignar el distribuidor del socio.';
             }
         } else {
             distribuidorOk = false;
-            distribuidorAviso = 'El socio no tiene columna Dist. en el catálogo; elegí el distribuidor a mano.';
+            distribuidorAviso = 'El socio no tiene Dist. en el catálogo; elegí el distribuidor manualmente.';
         }
         const barrioAux = document.getElementById('ped-cli-barrio');
         if (barrioAux && txt(full.barrio)) barrioAux.value = txt(full.barrio);
+        aplicarSuministroElectricoDesdePadron(full);
     }
 
     if (opts.esMunicipio || opts.esAgua) {
