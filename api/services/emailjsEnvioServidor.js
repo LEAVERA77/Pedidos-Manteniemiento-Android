@@ -30,8 +30,7 @@ export function resolveEmailjsConfig(override) {
     o.templateId,
     o.template_id,
     o.templateIdInforme,
-    process.env.EMAILJS_TEMPLATE_ID_INFORME,
-    process.env.EMAILJS_TEMPLATE_ID
+    process.env.EMAILJS_TEMPLATE_ID_INFORME
   );
   const privateKey = pick(
     o.privateKey,

@@ -1,26 +1,22 @@
-# EmailJS — plantilla unificada (informes + recuperación de clave)
+# EmailJS — plantilla SOLO para informes (obligatorio)
 
-Una sola plantilla en EmailJS evita el texto fijo de «Solicitud de acceso» en los informes.
+**No uses** la plantilla de «código de acceso» / «Solicitud de acceso» para informes. Duplicá la plantilla y usá un **Template ID distinto**.
 
 ## Pasos en EmailJS (una vez)
 
-1. [EmailJS.com](https://www.emailjs.com/) → **Email Templates** → abrí tu plantilla (o **Create new**).
+1. [EmailJS.com](https://www.emailjs.com/) → **Email Templates** → **Duplicate** la plantilla de reset (o **Create new**).
 2. **To email:** `{{to_email}}`
-3. **Subject:** pegá exactamente:
+3. **Subject:** `{{email_subject}}`
+4. **Content:** borrá todo el texto de recuperación de clave y dejá solo:
 
 ```
-{{email_subject}}
+{{email_body}}
 ```
 
-4. **Content (cuerpo):** pegá exactamente:
-
-```
-{{{email_body}}}
-```
-
-(Las tres llaves conservan saltos de línea del informe.)
-
-5. **Save**. Anotá el **Template ID** en GitHub Secrets / `config.json`.
+5. **Save** → copiá el **Template ID** nuevo.
+6. En el panel **Admin → Empresa → Informes**, pegalo en **Template ID informes** y guardá.
+7. Opcional Render: `EMAILJS_TEMPLATE_ID_INFORME` = ese mismo ID (informes automáticos).
+8. GitHub Secret opcional: `EMAILJS_TEMPLATE_ID_INFORME` para `config.json` en Pages.
 
 ## Variables que envía GestorNova
 

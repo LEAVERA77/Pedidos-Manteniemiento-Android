@@ -6,9 +6,9 @@
 import nodemailer from "nodemailer";
 import { query } from "../db/neon.js";
 import {
-  emailjsServidorConfigurado,
-  enviarCorreoEmailjsServidor,
-} from "./emailjsEnvioServidor.js";
+  emailjsInformeConfigurado,
+  enviarCorreoInformeEmailjs,
+} from "./emailjsEnvioInforme.js";
 import {
   buildContenidoInformeTenant,
   normalizarFrecuenciaInforme,
@@ -59,9 +59,11 @@ function normalizarEmailjsBody(raw) {
   const o = /** @type {Record<string, unknown>} */ (raw);
   const publicKey = String(o.publicKey || o.public_key || "").trim();
   const serviceId = String(o.serviceId || o.service_id || "").trim();
-  const templateId = String(o.templateId || o.template_id || "").trim();
-  if (!publicKey || !serviceId || !templateId) return null;
-  return { publicKey, serviceId, templateId };
+  const templateIdInforme = String(
+    o.templateIdInforme || o.template_id_informe || o.templateId || o.template_id || ""
+  ).trim();
+  if (!publicKey || !serviceId || !templateIdInforme) return null;
+  return { publicKey, serviceId, templateId: templateIdInforme, templateIdInforme };
 }
 
 export async function getStoredEmailjsConfig(tenantId) {
@@ -113,8 +115,9 @@ export async function getReporteEmailConfig(tenantId) {
     frecuencia: row?.frecuencia || "off",
     ultimo_envio: row?.ultimo_envio || null,
     tabla_ok: true,
-    emailjs_en_servidor: emailjsServidorConfigurado(),
+    emailjs_en_servidor: emailjsInformeConfigurado(),
     emailjs_guardado: !!(await getStoredEmailjsConfig(tenantId)),
+    emailjs_template_id_informe: (await getStoredEmailjsConfig(tenantId))?.templateIdInforme || "",
   };
 }
 
@@ -188,15 +191,16 @@ export async function generarYEnviarReporteTenant(
       subject: contenido.subject,
       text: contenido.text,
     });
-  } else if (emailjsServidorConfigurado(emailjsCfg)) {
+  } else if (emailjsInformeConfigurado(emailjsCfg)) {
     via = "emailjs";
-    await enviarCorreoEmailjsServidor(params, emailjsCfg);
+    await enviarCorreoInformeEmailjs(params, emailjsCfg);
   } else {
     return {
       ok: false,
       mensaje:
-        "Correo no disponible en el servidor. Desde la web usá «Enviar ahora» (EmailJS del config.json) o agregá EMAILJS_* en Render.",
-      usar_cliente: true,
+        "Plantilla de informes no configurada: en EmailJS duplicá la plantilla (solo {{email_subject}} y {{email_body}}), guardá el Template ID en el panel o definí EMAILJS_TEMPLATE_ID_INFORME en Render (distinto al de recuperación de clave).",
+      usar_cliente: false,
+      requiere_template_informe: true,
     };
   }
 
