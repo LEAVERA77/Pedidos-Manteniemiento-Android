@@ -23,6 +23,10 @@ function bindAdminSociosModule(sociosMod, ctx) {
         normalizarRubroEmpresa: ctx.normalizarRubroEmpresa,
         esMunicipioRubro: ctx.esMunicipioRubro,
         esAdmin: ctx.esAdmin,
+        getApiToken: ctx.getApiToken,
+        apiUrl: ctx.apiUrl,
+        toast: ctx.toast,
+        toastError: ctx.toastError,
         mostrarOverlayImportacion: ctx.mostrarOverlayImportacion,
         actualizarOverlayImportacion: ctx.actualizarOverlayImportacion,
         ocultarOverlayImportacion: ctx.ocultarOverlayImportacion,
@@ -163,6 +167,24 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
                 toastError: ctx.toastError,
             });
         } catch (_) {}
+        try {
+            const distUi = await import('./admin-distribuidores-catalogo-ui.js');
+            distUi.initAdminDistribuidoresCatalogoUi({
+                getApiToken: ctx.getApiToken,
+                apiUrl: ctx.apiUrl,
+                toast: ctx.toast,
+                toastError: ctx.toastError,
+                esMunicipioRubro: ctx.esMunicipioRubro,
+                esCooperativaAguaRubro: ctx.esCooperativaAguaRubro,
+                mostrarOverlayImportacion: ctx.mostrarOverlayImportacion,
+                actualizarOverlayImportacion: ctx.actualizarOverlayImportacion,
+                ocultarOverlayImportacion: ctx.ocultarOverlayImportacion,
+                cargarListaDistribuidoresAdmin: ctx.cargarListaDistribuidoresAdmin,
+                cargarDistribuidores: ctx.cargarDistribuidores,
+            });
+        } catch (e) {
+            console.warn('[admin-deferred] init distribuidores catalogo', e);
+        }
         if (!sociosMod.isAdminSociosInitialized()) {
             throw new Error(
                 'No se pudo inicializar el catálogo de socios (admin). Recargá la página o abrí Admin → Socios de nuevo.'

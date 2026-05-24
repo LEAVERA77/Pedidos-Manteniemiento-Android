@@ -1,10 +1,17 @@
 import express from "express";
 import multer from "multer";
-import XLSX from "xlsx";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { mergeDistribuidoresSaidiFromExcelBuffer } from "../services/distribuidoresSaidiExcelMerge.js";
+import {
+  mergeDistribuidoresCatalogoFromExcelBuffer,
+  darDeBajaDistribuidoresCatalogoPorCodigos,
+} from "../services/distribuidoresCatalogoExcelMerge.js";
+import {
+  buildDistribuidoresCatalogoExcelBuffer,
+  fetchDistribuidoresCatalogoExportRows,
+} from "../services/distribuidoresCatalogoExcelExport.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -114,49 +121,49 @@ router.delete("/:id", adminOnly, async (req, res) => {
 router.post("/import-excel", adminOnly, upload.single("file"), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ error: "Archivo requerido (file)" });
-    const wb = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-    let ok = 0;
     const tenantId = req.tenantId;
-    const hasTid = await distribuidoresTieneTenantId();
+    const flags = {
+      hasTenantId: await distribuidoresTieneTenantId(),
+      hasLocalidad: await tableHasColumn("distribuidores", "localidad"),
+    };
+    let out;
     await withTransaction(async (client) => {
-      for (const row of rows) {
-        const codigo = String(row.codigo || "").trim().toUpperCase();
-        if (!codigo) continue;
-        const loc =
-          row.localidad != null && String(row.localidad).trim() !== "" ? String(row.localidad).trim() : null;
-        if (hasTid) {
-          const ex = await client.query(
-            `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = $1 AND tenant_id = $2 LIMIT 1`,
-            [codigo, tenantId]
-          );
-          if (ex.rows.length) {
-            await client.query(
-              `UPDATE distribuidores SET nombre = $2, tension = $3, localidad = $4, activo = TRUE WHERE id = $1`,
-              [ex.rows[0].id, row.nombre || null, row.tension || null, loc]
-            );
-          } else {
-            await client.query(
-              `INSERT INTO distribuidores(codigo, nombre, tension, localidad, activo, tenant_id)
-               VALUES($1,$2,$3,$4,TRUE,$5)`,
-              [codigo, row.nombre || null, row.tension || null, loc, tenantId]
-            );
-          }
-        } else {
-          await client.query(
-            `INSERT INTO distribuidores(codigo, nombre, tension, localidad, activo)
-             VALUES($1,$2,$3,$4,TRUE)
-             ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension, localidad = EXCLUDED.localidad`,
-            [codigo, row.nombre || null, row.tension || null, loc]
-          );
-        }
-        ok += 1;
-      }
+      out = await mergeDistribuidoresCatalogoFromExcelBuffer(req.file.buffer, tenantId, client, flags);
     });
-    res.json({ ok: true, importados: ok });
+    res.json(out);
   } catch (error) {
     res.status(500).json({ error: "No se pudo importar Excel", detail: error.message });
+  }
+});
+
+router.post("/dar-de-baja-codigos", adminOnly, async (req, res) => {
+  try {
+    const codigos = Array.isArray(req.body?.codigos) ? req.body.codigos : [];
+    if (!codigos.length) return res.status(400).json({ error: "Indicá al menos un código en codigos[]" });
+    const flags = {
+      hasTenantId: await distribuidoresTieneTenantId(),
+      hasLocalidad: await tableHasColumn("distribuidores", "localidad"),
+    };
+    let out;
+    await withTransaction(async (client) => {
+      out = await darDeBajaDistribuidoresCatalogoPorCodigos(req.tenantId, codigos, client, flags);
+    });
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo dar de baja", detail: error.message });
+  }
+});
+
+router.get("/export", adminOnly, async (req, res) => {
+  try {
+    const { rows, colNames } = await fetchDistribuidoresCatalogoExportRows(req.tenantId);
+    const buf = buildDistribuidoresCatalogoExcelBuffer(rows, colNames);
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="distribuidores_${day}.xlsx"`);
+    res.send(buf);
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo exportar distribuidores", detail: error.message });
   }
 });
 

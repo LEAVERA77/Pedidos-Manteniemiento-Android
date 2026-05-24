@@ -14914,6 +14914,9 @@ function _depsAdminPanelDeferred() {
         tenantIdActual,
         normalizarRubroEmpresa,
         esMunicipioRubro,
+        esCooperativaAguaRubro,
+        cargarListaDistribuidoresAdmin: () => cargarListaDistribuidoresAdmin(),
+        cargarDistribuidores: () => cargarDistribuidores(),
         normalizarWhatsappInternacionalDesdeInput,
         setDerivacionesInlineError,
         actualizarBotonesWhatsappDerivacionesUi,
@@ -15677,132 +15680,33 @@ async function crearDistribuidor() {
 }
 
 async function eliminarDistribuidor(id) {
-    if (!confirm(`¿Eliminar este ${etiquetaZonaPedido().toLowerCase()}?`)) return;
+    if (!confirm(`¿Dar de baja este ${etiquetaZonaPedido().toLowerCase()}? (queda inactivo en Neon, no se borra)`)) return;
     try {
         const wfD = await sqlFiltroDistribuidoresPorTenant();
-        await sqlSimple(`DELETE FROM distribuidores WHERE id = ${esc(id)}${wfD}`);
-        toast('Eliminado', 'success');
+        await sqlSimple(`UPDATE distribuidores SET activo = FALSE WHERE id = ${esc(id)}${wfD}`);
+        toast('Dado de baja (inactivo)', 'success');
         cargarListaDistribuidoresAdmin();
         cargarDistribuidores();
-    } catch(e) { toastError('eliminar-distribuidor', e); }
+    } catch (e) {
+        toastError('eliminar-distribuidor', e);
+    }
 }
 
 async function importarExcelDistribuidores(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    if (typeof XLSX === 'undefined') { toast('Librería Excel no cargada', 'error'); return; }
-    const zpl = esMunicipioRubro() ? 'barrios' : esCooperativaAguaRubro() ? 'ramales' : 'distribuidores';
-    const errMsgs = [];
-    try {
-        mostrarOverlayImportacion(`Leyendo Excel de ${zpl}…`);
-        const reemplazar = document.getElementById('distribuidores-import-reemplazar')?.checked;
-        if (reemplazar) {
-            actualizarOverlayImportacion('Vaciando tabla…');
-            const wfDel = await sqlFiltroDistribuidoresPorTenant();
-            await sqlSimple(wfDel ? `DELETE FROM distribuidores WHERE 1=1${wfDel}` : 'DELETE FROM distribuidores');
-        }
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const hasLoc = await sqlDistribuidoresTieneLocalidad();
-        const rows = XLSX.utils.sheet_to_json(ws, {
-            header: ['codigo', 'nombre', 'tension', 'localidad'],
-            range: 1,
-            defval: '',
-            raw: false
-        });
-        if (!rows.length) {
-            ocultarOverlayImportacion();
-            toast('Excel vacío o formato incorrecto', 'error');
-            event.target.value = '';
-            return;
-        }
-        let ok = 0;
-        let fail = 0;
-        let idx = 0;
-        const wfDImp = await sqlFiltroDistribuidoresPorTenant();
-        const tidImp = tenantIdActual();
-        for (const row of rows) {
-            idx++;
-            if (!row.codigo || !row.nombre) continue;
-            actualizarOverlayImportacion(`Importando ${zpl}… ${ok + fail + 1} / ${rows.length}`);
-            if (idx % 80 === 0) await new Promise(r => setTimeout(r, 0));
-            try {
-                const locIns =
-                    hasLoc && row.localidad != null && String(row.localidad).trim() !== ''
-                        ? String(row.localidad).trim()
-                        : null;
-                const codU = String(row.codigo).trim().toUpperCase();
-                const nomU = String(row.nombre).trim();
-                const tenU = row.tension ? String(row.tension).trim() : null;
-                if (wfDImp) {
-                    const ex = await sqlSimple(
-                        `SELECT id FROM distribuidores WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(${esc(codU)}))${wfDImp} LIMIT 1`
-                    );
-                    const rid = ex.rows?.[0]?.id;
-                    if (rid != null) {
-                        if (hasLoc) {
-                            await sqlSimple(
-                                `UPDATE distribuidores SET nombre = ${esc(nomU)}, tension = ${esc(
-                                    tenU || null
-                                )}, localidad = ${esc(locIns)}, activo = TRUE WHERE id = ${esc(rid)}${wfDImp}`
-                            );
-                        } else {
-                            await sqlSimple(
-                                `UPDATE distribuidores SET nombre = ${esc(nomU)}, tension = ${esc(
-                                    tenU || null
-                                )}, activo = TRUE WHERE id = ${esc(rid)}${wfDImp}`
-                            );
-                        }
-                    } else if (hasLoc) {
-                        await sqlSimple(
-                            `INSERT INTO distribuidores(codigo, nombre, tension, localidad, activo, tenant_id) VALUES(${esc(
-                                codU
-                            )}, ${esc(nomU)}, ${esc(tenU || null)}, ${esc(locIns)}, TRUE, ${esc(tidImp)})`
-                        );
-                    } else {
-                        await sqlSimple(
-                            `INSERT INTO distribuidores(codigo, nombre, tension, activo, tenant_id) VALUES(${esc(
-                                codU
-                            )}, ${esc(nomU)}, ${esc(tenU || null)}, TRUE, ${esc(tidImp)})`
-                        );
-                    }
-                } else if (hasLoc) {
-                    await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension, localidad)
-                    VALUES(${esc(codU)}, ${esc(nomU)}, ${esc(tenU || null)}, ${esc(locIns)})
-                    ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension, localidad = EXCLUDED.localidad`);
-                } else {
-                    await sqlSimple(`INSERT INTO distribuidores(codigo, nombre, tension)
-                    VALUES(${esc(codU)}, ${esc(nomU)}, ${esc(tenU || null)})
-                    ON CONFLICT(codigo) DO UPDATE SET nombre = EXCLUDED.nombre, tension = EXCLUDED.tension`);
-                }
-                ok++;
-            } catch (e) {
-                fail++;
-                if (errMsgs.length < 8) errMsgs.push(`Fila ~${idx + 1}: ${e && e.message ? e.message : String(e)}`);
-            }
-        }
-        ocultarOverlayImportacion();
-        const suf = reemplazar ? ' (tabla reemplazada)' : '';
-        if (fail && !ok) {
-            toast(`Importación con errores: 0 OK, ${fail} fallidos${suf}`, 'error');
-            alert(`No se pudo completar la importación de ${zpl}.\n\n` + errMsgs.join('\n'));
-        } else {
-            toast(`Importados: ${ok} OK${fail ? ', ' + fail + ' errores' : ''}${suf}`, ok > 0 ? 'success' : 'error');
-            if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
-        }
-        cargarListaDistribuidoresAdmin();
-        cargarDistribuidores();
-        try {
-            const chk = document.getElementById('distribuidores-import-reemplazar');
-            if (chk) chk.checked = false;
-        } catch (_) {}
-    } catch (e) {
-        ocultarOverlayImportacion();
-        toastError('import-excel-distribuidores', e, 'Error al leer el Excel.');
-        alert(`Error al importar ${zpl}.\n\n` + mensajeErrorUsuario(e));
-    }
-    event.target.value = '';
+    const { importarExcelDistribuidoresCatalogo } = await import('./modules/admin-distribuidores-catalogo-import.js');
+    return importarExcelDistribuidoresCatalogo(event, {
+        getApiToken,
+        apiUrl,
+        toast,
+        toastError,
+        esMunicipioRubro,
+        esCooperativaAguaRubro,
+        mostrarOverlayImportacion,
+        actualizarOverlayImportacion,
+        ocultarOverlayImportacion,
+        cargarListaDistribuidoresAdmin: () => cargarListaDistribuidoresAdmin(),
+        cargarDistribuidores: () => cargarDistribuidores(),
+    });
 }
 
 

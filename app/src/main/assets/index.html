@@ -711,14 +711,14 @@
         <h3 id="admin-zona-catalogo-titulo" style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em">Distribuidores</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
           <button class="btn-sm primary" onclick="abrirFormDistribuidor()"><i class="fas fa-plus"></i> Nuevo</button>
-          <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel<input type="file" id="input-excel-dist" accept=".xlsx,.xls" style="display:none" onchange="importarExcelDistribuidores(event)"></label>
+          <input type="file" id="input-excel-dist" accept=".xlsx,.xls" style="font-size:.8rem;max-width:min(100%,14rem)">
+          <button type="button" class="btn-sm primary" id="admin-distribuidores-btn-import"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon</button>
+          <button type="button" class="btn-sm" id="admin-distribuidores-btn-export" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-download"></i> Descargar Excel</button>
           <button class="btn-sm warning" onclick="mostrarFormatoExcel()"><i class="fas fa-question-circle"></i> Formato</button>
-          <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;margin-left:.25rem">
-            <input type="checkbox" id="distribuidores-import-reemplazar"> Vaciar tabla antes de importar
-          </label>
+          <span id="admin-distribuidores-file-status" style="font-size:.72rem;color:var(--tl);flex:1 1 100%"></span>
         </div>
       </div>
-      <p id="admin-distribuidores-excel-hint" style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas en el listado. Excel: fila 1 = encabezados <code style="font-size:.75rem">codigo | nombre | tension | localidad</code> (localidad opcional). En Neon, columna <code style="font-size:.75rem">localidad</code>: <code style="font-size:.75rem">docs/NEON_distribuidores_localidad.sql</code>.</p>
+      <p id="admin-distribuidores-excel-hint" style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem">Sin límite de filas. Cada Excel <strong>fusiona</strong> con Neon: actualiza existentes, agrega nuevos; si falta un código en el archivo, te preguntamos si darlo de baja (<strong>activo = no</strong>, no se borra). Cooperativa eléctrica (distribuidores), agua (ramales) y municipio (barrios). Encabezados: <code style="font-size:.75rem">codigo | nombre | tension | localidad</code>.</p>
       <div id="lista-distribuidores-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="form-distribuidor" style="display:none;background:var(--bg);border-radius:.75rem;padding:1rem;margin-top:1rem;border:1px solid var(--bo)">
         <h4 style="margin-bottom:.75rem;color:var(--bd)">Nuevo distribuidor</h4>
@@ -756,8 +756,10 @@
           <label for="admin-red-electrica-file" style="font-size:.76rem;font-weight:600;color:var(--tm);display:block">Archivo Excel</label>
           <input type="file" id="admin-red-electrica-file" accept=".xlsx,.xls" style="margin-top:.25rem;font-size:.8rem;max-width:min(100%,22rem)">
         </div>
-        <button type="button" class="btn-sm primary" id="admin-red-electrica-btn"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon (API)</button>
+        <button type="button" class="btn-sm primary" id="admin-red-electrica-btn-import"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon</button>
+        <button type="button" class="btn-sm" id="admin-red-electrica-btn-export" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-download"></i> Descargar Excel</button>
         <button type="button" class="btn-sm" id="admin-red-electrica-refresh" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-sync"></i> Actualizar lista</button>
+        <span id="admin-red-electrica-file-status" style="font-size:.72rem;color:var(--tl);flex:1 1 100%"></span>
       </div>
       <pre id="admin-red-electrica-result" style="display:none;white-space:pre-wrap;font-size:.72rem;background:var(--bg2,#f8fafc);border:1px solid var(--bo);border-radius:.45rem;padding:.65rem;max-height:min(28vh,220px);overflow:auto;margin:0 0 .75rem"></pre>
       <div style="overflow:auto;border:1px solid var(--bo);border-radius:.45rem">
@@ -856,13 +858,14 @@
           <label class="btn-sm success" style="cursor:pointer"><i class="fas fa-file-excel"></i> Importar Excel / CSV<input type="file" id="input-excel-socios" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="if(typeof onInputExcelSociosConInferencia==='function')onInputExcelSociosConInferencia(event)"></label>
           <button type="button" class="btn-sm primary" style="background:#1d4ed8;color:#fff;border:none" onclick="if(typeof abrirModalAltaSocioManual==='function')abrirModalAltaSocioManual()" title="Alta o fusión por NIS en el tenant y línea de negocio actuales"><i class="fas fa-user-plus"></i> Agregar cliente</button>
           <button type="button" class="btn-sm primary" style="background:#0d9488;color:#fff;border:none" onclick="if(typeof descargarPlanillaSociosCsvExport==='function')descargarPlanillaSociosCsvExport()" title="CSV con las mismas columnas que la tabla Socios (rubro y tenant actuales), sin mezclar otras líneas de negocio"><i class="fas fa-download"></i> Descargar Excel (CSV)</button>
+          <button type="button" class="btn-sm" id="admin-socios-btn-export-neon" style="background:var(--bg);border:1px solid var(--bo)" title="Todas las columnas de socios_catalogo en Neon para este tenant"><i class="fas fa-database"></i> Excel Neon (completo)</button>
           <button type="button" class="btn-sm warning" onclick="mostrarFormatoExcelSocios()"><i class="fas fa-question-circle"></i> Formato</button>
           <label style="font-size:.78rem;color:var(--tm);display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;max-width:min(44rem,100%);line-height:1.35" title="Desactivado por defecto: import instantáneo. Si lo activás, se consulta Nominatim una vez por cada calle+localidad+provincia distintas (~1 s entre consultas).">
             <input type="checkbox" id="socios-import-cp-nominatim"> Inferir CP (Nominatim) si falta en el Excel — opcional, puede ser lento.
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> Cada importación <strong>fusiona</strong> con el catálogo en el servidor: los socios que ya existían <strong>permanecen</strong>; las filas nuevas del Excel se agregan; si el mismo NIS/medidor viene en el archivo, se actualiza esa fila <strong>sin borrar</strong> el resto del catálogo (cooperativa eléctrica, agua y municipio). Revisá <strong>Formato</strong> para columnas obligatorias por rubro.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> Cada importación <strong>fusiona</strong> con Neon: altas y actualizaciones por NIS; los socios que <strong>no</strong> vienen en el Excel <strong>no se eliminan</strong> (aunque sean muchos). Teléfonos y datos ya guardados (p. ej. desde pedidos) <strong>no se borran</strong> si la celda del archivo viene vacía. Revisá <strong>Formato</strong> por rubro.</p>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="modal-alta-socio-manual" class="mo" role="dialog" aria-modal="true" aria-labelledby="soc-man-titulo">
         <div class="mc" style="max-width:min(32rem,96vw)">

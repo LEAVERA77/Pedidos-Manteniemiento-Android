@@ -4,6 +4,7 @@
  */
 
 import { importarExcelRedElectricaConConfirmacion } from "./admin-red-electrica-import-flow.js";
+import { descargarExcelRedElectricaCompleto } from "./admin-red-electrica-export.js";
 
 /** @type {boolean} */
 let _bound = false;
@@ -26,16 +27,21 @@ function escCell(s) {
 export function initAdminRedElectricaInfra(d) {
   if (_bound) return;
 
-  const btn = document.getElementById("admin-red-electrica-btn");
+  const btnImp = document.getElementById("admin-red-electrica-btn-import") || document.getElementById("admin-red-electrica-btn");
+  const btnExp = document.getElementById("admin-red-electrica-btn-export");
   const inp = document.getElementById("admin-red-electrica-file");
   const out = document.getElementById("admin-red-electrica-result");
   const ref = document.getElementById("admin-red-electrica-refresh");
-  if (!btn || !inp) return;
+  const status = document.getElementById("admin-red-electrica-file-status");
+  if (!btnImp || !inp) return;
 
   _bound = true;
 
-  btn.addEventListener("click", async () => {
-    const f = inp.files && inp.files[0];
+  const setStatus = (msg) => {
+    if (status) status.textContent = msg || "";
+  };
+
+  const runImport = async (f) => {
     if (!f) {
       d.toast("Elegí un archivo Excel (.xlsx o .xls)", "warning");
       return;
@@ -45,16 +51,44 @@ export function initAdminRedElectricaInfra(d) {
       d.toast("Iniciá sesión con API (token) para importar", "error");
       return;
     }
-    btn.disabled = true;
+    btnImp.disabled = true;
     try {
       await importarExcelRedElectricaConConfirmacion(d, f, out);
+      setStatus(f.name ? `Último: ${f.name}` : "");
     } catch (e) {
       d.toastError("admin-red-electrica", e, "No se pudo importar");
       if (out) out.textContent = String(e && e.message ? e.message : e);
     } finally {
-      btn.disabled = false;
+      btnImp.disabled = false;
     }
+  };
+
+  inp.addEventListener("change", async () => {
+    const f = inp.files?.[0];
+    if (!f) {
+      setStatus("");
+      return;
+    }
+    setStatus(`Archivo: ${f.name}`);
+    const ok = window.confirm(
+      `¿Importar "${f.name}" a Neon?\n\nSe actualizan los existentes, se agregan nuevos y, si falta algún código en el Excel, te preguntamos si darlo de baja en la tabla de red.`
+    );
+    if (ok) await runImport(f);
   });
+
+  btnImp.addEventListener("click", async () => {
+    const f = inp.files?.[0];
+    if (!f) {
+      d.toast("Elegí un archivo Excel primero", "warning");
+      inp.click();
+      return;
+    }
+    await runImport(f);
+  });
+
+  if (btnExp) {
+    btnExp.addEventListener("click", () => descargarExcelRedElectricaCompleto(d));
+  }
 
   if (ref) {
     ref.addEventListener("click", () => {
@@ -121,8 +155,6 @@ export async function cargarListaRedElectricaInfra(d) {
 }
 
 /**
- * Pestaña «Red Eléctrica»: visible en cooperativa eléctrica aunque el admin oculte
- * catálogo Distribuidores / métricas SAIDI (cfg `ocultar_modulos_redes`), porque acá se carga infra para estadísticas.
  * @param {{ esCooperativaElectricaRubro: () => boolean }} d
  */
 export function syncAdminRedElectricaTabVisibility(d) {

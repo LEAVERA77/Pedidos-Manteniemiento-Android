@@ -192,6 +192,8 @@ async function guardarModalAltaSocioManualCatalogo() {
 /**
  * @param {object} deps
  */
+let _sociosExportNeonBound = false;
+
 export function initAdminSocios(deps) {
     _sociosDeps = deps;
     try {
@@ -202,6 +204,22 @@ export function initAdminSocios(deps) {
         window.cerrarModalAltaSocioManual = cerrarModalAltaSocioManual;
         window.guardarModalAltaSocioManualCatalogo = guardarModalAltaSocioManualCatalogo;
     } catch (_) {}
+    if (!_sociosExportNeonBound) {
+        const btnNeon = document.getElementById('admin-socios-btn-export-neon');
+        if (btnNeon && typeof deps.getApiToken === 'function' && typeof deps.apiUrl === 'function') {
+            _sociosExportNeonBound = true;
+            btnNeon.addEventListener('click', () => {
+                void import('./admin-socios-export-api-completo.js').then((m) =>
+                    m.descargarSociosExcelCompletoApi({
+                        getApiToken: deps.getApiToken,
+                        apiUrl: deps.apiUrl,
+                        toast: deps.toast || ((msg, t) => window.toast?.(msg, t)),
+                        toastError: deps.toastError,
+                    })
+                );
+            });
+        }
+    }
 }
 
 function actualizarUiSociosImportCrs() {
@@ -1798,7 +1816,7 @@ async function ejecutarBulkInsertSociosCatalogo(lote) {
          ON CONFLICT ${onConf} DO UPDATE SET
            nis = COALESCE(EXCLUDED.nis, socios_catalogo.nis),
            medidor = COALESCE(EXCLUDED.medidor, socios_catalogo.medidor),
-           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = EXCLUDED.telefono, distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = EXCLUDED.tipo_tarifa, urbano_rural = EXCLUDED.urbano_rural, transformador = EXCLUDED.transformador, tipo_conexion = EXCLUDED.tipo_conexion, fases = EXCLUDED.fases,
+           nombre = EXCLUDED.nombre, calle = EXCLUDED.calle, numero = EXCLUDED.numero, barrio = EXCLUDED.barrio, telefono = COALESCE(NULLIF(TRIM(EXCLUDED.telefono), ''), socios_catalogo.telefono), distribuidor_codigo = EXCLUDED.distribuidor_codigo, localidad = EXCLUDED.localidad, provincia = COALESCE(NULLIF(TRIM(EXCLUDED.provincia), ''), socios_catalogo.provincia), codigo_postal = COALESCE(NULLIF(TRIM(EXCLUDED.codigo_postal), ''), socios_catalogo.codigo_postal), tipo_tarifa = COALESCE(NULLIF(TRIM(EXCLUDED.tipo_tarifa), ''), socios_catalogo.tipo_tarifa), urbano_rural = COALESCE(NULLIF(TRIM(EXCLUDED.urbano_rural), ''), socios_catalogo.urbano_rural), transformador = COALESCE(NULLIF(TRIM(EXCLUDED.transformador), ''), socios_catalogo.transformador), tipo_conexion = COALESCE(NULLIF(TRIM(EXCLUDED.tipo_conexion), ''), socios_catalogo.tipo_conexion), fases = COALESCE(NULLIF(TRIM(EXCLUDED.fases), ''), socios_catalogo.fases),
            latitud = CASE 
              WHEN COALESCE(socios_catalogo.ubicacion_manual, FALSE) = TRUE THEN socios_catalogo.latitud
              WHEN socios_catalogo.latitud IS NOT NULL AND ABS(socios_catalogo.latitud::numeric) > 1e-8 THEN socios_catalogo.latitud 
