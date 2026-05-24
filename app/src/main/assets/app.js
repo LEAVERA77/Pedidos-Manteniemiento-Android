@@ -14832,7 +14832,7 @@ function adminTab(tab) {
     }
     if (tab === 'red-electrica') {
         const pre = document.getElementById('admin-red-electrica-result');
-        if (pre && !pre.textContent.trim()) pre.style.display = 'none';
+        if (pre && !pre.querySelector('.gn-import-result-panel')) pre.style.display = 'none';
         void cargarListaRedElectricaInfra({
             getApiToken,
             apiUrl,

@@ -24,6 +24,14 @@ import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } fro
 import { SOCIOS_CATALOGO_OPTS_PRE_CALLE, SOCIOS_CATALOGO_OPT_DISTRIB } from './socios-catalogo-col-defs.js';
 import { sociosCatalogoBuildWysiwygExport } from './socios-catalogo-export-wysiwyg.js';
 import {
+    eliminarSociosCatalogoNoEnExcel,
+    contarNuevosYActualizadosSociosExcel,
+} from './admin-socios-import-sync.js';
+import {
+    mostrarPanelResultadoImportacion,
+    lineasResumenSociosImport,
+} from './admin-import-result-panel.js';
+import {
     fajaArgentinaPorLongitud,
     convertirProyectadasARGaWgs84,
     proyectarWgs84AFamiliaFaja,
@@ -2369,6 +2377,13 @@ async function importarExcelSocios(event) {
         }
         const payloadsUnicos = deduplicarPayloadsImportSocios(payloads);
         const dupEnArchivo = payloads.length - payloadsUnicos.length;
+        const depsSoc = {
+            sqlSimple: (q) => req().sqlSimple(q),
+            esc: (v) => req().esc(v),
+            tenantIdActual: () => req().tenantIdActual(),
+        };
+        const { nuevos: nuevosPrevistos, actualizados: actualizadosPrevistos } =
+            await contarNuevosYActualizadosSociosExcel(depsSoc, payloadsUnicos);
         const inferirCpNominatim = document.getElementById('socios-import-cp-nominatim')?.checked === true;
         let cpInf = 0;
         if (inferirCpNominatim) {
@@ -2397,16 +2412,47 @@ async function importarExcelSocios(event) {
             }
             await new Promise((r) => setTimeout(r, 0));
         }
+        let delRes = { eliminados: 0, cancelado: false, pendientesEliminar: 0 };
+        try {
+            req().actualizarOverlayImportacion('Revisando socios que no están en el Excel…');
+            delRes = await eliminarSociosCatalogoNoEnExcel(depsSoc, payloadsUnicos);
+        } catch (eDel) {
+            toastError('import-socios-eliminar-ausentes', eDel, 'No se pudieron quitar socios ausentes:');
+        }
         req().ocultarOverlayImportacion();
         const sufDup = dupEnArchivo > 0 ? ` · ${dupEnArchivo} fila(s) duplicadas en el archivo (última gana)` : '';
-        const sufS = ` · fusionado con catálogo existente${sufDup}`;
+        const sufS = ` · catálogo alineado al Excel${sufDup}`;
         if (fail && !ok) {
             toast(`Socios: 0 OK, ${fail} errores${sufS}`, 'error');
             alert('No se pudo completar la importación de socios.\n\n' + errMsgs.join('\n'));
         } else {
-            toast(`Socios: ${ok} OK` + (fail ? ', ' + fail + ' errores' : '') + sufS, ok > 0 ? 'success' : 'error');
+            toast(
+                `Socios: ${ok} fila(s) guardadas` +
+                    (delRes.eliminados ? `, ${delRes.eliminados} eliminado(s) del catálogo` : '') +
+                    (fail ? `, ${fail} errores` : '') +
+                    sufS,
+                ok > 0 ? 'success' : 'error'
+            );
             if (fail && errMsgs.length) alert('Algunas filas fallaron:\n\n' + errMsgs.join('\n'));
         }
+        const resSoc = lineasResumenSociosImport({
+            nuevos: nuevosPrevistos,
+            actualizados: actualizadosPrevistos,
+            eliminados: delRes.eliminados,
+            canceloEliminar: delRes.cancelado,
+            pendientesEliminar: delRes.pendientesEliminar,
+            errores: fail,
+            omitidasFilas: omitidas.length,
+            duplicadasArchivo: dupEnArchivo,
+            cpInferidos: cpInf,
+            archivo: file.name,
+        });
+        mostrarPanelResultadoImportacion('admin-socios-import-result', {
+            titulo: 'Socios — importación lista',
+            lineas: resSoc.lineas,
+            detalle: resSoc.detalle,
+            tipo: resSoc.tipo,
+        });
         if (omitidas.length) {
             const muestra = omitidas
                 .slice(0, 6)

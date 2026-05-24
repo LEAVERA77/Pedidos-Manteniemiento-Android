@@ -5,6 +5,7 @@
 
 import { importarExcelRedElectricaConConfirmacion } from "./admin-red-electrica-import-flow.js";
 import { descargarExcelRedElectricaCompleto } from "./admin-red-electrica-export.js";
+import { mostrarPanelResultadoImportacion } from "./admin-import-result-panel.js";
 
 /** @type {boolean} */
 let _bound = false;
@@ -57,7 +58,13 @@ export function initAdminRedElectricaInfra(d) {
       setStatus(f.name ? `Último: ${f.name}` : "");
     } catch (e) {
       d.toastError("admin-red-electrica", e, "No se pudo importar");
-      if (out) out.textContent = String(e && e.message ? e.message : e);
+      if (out) {
+        mostrarPanelResultadoImportacion(out, {
+          titulo: "No se pudo importar",
+          lineas: [String(e && e.message ? e.message : e)],
+          tipo: "error",
+        });
+      }
     } finally {
       btnImp.disabled = false;
     }

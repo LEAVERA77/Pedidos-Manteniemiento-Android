@@ -4,6 +4,10 @@
  */
 
 import { cargarListaRedElectricaInfra } from "./admin-red-electrica-infra.js";
+import {
+  mostrarPanelResultadoImportacion,
+  lineasResumenRedElectrica,
+} from "./admin-import-result-panel.js";
 
 function numFallback(a, b) {
   const v = a != null ? a : b;
@@ -95,8 +99,11 @@ export async function importarExcelRedElectricaConConfirmacion(d, file, out) {
   const fd = new FormData();
   fd.append("file", file, file.name);
   if (out) {
-    out.textContent = "Procesando Excel (solo inserta y actualiza, no borra)…";
-    out.style.display = "block";
+    mostrarPanelResultadoImportacion(out, {
+      titulo: "Importando red eléctrica…",
+      lineas: ["Leyendo el archivo y actualizando la base en Neon."],
+      tipo: "info",
+    });
   }
   const url = String(d.apiUrl("/api/admin/importar-red-electrica") || "").replace(/\/+$/, "");
   const r = await fetch(url, {
@@ -109,8 +116,6 @@ export async function importarExcelRedElectricaConConfirmacion(d, file, out) {
     const msg = [j.error, j.hint, j.detail].filter(Boolean).join(" — ");
     throw new Error(msg || `HTTP ${r.status}`);
   }
-  if (out) out.textContent = JSON.stringify(j, null, 2);
-
   const ins = numFallback(j.insertados, j.inserted);
   const act = numFallback(j.actualizados, j.updated);
   const unc = numFallback(j.sin_cambios, j.unchanged);
@@ -159,6 +164,20 @@ export async function importarExcelRedElectricaConConfirmacion(d, file, out) {
     toastMsg = `Red eléctrica: +${ins} nuevos, ${act} actualizados, ${unc} sin cambios${bajaTxt}${conservTxt}.`;
   }
   d.toast(toastMsg, "success", ins + act === 0 && unc > 0 && !eliminados ? 8500 : 5500);
+
+  if (out) {
+    const res = lineasResumenRedElectrica(j, {
+      eliminados,
+      ausentes: ausentes.length,
+      archivo: file.name,
+    });
+    mostrarPanelResultadoImportacion(out, {
+      titulo: "Red eléctrica — importación lista",
+      lineas: res.lineas,
+      detalle: res.detalle,
+      tipo: res.tipo,
+    });
+  }
 
   await cargarListaRedElectricaInfra(d);
   try {
