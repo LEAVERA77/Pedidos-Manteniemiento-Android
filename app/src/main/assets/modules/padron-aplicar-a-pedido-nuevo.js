@@ -11,7 +11,10 @@ import {
     aplicarDistribuidorCoopDesdeSocioCatalogo,
 } from './padron-distribuidor-socio-di2.js';
 import { resolverDistribuidorCodigoSocio } from './padron-socio-campos-resolver.js';
-import { aplicarSuministroElectricoDesdePadron } from './pedido-nuevo-suministro-padron.js';
+import {
+    aplicarSuministroElectricoDesdePadron,
+    guardarSuministroPadronDesdeFila,
+} from './pedido-nuevo-suministro-padron.js';
 import { aplicarCoordsPadronPedidoOficinaSiHay } from './pedido-nuevo-oficina.js';
 
 /** @param {unknown} v */
@@ -78,17 +81,20 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
         }
         const barrioAux = document.getElementById('ped-cli-barrio');
         if (barrioAux && txt(full.barrio)) barrioAux.value = txt(full.barrio);
-        aplicarSuministroElectricoDesdePadron(full);
+        guardarSuministroPadronDesdeFila(full);
+        try {
+            if (typeof window.syncSuministroElectricoUI === 'function') {
+                window.syncSuministroElectricoUI();
+            } else {
+                aplicarSuministroElectricoDesdePadron(full);
+            }
+        } catch (_) {
+            aplicarSuministroElectricoDesdePadron(full);
+        }
     }
 
     if (opts.esMunicipio || opts.esAgua) {
         await seleccionarBarrioMunicipioDi2(deps, full);
-    }
-
-    if (opts.esCooperativaElectrica) {
-        try {
-            if (typeof window.syncSuministroElectricoUI === 'function') window.syncSuministroElectricoUI();
-        } catch (_) {}
     }
 
     try {

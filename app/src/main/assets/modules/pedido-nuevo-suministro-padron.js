@@ -5,6 +5,9 @@
 
 import { resolverFasesSocio, resolverTipoConexionSocio } from './padron-socio-campos-resolver.js';
 
+/** @type {{ tipo_conexion?: string, fases?: string }|null} */
+let _padronSuministroPendiente = null;
+
 /** @param {string} s */
 function norm(s) {
     return String(s || '')
@@ -47,6 +50,33 @@ function asignarValorSelectPadron(sel, raw) {
     try {
         sel.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (_) {}
+}
+
+/**
+ * @param {Record<string, unknown>|null|undefined} row
+ */
+export function guardarSuministroPadronDesdeFila(row) {
+    if (!row) {
+        _padronSuministroPendiente = null;
+        return;
+    }
+    _padronSuministroPendiente = {
+        tipo_conexion: resolverTipoConexionSocio(row),
+        fases: resolverFasesSocio(row),
+    };
+}
+
+export function limpiarSuministroPadronPendiente() {
+    _padronSuministroPendiente = null;
+}
+
+/** Reaplica conexión/fases del último socio cargado (p. ej. al elegir tipo de reclamo). */
+export function reaplicarSuministroPadronPendiente() {
+    if (!_padronSuministroPendiente) return false;
+    aplicarSuministroElectricoDesdePadron(_padronSuministroPendiente);
+    return !!(
+        _padronSuministroPendiente.tipo_conexion && _padronSuministroPendiente.fases
+    );
 }
 
 /**

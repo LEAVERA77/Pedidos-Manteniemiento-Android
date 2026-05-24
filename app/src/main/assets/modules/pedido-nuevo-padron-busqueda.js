@@ -11,6 +11,7 @@ import { tipoReclamoEsFraudeAnonimo } from './catalogoReclamoPorRubro.js';
 import { installPedidoNuevoNisBusqueda } from './pedido-nuevo-nis-busqueda.js';
 import { toastPedidoPadron, resetToastPedidoPadronDedupe } from './pedido-nuevo-padron-toast.js';
 import { normalizarFilaPadronSocio } from './padron-socio-campos-resolver.js';
+import { limpiarSuministroPadronPendiente } from './pedido-nuevo-suministro-padron.js';
 
 let _installed = false;
 let _aplicandoPadron = false;
@@ -357,6 +358,9 @@ export function resetPadronNuevoPedidoNisTimers() {
         if (out) out.innerHTML = '';
     } catch (_) {}
     _ultimoPadronIdentAplicado = '';
+    try {
+        limpiarSuministroPadronPendiente();
+    } catch (_) {}
     try {
         resetToastPedidoPadronDedupe();
     } catch (_) {}

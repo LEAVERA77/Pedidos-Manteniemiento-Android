@@ -4,6 +4,7 @@
  */
 
 import { prioridadPredeterminadaPorTipoTrabajoUI } from './catalogoReclamoPorRubro.js';
+import { reaplicarSuministroPadronPendiente } from './pedido-nuevo-suministro-padron.js';
 
 function esCooperativaElectricaRubro() {
     const t = String(window.EMPRESA_CFG?.tipo || '')
@@ -47,6 +48,8 @@ export function syncSuministroElectricoUI() {
         const b = document.getElementById('ped-sum-fases');
         if (a) a.value = '';
         if (b) b.value = '';
+    } else {
+        reaplicarSuministroPadronPendiente();
     }
 }
 
