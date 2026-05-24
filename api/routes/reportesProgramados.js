@@ -13,8 +13,18 @@ import {
   buildResumenInformeTenant,
   registrarUltimoEnvioInforme,
 } from "../services/reportesEmailProgramados.js";
+import { ensureGestorNovaInformeTemplate } from "../services/emailjsPlantillaInformeGestorNova.js";
 
 const router = express.Router();
+
+router.get("/emailjs-informe-setup", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const out = await ensureGestorNovaInformeTemplate(req.tenantId);
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 router.get("/config", authWithTenantHost, adminOnly, async (req, res) => {
   try {

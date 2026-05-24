@@ -9,6 +9,7 @@ import {
   emailjsInformeConfigurado,
   enviarCorreoInformeEmailjs,
 } from "./emailjsEnvioInforme.js";
+import { ensureGestorNovaInformeTemplate } from "./emailjsPlantillaInformeGestorNova.js";
 import {
   buildContenidoInformeTenant,
   normalizarFrecuenciaInforme,
@@ -53,15 +54,17 @@ function smtpTransport() {
   });
 }
 
-/** @param {unknown} raw */
-function normalizarEmailjsBody(raw) {
+/** @param {unknown} raw @param {number} [tenantId] */
+async function normalizarEmailjsBody(raw, tenantId) {
   if (!raw || typeof raw !== "object") return null;
   const o = /** @type {Record<string, unknown>} */ (raw);
   const publicKey = String(o.publicKey || o.public_key || "").trim();
   const serviceId = String(o.serviceId || o.service_id || "").trim();
-  const templateIdInforme = String(
-    o.templateIdInforme || o.template_id_informe || o.templateId || o.template_id || ""
-  ).trim();
+  let templateIdInforme = String(o.templateIdInforme || o.template_id_informe || "").trim();
+  if (!templateIdInforme) {
+    const ensured = await ensureGestorNovaInformeTemplate(tenantId);
+    templateIdInforme = ensured.templateIdInforme || "";
+  }
   if (!publicKey || !serviceId || !templateIdInforme) return null;
   return { publicKey, serviceId, templateId: templateIdInforme, templateIdInforme };
 }
@@ -75,7 +78,7 @@ export async function getStoredEmailjsConfig(tenantId) {
     );
     const raw = r.rows?.[0]?.emailjs_config;
     if (!raw || typeof raw !== "object") return null;
-    return normalizarEmailjsBody(raw);
+    return normalizarEmailjsBody(raw, tenantId);
   } catch {
     return null;
   }
@@ -105,19 +108,21 @@ export async function getReporteEmailConfig(tenantId) {
   if (!(await configTableOk())) {
     return { email: "", frecuencia: "off", tabla_ok: false };
   }
+  const tpl = await ensureGestorNovaInformeTemplate(tenantId);
   const r = await query(
     `SELECT email, frecuencia, ultimo_envio FROM tenant_reporte_email_config WHERE tenant_id = $1 LIMIT 1`,
     [tenantId]
   );
   const row = r.rows?.[0];
+  const stored = await getStoredEmailjsConfig(tenantId);
   return {
     email: row?.email || "",
     frecuencia: row?.frecuencia || "off",
     ultimo_envio: row?.ultimo_envio || null,
     tabla_ok: true,
-    emailjs_en_servidor: emailjsInformeConfigurado(),
-    emailjs_guardado: !!(await getStoredEmailjsConfig(tenantId)),
-    emailjs_template_id_informe: (await getStoredEmailjsConfig(tenantId))?.templateIdInforme || "",
+    emailjs_en_servidor: await emailjsInformeConfigurado(stored, tenantId),
+    emailjs_plantilla_gestornova: tpl.ok,
+    emailjs_template_id_informe: tpl.templateIdInforme || stored?.templateIdInforme || "",
   };
 }
 
@@ -133,7 +138,16 @@ export async function putReporteEmailConfig(tenantId, { email, frecuencia, email
      RETURNING *`,
     [tenantId, String(email || "").trim() || null, freq]
   );
-  const ej = normalizarEmailjsBody(emailjs);
+  let ej = emailjs ? await normalizarEmailjsBody(emailjs, tenantId) : null;
+  if (!ej && (emailjs?.publicKey || process.env.EMAILJS_PUBLIC_KEY)) {
+    ej = await normalizarEmailjsBody(
+      {
+        publicKey: emailjs?.publicKey || process.env.EMAILJS_PUBLIC_KEY,
+        serviceId: emailjs?.serviceId || process.env.EMAILJS_SERVICE_ID,
+      },
+      tenantId
+    );
+  }
   if (ej) await saveStoredEmailjsConfig(tenantId, ej);
   return r.rows[0];
 }
@@ -144,11 +158,18 @@ export async function registrarUltimoEnvioInforme(tenantId) {
 }
 
 async function resolveEmailjsParaEnvio(tenantId, emailjsOverride) {
-  const fromBody = normalizarEmailjsBody(emailjsOverride);
+  const fromBody = await normalizarEmailjsBody(emailjsOverride, tenantId);
   if (fromBody) return fromBody;
   const stored = await getStoredEmailjsConfig(tenantId);
   if (stored) return stored;
-  return null;
+  const ej = await normalizarEmailjsBody(
+    {
+      publicKey: process.env.EMAILJS_PUBLIC_KEY,
+      serviceId: process.env.EMAILJS_SERVICE_ID,
+    },
+    tenantId
+  );
+  return ej;
 }
 
 export async function generarYEnviarReporteTenant(
@@ -191,16 +212,17 @@ export async function generarYEnviarReporteTenant(
       subject: contenido.subject,
       text: contenido.text,
     });
-  } else if (emailjsInformeConfigurado(emailjsCfg)) {
+  } else if (await emailjsInformeConfigurado(emailjsCfg, tenantId)) {
     via = "emailjs";
-    await enviarCorreoInformeEmailjs(params, emailjsCfg);
+    await enviarCorreoInformeEmailjs(params, emailjsCfg, tenantId);
   } else {
+    const tpl = await ensureGestorNovaInformeTemplate(tenantId);
     return {
       ok: false,
       mensaje:
-        "Plantilla de informes no configurada: en EmailJS duplicá la plantilla (solo {{email_subject}} y {{email_body}}), guardá el Template ID en el panel o definí EMAILJS_TEMPLATE_ID_INFORME en Render (distinto al de recuperación de clave).",
+        tpl.mensaje ||
+        "Plantilla GestorNova de informes no disponible. En Render: EMAILJS_TEMPLATE_ID_INFORME o EMAILJS_PRIVATE_KEY.",
       usar_cliente: false,
-      requiere_template_informe: true,
     };
   }
 

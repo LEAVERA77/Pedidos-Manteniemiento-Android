@@ -1,54 +1,25 @@
-# EmailJS — plantilla SOLO para informes (obligatorio)
+# Informes por email — plantilla GestorNova (automática)
 
-**No uses** la plantilla de «código de acceso» / «Solicitud de acceso» para informes. Duplicá la plantilla y usá un **Template ID distinto**.
+El sistema incluye la plantilla **`GestorNova_Informe_Operativo`** (asunto `{{email_subject}}`, cuerpo `{{email_body}}`). **No hace falta** pegar Template ID en el panel admin.
 
-## Pasos en EmailJS (una vez)
+## Cómo se resuelve la plantilla
 
-1. [EmailJS.com](https://www.emailjs.com/) → **Email Templates** → **Duplicate** la plantilla de reset (o **Create new**).
-2. **To email:** `{{to_email}}`
-3. **Subject:** `{{email_subject}}`
-4. **Content:** borrá todo el texto de recuperación de clave y dejá solo:
+1. **Render:** `EMAILJS_TEMPLATE_ID_INFORME` (si ya creaste la plantilla en EmailJS), o  
+2. **`EMAILJS_PRIVATE_KEY`** en Render → la API intenta crear la plantilla en EmailJS al primer envío, o  
+3. **GitHub Secret** `EMAILJS_TEMPLATE_ID_INFORME` → va a `config.json` → `emailjs.templateIdInforme`.
 
-```
-{{email_body}}
-```
+Recuperación de clave sigue usando `EMAILJS_TEMPLATE_ID` / `templateIdReset`.
 
-5. **Save** → copiá el **Template ID** nuevo.
-6. En el panel **Admin → Empresa → Informes**, pegalo en **Template ID informes** y guardá.
-7. Opcional Render: `EMAILJS_TEMPLATE_ID_INFORME` = ese mismo ID (informes automáticos).
-8. GitHub Secret opcional: `EMAILJS_TEMPLATE_ID_INFORME` para `config.json` en Pages.
+## Si falla el primer envío
 
-## Variables que envía GestorNova
+En [EmailJS](https://www.emailjs.com/) → **Email Templates** → **Create** → nombre `GestorNova_Informe_Operativo`:
 
-| Variable | Informe periódico | Recuperación de clave |
-|----------|-------------------|------------------------|
-| `email_subject` | Asunto del informe | «GestorNova — código…» |
-| `email_body` | Texto completo del informe | Texto con el código |
-| `to_email` / `to_name` | Destinatario | Admin |
+- **To:** `{{to_email}}`
+- **Subject:** `{{email_subject}}`
+- **Content:** `{{email_body}}`
 
-También se envían `informe_cuerpo`, `message`, etc. por compatibilidad.
+Guardá y poné el Template ID en Render como `EMAILJS_TEMPLATE_ID_INFORME`.
 
-## `config.json` (opcional: dos plantillas)
-
-```json
-"emailjs": {
-  "publicKey": "...",
-  "serviceId": "service_...",
-  "templateId": "template_reset",
-  "templateIdInforme": "template_informe",
-  "templateIdReset": "template_reset"
-}
-```
-
-- Si solo tenés `templateId`, usala con la plantilla unificada de arriba (sirve para ambos).
-- `templateIdInforme` / `templateIdReset` permiten plantillas separadas.
-
-Secretos GitHub Pages: `EMAILJS_TEMPLATE_ID` y opcional `EMAILJS_TEMPLATE_ID_INFORME`.
-
-Render (informes automáticos): `EMAILJS_TEMPLATE_ID_INFORME` o la misma plantilla unificada en `EMAILJS_TEMPLATE_ID`.
-
-## Referencia en el repo
-
-Texto listo para copiar: `app/src/main/assets/modules/emailjs-plantilla-unificada.js` (`PLANTILLA_EMAILJS_SUBJECT`, `PLANTILLA_EMAILJS_BODY`).
+**Private Key:** EmailJS → Account → Security → API para aplicaciones no navegador + copiar Private Key a `EMAILJS_PRIVATE_KEY` en Render.
 
 `made by leavera77`
