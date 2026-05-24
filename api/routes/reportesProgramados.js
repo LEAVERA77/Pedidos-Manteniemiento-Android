@@ -10,6 +10,8 @@ import {
   putReporteEmailConfig,
   generarYEnviarReporteTenant,
   ejecutarReportesProgramadosCron,
+  buildResumenInformeTenant,
+  registrarUltimoEnvioInforme,
 } from "../services/reportesEmailProgramados.js";
 
 const router = express.Router();
@@ -28,8 +30,30 @@ router.put("/config", authWithTenantHost, adminOnly, async (req, res) => {
     const row = await putReporteEmailConfig(req.tenantId, {
       email: req.body?.email,
       frecuencia: req.body?.frecuencia,
+      emailjs: req.body?.emailjs,
     });
     return res.json(row);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/resumen", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const out = await buildResumenInformeTenant(req.tenantId, {
+      frecuencia: req.body?.frecuencia || "diario",
+      forzar: true,
+    });
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/registrar-envio", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    await registrarUltimoEnvioInforme(req.tenantId);
+    return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -41,6 +65,7 @@ router.post("/ejecutar-ahora", authWithTenantHost, adminOnly, async (req, res) =
       forzar: true,
       emailOverride: req.body?.email,
       frecuenciaOverride: req.body?.frecuencia,
+      emailjsOverride: req.body?.emailjs,
     });
     if (!out.ok) return res.status(400).json(out);
     return res.json(out);

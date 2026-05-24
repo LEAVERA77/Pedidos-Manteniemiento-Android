@@ -1,46 +1,76 @@
 /**
  * Envío de correo desde la API (Render) vía EmailJS REST.
- * Mismas variables que GitHub Pages: EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID.
- * Opcional: EMAILJS_TEMPLATE_ID_INFORME, EMAILJS_PRIVATE_KEY (recomendado en EmailJS → Security).
+ * Origen de credenciales (en orden): override (body/BD) → variables de entorno.
  * made by leavera77
  */
 
 /**
+ * @param {Record<string, unknown>|null|undefined} override
+ * @returns {{ publicKey: string, serviceId: string, templateId: string, privateKey: string }}
+ */
+export function resolveEmailjsConfig(override) {
+  const o = override && typeof override === "object" ? override : {};
+  const pick = (...vals) => {
+    for (const v of vals) {
+      const s = String(v ?? "").trim();
+      if (s) return s;
+    }
+    return "";
+  };
+  const publicKey = pick(
+    o.publicKey,
+    o.public_key,
+    o.user_id,
+    o.userId,
+    process.env.EMAILJS_PUBLIC_KEY,
+    process.env.EMAILJS_USER_ID
+  );
+  const serviceId = pick(o.serviceId, o.service_id, process.env.EMAILJS_SERVICE_ID);
+  const templateId = pick(
+    o.templateId,
+    o.template_id,
+    o.templateIdInforme,
+    process.env.EMAILJS_TEMPLATE_ID_INFORME,
+    process.env.EMAILJS_TEMPLATE_ID
+  );
+  const privateKey = pick(
+    o.privateKey,
+    o.private_key,
+    o.accessToken,
+    process.env.EMAILJS_PRIVATE_KEY
+  );
+  return { publicKey, serviceId, templateId, privateKey };
+}
+
+/**
+ * @param {Record<string, unknown>|null|undefined} [override]
  * @returns {boolean}
  */
-export function emailjsServidorConfigurado() {
-  const pk = String(process.env.EMAILJS_PUBLIC_KEY || "").trim();
-  const sid = String(process.env.EMAILJS_SERVICE_ID || "").trim();
-  const tid = String(
-    process.env.EMAILJS_TEMPLATE_ID_INFORME || process.env.EMAILJS_TEMPLATE_ID || ""
-  ).trim();
-  return !!(pk && sid && tid);
+export function emailjsServidorConfigurado(override) {
+  const c = resolveEmailjsConfig(override);
+  return !!(c.publicKey && c.serviceId && c.templateId);
 }
 
 /**
  * @param {Record<string, string>} templateParams
+ * @param {Record<string, unknown>|null|undefined} [override]
  */
-export async function enviarCorreoEmailjsServidor(templateParams) {
-  if (!emailjsServidorConfigurado()) {
+export async function enviarCorreoEmailjsServidor(templateParams, override) {
+  const c = resolveEmailjsConfig(override);
+  if (!c.publicKey || !c.serviceId || !c.templateId) {
     throw new Error(
-      "EmailJS no configurado (EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID en Render)"
+      "EmailJS no configurado (publicKey, serviceId, templateId en Render, en el body o guardado en admin)"
     );
   }
-  const publicKey = String(process.env.EMAILJS_PUBLIC_KEY).trim();
-  const serviceId = String(process.env.EMAILJS_SERVICE_ID).trim();
-  const templateId = String(
-    process.env.EMAILJS_TEMPLATE_ID_INFORME || process.env.EMAILJS_TEMPLATE_ID
-  ).trim();
-  const privateKey = String(process.env.EMAILJS_PRIVATE_KEY || "").trim();
 
   /** @type {Record<string, unknown>} */
   const payload = {
-    service_id: serviceId,
-    template_id: templateId,
-    user_id: publicKey,
+    service_id: c.serviceId,
+    template_id: c.templateId,
+    user_id: c.publicKey,
     template_params: templateParams,
   };
-  if (privateKey) payload.accessToken = privateKey;
+  if (c.privateKey) payload.accessToken = c.privateKey;
 
   const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
     method: "POST",
@@ -51,7 +81,7 @@ export async function enviarCorreoEmailjsServidor(templateParams) {
   if (!r.ok) {
     const hint =
       r.status === 403
-        ? " — En EmailJS: Account → Security → activá «Allow API requests for non-browser applications»."
+        ? " — En EmailJS: Account → Security → activá «Allow API requests for non-browser applications», o usá «Enviar ahora» desde la web (envío en el navegador)."
         : "";
     throw new Error((body || `EmailJS HTTP ${r.status}`) + hint);
   }
