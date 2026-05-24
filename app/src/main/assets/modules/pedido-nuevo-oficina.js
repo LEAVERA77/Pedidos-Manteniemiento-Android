@@ -4,6 +4,7 @@
  */
 
 import { toast } from './ui-utils.js';
+import { getApp } from './gn-app-global-bridge.js';
 import { resetPadronNuevoPedidoNisTimers } from './pedido-nuevo-padron-busqueda.js';
 
 let _modoOficina = false;
@@ -164,9 +165,8 @@ export async function aplicarCoordenadasPedidoOficina(deps, lat, lng, opts = {})
 
     const sel = crearSeleccionMapaDesdeCoords(la, lo);
     if (!sel) return false;
-    if (typeof window !== 'undefined' && window.app) {
-        window.app.sel = sel;
-    }
+    const app = getApp();
+    if (app) app.sel = sel;
 
     const li = document.getElementById('li');
     const gi = document.getElementById('gi');
@@ -185,9 +185,10 @@ export async function aplicarCoordenadasPedidoOficina(deps, lat, lng, opts = {})
         if (typeof deps.mostrarMarcadorUbicacion === 'function') {
             deps.mostrarMarcadorUbicacion(la, lo, null);
         }
-        if (window.app?.map) {
-            window.app.map.invalidateSize({ animate: false });
-            window.app.map.setView([la, lo], 16, { animate: false });
+        const appMap = getApp()?.map;
+        if (appMap) {
+            appMap.invalidateSize({ animate: false });
+            appMap.setView([la, lo], 16, { animate: false });
         }
     } catch (_) {}
 
@@ -483,7 +484,8 @@ export async function abrirPedidoNuevoOficina(deps) {
     _modoOficina = true;
 
     if (typeof deps.limpiarFotosYPreviewNuevoPedido === 'function') deps.limpiarFotosYPreviewNuevoPedido();
-    if (window.app) window.app.sel = null;
+    const appRef = getApp();
+    if (appRef) appRef.sel = null;
 
     const li = document.getElementById('li');
     const gi = document.getElementById('gi');

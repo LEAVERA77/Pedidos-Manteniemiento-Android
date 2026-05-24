@@ -164,11 +164,19 @@ import {
     esPedidoNuevoModoOficina,
     syncVisibilidadBotonPedidoOficina,
 } from './modules/pedido-nuevo-oficina.js';
+import { registrarAppGlobal } from './modules/gn-app-global-bridge.js';
 import {
     prepararUbicacionSubmitPedidoOficina,
     finalizarPedidoOficinaTrasGuardar,
     asegurarAppSelParaGuardarPedido,
+    coordsDesdeAppParaGuardar,
 } from './modules/pedido-oficina-guardar-ubicacion.js';
+import {
+    syncPrioridadConTipoReclamo,
+    syncSuministroElectricoUI,
+    installPedidoFormularioGlobalHooks,
+    tipoReclamoElectricoPideSuministroWhatsapp,
+} from './modules/pedido-formulario-global-hooks.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 
 try {
@@ -1102,14 +1110,6 @@ async function initNeon() {
 
 let DIST = []; // Se carga desde Neon: tabla distribuidores
 
-function syncPrioridadConTipoReclamo() {
-    const tt = document.getElementById('tt');
-    const pr = document.getElementById('pr');
-    if (!tt || !pr) return;
-    const v = prioridadPredeterminadaPorTipoTrabajoUI(tt.value);
-    if (Array.from(pr.options).some(o => o.value === v)) pr.value = v;
-}
-
 function normalizarRubroEmpresa(tipo) {
     const t = String(tipo || '').trim().toLowerCase();
     if (t === 'municipio') return 'municipio';
@@ -1661,6 +1661,10 @@ const app = {
     cid: null,
     ok: false
 };
+registrarAppGlobal(app);
+try {
+    installPedidoFormularioGlobalHooks();
+} catch (_) {}
 
 function normalizarRolStr(r) {
     const x = String(r == null ? '' : r)
@@ -8990,6 +8994,15 @@ function _bindPedidoFormSubmit() {
         btn.disabled = false;
         return;
     }
+    const coordsInsert = coordsDesdeAppParaGuardar();
+    if (!coordsInsert) {
+        toast('No se pudieron leer las coordenadas del reclamo.', 'error');
+        btn.disabled = false;
+        return;
+    }
+    if (app.sel == null) {
+        app.sel = { lat: coordsInsert.lat, lng: coordsInsert.lng };
+    }
     
     try {
         
@@ -12150,32 +12163,6 @@ function tipoPedidoExcluyeMateriales(tipoTrabajo) {
     if (v === 'Otros') return true;
     if (esTipoPedidoFactibilidad(v)) return true;
     return false;
-}
-
-/** Alineado con api/services/tiposReclamo.js (cooperativa eléctrica). */
-function tipoReclamoElectricoPideSuministroWhatsapp(tipoTrabajo) {
-    const v = String(tipoTrabajo || '').trim();
-    return (
-        v === 'Problemas de Tensión' ||
-        v === 'Consumo elevado' ||
-        v === 'Corte de Energía' ||
-        v === 'Alumbrado Público (Mantenimiento)' ||
-        v === 'Pedido de factibilidad (nuevo servicio)'
-    );
-}
-
-function syncSuministroElectricoUI() {
-    const w = document.getElementById('ped-suministro-wrap');
-    if (!w) return;
-    const tt = document.getElementById('tt')?.value || '';
-    const show = esCooperativaElectricaRubro() && tipoReclamoElectricoPideSuministroWhatsapp(tt);
-    w.style.display = show ? '' : 'none';
-    if (!show) {
-        const a = document.getElementById('ped-sum-conexion');
-        const b = document.getElementById('ped-sum-fases');
-        if (a) a.value = '';
-        if (b) b.value = '';
-    }
 }
 
 function syncNisClienteReclamoConexionUI() {

@@ -4,6 +4,7 @@
  */
 
 import { toast } from './ui-utils.js';
+import { getApp } from './gn-app-global-bridge.js';
 import {
     aplicarCoordenadasPedidoOficina,
     crearSeleccionMapaDesdeCoords,
@@ -21,9 +22,10 @@ function parseCoordNum(s) {
 /** Lee lat/lng desde #li/#gi, #ped-oficina-estado.sel o app.sel. */
 export function leerCoordenadasPedidoOficinaDesdeDom() {
     try {
-        if (window.app?.sel) {
-            const la = Number(window.app.sel.lat);
-            const lo = Number(window.app.sel.lng);
+        const app = getApp();
+        if (app?.sel) {
+            const la = Number(app.sel.lat);
+            const lo = Number(app.sel.lng);
             if (Number.isFinite(la) && Number.isFinite(lo)) return { lat: la, lng: lo };
         }
     } catch (_) {}
@@ -49,34 +51,44 @@ export function leerCoordenadasPedidoOficinaDesdeDom() {
  * Garantiza window.app.sel antes del INSERT (oficina puede tener #li/#gi sin Leaflet listo).
  * @param {{ ok?: boolean, lat?: number, lng?: number }} [prep]
  */
+function fijarSelEnApp(sel) {
+    const app = getApp();
+    if (!app || !sel) return false;
+    app.sel = sel;
+    return true;
+}
+
+/** Coordenadas listas para INSERT (app.sel o DOM). */
+export function coordsDesdeAppParaGuardar() {
+    const app = getApp();
+    if (app?.sel) {
+        const la = Number(app.sel.lat);
+        const lo = Number(app.sel.lng);
+        if (Number.isFinite(la) && Number.isFinite(lo)) return { lat: la, lng: lo };
+    }
+    return leerCoordenadasPedidoOficinaDesdeDom();
+}
+
 export function asegurarAppSelParaGuardarPedido(prep) {
-    try {
-        if (window.app?.sel) {
-            const la = Number(window.app.sel.lat);
-            const lo = Number(window.app.sel.lng);
-            if (Number.isFinite(la) && Number.isFinite(lo)) return true;
-        }
-    } catch (_) {}
+    const existente = coordsDesdeAppParaGuardar();
+    if (existente) {
+        fijarSelEnApp(crearSeleccionMapaDesdeCoords(existente.lat, existente.lng));
+        return true;
+    }
 
     if (prep?.ok && Number.isFinite(prep.lat) && Number.isFinite(prep.lng)) {
         const sel = crearSeleccionMapaDesdeCoords(prep.lat, prep.lng);
-        if (sel && window.app) {
-            window.app.sel = sel;
-            return true;
-        }
+        if (fijarSelEnApp(sel)) return true;
     }
 
     const c = leerCoordenadasPedidoOficinaDesdeDom();
     if (c) {
         const sel = crearSeleccionMapaDesdeCoords(c.lat, c.lng);
-        if (sel && window.app) {
-            window.app.sel = sel;
-            const li = document.getElementById('li');
-            const gi = document.getElementById('gi');
-            if (li) li.value = String(c.lat);
-            if (gi) gi.value = String(c.lng);
-            return true;
-        }
+        const li = document.getElementById('li');
+        const gi = document.getElementById('gi');
+        if (li) li.value = String(c.lat);
+        if (gi) gi.value = String(c.lng);
+        if (fijarSelEnApp(sel)) return true;
     }
     return false;
 }
@@ -96,8 +108,9 @@ export async function sincronizarSelDesdeDomPedidoOficina(deps) {
  */
 export async function prepararUbicacionSubmitPedidoOficina(deps) {
     if (!esPedidoNuevoModoOficina()) {
-        if (!window.app?.sel) return { ok: false };
-        return { ok: true, lat: window.app.sel.lat, lng: window.app.sel.lng, fuente: 'mapa' };
+        const c = coordsDesdeAppParaGuardar();
+        if (!c) return { ok: false };
+        return { ok: true, lat: c.lat, lng: c.lng, fuente: 'mapa' };
     }
 
     let coords = leerCoordenadasPedidoOficinaDesdeDom();
@@ -108,8 +121,9 @@ export async function prepararUbicacionSubmitPedidoOficina(deps) {
     }
 
     const okGeo = await geocodificarDireccionPedidoOficina(deps);
-    if (okGeo && window.app?.sel) {
-        return { ok: true, lat: window.app.sel.lat, lng: window.app.sel.lng, fuente: 'nominatim' };
+    if (okGeo) {
+        const c = coordsDesdeAppParaGuardar();
+        if (c) return { ok: true, lat: c.lat, lng: c.lng, fuente: 'nominatim' };
     }
 
     coords = leerCoordenadasPedidoOficinaDesdeDom();
