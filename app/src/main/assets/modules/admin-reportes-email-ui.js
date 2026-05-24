@@ -1,13 +1,19 @@
 /**
  * Admin: informes periódicos por email (config + disparo manual).
- * «Enviar ahora» usa EmailJS del config.json en el navegador (como recuperación de clave).
  * made by leavera77
  */
+
+import {
+    paramsEmailInforme,
+    templateIdEmailInforme,
+    PLANTILLA_EMAILJS_SUBJECT,
+    PLANTILLA_EMAILJS_BODY,
+} from './emailjs-plantilla-unificada.js';
 
 export function htmlReportesEmailAdminBlock() {
     return `<div id="gn-reportes-email-block" style="margin-top:1rem;padding:.75rem;border:1px solid var(--bo);border-radius:.5rem">
 <h4 style="margin:0 0 .5rem"><i class="fas fa-envelope"></i> Informes por email</h4>
-<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Informe operativo <strong>diario, semanal o mensual</strong> con resumen de pedidos y análisis breve (IA si hay <code style="font-size:.7rem">GROQ_API_KEY</code> en Render). En EmailJS conviene una plantilla con <code style="font-size:.7rem">{{informe_cuerpo}}</code> — ver <code style="font-size:.7rem">docs/EMAILJS_INFORME_PERIODICO.md</code>.</p>
+<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Informe <strong>diario, semanal o mensual</strong> con análisis (IA si hay <code style="font-size:.7rem">GROQ_API_KEY</code>). La plantilla EmailJS debe usar <code style="font-size:.7rem">{{email_subject}}</code> y <code style="font-size:.7rem">{{email_body}}</code> — <button type="button" class="btn-sm" id="gn-reporte-ver-plantilla-emailjs" style="font-size:.7rem;padding:.15rem .35rem">Copiar plantilla</button></p>
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Email destino</label>
 <input type="email" id="gn-reporte-email" placeholder="admin@empresa.com" style="width:100%;max-width:320px;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem;margin-bottom:.5rem">
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Frecuencia</label>
@@ -34,11 +40,12 @@ function leerFormReporteEmail() {
 
 function emailjsDesdeAppConfig() {
     const cfg = window.APP_CONFIG?.emailjs;
-    if (!cfg?.publicKey || !cfg?.serviceId || !cfg?.templateId) return null;
+    const templateId = templateIdEmailInforme(cfg);
+    if (!cfg?.publicKey || !cfg?.serviceId || !templateId) return null;
     return {
         publicKey: cfg.publicKey,
         serviceId: cfg.serviceId,
-        templateId: cfg.templateId,
+        templateId,
     };
 }
 
@@ -71,17 +78,13 @@ function mensajeErrorInforme(e) {
  * @param {Record<string, string>} resumen
  */
 async function enviarEmailjsInforme(ej, destino, resumen) {
-    const params = {
-        ...(resumen.emailjsParams || {}),
-        to_email: destino,
-        to_name: resumen.emailjsParams?.to_name || 'Administrador',
-        message: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
+    const params = paramsEmailInforme({
+        toEmail: destino,
+        toName: resumen.emailjsParams?.to_name || 'Administrador',
         subject: resumen.subject || resumen.emailjsParams?.informe_asunto || 'Informe operativo | GestorNova',
-        informe_cuerpo: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
-        informe_asunto: resumen.subject || resumen.emailjsParams?.informe_asunto || '',
-        app_name: resumen.nombreEmpresa || resumen.emailjsParams?.app_name || 'GestorNova',
-        token: '—',
-    };
+        body: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
+        nombreEmpresa: resumen.nombreEmpresa || resumen.emailjsParams?.app_name,
+    });
     await window.emailjs.send(ej.serviceId, ej.templateId, params, ej.publicKey);
 }
 
@@ -130,7 +133,15 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
     const guardarConfig = async (tok, bodyIn) => {
         const body = bodyIn || leerFormReporteEmail();
         if (!body.email) throw new Error('Completá el email destino');
-        const emailjs = emailjsDesdeAppConfig();
+        const ej = emailjsDesdeAppConfig();
+        const emailjs = ej
+            ? {
+                  publicKey: ej.publicKey,
+                  serviceId: ej.serviceId,
+                  templateId: ej.templateId,
+                  templateIdInforme: ej.templateId,
+              }
+            : null;
         const r = await fetch(apiUrl('/api/reportes-programados/config'), {
             method: 'PUT',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
@@ -192,6 +203,17 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
         } catch (_) {}
     };
     void load();
+
+    document.getElementById('gn-reporte-ver-plantilla-emailjs')?.addEventListener('click', async () => {
+        const texto = `Asunto (Subject):\n${PLANTILLA_EMAILJS_SUBJECT}\n\nCuerpo (Content):\n${PLANTILLA_EMAILJS_BODY}\n\nTo email: {{to_email}}`;
+        try {
+            await navigator.clipboard.writeText(texto);
+            toast('Plantilla copiada. Pegala en EmailJS → tu template → Save.', 'success');
+        } catch (_) {
+            mensajeReporteUi(texto, false);
+            toast('Copiá manualmente desde el texto debajo del formulario', 'warning');
+        }
+    });
 
     document.getElementById('gn-reporte-guardar')?.addEventListener('click', async () => {
         const tok = getApiToken();

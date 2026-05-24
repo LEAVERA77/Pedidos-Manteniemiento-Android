@@ -44,6 +44,7 @@ import {
     esTelefonoWhatsappValido,
 } from './modules/normalizar-telefono.js';
 import { pdfEncabezadoEmpresaBloque } from './modules/empresa-encabezado-pdf.js';
+import { paramsEmailReset, templateIdEmailReset } from './modules/emailjs-plantilla-unificada.js';
 import { construirHtmlEncabezadoInformeEmpresa } from './modules/informe-empresa-html-encabezado.js';
 import {
     ESTADO_DONUT_COLORS,
@@ -17266,13 +17267,13 @@ async function pasoResetPw() {
                 }
                 await emailjs.send(
                     cfg.serviceId,
-                    cfg.templateId,
-                    {
-                        to_email: toEmail,
-                        to_name: usuario.nombre || usuario.email || 'Administrador',
+                    templateIdEmailReset(cfg),
+                    paramsEmailReset({
+                        toEmail,
+                        toName: usuario.nombre || usuario.email || 'Administrador',
                         token,
-                        app_name: 'GestorNova'
-                    },
+                        appName: 'GestorNova',
+                    }),
                     cfg.publicKey
                 );
 

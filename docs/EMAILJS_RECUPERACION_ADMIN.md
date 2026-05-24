@@ -5,22 +5,15 @@
 1. [EmailJS.com](https://www.emailjs.com/) → **Email Services** → vinculá **Gmail** (u otro). Anotá el **Service ID** (ej. `service_5cpzveh`).
 2. **Email Templates** → **Create new template**.
 
-## 2. Campos del template (variables)
+## 2. Plantilla unificada (recomendado)
 
-El front envía estos `template_params` (nombres exactos):
+Usá la misma plantilla para informes y recuperación de clave. Ver **`docs/EMAILJS_INFORME_PERIODICO.md`**:
 
-| Variable      | Uso |
-|---------------|-----|
-| `to_email`    | Destino del correo (email de empresa, el que el admin elija, o el del usuario admin). |
-| `to_name`     | Nombre del administrador. |
-| `token`       | Código de 6 dígitos (válido ~30 min). |
-| `app_name`    | Nombre de la empresa (desde `EMPRESA_CFG` / branding). |
+- **Subject:** `{{email_subject}}`
+- **Content:** `{{{email_body}}}`
+- **To email:** `{{to_email}}`
 
-En el template:
-
-- **To email**: `{{to_email}}` (campo *To* dinámico según tu plan; en plantillas gratuitas suele configurarse en *Settings* del template como “Send to email” = `{{to_email}}`).
-- **Subject**: ej. `{{app_name}} — código para restablecer contraseña`
-- **Content**: texto con el código `{{token}}` y aviso de caducidad.
+El front envía `email_subject` y `email_body` (y `to_email`, `to_name`, `token` por compatibilidad).
 
 ## 3. API Keys (Integration)
 

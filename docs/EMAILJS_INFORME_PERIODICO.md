@@ -1,46 +1,58 @@
-# EmailJS — plantilla para informes periódicos
+# EmailJS — plantilla unificada (informes + recuperación de clave)
 
-Los informes usan las mismas credenciales que la recuperación de contraseña (`config.json` / secretos GitHub). Conviene **duplicar la plantilla** en EmailJS para no mezclar textos de “código de acceso” con el informe operativo.
+Una sola plantilla en EmailJS evita el texto fijo de «Solicitud de acceso» en los informes.
+
+## Pasos en EmailJS (una vez)
+
+1. [EmailJS.com](https://www.emailjs.com/) → **Email Templates** → abrí tu plantilla (o **Create new**).
+2. **To email:** `{{to_email}}`
+3. **Subject:** pegá exactamente:
+
+```
+{{email_subject}}
+```
+
+4. **Content (cuerpo):** pegá exactamente:
+
+```
+{{{email_body}}}
+```
+
+(Las tres llaves conservan saltos de línea del informe.)
+
+5. **Save**. Anotá el **Template ID** en GitHub Secrets / `config.json`.
 
 ## Variables que envía GestorNova
 
-| Variable | Uso |
-|----------|-----|
-| `to_email` | Destinatario |
-| `to_name` | Nombre (ej. Administrador) |
-| `informe_asunto` | Asunto completo del informe |
-| `informe_cuerpo` | Cuerpo en texto plano (resumen + análisis IA) |
-| `informe_periodo` | Ej. «diario (últimas 24 horas)» |
-| `informe_tipo` | `diario`, `semanal`, `mensual` o `prueba` |
-| `message` | Igual que `informe_cuerpo` (compatibilidad) |
-| `subject` | Igual que `informe_asunto` |
-| `app_name` | Nombre de la empresa / tenant |
-| `token` | `—` (no usar en informes) |
+| Variable | Informe periódico | Recuperación de clave |
+|----------|-------------------|------------------------|
+| `email_subject` | Asunto del informe | «GestorNova — código…» |
+| `email_body` | Texto completo del informe | Texto con el código |
+| `to_email` / `to_name` | Destinatario | Admin |
 
-Opcional en Render: `EMAILJS_TEMPLATE_ID_INFORME` apuntando a esta plantilla.
+También se envían `informe_cuerpo`, `message`, etc. por compatibilidad.
 
-## Ejemplo de plantilla (Email Templates)
+## `config.json` (opcional: dos plantillas)
 
-**Subject:** `{{informe_asunto}}`
-
-**Content (texto):**
-
-```
-{{informe_cuerpo}}
+```json
+"emailjs": {
+  "publicKey": "...",
+  "serviceId": "service_...",
+  "templateId": "template_reset",
+  "templateIdInforme": "template_informe",
+  "templateIdReset": "template_reset"
+}
 ```
 
-**To email:** `{{to_email}}`
+- Si solo tenés `templateId`, usala con la plantilla unificada de arriba (sirve para ambos).
+- `templateIdInforme` / `templateIdReset` permiten plantillas separadas.
 
-Si mantenés la plantilla de recuperación de clave, el correo seguirá mostrando “Solicitud de acceso” hasta que cambies el texto o uses una plantilla dedicada.
+Secretos GitHub Pages: `EMAILJS_TEMPLATE_ID` y opcional `EMAILJS_TEMPLATE_ID_INFORME`.
 
-## Frecuencias
+Render (informes automáticos): `EMAILJS_TEMPLATE_ID_INFORME` o la misma plantilla unificada en `EMAILJS_TEMPLATE_ID`.
 
-| Valor | Período analizado |
-|-------|-------------------|
-| `diario` | Últimas 24 horas |
-| `semanal` | Últimos 7 días |
-| `mensual` | Último mes |
+## Referencia en el repo
 
-El análisis breve usa Groq si `GROQ_API_KEY` está en Render; si no, un texto automático según los números.
+Texto listo para copiar: `app/src/main/assets/modules/emailjs-plantilla-unificada.js` (`PLANTILLA_EMAILJS_SUBJECT`, `PLANTILLA_EMAILJS_BODY`).
 
 `made by leavera77`

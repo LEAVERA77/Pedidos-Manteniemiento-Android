@@ -139,6 +139,8 @@ export async function buildContenidoInformeTenant(
   const emailjsParams = {
     to_email: destinatarioEmail || "",
     to_name: destinatarioNombre || "Administrador",
+    email_subject: subject,
+    email_body: cuerpo,
     informe_asunto: subject,
     informe_cuerpo: cuerpo,
     informe_periodo: periodoLabel,
@@ -167,6 +169,8 @@ export function emailjsParamsDesdeContenido(contenido, destinatarioEmail, destin
   const p = { ...contenido.emailjsParams };
   if (destinatarioEmail) p.to_email = destinatarioEmail;
   if (destinatarioNombre) p.to_name = destinatarioNombre;
+  p.email_subject = contenido.subject;
+  p.email_body = contenido.text;
   p.message = contenido.text;
   p.subject = contenido.subject;
   p.informe_cuerpo = contenido.text;
