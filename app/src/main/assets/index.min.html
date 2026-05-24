@@ -761,7 +761,7 @@
         <button type="button" class="btn-sm" id="admin-red-electrica-refresh" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-sync"></i> Actualizar lista</button>
         <span id="admin-red-electrica-file-status" style="font-size:.72rem;color:var(--tl);flex:1 1 100%"></span>
       </div>
-      <pre id="admin-red-electrica-result" style="display:none;white-space:pre-wrap;font-size:.72rem;background:var(--bg2,#f8fafc);border:1px solid var(--bo);border-radius:.45rem;padding:.65rem;max-height:min(28vh,220px);overflow:auto;margin:0 0 .75rem"></pre>
+      <div id="admin-red-electrica-result" style="display:none;margin:0 0 .75rem" aria-live="polite"></div>
       <div style="overflow:auto;border:1px solid var(--bo);border-radius:.45rem">
         <table class="admin-table" style="margin:0;min-width:640px">
           <thead><tr>
@@ -865,7 +865,8 @@
           </label>
         </div>
       </div>
-      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> Cada importación <strong>fusiona</strong> con Neon: altas y actualizaciones por NIS; los socios que <strong>no</strong> vienen en el Excel <strong>no se eliminan</strong> (aunque sean muchos). Teléfonos y datos ya guardados (p. ej. desde pedidos) <strong>no se borran</strong> si la celda del archivo viene vacía. Revisá <strong>Formato</strong> por rubro.</p>
+      <p style="font-size:.8rem;color:var(--tl);margin-bottom:.75rem"><strong>Fila 1 = encabezados.</strong> El Excel define el catálogo de este tenant y rubro: <strong>altas y actualizaciones</strong> por NIS; los socios que <strong>no</strong> vienen en el archivo se pueden <strong>eliminar de la base</strong> (te pedimos confirmación). Teléfonos y otros datos ya guardados <strong>no se borran</strong> si la celda del Excel viene vacía. Revisá <strong>Formato</strong> por rubro.</p>
+      <div id="admin-socios-import-result" style="display:none;margin:0 0 .75rem" aria-live="polite"></div>
       <div id="lista-socios-admin"><div class="ll2"><i class="fas fa-circle-notch fa-spin"></i></div></div>
       <div id="modal-alta-socio-manual" class="mo" role="dialog" aria-modal="true" aria-labelledby="soc-man-titulo">
         <div class="mc" style="max-width:min(32rem,96vw)">

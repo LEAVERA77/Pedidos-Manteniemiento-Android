@@ -2379,7 +2379,7 @@ async function importarExcelSocios(event) {
         const dupEnArchivo = payloads.length - payloadsUnicos.length;
         const depsSoc = {
             sqlSimple: (q) => req().sqlSimple(q),
-            esc: (v) => req().esc(v),
+            esc,
             tenantIdActual: () => req().tenantIdActual(),
         };
         const { nuevos: nuevosPrevistos, actualizados: actualizadosPrevistos } =
