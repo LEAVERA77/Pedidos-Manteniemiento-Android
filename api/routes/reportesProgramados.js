@@ -19,7 +19,16 @@ const router = express.Router();
 
 router.get("/emailjs-informe-setup", authWithTenantHost, adminOnly, async (req, res) => {
   try {
-    const out = await ensureGestorNovaInformeTemplate(req.tenantId);
+    const out = await ensureGestorNovaInformeTemplate(req.tenantId, req.body?.emailjs);
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/emailjs-informe-setup", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const out = await ensureGestorNovaInformeTemplate(req.tenantId, req.body?.emailjs);
     return res.json(out);
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });

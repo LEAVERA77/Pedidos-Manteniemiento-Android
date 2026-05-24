@@ -1,5 +1,5 @@
 /**
- * EmailJS solo para informes (plantilla GestorNova integrada).
+ * EmailJS informes — Public Key + Service + Template (Private Key opcional).
  * made by leavera77
  */
 
@@ -27,22 +27,7 @@ export async function resolveEmailjsConfigInforme(override, tenantId) {
   );
   const serviceId = pick(o.serviceId, o.service_id, process.env.EMAILJS_SERVICE_ID);
   const privateKey = pick(o.privateKey, o.private_key, process.env.EMAILJS_PRIVATE_KEY);
-
-  let templateId = pick(o.templateIdInforme, o.template_id_informe);
-  if (!templateId) templateId = await resolveGestorNovaInformeTemplateId(tenantId);
-
-  const templateIdReset = pick(o.templateIdReset, process.env.EMAILJS_TEMPLATE_ID);
-
-  if (templateId && templateIdReset && templateId === templateIdReset) {
-    return {
-      publicKey: "",
-      serviceId: "",
-      templateId: "",
-      privateKey: "",
-      errorPlantilla:
-        "La plantilla de informes coincide con la de recuperación de clave. Configurá EMAILJS_TEMPLATE_ID_INFORME distinto o EMAILJS_PRIVATE_KEY en Render.",
-    };
-  }
+  const templateId = await resolveGestorNovaInformeTemplateId(tenantId, o);
 
   return { publicKey, serviceId, templateId, privateKey, errorPlantilla: "" };
 }
@@ -53,7 +38,7 @@ export async function resolveEmailjsConfigInforme(override, tenantId) {
  */
 export async function emailjsInformeConfigurado(override, tenantId) {
   const c = await resolveEmailjsConfigInforme(override, tenantId);
-  return !!(c.publicKey && c.serviceId && c.templateId && !c.errorPlantilla);
+  return !!(c.publicKey && c.serviceId && c.templateId);
 }
 
 /**
@@ -63,10 +48,9 @@ export async function emailjsInformeConfigurado(override, tenantId) {
  */
 export async function enviarCorreoInformeEmailjs(templateParams, override, tenantId) {
   const c = await resolveEmailjsConfigInforme(override, tenantId);
-  if (c.errorPlantilla) throw new Error(c.errorPlantilla);
   if (!c.publicKey || !c.serviceId || !c.templateId) {
     throw new Error(
-      "Plantilla de informes no disponible. En Render: EMAILJS_TEMPLATE_ID_INFORME o EMAILJS_PRIVATE_KEY (Account → Security → API no navegador)."
+      "EmailJS incompleto en el servidor. Agregá en Render EMAILJS_SERVICE_ID y EMAILJS_TEMPLATE_ID (mismos que GitHub) o enviá el informe desde la web admin."
     );
   }
   return enviarCorreoEmailjsServidor(templateParams, {

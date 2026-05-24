@@ -62,19 +62,17 @@ solo si el VPS Vultr sigue activo y accesible; luego redeploy. Ver `MIGRATION_VU
 
 ## Informes por email (API — Render)
 
-Mismas credenciales que en GitHub Pages para recuperación de clave, configuradas en el **servicio Render** de la API (no solo en GitHub Actions):
+| Variable | Obligatoria | Uso |
+|----------|-------------|-----|
+| `EMAILJS_PUBLIC_KEY` | Sí | Public Key (ya la tenés) |
+| `EMAILJS_SERVICE_ID` | Para cron/API | Mismo valor que secret GitHub `EMAILJS_SERVICE_ID` |
+| `EMAILJS_TEMPLATE_ID` | Para cron/API | Mismo valor que secret GitHub `EMAILJS_TEMPLATE_ID` |
 
-| Variable | Uso |
-|----------|-----|
-| `EMAILJS_PUBLIC_KEY` | Public Key de EmailJS |
-| `EMAILJS_SERVICE_ID` | Service ID |
-| `EMAILJS_TEMPLATE_ID` | Plantilla; el informe envía `message` con el resumen |
-| `EMAILJS_TEMPLATE_ID_INFORME` | Opcional: plantilla solo para informes |
-| `EMAILJS_PRIVATE_KEY` | Opcional; recomendado si activás strict mode |
+Con **solo** `EMAILJS_PUBLIC_KEY` en Render, **«Enviar ahora»** en la web admin funciona igual (usa `config.json` de Pages con las tres claves).
 
-En [EmailJS](https://www.emailjs.com/) → **Account → Security** → activar **Allow API requests for non-browser applications**.
+Plantilla EmailJS (Subject `{{email_subject}}`, Content `{{email_body}}`, To `{{to_email}}`) para informes y reset unificado.
 
-Plantilla de informe: incluir en el cuerpo `{{message}}` (destino `{{to_email}}`). Alternativa: SMTP con `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`.
+En [EmailJS](https://www.emailjs.com/) → **Security** → permitir API desde servidor si usás envío solo por API.
 
 ---
 

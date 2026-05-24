@@ -1,17 +1,18 @@
 /**
- * Admin: informes periódicos por email (plantilla GestorNova automática).
+ * Admin: informes por email (EmailJS: Public Key en Render; Service+Template desde config.json).
  * made by leavera77
  */
 
-import { credencialesEmailjsInforme } from './emailjs-plantilla-unificada.js';
-
-/** @type {{ templateIdInforme?: string, ok?: boolean }|null} */
-let _emailjsInformeSetup = null;
+import {
+    paramsEmailInforme,
+    credencialesEmailjsDesdeConfig,
+    credencialesEmailjsInforme,
+} from './emailjs-plantilla-unificada.js';
 
 export function htmlReportesEmailAdminBlock() {
     return `<div id="gn-reportes-email-block" style="margin-top:1rem;padding:.75rem;border:1px solid var(--bo);border-radius:.5rem">
 <h4 style="margin:0 0 .5rem"><i class="fas fa-envelope"></i> Informes por email</h4>
-<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Informe <strong>diario, semanal o mensual</strong> con plantilla <strong>GestorNova</strong> (automática vía API). El texto del mail lo arma el sistema; no hace falta cargar Template ID a mano.</p>
+<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Informe <strong>diario, semanal o mensual</strong>. Con solo <code style="font-size:.7rem">EMAILJS_PUBLIC_KEY</code> en Render, «Enviar ahora» usa EmailJS desde esta web (<code style="font-size:.7rem">config.json</code>). Para informes automáticos en Render agregá también <code style="font-size:.7rem">EMAILJS_SERVICE_ID</code> y <code style="font-size:.7rem">EMAILJS_TEMPLATE_ID</code> (los mismos secretos de GitHub).</p>
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Email destino</label>
 <input type="email" id="gn-reporte-email" placeholder="admin@empresa.com" style="width:100%;max-width:320px;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem;margin-bottom:.5rem">
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Frecuencia</label>
@@ -58,32 +59,58 @@ function mensajeErrorInforme(e) {
     }
 }
 
+function emailjsCompletoEnCliente() {
+    return credencialesEmailjsDesdeConfig(window.APP_CONFIG?.emailjs);
+}
+
 /**
  * @param {(path: string) => string} apiUrl
  * @param {string} tok
+ * @param {{ frecuencia: string }} body
  */
-async function asegurarPlantillaInforme(apiUrl, tok) {
-    const cfg = window.APP_CONFIG?.emailjs;
-    if (cfg?.templateIdInforme) {
-        _emailjsInformeSetup = { ok: true, templateIdInforme: cfg.templateIdInforme };
-        return _emailjsInformeSetup;
-    }
-    if (_emailjsInformeSetup?.ok && _emailjsInformeSetup.templateIdInforme) {
-        return _emailjsInformeSetup;
-    }
-    const r = await fetch(apiUrl('/api/reportes-programados/emailjs-informe-setup'), {
-        headers: { Authorization: `Bearer ${tok}` },
+async function obtenerResumenInforme(apiUrl, tok, body) {
+    const r = await fetch(apiUrl('/api/reportes-programados/resumen'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frecuencia: body.frecuencia || 'diario' }),
     });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) {
-        throw new Error(j.mensaje || j.error || 'No se pudo preparar la plantilla de informes en el servidor');
-    }
-    _emailjsInformeSetup = j;
-    return j;
+    const resumen = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(resumen.error || resumen.mensaje || `Error al armar informe (${r.status})`);
+    return resumen;
 }
 
-function emailjsPayloadInforme(setup) {
-    return credencialesEmailjsInforme(window.APP_CONFIG?.emailjs, setup);
+/**
+ * Envío en el navegador (solo Public Key; Service+Template en config.json).
+ */
+async function enviarInformeDesdeNavegador(destino, resumen) {
+    const ej = emailjsCompletoEnCliente();
+    if (!ej) {
+        throw new Error(
+            'EmailJS incompleto en config.json. Revisá secretos GitHub: EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID.'
+        );
+    }
+    if (!window.emailjs || typeof window.emailjs.send !== 'function') {
+        throw new Error('EmailJS no cargado; recargá la página');
+    }
+    const params = paramsEmailInforme({
+        toEmail: destino,
+        toName: resumen.emailjsParams?.to_name || 'Administrador',
+        subject: resumen.subject || resumen.emailjsParams?.informe_asunto,
+        body: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
+        nombreEmpresa: resumen.nombreEmpresa || resumen.emailjsParams?.app_name,
+    });
+    await window.emailjs.send(ej.serviceId, ej.templateId, params, ej.publicKey);
+}
+
+function payloadEmailjsParaApi() {
+    const ej = emailjsCompletoEnCliente();
+    if (!ej) return null;
+    return {
+        publicKey: ej.publicKey,
+        serviceId: ej.serviceId,
+        templateId: ej.templateId,
+        templateIdInforme: ej.templateId,
+    };
 }
 
 /**
@@ -97,15 +124,11 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
     const guardarConfig = async (tok, bodyIn) => {
         const body = bodyIn || leerFormReporteEmail();
         if (!body.email) throw new Error('Completá el email destino');
-        const setup = await asegurarPlantillaInforme(apiUrl, tok);
-        const emailjs = emailjsPayloadInforme(setup);
-        if (!emailjs) {
-            throw new Error('EmailJS no configurado en config.json (secretos GitHub Pages)');
-        }
+        const emailjs = payloadEmailjsParaApi();
         const r = await fetch(apiUrl('/api/reportes-programados/config'), {
             method: 'PUT',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...body, emailjs }),
+            body: JSON.stringify(emailjs ? { ...body, emailjs } : body),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || j.mensaje || `Error al guardar (${r.status})`);
@@ -113,13 +136,15 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
     };
 
     const enviarInformeDesdeApi = async (tok, body) => {
-        const setup = await asegurarPlantillaInforme(apiUrl, tok);
-        const emailjs = emailjsPayloadInforme(setup);
-        if (!emailjs) throw new Error('EmailJS no configurado en config.json');
+        const emailjs = payloadEmailjsParaApi();
         const r = await fetch(apiUrl('/api/reportes-programados/ejecutar-ahora'), {
             method: 'POST',
             headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: body.email, frecuencia: body.frecuencia, emailjs }),
+            body: JSON.stringify({
+                email: body.email,
+                frecuencia: body.frecuencia,
+                emailjs: emailjs || undefined,
+            }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -138,9 +163,6 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
             const j = await r.json().catch(() => ({}));
             if (j.email) document.getElementById('gn-reporte-email').value = j.email;
             if (j.frecuencia) document.getElementById('gn-reporte-frecuencia').value = j.frecuencia;
-            if (j.emailjs_template_id_informe) {
-                _emailjsInformeSetup = { ok: true, templateIdInforme: j.emailjs_template_id_informe };
-            }
             if (j.tabla_ok === false) {
                 mensajeReporteUi('Falta tabla en Neon: docs/NEON_fcm_reportes_sla.sql', true);
             }
@@ -183,7 +205,21 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
                     console.warn('[reportes-email] guardar config:', warn);
                 }
             }
-            const okMsg = await enviarInformeDesdeApi(tok, body);
+
+            const resumen = await obtenerResumenInforme(apiUrl, tok, body);
+            let okMsg;
+
+            if (emailjsCompletoEnCliente()) {
+                await enviarInformeDesdeNavegador(body.email, resumen);
+                await fetch(apiUrl('/api/reportes-programados/registrar-envio'), {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+                }).catch(() => {});
+                okMsg = `Informe enviado a ${body.email}`;
+            } else {
+                okMsg = await enviarInformeDesdeApi(tok, body);
+            }
+
             mensajeReporteUi(okMsg);
             toast(okMsg, 'success');
         } catch (e) {

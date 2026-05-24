@@ -1,6 +1,5 @@
 /**
- * EmailJS: parámetros de informe y recuperación de clave.
- * Plantilla de informes: GestorNova integrada (API / Render).
+ * Parámetros EmailJS — informes y recuperación de clave.
  * made by leavera77
  */
 
@@ -61,21 +60,27 @@ export function templateIdEmailReset(cfg) {
     return String(c.templateIdReset || c.templateId || '').trim();
 }
 
-/**
- * Credenciales EmailJS para informe (templateId lo resuelve la API).
- * @param {Record<string, unknown>|undefined} cfg
- * @param {{ templateIdInforme?: string }|null} [setup]
- */
-export function credencialesEmailjsInforme(cfg, setup) {
+/** Credenciales desde config.json (Pages): publicKey + serviceId + templateId. */
+export function credencialesEmailjsDesdeConfig(cfg) {
     const c = cfg || {};
-    const templateIdInforme = String(
-        setup?.templateIdInforme || c.templateIdInforme || ''
-    ).trim();
-    if (!c.publicKey || !c.serviceId || !templateIdInforme) return null;
+    const publicKey = String(c.publicKey || '').trim();
+    const serviceId = String(c.serviceId || '').trim();
+    const templateId = String(c.templateIdInforme || c.templateId || '').trim();
+    if (!publicKey || !serviceId || !templateId) return null;
     return {
-        publicKey: c.publicKey,
-        serviceId: c.serviceId,
-        templateId: templateIdInforme,
-        templateIdInforme,
+        publicKey,
+        serviceId,
+        templateId,
+        templateIdInforme: templateId,
     };
+}
+
+/** @param {Record<string, unknown>|undefined} cfg @param {{ templateIdInforme?: string }|null} [setup] */
+export function credencialesEmailjsInforme(cfg, setup) {
+    const merged = {
+        ...(cfg || {}),
+        templateIdInforme: setup?.templateIdInforme || cfg?.templateIdInforme,
+        templateId: setup?.templateIdInforme || cfg?.templateIdInforme || cfg?.templateId,
+    };
+    return credencialesEmailjsDesdeConfig(merged);
 }
