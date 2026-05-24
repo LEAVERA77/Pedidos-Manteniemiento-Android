@@ -1,5 +1,7 @@
 export function parsePeriod(period) {
   const p = String(period || "mes");
+  if (p === "1d") return "NOW() - INTERVAL '1 day'";
+  if (p === "7d") return "NOW() - INTERVAL '7 days'";
   if (p === "mes") return "NOW() - INTERVAL '1 month'";
   if (p === "3meses") return "NOW() - INTERVAL '3 months'";
   if (p === "anio") return "NOW() - INTERVAL '1 year'";

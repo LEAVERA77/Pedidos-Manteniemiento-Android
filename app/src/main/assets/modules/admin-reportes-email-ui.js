@@ -49,6 +49,81 @@ function mensajeReporteUi(text, esError = false) {
     }
 }
 
+/** @param {unknown} e */
+function mensajeErrorInforme(e) {
+    if (!e) return 'Error desconocido';
+    if (typeof e === 'string') return e;
+    const o = /** @type {{ text?: string, status?: number, message?: string }} */ (e);
+    if (o.text) return String(o.text);
+    if (o.message) return String(o.message);
+    try {
+        return JSON.stringify(e);
+    } catch (_) {
+        return String(e);
+    }
+}
+
+/**
+ * Misma firma que recuperación de clave (EmailJS browser v3): 4.º arg = publicKey string.
+ * @param {{ serviceId: string, templateId: string, publicKey: string }} ej
+ * @param {string} destino
+ * @param {{ text: string, subject: string }} resumen
+ */
+async function enviarEmailjsInforme(ej, destino, resumen) {
+    const texto = String(resumen.text || '').trim() || 'Sin datos en el período.';
+    const asunto = String(resumen.subject || 'GestorNova — informe').trim();
+    const paramsCompletos = {
+        to_email: destino,
+        to_name: 'Administrador',
+        message: texto,
+        subject: asunto,
+        token: texto.slice(0, 500),
+        app_name: asunto,
+    };
+    const paramsReset = {
+        to_email: destino,
+        to_name: 'Administrador',
+        token: texto.slice(0, 500),
+        app_name: asunto,
+    };
+    try {
+        await window.emailjs.send(ej.serviceId, ej.templateId, paramsCompletos, ej.publicKey);
+    } catch (e1) {
+        try {
+            await window.emailjs.send(ej.serviceId, ej.templateId, paramsReset, ej.publicKey);
+        } catch (e2) {
+            const m1 = mensajeErrorInforme(e1);
+            const m2 = mensajeErrorInforme(e2);
+            throw new Error(m2 && m2 !== m1 ? `${m1} (${m2})` : m1);
+        }
+    }
+}
+
+/**
+ * @param {(path: string) => string} apiUrl
+ * @param {string} tok
+ * @param {{ frecuencia: string }} body
+ */
+async function obtenerResumenInforme(apiUrl, tok, body) {
+    const r = await fetch(apiUrl('/api/reportes-programados/resumen'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frecuencia: body.frecuencia || 'diario' }),
+    });
+    const resumen = await r.json().catch(() => ({}));
+    if (r.ok && resumen.text) return resumen;
+    if (r.status === 404 || r.status === 405) {
+        const periodo = body.frecuencia === 'semanal' ? '7 días' : '24 horas';
+        return {
+            text:
+                `Informe de prueba GestorNova (${periodo})\n\n` +
+                `La API aún no expone /resumen (actualizá Render). Revisá pedidos en el panel.\n\n— GestorNova`,
+            subject: 'GestorNova — informe (prueba)',
+        };
+    }
+    throw new Error(resumen.error || resumen.mensaje || `Error al armar informe (${r.status})`);
+}
+
 /**
  * @param {{ apiUrl: (p: string) => string, getApiToken: () => string|null|undefined, toast: (m: string, t?: string) => void, esAdmin: boolean }} opts
  */
@@ -79,27 +154,8 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
         if (!window.emailjs || typeof window.emailjs.send !== 'function') {
             throw new Error('Servicio de correo no cargado; recargá la página');
         }
-        const r = await fetch(apiUrl('/api/reportes-programados/resumen'), {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ frecuencia: body.frecuencia }),
-        });
-        const resumen = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(resumen.error || resumen.mensaje || `Error al armar informe (${r.status})`);
-
-        await window.emailjs.send(
-            ej.serviceId,
-            ej.templateId,
-            {
-                to_email: body.email,
-                to_name: 'Administrador',
-                message: resumen.text || '',
-                subject: resumen.subject || 'GestorNova — informe',
-                token: 'informe',
-                app_name: resumen.subject || 'GestorNova — informe',
-            },
-            { publicKey: ej.publicKey }
-        );
+        const resumen = await obtenerResumenInforme(apiUrl, tok, body);
+        await enviarEmailjsInforme(ej, body.email, resumen);
 
         await fetch(apiUrl('/api/reportes-programados/registrar-envio'), {
             method: 'POST',
@@ -172,7 +228,10 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
                 await guardarConfig(tok, body);
             } catch (e) {
                 const warn = String(e.message || e);
-                if (!/NEON_fcm_reportes_sla/i.test(warn)) throw e;
+                if (/Completá el email/i.test(warn)) throw e;
+                if (!/NEON_fcm_reportes_sla/i.test(warn)) {
+                    console.warn('[reportes-email] guardar config:', warn);
+                }
             }
 
             let okMsg;
@@ -194,7 +253,7 @@ export function initAdminReportesEmailUI({ apiUrl, getApiToken, toast, esAdmin }
             mensajeReporteUi(okMsg);
             toast(okMsg, 'success');
         } catch (e) {
-            const m = e.message || 'Error';
+            const m = mensajeErrorInforme(e);
             mensajeReporteUi(m, true);
             toast(m, 'error');
         } finally {
