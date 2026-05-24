@@ -7,6 +7,10 @@ import nodemailer from "nodemailer";
 import { query } from "../db/neon.js";
 import { parsePeriod } from "../utils/helpers.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
+import {
+  emailjsServidorConfigurado,
+  enviarCorreoEmailjsServidor,
+} from "./emailjsEnvioServidor.js";
 
 async function configTableOk() {
   try {
@@ -88,13 +92,6 @@ export async function generarYEnviarReporteTenant(
   if (!forzar && (freq === "off" || !cfg.email)) {
     return { ok: false, mensaje: "Reportes desactivados o sin email (guardá la config)" };
   }
-  const transport = smtpTransport();
-  if (!transport) {
-    return {
-      ok: false,
-      mensaje: "SMTP no configurado en el servidor (variables SMTP_HOST, SMTP_USER en Render)",
-    };
-  }
   const hasT = await pedidosTableHasTenantIdColumn();
   const periodo =
     freq === "semanal" ? "7d" : "1d";
@@ -114,16 +111,39 @@ export async function generarYEnviarReporteTenant(
   const etiquetaFreq = forzar && freq === "off" ? "prueba" : freq;
   const subject = `GestorNova — informe ${etiquetaFreq} tenant ${tenantId}`;
   const text = `Resumen operativo (${periodo})\n\nTotal: ${s.total}\nPendientes: ${s.pendientes}\nEn ejecución: ${s.en_ejecucion}\nCerrados: ${s.cerrados}\n\n— GestorNova`;
-  await transport.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@gestornova.local",
-    to: email,
-    subject,
-    text,
-  });
+
+  const transport = smtpTransport();
+  let via = "smtp";
+  if (transport) {
+    await transport.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@gestornova.local",
+      to: email,
+      subject,
+      text,
+    });
+  } else if (emailjsServidorConfigurado()) {
+    via = "emailjs";
+    await enviarCorreoEmailjsServidor({
+      to_email: email,
+      to_name: "Administrador",
+      message: text,
+      subject,
+      token: "informe",
+      app_name: `GestorNova — informe ${etiquetaFreq}`,
+    });
+  } else {
+    return {
+      ok: false,
+      mensaje:
+        "Correo no configurado en Render: usá SMTP (SMTP_HOST, SMTP_USER) o las mismas variables EmailJS que GitHub (EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID). En EmailJS → Security activá peticiones API desde servidor.",
+    };
+  }
+
   if (await configTableOk()) {
     await query(`UPDATE tenant_reporte_email_config SET ultimo_envio = NOW() WHERE tenant_id = $1`, [tenantId]);
   }
-  return { ok: true, mensaje: `Informe enviado a ${email}` };
+  const viaTxt = via === "emailjs" ? " (EmailJS)" : "";
+  return { ok: true, mensaje: `Informe enviado a ${email}${viaTxt}` };
 }
 
 /** Cron: procesar todos los tenants con frecuencia activa. */

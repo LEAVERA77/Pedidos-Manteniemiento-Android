@@ -60,6 +60,22 @@ Volver temporalmente a:
 
 solo si el VPS Vultr sigue activo y accesible; luego redeploy. Ver `MIGRATION_VULTR_TO_ORACLE.md` § Plan de contingencia.
 
+## Informes por email (API — Render)
+
+Mismas credenciales que en GitHub Pages para recuperación de clave, configuradas en el **servicio Render** de la API (no solo en GitHub Actions):
+
+| Variable | Uso |
+|----------|-----|
+| `EMAILJS_PUBLIC_KEY` | Public Key de EmailJS |
+| `EMAILJS_SERVICE_ID` | Service ID |
+| `EMAILJS_TEMPLATE_ID` | Plantilla; el informe envía `message` con el resumen |
+| `EMAILJS_TEMPLATE_ID_INFORME` | Opcional: plantilla solo para informes |
+| `EMAILJS_PRIVATE_KEY` | Opcional; recomendado si activás strict mode |
+
+En [EmailJS](https://www.emailjs.com/) → **Account → Security** → activar **Allow API requests for non-browser applications**.
+
+Plantilla de informe: incluir en el cuerpo `{{message}}` (destino `{{to_email}}`). Alternativa: SMTP con `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`.
+
 ---
 
 `made by leavera77`

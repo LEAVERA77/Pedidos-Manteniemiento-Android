@@ -6,7 +6,7 @@
 export function htmlReportesEmailAdminBlock() {
     return `<div id="gn-reportes-email-block" style="margin-top:1rem;padding:.75rem;border:1px solid var(--bo);border-radius:.5rem">
 <h4 style="margin:0 0 .5rem"><i class="fas fa-envelope"></i> Informes por email</h4>
-<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Resumen diario/semanal al correo del administrador (requiere SMTP en Render: <code style="font-size:.7rem">SMTP_HOST</code>, etc.). «Enviar ahora» usa el email del formulario aunque la frecuencia esté en Desactivado.</p>
+<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Resumen diario/semanal al correo del administrador. La API en Render envía con <strong>EmailJS</strong> (<code style="font-size:.7rem">EMAILJS_PUBLIC_KEY</code>, <code style="font-size:.7rem">EMAILJS_SERVICE_ID</code>, <code style="font-size:.7rem">EMAILJS_TEMPLATE_ID</code>) o con SMTP si lo configurás. En EmailJS → Security: permitir API desde servidor. «Enviar ahora» usa el email del formulario aunque la frecuencia esté en Desactivado.</p>
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Email destino</label>
 <input type="email" id="gn-reporte-email" placeholder="admin@empresa.com" style="width:100%;max-width:320px;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem;margin-bottom:.5rem">
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Frecuencia</label>
