@@ -61,6 +61,11 @@ function esAdminWebPublico(deps) {
     }
 }
 
+/** Admin en navegador (no WebView): pedido nuevo desde coords usa #pm-oficina. */
+export function esAdminWebPedidoNuevoOficina(deps) {
+    return esAdminWebPublico(deps);
+}
+
 /**
  * Muestra u oculta el FAB «Pedido en oficina» (tras login admin en web).
  * @param {Parameters<typeof initPedidoNuevoOficina>[0]} [deps]
@@ -514,4 +519,16 @@ export async function abrirPedidoNuevoOficina(deps) {
     try {
         document.getElementById('pm')?.classList.remove('active');
     } catch (_) {}
+}
+
+/**
+ * Igual que oficina vacía, con WGS84 precargado (goto «Nuevo reclamo», Ir en panel coords).
+ * @param {Parameters<typeof initPedidoNuevoOficina>[0]} deps
+ */
+export async function abrirPedidoNuevoOficinaEnCoordenadas(deps, lat, lng) {
+    await abrirPedidoNuevoOficina(deps);
+    const la = Number(lat);
+    const lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
+    await aplicarCoordenadasPedidoOficina(deps, la, lo, { silencioso: true });
 }

@@ -71,29 +71,19 @@ function armGlobalKeys(map) {
 }
 
 /**
- * Abre #pm con el mismo flujo que `abrirNuevoPedidoEnCoordenadas` (formulario, tipos, NIS, etc.)
- * y programa reverse Nominatim si aplica (cualquier rubro con sesión/API).
+ * Oficina (#pm-oficina) en admin web; #pm en app/técnicos — vía `abrirNuevoPedidoDesdePunto`.
  */
 async function abrirModalNuevoPedidoDesdeGoto(lat, lng) {
-    try {
-        if (typeof window !== 'undefined') window._gnSuppressMapClickUntil = Date.now() + 500;
-    } catch (_) {}
     const la = Number(lat);
     const lo = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
     try {
+        if (typeof window.abrirNuevoPedidoDesdePunto === 'function') {
+            await window.abrirNuevoPedidoDesdePunto(la, lo, null);
+            return;
+        }
         if (typeof window.abrirNuevoPedidoEnCoordenadas === 'function') {
             await window.abrirNuevoPedidoEnCoordenadas(la, lo, null);
-        }
-    } catch (_) {}
-    try {
-        const fakeE = { latlng: { lat: la, lng: lo }, originalEvent: {} };
-        if (
-            typeof window.debeReverseNominatimAdminMapTap === 'function' &&
-            window.debeReverseNominatimAdminMapTap(fakeE) &&
-            typeof window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa === 'function'
-        ) {
-            window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa(la, lo);
         }
     } catch (_) {}
 }

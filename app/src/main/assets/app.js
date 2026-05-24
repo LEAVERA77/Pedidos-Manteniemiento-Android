@@ -164,6 +164,10 @@ import {
     esPedidoNuevoModoOficina,
     syncVisibilidadBotonPedidoOficina,
 } from './modules/pedido-nuevo-oficina.js';
+import {
+    initPedidoNuevoDesdePunto,
+    abrirNuevoPedidoDesdePunto,
+} from './modules/pedido-nuevo-desde-punto-coords.js';
 import { registrarAppGlobal } from './modules/gn-app-global-bridge.js';
 import {
     prepararUbicacionSubmitPedidoOficina,
@@ -7300,64 +7304,7 @@ async function irAMiUbicacionEnMapa() {
 window.irAMiUbicacionEnMapa = irAMiUbicacionEnMapa;
 
 async function abrirNuevoPedidoEnCoordenadas(lat, lng, acc) {
-    await ensureMapReady();
-    if (!app.map) {
-        toast('No se pudo cargar el mapa', 'error');
-        return;
-    }
-    try {
-        gnRequestClearGotoPreviewMarker();
-    } catch (_) {}
-    const latN = Number(lat);
-    const lngN = Number(lng);
-    if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
-        toast('Coordenadas no válidas', 'error');
-        return;
-    }
-    const Lref = window.L;
-    if (!Lref || typeof Lref.latLng !== 'function') {
-        toast('Mapa no listo', 'error');
-        return;
-    }
-    app.sel = Lref.latLng(latN, lngN);
-    limpiarFotosYPreviewNuevoPedido();
-    try {
-        resetPedidoNuevoOficinaUi();
-    } catch (_) {}
-    try {
-        resetPadronNuevoPedidoNisTimers();
-    } catch (_) {}
-    const li = document.getElementById('li');
-    const gi = document.getElementById('gi');
-    const pm = document.getElementById('pm');
-    if (!li || !gi || !pm) return;
-    mountPedidoFormularioEnDom();
-    const pfHome = document.getElementById('pm-form-home');
-    const pf = document.getElementById('pf');
-    if (pf && pfHome && pf.parentElement !== pfHome) pfHome.appendChild(pf);
-    li.value = String(latN);
-    gi.value = String(lngN);
-    syncWrapCoordsDisplayNuevoPedido();
-    const ui = document.getElementById('ui');
-    if (ui) {
-        ui.innerHTML = htmlLineaUbicacionFormulario(latN, lngN, acc != null && acc !== '' ? acc : null);
-        ui.className = 'ud sel';
-    }
-    try {
-        poblarSelectTiposReclamo();
-        syncNisClienteReclamoConexionUI();
-    } catch (_) {}
-    pm.classList.add('active');
-    try {
-        if (typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa()) desarmarMapTapNuevoPedido();
-    } catch (_) {}
-    const z = mostrarMarcadorUbicacion(latN, lngN, acc != null ? acc : null);
-    app.map.invalidateSize({ animate: false });
-    app.map.setView([latN, lngN], z || 16, { animate: !gnMapaLigero() });
-    try {
-        const zEl = document.getElementById('zoom-altura');
-        if (zEl) zEl.textContent = calcularEscalaReal(app.map.getZoom());
-    } catch (_) {}
+    return abrirNuevoPedidoDesdePunto(lat, lng, acc);
 }
 window.abrirNuevoPedidoEnCoordenadas = abrirNuevoPedidoEnCoordenadas;
 
@@ -17785,6 +17732,24 @@ try {
         nominatimFetchSearch: _nominatimFetchSearch,
         parseEmpresaCfgLatLngBase,
         resolverUbicacionCentralTenantParaMapa,
+    });
+} catch (_) {}
+
+try {
+    initPedidoNuevoDesdePunto({
+        esAdminSesionWebPublica,
+        ensureMapReady,
+        htmlLineaUbicacionFormulario,
+        syncWrapCoordsDisplayNuevoPedido,
+        mostrarMarcadorUbicacion,
+        limpiarFotosYPreviewNuevoPedido,
+        poblarSelectTiposReclamo,
+        syncNisClienteReclamoConexionUI,
+        esAndroidWebViewMapa,
+        desarmarMapTapNuevoPedido,
+        gnMapaLigero,
+        calcularEscalaReal,
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa,
     });
 } catch (_) {}
 
