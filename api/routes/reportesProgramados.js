@@ -37,11 +37,15 @@ router.put("/config", authWithTenantHost, adminOnly, async (req, res) => {
 
 router.post("/ejecutar-ahora", authWithTenantHost, adminOnly, async (req, res) => {
   try {
-    const out = await generarYEnviarReporteTenant(req.tenantId, { forzar: true });
-  if (!out.ok) return res.status(400).json(out);
+    const out = await generarYEnviarReporteTenant(req.tenantId, {
+      forzar: true,
+      emailOverride: req.body?.email,
+      frecuenciaOverride: req.body?.frecuencia,
+    });
+    if (!out.ok) return res.status(400).json(out);
     return res.json(out);
   } catch (e) {
-    return res.status(500).json({ error: e.message, detail: e.message });
+    return res.status(500).json({ error: e.message, detail: e.message, mensaje: e.message });
   }
 });
 

@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v194';
-const SW_VERSION  = '1.8.49';
+const CACHE_SHELL = 'pmg-shell-v195';
+const SW_VERSION  = '1.8.50';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {

@@ -65,17 +65,40 @@ export async function putReporteEmailConfig(tenantId, { email, frecuencia }) {
   return r.rows[0];
 }
 
-export async function generarYEnviarReporteTenant(tenantId, { forzar = false } = {}) {
+export async function generarYEnviarReporteTenant(
+  tenantId,
+  { forzar = false, emailOverride, frecuenciaOverride } = {}
+) {
   const cfg = await getReporteEmailConfig(tenantId);
-  if (!cfg.email || cfg.frecuencia === "off") {
-    return { ok: false, mensaje: "Reportes desactivados o sin email" };
+  if (!cfg.tabla_ok && !forzar) {
+    return { ok: false, mensaje: "Ejecutá docs/NEON_fcm_reportes_sla.sql en Neon" };
+  }
+  const email = String(emailOverride ?? cfg.email ?? "").trim();
+  const freq = ["off", "diario", "semanal"].includes(frecuenciaOverride)
+    ? frecuenciaOverride
+    : cfg.frecuencia || "off";
+  if (!email) {
+    return {
+      ok: false,
+      mensaje: forzar
+        ? "Indicá un email destino en el formulario"
+        : "Reportes desactivados o sin email",
+    };
+  }
+  if (!forzar && (freq === "off" || !cfg.email)) {
+    return { ok: false, mensaje: "Reportes desactivados o sin email (guardá la config)" };
   }
   const transport = smtpTransport();
   if (!transport) {
-    return { ok: false, mensaje: "SMTP no configurado en el servidor (SMTP_HOST)" };
+    return {
+      ok: false,
+      mensaje: "SMTP no configurado en el servidor (variables SMTP_HOST, SMTP_USER en Render)",
+    };
   }
   const hasT = await pedidosTableHasTenantIdColumn();
-  const since = parsePeriod(cfg.frecuencia === "semanal" ? "7d" : "1d");
+  const periodo =
+    freq === "semanal" ? "7d" : "1d";
+  const since = parsePeriod(periodo);
   const params = hasT ? [tenantId] : [];
   const tsql = hasT ? ` AND tenant_id = $1` : "";
   const r = await query(
@@ -88,18 +111,19 @@ export async function generarYEnviarReporteTenant(tenantId, { forzar = false } =
     params
   );
   const s = r.rows?.[0] || {};
-  const subject = `GestorNova — informe ${cfg.frecuencia} tenant ${tenantId}`;
-  const text = `Resumen operativo\n\nTotal: ${s.total}\nPendientes: ${s.pendientes}\nEn ejecución: ${s.en_ejecucion}\nCerrados: ${s.cerrados}\n\n— GestorNova`;
+  const etiquetaFreq = forzar && freq === "off" ? "prueba" : freq;
+  const subject = `GestorNova — informe ${etiquetaFreq} tenant ${tenantId}`;
+  const text = `Resumen operativo (${periodo})\n\nTotal: ${s.total}\nPendientes: ${s.pendientes}\nEn ejecución: ${s.en_ejecucion}\nCerrados: ${s.cerrados}\n\n— GestorNova`;
   await transport.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@gestornova.local",
-    to: cfg.email,
+    to: email,
     subject,
     text,
   });
   if (await configTableOk()) {
     await query(`UPDATE tenant_reporte_email_config SET ultimo_envio = NOW() WHERE tenant_id = $1`, [tenantId]);
   }
-  return { ok: true, mensaje: `Informe enviado a ${cfg.email}` };
+  return { ok: true, mensaje: `Informe enviado a ${email}` };
 }
 
 /** Cron: procesar todos los tenants con frecuencia activa. */
