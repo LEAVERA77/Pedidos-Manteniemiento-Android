@@ -5,12 +5,15 @@
 
 import nodemailer from "nodemailer";
 import { query } from "../db/neon.js";
-import { parsePeriod } from "../utils/helpers.js";
-import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
 import {
   emailjsServidorConfigurado,
   enviarCorreoEmailjsServidor,
 } from "./emailjsEnvioServidor.js";
+import {
+  buildContenidoInformeTenant,
+  normalizarFrecuenciaInforme,
+  emailjsParamsDesdeContenido,
+} from "./reportesInformeContenido.js";
 
 async function configTableOk() {
   try {
@@ -48,10 +51,6 @@ function smtpTransport() {
         ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
         : undefined,
   });
-}
-
-function normalizarFreq(frecuencia) {
-  return ["off", "diario", "semanal"].includes(frecuencia) ? frecuencia : "off";
 }
 
 /** @param {unknown} raw */
@@ -94,29 +93,10 @@ async function saveStoredEmailjsConfig(tenantId, emailjs) {
 
 /**
  * @param {number} tenantId
- * @param {{ frecuencia?: string, forzar?: boolean }} [opts]
+ * @param {{ frecuencia?: string, forzar?: boolean, destinatarioEmail?: string, destinatarioNombre?: string }} [opts]
  */
-export async function buildResumenInformeTenant(tenantId, { frecuencia = "diario", forzar = false } = {}) {
-  const freq = normalizarFreq(frecuencia);
-  const hasT = await pedidosTableHasTenantIdColumn();
-  const periodo = freq === "semanal" ? "7d" : "1d";
-  const since = parsePeriod(periodo);
-  const params = hasT ? [tenantId] : [];
-  const tsql = hasT ? ` AND tenant_id = $1` : "";
-  const r = await query(
-    `SELECT
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE estado='Pendiente')::int AS pendientes,
-      COUNT(*) FILTER (WHERE estado='En ejecución')::int AS en_ejecucion,
-      COUNT(*) FILTER (WHERE estado='Cerrado')::int AS cerrados
-     FROM pedidos WHERE fecha_creacion >= ${since}${tsql}`,
-    params
-  );
-  const s = r.rows?.[0] || {};
-  const etiquetaFreq = forzar && freq === "off" ? "prueba" : freq;
-  const subject = `GestorNova — informe ${etiquetaFreq}`;
-  const text = `Resumen operativo (${periodo})\n\nTotal: ${s.total}\nPendientes: ${s.pendientes}\nEn ejecución: ${s.en_ejecucion}\nCerrados: ${s.cerrados}\n\n— GestorNova`;
-  return { text, subject, periodo, etiquetaFreq };
+export async function buildResumenInformeTenant(tenantId, opts = {}) {
+  return buildContenidoInformeTenant(tenantId, opts);
 }
 
 export async function getReporteEmailConfig(tenantId) {
@@ -142,7 +122,7 @@ export async function putReporteEmailConfig(tenantId, { email, frecuencia, email
   if (!(await configTableOk())) {
     throw new Error("Ejecutá docs/NEON_fcm_reportes_sla.sql en Neon");
   }
-  const freq = normalizarFreq(frecuencia);
+  const freq = normalizarFrecuenciaInforme(frecuencia);
   const r = await query(
     `INSERT INTO tenant_reporte_email_config (tenant_id, email, frecuencia, updated_at)
      VALUES ($1, $2, $3, NOW())
@@ -177,7 +157,7 @@ export async function generarYEnviarReporteTenant(
     return { ok: false, mensaje: "Ejecutá docs/NEON_fcm_reportes_sla.sql en Neon" };
   }
   const email = String(emailOverride ?? cfg.email ?? "").trim();
-  const freq = normalizarFreq(frecuenciaOverride ?? cfg.frecuencia ?? "off");
+  const freq = normalizarFrecuenciaInforme(frecuenciaOverride ?? cfg.frecuencia ?? "off");
   if (!email) {
     return {
       ok: false,
@@ -190,10 +170,13 @@ export async function generarYEnviarReporteTenant(
     return { ok: false, mensaje: "Reportes desactivados o sin email (guardá la config)" };
   }
 
-  const { text, subject, etiquetaFreq } = await buildResumenInformeTenant(tenantId, {
+  const contenido = await buildContenidoInformeTenant(tenantId, {
     frecuencia: freq,
     forzar,
+    destinatarioEmail: email,
+    destinatarioNombre: "Administrador",
   });
+  const params = emailjsParamsDesdeContenido(contenido, email, "Administrador");
 
   const emailjsCfg = await resolveEmailjsParaEnvio(tenantId, emailjsOverride);
   const transport = smtpTransport();
@@ -202,27 +185,17 @@ export async function generarYEnviarReporteTenant(
     await transport.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@gestornova.local",
       to: email,
-      subject,
-      text,
+      subject: contenido.subject,
+      text: contenido.text,
     });
   } else if (emailjsServidorConfigurado(emailjsCfg)) {
     via = "emailjs";
-    await enviarCorreoEmailjsServidor(
-      {
-        to_email: email,
-        to_name: "Administrador",
-        message: text,
-        subject,
-        token: "informe",
-        app_name: `GestorNova — informe ${etiquetaFreq}`,
-      },
-      emailjsCfg
-    );
+    await enviarCorreoEmailjsServidor(params, emailjsCfg);
   } else {
     return {
       ok: false,
       mensaje:
-        "Correo no disponible en el servidor. Desde la web usá «Enviar ahora» (EmailJS del config.json) o agregá EMAILJS_* en Render. Opcional: docs/NEON_reporte_email_emailjs.sql para guardar credenciales en Neon.",
+        "Correo no disponible en el servidor. Desde la web usá «Enviar ahora» (EmailJS del config.json) o agregá EMAILJS_* en Render.",
       usar_cliente: true,
     };
   }
@@ -236,13 +209,18 @@ export async function generarYEnviarReporteTenant(
 export async function ejecutarReportesProgramadosCron() {
   if (!(await configTableOk())) return { processed: 0 };
   const r = await query(
-    `SELECT tenant_id, email, frecuencia, ultimo_envio FROM tenant_reporte_email_config WHERE frecuencia IN ('diario','semanal') AND email IS NOT NULL`
+    `SELECT tenant_id, email, frecuencia, ultimo_envio FROM tenant_reporte_email_config WHERE frecuencia IN ('diario','semanal','mensual') AND email IS NOT NULL`
   );
   let n = 0;
   for (const row of r.rows || []) {
     const ult = row.ultimo_envio ? new Date(row.ultimo_envio).getTime() : 0;
     const h = Date.now() - ult;
-    const min = row.frecuencia === "semanal" ? 6 * 24 * 3600 * 1000 : 20 * 3600 * 1000;
+    const min =
+      row.frecuencia === "mensual"
+        ? 25 * 24 * 3600 * 1000
+        : row.frecuencia === "semanal"
+          ? 6 * 24 * 3600 * 1000
+          : 20 * 3600 * 1000;
     if (h < min) continue;
     try {
       const out = await generarYEnviarReporteTenant(row.tenant_id, {

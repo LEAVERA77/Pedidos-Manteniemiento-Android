@@ -7,13 +7,14 @@
 export function htmlReportesEmailAdminBlock() {
     return `<div id="gn-reportes-email-block" style="margin-top:1rem;padding:.75rem;border:1px solid var(--bo);border-radius:.5rem">
 <h4 style="margin:0 0 .5rem"><i class="fas fa-envelope"></i> Informes por email</h4>
-<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Resumen diario/semanal al correo del administrador. En la <strong>web admin</strong>, «Enviar ahora» usa el mismo EmailJS que la recuperación de contraseña (<code style="font-size:.7rem">config.json</code> / secretos de GitHub Pages). Los informes automáticos en horario usan la API (Render con <code style="font-size:.7rem">EMAILJS_*</code> o guardá la config tras ejecutar <code style="font-size:.7rem">docs/NEON_reporte_email_emailjs.sql</code> en Neon).</p>
+<p style="font-size:.78rem;color:var(--tm);margin:0 0 .5rem">Informe operativo <strong>diario, semanal o mensual</strong> con resumen de pedidos y análisis breve (IA si hay <code style="font-size:.7rem">GROQ_API_KEY</code> en Render). En EmailJS conviene una plantilla con <code style="font-size:.7rem">{{informe_cuerpo}}</code> — ver <code style="font-size:.7rem">docs/EMAILJS_INFORME_PERIODICO.md</code>.</p>
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Email destino</label>
 <input type="email" id="gn-reporte-email" placeholder="admin@empresa.com" style="width:100%;max-width:320px;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem;margin-bottom:.5rem">
 <label style="font-size:.85rem;display:block;margin-bottom:.35rem">Frecuencia</label>
 <select id="gn-reporte-frecuencia" style="padding:.35rem;border:1px solid var(--bo);border-radius:.4rem;margin-bottom:.5rem">
-  <option value="diario">Diario</option>
-  <option value="semanal">Semanal</option>
+  <option value="diario">Diario (24 h)</option>
+  <option value="semanal">Semanal (7 días)</option>
+  <option value="mensual">Mensual (30 días)</option>
   <option value="off">Desactivado</option>
 </select>
 <div style="display:flex;gap:.4rem;flex-wrap:wrap">
@@ -64,39 +65,24 @@ function mensajeErrorInforme(e) {
 }
 
 /**
- * Misma firma que recuperación de clave (EmailJS browser v3): 4.º arg = publicKey string.
+ * EmailJS browser v3 — params de informe desde la API.
  * @param {{ serviceId: string, templateId: string, publicKey: string }} ej
  * @param {string} destino
- * @param {{ text: string, subject: string }} resumen
+ * @param {Record<string, string>} resumen
  */
 async function enviarEmailjsInforme(ej, destino, resumen) {
-    const texto = String(resumen.text || '').trim() || 'Sin datos en el período.';
-    const asunto = String(resumen.subject || 'GestorNova — informe').trim();
-    const paramsCompletos = {
+    const params = {
+        ...(resumen.emailjsParams || {}),
         to_email: destino,
-        to_name: 'Administrador',
-        message: texto,
-        subject: asunto,
-        token: texto.slice(0, 500),
-        app_name: asunto,
+        to_name: resumen.emailjsParams?.to_name || 'Administrador',
+        message: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
+        subject: resumen.subject || resumen.emailjsParams?.informe_asunto || 'Informe operativo | GestorNova',
+        informe_cuerpo: resumen.text || resumen.emailjsParams?.informe_cuerpo || '',
+        informe_asunto: resumen.subject || resumen.emailjsParams?.informe_asunto || '',
+        app_name: resumen.nombreEmpresa || resumen.emailjsParams?.app_name || 'GestorNova',
+        token: '—',
     };
-    const paramsReset = {
-        to_email: destino,
-        to_name: 'Administrador',
-        token: texto.slice(0, 500),
-        app_name: asunto,
-    };
-    try {
-        await window.emailjs.send(ej.serviceId, ej.templateId, paramsCompletos, ej.publicKey);
-    } catch (e1) {
-        try {
-            await window.emailjs.send(ej.serviceId, ej.templateId, paramsReset, ej.publicKey);
-        } catch (e2) {
-            const m1 = mensajeErrorInforme(e1);
-            const m2 = mensajeErrorInforme(e2);
-            throw new Error(m2 && m2 !== m1 ? `${m1} (${m2})` : m1);
-        }
-    }
+    await window.emailjs.send(ej.serviceId, ej.templateId, params, ej.publicKey);
 }
 
 /**
@@ -113,12 +99,21 @@ async function obtenerResumenInforme(apiUrl, tok, body) {
     const resumen = await r.json().catch(() => ({}));
     if (r.ok && resumen.text) return resumen;
     if (r.status === 404 || r.status === 405) {
-        const periodo = body.frecuencia === 'semanal' ? '7 días' : '24 horas';
+        const periodo =
+            body.frecuencia === 'mensual'
+                ? 'último mes'
+                : body.frecuencia === 'semanal'
+                  ? '7 días'
+                  : '24 horas';
         return {
             text:
                 `Informe de prueba GestorNova (${periodo})\n\n` +
-                `La API aún no expone /resumen (actualizá Render). Revisá pedidos en el panel.\n\n— GestorNova`,
-            subject: 'GestorNova — informe (prueba)',
+                `Actualizá la API en Render para estadísticas y análisis automático.\n\n— GestorNova`,
+            subject: 'Informe operativo de prueba | GestorNova',
+            emailjsParams: {
+                informe_asunto: 'Informe operativo de prueba | GestorNova',
+                informe_cuerpo: `Informe de prueba (${periodo}). Actualizá Render.`,
+            },
         };
     }
     throw new Error(resumen.error || resumen.mensaje || `Error al armar informe (${r.status})`);
