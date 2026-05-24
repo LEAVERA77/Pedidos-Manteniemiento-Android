@@ -11147,6 +11147,8 @@ function getDetalleRenderDeps() {
         modoOffline,
         NEON_OK,
         _sql,
+        sqlSimple,
+        esc,
         esAdmin,
         esTecnicoOSupervisor,
         esAndroidWebViewMapa,

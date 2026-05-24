@@ -10,6 +10,7 @@ import {
 } from './pedido-detalle-incremental.js';
 import { gnPrefetchNombresPedidoDetalle } from './gn-usuario-nombres.js';
 import { gnParchAuditoriaDetalleTrasNombres } from './gn-usuario-nombres-detalle-patch.js';
+import { inferirProvinciaCpDetallePedidoSiFalta } from './pedido-detalle-infer-ubicacion-nominatim.js';
 
 function isAndroidShell() {
     try {
@@ -128,6 +129,7 @@ export function hydrateDetallePedido(p, deps, opts = {}) {
         ensureDetallePedidoShellMounted();
         patchDetallePedidoIncremental(p, deps);
         guardarDetalleEstructuraSig(p, deps);
+        void inferirProvinciaCpDetallePedidoSiFalta(p, deps);
         return { mode: 'patch' };
     }
 
@@ -145,6 +147,8 @@ export function hydrateDetallePedido(p, deps, opts = {}) {
     applyDetalleSectionsToShell(p, sections, deps);
     guardarDetalleEstructuraSig(p, deps);
     restoreScroll(scroll, scrollTop);
+
+    void inferirProvinciaCpDetallePedidoSiFalta(p, deps);
 
     void gnPrefetchNombresPedidoDetalle(p).then(() => {
         try {
