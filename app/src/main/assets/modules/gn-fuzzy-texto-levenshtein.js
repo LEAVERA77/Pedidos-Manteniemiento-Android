@@ -98,7 +98,72 @@ export function construirTextoDireccionPadron(row) {
 }
 
 /**
- * Coincidencia de dirección en padrón (todos los rubros): calle y domicilio completo con Levenshtein.
+ * Normaliza número de puerta para comparar (solo dígitos + sufijo opcional).
+ * @param {unknown} n
+ * @returns {string}
+ */
+export function normalizarNumeroPuerta(n) {
+    const t = normalizarTextoFuzzy(n).replace(/\s+/g, '');
+    const m = t.match(/^(\d+)([a-z])?$/);
+    if (!m) return t;
+    return String(parseInt(m[1], 10)) + (m[2] || '');
+}
+
+/**
+ * Separa calle y número en la búsqueda (ej. "Union 118" → palabras + [118]).
+ * @param {string} needleRaw
+ * @returns {{ words: string[], nums: string[] }}
+ */
+export function extraerTokensBusquedaDireccion(needleRaw) {
+    const needle = normalizarTextoFuzzy(needleRaw);
+    const words = [];
+    const nums = [];
+    for (const t of needle.split(' ').filter(Boolean)) {
+        if (/^\d+[a-z]?$/.test(t)) nums.push(normalizarNumeroPuerta(t));
+        else if (t.length >= 2) words.push(t);
+    }
+    return { words, nums };
+}
+
+/**
+ * @param {string} busqNum
+ * @param {unknown} rowNumero
+ * @returns {boolean}
+ */
+export function numeroPuertaCoincideBusqueda(busqNum, rowNumero) {
+    const b = normalizarNumeroPuerta(busqNum);
+    if (!b) return true;
+    const a = normalizarNumeroPuerta(rowNumero);
+    if (!a) return false;
+    if (a === b) return true;
+    if (a.length === b.length && distanciaLevenshtein(a, b) <= 1) return true;
+    return false;
+}
+
+/**
+ * Palabra de calle en búsqueda vs. nombre de calle (no usa número ni localidad).
+ * @param {string} token
+ * @param {string} calleNorm
+ * @returns {boolean}
+ */
+function tokenCalleCoincideBusqueda(token, calleNorm) {
+    if (!token || !calleNorm) return false;
+    if (calleNorm.includes(token)) return true;
+    if (token.length < 3) return false;
+    const calleWords = calleNorm.split(' ').filter((w) => w.length > 0);
+    const maxD = token.length <= 4 ? 1 : Math.min(2, umbralLevenshteinParaNeedle(token.length));
+    for (const cw of calleWords) {
+        if (cw === token) return true;
+        if (token.length >= 4 && cw.includes(token)) return true;
+        if (Math.abs(cw.length - token.length) > maxD + 1) continue;
+        if (distanciaLevenshtein(token, cw) <= maxD) return true;
+    }
+    return false;
+}
+
+/**
+ * Coincidencia de dirección en padrón: exige calle + número de puerta si el usuario lo ingresó.
+ * Más estricta que apellido: no matchea "118" con "688" ni calle solo si pidió altura.
  * @param {string} needleRaw
  * @param {Record<string, unknown>|null|undefined} row
  * @returns {boolean}
@@ -107,17 +172,14 @@ export function direccionCoincideFuzzy(needleRaw, row) {
     const needle = normalizarTextoFuzzy(needleRaw);
     if (!needle) return true;
     const calle = normalizarTextoFuzzy(row?.calle);
-    const full = normalizarTextoFuzzy(construirTextoDireccionPadron(row));
-    if (!full && !calle) return false;
-    if (calle && nombreCoincideFuzzy(needleRaw, calle)) return true;
-    if (full && nombreCoincideFuzzy(needleRaw, full)) return true;
-    const tokens = needle.split(' ').filter((t) => t.length >= 2);
-    if (tokens.length > 1) {
-        const hay = full || calle;
-        if (!hay) return false;
-        return tokens.every((tok) => nombreCoincideFuzzy(tok, hay));
+    if (!calle) return false;
+    const { words, nums } = extraerTokensBusquedaDireccion(needleRaw);
+    if (nums.length > 0) {
+        const numOk = nums.some((n) => numeroPuertaCoincideBusqueda(n, row?.numero));
+        if (!numOk) return false;
     }
-    return false;
+    if (words.length === 0) return nums.length > 0;
+    return words.every((w) => tokenCalleCoincideBusqueda(w, calle));
 }
 
 /**
