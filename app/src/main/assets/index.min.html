@@ -750,7 +750,7 @@
     <div id="admin-red-electrica" class="admin-section">
       <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Carga de red eléctrica (infraestructura)</h3>
       <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Datos para <strong>SAIDI / SAIFI</strong> en Estadísticas: se guardan en la tabla <code style="font-size:.75rem">distribuidores_red</code> (separada de <code style="font-size:.72rem">distribuidores</code> y de la pestaña «Métricas SAIDI/SAIFI»). Migración Neon: <code style="font-size:.72rem">api/db/migrations/distribuidores_red.sql</code>.</p>
-      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem"><strong>Fila 1 — encabezados:</strong> <code style="font-size:.72rem">ID Distribuidor</code> · <code style="font-size:.72rem">Nombre</code> · <code style="font-size:.72rem">Localidad</code> · <code style="font-size:.72rem">Nivel de tensión</code> (kV con punto decimal, ej. <code style="font-size:.72rem">13.2</code>) · <code style="font-size:.72rem">Trafos</code> · <code style="font-size:.72rem">KVA</code> · <code style="font-size:.72rem">Clientes</code>. La importación <strong>no borra</strong> la tabla: actualiza valores por código, agrega filas nuevas y, si un distribuidor de la base no viene en el Excel, te pregunta uno por uno si fue dado de baja antes de quitarlo.</p>
+      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem"><strong>Fila 1 — encabezados:</strong> <code style="font-size:.72rem">ID Distribuidor</code> · <code style="font-size:.72rem">Nombre</code> · <code style="font-size:.72rem">Localidad</code> · <code style="font-size:.72rem">Nivel de tensión</code> (kV: <code style="font-size:.72rem">33</code>, <code style="font-size:.72rem">132</code>; decimal solo si el Excel lo trae, ej. <code style="font-size:.72rem">13.2</code>) · <code style="font-size:.72rem">Trafos</code> · <code style="font-size:.72rem">KVA</code> · <code style="font-size:.72rem">Clientes</code>. La importación <strong>no borra</strong> la tabla: actualiza valores por código, agrega filas nuevas y, si un distribuidor de la base no viene en el Excel, te pregunta uno por uno si fue dado de baja antes de quitarlo.</p>
       <div style="display:flex;flex-wrap:wrap;gap:.65rem;align-items:flex-end;margin-bottom:.75rem">
         <div>
           <label for="admin-red-electrica-file" style="font-size:.76rem;font-weight:600;color:var(--tm);display:block">Archivo Excel</label>
@@ -779,7 +779,7 @@
               <span style="display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;background:#2563eb;color:#fff;border-radius:.5rem;font-size:1rem"><i class="fas fa-search-location"></i></span>
               <strong style="color:var(--bd);font-size:.95rem">Padrón y reclamos</strong>
             </div>
-            <p style="font-size:.78rem;color:var(--tm);margin:0;line-height:1.45">Buscá por identificador (NIS, socio o vecino según rubro) o por apellido. Los reclamos se abren en el mapa. <kbd style="font-size:.7rem;padding:.1rem .25rem;border:1px solid var(--bo);border-radius:.2rem;background:var(--bg)">Enter</kbd> en el identificador ejecuta la búsqueda.</p>
+            <p style="font-size:.78rem;color:var(--tm);margin:0;line-height:1.45">Buscá por identificador (NIS, socio o vecino según rubro), por apellido o por dirección en el padrón. Los reclamos se abren en el mapa. <kbd style="font-size:.7rem;padding:.1rem .25rem;border:1px solid var(--bo);border-radius:.2rem;background:var(--bg)">Enter</kbd> en el identificador ejecuta la búsqueda.</p>
           </div>
         </div>
         <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.75rem">
@@ -793,13 +793,22 @@
         <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.55rem;padding-top:.55rem;border-top:1px dashed #93c5fd">
           <div style="flex:1;min-width:220px">
             <label for="historial-apellido-input" style="font-size:.78rem;font-weight:600;color:var(--tm)">Apellido del socio/vecino</label>
-            <input type="text" id="historial-apellido-input" placeholder="Ej: García" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem">
+            <input type="text" id="historial-apellido-input" placeholder="Ej: García" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem" data-gn-apellido-enter="1">
             <p style="font-size:.72rem;color:var(--tl);margin:.25rem 0 0;line-height:1.35">Todos los rubros: catálogo de socios y, en municipio/agua, también clientes finales. Tolerancia a tildes y errores (Levenshtein).</p>
           </div>
           <button type="button" class="btn-sm primary" onclick="buscarPorApellido()" style="padding:.55rem 1.1rem;font-weight:600;background:#059669;border-color:#059669"><i class="fas fa-search"></i> Buscar por apellido</button>
           <button type="button" class="btn-sm primary" id="btn-buscar-padron-ident-apellido" onclick="buscarPadronPorIdentificador()" style="padding:.55rem 1.1rem;font-weight:600;background:#1d4ed8;border-color:#1d4ed8" title="Usa el campo de identificador de arriba"><i class="fas fa-id-card"></i> <span class="btn-padron-ident-lbl">NIS o medidor</span></button>
         </div>
         <div id="historial-apellido-result" role="region" aria-label="Resultados de búsqueda por apellido" style="margin-top:.5rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
+        <div style="display:flex;gap:.55rem;flex-wrap:wrap;align-items:flex-end;margin-top:.55rem;padding-top:.55rem;border-top:1px dashed #93c5fd">
+          <div style="flex:1;min-width:220px">
+            <label for="historial-direccion-input" style="font-size:.78rem;font-weight:600;color:var(--tm)">Calle o dirección en el padrón</label>
+            <input type="text" id="historial-direccion-input" placeholder="Ej: Rivadavia 1200" autocomplete="off" style="width:100%;margin-top:.2rem;padding:.5rem .65rem;border:1.5px solid #93c5fd;border-radius:.5rem;font-size:.9rem" data-gn-direccion-enter="1">
+            <p style="font-size:.72rem;color:var(--tl);margin:.25rem 0 0;line-height:1.35">Todos los rubros: socios del catálogo y, en municipio/agua, vecinos en clientes finales. Tolerancia a tildes y errores de tipeo (Levenshtein).</p>
+          </div>
+          <button type="button" class="btn-sm primary" onclick="buscarPorDireccion()" style="padding:.55rem 1.1rem;font-weight:600;background:#7c3aed;border-color:#7c3aed"><i class="fas fa-map-marker-alt"></i> Buscar por dirección</button>
+        </div>
+        <div id="historial-direccion-result" role="region" aria-label="Resultados de búsqueda por dirección" style="margin-top:.5rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
         <div id="historial-nis-result" role="region" aria-label="Resultados de reclamos" style="margin-top:.85rem;font-size:.83rem;max-height:min(42vh,320px);overflow-y:auto;border-radius:.5rem"></div>
       </div>
       <div id="socios-import-crs-wrap" style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:.85rem;padding:.65rem .85rem;background:var(--bg2,#f8fafc);border-radius:.5rem;border:1px solid var(--bo)">
@@ -1199,8 +1208,8 @@
       <input id="gn-acceso-tec-clave" type="password" autocomplete="off" style="width:100%;padding:.45rem .5rem;border:1px solid var(--bo);border-radius:.45rem;font-size:.9rem;margin-bottom:.5rem">
       <p id="gn-acceso-tec-err" style="display:none;font-size:.8rem;color:var(--re);margin:0 0 .75rem" role="alert"></p>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button type="button" class="sec" onclick="if(typeof _gnAccesoTecCancelar==='function')_gnAccesoTecCancelar()">Cancelar</button>
-        <button type="button" class="bp" onclick="if(typeof _gnAccesoTecContinuar==='function')void _gnAccesoTecContinuar()"><i class="fas fa-check"></i> Continuar</button>
+        <button type="button" class="sec" id="gn-acceso-tec-btn-cancelar">Cancelar</button>
+        <button type="button" class="bp" id="gn-acceso-tec-btn-continuar"><i class="fas fa-check"></i> Continuar</button>
       </div>
     </div>
   </div>
