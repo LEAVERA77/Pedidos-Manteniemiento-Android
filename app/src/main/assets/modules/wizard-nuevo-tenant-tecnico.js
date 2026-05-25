@@ -91,7 +91,11 @@ async function crearNuevoTenantDesdePanel() {
         }
         const admin = j.admin_creado;
         const continuarTrasCrear = async () => {
-            toast(`Tenant creado: ${String(cli.nombre || '').trim()} (#${newId})`, 'success');
+            const msgOk = j.reutilizado
+                ? (j.message ||
+                      `Tenant recuperado (${String(cli.nombre || '').trim()} #${newId}). Continuá el setup.`)
+                : `Tenant creado: ${String(cli.nombre || '').trim()} (#${newId})`;
+            toast(msgOk, 'success');
             persistGnTechnicianKeyForSession(k);
             const list = await fetchListaTenants(k);
             const selNom = document.getElementById('cfgi-nombre');

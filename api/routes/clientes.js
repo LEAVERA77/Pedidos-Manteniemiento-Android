@@ -17,6 +17,10 @@ import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
 import { sanitizeWhatsappArAreaConfigIncrement } from "../utils/whatsappArAreaConfig.js";
 import { resetPedidoContadorPorTenant } from "../services/pedidoContador.js";
+import {
+  findClienteByNombreAndRubro,
+  isTenantSetupIncompleto,
+} from "../utils/clienteNombreTipoDuplicate.js";
 
 const router = express.Router();
 
@@ -274,21 +278,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         tipos_sugeridos: ["municipio", "cooperativa_electrica", "cooperativa_agua"],
       });
     }
-    const dup = await query(
-      `SELECT id FROM clientes
-       WHERE lower(trim(nombre)) = lower(trim($1))
-         AND lower(trim(COALESCE(tipo, ''))) = lower(trim($2))
-         AND COALESCE(activo, TRUE)
-       LIMIT 1`,
-      [nombreRaw, tipoDb]
-    );
-    if (dup.rows.length) {
-      return res.status(409).json({
-        error: "Ya existe un tenant con ese nombre y tipo de negocio",
-        code: "tenant_nombre_tipo_duplicado",
-        cliente_id: dup.rows[0].id,
-      });
-    }
+    const dupRow = await findClienteByNombreAndRubro(nombreRaw, tipoDb);
     const hasAbt = await tableHasColumn("clientes", "active_business_type");
     const abt = normalizeBusinessTypeInput(tipoDb) || rubroNormToBusinessType(tipoDb);
     const uCol = await usuariosTenantColumnName();
@@ -304,13 +294,83 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         error: "nombre_usuario inválido (2–120 caracteres, sin espacios)",
       });
     }
+    const hasEsDefault = await tableHasColumn("usuarios", "es_usuario_default");
+
+    if (dupRow) {
+      const dupId = Number(dupRow.id);
+      const setupIncompleto = isTenantSetupIncompleto(dupRow.configuracion);
+      if (!setupIncompleto) {
+        return res.status(409).json({
+          error: "Ya existe un tenant con ese nombre y tipo de negocio",
+          code: "tenant_nombre_tipo_duplicado",
+          cliente_id: dupId,
+          nombre_existente: String(dupRow.nombre || "").trim(),
+          setup_completado: true,
+        });
+      }
+      if (loginAdmin && (await loginExistsGlobally(loginAdmin))) {
+        return res.status(409).json({
+          error: "Ese nombre de usuario ya existe en el sistema",
+          code: "login_duplicado",
+        });
+      }
+      let admin_creado_reuse = null;
+      if (uCol) {
+        const rAdm = await query(
+          `SELECT 1 FROM usuarios WHERE ${uCol} = $1 AND lower(rol) IN ('admin', 'administrador') LIMIT 1`,
+          [dupId]
+        );
+        if (!rAdm.rows.length) {
+          try {
+            admin_creado_reuse = await withTransaction(async (client) =>
+              crearUsuarioAdminBootstrap({
+                client,
+                col: uCol,
+                hasBt,
+                hasTw,
+                tenantId: dupId,
+                nombreTenant: String(dupRow.nombre || nombreRaw).trim(),
+                telefono: telefonoOpt,
+                hasMustChangePassword: hasMustPw,
+                loginPreferido: loginAdmin,
+                hasEsUsuarioDefault: hasEsDefault,
+              })
+            );
+          } catch (error) {
+            if (error?.code === "LOGIN_YA_EXISTE") {
+              return res.status(409).json({
+                error: "Ese nombre de usuario ya existe en el sistema",
+                code: "login_duplicado",
+              });
+            }
+            throw error;
+          }
+        }
+      }
+      return res.status(201).json({
+        ok: true,
+        reutilizado: true,
+        setup_incompleto: true,
+        cliente: {
+          id: dupId,
+          nombre: dupRow.nombre,
+          tipo: dupRow.tipo || tipoDb,
+          ...(hasAbt && dupRow.active_business_type != null
+            ? { active_business_type: dupRow.active_business_type }
+            : {}),
+        },
+        admin_creado: admin_creado_reuse,
+        message:
+          "Ya existía un tenant con ese nombre sin setup finalizado; se reutilizó para continuar el wizard.",
+      });
+    }
+
     if (loginAdmin && (await loginExistsGlobally(loginAdmin))) {
       return res.status(409).json({
         error: "Ese nombre de usuario ya existe en el sistema",
         code: "login_duplicado",
       });
     }
-    const hasEsDefault = await tableHasColumn("usuarios", "es_usuario_default");
 
     const { row, admin_creado } = await withTransaction(async (client) => {
       let r;

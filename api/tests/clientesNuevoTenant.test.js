@@ -36,8 +36,24 @@ function mockNeonForNuevoTenant({ clienteId = 21, dupNombre = false, loginTaken 
     if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "es_usuario_default") {
       return { rows: [{ ok: 1 }] };
     }
-    if (q.includes("lower(trim(nombre))") && q.includes("lower(trim(COALESCE(tipo")) {
-      return dupNombre ? { rows: [{ id: 1 }] } : { rows: [] };
+    if (q.includes("regexp_replace(trim(nombre)") && q.includes("FROM clientes")) {
+      return dupNombre
+        ? {
+            rows: [
+              {
+                id: 99,
+                nombre: "Cooperativa Nueva",
+                tipo: "cooperativa_electrica",
+                configuracion: {},
+                activo: true,
+                active_business_type: "electricidad",
+              },
+            ],
+          }
+        : { rows: [] };
+    }
+    if (q.includes("FROM usuarios") && q.includes("admin") && q.includes("LIMIT 1")) {
+      return { rows: [] };
     }
     if (q.includes("lower(btrim(email))")) {
       const login = String(params[0] || "").toLowerCase();
@@ -149,6 +165,50 @@ describe("POST /api/clientes/nuevo", () => {
     expect(res.status).toBe(201);
     expect(res.body.admin_creado?.usuario).toBeTruthy();
     expect(res.body.admin_creado?.password).toBeTruthy();
+  });
+
+  it("201 reutiliza tenant huérfano sin setup completado", async () => {
+    mockNeonForNuevoTenant({ clienteId: 99, dupNombre: true });
+    const res = await request(app)
+      .post("/api/clientes/nuevo")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_nuevo_tenant")
+      .send({ nombre: "Cooperativa Nueva", tipo: "cooperativa_electrica", nombre_usuario: "admin_nueva" });
+    expect(res.status).toBe(201);
+    expect(res.body.reutilizado).toBe(true);
+    expect(res.body.cliente.id).toBe(99);
+  });
+
+  it("409 si tenant duplicado ya finalizó setup", async () => {
+    vi.mocked(query).mockImplementation(async (sql, params = []) => {
+      const q = String(sql);
+      if (q.includes("information_schema.columns") && params[0] === "clientes" && params[1] === "active_business_type") {
+        return { rows: [{ ok: 1 }] };
+      }
+      if (q.includes("information_schema.columns") && params[0] === "usuarios") {
+        return { rows: [{ ok: 1 }] };
+      }
+      if (q.includes("regexp_replace(trim(nombre)") && q.includes("FROM clientes")) {
+        return {
+          rows: [
+            {
+              id: 50,
+              nombre: "Cooperativa Nueva",
+              tipo: "cooperativa_electrica",
+              configuracion: { setup_wizard_completado: true },
+              activo: true,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    const res = await request(app)
+      .post("/api/clientes/nuevo")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_nuevo_tenant")
+      .send({ nombre: "Cooperativa Nueva", tipo: "cooperativa_electrica" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("tenant_nombre_tipo_duplicado");
+    expect(res.body.cliente_id).toBe(50);
   });
 
   it("201 con login explícito único (admin_pajarito2)", async () => {
