@@ -85,6 +85,42 @@ export function nombreCoincideFuzzy(needleRaw, nombreCompletoRaw) {
 }
 
 /**
+ * Texto de domicilio unificado para fuzzy (calle, nº, barrio, localidad, provincia).
+ * @param {Record<string, unknown>|null|undefined} row
+ * @returns {string}
+ */
+export function construirTextoDireccionPadron(row) {
+    if (!row || typeof row !== 'object') return '';
+    const parts = [row.calle, row.numero, row.barrio, row.localidad, row.provincia]
+        .map((x) => (x != null ? String(x).trim() : ''))
+        .filter(Boolean);
+    return parts.join(' ');
+}
+
+/**
+ * Coincidencia de dirección en padrón (todos los rubros): calle y domicilio completo con Levenshtein.
+ * @param {string} needleRaw
+ * @param {Record<string, unknown>|null|undefined} row
+ * @returns {boolean}
+ */
+export function direccionCoincideFuzzy(needleRaw, row) {
+    const needle = normalizarTextoFuzzy(needleRaw);
+    if (!needle) return true;
+    const calle = normalizarTextoFuzzy(row?.calle);
+    const full = normalizarTextoFuzzy(construirTextoDireccionPadron(row));
+    if (!full && !calle) return false;
+    if (calle && nombreCoincideFuzzy(needleRaw, calle)) return true;
+    if (full && nombreCoincideFuzzy(needleRaw, full)) return true;
+    const tokens = needle.split(' ').filter((t) => t.length >= 2);
+    if (tokens.length > 1) {
+        const hay = full || calle;
+        if (!hay) return false;
+        return tokens.every((tok) => nombreCoincideFuzzy(tok, hay));
+    }
+    return false;
+}
+
+/**
  * Timestamp de resolución para ordenar históricos (cierre o derivación).
  * @param {Record<string, unknown>|null|undefined} p
  * @returns {number}

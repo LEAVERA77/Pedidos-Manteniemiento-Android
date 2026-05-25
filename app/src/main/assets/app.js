@@ -156,6 +156,7 @@ import {
 } from './modules/admin-red-electrica-infra.js';
 import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDockChip } from './modules/gn-panel-docks.js';
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
+import { installBusquedaDireccionHistorial } from './modules/busqueda-direccion-historial.js';
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
 import { aplicarDireccionNominatimRespetandoPadron } from './modules/pedido-nuevo-nominatim-padron-guard.js';
 import {
@@ -17619,7 +17620,7 @@ try {
 } catch (_) {}
 
 try {
-    installBusquedaApellidoHistorial({
+    const depsBusquedaPadronHistorial = {
         sqlSimple,
         pedidosFiltroTenantSql,
         tenantIdActual,
@@ -17631,7 +17632,9 @@ try {
             if (typeof esCooperativaAguaRubro === 'function' && esCooperativaAguaRubro()) return 'ID socio';
             return 'NIS';
         },
-    });
+    };
+    installBusquedaApellidoHistorial(depsBusquedaPadronHistorial);
+    installBusquedaDireccionHistorial(depsBusquedaPadronHistorial);
 } catch (_) {}
 
 try {
