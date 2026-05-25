@@ -293,6 +293,7 @@ import {
 } from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import { initTenantPrimerIngresoBootstrap } from './modules/tenant-primer-ingreso-bootstrap.js';
+import { shouldSkipNeonPlaintextLoginFallback } from './modules/auth-login-neon-fallback.js';
 import {
     abrirModalAvancePedido,
     initPedidoAvanceModalUI,
@@ -3500,8 +3501,12 @@ const gnLoginSubmitHandler = async e => {
             }
         } catch (_) {}
 
-        /** 2) Fallback Neon solo si la API no autenticó (contraseña legado en texto plano en BD). */
-        if (!usuario && !loginJwtPayload?.must_change_password) {
+        /** 2) Fallback Neon solo si la API no respondió; no comparar texto plano si la API ya validó bcrypt (401). */
+        if (
+            !usuario &&
+            !loginJwtPayload?.must_change_password &&
+            !shouldSkipNeonPlaintextLoginFallback(loginApiFallo, getApiBaseUrl)
+        ) {
             let tenantFrag = '';
             try {
                 tenantFrag = await buildNeonLoginTenantSqlFrag(esc, sqlColumnaTenantUsuariosNeonSync);
@@ -3655,6 +3660,9 @@ const gnLoginSubmitHandler = async e => {
                     le.textContent =
                         'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
                 }
+            } else if (loginApiFallo?.status === 401 && le) {
+                le.textContent =
+                    'Usuario o contraseña incorrectos. Verificá el usuario de login definido y la contraseña en texto plano (no un código que empiece con $2a$).';
             } else if (le) {
                 le.textContent = 'Usuario o contraseña incorrectos.';
             }

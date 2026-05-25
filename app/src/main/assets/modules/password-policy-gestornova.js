@@ -5,10 +5,19 @@
 
 export const MIN_PASSWORD_LEN_GESTORNOVA = 4;
 
+/** El usuario no debe pegar un hash bcrypt como contraseña. */
+export function pareceHashBcryptGestornova(s) {
+    const t = String(s ?? '').trim();
+    return /^\$2[aby]\$\d{2}\$/.test(t);
+}
+
 /** @param {unknown} nueva */
 export function mensajePasswordNuevaNoValidaGestornova(nueva) {
     const t = String(nueva ?? '').trim();
     if (!t) return 'Completá la contraseña.';
+    if (pareceHashBcryptGestornova(t)) {
+        return 'Ingresá la contraseña en texto plano (no el código que empieza con $2a$ o $2b$).';
+    }
     if (t.length < MIN_PASSWORD_LEN_GESTORNOVA) {
         return `La contraseña debe tener al menos ${MIN_PASSWORD_LEN_GESTORNOVA} caracteres.`;
     }

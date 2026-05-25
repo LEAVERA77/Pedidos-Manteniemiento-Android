@@ -5,6 +5,8 @@
  */
 
 import { validarParPasswordNuevoConfirmacionGestornova } from './password-policy-gestornova.js';
+import { setAuthLoginTenantHint } from './auth-login-api-body.js';
+import { eliminarUsuarioOfflinePorEmail } from '../offline.js';
 
 const RELOGIN_MSG_KEY = 'gn_tenant_primer_relogin_msg';
 
@@ -141,6 +143,11 @@ export async function confirmarCambioPasswordObligatorioAndroid() {
         if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar las credenciales.';
         return;
       }
+      const loginUser = String(data.user?.email || nuevoUsuario).trim().toLowerCase();
+      if (!loginUser) {
+        if (msg) msg.textContent = 'El servidor no devolvió el usuario de login. Reintentá o contactá soporte.';
+        return;
+      }
       document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
       ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2', 'forzar-cambio-pw-usuario', 'forzar-cambio-pw-nombre'].forEach(
         (id) => {
@@ -150,10 +157,21 @@ export async function confirmarCambioPasswordObligatorioAndroid() {
       );
       if (msg) msg.textContent = '';
       delete window._pendingAndroidPasswordChange;
-      const loginUser = String(data.user?.email || nuevoUsuario).trim();
+      try {
+        eliminarUsuarioOfflinePorEmail(pend.u?.email);
+        eliminarUsuarioOfflinePorEmail(nuevoUsuario);
+        eliminarUsuarioOfflinePorEmail(loginUser);
+      } catch (_) {}
       const tid = Number(data.user?.tenant_id ?? pend.u?.tenant_id);
+      if (Number.isFinite(tid) && tid > 0) setAuthLoginTenantHint(tid);
+      try {
+        sessionStorage.setItem(
+          RELOGIN_MSG_KEY,
+          `Credenciales guardadas. Ingresá con usuario «${loginUser}» y la contraseña que acabás de definir (texto plano, no un código $2a$).`
+        );
+      } catch (_) {}
       cerrarSesionTrasPrimerIngreso({ usuario: loginUser, tenantId: tid });
-      toast('Listo. Ingresá de nuevo con tu usuario y contraseña nuevos.', 'success');
+      toast(`Listo. Ingresá con usuario «${loginUser}» y tu contraseña nueva.`, 'success');
       return;
     }
 

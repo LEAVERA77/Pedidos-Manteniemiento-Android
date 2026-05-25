@@ -74,3 +74,14 @@ export function verificarUsuarioOffline(em, pw) {
         return null;
     }
 }
+
+/** Quita caché offline de login (evita clave vieja tras cambio de credenciales). */
+export function eliminarUsuarioOfflinePorEmail(em) {
+    try {
+        const emLc = String(em || '').trim().toLowerCase();
+        if (!emLc) return;
+        const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
+        const next = lista.filter((u) => String(u.email || '').trim().toLowerCase() !== emLc);
+        localStorage.setItem(OU_KEY, JSON.stringify(next));
+    } catch (_) {}
+}

@@ -5,7 +5,13 @@
 import { query } from "../db/neon.js";
 
 export function normalizeLoginId(raw) {
-  return String(raw || "").trim();
+  return String(raw || "").trim().toLowerCase();
+}
+
+/** Evita guardar o comparar un hash bcrypt como si fuera contraseña en texto plano. */
+export function parecePasswordHashBcrypt(raw) {
+  const t = String(raw || "").trim();
+  return /^\$2[aby]\$\d{2}\$/.test(t);
 }
 
 /**

@@ -4,15 +4,20 @@ import { query } from "../db/neon.js";
 import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
-import { normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
+import { normalizeLoginId, parecePasswordHashBcrypt } from "../utils/usuarioLoginGlobal.js";
 
 const router = express.Router();
 
 router.post("/login", async (req, res) => {
   try {
-    const loginId = String(req.body.usuario || req.body.email || "").trim();
+    const loginId = normalizeLoginId(req.body.usuario || req.body.email || "");
     const password = String(req.body.password || "").trim();
     if (!loginId || !password) return res.status(400).json({ error: "Usuario y contraseña requeridos" });
+    if (parecePasswordHashBcrypt(password)) {
+      return res.status(400).json({
+        error: "Ingresá la contraseña en texto plano, no el código hash de la base de datos.",
+      });
+    }
 
     const col = await usuariosTenantColumnName();
     const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
@@ -159,6 +164,11 @@ router.post("/cambiar-primera-contrasena", async (req, res) => {
     }
     if (nueva.length < 4) {
       return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
+    }
+    if (parecePasswordHashBcrypt(nueva)) {
+      return res.status(400).json({
+        error: "Ingresá la contraseña en texto plano, no el código hash de la base de datos.",
+      });
     }
     if (nuevoLoginRaw && (nuevoLoginRaw.length < 2 || nuevoLoginRaw.length > 120 || /\s/.test(nuevoLoginRaw))) {
       return res.status(400).json({ error: "Nombre de usuario no válido" });
