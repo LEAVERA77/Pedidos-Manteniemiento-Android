@@ -40,7 +40,7 @@ Booleano opcional. Si es `true`, en el panel admin se ocultan **ambas** pestaña
 ## Comportamiento por rubro (`clientes.tipo`)
 
 - **`municipio`** y **`cooperativa_agua`**: por defecto se oculta solo la pestaña **Clientes afectados** (infra eléctrica: transformadores, kVA, cierre por trafo). La pestaña de **Barrios** o **Ramales** (mismo listado que en eléctrica se llama Distribuidores) **sigue visible** para gestionar la zona del reclamo. Las rutas API y tablas `infra_*` no se eliminan.
-- **`cooperativa_electrica`**: se muestran todas las pestañas salvo `ocultar_modulos_redes`.
+- **`cooperativa_electrica`**: la pestaña **Red Eléctrica** (`distribuidores_red`) es la fuente operativa. Las pestañas **Distribuidores** y **Métricas SAIDI/SAIFI** (tabla legacy `distribuidores`) van **ocultas** por defecto; ver `docs/COOPERATIVA_ELECTRICA_DISTRIBUIDORES_VS_RED.md`. `ocultar_modulos_redes` sigue ocultando además **Clientes afectados**.
 
 ## API
 

@@ -294,6 +294,7 @@ import {
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import { initTenantPrimerIngresoBootstrap } from './modules/tenant-primer-ingreso-bootstrap.js';
 import { shouldSkipNeonPlaintextLoginFallback } from './modules/auth-login-neon-fallback.js';
+import { debeOcultarTabDistribuidoresAdmin as debeOcultarTabDistribuidoresAdminPolicy } from './modules/admin-tab-distribuidores-policy.js';
 import {
     abrirModalAvancePedido,
     initPedidoAvanceModalUI,
@@ -1141,12 +1142,9 @@ function debeOcultarTabClientesAfectadosInfraAdmin() {
     return r === 'municipio' || r === 'cooperativa_agua';
 }
 
-/** Pestaña catálogo zona (Distribuidores / Barrios / Ramales): municipio la oculta (barrios vienen de Nominatim). */
+/** Pestaña catálogo zona: ver modules/admin-tab-distribuidores-policy.js */
 function debeOcultarTabDistribuidoresAdmin() {
-    if (esMunicipioRubro()) return true;
-    const cfg = window.EMPRESA_CFG || {};
-    const o = cfg.ocultar_modulos_redes;
-    return o === true || o === 1 || String(o).toLowerCase() === 'true' || String(o) === '1';
+    return debeOcultarTabDistribuidoresAdminPolicy({ esMunicipioRubro, esCooperativaElectricaRubro });
 }
 
 function aplicarVisibilidadTabsAdminRedElectrica() {
