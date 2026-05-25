@@ -1,24 +1,24 @@
 /**
- * Formato kV Red Eléctrica: mismo valor que Neon/Excel (33 → 33, 132 → 132, 13.2 → 13.2).
+ * Formato kV Red Eléctrica: enteros sin punto (33, 132); decimal solo con flag.
  * made by leavera77
  */
 
-/** @param {unknown} dbValue */
-export function formatNivelTensionKvFromDb(dbValue) {
+/** @param {unknown} dbValue @param {boolean} [kvDecimal] */
+export function formatNivelTensionKvFromDb(dbValue, kvDecimal = false) {
   const v = Number(dbValue);
   if (!Number.isFinite(v) || v <= 0) return '0';
-  const rounded = Math.round(v * 1000) / 1000;
-  if (Math.abs(rounded - Math.round(rounded)) < 1e-9) {
-    return String(Math.round(rounded));
+  if (kvDecimal) {
+    const kv = v / 10;
+    const rounded = Math.round(kv * 10) / 10;
+    if (Number.isInteger(rounded)) return String(rounded);
+    return rounded.toFixed(1);
   }
-  let s = rounded.toFixed(2);
-  s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
-  return s;
+  return String(Math.round(v));
 }
 
-/** @param {unknown} dbValue */
-export function etiquetaGrupoTensionKv(dbValue) {
-  const kv = formatNivelTensionKvFromDb(dbValue);
+/** @param {unknown} dbValue @param {boolean} [kvDecimal] */
+export function etiquetaGrupoTensionKv(dbValue, kvDecimal = false) {
+  const kv = formatNivelTensionKvFromDb(dbValue, kvDecimal);
   if (!kv || kv === '0') return 'Sin clasificar';
   return `${kv} kV`;
 }

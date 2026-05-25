@@ -75,7 +75,7 @@ router.get("/red-electrica", adminOnly, async (req, res) => {
       });
     }
     const r = await query(
-      `SELECT id, codigo, nombre, localidad, nivel_tension, trafos, kva, clientes, created_at, updated_at
+      `SELECT id, codigo, nombre, localidad, nivel_tension, COALESCE(nivel_tension_kv_decimal, FALSE) AS nivel_tension_kv_decimal, trafos, kva, clientes, created_at, updated_at
        FROM distribuidores_red WHERE tenant_id = $1 ORDER BY codigo`,
       [req.tenantId]
     );
@@ -94,7 +94,7 @@ router.get("/red-electrica/export", adminOnly, async (req, res) => {
       });
     }
     const r = await query(
-      `SELECT id, tenant_id, codigo, nombre, localidad, nivel_tension, trafos, kva, clientes, created_at, updated_at
+      `SELECT id, tenant_id, codigo, nombre, localidad, nivel_tension, COALESCE(nivel_tension_kv_decimal, FALSE) AS nivel_tension_kv_decimal, trafos, kva, clientes, created_at, updated_at
        FROM distribuidores_red WHERE tenant_id = $1 ORDER BY codigo`,
       [req.tenantId]
     );

@@ -72,14 +72,24 @@ function buildPayload(canon, provided) {
   if (!codigo) return { err: "codigo_vacio" };
   const nombre = canon.nombre && String(canon.nombre).trim() ? String(canon.nombre).trim() : codigo;
   const localidad = canon.localidad && String(canon.localidad).trim() ? String(canon.localidad).trim() : null;
-  const nivel_tension = parseNivelTensionExcelToDb(canon.nivel_tension);
+  const nt = parseNivelTensionExcelToDb(canon.nivel_tension);
   const tf = parseIntLoose(canon.trafos);
   const trafos = tf != null ? tf : 0;
   const kv = parseNumLoose(canon.kva);
   const kva = kv != null ? Math.round(kv) : 0;
   const cl = parseIntLoose(canon.clientes);
   const clientes = cl != null ? cl : 0;
-  return { codigo, nombre, localidad, nivel_tension, trafos, kva, clientes, provided };
+  return {
+    codigo,
+    nombre,
+    localidad,
+    nivel_tension: nt.nivel_tension,
+    nivel_tension_kv_decimal: nt.nivel_tension_kv_decimal,
+    trafos,
+    kva,
+    clientes,
+    provided,
+  };
 }
 
 function rowEqualDb(row, p) {
@@ -87,6 +97,7 @@ function rowEqualDb(row, p) {
     String(row.nombre || "") === String(p.nombre) &&
     String(row.localidad || "") === String(p.localidad || "") &&
     Number(row.nivel_tension || 0) === Number(p.nivel_tension) &&
+    !!row.nivel_tension_kv_decimal === !!p.nivel_tension_kv_decimal &&
     Number(row.trafos || 0) === Number(p.trafos) &&
     Number(row.kva || 0) === Number(p.kva) &&
     Number(row.clientes || 0) === Number(p.clientes)
@@ -137,9 +148,19 @@ export async function mergeDistribuidoresRedFromExcelBuffer(buffer, tenantId, cl
     ]);
     if (!ex.rows.length) {
       await client.query(
-        `INSERT INTO distribuidores_red (tenant_id, codigo, nombre, localidad, nivel_tension, trafos, kva, clientes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [tenantId, p.codigo, p.nombre, p.localidad, p.nivel_tension, p.trafos, p.kva, p.clientes]
+        `INSERT INTO distribuidores_red (tenant_id, codigo, nombre, localidad, nivel_tension, nivel_tension_kv_decimal, trafos, kva, clientes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          tenantId,
+          p.codigo,
+          p.nombre,
+          p.localidad,
+          p.nivel_tension,
+          !!p.nivel_tension_kv_decimal,
+          p.trafos,
+          p.kva,
+          p.clientes,
+        ]
       );
       insertados++;
       continue;
@@ -163,6 +184,10 @@ export async function mergeDistribuidoresRedFromExcelBuffer(buffer, tenantId, cl
     if (Number(row.nivel_tension || 0) !== Number(p.nivel_tension)) {
       sets.push(`nivel_tension = $${i++}`);
       vals.push(p.nivel_tension);
+    }
+    if (!!row.nivel_tension_kv_decimal !== !!p.nivel_tension_kv_decimal) {
+      sets.push(`nivel_tension_kv_decimal = $${i++}`);
+      vals.push(!!p.nivel_tension_kv_decimal);
     }
     if (Number(row.trafos || 0) !== Number(p.trafos)) {
       sets.push(`trafos = $${i++}`);

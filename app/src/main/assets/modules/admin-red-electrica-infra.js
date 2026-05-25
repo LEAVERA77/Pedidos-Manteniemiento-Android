@@ -140,7 +140,7 @@ export async function cargarListaRedElectricaInfra(d) {
   <td>${escCell(row.codigo)}</td>
   <td>${escCell(row.nombre)}</td>
   <td>${escCell(row.localidad)}</td>
-  <td style="text-align:right">${escCell(formatNivelTensionKvFromDb(row.nivel_tension))}</td>
+  <td style="text-align:right">${escCell(formatNivelTensionKvFromDb(row.nivel_tension, !!row.nivel_tension_kv_decimal))}</td>
   <td style="text-align:right">${escCell(row.trafos)}</td>
   <td style="text-align:right">${escCell(row.kva)}</td>
   <td style="text-align:right">${escCell(row.clientes)}</td>

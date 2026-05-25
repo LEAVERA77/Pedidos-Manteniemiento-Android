@@ -31,7 +31,7 @@ export function buildDistribuidoresRedExcelBuffer(rows) {
     codigo: r.codigo ?? "",
     nombre: r.nombre ?? "",
     localidad: r.localidad ?? "",
-    nivel_tension: formatNivelTensionKvFromDb(r.nivel_tension),
+    nivel_tension: formatNivelTensionKvFromDb(r.nivel_tension, !!r.nivel_tension_kv_decimal),
     trafos: r.trafos ?? "",
     kva: r.kva ?? "",
     clientes: r.clientes ?? "",

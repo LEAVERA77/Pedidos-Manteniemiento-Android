@@ -6,8 +6,8 @@
 import { etiquetaGrupoTensionKv } from './nivel-tension-kv-format.js';
 
 /** @param {string|number|null|undefined} t */
-export function etiquetaGrupoTensionDi2(t) {
-    return etiquetaGrupoTensionKv(t);
+export function etiquetaGrupoTensionDi2(t, kvDecimal = false) {
+    return etiquetaGrupoTensionKv(t, kvDecimal);
 }
 
 /**
@@ -87,13 +87,13 @@ export async function fetchFilasDi2DesdeRedElectrica(deps) {
     if (!(await tablaDistribuidoresRedExiste(deps))) return [];
     const wf = await sqlWhereDistribuidoresRedTenant(deps);
     const r = await deps.sqlSimpleSelectAllPages(
-        `SELECT codigo, nombre, localidad, nivel_tension FROM distribuidores_red WHERE 1=1${wf}`,
+        `SELECT codigo, nombre, localidad, nivel_tension, COALESCE(nivel_tension_kv_decimal, FALSE) AS nivel_tension_kv_decimal FROM distribuidores_red WHERE 1=1${wf}`,
         'ORDER BY nivel_tension NULLS LAST, codigo'
     );
     return (r.rows || []).map((row) => ({
         v: String(row.codigo || '').trim(),
         l: etiquetaOpcionDi2(row),
-        g: etiquetaGrupoTensionDi2(row.nivel_tension),
+        g: etiquetaGrupoTensionDi2(row.nivel_tension, !!row.nivel_tension_kv_decimal),
     })).filter((d) => d.v);
 }
 
