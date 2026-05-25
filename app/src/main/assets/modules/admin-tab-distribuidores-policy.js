@@ -24,3 +24,21 @@ export function debeOcultarTabDistribuidoresAdmin(deps = {}) {
     const o = cfg.ocultar_modulos_redes;
     return o === true || o === 1 || String(o).toLowerCase() === 'true' || String(o) === '1';
 }
+
+/**
+ * Pestañas admin coop. eléctrica: solo Red Eléctrica; ocultar Distribuidores y SAIDI Excel legacy.
+ * @param {{ esCooperativaElectricaRubro?: () => boolean; esMunicipioRubro?: () => boolean }} [deps]
+ */
+export function syncCooperativaElectricaAdminTabs(deps = {}) {
+    const esCoop =
+        typeof deps.esCooperativaElectricaRubro === 'function'
+            ? deps.esCooperativaElectricaRubro()
+            : typeof window.esCooperativaElectricaRubro === 'function' && window.esCooperativaElectricaRubro();
+    const hideLegacy = debeOcultarTabDistribuidoresAdmin(deps);
+    const tabDist = document.getElementById('admin-tab-distribuidores');
+    const tabSaidi = document.getElementById('admin-tab-saidi-excel');
+    const tabRed = document.getElementById('admin-tab-red-electrica');
+    if (tabDist) tabDist.style.display = hideLegacy ? 'none' : '';
+    if (tabSaidi) tabSaidi.style.display = esCoop && hideLegacy ? 'none' : tabSaidi.style.display;
+    if (tabRed) tabRed.style.display = esCoop ? '' : 'none';
+}

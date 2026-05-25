@@ -6,6 +6,7 @@
 import { importarExcelRedElectricaConConfirmacion } from "./admin-red-electrica-import-flow.js";
 import { descargarExcelRedElectricaCompleto } from "./admin-red-electrica-export.js";
 import { mostrarPanelResultadoImportacion } from "./admin-import-result-panel.js";
+import { formatNivelTensionKvFromDb } from "./nivel-tension-kv-format.js";
 
 /** @type {boolean} */
 let _bound = false;
@@ -139,7 +140,7 @@ export async function cargarListaRedElectricaInfra(d) {
   <td>${escCell(row.codigo)}</td>
   <td>${escCell(row.nombre)}</td>
   <td>${escCell(row.localidad)}</td>
-  <td style="text-align:right">${escCell(row.nivel_tension)}</td>
+  <td style="text-align:right">${escCell(formatNivelTensionKvFromDb(row.nivel_tension))}</td>
   <td style="text-align:right">${escCell(row.trafos)}</td>
   <td style="text-align:right">${escCell(row.kva)}</td>
   <td style="text-align:right">${escCell(row.clientes)}</td>

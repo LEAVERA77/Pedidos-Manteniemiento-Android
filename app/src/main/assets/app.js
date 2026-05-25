@@ -294,7 +294,10 @@ import {
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
 import { initTenantPrimerIngresoBootstrap } from './modules/tenant-primer-ingreso-bootstrap.js';
 import { shouldSkipNeonPlaintextLoginFallback } from './modules/auth-login-neon-fallback.js';
-import { debeOcultarTabDistribuidoresAdmin as debeOcultarTabDistribuidoresAdminPolicy } from './modules/admin-tab-distribuidores-policy.js';
+import {
+    debeOcultarTabDistribuidoresAdmin as debeOcultarTabDistribuidoresAdminPolicy,
+    syncCooperativaElectricaAdminTabs,
+} from './modules/admin-tab-distribuidores-policy.js';
 import {
     abrirModalAvancePedido,
     initPedidoAvanceModalUI,
@@ -1148,15 +1151,12 @@ function debeOcultarTabDistribuidoresAdmin() {
 }
 
 function aplicarVisibilidadTabsAdminRedElectrica() {
-    const hideDist = debeOcultarTabDistribuidoresAdmin();
-    const d = document.getElementById('admin-tab-distribuidores');
-    if (d) d.style.display = hideDist ? 'none' : '';
+    syncCooperativaElectricaAdminTabs({ esMunicipioRubro, esCooperativaElectricaRubro });
     try {
         syncAdminSaidiDistribTabVisibility({
             esCooperativaElectricaRubro,
             debeOcultarTabDistribuidoresAdmin,
         });
-        syncAdminRedElectricaTabVisibility({ esCooperativaElectricaRubro });
     } catch (_) {}
     try {
         syncOcultarModulosRedesRowVisibility();

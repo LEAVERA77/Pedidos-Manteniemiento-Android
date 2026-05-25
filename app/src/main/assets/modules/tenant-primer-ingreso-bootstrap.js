@@ -45,6 +45,11 @@ export function abrirModalPrimerIngresoBootstrap(pend) {
       'Tu cuenta tiene una contraseña que debe cambiarse antes de continuar. Elegí una contraseña nueva distinta de la actual (mínimo 4 caracteres).';
   }
   modal.classList.add('active');
+  try {
+    if (typeof window.refreshPasswordVisibilityToggles === 'function') {
+      window.refreshPasswordVisibilityToggles(modal);
+    }
+  } catch (_) {}
   (esPrimera ? inUser : document.getElementById('forzar-cambio-pw-nueva'))?.focus();
 }
 

@@ -4,6 +4,7 @@
  */
 
 import XLSX from "xlsx";
+import { formatNivelTensionKvFromDb } from "../utils/nivelTensionKv.js";
 
 const EXPORT_HEADERS = [
   "id",
@@ -30,7 +31,7 @@ export function buildDistribuidoresRedExcelBuffer(rows) {
     codigo: r.codigo ?? "",
     nombre: r.nombre ?? "",
     localidad: r.localidad ?? "",
-    nivel_tension: r.nivel_tension ?? "",
+    nivel_tension: formatNivelTensionKvFromDb(r.nivel_tension),
     trafos: r.trafos ?? "",
     kva: r.kva ?? "",
     clientes: r.clientes ?? "",

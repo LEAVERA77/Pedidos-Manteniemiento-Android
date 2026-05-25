@@ -3,14 +3,11 @@
  * made by leavera77
  */
 
+import { etiquetaGrupoTensionKv } from './nivel-tension-kv-format.js';
+
 /** @param {string|number|null|undefined} t */
 export function etiquetaGrupoTensionDi2(t) {
-    const s = String(t ?? '').trim();
-    if (!s) return 'Sin clasificar';
-    const digits = s.replace(/[^\d]/g, '');
-    const n = parseInt(digits, 10);
-    if (!Number.isFinite(n) || n <= 0) return s;
-    return `${n} Kv`;
+    return etiquetaGrupoTensionKv(t);
 }
 
 /**

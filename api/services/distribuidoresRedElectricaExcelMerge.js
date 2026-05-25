@@ -1,4 +1,5 @@
 import XLSX from "xlsx";
+import { parseNivelTensionExcelToDb } from "../utils/nivelTensionKv.js";
 
 function normHeaderKey(k) {
   return String(k || "")
@@ -71,8 +72,7 @@ function buildPayload(canon, provided) {
   if (!codigo) return { err: "codigo_vacio" };
   const nombre = canon.nombre && String(canon.nombre).trim() ? String(canon.nombre).trim() : codigo;
   const localidad = canon.localidad && String(canon.localidad).trim() ? String(canon.localidad).trim() : null;
-  const nt = parseIntLoose(canon.nivel_tension);
-  const nivel_tension = nt != null ? nt : 0;
+  const nivel_tension = parseNivelTensionExcelToDb(canon.nivel_tension);
   const tf = parseIntLoose(canon.trafos);
   const trafos = tf != null ? tf : 0;
   const kv = parseNumLoose(canon.kva);
