@@ -56,6 +56,7 @@ async function crearNuevoTenantDesdePanel() {
     }
     const nombre = String(document.getElementById('cfgi-nuevo-tenant-nombre')?.value || '').trim();
     const tipo = String(document.getElementById('cfgi-nuevo-tenant-tipo')?.value || '').trim();
+    const nombreUsuario = String(document.getElementById('cfgi-nuevo-tenant-usuario')?.value || '').trim();
     if (nombre.length < 2) {
         toast('Nombre del tenant: mínimo 2 caracteres.', 'error');
         return;
@@ -73,7 +74,11 @@ async function crearNuevoTenantDesdePanel() {
                 'Content-Type': 'application/json',
                 'X-GestorNova-Technician-Key': k,
             },
-            body: JSON.stringify({ nombre, tipo }),
+            body: JSON.stringify({
+                nombre,
+                tipo,
+                ...(nombreUsuario ? { nombre_usuario: nombreUsuario } : {}),
+            }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -123,6 +128,8 @@ async function crearNuevoTenantDesdePanel() {
             if (panel) panel.style.display = 'none';
             const nmIn = document.getElementById('cfgi-nuevo-tenant-nombre');
             if (nmIn) nmIn.value = '';
+            const uIn = document.getElementById('cfgi-nuevo-tenant-usuario');
+            if (uIn) uIn.value = '';
             try {
                 window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), nombre: String(cli.nombre || '').trim(), tipo: String(cli.tipo || '').trim() };
             } catch (_) {}

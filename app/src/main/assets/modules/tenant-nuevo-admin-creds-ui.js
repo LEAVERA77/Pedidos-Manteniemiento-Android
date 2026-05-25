@@ -22,6 +22,7 @@ export function mostrarModalCredencialesAdminNuevoTenant({ usuario, password, no
   const pEl = document.getElementById('cfgi-tenant-admin-creds-password');
   const nEl = document.getElementById('cfgi-tenant-admin-creds-nombre');
   const copyBtn = document.getElementById('cfgi-tenant-admin-creds-copy');
+  const loginBtn = document.getElementById('cfgi-tenant-admin-creds-login');
   const contBtn = document.getElementById('cfgi-tenant-admin-creds-continue');
   if (!modal || !uEl || !pEl || !copyBtn || !contBtn) {
     toast('No se pudo mostrar el aviso de credenciales (falta el modal en la página).', 'error');
@@ -33,9 +34,31 @@ export function mostrarModalCredencialesAdminNuevoTenant({ usuario, password, no
   if (nEl) nEl.textContent = nombre || '';
 
   return new Promise((resolve) => {
+    const irALogin = () => {
+      try {
+        sessionStorage.setItem(
+          'gn_tenant_primer_relogin_msg',
+          'Ingresá con las credenciales del administrador. En el primer acceso vas a definir usuario, nombre y contraseña definitivos.'
+        );
+      } catch (_) {}
+      const em = document.getElementById('em');
+      const pw = document.getElementById('pw');
+      if (em) em.value = String(usuario || '').trim();
+      if (pw) pw.value = '';
+      try {
+        document.getElementById('gw')?.classList.remove('active');
+        document.getElementById('cfgi')?.classList.remove('active');
+      } catch (_) {}
+      document.getElementById('ls')?.classList.add('active');
+      document.getElementById('ms')?.classList.remove('active');
+      if (typeof window.__gnAbrirModalPrimerIngresoBootstrap !== 'function') {
+        toast('Iniciá sesión con el usuario y contraseña mostrados.', 'info');
+      }
+    };
     const done = () => {
       copyBtn.removeEventListener('click', onCopy);
       contBtn.removeEventListener('click', onCont);
+      if (loginBtn) loginBtn.removeEventListener('click', onLogin);
       modal.classList.remove('active');
       resolve();
     };
@@ -50,8 +73,13 @@ export function mostrarModalCredencialesAdminNuevoTenant({ usuario, password, no
         await onContinue?.();
       } catch (_) {}
     };
+    const onLogin = () => {
+      done();
+      irALogin();
+    };
     copyBtn.addEventListener('click', onCopy);
     contBtn.addEventListener('click', onCont);
+    if (loginBtn) loginBtn.addEventListener('click', onLogin);
     modal.classList.add('active');
   });
 }

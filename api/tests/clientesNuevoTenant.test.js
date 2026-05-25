@@ -36,7 +36,7 @@ function mockNeonForNuevoTenant({ clienteId = 21, dupNombre = false, loginTaken 
     if (q.includes("information_schema.columns") && params[0] === "usuarios" && params[1] === "es_usuario_default") {
       return { rows: [{ ok: 1 }] };
     }
-    if (q.includes("lower(trim(nombre))")) {
+    if (q.includes("lower(trim(nombre))") && q.includes("lower(trim(COALESCE(tipo")) {
       return dupNombre ? { rows: [{ id: 1 }] } : { rows: [] };
     }
     if (q.includes("lower(btrim(email))")) {
@@ -138,6 +138,17 @@ describe("POST /api/clientes/nuevo", () => {
       .send({ nombre: "El Pajarito", tipo: "cooperativa_electrica", nombre_usuario: "admin" });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("login_duplicado");
+  });
+
+  it("201 sin nombre_usuario (auto admin o admin_slug)", async () => {
+    mockNeonForNuevoTenant({ clienteId: 41 });
+    const res = await request(app)
+      .post("/api/clientes/nuevo")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_nuevo_tenant")
+      .send({ nombre: "Solo Nombre", tipo: "municipio" });
+    expect(res.status).toBe(201);
+    expect(res.body.admin_creado?.usuario).toBeTruthy();
+    expect(res.body.admin_creado?.password).toBeTruthy();
   });
 
   it("201 con login explícito único (admin_pajarito2)", async () => {

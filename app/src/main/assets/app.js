@@ -292,6 +292,7 @@ import {
     clearAuthLoginTenantHint,
 } from './modules/auth-login-api-body.js';
 import { validarParPasswordNuevoConfirmacionGestornova } from './modules/password-policy-gestornova.js';
+import { initTenantPrimerIngresoBootstrap } from './modules/tenant-primer-ingreso-bootstrap.js';
 import {
     abrirModalAvancePedido,
     initPedidoAvanceModalUI,
@@ -3541,19 +3542,25 @@ const gnLoginSubmitHandler = async e => {
         }
 
         if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id && !usuario) {
-            window._pendingAndroidPasswordChange = {
+            const pendPrimera = {
                 u: {
                     id: loginJwtPayload.user_id,
                     email: loginJwtPayload.user?.email || em,
                     nombre: loginJwtPayload.user?.nombre || 'Usuario',
                     rol: loginJwtPayload.user?.rol || 'admin',
+                    tenant_id: loginJwtPayload.user?.tenant_id,
                     must_change_password: true,
                 },
                 passwordActual: pw,
                 primeraContrasenaApi: true,
             };
-            document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
-            toast('Debés definir una nueva contraseña para continuar.', 'info');
+            window._pendingAndroidPasswordChange = pendPrimera;
+            if (typeof window.__gnAbrirModalPrimerIngresoBootstrap === 'function') {
+                window.__gnAbrirModalPrimerIngresoBootstrap(pendPrimera);
+            } else {
+                document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+            }
+            toast('Completá usuario, nombre y contraseña del administrador.', 'info');
             return;
         }
 
@@ -3578,21 +3585,27 @@ const gnLoginSubmitHandler = async e => {
                 else loginJwtPayload = jwt2;
             }
             if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id) {
-                window._pendingAndroidPasswordChange = {
+                const pendPrimera2 = {
                     u: {
                         id: loginJwtPayload.user_id,
                         email: loginJwtPayload.user?.email || em,
                         nombre: loginJwtPayload.user?.nombre || 'Usuario',
                         rol: loginJwtPayload.user?.rol || 'admin',
+                        tenant_id: loginJwtPayload.user?.tenant_id,
                         must_change_password: true,
                     },
                     passwordActual: pw,
                     primeraContrasenaApi: true,
                 };
-                document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                window._pendingAndroidPasswordChange = pendPrimera2;
+                if (typeof window.__gnAbrirModalPrimerIngresoBootstrap === 'function') {
+                    window.__gnAbrirModalPrimerIngresoBootstrap(pendPrimera2);
+                } else {
+                    document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                }
                 lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
                 lb.disabled = false;
-                toast('Debés definir una nueva contraseña para continuar.', 'info');
+                toast('Completá usuario, nombre y contraseña del administrador.', 'info');
                 return;
             }
             try {
@@ -3606,11 +3619,16 @@ const gnLoginSubmitHandler = async e => {
             }
             const forzarCambioPw = !!u.must_change_password;
             if (forzarCambioPw) {
-                window._pendingAndroidPasswordChange = { u, passwordActual: pw };
-                document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                const pendPw = { u, passwordActual: pw, primeraContrasenaApi: true };
+                window._pendingAndroidPasswordChange = pendPw;
+                if (typeof window.__gnAbrirModalPrimerIngresoBootstrap === 'function') {
+                    window.__gnAbrirModalPrimerIngresoBootstrap(pendPw);
+                } else {
+                    document.getElementById('modal-forzar-cambio-pw')?.classList.add('active');
+                }
                 lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
                 lb.disabled = false;
-                toast('Debés definir una nueva contraseña para continuar.', 'info');
+                toast('Completá usuario, nombre y contraseña del administrador.', 'info');
                 return;
             }
             entrarConUsuario(u, false);
@@ -11827,6 +11845,15 @@ function ejecutarCerrarSesion() {
     cerrarUserMenuPop();
 }
 
+/** Tras primer ingreso bootstrap: vuelve al login con usuario prefilled (sin confirm). */
+window.__gnCerrarSesionTrasPrimerIngreso = function __gnCerrarSesionTrasPrimerIngreso(prefillUsuario) {
+    ejecutarCerrarSesion();
+    if (prefillUsuario) {
+        const emEl = document.getElementById('em');
+        if (emEl) emEl.value = String(prefillUsuario).trim();
+    }
+};
+
 /**
  * Tras persistir en servidor un cambio de línea de negocio: vacía catálogo socios del tenant (sin confirmaciones), cierra sesión, vacía storage y recarga.
  * Evita datos residuales (filtros mapa, listas en memoria). Borra también cola offline en localStorage.
@@ -15466,102 +15493,7 @@ async function leerEmailContactoEmpresaNeon() {
     }
 }
 
-async function confirmarCambioPasswordObligatorioAndroid() {
-    const pend = window._pendingAndroidPasswordChange;
-    const msg = document.getElementById('forzar-cambio-pw-msg');
-    if (!pend || !pend.u || !pend.passwordActual) {
-        if (msg) msg.textContent = 'Sesión inválida. Volvé a iniciar sesión.';
-        return;
-    }
-    const n1 = document.getElementById('forzar-cambio-pw-nueva')?.value || '';
-    const n2 = document.getElementById('forzar-cambio-pw-nueva2')?.value || '';
-    const v = validarParPasswordNuevoConfirmacionGestornova(n1, n2);
-    if (!v.ok) {
-        if (msg) msg.textContent = v.error;
-        return;
-    }
-    if (v.skipped) {
-        if (msg) msg.textContent = 'Completá ambos campos.';
-        return;
-    }
-    const n1t = v.nueva;
-    if (n1t === pend.passwordActual) {
-        if (msg) msg.textContent = 'La nueva contraseña debe ser distinta de la provisional.';
-        return;
-    }
-    try {
-        if (pend.primeraContrasenaApi) {
-            const resp = await fetch(apiUrl('/api/auth/cambiar-primera-contrasena'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: pend.u.id,
-                    password_actual: pend.passwordActual,
-                    nueva_password: n1t,
-                    confirmar_password: n1t,
-                }),
-            });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar la contraseña.';
-                return;
-            }
-            if (data.token) {
-                app.apiToken = String(data.token);
-                try {
-                    localStorage.setItem('pmg_api_token', app.apiToken);
-                } catch (_) {}
-            }
-        } else {
-        const tok = getApiToken();
-        const base = getApiBaseUrl();
-        if (tok && base) {
-            const resp = await fetch(apiUrl('/api/auth/me'), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-                body: JSON.stringify({
-                    usuario: pend.u.email,
-                    nombre: pend.u.nombre,
-                    password_actual: pend.passwordActual,
-                    password_nueva: n1t,
-                }),
-            });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar la contraseña.';
-                return;
-            }
-        } else {
-            const r = await sqlSimple(
-                `UPDATE usuarios SET password_hash = ${esc(n1t)}, must_change_password = FALSE, reset_token = NULL, reset_expiry = NULL
-                 WHERE id = ${esc(pend.u.id)} AND password_hash = ${esc(pend.passwordActual)}
-                 RETURNING id`
-            );
-            if (!(r.rows || []).length) {
-                if (msg) msg.textContent = 'No se pudo actualizar (revisá la clave actual).';
-                return;
-            }
-        }
-        }
-        document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
-        ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach((id) => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-        if (msg) msg.textContent = '';
-        const u = { ...pend.u, must_change_password: false };
-        const fuePrimeraApi = !!pend.primeraContrasenaApi;
-        delete window._pendingAndroidPasswordChange;
-        guardarUsuarioOffline(u, n1t);
-        if (!fuePrimeraApi) await loginApiJwt(u.email, n1t);
-        entrarConUsuario(u, false);
-        toast('Contraseña actualizada. Bienvenido ' + u.nombre, 'success');
-    } catch (e) {
-        logErrorWeb('cambio-pw-android', e);
-        if (msg) msg.textContent = mensajeErrorUsuario(e);
-    }
-}
-window.confirmarCambioPasswordObligatorioAndroid = confirmarCambioPasswordObligatorioAndroid;
+// confirmarCambioPasswordObligatorioAndroid → modules/tenant-primer-ingreso-bootstrap.js
 
 // ── Distribuidores admin ──────────────────────────────────────
 async function cargarListaDistribuidoresAdmin() {
@@ -17491,6 +17423,7 @@ if ('serviceWorker' in navigator) {
             GN_SUBTITULO_FIJO,
             WEB_MAP_FILTRO_TIPOS_KEY,
         });
+        initTenantPrimerIngresoBootstrap();
         initGnTenantAccesoTecnicoUnificado({
             apiSetupTechnicianFetchTenants,
             abrirWizardMarcaEmpresaManualTrasPassword,

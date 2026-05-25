@@ -4,6 +4,7 @@ import { query } from "../db/neon.js";
 import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
+import { normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
 
 const router = express.Router();
 
@@ -134,7 +135,8 @@ router.post("/login", async (req, res) => {
 
 /**
  * Primer login con usuario bootstrap (must_change_password): sin JWT previo.
- * Body: { user_id, password_actual, nueva_password, confirmar_password }
+ * Body: { user_id, password_actual, nueva_password, confirmar_password, nuevo_usuario?, nombre? }
+ * Tras el cambio el cliente debe volver a iniciar sesión (no se emite JWT).
  */
 router.post("/cambiar-primera-contrasena", async (req, res) => {
   try {
@@ -142,6 +144,10 @@ router.post("/cambiar-primera-contrasena", async (req, res) => {
     const passwordActual = String(req.body?.password_actual || req.body?.password || "").trim();
     const nueva = String(req.body?.nueva_password || "").trim();
     const confirmar = String(req.body?.confirmar_password || req.body?.nueva_password || "").trim();
+    const nuevoLoginRaw = normalizeLoginId(
+      req.body?.nuevo_usuario ?? req.body?.usuario ?? req.body?.usuario_nuevo ?? ""
+    );
+    const nombreNuevo = req.body?.nombre != null ? String(req.body.nombre).trim() : null;
     if (!Number.isFinite(userId) || userId < 1) {
       return res.status(400).json({ error: "user_id requerido" });
     }
@@ -151,8 +157,14 @@ router.post("/cambiar-primera-contrasena", async (req, res) => {
     if (nueva !== confirmar) {
       return res.status(400).json({ error: "La confirmación no coincide" });
     }
-    if (nueva.length < 6) {
-      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 6 caracteres" });
+    if (nueva.length < 4) {
+      return res.status(400).json({ error: "La contraseña nueva debe tener al menos 4 caracteres" });
+    }
+    if (nuevoLoginRaw && (nuevoLoginRaw.length < 2 || nuevoLoginRaw.length > 120 || /\s/.test(nuevoLoginRaw))) {
+      return res.status(400).json({ error: "Nombre de usuario no válido" });
+    }
+    if (nombreNuevo != null && nombreNuevo !== "" && nombreNuevo.length < 2) {
+      return res.status(400).json({ error: "El nombre del administrador debe tener al menos 2 caracteres" });
     }
     const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
     if (!hasMustCol) {
@@ -177,18 +189,47 @@ router.post("/cambiar-primera-contrasena", async (req, res) => {
       okPw = passwordActual === hash;
     }
     if (!okPw) return res.status(401).json({ error: "Contraseña actual incorrecta" });
+
+    const nextEmail = nuevoLoginRaw || String(row.email || "").trim();
+    const nextNombre =
+      nombreNuevo != null && nombreNuevo !== "" ? nombreNuevo : String(row.nombre || "").trim();
+    if (!nextEmail) {
+      return res.status(400).json({ error: "Indicá un nombre de usuario (login) para el administrador" });
+    }
+    if (!nextNombre || nextNombre.length < 2) {
+      return res.status(400).json({ error: "Indicá el nombre visible del administrador" });
+    }
+
+    if (nuevoLoginRaw && nuevoLoginRaw.toLowerCase() !== String(row.email || "").trim().toLowerCase()) {
+      const dup = await query(
+        "SELECT id FROM usuarios WHERE lower(trim(email)) = $1 AND id <> $2 LIMIT 1",
+        [nuevoLoginRaw, userId]
+      );
+      if (dup.rows.length) {
+        return res.status(409).json({ error: "Ya existe un usuario con ese nombre de usuario" });
+      }
+    }
+
     const nextHash = await bcrypt.hash(nueva, 10);
     const defSet = hasDefCol ? ", es_usuario_default = FALSE" : "";
     const up = await query(
-      `UPDATE usuarios SET password_hash = $2, must_change_password = FALSE${defSet}, reset_token = NULL, reset_expiry = NULL WHERE id = $1 RETURNING id, email, nombre, rol`,
-      [userId, nextHash]
+      `UPDATE usuarios SET email = $2, nombre = $3, password_hash = $4, must_change_password = FALSE${defSet}, reset_token = NULL, reset_expiry = NULL WHERE id = $1 RETURNING id, email, nombre, rol`,
+      [userId, nextEmail, nextNombre, nextHash]
     );
     const u = up.rows[0];
     const tenant_id = await getUserTenantId(u.id);
-    const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
+    try {
+      const rol = String(u.rol || "").toLowerCase();
+      if (tenant_id && (rol === "admin" || rol === "administrador")) {
+        await query(
+          `UPDATE clientes SET configuracion = COALESCE(configuracion, '{}'::jsonb) || '{"default_creds_changed":true}'::jsonb WHERE id = $1`,
+          [tenant_id]
+        );
+      }
+    } catch (_) {}
     return res.json({
       ok: true,
-      token,
+      requiere_relogin: true,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
     });
   } catch (error) {

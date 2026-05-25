@@ -275,12 +275,17 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
       });
     }
     const dup = await query(
-      `SELECT id FROM clientes WHERE lower(trim(nombre)) = lower(trim($1)) AND COALESCE(activo, TRUE) LIMIT 1`,
-      [nombreRaw]
+      `SELECT id FROM clientes
+       WHERE lower(trim(nombre)) = lower(trim($1))
+         AND lower(trim(COALESCE(tipo, ''))) = lower(trim($2))
+         AND COALESCE(activo, TRUE)
+       LIMIT 1`,
+      [nombreRaw, tipoDb]
     );
     if (dup.rows.length) {
       return res.status(409).json({
-        error: "Ya existe un tenant con ese nombre",
+        error: "Ya existe un tenant con ese nombre y tipo de negocio",
+        code: "tenant_nombre_tipo_duplicado",
         cliente_id: dup.rows[0].id,
       });
     }
@@ -294,12 +299,12 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
     const loginAdmin = normalizeLoginId(
       req.body?.nombre_usuario ?? req.body?.usuario_admin ?? req.body?.login_admin ?? ""
     );
-    if (!loginAdmin || loginAdmin.length < 2 || loginAdmin.length > 120 || /\s/.test(loginAdmin)) {
+    if (loginAdmin && (loginAdmin.length < 2 || loginAdmin.length > 120 || /\s/.test(loginAdmin))) {
       return res.status(400).json({
-        error: "nombre_usuario del administrador es obligatorio (2–120 caracteres, sin espacios)",
+        error: "nombre_usuario inválido (2–120 caracteres, sin espacios)",
       });
     }
-    if (await loginExistsGlobally(loginAdmin)) {
+    if (loginAdmin && (await loginExistsGlobally(loginAdmin))) {
       return res.status(409).json({
         error: "Ese nombre de usuario ya existe en el sistema",
         code: "login_duplicado",
