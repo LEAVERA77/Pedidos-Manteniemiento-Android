@@ -3,8 +3,16 @@ import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { technicianTenantKeyOk, requireTechnicianTenantKey } from "../middleware/technicianTenantKey.js";
 import { query, withTransaction } from "../db/neon.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
-import { crearUsuarioAdminBootstrap } from "../services/tenantBootstrapAdminUser.js";
-import { loginExistsGlobally, normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
+import {
+  crearUsuarioAdminBootstrap,
+  regenerarClaveAdminProvisionalTenant,
+} from "../services/tenantBootstrapAdminUser.js";
+import { normalizeLoginId } from "../utils/usuarioLoginGlobal.js";
+import {
+  findAdminUsuarioEnTenant,
+  loginPerteneceAdminDelTenant,
+  resolverLoginPreferidoAltaTenant,
+} from "../utils/nuevoTenantAdminLogin.js";
 import {
   TIPOS_RECLAMO_LEGACY,
   tiposReclamoParaClienteTipo,
@@ -298,55 +306,87 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
 
     if (dupRow) {
       const dupId = Number(dupRow.id);
+      const nombreDup = String(dupRow.nombre || nombreRaw).trim();
       const setupIncompleto = isTenantSetupIncompleto(dupRow.configuracion);
       if (!setupIncompleto) {
         return res.status(409).json({
           error: "Ya existe un tenant con ese nombre y tipo de negocio",
           code: "tenant_nombre_tipo_duplicado",
           cliente_id: dupId,
-          nombre_existente: String(dupRow.nombre || "").trim(),
+          nombre_existente: nombreDup,
           setup_completado: true,
         });
       }
-      if (loginAdmin && (await loginExistsGlobally(loginAdmin))) {
-        return res.status(409).json({
-          error: "Ese nombre de usuario ya existe en el sistema",
-          code: "login_duplicado",
-        });
-      }
       let admin_creado_reuse = null;
-      if (uCol) {
-        const rAdm = await query(
-          `SELECT 1 FROM usuarios WHERE ${uCol} = $1 AND lower(rol) IN ('admin', 'administrador') LIMIT 1`,
-          [dupId]
-        );
-        if (!rAdm.rows.length) {
-          try {
-            admin_creado_reuse = await withTransaction(async (client) =>
-              crearUsuarioAdminBootstrap({
-                client,
-                col: uCol,
-                hasBt,
-                hasTw,
-                tenantId: dupId,
-                nombreTenant: String(dupRow.nombre || nombreRaw).trim(),
-                telefono: telefonoOpt,
-                hasMustChangePassword: hasMustPw,
-                loginPreferido: loginAdmin,
-                hasEsUsuarioDefault: hasEsDefault,
-              })
-            );
-          } catch (error) {
-            if (error?.code === "LOGIN_YA_EXISTE") {
-              return res.status(409).json({
-                error: "Ese nombre de usuario ya existe en el sistema",
-                code: "login_duplicado",
-              });
-            }
-            throw error;
+      let avisoLoginAuto = null;
+      const adminExistente = uCol ? await findAdminUsuarioEnTenant(uCol, dupId) : null;
+
+      if (adminExistente) {
+        const loginOk =
+          !loginAdmin ||
+          (await loginPerteneceAdminDelTenant(loginAdmin, dupId, uCol)) ||
+          normalizeLoginId(adminExistente.email) === loginAdmin;
+        if (loginAdmin && !loginOk) {
+          return res.status(409).json({
+            error:
+              "Ese nombre de usuario ya pertenece a otro tenant. Dejá el campo vacío para usar el admin existente o elegí otro login.",
+            code: "login_duplicado",
+          });
+        }
+        try {
+          admin_creado_reuse = await withTransaction(async (client) =>
+            regenerarClaveAdminProvisionalTenant({
+              client,
+              userId: adminExistente.id,
+              nombreTenant: nombreDup,
+              login: adminExistente.email,
+              hasMustChangePassword: hasMustPw,
+            })
+          );
+        } catch (error) {
+          console.error("[clientes/nuevo] regenerar clave admin reuse", error);
+          return res.status(500).json({
+            error: "No se pudo regenerar la clave del administrador",
+            detail: error.message,
+          });
+        }
+      } else if (uCol) {
+        const loginRes = await resolverLoginPreferidoAltaTenant(loginAdmin, nombreDup, {
+          permitirAutoSiOcupado: true,
+        });
+        if (loginRes.rechazar) {
+          return res.status(409).json({
+            error: "Ese nombre de usuario ya existe en el sistema",
+            code: "login_duplicado",
+          });
+        }
+        avisoLoginAuto = loginRes.avisoLoginAuto || null;
+        try {
+          admin_creado_reuse = await withTransaction(async (client) =>
+            crearUsuarioAdminBootstrap({
+              client,
+              col: uCol,
+              hasBt,
+              hasTw,
+              tenantId: dupId,
+              nombreTenant: nombreDup,
+              telefono: telefonoOpt,
+              hasMustChangePassword: hasMustPw,
+              loginPreferido: loginRes.loginPreferido,
+              hasEsUsuarioDefault: hasEsDefault,
+            })
+          );
+        } catch (error) {
+          if (error?.code === "LOGIN_YA_EXISTE") {
+            return res.status(409).json({
+              error: "Ese nombre de usuario ya existe en el sistema",
+              code: "login_duplicado",
+            });
           }
+          throw error;
         }
       }
+
       return res.status(201).json({
         ok: true,
         reutilizado: true,
@@ -360,12 +400,17 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
             : {}),
         },
         admin_creado: admin_creado_reuse,
-        message:
-          "Ya existía un tenant con ese nombre sin setup finalizado; se reutilizó para continuar el wizard.",
+        aviso_login_auto: avisoLoginAuto,
+        message: admin_creado_reuse?.clave_regenerada
+          ? "Tenant recuperado. Se regeneró la clave provisoria del administrador para probar el primer ingreso."
+          : "Ya existía un tenant con ese nombre sin setup finalizado; se reutilizó para continuar el wizard.",
       });
     }
 
-    if (loginAdmin && (await loginExistsGlobally(loginAdmin))) {
+    const loginResNuevo = await resolverLoginPreferidoAltaTenant(loginAdmin, nombreRaw, {
+      permitirAutoSiOcupado: true,
+    });
+    if (loginResNuevo.rechazar) {
       return res.status(409).json({
         error: "Ese nombre de usuario ya existe en el sistema",
         code: "login_duplicado",
@@ -400,7 +445,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         nombreTenant: nombreRaw,
         telefono: telefonoOpt,
         hasMustChangePassword: hasMustPw,
-        loginPreferido: loginAdmin,
+        loginPreferido: loginResNuevo.loginPreferido,
         hasEsUsuarioDefault: hasEsDefault,
       });
       return { row: row0, admin_creado: admin_creado0 };
@@ -415,6 +460,7 @@ router.post("/nuevo", requireTechnicianTenantKey, async (req, res) => {
         ...(hasAbt && row.active_business_type != null ? { active_business_type: row.active_business_type } : {}),
       },
       admin_creado,
+      aviso_login_auto: loginResNuevo.avisoLoginAuto || null,
     });
   } catch (error) {
     if (error?.code === "LOGIN_YA_EXISTE") {

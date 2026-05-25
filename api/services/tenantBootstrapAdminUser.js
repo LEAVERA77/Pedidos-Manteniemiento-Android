@@ -138,3 +138,33 @@ export async function crearUsuarioAdminBootstrap({
 
   return { usuario: login, password: passwordPlain, nombre: nombreCompleto };
 }
+
+/**
+ * Regenera clave provisoria del admin de un tenant (wizard técnico / reutilizar alta).
+ * @param {import("pg").PoolClient} client
+ */
+export async function regenerarClaveAdminProvisionalTenant({
+  client,
+  userId,
+  nombreTenant,
+  login,
+  hasMustChangePassword = true,
+}) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid < 1) throw new Error("usuario_admin_invalido");
+  const nombreTrim = String(nombreTenant || "").trim();
+  const loginNorm = normalizeLoginId(login);
+  const passwordPlain = temporaryPasswordFromSlug(slugFromTenantNombre(nombreTrim));
+  const hash = await bcrypt.hash(String(passwordPlain), 10);
+  const mustFrag = hasMustChangePassword ? ", must_change_password = TRUE" : "";
+  await client.query(
+    `UPDATE usuarios SET password_hash = $1${mustFrag}, reset_token = NULL, reset_expiry = NULL WHERE id = $2`,
+    [hash, uid]
+  );
+  return {
+    usuario: loginNorm || login,
+    password: passwordPlain,
+    nombre: `Administrador del ${nombreTrim}`,
+    clave_regenerada: true,
+  };
+}

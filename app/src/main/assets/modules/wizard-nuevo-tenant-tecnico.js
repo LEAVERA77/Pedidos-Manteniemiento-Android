@@ -90,6 +90,9 @@ async function crearNuevoTenantDesdePanel() {
             throw new Error('Respuesta inválida del servidor');
         }
         const admin = j.admin_creado;
+        if (j.aviso_login_auto) {
+            toast(String(j.aviso_login_auto), 'info');
+        }
         const continuarTrasCrear = async () => {
             const msgOk = j.reutilizado
                 ? (j.message ||
@@ -138,7 +141,7 @@ async function crearNuevoTenantDesdePanel() {
                 window.EMPRESA_CFG = { ...(window.EMPRESA_CFG || {}), nombre: String(cli.nombre || '').trim(), tipo: String(cli.tipo || '').trim() };
             } catch (_) {}
         };
-        if (admin && admin.usuario && admin.password) {
+        if (admin && admin.usuario && (admin.password || admin.clave_regenerada)) {
             await mostrarModalCredencialesAdminNuevoTenant({
                 usuario: admin.usuario,
                 password: admin.password,

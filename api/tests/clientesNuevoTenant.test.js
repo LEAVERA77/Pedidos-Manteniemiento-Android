@@ -13,7 +13,12 @@ vi.mock("../db/neon.js", () => {
 import { query, withTransaction } from "../db/neon.js";
 import { createHttpApp } from "../httpApp.js";
 
-function mockNeonForNuevoTenant({ clienteId = 21, dupNombre = false, loginTaken = false } = {}) {
+function mockNeonForNuevoTenant({
+  clienteId = 21,
+  dupNombre = false,
+  loginTaken = false,
+  dupConAdmin = false,
+} = {}) {
   vi.mocked(query).mockImplementation(async (sql, params = []) => {
     const q = String(sql);
     if (q.includes("information_schema.columns") && q.includes("table_name = $1") && params[0] === "clientes" && params[1] === "active_business_type") {
@@ -53,13 +58,19 @@ function mockNeonForNuevoTenant({ clienteId = 21, dupNombre = false, loginTaken 
         : { rows: [] };
     }
     if (q.includes("FROM usuarios") && q.includes("admin") && q.includes("LIMIT 1")) {
+      if (dupConAdmin && dupNombre) {
+        return { rows: [{ id: 501, email: "admin_nueva" }] };
+      }
       return { rows: [] };
     }
     if (q.includes("lower(btrim(email))")) {
       const login = String(params[0] || "").toLowerCase();
-      if (loginTaken && (login === "admin" || login === "admin_pajarito")) {
+      if (loginTaken && (login === "admin" || login === "admin_pajarito" || login === "admin_nueva")) {
         return { rows: [{ id: 1 }] };
       }
+      return { rows: [] };
+    }
+    if (q.includes("UPDATE usuarios SET password_hash")) {
       return { rows: [] };
     }
     return { rows: [] };
@@ -146,14 +157,16 @@ describe("POST /api/clientes/nuevo", () => {
     expect(res.body.admin_creado?.usuario).toBe("admin");
   });
 
-  it("409 si nombre_usuario ya existe globalmente", async () => {
-    mockNeonForNuevoTenant({ loginTaken: true });
+  it("201 con login ocupado genera usuario automático (aviso)", async () => {
+    mockNeonForNuevoTenant({ loginTaken: true, clienteId: 31 });
     const res = await request(app)
       .post("/api/clientes/nuevo")
       .set("X-GestorNova-Technician-Key", "clave_tecnico_nuevo_tenant")
       .send({ nombre: "El Pajarito", tipo: "cooperativa_electrica", nombre_usuario: "admin" });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe("login_duplicado");
+    expect(res.status).toBe(201);
+    expect(res.body.aviso_login_auto).toMatch(/ya existe/i);
+    expect(res.body.admin_creado?.usuario).toBeTruthy();
+    expect(res.body.admin_creado?.password).toBeTruthy();
   });
 
   it("201 sin nombre_usuario (auto admin o admin_slug)", async () => {
@@ -176,6 +189,30 @@ describe("POST /api/clientes/nuevo", () => {
     expect(res.status).toBe(201);
     expect(res.body.reutilizado).toBe(true);
     expect(res.body.cliente.id).toBe(99);
+  });
+
+  it("201 reutiliza tenant y regenera clave si admin_nueva ya existe en ese tenant", async () => {
+    mockNeonForNuevoTenant({ dupNombre: true, dupConAdmin: true, loginTaken: true });
+    vi.mocked(withTransaction).mockImplementation(async (fn) => {
+      const client = {
+        query: async (sql) => {
+          if (String(sql).includes("UPDATE usuarios SET password_hash")) {
+            return { rows: [] };
+          }
+          return { rows: [] };
+        },
+      };
+      return fn(client);
+    });
+    const res = await request(app)
+      .post("/api/clientes/nuevo")
+      .set("X-GestorNova-Technician-Key", "clave_tecnico_nuevo_tenant")
+      .send({ nombre: "Cooperativa Nueva", tipo: "cooperativa_electrica", nombre_usuario: "admin_nueva" });
+    expect(res.status).toBe(201);
+    expect(res.body.reutilizado).toBe(true);
+    expect(res.body.admin_creado?.usuario).toBe("admin_nueva");
+    expect(res.body.admin_creado?.clave_regenerada).toBe(true);
+    expect(res.body.admin_creado?.password).toBeTruthy();
   });
 
   it("409 si tenant duplicado ya finalizó setup", async () => {
