@@ -273,6 +273,7 @@ import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
+import { apiSetupTechnicianFetchTenants } from './modules/setup-technician-api.js';
 import {
     initGnTenantSoloTecnicoUI,
     hydrateBrandingLoginSinTenantAjeno,
@@ -1897,18 +1898,6 @@ async function authLoginApiRetornarTokenUser(email, password) {
     } catch (_) {
         return null;
     }
-}
-
-async function apiSetupTechnicianFetchTenants(apiToken, techKey) {
-    const k = String(techKey || '').trim();
-    const headers = { 'X-GestorNova-Technician-Key': k };
-    if (apiToken) headers.Authorization = `Bearer ${apiToken}`;
-    const r = await fetch(apiUrl('/api/setup/technician/tenants'), { headers, cache: 'no-store' });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-        throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || `HTTP ${r.status}`);
-    }
-    return j;
 }
 
 async function apiSetupTechnicianPostAttach(apiToken, techKey, tenantId, fromTenantId) {
@@ -11716,6 +11705,7 @@ async function abrirWizardMarcaEmpresaManualTrasPassword() {
     setWizardManualContext(true);
     mostrarModalConfigInicial();
 }
+window.abrirWizardMarcaEmpresaManualTrasPassword = abrirWizardMarcaEmpresaManualTrasPassword;
 
 function switchTab(t) {
     app.tab = t;
@@ -17431,7 +17421,6 @@ if ('serviceWorker' in navigator) {
         });
         initTenantPrimerIngresoBootstrap();
         initGnTenantAccesoTecnicoUnificado({
-            apiSetupTechnicianFetchTenants,
             abrirWizardMarcaEmpresaManualTrasPassword,
         });
         initGnTenantSoloTecnicoUI({
