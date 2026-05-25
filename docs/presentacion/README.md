@@ -4,6 +4,7 @@ Documentos para reuniones comerciales y presentación del producto.
 
 | Archivo | Formato | Audiencia |
 |---------|---------|-----------|
+| `GestorNova-Documentacion-Tecnica-Outlier.md` | **Markdown** | Revisión técnica (servidores, IA, WhatsApp, anti-baneo) |
 | `GestorNova-Cooperativa-Electrica.md` | **Markdown (recomendado)** | Cooperativas y distribuidoras eléctricas |
 | `GestorNova-Municipios.md` | **Markdown (recomendado)** | Municipalidades |
 | `GestorNova-Cooperativa-Electrica.docx` | Word (opcional) | Misma audiencia |
