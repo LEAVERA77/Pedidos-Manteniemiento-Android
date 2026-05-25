@@ -1,5 +1,5 @@
 /**
- * Formato kV para Red Eléctrica (BD guarda décimas: 13,2 → 132).
+ * Formato kV Red Eléctrica: mismo valor que Neon/Excel (33 → 33, 132 → 132, 13.2 → 13.2).
  * made by leavera77
  */
 
@@ -7,12 +7,16 @@
 export function formatNivelTensionKvFromDb(dbValue) {
   const v = Number(dbValue);
   if (!Number.isFinite(v) || v <= 0) return '0';
-  const kv = v / 10;
-  const rounded = Math.round(kv * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  const rounded = Math.round(v * 1000) / 1000;
+  if (Math.abs(rounded - Math.round(rounded)) < 1e-9) {
+    return String(Math.round(rounded));
+  }
+  let s = rounded.toFixed(2);
+  s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return s;
 }
 
-/** @param {unknown} dbValue — etiqueta grupo en select #di2 */
+/** @param {unknown} dbValue */
 export function etiquetaGrupoTensionKv(dbValue) {
   const kv = formatNivelTensionKvFromDb(dbValue);
   if (!kv || kv === '0') return 'Sin clasificar';
