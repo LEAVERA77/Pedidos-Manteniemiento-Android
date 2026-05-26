@@ -9,6 +9,7 @@ import {
   contarPedidosAbiertosMismaZona,
   OUTAGE_SECTOR_MULTI_RECLAMO,
 } from "./pedidoZonaOutage.js";
+import { lookupDistribuidorTrafoPorProximidadSocio } from "./pedidoDistribuidorTrafoPorProximidad.js";
 import { parseDomicilioLibreArgentina, separarNumeroDuplicadoEnCalle } from "../utils/parseDomicilioArg.js";
 import {
   coordsValidasWgs84,
@@ -255,6 +256,8 @@ export async function crearPedidoDesdeWhatsappBot({
   fotoUrlOpcionalWhatsapp = null,
   prioridadOverride = null,
   notaAdicional = null,
+  /** Reclamo sin NIS/medidor (p. ej. denuncia anónima coop. eléctrica). */
+  modoAnonimoWhatsapp = false,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   let de = String(descripcion || "").trim();
@@ -321,17 +324,6 @@ export async function crearPedidoDesdeWhatsappBot({
     const lk = await lookupDistribuidorTrafoPorNisMedidor(lookupKey);
     distribuidorVal = lk.distribuidor;
     trafoVal = lk.trafo;
-  }
-
-  if (rubroCliente === "cooperativa_electrica" && tieneIdentificadorSum && (distribuidorVal || trafoVal)) {
-    const cnt = await contarPedidosAbiertosMismaZona({
-      tenantId: Number(tenantId),
-      distribuidor: distribuidorVal,
-      trafo: trafoVal,
-    });
-    if (cnt >= 4) {
-      throw new Error(OUTAGE_SECTOR_MULTI_RECLAMO);
-    }
   }
 
   const numeroPedido = await allocarSiguienteNumeroPedido(Number(tenantId));
@@ -457,6 +449,47 @@ export async function crearPedidoDesdeWhatsappBot({
     !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal)
   ) {
     coordsWhatsappParaCatalogo = { lat: latFinal, lng: lngFinal };
+  }
+
+  const sinIdentidadPadron = !tieneIdentificadorSum;
+  const inferirInfraPorProximidad =
+    rubroCliente === "cooperativa_electrica" &&
+    !!modoAnonimoWhatsapp &&
+    sinIdentidadPadron &&
+    (!distribuidorVal || !trafoVal) &&
+    coordsValidasWgs84(latFinal, lngFinal) &&
+    !esCoordenadaPlaceholderBuenosAiresPedidoWhatsapp(latFinal, lngFinal);
+
+  if (inferirInfraPorProximidad) {
+    try {
+      const prox = await lookupDistribuidorTrafoPorProximidadSocio({
+        tenantId: Number(tenantId),
+        lat: latFinal,
+        lng: lngFinal,
+      });
+      if (!distribuidorVal && prox.distribuidor) distribuidorVal = prox.distribuidor;
+      if (!trafoVal && prox.trafo) trafoVal = prox.trafo;
+      if ((prox.distribuidor || prox.trafo) && prox.distanceM != null) {
+        const distL = prox.distribuidor ? `Dist. ${prox.distribuidor}` : "";
+        const trafL = prox.trafo ? `Trafo ${prox.trafo}` : "";
+        const sep = distL && trafL ? " · " : "";
+        de =
+          `${de}\n\n_(Infra inferida por socio más cercano (~${prox.distanceM} m)${distL || trafL ? `: ${distL}${sep}${trafL}` : ""})_`;
+      }
+    } catch (e) {
+      console.warn("[pedido-whatsapp-bot] infra proximidad socio", e?.message || e);
+    }
+  }
+
+  if (rubroCliente === "cooperativa_electrica" && (distribuidorVal || trafoVal)) {
+    const cnt = await contarPedidosAbiertosMismaZona({
+      tenantId: Number(tenantId),
+      distribuidor: distribuidorVal,
+      trafo: trafoVal,
+    });
+    if (cnt >= 4) {
+      throw new Error(OUTAGE_SECTOR_MULTI_RECLAMO);
+    }
   }
 
   const cols = [

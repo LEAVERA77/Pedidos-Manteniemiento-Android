@@ -1518,6 +1518,7 @@ async function ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk) {
       telefonoContacto: phone,
       lat: latN,
       lng: lngN,
+      modoAnonimoWhatsapp: !!sess.modoAnonimo,
       contactName: sess.contactName || contactName || null,
       nis: sess.nisParaPedido ?? null,
       medidor: sess.medidorParaPedido ?? null,
