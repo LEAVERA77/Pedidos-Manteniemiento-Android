@@ -19,6 +19,9 @@ function canonicalPhone(digits) {
 async function ensureOpinionPendingExtraColumns() {
   try {
     await query(`ALTER TABLE cliente_opinion_pending ADD COLUMN IF NOT EXISTS rating_stars SMALLINT`);
+    await query(
+      `ALTER TABLE cliente_opinion_pending ADD COLUMN IF NOT EXISTS opinion_flow VARCHAR(32) DEFAULT 'post_cierre'`
+    );
   } catch (_) {
     /* sin permiso */
   }
@@ -85,14 +88,39 @@ export async function registerPendingClienteOpinion(tenantId, phoneDigits, pedid
     await ensureOpinionPendingTable();
     const expiresAt = new Date(Date.now() + 30 * 86400000);
     await query(
-      `INSERT INTO cliente_opinion_pending (tenant_id, phone_canonical, pedido_id, expires_at, rating_stars)
-       VALUES ($1, $2, $3, $4, NULL)
+      `INSERT INTO cliente_opinion_pending (tenant_id, phone_canonical, pedido_id, expires_at, rating_stars, opinion_flow)
+       VALUES ($1, $2, $3, $4, NULL, 'post_cierre')
        ON CONFLICT (tenant_id, phone_canonical)
-       DO UPDATE SET pedido_id = EXCLUDED.pedido_id, expires_at = EXCLUDED.expires_at, rating_stars = NULL, created_at = NOW()`,
+       DO UPDATE SET pedido_id = EXCLUDED.pedido_id, expires_at = EXCLUDED.expires_at, rating_stars = NULL,
+         opinion_flow = 'post_cierre', created_at = NOW()`,
       [tid, phone, pid, expiresAt]
     );
   } catch (e) {
     console.error("[whatsappClienteOpinion] registerPending", e.message);
+  }
+}
+
+/** Tras cerrar chat humano por descargo: nueva calificación reemplaza la anterior. */
+export async function registerPendingClienteOpinionReRating(tenantId, phoneDigits, pedidoId) {
+  const phone = canonicalPhone(phoneDigits);
+  if (!phone || phone.length < 8) return;
+  const pid = Number(pedidoId);
+  if (!Number.isFinite(pid) || pid < 1) return;
+  const tid = Number(tenantId);
+  if (!Number.isFinite(tid) || tid < 1) return;
+  try {
+    await ensureOpinionPendingTable();
+    const expiresAt = new Date(Date.now() + 14 * 86400000);
+    await query(
+      `INSERT INTO cliente_opinion_pending (tenant_id, phone_canonical, pedido_id, expires_at, rating_stars, opinion_flow)
+       VALUES ($1, $2, $3, $4, NULL, 're_rating')
+       ON CONFLICT (tenant_id, phone_canonical)
+       DO UPDATE SET pedido_id = EXCLUDED.pedido_id, expires_at = EXCLUDED.expires_at, rating_stars = NULL,
+         opinion_flow = 're_rating', created_at = NOW()`,
+      [tid, phone, pid, expiresAt]
+    );
+  } catch (e) {
+    console.error("[whatsappClienteOpinion] registerPendingReRating", e.message);
   }
 }
 
@@ -140,7 +168,7 @@ async function getPending(tenantId, phoneDigits) {
   try {
     await ensureOpinionPendingTable();
     const r = await query(
-      `SELECT pedido_id, rating_stars FROM cliente_opinion_pending
+      `SELECT pedido_id, rating_stars, opinion_flow FROM cliente_opinion_pending
        WHERE tenant_id = $1 AND phone_canonical = ANY($2::varchar[]) AND expires_at > NOW()
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -152,6 +180,7 @@ async function getPending(tenantId, phoneDigits) {
     return {
       pedidoId: Number(row.pedido_id),
       ratingStars: rs != null && rs !== "" ? Number(rs) : null,
+      opinionFlow: String(row.opinion_flow || "post_cierre").trim() || "post_cierre",
     };
   } catch (e) {
     console.error("[whatsappClienteOpinion] getPending", e.message);
@@ -203,16 +232,22 @@ function esComandoExcluidoFlujoMenu(low, raw) {
   return false;
 }
 
-function ackOpinionClienteGuardada() {
+function ackOpinionClienteGuardada(reRating = false) {
+  const extra = reRating
+    ? " *Actualizamos tu calificación* en nuestro sistema.\n\n"
+    : " *Registramos tu valoración* y la tendremos en cuenta para mejorar el servicio.\n\n";
   return (
-    "Muchas gracias. *Registramos tu valoración* y la tendremos en cuenta para mejorar el servicio.\n\n" +
+    `Muchas gracias.${extra}` +
     "Si más adelante necesitás algo más, escribí *menú* o *Cargar reclamo* cuando quieras."
   );
 }
 
-function ackPedirCalificacion() {
+function ackPedirCalificacion(reRating = false) {
+  const intro = reRating
+    ? "*Nueva valoración* (reemplaza la anterior)\n\n"
+    : "*Paso 1 de 2 — Calificación*\n\n";
   return (
-    "*Paso 1 de 2 — Calificación*\n\n" +
+    intro +
     "¿Cómo fue la atención del *1* al *5*?\n" +
     "· *1* = muy malo · *3* = regular · *5* = excelente\n\n" +
     "Respondé con *un número* o con *estrellas* (⭐).\n" +
@@ -272,11 +307,12 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
 
     const phoneCanon = canonicalPhone(phoneDigits);
 
+    const isReRating = pend.opinionFlow === "re_rating";
     const needRating = pend.ratingStars == null || !Number.isFinite(pend.ratingStars);
     if (needRating) {
       const stars = parseStarRating01a5(raw);
       if (stars == null) {
-        return { handled: true, ack: ackPedirCalificacion() };
+        return { handled: true, ack: ackPedirCalificacion(isReRating) };
       }
       await query(
         `UPDATE cliente_opinion_pending SET rating_stars = $3 WHERE tenant_id = $1 AND phone_canonical = $2`,
@@ -306,7 +342,7 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
     }
     await clearPendingClienteOpinion(tenantId, phoneDigits);
 
-    return { handled: true, ack: ackOpinionClienteGuardada() };
+    return { handled: true, ack: ackOpinionClienteGuardada(isReRating) };
   }
 
   if (esComandoExcluidoFlujoMenu(low, raw)) {

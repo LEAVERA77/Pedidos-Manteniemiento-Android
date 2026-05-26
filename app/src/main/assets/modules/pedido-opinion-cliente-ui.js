@@ -188,33 +188,146 @@ function pedidoEnApp(pid) {
     }
 }
 
-async function guardarDescargoOpinion(pid, texto) {
+async function intentarRefrescarJwtSiHay() {
+    try {
+        if (typeof _deps?.intentarRefrescarJwt === 'function') {
+            await _deps.intentarRefrescarJwt();
+        }
+    } catch (_) {}
+}
+
+async function guardarDescargoOpinionApi(pid, texto) {
     const apiUrl = _deps?.apiUrl;
     const asegurarJwt = _deps?.asegurarJwtApiRest;
     const puede = _deps?.puedeEnviarApiRestPedidos;
     const getToken = _deps?.getApiToken;
     if (typeof apiUrl !== 'function' || typeof asegurarJwt !== 'function') {
-        throw new Error('API no configurada');
+        return { ok: false, skipNeon: false, err: new Error('API no configurada') };
     }
     if (typeof puede === 'function' && !puede()) {
-        throw new Error('Sin conexión con el servidor');
+        await intentarRefrescarJwtSiHay();
+        if (typeof puede === 'function' && !puede()) {
+            return { ok: false, skipNeon: false, err: new Error('Sin conexión con el servidor (JWT)') };
+        }
     }
     await asegurarJwt();
-    const token = typeof getToken === 'function' ? getToken() : '';
     const url = apiUrl(`/api/pedidos/${encodeURIComponent(String(pid))}/opinion-descargo`);
-    const res = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ descargo: texto }),
-    });
+    const doFetch = async () => {
+        const token = typeof getToken === 'function' ? getToken() : '';
+        return fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ descargo: texto }),
+        });
+    };
+    let res = await doFetch();
+    if (res.status === 401) {
+        await intentarRefrescarJwtSiHay();
+        res = await doFetch();
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(data?.error || data?.detail || `Error ${res.status}`);
+        const err = new Error(data?.error || data?.detail || `Error ${res.status}`);
+        const tryNeon = [401, 403, 404, 502, 503].includes(res.status);
+        return { ok: false, skipNeon: !tryNeon, err };
     }
-    return data;
+    return { ok: true, data };
+}
+
+async function guardarDescargoOpinionNeon(pid, texto) {
+    if (!_deps?.NEON_OK || typeof _deps.sqlSimple !== 'function' || typeof _deps.esc !== 'function') {
+        return null;
+    }
+    if (typeof _deps.modoOffline === 'function' && _deps.modoOffline()) return null;
+    const esc = _deps.esc;
+    const pidNum = Number(pid);
+    if (!Number.isFinite(pidNum) || pidNum < 1) return null;
+    const val = String(texto || '').trim();
+    const sqlVal = val ? `'${esc(val)}'` : 'NULL';
+    const fechaSql = val ? 'NOW()' : 'NULL';
+    try {
+        await _deps.sqlSimple(
+            `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_descargo_empresa TEXT`
+        );
+        await _deps.sqlSimple(
+            `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_descargo_empresa TIMESTAMPTZ`
+        );
+    } catch (_) {}
+    let where = `id = ${esc(pidNum)}`;
+    try {
+        if (typeof _deps.neonPedidosTieneColumnaTenantId === 'function') {
+            const mt = await _deps.neonPedidosTieneColumnaTenantId();
+            if (mt && typeof _deps.tenantIdActual === 'function') {
+                const tid = Number(_deps.tenantIdActual());
+                if (Number.isFinite(tid) && tid > 0) where += ` AND tenant_id = ${esc(tid)}`;
+            }
+        }
+    } catch (_) {}
+    await _deps.sqlSimple(
+        `UPDATE pedidos SET opinion_descargo_empresa = ${sqlVal}, fecha_descargo_empresa = ${fechaSql} WHERE ${where}`
+    );
+    return {
+        opinion_descargo_empresa: val || null,
+        fecha_descargo_empresa: val ? new Date().toISOString() : null,
+        _soloNeon: true,
+    };
+}
+
+async function guardarDescargoOpinion(pid, texto) {
+    const api = await guardarDescargoOpinionApi(pid, texto);
+    if (api.ok) return api.data;
+    if (!api.skipNeon) {
+        const neon = await guardarDescargoOpinionNeon(pid, texto);
+        if (neon) return neon;
+    }
+    throw api.err || new Error('No se pudo guardar el descargo');
+}
+
+async function postGuardarDescargoUi(pid, row, texto) {
+    const desc =
+        row?.opinion_descargo_empresa != null ? String(row.opinion_descargo_empresa).trim() : texto;
+    const fecha = row?.fecha_descargo_empresa || (desc ? new Date().toISOString() : null);
+    aplicarDescargoEnPedidoLocal(pid, desc, fecha);
+    const cur = pedidoEnApp(pid);
+    if (cur) actualizarHostOpinionClienteDetalleModal(cur);
+
+    if (row?._soloNeon) {
+        try {
+            _deps?.toast?.(
+                desc
+                    ? 'Descargo guardado en la base. Para WhatsApp y chat operador hace falta la API activa.'
+                    : 'Descargo eliminado.',
+                desc ? 'warning' : 'ok'
+            );
+        } catch (_) {}
+        return;
+    }
+
+    let msg = desc ? 'Descargo guardado.' : 'Descargo eliminado.';
+    if (desc) {
+        if (row?.whatsappEnviado) msg += ' Enviado por WhatsApp al cliente.';
+        else msg += ' No se pudo enviar por WhatsApp (revisá teléfono del pedido).';
+    }
+    try {
+        _deps?.toast?.(msg, desc && row?.whatsappEnviado ? 'ok' : desc ? 'warning' : 'ok');
+    } catch (_) {}
+
+    const sid = row?.humanChatSessionId;
+    if (sid != null && typeof _deps?.abrirModalWhatsappHumanChat === 'function') {
+        try {
+            await _deps.abrirModalWhatsappHumanChat(Number(sid));
+        } catch (_) {}
+    } else if (desc && !row?.whatsappEnviado) {
+        try {
+            _deps?.toast?.(
+                'Podés abrir WhatsApp → Chat operador cuando el mensaje al cliente esté configurado.',
+                'info'
+            );
+        } catch (_) {}
+    }
 }
 
 function aplicarDescargoEnPedidoLocal(pid, texto, fecha) {
@@ -249,15 +362,7 @@ export function installPedidoOpinionDescargoUi() {
         if (statusEl) statusEl.textContent = 'Guardando…';
         try {
             const row = await guardarDescargoOpinion(pid, texto);
-            const desc =
-                row?.opinion_descargo_empresa != null ? String(row.opinion_descargo_empresa).trim() : texto;
-            const fecha = row?.fecha_descargo_empresa || (desc ? new Date().toISOString() : null);
-            aplicarDescargoEnPedidoLocal(pid, desc, fecha);
-            const cur = pedidoEnApp(pid);
-            if (cur) actualizarHostOpinionClienteDetalleModal(cur);
-            try {
-                _deps?.toast?.(desc ? 'Descargo guardado.' : 'Descargo eliminado.', 'ok');
-            } catch (_) {}
+            await postGuardarDescargoUi(pid, row, texto);
             if (statusEl) statusEl.textContent = '';
         } catch (e) {
             try {

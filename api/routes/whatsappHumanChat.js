@@ -61,7 +61,17 @@ router.post("/sessions/:id/close", async (req, res) => {
     const tenantId = req.tenantId;
     const id = Number(req.params.id);
     await humanChatCloseSessionAdmin(id, tenantId);
-    return res.json({ ok: true });
+    let reRatingOffered = false;
+    try {
+      const { humanChatCerradoOfrecerReCalificacion } = await import(
+        "../services/pedidoOpinionDescargo.js"
+      );
+      const off = await humanChatCerradoOfrecerReCalificacion(id, tenantId);
+      reRatingOffered = !!off.offered;
+    } catch (e) {
+      console.warn("[human-chat] re-rating tras descargo", e?.message || e);
+    }
+    return res.json({ ok: true, reRatingOffered });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo cerrar", detail: e.message });
   }

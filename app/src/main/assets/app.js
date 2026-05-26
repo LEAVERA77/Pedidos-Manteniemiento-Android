@@ -17349,6 +17349,13 @@ if ('serviceWorker' in navigator) {
             puedeEnviarApiRestPedidos,
             getApiToken,
             toast,
+            intentarRefrescarJwt: intentarRefrescarJwtDesdeCredencialesGuardadas,
+            abrirModalWhatsappHumanChat: (sid) =>
+                typeof window.abrirModalWhatsappHumanChat === 'function'
+                    ? window.abrirModalWhatsappHumanChat(sid)
+                    : undefined,
+            tenantIdActual,
+            neonPedidosTieneColumnaTenantId,
             getApp: () => app,
             get NEON_OK() {
                 return NEON_OK;
