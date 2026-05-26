@@ -194,10 +194,14 @@ async function postGuardarDescargoUi(pid, row, texto) {
         row?.opinion_descargo_empresa != null ? String(row.opinion_descargo_empresa).trim() : texto;
     const fecha = row?.fecha_descargo_empresa || (desc ? new Date().toISOString() : null);
     aplicarDescargoEnPedidoLocal(pid, desc, fecha);
+    aplicarReaperturaPedidoLocal(pid, row);
     const cur = pedidoEnApp(pid);
     if (cur) actualizarHostOpinionClienteDetalleModal(cur);
+    if (row?.pedidoReabierto || row?.estado === 'Pendiente') {
+        refrescarDetalleModalPedido(pid);
+    }
 
-    if (row?._soloNeon) {
+    if (row?._soloNeon && !row?.pedidoReabierto) {
         try {
             _deps?.toast?.(
                 desc
@@ -210,6 +214,9 @@ async function postGuardarDescargoUi(pid, row, texto) {
     }
 
     let msg = desc ? 'Descargo guardado.' : 'Descargo eliminado.';
+    if (row?.pedidoReabierto || (desc && row?.estado === 'Pendiente')) {
+        msg += ' Pedido reabierto: podés asignar técnico.';
+    }
     if (desc) {
         if (row?.whatsappEnviado) msg += ' Enviado por WhatsApp al cliente.';
         else if (row?.notifyWarning === 'sin_telefono_contacto')
@@ -243,6 +250,37 @@ function aplicarDescargoEnPedidoLocal(pid, texto, fecha) {
     cur.fodesc = t ? fecha || new Date().toISOString() : null;
     if (cur.opinion_descargo_empresa !== undefined) cur.opinion_descargo_empresa = cur.odesc;
     if (cur.fecha_descargo_empresa !== undefined) cur.fecha_descargo_empresa = cur.fodesc;
+}
+
+function aplicarReaperturaPedidoLocal(pid, row) {
+    const cur = pedidoEnApp(pid);
+    if (!cur || !row) return;
+    const est = row.estado != null ? String(row.estado).trim() : '';
+    if (est) cur.es = est;
+    if (row.tecnico_asignado_id !== undefined && row.tecnico_asignado_id !== null) {
+        cur.tai = Number(row.tecnico_asignado_id);
+    } else if (row.tai !== undefined) {
+        cur.tai = row.tai;
+    } else if (est === 'Pendiente' || row.pedidoReabierto) {
+        cur.tai = null;
+    }
+    if (row.avance !== undefined) cur.av = Number(row.avance) || 0;
+    else if (row.av !== undefined) cur.av = Number(row.av) || 0;
+    else if (est === 'Pendiente' || row.pedidoReabierto) cur.av = 0;
+}
+
+function refrescarDetalleModalPedido(pid) {
+    const cur = pedidoEnApp(pid);
+    if (!cur) return;
+    try {
+        if (typeof window.gnDmEncolarRepintadoDetalle === 'function') {
+            window.gnDmEncolarRepintadoDetalle(cur, { skipBackgroundRefetch: true });
+            return;
+        }
+        if (typeof window.detalle === 'function') {
+            void window.detalle(cur, { skipBackgroundRefetch: true });
+        }
+    } catch (_) {}
 }
 
 export function installPedidoOpinionDescargoUi() {

@@ -11,9 +11,7 @@ import {
   humanChatOpenOrGetSession,
   humanChatAppendOutbound,
   humanChatActivateSession,
-  humanChatGetSessionForTenant,
 } from "./whatsappHumanChat.js";
-import { registerPendingClienteOpinionReRating } from "./whatsappClienteOpinion.js";
 
 const SOURCE_DESCARGO = "opinion_descargo";
 
@@ -61,8 +59,7 @@ function buildMensajeDescargoCliente(pedido, descargo) {
   return (
     `Hola ${ent}, respecto de tu valoración del pedido *#${np}*:\n\n` +
     `*Respuesta de la empresa:*\n${txt}\n\n` +
-    `Si querés consultar o ampliar, respondé por este chat y un operador te atiende.\n` +
-    `Cuando finalicemos la conversación, podrás *volver a calificar* la atención (del 1 al 5).`
+    `Si querés consultar o ampliar, respondé por este chat y un operador te atiende.`
   );
 }
 
@@ -126,61 +123,3 @@ export async function notificarDescargoYAbrirChatHumano(pedido, descargo, tenant
   return { whatsappEnviado, humanChatSessionId };
 }
 
-async function pedidoIdDesdeSesionDescargo(sessionId, tenantId) {
-  const sid = Number(sessionId);
-  const tid = Number(tenantId);
-  if (!Number.isFinite(sid) || sid < 1) return null;
-  const r = await query(
-    `SELECT (meta->>'pedido_id')::int AS pid
-     FROM whatsapp_human_chat_message
-     WHERE session_id = $1 AND meta->>'source' = $2
-     ORDER BY id ASC LIMIT 1`,
-    [sid, SOURCE_DESCARGO]
-  );
-  const pid = r.rows?.[0]?.pid;
-  return Number.isFinite(Number(pid)) && Number(pid) > 0 ? Number(pid) : null;
-}
-
-/**
- * Tras cerrar chat humano: si fue por descargo, invita a re-calificar por WA.
- */
-export async function humanChatCerradoOfrecerReCalificacion(sessionId, tenantId) {
-  const sid = Number(sessionId);
-  const tid = Number(tenantId);
-  const session = await humanChatGetSessionForTenant(sid, tid);
-  if (!session) return { offered: false };
-
-  const pedidoId = await pedidoIdDesdeSesionDescargo(sid, tid);
-  if (!pedidoId) return { offered: false };
-
-  const phone = String(session.phone_canonical || "").replace(/\D/g, "");
-  if (phone.length < 8) return { offered: false };
-
-  let np = pedidoId;
-  try {
-    const rp = await query(`SELECT numero_pedido FROM pedidos WHERE id = $1 LIMIT 1`, [pedidoId]);
-    if (rp.rows?.[0]?.numero_pedido) np = rp.rows[0].numero_pedido;
-  } catch (_) {}
-
-  await registerPendingClienteOpinionReRating(tid, phone, pedidoId);
-
-  const invite =
-    `Gracias por conversar con nosotros sobre el pedido *#${np}*.\n\n` +
-    `Si querés, podés *volver a calificar* la atención del *1* al *5* ` +
-    `(la nueva valoración reemplaza a la anterior).\n` +
-    `Respondé con un número o con estrellas ⭐.`;
-
-  try {
-    await sendTenantWhatsAppText({
-      tenantId: tid,
-      toDigits: phone,
-      bodyText: invite,
-      pedidoId,
-      logContext: "opinion_re_rating_invite",
-    });
-  } catch (e) {
-    console.warn("[opinion-descargo] invite re-rating WA", e?.message || e);
-  }
-
-  return { offered: true, pedidoId };
-}

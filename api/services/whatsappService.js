@@ -18,7 +18,11 @@ import {
 } from "./wahaWhatsapp.js";
 import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
-import { registerPendingClienteOpinion } from "./whatsappClienteOpinion.js";
+import {
+  registerPendingClienteOpinion,
+  registerPendingClienteOpinionReRating,
+} from "./whatsappClienteOpinion.js";
+import { pedidoDebeReRatingAlCerrarTrasDescargo } from "./pedidoReabrirTrasDescargo.js";
 
 function whatsappProvider() {
   return String(process.env.WHATSAPP_PROVIDER || "meta").toLowerCase().trim();
@@ -382,14 +386,22 @@ export async function notifyPedidoCierreWhatsAppSafe({
 
   const np = String(numeroPedido || "").trim() || `#${pedidoId}`;
   const ent = String(nombreEntidad || "nuestro equipo").trim();
-  const body =
-    `*${ent}* informa: su reclamo *#${np}* fue *finalizado* por el equipo técnico.\n\n` +
-    `*Encuesta rápida (2 pasos)*\n\n` +
-    `*Paso 1 — Nota (obligatorio)*\n` +
-    `Calificá del *1* al *5* (1 = muy malo, 5 = excelente). Respondé con el *número* o con *⭐*.\n\n` +
-    `*Paso 2 — Comentario (opcionario)*\n` +
-    `Si querés, una frase. Si no, respondé *omitir*.\n\n` +
-    `_Gracias por tu tiempo._`;
+  const reRating = await pedidoDebeReRatingAlCerrarTrasDescargo(pedidoId, tenantId);
+  const body = reRating
+    ? `*${ent}* informa: el equipo técnico *volvió a finalizar* tu reclamo *#${np}*.\n\n` +
+      `*Nueva valoración* (reemplaza la anterior)\n\n` +
+      `*Paso 1 — Nota (obligatorio)*\n` +
+      `Calificá del *1* al *5* (1 = muy malo, 5 = excelente). Respondé con el *número* o con *⭐*.\n\n` +
+      `*Paso 2 — Comentario (opcionario)*\n` +
+      `Si querés, una frase. Si no, respondé *omitir*.\n\n` +
+      `_Gracias por tu tiempo._`
+    : `*${ent}* informa: su reclamo *#${np}* fue *finalizado* por el equipo técnico.\n\n` +
+      `*Encuesta rápida (2 pasos)*\n\n` +
+      `*Paso 1 — Nota (obligatorio)*\n` +
+      `Calificá del *1* al *5* (1 = muy malo, 5 = excelente). Respondé con el *número* o con *⭐*.\n\n` +
+      `*Paso 2 — Comentario (opcionario)*\n` +
+      `Si querés, una frase. Si no, respondé *omitir*.\n\n` +
+      `_Gracias por tu tiempo._`;
 
   try {
     const r = await sendTenantWhatsAppText({
@@ -397,11 +409,15 @@ export async function notifyPedidoCierreWhatsAppSafe({
       toDigits: phone,
       bodyText: body,
       pedidoId,
-      logContext: "cierre_pedido",
+      logContext: reRating ? "cierre_pedido_re_rating" : "cierre_pedido",
     });
     if (r.ok) {
       const phoneCanon = normalizeWhatsAppRecipientForMeta(phone);
-      await registerPendingClienteOpinion(tenantId, phoneCanon, pedidoId);
+      if (reRating) {
+        await registerPendingClienteOpinionReRating(tenantId, phoneCanon, pedidoId);
+      } else {
+        await registerPendingClienteOpinion(tenantId, phoneCanon, pedidoId);
+      }
     } else {
       console.error("[whatsapp-service] cierre: envío falló (pedido ya cerrado en BD)", {
         pedidoId,

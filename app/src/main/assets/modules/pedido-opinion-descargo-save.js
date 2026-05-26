@@ -96,11 +96,51 @@ async function guardarDescargoNeon(deps, pid, texto) {
         console.warn('[opinion-descargo] neon', e?.message || e);
         return null;
     }
-    return {
+    let base = {
         opinion_descargo_empresa: val || null,
         fecha_descargo_empresa: val ? new Date().toISOString() : null,
         _soloNeon: true,
     };
+    if (val) {
+        const reab = await reabrirPedidoNeonSiCorresponde(deps, pidNum, where, esc);
+        if (reab) base = { ...base, ...reab };
+    }
+    return base;
+}
+
+async function reabrirPedidoNeonSiCorresponde(deps, pidNum, where, esc) {
+    try {
+        const sel = await deps.sqlSimple(
+            `SELECT estado, opinion_cliente, opinion_cliente_estrellas, opinion_descargo_empresa
+             FROM pedidos WHERE ${where} LIMIT 1`
+        );
+        const row = sel?.rows?.[0];
+        if (!row) return null;
+        const est = String(row.estado || '')
+            .trim()
+            .toLowerCase();
+        if (est !== 'cerrado') return null;
+        const n = Number(row.opinion_cliente_estrellas);
+        const tieneOpinion =
+            (Number.isFinite(n) && n >= 1 && n <= 5) ||
+            (row.opinion_cliente != null && String(row.opinion_cliente).trim());
+        const desc = String(row.opinion_descargo_empresa || '').trim();
+        if (!tieneOpinion || !desc) return null;
+        await deps.sqlSimple(
+            `UPDATE pedidos SET estado = 'Pendiente', avance = 0, tecnico_asignado_id = NULL,
+             fecha_asignacion = NULL, fecha_cierre = NULL, usuario_cierre_id = NULL
+             WHERE ${where}`
+        );
+        return {
+            estado: 'Pendiente',
+            avance: 0,
+            tecnico_asignado_id: null,
+            pedidoReabierto: true,
+        };
+    } catch (e) {
+        console.warn('[opinion-descargo] reabrir neon', e?.message || e);
+        return null;
+    }
 }
 
 async function notificarDescargoApi(deps, pid, texto) {

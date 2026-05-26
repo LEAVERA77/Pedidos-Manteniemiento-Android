@@ -2078,9 +2078,20 @@ router.patch("/:id/opinion-descargo", adminOnly, async (req, res) => {
       return res.status(400).json({ error: "Descargo demasiado largo (máx. 4000 caracteres)" });
     }
     const { guardarDescargoEmpresaEnPedido } = await import("../services/pedidoOpinionDescargo.js");
-    const row = await guardarDescargoEmpresaEnPedido(id, descargo, req.tenantId, req, {
+    let row = await guardarDescargoEmpresaEnPedido(id, descargo, req.tenantId, req, {
       skipBusinessFilter: true,
     });
+    if (descargo) {
+      try {
+        const { reabrirPedidoOperativaTrasDescargoGuardado } = await import(
+          "../services/pedidoReabrirTrasDescargo.js"
+        );
+        const reopened = await reabrirPedidoOperativaTrasDescargoGuardado(id, req.tenantId);
+        if (reopened) row = reopened;
+      } catch (e) {
+        console.warn("[opinion-descargo] reabrir pedido", e?.message || e);
+      }
+    }
     let whatsappEnviado = false;
     let humanChatSessionId = null;
     let notifyWarning = null;
@@ -2103,11 +2114,14 @@ router.patch("/:id/opinion-descargo", adminOnly, async (req, res) => {
         console.warn("[opinion-descargo] notify", e?.message || e);
       }
     }
+    const pedidoReabierto =
+      descargo && String(row?.estado || "").trim().toLowerCase() === "pendiente";
     return res.json({
       ...coercePedidoLatLng(row),
       whatsappEnviado,
       humanChatSessionId,
       notifyWarning,
+      pedidoReabierto,
     });
   } catch (error) {
     return res.status(500).json({
