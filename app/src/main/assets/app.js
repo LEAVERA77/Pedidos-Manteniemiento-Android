@@ -17386,6 +17386,13 @@ if ('serviceWorker' in navigator) {
             getApiToken,
             toast,
             getApp: () => app,
+            get NEON_OK() {
+                return NEON_OK;
+            },
+            modoOffline: () => modoOffline,
+            sqlSimple,
+            esc,
+            coordsEfectivasPedidoMapa,
         });
         installPedidoOpinionDescargoUi();
         initAdminWizard({

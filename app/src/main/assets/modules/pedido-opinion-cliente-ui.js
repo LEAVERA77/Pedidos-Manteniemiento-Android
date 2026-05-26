@@ -1,7 +1,14 @@
 /**
  * Valoración WhatsApp + descargo de la empresa (todos los rubros).
+ * Provincia / CP por reverse Nominatim si faltan y hay coordenadas.
  * made by leavera77
  */
+
+import {
+    inferirProvinciaCpDetallePedidoSiFalta,
+    pedidoNecesitaInferirProvinciaCp,
+    coordsPedidoParaReverse,
+} from './pedido-detalle-infer-ubicacion-nominatim.js';
 
 let _deps = null;
 let _boundSave = false;
@@ -32,8 +39,54 @@ function mapDescargoPedido(p) {
     return String(v).trim();
 }
 
+function depsInferUbicacion() {
+    if (!_deps) return null;
+    const app = typeof _deps.getApp === 'function' ? _deps.getApp() : _deps.app;
+    return {
+        app,
+        NEON_OK: _deps.NEON_OK,
+        modoOffline: typeof _deps.modoOffline === 'function' ? _deps.modoOffline() : !!_deps.modoOffline,
+        sqlSimple: _deps.sqlSimple,
+        esc: _deps.esc,
+        coordsEfectivasPedidoMapa: _deps.coordsEfectivasPedidoMapa,
+    };
+}
+
+function htmlProvinciaCpEnBloqueOpinion(p, escDet) {
+    const prov = String(p?.cpcia || '').trim();
+    const cp = String(p?.ccp || '').trim();
+    const inferDeps = depsInferUbicacion();
+    const puedeInferir =
+        pedidoNecesitaInferirProvinciaCp(p) && !!coordsPedidoParaReverse(p, inferDeps || undefined);
+    if (!prov && !cp && !puedeInferir) return '';
+    const partes = [];
+    if (prov) partes.push(`Provincia: ${escDet(prov)}`);
+    else if (puedeInferir) partes.push('Provincia: …');
+    if (cp) partes.push(`CP: ${escDet(cp)}`);
+    else if (puedeInferir) partes.push('CP: …');
+    return `<p class="gn-opinion-prov-cp" style="font-size:.75rem;color:var(--tm);margin:.45rem 0 0;line-height:1.35">${partes.join(' · ')}</p>`;
+}
+
+async function inferirProvinciaCpParaBloqueOpinionSiCorresponde(p) {
+    if (!p || !pedidoNecesitaInferirProvinciaCp(p)) return;
+    const inferDeps = depsInferUbicacion();
+    if (!inferDeps || !coordsPedidoParaReverse(p, inferDeps)) return;
+    const pid = String(p.id ?? '');
+    const dm = document.getElementById('dm');
+    if (!dm?.classList.contains('active') || String(dm.dataset.detallePedidoId || '') !== pid) return;
+    await inferirProvinciaCpDetallePedidoSiFalta(p, inferDeps);
+    if (!dm.classList.contains('active') || String(dm.dataset.detallePedidoId || '') !== pid) return;
+    const host = document.getElementById('dm-opinion-cliente-host');
+    if (!host?.querySelector('h4')) return;
+    const cur =
+        typeof _deps?.getApp === 'function'
+            ? _deps.getApp()?.p?.find((x) => String(x.id) === pid)
+            : p;
+    if (cur) actualizarHostOpinionClienteDetalleModal(cur, { skipInfer: true });
+}
+
 /**
- * @param {object} p — pedido normalizado (opin, oes, fopin, odesc, fodesc)
+ * @param {object} p — pedido normalizado (opin, oes, fopin, odesc, fodesc, cpcia, ccp)
  * @param {(s: string) => string} escDet
  */
 export function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
@@ -81,16 +134,18 @@ export function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
     return `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
             <h4>💬 Valoración del cliente (WhatsApp)</h4>
             ${bloqueCliente}
+            ${htmlProvinciaCpEnBloqueOpinion(p, escDet)}
             ${!esAdm ? bloqueDescargoLectura : ''}
             ${bloqueDescargoEdicion || (esAdm && hasDescargo ? bloqueDescargoLectura : '')}
            </div>`;
 }
 
-export function actualizarHostOpinionClienteDetalleModal(p) {
+export function actualizarHostOpinionClienteDetalleModal(p, opts = {}) {
     const host = document.getElementById('dm-opinion-cliente-host');
     if (!host) return;
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     host.innerHTML = construirHtmlBloqueOpinionClienteDetalle(p, escDet);
+    if (!opts.skipInfer) void inferirProvinciaCpParaBloqueOpinionSiCorresponde(p);
 }
 
 /** HTML impresión / PDF */

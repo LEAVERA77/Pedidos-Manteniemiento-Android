@@ -26,7 +26,7 @@ export function extraerProvinciaCpDesdeNominatimAddress(address) {
  * @param {object} p
  * @param {object} [deps]
  */
-function coordsPedidoParaReverse(p, deps) {
+export function coordsPedidoParaReverse(p, deps) {
     if (deps && typeof deps.coordsEfectivasPedidoMapa === 'function') {
         const c = deps.coordsEfectivasPedidoMapa(p);
         if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng)) return c;
