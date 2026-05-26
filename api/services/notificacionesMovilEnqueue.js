@@ -96,6 +96,31 @@ export async function enqueueNotificacionChatInternoPedido({
         );
         void sendFcmToUsuario(tech, { titulo, cuerpo, pedidoId: pid });
       }
+      const colAdm = await tenantColumnForUsuarios();
+      let admins;
+      if (colAdm && Number.isFinite(tid) && tid >= 1) {
+        const r = await query(
+          `SELECT id FROM usuarios WHERE ${colAdm} = $1 AND rol = 'admin' AND activo = TRUE AND id != $2`,
+          [tid, autor]
+        );
+        admins = r.rows;
+      } else {
+        const r = await query(
+          `SELECT id FROM usuarios WHERE rol = 'admin' AND activo = TRUE AND id != $1`,
+          [autor]
+        );
+        admins = r.rows;
+      }
+      for (const row of admins || []) {
+        const uid = Number(row.id);
+        if (!Number.isFinite(uid) || uid < 1) continue;
+        await query(
+          `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+           VALUES ($1, $2, $3, $4, FALSE)`,
+          [uid, pid, titulo, cuerpo]
+        );
+        void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
+      }
       return;
     }
 
@@ -123,6 +148,16 @@ export async function enqueueNotificacionChatInternoPedido({
         [uid, pid, titulo, cuerpo]
       );
       void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
+    }
+    const techAsig =
+      pedido.tecnico_asignado_id != null ? Number(pedido.tecnico_asignado_id) : null;
+    if (Number.isFinite(techAsig) && techAsig >= 1 && techAsig !== autor) {
+      await query(
+        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+         VALUES ($1, $2, $3, $4, FALSE)`,
+        [techAsig, pid, titulo, cuerpo]
+      );
+      void sendFcmToUsuario(techAsig, { titulo, cuerpo, pedidoId: pid });
     }
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] chat interno", e.message);

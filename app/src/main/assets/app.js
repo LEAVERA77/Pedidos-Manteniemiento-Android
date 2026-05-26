@@ -328,6 +328,10 @@ import {
     verificarGeocercaAntesIniciarPedido,
 } from './modules/pedido-operativa-top3-ui.js';
 import {
+    installGnPedidoChatInternoAndroid,
+    onNotificacionMovilChatInterno,
+} from './modules/gn-pedido-chat-interno-android.js';
+import {
     initPedidoFotosCampoAndroid,
     solicitarFotosCampoOpcional,
     tomarFotosAvanceTemp,
@@ -5680,6 +5684,7 @@ function initMouiCardDraggable(cardId) {
     if (!hd || card.dataset.mouiCardDragInit === '1') return;
     if (!card.isConnected || !hd.isConnected) return;
     card.dataset.mouiCardDragInit = '1';
+    if (typeof window !== 'undefined') window.initMouiCardDraggable = initMouiCardDraggable;
     const key = 'pmg_moui_' + cardId.replace(/-/g, '_');
     const applySaved = () => {
         if (!floatingPanelsDragEnabled()) return;
@@ -7984,7 +7989,12 @@ window.pollNotificacionesMovil = async function () {
                     if (_pollNotifMovilUsaColumnaLeida) {
                         await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
                     }
-                    if (pid) await resolverFocoPedidoNotificacion(pid, { silent: true, scrollDerivacion: esNotifDerivacion });
+                    if (pid) {
+                        await resolverFocoPedidoNotificacion(pid, { silent: true, scrollDerivacion: esNotifDerivacion });
+                        try {
+                            onNotificacionMovilChatInterno(pid, t);
+                        } catch (_) {}
+                    }
                 } catch (_) {}
             } else if (esAdm) {
                 try {
@@ -7997,6 +8007,9 @@ window.pollNotificacionesMovil = async function () {
                             silent: true,
                             scrollDerivacion: esNotifDerivacion,
                         });
+                        try {
+                            onNotificacionMovilChatInterno(pid, t);
+                        } catch (_) {}
                     }
                 } catch (_) {}
             }
@@ -17366,6 +17379,7 @@ if ('serviceWorker' in navigator) {
             coordsEfectivasPedidoMapa,
         });
         installPedidoOpinionDescargoUi();
+        installGnPedidoChatInternoAndroid();
         initAdminWizard({
             app,
             getApiToken,

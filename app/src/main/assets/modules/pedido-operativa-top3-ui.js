@@ -213,11 +213,14 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
   <div id="gn-op-chat-msgs" class="gn-op-chat-msgs" style="max-height:160px;overflow:auto;border:1px solid var(--bo);border-radius:.4rem;padding:.45rem;background:var(--bg)"></div>
   ${
       ed
-          ? `<div style="display:flex;gap:.35rem;margin-top:.4rem">
-    <input type="text" id="gn-op-chat-input" maxlength="4000" placeholder="Mensaje para el equipo…" style="flex:1;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem">
+          ? `<div style="display:flex;gap:.35rem;margin-top:.4rem;flex-wrap:wrap;align-items:center">
+    <input type="text" id="gn-op-chat-input" maxlength="4000" placeholder="Mensaje para admin o técnico…" style="flex:1;min-width:8rem;padding:.4rem;border:1px solid var(--bo);border-radius:.4rem">
     <button type="button" class="btn-sm primary" id="gn-op-chat-send">Enviar</button>
+    ${esAndroidShell() ? '<button type="button" class="btn-sm" id="gn-op-chat-float-open" title="Abrir chat flotante en el mapa"><i class="fas fa-external-link-alt"></i> Panel</button>' : ''}
   </div>`
-          : ''
+          : esAndroidShell()
+            ? `<p style="font-size:.78rem;color:var(--tm);margin:.35rem 0 0"><button type="button" class="btn-sm" id="gn-op-chat-float-open"><i class="fas fa-comments"></i> Abrir chat con el equipo</button></p>`
+            : ''
   }
 </div>`;
 
@@ -236,5 +239,13 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
         } catch (e) {
             toastFn(e.message || 'No se pudo enviar', 'error');
         }
+    });
+
+    document.getElementById('gn-op-chat-float-open')?.addEventListener('click', () => {
+        try {
+            if (typeof window.gnAbrirPedidoChatInternoFloat === 'function') {
+                window.gnAbrirPedidoChatInternoFloat(pid);
+            }
+        } catch (_) {}
     });
 }

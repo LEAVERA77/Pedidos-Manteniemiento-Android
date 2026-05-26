@@ -158,3 +158,79 @@ html.gn-android-shell #cm2 .mb {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
 }
+
+/* Chat interno pedido — panel flotante (misma UX moui-card en Android) */
+html.gn-android-shell #gn-pedido-chat-float {
+    position: fixed;
+    display: none;
+    flex-direction: column;
+    width: min(360px, calc(100vw - 1rem));
+    max-height: min(68vh, 520px);
+    z-index: 10055;
+    pointer-events: auto;
+}
+html.gn-android-shell #gn-pedido-chat-float.moui-card-slideoff {
+    transform: translateX(calc(100vw + 1.5rem)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: transform 0.25s ease, opacity 0.2s;
+}
+html.gn-android-shell #gn-pedido-chat-float .gn-pedido-chat-float-bd {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+    padding: 0.45rem 0.55rem 0.55rem;
+}
+html.gn-android-shell #gn-pedido-chat-float-msgs {
+    flex: 1;
+    min-height: 5rem;
+    max-height: min(42vh, 320px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--bo);
+    border-radius: 0.4rem;
+    padding: 0.4rem;
+    margin-bottom: 0.45rem;
+    background: var(--bg);
+}
+html.gn-android-shell .gn-pedido-chat-line {
+    margin: 0.35rem 0;
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+html.gn-android-shell .gn-pedido-chat-line-hd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.35rem;
+}
+html.gn-android-shell .gn-pedido-chat-rol {
+    font-size: 0.7rem;
+    color: var(--tl);
+    font-weight: 500;
+}
+html.gn-android-shell .gn-pedido-chat-when {
+    margin-left: auto;
+    font-size: 0.68rem;
+    color: var(--tl);
+}
+html.gn-android-shell .gn-pedido-chat-float-compose {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+}
+html.gn-android-shell #gn-pedido-chat-float-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 16px;
+    padding: 0.4rem;
+    border: 1px solid var(--bo);
+    border-radius: 0.4rem;
+}
+html.gn-android-shell .gn-pedido-chat-float-tab.map-slide-tab {
+    display: none;
+}
+html.gn-android-shell .gn-pedido-chat-float-tab.map-slide-tab.visible {
+    display: inline-flex;
+}
