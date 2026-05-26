@@ -158,7 +158,6 @@ import { initCommunityBroadcastFab as initGnCommunityBroadcastFab, syncPedidosDo
 import { installBusquedaApellidoHistorial } from './modules/busqueda-apellido.js';
 import { installBusquedaDireccionHistorial } from './modules/busqueda-direccion-historial.js';
 import { initPedidoNuevoPadronBusqueda, resetPadronNuevoPedidoNisTimers } from './modules/pedido-nuevo-padron-busqueda.js';
-import { aplicarDireccionNominatimRespetandoPadron } from './modules/pedido-nuevo-nominatim-padron-guard.js';
 import {
     mountPedidoFormularioEnDom,
     initPedidoNuevoOficina,
@@ -277,6 +276,14 @@ import {
     setPedidoOpinionClienteUiDeps,
     installPedidoOpinionDescargoUi,
 } from './modules/pedido-opinion-cliente-ui.js';
+import {
+    reverseNominatimNuevoPedidoCore,
+    programarReverseNominatimFormularioNuevoPedidoDesdeMapa,
+    setPedidoNuevoReverseGeoDeps,
+    leerProvinciaCpNuevoPedido,
+    enriquecerSociosCatalogoGeoDesdeFormularioNuevoPedido,
+    resetPedidoNuevoReverseGeoCache,
+} from './modules/pedido-nuevo-reverse-geo.js';
 import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
@@ -1308,53 +1315,6 @@ function debeReverseNominatimAdminMapTap(e) {
     }
 }
 
-async function reverseNominatimNuevoPedidoCore(lat, lng) {
-    const la = Number(lat);
-    const lo = Number(lng);
-    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
-    try {
-        await asegurarJwtApiRest();
-        const token = getApiToken();
-        if (!token) {
-            toast('Sesión requerida para geocodificación inversa.', 'error');
-            return;
-        }
-        const r = await fetch(apiUrl('/api/geocode/nominatim/reverse'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ lat: la, lon: lo, zoom: 18 }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok || !j.result) {
-            toast(
-                'No se obtuvo dirección para ese punto. Probá otro clic o revisá la conexión/API.',
-                'warning'
-            );
-            return;
-        }
-        const addr = j.result.address || {};
-        aplicarDireccionNominatimRespetandoPadron(addr, { esMunicipioRubro: () => esMunicipioRubro() });
-    } catch (_) {
-        toast('No se pudo consultar la dirección en ese punto.', 'error');
-    }
-}
-
-/**
- * Diferir reverse hasta después del handler del mapa (modal #pm ya abierto).
- * `setTimeout(0)` es más fiable que `queueMicrotask` en algunos WebView Android tras eventos táctiles.
- */
-function programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng) {
-    const la = Number(lat);
-    const lo = Number(lng);
-    if (!Number.isFinite(la) || !Number.isFinite(lo)) return;
-    setTimeout(() => {
-        void reverseNominatimNuevoPedidoCore(la, lo);
-    }, 0);
-}
-
 /**
  * Clic en mapa → reverse Nominatim vía API → rellena calle/número/localidad/ref del formulario nuevo pedido.
  * Shift+clic mantiene el comportamiento anterior (abrir ubicación para nuevo pedido).
@@ -1374,8 +1334,6 @@ function aplicarReverseMapaAdminDesdeClicInicio(e) {
 if (typeof window !== 'undefined') {
     window.aplicarReverseMapaAdminDesdeClicInicio = aplicarReverseMapaAdminDesdeClicInicio;
     window.debeReverseNominatimAdminMapTap = debeReverseNominatimAdminMapTap;
-    window.programarReverseNominatimFormularioNuevoPedidoDesdeMapa =
-        programarReverseNominatimFormularioNuevoPedidoDesdeMapa;
 }
 
 /**
@@ -9062,12 +9020,13 @@ function _bindPedidoFormSubmit() {
             return;
         }
 
+        const { provincia: provPedGeo, codigo_postal: cpPedGeo } = leerProvinciaCpNuevoPedido();
         const queryInsert = `INSERT INTO pedidos(
             numero_pedido, distribuidor, trafo, cliente, tipo_trabajo,
             descripcion, prioridad, lat, lng, usuario_id, usuario_creador_id, estado, avance, foto_base64,
             x_inchauspe, y_inchauspe, fecha_creacion, nis_medidor, telefono_contacto,
             cliente_nombre, cliente_calle, cliente_numero_puerta, cliente_localidad, cliente_direccion,
-            suministro_tipo_conexion, suministro_fases, barrio
+            suministro_tipo_conexion, suministro_fases, barrio, provincia, codigo_postal
         ) VALUES(
             ${esc(numPedido)},
             ${esc(disVal || null)},
@@ -9094,7 +9053,9 @@ function _bindPedidoFormSubmit() {
             ${esc(refUbicVal || null)},
             ${esc(sumConVal || null)},
             ${esc(sumFasVal || null)},
-            ${esc(barrioVal || null)}
+            ${esc(barrioVal || null)},
+            ${esc(provPedGeo || null)},
+            ${esc(cpPedGeo || null)}
         )`;
 
         let derivacionAltaApiOk = false;
@@ -9139,6 +9100,9 @@ function _bindPedidoFormSubmit() {
             
             await ejecutarSQLConReintentos(queryInsert);
             toast('Pedido guardado', 'success');
+            if (esMunicipioRubro() && nisVal) {
+                void enriquecerSociosCatalogoGeoDesdeFormularioNuevoPedido();
+            }
             if (puedeEnviarApiRestPedidos()) {
                 try {
                     const rNew = await sqlSimple(
@@ -17571,6 +17535,24 @@ function descargarGrafico(canvasId, nombre) {
     }
 }
 window.descargarGrafico = descargarGrafico;
+
+try {
+    setPedidoNuevoReverseGeoDeps({
+        apiUrl,
+        asegurarJwtApiRest,
+        getApiToken,
+        toast,
+        modoOffline: () => modoOffline,
+        get NEON_OK() {
+            return NEON_OK;
+        },
+        sqlSimple,
+        esc,
+        tenantIdActual,
+        sociosCatalogoTieneTenantId,
+        esMunicipioRubro,
+    });
+} catch (_) {}
 
 try {
     initPedidoNuevoOficina({

@@ -6,6 +6,10 @@
 import { toast } from './ui-utils.js';
 import { getApp } from './gn-app-global-bridge.js';
 import { resetPadronNuevoPedidoNisTimers } from './pedido-nuevo-padron-busqueda.js';
+import {
+    programarReverseNominatimFormularioNuevoPedidoDesdeMapa,
+    resetPedidoNuevoReverseGeoCache,
+} from './pedido-nuevo-reverse-geo.js';
 
 let _modoOficina = false;
 let _mapPickHandler = null;
@@ -198,6 +202,9 @@ export async function aplicarCoordenadasPedidoOficina(deps, lat, lng, opts = {})
     } catch (_) {}
 
     if (!opts.silencioso) toast('Ubicación aplicada al pedido.', 'success');
+    if (opts.dispararReverse !== false && !opts.silencioso) {
+        programarReverseNominatimFormularioNuevoPedidoDesdeMapa(la, lo);
+    }
     return true;
 }
 
@@ -409,6 +416,7 @@ export async function asegurarUbicacionAntesGuardarPedidoOficina(deps) {
 }
 
 export function resetPedidoNuevoOficinaUi() {
+    resetPedidoNuevoReverseGeoCache();
     _modoOficina = false;
     setModoOficinaUi(false);
     document.getElementById('pm-oficina')?.classList.remove('pm-oficina--elegir-mapa', 'active');
