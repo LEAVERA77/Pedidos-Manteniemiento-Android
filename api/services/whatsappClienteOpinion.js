@@ -349,10 +349,29 @@ export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, tex
       textoOpinion = String(raw).trim().slice(0, 2000);
     }
 
+    const limpiarDescargo =
+      isReRating
+        ? `, opinion_descargo_empresa = NULL, fecha_descargo_empresa = NULL`
+        : "";
+    try {
+      await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_descargo_empresa TEXT`);
+      await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_descargo_empresa TIMESTAMPTZ`);
+    } catch (_) {}
     await query(
-      `UPDATE pedidos SET opinion_cliente_estrellas = $2, opinion_cliente = $3, fecha_opinion_cliente = NOW() WHERE id = $1`,
+      `UPDATE pedidos SET opinion_cliente_estrellas = $2, opinion_cliente = $3, fecha_opinion_cliente = NOW()${limpiarDescargo} WHERE id = $1`,
       [pend.pedidoId, stars, textoOpinion || null]
     );
+    if (isReRating) {
+      try {
+        await query(
+          `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_banner_admin_descartado BOOLEAN NOT NULL DEFAULT FALSE`
+        );
+        await query(
+          `UPDATE pedidos SET opinion_banner_admin_descartado = FALSE WHERE id = $1`,
+          [pend.pedidoId]
+        );
+      } catch (_) {}
+    }
     try {
       await query(
         `INSERT INTO cliente_observaciones_cierre (tenant_id, pedido_id, phone_canonical, estrellas, texto)

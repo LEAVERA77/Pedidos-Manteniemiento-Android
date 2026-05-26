@@ -10,6 +10,14 @@ import {
     coordsPedidoParaReverse,
 } from './pedido-detalle-infer-ubicacion-nominatim.js';
 import { guardarDescargoOpinionCompleto } from './pedido-opinion-descargo-save.js';
+import {
+    estrellasOpinionPedido,
+    esValoracionBajaOpinion,
+    puedeMostrarFormularioDescargoEmpresa,
+    descargoYaGuardadoParaValoracionActual,
+    mapDescargoTexto,
+    textoInicialTextareaDescargo,
+} from './pedido-opinion-descargo-ciclo.js';
 
 let _deps = null;
 let _boundSave = false;
@@ -35,9 +43,20 @@ function fmtFechaOpinion(v) {
 }
 
 function mapDescargoPedido(p) {
-    const v = p?.odesc ?? p?.opinion_descargo_empresa;
-    if (v == null || v === '') return '';
-    return String(v).trim();
+    return mapDescargoTexto(p);
+}
+
+function syncDescargoSaveButtonState() {
+    const ta = document.getElementById('dm-opinion-descargo-input');
+    const btn = document.querySelector('[data-gn-opinion-descargo-save]');
+    if (!btn) return;
+    const texto = ta ? String(ta.value || '').trim() : '';
+    const guardado = btn.dataset.descargoGuardado === '1';
+    if (guardado || ta?.disabled) {
+        btn.disabled = true;
+        return;
+    }
+    btn.disabled = !texto;
 }
 
 function depsInferUbicacion() {
@@ -92,11 +111,14 @@ async function inferirProvinciaCpParaBloqueOpinionSiCorresponde(p) {
  */
 export function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
     const opinTxtDet = p.opin != null && String(p.opin).trim() ? String(p.opin).trim() : '';
-    const estrellasDet = p.oes != null && p.oes >= 1 && p.oes <= 5 ? p.oes : null;
+    const estrellasDet = estrellasOpinionPedido(p);
     const descTxt = mapDescargoPedido(p);
     const hasCliente = estrellasDet != null || !!opinTxtDet;
     const hasDescargo = !!descTxt;
     const esAdm = esAdminUi();
+    const muestraForm = puedeMostrarFormularioDescargoEmpresa(p, esAdm);
+    const descargoGuardado = descargoYaGuardadoParaValoracionActual(p);
+    const valoracionBaja = esValoracionBajaOpinion(estrellasDet);
 
     if (!hasCliente && !hasDescargo) return '';
 
@@ -111,33 +133,38 @@ export function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
             ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtFechaOpinion(p.fopin))}</p>` : ''}`
         : '';
 
-    const bloqueDescargoLectura = hasDescargo
-        ? `<div class="trb" style="margin-top:.5rem;background:rgba(15,23,42,.04);border-radius:8px;padding:.55rem .65rem">
+    const bloqueDescargoLectura =
+        hasDescargo && (descargoGuardado || !muestraForm)
+            ? `<div class="trb" style="margin-top:.5rem;background:rgba(15,23,42,.04);border-radius:8px;padding:.55rem .65rem">
             <p style="font-size:.72rem;font-weight:600;color:var(--tm);margin:0 0 .25rem">Descargo de la empresa</p>
             <div style="font-size:.85rem;white-space:pre-wrap">${escDet(descTxt)}</div>
             ${p.fodesc ? `<p style="font-size:.72rem;color:var(--tm);margin:.35rem 0 0">Guardado: ${escDet(fmtFechaOpinion(p.fodesc))}</p>` : ''}
            </div>`
-        : '';
+            : '';
 
     const pid = p.id != null ? String(p.id) : '';
-    const bloqueDescargoEdicion =
-        esAdm && (hasCliente || hasDescargo)
-            ? `<div class="gn-opinion-descargo-edit" style="margin-top:.65rem;padding-top:.55rem;border-top:1px dashed var(--bd)">
+    const taIni = textoInicialTextareaDescargo(p, esAdm);
+    const bloqueDescargoEdicion = muestraForm
+        ? `<div class="gn-opinion-descargo-edit" style="margin-top:.65rem;padding-top:.55rem;border-top:1px dashed var(--bd)">
             <label for="dm-opinion-descargo-input" style="display:block;font-size:.72rem;font-weight:600;color:var(--tm);margin-bottom:.3rem">Descargo de la empresa</label>
-            <textarea id="dm-opinion-descargo-input" data-pedido-id="${escDet(pid)}" rows="3" maxlength="4000" placeholder="Respuesta o aclaración de la empresa ante esta valoración…" style="width:100%;font-size:.82rem;resize:vertical;min-height:4.2rem">${escDet(descTxt)}</textarea>
+            <p style="font-size:.72rem;color:var(--tm);margin:0 0 .35rem;line-height:1.35">Escribí el descargo y guardá <strong>una sola vez</strong> por esta valoración. Luego el pedido vuelve a pendiente para asignar técnico.</p>
+            <textarea id="dm-opinion-descargo-input" data-pedido-id="${escDet(pid)}" rows="3" maxlength="4000" placeholder="Respuesta o aclaración de la empresa ante esta valoración…" style="width:100%;font-size:.82rem;resize:vertical;min-height:4.2rem">${escDet(taIni)}</textarea>
             <div style="display:flex;gap:.4rem;align-items:center;margin-top:.4rem;flex-wrap:wrap">
-              <button type="button" class="btn btn-s" data-gn-opinion-descargo-save data-pedido-id="${escDet(pid)}">Guardar descargo</button>
+              <button type="button" class="btn btn-s" data-gn-opinion-descargo-save data-pedido-id="${escDet(pid)}" data-descargo-guardado="0" disabled>Guardar descargo</button>
               <span class="gn-opinion-descargo-status" style="font-size:.72rem;color:var(--tm)"></span>
             </div>
            </div>`
-            : '';
+        : descargoGuardado && esAdm && valoracionBaja
+          ? `<p style="font-size:.72rem;color:var(--tm);margin-top:.55rem;line-height:1.35">Descargo enviado. El pedido sigue en gestión; si el cliente vuelve a calificar bajo tras un nuevo cierre, podrá cargar otro descargo.</p>`
+          : '';
 
     return `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
             <h4>💬 Valoración del cliente (WhatsApp)</h4>
             ${bloqueCliente}
             ${htmlProvinciaCpEnBloqueOpinion(p, escDet)}
             ${!esAdm ? bloqueDescargoLectura : ''}
-            ${bloqueDescargoEdicion || (esAdm && hasDescargo ? bloqueDescargoLectura : '')}
+            ${bloqueDescargoEdicion}
+            ${!muestraForm ? bloqueDescargoLectura : ''}
            </div>`;
 }
 
@@ -146,6 +173,7 @@ export function actualizarHostOpinionClienteDetalleModal(p, opts = {}) {
     if (!host) return;
     const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
     host.innerHTML = construirHtmlBloqueOpinionClienteDetalle(p, escDet);
+    syncDescargoSaveButtonState();
     if (!opts.skipInfer) void inferirProvinciaCpParaBloqueOpinionSiCorresponde(p);
 }
 
@@ -286,6 +314,9 @@ function refrescarDetalleModalPedido(pid) {
 export function installPedidoOpinionDescargoUi() {
     if (_boundSave) return;
     _boundSave = true;
+    document.addEventListener('input', ev => {
+        if (ev.target?.id === 'dm-opinion-descargo-input') syncDescargoSaveButtonState();
+    });
     document.addEventListener('click', async ev => {
         const btn = ev.target?.closest?.('[data-gn-opinion-descargo-save]');
         if (!btn) return;
@@ -301,10 +332,12 @@ export function installPedidoOpinionDescargoUi() {
         const ta = document.getElementById('dm-opinion-descargo-input');
         const statusEl = btn.closest('.gn-opinion-descargo-edit')?.querySelector('.gn-opinion-descargo-status');
         const texto = ta ? String(ta.value || '').trim() : '';
+        if (!texto || btn.disabled || btn.dataset.descargoGuardado === '1') return;
         btn.disabled = true;
         if (statusEl) statusEl.textContent = 'Guardando…';
         try {
             const row = await guardarDescargoOpinionCompleto(_deps, pid, texto);
+            btn.dataset.descargoGuardado = '1';
             await postGuardarDescargoUi(pid, row, texto);
             if (statusEl) statusEl.textContent = '';
         } catch (e) {
@@ -312,8 +345,7 @@ export function installPedidoOpinionDescargoUi() {
                 _deps?.toast?.(e?.message || 'No se pudo guardar el descargo.', 'err');
             } catch (_) {}
             if (statusEl) statusEl.textContent = '';
-        } finally {
-            btn.disabled = false;
+            syncDescargoSaveButtonState();
         }
     });
 }
