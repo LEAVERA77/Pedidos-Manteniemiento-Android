@@ -36,7 +36,8 @@ flowchart TB
     Whapi[Whapi.cloud / Meta opcional]
     Cloudinary[Cloudinary]
     EmailJS[EmailJS]
-    Nominatim[Nominatim OSM]
+    NominatimOCI[Oracle Cloud Nominatim :8080]
+    NominatimPub[nominatim.openstreetmap.org fallback]
   end
   Admin --> Pages
   Pages -->|HTTPS JWT| Render
@@ -47,7 +48,8 @@ flowchart TB
   Render --> Groq
   Render --> Whapi
   Render --> Cloudinary
-  Render --> Nominatim
+  Render -->|search + reverse| NominatimOCI
+  Render -.->|respaldo| NominatimPub
   Admin --> EmailJS
   Render -.->|opcional informes| EmailJS
 ```
@@ -93,11 +95,37 @@ Workspace local típico: `AndroidStudioProjects/Nexxo` (Android) y `AndroidStudi
 - **Datos principales:** `clientes` (tenants), `usuarios`, `pedidos`, `socios_catalogo`, `clientes_finales`, `distribuidores`, `distribuidores_red`, `incidencias`, tablas de WhatsApp (`broadcast_*`, métricas), `notificaciones_movil`, `correcciones_direcciones`, etc.
 - **Extensiones útiles:** `unaccent`, `fuzzystrmatch` / `levenshtein` en Postgres para búsqueda de nombres en bot (ver migraciones en `api/db/migrations/`).
 
-### 2.4 Geocodificación (Nominatim)
+### 2.4 Geocodificación — Nominatim en Oracle Cloud (search + reverse)
 
-- **Uso:** alta de pedidos, bot WhatsApp, corrección de domicilios, pipeline con caché en `correcciones_direcciones`.
-- **Config:** `NOMINATIM_BASE_URL` (instancia propia recomendada en producción), fallback a OSM público, rate limiting y caché en memoria (`NOMINATIM_*` en `.env.example`).
-- **Rutas:** `/api/geocode`, `/api/whatsapp/geocode`, `/api/direcciones/corregir`, etc.
+**Documento detallado:** [`docs/NOMINATIM_ORACLE_CLOUD.md`](../NOMINATIM_ORACLE_CLOUD.md)  
+**Migración infra:** `MIGRATION_VULTR_TO_ORACLE.md`, `RENDER_ENV_VARS.md`, `MIGRATION_VERIFICATION.md`, `ORACLE_HTTPS_SETUP.md`
+
+El panel y la app **no** llaman a Nominatim en internet de forma directa. Todo pasa por la **API en Render**, que consulta una **instancia propia** de Nominatim desplegada en **Oracle Cloud** (VM + Docker, puerto **8080**). Variable en producción:
+
+```text
+NOMINATIM_BASE_URL=http://167.234.235.76:8080
+```
+
+(Sin barra final; tras cambiar → redeploy en Render.)
+
+| Capacidad | Endpoint Nominatim (Oracle) | Proxy API (JWT) |
+|-----------|----------------------------|-----------------|
+| **Forward** — dirección → lat/lng | `GET /search?...` | `POST /api/geocode/nominatim/search` |
+| **Reverse** — lat/lng → dirección | `GET /reverse?lat=&lon=&format=json&addressdetails=1` | `POST /api/geocode/nominatim/reverse` |
+| Salud / diagnóstico | ping `/search` | `GET /api/geocode/health` |
+
+**Reverse geocoding en el producto (ejemplos):**
+
+- Bot WhatsApp: ubicación GPS del vecino → calle y localidad inferidas (`whatsapp-bot-gps-ubicacion.js`).
+- Admin: clic en el mapa al cargar pedido nuevo → rellena formulario vía `/api/geocode/nominatim/reverse`.
+- Detalle de pedido: completar provincia / CP si faltan y hay coordenadas (`pedido-detalle-infer-ubicacion-nominatim.js`).
+- Validación de domicilio de padrón frente al punto geocodificado (`reverseHitMatchesCatalog` en `nominatimClient.js`).
+
+**Implementación servidor:** `api/services/nominatimClient.js` (throttle ~1,1 s, cabeceras `User-Agent` / `From`, reintentos 406, fallback a `nominatim.openstreetmap.org`). Caché de respuestas en Neon (`geocode_nominatim_cache`) y correcciones manuales (`correcciones_direcciones`). Rate limit en Render: `geocodeRouteLimiter` sobre `/api/geocode`.
+
+**Otras rutas relacionadas:** `/api/whatsapp/geocode`, `/api/direcciones/corregir`, `PUT /api/pedidos/:id/coords-manual`, re-geocodificación (`regeocodificarPedido.js`).
+
+**Operativa Oracle:** abrir puerto **8080** en security lists hacia Render; opcional HTTPS con Caddy (`scripts/oracle/setup_https_caddy.sh`). Host anterior de referencia (Vultr): `45.76.3.146:8080` — ver rollback en `MIGRATION_VULTR_TO_ORACLE.md`.
 
 ### 2.5 Cloudinary
 
@@ -385,6 +413,13 @@ EMAILJS_TEMPLATE_ID=
 # Opcional anti-baneo masivos
 WHAPI_BROADCAST_DELAY_MIN_MS=
 WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO=0
+
+# Nominatim (Oracle Cloud)
+NOMINATIM_BASE_URL=http://167.234.235.76:8080
+NOMINATIM_USER_AGENT=
+NOMINATIM_FROM_EMAIL=
+NOMINATIM_FETCH_TIMEOUT_MS=
+NOMINATIM_WHATSAPP_SEARCH_MODE=free-form
 ```
 
 Plantilla comentada: **`api/.env.example`** (800+ líneas de documentación inline).
@@ -400,6 +435,10 @@ Plantilla comentada: **`api/.env.example`** (800+ líneas de documentación inli
 | `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md` | Cambio de proveedor WA |
 | `docs/presentacion/GestorNova-Cooperativa-Electrica.md` | Presentación funcional cooperativa |
 | `docs/presentacion/GestorNova-Municipios.md` | Presentación funcional municipios |
+| `docs/NOMINATIM_ORACLE_CLOUD.md` | Nominatim en OCI: search, reverse, Render, caché |
+| `MIGRATION_VULTR_TO_ORACLE.md` | Migración geocoder Vultr → Oracle |
+| `RENDER_ENV_VARS.md` | `NOMINATIM_BASE_URL` y redeploy Render |
+| `docs/NOMINATIM_WHATSAPP_OPERATIVA.md` | Bot WA + variables Nominatim |
 | `.cursor/rules/pedidos-repos-arquitectura.mdc` | Paridad Nexxo ↔ Pedidos-MG |
 
 ---

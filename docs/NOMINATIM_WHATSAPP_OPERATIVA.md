@@ -1,5 +1,15 @@
 # Nominatim y geocodificación WhatsApp (operativa)
 
+## Instancia en Oracle Cloud (producción)
+
+En producción la API en **Render** no usa el Nominatim público de openstreetmap.org como origen principal: usa una **VM en Oracle Cloud** con Nominatim en Docker (`NOMINATIM_BASE_URL`, típicamente `http://167.234.235.76:8080`).
+
+- **Forward** (`/search`) y **reverse** (`/reverse`) hacia esa instancia.
+- El panel y el bot llaman siempre al **proxy** `POST /api/geocode/nominatim/search` y `POST /api/geocode/nominatim/reverse` (JWT), no a Oracle directamente.
+- **Reverse** en WhatsApp: cuando el vecino manda **ubicación GPS**, el servidor hace reverse en Oracle para proponer calle/localidad antes de confirmar el reclamo.
+
+Documentación técnica completa (arquitectura, firewall, HTTPS, caché, rollback): **`docs/NOMINATIM_ORACLE_CLOUD.md`**. Migración: `MIGRATION_VULTR_TO_ORACLE.md`, variables Render: `RENDER_ENV_VARS.md`.
+
 ## Política de uso (OSM)
 
 - Nominatim público exige **como máximo ~1 solicitud por segundo** por instancia. El cliente en `api/services/nominatimClient.js` encadena peticiones con un intervalo mínimo (~1100 ms) entre llamadas.
