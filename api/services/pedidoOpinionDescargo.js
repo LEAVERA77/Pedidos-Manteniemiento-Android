@@ -28,7 +28,7 @@ async function ensureDescargoColumns() {
  * @param {number} tenantId
  * @param {object} [req] — para filtro business_type en UPDATE
  */
-export async function guardarDescargoEmpresaEnPedido(pedidoId, descargo, tenantId, req = null) {
+export async function guardarDescargoEmpresaEnPedido(pedidoId, descargo, tenantId, req = null, opts = {}) {
   await ensureDescargoColumns();
   const id = Number(pedidoId);
   const tid = Number(tenantId);
@@ -37,7 +37,7 @@ export async function guardarDescargoEmpresaEnPedido(pedidoId, descargo, tenantI
   const hasTUp = await pedidosTableHasTenantIdColumn();
   const bind = hasTUp ? [id, val, tid] : [id, val];
   let bt = "";
-  if (req) bt = await pushPedidoBusinessFilter(req, bind);
+  if (req && !opts.skipBusinessFilter) bt = await pushPedidoBusinessFilter(req, bind);
   const sql = hasTUp
     ? `UPDATE pedidos
        SET opinion_descargo_empresa = $2,

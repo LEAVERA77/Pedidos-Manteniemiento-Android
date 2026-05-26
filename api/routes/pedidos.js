@@ -2044,11 +2044,24 @@ router.put("/:id", async (req, res) => {
   }
 });
 
+async function getPedidoInTenantOpinionDescargo(id, req) {
+  const tenantId = req.tenantId;
+  if (await pedidosTableHasTenantIdColumn()) {
+    const r = await query(`SELECT * FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [
+      id,
+      tenantId,
+    ]);
+    return r.rows[0] || null;
+  }
+  const r = await query(`SELECT * FROM pedidos WHERE id = $1 LIMIT 1`, [id]);
+  return r.rows[0] || null;
+}
+
 router.patch("/:id/opinion-descargo", adminOnly, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido" });
-    const pedido = await getPedidoInTenant(id, req);
+    const pedido = await getPedidoInTenantOpinionDescargo(id, req);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     try {
       await assertPedidoMismoTenant(pedido, req);
@@ -2064,26 +2077,79 @@ router.patch("/:id/opinion-descargo", adminOnly, async (req, res) => {
     if (descargo.length > 4000) {
       return res.status(400).json({ error: "Descargo demasiado largo (máx. 4000 caracteres)" });
     }
-    const {
-      guardarDescargoEmpresaEnPedido,
-      notificarDescargoYAbrirChatHumano,
-    } = await import("../services/pedidoOpinionDescargo.js");
-    const row = await guardarDescargoEmpresaEnPedido(id, descargo, req.tenantId, req);
+    const { guardarDescargoEmpresaEnPedido } = await import("../services/pedidoOpinionDescargo.js");
+    const row = await guardarDescargoEmpresaEnPedido(id, descargo, req.tenantId, req, {
+      skipBusinessFilter: true,
+    });
     let whatsappEnviado = false;
     let humanChatSessionId = null;
+    let notifyWarning = null;
     if (descargo) {
-      const fx = await notificarDescargoYAbrirChatHumano(row, descargo, req.tenantId, req.user.id);
-      whatsappEnviado = !!fx.whatsappEnviado;
-      humanChatSessionId = fx.humanChatSessionId ?? null;
+      try {
+        const { notificarDescargoYAbrirChatHumano } = await import("../services/pedidoOpinionDescargo.js");
+        const { getFirstAdminUserIdForTenant } = await import("../services/pedidoWhatsappBot.js");
+        const uid =
+          req.user?.id != null && Number.isFinite(Number(req.user.id))
+            ? Number(req.user.id)
+            : await getFirstAdminUserIdForTenant(req.tenantId);
+        const fx = await notificarDescargoYAbrirChatHumano(row, descargo, req.tenantId, uid);
+        whatsappEnviado = !!fx.whatsappEnviado;
+        humanChatSessionId = fx.humanChatSessionId ?? null;
+        if (fx.skipReason === "sin_telefono") {
+          notifyWarning = "sin_telefono_contacto";
+        }
+      } catch (e) {
+        notifyWarning = e?.message || "notify_failed";
+        console.warn("[opinion-descargo] notify", e?.message || e);
+      }
     }
     return res.json({
       ...coercePedidoLatLng(row),
       whatsappEnviado,
       humanChatSessionId,
+      notifyWarning,
     });
   } catch (error) {
     return res.status(500).json({
       error: "No se pudo guardar el descargo",
+      detail: error.message,
+    });
+  }
+});
+
+/** Tras guardar por Neon en el cliente: WhatsApp + chat humano (requiere descargo ya persistido). */
+router.post("/:id/opinion-descargo/notificar", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido" });
+    const pedido = await getPedidoInTenantOpinionDescargo(id, req);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    const descargo = String(pedido.opinion_descargo_empresa || "").trim();
+    if (!descargo) {
+      return res.status(400).json({ error: "No hay descargo guardado en el pedido" });
+    }
+    const { notificarDescargoYAbrirChatHumano } = await import("../services/pedidoOpinionDescargo.js");
+    const { getFirstAdminUserIdForTenant } = await import("../services/pedidoWhatsappBot.js");
+    const uid =
+      req.user?.id != null && Number.isFinite(Number(req.user.id))
+        ? Number(req.user.id)
+        : await getFirstAdminUserIdForTenant(req.tenantId);
+    const fx = await notificarDescargoYAbrirChatHumano(pedido, descargo, req.tenantId, uid);
+    return res.json({
+      ok: true,
+      whatsappEnviado: !!fx.whatsappEnviado,
+      humanChatSessionId: fx.humanChatSessionId ?? null,
+      skipReason: fx.skipReason || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "No se pudo notificar el descargo",
       detail: error.message,
     });
   }
