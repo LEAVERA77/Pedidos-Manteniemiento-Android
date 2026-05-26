@@ -2044,6 +2044,52 @@ router.put("/:id", async (req, res) => {
   }
 });
 
+router.patch("/:id/opinion-descargo", adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido" });
+    const pedido = await getPedidoInTenant(id, req);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+    try {
+      await assertPedidoMismoTenant(pedido, req);
+    } catch (e) {
+      if (e.statusCode === 403) return res.status(403).json({ error: e.message });
+      throw e;
+    }
+    await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_descargo_empresa TEXT`);
+    await query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_descargo_empresa TIMESTAMPTZ`);
+    const raw =
+      req.body?.descargo !== undefined
+        ? req.body.descargo
+        : req.body?.opinion_descargo_empresa;
+    const descargo = raw == null ? "" : String(raw).trim();
+    if (descargo.length > 4000) {
+      return res.status(400).json({ error: "Descargo demasiado largo (máx. 4000 caracteres)" });
+    }
+    const hasTUp = await pedidosTableHasTenantIdColumn();
+    const bind = hasTUp ? [id, descargo || null, req.tenantId] : [id, descargo || null];
+    const sql = hasTUp
+      ? `UPDATE pedidos
+         SET opinion_descargo_empresa = $2,
+             fecha_descargo_empresa = CASE WHEN $2 IS NULL OR $2 = '' THEN NULL ELSE NOW() END
+         WHERE id = $1 AND tenant_id = $3
+         RETURNING *`
+      : `UPDATE pedidos
+         SET opinion_descargo_empresa = $2,
+             fecha_descargo_empresa = CASE WHEN $2 IS NULL OR $2 = '' THEN NULL ELSE NOW() END
+         WHERE id = $1
+         RETURNING *`;
+    const r = await query(sql, bind);
+    if (!r.rows.length) return res.status(404).json({ error: "Pedido no encontrado" });
+    return res.json(coercePedidoLatLng(r.rows[0]));
+  } catch (error) {
+    return res.status(500).json({
+      error: "No se pudo guardar el descargo",
+      detail: error.message,
+    });
+  }
+});
+
 router.put("/:id/asignar", adminOnly, async (req, res) => {
   try {
     const id = Number(req.params.id);

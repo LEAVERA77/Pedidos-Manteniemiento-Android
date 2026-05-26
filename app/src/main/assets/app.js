@@ -271,6 +271,13 @@ import {
 } from './modules/pedido-detalle-incremental.js';
 import { hydrateDetallePedido } from './modules/pedido-detalle-hydrate.js';
 import {
+    construirHtmlBloqueOpinionClienteDetalle,
+    actualizarHostOpinionClienteDetalleModal,
+    construirHtmlOpinionClientePrint,
+    setPedidoOpinionClienteUiDeps,
+    installPedidoOpinionDescargoUi,
+} from './modules/pedido-opinion-cliente-ui.js';
+import {
     initGnTenantAccesoTecnicoUnificado,
     clearGnTenantTechSession,
 } from './modules/gn-tenant-acceso-tecnico-unificado.js';
@@ -3141,6 +3148,8 @@ async function conectarNeon() {
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente TEXT`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_opinion_cliente TIMESTAMPTZ`);
                 await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_cliente_estrellas SMALLINT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_descargo_empresa TEXT`);
+                await sqlSimple(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS fecha_descargo_empresa TIMESTAMPTZ`);
                 await sqlSimple(
                     `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS opinion_banner_admin_descartado BOOLEAN NOT NULL DEFAULT FALSE`
                 );
@@ -3810,6 +3819,13 @@ const norm = p => ({
         const n = parseInt(p.opinion_cliente_estrellas, 10);
         return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
     })(),
+    odesc: (() => {
+        const v = p.opinion_descargo_empresa;
+        if (v == null || v === '') return null;
+        const s = String(v).trim();
+        return s || null;
+    })(),
+    fodesc: p.fecha_descargo_empresa || null,
     orc: String(p.origen_reclamo || '').trim().toLowerCase(),
     dex: !!(
         p.derivado_externo === true ||
@@ -5135,22 +5151,6 @@ function fmtInformeFecha(v) {
     }
 }
 
-function construirHtmlBloqueOpinionClienteDetalle(p, escDet) {
-    const opinTxtDet = p.opin != null && String(p.opin).trim() ? String(p.opin).trim() : '';
-    const estrellasDet = p.oes != null && p.oes >= 1 && p.oes <= 5 ? p.oes : null;
-    const lineaEstrellas =
-        estrellasDet != null
-            ? `<p style="font-size:.9rem;margin:0 0 .35rem;font-weight:600;color:var(--bm)">Valoración: ${'⭐'.repeat(estrellasDet)} <span style="color:var(--tm);font-weight:500">(${estrellasDet}/5)</span></p>`
-            : '';
-    if (estrellasDet == null && !opinTxtDet) return '';
-    return `<div class="ds" style="border-left:4px solid #0d9488;background:linear-gradient(90deg,rgba(13,148,136,.06),transparent)">
-            <h4>💬 Valoración del cliente (WhatsApp)</h4>
-            ${lineaEstrellas}
-            ${opinTxtDet ? `<div class="trb">${escDet(opinTxtDet)}</div>` : '<p style="font-size:.78rem;color:var(--tm);margin:0">Sin comentario de texto.</p>'}
-            ${p.fopin ? `<p style="font-size:.78rem;color:var(--tm);margin-top:.45rem">Registrada: ${escDet(fmtInformeFecha(p.fopin))}</p>` : ''}
-           </div>`;
-}
-
 function _gnDmTypingFocused() {
     const dm = document.getElementById('dm');
     const ae = document.activeElement;
@@ -5159,13 +5159,6 @@ function _gnDmTypingFocused() {
     if (!ae.closest('#dm')) return false;
     const t = ae.tagName;
     return t === 'TEXTAREA' || t === 'INPUT' || t === 'SELECT';
-}
-
-function actualizarHostOpinionClienteDetalleModal(p) {
-    const host = document.getElementById('dm-opinion-cliente-host');
-    if (!host) return;
-    const escDet = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    host.innerHTML = construirHtmlBloqueOpinionClienteDetalle(p, escDet);
 }
 
 function actualizarBarraHeaderSesion() {
@@ -8178,12 +8171,7 @@ async function imprimirPedidoAsync(p) {
             : `<h2>✍️ Firma del ${_labFirma}</h2><p style="font-size:9pt"><em>Sin firma registrada.</em></p>`)
         : '';
 
-    const opinPrint =
-        p.opin && String(p.opin).trim()
-            ? `<h2>💬 Observación del cliente (WhatsApp)</h2>
-            <p style="font-size:9pt;white-space:pre-wrap">${escHtmlPrint(String(p.opin).trim())}</p>
-            ${p.fopin ? `<p style="font-size:8pt;color:#64748b">Registrada: ${escHtmlPrint(fmtInformeFecha(p.fopin))}</p>` : ''}`
-            : '';
+    const opinPrint = construirHtmlOpinionClientePrint(p, escHtmlPrint);
 
     const contenidoCuerpo = `
             <h1>${escHtmlPrint(tituloPedidoDocumento(p))}</h1>
@@ -11271,7 +11259,7 @@ async function detalle(p, opts = {}) {
                 const pidNum = parseInt(p.id, 10);
                 if (!Number.isFinite(pidNum)) return;
                 const r = await sqlSimple(
-                    `SELECT opinion_cliente, opinion_cliente_estrellas, fecha_opinion_cliente FROM pedidos WHERE id=${esc(pidNum)} LIMIT 1`
+                    `SELECT opinion_cliente, opinion_cliente_estrellas, fecha_opinion_cliente, opinion_descargo_empresa, fecha_descargo_empresa FROM pedidos WHERE id=${esc(pidNum)} LIMIT 1`
                 );
                 const row = r.rows?.[0];
                 if (!row) return;
@@ -11295,6 +11283,20 @@ async function detalle(p, opts = {}) {
                 const fp = row.fecha_opinion_cliente;
                 if (fp && String(fp) !== String(cur.fopin || '')) {
                     cur.fopin = fp;
+                    changed = true;
+                }
+                const od = row.opinion_descargo_empresa;
+                const odescNew = od != null && String(od).trim() ? String(od).trim() : null;
+                if (String(odescNew || '') !== String(cur.odesc || '')) {
+                    cur.odesc = odescNew;
+                    changed = true;
+                }
+                const fd = row.fecha_descargo_empresa;
+                if (fd && String(fd) !== String(cur.fodesc || '')) {
+                    cur.fodesc = fd;
+                    changed = true;
+                } else if (!odescNew && cur.fodesc) {
+                    cur.fodesc = null;
                     changed = true;
                 }
                 if (changed) {
@@ -17375,6 +17377,17 @@ if ('serviceWorker' in navigator) {
             etiquetaFirmaPersona,
             getAppUser: () => app?.u,
         });
+        setPedidoOpinionClienteUiDeps({
+            esAdmin,
+            fmtInformeFecha,
+            apiUrl,
+            asegurarJwtApiRest,
+            puedeEnviarApiRestPedidos,
+            getApiToken,
+            toast,
+            getApp: () => app,
+        });
+        installPedidoOpinionDescargoUi();
         initAdminWizard({
             app,
             getApiToken,

@@ -78,6 +78,13 @@ export const norm = p => ({
         const n = parseInt(p.opinion_cliente_estrellas, 10);
         return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
     })(),
+    odesc: (() => {
+        const v = p.opinion_descargo_empresa;
+        if (v == null || v === '') return null;
+        const s = String(v).trim();
+        return s || null;
+    })(),
+    fodesc: p.fecha_descargo_empresa || null,
     orc: String(p.origen_reclamo || '').trim().toLowerCase(),
     dex: !!(
         p.derivado_externo === true ||
