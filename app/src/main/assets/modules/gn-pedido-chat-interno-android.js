@@ -390,10 +390,13 @@ function initMouiDragWhenReady() {
     }
 }
 
-/** Llamado desde poll de notificaciones móvil (app.js). */
+/** @deprecated Usar manejarNotificacionChatInternoPedido (pedido-chat-interno-notif-ui.js). */
 export function onNotificacionMovilChatInterno(pedidoId, titulo) {
     if (!esAndroidShell()) return;
     if (!/Mensaje en reclamo/i.test(String(titulo || ''))) return;
+    try {
+        if (typeof window.esAdmin === 'function' && window.esAdmin()) return;
+    } catch (_) {}
     const pid = parseInt(pedidoId, 10);
     if (!Number.isFinite(pid) || pid < 1) return;
     abrirPedidoChatInternoFloatAndroid(pid);

@@ -327,10 +327,12 @@ import {
     mountPedidoOperativaTop3UI,
     verificarGeocercaAntesIniciarPedido,
 } from './modules/pedido-operativa-top3-ui.js';
+import { installGnPedidoChatInternoAndroid } from './modules/gn-pedido-chat-interno-android.js';
 import {
-    installGnPedidoChatInternoAndroid,
-    onNotificacionMovilChatInterno,
-} from './modules/gn-pedido-chat-interno-android.js';
+    installPedidoChatInternoNotifUi,
+    manejarNotificacionChatInternoPedido,
+    esNotificacionChatInternoPedido,
+} from './modules/pedido-chat-interno-notif-ui.js';
 import {
     initPedidoFotosCampoAndroid,
     solicitarFotosCampoOpcional,
@@ -7983,6 +7985,20 @@ window.pollNotificacionesMovil = async function () {
             }
             const esNotifDerivacion =
                 /derivaci/i.test(t) || /derivaci/i.test(b) || /solicita derivar/i.test(b);
+            if (pid && esNotificacionChatInternoPedido(t)) {
+                try {
+                    manejarNotificacionChatInternoPedido(pid, t, b);
+                } catch (_) {}
+                if (tienePuente && !esAdm) {
+                    try {
+                        window.AndroidLocalNotify.show(String(row.id), t, b, pid);
+                    } catch (_) {}
+                }
+                if (_pollNotifMovilUsaColumnaLeida) {
+                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                }
+                continue;
+            }
             if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
@@ -7991,9 +8007,6 @@ window.pollNotificacionesMovil = async function () {
                     }
                     if (pid) {
                         await resolverFocoPedidoNotificacion(pid, { silent: true, scrollDerivacion: esNotifDerivacion });
-                        try {
-                            onNotificacionMovilChatInterno(pid, t);
-                        } catch (_) {}
                     }
                 } catch (_) {}
             } else if (esAdm) {
@@ -8007,9 +8020,6 @@ window.pollNotificacionesMovil = async function () {
                             silent: true,
                             scrollDerivacion: esNotifDerivacion,
                         });
-                        try {
-                            onNotificacionMovilChatInterno(pid, t);
-                        } catch (_) {}
                     }
                 } catch (_) {}
             }
@@ -17380,6 +17390,7 @@ if ('serviceWorker' in navigator) {
         });
         installPedidoOpinionDescargoUi();
         installGnPedidoChatInternoAndroid();
+        installPedidoChatInternoNotifUi();
         initAdminWizard({
             app,
             getApiToken,

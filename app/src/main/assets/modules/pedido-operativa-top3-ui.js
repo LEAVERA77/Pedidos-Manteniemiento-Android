@@ -27,6 +27,66 @@ function wrapEl() {
     return document.getElementById('gn-operativa-top3-wrap');
 }
 
+/** Tras abrir detalle desde toast de chat (admin). */
+export function enfocarSeccionChatInternoDetalle(pedidoId) {
+    const pid = String(pedidoId || '').trim();
+    const dm = document.getElementById('dm');
+    if (!dm?.classList.contains('active') || String(dm.dataset.detallePedidoId || '') !== pid) return;
+
+    const wrap = wrapEl();
+    if (wrap && !wrap.open) {
+        wrap.open = true;
+    }
+
+    const p = (() => {
+        try {
+            return window.app?.p?.find((x) => String(x.id) === pid) || null;
+        } catch (_) {
+            return null;
+        }
+    })();
+
+    if (p && wrap && wrap.open && hostEl()?.dataset?.gnOpReady !== '1') {
+        try {
+            const u = window.app?.u;
+            const esAdm = typeof window.esAdmin === 'function' && window.esAdmin();
+            const esTec =
+                typeof window.esTecnicoOSupervisor === 'function' && window.esTecnicoOSupervisor();
+            const ed =
+                esAdm ||
+                String(p.ui) === String(u?.id) ||
+                (esTec && p.tai != null && String(p.tai) === String(u?.id));
+            const toastFn = typeof window.toast === 'function' ? window.toast : () => {};
+            mountPedidoOperativaTop3UINow(p, { ed, esAdmin: esAdm, toast: toastFn });
+        } catch (_) {}
+    }
+
+    const target =
+        document.getElementById('gn-op-chat-input') ||
+        document.getElementById('gn-op-chat-msgs') ||
+        hostEl();
+    if (!target) return;
+
+    try {
+        if (typeof esAndroidShell === 'function' && esAndroidShell()) {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        } else {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } catch (_) {}
+
+    const inp = document.getElementById('gn-op-chat-input');
+    if (inp && !inp.disabled) {
+        try {
+            inp.focus({ preventScroll: true });
+        } catch (_) {
+            try {
+                inp.focus();
+            } catch (_) {}
+        }
+    }
+}
+
 function esAndroidShell() {
     try {
         return document.documentElement.classList.contains('gn-android-shell');

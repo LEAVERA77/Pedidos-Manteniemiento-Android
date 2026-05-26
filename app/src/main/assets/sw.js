@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v225';
-const SW_VERSION  = '1.8.54';
+const CACHE_SHELL = 'pmg-shell-v226';
+const SW_VERSION  = '1.8.55';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -57,6 +57,7 @@ function shellAssetUrls() {
     j('modules/gn-offline-shell-refresh.js'),
     j('modules/gn-android-shell-perf.js'),
     j('modules/gn-pedido-chat-interno-android.js'),
+    j('modules/pedido-chat-interno-notif-ui.js'),
     j('modules/pedido-operativa-top3-ui.js'),
     j('modules/gn-dm-modal-perf-android.js'),
     j('modules/pedido-nuevo-reverse-geo.js'),
