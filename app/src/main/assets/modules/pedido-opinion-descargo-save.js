@@ -131,6 +131,19 @@ async function reabrirPedidoNeonSiCorresponde(deps, pidNum, where, esc) {
              fecha_asignacion = NULL, fecha_cierre = NULL, usuario_cierre_id = NULL
              WHERE ${where}`
         );
+        try {
+            let delPending = `DELETE FROM cliente_opinion_pending WHERE pedido_id = ${esc(pidNum)}`;
+            if (typeof deps.neonPedidosTieneColumnaTenantId === 'function') {
+                const mt = await deps.neonPedidosTieneColumnaTenantId();
+                if (mt && typeof deps.tenantIdActual === 'function') {
+                    const tid = Number(deps.tenantIdActual());
+                    if (Number.isFinite(tid) && tid > 0) {
+                        delPending += ` AND tenant_id = ${esc(tid)}`;
+                    }
+                }
+            }
+            await deps.sqlSimple(delPending);
+        } catch (_) {}
         return {
             estado: 'Pendiente',
             avance: 0,

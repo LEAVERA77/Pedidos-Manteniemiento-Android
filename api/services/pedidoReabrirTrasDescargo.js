@@ -4,6 +4,7 @@
  */
 import { query } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
+import { clearPendingClienteOpinionPorPedido } from "./whatsappClienteOpinion.js";
 function esPedidoCerrado(estado) {
   return String(estado || "")
     .trim()
@@ -63,7 +64,15 @@ export async function reabrirPedidoOperativaTrasDescargoGuardado(pedidoId, tenan
     `UPDATE pedidos SET ${sets.join(", ")} WHERE ${where} RETURNING *`,
     bindUpd
   );
-  return r.rows?.[0] || null;
+  const out = r.rows?.[0] || null;
+  if (out) {
+    try {
+      await clearPendingClienteOpinionPorPedido(tid, id);
+    } catch (e) {
+      console.warn("[pedido-reabrir-descargo] clear opinion pending", e?.message || e);
+    }
+  }
+  return out;
 }
 
 /** ¿Al próximo cierre del técnico debe ofrecerse re-calificación (reemplaza la anterior)? */
@@ -73,14 +82,15 @@ export async function pedidoDebeReRatingAlCerrarTrasDescargo(pedidoId, tenantId)
   if (!Number.isFinite(id) || id < 1) return false;
   const hasT = await pedidosTableHasTenantIdColumn();
   const sql = hasT
-    ? `SELECT opinion_descargo_empresa, opinion_cliente, opinion_cliente_estrellas
+    ? `SELECT estado, opinion_descargo_empresa, opinion_cliente, opinion_cliente_estrellas
        FROM pedidos WHERE id = $1 AND tenant_id = $2 LIMIT 1`
-    : `SELECT opinion_descargo_empresa, opinion_cliente, opinion_cliente_estrellas
+    : `SELECT estado, opinion_descargo_empresa, opinion_cliente, opinion_cliente_estrellas
        FROM pedidos WHERE id = $1 LIMIT 1`;
   const bind = hasT ? [id, tid] : [id];
   const r = await query(sql, bind);
   const row = r.rows?.[0];
   if (!row) return false;
+  if (!esPedidoCerrado(row.estado)) return false;
   if (!String(row.opinion_descargo_empresa || "").trim()) return false;
   return pedidoTieneValoracionCliente(row);
 }

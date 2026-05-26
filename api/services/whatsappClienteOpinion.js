@@ -145,6 +145,22 @@ export async function clearPendingClienteOpinion(tenantId, phoneDigits) {
   }
 }
 
+/** Limpia encuesta pendiente por pedido (p. ej. al reabrir tras descargo, antes del nuevo cierre). */
+export async function clearPendingClienteOpinionPorPedido(tenantId, pedidoId) {
+  const pid = Number(pedidoId);
+  const tid = Number(tenantId);
+  if (!Number.isFinite(pid) || pid < 1 || !Number.isFinite(tid) || tid < 1) return;
+  try {
+    await ensureOpinionPendingTable();
+    await query(`DELETE FROM cliente_opinion_pending WHERE tenant_id = $1 AND pedido_id = $2`, [
+      tid,
+      pid,
+    ]);
+  } catch (e) {
+    console.error("[whatsappClienteOpinion] clearPendingPorPedido", e.message);
+  }
+}
+
 const AR_MOB = "54" + "9";
 
 function canonicalPhoneVariantsForLookup(phoneDigits) {
@@ -274,6 +290,12 @@ function esEscapeMenuOpinionPendiente(raw) {
 export async function tryConsumeClienteOpinionReply({ tenantId, phoneDigits, text, nombreEntidad }) {
   const raw = String(text || "").trim();
   if (!raw) return { handled: false };
+
+  try {
+    const { humanChatFindOpenSessionForPhone } = await import("./whatsappHumanChat.js");
+    const hc = await humanChatFindOpenSessionForPhone(tenantId, phoneDigits);
+    if (hc?.id) return { handled: false };
+  } catch (_) {}
 
   const low = normalizeLow(raw);
   const pend = await getPending(tenantId, phoneDigits);

@@ -2829,12 +2829,14 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
   const automatedBotOff = await isWhatsAppAutomatedBotDisabled();
   const ctx = await loadTenantBotContext(tid);
   const wpidBootstrap = phoneNumberId ? String(phoneNumberId).trim() : null;
+  let humanChatOpenId = null;
   try {
     const hcOpen = await humanChatFindOpenSessionForPhone(tid, phone);
     if (hcOpen?.id) {
+      humanChatOpenId = Number(hcOpen.id);
       sessions.set(sk, {
         step: "human_chat",
-        humanChatSessionId: Number(hcOpen.id),
+        humanChatSessionId: humanChatOpenId,
         tenantId: tid,
         tipoCliente: ctx?.tipo ?? null,
         contactName: contactName || null,
@@ -2844,22 +2846,34 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     }
   } catch (_) {}
 
-  try {
-    const opinionTry = await tryConsumeClienteOpinionReply({
-      tenantId: tid,
-      phoneDigits: phone,
-      text,
-      nombreEntidad: ctx?.nombre,
-    });
-    if (opinionTry.handled) {
-      sessions.delete(sk);
-      if (opinionTry.ack) {
-        await reply(phone, opinionTry.ack, tid, phoneNumberId);
+  if (humanChatOpenId) {
+    try {
+      if (await processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneNumberId })) {
+        return;
       }
-      return;
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] human_chat inbound (priority)", e?.message || e);
     }
-  } catch (e) {
-    console.error("[whatsapp-bot-meta] opinion reply", e.message);
+  }
+
+  if (!humanChatOpenId) {
+    try {
+      const opinionTry = await tryConsumeClienteOpinionReply({
+        tenantId: tid,
+        phoneDigits: phone,
+        text,
+        nombreEntidad: ctx?.nombre,
+      });
+      if (opinionTry.handled) {
+        sessions.delete(sk);
+        if (opinionTry.ack) {
+          await reply(phone, opinionTry.ack, tid, phoneNumberId);
+        }
+        return;
+      }
+    } catch (e) {
+      console.error("[whatsapp-bot-meta] opinion reply", e.message);
+    }
   }
 
   try {
