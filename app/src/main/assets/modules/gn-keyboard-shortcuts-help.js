@@ -5,6 +5,17 @@
 
 const MODAL_ID = 'gn-shortcuts-modal';
 
+function isAndroidShell() {
+    try {
+        return (
+            document.documentElement.classList.contains('gn-android-shell') ||
+            typeof window.AndroidConfig !== 'undefined'
+        );
+    } catch (_) {
+        return false;
+    }
+}
+
 const SHORTCUTS = [
     { keys: 'Ctrl + K', desc: 'Buscar pedido' },
     { keys: '?', desc: 'Esta ayuda' },
@@ -45,6 +56,7 @@ function ensureModal() {
 }
 
 export function abrirAyudaAtajos() {
+    if (isAndroidShell()) return;
     ensureModal();
     document.getElementById(MODAL_ID)?.classList.add('active');
 }
@@ -71,6 +83,13 @@ function isTypingTarget(el) {
 }
 
 function initGnKeyboardShortcutsHelp() {
+    if (isAndroidShell()) {
+        const mo = document.getElementById(MODAL_ID);
+        if (mo) mo.remove();
+        const btn = document.getElementById('btn-keyboard-shortcuts');
+        if (btn) btn.remove();
+        return;
+    }
     injectHelpButton();
     window.addEventListener('keydown', (e) => {
         if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
