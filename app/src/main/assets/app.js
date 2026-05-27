@@ -14825,6 +14825,9 @@ function adminTab(tab) {
     const sec = document.getElementById('admin-' + tab);
     if (sec) sec.classList.add('active');
     if (tab === 'estadisticas') {
+        try {
+            window.ensureEstadisticasAdminMounts?.();
+        } catch (_) {}
         void import('./modules/estadisticas-chart-plugins.js').then((m) => m.initGNChartPercentPlugins()).catch(() => {});
         cargarEstadisticas();
         try { if (typeof window._gnInitBotonAnalizarIA === 'function') window._gnInitBotonAnalizarIA(); } catch (_) {}
