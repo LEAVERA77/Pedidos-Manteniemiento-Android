@@ -5,6 +5,25 @@
 
 import { query } from "../db/neon.js";
 import { sendFcmToUsuario } from "./fcmPush.js";
+import { usuarioPermiteNotifMovil } from "./usuarioNotifPrefs.js";
+
+async function encolarNotificacionMovil(usuarioId, pedidoId, titulo, cuerpo, categoria) {
+  const uid = Number(usuarioId);
+  if (!Number.isFinite(uid) || uid < 1) return;
+  if (!(await ensureNotificacionesMovilTable())) return;
+  if (!(await usuarioPermiteNotifMovil(uid, categoria))) return;
+  const pid = pedidoId != null && Number.isFinite(Number(pedidoId)) ? Number(pedidoId) : null;
+  try {
+    await query(
+      `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
+       VALUES ($1, $2, $3, $4, FALSE)`,
+      [uid, pid, titulo, cuerpo]
+    );
+    void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
+  } catch (e) {
+    console.error("[notificacionesMovilEnqueue]", categoria, e.message);
+  }
+}
 
 let _tableChecked = false;
 let _hasTable = false;
@@ -43,16 +62,7 @@ export async function enqueueNotificacionPedidoCerradoParaTecnico({
   const np = String(numeroPedido || "").trim() || `#${pid}`;
   const titulo = "Pedido cerrado";
   const cuerpo = `El reclamo ${np} fue cerrado desde la central.`;
-  try {
-    await query(
-      `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-       VALUES ($1, $2, $3, $4, FALSE)`,
-      [tid, pid, titulo, cuerpo]
-    );
-    void sendFcmToUsuario(tid, { titulo, cuerpo, pedidoId: pid });
-  } catch (e) {
-    console.error("[notificacionesMovilEnqueue] cierre técnico", e.message);
-  }
+  await encolarNotificacionMovil(tid, pid, titulo, cuerpo, "cierre_pedido");
 }
 
 async function tenantColumnForUsuarios() {
@@ -89,12 +99,7 @@ export async function enqueueNotificacionChatInternoPedido({
     if (autorRol === "admin") {
       const tech = pedido.tecnico_asignado_id != null ? Number(pedido.tecnico_asignado_id) : null;
       if (Number.isFinite(tech) && tech >= 1 && tech !== autor) {
-        await query(
-          `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-           VALUES ($1, $2, $3, $4, FALSE)`,
-          [tech, pid, titulo, cuerpo]
-        );
-        void sendFcmToUsuario(tech, { titulo, cuerpo, pedidoId: pid });
+        await encolarNotificacionMovil(tech, pid, titulo, cuerpo, "chat_interno");
       }
       const colAdm = await tenantColumnForUsuarios();
       let admins;
@@ -114,12 +119,7 @@ export async function enqueueNotificacionChatInternoPedido({
       for (const row of admins || []) {
         const uid = Number(row.id);
         if (!Number.isFinite(uid) || uid < 1) continue;
-        await query(
-          `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-           VALUES ($1, $2, $3, $4, FALSE)`,
-          [uid, pid, titulo, cuerpo]
-        );
-        void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
+        await encolarNotificacionMovil(uid, pid, titulo, cuerpo, "chat_interno");
       }
       return;
     }
@@ -142,22 +142,12 @@ export async function enqueueNotificacionChatInternoPedido({
     for (const row of rows || []) {
       const uid = Number(row.id);
       if (!Number.isFinite(uid) || uid < 1) continue;
-      await query(
-        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-         VALUES ($1, $2, $3, $4, FALSE)`,
-        [uid, pid, titulo, cuerpo]
-      );
-      void sendFcmToUsuario(uid, { titulo, cuerpo, pedidoId: pid });
+      await encolarNotificacionMovil(uid, pid, titulo, cuerpo, "chat_interno");
     }
     const techAsig =
       pedido.tecnico_asignado_id != null ? Number(pedido.tecnico_asignado_id) : null;
     if (Number.isFinite(techAsig) && techAsig >= 1 && techAsig !== autor) {
-      await query(
-        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-         VALUES ($1, $2, $3, $4, FALSE)`,
-        [techAsig, pid, titulo, cuerpo]
-      );
-      void sendFcmToUsuario(techAsig, { titulo, cuerpo, pedidoId: pid });
+      await encolarNotificacionMovil(techAsig, pid, titulo, cuerpo, "chat_interno");
     }
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] chat interno", e.message);
@@ -215,11 +205,7 @@ export async function enqueueNotificacionSolicitudDerivacionParaAdmins({
     for (const row of rows) {
       const uid = Number(row.id);
       if (!Number.isFinite(uid) || uid < 1) continue;
-      await query(
-        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-         VALUES ($1, $2, $3, $4, FALSE)`,
-        [uid, pid, titulo, cuerpo]
-      );
+      await encolarNotificacionMovil(uid, pid, titulo, cuerpo, "derivacion");
     }
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] solicitud derivación admin", e.message);
@@ -269,11 +255,7 @@ export async function enqueueNotificacionWhatsappHumanChatTercero({
     for (const row of rows) {
       const uid = Number(row.id);
       if (!Number.isFinite(uid) || uid < 1) continue;
-      await query(
-        `INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida)
-         VALUES ($1, NULL, $2, $3, FALSE)`,
-        [uid, titulo, cuerpo]
-      );
+      await encolarNotificacionMovil(uid, null, titulo, cuerpo, "whatsapp");
     }
   } catch (e) {
     console.error("[notificacionesMovilEnqueue] human chat tercero", e.message);

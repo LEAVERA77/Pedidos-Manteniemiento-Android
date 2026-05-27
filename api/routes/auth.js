@@ -11,6 +11,7 @@ import {
   crearDesafioOtpAdmin,
   verificarDesafioOtpAdmin,
 } from "../services/adminLoginOtp.js";
+import { getUsuarioNotifPrefs, setUsuarioNotifPrefs } from "../services/usuarioNotifPrefs.js";
 
 const router = express.Router();
 
@@ -522,6 +523,24 @@ router.put("/cambiar-credenciales", authMiddleware, adminOnly, async (req, res) 
     return res.json({ ok: true, token, user: up.rows[0] });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar credenciales", detail: error.message });
+  }
+});
+
+router.get("/notif-prefs", authMiddleware, async (req, res) => {
+  try {
+    const prefs = await getUsuarioNotifPrefs(req.user.id);
+    return res.json({ prefs });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudieron leer preferencias", detail: error.message });
+  }
+});
+
+router.put("/notif-prefs", authMiddleware, async (req, res) => {
+  try {
+    const prefs = await setUsuarioNotifPrefs(req.user.id, req.body?.prefs || req.body);
+    return res.json({ ok: true, prefs });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudieron guardar preferencias", detail: error.message });
   }
 });
 

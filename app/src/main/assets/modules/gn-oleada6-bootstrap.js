@@ -6,3 +6,4 @@
 import './gn-session-post-login.js';
 import './gn-admin-sistema-salud-ui.js';
 import './gn-pedidos-sin-coords-modal.js';
+import './gn-notif-prefs-ui.js';
