@@ -483,6 +483,12 @@ body.gn-global-search-con-detalle #dm.mo.active {
 body.gn-global-search-con-detalle:has(#admin-panel.active) #dm.mo.active {
   z-index: 100155 !important;
 }
+body.gn-dm-frente-paneles #dm.mo.active {
+  z-index: 100155 !important;
+}
+body.gn-dm-frente-paneles #gn-global-search-modal.mo.active {
+  z-index: 100065 !important;
+}
 .gn-global-search-mc {
   max-width: min(28rem, 96vw);
   width: 100%;

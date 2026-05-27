@@ -6025,7 +6025,7 @@ function aplicarUIMapaPlataforma() {
     }
     try {
         if (esAndroidWebViewMapa()) {
-            setBp2PanelHidden(true);
+            setBp2PanelHidden(localStorage.getItem('pmg_bp2_hidden') === '1');
         } else {
             setBp2PanelHidden(localStorage.getItem('pmg_bp2_hidden') === '1');
         }

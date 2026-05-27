@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v250';
-const SW_VERSION  = '1.8.79';
+const CACHE_SHELL = 'pmg-shell-v251';
+const SW_VERSION  = '1.8.80';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -230,6 +230,9 @@ function shellAssetUrls() {
     j('modules/ia-analisis-pedidos-bp2.js'),
     j('modules/gn-bp2-fullscreen.js'),
     j('modules/gn-bp2-panel-android.js'),
+    j('modules/gn-bp2-android-float.js'),
+    j('modules/gn-bp2-lista-densa.js'),
+    j('modules/gn-dm-frente-paneles.js'),
     j('modules/suggest-change-creds.js'),
     j('modules/nuevo-pedido-desde-gps-mapa.js'),
     j('map.js'),

@@ -4,6 +4,11 @@
  * made by leavera77
  */
 
+import { scheduleClampBp2PanelIntoViewport } from './gn-panel-docks.js';
+import { installGnBp2AndroidFloat } from './gn-bp2-android-float.js';
+import { installGnBp2ListaDensaObserver } from './gn-bp2-lista-densa.js';
+import { installGnDmFrentePaneles } from './gn-dm-frente-paneles.js';
+
 function isAndroidShell() {
     try {
         return (
@@ -26,6 +31,9 @@ export function expandBp2Panel() {
     bp2.classList.add('gn-bp2-expanded');
     try {
         localStorage.setItem('pmg_bp2_hidden', '0');
+    } catch (_) {}
+    try {
+        scheduleClampBp2PanelIntoViewport();
     } catch (_) {}
 }
 
@@ -79,6 +87,15 @@ function onMainScreenVisible() {
 function initGnBp2PanelBehavior() {
     bindHeaderPedidosTrigger();
     patchDetalleMantieneBp2();
+    try {
+        installGnBp2AndroidFloat();
+    } catch (_) {}
+    try {
+        installGnBp2ListaDensaObserver();
+    } catch (_) {}
+    try {
+        installGnDmFrentePaneles();
+    } catch (_) {}
     document.addEventListener('gn-ms-visible', onMainScreenVisible);
     if (document.getElementById('ms')?.classList.contains('active')) {
         onMainScreenVisible();

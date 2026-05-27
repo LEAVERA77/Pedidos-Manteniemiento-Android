@@ -157,8 +157,58 @@ html.gn-android-shell .pl.pedidos-panel-scroll {
 html.gn-android-shell #ms #bp2.col:not(.bp2-fullhide) {
     transform: none !important;
 }
+html.gn-android-shell #ms #bp2.gn-bp2-positioned {
+    right: auto !important;
+    bottom: auto !important;
+    width: min(calc(100vw - 1rem), 26rem) !important;
+    max-width: calc(100vw - 1rem) !important;
+}
+html.gn-android-shell #ms #bp2.gn-bp2-positioned.bp2-fullhide {
+    transform: none !important;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
 html.gn-android-shell #ms #bp2:not(.bp2-fullhide) {
     max-height: min(62vh, calc(100dvh - 10.5rem));
+}
+html.gn-android-shell #ms #bp2.gn-bp2-positioned:not(.bp2-fullhide) {
+    max-height: min(58vh, calc(100dvh - 12rem));
+}
+html.gn-android-shell #bp2 .gn-bp2-drag-grip {
+    opacity: 0.55;
+    margin-right: 0.25rem;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl.pedidos-panel-scroll .pi,
+html.gn-android-shell #bp2.gn-bp2-lista-densa .pi {
+    padding: 0.18rem 0.38rem;
+    margin-bottom: 0.16rem;
+    border-radius: 0.45rem;
+    contain-intrinsic-size: 0 52px;
+}
+html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl .pi .pn,
+html.gn-android-shell #bp2.gn-bp2-lista-densa .pi .pn {
+    font-size: 0.74rem;
+}
+html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl .pi .pi2,
+html.gn-android-shell #bp2.gn-bp2-lista-densa .pi .pi2 {
+    font-size: 0.62rem;
+    margin-bottom: 0;
+    line-height: 1.15;
+}
+html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl .pi .pd,
+html.gn-android-shell #bp2.gn-bp2-lista-densa .pi .pd {
+    font-size: 0.65rem;
+    -webkit-line-clamp: 1;
+}
+html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl .pi .pt2,
+html.gn-android-shell #bp2.gn-bp2-lista-densa .pi .pt2 {
+    display: none;
+}
+html.gn-android-shell body.gn-dm-frente-paneles #ms #bp2:not(.bp2-fullhide) {
+    z-index: 100060 !important;
 }
 html.gn-android-shell #ms #bp2:not(.bp2-fullhide) .pl.pedidos-panel-scroll {
     flex: 1 1 auto;
