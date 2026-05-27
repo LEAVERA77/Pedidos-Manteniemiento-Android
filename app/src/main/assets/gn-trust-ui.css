@@ -711,3 +711,27 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   font-size: 0.72rem;
   color: #64748b;
 }
+.gn-app-version-banner {
+  position: fixed;
+  bottom: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100090;
+  max-width: min(24rem, 92vw);
+  padding: 0.5rem 0.65rem;
+  background: #1e3a8a;
+  color: #fff;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.gn-app-version-banner button {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
