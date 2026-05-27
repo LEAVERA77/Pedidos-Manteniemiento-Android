@@ -191,7 +191,6 @@ import {
 } from './modules/pedido-formulario-global-hooks.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 import { normalizarTrafoDistribuidorAlGuardarPedido } from './modules/pedido-nuevo-guardar-trafo-dist.js';
-import { validarPuedePonerPedidoEnEjecucion } from './modules/pedido-detalle-puede-ejecutar.js';
 
 try {
     mountPedidoFormularioEnDom();
@@ -199,7 +198,12 @@ try {
 import { installAdminSociosHistorialPedidos } from './modules/admin-socios-historial-pedidos.js';
 import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqueda-padron.js';
 import { installAdminSociosUsarEnPedido } from './modules/admin-socios-usar-en-pedido.js';
-import { tsResolucionPedidoMs, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
+import { GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
+import { filtrarListaPanelPedidosRender, contarCerradosPanelPedidos } from './modules/pedido-panel-lista-tecnico.js';
+import {
+    validarPuedeCerrarPedido,
+    validarPuedePonerPedidoEnEjecucion,
+} from './modules/pedido-detalle-puede-ejecutar.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
 import {
   gnMapThrottleOnDetallePedidoOpened,
@@ -8881,6 +8885,12 @@ function actualizarVistaPreviaFotos() {
 
 
 function abrirAvance(id) {
+    const p = app.p.find((x) => String(x.id) === String(id));
+    const gate = validarPuedeCerrarPedido(p, { esAdmin, esTecnicoOSupervisor });
+    if (!gate.ok) {
+        toast(gate.message || 'No podés cargar avance en este pedido.', 'warning');
+        return;
+    }
     resetFotosAvanceSesion();
     abrirModalAvancePedido(id, (pid) => app.p.find((x) => String(x.id) === String(pid)));
 }
@@ -10465,7 +10475,12 @@ async function enviarRegistroClientesAfectados(pedidoId, body) {
 async function abrirCierre(id) {
     const p = app.p.find(x => String(x.id) === String(id));
     if (!p) return;
-    
+    const gateCerrar = validarPuedeCerrarPedido(p, { esAdmin, esTecnicoOSupervisor });
+    if (!gateCerrar.ok) {
+        toast(gateCerrar.message || 'No podés cerrar este pedido.', 'warning');
+        return;
+    }
+
     app.cid = id;
     const lblFirma = document.getElementById('lbl-firma-cierre');
     const _fp = etiquetaFirmaPersona();
@@ -11432,12 +11447,15 @@ function render() {
     const soloDerivLista = esAdmin() && document.getElementById('chk-mostrar-derivados-fuera')?.checked;
     const pasaSoloAgrupadosToolbar = (p) =>
         !soloAgLista || (p.inci != null && Number(p.inci) > 0);
-    const cer = vis.filter((p) => {
-        if (!pasaSoloAgrupadosToolbar(p)) return false;
-        if (soloDesLista) return p.es === 'Desestimado';
-        if (soloDerivLista) return pedidoEsDerivadoFuera(p);
-        return p.es === 'Cerrado' || p.es === 'Derivado externo';
-    }).length;
+    const verTodosTec = esTecnicoOSupervisor() && tecnicoPideVerTodosPedidosEmpresa();
+    const cer = contarCerradosPanelPedidos(
+        vis,
+        esTecnicoOSupervisor(),
+        verTodosTec,
+        pasaSoloAgrupadosToolbar,
+        soloDesLista,
+        pedidoEsDerivadoFuera
+    );
     const asg = vis.filter((p) => pasaSoloAgrupadosToolbar(p) && (p.es === 'Asignado' || p.es === 'En ejecución')).length;
     const pen = vis.filter((p) => pasaSoloAgrupadosToolbar(p) && p.es === 'Pendiente').length;
     const pcEl = document.getElementById('pc');
@@ -11457,27 +11475,16 @@ function render() {
         }
     }
 
-    let fl = tecnicoPideVerTodosPedidosEmpresa()
-        ? [...vis]
-              .filter((p) => pasaSoloAgrupadosToolbar(p))
-              .sort((a, b) => {
-                  const ta = a.f ? new Date(a.f).getTime() : 0;
-                  const tb = b.f ? new Date(b.f).getTime() : 0;
-                  return tb - ta;
-              })
-        : vis.filter((p) => {
-              if (!pasaSoloAgrupadosToolbar(p)) return false;
-              if (app.tab === 'p') return p.es === 'Pendiente';
-              if (app.tab === 'a') return p.es === 'Asignado' || p.es === 'En ejecución';
-              if (soloDesLista) return p.es === 'Desestimado';
-              if (soloDerivLista) return pedidoEsDerivadoFuera(p);
-              return p.es === 'Cerrado' || p.es === 'Derivado externo';
-          });
-    if (!tecnicoPideVerTodosPedidosEmpresa() && app.tab === 'c' && Array.isArray(fl) && fl.length > GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS) {
-        fl = [...fl]
-            .sort((a, b) => tsResolucionPedidoMs(b) - tsResolucionPedidoMs(a))
-            .slice(0, GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS);
-    }
+    let fl = filtrarListaPanelPedidosRender({
+        vis,
+        tab: app.tab,
+        esTecnicoOSupervisor: esTecnicoOSupervisor(),
+        verTodosEmpresa: verTodosTec,
+        pasaSoloAgrupadosToolbar,
+        soloDesLista,
+        soloDerivLista,
+        pedidoEsDerivadoFuera,
+    });
     if ((app.tab === 'p' || app.tab === 'a') && typeof window._gnPriorizarPedidosBp2 === 'function') {
         fl = window._gnPriorizarPedidosBp2(fl);
     }

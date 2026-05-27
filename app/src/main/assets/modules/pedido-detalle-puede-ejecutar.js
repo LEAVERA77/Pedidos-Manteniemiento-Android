@@ -74,6 +74,41 @@ export function puedePonerPedidoEnEjecucionEnDetalle(p, ctx = {}) {
  * @param {{ esAdmin?: () => boolean, esTecnicoOSupervisor?: () => boolean }} [ctx]
  * @returns {{ ok: boolean, message?: string }}
  */
+/** Cerrar / avance: admin o técnico asignado (no por ser creador del pedido). */
+export function puedeCerrarPedidoEnDetalle(p, ctx = {}) {
+    if (!p) return false;
+    const es = String(p.es || '').trim();
+    if (es === 'Cerrado' || es === 'Derivado externo' || es === 'Desestimado') return false;
+    if (typeof ctx.esAdmin === 'function' && ctx.esAdmin()) return true;
+    if (typeof ctx.esTecnicoOSupervisor === 'function' && !ctx.esTecnicoOSupervisor()) return false;
+    const uid = usuarioIdSesionOperadorPedidos();
+    const tid = tecnicoAsignadoIdDesdePedido(p);
+    if (uid == null || tid == null) return false;
+    return tid === uid;
+}
+
+/**
+ * @param {object} p
+ * @param {{ esAdmin?: () => boolean, esTecnicoOSupervisor?: () => boolean }} [ctx]
+ * @returns {{ ok: boolean, message?: string }}
+ */
+export function validarPuedeCerrarPedido(p, ctx = {}) {
+    if (puedeCerrarPedidoEnDetalle(p, ctx)) return { ok: true };
+    if (typeof ctx.esAdmin === 'function' && ctx.esAdmin()) return { ok: true };
+    const tid = tecnicoAsignadoIdDesdePedido(p);
+    if (tid == null) {
+        return {
+            ok: false,
+            message:
+                'Este reclamo no está asignado a tu usuario. Solo podés cerrar pedidos asignados a vos.',
+        };
+    }
+    return {
+        ok: false,
+        message: 'Este reclamo está asignado a otro técnico. Solo podés cerrar pedidos asignados a vos.',
+    };
+}
+
 export function validarPuedePonerPedidoEnEjecucion(p, ctx = {}) {
     if (puedePonerPedidoEnEjecucionEnDetalle(p, ctx)) return { ok: true };
     const es = String(p?.es || '').trim();

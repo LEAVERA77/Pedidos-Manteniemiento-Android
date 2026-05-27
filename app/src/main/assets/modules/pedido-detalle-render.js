@@ -4,7 +4,10 @@
  */
 import { gnDetalleImgAttrs } from './pedido-detalle-html-helpers.js';
 import { gnNombreUsuarioDisplay } from './gn-usuario-nombres.js';
-import { puedePonerPedidoEnEjecucionEnDetalle } from './pedido-detalle-puede-ejecutar.js';
+import {
+    puedeCerrarPedidoEnDetalle,
+    puedePonerPedidoEnEjecucionEnDetalle,
+} from './pedido-detalle-puede-ejecutar.js';
 
 export function computeDetalleEstructuraSig(p, deps) {
     const fotosCount = Array.isArray(p.fotos) ? p.fotos.filter(Boolean).length : 0;
@@ -132,6 +135,7 @@ function buildDetalleRenderParts(p, deps) {
         String(p.ui) === String(app.u?.id) ||
         (esTecnicoOSupervisor() && p.tai != null && String(p.tai) === String(app.u?.id));
     const puedeEjecutar = puedePonerPedidoEnEjecucionEnDetalle(p, { esAdmin, esTecnicoOSupervisor });
+    const puedeCerrar = puedeCerrarPedidoEnDetalle(p, { esAdmin, esTecnicoOSupervisor });
     /** En WebView Android el usuario suele buscar la acción como «Ejecutar»; en web se mantiene el texto largo. */
     const lblPonerEnEjecucion =
         typeof esAndroidWebViewMapa === 'function' && esAndroidWebViewMapa() ? 'Ejecutar' : 'Poner en ejecución';
@@ -438,8 +442,8 @@ function buildDetalleRenderParts(p, deps) {
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && p.es !== 'Desestimado' && (p.tai == null) ? `<button type="button" class="ba2" style="background:#059669;color:#fff;border-color:#059669" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-user-hard-hat"></i> Asignar técnico</button>` : ''}
             ${esAdmin() && p.es !== 'Cerrado' && p.es !== 'Derivado externo' && p.es !== 'Desestimado' && (p.tai != null) ? `<button type="button" class="ba2" style="background:#ea580c;color:#fff;border-color:#ea580c" onclick="abrirModalAsignarTecnico('${p.id}')"><i class="fas fa-exchange-alt"></i> Reasignar técnico</button><button type="button" class="ba2" style="background:#64748b;color:#fff;border-color:#64748b" onclick="ejecutarDesasignarPedidoPorId('${p.id}', {confirmar:true})"><i class="fas fa-user-slash"></i> Desasignar</button>` : ''}
             ${puedeEjecutar && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 p2" title="Marca el pedido como En ejecución. Con teléfono válido y WhatsApp del tenant, el servidor puede avisar al cliente." onclick="_a('i','${p.id}')"><i class="fas fa-play"></i> ${lblPonerEnEjecucion}</button>` : ''}
-            ${ed && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
-            ${ed && p.es === 'En ejecución' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button type="button" class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
+            ${puedeCerrar && (p.es === 'Pendiente' || p.es === 'Asignado') && p.es !== 'Derivado externo' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button>` : ''}
+            ${puedeCerrar && p.es === 'En ejecución' ? `<button type="button" class="ba2 s2" onclick="_a('c','${p.id}')"><i class="fas fa-check"></i> Cerrar Pedido</button><button type="button" class="ba2 p2" onclick="_a('av','${p.id}')"><i class="fas fa-percent"></i> Cargar Avance (${p.av}%)</button>` : ''}
             <button type="button" class="ba2 imprimir" onclick="imprimirPedidoPorId('${p.id}')"><i class="fas fa-print"></i> Imprimir</button>
             <button type="button" class="ba2" onclick="_xl('${p.id}')"><i class="fas fa-file-excel"></i> Exportar</button>`;
 
