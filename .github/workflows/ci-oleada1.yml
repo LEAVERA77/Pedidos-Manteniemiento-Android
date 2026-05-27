@@ -1,0 +1,72 @@
+name: CI Oleada 1
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-oleada1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-test:
+    name: API (Vitest smoke)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  frontend-syntax:
+    name: Front assets (node --check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check JS en assets
+        run: node scripts/check-frontend-syntax.mjs
+
+  e2e-smoke:
+    name: E2E smoke (shell + status)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+      - name: Run smoke tests
+        working-directory: e2e
+        run: npm test
+
+  paridad-pedidos-mg:
+    name: Paridad assets vs Pedidos-MG
+    runs-on: ubuntu-latest
+    if: github.repository == 'LEAVERA77/Pedidos-Manteniemiento-Android'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout Pedidos-MG
+        uses: actions/checkout@v4
+        with:
+          repository: LEAVERA77/Pedidos-MG
+          path: Pedidos-MG
+          ref: main
+      - name: Verificar hashes
+        shell: pwsh
+        run: ./scripts/verify-paridad-pedidos-mg.ps1 -PedidosMgRoot ./Pedidos-MG

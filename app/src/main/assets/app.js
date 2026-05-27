@@ -208,6 +208,7 @@ import {
 
 import './modules/login-biometric-android.js';
 import './modules/login-android-arranque.js';
+import './modules/gn-window-dialogs-patch.js';
 import './modules/gn-lazy-optional-ui-bootstrap.js';
 import './modules/gn-trust-ui-bootstrap.js';
 import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
@@ -3659,24 +3660,6 @@ if (lfLogin) {
         });
     }
 }
-
-(function wrapConfirmGestorNova() {
-    if (typeof window === 'undefined' || window.__gnConfirmWrapped) return;
-    const orig = window.confirm.bind(window);
-    window.confirm = function (msg) {
-        return orig(gnDice(msg));
-    };
-    window.__gnConfirmWrapped = true;
-})();
-
-(function wrapAlertGestorNova() {
-    if (typeof window === 'undefined' || window.__gnAlertWrapped) return;
-    const orig = window.alert.bind(window);
-    window.alert = function (msg) {
-        orig(gnDice(msg));
-    };
-    window.__gnAlertWrapped = true;
-})();
 
 /**
  * Unifica valores legacy o anglosajones (`EnProgreso`, `en_progreso`, sin tilde) con los estados del panel.

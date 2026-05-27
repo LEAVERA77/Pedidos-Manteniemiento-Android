@@ -11,9 +11,16 @@ Guía única para desplegar, sincronizar repos y diagnosticar lo más frecuente.
 
 **Paridad:** tras cambios en front, ejecutar desde Nexxo:
 
-`.\scripts\sync-assets-to-pedidos-mg.ps1`
+```powershell
+.\scripts\sync-assets-to-pedidos-mg.ps1
+.\scripts\verify-paridad-pedidos-mg.ps1
+```
+
+Si `verify` reporta diferencias: volver a sync o `.\scripts\verify-paridad-pedidos-mg.ps1 -AutoFix` (solo en tu PC).
 
 Luego en el clon de Pedidos-MG: `git add`, `commit`, `push` (no subir `config.json`).
+
+**CI (oleada 1):** en push a `main`, GitHub Actions ejecuta tests API, sintaxis JS, E2E shell y (en repo Android) comparación con Pedidos-MG. Detalle: `docs/OLEADA1_CI_Y_PARIDAD.md`.
 
 Tras cambios en **API**, copiar `Nexxo/api/` → `Pedidos-MG/api/` (o viceversa según dónde editaste) y subir **un** commit coherente en el repo que despliega Render.
 

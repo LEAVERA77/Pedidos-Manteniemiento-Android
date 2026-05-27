@@ -34,4 +34,11 @@ describe("API smoke", () => {
     const res = await request(app).get("/health").set("X-Request-Id", id).expect(200);
     expect(res.headers["x-request-id"]).toBe(id);
   });
+
+  it("GET /api/health/deploy expone metadatos de despliegue", async () => {
+    const app = createHttpApp();
+    const res = await request(app).get("/api/health/deploy").expect(200);
+    expect(res.body.service).toBe("pedidosmg-api");
+    expect(res.body).toHaveProperty("node");
+  });
 });
