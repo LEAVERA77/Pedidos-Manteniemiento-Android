@@ -31,6 +31,16 @@ export async function cargarSetupChecklistAdmin({ apiUrl, getApiToken }) {
         if (!r.ok) throw new Error(data.error || r.statusText);
         const items = data.items || [];
         const res = data.resumen || {};
+        try {
+            void fetch(apiUrl('/api/admin/setup-checklist/event'), {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${tok}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ evento: 'vista_checklist', porcentaje: res.porcentaje ?? 0 }),
+            });
+        } catch (_) {}
         host.innerHTML =
             `<div class="gn-setup-checklist-card">
 <h4 style="margin:0 0 .5rem"><i class="fas fa-clipboard-check"></i> Configuración del tenant (${esc(res.porcentaje ?? 0)}%)</h4>

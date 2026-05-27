@@ -8,7 +8,7 @@
 import express from "express";
 import { query } from "../db/neon.js";
 import { adminOnly } from "../middleware/auth.js";
-import { listOperacionAudit } from "../services/operacionAuditLog.js";
+import { listOperacionAudit, logOperacionAudit } from "../services/operacionAuditLog.js";
 import { buildAdminSetupChecklist } from "../services/adminSetupChecklist.js";
 import { calcularGeoCalidadPedidos } from "../services/geoCalidadMetricas.js";
 import { buildAdminSistemaSalud } from "../services/adminSistemaSalud.js";
@@ -305,6 +305,23 @@ router.get("/setup-checklist", adminOnly, async (req, res) => {
       error: "No se pudo obtener checklist",
       detail: err?.message || String(err),
     });
+  }
+});
+
+router.post("/setup-checklist/event", adminOnly, async (req, res) => {
+  try {
+    const evento = String(req.body?.evento || req.body?.event || "").trim().slice(0, 64);
+    if (!evento) return res.status(400).json({ error: "evento requerido" });
+    await logOperacionAudit({
+      tenantId: req.tenantId,
+      usuarioId: req.user?.id,
+      accion: "setup_checklist",
+      detalle: { evento, porcentaje: req.body?.porcentaje ?? null },
+      req,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: "No se pudo registrar evento", detail: err?.message || String(err) });
   }
 });
 
