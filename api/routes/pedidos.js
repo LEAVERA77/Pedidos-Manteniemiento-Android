@@ -38,6 +38,7 @@ import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../se
 import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
 import { allocarSiguienteNumeroPedido } from "../services/pedidoContador.js";
 import { logOperacionAudit } from "../services/operacionAuditLog.js";
+import { ejecutarBuscarPedidosGlobal } from "../services/pedidosBuscarGlobal.js";
 import {
   derivacionReclamosDesdeConfig,
   resolverContactoDerivacion,
@@ -734,40 +735,8 @@ router.get("/buscar-global", async (req, res) => {
       return res.status(400).json({ error: "Ingrese al menos 2 caracteres" });
     }
     const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 50);
-    const like = `%${q.replace(/[%_\\]/g, "")}%`;
-    const params = [like];
-    const hasTb = await pedidosTableHasTenantIdColumn();
-    let tsql = "";
-    if (hasTb) {
-      params.push(req.tenantId);
-      tsql = ` AND tenant_id = $${params.length}`;
-    }
-    const bt = await pushPedidoBusinessFilter(req, params);
-    const numQ = /^\d+$/.test(q) ? Number(q) : null;
-    const orParts = [
-      `cliente_nombre ILIKE $1`,
-      `COALESCE(cliente, '') ILIKE $1`,
-      `cliente_direccion ILIKE $1`,
-      `COALESCE(nis::text, '') ILIKE $1`,
-      `COALESCE(medidor::text, '') ILIKE $1`,
-      `COALESCE(nis_medidor::text, '') ILIKE $1`,
-      `COALESCE(telefono_contacto::text, '') ILIKE $1`,
-      `COALESCE(numero_pedido::text, '') ILIKE $1`,
-    ];
-    if (numQ != null) {
-      params.push(numQ);
-      orParts.push(`id = $${params.length}`);
-    }
-    const r = await query(
-      `SELECT id, numero_pedido, estado, nis, medidor, cliente_nombre, cliente_direccion,
-              telefono_contacto, fecha_creacion, lat, lng
-       FROM pedidos
-       WHERE (${orParts.join(" OR ")})${tsql}${bt}
-       ORDER BY fecha_creacion DESC
-       LIMIT ${limit}`,
-      params
-    );
-    return res.json({ resultados: r.rows || [], q });
+    const payload = await ejecutarBuscarPedidosGlobal(req, { q, limit });
+    return res.json(payload);
   } catch (error) {
     return res.status(500).json({ error: "Error en búsqueda global", detail: error.message });
   }

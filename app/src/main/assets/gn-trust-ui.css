@@ -473,6 +473,16 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
 .gn-global-search-modal.mo.active {
   z-index: 100150 !important;
 }
+/* Detalle abierto desde Ctrl+K: búsqueda sigue activa detrás; #dm al frente */
+body.gn-global-search-con-detalle #gn-global-search-modal.mo.active {
+  z-index: 100065 !important;
+}
+body.gn-global-search-con-detalle #dm.mo.active {
+  z-index: 100155 !important;
+}
+body.gn-global-search-con-detalle:has(#admin-panel.active) #dm.mo.active {
+  z-index: 100155 !important;
+}
 .gn-global-search-mc {
   max-width: min(28rem, 96vw);
   width: 100%;
@@ -520,6 +530,17 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
 .gn-global-search-row:hover {
   background: #eff6ff;
   border-color: #93c5fd;
+}
+.gn-global-search-row--active {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+.gn-global-search-ia-hint {
+  font-size: 0.7rem;
+  color: #6366f1;
+  margin: 0 0 0.35rem;
+  line-height: 1.35;
 }
 .gn-global-search-row-t {
   font-size: 0.82rem;

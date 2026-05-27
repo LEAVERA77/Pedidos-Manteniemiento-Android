@@ -1,12 +1,20 @@
 /**
- * Búsqueda global de pedidos (Ctrl+K) — oleada 3.
+ * Búsqueda global de pedidos (Ctrl+K) — ILIKE + Levenshtein + Groq (API).
  * made by leavera77
  */
 
 import { abrirDetallePedidoPorId } from './gn-abrir-detalle-pedido.js';
+import {
+    busquedaGlobalEstaAbierta,
+    marcarBusquedaGlobalConDetalle,
+    installGnGlobalSearchDetalleStack,
+} from './gn-global-search-detalle-stack.js';
+import { gnForceModalZFront } from './gn-modal-z-index-stack.js';
 
 const MODAL_ID = 'gn-global-search-modal';
 let _debounce = null;
+/** @type {string | null} */
+let _ultimoPidAbierto = null;
 
 function esc(t) {
     return String(t == null ? '' : t)
@@ -33,6 +41,14 @@ function isTypingTarget(el) {
     return type !== 'checkbox' && type !== 'radio' && type !== 'button';
 }
 
+function marcarFilaSeleccionada(pid) {
+    const host = document.getElementById('gn-global-search-results');
+    if (!host) return;
+    host.querySelectorAll('.gn-global-search-row').forEach((btn) => {
+        btn.classList.toggle('gn-global-search-row--active', btn.getAttribute('data-pid') === String(pid));
+    });
+}
+
 function ensureModal() {
     if (document.getElementById(MODAL_ID)) return;
     const mo = document.createElement('div');
@@ -46,7 +62,8 @@ function ensureModal() {
   </div>
   <div class="mb" style="padding:.75rem 1rem 1rem">
     <input type="search" id="gn-global-search-input" class="gn-global-search-input" placeholder="Nº, NIS, medidor, teléfono, nombre o dirección…" autocomplete="off" />
-    <p class="gn-global-search-hint">Mínimo 2 caracteres · atajo <kbd>Ctrl</kbd>+<kbd>K</kbd></p>
+    <p class="gn-global-search-hint">Mínimo 2 caracteres · tolera errores de tipeo · atajo <kbd>Ctrl</kbd>+<kbd>K</kbd></p>
+    <p id="gn-global-search-ia-hint" class="gn-global-search-ia-hint" hidden></p>
     <div id="gn-global-search-results" class="gn-global-search-results" role="listbox"></div>
   </div>
 </div>`;
@@ -78,8 +95,13 @@ function ensureModal() {
 async function abrirPedidoDesdeFila(pidAttr) {
     const pid = Number(pidAttr);
     if (!Number.isFinite(pid)) return;
-    cerrarBusquedaGlobal();
+    _ultimoPidAbierto = String(pid);
+    marcarFilaSeleccionada(_ultimoPidAbierto);
+    if (busquedaGlobalEstaAbierta()) marcarBusquedaGlobalConDetalle();
     await abrirDetallePedidoPorId(pid);
+    try {
+        gnForceModalZFront(document.getElementById('dm'));
+    } catch (_) {}
 }
 
 export function abrirBusquedaGlobal() {
@@ -90,20 +112,40 @@ export function abrirBusquedaGlobal() {
     }
     ensureModal();
     injectSearchButton();
+    installGnGlobalSearchDetalleStack();
     const mo = document.getElementById(MODAL_ID);
     if (!mo) return;
     mo.classList.add('active');
     const inp = document.getElementById('gn-global-search-input');
     if (inp) {
-        inp.value = '';
+        if (!inp.value.trim()) inp.value = '';
         setTimeout(() => inp.focus(), 50);
     }
     const res = document.getElementById('gn-global-search-results');
     if (res) res.innerHTML = '<p class="gn-global-search-empty">Escribí para buscar…</p>';
+    const ia = document.getElementById('gn-global-search-ia-hint');
+    if (ia) ia.hidden = true;
 }
 
 export function cerrarBusquedaGlobal() {
     document.getElementById(MODAL_ID)?.classList.remove('active');
+    _ultimoPidAbierto = null;
+    try {
+        document.body.classList.remove('gn-global-search-con-detalle');
+    } catch (_) {}
+}
+
+function pintarSugerenciaIa(texto) {
+    const el = document.getElementById('gn-global-search-ia-hint');
+    if (!el) return;
+    const t = String(texto || '').trim();
+    if (!t) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+    }
+    el.hidden = false;
+    el.innerHTML = `<i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> ${esc(t)}`;
 }
 
 async function ejecutarBusquedaGlobal() {
@@ -112,19 +154,25 @@ async function ejecutarBusquedaGlobal() {
     if (!host) return;
     if (q.length < 2) {
         host.innerHTML = '<p class="gn-global-search-empty">Escribí al menos 2 caracteres</p>';
+        pintarSugerenciaIa('');
         return;
     }
     host.innerHTML = '<p class="gn-global-search-empty"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</p>';
+    pintarSugerenciaIa('');
     try {
         if (typeof window.asegurarJwtApiRest === 'function') {
             await window.asegurarJwtApiRest();
         }
-        const r = await fetch(apiUrl(`/api/pedidos/buscar-global?q=${encodeURIComponent(q)}&limit=30`), {
-            headers: { Authorization: `Bearer ${getTok()}` },
-            cache: 'no-store',
-        });
+        const r = await fetch(
+            apiUrl(`/api/pedidos/buscar-global?q=${encodeURIComponent(q)}&limit=30`),
+            {
+                headers: { Authorization: `Bearer ${getTok()}` },
+                cache: 'no-store',
+            }
+        );
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.error || data.detail || r.statusText);
+        pintarSugerenciaIa(data.sugerencia_ia || '');
         const rows = data.resultados || [];
         if (!rows.length) {
             host.innerHTML = '<p class="gn-global-search-empty">Sin resultados</p>';
@@ -139,7 +187,11 @@ async function ejecutarBusquedaGlobal() {
                         : `#${id}`;
                 const sub = [p.nis, p.medidor, p.telefono_contacto].filter(Boolean).join(' · ');
                 const nom = p.cliente_nombre || p.cliente || 'Sin nombre';
-                return `<button type="button" class="gn-global-search-row" data-pid="${esc(id)}" role="option">
+                const active =
+                    _ultimoPidAbierto != null && String(_ultimoPidAbierto) === String(id)
+                        ? ' gn-global-search-row--active'
+                        : '';
+                return `<button type="button" class="gn-global-search-row${active}" data-pid="${esc(id)}" role="option">
   <span class="gn-global-search-row-t">${esc(num)} · ${esc(p.estado || '—')}</span>
   <span class="gn-global-search-row-s">${esc(nom)}</span>
   <span class="gn-global-search-row-m">${esc(p.cliente_direccion || '')}${sub ? ` · ${esc(sub)}` : ''}</span>
@@ -165,7 +217,10 @@ function injectSearchButton() {
     btn.title = 'Buscar pedido (Ctrl+K)';
     btn.innerHTML = '<i class="fas fa-search" aria-hidden="true"></i>';
     btn.addEventListener('click', () => abrirBusquedaGlobal());
-    const ref = document.getElementById('btn-keyboard-shortcuts') || document.getElementById('btn-dashboard-gerencia') || document.getElementById('btn-admin');
+    const ref =
+        document.getElementById('btn-keyboard-shortcuts') ||
+        document.getElementById('btn-dashboard-gerencia') ||
+        document.getElementById('btn-admin');
     if (ref) slot.insertBefore(btn, ref);
     else slot.prepend(btn);
 }
@@ -181,9 +236,11 @@ function onGlobalShortcut(e) {
 
 function initGnGlobalSearch() {
     injectSearchButton();
+    installGnGlobalSearchDetalleStack();
     window.addEventListener('keydown', onGlobalShortcut, true);
     document.addEventListener('gn-ms-visible', injectSearchButton);
     window.abrirBusquedaGlobal = abrirBusquedaGlobal;
+    window.cerrarBusquedaGlobal = cerrarBusquedaGlobal;
 }
 
 if (typeof document !== 'undefined') {
