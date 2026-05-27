@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { filasTiposTrabajoParaGraficoEstadisticas } from './estadisticas-desestimados.js';
+
 /**
  * @param {object} p
  * @param {(s: unknown) => string} p.scap
@@ -83,11 +85,12 @@ export function pintarCaptionsGraficosEstadisticasAdmin(p) {
                 'Barras más cortas = cierre más rápido. Requiere columna <code>barrio</code> en pedidos.';
         } else capBT.textContent = '';
     }
-    const totTip = (rTipos.rows || []).reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
+    const tiposCaptionRows = filasTiposTrabajoParaGraficoEstadisticas(rTipos.rows || []);
+    const totTip = tiposCaptionRows.reduce((s, r) => s + parseInt(r.n || 0, 10), 0);
     const capT = document.getElementById('chart-cap-tipos');
     if (capT) {
         if (totTip) {
-            const lines = rTipos.rows
+            const lines = tiposCaptionRows
                 .map((r) => {
                     const n = parseInt(r.n || 0, 10);
                     return `${scap(r.tipo)} <strong>${pctOf(n, totTip)}%</strong> (${n})`;
