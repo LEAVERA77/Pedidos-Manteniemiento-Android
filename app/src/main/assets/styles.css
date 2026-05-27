@@ -463,6 +463,21 @@ html.gn-android-webview #mc{
 #mc .leaflet-container{border-radius:12px;border:1px solid var(--bo);box-shadow:var(--shadow-card);overflow:hidden}
 .bp2{position:absolute;bottom:0;left:0;right:0;background:var(--card,#fff);border:1px solid var(--bo);border-bottom:none;border-radius:12px 12px 0 0;box-shadow:var(--shadow-card),0 -4px 20px rgba(15,23,42,.08);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:1000;max-height:72vh;display:flex;flex-direction:column;min-height:0}
 .bp2.col{transform:translateY(calc(100% - 4.5rem))}
+/* Mapa (#ms): barra Pedidos despliega lista; solo .bp2-fullhide oculta (gn-bp2-panel-android.js). */
+#ms #bp2.col:not(.bp2-fullhide){
+  transform:none!important;
+}
+#ms #bp2:not(.bp2-fullhide){
+  max-height:min(68vh,calc(100vh - 8rem));
+}
+#ms #bp2:not(.bp2-fullhide) .pl.pedidos-panel-scroll{
+  flex:1 1 auto;
+  min-height:10rem;
+  max-height:min(58vh,calc(100vh - 12rem));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
 .ph{padding:.6rem 1rem .4rem;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;flex-shrink:0}
 .hb{width:44px;height:4px;background:#cbd5e1;border-radius:10px;margin-bottom:.2rem}
 .hl{font-size:.75rem;color:var(--tl);font-weight:500;letter-spacing:.05em}

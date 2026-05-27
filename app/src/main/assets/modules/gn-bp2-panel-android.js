@@ -1,5 +1,5 @@
 /**
- * Panel #bp2 en Android: tocar «Pedidos» siempre despliega; solo el ojo oculta.
+ * Panel #bp2 (mapa / admin web y APK): tocar «Pedidos» siempre despliega; solo el ojo oculta.
  * Lista con scroll; detalle #dm al frente sin cerrar el panel.
  * made by leavera77
  */
@@ -15,7 +15,7 @@ function isAndroidShell() {
     }
 }
 
-/** Muestra y despliega el panel de pedidos (no colapsa con .col en APK). */
+/** Muestra y despliega el panel de pedidos (la clase .col ya no pliega la lista en #ms). */
 export function expandBp2Panel() {
     const bp2 = document.getElementById('bp2');
     if (!bp2) return;
@@ -23,7 +23,7 @@ export function expandBp2Panel() {
         window.setBp2PanelHidden(false);
     }
     bp2.classList.remove('col');
-    bp2.classList.add('gn-bp2-android-open');
+    bp2.classList.add('gn-bp2-expanded');
     try {
         localStorage.setItem('pmg_bp2_hidden', '0');
     } catch (_) {}
@@ -33,28 +33,21 @@ function bindHeaderPedidosTrigger() {
     const trigger = document.querySelector('#ph .gn-bp2-plegar-trigger');
     if (!trigger || trigger.dataset.gnBp2HdrBound === '1') return;
     trigger.dataset.gnBp2HdrBound = '1';
+    trigger.title = 'Mostrar lista de pedidos (el ícono del ojo oculta el panel)';
     const onTap = (e) => {
         if (e.target.closest('button')) return;
         if (window.__bp2DragJustEnded) return;
         e.preventDefault();
         e.stopPropagation();
-        if (isAndroidShell()) {
-            expandBp2Panel();
-        } else {
-            document.getElementById('bp2')?.classList.toggle('col');
-        }
+        expandBp2Panel();
     };
-    if (isAndroidShell()) {
-        trigger.title = 'Mostrar lista de pedidos';
-    }
     trigger.addEventListener('click', onTap);
     trigger.addEventListener(
         'keydown',
         (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                if (isAndroidShell()) expandBp2Panel();
-                else document.getElementById('bp2')?.classList.toggle('col');
+                expandBp2Panel();
             }
         },
         false
@@ -63,12 +56,12 @@ function bindHeaderPedidosTrigger() {
 
 function patchDetalleMantieneBp2() {
     const orig = window.detalle;
-    if (!orig || orig.__gnBp2AndroidKeep) return;
+    if (!orig || orig.__gnBp2KeepOpen) return;
     async function wrapped(p, opts) {
         expandBp2Panel();
         return orig.call(window, p, opts);
     }
-    wrapped.__gnBp2AndroidKeep = true;
+    wrapped.__gnBp2KeepOpen = true;
     window.detalle = wrapped;
 }
 
@@ -81,7 +74,6 @@ function onMainScreenVisible() {
 
 function initGnBp2PanelBehavior() {
     bindHeaderPedidosTrigger();
-    if (!isAndroidShell()) return;
     patchDetalleMantieneBp2();
     document.addEventListener('gn-ms-visible', onMainScreenVisible);
     if (document.getElementById('ms')?.classList.contains('active')) {
