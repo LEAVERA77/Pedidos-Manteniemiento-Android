@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { wireExportAuditoriaButton } from './gn-export-audit-csv.js';
+
 const esc = (t) =>
     String(t == null ? '' : t)
         .replace(/&/g, '&amp;')
@@ -78,6 +80,7 @@ export async function cargarOperacionAuditEnEstadisticas({ apiUrl, getApiToken }
                 })
                 .join('') +
             '</tbody></table>';
+        wireExportAuditoriaButton(host);
     } catch (e) {
         host.innerHTML = `<p style="font-size:.8rem;color:var(--tl)">Auditoría: ${esc(e.message || 'no disponible')}</p>`;
         host.style.display = 'block';

@@ -562,3 +562,32 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   border-radius: 999px;
   margin-left: 0.35rem;
 }
+
+/* —— Oleada 4: checklist setup —— */
+.gn-setup-checklist-card {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+  margin-bottom: 0.75rem;
+}
+.gn-setup-checklist-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}
+.gn-setup-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.28rem 0;
+  color: #64748b;
+}
+.gn-setup-checklist-item--ok {
+  color: #15803d;
+}
+.gn-setup-checklist-item i {
+  margin-top: 0.12rem;
+  flex-shrink: 0;
+}

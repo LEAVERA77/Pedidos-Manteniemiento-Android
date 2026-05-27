@@ -137,8 +137,47 @@ export function refreshPasswordVisibilityToggles(root = document) {
   scope.querySelectorAll('input[type="password"]').forEach((el) => attachPasswordToggle(el));
 }
 
+function wireDynamicRefresh() {
+  document.addEventListener(
+    'click',
+    (e) => {
+      const tab = e.target?.closest?.('.admin-tab');
+      const onclick = tab?.getAttribute?.('onclick') || '';
+      if (onclick.includes("adminTab('contrasena')")) {
+        setTimeout(() => {
+          refreshPasswordVisibilityToggles(document.getElementById('admin-contrasena') || document);
+        }, 0);
+      }
+    },
+    true
+  );
+
+  const micuenta = document.getElementById('modal-mi-cuenta');
+  if (micuenta && typeof MutationObserver !== 'undefined') {
+    const mo = new MutationObserver(() => {
+      if (micuenta.classList.contains('active')) {
+        refreshPasswordVisibilityToggles(micuenta);
+      }
+    });
+    mo.observe(micuenta, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  const adminPanel = document.getElementById('admin-panel');
+  if (adminPanel && typeof MutationObserver !== 'undefined') {
+    const mo2 = new MutationObserver(() => {
+      if (!adminPanel.classList.contains('active')) return;
+      const sec = document.getElementById('admin-contrasena');
+      if (sec?.classList.contains('active')) {
+        refreshPasswordVisibilityToggles(sec);
+      }
+    });
+    mo2.observe(adminPanel, { attributes: true, attributeFilter: ['class'], subtree: true });
+  }
+}
+
 function boot() {
   initPasswordVisibilityToggles();
+  wireDynamicRefresh();
 }
 
 if (typeof document !== 'undefined') {

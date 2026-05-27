@@ -9,6 +9,7 @@ import express from "express";
 import { query } from "../db/neon.js";
 import { adminOnly } from "../middleware/auth.js";
 import { listOperacionAudit } from "../services/operacionAuditLog.js";
+import { buildAdminSetupChecklist } from "../services/adminSetupChecklist.js";
 
 const router = express.Router();
 
@@ -217,6 +218,23 @@ router.post("/socios-catalogo/:id/marcar-sospechoso", adminOnly, async (req, res
   } catch (err) {
     console.error("[admin] marcar-sospechoso:", err);
     return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * GET /api/admin/setup-checklist
+ * Estado de configuración del tenant (onboarding).
+ */
+router.get("/setup-checklist", adminOnly, async (req, res) => {
+  try {
+    const data = await buildAdminSetupChecklist(req);
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] setup-checklist:", err);
+    return res.status(500).json({
+      error: "No se pudo obtener checklist",
+      detail: err?.message || String(err),
+    });
   }
 });
 

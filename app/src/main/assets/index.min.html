@@ -1170,9 +1170,9 @@
         <div style="margin-bottom:.75rem"><label>Usuario (login)</label><input id="pw-email-nuevo" type="text" maxlength="254" autocomplete="username"></div>
         <div style="margin-bottom:.75rem"><label>Nombre visible</label><input id="pw-nombre-nuevo" type="text" maxlength="120" autocomplete="name"></div>
         <p style="font-size:.72rem;color:var(--tl);margin:-.25rem 0 .75rem;line-height:1.35">Requiere <strong>contraseña actual</strong> y sesión con el servidor (token API). Si cambiás <strong>usuario</strong> o <strong>contraseña</strong>, al guardar se cierra la sesión: volvé a ingresar con los datos nuevos.</p>
-        <div style="margin-bottom:.75rem"><label>Contraseña actual</label><input id="pw-actual" type="password" autocomplete="current-password"></div>
-        <div style="margin-bottom:.75rem"><label>Nueva contraseña</label><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás usuario o nombre"></div>
-        <div style="margin-bottom:.75rem"><label>Confirmar nueva</label><input id="pw-confirmar" type="password" autocomplete="new-password"></div>
+        <div class="fg gn-pw-field-block" style="margin-bottom:.75rem;padding:0"><label for="pw-actual">Contraseña actual</label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="pw-actual" type="password" autocomplete="current-password"></div></div>
+        <div class="fg gn-pw-field-block" style="margin-bottom:.75rem;padding:0"><label for="pw-nueva">Nueva contraseña</label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="pw-nueva" type="password" autocomplete="new-password" placeholder="Opcional si solo cambiás usuario o nombre"></div></div>
+        <div class="fg gn-pw-field-block" style="margin-bottom:.75rem;padding:0"><label for="pw-confirmar">Confirmar nueva</label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="pw-confirmar" type="password" autocomplete="new-password"></div></div>
         <button class="bp" style="max-width:200px" onclick="cambiarContrasena()"><i class="fas fa-save"></i> Guardar</button>
         <div id="pw-msg" style="margin-top:.5rem;font-size:.85rem"></div>
       </div>
@@ -1468,9 +1468,9 @@
       <p style="font-size:.85rem;color:var(--tm);margin-bottom:.85rem">Cambios con validación de seguridad. El <strong>usuario</strong> es el nombre con el que iniciás sesión; el correo solo se usa en recuperación de contraseña. Requiere conexión al servidor (no disponible en modo offline).</p>
       <div class="fg" style="padding:0"><label>Nombre visible</label><input id="micuenta-nombre" type="text" autocomplete="name"></div>
       <div class="fg" style="padding:0;margin-top:.5rem"><label>Usuario (login)</label><input id="micuenta-email" type="text" autocomplete="username" autocapitalize="none"></div>
-      <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña actual <span style="color:var(--re)">*</span></label><input id="micuenta-pw-actual" type="password" autocomplete="current-password"></div>
-      <div class="fg" style="padding:0;margin-top:.5rem"><label>Contraseña nueva (opcional)</label><input id="micuenta-pw-nueva" type="password" autocomplete="new-password"></div>
-      <div class="fg" style="padding:0;margin-top:.5rem"><label>Repetir contraseña nueva</label><input id="micuenta-pw-nueva2" type="password" autocomplete="new-password"></div>
+      <div class="fg gn-pw-field-block" style="padding:0;margin-top:.5rem"><label for="micuenta-pw-actual">Contraseña actual <span style="color:var(--re)">*</span></label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="micuenta-pw-actual" type="password" autocomplete="current-password"></div></div>
+      <div class="fg gn-pw-field-block" style="padding:0;margin-top:.5rem"><label for="micuenta-pw-nueva">Contraseña nueva (opcional)</label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="micuenta-pw-nueva" type="password" autocomplete="new-password"></div></div>
+      <div class="fg gn-pw-field-block" style="padding:0;margin-top:.5rem"><label for="micuenta-pw-nueva2">Repetir contraseña nueva</label><div class="ig" style="margin-bottom:0;margin-top:.35rem"><i class="fas fa-lock" aria-hidden="true"></i><input id="micuenta-pw-nueva2" type="password" autocomplete="new-password"></div></div>
       <div id="micuenta-msg" style="font-size:.85rem;margin-top:.5rem;min-height:1.1rem"></div>
       <div style="display:flex;gap:.75rem;margin-top:1rem;flex-wrap:wrap">
         <button type="button" class="sec" onclick="document.getElementById('modal-mi-cuenta').classList.remove('active')">Cancelar</button>

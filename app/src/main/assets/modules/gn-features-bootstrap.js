@@ -13,6 +13,7 @@ import {
 } from './gn-admin-operacion-audit-ui.js';
 import { htmlZonaServicioAdminBlock, cargarZonaServicioAdmin } from './gn-zona-servicio-ui.js';
 import { refrescarIndicadorReportesEmail } from './gn-reportes-email-indicator.js';
+import { htmlSetupChecklistAdminBlock, cargarSetupChecklistAdmin } from './gn-admin-setup-checklist-ui.js';
 
 let _mounted = false;
 
@@ -21,7 +22,8 @@ export function initGnFeaturesAdminMounts(ctx) {
     _mounted = true;
     const geoMount = document.getElementById('gn-admin-geocerca-mount');
     if (geoMount && !geoMount.innerHTML.trim()) {
-        geoMount.innerHTML = htmlGeocercaSettingsAdminBlock() + htmlZonaServicioAdminBlock();
+        geoMount.innerHTML =
+            htmlSetupChecklistAdminBlock() + htmlGeocercaSettingsAdminBlock() + htmlZonaServicioAdminBlock();
     }
     const repMount = document.getElementById('gn-reportes-email-mount');
     if (repMount && !repMount.innerHTML.trim()) {
@@ -33,6 +35,10 @@ export function initGnFeaturesAdminMounts(ctx) {
     }
     if (ctx?.esAdmin?.()) {
         void initAdminGeocercaSettingsUI({ toast: ctx.toast, esAdmin: true });
+        void cargarSetupChecklistAdmin({
+            apiUrl: ctx.apiUrl,
+            getApiToken: ctx.getApiToken,
+        });
         void cargarZonaServicioAdmin({
             apiUrl: ctx.apiUrl,
             getApiToken: ctx.getApiToken,
