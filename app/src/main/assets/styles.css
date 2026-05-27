@@ -136,6 +136,11 @@ body:has(#admin-panel.active) #gn-minimized-panels-dock{z-index:100100!important
 body:has(#admin-panel.active) .gn-map-dock-extras{z-index:100100!important}
 body:has(#admin-panel.active) #bp2.bp2-fullhide + .fab-show-pedidos{z-index:100100!important}
 .gn-dock-chip--pedidos{background:#1e3a5f;color:#f8fafc;border-left:3px solid #38bdf8}
+.gn-dock-chip--corte-masivo{background:#dc2626;color:#fff;border-left:3px solid #fca5a5}
+#gn-evento-corte-root.moui-card.gn-evento-corte-launcher{position:fixed!important;left:max(12px,env(safe-area-inset-left,0px));top:max(148px,calc(72px + env(safe-area-inset-top,0px)));right:auto!important;bottom:auto!important;z-index:10038;max-width:min(220px,calc(100vw - 1.5rem));touch-action:none}
+#gn-evento-corte-root.moui-card.gn-evento-corte-launcher .moui-hd{cursor:grab;user-select:none}
+#gn-evento-corte-root.moui-card.gn-evento-corte-launcher.moui-card-slideoff{transform:translateX(calc(-100vw - 1.5rem))!important;opacity:0!important;pointer-events:none!important}
+body.gn-dock-corte-masivo-active #gn-evento-corte-root.moui-card-slideoff{display:none!important}
 .gn-dock-chip--community{background:#128C7E;color:#fff;border-left:3px solid #34d399}
 .gn-dock-chip-label{font-size:.72rem;font-weight:600}
 body.gn-dock-pedidos-active #bp2.bp2-fullhide + .fab-show-pedidos{display:none!important}

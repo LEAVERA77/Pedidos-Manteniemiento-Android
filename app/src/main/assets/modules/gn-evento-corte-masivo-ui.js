@@ -3,6 +3,7 @@
  * made by leavera77
  */
 import { toast } from './ui-utils.js';
+import { ensureCorteMasivoLauncher } from './gn-evento-corte-masivo-launcher.js';
 
 const API = '/api/evento-corte-masivo';
 
@@ -43,8 +44,6 @@ function recargarMapa() {
 }
 
 /** @type {HTMLElement|null} */
-let _fab = null;
-/** @type {HTMLElement|null} */
 let _modal = null;
 
 /** @type {{ transformadores: Array<{valor:string}>, distribuidores: Array<{codigo:string,nombre:string}> }} */
@@ -52,27 +51,13 @@ let _catalogos = { transformadores: [], distribuidores: [] };
 /** @type {Array<{id:number,numero_pedido:number,estado:string,cliente:string}>} */
 let _previewPedidos = [];
 
-function ensureFab() {
-    if (_fab) return _fab;
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.id = 'gn-evento-corte-fab';
-    el.className = 'gn-inc-fab';
-    el.title = 'Evento de corte masivo (tormenta / sector)';
-    el.style.cssText =
-        'display:none;position:fixed;bottom:8.25rem;left:50%;transform:translateX(-50%);z-index:10039;padding:.55rem 1rem;border-radius:999px;border:none;background:#dc2626;color:#fff;font-weight:700;font-size:.82rem;cursor:pointer;box-shadow:0 4px 14px rgba(220,38,38,.4);align-items:center;gap:.35rem;touch-action:manipulation';
-    el.innerHTML = '<i class="fas fa-cloud-bolt"></i> Corte masivo';
-    el.addEventListener('click', () => void openWizard());
-    document.body.appendChild(el);
-    _fab = el;
-    return el;
-}
-
-function syncFabVisibility() {
-    const fab = ensureFab();
+function syncLauncherVisibility() {
     const tok = getTok();
     const show = !!tok && esAdminOperador();
-    fab.style.display = show ? 'inline-flex' : 'none';
+    ensureCorteMasivoLauncher({
+        visible: show,
+        onOpen: () => void openWizard(),
+    });
 }
 
 function ensureModal() {
@@ -401,9 +386,10 @@ function bindModalActions() {
 
 function install() {
     bindModalActions();
-    syncFabVisibility();
-    document.addEventListener('visibilitychange', syncFabVisibility, false);
-    const obs = () => syncFabVisibility();
+    syncLauncherVisibility();
+    document.addEventListener('visibilitychange', syncLauncherVisibility, false);
+    document.addEventListener('gn-ms-visible', syncLauncherVisibility, false);
+    const obs = () => syncLauncherVisibility();
     try {
         setInterval(obs, 8000);
     } catch (_) {}

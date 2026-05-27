@@ -114,7 +114,7 @@ const DOCK_ID = 'gn-minimized-panels-dock';
 const DOCK_HOST_CLUSTER = 'gn-map-dock-extras';
 
 /** Chips debajo de «Capas» en `#map-slide-tabs-cluster`; fallback body si no hay mapa. */
-function ensureDock() {
+export function ensureGnMapDock() {
     const cluster = document.getElementById('map-slide-tabs-cluster');
     if (cluster) {
         let host = document.getElementById(DOCK_HOST_CLUSTER);
@@ -143,7 +143,7 @@ function ensureDock() {
 }
 
 /** Clic sin movimiento → acción; arrastre → posición fixed clamp al viewport (sin persistencia). */
-function bindGnDockChipDrag(chip, onActivate) {
+export function bindGnDockChipDrag(chip, onActivate) {
     if (!chip || chip.dataset.gnDockDragInit === '1') return;
     chip.dataset.gnDockDragInit = '1';
     try {
@@ -223,7 +223,7 @@ function dockInsertCommunityChip(chip, dock) {
 
 export function syncPedidosDockChip() {
     const bp2 = document.getElementById('bp2');
-    const dock = ensureDock();
+    const dock = ensureGnMapDock();
     const hidden = bp2 && bp2.classList.contains('bp2-fullhide');
     let chip = document.getElementById('gn-dock-chip-pedidos');
     if (hidden) {
@@ -396,7 +396,7 @@ function businessTypeBroadcast() {
 }
 
 function syncCommunityDock(root, st, modal) {
-    const dock = ensureDock();
+    const dock = ensureGnMapDock();
     const modalOpen = modal && modal.style.display === 'flex';
     const showChip = st.minimized || modalOpen;
     let chip = document.getElementById('gn-dock-chip-community');
