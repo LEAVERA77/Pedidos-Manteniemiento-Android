@@ -69,13 +69,12 @@
       <button type="button" id="lb" class="bp" disabled><i class="fas fa-sign-in-alt"></i> Ingresar</button>
     </form>
     <div id="le" class="le"></div>
-    <div style="text-align:center;margin-top:.5rem;display:flex;flex-direction:column;align-items:center;gap:.35rem;max-width:24rem;margin-left:auto;margin-right:auto">
-      <button type="button" onclick="if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();document.getElementById('modal-reset-pw').classList.add('active')" style="background:none;border:none;color:var(--bl);font-size:.85rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button>
-      <span style="font-size:.74rem;color:var(--tm);line-height:1.35;text-align:center">¿Olvidaste tu contraseña? Ingresá tu nombre de usuario y el mail donde querés recibir el código de recuperación.</span>
+    <div class="gn-login-recovery">
+      <button type="button" class="gn-login-recovery-link" onclick="if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();document.getElementById('modal-reset-pw').classList.add('active')">¿Olvidaste tu contraseña?</button>
     </div>
     <div id="gn-login-bio-android" style="display:none;margin-top:.55rem;text-align:center;max-width:22rem;margin-left:auto;margin-right:auto;flex-direction:column;gap:.35rem;align-items:center" aria-live="polite"></div>
-    <p id="app-version" class="app-version" style="text-align:center;margin-top:.75rem;font-size:.75rem;color:var(--tm)"></p>
-    <div style="text-align:center;margin-top:.25rem;display:flex;flex-direction:column;align-items:center;gap:.2rem">
+    <p id="app-version" class="app-version"></p>
+    <div class="gn-login-extra-links">
       <button type="button" class="gn-acerca-link" onclick="abrirModalAcercaDe()">Acerca de…</button>
       <button type="button" class="gn-login-asistente-link" onclick="abrirModalReabrirAsistenteAdmin()" title="Solo administrador">Asistente inicial…</button>
     </div>
