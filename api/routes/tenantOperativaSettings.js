@@ -5,6 +5,10 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
+import {
+  getZonaServicioTenant,
+  verificarCoordenadasZonaServicio,
+} from "../services/tenantZonaServicio.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
@@ -73,6 +77,26 @@ router.put("/geocerca-settings", adminOnly, async (req, res) => {
     return res.json(r.rows[0]);
   } catch (error) {
     return res.status(500).json({ error: "No se pudo guardar", detail: error.message });
+  }
+});
+
+router.get("/zona-servicio", adminOnly, async (req, res) => {
+  try {
+    const zona = await getZonaServicioTenant(req.tenantId);
+    return res.json(zona);
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo leer zona de servicio", detail: error.message });
+  }
+});
+
+router.post("/zona-servicio/verificar", async (req, res) => {
+  try {
+    const lat = req.body?.lat ?? req.body?.latitude;
+    const lng = req.body?.lng ?? req.body?.longitude ?? req.body?.lon;
+    const out = await verificarCoordenadasZonaServicio(req.tenantId, lat, lng);
+    return res.json(out);
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo verificar coordenadas", detail: error.message });
   }
 });
 

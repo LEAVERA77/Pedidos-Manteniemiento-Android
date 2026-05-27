@@ -11,6 +11,8 @@ import {
     cargarSlaResumenEnEstadisticas,
     cargarOperacionAuditEnEstadisticas,
 } from './gn-admin-operacion-audit-ui.js';
+import { htmlZonaServicioAdminBlock, cargarZonaServicioAdmin } from './gn-zona-servicio-ui.js';
+import { refrescarIndicadorReportesEmail } from './gn-reportes-email-indicator.js';
 
 let _mounted = false;
 
@@ -19,7 +21,7 @@ export function initGnFeaturesAdminMounts(ctx) {
     _mounted = true;
     const geoMount = document.getElementById('gn-admin-geocerca-mount');
     if (geoMount && !geoMount.innerHTML.trim()) {
-        geoMount.innerHTML = htmlGeocercaSettingsAdminBlock();
+        geoMount.innerHTML = htmlGeocercaSettingsAdminBlock() + htmlZonaServicioAdminBlock();
     }
     const repMount = document.getElementById('gn-reportes-email-mount');
     if (repMount && !repMount.innerHTML.trim()) {
@@ -31,11 +33,20 @@ export function initGnFeaturesAdminMounts(ctx) {
     }
     if (ctx?.esAdmin?.()) {
         void initAdminGeocercaSettingsUI({ toast: ctx.toast, esAdmin: true });
+        void cargarZonaServicioAdmin({
+            apiUrl: ctx.apiUrl,
+            getApiToken: ctx.getApiToken,
+        });
         initAdminReportesEmailUI({
             apiUrl: ctx.apiUrl,
             getApiToken: ctx.getApiToken,
             toast: ctx.toast,
             esAdmin: true,
+        });
+        void refrescarIndicadorReportesEmail({
+            apiUrl: ctx.apiUrl,
+            getApiToken: ctx.getApiToken,
+            esAdmin: ctx.esAdmin,
         });
     }
 }

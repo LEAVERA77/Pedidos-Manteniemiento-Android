@@ -5,3 +5,4 @@
 
 import './gn-offline-banner-enhanced.js';
 import './gn-sw-update-prompt.js';
+import './gn-oleada3-bootstrap.js';

@@ -142,6 +142,10 @@ export function createHttpApp() {
     if (req.method !== "POST") return next();
     return authVerifyPasswordLimiter(req, res, next);
   });
+  app.use("/api/auth/verify-login-otp", (req, res, next) => {
+    if (req.method !== "POST") return next();
+    return authLoginLimiter(req, res, next);
+  });
 
   app.use("/api/auth", authRoutes);
   app.use("/api/admin", adminRoutes);

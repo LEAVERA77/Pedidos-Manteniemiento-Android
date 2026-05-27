@@ -5,6 +5,12 @@ import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { normalizeLoginId, parecePasswordHashBcrypt } from "../utils/usuarioLoginGlobal.js";
+import {
+  admin2faHabilitado,
+  adminRolPara2fa,
+  crearDesafioOtpAdmin,
+  verificarDesafioOtpAdmin,
+} from "../services/adminLoginOtp.js";
 
 const router = express.Router();
 
@@ -128,6 +134,24 @@ router.post("/login", async (req, res) => {
         tenant_id,
       });
     }
+    if (admin2faHabilitado() && adminRolPara2fa(u.rol)) {
+      try {
+        const otp = await crearDesafioOtpAdmin(u);
+        if (otp) {
+          return res.json({
+            requires_otp: true,
+            challenge_id: otp.challenge_id,
+            email_masked: otp.email_masked,
+            user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
+          });
+        }
+      } catch (e) {
+        console.error("[auth/login] admin 2FA", e?.message || e);
+        return res.status(503).json({
+          error: "No se pudo enviar el código de verificación. Revisá EmailJS en el servidor.",
+        });
+      }
+    }
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
@@ -135,6 +159,43 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: "Error en login", detail: error.message });
+  }
+});
+
+/**
+ * POST /api/auth/verify-login-otp
+ * Body: { challenge_id, code }
+ */
+router.post("/verify-login-otp", async (req, res) => {
+  try {
+    if (!admin2faHabilitado()) {
+      return res.status(400).json({ error: "Verificación OTP no habilitada" });
+    }
+    const challengeId = String(req.body?.challenge_id || "").trim();
+    const code = String(req.body?.code || "").trim().replace(/\D/g, "");
+    if (!challengeId || code.length < 4) {
+      return res.status(400).json({ error: "Código o desafío inválido" });
+    }
+    const verified = await verificarDesafioOtpAdmin(challengeId, code);
+    if (!verified?.user_id) {
+      return res.status(401).json({ error: "Código incorrecto o vencido" });
+    }
+    const r = await query(
+      `SELECT id, email, nombre, rol, activo FROM usuarios WHERE id = $1 LIMIT 1`,
+      [verified.user_id]
+    );
+    const u = r.rows?.[0];
+    if (!u?.activo || !adminRolPara2fa(u.rol)) {
+      return res.status(401).json({ error: "Usuario inválido" });
+    }
+    const tenant_id = await getUserTenantId(u.id);
+    const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
+    return res.json({
+      token,
+      user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Error al verificar código", detail: error.message });
   }
 });
 

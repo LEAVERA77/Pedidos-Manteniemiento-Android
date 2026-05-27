@@ -63,7 +63,18 @@ export function authLoginJsonBody(usuario, password) {
 }
 
 function loginOk({ resp, data }) {
-    return resp.ok || (resp.status === 403 && data?.code === 'must_change_password');
+    return (
+        resp.ok ||
+        (resp.status === 403 && data?.code === 'must_change_password') ||
+        data?.requires_otp === true
+    );
+}
+
+async function maybeCompletarOtpLogin(data) {
+    if (!data?.requires_otp) return data;
+    if (typeof window.__gnCompleteLoginOtp !== 'function') return data;
+    const completed = await window.__gnCompleteLoginOtp(data);
+    return completed || data;
 }
 
 /**
@@ -104,21 +115,37 @@ async function postLoginOnce(usuario, password, tenantId, apiUrlFn, fetchFn, tim
     }
 }
 
+async function normalizarResultadoLogin(result) {
+    if (!loginOk(result) || !result.data?.requires_otp) return result;
+    const completed = await maybeCompletarOtpLogin(result.data);
+    if (completed?.token) {
+        return {
+            resp: { ok: true, status: 200 },
+            data: completed,
+        };
+    }
+    return {
+        resp: { ok: false, status: 401 },
+        data: { error: 'Verificación cancelada o código inválido' },
+    };
+}
+
 async function fetchAuthLoginApiAttempt(usuario, password, apiUrlFn, fetchFn, timeoutMs) {
     const hint = getExplicitLoginTenantHint();
     if (hint != null) {
         const r1 = await postLoginOnce(usuario, password, hint, apiUrlFn, fetchFn, timeoutMs);
-        if (loginOk(r1)) return r1;
+        if (loginOk(r1)) return normalizarResultadoLogin(r1);
         if (r1.resp.status === 401) {
             const r2 = await postLoginOnce(usuario, password, null, apiUrlFn, fetchFn, timeoutMs);
             if (loginOk(r2)) {
                 clearAuthLoginTenantHint();
-                return r2;
+                return normalizarResultadoLogin(r2);
             }
         }
         return r1;
     }
-    return postLoginOnce(usuario, password, null, apiUrlFn, fetchFn, timeoutMs);
+    const r0 = await postLoginOnce(usuario, password, null, apiUrlFn, fetchFn, timeoutMs);
+    return normalizarResultadoLogin(r0);
 }
 
 /**
@@ -182,4 +209,4 @@ export function beginLoginAttempt() {
 export function endLoginAttempt() {
     _loginInFlight = false;
 }
-
+

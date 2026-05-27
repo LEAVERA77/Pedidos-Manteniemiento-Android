@@ -721,6 +721,56 @@ router.get("/mis-pedidos", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/pedidos/buscar-global?q=texto&limit=25
+ * Búsqueda unificada (número, NIS, medidor, teléfono, nombre, dirección).
+ */
+router.get("/buscar-global", async (req, res) => {
+  try {
+    const q = String(req.query.q || "")
+      .trim()
+      .slice(0, 80);
+    if (q.length < 2) {
+      return res.status(400).json({ error: "Ingrese al menos 2 caracteres" });
+    }
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 50);
+    const like = `%${q.replace(/[%_\\]/g, "")}%`;
+    const params = [like];
+    const hasTb = await pedidosTableHasTenantIdColumn();
+    let tsql = "";
+    if (hasTb) {
+      params.push(req.tenantId);
+      tsql = ` AND tenant_id = $${params.length}`;
+    }
+    const bt = await pushPedidoBusinessFilter(req, params);
+    const numQ = /^\d+$/.test(q) ? Number(q) : null;
+    const orParts = [
+      `cliente_nombre ILIKE $1`,
+      `cliente_direccion ILIKE $1`,
+      `COALESCE(nis::text, '') ILIKE $1`,
+      `COALESCE(medidor::text, '') ILIKE $1`,
+      `COALESCE(telefono_contacto::text, '') ILIKE $1`,
+    ];
+    if (numQ != null) {
+      params.push(numQ);
+      orParts.push(`id = $${params.length}`);
+      orParts.push(`numero_pedido = $${params.length}`);
+    }
+    const r = await query(
+      `SELECT id, numero_pedido, estado, nis, medidor, cliente_nombre, cliente_direccion,
+              telefono_contacto, fecha_creacion, lat, lng
+       FROM pedidos
+       WHERE (${orParts.join(" OR ")})${tsql}${bt}
+       ORDER BY fecha_creacion DESC
+       LIMIT ${limit}`,
+      params
+    );
+    return res.json({ resultados: r.rows || [], q });
+  } catch (error) {
+    return res.status(500).json({ error: "Error en búsqueda global", detail: error.message });
+  }
+});
+
 router.get("/buscar", async (req, res) => {
   try {
     const nis = String(req.query.nis || "").trim();

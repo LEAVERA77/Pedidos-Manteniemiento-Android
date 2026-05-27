@@ -468,3 +468,97 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   font-size: 0.72rem;
   color: #64748b;
 }
+
+/* —— Oleada 3: búsqueda global / OTP / badges —— */
+.gn-global-search-modal.mo.active {
+  z-index: 100150 !important;
+}
+.gn-global-search-mc {
+  max-width: min(28rem, 96vw);
+  width: 100%;
+}
+.gn-global-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.45rem;
+  font-family: inherit;
+}
+.gn-global-search-hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin: 0.35rem 0 0.5rem;
+}
+.gn-global-search-hint kbd {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 0.2rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.gn-global-search-results {
+  max-height: min(50vh, 20rem);
+  overflow-y: auto;
+  margin-top: 0.35rem;
+}
+.gn-global-search-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.4rem;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.gn-global-search-row:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.gn-global-search-row-t {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.gn-global-search-row-s {
+  font-size: 0.78rem;
+  color: #334155;
+}
+.gn-global-search-row-m {
+  font-size: 0.68rem;
+  color: #64748b;
+}
+.gn-global-search-empty {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-align: center;
+  padding: 0.75rem 0;
+  margin: 0;
+}
+.gn-admin-otp-modal.mo.active {
+  z-index: 100160 !important;
+}
+.gn-zona-servicio-note {
+  font-size: 0.78rem;
+  color: var(--tm, #64748b);
+  margin: 0;
+  line-height: 1.4;
+}
+.gn-reportes-hd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #1e40af;
+  background: #dbeafe;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  margin-left: 0.35rem;
+}
