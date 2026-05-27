@@ -5,32 +5,169 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GestorNova — Estado del servicio</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="gn-trust-ui.css">
   <style>
-    :root { font-family: Inter, system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
-    body { max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
-    .sub { color: #64748b; font-size: 0.88rem; margin-bottom: 1.25rem; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.65rem; }
-    .ok { color: #15803d; font-weight: 600; }
-    .bad { color: #b91c1c; font-weight: 600; }
-    .pend { color: #b45309; }
-    .meta { font-size: 0.78rem; color: #64748b; margin-top: 0.35rem; }
-    a { color: #2563eb; }
-    button { margin-top: 1rem; padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+    body.gn-status-page {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background: linear-gradient(145deg, #0f172a 0%, #1e3a8a 48%, #1e40af 100%);
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .gn-status-wrap {
+      width: 100%;
+      max-width: 26rem;
+    }
+    .gn-status-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+      overflow: hidden;
+    }
+    .gn-status-hd {
+      padding: 1.1rem 1.2rem;
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      color: #fff;
+      text-align: center;
+    }
+    .gn-status-hd h1 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    .gn-status-hd p {
+      margin: 0.35rem 0 0;
+      font-size: 0.78rem;
+      opacity: 0.9;
+    }
+    .gn-status-bd {
+      padding: 1rem 1.15rem 1.15rem;
+    }
+    .gn-status-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .gn-status-row:last-of-type {
+      border-bottom: none;
+    }
+    .gn-status-ic {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.5rem;
+      background: #eff6ff;
+      color: #1e40af;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.9rem;
+    }
+    .gn-status-row strong {
+      display: block;
+      font-size: 0.82rem;
+      color: #0f172a;
+      margin-bottom: 0.15rem;
+    }
+    .gn-status-state {
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+    .gn-status-state.ok { color: #15803d; }
+    .gn-status-state.bad { color: #b91c1c; }
+    .gn-status-state.pend { color: #b45309; }
+    .gn-status-meta {
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-top: 0.2rem;
+      word-break: break-word;
+    }
+    .gn-status-ft {
+      padding: 0 1.15rem 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .gn-status-ft a,
+    .gn-status-ft button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      width: 100%;
+      min-height: 2.35rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: inherit;
+      border-radius: 0.55rem;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+    }
+    .gn-status-back {
+      background: #f1f5f9;
+      color: #1e3a8a;
+      border: 1px solid #cbd5e1;
+    }
+    .gn-status-refresh {
+      background: var(--bl, #2563eb);
+      color: #fff;
+    }
+    .gn-status-checked {
+      text-align: center;
+      font-size: 0.7rem;
+      color: #94a3b8;
+      margin: 0.5rem 0 0;
+    }
   </style>
 </head>
-<body>
-  <h1>Estado del servicio</h1>
-  <p class="sub">GestorNova — comprobación pública de API y base de datos</p>
-
-  <div id="api-card" class="card"><strong>API</strong><div id="api-state" class="pend">Comprobando…</div><div id="api-meta" class="meta"></div></div>
-  <div id="db-card" class="card"><strong>Base de datos</strong><div id="db-state" class="pend">Comprobando…</div><div id="db-meta" class="meta"></div></div>
-  <div class="card"><strong>WhatsApp / mensajería</strong><div class="meta">No se expone un endpoint público de salud. El estado operativo lo confirma el administrador desde el panel.</div></div>
-
-  <p class="meta" id="checked-at"></p>
-  <p><a href="index.html">Volver al panel</a></p>
-  <button type="button" id="btn-refresh">Actualizar</button>
-
+<body class="gn-status-page">
+  <div class="gn-status-wrap">
+    <div class="gn-status-card">
+      <header class="gn-status-hd">
+        <h1><i class="fas fa-heartbeat" aria-hidden="true"></i> Estado del servicio</h1>
+        <p>Comprobación pública de API y base de datos</p>
+      </header>
+      <div class="gn-status-bd">
+        <div class="gn-status-row">
+          <div class="gn-status-ic" aria-hidden="true"><i class="fas fa-server"></i></div>
+          <div>
+            <strong>API</strong>
+            <div id="api-state" class="gn-status-state pend">Comprobando…</div>
+            <div id="api-meta" class="gn-status-meta"></div>
+          </div>
+        </div>
+        <div class="gn-status-row">
+          <div class="gn-status-ic" aria-hidden="true"><i class="fas fa-database"></i></div>
+          <div>
+            <strong>Base de datos</strong>
+            <div id="db-state" class="gn-status-state pend">Comprobando…</div>
+            <div id="db-meta" class="gn-status-meta"></div>
+          </div>
+        </div>
+        <div class="gn-status-row">
+          <div class="gn-status-ic" aria-hidden="true"><i class="fab fa-whatsapp"></i></div>
+          <div>
+            <strong>WhatsApp / mensajería</strong>
+            <div class="gn-status-state ok" style="font-weight:500;font-size:0.8rem;color:#475569">Sin endpoint público</div>
+            <div class="gn-status-meta">El estado operativo lo confirma el administrador desde el panel.</div>
+          </div>
+        </div>
+      </div>
+      <p class="gn-status-checked" id="checked-at"></p>
+      <div class="gn-status-ft">
+        <a class="gn-status-back" href="index.html"><i class="fas fa-arrow-left"></i> Volver al panel</a>
+        <button type="button" class="gn-status-refresh" id="btn-refresh"><i class="fas fa-sync-alt"></i> Actualizar</button>
+      </div>
+    </div>
+  </div>
   <script>
     async function loadApiBase() {
       try {
@@ -38,23 +175,21 @@
         if (!r.ok) throw new Error('config.json no disponible');
         const cfg = await r.json();
         const base = String(cfg?.api?.baseUrl || '').trim().replace(/\/+$/, '');
-        if (!base) throw new Error('api.baseUrl vacío en config.json');
+        if (!base) throw new Error('api.baseUrl vacío');
         return base;
-      } catch (e) {
+      } catch (_) {
         return '';
       }
     }
-
     function setState(elId, metaId, ok, label, meta) {
       const el = document.getElementById(elId);
       const metaEl = document.getElementById(metaId);
       if (el) {
-        el.className = ok ? 'ok' : 'bad';
+        el.className = 'gn-status-state ' + (ok ? 'ok' : 'bad');
         el.textContent = label;
       }
       if (metaEl) metaEl.textContent = meta || '';
     }
-
     async function runCheck() {
       const base = await loadApiBase();
       if (!base) {
@@ -62,32 +197,28 @@
         setState('db-state', 'db-meta', false, 'Sin comprobar', '');
         return;
       }
-
       const t0 = performance.now();
       try {
         const r = await fetch(base + '/health', { cache: 'no-store' });
         const data = await r.json().catch(() => ({}));
         const ms = Math.round(performance.now() - t0);
-        setState('api-state', 'api-meta', r.ok && data.ok !== false, r.ok ? 'Operativo' : 'Error', `${base}/health · ${ms} ms`);
+        setState('api-state', 'api-meta', r.ok && data.ok !== false, r.ok ? 'Operativo' : 'Error', base + '/health · ' + ms + ' ms');
       } catch (e) {
         setState('api-state', 'api-meta', false, 'Sin respuesta', String(e.message || e));
       }
-
       const t1 = performance.now();
       try {
         const r = await fetch(base + '/health/db', { cache: 'no-store' });
         const data = await r.json().catch(() => ({}));
         const ms = Math.round(performance.now() - t1);
         const ok = r.ok && data.ok && data.db === 'ok';
-        setState('db-state', 'db-meta', ok, ok ? 'Operativo' : 'Error', `${base}/health/db · ${ms} ms`);
+        setState('db-state', 'db-meta', ok, ok ? 'Operativo' : 'Error', base + '/health/db · ' + ms + ' ms');
       } catch (e) {
         setState('db-state', 'db-meta', false, 'Sin respuesta', String(e.message || e));
       }
-
       document.getElementById('checked-at').textContent =
         'Última comprobación: ' + new Date().toLocaleString('es-AR');
     }
-
     document.getElementById('btn-refresh').addEventListener('click', runCheck);
     runCheck();
   </script>

@@ -1,26 +1,29 @@
 /**
- * Términos de uso y política de privacidad (modales, sin tocar app.js).
+ * Términos de uso y política de privacidad (modales centrados, estilo panel).
  * made by leavera77
  */
 
 const MODAL_TERMS_ID = 'gn-modal-terminos';
 const MODAL_PRIV_ID = 'gn-modal-privacidad';
 
-function legalModalHtml(id, title, bodyHtml) {
-  return `
-<div id="${id}" class="mo gn-trust-legal-modal" style="z-index:2060" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
-  <div class="md" style="max-width:min(92vw,28rem)">
-    <div class="mh">
-      <h3 id="${id}-title"><i class="fas fa-file-contract"></i> ${title}</h3>
+function legalModalHtml(id, title, icon, bodyHtml) {
+    return `
+<div id="${id}" class="mo gn-trust-legal-modal" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
+  <div class="mc gn-trust-legal-mc">
+    <div class="mh gn-trust-legal-mh">
+      <h3 id="${id}-title"><i class="fas ${icon}" aria-hidden="true"></i> ${title}</h3>
       <button type="button" class="cm" data-gn-legal-close aria-label="Cerrar"><i class="fas fa-times"></i></button>
     </div>
     <div class="mb gn-trust-legal-body">${bodyHtml}</div>
+    <div class="gn-trust-legal-ft">
+      <button type="button" class="bp gn-trust-legal-close-btn" data-gn-legal-close><i class="fas fa-check"></i> Entendido</button>
+    </div>
   </div>
 </div>`;
 }
 
 const TERMS_BODY = `
-<p>GestorNova es un sistema de gestión de pedidos y reclamos para cooperativas eléctricas, municipios y organizaciones de servicios.</p>
+<p class="gn-trust-legal-lead">GestorNova es un sistema de gestión de pedidos y reclamos para cooperativas eléctricas, municipios y organizaciones de servicios.</p>
 <h4>Uso autorizado</h4>
 <p>El acceso está limitado a usuarios habilitados por su organización. No comparta su usuario ni contraseña.</p>
 <h4>Datos operativos</h4>
@@ -32,7 +35,7 @@ const TERMS_BODY = `
 `;
 
 const PRIV_BODY = `
-<p>Esta política describe, en forma resumida, cómo GestorNova trata la información en el panel web y la app de cuadrillas.</p>
+<p class="gn-trust-legal-lead">Resumen de cómo GestorNova trata la información en el panel web y la app de cuadrillas.</p>
 <h4>Qué datos se procesan</h4>
 <p>Identificación de usuario, datos de reclamos (domicilio, coordenadas, fotos, avances), catálogo de socios cuando la organización lo utiliza, y registros técnicos necesarios para soporte y seguridad.</p>
 <h4>Dónde se almacenan</h4>
@@ -45,57 +48,99 @@ const PRIV_BODY = `
 <p>Para ejercer derechos o consultas sobre datos personales, contacte al administrador de su cooperativa o municipio, que es el responsable del tratamiento frente a los titulares.</p>
 `;
 
+function traerModalLegalAlFrente(el) {
+    if (!el) return;
+    try {
+        if (typeof window.gnForceModalZFront === 'function') {
+            window.gnForceModalZFront(el);
+            return;
+        }
+    } catch (_) {}
+    try {
+        if (typeof window.gnBumpOverlayElement === 'function') {
+            window.gnBumpOverlayElement(el);
+        }
+    } catch (_) {}
+}
+
 function cerrarModalLegal(id) {
-  document.getElementById(id)?.classList.remove('active');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('active');
+    const anyOpen = document.querySelector('.gn-trust-legal-modal.active');
+    if (!anyOpen) {
+        try {
+            document.body.style.overflow = '';
+        } catch (_) {}
+    }
 }
 
 function abrirModalLegal(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.add('active');
+    const el = document.getElementById(id);
+    if (!el) return;
+    document.querySelectorAll('.gn-trust-legal-modal.active').forEach((m) => {
+        if (m.id !== id) m.classList.remove('active');
+    });
+    el.classList.add('active');
+    traerModalLegalAlFrente(el);
+    try {
+        document.body.style.overflow = 'hidden';
+    } catch (_) {}
+    requestAnimationFrame(() => traerModalLegalAlFrente(el));
+}
+
+function wireLegalModal(el) {
+    if (!el || el.dataset.gnLegalWired === '1') return;
+    el.dataset.gnLegalWired = '1';
+    el.querySelectorAll('[data-gn-legal-close]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const modal = btn.closest('.mo');
+            if (modal?.id) cerrarModalLegal(modal.id);
+        });
+    });
+    el.addEventListener('click', (e) => {
+        if (e.target === el) cerrarModalLegal(el.id);
+    });
 }
 
 function ensureLegalModals() {
-  if (document.getElementById(MODAL_TERMS_ID)) return;
-  const wrap = document.createElement('div');
-  wrap.innerHTML =
-    legalModalHtml(MODAL_TERMS_ID, 'Términos de uso', TERMS_BODY) +
-    legalModalHtml(MODAL_PRIV_ID, 'Política de privacidad', PRIV_BODY);
-  document.body.appendChild(wrap);
-  wrap.querySelectorAll('[data-gn-legal-close]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const modal = btn.closest('.mo');
-      if (modal?.id) cerrarModalLegal(modal.id);
-    });
-  });
-  [MODAL_TERMS_ID, MODAL_PRIV_ID].forEach((id) => {
-    const m = document.getElementById(id);
-    m?.addEventListener('click', (e) => {
-      if (e.target === m) cerrarModalLegal(id);
-    });
-  });
+    if (document.getElementById(MODAL_TERMS_ID)) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML =
+        legalModalHtml(MODAL_TERMS_ID, 'Términos de uso', 'fa-file-contract', TERMS_BODY) +
+        legalModalHtml(MODAL_PRIV_ID, 'Política de privacidad', 'fa-user-shield', PRIV_BODY);
+    document.body.appendChild(wrap);
+    wrap.querySelectorAll('.gn-trust-legal-modal').forEach(wireLegalModal);
 }
 
 export function abrirTerminosGestorNova() {
-  ensureLegalModals();
-  abrirModalLegal(MODAL_TERMS_ID);
+    ensureLegalModals();
+    abrirModalLegal(MODAL_TERMS_ID);
 }
 
 export function abrirPrivacidadGestorNova() {
-  ensureLegalModals();
-  abrirModalLegal(MODAL_PRIV_ID);
+    ensureLegalModals();
+    abrirModalLegal(MODAL_PRIV_ID);
+}
+
+function onEscapeLegal(e) {
+    if (e.key !== 'Escape') return;
+    const open = document.querySelector('.gn-trust-legal-modal.active');
+    if (open?.id) cerrarModalLegal(open.id);
 }
 
 function initGnTerminosPrivacidad() {
-  ensureLegalModals();
-  if (typeof window !== 'undefined') {
-    window.abrirTerminosGestorNova = abrirTerminosGestorNova;
-    window.abrirPrivacidadGestorNova = abrirPrivacidadGestorNova;
-  }
+    ensureLegalModals();
+    document.addEventListener('keydown', onEscapeLegal);
+    if (typeof window !== 'undefined') {
+        window.abrirTerminosGestorNova = abrirTerminosGestorNova;
+        window.abrirPrivacidadGestorNova = abrirPrivacidadGestorNova;
+    }
 }
 
 if (typeof document !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initGnTerminosPrivacidad, { once: true });
-  } else initGnTerminosPrivacidad();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initGnTerminosPrivacidad, { once: true });
+    } else initGnTerminosPrivacidad();
 }
