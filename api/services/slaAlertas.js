@@ -46,7 +46,25 @@ export async function calcularAlertasSla(req) {
     });
   }
 
-  return { alertas };
+  const rAbiertos = await query(
+    `SELECT COUNT(*)::int AS n FROM pedidos
+     WHERE estado NOT IN ('Cerrado', 'Desestimado')${tsql}${bt}`,
+    [...params]
+  );
+  const rCerrados7 = await query(
+    `SELECT COUNT(*)::int AS n FROM pedidos
+     WHERE estado = 'Cerrado' AND fecha_cierre >= NOW() - INTERVAL '7 days'${tsql}${bt}`,
+    [...params]
+  );
+
+  return {
+    alertas,
+    resumen: {
+      abiertos: rAbiertos.rows?.[0]?.n ?? 0,
+      cerrados_7d: rCerrados7.rows?.[0]?.n ?? 0,
+      alertas_activas: alertas.length,
+    },
+  };
 }
 
 /**

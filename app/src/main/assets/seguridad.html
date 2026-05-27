@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GestorNova — Seguridad</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="gn-trust-ui.css">
+  <style>
+    body.gn-status-page {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background: linear-gradient(145deg, #0f172a 0%, #1e3a8a 48%, #1e40af 100%);
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .gn-status-wrap { width: 100%; max-width: 28rem; }
+    .gn-status-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+      overflow: hidden;
+    }
+    .gn-status-hd {
+      padding: 1.1rem 1.2rem;
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      color: #fff;
+      text-align: center;
+    }
+    .gn-status-hd h1 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+    .gn-status-hd p { margin: 0.35rem 0 0; font-size: 0.78rem; opacity: 0.9; }
+    .gn-status-bd { padding: 1rem 1.15rem; font-size: 0.82rem; color: #334155; line-height: 1.5; }
+    .gn-status-bd ul { margin: 0.5rem 0 0; padding-left: 1.15rem; }
+    .gn-status-bd li { margin-bottom: 0.45rem; }
+    .gn-status-ft {
+      padding: 0 1.15rem 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .gn-status-ft a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      width: 100%;
+      min-height: 2.35rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 0.55rem;
+      text-decoration: none;
+      background: #f1f5f9;
+      color: #1e3a8a;
+      border: 1px solid #cbd5e1;
+    }
+  </style>
+</head>
+<body class="gn-status-page">
+  <div class="gn-status-wrap">
+    <div class="gn-status-card">
+      <header class="gn-status-hd">
+        <h1><i class="fas fa-shield-alt" aria-hidden="true"></i> Seguridad y datos</h1>
+        <p>Prácticas operativas de GestorNova</p>
+      </header>
+      <div class="gn-status-bd">
+        <p>Resumen orientado a administradores y técnicos. El detalle contractual está en Términos y Privacidad del panel.</p>
+        <ul>
+          <li><strong>Autenticación:</strong> acceso con credenciales y token JWT; sesión con cierre por inactividad.</li>
+          <li><strong>Transporte:</strong> comunicación con la API sobre HTTPS en producción.</li>
+          <li><strong>Datos:</strong> pedidos, fotos y mensajes almacenados en infraestructura administrada (Neon, Cloudinary, Render según despliegue).</li>
+          <li><strong>Multi-tenant:</strong> cada empresa opera con <code>tenant_id</code> aislado en consultas del servidor.</li>
+          <li><strong>Auditoría:</strong> cambios relevantes de estado en pedidos se registran en el servidor (pestaña Estadísticas, admin).</li>
+          <li><strong>Offline:</strong> la cola local en el dispositivo no sustituye al servidor; sincronizá al recuperar conexión.</li>
+          <li><strong>Secretos:</strong> no incluir contraseñas ni tokens en capturas, chats ni repositorios públicos.</li>
+        </ul>
+        <p style="margin-top:0.75rem;font-size:0.75rem;color:#64748b">Para incidentes de seguridad contactá al administrador de tu organización.</p>
+      </div>
+      <div class="gn-status-ft">
+        <a href="index.html"><i class="fas fa-arrow-left"></i> Volver al panel</a>
+        <a href="status.html"><i class="fas fa-heartbeat"></i> Estado del servicio</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

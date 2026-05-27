@@ -8,6 +8,7 @@
 import express from "express";
 import { query } from "../db/neon.js";
 import { adminOnly } from "../middleware/auth.js";
+import { listOperacionAudit } from "../services/operacionAuditLog.js";
 
 const router = express.Router();
 
@@ -216,6 +217,24 @@ router.post("/socios-catalogo/:id/marcar-sospechoso", adminOnly, async (req, res
   } catch (err) {
     console.error("[admin] marcar-sospechoso:", err);
     return res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
+/**
+ * GET /api/admin/operacion-audit?limit=40
+ * Últimos cambios operativos auditados (admin).
+ */
+router.get("/operacion-audit", adminOnly, async (req, res) => {
+  try {
+    const limit = Number(req.query.limit) || 40;
+    const data = await listOperacionAudit(req, { limit });
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] operacion-audit:", err);
+    return res.status(500).json({
+      error: "No se pudo obtener auditoría",
+      detail: err?.message || String(err),
+    });
   }
 });
 

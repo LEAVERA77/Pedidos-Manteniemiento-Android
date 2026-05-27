@@ -356,3 +356,70 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   cursor: help;
   vertical-align: middle;
 }
+
+/* —— Oleada 2: offline / SW / SLA —— */
+.gn-offline-banner-msg {
+  margin: 0 0.35rem;
+  font-weight: 600;
+}
+#offline-banner.gn-offline-banner--pending-sync {
+  background: #b45309;
+}
+.gn-sw-update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 8998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.75rem;
+  background: #1e40af;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.gn-sw-update-btn {
+  border: none;
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  background: #fff;
+  color: #1e40af;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.gn-sw-update-dismiss {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.35rem;
+}
+.gn-sla-resumen-card {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+}
+.gn-sla-resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  text-align: center;
+}
+.gn-sla-resumen-grid strong {
+  display: block;
+  font-size: 1.15rem;
+  color: #1e3a8a;
+}
+.gn-sla-resumen-grid span {
+  font-size: 0.72rem;
+  color: #64748b;
+}

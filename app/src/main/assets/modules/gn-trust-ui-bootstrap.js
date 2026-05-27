@@ -9,3 +9,4 @@ import './gn-error-messages.js';
 import './gn-session-idle-warning.js';
 import './gn-skeleton-map-loader.js';
 import './gn-tooltips.js';
+import './gn-oleada2-bootstrap.js';

@@ -25,23 +25,25 @@ function guardarColapsado(colapsado) {
     } catch (_) {}
 }
 
-function statusPageHref() {
+function staticPageHref(fileName) {
     try {
         const path = window.location.pathname || '/';
         const base = path.endsWith('/') ? path : path.replace(/\/[^/]*$/, '/');
-        return `${base}status.html`.replace(/\/+/g, '/').replace(/^(https?:\/[^/]+)\/\//, '$1/');
+        return `${base}${fileName}`.replace(/\/+/g, '/').replace(/^(https?:\/[^/]+)\/\//, '$1/');
     } catch (_) {
-        return 'status.html';
+        return fileName;
     }
 }
 
 function footerLinksHtml() {
-    const status = statusPageHref();
+    const status = staticPageHref('status.html');
+    const seguridad = staticPageHref('seguridad.html');
     return `
 <div class="gn-trust-footer-links" role="navigation" aria-label="Información legal y estado">
   <button type="button" class="gn-trust-pill" data-gn-open-terms><i class="fas fa-file-contract" aria-hidden="true"></i> Términos</button>
   <button type="button" class="gn-trust-pill" data-gn-open-privacy><i class="fas fa-user-shield" aria-hidden="true"></i> Privacidad</button>
   <a class="gn-trust-pill gn-trust-pill--link" href="${status}"><i class="fas fa-heartbeat" aria-hidden="true"></i> Estado</a>
+  <a class="gn-trust-pill gn-trust-pill--link" href="${seguridad}"><i class="fas fa-shield-alt" aria-hidden="true"></i> Seguridad</a>
 </div>`;
 }
 

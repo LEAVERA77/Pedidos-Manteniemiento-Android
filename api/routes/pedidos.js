@@ -37,6 +37,7 @@ import {
 import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
 import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
 import { allocarSiguienteNumeroPedido } from "../services/pedidoContador.js";
+import { logOperacionAudit } from "../services/operacionAuditLog.js";
 import {
   derivacionReclamosDesdeConfig,
   resolverContactoDerivacion,
@@ -2035,6 +2036,27 @@ router.put("/:id", async (req, res) => {
             console.error("[pedidos] notify evidencia insuficiente WA", e?.message || e);
           }
         })();
+      });
+    }
+
+    const estadoCambio =
+      estadoParam && String(estadoParam).trim() && String(estadoParam) !== estadoAntesNorm;
+    const avanceCambio =
+      avanceParam != null && Number(avanceParam) !== Number(pedido.avance ?? 0);
+    if (estadoCambio || avanceCambio) {
+      setImmediate(() => {
+        logOperacionAudit({
+          tenantId: req.tenantId,
+          usuarioId: req.user?.id,
+          pedidoId: id,
+          accion: estadoCambio ? "pedido_estado" : "pedido_avance",
+          estadoAnterior: estadoAntesNorm,
+          estadoNuevo: estadoCambio ? estadoParam : null,
+          detalle: avanceCambio
+            ? { avance_anterior: pedido.avance, avance_nuevo: avanceParam }
+            : null,
+          req,
+        }).catch((e) => console.warn("[audit]", e?.message || e));
       });
     }
 

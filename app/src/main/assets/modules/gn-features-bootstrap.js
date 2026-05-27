@@ -6,6 +6,11 @@
 import { htmlGeocercaSettingsAdminBlock, initAdminGeocercaSettingsUI } from './admin-geocerca-settings-ui.js';
 import { htmlReportesEmailAdminBlock, initAdminReportesEmailUI } from './admin-reportes-email-ui.js';
 import { htmlRankingSlaAdminBlocks, cargarRankingTecnicosEnEstadisticas, cargarAlertasSlaEnEstadisticas } from './estadisticas-ranking-sla-ui.js';
+import {
+    htmlOperacionAuditAdminBlock,
+    cargarSlaResumenEnEstadisticas,
+    cargarOperacionAuditEnEstadisticas,
+} from './gn-admin-operacion-audit-ui.js';
 
 let _mounted = false;
 
@@ -22,7 +27,7 @@ export function initGnFeaturesAdminMounts(ctx) {
     }
     const estMount = document.getElementById('gn-est-ranking-sla-mount');
     if (estMount && !estMount.innerHTML.trim()) {
-        estMount.innerHTML = htmlRankingSlaAdminBlocks();
+        estMount.innerHTML = htmlRankingSlaAdminBlocks() + htmlOperacionAuditAdminBlock();
     }
     if (ctx?.esAdmin?.()) {
         void initAdminGeocercaSettingsUI({ toast: ctx.toast, esAdmin: true });
@@ -44,6 +49,14 @@ export async function refrescarRankingSlaEstadisticas(ctx) {
         periodo,
     });
     await cargarAlertasSlaEnEstadisticas({
+        apiUrl: ctx.apiUrl,
+        getApiToken: ctx.getApiToken,
+    });
+    await cargarSlaResumenEnEstadisticas({
+        apiUrl: ctx.apiUrl,
+        getApiToken: ctx.getApiToken,
+    });
+    await cargarOperacionAuditEnEstadisticas({
         apiUrl: ctx.apiUrl,
         getApiToken: ctx.getApiToken,
     });

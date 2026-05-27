@@ -32,4 +32,10 @@ test.describe('GestorNova shell (assets estáticos)', () => {
         expect(res?.ok()).toBeTruthy();
         await expect(page.getByRole('heading', { name: /Estado del servicio/i })).toBeVisible();
     });
+
+    test('seguridad.html responde', async ({ page }) => {
+        const res = await page.goto('/seguridad.html');
+        expect(res?.ok()).toBeTruthy();
+        await expect(page.getByRole('heading', { name: /Seguridad y datos/i })).toBeVisible();
+    });
 });

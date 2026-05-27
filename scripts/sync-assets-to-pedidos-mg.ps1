@@ -43,6 +43,7 @@ $files = @(
     'gn-android-shell-perf.css',
     'gn-trust-ui.css',
     'status.html',
+    'seguridad.html',
     'app.js',
     'map.js',
     'map-view.js',

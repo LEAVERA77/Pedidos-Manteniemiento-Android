@@ -44,6 +44,12 @@ export function enqueueOffline(op) {
 }
 
 
+function notifyOfflineQueueChanged() {
+    try {
+        window.dispatchEvent(new CustomEvent('pmg-offline-queue-changed'));
+    } catch (_) {}
+}
+
 export function actualizarBadgeOffline() {
     const q = offlineQueue();
     const badge = document.getElementById('offline-badge');
@@ -54,6 +60,7 @@ export function actualizarBadgeOffline() {
     } else {
         badge.style.display = 'none';
     }
+    notifyOfflineQueueChanged();
 }
 
 export function guardarUsuarioOffline(u, pw) {

@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v231';
-const SW_VERSION  = '1.8.60';
+const CACHE_SHELL = 'pmg-shell-v232';
+const SW_VERSION  = '1.8.61';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -37,6 +37,7 @@ function shellAssetUrls() {
     j('gn-android-shell-perf.css'),
     j('gn-trust-ui.css'),
     j('status.html'),
+    j('seguridad.html'),
     j('app.js'),
     j('modules/gn-window-dialogs-patch.js'),
     j('modules/gn-trust-ui-bootstrap.js'),
@@ -46,6 +47,10 @@ function shellAssetUrls() {
     j('modules/gn-session-idle-warning.js'),
     j('modules/gn-skeleton-map-loader.js'),
     j('modules/gn-tooltips.js'),
+    j('modules/gn-oleada2-bootstrap.js'),
+    j('modules/gn-offline-banner-enhanced.js'),
+    j('modules/gn-sw-update-prompt.js'),
+    j('modules/gn-admin-operacion-audit-ui.js'),
     j('modules/gn-lazy-optional-ui-bootstrap.js'),
     j('modules/filtros-estado.js'),
     j('modules/admin-desestimar-reclamo.js'),
