@@ -172,90 +172,98 @@ function ensureBp2DragHandle() {
     ph.insertBefore(grip, ph.firstChild);
 }
 
+/** Arrastre del panel desde la barra de título (#ph): pointer events (misma idea que moui-card). */
 function initBp2DragAndroid() {
     const bp2 = document.getElementById('bp2');
     const ph = document.getElementById('ph');
-    if (!bp2 || !ph || ph.dataset.gnBp2AndroidDrag === '1') return;
-    if (!floatingBp2Enabled()) return;
-    ph.dataset.gnBp2AndroidDrag = '1';
+    if (!bp2 || !ph) return;
+    if (!floatingBp2Enabled() && !isAndroidShell()) return;
+    if (typeof window !== 'undefined' && window.__gnBp2PhDragInit) return;
+    try {
+        window.__gnBp2PhDragInit = true;
+    } catch (_) {}
+
     ensureBp2DragHandle();
+    try {
+        ph.style.touchAction = 'none';
+        ph.style.cursor = 'grab';
+        ph.style.userSelect = 'none';
+    } catch (_) {}
 
-    let drag = null;
+    /** Solo los botones (ojo, expandir) no inician arrastre; el resto de la barra sí. */
+    const isBlockedDragTarget = (el) => !!el?.closest?.('button');
 
-    const onDown = (clientX, clientY) => {
-        if (bp2.classList.contains('bp2-fullhide')) return;
-        const r = bp2.getBoundingClientRect();
-        marcarBp2Posicionado(bp2);
-        drag = { sx: clientX, sy: clientY, sl: r.left, st: r.top, moved: false };
-    };
-
-    const onMove = (clientX, clientY, ev) => {
-        if (!drag) return;
-        if (Math.abs(clientX - drag.sx) + Math.abs(clientY - drag.sy) > 5) {
-            drag.moved = true;
-            if (ev?.cancelable) ev.preventDefault();
-        }
-        if (!drag.moved) return;
-        bp2.style.left = `${drag.sl + (clientX - drag.sx)}px`;
-        bp2.style.top = `${drag.st + (clientY - drag.sy)}px`;
-        clampBp2PanelIntoViewport();
-    };
-
-    const onUp = () => {
-        if (!drag) return;
-        if (drag.moved) {
-            try {
-                const br = bp2.getBoundingClientRect();
-                localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: br.left, top: br.top }));
-            } catch (_) {}
-            window.__bp2DragJustEnded = true;
-            setTimeout(() => {
-                window.__bp2DragJustEnded = false;
-            }, 450);
-            scheduleClampBp2PanelIntoViewport();
-        }
-        drag = null;
-    };
-
-    ph.addEventListener('mousedown', (e) => {
-        if (e.button !== 0 || e.target.closest('button')) return;
-        if (e.target.closest('.gn-bp2-plegar-trigger')) return;
-        e.preventDefault();
-        onDown(e.clientX, e.clientY);
-        const mm = (ev) => onMove(ev.clientX, ev.clientY, ev);
-        const mu = () => {
-            document.removeEventListener('mousemove', mm);
-            document.removeEventListener('mouseup', mu);
-            onUp();
-        };
-        document.addEventListener('mousemove', mm);
-        document.addEventListener('mouseup', mu);
-    });
+    let ptr = null;
 
     ph.addEventListener(
-        'touchstart',
+        'pointerdown',
         (e) => {
-            if (e.touches.length !== 1 || e.target.closest('button')) return;
-            if (e.target.closest('.gn-bp2-plegar-trigger')) return;
-            e.preventDefault();
-            const t = e.touches[0];
-            onDown(t.clientX, t.clientY);
-            const tm = (ev) => {
-                const tt = ev.touches[0];
-                if (tt) onMove(tt.clientX, tt.clientY, ev);
+            if (e.button !== 0) return;
+            if (bp2.classList.contains('bp2-fullhide')) return;
+            if (isBlockedDragTarget(e.target)) return;
+            const r = bp2.getBoundingClientRect();
+            marcarBp2Posicionado(bp2);
+            try {
+                bp2.style.position = 'fixed';
+            } catch (_) {}
+            ptr = {
+                id: e.pointerId,
+                x0: e.clientX,
+                y0: e.clientY,
+                sl: r.left,
+                st: r.top,
+                moved: false,
             };
-            const te = () => {
-                document.removeEventListener('touchmove', tm);
-                document.removeEventListener('touchend', te);
-                document.removeEventListener('touchcancel', te);
-                onUp();
-            };
-            document.addEventListener('touchmove', tm, { passive: false });
-            document.addEventListener('touchend', te);
-            document.addEventListener('touchcancel', te);
+            try {
+                ph.setPointerCapture(e.pointerId);
+            } catch (_) {}
+        },
+        { passive: true }
+    );
+
+    ph.addEventListener(
+        'pointermove',
+        (e) => {
+            if (!ptr || e.pointerId !== ptr.id) return;
+            const dx = Math.abs(e.clientX - ptr.x0);
+            const dy = Math.abs(e.clientY - ptr.y0);
+            if (dx + dy > 6) ptr.moved = true;
+            if (!ptr.moved) return;
+            if (e.cancelable) e.preventDefault();
+            try {
+                ph.style.cursor = 'grabbing';
+            } catch (_) {}
+            bp2.style.left = `${ptr.sl + (e.clientX - ptr.x0)}px`;
+            bp2.style.top = `${ptr.st + (e.clientY - ptr.y0)}px`;
+            clampBp2PanelIntoViewport();
         },
         { passive: false }
     );
+
+    const endPtr = (e) => {
+        if (!ptr || e.pointerId !== ptr.id) return;
+        const moved = ptr.moved;
+        ptr = null;
+        try {
+            ph.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+        try {
+            ph.style.cursor = 'grab';
+        } catch (_) {}
+        if (!moved) return;
+        try {
+            const br = bp2.getBoundingClientRect();
+            localStorage.setItem('pmg_bp2_pos', JSON.stringify({ left: br.left, top: br.top }));
+        } catch (_) {}
+        window.__bp2DragJustEnded = true;
+        setTimeout(() => {
+            window.__bp2DragJustEnded = false;
+        }, 450);
+        scheduleClampBp2PanelIntoViewport();
+    };
+
+    ph.addEventListener('pointerup', endPtr);
+    ph.addEventListener('pointercancel', endPtr);
 }
 
 function patchSetBp2PanelHiddenAndroid() {

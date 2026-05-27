@@ -993,8 +993,9 @@ html.gn-android-webview #modal-foto-ampliada #gn-reclamo-foto-nav{
   #ms .bp2.col{transform:translateY(calc(100% - 3.25rem))!important}
   #ms .bp2.bp2-fullhide{transform:translateY(110%)!important;pointer-events:none}
   #ms .bp2.bp2-fullhide .ph{pointer-events:auto}
-  #ms .bp2 .ph{cursor:grab;user-select:none}
+  #ms .bp2 .ph{cursor:grab;user-select:none;touch-action:none;-webkit-user-select:none}
   #ms .bp2 .ph:active{cursor:grabbing}
+  #ms .bp2 .ph button{touch-action:manipulation;cursor:pointer}
   .btn-mapa-ir-gps{bottom:2.55rem;left:1rem}
   .btn-mapa-nuevo-gps{bottom:5.85rem;left:1rem}
   .btn-mapa-nuevo-oficina{bottom:12.25rem;left:1rem}

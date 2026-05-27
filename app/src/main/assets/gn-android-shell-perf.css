@@ -225,11 +225,25 @@ html.gn-android-shell #ms #bp2.gn-bp2-positioned:not(.bp2-fullhide) {
     color: #fff;
     border-left: 3px solid #fca5a5;
 }
+html.gn-android-shell #bp2 .ph {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+html.gn-android-shell #bp2 .ph:active {
+    cursor: grabbing;
+}
+html.gn-android-shell #bp2 .ph button {
+    touch-action: manipulation;
+    cursor: pointer;
+}
 html.gn-android-shell #bp2 .gn-bp2-drag-grip {
     opacity: 0.55;
     margin-right: 0.25rem;
     font-size: 0.85rem;
     flex-shrink: 0;
+    pointer-events: none;
 }
 html.gn-android-shell #bp2.gn-bp2-many-pedidos .pl.pedidos-panel-scroll .pi,
 html.gn-android-shell #bp2.gn-bp2-lista-densa .pi {
