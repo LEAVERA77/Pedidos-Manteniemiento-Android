@@ -11715,12 +11715,6 @@ function switchTab(t) {
 }
 
 
-document.querySelector('#ph .gn-bp2-plegar-trigger')?.addEventListener('click', (e) => {
-    if (e.target.closest('button')) return;
-    if (window.__bp2DragJustEnded) return;
-    togglePanel();
-});
-
 function cerrarUserMenuPop() {
     const pop = document.getElementById('user-menu-pop');
     if (pop) {
