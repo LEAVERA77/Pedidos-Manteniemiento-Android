@@ -17,6 +17,12 @@ html.gn-android-shell #dm input[type="number"] {
     font-size: 16px;
 }
 
+/* Cerrado: anular display:inline de gn-overlay-stack-android (si no se limpió a tiempo). */
+html.gn-android-shell #dm.mo:not(.active),
+html.gn-android-shell #pm.mo:not(.active) {
+    display: none !important;
+}
+
 /* #dm / #pm: sin backdrop-filter (repintado caro del mapa/lista al hacer scroll del contenido). */
 html.gn-android-shell #dm.mo,
 html.gn-android-shell #pm.mo {

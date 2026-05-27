@@ -55,6 +55,15 @@ function clampToViewport(el, leftPx, topPx) {
     };
 }
 
+const MODAL_LAYOUT_PROPS = [
+    'display',
+    'align-items',
+    'justify-content',
+    'position',
+    'inset',
+    'padding',
+];
+
 function applyModalAndroidLayout(el) {
     if (!el?.classList) return;
     try {
@@ -66,6 +75,16 @@ function applyModalAndroidLayout(el) {
         const pad = 'max(0.5rem, env(safe-area-inset-top, 0px)) max(0.5rem, env(safe-area-inset-right, 0px)) max(0.5rem, env(safe-area-inset-bottom, 0px)) max(0.5rem, env(safe-area-inset-left, 0px))';
         el.style.setProperty('padding', pad, 'important');
     } catch (_) {}
+}
+
+/** Sin esto, `display:flex !important` deja #dm/#pm visibles tras quitar .active (no cierra el modal). */
+function clearModalAndroidLayout(el) {
+    if (!el?.style) return;
+    for (const prop of MODAL_LAYOUT_PROPS) {
+        try {
+            el.style.removeProperty(prop);
+        } catch (_) {}
+    }
 }
 
 function chatAboveDetail(card) {
@@ -139,7 +158,10 @@ export function gnOverlayCenterFloatingPanel(card, opts = {}) {
 
 function onModalClassChange(el) {
     if (!el?.classList?.contains('mo')) return;
-    if (!el.classList.contains('active')) return;
+    if (!el.classList.contains('active')) {
+        if (MODAL_CENTER_IDS.has(el.id)) clearModalAndroidLayout(el);
+        return;
+    }
     if (MODAL_CENTER_IDS.has(el.id)) applyModalAndroidLayout(el);
     if (el.id === 'dm' && gnHaySuboverlaySobreDetallePedido()) return;
     try {

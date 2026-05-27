@@ -58,7 +58,11 @@ function patchDetalleMantieneBp2() {
     const orig = window.detalle;
     if (!orig || orig.__gnBp2KeepOpen) return;
     async function wrapped(p, opts) {
-        expandBp2Panel();
+        try {
+            if (localStorage.getItem('pmg_bp2_hidden') !== '1') expandBp2Panel();
+        } catch (_) {
+            expandBp2Panel();
+        }
         return orig.call(window, p, opts);
     }
     wrapped.__gnBp2KeepOpen = true;
