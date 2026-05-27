@@ -1553,54 +1553,7 @@
 <script>
 (function(){var _b=atob("d2luZG93Ll9zdXBwb3J0c01vZHVsZXMgPSBmYWxzZTsKdHJ5IHsgaWYgKHR5cGVvZiBQcm9taXNlICE9PSAndW5kZWZpbmVkJyAmJiB0eXBlb2YgZmV0Y2ggIT09ICd1bmRlZmluZWQnKSB7IHdpbmRvdy5fc3VwcG9ydHNNb2R1bGVzID0gdHJ1ZTsgfSB9IGNhdGNoKF8pIHt9");var _u=new Uint8Array(_b.length);for(var _i=0;_i<_b.length;_i++)_u[_i]=_b.charCodeAt(_i);eval(new TextDecoder("utf-8").decode(_u));})()</script>
 <script src="autocompletado-calles.js"></script>
-<script>
-(function () {
-    var _gnLoginSubmitCaptureRegistrado = false;
-    var _gnLbLoginBridgeRegistrado = false;
-    function habilitarLbLoginTemprano() {
-        var b = document.getElementById('lb');
-        if (!b) return;
-        b.disabled = false;
-        try {
-            b.removeAttribute('disabled');
-        } catch (e) {}
-    }
-    /** Evita GET nativo (?gn_uid / ?gn_secret) si #lf dispara submit antes de app.js. */
-    function bloquearSubmitNativoLogin() {
-        var f = document.getElementById('lf');
-        if (!f || _gnLoginSubmitCaptureRegistrado) return;
-        _gnLoginSubmitCaptureRegistrado = true;
-        f.addEventListener('submit', function (ev) {
-            ev.preventDefault();
-        }, true);
-    }
-    /** Un solo click en #lb → window.__gnEjecutarLogin (app.js lo asigna al cargar el módulo). */
-    function registrarBridgeClickIngresar() {
-        var lb = document.getElementById('lb');
-        if (!lb || _gnLbLoginBridgeRegistrado) return;
-        _gnLbLoginBridgeRegistrado = true;
-        lb.addEventListener('click', function (ev) {
-            try {
-                ev.preventDefault();
-            } catch (e0) {}
-            if (typeof window.__gnEjecutarLogin === 'function') {
-                window.__gnEjecutarLogin(ev);
-            } else {
-                try {
-                    console.warn('[GN] Ingresar: app.js aún no cargó (red, error de módulo o caché vieja del SW)');
-                } catch (e1) {}
-            }
-        });
-    }
-    function initLoginTemprano() {
-        habilitarLbLoginTemprano();
-        bloquearSubmitNativoLogin();
-        registrarBridgeClickIngresar();
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initLoginTemprano);
-    else initLoginTemprano();
-})();
-</script>
+<script type="module" src="modules/gn-login-ingresar-bridge.js"></script>
 <script type="module" src="modules/admin-desestimar-reclamo.js"></script>
 <script type="module" src="modules/utils.js"></script>
 <script type="module" src="modules/ui-utils.js"></script>

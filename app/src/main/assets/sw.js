@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v248';
-const SW_VERSION  = '1.8.77';
+const CACHE_SHELL = 'pmg-shell-v249';
+const SW_VERSION  = '1.8.78';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -112,6 +112,7 @@ function shellAssetUrls() {
     j('modules/gn-map-throttle-when-modal.js'),
     j('modules/gn-modal-z-index-stack.js'),
     j('modules/gn-overlay-stack-android.js'),
+    j('modules/gn-login-ingresar-bridge.js'),
     j('modules/gn-post-login-lazy-bootstrap.js'),
     j('modules/gn-offline-status-bar.js'),
     j('modules/gn-clipboard-copy.js'),
@@ -653,5 +654,8 @@ self.addEventListener('fetch', event => {
     /\/index(\.min)?\.html$/i.test(path);
 
   const isMainJs = path.endsWith('/app.js') || path.endsWith('/sw.js');
-  event.respondWith((isHtml || isMainJs) ? networkFirstShell(req) : cacheFirstShell(req));
+  /** Evita app.js nuevo + módulos viejos en caché (rompe imports y el login no registra). */
+  const isShellJs =
+    isMainJs || /\/modules\//.test(path) || /\/js\//.test(path);
+  event.respondWith((isHtml || isShellJs) ? networkFirstShell(req) : cacheFirstShell(req));
 });
