@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v251';
-const SW_VERSION  = '1.8.80';
+const CACHE_SHELL = 'pmg-shell-v252';
+const SW_VERSION  = '1.8.81';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -65,6 +65,7 @@ function shellAssetUrls() {
     j('modules/gn-keyboard-shortcuts-help.js'),
     j('modules/gn-zona-servicio-pedido-guard.js'),
     j('modules/gn-oleada6-bootstrap.js'),
+    j('modules/gn-evento-corte-masivo-ui.js'),
     j('modules/gn-admin-sistema-salud-ui.js'),
     j('modules/gn-pedidos-sin-coords-modal.js'),
     j('modules/gn-notif-prefs-ui.js'),

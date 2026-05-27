@@ -9,3 +9,4 @@ import './gn-pedidos-sin-coords-modal.js';
 import './gn-notif-prefs-ui.js';
 import './gn-zona-servicio-mapa-preview.js';
 import './gn-app-version-gate.js';
+import './gn-evento-corte-masivo-ui.js';

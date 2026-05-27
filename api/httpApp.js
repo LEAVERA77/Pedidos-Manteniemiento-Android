@@ -31,6 +31,7 @@ import sociosCatalogoAdminRoutes from "./routes/sociosCatalogoAdmin.js";
 import geocodWaOperacionesRoutes from "./routes/geocodWaOperaciones.js";
 import infraAfectadosRoutes from "./routes/infraAfectados.js";
 import incidenciasRoutes from "./routes/incidencias.js";
+import eventoCorteMasivoRoutes from "./routes/eventoCorteMasivo.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
 import iaRoutes from "./routes/ia.js";
@@ -162,6 +163,7 @@ export function createHttpApp() {
   app.use("/api/calles-normalizadas", callesNormalizadasRoutes);
   app.use("/api/pedidos", pedidosRoutes);
   app.use("/api/incidencias", incidenciasRoutes);
+  app.use("/api/evento-corte-masivo", eventoCorteMasivoRoutes);
   app.use("/api/direcciones", direccionesRoutes);
   app.use("/api/tenant-operativa", tenantOperativaSettingsRoutes);
   app.use("/api/infra-afectados", infraAfectadosRoutes);
