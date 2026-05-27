@@ -295,7 +295,8 @@ function _gnMountLoginBiometricUi() {
     }
 }
 
-function _gnPurgarHuellaAlCerrarSesion() {
+/** Purga explícita (cambio de credenciales, olvidar acceso). No usar en logout normal. */
+function _gnPurgarHuellaGuardadaExplicitamente() {
     const B = window.AndroidBiometric;
     if (!B || typeof B.clearSavedLogin !== 'function') return;
     try {
@@ -305,7 +306,8 @@ function _gnPurgarHuellaAlCerrarSesion() {
 
 if (typeof window !== 'undefined') {
     window.__gnRefreshLoginBiometricUi = _gnMountLoginBiometricUi;
-    window.__gnPurgarHuellaAlCerrarSesion = _gnPurgarHuellaAlCerrarSesion;
+    window.__gnPurgarHuellaGuardadaExplicitamente = _gnPurgarHuellaGuardadaExplicitamente;
+    window.__gnPurgarHuellaAlCerrarSesion = _gnPurgarHuellaGuardadaExplicitamente;
     try {
         window.addEventListener('gestornova-app-ready', () => _gnSyncBiometricLoginScope());
     } catch (_) {}
