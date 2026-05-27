@@ -27,6 +27,7 @@ export function htmlReportesEmailAdminBlock() {
   <button type="button" class="btn-sm" id="gn-reporte-enviar-ahora">Enviar ahora (prueba)</button>
 </div>
 <span id="gn-reporte-msg" style="font-size:.75rem;color:var(--tl);display:block;margin-top:.35rem"></span>
+<p style="font-size:.72rem;color:var(--tl);margin:.5rem 0 0"><i class="fas fa-clock"></i> Automático en servidor: programá un cron en Render que llame <code>POST /api/reportes-programados/cron/ejecutar</code> con header <code>x-cron-secret</code> (diario 08:00, semanal lunes, mensual día 1).</p>
 </div>`;
 }
 
