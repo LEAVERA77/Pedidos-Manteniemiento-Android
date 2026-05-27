@@ -191,6 +191,7 @@ import {
 } from './modules/pedido-formulario-global-hooks.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
 import { normalizarTrafoDistribuidorAlGuardarPedido } from './modules/pedido-nuevo-guardar-trafo-dist.js';
+import { validarPuedePonerPedidoEnEjecucion } from './modules/pedido-detalle-puede-ejecutar.js';
 
 try {
     mountPedidoFormularioEnDom();
@@ -9437,6 +9438,15 @@ async function mergeFotosBase64EnPedido(id, nuevasDataUrls) {
 
 async function iniciar(id) {
     try {
+        const prevGate = app.p.find((p) => String(p.id) === String(id));
+        const gate = validarPuedePonerPedidoEnEjecucion(prevGate, {
+            esAdmin,
+            esTecnicoOSupervisor,
+        });
+        if (!gate.ok) {
+            toast(gate.message || 'No podés ejecutar este pedido.', 'warning');
+            return;
+        }
         const geo = await verificarGeocercaAntesIniciarPedido(id);
         if (!geo.ok) {
             toast(geo.message || 'Geocerca: acercate al reclamo para iniciar', 'warning');
