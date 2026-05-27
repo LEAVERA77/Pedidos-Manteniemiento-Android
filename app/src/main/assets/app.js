@@ -209,6 +209,7 @@ import {
 import './modules/login-biometric-android.js';
 import './modules/login-android-arranque.js';
 import './modules/gn-lazy-optional-ui-bootstrap.js';
+import './modules/gn-trust-ui-bootstrap.js';
 import { renderMkPedidosEnMapa } from './modules/map-pedidos-markers.js';
 
 import {

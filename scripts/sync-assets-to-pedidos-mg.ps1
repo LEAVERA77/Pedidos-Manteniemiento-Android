@@ -41,6 +41,8 @@ $files = @(
     'styles.css',
     'admin-web-responsive.css',
     'gn-android-shell-perf.css',
+    'gn-trust-ui.css',
+    'status.html',
     'app.js',
     'map.js',
     'map-view.js',

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GestorNova — Estado del servicio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #0f172a; background: #f8fafc; }
+    body { max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+    .sub { color: #64748b; font-size: 0.88rem; margin-bottom: 1.25rem; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.65rem; }
+    .ok { color: #15803d; font-weight: 600; }
+    .bad { color: #b91c1c; font-weight: 600; }
+    .pend { color: #b45309; }
+    .meta { font-size: 0.78rem; color: #64748b; margin-top: 0.35rem; }
+    a { color: #2563eb; }
+    button { margin-top: 1rem; padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Estado del servicio</h1>
+  <p class="sub">GestorNova — comprobación pública de API y base de datos</p>
+
+  <div id="api-card" class="card"><strong>API</strong><div id="api-state" class="pend">Comprobando…</div><div id="api-meta" class="meta"></div></div>
+  <div id="db-card" class="card"><strong>Base de datos</strong><div id="db-state" class="pend">Comprobando…</div><div id="db-meta" class="meta"></div></div>
+  <div class="card"><strong>WhatsApp / mensajería</strong><div class="meta">No se expone un endpoint público de salud. El estado operativo lo confirma el administrador desde el panel.</div></div>
+
+  <p class="meta" id="checked-at"></p>
+  <p><a href="index.html">Volver al panel</a></p>
+  <button type="button" id="btn-refresh">Actualizar</button>
+
+  <script>
+    async function loadApiBase() {
+      try {
+        const r = await fetch('config.json', { cache: 'no-store' });
+        if (!r.ok) throw new Error('config.json no disponible');
+        const cfg = await r.json();
+        const base = String(cfg?.api?.baseUrl || '').trim().replace(/\/+$/, '');
+        if (!base) throw new Error('api.baseUrl vacío en config.json');
+        return base;
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function setState(elId, metaId, ok, label, meta) {
+      const el = document.getElementById(elId);
+      const metaEl = document.getElementById(metaId);
+      if (el) {
+        el.className = ok ? 'ok' : 'bad';
+        el.textContent = label;
+      }
+      if (metaEl) metaEl.textContent = meta || '';
+    }
+
+    async function runCheck() {
+      const base = await loadApiBase();
+      if (!base) {
+        setState('api-state', 'api-meta', false, 'No configurado', 'No se pudo leer config.json (api.baseUrl).');
+        setState('db-state', 'db-meta', false, 'Sin comprobar', '');
+        return;
+      }
+
+      const t0 = performance.now();
+      try {
+        const r = await fetch(base + '/health', { cache: 'no-store' });
+        const data = await r.json().catch(() => ({}));
+        const ms = Math.round(performance.now() - t0);
+        setState('api-state', 'api-meta', r.ok && data.ok !== false, r.ok ? 'Operativo' : 'Error', `${base}/health · ${ms} ms`);
+      } catch (e) {
+        setState('api-state', 'api-meta', false, 'Sin respuesta', String(e.message || e));
+      }
+
+      const t1 = performance.now();
+      try {
+        const r = await fetch(base + '/health/db', { cache: 'no-store' });
+        const data = await r.json().catch(() => ({}));
+        const ms = Math.round(performance.now() - t1);
+        const ok = r.ok && data.ok && data.db === 'ok';
+        setState('db-state', 'db-meta', ok, ok ? 'Operativo' : 'Error', `${base}/health/db · ${ms} ms`);
+      } catch (e) {
+        setState('db-state', 'db-meta', false, 'Sin respuesta', String(e.message || e));
+      }
+
+      document.getElementById('checked-at').textContent =
+        'Última comprobación: ' + new Date().toLocaleString('es-AR');
+    }
+
+    document.getElementById('btn-refresh').addEventListener('click', runCheck);
+    runCheck();
+  </script>
+</body>
+</html>
