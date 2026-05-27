@@ -746,15 +746,17 @@ router.get("/buscar-global", async (req, res) => {
     const numQ = /^\d+$/.test(q) ? Number(q) : null;
     const orParts = [
       `cliente_nombre ILIKE $1`,
+      `COALESCE(cliente, '') ILIKE $1`,
       `cliente_direccion ILIKE $1`,
       `COALESCE(nis::text, '') ILIKE $1`,
       `COALESCE(medidor::text, '') ILIKE $1`,
+      `COALESCE(nis_medidor::text, '') ILIKE $1`,
       `COALESCE(telefono_contacto::text, '') ILIKE $1`,
+      `COALESCE(numero_pedido::text, '') ILIKE $1`,
     ];
     if (numQ != null) {
       params.push(numQ);
       orParts.push(`id = $${params.length}`);
-      orParts.push(`numero_pedido = $${params.length}`);
     }
     const r = await query(
       `SELECT id, numero_pedido, estado, nis, medidor, cliente_nombre, cliente_direccion,

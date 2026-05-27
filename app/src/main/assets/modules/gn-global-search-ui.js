@@ -23,6 +23,16 @@ function getTok() {
     return typeof window.getApiToken === 'function' ? window.getApiToken() : '';
 }
 
+function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = String(el.tagName || '').toLowerCase();
+    if (tag === 'select' || el.isContentEditable) return true;
+    if (tag !== 'input' && tag !== 'textarea') return false;
+    if (el.id === 'gn-global-search-input') return false;
+    const type = String(el.type || '').toLowerCase();
+    return type !== 'checkbox' && type !== 'radio' && type !== 'button';
+}
+
 function ensureModal() {
     if (document.getElementById(MODAL_ID)) return;
     const mo = document.createElement('div');
@@ -55,7 +65,21 @@ function ensureModal() {
             e.preventDefault();
             cerrarBusquedaGlobal();
         }
+        if (e.key === 'Enter') {
+            const first = document.querySelector('#gn-global-search-results [data-pid]');
+            if (first) {
+                e.preventDefault();
+                void abrirPedidoDesdeFila(first.getAttribute('data-pid'));
+            }
+        }
     });
+}
+
+async function abrirPedidoDesdeFila(pidAttr) {
+    const pid = Number(pidAttr);
+    if (!Number.isFinite(pid)) return;
+    cerrarBusquedaGlobal();
+    await abrirDetallePedidoPorId(pid);
 }
 
 export function abrirBusquedaGlobal() {
@@ -65,6 +89,7 @@ export function abrirBusquedaGlobal() {
         return;
     }
     ensureModal();
+    injectSearchButton();
     const mo = document.getElementById(MODAL_ID);
     if (!mo) return;
     mo.classList.add('active');
@@ -91,12 +116,15 @@ async function ejecutarBusquedaGlobal() {
     }
     host.innerHTML = '<p class="gn-global-search-empty"><i class="fas fa-circle-notch fa-spin"></i> Buscando…</p>';
     try {
+        if (typeof window.asegurarJwtApiRest === 'function') {
+            await window.asegurarJwtApiRest();
+        }
         const r = await fetch(apiUrl(`/api/pedidos/buscar-global?q=${encodeURIComponent(q)}&limit=30`), {
             headers: { Authorization: `Bearer ${getTok()}` },
             cache: 'no-store',
         });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.error || r.statusText);
+        if (!r.ok) throw new Error(data.error || data.detail || r.statusText);
         const rows = data.resultados || [];
         if (!rows.length) {
             host.innerHTML = '<p class="gn-global-search-empty">Sin resultados</p>';
@@ -105,22 +133,21 @@ async function ejecutarBusquedaGlobal() {
         host.innerHTML = rows
             .map((p) => {
                 const id = p.id;
-                const num = p.numero_pedido != null ? `#${p.numero_pedido}` : `#${id}`;
+                const num =
+                    p.numero_pedido != null && String(p.numero_pedido).trim()
+                        ? `#${p.numero_pedido}`
+                        : `#${id}`;
                 const sub = [p.nis, p.medidor, p.telefono_contacto].filter(Boolean).join(' · ');
+                const nom = p.cliente_nombre || p.cliente || 'Sin nombre';
                 return `<button type="button" class="gn-global-search-row" data-pid="${esc(id)}" role="option">
   <span class="gn-global-search-row-t">${esc(num)} · ${esc(p.estado || '—')}</span>
-  <span class="gn-global-search-row-s">${esc(p.cliente_nombre || 'Sin nombre')}</span>
+  <span class="gn-global-search-row-s">${esc(nom)}</span>
   <span class="gn-global-search-row-m">${esc(p.cliente_direccion || '')}${sub ? ` · ${esc(sub)}` : ''}</span>
 </button>`;
             })
             .join('');
         host.querySelectorAll('[data-pid]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const pid = Number(btn.getAttribute('data-pid'));
-                if (!Number.isFinite(pid)) return;
-                cerrarBusquedaGlobal();
-                await abrirDetallePedidoPorId(pid);
-            });
+            btn.addEventListener('click', () => void abrirPedidoDesdeFila(btn.getAttribute('data-pid')));
         });
     } catch (e) {
         host.innerHTML = `<p class="gn-global-search-empty">${esc(e.message || 'Error')}</p>`;
@@ -138,21 +165,24 @@ function injectSearchButton() {
     btn.title = 'Buscar pedido (Ctrl+K)';
     btn.innerHTML = '<i class="fas fa-search" aria-hidden="true"></i>';
     btn.addEventListener('click', () => abrirBusquedaGlobal());
-    const ref = document.getElementById('btn-dashboard-gerencia') || document.getElementById('btn-admin');
+    const ref = document.getElementById('btn-keyboard-shortcuts') || document.getElementById('btn-dashboard-gerencia') || document.getElementById('btn-admin');
     if (ref) slot.insertBefore(btn, ref);
     else slot.prepend(btn);
 }
 
+function onGlobalShortcut(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    if (e.key !== 'k' && e.key !== 'K') return;
+    if (isTypingTarget(document.activeElement)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    abrirBusquedaGlobal();
+}
+
 function initGnGlobalSearch() {
     injectSearchButton();
-    window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-            const tag = String(document.activeElement?.tagName || '').toLowerCase();
-            if (tag === 'input' || tag === 'textarea') return;
-            e.preventDefault();
-            abrirBusquedaGlobal();
-        }
-    });
+    window.addEventListener('keydown', onGlobalShortcut, true);
+    document.addEventListener('gn-ms-visible', injectSearchButton);
     window.abrirBusquedaGlobal = abrirBusquedaGlobal;
 }
 

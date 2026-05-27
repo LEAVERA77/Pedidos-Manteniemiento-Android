@@ -4,6 +4,32 @@
  */
 
 import { CHART_PALETTE_ARRAY } from './graficos-colores.js';
+import { tiposReclamoSeleccionables, TIPOS_RECLAMO_LEGACY } from './catalogoReclamoPorRubro.js';
+
+/**
+ * Excluye tipos de otro rubro (p. ej. «Bacheo y Pavimento» en cooperativa eléctrica).
+ * @param {Array<{ tipo?: string, n?: number|string, nd?: number|string }>} rows
+ */
+export function filasTiposTrabajoParaGraficoEstadisticas(rows) {
+    const permitidos = new Set(
+        tiposReclamoSeleccionables().map((t) => String(t).trim().toLowerCase())
+    );
+    permitidos.add('sin tipo');
+    for (const t of TIPOS_RECLAMO_LEGACY) {
+        permitidos.add(String(t).trim().toLowerCase());
+    }
+    const out = [];
+    for (const r of rows || []) {
+        const tipo = String(r.tipo || 'Sin tipo').trim() || 'Sin tipo';
+        if (!permitidos.has(tipo.toLowerCase())) continue;
+        out.push({
+            tipo,
+            n: parseInt(r.n, 10) || 0,
+            nd: parseInt(r.nd, 10) || 0,
+        });
+    }
+    return out.sort((a, b) => b.n - a.n).slice(0, 10);
+}
 
 export function sqlMotivosDesestimacion(filtro) {
     return `SELECT COALESCE(NULLIF(TRIM(motivo_desestimacion),''), '(Sin motivo)') AS motivo, COUNT(*)::int AS n

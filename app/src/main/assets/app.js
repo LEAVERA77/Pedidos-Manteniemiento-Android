@@ -76,6 +76,7 @@ import {
     sqlMotivosDesestimacion,
     datasetsTiposTrabajoConDesestimados,
     opcionesChartTiposApilados,
+    filasTiposTrabajoParaGraficoEstadisticas,
     crearGraficoMotivosDesestimacion,
     insertarCardDesestimadosEnResumen,
     renderBloquePdfDesestimados,
@@ -3280,6 +3281,9 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
+        try {
+            document.dispatchEvent(new CustomEvent('gn-ms-visible'));
+        } catch (_) {}
         try {
             document.body.classList.add('gn-sesion-activa');
         } catch (_) {}
@@ -16274,15 +16278,16 @@ async function cargarEstadisticas() {
         );
 
         // ── Gráfico tipos de trabajo: barras horizontales apiladas (otros + desestimados) ─────
+        const tiposGrafRows = filasTiposTrabajoParaGraficoEstadisticas(rTipos.rows);
         crearChart(
             'chart-tipos',
             'bar',
-            rTipos.rows.map((r) => (r.tipo.length > 25 ? r.tipo.substring(0, 25) + '…' : r.tipo)),
-            datasetsTiposTrabajoConDesestimados(rTipos.rows),
+            tiposGrafRows.map((r) => (r.tipo.length > 25 ? r.tipo.substring(0, 25) + '…' : r.tipo)),
+            datasetsTiposTrabajoConDesestimados(tiposGrafRows),
             opcionesChartTiposApilados()
         );
         if (_charts['chart-tipos']) {
-            _charts['chart-tipos']._gnLabelsFull = rTipos.rows.map((r) => String(r.tipo || ''));
+            _charts['chart-tipos']._gnLabelsFull = tiposGrafRows.map((r) => String(r.tipo || ''));
         }
         try {
             crearGraficoMotivosDesestimacion(crearChart, rMotivos.rows || []);
