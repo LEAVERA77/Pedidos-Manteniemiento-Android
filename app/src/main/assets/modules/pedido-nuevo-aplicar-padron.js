@@ -209,9 +209,9 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
         if (telPadron) tel.value = telPadron;
         else if (limpiarTel) tel.value = '';
     }
-    if (calleEl && row.calle != null) calleEl.value = String(row.calle).trim();
-    if (numEl && row.numero != null) numEl.value = String(row.numero).trim();
-    if (locEl && row.localidad != null) locEl.value = String(row.localidad).trim();
+    if (calleEl) calleEl.value = row.calle != null ? String(row.calle).trim() : '';
+    if (numEl) numEl.value = row.numero != null ? String(row.numero).trim() : '';
+    if (locEl) locEl.value = row.localidad != null ? String(row.localidad).trim() : '';
 
     if (opts.esMunicipio || opts.esAgua) {
         if (refEl && row.barrio != null) refEl.value = String(row.barrio).trim();
@@ -246,4 +246,18 @@ export function aplicarPadronAlFormularioNuevoPedido(row, opts = {}) {
 
     registrarProteccionPadronPedidoNuevo(row, opts);
     return String(ident || '').trim();
+}
+
+/**
+ * CP/provincia del catálogo si aún no hay reverse en el pin (se pisan luego con Nominatim).
+ * @param {Record<string, unknown>} row
+ */
+export function aplicarProvinciaCpFallbackDesdePadron(row) {
+    if (!row || typeof row !== 'object') return;
+    const pEl = document.getElementById('ped-cli-provincia');
+    const cEl = document.getElementById('ped-cli-cp');
+    const prov = row.provincia != null ? String(row.provincia).trim() : '';
+    const cp = row.codigo_postal != null ? String(row.codigo_postal).trim() : '';
+    if (pEl && prov) pEl.value = prov;
+    if (cEl && cp) cEl.value = cp;
 }

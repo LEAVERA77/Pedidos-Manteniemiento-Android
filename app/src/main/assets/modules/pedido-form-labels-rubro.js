@@ -76,10 +76,12 @@ export function placeholderNisCampo({ requerido }) {
 }
 
 /**
- * @param {{ requiereNis: boolean, esMunicipio: boolean }} opts
+ * @param {{ requiereNis: boolean, requiereNombre?: boolean, esMunicipio: boolean }} opts
  */
 export function syncPedidoFormNisYClienteLabels(opts) {
     const { requiereNis, esMunicipio } = opts;
+    const requiereNombre =
+        opts.requiereNombre !== undefined ? !!opts.requiereNombre : !!requiereNis;
     const base = etiquetaCampoIdentificadorServicio();
     const lbN = document.getElementById('lbl-nis');
     const inpN = document.getElementById('nis');
@@ -92,11 +94,17 @@ export function syncPedidoFormNisYClienteLabels(opts) {
     const lb = document.getElementById('lbl-cl');
     const inp = document.getElementById('cl');
     const etiquetaPersona = esMunicipio ? 'Vecino' : 'Cliente';
-    if (lb) lb.textContent = requiereNis ? `${etiquetaPersona} *` : etiquetaPersona;
+    if (lb) lb.textContent = requiereNombre ? `${etiquetaPersona} *` : etiquetaPersona;
     if (inp) {
-        if (requiereNis) inp.setAttribute('required', 'required');
+        if (requiereNombre) inp.setAttribute('required', 'required');
         else inp.removeAttribute('required');
-        inp.placeholder = esMunicipio ? 'Nombre del vecino (si aplica)' : 'Nombre o razón social del socio';
+        inp.placeholder = requiereNombre
+            ? esMunicipio
+                ? 'Nombre del vecino'
+                : 'Nombre o razón social del socio'
+            : esMunicipio
+              ? 'Opcional — solo ubicación en mapa'
+              : 'Opcional — nombre si lo conocés; sin NIS podés usar solo el punto del mapa';
     }
     try {
         syncHistorialNisBusquedaDom();

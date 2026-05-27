@@ -16,6 +16,8 @@ import {
     guardarSuministroPadronDesdeFila,
 } from './pedido-nuevo-suministro-padron.js';
 import { aplicarCoordsPadronPedidoOficinaSiHay } from './pedido-nuevo-oficina.js';
+import { programarReverseTrasPadronNuevoPedido } from './pedido-nuevo-reverse-tras-padron.js';
+import { syncTrafoPedidoNuevoEditable } from './pedido-nuevo-trafo-editable.js';
 
 /** @param {unknown} v */
 function txt(v) {
@@ -99,6 +101,11 @@ export async function aplicarPadronAlPedidoNuevo(deps, row) {
 
     try {
         await aplicarCoordsPadronPedidoOficinaSiHay(full);
+    } catch (_) {}
+
+    programarReverseTrasPadronNuevoPedido(full);
+    try {
+        syncTrafoPedidoNuevoEditable();
     } catch (_) {}
 
     return { ident, distribuidorOk, row: full };

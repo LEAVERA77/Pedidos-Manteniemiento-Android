@@ -190,6 +190,7 @@ import {
     tipoReclamoElectricoPideSuministroWhatsapp,
 } from './modules/pedido-formulario-global-hooks.js';
 import { cargarSelectDi2Distribuidores } from './modules/pedido-di2-distribuidores.js';
+import { normalizarTrafoDistribuidorAlGuardarPedido } from './modules/pedido-nuevo-guardar-trafo-dist.js';
 
 try {
     mountPedidoFormularioEnDom();
@@ -9007,17 +9008,17 @@ function _bindPedidoFormSubmit() {
         let trafoVal = (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
         let barrioVal = null;
         const tieneNisMed = !!nisVal;
-        if (esCooperativaElectricaRubro()) {
-            if (!tieneNisMed) {
-                trafoVal = '';
-            }
-        } else if (esMunicipioRubro()) {
-            barrioVal = disVal || null;
-            disVal = '';
-            trafoVal = '';
-        } else if (esCooperativaAguaRubro()) {
-            trafoVal = '';
-        }
+        const normTrafoDis = normalizarTrafoDistribuidorAlGuardarPedido({
+            esCooperativaElectrica: esCooperativaElectricaRubro(),
+            esMunicipio: esMunicipioRubro(),
+            esAgua: esCooperativaAguaRubro(),
+            nisVal,
+            disVal,
+            trafoVal,
+        });
+        disVal = normTrafoDis.disVal;
+        trafoVal = normTrafoDis.trafoVal;
+        barrioVal = normTrafoDis.barrioVal;
         if (
             esCooperativaElectricaRubro() &&
             tieneNisMed &&
@@ -12134,9 +12135,17 @@ function tipoPedidoExcluyeMateriales(tipoTrabajo) {
 }
 
 function syncNisClienteReclamoConexionUI() {
-    const req = tipoTrabajoRequiereNisYCliente();
+    const tipoTr = document.getElementById('tt')?.value || '';
+    const req = tipoReclamoRequiereNisYCliente(tipoTr);
     const esMunicipio = String(window.EMPRESA_CFG?.tipo || '').toLowerCase() === 'municipio';
-    syncPedidoFormNisYClienteLabels({ requiereNis: req, esMunicipio });
+    syncPedidoFormNisYClienteLabels({
+        requiereNis: req,
+        requiereNombre: tipoReclamoRequiereNombreClienteEnFormulario(tipoTr),
+        esMunicipio,
+    });
+    try {
+        if (typeof window.syncTrafoPedidoNuevoEditable === 'function') window.syncTrafoPedidoNuevoEditable();
+    } catch (_) {}
 }
 const st = document.getElementById('tt');
 if (st) {

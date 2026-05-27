@@ -216,8 +216,12 @@ export function programarReverseNominatimFormularioNuevoPedidoDesdeMapa(lat, lng
     }, 0);
 }
 
-export function resetPedidoNuevoReverseGeoCache() {
+export function invalidatePedidoNuevoReverseGeoKey() {
     _ultimaReverseKey = '';
+}
+
+export function resetPedidoNuevoReverseGeoCache() {
+    invalidatePedidoNuevoReverseGeoKey();
     const pEl = document.getElementById('ped-cli-provincia');
     const cEl = document.getElementById('ped-cli-cp');
     if (pEl) pEl.value = '';

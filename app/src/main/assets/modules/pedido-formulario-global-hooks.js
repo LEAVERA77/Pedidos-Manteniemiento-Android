@@ -5,6 +5,10 @@
 
 import { prioridadPredeterminadaPorTipoTrabajoUI } from './catalogoReclamoPorRubro.js';
 import { reaplicarSuministroPadronPendiente } from './pedido-nuevo-suministro-padron.js';
+import {
+    installTrafoPedidoNuevoListeners,
+    syncTrafoPedidoNuevoEditable,
+} from './pedido-nuevo-trafo-editable.js';
 
 function esCooperativaElectricaRubro() {
     const t = String(window.EMPRESA_CFG?.tipo || '')
@@ -51,10 +55,14 @@ export function syncSuministroElectricoUI() {
     } else {
         reaplicarSuministroPadronPendiente();
     }
+    try {
+        syncTrafoPedidoNuevoEditable();
+    } catch (_) {}
 }
 
 export function installPedidoFormularioGlobalHooks() {
     if (typeof window === 'undefined') return;
     window.syncPrioridadConTipoReclamo = syncPrioridadConTipoReclamo;
     window.syncSuministroElectricoUI = syncSuministroElectricoUI;
+    installTrafoPedidoNuevoListeners();
 }
