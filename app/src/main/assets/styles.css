@@ -1092,6 +1092,15 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
   flex-shrink:0;
 }
 .chart-container--tall{height:440px;min-height:440px;max-height:520px}
+#admin-estadisticas .chart-wrap:has(#chart-tipos),
+#admin-estadisticas .chart-wrap:has(#chart-barrios-tiempo){
+  overflow:visible;
+}
+#admin-estadisticas .chart-container--tall:has(#chart-tipos),
+#admin-estadisticas .chart-container--tall:has(#chart-barrios-tiempo){
+  overflow:visible;
+  min-width:0;
+}
 /* Captura PDF / html2canvas: evita que la grilla estire alturas fantasma */
 .gn-capture-pdf.chart-wrap,
 .chart-wrap.gn-capture-pdf{

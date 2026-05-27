@@ -1,4 +1,6 @@
 /** Chart.js plugins estadisticas admin. made by leavera77 */
+import { ajustarEjeYBarraHorizontal, CHART_IDS_BARRA_HORIZONTAL } from './estadisticas-chart-hbar-layout.js';
+
 export function initGNChartPercentPlugins() {
     if (window.__gnChartPctPlugins || typeof Chart === 'undefined') return;
     window.__gnChartPctPlugins = true;
@@ -31,6 +33,20 @@ export function initGNChartPercentPlugins() {
             });
             ctx.restore();
         }
+    });
+    Chart.register({
+        id: 'gestornovaStatsHBarYAxis',
+        afterLayout(chart) {
+            const cid = chart.canvas?.id;
+            if (!cid || !CHART_IDS_BARRA_HORIZONTAL.has(cid)) return;
+            if (chart.config.type !== 'bar' || chart.options.indexAxis !== 'y') return;
+            if (chart.__gnHbarYDone) return;
+            chart.__gnHbarYDone = true;
+            ajustarEjeYBarraHorizontal(chart);
+            requestAnimationFrame(() => {
+                chart.__gnHbarYDone = false;
+            });
+        },
     });
     Chart.register({
         id: 'gestornovaStatsBarLabels',

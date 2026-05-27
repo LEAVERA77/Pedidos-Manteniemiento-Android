@@ -77,6 +77,10 @@ import {
     datasetsTiposTrabajoConDesestimados,
     opcionesChartTiposApilados,
     filasTiposTrabajoParaGraficoEstadisticas,
+    labelsEjeYChartTipos,
+    finalizarChartTiposTrabajo,
+    crearChartBarriosTiempoEstadisticas,
+    opcionesChartDistribuidoresEstadisticas,
     crearGraficoMotivosDesestimacion,
     insertarCardDesestimadosEnResumen,
     renderBloquePdfDesestimados,
@@ -16285,13 +16289,11 @@ async function cargarEstadisticas() {
         crearChart(
             'chart-tipos',
             'bar',
-            tiposGrafRows.map((r) => (r.tipo.length > 25 ? r.tipo.substring(0, 25) + '…' : r.tipo)),
+            labelsEjeYChartTipos(tiposGrafRows),
             datasetsTiposTrabajoConDesestimados(tiposGrafRows),
             opcionesChartTiposApilados()
         );
-        if (_charts['chart-tipos']) {
-            _charts['chart-tipos']._gnLabelsFull = tiposGrafRows.map((r) => String(r.tipo || ''));
-        }
+        finalizarChartTiposTrabajo(_charts['chart-tipos'], tiposGrafRows);
         try {
             crearGraficoMotivosDesestimacion(crearChart, rMotivos.rows || []);
         } catch (_) {}
@@ -16316,49 +16318,11 @@ async function cargarEstadisticas() {
                 { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(186, 230, 253, 0.82)', borderColor: 'rgba(125, 211, 252, 0.65)', borderWidth: 1 },
                 { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(167, 243, 208, 0.85)', borderColor: 'rgba(110, 231, 183, 0.65)', borderWidth: 1 }
             ],
-            { layout: { padding: { top: 8, bottom: 36, left: 4, right: 10 } },
-              plugins: { legend: { display: true, position: 'top' },
-                tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + c.parsed.y }}},
-              scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
+            opcionesChartDistribuidoresEstadisticas()
         );
 
         if (esMun && (rBarT?.rows || []).length) {
-            crearChart(
-                'chart-barrios-tiempo',
-                'bar',
-                rBarT.rows.map((r) => (String(r.barrio || '').length > 22 ? String(r.barrio).slice(0, 22) + '…' : String(r.barrio || ''))),
-                [
-                    {
-                        label: 'Horas prom. cierre',
-                        data: rBarT.rows.map((r) => parseFloat(r.horas_prom || 0)),
-                        backgroundColor: 'rgba(186, 230, 253, 0.75)',
-                        borderColor: 'rgba(125, 211, 252, 0.55)',
-                        borderWidth: 1,
-                    },
-                ],
-                {
-                    indexAxis: 'y',
-                    layout: { padding: { top: 4, bottom: 4, left: 4, right: 48 } },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: (c) =>
-                                    ' ' +
-                                    (c.parsed?.x != null ? c.parsed.x.toFixed(1) : c.raw) +
-                                    ' h · n=' +
-                                    (rBarT.rows[c.dataIndex]?.n ?? ''),
-                            },
-                        },
-                    },
-                    scales: { x: { beginAtZero: true, title: { display: true, text: 'Horas' } } },
-                }
-            );
-            if (_charts['chart-barrios-tiempo']) {
-                _charts['chart-barrios-tiempo']._gnLabelsFull = rBarT.rows.map((r) =>
-                    String(r.barrio || '')
-                );
-            }
+            crearChartBarriosTiempoEstadisticas(crearChart, _charts, rBarT.rows);
         } else if (_charts['chart-barrios-tiempo']) {
             _charts['chart-barrios-tiempo'].destroy();
             delete _charts['chart-barrios-tiempo'];

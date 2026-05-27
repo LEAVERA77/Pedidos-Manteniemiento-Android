@@ -5,6 +5,17 @@
 
 import { CHART_PALETTE_ARRAY } from './graficos-colores.js';
 import { tiposReclamoSeleccionables, TIPOS_RECLAMO_LEGACY } from './catalogoReclamoPorRubro.js';
+import {
+    labelsEjeYChartTipos,
+    mergeOpcionesBarraHorizontalEstadisticas,
+    ajustarEjeYBarraHorizontal,
+} from './estadisticas-chart-hbar-layout.js';
+
+export {
+    labelsEjeYChartTipos,
+    crearChartBarriosTiempoEstadisticas,
+    opcionesChartDistribuidoresEstadisticas,
+} from './estadisticas-chart-hbar-layout.js';
 
 /**
  * Excluye tipos de otro rubro (p. ej. «Bacheo y Pavimento» en cooperativa eléctrica).
@@ -59,13 +70,17 @@ export function datasetsTiposTrabajoConDesestimados(rTiposRows) {
 }
 
 export function opcionesChartTiposApilados() {
-    return {
-        indexAxis: 'y',
-        layout: { padding: { top: 8, bottom: 8, left: 12, right: 44 } },
+    return mergeOpcionesBarraHorizontalEstadisticas({
         plugins: {
             legend: { display: true, position: 'top' },
             tooltip: {
                 callbacks: {
+                    title: (items) => {
+                        const i = items[0]?.dataIndex;
+                        const full = items[0]?.chart?._gnLabelsFull;
+                        if (full && full[i] != null) return String(full[i]);
+                        return items[0]?.label != null ? String(items[0].label) : '';
+                    },
                     label: (c) => {
                         const v =
                             c.parsed && typeof c.parsed === 'object' && 'x' in c.parsed ? c.parsed.x : c.raw;
@@ -78,7 +93,14 @@ export function opcionesChartTiposApilados() {
             x: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
             y: { stacked: true },
         },
-    };
+    });
+}
+
+/** Tras crear chart-tipos: etiquetas completas en tooltip + ancho eje Y. */
+export function finalizarChartTiposTrabajo(chart, filas) {
+    if (!chart) return;
+    chart._gnLabelsFull = (filas || []).map((r) => String(r.tipo || ''));
+    ajustarEjeYBarraHorizontal(chart);
 }
 
 export function crearGraficoMotivosDesestimacion(crearChart, rMotivosRows) {
