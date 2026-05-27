@@ -14,6 +14,7 @@ const LS_CAPAS_BODY = 'pmg_map_capas_body_collapsed';
 const LS_COORDS_SLID = 'pmg_map_coords_slid';
 const LS_COORDS_BODY = 'pmg_map_coords_body_collapsed';
 const LS_MAP_PANELS_V2 = 'pmg_map_panels_storage_v2';
+const LS_CORTE_MASIVO_SLID = 'pmg_map_corte_masivo_slid';
 
 function migrateMapFiltrosCapasStorageV2Once() {
     try {
@@ -50,6 +51,7 @@ function mapTabIdForCard(cardId) {
     if (cardId === 'mapa-card-colores') return 'map-tab-colores';
     if (cardId === 'mapa-card-capas-osm') return 'map-tab-capas-osm';
     if (cardId === 'mapa-card-coords-converter') return 'map-tab-coords-converter';
+    if (cardId === 'mapa-card-corte-masivo') return 'map-tab-corte-masivo';
     return 'map-tab-dash';
 }
 
@@ -88,6 +90,7 @@ function toggleMapaCardSlideoff(cardId, hide) {
         if (cardId === 'mapa-card-dashboard') localStorage.setItem('pmg_slideoff_dash', hide ? '1' : '0');
         if (cardId === 'mapa-card-capas-osm') localStorage.setItem(LS_CAPAS_SLID, hide ? '1' : '0');
         if (cardId === 'mapa-card-coords-converter') localStorage.setItem(LS_COORDS_SLID, hide ? '1' : '0');
+        if (cardId === 'mapa-card-corte-masivo') localStorage.setItem(LS_CORTE_MASIVO_SLID, hide ? '1' : '0');
     } catch (_) {}
 }
 
@@ -145,6 +148,18 @@ function syncMapSlideTabsFromStorage() {
         const bodyCollapsedCr = localStorage.getItem(LS_COORDS_BODY) === '1';
         if (bCr) bCr.classList.toggle('collapsed', bodyCollapsedCr);
         if (chCr) chCr.textContent = bodyCollapsedCr ? '▶' : '▼';
+    }
+    const corte = document.getElementById('mapa-card-corte-masivo');
+    const tabCorte = document.getElementById('map-tab-corte-masivo');
+    if (corte && corte.style.display !== 'none') {
+        try {
+            if (localStorage.getItem(LS_CORTE_MASIVO_SLID) === null) localStorage.setItem(LS_CORTE_MASIVO_SLID, '1');
+        } catch (_) {}
+        const slidCorte = localStorage.getItem(LS_CORTE_MASIVO_SLID) !== '0';
+        corte.classList.toggle('moui-card-slideoff', slidCorte);
+        try {
+            tabCorte?.classList.toggle('visible', slidCorte);
+        } catch (_) {}
     }
 }
 

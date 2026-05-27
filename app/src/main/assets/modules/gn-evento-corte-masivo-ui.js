@@ -3,7 +3,7 @@
  * made by leavera77
  */
 import { toast } from './ui-utils.js';
-import { ensureCorteMasivoLauncher } from './gn-evento-corte-masivo-launcher.js';
+import { ensureCorteMasivoLauncher, syncCorteMasivoLauncher } from './gn-evento-corte-masivo-launcher.js';
 
 const API = '/api/evento-corte-masivo';
 
@@ -388,7 +388,10 @@ function install() {
     bindModalActions();
     syncLauncherVisibility();
     document.addEventListener('visibilitychange', syncLauncherVisibility, false);
-    document.addEventListener('gn-ms-visible', syncLauncherVisibility, false);
+    document.addEventListener('gn-ms-visible', () => {
+        syncLauncherVisibility();
+        syncCorteMasivoLauncher();
+    }, false);
     const obs = () => syncLauncherVisibility();
     try {
         setInterval(obs, 8000);
