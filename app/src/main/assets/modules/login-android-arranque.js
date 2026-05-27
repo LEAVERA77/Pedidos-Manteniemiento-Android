@@ -132,6 +132,14 @@ function instalarPreservacionCamposLogin() {
                 sessionStorage.removeItem(DRAFT_PW);
             } else if (teniaSesion && !window.__gnBiometricLoginFlow) {
                 try {
+                    sessionStorage.removeItem(DRAFT_EM);
+                    sessionStorage.removeItem(DRAFT_PW);
+                    const emEl = document.getElementById('em');
+                    const pwEl = document.getElementById('pw');
+                    if (emEl) emEl.value = '';
+                    if (pwEl) pwEl.value = '';
+                } catch (_) {}
+                try {
                     const refreshBio = () => {
                         if (typeof window.__gnRefreshLoginBiometricUi === 'function') {
                             window.__gnRefreshLoginBiometricUi();

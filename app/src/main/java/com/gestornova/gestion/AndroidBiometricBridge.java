@@ -253,31 +253,33 @@ public final class AndroidBiometricBridge {
     }
 
     /**
-     * Alinea el acceso biométrico con el tenant y la línea de negocio actuales (login / cambio de tenant).
-     * Si hay credenciales de otro ámbito, las borra.
+     * Reservado para alinear metadatos en sesión. No borra credenciales: la purga por cambio de
+     * tenant la hace {@link #clearSavedLoginIfTenantChanged}; el login con huella valida ámbito.
      */
     @JavascriptInterface
     public void syncBiometricLoginScope(int tenantId, String businessType) {
         ensureFreshInstallOrAppUpgrade();
-        int tid = tenantId > 0 ? tenantId : 1;
-        String bt = normalizeBusinessType(businessType);
+    }
+
+    /** Ámbito con el que se guardó el acceso (para login tras cerrar sesión en WebView). */
+    @JavascriptInterface
+    public String getSavedLoginScopeJson() {
         try {
             SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String emStored = p.getString(K_EM, "");
-            if (emStored != null
-                    && !emStored.trim().isEmpty()
-                    && !storedScopeMatches(tid, bt)) {
-                wipeBiometricCredentialsInternal(true);
-                activity.runOnUiThread(
-                        () ->
-                                Toast.makeText(
-                                                activity,
-                                                "El acceso con huella era de otro tenant o tipo de negocio. "
-                                                        + "Guardalo de nuevo para este contexto.",
-                                                Toast.LENGTH_LONG)
-                                        .show());
+            String em = p.getString(K_EM, "");
+            if (em == null || em.trim().isEmpty()) {
+                return "{}";
             }
-        } catch (Throwable ignored) {
+            int st = p.getInt(K_SCOPE_TENANT, -1);
+            if (st < 1) {
+                return "{}";
+            }
+            JSONObject o = new JSONObject();
+            o.put("tenantId", st);
+            o.put("businessType", normalizeBusinessType(p.getString(K_SCOPE_BIZ, "")));
+            return o.toString();
+        } catch (Throwable t) {
+            return "{}";
         }
     }
 
