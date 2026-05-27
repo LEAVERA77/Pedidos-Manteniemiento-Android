@@ -1,5 +1,6 @@
 /**
  * Aviso cuando hay una nueva versión del service worker / caché shell.
+ * Tras Recargar o cerrar (×), no vuelve a mostrarse para la misma SW_VERSION.
  * made by leavera77
  */
 
@@ -11,24 +12,52 @@ function parseSwVersion(text) {
     return m?.[1] || '';
 }
 
+function getSeenVersion() {
+    try {
+        return localStorage.getItem(LS_SEEN) || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function markVersionSeen(version) {
+    const v = String(version || '').trim();
+    if (!v) return;
+    try {
+        localStorage.setItem(LS_SEEN, v);
+    } catch (_) {}
+}
+
+/** Solo mostrar si hay versión remota distinta a la ya reconocida por el usuario. */
+function shouldPromptForVersion(remote) {
+    const r = String(remote || '').trim();
+    if (!r) return false;
+    return r !== getSeenVersion();
+}
+
 function showUpdateBanner(version) {
+    const remote = String(version || '').trim();
+    if (!remote || !shouldPromptForVersion(remote)) return;
     if (document.getElementById(BANNER_ID)) return;
+
     const bar = document.createElement('div');
     bar.id = BANNER_ID;
     bar.className = 'gn-sw-update-banner';
     bar.setAttribute('role', 'status');
     bar.innerHTML = `
-<span><i class="fas fa-download" aria-hidden="true"></i> Hay una actualización (${version || 'nueva'})</span>
+<span><i class="fas fa-download" aria-hidden="true"></i> Hay una actualización (${remote})</span>
 <button type="button" class="gn-sw-update-btn" data-gn-sw-reload>Recargar</button>
 <button type="button" class="gn-sw-update-dismiss" data-gn-sw-dismiss aria-label="Cerrar">×</button>`;
     document.body.appendChild(bar);
+
     bar.querySelector('[data-gn-sw-reload]')?.addEventListener('click', () => {
-        try {
-            localStorage.setItem(LS_SEEN, version || '');
-        } catch (_) {}
+        markVersionSeen(remote);
         window.location.reload();
     });
-    bar.querySelector('[data-gn-sw-dismiss]')?.addEventListener('click', () => bar.remove());
+    bar.querySelector('[data-gn-sw-dismiss]')?.addEventListener('click', () => {
+        markVersionSeen(remote);
+        bar.remove();
+    });
 }
 
 async function fetchRemoteSwVersion() {
@@ -48,9 +77,10 @@ function wireRegistration(reg) {
         const nw = reg.installing;
         if (!nw) return;
         nw.addEventListener('statechange', () => {
-            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-                fetchRemoteSwVersion().then((v) => showUpdateBanner(v));
-            }
+            if (nw.state !== 'installed' || !navigator.serviceWorker.controller) return;
+            fetchRemoteSwVersion().then((v) => {
+                if (shouldPromptForVersion(v)) showUpdateBanner(v);
+            });
         });
     });
 }
@@ -59,23 +89,27 @@ function wireRegistration(reg) {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
     try {
         const remote = await fetchRemoteSwVersion();
-        let seen = '';
-        try {
-            seen = localStorage.getItem(LS_SEEN) || '';
-        } catch (_) {}
-        if (remote && seen && remote !== seen) {
-            showUpdateBanner(remote);
-        } else if (remote && !seen) {
-            try {
-                localStorage.setItem(LS_SEEN, remote);
-            } catch (_) {}
+        if (remote) {
+            const seen = getSeenVersion();
+            if (!seen) {
+                markVersionSeen(remote);
+            } else if (shouldPromptForVersion(remote)) {
+                showUpdateBanner(remote);
+            }
         }
+
         const reg = await navigator.serviceWorker.getRegistration();
         wireRegistration(reg);
+
+        if (reg?.waiting && shouldPromptForVersion(remote)) {
+            showUpdateBanner(remote);
+        }
+
         await reg?.update?.();
+
         navigator.serviceWorker.addEventListener('controllerchange', () => {
             fetchRemoteSwVersion().then((v) => {
-                if (v && v !== seen) showUpdateBanner(v);
+                if (v) markVersionSeen(v);
             });
         });
     } catch (_) {}
