@@ -9,6 +9,7 @@ const SHORTCUTS = [
     { keys: 'Ctrl + K', desc: 'Buscar pedido' },
     { keys: '?', desc: 'Esta ayuda' },
     { keys: 'Esc', desc: 'Cerrar modal activo (si aplica)' },
+    { keys: 'Estado', desc: 'Footer → enlace Estado del servicio (API, BD, geo)' },
 ];
 
 function esc(t) {

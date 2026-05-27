@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { abrirModalPedidosSinCoords } from './gn-pedidos-sin-coords-modal.js';
+
 const HOST_ID = 'gn-est-geo-calidad-host';
 
 const esc = (t) =>
@@ -41,7 +43,11 @@ export async function cargarGeoCalidadEnEstadisticas({ apiUrl, getApiToken }) {
   <div><strong>${esc(data.porcentaje_abiertos_con_coords)}%</strong><span>Abiertos geolocalizados</span></div>
 </div>
 <p style="font-size:.72rem;color:var(--tl);margin:.45rem 0 0">${esc(data.abiertos_sin_coordenadas)} pedido(s) abierto(s) sin pin en mapa</p>
+${Number(data.abiertos_sin_coordenadas) > 0 ? `<button type="button" class="btn btn-s gn-geo-sin-coords-btn" style="margin-top:.5rem"><i class="fas fa-list"></i> Ver listado</button>` : ''}
 </div>`;
+        host.querySelector('.gn-geo-sin-coords-btn')?.addEventListener('click', () => {
+            void abrirModalPedidosSinCoords({ apiUrl, getApiToken });
+        });
     } catch (e) {
         host.innerHTML = `<p style="font-size:.8rem;color:var(--tl)">Geo: ${esc(e.message || 'no disponible')}</p>`;
         host.style.display = 'block';

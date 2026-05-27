@@ -11,6 +11,8 @@ import { adminOnly } from "../middleware/auth.js";
 import { listOperacionAudit } from "../services/operacionAuditLog.js";
 import { buildAdminSetupChecklist } from "../services/adminSetupChecklist.js";
 import { calcularGeoCalidadPedidos } from "../services/geoCalidadMetricas.js";
+import { buildAdminSistemaSalud } from "../services/adminSistemaSalud.js";
+import { listarPedidosAbiertosSinCoords } from "../services/pedidosSinCoordsAdmin.js";
 
 const router = express.Router();
 
@@ -234,6 +236,41 @@ router.get("/geo-calidad", adminOnly, async (req, res) => {
     console.error("[admin] geo-calidad:", err);
     return res.status(500).json({
       error: "No se pudieron calcular métricas geográficas",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * GET /api/admin/sistema-salud
+ * API, BD, Nominatim y metadatos de deploy (admin).
+ */
+router.get("/sistema-salud", adminOnly, async (_req, res) => {
+  try {
+    const data = await buildAdminSistemaSalud();
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] sistema-salud:", err);
+    return res.status(500).json({
+      error: "No se pudo comprobar salud del sistema",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * GET /api/admin/pedidos-sin-coords?limit=30
+ * Pedidos abiertos sin lat/lng válidos.
+ */
+router.get("/pedidos-sin-coords", adminOnly, async (req, res) => {
+  try {
+    const limit = Number(req.query?.limit) || 25;
+    const data = await listarPedidosAbiertosSinCoords(req, { limit });
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] pedidos-sin-coords:", err);
+    return res.status(500).json({
+      error: "No se pudo listar pedidos sin coordenadas",
       detail: err?.message || String(err),
     });
   }

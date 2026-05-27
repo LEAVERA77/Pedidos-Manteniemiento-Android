@@ -637,3 +637,77 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   color: #475569;
   text-align: right;
 }
+
+/* —— Oleada 6: salud sistema / sin coords —— */
+.gn-sistema-salud-card {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+  margin-bottom: 0.75rem;
+}
+.gn-salud-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gn-salud-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.32rem 0;
+  font-size: 0.8rem;
+}
+.gn-salud-row strong {
+  display: block;
+  font-size: 0.82rem;
+}
+.gn-salud-row small {
+  display: block;
+  font-size: 0.7rem;
+  color: #64748b;
+  word-break: break-word;
+}
+.gn-salud-ok {
+  color: #15803d;
+}
+.gn-salud-bad {
+  color: #b91c1c;
+}
+.gn-salud-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+.gn-sin-coords-modal.mo.active {
+  z-index: 100145 !important;
+}
+.gn-sin-coords-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gn-sin-coords-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 0.3rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.4rem;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+.gn-sin-coords-num {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: #1e3a8a;
+}
+.gn-sin-coords-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+}

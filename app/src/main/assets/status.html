@@ -153,6 +153,14 @@
           </div>
         </div>
         <div class="gn-status-row">
+          <div class="gn-status-ic" aria-hidden="true"><i class="fas fa-map-marked-alt"></i></div>
+          <div>
+            <strong>Geocodificación (Nominatim)</strong>
+            <div id="geo-state" class="gn-status-state pend">Comprobando…</div>
+            <div id="geo-meta" class="gn-status-meta"></div>
+          </div>
+        </div>
+        <div class="gn-status-row">
           <div class="gn-status-ic" aria-hidden="true"><i class="fab fa-whatsapp"></i></div>
           <div>
             <strong>WhatsApp / mensajería</strong>
@@ -195,6 +203,7 @@
       if (!base) {
         setState('api-state', 'api-meta', false, 'No configurado', 'No se pudo leer config.json (api.baseUrl).');
         setState('db-state', 'db-meta', false, 'Sin comprobar', '');
+        setState('geo-state', 'geo-meta', false, 'Sin comprobar', '');
         return;
       }
       const t0 = performance.now();
@@ -215,6 +224,28 @@
         setState('db-state', 'db-meta', ok, ok ? 'Operativo' : 'Error', base + '/health/db · ' + ms + ' ms');
       } catch (e) {
         setState('db-state', 'db-meta', false, 'Sin respuesta', String(e.message || e));
+      }
+      const t2 = performance.now();
+      try {
+        const r = await fetch(base + '/api/geocode/health', { cache: 'no-store' });
+        const data = await r.json().catch(() => ({}));
+        const ms = Math.round(performance.now() - t2);
+        if (data.disable_nominatim) {
+          setState('geo-state', 'geo-meta', true, 'Deshabilitado', 'DISABLE_NOMINATIM en servidor');
+        } else {
+          const ok = r.ok && data.nominatim_reachable !== false;
+          setState(
+            'geo-state',
+            'geo-meta',
+            ok,
+            ok ? 'Operativo' : 'Error',
+            (data.nominatim_effective_base || base + '/api/geocode/health') +
+              ' · ' +
+              (data.nominatim_latency_ms != null ? data.nominatim_latency_ms + ' ms' : ms + ' ms')
+          );
+        }
+      } catch (e) {
+        setState('geo-state', 'geo-meta', false, 'Sin respuesta', String(e.message || e));
       }
       document.getElementById('checked-at').textContent =
         'Última comprobación: ' + new Date().toLocaleString('es-AR');

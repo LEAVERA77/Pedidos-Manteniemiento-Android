@@ -6,3 +6,4 @@
 import './gn-geo-calidad-admin-ui.js';
 import './gn-keyboard-shortcuts-help.js';
 import './gn-zona-servicio-pedido-guard.js';
+import './gn-oleada6-bootstrap.js';
