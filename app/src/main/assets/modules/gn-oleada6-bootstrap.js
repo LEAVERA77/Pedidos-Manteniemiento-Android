@@ -3,5 +3,6 @@
  * made by leavera77
  */
 
+import './gn-session-post-login.js';
 import './gn-admin-sistema-salud-ui.js';
 import './gn-pedidos-sin-coords-modal.js';

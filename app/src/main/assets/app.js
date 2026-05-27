@@ -3282,7 +3282,7 @@ const gnLoginSubmitHandler = async e => {
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
         try {
-            document.dispatchEvent(new CustomEvent('gn-ms-visible'));
+            window.notifyMainScreenVisible?.();
         } catch (_) {}
         try {
             document.body.classList.add('gn-sesion-activa');
