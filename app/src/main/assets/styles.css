@@ -523,12 +523,23 @@ html.gn-android-webview #mc{
 #bp2.gn-bp2-many-pedidos .pl .pi .pi2{font-size:.66rem;margin-bottom:0}
 #bp2.gn-bp2-many-pedidos .pl .pi .pd{font-size:.68rem;-webkit-line-clamp:1}
 #bp2.gn-bp2-many-pedidos .pl .pi .pt2{display:none}
-html.gn-android-webview #ms #bp2.gn-bp2-positioned{
+html.gn-android-webview #ms #bp2.gn-bp2-positioned:not(.bp2-fullhide){
+  position:fixed!important;
   left:auto;
   right:auto!important;
   bottom:auto!important;
   width:min(calc(100vw - 1rem),26rem)!important;
   max-width:calc(100vw - 1rem)!important;
+  transform:none!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+html.gn-android-webview body.gn-dock-pedidos-active #bp2.bp2-fullhide + .fab-show-pedidos{
+  display:flex!important;
+  visibility:visible!important;
+  opacity:1!important;
+  pointer-events:auto!important;
 }
 html.gn-android-webview #ms #bp2.gn-bp2-positioned.bp2-fullhide{
   transform:none!important;

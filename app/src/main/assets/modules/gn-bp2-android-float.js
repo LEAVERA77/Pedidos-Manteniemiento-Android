@@ -91,10 +91,11 @@ export function marcarBp2Posicionado(bp2) {
     } catch (_) {}
 }
 
-/** Al mostrar: aparece desde abajo, dentro del viewport (luego el usuario puede arrastrar). */
+/** Al mostrar: fixed en viewport (coordenadas de clamp/drag), visible y dentro de pantalla. */
 export function positionBp2AndroidVisible(bp2) {
     const el = bp2 || document.getElementById('bp2');
     if (!el) return;
+    el.classList.remove('bp2-fullhide');
     marcarBp2Posicionado(el);
     const vv = window.visualViewport;
     const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
@@ -103,31 +104,38 @@ export function positionBp2AndroidVisible(bp2) {
     const padBottom = gnPadBottomPx();
     const padTop = gnPadTopPx();
     const w = Math.min(vw - padX * 2, 416);
-    let h = el.offsetHeight;
-    if (!h || h < 80) {
-        try {
-            el.style.visibility = 'hidden';
-            el.classList.remove('bp2-fullhide');
-            h = el.offsetHeight || 280;
-        } finally {
-            el.style.visibility = '';
-        }
-    }
     const maxH = Math.max(120, vh - padTop - padBottom);
-    h = Math.min(h, maxH);
+    try {
+        el.style.position = 'fixed';
+        el.style.maxHeight = `${Math.round(maxH)}px`;
+        el.style.width = `${Math.round(w)}px`;
+        el.style.zIndex = '10025';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+    } catch (_) {}
+    let h = el.getBoundingClientRect().height;
+    if (!h || h < 80) h = Math.min(280, maxH);
     const left = padX;
     const top = Math.max(padTop, vh - h - padBottom);
     try {
         el.style.left = `${Math.round(left)}px`;
         el.style.top = `${Math.round(top)}px`;
-        el.style.right = 'auto';
-        el.style.bottom = 'auto';
-        el.style.maxHeight = `${Math.round(maxH)}px`;
-        el.style.width = `${Math.round(w)}px`;
-        el.style.zIndex = '10025';
     } catch (_) {}
     clampBp2PanelIntoViewport();
     scheduleClampBp2PanelIntoViewport();
+}
+
+/** Mostrar panel tras FAB o chip (Android). */
+export function showBp2AndroidPanel() {
+    const bp2 = document.getElementById('bp2');
+    if (!bp2) return;
+    bp2.classList.remove('col', 'gn-bp2-dock-bottom');
+    bp2.classList.add('gn-bp2-expanded');
+    try {
+        localStorage.setItem('pmg_bp2_hidden', '0');
+    } catch (_) {}
+    positionBp2AndroidVisible(bp2);
+    initBp2DragAndroid();
 }
 
 function aplicarPosicionBp2Guardada() {
@@ -254,19 +262,31 @@ function patchSetBp2PanelHiddenAndroid() {
     const orig = window.setBp2PanelHidden;
     if (!orig || orig.__gnBp2AndroidFloatWrap) return;
     function wrapped(hidden) {
-        orig(hidden);
-        if (!isAndroidShell()) return;
-        const bp2 = document.getElementById('bp2');
-        if (!bp2) return;
-        if (hidden) {
-            dockBp2AndroidHidden(bp2);
+        if (!isAndroidShell()) {
+            orig(hidden);
             return;
         }
-        bp2.classList.remove('col');
-        bp2.classList.add('gn-bp2-expanded');
-        aplicarPosicionBp2Guardada();
-        initBp2DragAndroid();
-        scheduleClampBp2PanelIntoViewport();
+        const bp2 = document.getElementById('bp2');
+        if (hidden) {
+            orig(true);
+            if (bp2) dockBp2AndroidHidden(bp2);
+            return;
+        }
+        orig(false);
+        if (!bp2) return;
+        showBp2AndroidPanel();
+        try {
+            const raw = localStorage.getItem('pmg_bp2_pos');
+            if (raw) {
+                const p = JSON.parse(raw);
+                if (Number.isFinite(p.left) && Number.isFinite(p.top)) {
+                    marcarBp2Posicionado(bp2);
+                    bp2.style.left = `${p.left}px`;
+                    bp2.style.top = `${p.top}px`;
+                    scheduleClampBp2PanelIntoViewport();
+                }
+            }
+        } catch (_) {}
     }
     wrapped.__gnBp2AndroidFloatWrap = true;
     window.setBp2PanelHidden = wrapped;
@@ -301,7 +321,18 @@ export function installGnBp2AndroidFloat() {
     }
     document.addEventListener('gn-ms-visible', () => {
         ensureAndroidSessionBp2HiddenDefault();
-        setTimeout(boot, 80);
+        setTimeout(() => {
+            try {
+                if (localStorage.getItem('pmg_bp2_hidden') === '0') {
+                    const bp2 = document.getElementById('bp2');
+                    if (bp2 && !bp2.classList.contains('bp2-fullhide')) {
+                        showBp2AndroidPanel();
+                        return;
+                    }
+                }
+            } catch (_) {}
+            boot();
+        }, 80);
     });
     try {
         window.addEventListener('resize', () => scheduleClampBp2PanelIntoViewport(), { passive: true });

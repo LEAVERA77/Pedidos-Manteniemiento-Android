@@ -7,7 +7,7 @@
 import { scheduleClampBp2PanelIntoViewport } from './gn-panel-docks.js';
 import {
     installGnBp2AndroidFloat,
-    positionBp2AndroidVisible,
+    showBp2AndroidPanel,
     ensureAndroidSessionBp2HiddenDefault,
 } from './gn-bp2-android-float.js';
 import { installGnBp2ListaDensaObserver } from './gn-bp2-lista-densa.js';
@@ -28,18 +28,18 @@ function isAndroidShell() {
 export function expandBp2Panel() {
     const bp2 = document.getElementById('bp2');
     if (!bp2) return;
-    if (typeof window.setBp2PanelHidden === 'function') {
-        window.setBp2PanelHidden(false);
-    }
-    bp2.classList.remove('col');
-    bp2.classList.add('gn-bp2-expanded');
     try {
         localStorage.setItem('pmg_bp2_hidden', '0');
     } catch (_) {}
-    try {
-        if (isAndroidShell()) positionBp2AndroidVisible(bp2);
-        else scheduleClampBp2PanelIntoViewport();
-    } catch (_) {}
+    if (typeof window.setBp2PanelHidden === 'function') {
+        window.setBp2PanelHidden(false);
+    } else if (isAndroidShell()) {
+        showBp2AndroidPanel();
+    } else {
+        bp2.classList.remove('col');
+        bp2.classList.add('gn-bp2-expanded');
+        scheduleClampBp2PanelIntoViewport();
+    }
 }
 
 function bindHeaderPedidosTrigger() {

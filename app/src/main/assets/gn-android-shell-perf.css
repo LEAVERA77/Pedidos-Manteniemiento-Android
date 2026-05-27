@@ -157,13 +157,17 @@ html.gn-android-shell .pl.pedidos-panel-scroll {
 html.gn-android-shell #ms #bp2.col:not(.bp2-fullhide) {
     transform: none !important;
 }
-html.gn-android-shell #ms #bp2.gn-bp2-positioned {
+html.gn-android-shell #ms #bp2.gn-bp2-positioned:not(.bp2-fullhide) {
+    position: fixed !important;
     right: auto !important;
     bottom: auto !important;
     width: min(calc(100vw - 1rem), 26rem) !important;
     max-width: calc(100vw - 1rem) !important;
+    transform: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
 }
-html.gn-android-shell #ms #bp2.gn-bp2-dock-bottom,
 html.gn-android-shell #ms #bp2.gn-bp2-dock-bottom.bp2-fullhide {
     position: absolute !important;
     left: 0 !important;
@@ -176,6 +180,13 @@ html.gn-android-shell #ms #bp2.gn-bp2-dock-bottom.bp2-fullhide {
     opacity: 1;
     visibility: visible;
     pointer-events: none;
+}
+/* Con chip de pedidos minimizado, mantener FAB inferior visible en APK */
+html.gn-android-shell body.gn-dock-pedidos-active #bp2.bp2-fullhide + .fab-show-pedidos {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 html.gn-android-shell #ms #bp2.gn-bp2-positioned.bp2-fullhide:not(.gn-bp2-dock-bottom) {
     transform: translateY(100%) !important;
