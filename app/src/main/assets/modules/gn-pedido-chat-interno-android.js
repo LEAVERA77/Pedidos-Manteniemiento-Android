@@ -119,6 +119,10 @@ function attachFloatDrag(headerEl, card) {
 }
 
 function traerAlFrente(card) {
+    if (typeof window.gnOverlayBringToFront === 'function') {
+        window.gnOverlayBringToFront(card);
+        return;
+    }
     try {
         if (typeof window.gnBumpOverlayElement === 'function') {
             window.gnBumpOverlayElement(card);
@@ -130,24 +134,13 @@ function traerAlFrente(card) {
     } catch (_) {
         card.style.zIndex = String(_floatZ);
     }
-    asegurarChatSobreDetallePedido(card);
-}
-
-/** Por encima de #dm (detalle pedido) en Android. */
-function asegurarChatSobreDetallePedido(card) {
-    if (!card) return;
-    try {
-        const dm = document.getElementById('dm');
-        if (!dm?.classList.contains('active')) return;
-        const dmZ = parseInt(getComputedStyle(dm).zIndex, 10);
-        if (!Number.isFinite(dmZ)) return;
-        const z = dmZ + 6;
-        _floatZ = Math.max(_floatZ, z);
-        card.style.setProperty('z-index', String(z), 'important');
-    } catch (_) {}
 }
 
 function quitarCentradoChat(card) {
+    if (typeof window.gnOverlayClearCentered === 'function') {
+        window.gnOverlayClearCentered(card);
+        return;
+    }
     if (!card) return;
     card.classList.remove('gn-pedido-chat-float--centered');
     try {
@@ -157,11 +150,13 @@ function quitarCentradoChat(card) {
 
 /** Centra el panel en pantalla (teléfono) al abrir el chat. */
 function centrarPanelChatEnPantalla(card) {
+    if (typeof window.gnOverlayCenterFloatingPanel === 'function') {
+        window.gnOverlayCenterFloatingPanel(card);
+        return;
+    }
     if (!card) return;
     try {
-        if (card.parentElement !== document.body) {
-            document.body.appendChild(card);
-        }
+        if (card.parentElement !== document.body) document.body.appendChild(card);
     } catch (_) {}
     card.style.position = 'fixed';
     card.style.right = 'auto';

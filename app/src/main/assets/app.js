@@ -304,6 +304,9 @@ import {
 import './modules/gn-tenant-force-sync-android-boot.js';
 import './modules/gn-android-shell-perf.js';
 import './modules/gn-offline-shell-refresh.js';
+import './modules/gn-post-login-lazy-bootstrap.js';
+import './modules/gn-offline-status-bar.js';
+import { initGnOverlayStackAndroid } from './modules/gn-overlay-stack-android.js';
 import { initAdminCambiarCredenciales } from './modules/admin-cambiar-credenciales.js';
 import { initAdminClaveProvisoria } from './modules/admin-clave-provisoria.js';
 import {
@@ -2899,6 +2902,9 @@ function setupMapLazyWhenVisibleOnce() {
     }, { root: ms, rootMargin: '0px', threshold: [0, 0.02, 0.08] });
     _mapLazyIo.observe(mc);
 }
+try {
+    window.__gnPostLoginMapLazy = setupMapLazyWhenVisibleOnce;
+} catch (_) {}
 
 function limpiarEstadoMapaSesion() {
     _gpsRecibidoEstaSesion = false;
@@ -3300,15 +3306,11 @@ const gnLoginSubmitHandler = async e => {
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
         try { initWebCoordsConverterBar(); } catch (_) {}
-        setupMapLazyWhenVisibleOnce();
         scheduleGnMapLayoutBumpsTrasLogin();
         iniciarKeepAlive();
         iniciarTracking();
         iniciarPollNotifMovil();
         iniciarSyncCatalogos();
-        try {
-            initGnFeaturesAdminMounts({ esAdmin, toast, apiUrl, getApiToken });
-        } catch (_) {}
         void registrarFcmTokenSiDisponible({ apiUrl, getApiToken });
         const btnAdm = document.getElementById('btn-admin');
         if (btnAdm) btnAdm.style.display = esAdmin() ? 'flex' : 'none';
@@ -3379,7 +3381,6 @@ const gnLoginSubmitHandler = async e => {
                     else setTimeout(enviarAl_SW, 4000);
                 }
             });
-            setupMapLazyWhenVisibleOnce();
             if (!offline) {
                 await asegurarJwtApiRest();
                 try {
@@ -7361,6 +7362,11 @@ async function refreshMapAdminBaseMarkerIfReady() {
 }
 
 async function initMap() {
+    if (typeof window.ensureLeafletLoaded === 'function') {
+        try {
+            await window.ensureLeafletLoaded();
+        } catch (_) {}
+    }
     const mod = await loadMapViewModule();
     mod.setMapViewContext(buildMapViewCtx());
     await mod.runInitMap();
@@ -12390,6 +12396,9 @@ try {
         document.getElementById('ls').classList.remove('active');
         document.getElementById('ms').classList.add('active');
         try {
+            window.notifyMainScreenVisible?.();
+        } catch (_) {}
+        try {
             document.body.classList.add('gn-sesion-activa');
         } catch (_) {}
         try {
@@ -12401,7 +12410,6 @@ try {
         resetPreferenciasPanelesInicioCerrados();
         try { aplicarUIMapaPlataforma(); } catch (_) {}
         try { initWebCoordsConverterBar(); } catch (_) {}
-        setupMapLazyWhenVisibleOnce();
         scheduleGnMapLayoutBumpsTrasLogin();
         iniciarKeepAlive();
         iniciarTracking();
@@ -12411,7 +12419,6 @@ try {
         setTimeout(async () => {
             
             solicitarPermisos();
-            setupMapLazyWhenVisibleOnce();
             await asegurarJwtApiRest();
             try {
                 await sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true });
@@ -17295,7 +17302,11 @@ if ('serviceWorker' in navigator) {
 (async function iniciarApp() {
     try {
         window.__GESTORNOVA_APP_BOOT_TS = Date.now();
+        try {
+            window.__gnAdminMountsCtx = { esAdmin, toast, apiUrl, getApiToken };
+        } catch (_) {}
         initGnModalZIndexStack();
+        initGnOverlayStackAndroid();
         setAdminEmpresaWhatsappDerivacionesDeps({
             toast,
             setDerivacionesInlineError,

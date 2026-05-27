@@ -29,6 +29,9 @@ function setBannerMessage(banner, text) {
 }
 
 function refreshOfflineBannerUi() {
+    if (document.documentElement.classList.contains('gn-android-shell')) {
+        return;
+    }
     const banner = document.getElementById('offline-banner');
     if (!banner) return;
     const n = queueLen();

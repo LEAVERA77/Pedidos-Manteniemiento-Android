@@ -235,3 +235,105 @@ html.gn-android-shell .gn-pedido-chat-float-tab.map-slide-tab {
 html.gn-android-shell .gn-pedido-chat-float-tab.map-slide-tab.visible {
     display: inline-flex;
 }
+
+/* Barra fija inferior: sin red / cola offline */
+html.gn-android-shell .gn-offline-status-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff;
+    pointer-events: auto;
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.2);
+}
+html.gn-android-shell .gn-offline-status-bar[hidden] {
+    display: none !important;
+}
+html.gn-android-shell .gn-offline-status-bar--offline {
+    background: #b91c1c;
+}
+html.gn-android-shell .gn-offline-status-bar--queue {
+    background: #b45309;
+}
+html.gn-android-shell .gn-offline-status-bar__sync {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-radius: 0.45rem;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+html.gn-android-shell.gn-has-offline-status-bar #bp2,
+html.gn-android-shell.gn-has-offline-status-bar .fab-show-pedidos {
+    margin-bottom: 2.35rem;
+}
+
+/* Pantalla bloqueante: actualizar APK o recargar assets */
+html.gn-android-shell .gn-force-update-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 500000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.92);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+html.gn-android-shell .gn-force-update-screen__card {
+    width: min(22rem, 100%);
+    background: #fff;
+    border-radius: 0.85rem;
+    padding: 1.25rem 1.1rem 1.1rem;
+    text-align: center;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.35);
+}
+html.gn-android-shell .gn-force-update-screen__icon {
+    font-size: 2rem;
+    color: var(--bm, #2563eb);
+    margin-bottom: 0.35rem;
+}
+html.gn-android-shell .gn-force-update-screen__title {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+    color: var(--bd, #0f172a);
+}
+html.gn-android-shell .gn-force-update-screen__body {
+    margin: 0 0 1rem;
+    font-size: 0.88rem;
+    color: var(--tm, #64748b);
+    line-height: 1.45;
+}
+html.gn-android-shell .gn-force-update-screen__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+html.gn-android-shell .gn-force-update-screen__primary {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: var(--bm, #2563eb);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+html.gn-force-update-active body {
+    overflow: hidden;
+}
+html.gn-android-shell .gn-overlay-stack--centered {
+    transform: none;
+}

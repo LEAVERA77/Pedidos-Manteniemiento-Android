@@ -152,7 +152,7 @@ function observeFloatingPanels() {
     if (chat && chat.style.display !== 'none' && chat.offsetParent !== null) {
         gnOverlayBringToFront(chat);
     }
-    document.querySelectorAll(WA_FLOAT_SEL).forEach((node) => {
+    document.querySelectorAll('.wa-hc-float').forEach((node) => {
         if (node instanceof HTMLElement && node.offsetParent !== null) gnOverlayBringToFront(node);
     });
 }
@@ -176,7 +176,7 @@ export function initGnOverlayStackAndroid() {
             const t = m.target;
             if (!(t instanceof HTMLElement)) continue;
             if (t.classList.contains('mo')) onModalClassChange(t);
-            if (t.id === CHAT_ID || t.matches?.(WA_FLOAT_SEL)) {
+            if (t.id === CHAT_ID || (typeof t.matches === 'function' && t.matches('.wa-hc-float'))) {
                 if (t.style.display !== 'none') gnOverlayBringToFront(t);
             }
         }

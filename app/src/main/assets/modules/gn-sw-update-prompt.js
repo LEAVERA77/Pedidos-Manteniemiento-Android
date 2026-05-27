@@ -35,7 +35,7 @@ function shouldPromptForVersion(remote) {
     return r !== getSeenVersion();
 }
 
-function showUpdateBanner(version) {
+export function showUpdateBanner(version) {
     const remote = String(version || '').trim();
     if (!remote || !shouldPromptForVersion(remote)) return;
     if (document.getElementById(BANNER_ID)) return;
