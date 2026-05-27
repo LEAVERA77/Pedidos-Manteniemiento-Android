@@ -85,21 +85,41 @@
   outline: none;
 }
 .gn-trust-footer-wrap--panel {
-  position: relative;
-  z-index: 2;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 520;
   flex-shrink: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.05);
+  pointer-events: none;
+  border-top: none;
+  background: transparent;
+  box-shadow: none;
+}
+.gn-trust-footer-wrap--panel .gn-trust-footer-toggle,
+.gn-trust-footer-wrap--panel .gn-trust-footer {
+  pointer-events: auto;
 }
 .gn-trust-footer-wrap--panel .gn-trust-footer-toggle {
   color: var(--bd, #1e3a8a);
-  background: #f8fafc;
-  border-color: #e2e8f0;
-  border-radius: 0;
+  background: rgba(248, 250, 252, 0.94);
+  border-color: rgba(226, 232, 240, 0.95);
+  border-radius: 999px 999px 0 0;
   border-left: none;
   border-right: none;
-  border-top: none;
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  min-height: 1.35rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.62rem;
+  max-width: 11rem;
+  margin: 0 auto;
+  box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.06);
+}
+.gn-trust-footer-wrap--panel .gn-trust-footer-toggle-txt {
+  max-width: 4.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .gn-trust-footer {
   text-align: center;
@@ -112,8 +132,12 @@
   padding-top: 0.25rem;
 }
 .gn-trust-footer--panel {
-  background: rgba(255, 255, 255, 0.96);
-  padding-bottom: 0.55rem;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.2rem 0.35rem 0.28rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  margin: 0 auto;
+  max-width: min(100%, 22rem);
+  box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.08);
 }
 html.dark .gn-trust-footer-wrap--panel,
 body.gn-dark .gn-trust-footer-wrap--panel {
@@ -182,9 +206,30 @@ body.gn-dark .gn-trust-footer-wrap--panel {
   color: #fff;
 }
 .gn-trust-footer-wrap--panel .gn-trust-pill {
-  min-height: 1.65rem;
-  padding: 0.22rem 0.6rem;
-  font-size: 0.68rem;
+  min-height: 1.35rem;
+  min-width: 1.35rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.62rem;
+}
+.gn-trust-footer-links--compact .gn-trust-pill {
+  padding: 0.12rem 0.28rem;
+}
+.gn-trust-footer-links--compact .gn-trust-pill-lbl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+/* Atribución Leaflet: no quedar tapada por el pie flotante */
+#ms:has(.gn-trust-footer-wrap--panel) #mc .leaflet-control-attribution {
+  margin-bottom: 1.1rem;
+  font-size: 0.58rem;
+  padding: 0 2px;
+  opacity: 0.85;
+}
+#ms:has(.gn-trust-footer-wrap--panel.gn-trust-footer-wrap--open) #mc .leaflet-control-attribution {
+  margin-bottom: 2.4rem;
 }
 
 /* —— Modales legales (Términos / Privacidad) —— */

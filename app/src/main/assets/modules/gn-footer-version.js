@@ -35,15 +35,23 @@ function staticPageHref(fileName) {
     }
 }
 
-function footerLinksHtml() {
+function pillInner(iconClass, label, compact) {
+    if (compact) {
+        return `<span class="gn-trust-pill-lbl" aria-hidden="true"><i class="${iconClass}"></i></span>`;
+    }
+    return `<i class="${iconClass}" aria-hidden="true"></i> ${label}`;
+}
+
+function footerLinksHtml({ compact = false } = {}) {
     const status = staticPageHref('status.html');
     const seguridad = staticPageHref('seguridad.html');
     return `
-<div class="gn-trust-footer-links" role="navigation" aria-label="Información legal y estado">
-  <button type="button" class="gn-trust-pill" data-gn-open-terms><i class="fas fa-file-contract" aria-hidden="true"></i> Términos</button>
-  <button type="button" class="gn-trust-pill" data-gn-open-privacy><i class="fas fa-user-shield" aria-hidden="true"></i> Privacidad</button>
-  <a class="gn-trust-pill gn-trust-pill--link" href="${status}"><i class="fas fa-heartbeat" aria-hidden="true"></i> Estado</a>
-  <a class="gn-trust-pill gn-trust-pill--link" href="${seguridad}"><i class="fas fa-shield-alt" aria-hidden="true"></i> Seguridad</a>
+<div class="gn-trust-footer-links${compact ? ' gn-trust-footer-links--compact' : ''}" role="navigation" aria-label="Información legal y estado">
+  <span class="gn-trust-footer-version gn-trust-footer-version--inline" title="GestorNova">v${GN_WEB_VERSION_LABEL}</span>
+  <button type="button" class="gn-trust-pill" data-gn-open-terms title="Términos de uso">${pillInner('fas fa-file-contract', 'Términos', compact)}</button>
+  <button type="button" class="gn-trust-pill" data-gn-open-privacy title="Privacidad">${pillInner('fas fa-user-shield', 'Privacidad', compact)}</button>
+  <a class="gn-trust-pill gn-trust-pill--link" href="${status}" title="Estado del servicio">${pillInner('fas fa-heartbeat', 'Estado', compact)}</a>
+  <a class="gn-trust-pill gn-trust-pill--link" href="${seguridad}" title="Seguridad">${pillInner('fas fa-shield-alt', 'Seguridad', compact)}</a>
 </div>`;
 }
 
@@ -80,21 +88,22 @@ function buildCollapsibleFooter({ id, extraClass, variant }) {
     toggle.type = 'button';
     toggle.className = 'gn-trust-footer-toggle';
     toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    const toggleLabel =
+        variant === 'panel' ? 'Legal' : 'Legal y estado del servicio';
     toggle.innerHTML =
         '<i class="fas fa-circle-info" aria-hidden="true"></i> ' +
-        '<span class="gn-trust-footer-toggle-txt">Legal y estado del servicio</span>' +
+        `<span class="gn-trust-footer-toggle-txt">${toggleLabel}</span>` +
         '<i class="fas fa-chevron-down gn-trust-footer-chevron" aria-hidden="true"></i>';
+    if (variant === 'panel') {
+        toggle.title = 'Mostrar u ocultar enlaces legales y estado';
+    }
 
     const body = document.createElement('div');
     body.className = `gn-trust-footer ${extraClass || ''}`.trim();
     body.id = id;
     if (!expanded) body.classList.add('gn-trust-footer--hidden');
 
-    const versionLine =
-        variant === 'panel'
-            ? `<span class="gn-trust-footer-version">GestorNova · v${GN_WEB_VERSION_LABEL}</span>`
-            : '';
-    body.innerHTML = versionLine + footerLinksHtml();
+    body.innerHTML = footerLinksHtml({ compact: variant === 'panel' });
     wireFooterLinks(body);
 
     toggle.addEventListener('click', () => {
