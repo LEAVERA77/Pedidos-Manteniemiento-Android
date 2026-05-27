@@ -42,6 +42,7 @@ $files = @(
     'admin-web-responsive.css',
     'gn-android-shell-perf.css',
     'gn-trust-ui.css',
+    'gn-login-screen.css',
     'status.html',
     'seguridad.html',
     'app.js',

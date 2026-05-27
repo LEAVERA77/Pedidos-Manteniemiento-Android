@@ -82,7 +82,7 @@ function buildCollapsibleFooter({ id, extraClass, variant }) {
     wrap.className = `gn-trust-footer-wrap gn-trust-footer-wrap--${variant}`;
     wrap.id = `${id}-wrap`;
 
-    const expanded = !leerColapsadoPorDefecto();
+    const expanded = variant === 'login' ? true : !leerColapsadoPorDefecto();
 
     const toggle = document.createElement('button');
     toggle.type = 'button';

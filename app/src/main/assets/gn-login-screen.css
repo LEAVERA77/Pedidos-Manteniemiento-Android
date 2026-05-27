@@ -1,0 +1,247 @@
+/**
+ * Pantalla de login (#ls): fondo moderno, enlaces legibles y modo alto contraste.
+ * made by leavera77
+ */
+
+#ls {
+    overflow: hidden;
+    background-color: #0b1220;
+    background-image:
+        radial-gradient(ellipse 110% 70% at 15% -5%, rgba(56, 189, 248, 0.42), transparent 52%),
+        radial-gradient(ellipse 85% 55% at 105% 15%, rgba(129, 140, 248, 0.38), transparent 50%),
+        radial-gradient(ellipse 70% 45% at 50% 110%, rgba(37, 99, 235, 0.35), transparent 55%),
+        linear-gradient(160deg, #0f172a 0%, #1e3a8a 38%, #2563eb 72%, #1d4ed8 100%);
+}
+
+#ls::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 20%, transparent 100%);
+}
+
+#ls::after {
+    content: '';
+    position: absolute;
+    width: min(42vw, 220px);
+    height: min(42vw, 220px);
+    right: -8%;
+    top: 12%;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 68%);
+    filter: blur(2px);
+}
+
+#ls .lc {
+    position: relative;
+    z-index: 2;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+        0 28px 64px rgba(2, 6, 23, 0.45),
+        0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+#ls .app-version {
+    color: #e2e8f0 !important;
+    font-weight: 500;
+    opacity: 1;
+}
+
+#ls .gn-login-recovery-link {
+    color: #bfdbfe !important;
+    font-weight: 600;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    opacity: 1;
+}
+
+#ls .gn-login-recovery-link:hover,
+#ls .gn-login-recovery-link:focus-visible {
+    color: #fff !important;
+}
+
+#ls .gn-login-extra-links .gn-acerca-link,
+#ls .gn-login-extra-links .gn-login-asistente-link {
+    color: #e2e8f0 !important;
+    font-weight: 600;
+    opacity: 1 !important;
+    text-decoration-thickness: 1.5px;
+}
+
+#ls .gn-login-extra-links .gn-acerca-link:hover,
+#ls .gn-login-extra-links .gn-login-asistente-link:hover,
+#ls .gn-login-extra-links .gn-acerca-link:focus-visible,
+#ls .gn-login-extra-links .gn-login-asistente-link:focus-visible {
+    color: #fff !important;
+}
+
+#ls #gn-bio-hint {
+    color: #e2e8f0 !important;
+    opacity: 1 !important;
+}
+
+#ls .gn-trust-footer-wrap--login {
+    margin-top: 0.5rem;
+}
+
+#ls .gn-trust-footer-wrap--login .gn-trust-footer-toggle {
+    color: #f8fafc;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.55);
+    border-color: rgba(255, 255, 255, 0.55);
+    opacity: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+#ls .gn-trust-footer-wrap--login .gn-trust-footer-toggle:hover,
+#ls .gn-trust-footer-wrap--login .gn-trust-footer-toggle:focus-visible {
+    background: rgba(15, 23, 42, 0.72);
+    border-color: #fff;
+    color: #fff;
+}
+
+#ls .gn-trust-footer-wrap--login .gn-trust-pill {
+    background: #f8fafc;
+    border: 1.5px solid rgba(255, 255, 255, 0.85);
+    color: #0f172a;
+    font-weight: 700;
+    opacity: 1;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
+    min-height: 2rem;
+    font-size: 0.74rem;
+}
+
+#ls .gn-trust-footer-wrap--login .gn-trust-pill:hover,
+#ls .gn-trust-footer-wrap--login .gn-trust-pill:focus-visible {
+    background: #fff;
+    border-color: #fff;
+    color: #1e3a8a;
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+#ls .gn-trust-footer-wrap--login .gn-trust-footer-version--inline {
+    color: #cbd5e1;
+    font-weight: 600;
+    opacity: 1;
+}
+
+#ls .gn-login-accesibilidad {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.45rem;
+}
+
+#ls .gn-login-alto-contraste-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.1rem;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-family: inherit;
+    color: #0f172a;
+    background: #fef08a;
+    border: 2px solid #facc15;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+#ls .gn-login-alto-contraste-btn:hover,
+#ls .gn-login-alto-contraste-btn:focus-visible {
+    background: #fde047;
+    border-color: #ca8a04;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+#ls .gn-login-alto-contraste-btn[aria-pressed='true'] {
+    background: #0f172a;
+    color: #fef08a;
+    border-color: #fef08a;
+}
+
+/* —— Modo alto contraste (accesibilidad) —— */
+html.gn-login-alto-contraste #ls {
+    background: #000 !important;
+    background-image: none !important;
+}
+
+html.gn-login-alto-contraste #ls::before,
+html.gn-login-alto-contraste #ls::after {
+    display: none;
+}
+
+html.gn-login-alto-contraste #ls .lc {
+    background: #fff !important;
+    border: 3px solid #000 !important;
+    box-shadow: none !important;
+}
+
+html.gn-login-alto-contraste #ls .lc h1,
+html.gn-login-alto-contraste #ls .lc .sub,
+html.gn-login-alto-contraste #ls .ig input {
+    color: #000 !important;
+}
+
+html.gn-login-alto-contraste #ls .lc .sub {
+    font-weight: 600;
+}
+
+html.gn-login-alto-contraste #ls .ig input {
+    border: 2px solid #000 !important;
+    background: #fff !important;
+}
+
+html.gn-login-alto-contraste #ls .bp {
+    background: #000 !important;
+    color: #fff !important;
+    border: 2px solid #000 !important;
+}
+
+html.gn-login-alto-contraste #ls .app-version,
+html.gn-login-alto-contraste #ls .gn-login-recovery-link,
+html.gn-login-alto-contraste #ls .gn-login-extra-links button,
+html.gn-login-alto-contraste #ls #gn-bio-hint {
+    color: #000 !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+
+html.gn-login-alto-contraste #ls .gn-trust-footer-wrap--login .gn-trust-footer-toggle {
+    background: #000 !important;
+    color: #fff !important;
+    border: 2px solid #fff !important;
+}
+
+html.gn-login-alto-contraste #ls .gn-trust-footer-wrap--login .gn-trust-pill {
+    background: #fff !important;
+    color: #000 !important;
+    border: 2px solid #000 !important;
+}
+
+html.gn-login-alto-contraste #ls .gn-login-alto-contraste-btn {
+    background: #000 !important;
+    color: #fff !important;
+    border: 2px solid #fff !important;
+}
+
+html.gn-login-alto-contraste #ls .gn-login-alto-contraste-btn[aria-pressed='true'] {
+    background: #fff !important;
+    color: #000 !important;
+}
+
+html.gn-android-shell #ls .gn-trust-footer-wrap--login .gn-trust-pill {
+    min-height: 2.15rem;
+}

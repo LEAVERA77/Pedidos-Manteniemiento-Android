@@ -5,6 +5,7 @@
 
 import './gn-terminos-privacidad.js';
 import './gn-footer-version.js';
+import './gn-login-alto-contraste.js';
 import './gn-error-messages.js';
 import './gn-session-idle-warning.js';
 import './gn-skeleton-map-loader.js';
