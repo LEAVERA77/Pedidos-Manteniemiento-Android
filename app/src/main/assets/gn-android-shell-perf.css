@@ -163,8 +163,22 @@ html.gn-android-shell #ms #bp2.gn-bp2-positioned {
     width: min(calc(100vw - 1rem), 26rem) !important;
     max-width: calc(100vw - 1rem) !important;
 }
-html.gn-android-shell #ms #bp2.gn-bp2-positioned.bp2-fullhide {
-    transform: none !important;
+html.gn-android-shell #ms #bp2.gn-bp2-dock-bottom,
+html.gn-android-shell #ms #bp2.gn-bp2-dock-bottom.bp2-fullhide {
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    transform: translateY(100%) !important;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+}
+html.gn-android-shell #ms #bp2.gn-bp2-positioned.bp2-fullhide:not(.gn-bp2-dock-bottom) {
+    transform: translateY(100%) !important;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;

@@ -5,7 +5,11 @@
  */
 
 import { scheduleClampBp2PanelIntoViewport } from './gn-panel-docks.js';
-import { installGnBp2AndroidFloat } from './gn-bp2-android-float.js';
+import {
+    installGnBp2AndroidFloat,
+    positionBp2AndroidVisible,
+    ensureAndroidSessionBp2HiddenDefault,
+} from './gn-bp2-android-float.js';
 import { installGnBp2ListaDensaObserver } from './gn-bp2-lista-densa.js';
 import { installGnDmFrentePaneles } from './gn-dm-frente-paneles.js';
 
@@ -33,7 +37,8 @@ export function expandBp2Panel() {
         localStorage.setItem('pmg_bp2_hidden', '0');
     } catch (_) {}
     try {
-        scheduleClampBp2PanelIntoViewport();
+        if (isAndroidShell()) positionBp2AndroidVisible(bp2);
+        else scheduleClampBp2PanelIntoViewport();
     } catch (_) {}
 }
 
@@ -78,6 +83,19 @@ function patchDetalleMantieneBp2() {
 }
 
 function onMainScreenVisible() {
+    if (isAndroidShell()) {
+        ensureAndroidSessionBp2HiddenDefault();
+        try {
+            if (localStorage.getItem('pmg_bp2_hidden') === '1') {
+                if (typeof window.setBp2PanelHidden === 'function') window.setBp2PanelHidden(true);
+            } else {
+                expandBp2Panel();
+            }
+        } catch (_) {
+            if (typeof window.setBp2PanelHidden === 'function') window.setBp2PanelHidden(true);
+        }
+        return;
+    }
     try {
         if (localStorage.getItem('pmg_bp2_hidden') === '1') return;
     } catch (_) {}

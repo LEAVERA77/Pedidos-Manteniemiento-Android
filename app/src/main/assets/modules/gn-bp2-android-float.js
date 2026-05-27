@@ -1,5 +1,5 @@
 /**
- * Android / WebView: panel #bp2 arrastrable (como moui-card), clamp al viewport y recuperación al mostrar.
+ * Android / WebView: panel #bp2 oculto abajo al inicio; al mostrar: arrastrable, cerrable, siempre en pantalla.
  * made by leavera77
  */
 
@@ -33,28 +33,125 @@ function floatingBp2Enabled() {
     }
 }
 
-function marcarBp2Posicionado(bp2) {
+function gnPadBottomPx() {
+    try {
+        const vv = window.visualViewport;
+        const ob = vv && Number.isFinite(Number(vv.offsetBottom)) ? Number(vv.offsetBottom) : 0;
+        return Math.round(152 + ob);
+    } catch (_) {
+        return 152;
+    }
+}
+
+function gnPadTopPx() {
+    try {
+        const hd = document.querySelector('#ms .hd');
+        if (hd) {
+            const r = hd.getBoundingClientRect();
+            if (r.height > 0 && r.bottom > 0) return Math.ceil(r.bottom) + 6;
+        }
+    } catch (_) {}
+    return 64;
+}
+
+/** Cada sesión en APK: panel de pedidos arranca oculto abajo. */
+export function ensureAndroidSessionBp2HiddenDefault() {
+    if (!isAndroidShell()) return;
+    try {
+        if (sessionStorage.getItem('pmg_bp2_android_docked') === '1') return;
+        sessionStorage.setItem('pmg_bp2_android_docked', '1');
+        localStorage.setItem('pmg_bp2_hidden', '1');
+    } catch (_) {}
+}
+
+/** Oculto: anclado al borde inferior, fuera de vista (translateY 100%). */
+export function dockBp2AndroidHidden(bp2) {
+    const el = bp2 || document.getElementById('bp2');
+    if (!el) return;
+    el.classList.add('gn-bp2-dock-bottom');
+    el.classList.remove('gn-bp2-positioned');
+    try {
+        el.style.left = '0';
+        el.style.right = '0';
+        el.style.top = 'auto';
+        el.style.bottom = '0';
+        el.style.transform = 'translateY(100%)';
+        el.style.removeProperty('width');
+    } catch (_) {}
+}
+
+export function marcarBp2Posicionado(bp2) {
     if (!bp2) return;
+    bp2.classList.remove('gn-bp2-dock-bottom');
     bp2.classList.add('gn-bp2-positioned');
     try {
         bp2.style.right = 'auto';
         bp2.style.bottom = 'auto';
+        bp2.style.transform = '';
     } catch (_) {}
+}
+
+/** Al mostrar: aparece desde abajo, dentro del viewport (luego el usuario puede arrastrar). */
+export function positionBp2AndroidVisible(bp2) {
+    const el = bp2 || document.getElementById('bp2');
+    if (!el) return;
+    marcarBp2Posicionado(el);
+    const vv = window.visualViewport;
+    const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
+    const vw = window.innerWidth;
+    const padX = 8;
+    const padBottom = gnPadBottomPx();
+    const padTop = gnPadTopPx();
+    const w = Math.min(vw - padX * 2, 416);
+    let h = el.offsetHeight;
+    if (!h || h < 80) {
+        try {
+            el.style.visibility = 'hidden';
+            el.classList.remove('bp2-fullhide');
+            h = el.offsetHeight || 280;
+        } finally {
+            el.style.visibility = '';
+        }
+    }
+    const maxH = Math.max(120, vh - padTop - padBottom);
+    h = Math.min(h, maxH);
+    const left = padX;
+    const top = Math.max(padTop, vh - h - padBottom);
+    try {
+        el.style.left = `${Math.round(left)}px`;
+        el.style.top = `${Math.round(top)}px`;
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.maxHeight = `${Math.round(maxH)}px`;
+        el.style.width = `${Math.round(w)}px`;
+        el.style.zIndex = '10025';
+    } catch (_) {}
+    clampBp2PanelIntoViewport();
+    scheduleClampBp2PanelIntoViewport();
 }
 
 function aplicarPosicionBp2Guardada() {
     const bp2 = document.getElementById('bp2');
     if (!bp2 || !floatingBp2Enabled()) return;
+    if (bp2.classList.contains('bp2-fullhide')) return;
     try {
         const raw = localStorage.getItem('pmg_bp2_pos');
-        if (!raw) return;
+        if (!raw) {
+            positionBp2AndroidVisible(bp2);
+            return;
+        }
         const p = JSON.parse(raw);
-        if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) return;
+        if (!Number.isFinite(p.left) || !Number.isFinite(p.top)) {
+            positionBp2AndroidVisible(bp2);
+            return;
+        }
         marcarBp2Posicionado(bp2);
         bp2.style.left = `${p.left}px`;
         bp2.style.top = `${p.top}px`;
         scheduleClampBp2PanelIntoViewport();
-    } catch (_) {}
+    } catch (_) {
+        positionBp2AndroidVisible(bp2);
+    }
 }
 
 function ensureBp2DragHandle() {
@@ -74,7 +171,6 @@ function initBp2DragAndroid() {
     if (!floatingBp2Enabled()) return;
     ph.dataset.gnBp2AndroidDrag = '1';
     ensureBp2DragHandle();
-    aplicarPosicionBp2Guardada();
 
     let drag = null;
 
@@ -161,10 +257,16 @@ function patchSetBp2PanelHiddenAndroid() {
         orig(hidden);
         if (!isAndroidShell()) return;
         const bp2 = document.getElementById('bp2');
-        if (!hidden && bp2) {
-            marcarBp2Posicionado(bp2);
-            scheduleClampBp2PanelIntoViewport();
+        if (!bp2) return;
+        if (hidden) {
+            dockBp2AndroidHidden(bp2);
+            return;
         }
+        bp2.classList.remove('col');
+        bp2.classList.add('gn-bp2-expanded');
+        aplicarPosicionBp2Guardada();
+        initBp2DragAndroid();
+        scheduleClampBp2PanelIntoViewport();
     }
     wrapped.__gnBp2AndroidFloatWrap = true;
     window.setBp2PanelHidden = wrapped;
@@ -172,13 +274,25 @@ function patchSetBp2PanelHiddenAndroid() {
 
 export function installGnBp2AndroidFloat() {
     if (!isAndroidShell()) return;
+    ensureAndroidSessionBp2HiddenDefault();
     patchSetBp2PanelHiddenAndroid();
     try {
         installGnPanelDockObservers();
     } catch (_) {}
     const boot = () => {
+        const bp2 = document.getElementById('bp2');
+        try {
+            if (localStorage.getItem('pmg_bp2_hidden') !== '0') {
+                if (typeof window.setBp2PanelHidden === 'function') window.setBp2PanelHidden(true);
+                else if (bp2) dockBp2AndroidHidden(bp2);
+            } else if (bp2 && !bp2.classList.contains('bp2-fullhide')) {
+                initBp2DragAndroid();
+                scheduleClampBp2PanelIntoViewport();
+            }
+        } catch (_) {
+            if (bp2) dockBp2AndroidHidden(bp2);
+        }
         initBp2DragAndroid();
-        scheduleClampBp2PanelIntoViewport();
     };
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot, { once: true });
@@ -186,6 +300,7 @@ export function installGnBp2AndroidFloat() {
         boot();
     }
     document.addEventListener('gn-ms-visible', () => {
+        ensureAndroidSessionBp2HiddenDefault();
         setTimeout(boot, 80);
     });
     try {
