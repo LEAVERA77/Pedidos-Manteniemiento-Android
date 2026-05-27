@@ -4924,6 +4924,10 @@ async function persistirCoordsManualPedidoPanel(pedidoId, la, ln, opts) {
     await asegurarJwtApiRest();
     const token = getApiToken();
     if (!token) return;
+    if (typeof window.gnConfirmarSiFueraDeZonaServicio === 'function') {
+        const okZona = await window.gnConfirmarSiFueraDeZonaServicio(la, ln);
+        if (!okZona) return;
+    }
     try {
         const r = await fetch(
             apiUrl(`/api/pedidos/${encodeURIComponent(String(pedidoId))}/coords-manual`),
@@ -8914,6 +8918,13 @@ function _bindPedidoFormSubmit() {
         toast('No se pudieron leer las coordenadas del reclamo.', 'error');
         btn.disabled = false;
         return;
+    }
+    if (typeof window.gnConfirmarSiFueraDeZonaServicio === 'function') {
+        const okZona = await window.gnConfirmarSiFueraDeZonaServicio(coordsInsert.lat, coordsInsert.lng);
+        if (!okZona) {
+            btn.disabled = false;
+            return;
+        }
     }
     if (app.sel == null) {
         app.sel = { lat: coordsInsert.lat, lng: coordsInsert.lng };

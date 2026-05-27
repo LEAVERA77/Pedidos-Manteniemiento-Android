@@ -591,3 +591,49 @@ html.gn-android-shell .gn-trust-legal-modal.mo {
   margin-top: 0.12rem;
   flex-shrink: 0;
 }
+
+/* —— Oleada 5: calidad geo / atajos —— */
+.gn-geo-calidad-card {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+  margin-bottom: 0.75rem;
+}
+.gn-geo-calidad-card--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+.gn-shortcuts-modal.mo.active {
+  z-index: 100140 !important;
+}
+.gn-shortcuts-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gn-shortcuts-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  font-size: 0.82rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.gn-shortcuts-list li:last-child {
+  border-bottom: none;
+}
+.gn-shortcuts-list kbd {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.gn-shortcuts-list span {
+  color: #475569;
+  text-align: right;
+}

@@ -10,6 +10,7 @@ import { query } from "../db/neon.js";
 import { adminOnly } from "../middleware/auth.js";
 import { listOperacionAudit } from "../services/operacionAuditLog.js";
 import { buildAdminSetupChecklist } from "../services/adminSetupChecklist.js";
+import { calcularGeoCalidadPedidos } from "../services/geoCalidadMetricas.js";
 
 const router = express.Router();
 
@@ -222,9 +223,22 @@ router.post("/socios-catalogo/:id/marcar-sospechoso", adminOnly, async (req, res
 });
 
 /**
- * GET /api/admin/setup-checklist
- * Estado de configuración del tenant (onboarding).
+ * GET /api/admin/geo-calidad
+ * Métricas de pedidos con/sin coordenadas (mapa).
  */
+router.get("/geo-calidad", adminOnly, async (req, res) => {
+  try {
+    const data = await calcularGeoCalidadPedidos(req);
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] geo-calidad:", err);
+    return res.status(500).json({
+      error: "No se pudieron calcular métricas geográficas",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
 router.get("/setup-checklist", adminOnly, async (req, res) => {
   try {
     const data = await buildAdminSetupChecklist(req);

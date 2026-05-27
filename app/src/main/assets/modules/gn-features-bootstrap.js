@@ -14,6 +14,7 @@ import {
 import { htmlZonaServicioAdminBlock, cargarZonaServicioAdmin } from './gn-zona-servicio-ui.js';
 import { refrescarIndicadorReportesEmail } from './gn-reportes-email-indicator.js';
 import { htmlSetupChecklistAdminBlock, cargarSetupChecklistAdmin } from './gn-admin-setup-checklist-ui.js';
+import { htmlGeoCalidadAdminBlock, cargarGeoCalidadEnEstadisticas } from './gn-geo-calidad-admin-ui.js';
 
 let _mounted = false;
 
@@ -31,7 +32,8 @@ export function initGnFeaturesAdminMounts(ctx) {
     }
     const estMount = document.getElementById('gn-est-ranking-sla-mount');
     if (estMount && !estMount.innerHTML.trim()) {
-        estMount.innerHTML = htmlRankingSlaAdminBlocks() + htmlOperacionAuditAdminBlock();
+        estMount.innerHTML =
+            htmlRankingSlaAdminBlocks() + htmlGeoCalidadAdminBlock() + htmlOperacionAuditAdminBlock();
     }
     if (ctx?.esAdmin?.()) {
         void initAdminGeocercaSettingsUI({ toast: ctx.toast, esAdmin: true });
@@ -74,6 +76,10 @@ export async function refrescarRankingSlaEstadisticas(ctx) {
         getApiToken: ctx.getApiToken,
     });
     await cargarOperacionAuditEnEstadisticas({
+        apiUrl: ctx.apiUrl,
+        getApiToken: ctx.getApiToken,
+    });
+    await cargarGeoCalidadEnEstadisticas({
         apiUrl: ctx.apiUrl,
         getApiToken: ctx.getApiToken,
     });

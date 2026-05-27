@@ -5,3 +5,4 @@
 
 import './gn-admin-setup-checklist-ui.js';
 import './gn-export-audit-csv.js';
+import './gn-oleada5-bootstrap.js';
