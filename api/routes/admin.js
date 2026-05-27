@@ -13,6 +13,7 @@ import { buildAdminSetupChecklist } from "../services/adminSetupChecklist.js";
 import { calcularGeoCalidadPedidos } from "../services/geoCalidadMetricas.js";
 import { buildAdminSistemaSalud } from "../services/adminSistemaSalud.js";
 import { listarPedidosAbiertosSinCoords } from "../services/pedidosSinCoordsAdmin.js";
+import { regeocodificarLotePedidosSinCoords } from "../services/regeocodificarLoteAdmin.js";
 
 const router = express.Router();
 
@@ -271,6 +272,24 @@ router.get("/pedidos-sin-coords", adminOnly, async (req, res) => {
     console.error("[admin] pedidos-sin-coords:", err);
     return res.status(500).json({
       error: "No se pudo listar pedidos sin coordenadas",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * POST /api/admin/pedidos-sin-coords/regeocodificar-lote
+ * Body opcional: { limit: 10 }
+ */
+router.post("/pedidos-sin-coords/regeocodificar-lote", adminOnly, async (req, res) => {
+  try {
+    const limit = Number(req.body?.limit ?? req.query?.limit) || 10;
+    const data = await regeocodificarLotePedidosSinCoords(req, { limit });
+    return res.json(data);
+  } catch (err) {
+    console.error("[admin] regeocodificar-lote:", err);
+    return res.status(500).json({
+      error: "No se pudo ejecutar re-geocodificación en lote",
       detail: err?.message || String(err),
     });
   }
