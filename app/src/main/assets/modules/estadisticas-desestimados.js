@@ -16,6 +16,11 @@ export {
     crearChartBarriosTiempoEstadisticas,
     opcionesChartDistribuidoresEstadisticas,
 } from './estadisticas-chart-hbar-layout.js';
+export {
+    sqlPedidosPorCodigoDistribuidor,
+    resolverFilasChartDistribuidoresRed,
+    crearChartDistribuidoresEstadisticas,
+} from './estadisticas-chart-distribuidores-red.js';
 
 /**
  * Excluye tipos de otro rubro (p. ej. «Bacheo y Pavimento» en cooperativa eléctrica).

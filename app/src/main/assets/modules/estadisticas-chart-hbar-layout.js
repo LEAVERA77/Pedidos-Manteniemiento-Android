@@ -4,7 +4,11 @@
  */
 
 /** @type {Set<string>} */
-export const CHART_IDS_BARRA_HORIZONTAL = new Set(['chart-tipos', 'chart-barrios-tiempo']);
+export const CHART_IDS_BARRA_HORIZONTAL = new Set([
+    'chart-tipos',
+    'chart-barrios-tiempo',
+    'chart-distribuidores',
+]);
 
 function fontStringForScale(scale) {
     const tickFont = scale?.options?.ticks?.font || {};
@@ -110,6 +114,14 @@ export function mergeOpcionesBarraHorizontalEstadisticas(opts = {}) {
             },
         },
     };
+}
+
+/** @param {Array<{ distribuidor?: string }>} filas */
+export function labelsEjeYDistribuidorRed(filas) {
+    return (filas || []).map((r) => {
+        const t = String(r.distribuidor || '').trim();
+        return t.length > 44 ? `${t.slice(0, 43)}…` : t;
+    });
 }
 
 /** Etiquetas completas para chart-tipos (tooltips usan _gnLabelsFull en app). */

@@ -80,7 +80,9 @@ import {
     labelsEjeYChartTipos,
     finalizarChartTiposTrabajo,
     crearChartBarriosTiempoEstadisticas,
-    opcionesChartDistribuidoresEstadisticas,
+    sqlPedidosPorCodigoDistribuidor,
+    resolverFilasChartDistribuidoresRed,
+    crearChartDistribuidoresEstadisticas,
     crearGraficoMotivosDesestimacion,
     insertarCardDesestimadosEnResumen,
     renderBloquePdfDesestimados,
@@ -15905,7 +15907,9 @@ async function cargarEstadisticas() {
             ? `SELECT COALESCE(NULLIF(TRIM(barrio),''), 'Sin barrio') AS distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
                 FROM pedidos ${filtro} GROUP BY 1 ORDER BY n DESC LIMIT 10`
-            : `SELECT distribuidor, COUNT(*) AS n,
+            : esCooperativaElectricaRubro()
+              ? sqlPedidosPorCodigoDistribuidor(filtro)
+              : `SELECT distribuidor, COUNT(*) AS n,
                 COUNT(*) FILTER(WHERE estado='Cerrado') AS cerrados
                 FROM pedidos ${filtro} GROUP BY distribuidor ORDER BY n DESC LIMIT 10`;
         const showConf = esCooperativaElectricaRubro();
@@ -16318,15 +16322,18 @@ async function cargarEstadisticas() {
             }
         } catch (_) {}
 
-        // ── Gráfico distribuidor / ramal / barrio: barras con % cierre ─
-        crearChart('chart-distribuidores', 'bar',
-            rDist.rows.map(r => r.distribuidor),
-            [
-                { label: 'Total',    data: rDist.rows.map(r => parseInt(r.n        || 0)), backgroundColor: 'rgba(186, 230, 253, 0.82)', borderColor: 'rgba(125, 211, 252, 0.65)', borderWidth: 1 },
-                { label: 'Cerrados', data: rDist.rows.map(r => parseInt(r.cerrados || 0)), backgroundColor: 'rgba(167, 243, 208, 0.85)', borderColor: 'rgba(110, 231, 183, 0.65)', borderWidth: 1 }
-            ],
-            opcionesChartDistribuidoresEstadisticas()
-        );
+        // ── Gráfico distribuidor / ramal / barrio (coop. eléctrica: catálogo Red Eléctrica) ─
+        const filasDistChart = showConf
+            ? await resolverFilasChartDistribuidoresRed({
+                  pedidosRows: rDist.rows || [],
+                  getApiToken,
+                  apiUrl,
+                  asegurarJwtApiRest,
+              })
+            : rDist.rows || [];
+        crearChartDistribuidoresEstadisticas(crearChart, _charts, filasDistChart, {
+            horizontal: showConf,
+        });
 
         if (esMun && (rBarT?.rows || []).length) {
             crearChartBarriosTiempoEstadisticas(crearChart, _charts, rBarT.rows);
@@ -16382,7 +16389,7 @@ async function cargarEstadisticas() {
             rMensual,
             rEstados,
             rPrior,
-            rDist,
+            rDist: { rows: filasDistChart },
             rBarT,
             rTipos,
             rUsuarios: rUsuarios || { rows: [] },
