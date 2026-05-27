@@ -323,7 +323,7 @@ export function clampBp2PanelIntoViewport() {
     } catch (_) {}
 }
 
-function scheduleClampBp2PanelIntoViewport() {
+export function scheduleClampBp2PanelIntoViewport() {
     const run = () => clampBp2PanelIntoViewport();
     requestAnimationFrame(() => requestAnimationFrame(run));
     setTimeout(run, 50);

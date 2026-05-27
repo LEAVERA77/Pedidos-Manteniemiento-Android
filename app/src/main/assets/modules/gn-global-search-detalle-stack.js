@@ -13,4 +13,13 @@ export function busquedaGlobalEstaAbierta() {
     }
 }
 
+/** Antes de abrir #dm desde Ctrl+K: mantener búsqueda visible detrás del detalle. */
+export function marcarBusquedaGlobalConDetalle() {
+    try {
+        if (!busquedaGlobalEstaAbierta()) return;
+        document.body.classList.add('gn-global-search-con-detalle');
+        document.body.classList.add('gn-dm-frente-paneles');
+    } catch (_) {}
+}
+
 export { installGnDmFrentePaneles as installGnGlobalSearchDetalleStack } from './gn-dm-frente-paneles.js';
