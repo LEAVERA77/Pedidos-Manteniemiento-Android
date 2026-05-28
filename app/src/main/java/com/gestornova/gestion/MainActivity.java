@@ -582,7 +582,8 @@ public class MainActivity extends AppCompatActivity {
                 drainUbic);
         if (webView != null) {
             webView.onResume();
-            final long BG_RELOAD_THRESHOLD_MS = 5L * 60_000L;
+            /** Misma ventana que inactividad en JS (15 min): no recargar WebView antes. */
+            final long BG_RELOAD_THRESHOLD_MS = 15L * 60_000L;
             final boolean resumeFromBackground =
                     !isChangingConfigurations()
                             && gnWebMainDocumentReady
@@ -607,6 +608,10 @@ public class MainActivity extends AppCompatActivity {
                 dispatchPendingPedidoIdToWeb();
                 return;
             }
+            webView.evaluateJavascript(
+                    "(function(){try{if(typeof window.gnRehidratarSesionAndroid==='function')"
+                            + "window.gnRehidratarSesionAndroid();}catch(e){}})();",
+                    null);
             webView.evaluateJavascript(
                     "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
                     null);

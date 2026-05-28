@@ -82,7 +82,7 @@ function buildCollapsibleFooter({ id, extraClass, variant }) {
     wrap.className = `gn-trust-footer-wrap gn-trust-footer-wrap--${variant}`;
     wrap.id = `${id}-wrap`;
 
-    const expanded = variant === 'login' ? true : !leerColapsadoPorDefecto();
+    const expanded = !leerColapsadoPorDefecto();
 
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -105,10 +105,6 @@ function buildCollapsibleFooter({ id, extraClass, variant }) {
 
     body.innerHTML = footerLinksHtml({ compact: variant === 'panel' });
     wireFooterLinks(body);
-    if (variant === 'login') {
-        body.classList.remove('gn-trust-footer--hidden');
-        wrap.classList.add('gn-trust-footer-wrap--open');
-    }
 
     toggle.addEventListener('click', () => {
         const willExpand = body.classList.contains('gn-trust-footer--hidden');

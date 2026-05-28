@@ -1,12 +1,17 @@
 /**
- * Android WebView: arranque login sin toast de inactividad espuria ni borrado del usuario al conectar Neon.
+ * Android WebView: arranque login, sesión tras segundo plano, offline y alto contraste.
  * Se importa al inicio de app.js (antes del restore de sesión local).
  * made by leavera77
  */
 
+import { getApp } from './gn-app-global-bridge.js';
+import { offlinePedidos, OU_KEY } from '../offline.js';
+
 const DRAFT_EM = 'gn_login_draft_em';
 const DRAFT_PW = 'gn_login_draft_pw';
 const PMG_LAST_ACTIVITY_TS_KEY = 'pmg_last_activity_ts';
+const PMG_KEY = 'pmg';
+const SESION_INACTIVIDAD_MAX_MS = 15 * 60 * 1000;
 const GUARD_MS = 120000;
 
 function esShellAndroidGestorNova() {
@@ -25,9 +30,153 @@ function sesionLocalSuperaInactividadMaxima() {
         if (raw == null || String(raw).trim() === '') return false;
         const t = parseInt(raw, 10);
         if (!Number.isFinite(t) || t <= 0) return false;
-        return Date.now() - t > 15 * 60 * 1000;
+        return Date.now() - t > SESION_INACTIVIDAD_MAX_MS;
     } catch (_) {
         return false;
+    }
+}
+
+function leerPmgUsuario() {
+    try {
+        const raw = localStorage.getItem(PMG_KEY);
+        if (!raw || !String(raw).trim()) return null;
+        const u = JSON.parse(raw);
+        return u && u.id != null ? u : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function tieneCacheLoginOffline() {
+    try {
+        const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
+        return Array.isArray(lista) && lista.length > 0;
+    } catch (_) {
+        return false;
+    }
+}
+
+function asegurarPantallaPrincipalActiva() {
+    const ls = document.getElementById('ls');
+    const ms = document.getElementById('ms');
+    if (!ls || !ms) return;
+    ls.classList.remove('active');
+    ms.classList.add('active');
+    try {
+        document.body.classList.add('gn-sesion-activa');
+    } catch (_) {}
+}
+
+function marcarActividadSesionAhora() {
+    try {
+        localStorage.setItem(PMG_LAST_ACTIVITY_TS_KEY, String(Date.now()));
+    } catch (_) {}
+}
+
+/** Rehidrata app.u y pantalla principal si hay pmg y no pasaron 15 min de inactividad. */
+export function rehidratarSesionAndroidDesdePmg() {
+    if (!esShellAndroidGestorNova()) return false;
+    if (sesionLocalSuperaInactividadMaxima()) return false;
+
+    const app = getApp();
+    if (app?.u) {
+        if (document.getElementById('ls')?.classList.contains('active')) {
+            asegurarPantallaPrincipalActiva();
+        }
+        marcarActividadSesionAhora();
+        return true;
+    }
+
+    const u = leerPmgUsuario();
+    if (!u) return false;
+
+    if (!app) return false;
+    try {
+        u.rol = typeof window.normalizarRolStr === 'function' ? window.normalizarRolStr(u.rol) : u.rol;
+    } catch (_) {}
+    app.u = u;
+    asegurarPantallaPrincipalActiva();
+    marcarActividadSesionAhora();
+
+    setTimeout(() => {
+        try {
+            if (typeof window.cargarPedidos === 'function') {
+                void window.cargarPedidos();
+            } else if (typeof window.render === 'function') {
+                try {
+                    app.p = offlinePedidos();
+                } catch (_) {
+                    app.p = [];
+                }
+                window.render();
+            }
+        } catch (_) {}
+    }, 250);
+
+    return true;
+}
+
+function prepararLoginOfflineAndroid() {
+    if (!esShellAndroidGestorNova()) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        try {
+            window.__gnNeonFastOfflineAndroid = true;
+        } catch (_) {}
+    }
+    const dbs = document.getElementById('dbs');
+    const lb = document.getElementById('lb');
+    const offlinePosible = tieneCacheLoginOffline() || !!leerPmgUsuario();
+    if (dbs && offlinePosible) {
+        dbs.className = 'dbs er';
+        dbs.innerHTML =
+            '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline';
+    }
+    if (lb) {
+        lb.disabled = false;
+        try {
+            lb.removeAttribute('disabled');
+        } catch (_) {}
+    }
+    void rehidratarSesionAndroidDesdePmg();
+}
+
+function instalarHooksSesionAndroid() {
+    if (!esShellAndroidGestorNova()) return;
+    try {
+        window.gnRehidratarSesionAndroid = rehidratarSesionAndroidDesdePmg;
+    } catch (_) {}
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        setTimeout(() => {
+            void rehidratarSesionAndroidDesdePmg();
+        }, 80);
+    });
+
+    window.addEventListener('pageshow', () => {
+        setTimeout(() => {
+            void rehidratarSesionAndroidDesdePmg();
+        }, 80);
+    });
+
+    window.addEventListener('gestornova-app-ready', () => {
+        prepararLoginOfflineAndroid();
+        setTimeout(() => void rehidratarSesionAndroidDesdePmg(), 120);
+        setTimeout(() => void rehidratarSesionAndroidDesdePmg(), 600);
+    });
+
+    if (typeof navigator !== 'undefined') {
+        window.addEventListener('offline', () => {
+            try {
+                window.__gnNeonFastOfflineAndroid = true;
+            } catch (_) {}
+            prepararLoginOfflineAndroid();
+        });
+        window.addEventListener('online', () => {
+            try {
+                window.__gnNeonFastOfflineAndroid = false;
+            } catch (_) {}
+        });
     }
 }
 
@@ -190,11 +339,16 @@ function suprimirToastInactividadArranque() {
 prepararStorageSesionObsoletaArranqueAndroid();
 purgarHuellaSiCambioVersionApk();
 suprimirToastInactividadArranque();
+instalarHooksSesionAndroid();
 
 if (typeof document !== 'undefined') {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => instalarPreservacionCamposLogin(), { once: true });
-    } else {
+    const bootAndroidLogin = () => {
         instalarPreservacionCamposLogin();
+        prepararLoginOfflineAndroid();
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootAndroidLogin, { once: true });
+    } else {
+        bootAndroidLogin();
     }
 }

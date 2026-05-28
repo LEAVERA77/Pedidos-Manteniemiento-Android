@@ -1077,6 +1077,10 @@ window.addEventListener('offline', () => { _netCache = { ok: false, ts: Date.now
 
 
 async function initNeon() {
+    if (window.__gnNeonFastOfflineAndroid && typeof window.AndroidConfig !== 'undefined') {
+        NEON_OK = false;
+        return false;
+    }
     if (!window.APP_CONFIG?.neon?.connectionString) {
         console.warn('[neon] APP_CONFIG no disponible — esperando config.json');
         return false;
