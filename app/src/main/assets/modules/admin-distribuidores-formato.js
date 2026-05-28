@@ -24,19 +24,6 @@ function rubroEmpresaCfg() {
     return null;
 }
 
-/** Solo cooperativa eléctrica: el checkbox aplica; municipio/agua no muestran la fila. */
-export function syncOcultarModulosRedesRowVisibility() {
-    const wrap = document.getElementById('wrap-cfg-ocultar-modulos-redes');
-    if (!wrap) return;
-    wrap.style.display = rubroEmpresaCfg() === 'cooperativa_electrica' ? '' : 'none';
-}
-
-/** Valor a enviar en PUT configuración: fuera de eléctrica siempre false. */
-export function ocultarModulosRedesValorParaApi() {
-    if (rubroEmpresaCfg() !== 'cooperativa_electrica') return false;
-    return !!document.getElementById('cfg-ocultar-modulos-redes')?.checked;
-}
-
 const HTML_AYUDA_ELECTRIC =
     'Sin límite de filas en el listado. Excel: fila 1 = encabezados <code style="font-size:.75rem">codigo | nombre | tension | localidad</code> (localidad opcional). En Neon, columna <code style="font-size:.75rem">localidad</code>: <code style="font-size:.75rem">docs/NEON_distribuidores_localidad.sql</code>.';
 

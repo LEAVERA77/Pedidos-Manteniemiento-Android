@@ -45,6 +45,11 @@ export async function cargarSistemaSaludAdmin({ apiUrl, getApiToken }) {
             cache: 'no-store',
         });
         const data = await r.json().catch(() => ({}));
+        if (r.status === 403) {
+            host.innerHTML =
+                '<p style="font-size:.8rem;color:var(--tm)"><i class="fas fa-lock"></i> La salud del sistema solo está disponible con <strong>rol administrador</strong>. Si entraste como técnico o supervisor, no verás este panel.</p>';
+            return;
+        }
         if (!r.ok) throw new Error(data.error || r.statusText);
         const api = data.api || {};
         const db = data.db || {};

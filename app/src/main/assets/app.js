@@ -152,11 +152,7 @@ import {
 import { postDerivarExternoDesdeAltaNuevoPedido } from './modules/pedido-alta-derivacion-api.js';
 import { resolverPedidoParaDerivacionRevisionAdmin } from './modules/derivacion-revision-admin-modal.js';
 import { runNeonAppVersionCheckAndroid } from './modules/android-app-update-neon.js';
-import {
-    ocultarModulosRedesValorParaApi,
-    syncAyudaDistribuidoresExcelHint,
-    syncOcultarModulosRedesRowVisibility,
-} from './modules/admin-distribuidores-formato.js';
+import { syncAyudaDistribuidoresExcelHint } from './modules/admin-distribuidores-formato.js';
 import { syncAdminSaidiDistribTabVisibility } from './modules/admin-saidi-distrib-excel.js';
 import {
     syncAdminRedElectricaTabVisibility,
@@ -1204,7 +1200,6 @@ function aplicarVisibilidadTabsAdminRedElectrica() {
         });
     } catch (_) {}
     try {
-        syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
     } catch (_) {}
 }
@@ -12256,7 +12251,7 @@ function vaciarDerivacionesTercerosFormularioAdmin() {
         if (!wrap) return;
         wrap.querySelectorAll('input:not([type="button"]):not([type="submit"]), textarea').forEach((el) => {
             const id = el.id || '';
-            if (!id.startsWith('cfg-deriv-') && id !== 'cfg-ocultar-modulos-redes') return;
+            if (!id.startsWith('cfg-deriv-')) return;
             if (el.type === 'checkbox') el.checked = false;
             else el.value = '';
         });
@@ -13402,7 +13397,6 @@ function aplicarEtiquetasPorTipo(tipo) {
         syncChecklistSeguridadCierreLabels();
     } catch (_) {}
     try {
-        syncOcultarModulosRedesRowVisibility();
         syncAyudaDistribuidoresExcelHint();
         syncAdminSaidiDistribTabVisibility({
             esCooperativaElectricaRubro,
@@ -15204,8 +15198,6 @@ async function cargarFormEmpresa() {
             const cur = String(ec.provincia || ec.provincia_nominatim || ec.state || '').trim();
             if (cur) provEl.value = cur;
         }
-        const ohRed = document.getElementById('cfg-ocultar-redes-help');
-        if (ohRed) ohRed.style.removeProperty('display');
         try {
             const ec = window.EMPRESA_CFG || {};
             sincronizarFirmaIdentidadTenantDesdeValores(ec.nombre || cfg.nombre, ec.tipo || cfg.tipo);
@@ -15278,7 +15270,6 @@ async function guardarConfigEmpresa() {
                     const body = {
                         configuracion: {
                             marca_publicada_admin: true,
-                            ocultar_modulos_redes: ocultarModulosRedesValorParaApi(),
                         },
                     };
                     const provNom = (document.getElementById('cfg-provincia-nominatim')?.value || '').trim();
@@ -16764,8 +16755,6 @@ function vaciarPanelesAdminPorCambioTenantSesion() {
         const tvr = document.getElementById('cfg-deriv-tv-rows');
         if (irr) irr.innerHTML = '';
         if (tvr) tvr.innerHTML = '';
-        const oh = document.getElementById('cfg-ocultar-redes-help');
-        if (oh) oh.style.display = 'none';
         try {
             syncCoordModoVisibility();
         } catch (_) {}

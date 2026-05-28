@@ -232,8 +232,6 @@ export function poblarFormDerivacionesDesdeEmpresaCfg() {
             onChange: actualizarBotonesWhatsappDerivacionesUi,
         });
     } catch (_) {}
-    const om = document.getElementById('cfg-ocultar-modulos-redes');
-    if (om) om.checked = !!(window.EMPRESA_CFG && window.EMPRESA_CFG.ocultar_modulos_redes);
     actualizarBotonesWhatsappDerivacionesUi();
 }
 
