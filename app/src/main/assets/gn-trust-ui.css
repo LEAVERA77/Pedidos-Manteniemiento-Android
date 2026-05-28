@@ -73,17 +73,6 @@
 .gn-trust-footer--hidden {
   display: none !important;
 }
-.gn-trust-footer-wrap--login .gn-trust-footer-toggle {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.28);
-}
-.gn-trust-footer-wrap--login .gn-trust-footer-toggle:hover,
-.gn-trust-footer-wrap--login .gn-trust-footer-toggle:focus-visible {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.45);
-  outline: none;
-}
 .gn-trust-footer-wrap--panel {
   position: absolute;
   left: 0;
@@ -190,20 +179,35 @@ body.gn-dark .gn-trust-footer-wrap--panel {
 .gn-trust-pill--link {
   /* enlace externo / status */
 }
-.gn-trust-footer-wrap--login .gn-trust-pill {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #e2e8f0;
-  box-shadow: none;
-  min-height: 1.65rem;
-  padding: 0.22rem 0.6rem;
-  font-size: 0.68rem;
+/* En login el pie vive dentro de .lc (fondo blanco): contraste alto, no gris sobre gris */
+#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill {
+  background: #ffffff;
+  border: 2px solid #2563eb;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  min-height: 1.85rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  opacity: 1;
 }
-.gn-trust-footer-wrap--login .gn-trust-pill:hover,
-.gn-trust-footer-wrap--login .gn-trust-pill:focus-visible {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: #fff;
-  color: #fff;
+#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill:hover,
+#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill:focus-visible {
+  background: #eff6ff;
+  border-color: #1d4ed8;
+  color: #1e3a8a;
+}
+.gn-trust-footer-wrap--login .gn-trust-footer-toggle {
+  color: #0f172a;
+  background: #dbeafe;
+  border-color: #2563eb;
+  opacity: 1;
+}
+.gn-trust-footer-wrap--login .gn-trust-footer-toggle:hover,
+.gn-trust-footer-wrap--login .gn-trust-footer-toggle:focus-visible {
+  background: #bfdbfe;
+  border-color: #1d4ed8;
+  color: #0f172a;
 }
 .gn-trust-footer-wrap--panel .gn-trust-pill {
   min-height: 1.35rem;
