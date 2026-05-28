@@ -34,8 +34,7 @@ html.gn-android-webview #app{height:calc(var(--gn-vh,1vh)*100);max-height:calc(v
 #gw.gn-wizard-screen{background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#2563eb 100%)}
 #gw.gn-wizard-screen.active{display:flex;align-items:center;justify-content:center}
 .gw-brand{display:flex;justify-content:center;margin:0 auto 1rem}
-.gn-wizard-txt{font-size:.88rem;color:var(--tm);line-height:1.45;margin-bottom:1rem;text-align:center}
-.gn-wizard-secondary{display:none;width:100%;margin-top:.5rem;padding:.65rem;border-radius:.6rem;border:1px solid var(--bo);background:var(--bg);cursor:pointer;font-size:.92rem;font-weight:500;color:var(--td)}
+/* Wizard: gn-wizard-screen.css */
 .gn-btn-asistente-tl{position:absolute;top:.85rem;left:.85rem;z-index:5;width:2.55rem;height:2.55rem;border-radius:.65rem;border:1px solid rgba(255,255,255,.35);background:rgba(15,23,42,.5);color:#e2e8f0;cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.2)}
 .gn-btn-asistente-tl:hover{background:rgba(30,58,138,.55)}
 #gw.active .gn-btn-asistente-tl{display:flex}
@@ -1140,6 +1139,29 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
 .stat-card.green .val{color:#3d7a56}
 .stat-card.orange{background:linear-gradient(180deg,rgba(255,247,237,.95),var(--bg));border-color:rgba(253,186,116,.4)}
 .stat-card.orange .val{color:#b45309}
+.stat-card-click{cursor:pointer}
+.stat-card-click:focus-visible{outline:2px solid var(--bm);outline-offset:2px}
+.gn-est-stats-detalle-host{
+  display:none;
+  margin:.35rem 0 .85rem;
+  font-size:.82rem;
+  border:1px solid var(--bo);
+  border-radius:.55rem;
+  padding:.55rem .7rem;
+  max-height:min(42vh,320px);
+  overflow-y:auto;
+  background:var(--bg);
+}
+.gn-est-stats-detalle-hd{margin-bottom:.45rem;font-size:.84rem;line-height:1.35}
+.gn-est-stats-detalle-row{
+  padding:.35rem 0;
+  border-bottom:1px solid var(--bo);
+  cursor:pointer;
+  color:var(--bm);
+}
+.gn-est-stats-detalle-row:last-child{border-bottom:none}
+.gn-est-stats-detalle-row:hover{background:rgba(37,99,235,.06)}
+.gn-est-stats-detalle-meta{color:var(--tm);font-size:.78rem}
 .chart-wrap{background:white;border:1px solid var(--bo);border-radius:.75rem;padding:1rem;margin-bottom:1rem}
 .chart-wrap h4{font-size:.85rem;color:var(--tm);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.05em}
 /* Chart.js + maintainAspectRatio:false: contenedor con altura fija; sin esto el canvas puede crecer sin límite */

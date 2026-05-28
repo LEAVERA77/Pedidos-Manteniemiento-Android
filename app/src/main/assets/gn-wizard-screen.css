@@ -15,9 +15,10 @@
         max(1rem, env(safe-area-inset-bottom, 0)) max(1rem, env(safe-area-inset-left, 0));
 }
 
-#gw .gn-wizard-card.lc {
-    background: #ffffff;
-    color: #0f172a;
+#gw .gn-wizard-card.lc,
+#gw .lc.gn-wizard-card {
+    background: #ffffff !important;
+    color: #0f172a !important;
     padding: 2rem 1.75rem 1.5rem;
     border-radius: 1.25rem;
     width: min(92%, 420px);
@@ -27,26 +28,29 @@
     overflow-y: auto;
 }
 
-#gw .gn-wizard-card h1 {
+#gw .gn-wizard-card h1,
+#gw .lc h1 {
     font-size: 1.45rem;
-    color: #0f172a;
+    color: #0f172a !important;
     text-align: center;
     font-weight: 700;
     margin: 0 0 0.35rem;
     letter-spacing: -0.02em;
 }
 
-#gw .gn-wizard-card .sub {
+#gw .gn-wizard-card .sub,
+#gw .lc .sub {
     text-align: center;
-    color: #475569;
+    color: #475569 !important;
     font-size: 0.92rem;
     margin: 0 0 1rem;
     line-height: 1.4;
 }
 
-#gw .gn-wizard-txt {
+#gw .gn-wizard-txt,
+#gw .lc p.gn-wizard-txt {
     font-size: 0.88rem;
-    color: #64748b;
+    color: #475569 !important;
     line-height: 1.5;
     margin: 0 0 1.15rem;
     text-align: center;

@@ -166,6 +166,7 @@ export function insertarCardDesestimadosEnResumen(cardList, desestimados, totalN
         val: n,
         lbl: 'Desestimados',
         cls: n > 0 ? 'dash-kpi-slate' : '',
+        filter: 'est_desestimados',
     });
 }
 

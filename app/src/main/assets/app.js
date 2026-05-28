@@ -88,6 +88,7 @@ import {
     renderBloquePdfDesestimados,
 } from './modules/estadisticas-desestimados.js';
 import { pintarCaptionsGraficosEstadisticasAdmin } from './modules/estadisticas-chart-captions.js';
+import { pintarEstadisticasStatCards } from './modules/admin-estadisticas-stat-cards-ui.js';
 import { pedidosBaseMapaSinToolbarBp2, pedidoPasaFiltroRubroSiAsignadoAOperador } from './modules/filtros-checkboxes.js';
 import {
     toggleMapaCardSlideoff,
@@ -14996,6 +14997,21 @@ function _depsAdminPanelDeferred() {
         actualizarOverlayImportacion,
         ocultarOverlayImportacion,
         nominatimFetchSearch: _nominatimFetchSearch,
+        fmtInformeFecha,
+        logErrorWeb,
+        mensajeErrorUsuario,
+        abrirPedidoDetalleEstadisticas: async (id) => {
+            await cargarPedidos();
+            const p = app.p.find((x) => String(x.id) === String(id));
+            if (!p) {
+                toast('Pedido no encontrado', 'error');
+                return;
+            }
+            app.tab = tabPedidoListaPorEstado(p.es);
+            document.querySelectorAll('.tb').forEach((b) => b.classList.toggle('active', b.dataset.tab === app.tab));
+            render();
+            void detalle(p);
+        },
     };
 }
 if (typeof window !== 'undefined') {
@@ -16204,9 +16220,7 @@ async function cargarEstadisticas() {
                 motivosRows: rMotivos.rows || [],
             });
         } catch (_) {}
-        document.getElementById('stats-cards').innerHTML = cardList
-            .map(s => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
-            .join('');
+        pintarEstadisticasStatCards(cardList);
 
         // ── Helper para crear/recrear charts (Chart.js v4) ────
         const crearChart = (id, type, labels, datasets, extraOpts = {}) => {
@@ -16553,9 +16567,7 @@ function resetEstadisticasAdminVisualNeutro() {
                 );
             }
         } catch (_) {}
-        statsEl.innerHTML = cardList
-            .map((s) => `<div class="stat-card ${s.cls}"><div class="val">${s.val}</div><div class="lbl">${s.lbl}</div></div>`)
-            .join('');
+        pintarEstadisticasStatCards(cardList);
     } catch (_) {}
 }
 

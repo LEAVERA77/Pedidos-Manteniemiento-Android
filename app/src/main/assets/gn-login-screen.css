@@ -55,6 +55,8 @@
     overflow-y: auto;
     overflow-x: hidden;
     padding: 1.75rem 1.5rem 1.35rem;
+    background: #ffffff !important;
+    color: #0f172a !important;
     background: var(--gn-login-card);
     border: 1px solid rgba(255, 255, 255, 0.65);
     border-radius: 1.25rem;
@@ -63,17 +65,21 @@
         0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
-#ls .lc h1 {
+#ls .lc h1,
+#ls #app-titulo {
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: -0.02em;
+    color: #0f172a !important;
     color: var(--gn-login-text);
     text-align: center;
     margin: 0 0 0.25rem;
 }
 
-#ls .lc .sub {
+#ls .lc .sub,
+#ls #app-subtitulo {
     text-align: center;
+    color: #475569 !important;
     color: var(--gn-login-muted);
     font-size: 0.88rem;
     font-weight: 500;

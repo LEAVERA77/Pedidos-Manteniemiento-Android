@@ -168,6 +168,12 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             });
         } catch (_) {}
         try {
+            const estStat = await import('./admin-estadisticas-stat-cards-ui.js');
+            estStat.initEstadisticasStatCardsUi(estStat.buildEstadisticasStatCardsDeps(ctx));
+        } catch (e) {
+            console.warn('[admin-deferred] init estadisticas stat cards', e);
+        }
+        try {
             const distUi = await import('./admin-distribuidores-catalogo-ui.js');
             distUi.initAdminDistribuidoresCatalogoUi({
                 getApiToken: ctx.getApiToken,
