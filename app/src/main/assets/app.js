@@ -11454,6 +11454,7 @@ function render() {
         verTodosTec,
         pasaSoloAgrupadosToolbar,
         soloDesLista,
+        soloDerivLista,
         pedidoEsDerivadoFuera
     );
     const asg = vis.filter((p) => pasaSoloAgrupadosToolbar(p) && (p.es === 'Asignado' || p.es === 'En ejecución')).length;

@@ -107,6 +107,7 @@ export function filtrarListaPanelPedidosRender(opts) {
  * @param {boolean} verTodosEmpresa
  * @param {(p: object) => boolean} pasaSoloAgrupadosToolbar
  * @param {boolean} soloDesLista
+ * @param {boolean} soloDerivLista
  * @param {(p: object) => boolean} pedidoEsDerivadoFuera
  */
 export function contarCerradosPanelPedidos(
@@ -115,6 +116,7 @@ export function contarCerradosPanelPedidos(
     verTodosEmpresa,
     pasaSoloAgrupadosToolbar,
     soloDesLista,
+    soloDerivLista,
     pedidoEsDerivadoFuera
 ) {
     return (vis || []).filter((p) => {
