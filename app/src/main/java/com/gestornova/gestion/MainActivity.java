@@ -1018,23 +1018,34 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void downloadImage(String url) {
             if (url == null || url.isEmpty()) return;
-            runOnUiThread(() -> {
+            new Thread(() -> {
                 try {
-                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                    if (dm == null) return;
-                    Uri uri = Uri.parse(url);
-                    String filename = "GestorNova_" + System.currentTimeMillis() + ".jpg";
-                    DownloadManager.Request request = new DownloadManager.Request(uri);
-                    request.setTitle(filename);
-                    request.setDescription("Descargando imagen del pedido");
-                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "GestorNova/" + filename);
-                    dm.enqueue(request);
-                    Toast.makeText(MainActivity.this, "Descargando imagen…", Toast.LENGTH_SHORT).show();
+                    byte[] data = loadImageBytesForShare(url);
+                    String mime = mimeTypeForImageSource(url);
+                    String ext = extensionForMime(mime);
+                    String filename = "GestorNova_" + System.currentTimeMillis() + ext;
+                    File dir = new File(
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                            "GestorNova");
+                    if (!dir.exists() && !dir.mkdirs()) {
+                        throw new IllegalStateException("No se pudo crear la carpeta de imágenes");
+                    }
+                    File imgFile = new File(dir, filename);
+                    FileOutputStream fos = new FileOutputStream(imgFile);
+                    fos.write(data);
+                    fos.close();
+                    MediaScannerConnection.scanFile(
+                            MainActivity.this,
+                            new String[]{imgFile.getAbsolutePath()},
+                            new String[]{mime},
+                            null);
+                    runOnUiThread(() ->
+                            Toast.makeText(MainActivity.this, "Imagen guardada en Fotos", Toast.LENGTH_SHORT).show());
                 } catch (Exception e) {
-                    Toast.makeText(MainActivity.this, "Error al descargar: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    runOnUiThread(() ->
+                            Toast.makeText(MainActivity.this, "Error al descargar: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
-            });
+            }).start();
         }
 
         @JavascriptInterface
@@ -1042,17 +1053,12 @@ public class MainActivity extends AppCompatActivity {
             if (url == null || url.isEmpty()) return;
             new Thread(() -> {
                 try {
-                    java.net.URL imgUrl = new java.net.URL(url);
-                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) imgUrl.openConnection();
-                    conn.setDoInput(true);
-                    conn.connect();
-                    InputStream in = conn.getInputStream();
-                    byte[] data = readAllBytes(in);
-                    in.close();
-
+                    byte[] data = loadImageBytesForShare(url);
+                    String mime = mimeTypeForImageSource(url);
+                    String ext = extensionForMime(mime);
                     File cacheDir = new File(getCacheDir(), "shared_images");
                     if (!cacheDir.exists()) cacheDir.mkdirs();
-                    File imgFile = new File(cacheDir, "compartir_" + System.currentTimeMillis() + ".jpg");
+                    File imgFile = new File(cacheDir, "compartir_" + System.currentTimeMillis() + ext);
                     FileOutputStream fos = new FileOutputStream(imgFile);
                     fos.write(data);
                     fos.close();
@@ -1064,7 +1070,7 @@ public class MainActivity extends AppCompatActivity {
 
                     runOnUiThread(() -> {
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                        shareIntent.setType("image/jpeg");
+                        shareIntent.setType(mime);
                         shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
                         shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         startActivity(Intent.createChooser(shareIntent, "Compartir imagen"));
@@ -1074,6 +1080,68 @@ public class MainActivity extends AppCompatActivity {
                             Toast.makeText(MainActivity.this, "Error al compartir: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
             }).start();
+        }
+
+        /** Soporta data:image/…;base64, http(s) y file:// (visor WebView). */
+        private byte[] loadImageBytesForShare(String url) throws Exception {
+            String u = url.trim();
+            if (u.regionMatches(true, 0, "data:", 0, 5)) {
+                int comma = u.indexOf(',');
+                if (comma < 0) throw new IllegalArgumentException("URL de imagen inválida");
+                String meta = u.substring(5, comma).toLowerCase(Locale.ROOT);
+                String payload = u.substring(comma + 1);
+                if (meta.contains(";base64")) {
+                    return Base64.decode(payload, Base64.DEFAULT);
+                }
+                return java.net.URLDecoder.decode(payload, StandardCharsets.UTF_8.name())
+                        .getBytes(StandardCharsets.UTF_8);
+            }
+            if (u.regionMatches(true, 0, "file:", 0, 5)) {
+                Uri uri = Uri.parse(u);
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    if (in == null) throw new IllegalStateException("No se pudo leer el archivo");
+                    return readAllBytes(in);
+                }
+            }
+            java.net.URL imgUrl = new java.net.URL(u);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) imgUrl.openConnection();
+            conn.setDoInput(true);
+            conn.connect();
+            try (InputStream in = conn.getInputStream()) {
+                return readAllBytes(in);
+            } finally {
+                conn.disconnect();
+            }
+        }
+
+        private String mimeTypeForImageSource(String url) {
+            String u = url == null ? "" : url.trim();
+            if (u.regionMatches(true, 0, "data:", 0, 5)) {
+                int comma = u.indexOf(',');
+                if (comma > 5) {
+                    String meta = u.substring(5, comma).toLowerCase(Locale.ROOT);
+                    int semi = meta.indexOf(';');
+                    String mime = semi >= 0 ? meta.substring(0, semi) : meta;
+                    if (!mime.isEmpty()) return mime;
+                }
+            }
+            if (u.toLowerCase(Locale.ROOT).contains(".png")) return "image/png";
+            if (u.toLowerCase(Locale.ROOT).contains(".webp")) return "image/webp";
+            return "image/jpeg";
+        }
+
+        private String extensionForMime(String mime) {
+            if (mime == null) return ".jpg";
+            switch (mime.toLowerCase(Locale.ROOT)) {
+                case "image/png":
+                    return ".png";
+                case "image/webp":
+                    return ".webp";
+                case "image/gif":
+                    return ".gif";
+                default:
+                    return ".jpg";
+            }
         }
 
         private byte[] readAllBytes(InputStream in) throws Exception {

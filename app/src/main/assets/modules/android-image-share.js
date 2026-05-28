@@ -27,7 +27,14 @@ export function initAndroidImageShare() {
         if (!src) return;
 
         if (isAndroid && typeof window.AndroidImageShare.shareImage === 'function') {
-            window.AndroidImageShare.shareImage(src);
+            try {
+                window.AndroidImageShare.shareImage(src);
+            } catch (err) {
+                if (typeof window.toast === 'function') {
+                    window.toast('No se pudo compartir la imagen', 'warning');
+                }
+                console.warn('AndroidImageShare.shareImage:', err);
+            }
             return;
         }
 
