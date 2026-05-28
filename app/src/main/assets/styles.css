@@ -1164,6 +1164,17 @@ html.gn-android-webview #ms .bp2.bp2-panel-maximized{
   overflow-x:auto;
   overflow-y:visible;
 }
+#admin-estadisticas .chart-legend-caption{
+  font-size:.78rem;
+  line-height:1.45;
+  color:var(--tm);
+  max-height:5.5rem;
+  overflow-y:auto;
+  margin-top:.45rem;
+}
+#admin-estadisticas #chart-cap-distribuidores{
+  max-height:4.5rem;
+}
 /* Captura PDF / html2canvas: evita que la grilla estire alturas fantasma */
 .gn-capture-pdf.chart-wrap,
 .chart-wrap.gn-capture-pdf{

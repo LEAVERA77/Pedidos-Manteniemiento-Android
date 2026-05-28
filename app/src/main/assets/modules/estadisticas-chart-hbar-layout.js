@@ -116,11 +116,34 @@ export function mergeOpcionesBarraHorizontalEstadisticas(opts = {}) {
     };
 }
 
-/** @param {Array<{ distribuidor?: string }>} filas */
+/** Altura del contenedor según filas (evita canvas de 900px+ en grillas estrechas). */
+export function ajustarContenedorChartBarrasHorizontales(canvasId, nFilas, opts = {}) {
+    const wrap = document.getElementById(canvasId)?.closest('.chart-container');
+    if (!wrap) return;
+    const n = Number(nFilas) || 0;
+    if (!n) {
+        wrap.style.height = '';
+        wrap.style.minHeight = '';
+        wrap.style.maxHeight = '';
+        return;
+    }
+    const capped = Math.max(3, Math.min(n, opts.maxFilas ?? 14));
+    const rowH = opts.rowHeight ?? 28;
+    const base = opts.base ?? 72;
+    const maxH = opts.maxHeight ?? 380;
+    const h = Math.min(base + capped * rowH, maxH);
+    wrap.style.height = `${h}px`;
+    wrap.style.minHeight = `${h}px`;
+    wrap.style.maxHeight = `${h}px`;
+}
+
+/** @param {Array<{ codigo?: string; distribuidor?: string }>} filas */
 export function labelsEjeYDistribuidorRed(filas) {
     return (filas || []).map((r) => {
+        const code = String(r.codigo || '').trim();
+        if (code) return code.length > 14 ? `${code.slice(0, 13)}…` : code;
         const t = String(r.distribuidor || '').trim();
-        return t.length > 44 ? `${t.slice(0, 43)}…` : t;
+        return t.length > 28 ? `${t.slice(0, 27)}…` : t;
     });
 }
 
@@ -146,6 +169,10 @@ export function labelsEjeYBarriosTiempo(rows) {
  */
 export function crearChartBarriosTiempoEstadisticas(crearChart, chartRef, rows) {
     if (!rows?.length) return;
+    ajustarContenedorChartBarrasHorizontales('chart-barrios-tiempo', rows.length, {
+        maxFilas: 10,
+        maxHeight: 360,
+    });
     const labels = labelsEjeYBarriosTiempo(rows);
     crearChart(
         'chart-barrios-tiempo',

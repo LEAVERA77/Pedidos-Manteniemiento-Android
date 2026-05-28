@@ -1,0 +1,87 @@
+/**
+ * Pantalla de bienvenida (#gw) — tarjeta clara sobre fondo oscuro.
+ * made by leavera77
+ */
+
+#gw.gn-wizard-screen {
+    background: linear-gradient(145deg, #0c1222 0%, #1e3a8a 42%, #2563eb 100%);
+}
+
+#gw.gn-wizard-screen.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(1rem, env(safe-area-inset-top, 0)) max(1rem, env(safe-area-inset-right, 0))
+        max(1rem, env(safe-area-inset-bottom, 0)) max(1rem, env(safe-area-inset-left, 0));
+}
+
+#gw .gn-wizard-card.lc {
+    background: #ffffff;
+    color: #0f172a;
+    padding: 2rem 1.75rem 1.5rem;
+    border-radius: 1.25rem;
+    width: min(92%, 420px);
+    max-width: 420px;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.35);
+    max-height: min(92vh, 640px);
+    overflow-y: auto;
+}
+
+#gw .gn-wizard-card h1 {
+    font-size: 1.45rem;
+    color: #0f172a;
+    text-align: center;
+    font-weight: 700;
+    margin: 0 0 0.35rem;
+    letter-spacing: -0.02em;
+}
+
+#gw .gn-wizard-card .sub {
+    text-align: center;
+    color: #475569;
+    font-size: 0.92rem;
+    margin: 0 0 1rem;
+    line-height: 1.4;
+}
+
+#gw .gn-wizard-txt {
+    font-size: 0.88rem;
+    color: #64748b;
+    line-height: 1.5;
+    margin: 0 0 1.15rem;
+    text-align: center;
+}
+
+#gw .gn-wizard-card .bp {
+    width: 100%;
+    padding: 0.85rem 1rem;
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    color: #fff;
+    border: none;
+    border-radius: 0.65rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+#gw .gn-wizard-card .bp:hover {
+    filter: brightness(1.05);
+}
+
+#gw .gn-wizard-secondary {
+    display: none;
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.65rem;
+    border-radius: 0.6rem;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: #334155;
+}

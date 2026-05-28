@@ -119,9 +119,11 @@ export function initGNChartPercentPlugins() {
                 ctx.restore();
                 return;
             }
-            if (cid === 'chart-tipos' && chart.config.type === 'bar' && chart.options.indexAxis === 'y') {
+            const hBarValueIds = new Set(['chart-tipos', 'chart-distribuidores']);
+            if (hBarValueIds.has(cid) && chart.config.type === 'bar' && chart.options.indexAxis === 'y') {
                 const dsets = chart.data.datasets || [];
-                const metaLast = chart.getDatasetMeta(dsets.length - 1);
+                const metaIdx = cid === 'chart-distribuidores' ? 0 : dsets.length - 1;
+                const metaLast = chart.getDatasetMeta(metaIdx);
                 if (!metaLast?.data?.length) {
                     ctx.restore();
                     return;
@@ -132,9 +134,13 @@ export function initGNChartPercentPlugins() {
                 ctx.textBaseline = 'middle';
                 metaLast.data.forEach((bar, i) => {
                     let sum = 0;
-                    dsets.forEach((ds) => {
-                        sum += Number(ds.data?.[i] || 0);
-                    });
+                    if (cid === 'chart-distribuidores') {
+                        sum = Number(dsets[0]?.data?.[i] || 0);
+                    } else {
+                        dsets.forEach((ds) => {
+                            sum += Number(ds.data?.[i] || 0);
+                        });
+                    }
                     if (!sum) return;
                     const p = typeof bar.getProps === 'function' ? bar.getProps(['x', 'y', 'base'], true) : null;
                     const xv = p?.x ?? bar.x;

@@ -7,6 +7,7 @@ import { codigoDistribuidorDesdeTextoPedido } from './estadisticas-datos-red-sai
 import {
     mergeOpcionesBarraHorizontalEstadisticas,
     ajustarEjeYBarraHorizontal,
+    ajustarContenedorChartBarrasHorizontales,
     labelsEjeYDistribuidorRed,
     opcionesChartDistribuidoresEstadisticas,
 } from './estadisticas-chart-hbar-layout.js';
@@ -87,32 +88,22 @@ function mapaPedidosPorCodigo(pedidosRows) {
  * @param {{ maxFilas?: number }} [opts]
  */
 export function filasChartDistribuidoresRedElectrica(catalog, pedidosMap, opts = {}) {
-    const maxFilas = opts.maxFilas ?? 40;
+    const maxFilas = opts.maxFilas ?? 16;
+    const soloConPedidos = opts.soloConPedidos !== false;
     const out = [];
-    const seen = new Set();
     for (const row of catalog || []) {
         const codigo = String(row.codigo || '')
             .trim()
             .toUpperCase();
         if (!codigo) continue;
-        seen.add(codigo);
         const stats = pedidosMap[codigo] || { n: 0, cerrados: 0 };
+        if (soloConPedidos && !(stats.n > 0)) continue;
         out.push({
             codigo,
             distribuidor: etiquetaDistribuidorRed(codigo, row.nombre, row.localidad),
             n: stats.n,
             cerrados: stats.cerrados,
             clientes: parseInt(row.clientes, 10) || 0,
-        });
-    }
-    for (const [codigo, stats] of Object.entries(pedidosMap)) {
-        if (seen.has(codigo)) continue;
-        out.push({
-            codigo,
-            distribuidor: codigo,
-            n: stats.n,
-            cerrados: stats.cerrados,
-            clientes: 0,
         });
     }
     out.sort((a, b) => b.n - a.n || String(a.codigo).localeCompare(String(b.codigo)));
@@ -133,22 +124,31 @@ export async function resolverFilasChartDistribuidoresRed(p) {
     if (catalog.length) {
         return filasChartDistribuidoresRedElectrica(catalog, pedidosMap);
     }
-    return (p.pedidosRows || []).map((r) => ({
-        distribuidor: String(r.distribuidor || ''),
-        n: parseInt(r.n, 10) || 0,
-        cerrados: parseInt(r.cerrados, 10) || 0,
-    }));
+    return (p.pedidosRows || [])
+        .map((r) => {
+            const code =
+                codigoDistribuidorDesdeTextoPedido(r.distribuidor) ||
+                String(r.distribuidor || '').trim();
+            return {
+                codigo: code,
+                distribuidor: String(r.distribuidor || code),
+                n: parseInt(r.n, 10) || 0,
+                cerrados: parseInt(r.cerrados, 10) || 0,
+            };
+        })
+        .filter((r) => r.n > 0)
+        .sort((a, b) => b.n - a.n)
+        .slice(0, 12);
 }
 
 /** Ajusta altura del contenedor según cantidad de filas (barras horizontales). */
 export function ajustarContenedorChartDistribuidores(nFilas) {
-    const wrap = document.getElementById('chart-distribuidores')?.closest('.chart-container');
-    if (!wrap) return;
-    const n = Math.max(4, Math.min(nFilas || 8, 45));
-    const h = Math.min(56 + n * 26, 960);
-    wrap.style.height = `${h}px`;
-    wrap.style.minHeight = `${h}px`;
-    wrap.style.maxHeight = `${h}px`;
+    ajustarContenedorChartBarrasHorizontales('chart-distribuidores', nFilas, {
+        maxFilas: 16,
+        maxHeight: 400,
+        rowHeight: 30,
+        base: 80,
+    });
 }
 
 /**
@@ -158,7 +158,18 @@ export function ajustarContenedorChartDistribuidores(nFilas) {
  * @param {{ horizontal?: boolean }} [opts]
  */
 export function crearChartDistribuidoresEstadisticas(crearChart, chartRef, filas, opts = {}) {
-    const rows = filas || [];
+    const rows = (filas || []).filter((r) => parseInt(r.n, 10) > 0);
+    if (!rows.length) {
+        ajustarContenedorChartDistribuidores(0);
+        const prev = chartRef['chart-distribuidores'];
+        if (prev) {
+            try {
+                prev.destroy();
+            } catch (_) {}
+            delete chartRef['chart-distribuidores'];
+        }
+        return;
+    }
     const horizontal = opts.horizontal !== false && rows.length > 0;
     if (horizontal) {
         ajustarContenedorChartDistribuidores(rows.length);

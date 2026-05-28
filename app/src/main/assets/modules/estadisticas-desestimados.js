@@ -9,6 +9,7 @@ import {
     labelsEjeYChartTipos,
     mergeOpcionesBarraHorizontalEstadisticas,
     ajustarEjeYBarraHorizontal,
+    ajustarContenedorChartBarrasHorizontales,
 } from './estadisticas-chart-hbar-layout.js';
 
 export {
@@ -104,7 +105,13 @@ export function opcionesChartTiposApilados() {
 /** Tras crear chart-tipos: etiquetas completas en tooltip + ancho eje Y. */
 export function finalizarChartTiposTrabajo(chart, filas) {
     if (!chart) return;
-    chart._gnLabelsFull = (filas || []).map((r) => String(r.tipo || ''));
+    const rows = filas || [];
+    ajustarContenedorChartBarrasHorizontales('chart-tipos', rows.length, {
+        maxFilas: 10,
+        maxHeight: 380,
+        rowHeight: 30,
+    });
+    chart._gnLabelsFull = rows.map((r) => String(r.tipo || ''));
     ajustarEjeYBarraHorizontal(chart);
 }
 

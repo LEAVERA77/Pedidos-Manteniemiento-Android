@@ -65,17 +65,29 @@ export function pintarCaptionsGraficosEstadisticasAdmin(p) {
     const capD = document.getElementById('chart-cap-distribuidores');
     if (capD) {
         const lblZ = esMun ? 'barrio' : esCooperativaAgua ? 'ramal' : 'distribuidor';
-        if ((rDist.rows || []).length) {
-            const lines = rDist.rows
+        const distRows = (rDist.rows || []).filter((r) => parseInt(r.n || 0, 10) > 0);
+        if (distRows.length) {
+            const top = distRows.slice(0, 8);
+            const lines = top
                 .map((r) => {
                     const n = parseInt(r.n || 0, 10);
                     const c = parseInt(r.cerrados || 0, 10);
                     const pc = n ? pctOf(c, n) : 0;
-                    return `${scap(r.distribuidor)}: total ${n}, cerrados ${c} (<strong>${pc}%</strong> del propio ${lblZ})`;
+                    const nom = scap(r.codigo || r.distribuidor);
+                    return `${nom}: ${n} pedidos, ${c} cerrados (${pc}%)`;
                 })
-                .join('<br>');
-            capD.innerHTML = `<strong>Por ${lblZ}</strong><br>${lines}`;
-        } else capD.textContent = 'Sin datos en el período.';
+                .join(' · ');
+            const extra =
+                distRows.length > top.length
+                    ? ` · <span style="color:var(--tm)">+${distRows.length - top.length} más en el gráfico</span>`
+                    : '';
+            capD.innerHTML = `<strong>Top ${lblZ}es (Red Eléctrica, con pedidos en el período)</strong><br>${lines}${extra}`;
+        } else {
+            capD.textContent =
+                lblZ === 'distribuidor'
+                    ? 'Sin pedidos en el período para distribuidores del catálogo Red Eléctrica.'
+                    : 'Sin datos en el período.';
+        }
     }
     const capBT = document.getElementById('chart-cap-barrios-tiempo');
     if (capBT) {
