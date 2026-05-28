@@ -3,6 +3,8 @@
  * made by leavera77
  */
 
+import { formatearValorNumeroTablaUnDecimal } from './formato-numero-celda.js';
+
 /**
  * Convierte una clave de métrica cruda (ej. "pct_cerrados_24h") a etiqueta legible ("% Cerrados 24h").
  */
