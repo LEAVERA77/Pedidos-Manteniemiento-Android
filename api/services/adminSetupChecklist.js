@@ -87,19 +87,6 @@ export async function buildAdminSetupChecklist(req) {
     });
   }
 
-  if (await tableExists("tenant_reporte_email_config")) {
-    const rRep = await query(
-      `SELECT email, frecuencia FROM tenant_reporte_email_config WHERE tenant_id = $1 LIMIT 1`,
-      [tid]
-    );
-    const rep = rRep.rows?.[0];
-    items.push({
-      id: "reportes_email",
-      ok: !!(rep?.email && rep?.frecuencia && rep.frecuencia !== "off"),
-      label: "Informe programado por email",
-    });
-  }
-
   const done = items.filter((i) => i.ok).length;
   return {
     items,

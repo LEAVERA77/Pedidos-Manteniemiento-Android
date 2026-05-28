@@ -1,10 +1,9 @@
 /**
- * Monta bloques admin (geocerca, reportes email, ranking/SLA) una sola vez.
+ * Monta bloques admin (geocerca, ranking/SLA) una sola vez.
  * made by leavera77
  */
 
 import { htmlGeocercaSettingsAdminBlock, initAdminGeocercaSettingsUI } from './admin-geocerca-settings-ui.js';
-import { htmlReportesEmailAdminBlock, initAdminReportesEmailUI } from './admin-reportes-email-ui.js';
 import { htmlRankingSlaAdminBlocks, cargarRankingTecnicosEnEstadisticas, cargarAlertasSlaEnEstadisticas } from './estadisticas-ranking-sla-ui.js';
 import {
     htmlOperacionAuditAdminBlock,
@@ -12,7 +11,6 @@ import {
     cargarOperacionAuditEnEstadisticas,
 } from './gn-admin-operacion-audit-ui.js';
 import { htmlZonaServicioAdminBlock, cargarZonaServicioAdmin } from './gn-zona-servicio-ui.js';
-import { refrescarIndicadorReportesEmail } from './gn-reportes-email-indicator.js';
 import { htmlSetupChecklistAdminBlock, cargarSetupChecklistAdmin } from './gn-admin-setup-checklist-ui.js';
 import { htmlGeoCalidadAdminBlock, cargarGeoCalidadEnEstadisticas } from './gn-geo-calidad-admin-ui.js';
 import { htmlSistemaSaludAdminBlock, cargarSistemaSaludAdmin } from './gn-admin-sistema-salud-ui.js';
@@ -32,10 +30,6 @@ export function initGnFeaturesAdminMounts(ctx) {
                 htmlGeocercaSettingsAdminBlock() +
                 htmlZonaServicioAdminBlock();
         }
-        const repMount = document.getElementById('gn-reportes-email-mount');
-        if (repMount && !repMount.innerHTML.trim()) {
-            repMount.innerHTML = htmlReportesEmailAdminBlock();
-        }
     }
     if (ctx?.esAdmin?.()) {
         void initAdminGeocercaSettingsUI({ toast: ctx.toast, esAdmin: true });
@@ -50,17 +44,6 @@ export function initGnFeaturesAdminMounts(ctx) {
         void cargarZonaServicioAdmin({
             apiUrl: ctx.apiUrl,
             getApiToken: ctx.getApiToken,
-        });
-        initAdminReportesEmailUI({
-            apiUrl: ctx.apiUrl,
-            getApiToken: ctx.getApiToken,
-            toast: ctx.toast,
-            esAdmin: true,
-        });
-        void refrescarIndicadorReportesEmail({
-            apiUrl: ctx.apiUrl,
-            getApiToken: ctx.getApiToken,
-            esAdmin: ctx.esAdmin,
         });
     }
 }

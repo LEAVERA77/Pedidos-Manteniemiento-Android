@@ -8,8 +8,7 @@
   "emailjs": {
     "publicKey": "TU_PUBLIC_KEY",
     "serviceId": "service_xxxxxxx",
-    "templateIdReset": "template_codigo_acceso",
-    "templateIdInforme": "template_informe_email_body"
+    "templateIdReset": "template_codigo_acceso"
   },
   "app": {
     "version": "2.0.0",

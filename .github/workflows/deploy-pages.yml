@@ -34,7 +34,6 @@ jobs:
           EJS_PK: ${{ secrets.EMAILJS_PUBLIC_KEY }}
           EJS_SV: ${{ secrets.EMAILJS_SERVICE_ID }}
           EJS_TPL: ${{ secrets.EMAILJS_TEMPLATE_ID }}
-          EJS_TPL_INFORME: ${{ secrets.EMAILJS_TEMPLATE_ID_INFORME }}
         run: |
           if [ -z "$NEON_CS" ]; then
             echo "::error::Falta el secret NEON_CONNECTION_STRING en Settings → Secrets and variables → Actions."
@@ -46,8 +45,7 @@ jobs:
             --arg pk "${EJS_PK:-}" \
             --arg sv "${EJS_SV:-}" \
             --arg tpl "${EJS_TPL:-}" \
-            --arg tplInf "${EJS_TPL_INFORME:-}" \
-            '{neon:{connectionString:$cs},api:{baseUrl:$api},emailjs:{publicKey:$pk,serviceId:$sv,templateId:$tpl,templateIdInforme:$tplInf,templateIdReset:$tpl},app:{version:"2.0.4"}}' \
+            '{neon:{connectionString:$cs},api:{baseUrl:$api},emailjs:{publicKey:$pk,serviceId:$sv,templateId:$tpl,templateIdReset:$tpl},app:{version:"2.0.4"}}' \
             > config.json
           echo "OK: config.json generado (v2.0.4 con escapeHtml fix)."
 
