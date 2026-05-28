@@ -68,15 +68,10 @@ async function normalizarEmailjsBody(raw, tenantId) {
   const o = /** @type {Record<string, unknown>} */ (raw);
   const publicKey = pickStr(o.publicKey, o.public_key, process.env.EMAILJS_PUBLIC_KEY);
   const serviceId = pickStr(o.serviceId, o.service_id, process.env.EMAILJS_SERVICE_ID);
-  let templateIdInforme = pickStr(
-    o.templateIdInforme,
-    o.template_id_informe,
-    o.templateId,
-    o.template_id
-  );
+  let templateIdInforme = pickStr(o.templateIdInforme, o.template_id_informe);
   if (!templateIdInforme) {
     const ensured = await ensureGestorNovaInformeTemplate(tenantId, o);
-    templateIdInforme = ensured.templateIdInforme || pickStr(o.templateId, o.template_id) || "";
+    templateIdInforme = ensured.templateIdInforme || "";
   }
   if (!publicKey || !serviceId || !templateIdInforme) return null;
   return { publicKey, serviceId, templateId: templateIdInforme, templateIdInforme };
@@ -234,7 +229,7 @@ export async function generarYEnviarReporteTenant(
       ok: false,
       mensaje:
         tpl.mensaje ||
-        "EmailJS incompleto en Render. Agregá EMAILJS_SERVICE_ID y EMAILJS_TEMPLATE_ID (mismos que GitHub) o enviá desde la web admin.",
+        "EmailJS incompleto para informes. En Render/GitHub configurá EMAILJS_TEMPLATE_ID_INFORME (plantilla con {{email_body}}, no la de código de acceso) o enviá desde la web admin con templateIdInforme en config.json.",
       usar_cliente: !!tpl.usar_navegador,
     };
   }

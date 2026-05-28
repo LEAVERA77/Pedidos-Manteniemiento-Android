@@ -60,19 +60,42 @@ export function templateIdEmailReset(cfg) {
     return String(c.templateIdReset || c.templateId || '').trim();
 }
 
-/** Credenciales desde config.json (Pages): publicKey + serviceId + templateId. */
+/** Credenciales informe desde config.json — solo templateIdInforme (no la de reset/acceso). */
 export function credencialesEmailjsDesdeConfig(cfg) {
+    return credencialesEmailjsInforme(cfg, null);
+}
+
+/**
+ * Valida que exista plantilla de informe distinta de la de código de acceso.
+ * @param {Record<string, unknown>|undefined} cfg
+ */
+export function plantillaInformeEmailjsConfigurada(cfg) {
     const c = cfg || {};
     const publicKey = String(c.publicKey || '').trim();
     const serviceId = String(c.serviceId || '').trim();
-    const templateId = String(c.templateIdInforme || c.templateId || '').trim();
-    if (!publicKey || !serviceId || !templateId) return null;
-    return {
-        publicKey,
-        serviceId,
-        templateId,
-        templateIdInforme: templateId,
-    };
+    const templateIdInforme = String(c.templateIdInforme || '').trim();
+    const templateIdReset = String(c.templateIdReset || c.templateId || '').trim();
+    if (!publicKey || !serviceId) {
+        return {
+            ok: false,
+            error: 'Faltan publicKey o serviceId en config.json / secretos GitHub.',
+        };
+    }
+    if (!templateIdInforme) {
+        return {
+            ok: false,
+            error:
+                'Falta templateIdInforme en config.json. Creá en EmailJS una plantilla con asunto {{email_subject}} y cuerpo {{email_body}} (no uses la de «código de acceso»). Ver docs/EMAILJS_INFORME_PERIODICO.md',
+        };
+    }
+    if (templateIdReset && templateIdInforme === templateIdReset) {
+        return {
+            ok: false,
+            error:
+                'templateIdInforme no puede ser la misma plantilla que templateIdReset (código de acceso). Creá una plantilla nueva solo para informes.',
+        };
+    }
+    return { ok: true, templateId: templateIdInforme };
 }
 
 /** @param {Record<string, unknown>|undefined} cfg @param {{ templateIdInforme?: string }|null} [setup] */

@@ -239,4 +239,5 @@ export function pintarEstadisticasStatCards(cardList) {
         host.innerHTML = '';
     }
     el.innerHTML = renderEstadisticasStatCardsHtml(enrichEstadisticasStatCards(cardList));
-  
+    bindEstadisticasStatCardClicks(el);
+}

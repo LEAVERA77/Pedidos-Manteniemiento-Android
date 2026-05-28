@@ -29,10 +29,7 @@ export async function resolveGestorNovaInformeTemplateId(tenantId, override) {
     return cacheTemplateId;
   }
 
-  const fromEnv = pick(
-    process.env.EMAILJS_TEMPLATE_ID_INFORME,
-    process.env.EMAILJS_TEMPLATE_ID
-  );
+  const fromEnv = pick(process.env.EMAILJS_TEMPLATE_ID_INFORME);
   if (fromEnv) {
     cacheTemplateId = fromEnv;
     return cacheTemplateId;

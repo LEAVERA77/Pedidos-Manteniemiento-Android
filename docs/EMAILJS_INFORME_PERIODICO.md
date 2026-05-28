@@ -12,10 +12,15 @@
 
 ## Plantilla en EmailJS (una vez)
 
-Subject: `{{email_subject}}`  
-Content: `{{email_body}}`  
-To: `{{to_email}}`
+Creá una plantilla **nueva** solo para informes (no reutilices la de «código de acceso»):
 
-Así el informe no muestra texto de «código de acceso».
+| Campo EmailJS | Variable |
+|---------------|----------|
+| Subject | `{{email_subject}}` |
+| Content | `{{email_body}}` |
+| To email | `{{to_email}}` |
+
+En GitHub Secrets / `config.json` usá su ID en **`templateIdInforme`** (secret `EMAILJS_TEMPLATE_ID_INFORME`).  
+La plantilla de reset queda en **`templateIdReset`** / `EMAILJS_TEMPLATE_ID`.
 
 `made by leavera77`
