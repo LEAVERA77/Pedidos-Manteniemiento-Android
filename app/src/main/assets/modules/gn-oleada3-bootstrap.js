@@ -7,4 +7,5 @@ import './gn-global-search-ui.js';
 import './gn-admin-2fa-login.js';
 import './gn-zona-servicio-ui.js';
 import './gn-reportes-email-indicator.js';
+import './kpi-snapshots-valor-celda.js';
 import './gn-oleada4-bootstrap.js';

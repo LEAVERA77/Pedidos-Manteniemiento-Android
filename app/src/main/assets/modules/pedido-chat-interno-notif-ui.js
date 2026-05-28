@@ -5,7 +5,11 @@
  */
 
 import { abrirPedidoChatInternoFloatAndroid } from './gn-pedido-chat-interno-android.js';
-import { enfocarSeccionChatInternoDetalle } from './pedido-operativa-top3-ui.js';
+import {
+    detalleModalAbiertoParaPedido,
+    enfocarSeccionChatInternoDetalle,
+    refrescarChatInternoEnDetalleAbierto,
+} from './pedido-operativa-top3-ui.js';
 
 const HOST_ID = 'gn-pedido-chat-toast-host';
 
@@ -105,6 +109,10 @@ export function manejarNotificacionChatInternoPedido(pedidoId, titulo, cuerpo) {
     if (!pid) return;
 
     if (esAdminSesion()) {
+        if (detalleModalAbiertoParaPedido(pid)) {
+            refrescarChatInternoEnDetalleAbierto(pid);
+            return;
+        }
         mostrarToastChatInternoAdmin(pid, titulo, cuerpo);
         return;
     }

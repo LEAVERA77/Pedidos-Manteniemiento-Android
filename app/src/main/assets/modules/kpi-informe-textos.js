@@ -142,7 +142,10 @@ export function lineasNarrativaMetricaKpiPdf(metricaKey, filas, deps) {
         lineas.push(`Cantidad de respuestas: ${Number.isFinite(nResp) ? nResp : '—'}.`);
     } else {
         const r0 = fs[0];
-        const vn = r0 && r0.valor_numero != null && r0.valor_numero !== '' ? String(r0.valor_numero) : '—';
+        const vn =
+            r0 && r0.valor_numero != null && r0.valor_numero !== ''
+                ? formatearValorNumeroTablaUnDecimal(r0.valor_numero)
+                : '—';
         const un = r0 && r0.unidad ? String(r0.unidad) : '';
         lineas.push(
             `${nPeriodos} periodo${nPeriodos === 1 ? '' : 's'} con datos entre el ${fi} y el ${ff}.`

@@ -19,6 +19,7 @@ import {
     buildCtxProyeccionSociosExport,
     sociosCatalogoTieneWgs84ParaProyeccion,
 } from './socios-catalogo-export-proyeccion.js';
+import { formatearValorNumeroTablaUnDecimal, formatearCeldaTextoSiNumero } from './formato-numero-celda.js';
 import { quitarMovil9Tras54Digitos } from './normalizar-telefono.js';
 import { logErrorWeb, mensajeErrorUsuario, toastError, escHtmlPrint, toast } from './ui-utils.js';
 import { SOCIOS_CATALOGO_OPTS_PRE_CALLE, SOCIOS_CATALOGO_OPT_DISTRIB } from './socios-catalogo-col-defs.js';
@@ -701,7 +702,8 @@ function sociosCatalogoHtmlExtrasDatosExtra(s, keys, escCell) {
     const o = sociosCatalogoParseObjetoDatosExtra(s.datos_extra);
     let h = '';
     for (const key of keys) {
-        const v = o && o[key] != null ? String(o[key]) : '';
+        const raw = o && o[key] != null ? o[key] : '';
+        const v = formatearCeldaTextoSiNumero(raw);
         h += `<td style="max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escCell(v)}">${escCell(v)}</td>`;
     }
     return h;
@@ -1861,11 +1863,7 @@ function renderSociosCatalogoVirtual() {
     const padBot = Math.max(0, (total - end) * rh);
     const e = (x) => String(x ?? '').replace(/</g, '&lt;');
     const slice = data.slice(start, end);
-    const fmtLon = (v) => {
-        if (v == null || v === '') return '—';
-        const n = Number(v);
-        return Number.isFinite(n) ? n.toFixed(6) : '—';
-    };
+    const fmtLon = (v) => formatearValorNumeroTablaUnDecimal(v);
     const ncol = window._sociosTablaColCount || obtenerNumColsTablaSociosAdmin();
     const hideMed = req().esMunicipioRubro();
     tb.innerHTML =

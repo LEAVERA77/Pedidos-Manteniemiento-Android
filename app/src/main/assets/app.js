@@ -14324,7 +14324,12 @@ async function cargarKpiSnapshotsAdmin() {
             .map(row => {
                 const vj = row.valor_json != null ? JSON.stringify(row.valor_json) : '{}';
                 const vjShort = vj.length > 48 ? vj.slice(0, 45) + '…' : vj;
-                const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+                const vn =
+                    typeof window.gnFormatearKpiValorNumeroCelda === 'function'
+                        ? window.gnFormatearKpiValorNumeroCelda(row.valor_numero)
+                        : row.valor_numero != null && row.valor_numero !== ''
+                          ? String(row.valor_numero)
+                          : '—';
                 const labM = KPI_METRICA_ETIQUETAS[row.metrica];
                 const al = splitFechaHoraExportAR(row.created_at);
                 const celMetrica = labM
@@ -14801,7 +14806,12 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
         for (let ri = 0; ri < rows.length; ri++) {
             const row = rows[ri];
             const labM = KPI_METRICA_ETIQUETAS[row.metrica] || K.formatearMetricaKeyLegible(row.metrica);
-            const vn = row.valor_numero != null && row.valor_numero !== '' ? String(row.valor_numero) : '—';
+            const vn =
+                typeof window.gnFormatearKpiValorNumeroCelda === 'function'
+                    ? window.gnFormatearKpiValorNumeroCelda(row.valor_numero)
+                    : row.valor_numero != null && row.valor_numero !== ''
+                      ? String(row.valor_numero)
+                      : '—';
             const al = splitFechaHoraExportAR(row.created_at);
             const cells = [
                 { w: 50, t: labM },

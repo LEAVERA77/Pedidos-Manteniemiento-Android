@@ -4,6 +4,12 @@
  * made by leavera77
  */
 
+import { formatearValorNumeroTablaUnDecimal } from './formato-numero-celda.js';
+
+const CHAT_POLL_MS_ADMIN = 3500;
+let _chatInternoPollTimer = null;
+let _chatInternoPollPid = null;
+
 const esc = (t) =>
     String(t == null ? '' : t)
         .replace(/&/g, '&amp;')
@@ -25,6 +31,50 @@ function hostEl() {
 
 function wrapEl() {
     return document.getElementById('gn-operativa-top3-wrap');
+}
+
+/** Modal #dm abierto para este pedido. */
+export function detalleModalAbiertoParaPedido(pedidoId) {
+    const pid = String(pedidoId || '').trim();
+    const dm = document.getElementById('dm');
+    return !!(dm?.classList.contains('active') && String(dm.dataset.detallePedidoId || '') === pid);
+}
+
+export function detenerChatInternoLivePoll() {
+    if (_chatInternoPollTimer) {
+        clearInterval(_chatInternoPollTimer);
+        _chatInternoPollTimer = null;
+    }
+    _chatInternoPollPid = null;
+}
+
+export function iniciarChatInternoLivePoll(pedidoId, opts = {}) {
+    detenerChatInternoLivePoll();
+    const pid = parseInt(pedidoId, 10);
+    if (!Number.isFinite(pid) || pid < 1) return;
+    _chatInternoPollPid = pid;
+    const ms = opts.esAdmin ? CHAT_POLL_MS_ADMIN : 5000;
+    const tick = () => {
+        if (!detalleModalAbiertoParaPedido(pid)) {
+            detenerChatInternoLivePoll();
+            return;
+        }
+        void cargarChatPedidoInterno(pid);
+    };
+    _chatInternoPollTimer = setInterval(tick, ms);
+    void tick();
+}
+
+/** Refresco en vivo cuando llega notificación y el modal ya está abierto (admin). */
+export function refrescarChatInternoEnDetalleAbierto(pedidoId) {
+    const pid = String(pedidoId || '').trim();
+    if (!detalleModalAbiertoParaPedido(pid)) return;
+    const wrap = wrapEl();
+    if (wrap && !wrap.open) wrap.open = true;
+    void cargarChatPedidoInterno(parseInt(pid, 10));
+    if (typeof window.esAdmin === 'function' && window.esAdmin()) {
+        iniciarChatInternoLivePoll(pid, { esAdmin: true });
+    }
 }
 
 /** Tras abrir detalle desde toast de chat (admin). */
@@ -160,7 +210,7 @@ export async function verificarGeocercaAntesIniciarPedido(pedidoId) {
     }
 }
 
-async function cargarChat(pid) {
+export async function cargarChatPedidoInterno(pid) {
     const box = document.getElementById('gn-op-chat-msgs');
     if (!box || typeof window.gnOperativaChatListar !== 'function') return;
     try {
@@ -201,7 +251,8 @@ async function cargarEventosGeocerca(pid, esAdmin) {
                 .map((e) => {
                     const ok = e.permitido ? '✓' : '✗';
                     const f = e.created_at ? new Date(e.created_at).toLocaleString('es-AR', { hour12: false }) : '';
-                    return `<tr><td>${esc(f)}</td><td>${esc(e.usuario_nombre || e.usuario_id)}</td><td>${esc(e.distancia_metros)}</td><td>${ok}</td></tr>`;
+                    const metros = formatearValorNumeroTablaUnDecimal(e.distancia_metros);
+                    return `<tr><td>${esc(f)}</td><td>${esc(e.usuario_nombre || e.usuario_id)}</td><td>${esc(metros)}</td><td>${ok}</td></tr>`;
                 })
                 .join('') +
             '</table>';
@@ -284,8 +335,14 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
   }
 </div>`;
 
-    void cargarChat(pid);
+    void cargarChatPedidoInterno(pid);
     void cargarEventosGeocerca(pid, esAdmin);
+
+    if (esAdmin) {
+        iniciarChatInternoLivePoll(pid, { esAdmin: true });
+    } else {
+        detenerChatInternoLivePoll();
+    }
 
     document.getElementById('gn-op-chat-send')?.addEventListener('click', async () => {
         const inp = document.getElementById('gn-op-chat-input');
@@ -295,7 +352,7 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
             await window.gnOperativaChatEnviar(pid, txt);
             if (inp) inp.value = '';
             toastFn('Mensaje enviado', 'success');
-            await cargarChat(pid);
+            await cargarChatPedidoInterno(pid);
         } catch (e) {
             toastFn(e.message || 'No se pudo enviar', 'error');
         }
@@ -308,4 +365,24 @@ function mountPedidoOperativaTop3UINow(p, ctx = {}) {
             }
         } catch (_) {}
     });
+}
+
+function instalarObservadorCierreDmChatPoll() {
+    const dm = document.getElementById('dm');
+    if (!dm || dm.dataset.gnChatPollObs === '1') return;
+    dm.dataset.gnChatPollObs = '1';
+    try {
+        const mo = new MutationObserver(() => {
+            if (!dm.classList.contains('active')) detenerChatInternoLivePoll();
+        });
+        mo.observe(dm, { attributes: true, attributeFilter: ['class'] });
+    } catch (_) {}
+}
+
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', instalarObservadorCierreDmChatPoll, { once: true });
+    } else {
+        instalarObservadorCierreDmChatPoll();
+    }
 }
