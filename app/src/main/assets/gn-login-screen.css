@@ -1,16 +1,25 @@
 /**
- * Pantalla de login (#ls): fondo moderno, enlaces legibles en tarjeta blanca y alto contraste.
+ * Pantalla de login (#ls): diseño minimalista, Inter, colores suaves, WebView Android estable.
  * made by leavera77
  */
 
-#ls {
+#ls,
+#ls.gn-login-modern {
+    --gn-login-bg: #0c1222;
+    --gn-login-accent: #3b82f6;
+    --gn-login-accent-soft: #dbeafe;
+    --gn-login-card: #ffffff;
+    --gn-login-text: #0f172a;
+    --gn-login-muted: #64748b;
+    --gn-login-border: #e2e8f0;
+    --gn-login-input-bg: #f8fafc;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     overflow: hidden;
-    background-color: #0b1220;
+    background-color: var(--gn-login-bg);
     background-image:
-        radial-gradient(ellipse 110% 70% at 15% -5%, rgba(56, 189, 248, 0.42), transparent 52%),
-        radial-gradient(ellipse 85% 55% at 105% 15%, rgba(129, 140, 248, 0.38), transparent 50%),
-        radial-gradient(ellipse 70% 45% at 50% 110%, rgba(37, 99, 235, 0.35), transparent 55%),
-        linear-gradient(160deg, #0f172a 0%, #1e3a8a 38%, #2563eb 72%, #1d4ed8 100%);
+        radial-gradient(ellipse 90% 60% at 20% 0%, rgba(59, 130, 246, 0.28), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 100% 20%, rgba(99, 102, 241, 0.22), transparent 50%),
+        linear-gradient(165deg, #0f172a 0%, #1e293b 45%, #0f172a 100%);
 }
 
 #ls::before {
@@ -18,229 +27,289 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.35;
+    opacity: 0.2;
     background-image:
-        linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-    background-size: 28px 28px;
-    mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 20%, transparent 100%);
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
 }
 
 #ls::after {
-    content: '';
-    position: absolute;
-    width: min(42vw, 220px);
-    height: min(42vw, 220px);
-    right: -8%;
-    top: 12%;
-    border-radius: 50%;
-    pointer-events: none;
-    background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 68%);
-    filter: blur(2px);
+    display: none;
+}
+
+#ls.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+        max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 
 #ls .lc {
     position: relative;
     z-index: 2;
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    width: min(92vw, 400px);
+    max-width: 400px;
+    max-height: min(92vh, 720px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1.75rem 1.5rem 1.35rem;
+    background: var(--gn-login-card);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 1.25rem;
     box-shadow:
-        0 28px 64px rgba(2, 6, 23, 0.45),
-        0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+        0 24px 48px rgba(15, 23, 42, 0.35),
+        0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
-/* —— Textos dentro de la tarjeta blanca (legal, versión, enlaces) —— */
-#ls .lc .app-version {
-    color: #475569 !important;
-    font-weight: 600 !important;
-    opacity: 1 !important;
+#ls .lc h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--gn-login-text);
+    text-align: center;
+    margin: 0 0 0.25rem;
 }
 
-#ls .lc .gn-login-recovery-link {
-    color: #1d4ed8 !important;
-    font-weight: 600 !important;
-    opacity: 1 !important;
+#ls .lc .sub {
+    text-align: center;
+    color: var(--gn-login-muted);
+    font-size: 0.88rem;
+    font-weight: 500;
+    line-height: 1.45;
+    margin: 0 0 1.1rem;
 }
 
-#ls .lc .gn-login-extra-links .gn-acerca-link,
-#ls .lc .gn-login-extra-links .gn-login-asistente-link {
-    color: #1e40af !important;
-    font-weight: 600 !important;
-    opacity: 1 !important;
+#ls .dbs {
+    font-size: 0.78rem;
+    font-weight: 500;
+    border-radius: 0.55rem;
+    margin-bottom: 0.85rem;
+    padding: 0.45rem 0.55rem;
 }
 
-#ls .lc #gn-bio-hint {
-    color: #334155 !important;
-    opacity: 1 !important;
+#ls .dbs.ok {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
 }
 
-#ls .lc .gn-trust-footer-wrap--login {
-    margin-top: 0.5rem;
+#ls .dbs.er,
+#ls .dbs.c {
+    background: #f8fafc;
+    color: var(--gn-login-muted);
+    border: 1px solid var(--gn-login-border);
 }
 
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle span,
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle i {
-    color: #0f172a !important;
-    opacity: 1 !important;
-}
-
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle {
-    font-weight: 700 !important;
-    background: #dbeafe !important;
-    border: 2px solid #1d4ed8 !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1) !important;
-}
-
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill,
-#ls .lc .gn-trust-footer-wrap--login a.gn-trust-pill,
-#ls .lc .gn-trust-footer-wrap--login button.gn-trust-pill {
-    background: #ffffff !important;
-    border: 2px solid #2563eb !important;
-    color: #0f172a !important;
-    font-weight: 700 !important;
-    opacity: 1 !important;
-    -webkit-text-fill-color: #0f172a !important;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12) !important;
-    min-height: 2rem !important;
-    font-size: 0.76rem !important;
-}
-
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill i {
-    color: #1e40af !important;
-    opacity: 1 !important;
-}
-
-#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-version--inline {
-    color: #334155 !important;
-    font-weight: 700 !important;
-    opacity: 1 !important;
-}
-
-#ls .lc .gn-trust-footer--login.gn-trust-footer--hidden {
-    display: none !important;
-}
-
-#ls .lc .gn-login-accesibilidad {
+#ls #lf,
+#ls #lf.gn-login-form-stable {
+    position: relative;
     display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+}
+
+#ls .ig {
+    position: relative;
+    margin: 0;
+    flex-shrink: 0;
+    min-height: 3rem;
+}
+
+#ls .ig i {
+    position: absolute;
+    left: 0.95rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 0.95rem;
+    pointer-events: none;
+    z-index: 1;
+}
+
+#ls .ig input {
+    display: block;
+    width: 100%;
+    min-height: 3rem;
+    height: 3rem;
+    padding: 0 0.95rem 0 2.55rem;
+    border: 1.5px solid var(--gn-login-border);
+    border-radius: 0.7rem;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--gn-login-text);
+    background: var(--gn-login-input-bg);
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    -webkit-text-size-adjust: 100%;
+}
+
+#ls .ig input:focus {
+    outline: none;
+    border-color: var(--gn-login-accent);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+#ls .bp,
+#ls #lb {
+    width: 100%;
+    min-height: 3rem;
+    height: auto;
+    flex-shrink: 0;
+    margin: 0.15rem 0 0;
+    padding: 0.85rem 1rem;
+    border: none;
+    border-radius: 0.7rem;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    letter-spacing: 0.01em;
+    color: #fff;
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 0.45rem;
+    transform: none;
+}
+
+#ls .bp:hover:not(:disabled),
+#ls #lb:hover:not(:disabled) {
+    filter: brightness(1.03);
+    transform: none;
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.4);
+}
+
+#ls .bp:active:not(:disabled),
+#ls #lb:active:not(:disabled) {
+    transform: none;
+    filter: brightness(0.98);
+}
+
+#ls .bp:disabled,
+#ls #lb:disabled {
+    opacity: 0.72;
+    cursor: wait;
+}
+
+#ls #lf.gn-login-form--loading .ig,
+#ls #lf.gn-login-form--loading .ig input {
+    min-height: 3rem;
+    height: 3rem;
+}
+
+#ls #lf.gn-login-form--loading #lb.gn-login-btn--loading {
+    min-height: 3rem;
+}
+
+#ls .le {
+    min-height: 1.25rem;
+    font-size: 0.82rem;
+    margin-top: 0.35rem;
+}
+
+#ls .gn-login-recovery {
+    margin-top: 0.65rem;
+    text-align: center;
+}
+
+#ls .gn-login-recovery-link {
+    color: #2563eb !important;
+    font-weight: 600 !important;
+    font-size: 0.84rem !important;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+#ls .app-version {
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #94a3b8 !important;
+    margin: 0.75rem 0 0;
+}
+
+#ls .gn-login-extra-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 0.85rem;
     margin-top: 0.55rem;
 }
 
-#ls .lc .gn-login-alto-contraste-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2.25rem;
-    padding: 0.4rem 0.95rem;
-    font-size: 0.82rem;
-    font-weight: 800;
-    font-family: inherit;
+#ls .gn-login-extra-links button {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #64748b !important;
+}
+
+#ls .ll.ll--logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 0.65rem;
+}
+
+#ls .ll.ll--logo img {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+/* Pie legal en tarjeta */
+#ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle {
     color: #0f172a !important;
-    background: #fef08a !important;
-    border: 3px solid #ca8a04 !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+}
+
+#ls .lc .gn-trust-footer-wrap--login .gn-trust-pill {
+    background: #fff !important;
+    border: 1.5px solid #cbd5e1 !important;
+    color: #0f172a !important;
+}
+
+#ls .lc .gn-login-accesibilidad {
+    margin-top: 0.65rem;
+}
+
+#ls .lc .gn-login-alto-contraste-btn {
+    font-family: inherit;
+    font-weight: 700;
     border-radius: 999px;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-#ls .lc .gn-login-alto-contraste-btn[aria-pressed='true'] {
-    background: #0f172a !important;
-    color: #fef08a !important;
-    border-color: #fef08a !important;
-}
-
-/* —— Alto contraste: html + data en #ls (WebView Android) —— */
+/* Alto contraste (mantiene inyección JS) */
 html.gn-login-alto-contraste #ls,
 #ls[data-gn-alto-contraste='1'],
 #ls.gn-login-alto-contraste-active {
-    background: #000000 !important;
+    background: #000 !important;
     background-image: none !important;
-}
-
-html.gn-login-alto-contraste #ls::before,
-html.gn-login-alto-contraste #ls::after,
-#ls[data-gn-alto-contraste='1']::before,
-#ls[data-gn-alto-contraste='1']::after,
-#ls.gn-login-alto-contraste-active::before,
-#ls.gn-login-alto-contraste-active::after {
-    display: none !important;
 }
 
 html.gn-login-alto-contraste #ls .lc,
 #ls[data-gn-alto-contraste='1'] .lc,
 #ls.gn-login-alto-contraste-active .lc {
-    background: #ffffff !important;
-    border: 4px solid #000000 !important;
-    box-shadow: none !important;
+    background: #fff !important;
+    border: 4px solid #000 !important;
 }
 
-html.gn-login-alto-contraste #ls .lc h1,
-html.gn-login-alto-contraste #ls .lc .sub,
-html.gn-login-alto-contraste #ls .lc label,
-html.gn-login-alto-contraste #ls .ig input,
-#ls[data-gn-alto-contraste='1'] .lc h1,
-#ls[data-gn-alto-contraste='1'] .lc .sub,
-#ls[data-gn-alto-contraste='1'] .ig input,
-#ls.gn-login-alto-contraste-active .lc h1,
-#ls.gn-login-alto-contraste-active .lc .sub,
-#ls.gn-login-alto-contraste-active .ig input {
-    color: #000000 !important;
-    -webkit-text-fill-color: #000000 !important;
+html.gn-android-webview #ls .ig input {
+    font-size: 16px !important;
+    min-height: 3rem !important;
+    height: 3rem !important;
 }
 
-html.gn-login-alto-contraste #ls .ig input,
-#ls[data-gn-alto-contraste='1'] .ig input,
-#ls.gn-login-alto-contraste-active .ig input {
-    border: 3px solid #000000 !important;
-    background: #ffffff !important;
-}
-
-html.gn-login-alto-contraste #ls .bp,
-#ls[data-gn-alto-contraste='1'] .bp,
-#ls.gn-login-alto-contraste-active .bp {
-    background: #000000 !important;
-    color: #ffffff !important;
-    border: 3px solid #000000 !important;
-}
-
-html.gn-login-alto-contraste #ls .lc .app-version,
-html.gn-login-alto-contraste #ls .lc .gn-login-recovery-link,
-html.gn-login-alto-contraste #ls .lc .gn-login-extra-links button,
-html.gn-login-alto-contraste #ls .lc #gn-bio-hint,
-html.gn-login-alto-contraste #ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-html.gn-login-alto-contraste #ls .lc .gn-trust-footer-wrap--login .gn-trust-pill,
-#ls[data-gn-alto-contraste='1'] .lc .app-version,
-#ls[data-gn-alto-contraste='1'] .lc .gn-login-recovery-link,
-#ls[data-gn-alto-contraste='1'] .lc .gn-login-extra-links button,
-#ls[data-gn-alto-contraste='1'] .lc #gn-bio-hint,
-#ls[data-gn-alto-contraste='1'] .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-#ls[data-gn-alto-contraste='1'] .lc .gn-trust-footer-wrap--login .gn-trust-pill,
-#ls.gn-login-alto-contraste-active .lc .app-version,
-#ls.gn-login-alto-contraste-active .lc .gn-login-recovery-link,
-#ls.gn-login-alto-contraste-active .lc .gn-login-extra-links button,
-#ls.gn-login-alto-contraste-active .lc #gn-bio-hint,
-#ls.gn-login-alto-contraste-active .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-#ls.gn-login-alto-contraste-active .lc .gn-trust-footer-wrap--login .gn-trust-pill {
-    color: #000000 !important;
-    -webkit-text-fill-color: #000000 !important;
-    opacity: 1 !important;
-    font-weight: 800 !important;
-}
-
-html.gn-login-alto-contraste #ls .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-html.gn-login-alto-contraste #ls .lc .gn-trust-footer-wrap--login .gn-trust-pill,
-#ls[data-gn-alto-contraste='1'] .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-#ls[data-gn-alto-contraste='1'] .lc .gn-trust-footer-wrap--login .gn-trust-pill,
-#ls.gn-login-alto-contraste-active .lc .gn-trust-footer-wrap--login .gn-trust-footer-toggle,
-#ls.gn-login-alto-contraste-active .lc .gn-trust-footer-wrap--login .gn-trust-pill {
-    background: #ffffff !important;
-    border: 3px solid #000000 !important;
-}
-
-html.gn-login-alto-contraste #ls .dbs.ok,
-#ls[data-gn-alto-contraste='1'] .dbs.ok,
-#ls.gn-login-alto-contraste-active .dbs.ok {
-    background: #000000 !important;
-    color: #ffffff !important;
-    border: 2px solid #ffffff !important;
+html.gn-android-webview #ls #lb,
+html.gn-android-webview #ls .bp {
+    min-height: 3rem !important;
+    transform: none !important;
 }

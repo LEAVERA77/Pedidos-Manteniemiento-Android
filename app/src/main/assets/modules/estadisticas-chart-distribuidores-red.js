@@ -13,11 +13,12 @@ import {
 
 /** SQL: agrupa pedidos por código de distribuidor (columna distribuidor en pedidos). */
 export function sqlPedidosPorCodigoDistribuidor(filtro) {
+    const base = String(filtro || '').trim();
+    const clause = base ? `${base} AND` : 'WHERE';
     return `SELECT COALESCE(NULLIF(TRIM(SPLIT_PART(COALESCE(NULLIF(TRIM(distribuidor),''), '—'), ' - ', 1)), ''), 'Sin código') AS distribuidor,
         COUNT(*)::int AS n,
         COUNT(*) FILTER(WHERE estado='Cerrado')::int AS cerrados
-        FROM pedidos ${filtro}
-        WHERE COALESCE(NULLIF(TRIM(distribuidor),''), '') <> ''
+        FROM pedidos ${clause} COALESCE(NULLIF(TRIM(distribuidor),''), '') <> ''
         GROUP BY 1 ORDER BY n DESC`;
 }
 
