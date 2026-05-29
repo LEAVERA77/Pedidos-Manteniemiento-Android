@@ -1,9 +1,10 @@
 /**
- * Pobla #di2 desde distribuidores_red (coop. eléctrica) o tabla distribuidores (otros rubros).
+ * Pobla #di2 desde distribuidores_red; trafo desde catálogo de socios.
  * made by leavera77
  */
 
 import { etiquetaGrupoTensionKv } from './nivel-tension-kv-format.js';
+import { cargarTrafoPedidoDesdeSociosCatalogo } from './pedido-trafo-socios-catalogo.js';
 
 /** @param {string|number|null|undefined} t */
 export function etiquetaGrupoTensionDi2(t, kvDecimal = false) {
@@ -163,14 +164,22 @@ export async function cargarSelectDi2Distribuidores(deps) {
     const lblEl = document.getElementById('lbl-di2-zona');
     if (lblEl) lblEl.textContent = lbl;
 
-    let filas = [];
-    if (deps.esCooperativaElectricaRubro()) {
-        filas = await fetchFilasDi2DesdeRedElectrica(deps);
-    }
-    if (!filas.length) {
+    let filas = await fetchFilasDi2DesdeRedElectrica(deps);
+    if (!filas.length && !deps.esCooperativaElectricaRubro()) {
         filas = await fetchFilasDi2DesdeDistribuidores(deps);
     }
 
     renderSelectDi2(filas, vacio);
+
+    try {
+        await cargarTrafoPedidoDesdeSociosCatalogo({
+            esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
+            sqlSimple: deps.sqlSimple,
+            sqlSimpleSelectAllPages: deps.sqlSimpleSelectAllPages,
+            esc: deps.esc,
+            tenantIdActual: deps.tenantIdActual,
+        });
+    } catch (_) {}
+
     return filas;
 }

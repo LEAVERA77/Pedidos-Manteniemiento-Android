@@ -23,13 +23,13 @@ export function syncTrafoPedidoNuevoEditable() {
         tf.setAttribute('readonly', 'readonly');
         tf.style.background = 'var(--bg2,#f1f5f9)';
         tf.style.cursor = 'default';
-        tf.placeholder = 'Se completa con NIS en catálogo';
+        tf.placeholder = 'Se completa con NIS del padrón de socios';
     } else {
         tf.readOnly = false;
         tf.removeAttribute('readonly');
         tf.style.background = '';
         tf.style.cursor = '';
-        tf.placeholder = 'Sin NIS: ingresá trafo a mano (opcional)';
+        tf.placeholder = 'Elegí un transformador de la lista (catálogo de socios)';
     }
 }
 
