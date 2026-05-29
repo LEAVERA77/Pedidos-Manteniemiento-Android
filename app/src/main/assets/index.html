@@ -337,7 +337,7 @@
         </div>
         <div id="ped-padron-resultados" class="ped-padron-resultados" aria-live="polite"></div>
       </div>
-      <div class="fg"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" list="ped-trafo-socios-datalist" autocomplete="off" placeholder="Lista del padrón de socios; con NIS se completa solo"></div>
+      <div class="fg"><label for="trafo-pedido">Trafo</label><input type="text" id="trafo-pedido" list="ped-trafo-subestaciones-datalist" autocomplete="off" placeholder="Catálogo Subestaciones; con NIS se toma del socio"></div>
       <div class="fr">
         <div class="fg hf"><label for="cl" id="lbl-cl">Nombre y apellido</label>
           <div class="ped-campo-busqueda-row">
@@ -563,6 +563,7 @@
       <button type="button" class="admin-tab" id="admin-tab-distribuidores" onclick="adminTab('distribuidores')"><i class="fas fa-network-wired"></i> Distribuidores</button>
       <button type="button" class="admin-tab" id="admin-tab-saidi-excel" onclick="adminTab('saidi-excel')" style="display:none"><i class="fas fa-bolt"></i> Métricas SAIDI/SAIFI</button>
       <button type="button" class="admin-tab" id="admin-tab-red-electrica" onclick="adminTab('red-electrica')" style="display:none"><i class="fas fa-charging-station"></i> Red Eléctrica</button>
+      <button type="button" class="admin-tab" id="admin-tab-subestaciones" onclick="adminTab('subestaciones')" style="display:none"><i class="fas fa-bolt"></i> Subestaciones</button>
       <button class="admin-tab" onclick="adminTab('socios')"><i class="fas fa-address-book"></i> Socios / NIS</button>
       <button class="admin-tab" onclick="adminTab('estadisticas')"><i class="fas fa-chart-bar"></i> Estadísticas</button>
       <button class="admin-tab" onclick="adminTab('kpi')"><i class="fas fa-bullseye"></i> KPI piloto</button>
@@ -766,6 +767,30 @@
             <th>Código</th><th>Nombre</th><th>Localidad</th><th style="text-align:right">Nivel tensión</th><th style="text-align:right">Trafos</th><th style="text-align:right">KVA</th><th style="text-align:right">Clientes</th><th>Actualizado</th>
           </tr></thead>
           <tbody id="admin-red-electrica-tbody"><tr><td colspan="8" style="color:var(--tl);font-size:.78rem">Abrí esta pestaña con sesión API para cargar la lista.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="admin-subestaciones" class="admin-section">
+      <h3 style="color:var(--tm);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Catálogo de transformadores (Subestaciones)</h3>
+      <p style="font-size:.8rem;color:var(--tl);margin:0 0 .85rem;line-height:1.45">Transformadores para <strong>pedidos cargados a mano</strong> (mapa, oficina, GPS). Se guardan en <code style="font-size:.75rem">subestaciones_catalogo</code>. Si el reclamo sale del <strong>padrón de socios</strong> (NIS, WhatsApp o búsqueda por nombre), el trafo sigue siendo el del socio en <code style="font-size:.72rem">socios_catalogo</code>. Migración Neon: <code style="font-size:.72rem">api/db/migrations/subestaciones_catalogo.sql</code>.</p>
+      <p style="font-size:.78rem;color:var(--tm);margin:0 0 .65rem"><strong>Fila 1 — encabezados:</strong> <code style="font-size:.72rem">Código</code> (o ID Transformador) · <code style="font-size:.72rem">Nombre</code> · <code style="font-size:.72rem">Subestación</code> · <code style="font-size:.72rem">ID Distribuidor</code> · <code style="font-size:.72rem">KVA</code> · <code style="font-size:.72rem">Clientes</code> · <code style="font-size:.72rem">Barrio</code> · <code style="font-size:.72rem">Alimentador</code> · <code style="font-size:.72rem">Localidad</code>. Misma lógica que Red Eléctrica: actualiza por código, agrega nuevos y pregunta baja si falta en el Excel.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.65rem;align-items:flex-end;margin-bottom:.75rem">
+        <div>
+          <label for="admin-subestaciones-file" style="font-size:.76rem;font-weight:600;color:var(--tm);display:block">Archivo Excel</label>
+          <input type="file" id="admin-subestaciones-file" accept=".xlsx,.xls" style="margin-top:.25rem;font-size:.8rem;max-width:min(100%,22rem)">
+        </div>
+        <button type="button" class="btn-sm primary" id="admin-subestaciones-btn-import"><i class="fas fa-cloud-upload-alt"></i> Importar a Neon</button>
+        <button type="button" class="btn-sm" id="admin-subestaciones-btn-export" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-download"></i> Descargar Excel</button>
+        <button type="button" class="btn-sm" id="admin-subestaciones-refresh" style="background:var(--bg);border:1px solid var(--bo)"><i class="fas fa-sync"></i> Actualizar lista</button>
+        <span id="admin-subestaciones-file-status" style="font-size:.72rem;color:var(--tl);flex:1 1 100%"></span>
+      </div>
+      <div id="admin-subestaciones-result" style="display:none;margin:0 0 .75rem" aria-live="polite"></div>
+      <div style="overflow:auto;border:1px solid var(--bo);border-radius:.45rem">
+        <table class="admin-table" style="margin:0;min-width:720px">
+          <thead><tr>
+            <th>Código</th><th>Nombre</th><th>Subestación</th><th>Dist.</th><th style="text-align:right">KVA</th><th style="text-align:right">Clientes</th><th>Barrio</th><th>Alimentador</th><th>Actualizado</th>
+          </tr></thead>
+          <tbody id="admin-subestaciones-tbody"><tr><td colspan="9" style="color:var(--tl);font-size:.78rem">Abrí esta pestaña con sesión API para cargar la lista.</td></tr></tbody>
         </table>
       </div>
     </div>

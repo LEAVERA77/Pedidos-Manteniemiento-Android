@@ -98,7 +98,7 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             console.warn('[admin-deferred] getDeps', e);
             throw e;
         }
-        const [estCsv, exportStats, deriv, historicos, saidiDist, sociosMod, redInfra] = await Promise.all([
+        const [estCsv, exportStats, deriv, historicos, saidiDist, sociosMod, redInfra, subInfra, subHook] = await Promise.all([
             import('./est-csv-tipo-filtro.js'),
             import('./export-pedidos-admin-stats.js'),
             import('./derivaciones-reclamos-admin.js'),
@@ -106,6 +106,8 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             import('./admin-saidi-distrib-excel.js'),
             import('./admin-socios.js'),
             import('./admin-red-electrica-infra.js'),
+            import('./admin-subestaciones-infra.js'),
+            import('./admin-subestaciones-tab-hook.js'),
         ]);
         try {
             estCsv.initEstCsvTipoAutocomplete();
@@ -166,6 +168,17 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
                 toast: ctx.toast,
                 toastError: ctx.toastError,
             });
+        } catch (_) {}
+        try {
+            subInfra.initAdminSubestacionesInfra({
+                getApiToken: ctx.getApiToken,
+                apiUrl: ctx.apiUrl,
+                toast: ctx.toast,
+                toastError: ctx.toastError,
+            });
+        } catch (_) {}
+        try {
+            subHook.installAdminSubestacionesTabHook();
         } catch (_) {}
         try {
             const estStat = await import('./admin-estadisticas-stat-cards-ui.js');

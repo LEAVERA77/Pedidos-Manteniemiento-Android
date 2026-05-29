@@ -38,7 +38,9 @@ export function syncCooperativaElectricaAdminTabs(deps = {}) {
     const tabDist = document.getElementById('admin-tab-distribuidores');
     const tabSaidi = document.getElementById('admin-tab-saidi-excel');
     const tabRed = document.getElementById('admin-tab-red-electrica');
+    const tabSub = document.getElementById('admin-tab-subestaciones');
     if (tabDist) tabDist.style.display = hideLegacy ? 'none' : '';
     if (tabSaidi) tabSaidi.style.display = esCoop && hideLegacy ? 'none' : tabSaidi.style.display;
     if (tabRed) tabRed.style.display = esCoop ? '' : 'none';
+    if (tabSub) tabSub.style.display = esCoop ? '' : 'none';
 }

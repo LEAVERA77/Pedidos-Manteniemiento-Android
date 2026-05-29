@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v274';
-const SW_VERSION  = '1.8.99';
+const CACHE_SHELL = 'pmg-shell-v275';
+const SW_VERSION  = '1.9.0';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -160,6 +160,11 @@ function shellAssetUrls() {
     j('modules/admin-red-electrica-infra.js'),
     j('modules/admin-red-electrica-import-flow.js'),
     j('modules/admin-red-electrica-export.js'),
+    j('modules/admin-subestaciones-infra.js'),
+    j('modules/admin-subestaciones-import-flow.js'),
+    j('modules/admin-subestaciones-export.js'),
+    j('modules/admin-subestaciones-tab-hook.js'),
+    j('modules/pedido-trafo-subestaciones-catalogo.js'),
     j('modules/admin-distribuidores-catalogo-import.js'),
     j('modules/admin-distribuidores-catalogo-ui.js'),
     j('modules/admin-socios-export-api-completo.js'),

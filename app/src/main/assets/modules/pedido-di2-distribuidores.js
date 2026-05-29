@@ -1,10 +1,10 @@
 /**
- * Pobla #di2 desde distribuidores_red; trafo desde catálogo de socios.
+ * Pobla #di2 desde distribuidores_red; trafo desde catálogo Subestaciones (Excel admin).
  * made by leavera77
  */
 
 import { etiquetaGrupoTensionKv } from './nivel-tension-kv-format.js';
-import { cargarTrafoPedidoDesdeSociosCatalogo } from './pedido-trafo-socios-catalogo.js';
+import { cargarTrafoPedidoDesdeSubestacionesCatalogo } from './pedido-trafo-subestaciones-catalogo.js';
 
 /** @param {string|number|null|undefined} t */
 export function etiquetaGrupoTensionDi2(t, kvDecimal = false) {
@@ -155,6 +155,8 @@ export function renderSelectDi2(filas, etiquetaVacia) {
  *   sqlWhereDistribuidoresPorTenantOUsadosEnPedidos: () => Promise<string>;
  *   tenantIdActual?: () => number;
  *   esc?: (v: unknown) => string;
+ *   getApiToken?: () => string | null | undefined;
+ *   apiUrl?: (p: string) => string;
  * }} deps
  * @returns {Promise<Array<{ v: string, l: string, g: string }>>}
  */
@@ -172,12 +174,14 @@ export async function cargarSelectDi2Distribuidores(deps) {
     renderSelectDi2(filas, vacio);
 
     try {
-        await cargarTrafoPedidoDesdeSociosCatalogo({
+        await cargarTrafoPedidoDesdeSubestacionesCatalogo({
             esCooperativaElectricaRubro: deps.esCooperativaElectricaRubro,
             sqlSimple: deps.sqlSimple,
             sqlSimpleSelectAllPages: deps.sqlSimpleSelectAllPages,
             esc: deps.esc,
             tenantIdActual: deps.tenantIdActual,
+            getApiToken: deps.getApiToken,
+            apiUrl: deps.apiUrl,
         });
     } catch (_) {}
 

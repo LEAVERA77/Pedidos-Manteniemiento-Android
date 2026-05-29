@@ -12480,6 +12480,8 @@ async function cargarDistribuidores() {
             sqlWhereDistribuidoresPorTenantOUsadosEnPedidos,
             tenantIdActual,
             esc,
+            getApiToken,
+            apiUrl,
         });
     } catch (e) {
         console.warn('No se pudieron cargar distribuidores:', e.message);
@@ -13725,7 +13727,7 @@ async function cargarAppConfig() {
 }
 
 // ── Admin tab switcher ────────────────────────────────────────
-const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','red-electrica','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
+const _ADMIN_TAB_ORDER = ['empresa','usuarios','distribuidores','saidi-excel','red-electrica','subestaciones','socios','estadisticas','kpi','mapa-usuarios','historicos','contrasena'];
 let _kpiSnapshotsTablaCache = null;
 async function adminKpiSnapshotsTablaExiste(refrescar) {
     if (!refrescar && _kpiSnapshotsTablaCache !== null) return _kpiSnapshotsTablaCache;

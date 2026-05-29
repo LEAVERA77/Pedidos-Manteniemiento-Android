@@ -126,6 +126,32 @@ export function lineasResumenRedElectrica(j, extra = {}) {
 }
 
 /**
+ * @param {Record<string, unknown>} j
+ * @param {{ eliminados?: number, ausentes?: number, archivo?: string }} extra
+ */
+export function lineasResumenSubestacionesCatalogo(j, extra = {}) {
+  const ins = Number(j.insertados) || 0;
+  const act = Number(j.actualizados) || 0;
+  const unc = Number(j.sin_cambios) || 0;
+  const total = Number(j.total) || Number(j.total_excel_filas) || 0;
+  const err = Array.isArray(j.errores) ? j.errores.length : 0;
+  const elim = Number(extra.eliminados) || Number(j.eliminados) || 0;
+  const ausentes = Number(extra.ausentes) ?? (Array.isArray(j.ausentes_en_excel) ? j.ausentes_en_excel.length : 0);
+  const lineas = [
+    `${ins} transformador(es) nuevo(s)`,
+    `${act} actualizado(s)`,
+    `${unc} sin cambios (ya coincidían con la base)`,
+  ];
+  if (total > 0) lineas.push(`${total} fila(s) válidas en el Excel`);
+  if (elim > 0) lineas.push(`${elim} dado(s) de baja en el catálogo (no estaban en el archivo)`);
+  else if (ausentes > 0 && elim === 0)
+    lineas.push(`${ausentes} en la base no venían en el Excel (se conservaron)`);
+  if (err > 0) lineas.push(`${err} fila(s) con error en el archivo`);
+  const detalle = extra.archivo ? `Archivo: ${extra.archivo}` : '';
+  return { lineas, detalle, tipo: err && !ins && !act ? 'warn' : 'ok' };
+}
+
+/**
  * @param {{
  *   nuevos?: number,
  *   actualizados?: number,

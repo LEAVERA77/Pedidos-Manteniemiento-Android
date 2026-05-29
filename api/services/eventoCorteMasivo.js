@@ -39,6 +39,26 @@ export async function listarCatalogosEventoCorte(req) {
   const transformadores = [];
   const distribuidores = [];
 
+  if (await tableExists("subestaciones_catalogo")) {
+    try {
+      const sr = await query(
+        `SELECT TRIM(codigo) AS valor, clientes_conectados AS socios
+         FROM subestaciones_catalogo WHERE tenant_id = $1 AND TRIM(COALESCE(codigo::text, '')) <> ''
+         ORDER BY codigo ASC LIMIT 3000`,
+        [tid]
+      );
+      for (const row of sr.rows) {
+        const v = String(row.valor || "").trim();
+        if (!v) continue;
+        transformadores.push({
+          valor: v,
+          socios: Number(row.socios) || 0,
+          origen: "subestaciones",
+        });
+      }
+    } catch (_) {}
+  }
+
   try {
     const { where, params } = await sociosCatalogoWhereForApi(req);
     if (where) {
