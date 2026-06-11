@@ -495,6 +495,7 @@ export async function abrirModalWhatsappHumanChat(prefSessionId) {
         if (!ar.ok) {
             const err = await ar.json().catch(() => ({}));
             toast(err.error || ('No se pudo activar la sesión (' + ar.status + ')'), 'warning');
+            return;
         }
         if (!_waHcWindows.has(String(useId))) crearVentanaFlotanteWaHc(useId);
         else restaurarVentanaWaHc(String(useId));

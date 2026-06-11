@@ -546,6 +546,11 @@ function openModalCierreMasivoIncidencia(args) {
     });
     if (matWrap) matWrap.style.display = algunPermiteMat ? '' : 'none';
 
+    /** Progreso visible durante cierres largos (tormenta: decenas de pedidos). */
+    const setSubProgresoCierre = (el, hechos, total) => {
+        if (el) el.textContent = `Cerrando ${hechos + 1} de ${total} pedidos…`;
+    };
+
     const setPreview = (dataUrl) => {
         fotoDataUrl = dataUrl || '';
         if (!prev) return;
@@ -631,8 +636,9 @@ function openModalCierreMasivoIncidencia(args) {
             }
             const matsAll = algunPermiteMat ? collectMaterialesRows(mc) : [];
             nb.disabled = true;
+            let okCount = 0;
             try {
-                let okCount = 0;
+                const totalACerrar = pedidosAbiertos.length;
                 for (const p of pedidosAbiertos) {
                     const pid = p.id;
                     const tt = String(p.tipo_trabajo ?? p.tt ?? '').trim();
@@ -644,6 +650,7 @@ function openModalCierreMasivoIncidencia(args) {
                     };
                     if (fotoDataUrl) body.foto_cierre_base64 = fotoDataUrl;
                     if (!tipoPedidoExcluyeMaterialesModule(tt) && matsAll.length) body.materiales = matsAll;
+                    if (totalACerrar > 10) setSubProgresoCierre(sub, okCount, totalACerrar);
                     const row = await putFn(pid, body);
                     if (!row) throw new Error(`No se pudo cerrar el pedido ${pid}`);
                     okCount += 1;
@@ -662,7 +669,19 @@ function openModalCierreMasivoIncidencia(args) {
                 recargarPedidosYMapa();
                 void openVistaIncidencia(incId);
             } catch (e) {
-                toast(String(e?.message || e), 'error');
+                const detalle = String(e?.message || e);
+                if (okCount > 0) {
+                    toast(
+                        `Se cerraron ${okCount} de ${pedidosAbiertos.length} pedidos y luego falló: ${detalle}. La incidencia sigue abierta; reintentá para cerrar los restantes.`,
+                        'error',
+                        9000
+                    );
+                    invalidatePedidosIncidenciasCache();
+                    recargarPedidosYMapa();
+                } else {
+                    toast(detalle, 'error');
+                }
+                if (sub) sub.textContent = `Se aplicará a ${pedidosAbiertos.length} pedido(s) abierto(s).`;
             } finally {
                 nb.disabled = false;
             }

@@ -331,12 +331,15 @@ export async function ejecutarEventoCorteMasivo(req, body) {
           ? [pid, tecnicoId, req.user.id, req.tenantId]
           : [pid, tecnicoId, req.user.id];
         const bt = await pushPedidoBusinessFilter(req, params);
+        // Pendiente → Asignado: habilita el cierre masivo del técnico (regla front incidencias)
         const sql = hasT
           ? `UPDATE pedidos
-             SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
+             SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3,
+                 estado = CASE WHEN estado = 'Pendiente' THEN 'Asignado' ELSE estado END
              WHERE id = $1 AND tenant_id = $4${bt}`
           : `UPDATE pedidos
-             SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
+             SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3,
+                 estado = CASE WHEN estado = 'Pendiente' THEN 'Asignado' ELSE estado END
              WHERE id = $1${bt}`;
         const up = await client.query(sql, params);
         if (up.rowCount > 0) asignados += 1;

@@ -2230,14 +2230,17 @@ router.put("/:id/asignar", adminOnly, async (req, res) => {
     const hasTa = await pedidosTableHasTenantIdColumn();
     const bindAs = hasTa ? [id, tecnicoAsignadoId, req.user.id, req.tenantId] : [id, tecnicoAsignadoId, req.user.id];
     const bta = await pushPedidoBusinessFilter(req, bindAs);
+    // Pendiente → Asignado: paridad con asignación del front y cierre masivo del técnico
     const r = await query(
       hasTa
         ? `UPDATE pedidos
-       SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
+       SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3,
+           estado = CASE WHEN estado = 'Pendiente' THEN 'Asignado' ELSE estado END
        WHERE id = $1 AND tenant_id = $4${bta}
        RETURNING *`
         : `UPDATE pedidos
-       SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3
+       SET tecnico_asignado_id = $2, fecha_asignacion = NOW(), asignado_por_id = $3,
+           estado = CASE WHEN estado = 'Pendiente' THEN 'Asignado' ELSE estado END
        WHERE id = $1${bta}
        RETURNING *`,
       bindAs

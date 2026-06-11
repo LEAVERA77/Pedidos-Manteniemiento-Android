@@ -124,6 +124,10 @@ describe("ejecutarEventoCorteMasivo", () => {
     expect(asociaciones).toHaveLength(3);
     const asignaciones = clientQuery.mock.calls.filter((c) => String(c[0]).includes("tecnico_asignado_id"));
     expect(asignaciones).toHaveLength(3);
+    // Pendiente → Asignado: habilita el cierre masivo del técnico desde la vista incidencia
+    for (const c of asignaciones) {
+      expect(String(c[0])).toContain("WHEN estado = 'Pendiente' THEN 'Asignado'");
+    }
 
     // La notificación al técnico se encola en setImmediate (no bloqueante)
     await new Promise((resolve) => setTimeout(resolve, 30));

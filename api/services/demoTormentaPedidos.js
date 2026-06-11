@@ -53,6 +53,18 @@ function txt(v) {
   return v != null ? String(v).trim() : "";
 }
 
+/** Con coordenadas válidas el reclamo se ve en el mapa del técnico. */
+function tieneCoords(s) {
+  const lat = Number(s?.latitud);
+  const lng = Number(s?.longitud);
+  return Number.isFinite(lat) && lat !== 0 && Number.isFinite(lng) && lng !== 0;
+}
+
+/** Mezcla aleatoria pero priorizando socios con coordenadas (sort estable). */
+function shufflePreferCoords(arr) {
+  return shuffle(arr).sort((a, b) => Number(tieneCoords(b)) - Number(tieneCoords(a)));
+}
+
 /**
  * Inserta un pedido demo. Las columnas opcionales se agregan según el esquema.
  */
@@ -165,7 +177,7 @@ export async function generarDemoTormenta(req, opts = {}) {
     const tomar = Math.min(list.length, 12 + Math.floor(Math.random() * 14), cupoTrafos - usadosTrafo);
     if (tomar < 3) continue;
     trafosUsados.push({ trafo: tr, reclamos: tomar });
-    for (const s of shuffle(list).slice(0, tomar)) {
+    for (const s of shufflePreferCoords(list).slice(0, tomar)) {
       plan.push({ socio: s, tipo: TIPO_CORTE });
     }
     usadosTrafo += tomar;
@@ -180,14 +192,15 @@ export async function generarDemoTormenta(req, opts = {}) {
     const tomar = Math.min(candidatos.length, 8 + Math.floor(Math.random() * 8), cupoDist - usadosDist);
     if (tomar < 3) continue;
     distUsados.push({ distribuidor: dc, reclamos: tomar });
-    for (const s of shuffle(candidatos).slice(0, tomar)) {
+    for (const s of shufflePreferCoords(candidatos).slice(0, tomar)) {
       plan.push({ socio: s, tipo: TIPO_CORTE });
     }
     usadosDist += tomar;
   }
 
   const yaUsados = new Set(plan.map((p) => p.socio.id));
-  const restantes = shuffle(socios.filter((s) => !yaUsados.has(s.id)));
+  // reverse: pop() saca primero los socios con coordenadas
+  const restantes = shufflePreferCoords(socios.filter((s) => !yaUsados.has(s.id))).reverse();
   let sueltos = 0;
   while (plan.length < totalObjetivo && restantes.length) {
     const s = restantes.pop();

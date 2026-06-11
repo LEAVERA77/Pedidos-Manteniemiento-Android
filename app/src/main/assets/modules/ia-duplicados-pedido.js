@@ -26,8 +26,9 @@ function mostrarAvisoDuplicado(dups) {
 
   const div = document.createElement('div');
   div.id = 'gn-duplicado-aviso';
+  /* Por encima del modal nuevo pedido #pm (100070/100120/200028) para que no quede tapado. */
   div.style.cssText =
-    'position:fixed;top:1rem;right:1rem;z-index:100000;max-width:380px;' +
+    'position:fixed;top:1rem;right:1rem;z-index:200050;max-width:380px;' +
     'background:#fef3c7;border:2px solid #f59e0b;border-radius:.65rem;padding:.75rem 1rem;' +
     'box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:.82rem;color:#92400e;animation:fadeIn .3s';
 

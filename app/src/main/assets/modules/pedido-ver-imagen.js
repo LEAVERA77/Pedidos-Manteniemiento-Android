@@ -194,8 +194,9 @@ async function putPedidoCamposValidacion(pedidoId, body) {
 /** Modal mínimo (sin inflar app.js). */
 function abrirModalSeleccion(titulo, opciones, onConfirm) {
     const ov = document.createElement('div');
+    /* Por encima del detalle #dm (100070/100120) y de #modal-asignar-tecnico (199000). */
     ov.style.cssText =
-        'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:12000;display:flex;align-items:center;justify-content:center;padding:1rem';
+        'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200030;display:flex;align-items:center;justify-content:center;padding:1rem';
     const box = document.createElement('div');
     box.style.cssText =
         'background:var(--bg);color:inherit;border-radius:10px;max-width:380px;width:100%;padding:1rem;border:1px solid var(--bo);box-shadow:0 8px 32px rgba(0,0,0,.2)';
