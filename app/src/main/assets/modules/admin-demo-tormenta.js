@@ -6,6 +6,17 @@
 /** @type {boolean} */
 let _bound = false;
 
+const LS_KEY_OCULTO = "gn_demo_tormenta_oculto";
+
+/** Oculta el bloque demo si el flag local está activo (botón tenant técnico). */
+function aplicarVisibilidadBloqueDemo() {
+  try {
+    const block = document.getElementById("gn-demo-tormenta-block");
+    if (!block) return;
+    block.style.display = localStorage.getItem(LS_KEY_OCULTO) === "1" ? "none" : "";
+  } catch (_) {}
+}
+
 /**
  * @param {{
  *   getApiToken: () => string | null | undefined;
@@ -15,6 +26,7 @@ let _bound = false;
  * }} d
  */
 export function initAdminDemoTormenta(d) {
+  aplicarVisibilidadBloqueDemo();
   if (_bound) return;
   const btn = document.getElementById("admin-demo-tormenta-btn");
   const status = document.getElementById("admin-demo-tormenta-status");

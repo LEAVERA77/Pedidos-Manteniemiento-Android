@@ -65,6 +65,28 @@ export async function enqueueNotificacionPedidoCerradoParaTecnico({
   await encolarNotificacionMovil(tid, pid, titulo, cuerpo, "cierre_pedido");
 }
 
+/**
+ * Evento corte masivo (tormenta): una sola notificación resumen al técnico asignado.
+ */
+export async function enqueueNotificacionCorteMasivoParaTecnico({
+  tecnicoUsuarioId,
+  incidenciaId,
+  nombreIncidencia,
+  totalPedidos,
+  asignadoPorUsuarioId,
+}) {
+  const tid = Number(tecnicoUsuarioId);
+  if (!Number.isFinite(tid) || tid < 1) return;
+  const por = asignadoPorUsuarioId != null ? Number(asignadoPorUsuarioId) : null;
+  if (Number.isFinite(por) && por === tid) return;
+  if (!(await ensureNotificacionesMovilTable())) return;
+  const n = Number(totalPedidos) || 0;
+  const nombre = String(nombreIncidencia || "").trim().slice(0, 140) || `Incidencia #${incidenciaId}`;
+  const titulo = "Corte masivo asignado";
+  const cuerpo = `${nombre}: tenés ${n} reclamo${n === 1 ? "" : "s"} asignado${n === 1 ? "" : "s"}. Revisá el mapa.`;
+  await encolarNotificacionMovil(tid, null, titulo, cuerpo, "asignacion");
+}
+
 async function tenantColumnForUsuarios() {
   try {
     const c = await query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'usuarios'`);

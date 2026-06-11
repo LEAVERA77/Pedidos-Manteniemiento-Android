@@ -345,6 +345,25 @@ export async function ejecutarEventoCorteMasivo(req, body) {
       return { incidencia: inc, pedidos_asociados: uniq.length, pedidos_asignados: asignados };
     });
 
+    setImmediate(() => {
+      (async () => {
+        try {
+          const { enqueueNotificacionCorteMasivoParaTecnico } = await import(
+            "./notificacionesMovilEnqueue.js"
+          );
+          await enqueueNotificacionCorteMasivoParaTecnico({
+            tecnicoUsuarioId: tecnicoId,
+            incidenciaId: result.incidencia?.id,
+            nombreIncidencia: result.incidencia?.nombre,
+            totalPedidos: result.pedidos_asignados,
+            asignadoPorUsuarioId: req.user?.id,
+          });
+        } catch (e) {
+          console.error("[eventoCorteMasivo] notif técnico (no bloqueante)", e.message);
+        }
+      })();
+    });
+
     return { ok: true, status: 201, ...result };
   } catch (error) {
     return { ok: false, status: 500, error: "No se pudo ejecutar el evento de corte", detail: error.message };
