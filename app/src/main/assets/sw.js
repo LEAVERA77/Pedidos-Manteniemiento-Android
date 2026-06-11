@@ -11,8 +11,8 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v275';
-const SW_VERSION  = '1.9.0';
+const CACHE_SHELL = 'pmg-shell-v276';
+const SW_VERSION  = '1.9.1';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -164,6 +164,7 @@ function shellAssetUrls() {
     j('modules/admin-subestaciones-import-flow.js'),
     j('modules/admin-subestaciones-export.js'),
     j('modules/admin-subestaciones-tab-hook.js'),
+    j('modules/admin-demo-tormenta.js'),
     j('modules/pedido-trafo-subestaciones-catalogo.js'),
     j('modules/admin-distribuidores-catalogo-import.js'),
     j('modules/admin-distribuidores-catalogo-ui.js'),

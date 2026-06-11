@@ -181,6 +181,15 @@ export async function ensureAdminPanelDeferredBindings(getDeps) {
             subHook.installAdminSubestacionesTabHook();
         } catch (_) {}
         try {
+            const demoTormenta = await import('./admin-demo-tormenta.js');
+            demoTormenta.initAdminDemoTormenta({
+                getApiToken: ctx.getApiToken,
+                apiUrl: ctx.apiUrl,
+                toast: ctx.toast,
+                toastError: ctx.toastError,
+            });
+        } catch (_) {}
+        try {
             const estStat = await import('./admin-estadisticas-stat-cards-ui.js');
             estStat.initEstadisticasStatCardsUi(estStat.buildEstadisticasStatCardsDeps(ctx));
         } catch (e) {

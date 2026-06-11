@@ -14,6 +14,7 @@ import { calcularGeoCalidadPedidos } from "../services/geoCalidadMetricas.js";
 import { buildAdminSistemaSalud } from "../services/adminSistemaSalud.js";
 import { listarPedidosAbiertosSinCoords } from "../services/pedidosSinCoordsAdmin.js";
 import { regeocodificarLotePedidosSinCoords } from "../services/regeocodificarLoteAdmin.js";
+import { generarDemoTormenta } from "../services/demoTormentaPedidos.js";
 
 const router = express.Router();
 
@@ -254,6 +255,25 @@ router.get("/sistema-salud", adminOnly, async (_req, res) => {
     console.error("[admin] sistema-salud:", err);
     return res.status(500).json({
       error: "No se pudo comprobar salud del sistema",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * POST /api/admin/demo/tormenta
+ * Genera ~200 reclamos demo (corte masivo por tormenta) usando socios del padrón.
+ * Repetible; pedidos marcados [DEMO-TORMENTA] en descripción.
+ */
+router.post("/demo/tormenta", adminOnly, async (req, res) => {
+  try {
+    const out = await generarDemoTormenta(req, { total: req.body?.total });
+    if (!out.ok) return res.status(400).json(out);
+    return res.json(out);
+  } catch (err) {
+    console.error("[admin] demo tormenta:", err);
+    return res.status(500).json({
+      error: "No se pudo generar la demo de tormenta",
       detail: err?.message || String(err),
     });
   }
