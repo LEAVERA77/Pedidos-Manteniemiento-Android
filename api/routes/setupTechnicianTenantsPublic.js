@@ -6,6 +6,9 @@ import express from "express";
 import { query } from "../db/neon.js";
 import { requireTechnicianTenantKey } from "../middleware/technicianTenantKey.js";
 import { technicianCompletarSetupInicialSave } from "../services/technicianCompletarSetupInicialSave.js";
+import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
+import { normalizeBusinessTypeInput, rubroNormToBusinessType } from "../services/businessType.js";
+import { normalizarRubroCliente } from "../services/tiposReclamo.js";
 
 const router = express.Router();
 
@@ -89,6 +92,16 @@ router.post("/technician/completar-setup-inicial", requireTechnicianTenantKey, a
     body.longitud = lo;
 
     const { cliente } = await technicianCompletarSetupInicialSave(tenantId, body);
+    try {
+      const btSaved =
+        normalizeBusinessTypeInput(cliente?.active_business_type ?? body.active_business_type) ||
+        (cliente?.tipo ? rubroNormToBusinessType(normalizarRubroCliente(cliente.tipo)) : null);
+      await syncWhatsappBotActiveTarget({
+        tenantId,
+        businessType: btSaved,
+        source: "technician_completar_setup_inicial",
+      });
+    } catch (_) {}
     return res.json({ ok: true, tenant_id: tenantId, cliente });
   } catch (e) {
     if (e.status && e.json) {

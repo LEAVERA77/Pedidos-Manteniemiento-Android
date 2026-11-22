@@ -1,5 +1,14 @@
 import { randomUUID } from "crypto";
 
+function isQuietHealthProbe(req, res, path) {
+  if (res.statusCode >= 400) return false;
+  const logHealth = String(process.env.LOG_HEALTH_CHECKS || "").trim().toLowerCase();
+  if (logHealth === "1" || logHealth === "true" || logHealth === "yes") return false;
+  if (path === "/health" || path === "/health/db") return true;
+  if (path === "/" && (req.method === "HEAD" || req.method === "GET")) return true;
+  return false;
+}
+
 /**
  * Asigna X-Request-Id (o respeta el encabezado entrante) y registra una línea JSON por respuesta.
  */
@@ -12,6 +21,7 @@ export function requestContextMiddleware(req, res, next) {
   const start = Date.now();
   res.on("finish", () => {
     const path = (req.originalUrl || req.url || "").split("?")[0];
+    if (isQuietHealthProbe(req, res, path)) return;
     const line = {
       level: "info",
       ts: new Date().toISOString(),

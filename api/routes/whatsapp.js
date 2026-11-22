@@ -3,6 +3,15 @@ import { authWithTenantHost } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { normalizePhone } from "../utils/helpers.js";
 import { metaSendWhatsAppText } from "../services/metaWhatsapp.js";
+import { sendTenantWhatsAppText } from "../services/whatsappService.js";
+import { resolveWhatsappBotTarget } from "../services/metaTenantWhatsapp.js";
+import {
+  getWhatsappBotActiveTarget,
+  syncWhatsappBotActiveTarget,
+} from "../services/whatsappBotTargetStore.js";
+import { normalizeBusinessTypeInput, rubroNormToBusinessType } from "../services/businessType.js";
+import { normalizarRubroCliente } from "../services/tiposReclamo.js";
+import { technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
 import {
   tableHasColumn,
   getPedidoRowInTenant,
@@ -136,7 +145,20 @@ router.post("/meta/enviar-texto", async (req, res) => {
     const body = String(mensaje || "").trim();
     if (!tel || !body) return res.status(400).json({ error: "telefono y mensaje son requeridos" });
 
-    const send = await metaSendWhatsAppText(tel, body);
+    const prov = String(process.env.WHATSAPP_PROVIDER || "meta")
+      .trim()
+      .toLowerCase();
+    const send =
+      prov !== "meta"
+        ? await sendTenantWhatsAppText({
+            tenantId: req.tenantId,
+            toDigits: tel,
+            bodyText: body,
+            pedidoId: pedido_id || null,
+            logContext: "admin_enviar_texto_tecnico",
+            skipLog: true,
+          })
+        : await metaSendWhatsAppText(tel, body);
     const graph = send.graph || {};
     const { hasTenant } = await whatsappNotifInsertCols();
     if (!send.ok) {
@@ -180,6 +202,96 @@ router.post("/meta/enviar-texto", async (req, res) => {
     return res.json({ ok: true, graph, registro: r.rows[0] });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo enviar por Meta", detail: error.message });
+  }
+});
+
+router.get("/bot-target", async (req, res) => {
+  try {
+    const stored = await getWhatsappBotActiveTarget({ forceRefresh: true });
+    const effective = await resolveWhatsappBotTarget(null);
+    return res.json({
+      ok: true,
+      session_tenant_id: req.tenantId,
+      session_business_type: req.activeBusinessType || null,
+      target: effective
+        ? {
+            tenant_id: effective.tenantId,
+            tenant_nombre: effective.tenantNombre,
+            business_type: effective.businessType,
+            rubro: effective.rubro,
+            source: effective.source,
+            locked: Boolean(stored?.locked),
+            updated_at: stored?.updatedAt || null,
+          }
+        : null,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo consultar el destino del bot WhatsApp", detail: error.message });
+  }
+});
+
+router.post("/bot-target", async (req, res) => {
+  try {
+    const rol = String(req.user?.rol || "").toLowerCase();
+    const isAdmin = rol === "admin" || rol === "administrador";
+    const hasTechKey = technicianTenantKeyOk(req);
+    const requestedTidRaw = req.body?.tenant_id ?? req.body?.tenantId;
+    const requestedTid =
+      requestedTidRaw != null && String(requestedTidRaw).trim() !== ""
+        ? Number(requestedTidRaw)
+        : Number(req.tenantId);
+
+    if (!Number.isFinite(requestedTid) || requestedTid < 1) {
+      return res.status(400).json({ error: "tenant_id inválido" });
+    }
+    if (requestedTid !== Number(req.tenantId) && !isAdmin && !hasTechKey) {
+      return res.status(403).json({ error: "Solo un administrador puede apuntar el bot a otro tenant_id" });
+    }
+    if (typeof req.body?.locked === "boolean" && !isAdmin && !hasTechKey) {
+      return res.status(403).json({ error: "Solo un administrador puede bloquear o desbloquear el destino del bot" });
+    }
+
+    const btRaw = req.body?.business_type ?? req.body?.businessType;
+    const rubroRaw = req.body?.rubro ?? req.body?.tipo;
+    const btNorm =
+      normalizeBusinessTypeInput(btRaw) ||
+      (rubroRaw ? rubroNormToBusinessType(normalizarRubroCliente(rubroRaw)) : null) ||
+      (requestedTid === Number(req.tenantId) ? normalizeBusinessTypeInput(req.activeBusinessType) : null);
+
+    if (btRaw != null && String(btRaw).trim() !== "" && !normalizeBusinessTypeInput(btRaw)) {
+      return res.status(400).json({
+        error: "business_type inválido",
+        permitidos: ["electricidad", "agua", "municipio"],
+      });
+    }
+
+    const updated = await syncWhatsappBotActiveTarget({
+      tenantId: requestedTid,
+      businessType: btNorm,
+      source: String(req.body?.source || "api_whatsapp_bot_target").slice(0, 80),
+      userId: req.user?.id ?? null,
+      force: Boolean(req.body?.force && (isAdmin || hasTechKey)),
+      locked: typeof req.body?.locked === "boolean" ? req.body.locked : undefined,
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "Tenant destino no encontrado o inactivo", tenant_id: requestedTid });
+    }
+
+    return res.json({
+      ok: true,
+      target: {
+        tenant_id: updated.tenantId,
+        tenant_nombre: updated.tenantNombre,
+        business_type: updated.businessType,
+        rubro: updated.rubro,
+        locked: updated.locked,
+        source: updated.source,
+        updated_at: updated.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "No se pudo actualizar el destino del bot WhatsApp", detail: error.message });
   }
 });
 

@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 
 import { query } from "./db/neon.js";
 import { requestContextMiddleware, logApiError } from "./middleware/requestContext.js";
@@ -38,11 +39,13 @@ import debugRoutes from "./routes/debug.js";
 import iaRoutes from "./routes/ia.js";
 import sociosExportRoutes from "./routes/sociosExport.js";
 import padronPedidoRoutes from "./routes/padronPedido.js";
+import sqlRoutes from "./routes/sql.js";
 import {
   authLoginLimiter,
   authVerifyPasswordLimiter,
   generalApiLimiter,
   geocodeRouteLimiter,
+  sqlGatewayLimiter,
 } from "./middleware/rateLimits.js";
 
 export function createHttpApp() {
@@ -73,7 +76,9 @@ export function createHttpApp() {
         "X-Hub-Signature-256",
         "X-Request-Id",
         "X-GestorNova-Technician-Key",
+        "If-None-Match",
       ],
+      exposedHeaders: ["X-Neon-Cache", "ETag"],
       optionsSuccessStatus: 204,
       maxAge: 86400,
     };
@@ -88,11 +93,23 @@ export function createHttpApp() {
       return callback(null, corsOptions);
     }
 
+    const host = req.get("host");
+    if (host && (origin === `https://${host}` || origin === `http://${host}`)) {
+      corsOptions.origin = true;
+      return callback(null, corsOptions);
+    }
+
     return callback(null, corsOptions);
   };
 
   app.use(cors(corsOptionsDelegate));
   app.options("*", cors(corsOptionsDelegate));
+  app.use(
+    compression({
+      threshold: 1024,
+      level: 6,
+    })
+  );
 
   app.use((req, res, next) => {
     if (!req.path.startsWith("/api")) return next();
@@ -103,15 +120,33 @@ export function createHttpApp() {
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
+  app.get("/", (_req, res) => {
+    res.json({ ok: true, service: "pedidosmg-api", status: "live" });
+  });
+
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "pedidosmg-api", db: "not-checked" });
   });
 
-  app.get("/health/db", async (_req, res) => {
+  let lastHealthDbOkAt = 0;
+  app.get("/health/db", async (req, res) => {
+    const ttlMs =
+      process.env.NODE_ENV === "test"
+        ? 0
+        : Math.max(0, Number(process.env.HEALTH_DB_CACHE_MS ?? 60000) || 0);
+    const forceFresh =
+      String(req.query?.fresh || "").trim() === "1" ||
+      String(req.query?.fresh || "").trim().toLowerCase() === "true";
+
+    if (!forceFresh && ttlMs > 0 && lastHealthDbOkAt > 0 && Date.now() - lastHealthDbOkAt < ttlMs) {
+      return res.json({ ok: true, service: "pedidosmg-api", db: "ok", cached: true });
+    }
     try {
       await query("SELECT 1");
+      lastHealthDbOkAt = Date.now();
       res.json({ ok: true, service: "pedidosmg-api", db: "ok" });
     } catch (error) {
+      lastHealthDbOkAt = 0;
       res.status(500).json({ ok: false, service: "pedidosmg-api", db: "error", error: error.message });
     }
   });
@@ -147,8 +182,13 @@ export function createHttpApp() {
     if (req.method !== "POST") return next();
     return authLoginLimiter(req, res, next);
   });
+  app.use("/api/auth/password-reset/confirm", (req, res, next) => {
+    if (req.method !== "POST") return next();
+    return authLoginLimiter(req, res, next);
+  });
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/sql", sqlGatewayLimiter, sqlRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/admin", redElectricaInfraRoutes);
   app.use("/api/admin", subestacionesCatalogoRoutes);

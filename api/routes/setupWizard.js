@@ -13,6 +13,7 @@ import { tenantIdentityPairKey, normalizeCompanyNameKey } from "../utils/tenantI
 import { requireTechnicianTenantKey, technicianTenantKeyOk } from "../middleware/technicianTenantKey.js";
 import { getOrCreateAdminUidForTechnicianAttach, defaultAdminEmailForTenant } from "../services/defaultTenantAdminForAttach.js";
 import { createBootstrapAdminForNewTenant } from "../services/bootstrapTenantAdmin.js";
+import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
 
 const router = express.Router();
 
@@ -150,6 +151,13 @@ router.post(
       if (adm.created) {
         out.hint_admin_creado = `Se creó admin de respaldo: email ${defaultAdminEmailForTenant(fromTid)} y contraseña inicial admin (cambiarla desde el programa).`;
       }
+      try {
+        await syncWhatsappBotActiveTarget({
+          tenantId: tid,
+          source: "technician_attach_tenant_public",
+          userId: uid,
+        });
+      } catch (_) {}
       return res.json(out);
     } catch (e) {
       if (e.httpStatus && e.httpBody) {
@@ -166,6 +174,13 @@ router.post(
     try {
       const tid = Number(req.body?.tenant_id);
       const out = await runAttachTenantTechnicianCore(Number(req.user.id), Number(req.tenantId), tid, req.user.rol);
+      try {
+        await syncWhatsappBotActiveTarget({
+          tenantId: tid,
+          source: "technician_attach_tenant_auth",
+          userId: Number(req.user.id),
+        });
+      } catch (_) {}
       return res.json(out);
     } catch (e) {
       if (e.httpStatus && e.httpBody) {
@@ -445,6 +460,14 @@ router.post("/wizard", async (req, res) => {
       });
 
       const total = await contarDatos(tenantIdOld, businessType);
+      try {
+        await syncWhatsappBotActiveTarget({
+          tenantId: tenantIdOld,
+          businessType,
+          source: "setup_wizard_same_tenant",
+          userId: req.user?.id ?? null,
+        });
+      } catch (_) {}
       return res.json({
         ok: true,
         tenant_id: tenantIdOld,
@@ -521,6 +544,14 @@ router.post("/wizard", async (req, res) => {
       });
 
       const total = await contarDatos(existingTargetId, businessType);
+      try {
+        await syncWhatsappBotActiveTarget({
+          tenantId: existingTargetId,
+          businessType,
+          source: "setup_wizard_reuse_tenant",
+          userId: req.user?.id ?? null,
+        });
+      } catch (_) {}
       return res.json({
         ok: true,
         tenant_id: existingTargetId,
@@ -616,6 +647,14 @@ router.post("/wizard", async (req, res) => {
     });
 
     const total = await contarDatos(newTenantId, businessType);
+    try {
+      await syncWhatsappBotActiveTarget({
+        tenantId: newTenantId,
+        businessType,
+        source: "setup_wizard_new_tenant",
+        userId: req.user?.id ?? null,
+      });
+    } catch (_) {}
     return res.json({
       ok: true,
       tenant_id: newTenantId,

@@ -12,6 +12,14 @@ vi.mock("../db/neon.js", () => ({
 import { createHttpApp } from "../httpApp.js";
 
 describe("API smoke", () => {
+  it("GET / y HEAD / responden 200 (sondas de Render)", async () => {
+    const app = createHttpApp();
+    const resGet = await request(app).get("/").expect(200);
+    expect(resGet.body.ok).toBe(true);
+    expect(resGet.body.service).toBe("pedidosmg-api");
+    await request(app).head("/").expect(200);
+  });
+
   it("GET /health responde ok y expone X-Request-Id", async () => {
     const app = createHttpApp();
     const res = await request(app).get("/health").expect(200);

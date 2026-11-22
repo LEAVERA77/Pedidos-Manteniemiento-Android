@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { createHttpApp } from "./httpApp.js";
+import { initBaileysIfConfigured } from "./services/baileysWhatsapp.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const app = createHttpApp();
@@ -14,4 +15,5 @@ app.listen(PORT, () => {
       service: "pedidosmg-api",
     })
   );
+  initBaileysIfConfigured();
 });

@@ -13,7 +13,7 @@ async function ubicacionDesdeClientesRow(tenantId) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) return null;
   const r = await query(
-    `SELECT nombre, configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
+    `SELECT nombre, configuracion FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
     [tid]
   );
   const row = r.rows?.[0];

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import express from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db/neon.js";
@@ -11,7 +12,9 @@ import {
   crearDesafioOtpAdmin,
   verificarDesafioOtpAdmin,
 } from "../services/adminLoginOtp.js";
+import { enviarCorreoEmailjsServidor } from "../services/emailjsEnvioServidor.js";
 import { getUsuarioNotifPrefs, setUsuarioNotifPrefs } from "../services/usuarioNotifPrefs.js";
+import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
 
 const router = express.Router();
 
@@ -153,6 +156,13 @@ router.post("/login", async (req, res) => {
         });
       }
     }
+    try {
+      await syncWhatsappBotActiveTarget({
+        tenantId: tenant_id,
+        source: "auth_login",
+        userId: u.id,
+      });
+    } catch (_) {}
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
@@ -191,6 +201,13 @@ router.post("/verify-login-otp", async (req, res) => {
     }
     const tenant_id = await getUserTenantId(u.id);
     const token = signToken({ userId: u.id, rol: u.rol, tenant_id });
+    try {
+      await syncWhatsappBotActiveTarget({
+        tenantId: tenant_id,
+        source: "auth_verify_otp",
+        userId: u.id,
+      });
+    } catch (_) {}
     return res.json({
       token,
       user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
@@ -318,6 +335,13 @@ router.post("/verify-token", authMiddleware, async (req, res) => {
  * Útil cuando el WebView lee Neon con carrera y el JWT aún trae un tenant viejo.
  */
 router.get("/tenant-operativo", authMiddleware, async (req, res) => {
+  try {
+    await syncWhatsappBotActiveTarget({
+      tenantId: req.tenantId,
+      source: "auth_tenant_operativo",
+      userId: req.user?.id ?? null,
+    });
+  } catch (_) {}
   return res.json({
     tenant_id: req.tenantId,
     user_id: req.user.id,
@@ -541,6 +565,223 @@ router.put("/notif-prefs", authMiddleware, async (req, res) => {
     return res.json({ ok: true, prefs });
   } catch (error) {
     return res.status(500).json({ error: "No se pudieron guardar preferencias", detail: error.message });
+  }
+});
+
+function isSimpleValidEmail(s) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
+}
+
+async function resolveTenantContactEmail(tenantId) {
+  if (tenantId && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1) {
+    try {
+      const rC = await query("SELECT configuracion FROM clientes WHERE id = $1 LIMIT 1", [
+        Number(tenantId),
+      ]);
+      let cfg = rC.rows?.[0]?.configuracion;
+      if (typeof cfg === "string") {
+        try {
+          cfg = JSON.parse(cfg);
+        } catch (_) {
+          cfg = {};
+        }
+      }
+      const em = String(
+        cfg?.email || cfg?.email_contacto || cfg?.correo_contacto || cfg?.correo || ""
+      ).trim();
+      if (isSimpleValidEmail(em)) return em;
+    } catch (_) {}
+  }
+  try {
+    const rE = await query(
+      `SELECT valor FROM empresa_config WHERE clave IN ('email', 'email_contacto', 'correo_contacto') ORDER BY clave ASC LIMIT 1`
+    );
+    const val = String(rE.rows?.[0]?.valor || "").trim();
+    if (isSimpleValidEmail(val)) return val;
+  } catch (_) {}
+  return "";
+}
+
+router.post("/password-reset/request", async (req, res) => {
+  try {
+    const loginRaw = String(req.body?.usuario || req.body?.email || "").trim();
+    if (!loginRaw) {
+      return res.status(400).json({ error: "Ingresá el nombre de usuario del administrador." });
+    }
+    const loginLc = loginRaw.toLowerCase();
+    const hintTid = Number(req.body?.tenant_id);
+    const col = await usuariosTenantColumnName();
+
+    try {
+      await query("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_token TEXT");
+      await query("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_expiry TIMESTAMPTZ");
+    } catch (_) {}
+
+    let userRow = null;
+    if (col && Number.isFinite(hintTid) && hintTid >= 1) {
+      const rScoped = await query(
+        `SELECT id, email, nombre, rol, ${col}::int AS tid FROM usuarios WHERE activo = TRUE AND LOWER(TRIM(COALESCE(email,''))) = $1 AND ${col} = $2 LIMIT 1`,
+        [loginLc, Math.trunc(hintTid)]
+      );
+      userRow = rScoped.rows?.[0] || null;
+    }
+    if (!userRow) {
+      const rAny = await query(
+        `SELECT id, email, nombre, rol${col ? `, ${col}::int AS tid` : ""} FROM usuarios WHERE activo = TRUE AND LOWER(TRIM(COALESCE(email,''))) = $1 ORDER BY id ASC LIMIT 1`,
+        [loginLc]
+      );
+      userRow = rAny.rows?.[0] || null;
+    }
+    if (!userRow) {
+      return res.status(404).json({ error: "Cuenta no encontrada o inactiva" });
+    }
+
+    const rolRaw = String(userRow.rol || "").trim().toLowerCase();
+    if (rolRaw !== "admin" && rolRaw !== "administrador") {
+      return res.status(403).json({
+        error:
+          "La recuperación por correo es solo para administradores. Los técnicos deben pedir una clave provisoria al admin (panel Usuarios).",
+      });
+    }
+
+    const destManual = String(req.body?.email_destino || "").trim();
+    let toEmail = "";
+    if (destManual) {
+      if (!isSimpleValidEmail(destManual)) {
+        return res.status(400).json({ error: "El correo de destino no es válido." });
+      }
+      toEmail = destManual;
+    } else {
+      toEmail = await resolveTenantContactEmail(userRow.tid || hintTid || 1);
+      if (!toEmail && isSimpleValidEmail(userRow.email)) {
+        toEmail = String(userRow.email).trim();
+      }
+    }
+
+    if (!isSimpleValidEmail(toEmail)) {
+      return res.status(400).json({
+        error:
+          "No hay correo de destino. Completá «Correo para el código» o cargá el correo de la empresa en Admin → Empresa.",
+      });
+    }
+
+    const code = String(crypto.randomInt(100000, 999999));
+    const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    await query(`UPDATE usuarios SET reset_token = $1, reset_expiry = $2 WHERE id = $3`, [
+      code,
+      expiry,
+      userRow.id,
+    ]);
+
+    const toName = userRow.nombre || userRow.email || "Administrador";
+    const appName = "GestorNova";
+    const cuerpo = [
+      `Hola ${toName},`,
+      "",
+      `Recibimos una solicitud para restablecer la contraseña de ${appName}.`,
+      "",
+      `Tu código de verificación es: ${code}`,
+      "",
+      "El código vence en aproximadamente 30 minutos.",
+      "",
+      "Si no solicitaste este cambio, ignorá este mensaje.",
+      "",
+      "Saludos,",
+      `Equipo de ${appName}`,
+    ].join("\n");
+
+    const ejsBody = req.body?.emailjs && typeof req.body.emailjs === "object" ? req.body.emailjs : {};
+    await enviarCorreoEmailjsServidor(
+      {
+        to_email: toEmail,
+        to_name: toName,
+        email_subject: `${appName} — código para restablecer contraseña`,
+        email_body: cuerpo,
+        token: code,
+        app_name: appName,
+        message: cuerpo,
+      },
+      {
+        publicKey: ejsBody.publicKey,
+        serviceId: ejsBody.serviceId,
+        templateId: ejsBody.templateIdReset || ejsBody.templateId || process.env.EMAILJS_TEMPLATE_ID,
+      }
+    );
+
+    return res.json({
+      ok: true,
+      user_id: userRow.id,
+      to_email: toEmail,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error?.message || "No se pudo enviar el código de recuperación",
+    });
+  }
+});
+
+router.post("/password-reset/confirm", async (req, res) => {
+  try {
+    const emailLc = String(req.body?.usuario || req.body?.email || "")
+      .trim()
+      .toLowerCase();
+    const targetId = Number(req.body?.user_id);
+    const codigo = String(req.body?.codigo || "")
+      .trim()
+      .replace(/\s+/g, "");
+    const nuevaPw = String(req.body?.nueva_password || "").trim();
+
+    if (!codigo || !nuevaPw) {
+      return res.status(400).json({ error: "Completá el código y la nueva contraseña" });
+    }
+    if (nuevaPw.length < 3 || nuevaPw.length > 128) {
+      return res.status(400).json({
+        error: "La nueva contraseña debe tener entre 3 y 128 caracteres",
+      });
+    }
+    if (parecePasswordHashBcrypt(nuevaPw)) {
+      return res.status(400).json({
+        error: "Ingresá la contraseña en texto plano, no un hash bcrypt.",
+      });
+    }
+
+    let r = { rows: [] };
+    if (Number.isFinite(targetId) && targetId >= 1) {
+      r = await query(
+        `SELECT id FROM usuarios WHERE id = $1 AND TRIM(COALESCE(reset_token::text, '')) = $2 AND reset_expiry > NOW() LIMIT 1`,
+        [Math.trunc(targetId), codigo]
+      );
+    }
+    if (!r.rows?.length && emailLc) {
+      r = await query(
+        `SELECT id FROM usuarios WHERE LOWER(TRIM(COALESCE(email, ''))) = $1 AND TRIM(COALESCE(reset_token::text, '')) = $2 AND reset_expiry > NOW() LIMIT 1`,
+        [emailLc, codigo]
+      );
+    }
+    if (!r.rows?.length) {
+      return res.status(400).json({ error: "Código incorrecto o expirado" });
+    }
+
+    const nextHash = await bcrypt.hash(nuevaPw, 10);
+    const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
+    if (hasMustCol) {
+      await query(
+        `UPDATE usuarios SET password_hash = $1, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE WHERE id = $2`,
+        [nextHash, r.rows[0].id]
+      );
+    } else {
+      await query(
+        `UPDATE usuarios SET password_hash = $1, reset_token = NULL, reset_expiry = NULL WHERE id = $2`,
+        [nextHash, r.rows[0].id]
+      );
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({
+      error: "No se pudo actualizar la contraseña",
+      detail: error.message,
+    });
   }
 });
 

@@ -29,10 +29,26 @@ export const generalApiLimiter = rateLimit({
   skip: (req) => {
     const p = req.path || "";
     if (p.startsWith("/api/webhooks")) return true;
+    if (p.startsWith("/api/sql")) return true;
     // Listar/vincular tenant con X-GestorNova-Technician-Key: no bloquear por el limitador general (429).
     if (p.startsWith("/api/setup/technician")) return true;
     if (p.includes("/api/clientes/nuevo") && req.method === "POST") return true;
     return false;
+  },
+});
+
+const windowMsSql = Number(process.env.RATE_LIMIT_SQL_WINDOW_MS) || 60 * 1000;
+const maxSql =
+  Number(process.env.RATE_LIMIT_SQL_MAX) ||
+  (process.env.VITEST === "true" ? 50_000 : 600);
+
+export const sqlGatewayLimiter = rateLimit({
+  windowMs: windowMsSql,
+  max: maxSql,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Demasiadas consultas seguidas. Esperá unos segundos y reintentá.",
   },
 });
 

@@ -28,9 +28,10 @@ export async function getTenantProvinciaNominatim(tenantId) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) return null;
   try {
-    const r = await query(`SELECT configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`, [
-      tid,
-    ]);
+    const r = await query(
+      `SELECT configuracion FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
+      [tid]
+    );
     const c = parseCfg(r.rows?.[0]?.configuracion);
     const fromCfg = c.provincia ?? c.state ?? c.provincia_nominatim ?? c.provincia_geocode;
     const s = fromCfg != null ? String(fromCfg).trim() : "";

@@ -137,9 +137,8 @@ function inicializarMapaSetupWizard() {
     }
     if (!_setupMap) {
         _setupMap = L.map('setup-map', { zoomControl: true }).setView([_setupLat, _setupLng], 13);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd'
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         }).addTo(_setupMap);
         _setupMarker = L.marker([_setupLat, _setupLng], { draggable: true }).addTo(_setupMap);
         _setupMarker.on('dragend', () => {

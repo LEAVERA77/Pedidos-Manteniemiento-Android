@@ -420,9 +420,10 @@ function sqlLngPadExpr(cols) {
 }
 
 async function loadTenantCentroid(tenantId) {
-  const r = await query(`SELECT configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`, [
-    Number(tenantId),
-  ]);
+  const r = await query(
+    `SELECT configuracion FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
+    [Number(tenantId)]
+  );
   let cfg = r.rows?.[0]?.configuracion;
   if (typeof cfg === "string") {
     try {

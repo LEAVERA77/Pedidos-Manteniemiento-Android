@@ -15,6 +15,7 @@ const PG_NOMBRE_TRANSLATE_TO =
 import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { loadTenantBusinessContext } from "../utils/businessScope.js";
+import { normalizeBusinessTypeInput } from "../services/businessType.js";
 import { buscarCoordenadasVecinosMismaCalle } from "../services/whatsappPadronVecinos.js";
 
 /** @typedef {{ id: number, nombre: string, nombre_dist: number, calle: string|null, numero: string|null, localidad: string|null, telefono: string|null, barrio: string|null, provincia: string|null, codigo_postal: string|null, lat_pad: number|null, lng_pad: number|null, nis: string|null, medidor: string|null, nis_medidor: string|null, tipo_conexion: string|null, fases: string|null }} CatalogoNombreRow */
@@ -241,16 +242,17 @@ export async function catalogoNombreRowToIdentidadRes(tenantId, row) {
 /**
  * @param {string} nombreCanonSql — expresión SQL sobre `s` (sin alias extra).
  */
-async function ejecutarBusquedaSqlConCanon(tenantId, needleNorm, nombreCanonSql) {
+async function ejecutarBusquedaSqlConCanon(tenantId, needleNorm, nombreCanonSql, preferredBusinessType = null) {
   const cols = await columnasSet("socios_catalogo");
   const distExpr = `levenshtein(${nombreCanonSql}, $2::text)`;
   const selectList = buildSelectList(cols, distExpr);
   const params = [tenantId, needleNorm];
   let businessSql = "";
   const { activeBusinessType, businessTypeFilterEnabled } = await loadTenantBusinessContext(tenantId);
+  const effectiveBt = normalizeBusinessTypeInput(preferredBusinessType) || activeBusinessType;
   const hasBt = cols.has("business_type");
-  if (hasBt && businessTypeFilterEnabled) {
-    params.push(activeBusinessType);
+  if (hasBt && (businessTypeFilterEnabled || normalizeBusinessTypeInput(preferredBusinessType))) {
+    params.push(effectiveBt);
     const i = params.length;
     businessSql = ` AND (s.business_type IS NULL OR TRIM(COALESCE(s.business_type::text,'')) = ''
         OR LOWER(TRIM(COALESCE(s.business_type::text,''))) = LOWER($${i}::text))`;
@@ -274,13 +276,13 @@ const SQL_NOMBRE_CANON_UNACCENT = `trim(both ' ' from regexp_replace(regexp_repl
 
 const SQL_NOMBRE_CANON_TRANSLATE = `trim(both ' ' from regexp_replace(regexp_replace(translate(lower(trim(coalesce(s.nombre::text,'')))), '${PG_NOMBRE_TRANSLATE_FROM}', '${PG_NOMBRE_TRANSLATE_TO}'), '[^a-z0-9]+', ' ', 'gi'), E'\\\\s+', ' ', 'g'))`;
 
-async function ejecutarBusquedaSql(tenantId, needle) {
+async function ejecutarBusquedaSql(tenantId, needle, preferredBusinessType = null) {
   const needleNorm = normalizarTextoBusquedaNombreWa(needle);
   if (!needleNorm) return [];
   let lastErr;
   for (const expr of [SQL_NOMBRE_CANON_UNACCENT, SQL_NOMBRE_CANON_TRANSLATE]) {
     try {
-      return await ejecutarBusquedaSqlConCanon(tenantId, needleNorm, expr);
+      return await ejecutarBusquedaSqlConCanon(tenantId, needleNorm, expr, preferredBusinessType);
     } catch (e) {
       lastErr = e;
       const m = String(e?.message || e);
@@ -291,7 +293,7 @@ async function ejecutarBusquedaSql(tenantId, needle) {
   throw lastErr;
 }
 
-async function ejecutarBusquedaFallbackLike(tenantId, needle) {
+async function ejecutarBusquedaFallbackLike(tenantId, needle, preferredBusinessType = null) {
   const cols = await columnasSet("socios_catalogo");
   const selectList = buildSelectList(cols, "0");
   const needleNorm = normalizarTextoBusquedaNombreWa(needle);
@@ -308,9 +310,10 @@ async function ejecutarBusquedaFallbackLike(tenantId, needle) {
   }
   let businessSql = "";
   const { activeBusinessType, businessTypeFilterEnabled } = await loadTenantBusinessContext(tenantId);
+  const effectiveBt = normalizeBusinessTypeInput(preferredBusinessType) || activeBusinessType;
   const hasBt = cols.has("business_type");
-  if (hasBt && businessTypeFilterEnabled) {
-    params.push(activeBusinessType);
+  if (hasBt && (businessTypeFilterEnabled || normalizeBusinessTypeInput(preferredBusinessType))) {
+    params.push(effectiveBt);
     const i = params.length;
     businessSql = ` AND (s.business_type IS NULL OR TRIM(COALESCE(s.business_type::text,'')) = ''
         OR LOWER(TRIM(COALESCE(s.business_type::text,''))) = LOWER($${i}::text))`;
@@ -360,12 +363,12 @@ export async function buscarFilasPorNombreSociosCatalogo(p) {
 
   let rows = [];
   try {
-    rows = await ejecutarBusquedaSql(tenantId, nombreLibre);
+    rows = await ejecutarBusquedaSql(tenantId, nombreLibre, p?.businessType ?? null);
   } catch (e) {
     const msg = String(e?.message || e);
     if (/levenshtein|fuzzystrmatch|unaccent|42883|does not exist/i.test(msg)) {
       try {
-        rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre);
+        rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre, p?.businessType ?? null);
       } catch (_) {
         return [];
       }
@@ -388,13 +391,13 @@ export async function clasificarBusquedaNombreSociosParaBotWa(p) {
 
   let rows = [];
   try {
-    rows = await ejecutarBusquedaSql(tenantId, nombreLibre);
+    rows = await ejecutarBusquedaSql(tenantId, nombreLibre, p?.businessType ?? null);
   } catch (e) {
     const msg = String(e?.message || e);
     if (/levenshtein|fuzzystrmatch|unaccent|42883|does not exist/i.test(msg)) {
       console.warn("[busqueda-nombre-bot] levenshtein no disponible, fallback LIKE + JS", msg.slice(0, 160));
       try {
-        rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre);
+        rows = await ejecutarBusquedaFallbackLike(tenantId, nombreLibre, p?.businessType ?? null);
       } catch (e2) {
         console.warn("[busqueda-nombre-bot] fallback", e2?.message || e2);
         return { kind: "normal", nombreLibre, sinCoincidenciaPadron: false };

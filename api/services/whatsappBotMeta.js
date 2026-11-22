@@ -73,7 +73,21 @@ import {
 import { tryAttachWhatsappImageToPedidoEvidenciaInsuficiente } from "./pedidoFotoEvidenciaInbound.js";
 import { textoClienteNuevaFotoRecibida, loadActiveBusinessTypeForTenant } from "./pedidoFotoValidacionWa.js";
 import { upsertTelefonoSociosCatalogoDesdeWhatsappInbound } from "../utils/sociosCatalogoCoordsFromPedido.js";
-import { resolveTenantIdByMetaPhoneNumberId } from "./metaTenantWhatsapp.js";
+import {
+  resolveTenantIdByMetaPhoneNumberId,
+  resolveWhatsappBotTarget,
+} from "./metaTenantWhatsapp.js";
+import {
+  getWhatsappBotActiveTarget,
+  peekWhatsappBotActiveTarget,
+  registerOnWhatsappBotTargetChanged,
+} from "./whatsappBotTargetStore.js";
+import {
+  normalizeBusinessTypeInput,
+  rubroNormToBusinessType,
+  businessTypeToRubroParaTipos,
+} from "./businessType.js";
+import { loadTenantBusinessContext } from "../utils/businessScope.js";
 import { tryConsumeClienteOpinionReply, hasPendingClienteOpinion } from "./whatsappClienteOpinion.js";
 import { reverseGeocodeArgentina } from "./nominatimClient.js";
 import {
@@ -119,6 +133,14 @@ import {
 } from "../modules/busqueda-nombre-bot.js";
 
 const sessions = new Map();
+
+export function clearWhatsappBotSessions() {
+  sessions.clear();
+}
+
+registerOnWhatsappBotTargetChanged(() => {
+  sessions.clear();
+});
 
 const MSG_SALIR_ATRAS = "\n\n_Escribí *menú* para salir · *atrás* para el paso anterior._";
 
@@ -528,8 +550,12 @@ async function msgOpcionalIdentificadorEnriquecido(ctx) {
  * @param {number} tid
  * @param {string} texto
  */
-async function buscarNombreEnPadronConFallbackApellido(tid, texto) {
-  let busc = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: texto });
+async function buscarNombreEnPadronConFallbackApellido(tid, texto, businessType = null) {
+  let busc = await clasificarBusquedaNombreSociosParaBotWa({
+    tenantId: tid,
+    textoNombre: texto,
+    businessType,
+  });
   if (busc.kind !== "normal" || !busc.sinCoincidenciaPadron) {
     return { busc, textoBusqueda: texto, fallbackApellido: false };
   }
@@ -539,7 +565,11 @@ async function buscarNombreEnPadronConFallbackApellido(tid, texto) {
     return { busc, textoBusqueda: texto, fallbackApellido: false };
   }
   try {
-    const busc2 = await clasificarBusquedaNombreSociosParaBotWa({ tenantId: tid, textoNombre: ap });
+    const busc2 = await clasificarBusquedaNombreSociosParaBotWa({
+      tenantId: tid,
+      textoNombre: ap,
+      businessType,
+    });
     if (busc2.kind === "confirm_one" || busc2.kind === "pick_list") {
       return { busc: busc2, textoBusqueda: ap, fallbackApellido: true };
     }
@@ -770,7 +800,33 @@ async function aplicarMatchCatalogoNombreDesdeRow(phone, sess, sk, contactName, 
 }
 
 function botTenantId() {
+  const active = peekWhatsappBotActiveTarget();
+  if (active?.tenantId) return Number(active.tenantId);
+  const bTid = Number(process.env.BAILEYS_TENANT_ID || 0);
+  if (Number.isFinite(bTid) && bTid >= 1) return bTid;
   return Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+}
+
+function invalidateSessionIfBusinessChanged(sk, ctx) {
+  if (!ctx) return;
+  const sess = sessions.get(sk);
+  if (!sess || sess.step === "human_chat" || esPasoFinalizandoPedido(sess.step)) return;
+  const ctxRubro = normalizarRubroCliente(ctx.tipo);
+  const sessRubro = sess.tipoCliente ? normalizarRubroCliente(sess.tipoCliente) : null;
+  const mismatchRubro = Boolean(sessRubro && ctxRubro && sessRubro !== ctxRubro);
+  const mismatchBt = Boolean(sess.businessType && ctx.businessType && sess.businessType !== ctx.businessType);
+  if (mismatchRubro || mismatchBt) {
+    sessions.delete(sk);
+  }
+}
+
+function stampSessionBusinessType(sk, ctx) {
+  if (!ctx?.businessType) return;
+  const sess = sessions.get(sk);
+  if (sess && typeof sess === "object") {
+    sess.businessType = ctx.businessType;
+    if (!sess.tipoCliente && ctx.tipo) sess.tipoCliente = ctx.tipo;
+  }
 }
 
 function sessionKey(phoneDigits, tenantId) {
@@ -860,9 +916,9 @@ function normCfg(cfg) {
   return cfg;
 }
 
-async function loadTenantBotContext(tenantId) {
+export async function loadTenantBotContext(tenantId, preferredBusinessType = null) {
   const r = await query(
-    `SELECT id, nombre, tipo, configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
+    `SELECT id, nombre, tipo, configuracion FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
     [tenantId]
   );
   const row = r.rows?.[0];
@@ -876,6 +932,27 @@ async function loadTenantBotContext(tenantId) {
     }
   }
   const c = normCfg(cfg);
+
+  let effectiveBusinessType = normalizeBusinessTypeInput(preferredBusinessType);
+  if (!effectiveBusinessType) {
+    try {
+      const activeTarget = await getWhatsappBotActiveTarget();
+      if (activeTarget && Number(activeTarget.tenantId) === Number(row.id)) {
+        effectiveBusinessType = normalizeBusinessTypeInput(activeTarget.businessType);
+      }
+    } catch (_) {}
+  }
+  if (!effectiveBusinessType) {
+    try {
+      const bctx = await loadTenantBusinessContext(Number(row.id));
+      effectiveBusinessType = normalizeBusinessTypeInput(bctx?.activeBusinessType);
+    } catch (_) {}
+  }
+  if (!effectiveBusinessType) {
+    effectiveBusinessType = rubroNormToBusinessType(normalizarRubroCliente(row.tipo));
+  }
+  const effectiveRubro = businessTypeToRubroParaTipos(effectiveBusinessType);
+
   const bloqueo = resolveWhatsappBloqueoReclamos(c);
   const provRaw = c.provincia ?? c.state ?? c.provincia_nominatim ?? c.provincia_geocode;
   const geocodeState =
@@ -883,11 +960,13 @@ async function loadTenantBotContext(tenantId) {
   return {
     id: row.id,
     nombre: row.nombre,
-    tipo: row.tipo,
+    tipo: effectiveRubro,
+    tipoClienteRaw: row.tipo,
+    businessType: effectiveBusinessType,
     lat: c.lat_base != null ? Number(c.lat_base) : null,
     lng: c.lng_base != null ? Number(c.lng_base) : null,
     geocodeState,
-    tipos: tiposReclamoParaClienteTipo(row.tipo),
+    tipos: tiposReclamoParaClienteTipo(effectiveRubro),
     whatsappBloqueoReclamos: bloqueo.active,
     whatsappBloqueoMensaje: bloqueo.mensaje,
     derivacionReclamos: derivacionReclamosDesdeConfig(c),
@@ -1513,6 +1592,9 @@ async function ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk) {
     const pedido = await crearPedidoDesdeWhatsappBot({
       tenantId: sess.tenantId,
       tipoCliente: sess.tipoCliente,
+      businessType:
+        sess.businessType ||
+        rubroNormToBusinessType(normalizarRubroCliente(sess.tipoCliente)),
       tipoTrabajo: sess.tipo,
       descripcion: descripcionFinal,
       telefonoContacto: phone,
@@ -1581,7 +1663,7 @@ async function ejecutarFinalizacionPedidoCore(phone, sess, contactName, sk) {
     }
     if (m === "OUTAGE_SECTOR_MULTI_RECLAMO") {
       sessions.delete(sk);
-      const ctxOut = await loadTenantBotContext(sess.tenantId);
+      const ctxOut = await loadTenantBotContext(sess.tenantId, sess.businessType ?? null);
       const msgOut =
         `Estamos recibiendo *muchos reclamos* en tu zona en las últimas horas. ` +
         `Posiblemente se trata de un *corte* que afecta a tu *sector* o es de *carácter general*.\n\n` +
@@ -1752,6 +1834,22 @@ async function pedirFotoOpcionalAntesConfirmacionWhatsapp(phone, sess, sk, conta
     `Podés enviar hasta *2 fotos* desde la galería o la cámara (📎 → Imagen).\n\n` +
     `Escribí *0* para continuar sin fotos.`;
 
+  const waProv = String(process.env.WHATSAPP_PROVIDER || "meta")
+    .trim()
+    .toLowerCase();
+  if (waProv !== "meta") {
+    await reply(
+      phone,
+      `${bodyText}\n\n` +
+        `Si querés mandar foto: enviá la imagen directamente con 📎.\n` +
+        `Si no: escribí *0* para continuar sin fotos.` +
+        MSG_SALIR_ATRAS,
+      tid,
+      wpid
+    );
+    return;
+  }
+
   const pid = String(wpid || "").trim();
   let accessToken = "";
   let graphPid = pid;
@@ -1893,10 +1991,17 @@ async function replyListaTiposReclamo(phoneDigits, ctx, phoneNumberIdWebhook) {
     await reply(phoneDigits, ctx.whatsappBloqueoMensaje, ctx.id, phoneNumberIdWebhook);
     return { ok: true, blocked: true };
   }
+  const waProv = String(process.env.WHATSAPP_PROVIDER || "meta")
+    .trim()
+    .toLowerCase();
+  const pid = String(phoneNumberIdWebhook || "").trim();
+  if (waProv !== "meta") {
+    const rText = await reply(phoneDigits, menuTextoNumerado(ctx), ctx.id, pid || null);
+    return { ok: !!rText?.ok, skippedInteractive: true };
+  }
   const bodyText =
     `Elegí el tipo que mejor describe tu reclamo (o *Mis reclamos* con *0*):\n\n` +
     `_Para *salir* escribí *menú*._`;
-  const pid = String(phoneNumberIdWebhook || "").trim();
   let accessToken = "";
   let graphPid = pid;
   if (pid) {
@@ -2162,8 +2267,8 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   const directMediaUrl = msg?.image?.link ? String(msg.image.link).trim() : "";
   if (!mediaId && !directMediaUrl) return;
 
-  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
-  const tid = resolvedTid ?? botTenantId();
+  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
 
@@ -2188,7 +2293,7 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
       sess.step === "awaiting_wa_foto_opcional" ||
       sess.step === "awaiting_confirmar_resumen");
   if (!sess || !stepFotoPrevio) {
-    const ctxProbe = await loadTenantBotContext(tid);
+    const ctxProbe = await loadTenantBotContext(tid, botTarget?.businessType);
     if (ctxProbe) {
       const att = await tryAttachWhatsappImageToPedidoEvidenciaInsuficiente({
         tenantId: tid,
@@ -2211,7 +2316,7 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
     return;
   }
 
-  const ctxOk = await loadTenantBotContext(tid);
+  const ctxOk = await loadTenantBotContext(tid, botTarget?.businessType);
   if (!ctxOk) {
     sessions.delete(sk);
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
@@ -2416,8 +2521,8 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
-  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
-  const tid = resolvedTid ?? botTenantId();
+  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
 
@@ -2436,7 +2541,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     return;
   }
 
-  const ctxOk = await loadTenantBotContext(tid);
+  const ctxOk = await loadTenantBotContext(tid, botTarget?.businessType);
   if (!ctxOk) {
     sessions.delete(sk);
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
@@ -2497,7 +2602,7 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
     sess.ubicacionGpsPin = { lat, lng };
     if (phoneNumberId) sess.phoneNumberId = String(phoneNumberId).trim();
     sessions.set(sk, sess);
-    const ctx2 = await loadTenantBotContext(tid);
+    const ctx2 = await loadTenantBotContext(tid, botTarget?.businessType);
     await reply(
       phone,
       "✅ Recibimos tu *ubicación GPS*; la usaremos para ubicar el reclamo en el mapa.\n\n" +
@@ -2621,10 +2726,11 @@ async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, co
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
-  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
-  const tid = resolvedTid ?? botTenantId();
+  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
-  const ctx = await loadTenantBotContext(tid);
+  const ctx = await loadTenantBotContext(tid, botTarget?.businessType);
+  invalidateSessionIfBusinessChanged(sk, ctx);
   if (!ctx) {
     await reply(phone, "Servicio no configurado. Contactá al administrador.", tid, phoneNumberId);
     return;
@@ -2772,8 +2878,8 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
 async function processInboundText({ fromRaw, text, phoneNumberId, contactName, buttonReplyId = "" }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
 
-  const resolvedTid = await resolveTenantIdByMetaPhoneNumberId(phoneNumberId);
-  const tid = resolvedTid ?? botTenantId();
+  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
 
   const comandoMaster = parseActivarDesactivarComando(text);
@@ -2827,7 +2933,36 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
   }
 
   const automatedBotOff = await isWhatsAppAutomatedBotDisabled();
-  const ctx = await loadTenantBotContext(tid);
+  const ctx = await loadTenantBotContext(tid, botTarget?.businessType);
+  invalidateSessionIfBusinessChanged(sk, ctx);
+  try {
+    return await processInboundTextWithCtx({
+      phone,
+      text,
+      phoneNumberId,
+      contactName,
+      buttonReplyId,
+      tid,
+      sk,
+      ctx,
+      automatedBotOff,
+    });
+  } finally {
+    stampSessionBusinessType(sk, ctx);
+  }
+}
+
+async function processInboundTextWithCtx({
+  phone,
+  text,
+  phoneNumberId,
+  contactName,
+  buttonReplyId = "",
+  tid,
+  sk,
+  ctx,
+  automatedBotOff,
+}) {
   const wpidBootstrap = phoneNumberId ? String(phoneNumberId).trim() : null;
   let humanChatOpenId = null;
   try {
@@ -3461,7 +3596,7 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
     let textoBusqueda = t;
     let fallbackApellido = false;
     try {
-      const pack = await buscarNombreEnPadronConFallbackApellido(tid, t);
+      const pack = await buscarNombreEnPadronConFallbackApellido(tid, t, ctx?.businessType ?? null);
       busc = pack.busc;
       textoBusqueda = pack.textoBusqueda;
       fallbackApellido = pack.fallbackApellido;
@@ -3525,7 +3660,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await replyPedirNombrePersona(phone, ctx, tid, phoneNumberId);
       return;
     }
-    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw);
+    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw, {
+      businessType: ctx?.businessType ?? null,
+    });
     if (res.skip) {
       sessions.set(sk, {
         ...sess,
@@ -3648,7 +3785,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       return;
     }
     const raw = String(text || "").trim();
-    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw);
+    const res = await buscarIdentidadParaReclamoWhatsApp(tid, raw, {
+      businessType: ctx?.businessType ?? null,
+    });
     if (!res.ok || res.skip) {
       await reply(
         phone,
@@ -4221,7 +4360,9 @@ async function processInboundText({ fromRaw, text, phoneNumberId, contactName, b
       await iniciarFlujoOtrosHumano(phone, tid, wpid, contactName, ctx);
       return;
     }
-    const { rows, origen } = await resolverBusquedaMisReclamosWhatsapp(tid, idTxt, phone);
+    const { rows, origen } = await resolverBusquedaMisReclamosWhatsapp(tid, idTxt, phone, {
+      businessType: ctx?.businessType ?? null,
+    });
     if (!rows.length) {
       await reply(phone, mensajeNoEncontramosMisReclamos(ctx.tipo), tid, phoneNumberId);
       return;

@@ -1,5 +1,6 @@
 import { downloadWhatsAppMediaById } from "./metaWhatsapp.js";
 import { downloadWhapiMediaBuffer } from "./whapiWhatsapp.js";
+import { consumeBaileysMediaBuffer } from "./baileysMediaStore.js";
 import {
   destroyCloudinaryImageBySecureUrl,
   uploadPedidoImageBufferWithFallback,
@@ -39,6 +40,10 @@ export async function whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, 
     const r = await fetch(directUrl, { redirect: "follow" });
     if (!r.ok) throw new Error(`foto_direct_url_${r.status}`);
     buffer = Buffer.from(await r.arrayBuffer());
+  } else if (mid.startsWith("baileys-media:") || prov === "baileys") {
+    const entry = consumeBaileysMediaBuffer(mid);
+    if (!entry?.buffer) throw new Error("missing_baileys_media_buffer");
+    buffer = entry.buffer;
   } else if (prov === "whapi" || looksLikeWhapiMediaId(mid)) {
     const { buffer: b } = await downloadWhapiMediaBuffer(mid);
     buffer = b;

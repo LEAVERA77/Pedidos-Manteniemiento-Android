@@ -6,6 +6,19 @@
 import { query } from "../db/neon.js";
 import { sendTenantWhatsAppText } from "./whatsappService.js";
 import { normalizarRubroCliente } from "./tiposReclamo.js";
+import { normalizeBusinessTypeInput } from "./businessType.js";
+import { loadTenantBusinessContext } from "../utils/businessScope.js";
+
+async function resolveMisReclamosBusinessType(tenantId, opts = {}) {
+  const direct = normalizeBusinessTypeInput(opts?.businessType);
+  if (direct) return direct;
+  try {
+    const bctx = await loadTenantBusinessContext(Number(tenantId));
+    return normalizeBusinessTypeInput(bctx?.activeBusinessType);
+  } catch (_) {
+    return null;
+  }
+}
 
 /** Fila especial en lista interactiva de tipos (debe coincidir con `whatsappBotMeta`). */
 export const WHATSAPP_LIST_ROW_MIS_RECLAMOS = "Mis reclamos";
@@ -56,7 +69,7 @@ function normalizarEstadoNoCerradoSql() {
  * @param {string} rawQ
  * @returns {Promise<Array<{ id: number, numero_pedido: string|null, tipo_trabajo: string|null, estado: string|null, fecha_creacion: string|null, derivado_destino_nombre: string|null }>>}
  */
-export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, rawQ) {
+export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, rawQ, opts = {}) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) return [];
   const q = String(rawQ || "").trim();
@@ -100,6 +113,15 @@ export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, ra
 
   if (!cond) return [];
 
+  let btSql = "";
+  if (cols.has("business_type")) {
+    const bt = await resolveMisReclamosBusinessType(tid, opts);
+    if (bt) {
+      params.push(bt);
+      btSql = ` AND (LOWER(TRIM(COALESCE(business_type::text,''))) = LOWER($${params.length}::text) OR business_type IS NULL OR TRIM(COALESCE(business_type::text,'')) = '')`;
+    }
+  }
+
   const hasDdn = cols.has("derivado_destino_nombre");
   const sql = `
     SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion
@@ -108,6 +130,7 @@ export async function buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, ra
     WHERE tenant_id = $1
       AND (${normalizarEstadoNoCerradoSql()})
       AND (${cond.slice(4)})
+      ${btSql}
     ORDER BY fecha_creacion DESC NULLS LAST
     LIMIT 12`;
   try {
@@ -182,7 +205,7 @@ function puntajeNombreBusqueda(queryCanon, nombreFila) {
 /**
  * Pedidos abiertos cuyo `telefono_contacto` coincide con el WhatsApp del vecino (dígitos).
  */
-export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, phoneDigits) {
+export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, phoneDigits, opts = {}) {
   const tid = Number(tenantId);
   const dig = soloDigitos(phoneDigits);
   if (!Number.isFinite(tid) || tid < 1 || dig.length < 8) return [];
@@ -195,6 +218,15 @@ export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId,
 
   const hasDdn = cols.has("derivado_destino_nombre");
   const suf = dig.length >= 10 ? dig.slice(-10) : dig.slice(-8);
+  const params = [tid, dig, suf];
+  let btSql = "";
+  if (cols.has("business_type")) {
+    const bt = await resolveMisReclamosBusinessType(tid, opts);
+    if (bt) {
+      params.push(bt);
+      btSql = ` AND (LOWER(TRIM(COALESCE(business_type::text,''))) = LOWER($${params.length}::text) OR business_type IS NULL OR TRIM(COALESCE(business_type::text,'')) = '')`;
+    }
+  }
   const sql = `
     SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion
     ${hasDdn ? ", TRIM(COALESCE(derivado_destino_nombre::text,'')) AS derivado_destino_nombre" : ", NULL::text AS derivado_destino_nombre"}
@@ -206,10 +238,11 @@ export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId,
         regexp_replace(COALESCE(telefono_contacto::text,''),'\\D','','g') = $2
         OR regexp_replace(COALESCE(telefono_contacto::text,''),'\\D','','g') LIKE '%' || $3 || '%'
       )
+      ${btSql}
     ORDER BY fecha_creacion DESC NULLS LAST
     LIMIT 12`;
   try {
-    const r = await query(sql, [tid, dig, suf]);
+    const r = await query(sql, params);
     return (r.rows || []).map((row) => ({
       id: row.id,
       numero_pedido: row.numero_pedido != null ? String(row.numero_pedido) : null,
@@ -228,7 +261,7 @@ export async function buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId,
 /**
  * Coincidencias por nombre/apellido en reclamos vigentes (Levenshtein y subcadenas).
  */
-export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, rawQ) {
+export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, rawQ, opts = {}) {
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) return [];
   const q0 = String(rawQ || "").trim();
@@ -252,6 +285,16 @@ export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId
       ? "NULLIF(TRIM(COALESCE(cliente_nombre::text,'')),'')"
       : "NULLIF(TRIM(COALESCE(cliente::text,'')),'')";
 
+  const params = [tid];
+  let btSql = "";
+  if (cols.has("business_type")) {
+    const bt = await resolveMisReclamosBusinessType(tid, opts);
+    if (bt) {
+      params.push(bt);
+      btSql = ` AND (LOWER(TRIM(COALESCE(business_type::text,''))) = LOWER($${params.length}::text) OR business_type IS NULL OR TRIM(COALESCE(business_type::text,'')) = '')`;
+    }
+  }
+
   const hasDdn = cols.has("derivado_destino_nombre");
   const sql = `
     SELECT id, numero_pedido, tipo_trabajo, estado, fecha_creacion::text AS fecha_creacion,
@@ -261,11 +304,12 @@ export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId
     WHERE tenant_id = $1
       AND (${normalizarEstadoNoCerradoSql()})
       AND LENGTH(${nameSql}) > 2
+      ${btSql}
     ORDER BY fecha_creacion DESC NULLS LAST
     LIMIT 120`;
 
   try {
-    const r = await query(sql, [tid]);
+    const r = await query(sql, params);
     const scored = [];
     for (const row of r.rows || []) {
       const nom = row.nombre_reclamante != null ? String(row.nombre_reclamante).trim() : "";
@@ -310,15 +354,15 @@ export async function buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId
  * Orden de búsqueda: identificador de cuenta → teléfono del reclamo → nombre aproximado.
  * @returns {{ rows: Array<any>, origen: 'id'|'tel'|'nombre'|'vacío' }}
  */
-export async function resolverBusquedaMisReclamosWhatsapp(tenantId, idTxt, phoneDigitsVecino) {
-  const rowsId = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, idTxt);
+export async function resolverBusquedaMisReclamosWhatsapp(tenantId, idTxt, phoneDigitsVecino, opts = {}) {
+  const rowsId = await buscarPedidosAbiertosPorIdentificadorWhatsapp(tenantId, idTxt, opts);
   if (rowsId.length) return { rows: rowsId, origen: "id" };
   const dig = soloDigitos(phoneDigitsVecino);
   if (dig.length >= 8) {
-    const rowsTel = await buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, dig);
+    const rowsTel = await buscarPedidosAbiertosPorTelefonoContactoWhatsapp(tenantId, dig, opts);
     if (rowsTel.length) return { rows: rowsTel, origen: "tel" };
   }
-  const rowsNom = await buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, idTxt);
+  const rowsNom = await buscarPedidosAbiertosPorNombreLevenshteinWhatsapp(tenantId, idTxt, opts);
   if (rowsNom.length) return { rows: rowsNom, origen: "nombre" };
   return { rows: [], origen: "vacío" };
 }

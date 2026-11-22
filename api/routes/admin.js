@@ -15,6 +15,11 @@ import { buildAdminSistemaSalud } from "../services/adminSistemaSalud.js";
 import { listarPedidosAbiertosSinCoords } from "../services/pedidosSinCoordsAdmin.js";
 import { regeocodificarLotePedidosSinCoords } from "../services/regeocodificarLoteAdmin.js";
 import { generarDemoTormenta } from "../services/demoTormentaPedidos.js";
+import {
+  clearNeonQueryCacheL1,
+  getNeonQueryCacheStats,
+  invalidateCachedTables,
+} from "../services/neonQueryCache.js";
 
 const router = express.Router();
 
@@ -358,6 +363,40 @@ router.get("/operacion-audit", adminOnly, async (req, res) => {
     console.error("[admin] operacion-audit:", err);
     return res.status(500).json({
       error: "No se pudo obtener auditoría",
+      detail: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * GET /api/admin/cache/stats
+ * Métricas de caché L1 (LRU) + L2 (Redis) para ahorro de network transfer en Neon.
+ */
+router.get("/cache/stats", adminOnly, (_req, res) => {
+  return res.json({
+    ok: true,
+    cache: getNeonQueryCacheStats(),
+  });
+});
+
+/**
+ * POST /api/admin/cache/flush
+ * Limpia manualmente la caché L1 y opcionalmente invalida tablas en Redis L2.
+ */
+router.post("/cache/flush", adminOnly, async (req, res) => {
+  try {
+    const tables = Array.isArray(req.body?.tables) ? req.body.tables.map(String) : [];
+    clearNeonQueryCacheL1();
+    if (tables.length > 0) {
+      await invalidateCachedTables(tables);
+    }
+    return res.json({
+      ok: true,
+      cache: getNeonQueryCacheStats(),
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: "No se pudo vaciar caché",
       detail: err?.message || String(err),
     });
   }

@@ -21,6 +21,7 @@ import {
 import { normalizeBusinessTypeInput, rubroNormToBusinessType } from "../services/businessType.js";
 import { rubroEfectivoParaTipos } from "../utils/businessScope.js";
 import { setUbicacionCentralInTable } from "../services/configuracionStore.js";
+import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
 import { sanitizeDerivacionReclamosForStore } from "../utils/derivacionReclamos.js";
 import { mergeAndValidateDerivaciones } from "../utils/derivacionesConfig.js";
 import { sanitizeWhatsappArAreaConfigIncrement } from "../utils/whatsappArAreaConfig.js";
@@ -59,6 +60,14 @@ router.get("/mi-configuracion", authWithTenantHost, async (req, res) => {
       [tenantId]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Cliente no encontrado", tenant_id: tenantId });
+    try {
+      await syncWhatsappBotActiveTarget({
+        tenantId,
+        businessType: req.activeBusinessType ?? null,
+        source: "clientes_mi_configuracion_get",
+        userId: req.user?.id ?? null,
+      });
+    } catch (_) {}
     return res.json({ tenant_id: tenantId, cliente: r.rows[0] });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo consultar configuración", detail: error.message });
@@ -258,6 +267,17 @@ router.put("/mi-configuracion", authWithTenantHost, async (req, res) => {
         console.warn("[clientes] sync ubicacion configuracion tabla", e?.message || e);
       }
     }
+    try {
+      const updatedBt =
+        normalizeBusinessTypeInput(row.active_business_type ?? activeBusinessBody) ||
+        (row.tipo ? rubroNormToBusinessType(normalizarRubroCliente(row.tipo)) : null);
+      await syncWhatsappBotActiveTarget({
+        tenantId,
+        businessType: updatedBt,
+        source: "clientes_mi_configuracion_put",
+        userId: req.user?.id ?? null,
+      });
+    } catch (_) {}
     return res.json({ ok: true, tenant_id: tenantId, cliente: row });
   } catch (error) {
     return res.status(500).json({ error: "No se pudo actualizar configuración", detail: error.message });

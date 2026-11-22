@@ -4,6 +4,7 @@ import { query } from "../db/neon.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
 import { resetPedidoContadorPorTenant } from "../services/pedidoContador.js";
+import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
 
 const router = express.Router();
 
@@ -98,6 +99,14 @@ router.post("/switch-business", authWithTenantHost, adminOnly, async (req, res) 
         /* tabla opcional en entornos viejos */
       }
     }
+    try {
+      await syncWhatsappBotActiveTarget({
+        tenantId: req.tenantId,
+        businessType: bt,
+        source: "tenant_switch_business",
+        userId: req.user?.id ?? null,
+      });
+    } catch (_) {}
     return res.json({ ok: true, tenant_id: req.tenantId, cliente: r.rows[0] });
   } catch (e) {
     return res.status(500).json({ error: "No se pudo cambiar el negocio activo", detail: e.message });

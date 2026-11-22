@@ -44,6 +44,8 @@ import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
+import android.webkit.ServiceWorkerController;
+import android.webkit.ServiceWorkerWebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -113,6 +115,8 @@ public class MainActivity extends AppCompatActivity {
 
     /** Marca tiempo de {@link #onPause()} para recargar WebView al volver de background (tenant / shell fresco). */
     private long gnLastPauseMillis;
+    /** Cooldown para evitar ráfagas redundantes de sincronización contra Neon en onResume consecutivos. */
+    private long gnLastResumeSyncMillis;
     /** Tras el primer {@code onPageFinished} del documento principal; evita reload en el primer {@link #onResume()}. */
     private boolean gnWebMainDocumentReady;
 
@@ -252,7 +256,15 @@ public class MainActivity extends AppCompatActivity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         // DEFAULT con red; sin red se prefiere shell en caché (assets / SW) para fluidez en arranque.
-        s.setCacheMode(gnIsNetworkLikelyOnline() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        int initialCacheMode = gnIsNetworkLikelyOnline() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK;
+        s.setCacheMode(initialCacheMode);
+        try {
+            ServiceWorkerWebSettings swSettings = ServiceWorkerController.getInstance().getServiceWorkerWebSettings();
+            swSettings.setAllowContentAccess(true);
+            swSettings.setAllowFileAccess(true);
+            swSettings.setCacheMode(initialCacheMode);
+        } catch (Throwable ignored) {
+        }
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
@@ -562,24 +574,29 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        AppUpdateChecker.checkAsync(this);
-        Constraints netConstraints = new Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build();
-        OneTimeWorkRequest drainNotif = new OneTimeWorkRequest.Builder(NotificacionesMovilPollWorker.class)
-                .setConstraints(netConstraints)
-                .build();
-        WorkManager.getInstance(this).enqueueUniqueWork(
-                "notificaciones_movil_drain_on_resume",
-                ExistingWorkPolicy.REPLACE,
-                drainNotif);
-        OneTimeWorkRequest drainUbic = new OneTimeWorkRequest.Builder(UbicacionWorker.class)
-                .setConstraints(netConstraints)
-                .build();
-        WorkManager.getInstance(this).enqueueUniqueWork(
-                "ubicacion_tecnico_push_on_resume",
-                ExistingWorkPolicy.REPLACE,
-                drainUbic);
+        final long nowMs = System.currentTimeMillis();
+        final boolean shouldRunResumeSync = (nowMs - gnLastResumeSyncMillis) >= 8_000L;
+        if (shouldRunResumeSync) {
+            gnLastResumeSyncMillis = nowMs;
+            AppUpdateChecker.checkAsync(this);
+            Constraints netConstraints = new Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build();
+            OneTimeWorkRequest drainNotif = new OneTimeWorkRequest.Builder(NotificacionesMovilPollWorker.class)
+                    .setConstraints(netConstraints)
+                    .build();
+            WorkManager.getInstance(this).enqueueUniqueWork(
+                    "notificaciones_movil_drain_on_resume",
+                    ExistingWorkPolicy.REPLACE,
+                    drainNotif);
+            OneTimeWorkRequest drainUbic = new OneTimeWorkRequest.Builder(UbicacionWorker.class)
+                    .setConstraints(netConstraints)
+                    .build();
+            WorkManager.getInstance(this).enqueueUniqueWork(
+                    "ubicacion_tecnico_push_on_resume",
+                    ExistingWorkPolicy.REPLACE,
+                    drainUbic);
+        }
         if (webView != null) {
             webView.onResume();
             /** Misma ventana que inactividad en JS (15 min): no recargar WebView antes. */
@@ -612,36 +629,29 @@ public class MainActivity extends AppCompatActivity {
                     "(function(){try{if(typeof window.gnRehidratarSesionAndroid==='function')"
                             + "window.gnRehidratarSesionAndroid();}catch(e){}})();",
                     null);
-            webView.evaluateJavascript(
-                    "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
-                    null);
-            webView.evaluateJavascript(
-                    "if(typeof window.gnSincronizarPedidosDesdeAndroid==='function')window.gnSincronizarPedidosDesdeAndroid()",
-                    null);
-            webView.evaluateJavascript(
-                    "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
-                    null);
-            /* Segundo intento: el WebView a veces aún no rehidrató `app.u` en el primer frame tras onResume. */
-            final WebView wvResume = webView;
-            wvResume.postDelayed(() -> {
-                try {
-                    wvResume.evaluateJavascript(
-                            "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
-                            null);
-                } catch (Exception ignored) {
-                }
-            }, 750);
-            wvResume.postDelayed(() -> {
-                try {
-                    wvResume.evaluateJavascript(
-                            "(function(){ try { if (typeof gnBootTenantForceSyncAndroid==='function') void gnBootTenantForceSyncAndroid(); } catch(e) {} })();",
-                            null);
-                } catch (Exception ignored) {
-                }
-            }, 1500);
-            webView.evaluateJavascript(
-                    "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
-                    null);
+            if (shouldRunResumeSync) {
+                webView.evaluateJavascript(
+                        "if(typeof window.pollNotificacionesMovil==='function')window.pollNotificacionesMovil()",
+                        null);
+                webView.evaluateJavascript(
+                        "if(typeof window.gnSincronizarPedidosDesdeAndroid==='function')window.gnSincronizarPedidosDesdeAndroid()",
+                        null);
+                webView.evaluateJavascript(
+                        "(function(){ try { if (typeof sincronizarTenantOperativoDesdeMiConfiguracionApi==='function') void sincronizarTenantOperativoDesdeMiConfiguracionApi({ silent: true }); } catch(e) {} })();",
+                        null);
+                final WebView wvResume = webView;
+                wvResume.postDelayed(() -> {
+                    try {
+                        wvResume.evaluateJavascript(
+                                "(function(){ try { if (typeof gnBootTenantForceSyncAndroid==='function') void gnBootTenantForceSyncAndroid(); } catch(e) {} })();",
+                                null);
+                    } catch (Exception ignored) {
+                    }
+                }, 1200);
+                webView.evaluateJavascript(
+                        "(function(){ try { if (typeof notificarNeonConectadoParaUpdateCheck === 'function') notificarNeonConectadoParaUpdateCheck(); } catch(e) {} })();",
+                        null);
+            }
             dispatchPendingPedidoIdToWeb();
         }
     }

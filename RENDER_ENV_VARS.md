@@ -2,13 +2,16 @@
 
 **Servicio típico:** `nexxo-api-418k.onrender.com` (ajustar si el nombre del servicio cambió).
 
-## WhatsApp — Whapi vs Meta
+## WhatsApp — Baileys, Whapi o Meta
 
 | Variable | Uso |
 |----------|-----|
-| **`WHATSAPP_PROVIDER`** | Nombre **exacto** (sin typos). Valores: `whapi`, `meta`, `waha`, `evolution`. Si no está definida en Render, el código usa **`meta`** por defecto. |
+| **`WHATSAPP_PROVIDER`** | Nombre **exacto** (sin typos). Valores: `baileys`, `whapi`, `meta`, `waha`, `evolution`. Si no está definida en Render, el código usa **`meta`** por defecto. |
+| **Baileys** | `WHATSAPP_PROVIDER=baileys` + opcional `BAILEYS_SESSION_ID` (`default`), `WHATSAPP_WEBHOOK_TOKEN` (protege `/baileys/*`). Al abrir `GET /api/webhooks/whatsapp/baileys/qr?token=...` podés elegir y fijar el **`tenant_id` (número)** y su tipo de negocio (`electricidad`, `agua`, `municipio`), quedando bloqueado en Neon (`configuracion.whatsapp_bot_active_target`) para que el menú y los reclamos apunten siempre al negocio elegido (p. ej. `tenant_id=1` Cooperativa Segui). También soporta `POST /api/webhooks/whatsapp/baileys/select-tenant` y `POST /api/webhooks/whatsapp/baileys/reset-session`. |
 | **Whapi** | `WHATSAPP_PROVIDER=whapi` + `WHAPI_API_URL`, `WHAPI_API_KEY`, `WHATSAPP_WEBHOOK_TOKEN` (y opcional `WHAPI_CHANNEL_ID`). Webhook: `POST /api/webhooks/whatsapp/whapi`. |
 | **Meta** | `WHATSAPP_PROVIDER=meta` + `META_*` (token, phone id, app secret, verify token). Webhook: `POST /api/webhooks/whatsapp/meta`. |
+
+**Health Check en Render:** configurar **Health Check Path** en `/health` (liviano, sin golpear Neon cada 5 s). `/health/db` cuenta además con caché de 60 s (`HEALTH_DB_CACHE_MS`) para proteger Neon si sigue configurado como health check.
 
 Plantilla local: `api/.env.example` (actualmente **`WHATSAPP_PROVIDER=whapi`**). Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`.
 
@@ -73,6 +76,25 @@ Con **solo** `EMAILJS_PUBLIC_KEY` en Render, **«Enviar ahora»** en la web admi
 Plantilla EmailJS (Subject `{{email_subject}}`, Content `{{email_body}}`, To `{{to_email}}`) para informes y reset unificado.
 
 En [EmailJS](https://www.emailjs.com/) → **Security** → permitir API desde servidor si usás envío solo por API.
+
+## Rendimiento y reducción de `network transfer` en Neon (Caché Híbrida L1 + Redis L2)
+
+El backend incorpora de serie una capa de caché híbrida (`api/services/neonQueryCache.js`) con **LRU en memoria (L1)** + **Singleflight** (coalescing de ráfagas concurrentes) + **invalidación automática por tabla** en `INSERT`/`UPDATE`/`DELETE`/DDL y transacciones, además de compresión **gzip** HTTP.
+
+Para compartir caché entre reinicios o múltiples instancias en Render, podés conectar opcionalmente **Render Key Value (Redis)** o **Upstash Redis**:
+
+| Variable | Por defecto | Uso |
+|----------|-------------|-----|
+| `REDIS_URL` *(o `UPSTASH_REDIS_URL` / `KV_URL`)* | *(vacío → usa L1 en memoria)* | Cadena `redis://` o `rediss://` para activar la capa L2 distribuida |
+| `NEON_QUERY_CACHE_ENABLED` | `true` | `false` desactiva la caché SQL en servidor |
+| `NEON_CACHE_MAX_ENTRIES` | `600` | Máximo de consultas almacenadas en L1 |
+| `NEON_CACHE_MAX_MB` | `32` | Tope de memoria RAM para L1 |
+| `NEON_CACHE_TTL_SCHEMA_SEC` | `1800` | TTL (s) para `information_schema` / `pg_catalog` |
+| `NEON_CACHE_TTL_GEO_SEC` | `900` | TTL (s) para localidades y calles normalizadas |
+| `NEON_CACHE_TTL_CATALOG_SEC` | `300` | TTL (s) para catálogos (`socios_catalogo`, `distribuidores`, `subestaciones_catalogo`, `clientes`, `configuracion`) |
+| `NEON_CACHE_TTL_OPERATIONAL_SEC` | `10` | TTL (s) para tablas operativas (`pedidos`, `incidencias`, `notificaciones_movil`) con invalidación inmediata al escribir |
+
+Métricas en vivo para administradores: `GET /api/admin/cache/stats` y limpieza manual `POST /api/admin/cache/flush`.
 
 ---
 

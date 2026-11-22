@@ -5,6 +5,11 @@ import {
   normalizarRubroCliente,
 } from "./tiposReclamo.js";
 import {
+  normalizeBusinessTypeInput,
+  rubroNormToBusinessType,
+  businessTypeToRubroParaTipos,
+} from "./businessType.js";
+import {
   lookupDistribuidorTrafoPorNisMedidor,
   contarPedidosAbiertosMismaZona,
   OUTAGE_SECTOR_MULTI_RECLAMO,
@@ -113,6 +118,9 @@ async function columnasUsuarios() {
 }
 
 let _pedidosColsCache = null;
+export function __resetPedidosColsCacheForTests() {
+  _pedidosColsCache = null;
+}
 async function columnasPedidos() {
   if (_pedidosColsCache) return _pedidosColsCache;
   const cols = await query(
@@ -258,6 +266,8 @@ export async function crearPedidoDesdeWhatsappBot({
   notaAdicional = null,
   /** Reclamo sin NIS/medidor (p. ej. denuncia anónima coop. eléctrica). */
   modoAnonimoWhatsapp = false,
+  /** Línea de negocio activa ('electricidad' | 'agua' | 'municipio'). */
+  businessType = null,
 }) {
   const tt = String(tipoTrabajo || "").trim();
   let de = String(descripcion || "").trim();
@@ -274,11 +284,17 @@ export async function crearPedidoDesdeWhatsappBot({
   if (!tt || !de) {
     throw new Error("tipo_y_descripcion_requeridos");
   }
-  if (!tipoTrabajoPermitidoParaNuevoPedido(tt, tipoCliente)) {
+  const resolvedBusinessType =
+    normalizeBusinessTypeInput(businessType) ||
+    rubroNormToBusinessType(normalizarRubroCliente(tipoCliente));
+  const effectiveTipoCliente = resolvedBusinessType
+    ? businessTypeToRubroParaTipos(resolvedBusinessType)
+    : tipoCliente;
+  if (!tipoTrabajoPermitidoParaNuevoPedido(tt, effectiveTipoCliente)) {
     throw new Error("tipo_trabajo_invalido");
   }
 
-  const rubroCliente = normalizarRubroCliente(tipoCliente);
+  const rubroCliente = normalizarRubroCliente(effectiveTipoCliente);
   let provinciaIn = provincia != null && String(provincia).trim() ? String(provincia).trim() : null;
   let codigoPostalIn =
     codigoPostal != null && String(codigoPostal).trim()
@@ -649,6 +665,10 @@ export async function crearPedidoDesdeWhatsappBot({
   if (hasTenant) {
     cols.push("tenant_id");
     vals.push(Number(tenantId));
+  }
+  if (pCols.has("business_type") && resolvedBusinessType) {
+    cols.push("business_type");
+    vals.push(resolvedBusinessType);
   }
   if (hasOrigen) {
     cols.push("origen_reclamo");

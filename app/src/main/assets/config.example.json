@@ -1,17 +1,15 @@
 {
-  "neon": {
-    "connectionString": "postgresql://USUARIO:CONTRASEÑA@HOST-pooler.neon.tech/neondb?sslmode=require"
-  },
   "api": {
     "baseUrl": "https://nexxo-api-418k.onrender.com"
   },
   "emailjs": {
     "publicKey": "TU_PUBLIC_KEY",
-    "serviceId": "service_xxxxxxx",
-    "templateIdReset": "template_codigo_acceso"
+    "serviceId": "TU_SERVICE_ID",
+    "templateId": "TU_TEMPLATE_ID",
+    "templateIdReset": "TU_TEMPLATE_ID"
   },
   "app": {
-    "version": "2.0.0",
-    "tenantId": null
+    "version": "2.0.5",
+    "tenantId": 1
   }
 }

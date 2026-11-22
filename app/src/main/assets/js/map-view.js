@@ -365,31 +365,29 @@ export function gnAttachBaseMapLayers(mapa) {
             keepBuffer: keepBuf
         }
     );
-    const capaCarto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
+    const capaOsm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: maxZ,
         maxNativeZoom: maxZ,
         tileSize: 256,
-        detectRetina: false,
         crossOrigin: true,
         updateWhenIdle: true,
         updateWhenZooming: zoomWhile,
         keepBuffer: keepBuf
     });
     let nErr = 0;
-    capaCarto.on('tileerror', () => {
+    capaOsm.on('tileerror', () => {
         nErr++;
         if (nErr >= 4 && !mapa._gnUsandoEsriFallback) {
             mapa._gnUsandoEsriFallback = true;
             try {
-                mapa.removeLayer(capaCarto);
+                mapa.removeLayer(capaOsm);
             } catch (_) {}
             capaEsri.addTo(mapa);
-            toast('Mapa: capa CARTO inestable — usando mapa base alternativo', 'info');
+            toast('Mapa: capa OpenStreetMap inestable — usando mapa base alternativo', 'info');
         }
     });
-    capaCarto.addTo(mapa);
+    capaOsm.addTo(mapa);
 }
 
 export async function runInitMap() {

@@ -638,49 +638,33 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     mapa._gnCapaCartoBase = capaCarto;
     mapa._gnCapaEsriBase = capaEsri;
     mapa._gnCapaOsmBase = capaOsm;
-    mapa._gnBaseRasterLayer = capaCarto;
-    let nErr = 0;
-    let nErrEsri = 0;
-    capaEsri.on('tileerror', () => {
-        if (!mapa._gnUsandoEsriFallback || mapa._gnUsandoOsmFallback) return;
+    mapa._gnBaseRasterLayer = capaOsm;
+    let nErrOsm = 0;
+    capaOsm.on('tileerror', () => {
+        if (mapa._gnUsandoEsriFallback) return;
         try {
-            if (!mapa.hasLayer(capaEsri)) return;
+            if (!mapa.hasLayer(capaOsm)) return;
         } catch (_) {
             return;
         }
-        nErrEsri++;
-        if (nErrEsri >= 5 && !mapa._gnUsandoOsmFallback) {
-            mapa._gnUsandoOsmFallback = true;
-            try {
-                mapa.removeLayer(capaEsri);
-            } catch (_) {}
-            try {
-                capaOsm.addTo(mapa);
-                mapa._gnBaseRasterLayer = capaOsm;
-                if (applyOsm) gnApplyBaseMapVisibilityFromStorage(mapa);
-            } catch (_) {}
-            if (!mapa._gnOsmFallbackToastShown && ctx.toast) {
-                mapa._gnOsmFallbackToastShown = true;
-                ctx.toast('Mapa: capa Esri inestable — usando OpenStreetMap', 'info');
-            }
-        }
-    });
-    capaCarto.on('tileerror', () => {
-        nErr++;
-        if (nErr >= 4 && !mapa._gnUsandoEsriFallback) {
+        nErrOsm++;
+        if (nErrOsm >= 4 && !mapa._gnUsandoEsriFallback) {
             mapa._gnUsandoEsriFallback = true;
             try {
-                mapa.removeLayer(capaCarto);
+                mapa.removeLayer(capaOsm);
             } catch (_) {}
             try {
                 capaEsri.addTo(mapa);
                 mapa._gnBaseRasterLayer = capaEsri;
                 if (applyOsm) gnApplyBaseMapVisibilityFromStorage(mapa);
             } catch (_) {}
-            ctx.toast('Mapa: capa CARTO inestable — usando mapa base alternativo', 'info');
+            if (!mapa._gnOsmFallbackToastShown && ctx.toast) {
+                mapa._gnOsmFallbackToastShown = true;
+                ctx.toast('Mapa: capa OpenStreetMap inestable — usando mapa base alternativo', 'info');
+            }
         }
     });
-    capaCarto.addTo(mapa);
+    capaOsm.addTo(mapa);
     if (applyOsm) {
         gnApplyAdminOsmOverlaysFromStorage(mapa);
         gnApplyBaseMapVisibilityFromStorage(mapa);

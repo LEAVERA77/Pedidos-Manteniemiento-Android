@@ -1,7 +1,8 @@
 /**
- * Envío WhatsApp multitenant. Variable de entorno: **`WHATSAPP_PROVIDER`** (`whapi` | `meta` | `waha` | `evolution`).
+ * Envío WhatsApp multitenant. Variable de entorno: **`WHATSAPP_PROVIDER`** (`baileys` | `whapi` | `meta` | `waha` | `evolution`).
  * Si no está definida, el default en código es **`meta`**; `api/.env.example` plantea **`whapi`** para Whapi.cloud en campo.
  *
+ * - **Baileys:** `WHATSAPP_PROVIDER=baileys` + sesión persistida en Neon (`baileys_auth_state`) + `/api/webhooks/whatsapp/baileys/qr` — `api/services/baileysWhatsapp.js`
  * - **Whapi:** `WHAPI_*` + `POST /api/webhooks/whatsapp/whapi` — `api/services/whapiWhatsapp.js`
  * - **Meta:** credenciales globales o por tenant en `clientes.configuracion` + `POST /api/webhooks/whatsapp/meta`
  * Guía: `api/docs/CAMBIAR_PROVEEDOR_WHATSAPP.md`
@@ -16,6 +17,7 @@ import {
   sendText as sendTextWaha,
   startSession as startWahaSession,
 } from "./wahaWhatsapp.js";
+import { sendText as sendTextBaileys } from "./baileysWhatsapp.js";
 import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import {
@@ -101,6 +103,24 @@ export async function sendBotWhatsAppText({
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "baileys") {
+    console.log("[whatsapp-service] usando Baileys (bot)", { tenantId, logContext });
+    const r = await sendTextBaileys(to, body);
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, null);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
+    return {
+      ok: r.ok,
+      status: r.ok ? 200 : 502,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "baileys",
+    };
   }
 
   if (whatsappProvider() === "waha") {
@@ -235,7 +255,7 @@ export async function getWhatsAppCredentialsForTenant(tenantId) {
 
   try {
     const r = await query(
-      `SELECT configuracion FROM clientes WHERE id = $1 AND activo = TRUE LIMIT 1`,
+      `SELECT configuracion FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
       [tid]
     );
     const row = r.rows?.[0];
@@ -277,11 +297,32 @@ export async function sendTenantWhatsAppText({
   bodyText,
   pedidoId = null,
   logContext = "generic",
+  skipLog = false,
 }) {
   const to = String(toDigits || "").replace(/\D/g, "");
   const body = String(bodyText || "").trim();
   if (!to || !body) {
     return { ok: false, error: "invalid_params", skipped: false };
+  }
+
+  if (whatsappProvider() === "baileys") {
+    console.log("[whatsapp-service] usando Baileys (tenant)", { tenantId, logContext });
+    const r = await sendTextBaileys(to, body);
+    if (!skipLog) {
+      try {
+        await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+      } catch (e) {
+        console.error("[whatsapp-service] log", e.message);
+      }
+    }
+    return {
+      ok: r.ok,
+      status: r.ok ? 200 : 502,
+      graph: r.data,
+      error: r.ok ? undefined : r.error,
+      skipped: false,
+      provider: "baileys",
+    };
   }
 
   if (whatsappProvider() === "waha") {
@@ -293,10 +334,12 @@ export async function sendTenantWhatsAppText({
       await startWahaSession();
     }
     const r = await sendTextWaha(to, body);
-    try {
-      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
-    } catch (e) {
-      console.error("[whatsapp-service] log", e.message);
+    if (!skipLog) {
+      try {
+        await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+      } catch (e) {
+        console.error("[whatsapp-service] log", e.message);
+      }
     }
     return {
       ok: r.ok,
@@ -310,10 +353,12 @@ export async function sendTenantWhatsAppText({
   if (whatsappProvider() === "evolution") {
     console.log("[whatsapp-service] usando Evolution API (tenant)", { tenantId, logContext });
     const r = await sendEvolutionText(to, body);
-    try {
-      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
-    } catch (e) {
-      console.error("[whatsapp-service] log", e.message);
+    if (!skipLog) {
+      try {
+        await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+      } catch (e) {
+        console.error("[whatsapp-service] log", e.message);
+      }
     }
     return {
       ok: r.ok,
@@ -327,10 +372,12 @@ export async function sendTenantWhatsAppText({
   if (whatsappProvider() === "whapi") {
     console.log("[whatsapp-service] usando Whapi.cloud (tenant)", { tenantId, logContext });
     const r = await sendTextWhapi(to, body);
-    try {
-      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
-    } catch (e) {
-      console.error("[whatsapp-service] log", e.message);
+    if (!skipLog) {
+      try {
+        await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+      } catch (e) {
+        console.error("[whatsapp-service] log", e.message);
+      }
     }
     return {
       ok: r.ok,
@@ -344,9 +391,11 @@ export async function sendTenantWhatsAppText({
   const { accessToken, phoneNumberId, source } = await getWhatsAppCredentialsForTenant(tenantId);
   if (!accessToken || !phoneNumberId) {
     console.warn("[whatsapp-service] sin credenciales Meta", { tenantId, source, logContext });
-    try {
-      await logWhatsappMensajeEnviado(to, `[${logContext}] sin credenciales`, false, pedidoId);
-    } catch (_) {}
+    if (!skipLog) {
+      try {
+        await logWhatsappMensajeEnviado(to, `[${logContext}] sin credenciales`, false, pedidoId);
+      } catch (_) {}
+    }
     return { ok: false, error: "missing_meta_credentials", skipped: false };
   }
 
@@ -355,10 +404,12 @@ export async function sendTenantWhatsAppText({
     phoneNumberId,
     purpose: logContext,
   });
-  try {
-    await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
-  } catch (e) {
-    console.error("[whatsapp-service] log", e.message);
+  if (!skipLog) {
+    try {
+      await logWhatsappMensajeEnviado(to, body, r.ok, pedidoId);
+    } catch (e) {
+      console.error("[whatsapp-service] log", e.message);
+    }
   }
 
   return { ok: r.ok, graph: r.graph, error: r.error, skipped: false };

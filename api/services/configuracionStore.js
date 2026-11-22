@@ -17,6 +17,34 @@ function keyUbicacionCentral(tenantId) {
   return `ubicacion_central_tenant_${Number(tenantId)}`;
 }
 
+export async function getConfiguracion(key) {
+  const k = String(key || "").trim();
+  if (!k) return null;
+  await ensureConfiguracionTable();
+  const r = await query(`SELECT value FROM configuracion WHERE key = $1 LIMIT 1`, [k]);
+  let v = r.rows?.[0]?.value ?? null;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch (_) {}
+  }
+  return v;
+}
+
+export async function setConfiguracion(key, value) {
+  const k = String(key || "").trim();
+  if (!k) throw new Error("config_key_requerida");
+  await ensureConfiguracionTable();
+  const payload = value !== undefined ? value : {};
+  await query(
+    `INSERT INTO configuracion (key, value, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [k, JSON.stringify(payload)]
+  );
+  return payload;
+}
+
 export async function getUbicacionCentralFromTable(tenantId) {
   await ensureConfiguracionTable();
   const tid = Number(tenantId);

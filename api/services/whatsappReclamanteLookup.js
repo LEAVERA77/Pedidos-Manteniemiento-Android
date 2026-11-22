@@ -1,5 +1,8 @@
 import { query } from "../db/neon.js";
 import { buscarCoordenadasVecinosMismaCalle } from "./whatsappPadronVecinos.js";
+import { normalizeBusinessTypeInput } from "./businessType.js";
+import { loadTenantBusinessContext } from "../utils/businessScope.js";
+import { peekWhatsappBotActiveTarget } from "./whatsappBotTargetStore.js";
 /** Tras INSERT, el pin lo resuelve `regeocodificarPedido` (Nominatim API Simple / `q` si origen WhatsApp). */
 
 async function columnasUsuarios() {
@@ -211,7 +214,9 @@ export function sqlDigitosContieneSubcadena(campoSql, digitParamIndex) {
 function resolveTenantIdReclamoLookup(tenantIdRaw) {
   let t = Number(tenantIdRaw);
   if (!Number.isFinite(t) || t < 1) {
-    const fb = Number(process.env.WHATSAPP_BOT_TENANT_ID || 1);
+    const active = peekWhatsappBotActiveTarget();
+    if (active?.tenantId) return active.tenantId;
+    const fb = Number(process.env.BAILEYS_TENANT_ID || process.env.WHATSAPP_BOT_TENANT_ID || 1);
     t = Number.isFinite(fb) && fb >= 1 ? fb : 1;
   }
   return t;
@@ -219,9 +224,12 @@ function resolveTenantIdReclamoLookup(tenantIdRaw) {
 
 /**
  * Busca nombre / NIS para el reclamo: ID usuario del tenant, NIS/medidor/número en clientes_finales, o socios_catalogo.
- * @returns {{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoProvincia?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null, catalogoLatitud?: number|null, catalogoLongitud?: number|null, notaUbicacionProximidad?: string|null } | { ok: false } | { skip: true }}
+ * @param {number} tenantId
+ * @param {string} texto
+ * @param {{ businessType?: string|null }} [opts]
+ * @returns {Promise<{ ok: true, clienteNombre: string, nis: string|null, medidor: string|null, nisMedidor: string|null, catalogoCalle?: string|null, catalogoNumero?: string|null, catalogoLocalidad?: string|null, catalogoProvincia?: string|null, catalogoBarrio?: string|null, catalogoTipoConexion?: string|null, catalogoFases?: string|null, catalogoLatitud?: number|null, catalogoLongitud?: number|null, notaUbicacionProximidad?: string|null } | { ok: false } | { skip: true }>}
  */
-export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
+export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto, opts = {}) {
   const rawTrim = normalizarIdentificadorReclamoWhatsapp(texto);
   if (!rawTrim) return { skip: true };
   const low = rawTrim.toLowerCase();
@@ -381,11 +389,16 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
     const latExpr = sqlLatPadExpr(scCols);
     const lngExpr = sqlLngPadExpr(scCols);
 
-    const tenantColSc = scCols.has("cliente_id")
-      ? "cliente_id"
-      : scCols.has("tenant_id")
-        ? "tenant_id"
-        : null;
+    const hasTenantSc = scCols.has("tenant_id");
+    const hasClienteSc = scCols.has("cliente_id");
+    const tenantExprSc =
+      hasTenantSc && hasClienteSc
+        ? "COALESCE(tenant_id, cliente_id)"
+        : hasTenantSc
+          ? "tenant_id"
+          : hasClienteSc
+            ? "cliente_id"
+            : null;
 
     const idMatchOr = `(
           TRIM($1) ~ '^[0-9]+$'
@@ -432,10 +445,27 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
 
     const scParams = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
     let tenantSql = "";
-    if (tenantColSc) {
-      const pT = scParams.length + 1;
-      tenantSql = ` AND (${tenantColSc} IS NULL OR ${tenantColSc} = $${pT})`;
+    let tidParamIdx = null;
+    if (tenantExprSc) {
+      tidParamIdx = scParams.length + 1;
+      tenantSql = ` AND (${tenantExprSc} IS NULL OR ${tenantExprSc} = $${tidParamIdx})`;
       scParams.push(tid);
+    }
+
+    let businessSqlSc = "";
+    if (scCols.has("business_type")) {
+      let effectiveBt = normalizeBusinessTypeInput(opts?.businessType);
+      if (!effectiveBt) {
+        try {
+          const bctx = await loadTenantBusinessContext(tid);
+          effectiveBt = normalizeBusinessTypeInput(bctx?.activeBusinessType);
+        } catch (_) {}
+      }
+      if (effectiveBt) {
+        const btIdx = scParams.length + 1;
+        businessSqlSc = ` AND (business_type IS NULL OR TRIM(COALESCE(business_type::text,'')) = '' OR LOWER(TRIM(COALESCE(business_type::text,''))) = LOWER($${btIdx}::text))`;
+        scParams.push(effectiveBt);
+      }
     }
 
     const rankParts = [];
@@ -444,8 +474,14 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
       if (scCols.has("nis")) rankParts.push(`CASE WHEN ${sqlDigitosMismaMagnitud("nis::text", 2)} THEN 2 ELSE 0 END`);
       rankParts.push(`CASE WHEN ${sqlDigitosMismaMagnitud("nis_medidor::text", 2)} THEN 1 ELSE 0 END`);
     }
+    const tenantPriorityExpr =
+      tenantExprSc && tidParamIdx
+        ? `CASE WHEN ${tenantExprSc} IS NOT DISTINCT FROM $${tidParamIdx}::bigint THEN 0 ELSE 1 END, `
+        : "";
     const orderByRank =
-      useDigitMatch && rankParts.length > 0 ? ` ORDER BY ${rankParts.join(" + ")} DESC, id ASC` : ` ORDER BY id ASC`;
+      useDigitMatch && rankParts.length > 0
+        ? ` ORDER BY ${tenantPriorityExpr}${rankParts.join(" + ")} DESC, id ASC`
+        : ` ORDER BY ${tenantPriorityExpr}id ASC`;
 
     const selMedNis = `${scCols.has("medidor") ? "NULLIF(TRIM(COALESCE(medidor::text,'')), '') AS medidor_raw" : "NULL::text AS medidor_raw"},
               ${scCols.has("nis") ? "NULLIF(TRIM(COALESCE(nis::text,'')), '') AS nis_raw" : "NULL::text AS nis_raw"},`;
@@ -465,55 +501,11 @@ export async function buscarIdentidadParaReclamoWhatsApp(tenantId, texto) {
        FROM socios_catalogo
        WHERE COALESCE(activo, TRUE) = TRUE
          AND ${matchClause}
-         ${tenantSql}`;
+         ${tenantSql}
+         ${businessSqlSc}`;
 
-    let r = await query(`${baseSelect}${orderByRank} LIMIT 1`, scParams);
-    let row = r.rows?.[0];
-
-    if (!row && tenantColSc) {
-      const scParamsWide = useDigitMatch ? [rawTrim, dKey] : [rawTrim];
-      const tidIdx = scParamsWide.length + 1;
-      const orderFallback =
-        useDigitMatch && rankParts.length > 0
-          ? `ORDER BY CASE
-           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${tidIdx}::bigint THEN 0
-           WHEN ${tenantColSc} IS NULL THEN 1
-           ELSE 2
-         END, ${rankParts.join(" + ")} DESC, id ASC`
-          : `ORDER BY CASE
-           WHEN ${tenantColSc} IS NOT DISTINCT FROM $${tidIdx}::bigint THEN 0
-           WHEN ${tenantColSc} IS NULL THEN 1
-           ELSE 2
-         END, id ASC`;
-      r = await query(
-        `SELECT nis_medidor, nombre,
-              ${selMedNis}
-              NULLIF(TRIM(COALESCE(calle, '')), '') AS calle_cat,
-              NULLIF(TRIM(COALESCE(numero, '')), '') AS numero_cat,
-              NULLIF(TRIM(COALESCE(localidad, '')), '') AS localidad_cat,
-              NULLIF(TRIM(COALESCE(tipo_conexion, '')), '') AS tipo_conexion_cat,
-              NULLIF(TRIM(COALESCE(fases, '')), '') AS fases_cat,
-              ${latExpr},
-              ${lngExpr},
-              ${ptSelSc},
-              ${provExpr},
-              ${cpExprSc}
-         FROM socios_catalogo
-         WHERE COALESCE(activo, TRUE) = TRUE
-           AND ${matchClause}
-         ${orderFallback}
-         LIMIT 1`,
-        [...scParamsWide, tid]
-      );
-      row = r.rows?.[0];
-      if (row) {
-        console.warn("[whatsapp-reclamante-lookup] socios_catalogo: coincidencia sin filtro tenant estricto", {
-          tenantId: tid,
-          nis_medidor: row.nis_medidor,
-          tenantCol: tenantColSc,
-        });
-      }
-    }
+    const r = await query(`${baseSelect}${orderByRank} LIMIT 1`, scParams);
+    const row = r.rows?.[0];
 
     if (row) {
       const nm = String(row.nis_medidor || rawTrim).trim();

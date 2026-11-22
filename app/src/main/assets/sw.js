@@ -11,8 +11,9 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v278';
-const SW_VERSION  = '1.9.3';
+const CACHE_SHELL = 'pmg-shell-v280';
+const CACHE_API   = 'pmg-api-v1';
+const SW_VERSION  = '1.9.5';
 
 /** Tiles de mapa usados en producción (Carto, Esri fallback, OSM precache). */
 function isMapTileRequest(url) {
@@ -39,6 +40,9 @@ function shellAssetUrls() {
     j('status.html'),
     j('seguridad.html'),
     j('app.js'),
+    j('modules/gn-sql-cache-client.js'),
+    j('modules/password-facil-sugerido.js'),
+    j('modules/recuperar-contrasena-mail.js'),
     j('modules/gn-window-dialogs-patch.js'),
     j('modules/gn-trust-ui-bootstrap.js'),
     j('modules/gn-login-alto-contraste.js'),
@@ -607,7 +611,7 @@ self.addEventListener('install', event => {
 
 // ── ACTIVATE: limpiar versiones anteriores ────────────────────
 self.addEventListener('activate', event => {
-  const keep = new Set([CACHE_TILES, CACHE_SHELL]);
+  const keep = new Set([CACHE_TILES, CACHE_SHELL, CACHE_API]);
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
@@ -617,7 +621,136 @@ self.addEventListener('activate', event => {
   );
 });
 
-// ── FETCH: app shell (JS/CSS/img/HTML) + tiles OSM ─────────────
+// ── HELPERS CACHÉ AGRESIVA API / SQL EN SERVICE WORKER ────────
+function swFastHash(str) {
+  let h1 = 0xdeadbeef ^ str.length;
+  let h2 = 0x41c6ce57 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+function swClassifySqlTtl(rawSql) {
+  const s = String(rawSql || '').replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/'([^']|'')*'/g, "''").replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  const verb = (s.split(' ')[0] || '').toUpperCase();
+  if (verb === 'INSERT' || verb === 'UPDATE' || verb === 'DELETE' || verb === 'ALTER' || verb === 'CREATE' || verb === 'TRUNCATE') {
+    return { isWrite: true };
+  }
+  if (verb !== 'SELECT' && verb !== 'WITH') return null;
+  if (verb === 'WITH' && /\b(INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM)\b/i.test(s)) {
+    return { isWrite: true };
+  }
+  if (/\b(NEXTVAL|SETVAL|RANDOM\s*\(|FOR\s+UPDATE|RETURNING|password_hash|reset_token)\b/i.test(s)) {
+    return null;
+  }
+  if (/\b(information_schema|pg_catalog|localidades_argentinas|codigos_area_argentina|calles_normalizadas|calles_geometrias)\b/i.test(s)) {
+    return { isWrite: false, freshMs: 15 * 60 * 1000, swrMs: 60 * 60 * 1000 };
+  }
+  if (/\b(clientes|configuracion|tipos_reclamo|distribuidores|subestaciones_catalogo|socios_catalogo|tenant_localidades)\b/i.test(s) && !/\bpedidos\b/i.test(s)) {
+    return { isWrite: false, freshMs: 3 * 60 * 1000, swrMs: 15 * 60 * 1000 };
+  }
+  return { isWrite: false, freshMs: 6 * 1000, swrMs: 15 * 1000 };
+}
+
+function swClassifyGetApiTtl(pathname) {
+  if (/\/api\/(webhooks|auth\/login|auth\/password-reset|debug)/i.test(pathname)) return null;
+  if (/\/(export|xlsx|pdf|download)\b/i.test(pathname)) return null;
+  if (/\/api\/(admin\/socios-catalogo|distribuidores|admin\/subestaciones-catalogo|admin\/red-electrica|calles-normalizadas|clientes\/mi-config|config\/ubicacion-central|setup\/technician\/tenants|tenant-operativa-settings|tenant\/businesses)/i.test(pathname)) {
+    return { freshMs: 2 * 60 * 1000, swrMs: 15 * 60 * 1000 };
+  }
+  if (/\/api\/(pedidos|incidencias|notificaciones|estadisticas)/i.test(pathname)) {
+    return { freshMs: 6 * 1000, swrMs: 15 * 1000 };
+  }
+  return null;
+}
+
+async function swPutStampedJsonResponse(cache, cacheKeyReq, resp) {
+  try {
+    const bodyBuf = await resp.clone().arrayBuffer();
+    if (bodyBuf.byteLength > 2 * 1024 * 1024) return;
+    const headers = new Headers(resp.headers);
+    headers.set('X-SW-Cached-At', String(Date.now()));
+    const stamped = new Response(bodyBuf, {
+      status: resp.status,
+      statusText: resp.statusText,
+      headers,
+    });
+    await cache.put(cacheKeyReq, stamped);
+  } catch (_) {}
+}
+
+function swCloneWithHeader(resp, statusLabel) {
+  const headers = new Headers(resp.headers);
+  headers.set('X-SW-Cache', statusLabel);
+  return new Response(resp.body, {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers,
+  });
+}
+
+async function swServeWithTtlAndSwr(cacheKeyUrl, fetchFactory, freshMs, swrMs) {
+  const cache = await caches.open(CACHE_API);
+  const cacheKeyReq = new Request(cacheKeyUrl, { method: 'GET' });
+  const cached = await cache.match(cacheKeyReq);
+  const now = Date.now();
+
+  if (cached) {
+    const cachedAt = Number(cached.headers.get('X-SW-Cached-At') || 0);
+    const age = now - cachedAt;
+    if (age >= 0 && age <= freshMs) {
+      return swCloneWithHeader(cached.clone(), 'HIT-FRESH');
+    }
+    if (age >= 0 && age <= swrMs) {
+      fetchFactory()
+        .then(async (netResp) => {
+          if (netResp && netResp.ok) {
+            await swPutStampedJsonResponse(cache, cacheKeyReq, netResp);
+          }
+        })
+        .catch(() => {});
+      return swCloneWithHeader(cached.clone(), 'HIT-SWR');
+    }
+  }
+
+  try {
+    const netResp = await fetchFactory();
+    if (netResp && netResp.ok) {
+      await swPutStampedJsonResponse(cache, cacheKeyReq, netResp);
+    }
+    return netResp;
+  } catch (err) {
+    if (cached) {
+      return swCloneWithHeader(cached.clone(), 'HIT-OFFLINE-FALLBACK');
+    }
+    throw err;
+  }
+}
+
+async function swPurgeApiCache() {
+  try {
+    await caches.delete(CACHE_API);
+  } catch (_) {}
+}
+
+self.addEventListener('message', event => {
+  const data = event?.data || {};
+  if (data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+  if (data.type === 'PMG_INVALIDATE_API_CACHE' || data.type === 'PMG_CLEAR_API_CACHE') {
+    event.waitUntil(swPurgeApiCache());
+  }
+});
+
+// ── FETCH: app shell (JS/CSS/img/HTML) + API/SQL cache + tiles OSM ──
 self.addEventListener('fetch', event => {
   const req = event.request;
   const url = new URL(req.url);
@@ -655,6 +788,72 @@ self.addEventListener('fetch', event => {
       })()
     );
     return;
+  }
+
+  // Interceptar llamadas a la API (/api/*) para reducir consultas repetidas hacia Render y Neon
+  if (url.pathname.startsWith('/api/')) {
+    const authScope = swFastHash(
+      (req.headers.get('Authorization') || '') + '|' + (req.headers.get('X-GestorNova-Technician-Key') || '')
+    );
+
+    if (req.method === 'POST' && url.pathname.endsWith('/api/sql/query')) {
+      event.respondWith(
+        (async () => {
+          let bodyObj = null;
+          try {
+            bodyObj = await req.clone().json();
+          } catch (_) {}
+          const rawQuery = bodyObj && typeof bodyObj.query === 'string' ? bodyObj.query : '';
+          if (!rawQuery || bodyObj?.noCache) {
+            return fetch(req);
+          }
+          const rule = swClassifySqlTtl(rawQuery);
+          if (!rule) {
+            return fetch(req);
+          }
+          if (rule.isWrite) {
+            const writeResp = await fetch(req);
+            await swPurgeApiCache();
+            return writeResp;
+          }
+          const normQ = rawQuery.replace(/\s+/g, ' ').trim();
+          const syntheticUrl = `https://sw-api-cache.gestornova.local/sql/${authScope}/${swFastHash(normQ)}`;
+          return swServeWithTtlAndSwr(
+            syntheticUrl,
+            () => fetch(req.clone()),
+            rule.freshMs,
+            rule.swrMs
+          );
+        })()
+      );
+      return;
+    }
+
+    if (req.method === 'GET') {
+      const getRule = swClassifyGetApiTtl(url.pathname);
+      if (getRule) {
+        const syntheticUrl = `https://sw-api-cache.gestornova.local/get/${authScope}/${swFastHash(url.href)}`;
+        event.respondWith(
+          swServeWithTtlAndSwr(
+            syntheticUrl,
+            () => fetch(req),
+            getRule.freshMs,
+            getRule.swrMs
+          )
+        );
+        return;
+      }
+    } else if (req.method !== 'OPTIONS' && req.method !== 'HEAD') {
+      // Cualquier mutación REST invalida la caché de lecturas API/SQL del Service Worker
+      event.respondWith(
+        (async () => {
+          const resp = await fetch(req);
+          await swPurgeApiCache();
+          return resp;
+        })()
+      );
+      return;
+    }
   }
 
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
