@@ -9570,29 +9570,50 @@ function actualizarVistaPreviaFotoCierre() {
 }
 
 let _firmaCanvasBound = false;
+let _firmaCierreTieneTrazo = false;
 function initFirmaCierreCanvas() {
     const c = document.getElementById('firma-canvas-cierre');
     if (!c) return;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, c.width, c.height);
+    const ctx = c.getContext('2d');
+    limpiarFirmaCierreCanvas();
     ctx.strokeStyle = '#0f172a';
+    ctx.fillStyle = '#0f172a';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     if (_firmaCanvasBound) return;
     _firmaCanvasBound = true;
     let draw = false;
+    let rect = null;
+    let previous = null;
     const pos = e => {
-        const r = c.getBoundingClientRect();
-        const scaleX = c.width / r.width;
-        const scaleY = c.height / r.height;
-        const cx = ('touches' in e ? e.touches[0].clientX : e.clientX) - r.left;
-        const cy = ('touches' in e ? e.touches[0].clientY : e.clientY) - r.top;
-        return { x: cx * scaleX, y: cy * scaleY };
+        const point = 'touches' in e ? e.touches[0] : e;
+        return { x: (point.clientX - rect.left) * c.width / rect.width,
+                 y: (point.clientY - rect.top) * c.height / rect.height };
     };
-    const start = e => { draw = true; const p0 = pos(e); ctx.beginPath(); ctx.moveTo(p0.x, p0.y); };
-    const move = e => { if (!draw) return; const p0 = pos(e); ctx.lineTo(p0.x, p0.y); ctx.stroke(); };
-    const end = () => { draw = false; };
+    const start = e => {
+        rect = c.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        draw = true;
+        previous = pos(e);
+        // Un toque también debe contar como firma visible.
+        ctx.beginPath();
+        ctx.arc(previous.x, previous.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        _firmaCierreTieneTrazo = true;
+    };
+    const move = e => {
+        if (!draw) return;
+        const next = pos(e);
+        // Dibujar solo el segmento nuevo evita repintar todo el trazo en cada evento.
+        ctx.beginPath();
+        ctx.moveTo(previous.x, previous.y);
+        ctx.lineTo(next.x, next.y);
+        ctx.stroke();
+        previous = next;
+        _firmaCierreTieneTrazo = true;
+    };
+    const end = () => { draw = false; previous = null; rect = null; };
     c.addEventListener('mousedown', start);
     c.addEventListener('mousemove', move);
     c.addEventListener('mouseup', end);
@@ -9600,23 +9621,19 @@ function initFirmaCierreCanvas() {
     c.addEventListener('touchstart', e => { e.preventDefault(); start(e); }, { passive: false });
     c.addEventListener('touchmove', e => { e.preventDefault(); move(e); }, { passive: false });
     c.addEventListener('touchend', end);
+    c.addEventListener('touchcancel', end);
 }
 function limpiarFirmaCierreCanvas() {
     const c = document.getElementById('firma-canvas-cierre');
     if (!c) return;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const ctx = c.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#0f172a';
+    _firmaCierreTieneTrazo = false;
 }
 function firmaCierreCanvasVacio() {
-    const c = document.getElementById('firma-canvas-cierre');
-    if (!c) return true;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    for (let i = 0; i < d.length; i += 32) {
-        if (d[i] < 248 || d[i + 1] < 248 || d[i + 2] < 248) return false;
-    }
-    return true;
+    return !_firmaCierreTieneTrazo;
 }
 
 function htmlOptsUnidadMaterial(val) {
@@ -9803,8 +9820,13 @@ window.refrescarMaterialesDetallePorPid = function (pid) {
     if (p) void refrescarMaterialesEnDetalle(p);
 };
 
+// Invalida respuestas de cargas anteriores, incluso al reabrir el mismo pedido.
+let _cierreMaterialesSolicitud = 0;
+let _cierreApertura = 0;
 /** Materiales en el modal «Cerrar pedido» (mismas reglas que en detalle). */
 async function refrescarMaterialesEnModalCierre(p) {
+    const solicitud = ++_cierreMaterialesSolicitud;
+    const vigente = () => solicitud === _cierreMaterialesSolicitud && _materialesCierreModalSigueSiendoPedidoActual(p);
     const body = document.getElementById('cierre-materiales-body');
     if (!body) return;
     if (tipoPedidoExcluyeMateriales(p.tt)) {
@@ -9819,7 +9841,7 @@ async function refrescarMaterialesEnModalCierre(p) {
     const puedeEditarMat = puedeEditarMaterialesEnPedido(p);
     try {
         const rows = await sqlMaterialesPedidoRows(pid);
-        if (!_materialesCierreModalSigueSiendoPedidoActual(p)) return;
+        if (!vigente()) return;
         let html = '<table class="mat-det-table"><thead><tr><th class="mat-col-item">Ítem</th><th class="mat-col-un">Unidad</th><th class="mat-col-cant">Cantidad</th><th></th></tr></thead><tbody>';
         rows.forEach(row => {
             const des = String(row.descripcion || '').replace(/</g, '&lt;');
@@ -9849,13 +9871,14 @@ async function refrescarMaterialesEnModalCierre(p) {
                 <button type="button" class="btn-sm primary" onclick="agregarMaterialPedidoDesdeCierreModal(${pid})">+ Agregar</button>
             </div>`;
         }
-        if (!_materialesCierreModalSigueSiendoPedidoActual(p)) return;
+        if (!vigente()) return;
         if (!rows.length && !puedeEditarMat) {
             body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Sin materiales registrados</p>';
         } else {
             body.innerHTML = html;
         }
     } catch (e) {
+        if (!vigente()) return;
         logErrorWeb('materiales-cierre-modal', e);
         body.innerHTML =
             '<p style="color:var(--re);font-size:.8rem">' +
@@ -10553,24 +10576,25 @@ async function abrirCierre(id) {
 
     const blkMat = document.getElementById('cierre-materiales-block');
     const bodyMat = document.getElementById('cierre-materiales-body');
+    const apertura = ++_cierreApertura;
+    ++_cierreMaterialesSolicitud;
+    const admiteMat = blkMat && bodyMat && !tipoPedidoExcluyeMateriales(p.tt) &&
+        !String(p.id).startsWith('off_') && !modoOffline && NEON_OK;
     if (blkMat && bodyMat) {
-        const admiteMat = !tipoPedidoExcluyeMateriales(p.tt) && !String(p.id).startsWith('off_') && !modoOffline && NEON_OK;
-        if (admiteMat) {
-            blkMat.style.display = '';
-            void refrescarMaterialesEnModalCierre(p);
-        } else {
-            blkMat.style.display = 'none';
-            bodyMat.innerHTML = '';
-        }
+        blkMat.style.display = admiteMat ? '' : 'none';
+        bodyMat.innerHTML = admiteMat ? '<p style="font-size:.8rem;color:var(--tl)">Cargando materiales…</p>' : '';
     }
-
-    await prepararBloqueClientesAfectadosCierre(p);
 
     fotoCierreTemp = null;
     actualizarVistaPreviaFotoCierre();
     initFirmaCierreCanvas();
-    limpiarFirmaCierreCanvas();
     document.getElementById('cm2').classList.add('active');
+
+    // Permitir pintar el modal antes del trabajo de red/DOM; descartar aperturas obsoletas.
+    if (admiteMat) requestAnimationFrame(() => setTimeout(() => {
+        if (apertura !== _cierreApertura || !_materialesCierreModalSigueSiendoPedidoActual(p)) return;
+        void refrescarMaterialesEnModalCierre(p);
+    }, 0));
 }
 
 document.getElementById('btn-limpiar-firma-cierre')?.addEventListener('click', () => limpiarFirmaCierreCanvas());
@@ -10583,12 +10607,13 @@ document.getElementById('cc2').addEventListener('click', async () => {
     }
     const pCierre = app.p.find(x => String(x.id) === String(app.cid));
     const firmaObligatoria = pedidoTieneClienteCargado(pCierre);
-    if (firmaObligatoria && firmaCierreCanvasVacio()) {
+    const firmaVacia = firmaCierreCanvasVacio();
+    if (firmaObligatoria && firmaVacia) {
         toast('Este pedido tiene cliente cargado: la firma es obligatoria', 'error');
         return;
     }
     const c = document.getElementById('firma-canvas-cierre');
-    const firmaData = !firmaCierreCanvasVacio() && c ? c.toDataURL('image/png') : null;
+    const firmaData = !firmaVacia && c ? c.toDataURL('image/png') : null;
     const checklistJson = JSON.stringify({
         epp: !!document.getElementById('chk-epp')?.checked,
         corte: !!document.getElementById('chk-corte')?.checked,

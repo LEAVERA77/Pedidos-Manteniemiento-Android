@@ -11,7 +11,7 @@
 // =============================================================
 
 const CACHE_TILES = 'pmg-tiles-v6';
-const CACHE_SHELL = 'pmg-shell-v280';
+const CACHE_SHELL = 'pmg-shell-v281';
 const CACHE_API   = 'pmg-api-v1';
 const SW_VERSION  = '1.9.5';
 

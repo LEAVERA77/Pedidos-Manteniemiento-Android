@@ -450,3 +450,21 @@ html.gn-force-update-active body {
 html.gn-android-shell .gn-overlay-stack--centered {
     transform: none;
 }
+
+/* Cierre sobre detalle/mapa: el blur y la sombra genéricos penalizan el scroll en WebView. */
+html.gn-android-shell #cm2.mo {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(15, 23, 42, 0.78);
+}
+html.gn-android-shell #cm2.mo > .mc {
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+    animation: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+html.gn-android-shell #cm2 input[type="text"],
+html.gn-android-shell #cm2 input[type="tel"],
+html.gn-android-shell #cm2 textarea {
+    font-size: 16px;
+}
