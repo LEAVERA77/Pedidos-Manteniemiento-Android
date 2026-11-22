@@ -42,3 +42,9 @@ Como avance parcial, el frontend actual rechaza el ingreso administrativo desde 
 El servidor también se endureció para rechazar un `JWT_SECRET` ausente, de ejemplo o demasiado corto al arrancar. Antes de desplegar, verificar que el servicio tenga un secreto aleatorio configurado; cambiarlo invalida las sesiones JWT existentes. Esta medida no implementa la autorización de equipos ni el segundo factor.
 
 Para el detalle técnico y el estado del aislamiento de tenants, consultar [DISPOSITIVOS-AUTORIZADOS.md](DISPOSITIVOS-AUTORIZADOS.md) y [PLAN-SEGURIDAD-TENANTS-2FA.md](PLAN-SEGURIDAD-TENANTS-2FA.md).
+
+## Avance técnico: primitivas, todavía no conectadas
+
+Se incorporó `api/services/adminMfaPrimitives.js` en ambos repositorios. Usa `otplib` para generar una URI compatible con aplicaciones TOTP y comprobar códigos; cifra secretos con AES-256-GCM asociándolos al tenant y al usuario. También utiliza `@simplewebauthn/server` para crear y verificar desafíos WebAuthn, con origen y RP ID fijados y verificación de usuario requerida. La prueba automatizada usa un autenticador virtual de Chromium: no verifica Windows Hello ni Microsoft Authenticator en un equipo real.
+
+**Estas funciones no están conectadas al login ni hay pantallas, endpoints de inscripción, aprobación o recuperación.** No almacenan ni consumen desafíos, no limitan intentos, no guardan de manera atómica el último paso TOTP o el contador WebAuthn y no vinculan los JWT a una clave. Por sí solas no impiden acceso, repetición concurrente, uso de una sesión copiada ni acceso desde un dispositivo no aprobado. El origen compartido de GitHub Pages también requiere especial atención: WebAuthn identifica el origen, no la ruta del proyecto. No deben activarse en producción hasta completar los pasos anteriores y validar las rutas alternativas.
