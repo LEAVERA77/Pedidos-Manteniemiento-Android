@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Sesión mock y UI de búsqueda', () => {
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => {
+            localStorage.setItem('pmg_api_token', 'e2e-mock-token');
             localStorage.setItem(
                 'pmg',
                 JSON.stringify({
