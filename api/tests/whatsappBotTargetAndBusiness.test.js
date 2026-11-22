@@ -451,8 +451,47 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
     expect(memConfig.has("whatsapp_bot_active_target")).toBe(false);
     const qr = await request(app).get(`/api/webhooks/whatsapp/baileys/qr?token=${key}`).expect(200);
     expect(qr.headers["cache-control"]).toBe("no-store");
-    expect(qr.headers["referrer-policy"]).toBe("no-referrer");
+    expect(qr.headers["referrer-policy"]).toBe("same-origin");
+    await request(app).post("/api/webhooks/whatsapp/baileys/select-tenant")
+      .set("Host", "api.example.test").set("Origin", "null")
+      .send({ token: key, tenant_id: 1, confirm_tenant_id: 1 }).expect(403);
+    await request(app).post("/api/webhooks/whatsapp/baileys/select-tenant")
+      .set("Host", "api.example.test").set("Origin", "https://api.example.test")
+      .send({ token: key, tenant_id: 1, confirm_tenant_id: 1 }).expect(200);
   });
+
+  // Opcional: GN_BROWSER_TESTS=1 (requiere npm ci en e2e/ y npx playwright install chromium).
+  it.skipIf(process.env.GN_BROWSER_TESTS !== "1")("el formulario real de Chromium confirma tenant sin 403", async () => {
+    const { pathToFileURL } = await import("node:url");
+    const { resolve } = await import("node:path");
+    const { chromium } = await import(pathToFileURL(resolve(process.cwd(), "../e2e/node_modules/playwright/index.mjs")).href);
+    const key = "link-token-0123456789-abcdefghijklmnop";
+    process.env.WHATSAPP_LINK_TOKEN = key;
+    process.env.WHATSAPP_WEBHOOK_TOKEN = "otro-token";
+    process.env.WHATSAPP_PROVIDER = "baileys";
+    setupTenantsMock();
+    const server = createTestWebhookApp().listen(0, "127.0.0.1");
+    await new Promise((done) => server.once("listening", done));
+    let browser;
+    try {
+      const base = `http://127.0.0.1:${server.address().port}`;
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage();
+      await page.goto(`${base}/api/webhooks/whatsapp/baileys/qr?token=${key}`);
+      await page.locator("#tenant_id_input").fill("1");
+      await page.locator("#confirm_tenant_id").fill("1");
+      const responsePromise = page.waitForResponse(r => r.url().endsWith("/baileys/select-tenant") && r.request().method() === "POST");
+      await page.locator("#save-tenant-btn").click();
+      const response = await responsePromise;
+      expect(response.status()).toBe(303);
+      expect(response.request().headers().origin).toBe(base);
+      await page.waitForURL(/saved=1/);
+      expect(memConfig.get("whatsapp_bot_active_target")?.tenant_id).toBe(1);
+    } finally {
+      if (browser) await browser.close();
+      await new Promise((done) => server.close(done));
+    }
+  }, 30000);
 
   it("sincroniza el destino del bot en Neon real al loguearse o cambiar business_type (electricidad -> agua -> municipio)", async () => {
     process.env.WHATSAPP_PROVIDER = "baileys";

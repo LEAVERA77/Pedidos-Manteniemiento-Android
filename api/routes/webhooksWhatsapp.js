@@ -394,9 +394,10 @@ const baileysLinkLimiter = rateLimit({
 });
 router.use("/baileys", (req, res, next) => req.path === "/status" ? next() : baileysLinkLimiter(req, res, next));
 
-// Los QR y la clave de vinculación son sensibles: nunca cachearlos ni filtrarlos por Referer.
+// Nunca enviar Referer a otro origen. Con no-referrer Chrome manda Origin: null al
+// enviar formularios propios y la protección CSRF los rechaza; same-origin evita ambos problemas.
 router.use("/baileys", (req, res, next) => {
-  res.set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY" });
+  res.set({ "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "X-Frame-Options": "DENY" });
   if (req.method === "POST" && req.get("origin")) {
     try {
       if (new URL(req.get("origin")).host !== req.get("host")) return res.sendStatus(403);

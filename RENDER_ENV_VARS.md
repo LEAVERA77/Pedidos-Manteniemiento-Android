@@ -15,7 +15,7 @@
 
 1. En Render → Environment de la API, definir `WHATSAPP_LINK_TOKEN` con un secreto aleatorio único (por ejemplo, generar localmente con `openssl rand -hex 32`). No enviarlo por chat ni incluirlo en Git. Debe ser distinto de `WHATSAPP_WEBHOOK_TOKEN`.
 2. Desplegar la API y abrir mediante HTTPS `/api/webhooks/whatsapp/baileys/qr?token=<secreto>`, confirmar el mismo ID de tenant en ambos campos y verificar el negocio antes de escanear. El enlace contiene un secreto: no compartirlo, limitar el acceso a operadores confiables y evitar registros del proxy que incluyan query strings.
-3. El tenant existente y la sesión ya conectada no se reinician por este cambio. Para cambiar de tenant usar el formulario; `GET ?apply=1` ya no cambia datos. La página es `no-store`, `no-referrer` y limita intentos fallidos.
+3. El tenant existente y la sesión ya conectada no se reinician por este cambio. Para cambiar de tenant usar el formulario; `GET ?apply=1` ya no cambia datos. La página es `no-store`, limita el Referer al mismo origen y limita intentos fallidos.
 
 El 2FA existente es por correo y opcional (`ADMIN_2FA_ENABLED`); no es un autenticador TOTP. No activarlo obligatoriamente hasta completar el enrolamiento, recuperación y cierre de vías de autenticación alternativa.
 
