@@ -105,17 +105,12 @@ export async function crearDesafioOtpAdmin(user) {
 export async function verificarDesafioOtpAdmin(challengeId, code) {
   if (!challengeId || !code) return null;
   await ensureOtpTable();
+  // Consumo atómico: dos verificaciones concurrentes no pueden reutilizar el código.
   const r = await query(
-    `SELECT id, user_id, code_hash, expires_at FROM admin_login_otp WHERE id = $1 LIMIT 1`,
-    [challengeId]
+    `DELETE FROM admin_login_otp WHERE id = $1 AND code_hash = $2 AND expires_at > NOW()
+     RETURNING user_id`,
+    [challengeId, hashCode(code)]
   );
   const row = r.rows?.[0];
-  if (!row) return null;
-  if (new Date(row.expires_at).getTime() < Date.now()) {
-    await query(`DELETE FROM admin_login_otp WHERE id = $1`, [challengeId]);
-    return null;
-  }
-  if (hashCode(code) !== row.code_hash) return null;
-  await query(`DELETE FROM admin_login_otp WHERE id = $1`, [challengeId]);
-  return { user_id: Number(row.user_id) };
+  return row ? { user_id: Number(row.user_id) } : null;
 }

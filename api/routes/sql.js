@@ -4,6 +4,13 @@ import { authWithTenantHost } from "../middleware/auth.js";
 
 const router = express.Router();
 router.use(authWithTenantHost);
+// Interruptor de emergencia: deshabilita SQL libre hasta migrar a endpoints acotados.
+router.use((_req, res, next) => {
+  if (String(process.env.SQL_GATEWAY_DISABLED || "").trim().toLowerCase() === "true") {
+    return res.status(503).json({ error: "Gateway SQL deshabilitado por seguridad" });
+  }
+  return next();
+});
 
 const MAX_SQL_LENGTH = 100_000;
 

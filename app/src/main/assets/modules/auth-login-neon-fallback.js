@@ -11,6 +11,7 @@ export function shouldSkipNeonPlaintextLoginFallback(loginApiFallo, getApiBaseUr
   const base = typeof getApiBaseUrlFn === 'function' ? String(getApiBaseUrlFn() || '').trim() : '';
   if (!base) return false;
   if (!loginApiFallo?._loginFailed) return false;
+  if (loginApiFallo.code === 'admin_2fa_unavailable') return true;
   if (loginApiFallo.network) return false;
   const st = Number(loginApiFallo.status);
   if (st === 401 || st === 403 || st === 400 || st === 409) return true;

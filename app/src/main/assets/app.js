@@ -273,6 +273,7 @@ import {
     destruirTodasVentanasWaHc,
     setWhatsappHumanChatAdminDeps,
     wireWhatsappHumanChatAdminWindow,
+    abrirModalWhatsappHumanChat,
 } from './modules/whatsapp-human-chat-admin.js';
 import {
     htmlSolicitudDerivacionCoopElectricaTecnico,
@@ -3683,6 +3684,8 @@ const gnLoginSubmitHandler = async e => {
                     le.textContent =
                         'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
                 }
+            } else if (loginApiFallo?.code === 'admin_2fa_unavailable' && le) {
+                le.textContent = 'Segundo factor no disponible. Contactá al administrador del sistema.';
             } else if (loginApiFallo?.status === 401 && le) {
                 le.textContent =
                     'Usuario o contraseña incorrectos. Verificá el usuario de login definido y la contraseña en texto plano (no un código que empiece con $2a$).';

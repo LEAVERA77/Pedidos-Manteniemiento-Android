@@ -45,6 +45,8 @@ export async function ensureHumanChatTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  // Instalaciones anteriores pueden tener la tabla sin metadatos.
+  await query(`ALTER TABLE whatsapp_human_chat_message ADD COLUMN IF NOT EXISTS meta JSONB`);
   await query(`
     CREATE INDEX IF NOT EXISTS idx_whatsapp_hcs_tenant_estado
     ON whatsapp_human_chat_session (tenant_id, estado)
@@ -109,6 +111,13 @@ export async function humanChatOpenOrGetSession(tenantId, phoneCanonical, contac
     opts && opts.expiresInHours != null && Number.isFinite(Number(opts.expiresInHours))
       ? Number(opts.expiresInHours)
       : null;
+  // El índice único incluye sesiones expiradas aunque ya no sean elegibles para reutilizarse.
+  await query(
+    `UPDATE whatsapp_human_chat_session SET estado = 'closed', updated_at = NOW()
+     WHERE tenant_id = $1 AND phone_canonical IN ($2, $3)
+       AND estado IN ('queued', 'active') AND expires_at IS NOT NULL AND expires_at <= NOW()`,
+    [tid, phone, raw]
+  );
   const ex = await query(
     `SELECT id FROM whatsapp_human_chat_session
      WHERE tenant_id = $1
@@ -144,13 +153,23 @@ export async function humanChatOpenOrGetSession(tenantId, phoneCanonical, contac
     hours != null && hours > 0
       ? `INSERT INTO whatsapp_human_chat_session (tenant_id, phone_canonical, contact_name, estado, expires_at)
          VALUES ($1, $2, $3, 'queued', NOW() + ($4::numeric * INTERVAL '1 hour'))
+         ON CONFLICT (tenant_id, phone_canonical) WHERE estado IN ('queued', 'active') DO NOTHING
          RETURNING id`
       : `INSERT INTO whatsapp_human_chat_session (tenant_id, phone_canonical, contact_name, estado)
          VALUES ($1, $2, $3, 'queued')
+         ON CONFLICT (tenant_id, phone_canonical) WHERE estado IN ('queued', 'active') DO NOTHING
          RETURNING id`,
     hours != null && hours > 0 ? [tid, phone, cn, hours] : [tid, phone, cn]
   );
-  return { id: Number(ins.rows[0].id), isNew: true };
+  if (ins.rows?.[0]) return { id: Number(ins.rows[0].id), isNew: true };
+  // Otra solicitud creó la misma sesión entre el SELECT y el INSERT.
+  const existing = await humanChatFindOpenSessionForPhone(tid, phone);
+  if (!existing) throw new Error("human_chat_session_conflict");
+  if (hours != null && hours > 0) {
+    await query(`UPDATE whatsapp_human_chat_session SET expires_at = NOW() + ($3::numeric * INTERVAL '1 hour'),
+      updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, [existing.id, tid, hours]);
+  }
+  return { id: existing.id, isNew: false };
 }
 
 /**

@@ -90,6 +90,7 @@ export function installAdminSociosHistorialPedidos(deps) {
                         sqlSimple: deps.sqlSimple,
                         esc: deps.esc,
                         neonOk: deps.neonOk,
+                        pedidosFiltroTenantSql: deps.pedidosFiltroTenantSql,
                     });
                 });
             });

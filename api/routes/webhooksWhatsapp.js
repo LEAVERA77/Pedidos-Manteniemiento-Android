@@ -20,6 +20,8 @@
  *   - Avanzar whatsapp_bot_sessions + crear pedido vía servicio interno
  */
 import express from "express";
+import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import {
   handleInboundMetaWhatsAppPayload,
   clearWhatsappBotSessions,
@@ -345,10 +347,16 @@ function extractBaileysToken(req) {
 }
 
 function checkBaileysTokenAuthorized(req) {
-  const expected = String(process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
-  if (!expected) return { ok: true, token: "" };
+  // La clave del proveedor de webhooks no debe permitir cambiar el tenant ni escanear QR.
+  const expected = String(process.env.WHATSAPP_LINK_TOKEN || "").trim();
+  const webhookToken = String(process.env.WHATSAPP_WEBHOOK_TOKEN || "").trim();
   const provided = extractBaileysToken(req);
-  return { ok: provided === expected, token: provided };
+  if (expected.length < 32 || expected.length > 512 || (webhookToken && expected === webhookToken)) {
+    return { ok: false, token: "" };
+  }
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(provided, "utf8");
+  return { ok: a.length === b.length && crypto.timingSafeEqual(a, b), token: provided };
 }
 
 function wantsJsonResponse(req) {
@@ -374,6 +382,28 @@ async function buildBaileysBotTargetSnapshot() {
     return null;
   }
 }
+
+// El límite general excluye webhooks; proteger por separado los intentos de vinculación.
+const baileysLinkLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.VITEST === "true" ? 50000 : 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { ok: false, error: "Demasiados intentos. Esperá antes de volver a intentar." },
+});
+router.use("/baileys", (req, res, next) => req.path === "/status" ? next() : baileysLinkLimiter(req, res, next));
+
+// Los QR y la clave de vinculación son sensibles: nunca cachearlos ni filtrarlos por Referer.
+router.use("/baileys", (req, res, next) => {
+  res.set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY" });
+  if (req.method === "POST" && req.get("origin")) {
+    try {
+      if (new URL(req.get("origin")).host !== req.get("host")) return res.sendStatus(403);
+    } catch (_) { return res.sendStatus(403); }
+  }
+  return next();
+});
 
 router.get("/baileys/status", async (req, res) => {
   const auth = checkBaileysTokenAuthorized(req);
@@ -405,11 +435,21 @@ router.post("/baileys/select-tenant", async (req, res) => {
     return res.redirect(303, `/api/webhooks/whatsapp/baileys/qr?err=invalid_id${tokenQs}`);
   }
 
+  const confirmedTid = String(req.body?.confirm_tenant_id ?? "").trim();
+  if (!Number.isSafeInteger(tid) || confirmedTid !== String(tid)) {
+    return res.status(400).json({ ok: false, error: "Confirmá el mismo ID de tenant antes de vincular." });
+  }
   const rawBt = req.body?.business_type ?? req.body?.businessType ?? "auto";
-  const selected = await selectWhatsappBotTenantFromBaileysQr({
-    tenantId: Math.trunc(tid),
-    businessType: rawBt,
-  });
+  let selected;
+  try {
+    selected = await selectWhatsappBotTenantFromBaileysQr({
+      tenantId: tid,
+      businessType: rawBt,
+    });
+  } catch (e) {
+    console.error("[baileys] error al persistir vinculación", e?.message || e);
+    return res.status(503).json({ ok: false, error: "No se pudo guardar la vinculación; intentá de nuevo." });
+  }
 
   if (!selected) {
     if (wantsJsonResponse(req)) {
@@ -459,16 +499,7 @@ router.post("/baileys/reset-session", async (req, res) => {
     return res.status(401).send("Unauthorized: falta token válido");
   }
 
-  const rawTid = req.body?.tenant_id ?? req.body?.tenantId;
-  if (rawTid != null && String(rawTid).trim() !== "") {
-    const tid = Number(rawTid);
-    if (Number.isFinite(tid) && tid >= 1) {
-      await selectWhatsappBotTenantFromBaileysQr({
-        tenantId: Math.trunc(tid),
-        businessType: req.body?.business_type ?? "auto",
-      });
-    }
-  }
+  // Reiniciar la sesión no debe cambiar silenciosamente el tenant vinculado.
 
   clearWhatsappBotSessions();
   const nextStatus = await resetBaileysSessionAndReconnect();
@@ -488,15 +519,10 @@ router.get("/baileys/qr", async (req, res) => {
     return res.status(401).send("Unauthorized: falta ?token= correcto");
   }
 
-  // Si se pasa ?tenant_id=N&apply=1 por URL directa, lo persiste inmediatamente
   const urlTid = Number(req.query?.tenant_id);
-  const urlApply = String(req.query?.apply || "").trim() === "1";
-  if (urlApply && Number.isFinite(urlTid) && urlTid >= 1) {
-    await selectWhatsappBotTenantFromBaileysQr({
-      tenantId: Math.trunc(urlTid),
-      businessType: req.query?.business_type ?? "auto",
-    });
-    clearWhatsappBotSessions();
+  // GET no puede modificar la asociación ni reiniciar conversaciones.
+  if (String(req.query?.apply || "").trim() === "1") {
+    return res.status(405).send("Usá el formulario POST con confirmación para vincular el tenant.");
   }
 
   const tenants = await listActiveTenantsForWhatsappSelector();
@@ -777,6 +803,10 @@ router.get("/baileys/qr", async (req, res) => {
         </div>
 
         <div style="margin-bottom: 12px;">
+          <label for="confirm_tenant_id">Confirmá escribiendo nuevamente el ID del tenant</label>
+          <input id="confirm_tenant_id" name="confirm_tenant_id" type="number" min="1" step="1" required autocomplete="off" />
+        </div>
+        <div style="margin-bottom: 12px;">
           <label for="business_type_select">Tipo de negocio (rubro del bot)</label>
           <select id="business_type_select" name="business_type">
             <option value="auto" selected>Automático según el tenant elegido (recomendado)</option>
@@ -825,6 +855,8 @@ router.get("/baileys/qr", async (req, res) => {
     (function () {
       var TENANTS = ${tenantsJsonForClient};
       var STATE = ${initialStateJson};
+      // Eliminar el secreto de la barra de direcciones y del historial visible.
+      try { var url = new URL(location.href); url.searchParams.delete("token"); history.replaceState(null, "", url); } catch (_) {}
 
       var tidInput = document.getElementById("tenant_id_input");
       var tidSelect = document.getElementById("tenant_select");
@@ -945,9 +977,8 @@ router.get("/baileys/qr", async (req, res) => {
       renderQrPanel();
 
       function pollStatus() {
-        var qs = STATE.token ? "?token=" + encodeURIComponent(STATE.token) : "";
-        fetch("/api/webhooks/whatsapp/baileys/status" + qs, {
-          headers: { Accept: "application/json" },
+        fetch("/api/webhooks/whatsapp/baileys/status", {
+          headers: { Accept: "application/json", Authorization: "Bearer " + STATE.token },
           cache: "no-store",
         })
           .then(function (r) {

@@ -7,9 +7,17 @@
 | Variable | Uso |
 |----------|-----|
 | **`WHATSAPP_PROVIDER`** | Nombre **exacto** (sin typos). Valores: `baileys`, `whapi`, `meta`, `waha`, `evolution`. Si no está definida en Render, el código usa **`meta`** por defecto. |
-| **Baileys** | `WHATSAPP_PROVIDER=baileys` + opcional `BAILEYS_SESSION_ID` (`default`), `WHATSAPP_WEBHOOK_TOKEN` (protege `/baileys/*`). Al abrir `GET /api/webhooks/whatsapp/baileys/qr?token=...` podés elegir y fijar el **`tenant_id` (número)** y su tipo de negocio (`electricidad`, `agua`, `municipio`), quedando bloqueado en Neon (`configuracion.whatsapp_bot_active_target`) para que el menú y los reclamos apunten siempre al negocio elegido (p. ej. `tenant_id=1` Cooperativa Segui). También soporta `POST /api/webhooks/whatsapp/baileys/select-tenant` y `POST /api/webhooks/whatsapp/baileys/reset-session`. |
+| **Baileys** | `WHATSAPP_PROVIDER=baileys`; configurar **`WHATSAPP_LINK_TOKEN`**, secreto aleatorio de al menos 32 caracteres, distinto de `WHATSAPP_WEBHOOK_TOKEN`. Sin él, `/baileys/qr`, `/status`, `/select-tenant` y `/reset-session` rechazan el acceso. El formulario exige confirmar dos veces el ID de tenant; resetear la sesión ya no cambia el tenant. |
 | **Whapi** | `WHATSAPP_PROVIDER=whapi` + `WHAPI_API_URL`, `WHAPI_API_KEY`, `WHATSAPP_WEBHOOK_TOKEN` (y opcional `WHAPI_CHANNEL_ID`). Webhook: `POST /api/webhooks/whatsapp/whapi`. |
 | **Meta** | `WHATSAPP_PROVIDER=meta` + `META_*` (token, phone id, app secret, verify token). Webhook: `POST /api/webhooks/whatsapp/meta`. |
+
+### Configuración de vinculación Baileys
+
+1. En Render → Environment de la API, definir `WHATSAPP_LINK_TOKEN` con un secreto aleatorio único (por ejemplo, generar localmente con `openssl rand -hex 32`). No enviarlo por chat ni incluirlo en Git. Debe ser distinto de `WHATSAPP_WEBHOOK_TOKEN`.
+2. Desplegar la API y abrir mediante HTTPS `/api/webhooks/whatsapp/baileys/qr?token=<secreto>`, confirmar el mismo ID de tenant en ambos campos y verificar el negocio antes de escanear. El enlace contiene un secreto: no compartirlo, limitar el acceso a operadores confiables y evitar registros del proxy que incluyan query strings.
+3. El tenant existente y la sesión ya conectada no se reinician por este cambio. Para cambiar de tenant usar el formulario; `GET ?apply=1` ya no cambia datos. La página es `no-store`, `no-referrer` y limita intentos fallidos.
+
+El 2FA existente es por correo y opcional (`ADMIN_2FA_ENABLED`); no es un autenticador TOTP. No activarlo obligatoriamente hasta completar el enrolamiento, recuperación y cierre de vías de autenticación alternativa.
 
 **Health Check en Render:** configurar **Health Check Path** en `/health` (liviano, sin golpear Neon cada 5 s). `/health/db` cuenta además con caché de 60 s (`HEALTH_DB_CACHE_MS`) para proteger Neon si sigue configurado como health check.
 

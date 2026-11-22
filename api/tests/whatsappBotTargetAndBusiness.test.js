@@ -342,6 +342,7 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
   it("pantalla GET /baileys/qr muestra selector numérico de tenant_id y POST /baileys/select-tenant bloquea Cooperativa Segui en Neon", async () => {
     process.env.WHATSAPP_PROVIDER = "baileys";
     process.env.WHATSAPP_WEBHOOK_TOKEN = "tok-baileys-123";
+    process.env.WHATSAPP_LINK_TOKEN = "link-token-0123456789-abcdefghijklmnop";
     // Incluso si en Render quedaron envs viejos apuntando al tenant 2 (La Montevideana):
     process.env.BAILEYS_TENANT_ID = "2";
     process.env.WHATSAPP_BOT_TENANT_ID = "2";
@@ -356,7 +357,7 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
 
     // 2) Con token -> muestra formulario para elegir tenant_id (1 = Cooperativa Segui, 2 = La Montevideana)
     const qrPage = await request(app).get(
-      "/api/webhooks/whatsapp/baileys/qr?token=tok-baileys-123"
+      "/api/webhooks/whatsapp/baileys/qr?token=link-token-0123456789-abcdefghijklmnop"
     );
     expect(qrPage.status).toBe(200);
     expect(qrPage.text).toContain('name="tenant_id"');
@@ -368,8 +369,9 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
       .post("/api/webhooks/whatsapp/baileys/select-tenant")
       .type("form")
       .send({
-        token: "tok-baileys-123",
+        token: "link-token-0123456789-abcdefghijklmnop",
         tenant_id: "1",
+        confirm_tenant_id: "1",
         business_type: "auto",
       });
     expect(postRes.status).toBe(303);
@@ -404,7 +406,7 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
 
     // 6) GET /baileys/status devuelve el botTarget fijado y el QR listo para escanear
     const statusRes = await request(app).get(
-      "/api/webhooks/whatsapp/baileys/status?token=tok-baileys-123"
+      "/api/webhooks/whatsapp/baileys/status?token=link-token-0123456789-abcdefghijklmnop"
     );
     expect(statusRes.status).toBe(200);
     expect(statusRes.body.ok).toBe(true);
@@ -421,12 +423,35 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
       .post("/api/webhooks/whatsapp/baileys/reset-session")
       .set("Accept", "application/json")
       .send({
-        token: "tok-baileys-123",
-        tenant_id: 1,
+        token: "link-token-0123456789-abcdefghijklmnop",
+        tenant_id: 2, // reset nunca cambia la asociación a otro tenant
       });
     expect(resetRes.status).toBe(200);
     expect(mockResetBaileys).toHaveBeenCalledTimes(1);
     expect(resetRes.body.botTarget?.tenant_id).toBe(1);
+  });
+
+  it("protege QR, cambios por GET, origen ajeno y confirmación del tenant", async () => {
+    setupTenantsMock();
+    const app = createTestWebhookApp();
+    const key = "link-token-0123456789-abcdefghijklmnop";
+    delete process.env.WHATSAPP_LINK_TOKEN;
+    await request(app).get("/api/webhooks/whatsapp/baileys/qr").expect(401);
+    process.env.WHATSAPP_LINK_TOKEN = "corto";
+    await request(app).get("/api/webhooks/whatsapp/baileys/qr?token=corto").expect(401);
+    process.env.WHATSAPP_LINK_TOKEN = key;
+    process.env.WHATSAPP_WEBHOOK_TOKEN = key;
+    await request(app).get(`/api/webhooks/whatsapp/baileys/qr?token=${key}`).expect(401);
+    process.env.WHATSAPP_WEBHOOK_TOKEN = "webhook-otro";
+    await request(app).get(`/api/webhooks/whatsapp/baileys/qr?token=${key}&apply=1&tenant_id=1`).expect(405);
+    await request(app).post("/api/webhooks/whatsapp/baileys/select-tenant")
+      .set("Origin", "https://sitio-ajeno.example").send({ token: key, tenant_id: 1, confirm_tenant_id: 1 }).expect(403);
+    await request(app).post("/api/webhooks/whatsapp/baileys/select-tenant")
+      .send({ token: key, tenant_id: 1, confirm_tenant_id: 2 }).expect(400);
+    expect(memConfig.has("whatsapp_bot_active_target")).toBe(false);
+    const qr = await request(app).get(`/api/webhooks/whatsapp/baileys/qr?token=${key}`).expect(200);
+    expect(qr.headers["cache-control"]).toBe("no-store");
+    expect(qr.headers["referrer-policy"]).toBe("no-referrer");
   });
 
   it("sincroniza el destino del bot en Neon real al loguearse o cambiar business_type (electricidad -> agua -> municipio)", async () => {

@@ -99,8 +99,10 @@ export async function selectWhatsappBotTenantFromBaileysQr(params = {}) {
   const preferredBt =
     rawBt && rawBt !== "auto" ? normalizeBusinessTypeInput(rawBt) : null;
 
+  // No devolver el destino previo como si el ID solicitado se hubiese vinculado.
+  if (!Number.isSafeInteger(tid) || !(await resolveTenantMetadata(tid, preferredBt))) return null;
   return await syncWhatsappBotActiveTarget({
-    tenantId: Math.trunc(tid),
+    tenantId: tid,
     businessType: preferredBt,
     source: "baileys_qr_selector",
     force: true,
@@ -324,6 +326,7 @@ export async function syncWhatsappBotActiveTarget(params = {}) {
     }
   } catch (e) {
     console.warn("[whatsapp-bot-target] No se pudo persistir target activo:", e?.message || e);
+    if (params?.force) throw e; // Nunca confirmar una vinculación que no quedó en la base.
     _cachedTarget = candidate;
     _cachedAtMs = now;
   }

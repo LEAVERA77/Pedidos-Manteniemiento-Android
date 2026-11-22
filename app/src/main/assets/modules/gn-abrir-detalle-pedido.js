@@ -15,33 +15,10 @@ function getTok() {
 }
 
 async function cargarPedidoPorIdDesdeApi(id, opts) {
-    if (opts.neonOk?.() && typeof opts.sqlSimple === 'function' && typeof opts.esc === 'function') {
-        try {
-            const r = await opts.sqlSimple(`SELECT * FROM pedidos WHERE id = ${opts.esc(id)} LIMIT 1`);
-            const raw = r.rows?.[0];
-            const norm =
-                typeof window.gnNormPedidoDesdeApi === 'function' ? window.gnNormPedidoDesdeApi : null;
-            if (raw && norm) return norm(raw);
-        } catch (e) {
-            console.warn('[abrirDetallePedidoPorId] sql', e?.message || e);
-        }
-    }
-    const tok = getTok();
     const norm = typeof window.gnNormPedidoDesdeApi === 'function' ? window.gnNormPedidoDesdeApi : null;
-    if (!tok || !norm) return null;
-    try {
-        if (typeof window.asegurarJwtApiRest === 'function') {
-            await window.asegurarJwtApiRest();
-        }
-        const r = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(id))}`), {
-            headers: { Authorization: `Bearer ${tok}` },
-            cache: 'no-store',
-        });
-        const raw = await r.json().catch(() => ({}));
-        if (!r.ok) {
-            console.warn('[abrirDetallePedidoPorId] api', raw.error || r.status);
-            return null;
-        }
+    if (!norm) return null;
+    const guardar = (raw) => {
+        if (!raw) return null;
         const p = norm(raw);
         if (p && Array.isArray(window.app?.p)) {
             const idx = window.app.p.findIndex((x) => String(x.id) === String(id));
@@ -49,10 +26,31 @@ async function cargarPedidoPorIdDesdeApi(id, opts) {
             else window.app.p.push(p);
         }
         return p;
+    };
+    try {
+        if (typeof window.asegurarJwtApiRest === 'function') await window.asegurarJwtApiRest();
+        const tok = getTok();
+        if (tok) {
+            const r = await fetch(apiUrl(`/api/pedidos/${encodeURIComponent(String(id))}`), {
+                headers: { Authorization: `Bearer ${tok}` }, cache: 'no-store',
+            });
+            const raw = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                console.warn('[abrirDetallePedidoPorId] api', raw.error || r.status);
+                return null; // No eludir un rechazo de la API por SQL.
+            }
+            return guardar(raw);
+        }
+        if (opts.neonOk?.() && typeof opts.sqlSimple === 'function' &&
+            typeof opts.esc === 'function' && typeof opts.pedidosFiltroTenantSql === 'function') {
+            const filtro = await opts.pedidosFiltroTenantSql();
+            const r = await opts.sqlSimple(`SELECT * FROM pedidos WHERE id = ${opts.esc(id)} ${filtro} LIMIT 1`);
+            return guardar(r.rows?.[0]);
+        }
     } catch (e) {
-        console.warn('[abrirDetallePedidoPorId] fetch', e?.message || e);
-        return null;
+        console.warn('[abrirDetallePedidoPorId]', e?.message || e);
     }
+    return null;
 }
 
 /**

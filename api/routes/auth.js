@@ -141,18 +141,20 @@ router.post("/login", async (req, res) => {
     if (admin2faHabilitado() && adminRolPara2fa(u.rol)) {
       try {
         const otp = await crearDesafioOtpAdmin(u);
-        if (otp) {
-          return res.json({
-            requires_otp: true,
-            challenge_id: otp.challenge_id,
-            email_masked: otp.email_masked,
-            user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
-          });
+        if (!otp) {
+          return res.status(503).json({ error: "Segundo factor no disponible. Contactá al administrador del sistema.", code: "admin_2fa_unavailable" });
         }
+        return res.json({
+          requires_otp: true,
+          challenge_id: otp.challenge_id,
+          email_masked: otp.email_masked,
+          user: { id: u.id, email: u.email, nombre: u.nombre, rol: u.rol, tenant_id },
+        });
       } catch (e) {
         console.error("[auth/login] admin 2FA", e?.message || e);
         return res.status(503).json({
           error: "No se pudo enviar el código de verificación. Revisá EmailJS en el servidor.",
+          code: "admin_2fa_unavailable",
         });
       }
     }

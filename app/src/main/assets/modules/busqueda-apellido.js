@@ -230,8 +230,8 @@ export function installBusquedaApellidoHistorial(deps) {
                     const emoji = estadoEmoji(row.estado);
                     const pid = Number(row.id);
                     const dataPid =
-                        Number.isFinite(pid) && pid > 0 ? `data-pid="${pid}" class="gn-hist-pedido-open"` : '';
-                    return `<button type="button" class="nis-historial-item" ${dataPid} style="width:100%;text-align:left;cursor:pointer;padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);font:inherit;color:inherit;line-height:1.35;margin-bottom:.4rem">
+                        Number.isFinite(pid) && pid > 0 ? `data-pid="${pid}"` : '';
+                    return `<button type="button" class="nis-historial-item gn-hist-pedido-open" ${dataPid} style="width:100%;text-align:left;cursor:pointer;padding:.55rem .65rem;border:1px solid var(--bo);border-radius:.5rem;background:var(--bg);font:inherit;color:inherit;line-height:1.35;margin-bottom:.4rem">
   <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin-bottom:.2rem">
     <strong style="color:var(--bd);font-size:.88rem">#${np}</strong>
     <span style="font-size:.78rem;color:var(--tm)">${tipo}</span>
@@ -251,6 +251,7 @@ export function installBusquedaApellidoHistorial(deps) {
                         sqlSimple: deps.sqlSimple,
                         esc,
                         neonOk: deps.neonOk,
+                        pedidosFiltroTenantSql: deps.pedidosFiltroTenantSql,
                     });
                 });
             });

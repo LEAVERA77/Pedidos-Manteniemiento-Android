@@ -35,6 +35,20 @@ describe("Integración — POST /api/auth/login", () => {
     expect(res.body.error).toMatch(/requeridos/i);
   });
 
+  it("si 2FA está activado, no emite JWT cuando no se puede crear el desafío", async () => {
+    const previous = process.env.ADMIN_2FA_ENABLED;
+    process.env.ADMIN_2FA_ENABLED = "true";
+    try {
+      vi.mocked(query).mockResolvedValueOnce({ rows: [{ id: 3, email: "admin-sin-correo", nombre: "Admin", rol: "admin", password_hash: "clave", activo: true }] });
+      const res = await request(createHttpApp()).post("/api/auth/login").send({ usuario: "admin-sin-correo", password: "clave" }).expect(503);
+      expect(res.body.code).toBe("admin_2fa_unavailable");
+      expect(res.body.token).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.ADMIN_2FA_ENABLED;
+      else process.env.ADMIN_2FA_ENABLED = previous;
+    }
+  });
+
   it("401 si el usuario no existe", async () => {
     vi.mocked(query).mockResolvedValueOnce({ rows: [] });
     const app = createHttpApp();

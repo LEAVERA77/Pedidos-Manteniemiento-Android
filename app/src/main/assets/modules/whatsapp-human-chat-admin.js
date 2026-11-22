@@ -477,12 +477,11 @@ export async function abrirModalWhatsappHumanChat(prefSessionId) {
         let data = await r.json();
         let list = data.sessions || [];
         let useId = null;
-        if (prefSessionId && list.some(x => Number(x.id) === Number(prefSessionId))) {
+        if (prefSessionId != null) {
+            // Nunca abrir otro cliente si la sesión solicitada no aparece en la cola.
             useId = Number(prefSessionId);
         } else if (list[0]) {
             useId = Number(list[0].id);
-        } else if (prefSessionId) {
-            useId = Number(prefSessionId);
         }
         if (!useId || !Number.isFinite(useId)) {
             toast('No hay conversaciones en cola para abrir', 'info');

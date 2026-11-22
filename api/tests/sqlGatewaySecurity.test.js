@@ -96,6 +96,19 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
     });
   });
 
+  it("permite bloquear el gateway SQL con el interruptor de emergencia", async () => {
+    const previous = process.env.SQL_GATEWAY_DISABLED;
+    process.env.SQL_GATEWAY_DISABLED = "true";
+    try {
+      const token = signToken({ userId: 1, tenant_id: 1, rol: "admin" });
+      await request(createHttpApp()).post("/api/sql/query")
+        .set("Authorization", `Bearer ${token}`).send({ query: "SELECT 1" }).expect(503);
+    } finally {
+      if (previous === undefined) delete process.env.SQL_GATEWAY_DISABLED;
+      else process.env.SQL_GATEWAY_DISABLED = previous;
+    }
+  });
+
   it("rechaza con 401 cualquier consulta a /api/sql/query sin JWT válido", async () => {
     const app = createHttpApp();
     const res = await request(app)
