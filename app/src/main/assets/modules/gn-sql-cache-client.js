@@ -412,11 +412,12 @@ export async function createApiSqlGatewayClient({
     getAppUser,
     asegurarJwtApiRest,
     intentarRefrescarJwtDesdeCredencialesGuardadas,
+    skipHealthCheck = false,
 }) {
     const HEALTH_TIMEOUT_MS = 25000;
     const HEALTH_INTENTOS = 3;
-    let healthOk = false;
-    for (let i = 0; i < HEALTH_INTENTOS; i++) {
+    let healthOk = !!skipHealthCheck;
+    for (let i = 0; !healthOk && i < HEALTH_INTENTOS; i++) {
         if (i > 0) {
             await new Promise((r) => setTimeout(r, 500 + i * 750));
         }

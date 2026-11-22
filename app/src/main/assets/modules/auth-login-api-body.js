@@ -161,7 +161,8 @@ async function fetchAuthLoginApiAttempt(usuario, password, apiUrlFn, fetchFn, ti
 export async function fetchAuthLoginApi(usuario, password, apiUrlFn, fetchFn, opts = {}) {
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : DEFAULT_LOGIN_TIMEOUT_MS;
 
-    await pingApiHealthForLogin(apiUrlFn, fetchFn);
+    // El calentamiento no debe bloquear el POST: este también despierta la API.
+    void pingApiHealthForLogin(apiUrlFn, fetchFn);
 
     const run = () => fetchAuthLoginApiAttempt(usuario, password, apiUrlFn, fetchFn, timeoutMs);
 
@@ -171,7 +172,12 @@ export async function fetchAuthLoginApi(usuario, password, apiUrlFn, fetchFn, op
     }
 
     try {
-        return await run();
+        const first = await run();
+        if ([502, 503, 504].includes(first.resp.status)) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return await run();
+        }
+        return first;
     } catch (e) {
         if (!(e && e.name === 'AbortError')) throw e;
         clearAuthLoginTenantHint();

@@ -616,7 +616,7 @@ window.addEventListener('online', async () => {
     gnReiniciarWatchAlCambiarRed();
     console.log('Navegador: online (verificando conectividad real...)');
     
-    const hayRed = await hayInternet();
+    const hayRed = getApiBaseUrl() ? true : await hayInternet();
     if (!hayRed) { console.log('Evento online ignorado — sin red real'); return; }
     
     try {
@@ -1082,13 +1082,14 @@ window.addEventListener('offline', () => { _netCache = { ok: false, ts: Date.now
 
 
 
-async function initApiSqlGateway(apiBase) {
+async function initApiSqlGateway(apiBase, opts = {}) {
     const client = await createApiSqlGatewayClient({
         apiBase,
         getApiToken,
         getAppUser: () => app?.u || null,
         asegurarJwtApiRest,
         intentarRefrescarJwtDesdeCredencialesGuardadas,
+        skipHealthCheck: !!opts.skipHealthCheck,
     });
     if (!client) return false;
     _sql = client;
@@ -1097,11 +1098,36 @@ async function initApiSqlGateway(apiBase) {
     return true;
 }
 
+async function gnMarcarApiDisponibleDesdeLogin(apiBase) {
+    if (!apiBase || (NEON_OK && _sql && !modoOffline)) return;
+    // La respuesta de autenticación acredita conectividad, no disponibilidad de la BD.
+    await initApiSqlGateway(apiBase, { skipHealthCheck: true });
+    window.__gnNeonFastOfflineAndroid = false;
+    gnDetenerReintentoConexion();
+    app.ok = true;
+    setModoOffline(false);
+    if (dbs) {
+        dbs.className = 'dbs ok';
+        dbs.textContent = 'Conectado - Servidor API Seguro';
+    }
+}
+
+let _gnInitNeonEnCurso = null;
 async function initNeon() {
-    if (window.__gnNeonFastOfflineAndroid && typeof window.AndroidConfig !== 'undefined') {
-        NEON_OK = false;
+    if (_gnInitNeonEnCurso) return _gnInitNeonEnCurso;
+    const pending = initNeonImpl();
+    _gnInitNeonEnCurso = pending;
+    try { return await pending; }
+    finally { if (_gnInitNeonEnCurso === pending) _gnInitNeonEnCurso = null; }
+}
+
+async function initNeonImpl() {
+    if (window.__gnNeonFastOfflineAndroid && typeof window.AndroidConfig !== 'undefined'
+            && navigator.onLine === false) {
+        if (!_sql) NEON_OK = false;
         return false;
     }
+    if (navigator.onLine !== false) window.__gnNeonFastOfflineAndroid = false;
 
     const apiBase = getApiBaseUrl();
     const directCs = String(window.APP_CONFIG?.neon?.connectionString || '').trim();
@@ -1113,7 +1139,8 @@ async function initNeon() {
 
     // WebView Android: a veces hayInternet() falla con HTML remoto o file:// aunque la API sea alcanzable.
     const esWebViewLocal = typeof window.AndroidConfig !== 'undefined';
-    const tieneRed = await hayInternet();
+    // La API es el destino real; no bloquear por sondas de terceros que pueden fallar en Android.
+    const tieneRed = apiBase ? true : await hayInternet();
     const navegadorHttps =
         typeof window !== 'undefined' &&
         window.location?.protocol === 'https:' &&
@@ -1129,6 +1156,8 @@ async function initNeon() {
         const okApi = await initApiSqlGateway(apiBase);
         if (okApi) return true;
         if (!directCs) {
+            // Un login simultáneo pudo validar la API mientras terminaba /health.
+            if (_sql && NEON_OK) return true;
             NEON_OK = false;
             return false;
         }
@@ -3000,7 +3029,7 @@ const lb  = document.getElementById('lb');
 /** WebView Android: asegurar que el submit de login no quede bloqueado por el atributo HTML `disabled`. */
 function habilitarBotonIngresarLogin() {
     const el = document.getElementById('lb');
-    if (!el) return;
+    if (!el || window.__gnLoginEnCurso) return;
     el.disabled = false;
     try {
         el.removeAttribute('disabled');
@@ -3119,10 +3148,34 @@ if (dbs) {
 }
 
 
+let _gnRetryConexionTimer = null;
+let _gnRetryConexionIntentos = 0;
+function gnDetenerReintentoConexion() {
+    clearTimeout(_gnRetryConexionTimer);
+    _gnRetryConexionTimer = null;
+    _gnRetryConexionIntentos = 0;
+}
+function gnProgramarReintentoConexion(inmediato = false) {
+    if (_gnRetryConexionTimer != null || app.u || navigator.onLine === false) return;
+    const retrasos = [3000, 6000, 12000, 30000];
+    const delay = inmediato ? 0 : retrasos[Math.min(_gnRetryConexionIntentos++, retrasos.length - 1)];
+    _gnRetryConexionTimer = setTimeout(async () => {
+        _gnRetryConexionTimer = null;
+        if (app.u || navigator.onLine === false) return;
+        if (document.visibilityState === 'hidden') { gnProgramarReintentoConexion(); return; }
+        await conectarNeon();
+    }, delay);
+}
+window.addEventListener('online', () => gnProgramarReintentoConexion(true));
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && modoOffline) gnProgramarReintentoConexion(true);
+});
+
 async function conectarNeon() {
     try {
         const ok = await initNeon();
         if (ok) {
+            gnDetenerReintentoConexion();
             app.ok = true;
             try {
                 if (dbs) {
@@ -3262,6 +3315,8 @@ async function conectarNeon() {
             throw new Error('Sin red');
         }
     } catch(e) {
+        // No pisar una sesión que ya validó la API durante el arranque.
+        if (_sql && NEON_OK && !modoOffline) { gnDetenerReintentoConexion(); return; }
         console.warn('[Neon]', e.message);
         app.ok = false;
         NEON_OK = false;
@@ -3271,11 +3326,12 @@ async function conectarNeon() {
         if (dbs) {
             dbs.className = 'dbs er';
             dbs.innerHTML = tieneCache
-                ? '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline'
-                : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
+                ? '<i class="fas fa-wifi-slash"></i> Servidor no disponible — podés ingresar offline'
+                : '<i class="fas fa-wifi-slash"></i> Servidor no disponible — reintentando conexión';
         }
         setModoOffline(true);
         habilitarBotonIngresarLogin();
+        gnProgramarReintentoConexion();
     }
 }
 
@@ -3315,6 +3371,7 @@ const gnLoginSubmitHandler = async e => {
     const lb = document.getElementById('lb');
     if (!emEl || !pwEl || !lb) return;
     if (!beginLoginAttempt()) return;
+    window.__gnLoginEnCurso = true;
     try {
         console.log('[GN] login');
     } catch (_) {}
@@ -3450,6 +3507,9 @@ const gnLoginSubmitHandler = async e => {
     function intentarOffline() {
         const u = verificarUsuarioOffline(em, pw);
         if (u) {
+            NEON_OK = false;
+            _sql = null;
+            setModoOffline(true);
             const uEnt = usuarioSesionParaEntrar(u);
             entrarConUsuario(
                 uEnt && typeof uEnt === 'object'
@@ -3465,22 +3525,27 @@ const gnLoginSubmitHandler = async e => {
 
     try {
         
-        if (modoOffline || !NEON_OK || !_sql) {
-            try {
-                const reconectado = await initNeon();
-                if (reconectado) {
-                    NEON_OK = true;
-                    setModoOffline(false);
-                    await notificarNeonConectadoParaUpdateCheck();
-                }
-            } catch(_) {}
-        }
-        if (modoOffline || !NEON_OK || !_sql) {
-            if (!intentarOffline()) {
-                if (le) le.textContent = 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.';
+        // Una pulsación temprana comparte la carga de configuración con el arranque.
+        if (!window.APP_CONFIG) await asegurarAppConfig();
+        const apiLoginBase = getApiBaseUrl();
+        if (!apiLoginBase) {
+            if (modoOffline || !NEON_OK || !_sql) {
+                try {
+                    const reconectado = await initNeon();
+                    if (reconectado) { NEON_OK = true; setModoOffline(false); }
+                } catch (_) {}
             }
+            if (modoOffline || !NEON_OK || !_sql) {
+                if (!intentarOffline() && le) le.textContent = window.APP_CONFIG
+                    ? 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.'
+                    : 'No se pudo cargar la configuración. Revisá la conexión e intentá de nuevo.';
+                return;
+            }
+        } else if (navigator.onLine === false && intentarOffline()) {
             return;
         }
+        // Si hay API configurada, el propio login es la prueba autoritativa de conectividad.
+        // Nunca se acepta una contraseña offline ante un 401/403 del servidor.
 
         let usuario = null;
         let loginJwtPayload = null;
@@ -3493,8 +3558,9 @@ const gnLoginSubmitHandler = async e => {
                 loginApiFallo = loginJwtPayload;
                 loginJwtPayload = null;
             } else if (loginJwtPayload?.must_change_password && loginJwtPayload?.user_id) {
-                /* se maneja abajo con loginJwtPayload */
+                await gnMarcarApiDisponibleDesdeLogin(apiLoginBase);
             } else if (loginJwtPayload?.user?.id) {
+                await gnMarcarApiDisponibleDesdeLogin(apiLoginBase);
                 let must = false;
                 try {
                     const mr = await sqlSimple(
@@ -3514,6 +3580,13 @@ const gnLoginSubmitHandler = async e => {
                 };
             }
         } catch (_) {}
+
+        if (apiLoginBase && loginApiFallo?.network) {
+            if (!intentarOffline() && le) {
+                le.textContent = 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
+            }
+            return;
+        }
 
         /** 2) Fallback Neon solo si la API no respondió; no comparar texto plano si la API ya validó bcrypt (401). */
         if (
@@ -3670,9 +3743,8 @@ const gnLoginSubmitHandler = async e => {
                         'Falta api.baseUrl en config.json. Las contraseñas seguras solo validan por la API.';
                 }
             } else if (loginApiFallo?.network) {
-                if (le) {
-                    le.textContent =
-                        'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
+                if (!intentarOffline() && le) {
+                    le.textContent = 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
                 }
             } else if (loginApiFallo?.code === 'admin_2fa_unavailable' && le) {
                 le.textContent = 'Segundo factor no disponible. Contactá al administrador del sistema.';
@@ -3690,8 +3762,11 @@ const gnLoginSubmitHandler = async e => {
         }
     } finally {
         endLoginAttempt();
+        window.__gnLoginEnCurso = false;
         lb.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
         lb.disabled = false;
+        lfLogin?.classList.remove('gn-login-form--loading');
+        lb.classList.remove('gn-login-btn--loading');
     }
 };
 /** Expuesto para index.html (#lb) y login biométrico; el trap en login-biometric-android.js lo envuelve. */
@@ -13819,6 +13894,15 @@ function mostrarAlertaPedidoUrgente(pedido) {
 
 // ── Carga de config.json desde GitHub ────────────────────────
 let APP_CONFIG = null;
+let _gnConfigEnCurso = null;
+async function asegurarAppConfig() {
+    if (window.APP_CONFIG) return true;
+    if (_gnConfigEnCurso) return _gnConfigEnCurso;
+    const pending = cargarAppConfig();
+    _gnConfigEnCurso = pending;
+    try { return await pending; }
+    finally { if (_gnConfigEnCurso === pending) _gnConfigEnCurso = null; }
+}
 async function cargarAppConfig() {
     const uaGestorNova =
         typeof navigator !== 'undefined' &&
@@ -17726,7 +17810,7 @@ if ('serviceWorker' in navigator) {
         })();
 
         // 1. Cargar config.json
-        const configOk = await cargarAppConfig();
+        const configOk = await asegurarAppConfig();
         if (!configOk) return; // No continuar sin config
 
         // 2. Cargar EmailJS si hay config

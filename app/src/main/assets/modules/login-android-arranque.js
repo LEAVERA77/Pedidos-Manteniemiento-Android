@@ -126,12 +126,14 @@ function prepararLoginOfflineAndroid() {
     const dbs = document.getElementById('dbs');
     const lb = document.getElementById('lb');
     const offlinePosible = tieneCacheLoginOffline() || !!leerPmgUsuario();
-    if (dbs && offlinePosible) {
+    // No reemplazar un estado conectado/verificando solo porque existe una sesión cacheada.
+    if (dbs && typeof navigator !== 'undefined' && navigator.onLine === false) {
         dbs.className = 'dbs er';
-        dbs.innerHTML =
-            '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline';
+        dbs.innerHTML = offlinePosible
+            ? '<i class="fas fa-wifi-slash"></i> Sin conexión — podés ingresar offline'
+            : '<i class="fas fa-wifi-slash"></i> Sin conexión — ingresá con internet primero';
     }
-    if (lb) {
+    if (lb && !window.__gnLoginEnCurso) {
         lb.disabled = false;
         try {
             lb.removeAttribute('disabled');

@@ -17,6 +17,8 @@ let _runningVerify = false;
 let _waitAttempt = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let _waitTimer = null;
+let _retryVerifyTimer = null;
+let _retryVerifyCount = 0;
 
 function log(msg) {
     const s = String(msg || '').slice(0, 3800);
@@ -136,17 +138,24 @@ async function runTenantVerifyCore() {
         }
 
         if (!row) {
-            log(`[gn-tenant-boot] sin respuesta (${errLabel || 'null'}) → recarga forzada`);
-            if (!guardRecentReload()) {
-                markReloadGuard();
-                clearLocalExceptApiToken();
-                try {
-                    window.location.reload();
-                } catch (_) {}
+            // Una falla transitoria o estar offline no demuestra desajuste de tenant.
+            // No borrar sesión, cola de pedidos ni caché local; revalidar al volver la red.
+            log(`[gn-tenant-boot] tenant no verificable (${errLabel || 'sin respuesta'}); se conservan los datos locales`);
+            if (navigator.onLine !== false && _retryVerifyTimer == null && _retryVerifyCount < 3) {
+                const delay = [5000, 10000, 30000][_retryVerifyCount++];
+                _retryVerifyTimer = setTimeout(() => {
+                    _retryVerifyTimer = null;
+                    if (sessionReady() && navigator.onLine !== false && document.visibilityState === 'visible') {
+                        void runTenantVerifyCore();
+                    }
+                }, delay);
             }
             return;
         }
 
+        clearTimeout(_retryVerifyTimer);
+        _retryVerifyTimer = null;
+        _retryVerifyCount = 0;
         const remote = Number(row.tenant_id);
         if (!Number.isFinite(remote) || remote < 1) {
             log('[gn-tenant-boot] tenant remoto inválido');
@@ -224,6 +233,9 @@ function tryWaitForSession() {
 export function bootGnTenantForceSyncAndroid() {
     if (!isShell()) return;
     clearWaitTimer();
+    clearTimeout(_retryVerifyTimer);
+    _retryVerifyTimer = null;
+    _retryVerifyCount = 0;
     _waitAttempt = 0;
     queueMicrotask(() => tryWaitForSession());
 }
@@ -256,5 +268,6 @@ if (typeof window !== 'undefined') {
     if (isShell()) {
         scheduleBoot();
         installVisibilityHook();
+        window.addEventListener('online', bootGnTenantForceSyncAndroid);
     }
 }
