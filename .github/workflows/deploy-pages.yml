@@ -1,5 +1,5 @@
 # Patrón oficial GitHub: job build (artefacto) + job deploy (solo deploy-pages).
-# Secret obligatorio: NEON_CONNECTION_STRING (Settings → Secrets → Actions).
+# SEGURIDAD: config.json público en Pages SOLO incluye API_BASE_URL y EmailJS (NUNCA NEON_CONNECTION_STRING).
 
 name: Deploy GitHub Pages
 
@@ -27,34 +27,29 @@ jobs:
       - name: Configurar Pages
         uses: actions/configure-pages@v4
 
-      - name: Generar config.json desde secretos
+      - name: Generar config.json público sin credenciales de base de datos
         env:
-          NEON_CS: ${{ secrets.NEON_CONNECTION_STRING }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           EJS_PK: ${{ secrets.EMAILJS_PUBLIC_KEY }}
           EJS_SV: ${{ secrets.EMAILJS_SERVICE_ID }}
           EJS_TPL: ${{ secrets.EMAILJS_TEMPLATE_ID }}
         run: |
-          if [ -z "$NEON_CS" ]; then
-            echo "::error::Falta el secret NEON_CONNECTION_STRING en Settings → Secrets and variables → Actions."
-            exit 1
-          fi
+          EFFECTIVE_API="${API_BASE_URL:-https://nexxo-api-418k.onrender.com}"
           jq -n \
-            --arg cs "$NEON_CS" \
-            --arg api "${API_BASE_URL:-}" \
+            --arg api "$EFFECTIVE_API" \
             --arg pk "${EJS_PK:-}" \
             --arg sv "${EJS_SV:-}" \
             --arg tpl "${EJS_TPL:-}" \
-            '{neon:{connectionString:$cs},api:{baseUrl:$api},emailjs:{publicKey:$pk,serviceId:$sv,templateId:$tpl,templateIdReset:$tpl},app:{version:"2.0.4"}}' \
+            '{api:{baseUrl:$api},emailjs:{publicKey:$pk,serviceId:$sv,templateId:$tpl,templateIdReset:$tpl},app:{version:"2.0.5"}}' \
             > config.json
-          echo "OK: config.json generado (v2.0.4 con escapeHtml fix)."
+          echo "OK: config.json generado sin NEON_CONNECTION_STRING (API centralizada en Render)."
 
       - name: Preparar carpeta publicable
         run: |
           rm -rf dist
           mkdir -p dist
           cp index.html sw.js styles.css app.js map.js map-view.js offline.js autocompletado-calles.js config.example.json config.json dist/
-          for f in status.html seguridad.html gn-trust-ui.css gn-android-shell-perf.css; do
+          for f in status.html seguridad.html gn-trust-ui.css gn-android-shell-perf.css gn-login-screen.css gn-wizard-screen.css; do
             [ -f "$f" ] && cp "$f" dist/ || true
           done
           # app.js importa ES modules desde ./modules/*.js — sin esto el bundle falla en silencio (WebView).
@@ -73,6 +68,10 @@ jobs:
           [ -f SECURITY.md ] && cp SECURITY.md dist/ || true
           [ -f COPYRIGHT.md ] && cp COPYRIGHT.md dist/ || true
           touch dist/.nojekyll
+          if grep -qiE "postgresql://|postgres://|neon\.tech|connectionString" dist/config.json; then
+            echo "::error::Seguridad bloqueada: dist/config.json no puede contener cadenas de conexión a PostgreSQL/Neon."
+            exit 1
+          fi
 
       - name: Subir artefacto del sitio
         uses: actions/upload-pages-artifact@v4
