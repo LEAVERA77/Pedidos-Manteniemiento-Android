@@ -11,6 +11,11 @@ import { sugerirKpisConGroq } from "../services/groqKpiSugeridos.js";
 import { generarInformeConGroq } from "../services/groqGenerarInforme.js";
 import { explicarKpisConGroq } from "../services/groqExplicarKpis.js";
 import { generarMensajeDerivacionConGroq } from "../services/groqMensajeDerivacion.js";
+import {
+  callLlmChatCompletions,
+  getConfiguredProvidersPublicInfo,
+  hasLlmConfigured,
+} from "../services/llmClient.js";
 import { parsePeriod } from "../utils/helpers.js";
 
 const router = express.Router();
@@ -624,6 +629,54 @@ router.post("/generar-mensaje-derivacion", authWithTenantHost, adminOnly, async 
   } catch (e) {
     console.error("[ia/generar-mensaje-derivacion]", e?.message || e);
     return res.status(500).json({ ok: false, error: "No se pudo generar el mensaje" });
+  }
+});
+
+/**
+ * GET /api/ia/estado?probar=1
+ * Admin: informa proveedores IA configurados (con clave enmascarada) y opcionalmente prueba respuesta real.
+ */
+router.get("/estado", authWithTenantHost, adminOnly, async (req, res) => {
+  try {
+    const configurada = hasLlmConfigured();
+    const proveedores = getConfiguredProvidersPublicInfo();
+    if (String(req.query?.probar || "") !== "1") {
+      return res.json({ ok: true, configurada, proveedores });
+    }
+    if (!configurada) {
+      return res.status(400).json({
+        ok: false,
+        configurada: false,
+        proveedores: [],
+        error: "No hay clave de IA configurada en el servidor (GEMINI_API_KEY / OPENROUTER_API_KEY / AI_API_KEY)",
+      });
+    }
+    const t0 = Date.now();
+    const ping = await callLlmChatCompletions({
+      tag: "ia-estado-ping",
+      messages: [{ role: "user", content: "Respondé únicamente la palabra OK." }],
+      temperature: 0,
+      max_tokens: 20,
+      signal: AbortSignal.timeout(8000),
+    });
+    const latencia_ms = Date.now() - t0;
+    return res.status(ping.ok ? 200 : 502).json({
+      ok: ping.ok,
+      configurada: true,
+      proveedores,
+      prueba: {
+        ok: ping.ok,
+        proveedor_usado: ping.provider || null,
+        modelo: ping.model || null,
+        latencia_ms,
+        respuesta: ping.ok ? String(ping.content || "").trim().slice(0, 80) : null,
+        error: ping.ok ? null : ping.error || null,
+        detalle: ping.ok ? null : ping.detail || null,
+      },
+    });
+  } catch (e) {
+    console.error("[ia/estado]", e?.message || e);
+    return res.status(500).json({ ok: false, error: "Error verificando estado de IA" });
   }
 });
 

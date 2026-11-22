@@ -1,9 +1,4 @@
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 const SYSTEM_PROMPT_BASE = [
   "Eres un analista senior de gestión de servicios públicos en Argentina.",
@@ -48,45 +43,27 @@ function buildSystemPromptInforme(datos) {
  * @returns {Promise<{ ok: boolean, informe_ia?: object, error?: string }>}
  */
 export async function generarInformeConGroq({ datos }) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
+  if (!hasLlmConfigured()) {
     return { ok: true, informe_ia: null };
   }
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-generar-informe",
     messages: [
       { role: "system", content: buildSystemPromptInforme(datos) },
       { role: "user", content: JSON.stringify(datos) },
     ],
     temperature: 0.3,
     max_tokens: 1800,
-  };
-
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-generar-informe] HTTP", resp.status, detail.slice(0, 300));
-      return { ok: true, informe_ia: null };
-    }
-    const data = await resp.json();
-    const raw = data?.choices?.[0]?.message?.content || "";
-    const cleaned = raw.trim().replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
-    try {
-      const obj = JSON.parse(cleaned);
-      if (obj && typeof obj === "object") return { ok: true, informe_ia: obj };
-    } catch { /* parse failed */ }
-    return { ok: true, informe_ia: null };
-  } catch (err) {
-    console.error("[groq-generar-informe] fetch error:", err?.message || err);
+  });
+  if (!llm.ok) {
     return { ok: true, informe_ia: null };
   }
+  const raw = llm.content || "";
+  const cleaned = raw.trim().replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try {
+    const obj = JSON.parse(cleaned);
+    if (obj && typeof obj === "object") return { ok: true, informe_ia: obj };
+  } catch { /* parse failed */ }
+  return { ok: true, informe_ia: null };
 }

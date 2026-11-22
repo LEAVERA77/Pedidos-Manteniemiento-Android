@@ -4,14 +4,9 @@
  */
 
 import { normalizarRubroCliente } from "./tiposReclamo.js";
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-const TIMEOUT_MS = 2800;
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+const TIMEOUT_MS = 3500;
 
 function etiquetaRubro(tipoCliente) {
   const r = normalizarRubroCliente(tipoCliente);
@@ -52,8 +47,7 @@ const PROMPTS_PASO = {
  * @returns {Promise<{ ok: boolean, linea?: string, error?: string }>}
  */
 export async function generarLineaMicrocopyWhatsappGroq(opts) {
-  const apiKey = getApiKey();
-  if (!apiKey) return { ok: false, error: "GROQ_API_KEY no configurada" };
+  if (!hasLlmConfigured()) return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada" };
   const paso = String(opts?.paso || "").trim();
   const instruccion = PROMPTS_PASO[paso];
   if (!instruccion) return { ok: false, error: "paso inválido" };
@@ -73,43 +67,32 @@ export async function generarLineaMicrocopyWhatsappGroq(opts) {
     .filter(Boolean)
     .join(" ");
 
-  const body = {
-    model: MODEL,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: "Generá la línea de ayuda." },
-    ],
-    temperature: 0.4,
-    max_tokens: 90,
-  };
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
+    const llm = await callLlmChatCompletions({
+      tag: "ia-wa-microcopy",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: "Generá la línea de ayuda." },
+      ],
+      temperature: 0.4,
+      max_tokens: 90,
       signal: controller.signal,
     });
     clearTimeout(timer);
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-wa-microcopy] HTTP", resp.status, detail.slice(0, 160));
-      return { ok: false, error: `Groq ${resp.status}` };
+    if (!llm.ok) {
+      if (llm.aborted) return { ok: false, error: "timeout" };
+      return { ok: false, error: llm.status ? `${llm.provider || "IA"} ${llm.status}` : "red" };
     }
-    const data = await resp.json();
-    const linea = limpiarLinea(data?.choices?.[0]?.message?.content || "");
+    const linea = limpiarLinea(llm.content || "");
     if (!linea) return { ok: false, error: "vacío" };
     return { ok: true, linea };
   } catch (e) {
     clearTimeout(timer);
     if (e?.name === "AbortError") return { ok: false, error: "timeout" };
-    console.error("[groq-wa-microcopy]", e?.message || e);
+    console.error("[ia-wa-microcopy]", e?.message || e);
     return { ok: false, error: "red" };
   }
 }

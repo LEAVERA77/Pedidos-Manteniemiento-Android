@@ -37,6 +37,11 @@ import eventoCorteMasivoRoutes from "./routes/eventoCorteMasivo.js";
 import tenantOperativaSettingsRoutes from "./routes/tenantOperativaSettings.js";
 import debugRoutes from "./routes/debug.js";
 import iaRoutes from "./routes/ia.js";
+import {
+  callLlmChatCompletions,
+  hasLlmConfigured,
+  resolveLlmProviders,
+} from "./services/llmClient.js";
 import sociosExportRoutes from "./routes/sociosExport.js";
 import padronPedidoRoutes from "./routes/padronPedido.js";
 import sqlRoutes from "./routes/sql.js";
@@ -158,6 +163,58 @@ export function createHttpApp() {
       gitCommit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.SOURCE_VERSION || null,
       node: process.version,
     });
+  });
+
+  let lastIaProbeCache = null;
+  let lastIaProbeAt = 0;
+  /** Salud de IA sin exponer claves ni datos de clientes; probe real cacheado 60s para cuidar cuota gratuita. */
+  app.get("/api/health/ia", async (req, res) => {
+    const providers = resolveLlmProviders();
+    const primary = providers[0] || null;
+    if (String(req.query?.probar || "") !== "1") {
+      return res.json({
+        ok: hasLlmConfigured(),
+        configurada: hasLlmConfigured(),
+        proveedor: primary ? primary.label : null,
+        modelo: primary ? primary.model : null,
+      });
+    }
+    if (!primary) {
+      return res.status(503).json({
+        ok: false,
+        configurada: false,
+        proveedor: null,
+        modelo: null,
+        error: "sin_clave_ia",
+      });
+    }
+    const now = Date.now();
+    if (lastIaProbeCache && now - lastIaProbeAt < 60_000) {
+      return res.status(lastIaProbeCache.ok ? 200 : 502).json({
+        ...lastIaProbeCache,
+        cached: true,
+      });
+    }
+    const t0 = Date.now();
+    const ping = await callLlmChatCompletions({
+      tag: "health-ia",
+      messages: [{ role: "user", content: "Respondé solo OK." }],
+      temperature: 0,
+      max_tokens: 16,
+      signal: AbortSignal.timeout(8000),
+    });
+    const payload = {
+      ok: ping.ok,
+      configurada: true,
+      proveedor: ping.provider || primary.label,
+      modelo: ping.model || primary.model,
+      latencia_ms: Date.now() - t0,
+      status_upstream: ping.status || null,
+      error: ping.ok ? null : ping.error || null,
+    };
+    lastIaProbeCache = payload;
+    lastIaProbeAt = Date.now();
+    return res.status(ping.ok ? 200 : 502).json(payload);
   });
 
   /** Rutas debug que pegan a Nominatim: mismo bucket que /api/geocode. */

@@ -1,11 +1,5 @@
 import { TIPOS_RECLAMO_POR_RUBRO, normalizarRubroCliente } from "./tiposReclamo.js";
-
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 function buildSystemPrompt(tiposValidos) {
   return [
@@ -64,9 +58,8 @@ function limpiarNombreLocalidad(raw) {
  * @returns {Promise<{ ok: boolean, clasificacion?: object, error?: string }>}
  */
 export async function clasificarReclamoConGroq({ texto, tipoNegocio }) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    return { ok: false, error: "GROQ_API_KEY no configurada en el servidor" };
+  if (!hasLlmConfigured()) {
+    return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada en el servidor" };
   }
   const textoTrim = String(texto || "").trim();
   if (!textoTrim) {
@@ -77,39 +70,21 @@ export async function clasificarReclamoConGroq({ texto, tipoNegocio }) {
     ? TIPOS_RECLAMO_POR_RUBRO[rubro]
     : [...new Set(Object.values(TIPOS_RECLAMO_POR_RUBRO).flat())];
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-classifier",
     messages: [
       { role: "system", content: buildSystemPrompt(tiposValidos) },
       { role: "user", content: textoTrim },
     ],
     temperature: 0,
     max_tokens: 200,
-  };
-
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-classifier] HTTP", resp.status, detail.slice(0, 300));
-      return { ok: false, error: `Groq API respondió ${resp.status}` };
-    }
-    const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    const clasificacion = parseGroqResponse(content);
-    if (!tiposValidos.includes(clasificacion.tipo)) {
-      clasificacion.tipo = "Otros";
-    }
-    return { ok: true, clasificacion };
-  } catch (err) {
-    console.error("[groq-classifier] fetch error:", err?.message || err);
-    return { ok: false, error: "Error de red al contactar Groq" };
+  });
+  if (!llm.ok) {
+    return { ok: false, error: llm.error || "Error de red al contactar IA" };
   }
+  const clasificacion = parseGroqResponse(llm.content || "");
+  if (!tiposValidos.includes(clasificacion.tipo)) {
+    clasificacion.tipo = "Otros";
+  }
+  return { ok: true, clasificacion };
 }

@@ -4,12 +4,7 @@
  * made by leavera77
  */
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 function esEventoOFiesta(tituloLower) {
   const palabras = ["fiesta", "festival", "festejo", "patron", "aniversario", "evento", "acto",
@@ -201,42 +196,33 @@ function buildBroadcastSystemPrompt(tipoNegocio, titulo, nombreTenant) {
  * @returns {Promise<{ ok: boolean, mensaje?: string, error?: string }>}
  */
 export async function generarMensajeBroadcast({ titulo, tipo_negocio, nombre_tenant }) {
-  const key = getApiKey();
-  if (!key) return { ok: false, error: "GROQ_API_KEY no configurada" };
+  if (!hasLlmConfigured()) return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada" };
   if (!titulo || !titulo.trim()) return { ok: false, error: "Título vacío" };
 
   const systemPrompt = buildBroadcastSystemPrompt(tipo_negocio || "municipio", titulo, nombre_tenant || "");
 
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Estilo/tema del aviso: "${titulo.trim()}"` },
-        ],
-        temperature: 0.6,
-        max_tokens: 600,
-      }),
-    });
+  const llm = await callLlmChatCompletions({
+    tag: "ia-broadcast",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Estilo/tema del aviso: "${titulo.trim()}"` },
+    ],
+    temperature: 0.6,
+    max_tokens: 600,
+  });
 
-    if (!resp.ok) {
-      const errBody = await resp.text().catch(() => "");
-      return { ok: false, error: `Groq HTTP ${resp.status}: ${errBody.slice(0, 200)}` };
-    }
-
-    const data = await resp.json();
-    const raw = data?.choices?.[0]?.message?.content || "";
-    const mensaje = raw.trim().replace(/^["']|["']$/g, "");
-
-    if (!mensaje) return { ok: false, error: "La IA no generó un mensaje" };
-    return { ok: true, mensaje };
-  } catch (e) {
-    return { ok: false, error: String(e.message || e) };
+  if (!llm.ok) {
+    return {
+      ok: false,
+      error: llm.status
+        ? `${llm.provider || "IA"} HTTP ${llm.status}: ${(llm.detail || "").slice(0, 200)}`
+        : String(llm.error || "Error al consultar IA"),
+    };
   }
+
+  const raw = llm.content || "";
+  const mensaje = raw.trim().replace(/^["']|["']$/g, "");
+
+  if (!mensaje) return { ok: false, error: "La IA no generó un mensaje" };
+  return { ok: true, mensaje };
 }

@@ -1,9 +1,4 @@
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 const SYSTEM_PROMPT = [
   "Eres un analista senior de gestión de servicios públicos en Argentina.",
@@ -25,46 +20,28 @@ const SYSTEM_PROMPT = [
  * @returns {Promise<{ ok: boolean, explicaciones?: object, error?: string }>}
  */
 export async function explicarKpisConGroq({ kpis, tipo_negocio }) {
-  const apiKey = getApiKey();
-  if (!apiKey) return { ok: true, explicaciones: null };
+  if (!hasLlmConfigured()) return { ok: true, explicaciones: null };
   if (!kpis || !kpis.length) return { ok: true, explicaciones: {} };
 
   const payload = { tipo_negocio, kpis };
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-explicar-kpis",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify(payload) },
     ],
     temperature: 0.25,
     max_tokens: 1200,
-  };
-
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-explicar-kpis] HTTP", resp.status, detail.slice(0, 300));
-      return { ok: true, explicaciones: null };
-    }
-    const data = await resp.json();
-    const raw = data?.choices?.[0]?.message?.content || "";
-    const cleaned = raw.trim().replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
-    try {
-      const obj = JSON.parse(cleaned);
-      if (obj && typeof obj === "object" && !Array.isArray(obj)) return { ok: true, explicaciones: obj };
-    } catch { /* parse failed */ }
-    return { ok: true, explicaciones: null };
-  } catch (err) {
-    console.error("[groq-explicar-kpis] fetch error:", err?.message || err);
+  });
+  if (!llm.ok) {
     return { ok: true, explicaciones: null };
   }
+  const raw = llm.content || "";
+  const cleaned = raw.trim().replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try {
+    const obj = JSON.parse(cleaned);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) return { ok: true, explicaciones: obj };
+  } catch { /* parse failed */ }
+  return { ok: true, explicaciones: null };
 }

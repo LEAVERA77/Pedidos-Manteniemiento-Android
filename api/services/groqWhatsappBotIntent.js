@@ -4,9 +4,7 @@
  */
 
 import { normalizarRubroCliente } from "./tiposReclamo.js";
-
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 const INTENCIONES = [
   "identificador_cuenta_mis_pedidos",
@@ -14,10 +12,6 @@ const INTENCIONES = [
   "orientacion_chat",
   "menu_cargar_reclamo",
 ];
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
 
 function descripcionRubroParaPrompt(tipoCliente) {
   const r = normalizarRubroCliente(tipoCliente);
@@ -76,9 +70,8 @@ function parseIntencion(text) {
  * @returns {Promise<{ ok: boolean, intencion?: string, error?: string }>}
  */
 export async function inferirIntencionBotWhatsappGroq(opts) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    return { ok: false, error: "GROQ_API_KEY no configurada" };
+  if (!hasLlmConfigured()) {
+    return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada" };
   }
   const texto = String(opts?.texto || "").trim();
   if (texto.length < 2) {
@@ -96,40 +89,24 @@ export async function inferirIntencionBotWhatsappGroq(opts) {
     .filter(Boolean)
     .join("\n");
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-wa-intent",
     messages: [
       { role: "system", content: buildSystemPrompt() },
       { role: "user", content: userBlock },
     ],
     temperature: 0,
     max_tokens: 100,
-  };
+  });
 
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-wa-intent] HTTP", resp.status, detail.slice(0, 200));
-      return { ok: false, error: `Groq ${resp.status}` };
-    }
-    const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    const intencion = parseIntencion(content);
-    if (!intencion) {
-      console.warn("[groq-wa-intent] parse falló", content.slice(0, 120));
-      return { ok: false, error: "parse" };
-    }
-    return { ok: true, intencion };
-  } catch (e) {
-    console.error("[groq-wa-intent]", e?.message || e);
-    return { ok: false, error: "red" };
+  if (!llm.ok) {
+    return { ok: false, error: llm.status ? `${llm.provider || "IA"} ${llm.status}` : "red" };
   }
+  const content = llm.content || "";
+  const intencion = parseIntencion(content);
+  if (!intencion) {
+    console.warn("[ia-wa-intent] parse falló", content.slice(0, 120));
+    return { ok: false, error: "parse" };
+  }
+  return { ok: true, intencion };
 }

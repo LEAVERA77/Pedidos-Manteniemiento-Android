@@ -4,13 +4,7 @@
  */
 
 import { normalizarRubroCliente } from "./tiposReclamo.js";
-
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 function etiquetaRubro(tipoCliente) {
   const r = normalizarRubroCliente(tipoCliente);
@@ -36,8 +30,7 @@ function limpiarSalidaModelo(s) {
  * @returns {Promise<{ ok: boolean, mensaje?: string, error?: string }>}
  */
 export async function generarRespuestaOrientacionWhatsappGroq(opts) {
-  const apiKey = getApiKey();
-  if (!apiKey) return { ok: false, error: "GROQ_API_KEY no configurada" };
+  if (!hasLlmConfigured()) return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada" };
   const texto = String(opts?.texto || "").trim();
   if (texto.length < 2) return { ok: false, error: "vacío" };
 
@@ -66,36 +59,20 @@ export async function generarRespuestaOrientacionWhatsappGroq(opts) {
     .filter(Boolean)
     .join("\n");
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-wa-orientacion",
     messages: [
       { role: "system", content: system },
       { role: "user", content: texto.slice(0, 900) },
     ],
     temperature: 0.35,
     max_tokens: 420,
-  };
+  });
 
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-wa-orientacion] HTTP", resp.status, detail.slice(0, 200));
-      return { ok: false, error: `Groq ${resp.status}` };
-    }
-    const data = await resp.json();
-    const content = limpiarSalidaModelo(data?.choices?.[0]?.message?.content || "");
-    if (!content) return { ok: false, error: "vacío modelo" };
-    return { ok: true, mensaje: content };
-  } catch (e) {
-    console.error("[groq-wa-orientacion]", e?.message || e);
-    return { ok: false, error: "red" };
+  if (!llm.ok) {
+    return { ok: false, error: llm.status ? `${llm.provider || "IA"} ${llm.status}` : "red" };
   }
+  const content = limpiarSalidaModelo(llm.content || "");
+  if (!content) return { ok: false, error: "vacío modelo" };
+  return { ok: true, mensaje: content };
 }

@@ -5,13 +5,7 @@
  */
 
 import { normalizarRubroCliente } from "./tiposReclamo.js";
-
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-    return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 function rubroContextoPrompt(tipoCliente) {
     const r = normalizarRubroCliente(tipoCliente);
@@ -70,9 +64,8 @@ export function parseTipoReclamoGroqJson(text, maxN) {
  * @returns {Promise<{ ok: boolean, indice?: number|null, confiable?: boolean, intento_descripcion_reclamo?: boolean, error?: string }>}
  */
 export async function inferirTipoReclamoBotWhatsappGroq(opts) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        return { ok: false, error: "GROQ_API_KEY no configurada" };
+    if (!hasLlmConfigured()) {
+        return { ok: false, error: "GEMINI_API_KEY / GROQ_API_KEY no configurada" };
     }
     const tipos = Array.isArray(opts?.tipos) ? opts.tipos.map((t) => String(t || "").trim()).filter(Boolean) : [];
     if (!tipos.length) {
@@ -98,45 +91,29 @@ export async function inferirTipoReclamoBotWhatsappGroq(opts) {
         .filter(Boolean)
         .join("\n");
 
-    const body = {
-        model: MODEL,
+    const llm = await callLlmChatCompletions({
+        tag: "ia-wa-tipo-reclamo",
         messages: [
             { role: "system", content: buildSystemPrompt(maxN) },
             { role: "user", content: userBlock },
         ],
         temperature: 0,
         max_tokens: 120,
-    };
+    });
 
-    try {
-        const resp = await fetch(GROQ_API_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify(body),
-        });
-        if (!resp.ok) {
-            const detail = await resp.text().catch(() => "");
-            console.error("[groq-wa-tipo-reclamo] HTTP", resp.status, detail.slice(0, 200));
-            return { ok: false, error: `Groq ${resp.status}` };
-        }
-        const data = await resp.json();
-        const content = data?.choices?.[0]?.message?.content || "";
-        const parsed = parseTipoReclamoGroqJson(content, maxN);
-        if (!parsed) {
-            console.warn("[groq-wa-tipo-reclamo] parse falló", content.slice(0, 160));
-            return { ok: false, error: "parse" };
-        }
-        return {
-            ok: true,
-            indice: parsed.indice,
-            confiable: parsed.confiable,
-            intento_descripcion_reclamo: parsed.intento_descripcion_reclamo,
-        };
-    } catch (e) {
-        console.error("[groq-wa-tipo-reclamo]", e?.message || e);
-        return { ok: false, error: "red" };
+    if (!llm.ok) {
+        return { ok: false, error: llm.status ? `${llm.provider || "IA"} ${llm.status}` : "red" };
     }
+    const content = llm.content || "";
+    const parsed = parseTipoReclamoGroqJson(content, maxN);
+    if (!parsed) {
+        console.warn("[ia-wa-tipo-reclamo] parse falló", content.slice(0, 160));
+        return { ok: false, error: "parse" };
+    }
+    return {
+        ok: true,
+        indice: parsed.indice,
+        confiable: parsed.confiable,
+        intento_descripcion_reclamo: parsed.intento_descripcion_reclamo,
+    };
 }

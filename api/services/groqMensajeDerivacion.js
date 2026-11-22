@@ -3,12 +3,7 @@
  * made by leavera77
  */
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 function buildSystemPrompt(destinatario) {
   return `Eres un asistente que redacta mensajes formales y profesionales para derivar reclamos municipales a entidades externas en Argentina.
@@ -40,8 +35,7 @@ export async function generarMensajeDerivacionConGroq({
   nombre_tenant,
   mensaje_borrador,
 }) {
-  const key = getApiKey();
-  if (!key) throw new Error("GROQ_API_KEY no configurada");
+  if (!hasLlmConfigured()) throw new Error("GEMINI_API_KEY / GROQ_API_KEY no configurada");
 
   const partes = [];
   if (tipo_reclamo) partes.push(`Tipo de reclamo: ${tipo_reclamo}`);
@@ -66,30 +60,25 @@ ${partes.join("\n")}
 ${bloqueBorrador}
 El mensaje debe estar listo para enviar por WhatsApp. No uses markdown ni formato de código.`;
 
-  const resp = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: buildSystemPrompt(destinatario) },
-        { role: "user", content: userMsg },
-      ],
-      temperature: 0.6,
-      max_tokens: 600,
-    }),
+  const llm = await callLlmChatCompletions({
+    tag: "ia-mensaje-derivacion",
+    messages: [
+      { role: "system", content: buildSystemPrompt(destinatario) },
+      { role: "user", content: userMsg },
+    ],
+    temperature: 0.6,
+    max_tokens: 600,
   });
 
-  if (!resp.ok) {
-    const e = await resp.text().catch(() => "");
-    throw new Error(`Groq HTTP ${resp.status}: ${e.slice(0, 200)}`);
+  if (!llm.ok) {
+    throw new Error(
+      llm.status
+        ? `${llm.provider || "IA"} HTTP ${llm.status}: ${(llm.detail || "").slice(0, 200)}`
+        : String(llm.error || "Error al contactar IA")
+    );
   }
 
-  const data = await resp.json();
-  const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error("Groq devolvió respuesta vacía");
+  const text = (llm.content || "").trim();
+  if (!text) throw new Error("La IA devolvió respuesta vacía");
   return text;
 }

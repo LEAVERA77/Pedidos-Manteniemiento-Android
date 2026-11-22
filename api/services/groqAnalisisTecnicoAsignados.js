@@ -1,9 +1,4 @@
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-
-function getApiKey() {
-  return String(process.env.GROQ_API_KEY || "").trim();
-}
+import { callLlmChatCompletions, hasLlmConfigured } from "./llmClient.js";
 
 const SYSTEM_PROMPT = [
   "Eres asistente de planificación de ruta para un técnico de servicios en Argentina.",
@@ -21,40 +16,21 @@ const SYSTEM_PROMPT = [
  * @returns {Promise<{ ok: boolean, recomendacion_ia?: string | null, error?: string }>}
  */
 export async function analizarAsignadosTecnicoConGroq({ resumen }) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
+  if (!hasLlmConfigured()) {
     return { ok: true, recomendacion_ia: null };
   }
 
-  const body = {
-    model: MODEL,
+  const llm = await callLlmChatCompletions({
+    tag: "ia-analisis-tecnico-asignados",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify(resumen) },
     ],
     temperature: 0.25,
     max_tokens: 650,
-  };
-
-  try {
-    const resp = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      console.error("[groq-analisis-tecnico-asignados] HTTP", resp.status, detail.slice(0, 300));
-      return { ok: true, recomendacion_ia: null };
-    }
-    const data = await resp.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    return { ok: true, recomendacion_ia: content.trim() || null };
-  } catch (err) {
-    console.error("[groq-analisis-tecnico-asignados] fetch error:", err?.message || err);
+  });
+  if (!llm.ok) {
     return { ok: true, recomendacion_ia: null };
   }
+  return { ok: true, recomendacion_ia: (llm.content || "").trim() || null };
 }
