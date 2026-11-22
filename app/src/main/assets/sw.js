@@ -1,5 +1,5 @@
 // Service worker de Pedidos MG: los mapas usan la caché HTTP normal del navegador.
-const CACHE_SHELL = 'pmg-shell-v283';
+const CACHE_SHELL = 'pmg-shell-v284';
 const CACHE_API   = 'pmg-api-v1';
 const SW_VERSION  = '1.9.5';
 
@@ -235,6 +235,8 @@ function shellAssetUrls() {
     j('map.js'),
     j('map-view.js'),
     j('vendor/offline/entre-rios-ne-v1.js'),
+    j('vendor/offline/er-offline-render-v1.js'),
+    j('vendor/offline/er-osm-index-v1.js'),
     j('vendor/leaflet-1.9.4/leaflet.js'),
     j('vendor/leaflet-1.9.4/leaflet.css'),
     j('vendor/leaflet-1.9.4/images/marker-icon.png'),

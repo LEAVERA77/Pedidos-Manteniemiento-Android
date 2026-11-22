@@ -61,6 +61,8 @@ jobs:
           [ -f admin-web-responsive.css ] && cp admin-web-responsive.css dist/ || true
           [ -f index.min.html ] && cp index.min.html dist/ || true
           [ -f sync-worker.js ] && cp sync-worker.js dist/ || true
+          # Leaflet y los sectores OSM offline son dependencias del mapa.
+          if [ -d vendor ]; then mkdir -p dist/vendor && cp -r vendor/. dist/vendor/; fi
           if [ -d js ]; then mkdir -p dist/js && cp -r js/. dist/js/; fi
           if [ -d branding ]; then mkdir -p dist/branding && cp -r branding/. dist/branding/; fi
           [ -f gestornova-logo.png ] && cp gestornova-logo.png dist/ || true
@@ -68,6 +70,7 @@ jobs:
           [ -f README.md ] && cp README.md dist/ || true
           [ -f SECURITY.md ] && cp SECURITY.md dist/ || true
           [ -f COPYRIGHT.md ] && cp COPYRIGHT.md dist/ || true
+          [ -f MAPA_OFFLINE.md ] && cp MAPA_OFFLINE.md dist/ || true
           touch dist/.nojekyll
           if grep -qiE "postgresql://|postgres://|neon\.tech|connectionString" dist/config.json; then
             echo "::error::Seguridad bloqueada: dist/config.json no puede contener cadenas de conexión a PostgreSQL/Neon."

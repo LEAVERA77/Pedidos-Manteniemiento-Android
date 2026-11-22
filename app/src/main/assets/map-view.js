@@ -1,4 +1,5 @@
 import { offlineMap } from './vendor/offline/entre-rios-ne-v1.js';
+import { createOfflineDetails } from './vendor/offline/er-offline-render-v1.js';
 /**
  * Mapa Leaflet (capa base + init): se carga con import() la primera vez que hace falta.
  * Centro: API → caché Android → EMPRESA_CFG; en WebView Android sin centro: mensaje y reintentar (sin coords fijas de ciudad).
@@ -644,7 +645,8 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     offlineNotice.onAdd = () => {
         const el = L.DomUtil.create('div');
         el.style.cssText = 'background:#fff4cc;color:#453000;padding:6px 9px;border-radius:5px;font:12px system-ui;max-width:240px;box-shadow:0 1px 4px #0004';
-        el.textContent = 'Sin conexión: mapa esquemático de Entre Ríos y alrededores (Natural Earth). No incluye calles detalladas; fuera de esa zona no hay mapa.';
+        offlineNotice._gnText = el;
+        el.textContent = 'Sin conexión: cargando mapa local de Entre Ríos…';
         el.style.display = navigator.onLine === false ? 'block' : 'none';
         const update = () => { el.style.display = navigator.onLine === false ? 'block' : 'none'; };
         window.addEventListener('online', update);
@@ -685,6 +687,17 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     });
     // Datos libres y limitados, no teselas OSM guardadas ni descarga anticipada.
     let capaOffline = null;
+    function actualizarRutasEsquematicas() {
+        if (!capaOffline) return;
+        // En zoom alto evitar que rutas simplificadas se confundan con calles OSM detalladas.
+        capaOffline.setStyle(f => f.properties.kind === 'water'
+            ? { color: '#4d9cce', weight: 1.5, opacity: 0.8 }
+            : { color: '#c98b58', weight: 1.5, opacity: mapa.getZoom() < 12 ? 0.85 : 0 });
+    }
+    mapa.on('zoomend', actualizarRutasEsquematicas);
+    const detallesOffline = createOfflineDetails(L, mapa, message => {
+        if (offlineNotice._gnText) offlineNotice._gnText.textContent = `Sin conexión: ${message}`;
+    });
     function actualizarBasePorRed() {
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
         if (offline) {
@@ -705,9 +718,12 @@ export function gnAttachBaseMapLayers(mapa, opts) {
                     }
                 });
             }
+            actualizarRutasEsquematicas();
             if (!mapa.hasLayer(capaOffline)) capaOffline.addTo(mapa);
             mapa._gnBaseRasterLayer = capaOffline;
+            detallesOffline.start();
         } else {
+            detallesOffline.stop();
             if (capaOffline && mapa.hasLayer(capaOffline)) mapa.removeLayer(capaOffline);
             mapa._gnUsandoEsriFallback = false;
             nErrOsm = 0;
@@ -719,6 +735,8 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     window.addEventListener('online', actualizarBasePorRed);
     window.addEventListener('offline', actualizarBasePorRed);
     mapa.once('unload', () => {
+        detallesOffline.stop();
+        mapa.off('zoomend', actualizarRutasEsquematicas);
         window.removeEventListener('online', actualizarBasePorRed);
         window.removeEventListener('offline', actualizarBasePorRed);
     });

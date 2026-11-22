@@ -280,7 +280,10 @@ public class MainActivity extends AppCompatActivity {
         String path = url.getPath();
         if (path == null || !path.startsWith(basePath)) return null;
         String relative = path.substring(basePath.length());
-        if (!relative.equals("vendor/offline/entre-rios-ne-v1.js")
+        if (!relative.matches("vendor/offline/er-osm-v1/[0-9]{1,4}-[0-9]{1,4}\\.json")
+                && !relative.equals("vendor/offline/er-offline-render-v1.js")
+                && !relative.equals("vendor/offline/er-osm-index-v1.js")
+                && !relative.equals("vendor/offline/entre-rios-ne-v1.js")
                 && !relative.equals("vendor/leaflet-1.9.4/leaflet.js")
                 && !relative.equals("vendor/leaflet-1.9.4/leaflet.css")
                 && !relative.equals("vendor/leaflet-1.9.4/images/marker-icon.png")
@@ -290,7 +293,8 @@ public class MainActivity extends AppCompatActivity {
                 && !relative.equals("vendor/leaflet-1.9.4/images/layers-2x.png")) return null;
         try {
             String mime = relative.endsWith(".js") ? "application/javascript"
-                    : relative.endsWith(".css") ? "text/css" : "image/png";
+                    : relative.endsWith(".css") ? "text/css"
+                    : relative.endsWith(".json") ? "application/json" : "image/png";
             return new WebResourceResponse(mime, relative.endsWith(".png") ? null : "UTF-8", getAssets().open(relative));
         } catch (Exception e) { Log.w(TAG, "Recurso local de mapa", e); return null; }
     }
