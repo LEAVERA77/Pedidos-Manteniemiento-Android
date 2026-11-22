@@ -28,6 +28,7 @@ test.describe('Sesión mock y UI de búsqueda', () => {
     test('modal buscar pedido se abre con Ctrl+K', async ({ page }) => {
         await page.goto('/index.html');
         await page.evaluate(async () => {
+            window.getApiToken = () => 'e2e-mock-token';
             document.activeElement?.blur?.();
             document.getElementById('ls')?.classList.remove('active');
             document.getElementById('ms')?.classList.add('active');
