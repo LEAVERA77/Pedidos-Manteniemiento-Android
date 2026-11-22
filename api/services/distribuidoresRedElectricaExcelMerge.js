@@ -1,4 +1,4 @@
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { parseNivelTensionExcelToDb } from "../utils/nivelTensionKv.js";
 
 function normHeaderKey(k) {

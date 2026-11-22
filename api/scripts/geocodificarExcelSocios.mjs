@@ -20,7 +20,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { geocodeCalleNumeroLocalidadArgentina } from "../services/nominatimClient.js";
 import { geocodeAddressArgentina } from "../services/nominatimClient.js";
 import { geocodeWithFallback } from "../services/geocodeWithFallback.js";

@@ -1,5 +1,6 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query } from "../db/neon.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
@@ -7,6 +8,17 @@ import { loginExistsGlobally } from "../utils/usuarioLoginGlobal.js";
 
 const router = express.Router();
 router.use(authWithTenantHost, adminOnly);
+// Nunca operar globalmente si falta la columna multitenant o la identidad del tenant.
+router.use(async (req, res, next) => {
+  try {
+    if (!Number.isSafeInteger(Number(req.tenantId)) || Number(req.tenantId) < 1 || !(await usuariosTenantColumnName())) {
+      return res.status(503).json({ error: "Esquema de usuarios sin aislamiento por tenant" });
+    }
+    return next();
+  } catch (_) {
+    return res.status(503).json({ error: "No se pudo verificar el aislamiento de usuarios" });
+  }
+});
 
 router.get("/", async (_req, res) => {
   const col = await usuariosTenantColumnName();
@@ -44,15 +56,9 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "La contraseña debe tener al menos 4 caracteres" });
     }
     const hash = await bcrypt.hash(pwStr, 10);
-    const rolOperador = String(req.user?.rol || "").toLowerCase();
-    const bodyTid = Number(req.body?.tenant_id);
-    let insertTenantId = req.tenantId;
-    if (
-      (rolOperador === "admin" || rolOperador === "administrador") &&
-      Number.isFinite(bodyTid) &&
-      bodyTid > 0
-    ) {
-      insertTenantId = bodyTid;
+    const insertTenantId = Number(req.tenantId);
+    if (req.body?.tenant_id != null && Number(req.body.tenant_id) !== insertTenantId) {
+      return res.status(403).json({ error: "No se pueden crear usuarios en otro tenant" });
     }
     const col = await usuariosTenantColumnName();
     const hasBt = await tableHasColumn("usuarios", "business_type");
@@ -179,7 +185,7 @@ router.post("/:id/clave-provisoria", async (req, res) => {
     } else {
       const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       pwd = "";
-      for (let i = 0; i < 10; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+      for (let i = 0; i < 10; i++) pwd += chars[randomInt(chars.length)];
     }
     const hash = await bcrypt.hash(pwd, 10);
     const rUp = col

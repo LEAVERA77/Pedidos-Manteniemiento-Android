@@ -1,12 +1,12 @@
 import express from "express";
-import { authWithTenantHost, adminOrTecnicoIncidencias } from "../middleware/auth.js";
+import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { normalizarRubroCliente } from "../services/businessType.js";
 import { query } from "../db/neon.js";
 import { buscarPadronPorIdentificador, buscarPadronPorNombre } from "../services/padronBusquedaPedido.js";
 
 const router = express.Router();
 
-router.use(authWithTenantHost, adminOrTecnicoIncidencias);
+router.use(authWithTenantHost, adminOnly);
 
 /**
  * GET /api/padron-pedido/buscar-identificador?q=NIS|medidor|socio

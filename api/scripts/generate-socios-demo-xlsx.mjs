@@ -2,7 +2,7 @@
  * Genera socios-demo-300.xlsx: columnas NIS + Medidor (5 cifras), Calle + Numero, OSM vía Overpass.
  * Ejecutar: cd api && node scripts/generate-socios-demo-xlsx.mjs
  */
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import https from "https";
 import fs from "fs";
 import path from "path";

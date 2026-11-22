@@ -12,7 +12,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { query } from "../db/neon.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

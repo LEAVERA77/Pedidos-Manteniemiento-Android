@@ -3561,22 +3561,15 @@ const gnLoginSubmitHandler = async e => {
                 await gnMarcarApiDisponibleDesdeLogin(apiLoginBase);
             } else if (loginJwtPayload?.user?.id) {
                 await gnMarcarApiDisponibleDesdeLogin(apiLoginBase);
-                let must = false;
-                try {
-                    const mr = await sqlSimple(
-                        `SELECT COALESCE(must_change_password,false) AS must_change_password FROM usuarios WHERE id = ${esc(
-                            loginJwtPayload.user.id
-                        )} LIMIT 1`
-                    );
-                    must = !!(mr.rows?.[0]?.must_change_password);
-                } catch (_) {}
+                // La API ya rechaza con must_change_password antes de emitir un JWT.
+                // No consultar usuarios mediante SQL libre tras el login.
                 usuario = {
                     id: loginJwtPayload.user.id,
                     email: loginJwtPayload.user.email,
                     nombre: loginJwtPayload.user.nombre,
                     rol: loginJwtPayload.user.rol,
                     tenant_id: loginJwtPayload.user.tenant_id,
-                    must_change_password: must,
+                    must_change_password: false,
                 };
             }
         } catch (_) {}
@@ -15097,6 +15090,7 @@ window.imprimirInformeKpiPiloto = async function imprimirInformeKpiPiloto() {
 };
 
 function adminTab(tab) {
+    if (!esAdmin()) return;
     try {
         const ap = document.getElementById('admin-panel');
         if (ap && ap.classList.contains('active')) {
@@ -15333,6 +15327,7 @@ function cerrarModalAcercaDe() {
 window.cerrarModalAcercaDe = cerrarModalAcercaDe;
 
 function abrirAdmin() {
+    if (!esAdmin()) return;
     const p = document.getElementById('admin-panel');
     if (!p) return;
     p.classList.remove('admin-panel--maximized');

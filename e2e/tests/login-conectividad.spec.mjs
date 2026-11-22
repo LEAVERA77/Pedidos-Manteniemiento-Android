@@ -149,3 +149,15 @@ test('primer ingreso con cambio de contraseña no depende del health de arranque
     expect(stats.login).toBe(1);
     await expect(page.locator('#dbs')).toContainText('Conectado');
 });
+
+
+test('técnico no puede abrir el panel ni activar pestañas administrativas desde la interfaz', async ({page}) => {
+    await boot(page);
+    await login(page);
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:7000});
+    await expect(page.locator('#btn-admin')).toBeHidden();
+    await page.evaluate(() => { window.abrirAdmin(); window.adminTab('socios'); window.adminTab('kpi'); });
+    await expect(page.locator('#admin-panel')).not.toHaveClass(/active/);
+    await expect(page.locator('#admin-socios')).not.toHaveClass(/active/);
+    await expect(page.locator('#admin-kpi')).not.toHaveClass(/active/);
+});

@@ -14,7 +14,7 @@ import fs from "fs";
 import path from "path";
 import https from "https";
 import { fileURLToPath } from "url";
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { geocodeAddressArgentina } from "../services/nominatimClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -3,7 +3,7 @@
  * made by leavera77
  */
 
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 
 const EXPORT_HEADERS = [
   "id",

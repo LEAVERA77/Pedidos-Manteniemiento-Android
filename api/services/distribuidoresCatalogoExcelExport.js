@@ -3,7 +3,7 @@
  * made by leavera77
  */
 
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 
 /**

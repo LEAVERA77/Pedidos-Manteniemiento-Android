@@ -1,0 +1,30 @@
+# Seguridad de tenants y 2FA — estado y plan
+
+## Estado: riesgo crítico abierto
+
+La interfaz y varios endpoints rechazan roles no administrativos, pero **el gateway SQL genérico `/api/sql/query` y `/api/sql/location` sigue habilitado** para no interrumpir la operación. Las comprobaciones por expresiones regulares y la separación de la caché no restringen las filas por tenant ni por rol. Un usuario autenticado puede intentar eludir las rutas específicas; por lo tanto, las restricciones de esta entrega no constituyen una barrera completa y no se debe prometer confidencialidad ni aislamiento entre tenants. No habilitar TOTP como si ya protegiera todas las vías.
+
+La API también dispone de procedimientos de soporte protegidos por una clave compartida, incluidos endpoints sin sesión previa y `technician/attach-tenant`; esa clave es una capacidad privilegiada, no debe distribuirse a técnicos operativos. Auditar y sustituir esas rutas antes de dar por cerrado el problema. La conexión directa a Neon, los inicios alternativos y los datos/sesiones offline requieren la misma revisión. Revisar y rotar cualquier credencial de base de datos o de soporte que haya podido llegar al cliente. Sin cambios de infraestructura y despliegue estas acciones no se han realizado.
+
+## Entregado en esta etapa
+
+- El servidor exige administrador en la edición de configuración, el wizard autenticado y la búsqueda del padrón; la interfaz impide abrir el panel y las pestañas a otros roles. Las búsquedas del padrón al crear pedidos también quedan reservadas a administradores.
+- `/api/usuarios` rechaza operaciones sin columna y tenant válidos y rechaza crear un usuario en otro tenant. La clave provisoria autogenerada utiliza un generador criptográfico. Un administrador todavía puede cambiar los usuarios de su propio tenant.
+- El login API ya no consulta `usuarios` a través de SQL libre para comprobar la contraseña inicial; la API aplica esa validación antes de emitir un JWT.
+- Actualizadas dependencias de API, con pruebas de lectura/escritura de planillas y cargas multipart. `xlsx` proviene de la distribución oficial de SheetJS; el lockfile registra integridad. Se requieren Node >=20.19 y probar integraciones de Cloudinary/correo en preproducción. Revisar también auditoría de desarrollo y de otros proyectos, no solo `npm audit --omit=dev`.
+
+## Migración sin corte brusco
+
+1. Inventariar todas las consultas del cliente, endpoints, tablas, vistas, funciones y operaciones de fondo. Diseñar permisos por acción: administrador, técnico, soporte y servicio; identificar la mínima información de pedidos necesaria para técnicos. El tenant y el rol deben provenir de la identidad verificada en el servidor, nunca de los parámetros del cliente.
+2. Reemplazar por etapas el SQL libre por endpoints parametrizados con autorización específica, filtro de tenant obligatorio en lecturas y mutaciones, control de asignación y validación de negocio. Sin columna o tenant verificable, rechazar de forma segura; eliminar los fallbacks que consultan globalmente. Versionar API y app, medir el uso del gateway sin registrar SQL con datos o secretos, y probar los flujos y las colas offline.
+3. Añadir defensa en profundidad en PostgreSQL: un rol de ejecución sin superusuario, sin `BYPASSRLS`, sin propiedad de tablas y sin privilegios DDL; políticas RLS con `USING` y `WITH CHECK` para todas las tablas pertinentes y sus relaciones, `FORCE ROW LEVEL SECURITY` cuando corresponda, pruebas de tablas indirectas/vistas/funciones y validación de migraciones y datos sin tenant. Establecer contexto de tenant exclusivamente por el servidor y por transacción, con aislamiento correcto del pool y caché; una variable de sesión modificable mediante SQL arbitrario no es una frontera segura. Separar las credenciales de administración/migración de las de ejecución.
+4. Cerrar y retirar **ambos** endpoints SQL, eliminar el acceso directo a Neon y rotar sus credenciales, retirar todas las vías de autenticación alternativas y los accesos de soporte por clave compartida; verificar que versiones antiguas del cliente no puedan reactivarlos. El interruptor existente `SQL_GATEWAY_DISABLED=true` es una mitigación de emergencia, pero hoy puede cortar funciones existentes y no se activó en este cambio.
+5. Probar contra PostgreSQL real, bajo el rol de producción, con al menos dos tenants: lectura/escritura cruzada, relaciones, subconsultas, conexiones reutilizadas, caché, asignaciones, ausencia de tenant y intentos con JWT de rol manipulado. Incluir administradores y técnicos, búsquedas, exportaciones, sincronización y regresión de operaciones legítimas. Desplegar gradualmente, monitorizar y tener un rollback que no reabra el acceso inseguro. Solo entonces declarar cerrado el riesgo.
+
+## TOTP y recuperación: propuesta, no implementado
+
+- Enrolamiento voluntario inicial con contraseña reciente, secreto único cifrado con clave fuera de la BD, QR por canal seguro y confirmación de código; exigir TOTP al inicio y operaciones sensibles. Impedir reutilización del mismo paso, limitar intentos, no devolver secretos una vez confirmado y registrar eventos sin guardar códigos.
+- Emitir códigos de recuperación aleatorios de un solo uso, mostrar una vez y almacenar únicamente hashes; regenerarlos exige autenticación fuerte. Definir un procedimiento de recuperación de emergencia con identidad verificada, aprobación independiente, aviso y revocación de sesiones, sin depender solo de la clave técnica compartida.
+- Primero cerrar gateway, conexión directa, bootstrap/soporte y demás vías alternativas, y decidir política de acceso offline: el login cacheado no puede garantizar TOTP ni revocación en línea. No se debe afirmar que 2FA está activo o es efectivo antes de aplicar esa política y probar los casos de recuperación y evasión.
+
+Los cambios en Git no son despliegue: verificar versión de Node y de la API, copias de seguridad, Render y GitHub Pages, y probar en dispositivo y servicios reales.

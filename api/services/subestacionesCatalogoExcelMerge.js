@@ -1,4 +1,4 @@
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 
 function normHeaderKey(k) {
   return String(k || "")

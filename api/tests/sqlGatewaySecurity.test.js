@@ -165,6 +165,43 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
     expect(adminDdl.status).toBe(200);
   });
 
+  it("un técnico no accede a usuarios, padrón, estadísticas ni modifica configuración aun con clave de soporte", async () => {
+    const prev = process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY;
+    process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY = "clave-de-prueba";
+    try {
+      const app = createHttpApp();
+      const token = signToken({ userId: 2, tenant_id: 1, rol: "admin" }); // El rol válido viene de BD.
+      for (const [method, url, body] of [
+        ["get", "/api/usuarios", null],
+        ["post", "/api/usuarios", { usuario: "nuevo", password: "clave" }],
+        ["post", "/api/usuarios/1/clave-provisoria", {}],
+        ["put", "/api/clientes/mi-configuracion", { nombre: "Alterado" }],
+        ["post", "/api/setup/wizard", {}],
+        ["get", "/api/padron-pedido/buscar-nombre?q=Garcia", null],
+        ["get", "/api/admin/socios-catalogo", null],
+        ["get", "/api/socios/exportar", null],
+        ["get", "/api/estadisticas/resumen", null],
+        ["post", "/api/ia/sugerir-kpis", {}],
+      ]) {
+        const r = request(app)[method](url).set("Authorization", `Bearer ${token}`)
+          .set("X-GestorNova-Technician-Key", "clave-de-prueba");
+        if (body) r.send(body);
+        await r.expect(403);
+      }
+    } finally {
+      if (prev === undefined) delete process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY;
+      else process.env.GESTORNOVA_TECHNICIAN_TENANT_KEY = prev;
+    }
+  });
+
+  it("no permite a un administrador crear usuarios en otro tenant", async () => {
+    const app = createHttpApp();
+    const token = signToken({ userId: 1, tenant_id: 1 });
+    await request(app).post("/api/usuarios").set("Authorization", `Bearer ${token}`)
+      .send({ usuario: "intruso", password: "clave", rol: "admin", tenant_id: 2 }).expect(403);
+    expect(mockQuery.mock.calls.some(([sql]) => /^INSERT INTO usuarios/i.test(String(sql).trim()))).toBe(false);
+  });
+
   it("recuperación de contraseña por /api/auth/password-reset/* no expone el token en HTTP y guarda hash bcrypt", async () => {
     const app = createHttpApp();
 

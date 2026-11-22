@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import XLSX from "xlsx";
+import XLSX from "../utils/xlsxNode.js";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/neon.js";
 import { pedidosTableHasTenantIdColumn } from "../utils/tenantScope.js";
