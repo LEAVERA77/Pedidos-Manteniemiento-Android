@@ -1,13 +1,19 @@
 import { test, expect } from '@playwright/test';
 
 async function boot(page, options = {}) {
-    await page.addInitScript(({offline, cache, configBridge}) => {
+    await page.addInitScript(({offline, cache, cacheRole, configBridge, savedSession}) => {
         Object.defineProperty(navigator, 'userAgent', { configurable:true, get:() => 'Mozilla/5.0 Android GestorNova/1.0.42' });
         Object.defineProperty(navigator, 'onLine', { configurable:true, get:() => !offline });
         window.AndroidConfig = { getConfigJson: () => configBridge ? JSON.stringify({api:{baseUrl:'https://api.login-test.invalid'}}) : '', getVersionCode:()=>42 };
         if (cache) localStorage.setItem('gestornova_ls_pulse', '2');
-        if (cache) localStorage.setItem('pmg_offline_user', JSON.stringify([{id:7,email:'usuario@test.local',nombre:'Prueba',rol:'tecnico',tenant_id:1,_pw:'clave'}]));
-    }, {offline:!!options.offline, cache:!!options.cache, configBridge: options.configBridge !== false});
+        if (cache) localStorage.setItem('pmg_offline_user', JSON.stringify([{id:7,email:'usuario@test.local',nombre:'Prueba',rol:cacheRole,tenant_id:1,_pw:'clave'}]));
+        if (savedSession) {
+            localStorage.setItem('gestornova_ls_pulse', '2');
+            localStorage.setItem('pmg', JSON.stringify({id:7,email:'usuario@test.local',nombre:'Prueba',rol:savedSession,tenant_id:1}));
+            localStorage.setItem('pmg_api_token', 'jwt-previo');
+            localStorage.setItem('pmg_offline_queue', '[{"_offlineId":"pendiente"}]');
+        }
+    }, {offline:!!options.offline, cache:!!options.cache, cacheRole:options.cacheRole || 'tecnico', configBridge: options.configBridge !== false, savedSession:options.savedSession || ''});
     const stats = { login:0, health:0 };
     await page.route('https://api.login-test.invalid/**', async route => {
         const req = route.request(), url = new URL(req.url());
@@ -29,7 +35,7 @@ async function boot(page, options = {}) {
             if (options.transient && stats.login === 1) return route.fulfill({status:503,headers,contentType:'application/json',body:'{"error":"starting"}'});
             if (options.mustChange) return route.fulfill({status:403,headers,contentType:'application/json',body:'{"code":"must_change_password","user_id":7,"email":"usuario@test.local","rol":"admin","tenant_id":1}'});
             if (options.unauthorized) return route.fulfill({status:401,headers,contentType:'application/json',body:'{"error":"credenciales"}'});
-            return route.fulfill({status:200,headers,contentType:'application/json',body:JSON.stringify({token:'jwt-test',user:{id:7,email:'usuario@test.local',nombre:'Prueba',rol:'tecnico',tenant_id:1}})});
+            return route.fulfill({status:200,headers,contentType:'application/json',body:JSON.stringify({token:'jwt-test',user:{id:7,email:'usuario@test.local',nombre:'Prueba',rol:options.loginRole || 'tecnico',tenant_id:1}})});
         }
         return route.fulfill({status:200,headers,contentType:'application/json',body:'{"rows":[],"ok":true}'});
     });
@@ -160,4 +166,34 @@ test('técnico no puede abrir el panel ni activar pestañas administrativas desd
     await expect(page.locator('#admin-panel')).not.toHaveClass(/active/);
     await expect(page.locator('#admin-socios')).not.toHaveClass(/active/);
     await expect(page.locator('#admin-kpi')).not.toHaveClass(/active/);
+});
+
+
+test('administrador no entra usando credenciales offline guardadas', async ({page}) => {
+    await boot(page, {offline:true, cache:true, cacheRole:'administrador', netError:true});
+    await login(page);
+    await expect(page.locator('#ms')).not.toHaveClass(/active/);
+    await expect(page.locator('#le')).toContainText('administrador debe iniciar sesión con conexión', {timeout:7000});
+});
+
+test('administrador online ingresa pero no deja contraseña en la caché offline', async ({page}) => {
+    await boot(page, {cache:true, cacheRole:'admin', loginRole:'admin'});
+    await login(page);
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:7000});
+    const entries = await page.evaluate(() => JSON.parse(localStorage.getItem('pmg_offline_user') || '[]'));
+    expect(entries.some(u => u.email === 'usuario@test.local')).toBe(false);
+});
+
+test('sesión administrativa guardada no se restaura sin autenticar y conserva la cola', async ({page}) => {
+    await boot(page, {offline:true, netError:true, savedSession:'administrador'});
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => window.gnRehidratarSesionAndroid?.());
+    await expect(page.locator('#ms')).not.toHaveClass(/active/);
+    expect(await page.evaluate(() => localStorage.getItem('pmg'))).toBeNull();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('pmg_offline_queue'))[0]._offlineId)).toBe('pendiente');
+});
+
+test('sesión de técnico guardada sigue disponible sin red', async ({page}) => {
+    await boot(page, {offline:true, netError:true, savedSession:'tecnico'});
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:7000});
 });

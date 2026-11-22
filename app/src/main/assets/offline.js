@@ -64,6 +64,11 @@ export function actualizarBadgeOffline() {
 }
 
 export function guardarUsuarioOffline(u, pw) {
+    const rol = String(u?.rol || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (rol === 'admin' || rol === 'administrador') {
+        eliminarUsuarioOfflinePorEmail(u?.email);
+        return;
+    }
     try {
         const lista = JSON.parse(localStorage.getItem(OU_KEY) || '[]');
         const idx = lista.findIndex(x => x.email === u.email);

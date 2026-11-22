@@ -7,6 +7,7 @@ import {
   enqueueOffline,
   actualizarBadgeOffline,
   guardarUsuarioOffline,
+  eliminarUsuarioOfflinePorEmail,
   verificarUsuarioOffline
 } from './offline.js';
 
@@ -3504,8 +3505,13 @@ const gnLoginSubmitHandler = async e => {
     }
     
     
+    let gnOfflineAdminDenegado = false;
     function intentarOffline() {
         const u = verificarUsuarioOffline(em, pw);
+        if (u && normalizarRolStr(u.rol) === 'admin') {
+            gnOfflineAdminDenegado = true;
+            return false;
+        }
         if (u) {
             NEON_OK = false;
             _sql = null;
@@ -3536,8 +3542,9 @@ const gnLoginSubmitHandler = async e => {
                 } catch (_) {}
             }
             if (modoOffline || !NEON_OK || !_sql) {
-                if (!intentarOffline() && le) le.textContent = window.APP_CONFIG
-                    ? 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.'
+                if (!intentarOffline() && le) le.textContent = gnOfflineAdminDenegado
+                    ? 'El administrador debe iniciar sesión con conexión a la API.'
+                    : window.APP_CONFIG ? 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.'
                     : 'No se pudo cargar la configuración. Revisá la conexión e intentá de nuevo.';
                 return;
             }
@@ -3576,7 +3583,9 @@ const gnLoginSubmitHandler = async e => {
 
         if (apiLoginBase && loginApiFallo?.network) {
             if (!intentarOffline() && le) {
-                le.textContent = 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
+                le.textContent = gnOfflineAdminDenegado
+                    ? 'El administrador debe iniciar sesión con conexión a la API.'
+                    : 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
             }
             return;
         }
@@ -3620,7 +3629,9 @@ const gnLoginSubmitHandler = async e => {
                 console.warn('Login: red caída, usando cache:', netErr.message);
                 setModoOffline(true);
                 if (!intentarOffline()) {
-                    if (le) le.textContent = 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
+                    if (le) le.textContent = gnOfflineAdminDenegado
+                        ? 'El administrador debe iniciar sesión con conexión a la API.'
+                        : 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
                 }
                 return;
             }
@@ -3649,6 +3660,10 @@ const gnLoginSubmitHandler = async e => {
             return;
         }
 
+        if (usuario && normalizarRolStr(usuario.rol) === 'admin' && !loginJwtPayload?.token) {
+            if (le) le.textContent = 'El administrador debe iniciar sesión con conexión a la API.';
+            return;
+        }
         if (usuario) {
             const tidLogin = await resolverTenantIdPostLoginNeon({
                 usuario,
@@ -3663,7 +3678,9 @@ const gnLoginSubmitHandler = async e => {
                 tenant_id: tidLogin,
                 must_change_password: !!usuario.must_change_password
             };
-            guardarUsuarioOffline(u, pw);
+            // No conservar la contraseña administrativa en la caché de acceso offline.
+            if (u.rol === 'admin') eliminarUsuarioOfflinePorEmail(u.email);
+            else guardarUsuarioOffline(u, pw);
             if (!loginJwtPayload) {
                 const jwt2 = await loginApiJwt(em, pw);
                 if (jwt2?._loginFailed) loginApiFallo = jwt2;
@@ -3737,7 +3754,9 @@ const gnLoginSubmitHandler = async e => {
                 }
             } else if (loginApiFallo?.network) {
                 if (!intentarOffline() && le) {
-                    le.textContent = 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
+                    le.textContent = gnOfflineAdminDenegado
+                    ? 'El administrador debe iniciar sesión con conexión a la API.'
+                    : 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
                 }
             } else if (loginApiFallo?.code === 'admin_2fa_unavailable' && le) {
                 le.textContent = 'Segundo factor no disponible. Contactá al administrador del sistema.';
@@ -3751,7 +3770,9 @@ const gnLoginSubmitHandler = async e => {
     } catch (error) {
         console.error('Error inesperado en login:', error);
         if (!intentarOffline()) {
-            if (le) le.textContent = 'Error inesperado. Intentá de nuevo.';
+            if (le) le.textContent = gnOfflineAdminDenegado
+                ? 'El administrador debe iniciar sesión con conexión a la API.'
+                : 'Error inesperado. Intentá de nuevo.';
         }
     } finally {
         endLoginAttempt();
@@ -12495,6 +12516,17 @@ window.detenerTracking = detenerTracking;
         }
     } catch (_) {}
 })();
+
+// Una sesión administrativa persistida no se reanuda sin una nueva autenticación online.
+// No borrar pedidos ni operaciones offline del equipo.
+try {
+    const saved = JSON.parse(localStorage.getItem('pmg') || 'null');
+    if (saved && normalizarRolStr(saved.rol) === 'admin') {
+        localStorage.removeItem('pmg');
+        localStorage.removeItem('pmg_api_token');
+        try { window.AndroidSession?.clearUser?.(); } catch (_) {}
+    }
+} catch (_) {}
 
 try {
     const s = localStorage.getItem('pmg');

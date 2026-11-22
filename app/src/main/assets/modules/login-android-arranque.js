@@ -89,6 +89,9 @@ export function rehidratarSesionAndroidDesdePmg() {
 
     const u = leerPmgUsuario();
     if (!u) return false;
+    // El administrador debe autenticarse online: no reactivar desde localStorage.
+    const rol = String(u.rol || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (rol === 'admin' || rol === 'administrador') return false;
 
     if (!app) return false;
     try {
