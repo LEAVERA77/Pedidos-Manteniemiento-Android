@@ -26,9 +26,10 @@ test.describe('Sesión mock y UI de búsqueda', () => {
 
     test('modal buscar pedido se abre con Ctrl+K', async ({ page }) => {
         await page.goto('/index.html');
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
             document.getElementById('ls')?.classList.remove('active');
             document.getElementById('ms')?.classList.add('active');
+            await import('/modules/gn-oleada3-bootstrap.js');
         });
         await page.keyboard.press('Control+k');
         await expect(page.locator('#gn-global-search-modal.active')).toBeVisible({ timeout: 8000 });
