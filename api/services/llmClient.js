@@ -3,8 +3,8 @@
  * OpenRouter :free, Hugging Face Docker Spaces / Ollama y Groq legacy) con fallback automático.
  *
  * Variables soportadas en Render / entorno:
- *   - GEMINI_API_KEY=AIza...              (Recomendado gratis: Google AI Studio -> gemini-2.5-flash)
- *   - GEMINI_MODEL=gemini-2.5-flash       (Opcional; ej. gemini-2.5-flash-lite)
+ *   - GEMINI_API_KEY=AIza...              (Recomendado gratis: Google AI Studio -> gemini-3.5-flash-lite + cascada automática)
+ *   - GEMINI_MODEL=gemini-3.5-flash-lite  (Opcional; ej. gemini-3.8-flash, gemini-4-hydrogen)
  *   - OPENROUTER_API_KEY=sk-or-v1-...     (Opcional gratis: OpenRouter -> meta-llama/llama-3.3-70b-instruct:free)
  *   - OPENROUTER_MODEL=...                (Opcional)
  *   - AI_API_URL=https://.../v1/chat/completions  (Opcional: Hugging Face Space Docker / propio)
@@ -16,7 +16,13 @@
 
 export const GEMINI_OPENAI_URL =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-export const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
+export const GEMINI_DEFAULT_MODEL = "gemini-3.5-flash-lite";
+export const GEMINI_FREE_CASCADE_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.8-flash",
+  "gemini-4-hydrogen",
+  "gemini-2.5-flash-lite",
+];
 
 export const OPENROUTER_OPENAI_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const OPENROUTER_DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
@@ -66,11 +72,34 @@ export function inferProviderDefaultsFromKey(apiKey, fallbackKind = "groq") {
   };
 }
 
+function pushGeminiCandidateWithCascade(candidates, apiKey, explicitUrl, explicitModel) {
+  const url = explicitUrl || GEMINI_OPENAI_URL;
+  if (explicitModel) {
+    candidates.push({
+      name: "gemini",
+      label: "Gemini",
+      url,
+      apiKey,
+      model: explicitModel,
+    });
+    return;
+  }
+  for (const model of GEMINI_FREE_CASCADE_MODELS) {
+    candidates.push({
+      name: "gemini",
+      label: "Gemini",
+      url,
+      apiKey,
+      model,
+    });
+  }
+}
+
 /**
  * Devuelve la lista ordenada de proveedores configurados sin duplicados.
  * Prioridad:
  *   1) AI_API_KEY (+ AI_API_URL / AI_MODEL si están definidos)
- *   2) GEMINI_API_KEY
+ *   2) GEMINI_API_KEY (con cascada automática por modelos Free Tier si no se fija GEMINI_MODEL)
  *   3) OPENROUTER_API_KEY
  *   4) GROQ_API_KEY (autodetecta si contiene AIza... o sk-or-...)
  *   5) AI_FALLBACK_KEY (+ AI_FALLBACK_URL / AI_FALLBACK_MODEL)
@@ -81,30 +110,35 @@ export function resolveLlmProviders() {
   const aiKey = trimEnv("AI_API_KEY") || trimEnv("IA_API_KEY");
   const aiUrl = trimEnv("AI_API_URL") || trimEnv("IA_API_URL");
   const aiModel = trimEnv("AI_MODEL") || trimEnv("IA_MODEL");
+  const explicitGeminiModel = trimEnv("GEMINI_MODEL");
+
   if (aiKey) {
     const inferred = inferProviderDefaultsFromKey(aiKey, "custom");
     const finalUrl = aiUrl || inferred.url;
     const isGeminiUrl = finalUrl.includes("generativelanguage.googleapis.com");
     const isOpenRouterUrl = finalUrl.includes("openrouter.ai");
-    candidates.push({
-      name: aiUrl ? (isGeminiUrl ? "gemini" : isOpenRouterUrl ? "openrouter" : "custom") : inferred.name,
-      label: aiUrl ? (isGeminiUrl ? "Gemini" : isOpenRouterUrl ? "OpenRouter" : "IA") : inferred.label,
-      url: finalUrl,
-      apiKey: aiKey,
-      model: aiModel || inferred.model,
-    });
+    if (isGeminiUrl && !aiModel && !explicitGeminiModel) {
+      pushGeminiCandidateWithCascade(candidates, aiKey, finalUrl, "");
+    } else {
+      candidates.push({
+        name: aiUrl ? (isGeminiUrl ? "gemini" : isOpenRouterUrl ? "openrouter" : "custom") : inferred.name,
+        label: aiUrl ? (isGeminiUrl ? "Gemini" : isOpenRouterUrl ? "OpenRouter" : "IA") : inferred.label,
+        url: finalUrl,
+        apiKey: aiKey,
+        model: aiModel || explicitGeminiModel || inferred.model,
+      });
+    }
   }
 
   const geminiKey =
     trimEnv("GEMINI_API_KEY") || trimEnv("GOOGLE_API_KEY") || trimEnv("GEMINI_KEY");
   if (geminiKey) {
-    candidates.push({
-      name: "gemini",
-      label: "Gemini",
-      url: trimEnv("GEMINI_API_URL") || GEMINI_OPENAI_URL,
-      apiKey: geminiKey,
-      model: trimEnv("GEMINI_MODEL") || aiModel || GEMINI_DEFAULT_MODEL,
-    });
+    pushGeminiCandidateWithCascade(
+      candidates,
+      geminiKey,
+      trimEnv("GEMINI_API_URL") || GEMINI_OPENAI_URL,
+      explicitGeminiModel || aiModel
+    );
   }
 
   const openRouterKey = trimEnv("OPENROUTER_API_KEY");
@@ -121,13 +155,17 @@ export function resolveLlmProviders() {
   const groqKey = trimEnv("GROQ_API_KEY");
   if (groqKey) {
     const inferred = inferProviderDefaultsFromKey(groqKey, "groq");
-    candidates.push({
-      name: inferred.name,
-      label: inferred.label,
-      url: inferred.url,
-      apiKey: groqKey,
-      model: inferred.model,
-    });
+    if (inferred.name === "gemini" && !explicitGeminiModel) {
+      pushGeminiCandidateWithCascade(candidates, groqKey, inferred.url, "");
+    } else {
+      candidates.push({
+        name: inferred.name,
+        label: inferred.label,
+        url: inferred.url,
+        apiKey: groqKey,
+        model: inferred.model,
+      });
+    }
   }
 
   const fbKey = trimEnv("AI_FALLBACK_KEY");
@@ -147,7 +185,7 @@ export function resolveLlmProviders() {
   const seen = new Set();
   const unique = [];
   for (const p of candidates) {
-    const dedupKey = `${p.url}::${p.apiKey}`;
+    const dedupKey = `${p.url}::${p.model}::${p.apiKey}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
     unique.push(p);
@@ -182,6 +220,13 @@ export function getConfiguredProvidersPublicInfo() {
   });
 }
 
+function defaultGeminiReasoningEffort(model) {
+  const m = String(model || "").toLowerCase();
+  if (m.startsWith("gemini-2.5-flash")) return "none";
+  if (m.includes("flash-lite") || m.startsWith("gemini-3.6-flash")) return "minimal";
+  return "low";
+}
+
 function buildRequestBody(provider, { messages, temperature, max_tokens }) {
   const body = {
     model: provider.model,
@@ -190,17 +235,20 @@ function buildRequestBody(provider, { messages, temperature, max_tokens }) {
   if (typeof temperature === "number") {
     body.temperature = temperature;
   }
+
+  const isGeminiEndpoint = provider.url.includes("generativelanguage.googleapis.com");
   if (typeof max_tokens === "number" && max_tokens > 0) {
-    body.max_tokens = max_tokens;
+    // En Gemini 3 y Gemini 4 los tokens internos de razonamiento ("thinking") descuentan de max_tokens;
+    // en 2.5 se desactivan con reasoning_effort="none", pero en 3.x/4.x el mínimo es "minimal"/"low",
+    // por lo que sumamos margen para que respuestas cortas (bot WhatsApp / JSON) nunca se trunquen.
+    const isGemini25Flash = /^gemini-2\.5-flash/i.test(provider.model);
+    body.max_tokens =
+      isGeminiEndpoint && !isGemini25Flash ? Math.max(max_tokens + 512, 600) : max_tokens;
   }
-  // En Gemini 2.5 Flash los tokens de "thinking" descuentan de max_tokens en el endpoint
-  // compatible con OpenAI; desactivarlo por defecto evita respuestas truncadas en límites cortos
-  // (p. ej. 90-200 tokens en bot de WhatsApp) y reduce la latencia a < 1s.
-  if (
-    provider.url.includes("generativelanguage.googleapis.com") &&
-    /^gemini-2\.5-flash/i.test(provider.model)
-  ) {
-    const effort = trimEnv("GEMINI_REASONING_EFFORT") || "none";
+
+  if (isGeminiEndpoint) {
+    const effort =
+      trimEnv("GEMINI_REASONING_EFFORT") || defaultGeminiReasoningEffort(provider.model);
     if (effort !== "auto" && effort !== "omit") {
       body.reasoning_effort = effort;
     }
@@ -263,7 +311,7 @@ export async function callLlmChatCompletions(opts) {
       if (!resp.ok) {
         const detail = await resp.text().catch(() => "");
         console.error(
-          `[${tag}] [${provider.name}] HTTP ${resp.status}`,
+          `[${tag}] [${provider.name}:${provider.model}] HTTP ${resp.status}`,
           detail.slice(0, 300)
         );
         lastFailure = {
@@ -297,7 +345,7 @@ export async function callLlmChatCompletions(opts) {
           error: "timeout",
         };
       }
-      console.error(`[${tag}] [${provider.name}] fetch error:`, err?.message || err);
+      console.error(`[${tag}] [${provider.name}:${provider.model}] fetch error:`, err?.message || err);
       lastFailure = {
         ok: false,
         networkError: true,

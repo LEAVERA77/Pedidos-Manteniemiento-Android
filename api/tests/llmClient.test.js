@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   callLlmChatCompletions,
   GEMINI_OPENAI_URL,
+  GEMINI_DEFAULT_MODEL,
   OPENROUTER_OPENAI_URL,
   GROQ_OPENAI_URL,
   resolveLlmProviders,
@@ -12,7 +13,12 @@ const ENV_KEYS = [
   "AI_API_KEY",
   "AI_API_URL",
   "AI_MODEL",
+  "IA_API_KEY",
+  "IA_API_URL",
+  "IA_MODEL",
   "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GEMINI_KEY",
   "GEMINI_API_URL",
   "GEMINI_MODEL",
   "GEMINI_REASONING_EFFORT",
@@ -27,7 +33,7 @@ const ENV_KEYS = [
   "AI_FALLBACK_MODEL",
 ];
 
-describe("llmClient multi-proveedor (Gemini / OpenRouter / HF Space / Groq)", () => {
+describe("llmClient multi-proveedor (Gemini 3.x/4.x / OpenRouter / HF Space / Groq)", () => {
   const originalFetch = globalThis.fetch;
   const savedEnv = {};
 
@@ -56,7 +62,7 @@ describe("llmClient multi-proveedor (Gemini / OpenRouter / HF Space / Groq)", ()
     expect(res.error).toMatch(/GEMINI_API_KEY/);
   });
 
-  it("configura Gemini con reasoning_effort='none' para evitar truncado por thinking tokens", async () => {
+  it("usa gemini-3.5-flash-lite por defecto con reasoning_effort='minimal' y margen de max_tokens", async () => {
     process.env.GEMINI_API_KEY = "AIzaSyTestFakeKeyForUnitTestsOnly12345";
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -74,28 +80,31 @@ describe("llmClient multi-proveedor (Gemini / OpenRouter / HF Space / Groq)", ()
 
     expect(res.ok).toBe(true);
     expect(res.providerName).toBe("gemini");
+    expect(res.model).toBe(GEMINI_DEFAULT_MODEL);
     expect(res.content).toBe('{"ok":true}');
 
     const [url, opts] = globalThis.fetch.mock.calls[0];
     expect(url).toBe(GEMINI_OPENAI_URL);
     expect(opts.headers.Authorization).toBe("Bearer AIzaSyTestFakeKeyForUnitTestsOnly12345");
     const parsedBody = JSON.parse(opts.body);
-    expect(parsedBody.model).toBe("gemini-2.5-flash");
-    expect(parsedBody.reasoning_effort).toBe("none");
-    expect(parsedBody.max_tokens).toBe(100);
+    expect(parsedBody.model).toBe("gemini-3.5-flash-lite");
+    expect(parsedBody.reasoning_effort).toBe("minimal");
+    expect(parsedBody.max_tokens).toBeGreaterThanOrEqual(600);
   });
 
-  it("autodetecta Gemini incluso si el usuario pega una clave AIza... dentro de GROQ_API_KEY", () => {
+  it("autodetecta Gemini y cascada de modelos incluso si se pega AIza... en GROQ_API_KEY", () => {
     process.env.GROQ_API_KEY = "AIzaSyDropInKeyInGroqEnvVar0000001";
     const providers = resolveLlmProviders();
-    expect(providers).toHaveLength(1);
+    expect(providers.length).toBeGreaterThanOrEqual(3);
     expect(providers[0].name).toBe("gemini");
     expect(providers[0].url).toBe(GEMINI_OPENAI_URL);
-    expect(providers[0].model).toBe("gemini-2.5-flash");
+    expect(providers[0].model).toBe("gemini-3.5-flash-lite");
+    expect(providers[1].model).toBe("gemini-3.8-flash");
   });
 
-  it("hace fallback automático al segundo proveedor si el primero devuelve HTTP 429 o 403", async () => {
+  it("hace fallback automático entre modelos Gemini y luego a OpenRouter si hay 404/429", async () => {
     process.env.GEMINI_API_KEY = "AIzaSyPrimaryQuotaExceededKey0001";
+    process.env.GEMINI_MODEL = "gemini-3.5-flash-lite";
     process.env.OPENROUTER_API_KEY = "sk-or-v1-fallback-key-0002";
 
     globalThis.fetch = vi

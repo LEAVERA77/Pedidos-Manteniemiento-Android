@@ -189,7 +189,8 @@ export function createHttpApp() {
       });
     }
     const now = Date.now();
-    if (lastIaProbeCache && now - lastIaProbeAt < 60_000) {
+    const cacheTtlMs = lastIaProbeCache?.ok ? 60_000 : 10_000;
+    if (lastIaProbeCache && now - lastIaProbeAt < cacheTtlMs) {
       return res.status(lastIaProbeCache.ok ? 200 : 502).json({
         ...lastIaProbeCache,
         cached: true,
