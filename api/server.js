@@ -1,7 +1,9 @@
 import "dotenv/config";
+import { validateJwtSecretForServer } from "./utils/jwtSecret.js";
 import { createHttpApp } from "./httpApp.js";
 import { initBaileysIfConfigured } from "./services/baileysWhatsapp.js";
 
+validateJwtSecretForServer();
 const PORT = Number(process.env.PORT || 3000);
 const app = createHttpApp();
 

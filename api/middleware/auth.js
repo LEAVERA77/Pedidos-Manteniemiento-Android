@@ -1,11 +1,12 @@
 import jwt from "jsonwebtoken";
+import { resolveJwtSecret } from "../utils/jwtSecret.js";
 import { query } from "../db/neon.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tenantHostMiddleware } from "./tenantHost.js";
 import { businessContextMiddleware } from "./businessContext.js";
 import { technicianTenantKeyOk } from "./technicianTenantKey.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret";
+const JWT_SECRET = resolveJwtSecret();
 
 export function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, {

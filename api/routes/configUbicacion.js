@@ -1,3 +1,4 @@
+import { resolveJwtSecret } from "../utils/jwtSecret.js";
 import express from "express";
 import { query } from "../db/neon.js";
 import { authWithTenantHost } from "../middleware/auth.js";
@@ -59,7 +60,7 @@ router.get("/ubicacion-central", async (req, res) => {
     if (auth.startsWith("Bearer ")) {
       try {
         const jwt = (await import("jsonwebtoken")).default;
-        const secret = process.env.JWT_SECRET || "dev_secret";
+        const secret = resolveJwtSecret();
         const token = auth.slice(7);
         const decoded = jwt.verify(token, secret);
         if (decoded?.userId) {
