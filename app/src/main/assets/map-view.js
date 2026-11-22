@@ -1,3 +1,4 @@
+import { offlineMap } from './vendor/offline/entre-rios-ne-v1.js';
 /**
  * Mapa Leaflet (capa base + init): se carga con import() la primera vez que hace falta.
  * Centro: API → caché Android → EMPRESA_CFG; en WebView Android sin centro: mensaje y reintentar (sin coords fijas de ciudad).
@@ -36,10 +37,14 @@ async function resolveMapCenterLatLngZoom() {
     const tid = ctx.tenantIdActual ? Number(ctx.tenantIdActual()) : 1;
     const tidOk = Number.isFinite(tid) && tid >= 1 ? tid : 1;
     const base = ctx.getApiBaseUrl ? String(ctx.getApiBaseUrl() || '').trim() : '';
-    if (base) {
+    if (base && (!ctx.window.navigator || ctx.window.navigator.onLine !== false)) {
         try {
             const url = `${base.replace(/\/+$/, '')}/api/config/ubicacion-central?tenant_id=${encodeURIComponent(String(tidOk))}`;
-            const r = await fetch(url, { cache: 'no-store' });
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 3000);
+            let r;
+            try { r = await fetch(url, { cache: 'no-store', signal: controller.signal }); }
+            finally { clearTimeout(timer); }
             if (r.ok) {
                 const j = await r.json();
                 const lat = Number(j.lat);
@@ -99,8 +104,8 @@ function showMapCenterMissingMessage(onRetry) {
     wrap.style.cssText =
         'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:240px;padding:1.25rem;text-align:center;background:var(--bg,#f1f5f9);color:var(--bd,#0f172a);gap:.85rem;border-radius:.5rem;box-sizing:border-box';
     wrap.innerHTML =
-        '<p style="margin:0;font-size:.95rem;max-width:26rem;line-height:1.45">Falta la <strong>ubicación central</strong> definida por el administrador, o no hubo conexión con el servidor.</p>' +
-        '<p style="margin:0;font-size:.8rem;opacity:.88;max-width:24rem">Configurá la ubicación en la web (administrador) o en la pantalla de mapa dedicada; luego tocá <strong>Reintentar</strong>.</p>';
+        '<p style="margin:0;font-size:.95rem;max-width:26rem;line-height:1.45">No hay ubicación guardada ni se pudo obtener GPS o el centro de la empresa.</p>' +
+        '<p style="margin:0;font-size:.8rem;opacity:.88;max-width:24rem">Activá la ubicación y concedé permiso. En exteriores el GPS puede tardar; luego tocá <strong>Reintentar</strong>.</p>';
     const btn = ctx.document.createElement('button');
     btn.type = 'button';
     btn.className = 'bp';
@@ -635,6 +640,19 @@ export function gnAttachBaseMapLayers(mapa, opts) {
         keepBuffer: keepBuf,
         errorTileUrl: errTile
     });
+    const offlineNotice = L.control({ position: 'topleft' });
+    offlineNotice.onAdd = () => {
+        const el = L.DomUtil.create('div');
+        el.style.cssText = 'background:#fff4cc;color:#453000;padding:6px 9px;border-radius:5px;font:12px system-ui;max-width:240px;box-shadow:0 1px 4px #0004';
+        el.textContent = 'Sin conexión: mapa esquemático de Entre Ríos y alrededores (Natural Earth). No incluye calles detalladas; fuera de esa zona no hay mapa.';
+        el.style.display = navigator.onLine === false ? 'block' : 'none';
+        const update = () => { el.style.display = navigator.onLine === false ? 'block' : 'none'; };
+        window.addEventListener('online', update);
+        window.addEventListener('offline', update);
+        mapa.once('unload', () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); });
+        return el;
+    };
+    offlineNotice.addTo(mapa);
     mapa._gnCapaCartoBase = capaCarto;
     mapa._gnCapaEsriBase = capaEsri;
     mapa._gnCapaOsmBase = capaOsm;
@@ -642,6 +660,7 @@ export function gnAttachBaseMapLayers(mapa, opts) {
     let nErrOsm = 0;
     capaOsm.on('tileerror', () => {
         if (mapa._gnUsandoEsriFallback) return;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
         try {
             if (!mapa.hasLayer(capaOsm)) return;
         } catch (_) {
@@ -664,7 +683,46 @@ export function gnAttachBaseMapLayers(mapa, opts) {
             }
         }
     });
-    capaOsm.addTo(mapa);
+    // Datos libres y limitados, no teselas OSM guardadas ni descarga anticipada.
+    let capaOffline = null;
+    function actualizarBasePorRed() {
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (offline) {
+            [capaOsm, capaEsri, capaCarto].forEach(layer => { if (mapa.hasLayer(layer)) mapa.removeLayer(layer); });
+            if (!capaOffline) {
+                capaOffline = L.geoJSON(offlineMap, {
+                    attribution: 'Mapa esquemático: <a href="https://www.naturalearthdata.com/">Natural Earth</a> (dominio público)',
+                    style: f => f.properties.kind === 'water'
+                        ? { color: '#4d9cce', weight: 1.5, opacity: 0.8 }
+                        : { color: '#c98b58', weight: 1.5, opacity: 0.85 },
+                    pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 3, color: '#586478', weight: 1, fillOpacity: 0.8 }),
+                    onEachFeature: (f, layer) => {
+                        if (f.properties.kind === 'place' && f.properties.name) {
+                            const label = document.createElement('span');
+                            label.textContent = f.properties.name;
+                            layer.bindTooltip(label);
+                        }
+                    }
+                });
+            }
+            if (!mapa.hasLayer(capaOffline)) capaOffline.addTo(mapa);
+            mapa._gnBaseRasterLayer = capaOffline;
+        } else {
+            if (capaOffline && mapa.hasLayer(capaOffline)) mapa.removeLayer(capaOffline);
+            mapa._gnUsandoEsriFallback = false;
+            nErrOsm = 0;
+            mapa._gnBaseRasterLayer = capaOsm;
+            if (!mapa.hasLayer(capaOsm)) capaOsm.addTo(mapa);
+            if (applyOsm) gnApplyBaseMapVisibilityFromStorage(mapa);
+        }
+    }
+    window.addEventListener('online', actualizarBasePorRed);
+    window.addEventListener('offline', actualizarBasePorRed);
+    mapa.once('unload', () => {
+        window.removeEventListener('online', actualizarBasePorRed);
+        window.removeEventListener('offline', actualizarBasePorRed);
+    });
+    actualizarBasePorRed();
     if (applyOsm) {
         gnApplyAdminOsmOverlaysFromStorage(mapa);
         gnApplyBaseMapVisibilityFromStorage(mapa);
@@ -774,10 +832,21 @@ export async function runInitMap() {
         lngBase = center.lng;
         zoomInit = Math.min(center.zoom, maxZoomMap);
     } else if (ctx.esAndroidWebViewMapa()) {
-        showMapCenterMissingMessage(() => {
-            void ctx.scheduleMapRetry();
-        });
-        return;
+        // No confundir una base empresarial con la posición: iniciar con GPS si no hay centro.
+        let u = ctx.ultimaUbicacion;
+        if (!u && ctx.window.navigator && ctx.window.navigator.geolocation) {
+            try {
+                const p = await new Promise((resolve, reject) => ctx.window.navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }));
+                u = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, timestamp: p.timestamp, fuente: 'gps' };
+                ctx.ultimaUbicacion = u;
+                try { localStorage.setItem('ultima_ubicacion', JSON.stringify(u)); } catch (_) {}
+            } catch (_) {}
+        }
+        if (!u || !Number.isFinite(u.lat) || !Number.isFinite(u.lon)) {
+            showMapCenterMissingMessage(() => { void ctx.scheduleMapRetry(); });
+            return;
+        }
+        latBase = u.lat; lngBase = u.lon; zoomInit = 15;
     } else {
         /* Navegador web sin centro configurado: vista país (no anclada a una ciudad operativa). */
         latBase = -34.0;
@@ -944,7 +1013,7 @@ export async function runInitMap() {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
             ctx.registrarFajaInstalacionSiFalta(lng);
-            ctx.ultimaUbicacion = { lat, lon: lng, acc: null };
+            ctx.ultimaUbicacion = { lat, lon: lng, acc: null, timestamp: Date.now(), fuente: 'manual' };
             try {
                 localStorage.setItem('ultima_ubicacion', JSON.stringify(ctx.ultimaUbicacion));
             } catch (_) {}
@@ -1046,7 +1115,7 @@ export async function runInitMap() {
             ctx.document.getElementById('zoom-altura').textContent = ctx.calcularEscalaReal(ctx.app.map.getZoom());
         }, 100);
 
-        setTimeout(() => ctx.solicitarUbicacion(false, true), 500);
+        setTimeout(() => ctx.solicitarUbicacion(true, true), 500);
     } else {
         ctx.solicitarUbicacion(true, false);
     }

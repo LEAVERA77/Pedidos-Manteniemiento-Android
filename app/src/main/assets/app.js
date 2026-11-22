@@ -613,6 +613,7 @@ async function sincronizarOffline() {
 
 
 window.addEventListener('online', async () => {
+    gnReiniciarWatchAlCambiarRed();
     console.log('Navegador: online (verificando conectividad real...)');
     
     const hayRed = await hayInternet();
@@ -649,6 +650,7 @@ window.addEventListener('offline', () => {
     NEON_OK = false;
     _sql = null;
     setModoOffline(true);
+    gnReiniciarWatchAlCambiarRed();
 });
 
 
@@ -660,8 +662,10 @@ async function solicitarPermisos() {
     try {
         await new Promise((res, rej) =>
             navigator.geolocation.getCurrentPosition(
-                p => { ultimaUbicacion = { lat: p.coords.latitude, lon: p.coords.longitude };
+                p => { if (!gnPosicionGpsEsMasAntigua(p)) {
+                       ultimaUbicacion = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, timestamp: p.timestamp, fuente: 'gps' };
                        try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
+                       }
                        registrarFajaInstalacionSiFalta(p.coords.longitude);
                        res(); },
                 e => rej(e),
@@ -3417,21 +3421,7 @@ const gnLoginSubmitHandler = async e => {
 
             solicitarPermisos().then(r => {
                 if (!r.gps) toast('GPS no disponible — ubicación manual', 'info');
-                if (ultimaUbicacion) {
-                    const enviarAl_SW = () => {
-                        if (navigator.serviceWorker?.controller) {
-                            navigator.serviceWorker.controller.postMessage({
-                                tipo: 'CACHEAR_ZONA',
-                                lat: ultimaUbicacion.lat,
-                                lng: ultimaUbicacion.lon,
-                                radioKm: 150
-                            });
-                        }
-                    };
-                    // Esperar a que el SW esté activo
-                    if (navigator.serviceWorker?.controller) enviarAl_SW();
-                    else setTimeout(enviarAl_SW, 4000);
-                }
+
             });
             if (!offline) {
                 await asegurarJwtApiRest();
@@ -7015,27 +7005,31 @@ function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
         ? (acc < 1000 ? `±${Math.round(acc)} m` : `±${(acc/1000).toFixed(1)} km`)
         : 'precisión desconocida';
 
-    const tipoGps = !acc ? 'GPS'
-        : acc < 100  ? '🛰️ GPS'
-        : acc < 2000 ? '📶 WiFi/Red celular'
-        : '🌐 Geolocalización por IP';
-
     const paneGps = app.map.getPane && app.map.getPane('gnPaneGpsUser') ? 'gnPaneGpsUser' : undefined;
     const mkGps = { icon: svgIcon, zIndexOffset: 200 };
     if (paneGps) mkGps.pane = paneGps;
     marcadorUbicacion = L.marker([lat, lon], mkGps)
         .addTo(app.map)
-        .bindPopup(`
+        .bindPopup(() => {
+            const posicion = ultimaUbicacion && ultimaUbicacion.lat === lat && ultimaUbicacion.lon === lon ? ultimaUbicacion : null;
+            const fecha = posicion && Number(posicion.timestamp);
+            const esReciente = fecha && fecha <= Date.now() + 60000 && Date.now() - fecha < 120000;
+            const tipoGps = posicion && posicion.fuente === 'manual' ? 'Punto elegido manualmente'
+                : !posicion || !posicion.fuente ? 'Ubicación guardada (origen desconocido)'
+                : esReciente ? 'Ubicación reciente' : 'Última ubicación conocida';
+            const fechaTexto = fecha ? new Date(fecha).toLocaleString() : 'fecha desconocida';
+            return `
             <div style="font-family:system-ui;min-width:160px">
-                <b style="color:#059669">📍 Tu ubicación</b><br>
-                <span style="font-size:11px;color:#475569">${tipoGps} — ${accTexto}</span><br>
+                <b style="color:#059669">📍 ${tipoGps}</b><br>
+                <span style="font-size:11px;color:#475569">${accTexto} — ${fechaTexto}</span><br>
                 <span style="font-size:10px;color:#94a3b8">${lat.toFixed(6)}, ${lon.toFixed(6)}</span>
             </div>
-        `);
+        `;
+        });
 
     
     if (acc && acc > 50 && !gnMapaLigero()) {
-        const radioVisual = Math.min(Math.max(acc * 0.12, 10), 38);
+        const radioVisual = acc; // La circunferencia representa la precisión real, no un radio decorativo.
         const cOpt = {
             radius: radioVisual,
             color: '#10b981',
@@ -7058,6 +7052,19 @@ function mostrarMarcadorUbicacion(lat, lon, acc, opts) {
 
 
 
+function gnPosicionGpsEsMasAntigua(position) {
+    const anterior = ultimaUbicacion && ultimaUbicacion.fuente === 'gps' ? Number(ultimaUbicacion.timestamp) : 0;
+    const nueva = Number(position && position.timestamp);
+    return !!(anterior && nueva && nueva < anterior);
+}
+
+function gnReiniciarWatchAlCambiarRed() {
+    if (_watchId == null || !navigator.geolocation) return;
+    navigator.geolocation.clearWatch(_watchId);
+    _watchId = null;
+    if (app.map) solicitarUbicacion(false, true);
+}
+
 function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     if (!navigator.geolocation) {
         if (!modoSilencioso) toast('Geolocalización no disponible en este dispositivo', 'error');
@@ -7070,6 +7077,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     let centroInicialAplicado = false;
 
     function procesarPosicion(position, esWatchUpdate = false) {
+        if (gnPosicionGpsEsMasAntigua(position)) return;
         const { latitude, longitude, accuracy } = position.coords;
         const acc = Math.round(accuracy);
         registrarFajaInstalacionSiFalta(longitude);
@@ -7079,7 +7087,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
         if (esWatchUpdate && acc >= _mejorPrecision && acc > 200) return;
         _mejorPrecision = Math.min(_mejorPrecision, acc);
 
-        ultimaUbicacion = { lat: latitude, lon: longitude, acc };
+        ultimaUbicacion = { lat: latitude, lon: longitude, acc, timestamp: position.timestamp, fuente: 'gps' };
         try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
 
         if (app.map) {
@@ -7104,11 +7112,7 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
 
         
         if (!modoSilencioso && !esWatchUpdate) {
-            const msg = acc < 100
-                ? `📍 GPS: ±${acc}m`
-                : acc < 2000
-                ? `📶 WiFi/Red: ±${acc}m`
-                : `🌐 IP: ±${(acc/1000).toFixed(0)}km — precisión baja`;
+            const msg = `📍 Ubicación: ±${acc}m${Date.now() - Number(position.timestamp || 0) >= 120000 ? ' — última conocida' : ''}`;
             toast(msg, acc < 2000 ? 'success' : 'info');
         }
     }
@@ -7166,28 +7170,33 @@ function solicitarUbicacion(centrarMapa = true, modoSilencioso = false, opts) {
     
     
     
-    if (!_watchId) {
+    if (_watchId == null) {
         _watchId = navigator.geolocation.watchPosition(
             pos => {
-                
+                if (gnPosicionGpsEsMasAntigua(pos)) return;
                 const { latitude, longitude, accuracy } = pos.coords;
                 const acc = Math.round(accuracy);
                 registrarFajaInstalacionSiFalta(longitude);
-                ultimaUbicacion = { lat: latitude, lon: longitude, acc };
+                ultimaUbicacion = { lat: latitude, lon: longitude, acc, timestamp: pos.timestamp, fuente: 'gps' };
                 try { localStorage.setItem('ultima_ubicacion', JSON.stringify(ultimaUbicacion)); } catch(_) {}
                 
                 if (!app.map) return;
                 marcarGpsRecibidoEstaSesion();
                 if (gnMapaLigero()) {
                     const now = Date.now();
-                    if (now - _gnLastWatchUbicacionMs < 45000) return;
+                    if (now - _gnLastWatchUbicacionMs < (navigator.onLine === false ? 10000 : 45000)) return;
                     _gnLastWatchUbicacionMs = now;
                 }
-                mostrarMarcadorUbicacion(latitude, longitude, acc);
+                const zoomSugerido = mostrarMarcadorUbicacion(latitude, longitude, acc);
+                // Si la consulta inicial agotó el tiempo, aceptar el primer fix reciente del watch.
+                if (centrarMapa && !centroInicialAplicado && pos.timestamp && Date.now() - pos.timestamp < 120000) {
+                    app.map.setView([latitude, longitude], zoomSugerido, { animate: false });
+                    centroInicialAplicado = true;
+                }
             },
             err => console.warn('[GPS watch]', err.message),
             gnMapaLigero()
-                ? { enableHighAccuracy: false, maximumAge: 20000, timeout: 20000 }
+                ? { enableHighAccuracy: navigator.onLine === false, maximumAge: 20000, timeout: 20000 }
                 : { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
         );
     }
@@ -7338,7 +7347,8 @@ async function nuevoPedidoDesdeUbicacionActual() {
         ensureMapReady,
         getUltimaUbicacion: () => ultimaUbicacion,
         setUltimaUbicacion: (u) => {
-            ultimaUbicacion = u;
+            ultimaUbicacion = { ...u, timestamp: u.timestamp || Date.now(), fuente: u.fuente || 'gps' };
+            u = ultimaUbicacion;
             try {
                 localStorage.setItem('ultima_ubicacion', JSON.stringify(u));
             } catch (_) {}

@@ -104,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_UBI_JSON = "cached_json";
 
     private WebView webView;
+    private ConnectivityManager.NetworkCallback mapNetworkCallback;
     /** Capa nativa encima del WebView hasta el primer {@code onPageFinished} del documento; sin temporizador fijo. */
     private LinearLayout splashOverlay;
     private boolean nativeSplashDismissed;
@@ -241,6 +242,59 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /** Cambia con la conectividad, no solo al arrancar. No fuerza recargas ni descarga teselas. */
+    private void gnActualizarModoCache() {
+        if (webView == null) return;
+        int mode = gnIsNetworkLikelyOnline() ? WebSettings.LOAD_DEFAULT : WebSettings.LOAD_CACHE_ELSE_NETWORK;
+        webView.getSettings().setCacheMode(mode);
+        try { ServiceWorkerController.getInstance().getServiceWorkerWebSettings().setCacheMode(mode); }
+        catch (Throwable ignored) { }
+    }
+
+    private void gnRegistrarRedMapa() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            mapNetworkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override public void onAvailable(Network network) { runOnUiThread(() -> gnActualizarModoCache()); }
+                @Override public void onLost(Network network) { runOnUiThread(() -> gnActualizarModoCache()); }
+                @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    runOnUiThread(() -> gnActualizarModoCache());
+                }
+            };
+            cm.registerDefaultNetworkCallback(mapNetworkCallback);
+        } catch (Exception e) { mapNetworkCallback = null; Log.w(TAG, "Red mapa", e); }
+    }
+
+    /** Solo archivos inmutables versionados: el resto de la web continúa sirviéndose desde Pages. */
+    private WebResourceResponse gnRecursoMapaEmpaquetado(WebResourceRequest request) {
+        if (request == null || request.isForMainFrame() || !"GET".equals(request.getMethod())) return null;
+        Uri url = request.getUrl();
+        Uri base = Uri.parse(BuildConfig.WEB_APP_URL);
+        if (url == null || !"https".equalsIgnoreCase(url.getScheme())
+                || !base.getHost().equalsIgnoreCase(url.getHost()) || url.getPort() != base.getPort()
+                || url.getQuery() != null) return null;
+        String basePath = base.getPath();
+        if (basePath == null) return null;
+        if (!basePath.endsWith("/")) basePath += "/";
+        String path = url.getPath();
+        if (path == null || !path.startsWith(basePath)) return null;
+        String relative = path.substring(basePath.length());
+        if (!relative.equals("vendor/offline/entre-rios-ne-v1.js")
+                && !relative.equals("vendor/leaflet-1.9.4/leaflet.js")
+                && !relative.equals("vendor/leaflet-1.9.4/leaflet.css")
+                && !relative.equals("vendor/leaflet-1.9.4/images/marker-icon.png")
+                && !relative.equals("vendor/leaflet-1.9.4/images/marker-icon-2x.png")
+                && !relative.equals("vendor/leaflet-1.9.4/images/marker-shadow.png")
+                && !relative.equals("vendor/leaflet-1.9.4/images/layers.png")
+                && !relative.equals("vendor/leaflet-1.9.4/images/layers-2x.png")) return null;
+        try {
+            String mime = relative.endsWith(".js") ? "application/javascript"
+                    : relative.endsWith(".css") ? "text/css" : "image/png";
+            return new WebResourceResponse(mime, relative.endsWith(".png") ? null : "UTF-8", getAssets().open(relative));
+        } catch (Exception e) { Log.w(TAG, "Recurso local de mapa", e); return null; }
+    }
+
     private void configurarWebView() {
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -350,7 +404,14 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        gnRegistrarRedMapa();
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse local = gnRecursoMapaEmpaquetado(request);
+                return local != null ? local : super.shouldInterceptRequest(view, request);
+            }
+
             /**
              * Deprecado: en algunos WebView de dispositivos físicos (p. ej. Samsung) este callback se dispara
              * también para teselas del mapa, scripts CDN, etc. Si llamamos a {@link #handleWebViewUrl} aquí,
@@ -598,11 +659,13 @@ public class MainActivity extends AppCompatActivity {
                     drainUbic);
         }
         if (webView != null) {
+            gnActualizarModoCache();
             webView.onResume();
             /** Misma ventana que inactividad en JS (15 min): no recargar WebView antes. */
             final long BG_RELOAD_THRESHOLD_MS = 15L * 60_000L;
             final boolean resumeFromBackground =
                     !isChangingConfigurations()
+                            && gnIsNetworkLikelyOnline()
                             && gnWebMainDocumentReady
                             && gnLastPauseMillis > 0L
                             && (System.currentTimeMillis() - gnLastPauseMillis) > BG_RELOAD_THRESHOLD_MS;
@@ -690,6 +753,13 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (mapNetworkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) cm.unregisterNetworkCallback(mapNetworkCallback);
+            } catch (Exception ignored) { }
+            mapNetworkCallback = null;
+        }
         if (apkUpdateDownloadReceiver != null) {
             try {
                 unregisterReceiver(apkUpdateDownloadReceiver);

@@ -43,7 +43,7 @@ export async function ejecutarNuevoPedidoDesdeUbicacionActual(d) {
         const { latitude, longitude, accuracy } = pos.coords;
         d.registrarFajaInstalacionSiFalta(longitude);
         const accR = Math.round(accuracy || 0);
-        const next = { lat: latitude, lon: longitude, acc: accR };
+        const next = { lat: latitude, lon: longitude, acc: accR, timestamp: pos.timestamp, fuente: 'gps' };
         if (typeof d.setUltimaUbicacion === 'function') d.setUltimaUbicacion(next);
         else {
             try {

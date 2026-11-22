@@ -4,8 +4,8 @@
  */
 import { initGnFeaturesAdminMounts } from './gn-features-bootstrap.js';
 
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const LEAFLET_CSS = './vendor/leaflet-1.9.4/leaflet.css';
+const LEAFLET_JS = './vendor/leaflet-1.9.4/leaflet.js';
 
 let _started = false;
 /** @type {Promise<void> | null} */
@@ -29,7 +29,7 @@ function loadStylesheet(href) {
         link.rel = 'stylesheet';
         link.href = href;
         link.onload = () => resolve();
-        link.onerror = () => reject(new Error('css'));
+        link.onerror = () => { link.remove(); reject(new Error('css')); };
         document.head.appendChild(link);
     });
 }
@@ -49,7 +49,7 @@ function loadScript(src) {
         script.src = src;
         script.async = true;
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error('js'));
+        script.onerror = () => { script.remove(); reject(new Error('js')); };
         document.body.appendChild(script);
     });
 }
