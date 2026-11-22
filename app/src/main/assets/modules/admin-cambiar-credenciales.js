@@ -114,6 +114,7 @@ export async function cambiarContrasena() {
                     setErr(data.error || data.detail || 'No se pudo actualizar');
                     return;
                 }
+                try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
                 if (data.token) {
                     try {
                         app.apiToken = String(data.token);
@@ -202,6 +203,7 @@ export async function cambiarContrasena() {
             return;
         }
         await c.sqlSimple(`UPDATE usuarios SET password_hash = ${c.esc(nueva)} WHERE id = ${c.esc(app.u.id)}` + wf);
+        try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
         setOk('✓ Contraseña actualizada correctamente');
         ['pw-actual', 'pw-nueva', 'pw-confirmar'].forEach((id) => {
             const el = document.getElementById(id);

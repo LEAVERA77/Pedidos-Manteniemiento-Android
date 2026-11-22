@@ -28,7 +28,7 @@ function _gnScheduleOfferSaveBiometricAfterLogin(em0, pw0) {
     if (!_gnIsAndroidGestorNovaShell() || !em0 || !pw0) return;
     const offer = () => {
         try {
-            if (!document.body?.classList.contains('gn-sesion-activa')) return;
+            if (!document.body?.classList.contains('gn-sesion-activa') || window.__gnDefaultCredsChangePending) return;
             _gnOfferSaveBiometricIfNeeded(em0, pw0);
         } catch (_) {}
     };
@@ -37,8 +37,6 @@ function _gnScheduleOfferSaveBiometricAfterLogin(em0, pw0) {
         _gnBioOfferTimer = null;
         offer();
     }, 650);
-    setTimeout(offer, 120);
-    setTimeout(offer, 900);
 }
 
 function _gnWrapLoginHandler(fn) {
@@ -101,12 +99,19 @@ function _gnUserDeclinedBiometricSave() {
 function _gnOfferSaveBiometricIfNeeded(em, pw) {
     if (!em || !pw) return;
     const B = window.AndroidBiometric;
-    if (!B || typeof B.isAvailable !== 'function' || !B.isAvailable()) return;
+    if (!B) return;
     gnSyncBiometricScopeSiSesionActiva();
-    if (typeof B.hasSavedLogin === 'function' && B.hasSavedLogin()) return;
+    const { tid, bt } = gnBioScopeParaAccionBiometrica();
+    // Una entrada manual correcta puede usar datos cambiados desde otro dispositivo.
+    // No conservar ni ofrecer el acceso anterior si ya no corresponde a la sesión.
+    if (typeof B.hasSavedLogin === 'function' && B.hasSavedLogin()) {
+        if (typeof B.savedLoginMatches !== 'function' || B.savedLoginMatches(em, pw, tid, bt)) return;
+        if (typeof B.clearSavedLogin !== 'function') return;
+        B.clearSavedLogin();
+    }
+    if (typeof B.isAvailable !== 'function' || !B.isAvailable()) return;
     if (_gnUserDeclinedBiometricSave()) return;
     if (typeof B.saveLoginWithBiometric !== 'function') return;
-    const { tid, bt } = gnBioScopeParaAccionBiometrica();
     try {
         B.saveLoginWithBiometric(em, pw, tid, bt);
     } catch (e) {

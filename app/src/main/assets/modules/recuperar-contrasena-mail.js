@@ -276,6 +276,7 @@ async function pasoResetPw() {
                     msg.textContent = data?.error || `Error (${resp.status})`;
                     return;
                 }
+                try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
                 msg.style.color = '#166534';
                 msg.textContent = '✓ Contraseña actualizada. Ya podés iniciar sesión.';
                 btn.style.display = 'none';
@@ -324,6 +325,7 @@ async function pasoResetPw() {
             await sqlSimple(
                 `UPDATE usuarios SET password_hash = ${esc(nuevaPw)}, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE WHERE id = ${esc(r.rows[0].id)}`
             );
+            try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
             msg.style.color = '#166534';
             msg.textContent = '✓ Contraseña actualizada. Ya podés iniciar sesión.';
             btn.style.display = 'none';

@@ -115,6 +115,7 @@ async function guardarCreds() {
       }
       return;
     }
+    try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
     await _marcarEnServidor();
     document.getElementById('gn-creds-suggest-overlay')?.remove();
     const nuevoUser = user || (d.user && d.user.email) || 'admin';
@@ -151,6 +152,8 @@ export function checkAndSuggestCredentialsChange(loginResponse, passwordActual =
   if (!pa) return;
 
   _shown = true;
+  // No guardar la contraseña inicial mientras el cambio obligatorio está pendiente.
+  window.__gnDefaultCredsChangePending = true;
   _passwordActualLogin = pa;
   setTimeout(() => {
     const modal = buildModal();

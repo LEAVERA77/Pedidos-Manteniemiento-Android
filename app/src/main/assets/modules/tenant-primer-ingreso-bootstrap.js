@@ -148,6 +148,7 @@ export async function confirmarCambioPasswordObligatorioAndroid() {
         if (msg) msg.textContent = data.error || data.detail || 'No se pudo actualizar las credenciales.';
         return;
       }
+      try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
       const loginUser = String(data.user?.email || nuevoUsuario).trim().toLowerCase();
       if (!loginUser) {
         if (msg) msg.textContent = 'El servidor no devolvió el usuario de login. Reintentá o contactá soporte.';
@@ -213,6 +214,7 @@ export async function confirmarCambioPasswordObligatorioAndroid() {
       return;
     }
 
+    try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
     document.getElementById('modal-forzar-cambio-pw')?.classList.remove('active');
     ['forzar-cambio-pw-nueva', 'forzar-cambio-pw-nueva2'].forEach((id) => {
       const el = document.getElementById(id);

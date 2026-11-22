@@ -301,6 +301,23 @@ public final class AndroidBiometricBridge {
         }
     }
 
+    /** Compara sin devolver al WebView las credenciales guardadas. Se usa tras un login válido. */
+    @JavascriptInterface
+    public boolean savedLoginMatches(String email, String password, int tenantId, String businessType) {
+        if (email == null || password == null || !storedScopeMatches(tenantId, businessType)) {
+            return false;
+        }
+        try {
+            SharedPreferences p = ctx().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String storedEmail = p.getString(K_EM, "");
+            String storedPassword = p.getString(K_PW, "");
+            return storedEmail != null && storedEmail.trim().equalsIgnoreCase(email.trim())
+                    && password.equals(storedPassword);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** Compatibilidad: guarda sin ámbito explícito (no recomendado). */
     @JavascriptInterface
     public void saveLoginWithBiometric(String email, String password) {
