@@ -46,6 +46,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # El test WebAuthn importa primitivas de api/services y sus dependencias.
+      - name: Install API dependencies for E2E
+        working-directory: api
+        run: npm ci
       - name: Install Playwright
         working-directory: e2e
         run: |
