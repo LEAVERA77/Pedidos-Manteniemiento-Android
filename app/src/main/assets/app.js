@@ -8088,18 +8088,40 @@ window.ejecutarDesasignarPedidoPorId = ejecutarDesasignarPedidoPorId;
 
 let _pollNotifMovilUsaColumnaLeida = true;
 
-window.pollNotificacionesMovil = async function () {
-    if (!app.u || modoOffline || !NEON_OK || !_sql) return;
-    const uid = app.u.id;
+// Con API configurada nunca volver al SQL heredado ante error o 401.
+// El modo sin API conserva temporalmente la compatibilidad preexistente.
+async function listarNotificacionesMovil(usaApi, uid) {
+    if (usaApi) return gnOperativaFetch('/api/notificaciones/pendientes', { method: 'GET' });
     const filtroLeida = _pollNotifMovilUsaColumnaLeida ? ' AND leida = FALSE' : '';
+    return sqlSimple(
+        `SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil WHERE usuario_id = ${esc(uid)}${filtroLeida} ORDER BY id ASC LIMIT 15`
+    );
+}
+
+async function marcarNotificacionMovilLeida(usaApi, uid, id) {
+    if (usaApi) return gnOperativaFetch(`/api/notificaciones/${encodeURIComponent(String(id))}/leer`, { method: 'PATCH' });
+    if (_pollNotifMovilUsaColumnaLeida) {
+        return sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(id)} AND usuario_id = ${esc(uid)}`);
+    }
+}
+
+window.pollNotificacionesMovil = async function () {
+    if (!app.u || modoOffline) return;
+    const usaApi = !!getApiBaseUrl();
+    const tokenInicial = usaApi ? getApiToken() : null;
+    if (usaApi && !tokenInicial) return;
+    if (!usaApi && (!NEON_OK || !_sql)) return;
+    const uid = app.u.id;
+    const mismaSesion = () => app.u && String(app.u.id) === String(uid) &&
+        (!usaApi || getApiToken() === tokenInicial);
     try {
-        const r = await sqlSimple(
-            `SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil WHERE usuario_id = ${esc(uid)}${filtroLeida} ORDER BY id ASC LIMIT 15`
-        );
+        const r = await listarNotificacionesMovil(usaApi, uid);
+        if (!mismaSesion()) return;
         const rows = r.rows || [];
         const tienePuente = window.AndroidLocalNotify && typeof window.AndroidLocalNotify.show === 'function';
         const esAdm = esAdmin();
         for (const row of rows) {
+            if (!mismaSesion()) return;
             const t = row.titulo || 'GestorNova';
             const b = row.cuerpo || '';
             const pid = row.pedido_id != null ? String(row.pedido_id) : '';
@@ -8133,8 +8155,8 @@ window.pollNotificacionesMovil = async function () {
                 } catch (e) {
                     logErrorWeb('notif-regeo-log', e);
                 }
-                if (_pollNotifMovilUsaColumnaLeida) {
-                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                if (usaApi || _pollNotifMovilUsaColumnaLeida) {
+                    await marcarNotificacionMovilLeida(usaApi, uid, row.id);
                 }
                 continue;
             }
@@ -8149,16 +8171,16 @@ window.pollNotificacionesMovil = async function () {
                         window.AndroidLocalNotify.show(String(row.id), t, b, pid);
                     } catch (_) {}
                 }
-                if (_pollNotifMovilUsaColumnaLeida) {
-                    await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                if (usaApi || _pollNotifMovilUsaColumnaLeida) {
+                    await marcarNotificacionMovilLeida(usaApi, uid, row.id);
                 }
                 continue;
             }
             if (tienePuente) {
                 try {
                     window.AndroidLocalNotify.show(String(row.id), t, b, pid);
-                    if (_pollNotifMovilUsaColumnaLeida) {
-                        await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    if (usaApi || _pollNotifMovilUsaColumnaLeida) {
+                        await marcarNotificacionMovilLeida(usaApi, uid, row.id);
                     }
                     if (pid) {
                         await resolverFocoPedidoNotificacion(pid, { silent: true, scrollDerivacion: esNotifDerivacion });
@@ -8167,8 +8189,8 @@ window.pollNotificacionesMovil = async function () {
             } else if (esAdm) {
                 try {
                     toast(t + (b ? ': ' + b : ''), 'info');
-                    if (_pollNotifMovilUsaColumnaLeida) {
-                        await sqlSimple(`UPDATE notificaciones_movil SET leida = TRUE WHERE id = ${esc(row.id)}`);
+                    if (usaApi || _pollNotifMovilUsaColumnaLeida) {
+                        await marcarNotificacionMovilLeida(usaApi, uid, row.id);
                     }
                     if (pid) {
                         await resolverFocoPedidoNotificacion(pid, {
@@ -8181,7 +8203,7 @@ window.pollNotificacionesMovil = async function () {
         }
     } catch (e) {
         const m = String(e.message || e);
-        if (_pollNotifMovilUsaColumnaLeida && (m.includes('leida') || (m.includes('column') && m.includes('notificaciones_movil')))) {
+        if (!usaApi && _pollNotifMovilUsaColumnaLeida && (m.includes('leida') || (m.includes('column') && m.includes('notificaciones_movil')))) {
             _pollNotifMovilUsaColumnaLeida = false;
             return window.pollNotificacionesMovil();
         }

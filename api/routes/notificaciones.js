@@ -53,6 +53,48 @@ router.post("/fcm-token", async (req, res) => {
   }
 });
 
+// Migración gradual del SQL de lectura: solo notificaciones propias. La
+// identidad viene del middleware, nunca de parámetros del cliente.
+router.get("/pendientes", async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT id, titulo, cuerpo, pedido_id FROM notificaciones_movil
+       WHERE usuario_id = $1 AND leida = FALSE ORDER BY id ASC LIMIT 15`,
+      [req.user.id], { bypassCache: true }
+    );
+    return res.json({ rows: r.rows });
+  } catch (error) {
+    if (error?.code === "42703" || error?.code === "42P01") {
+      return res.status(503).json({ error: "Esquema de notificaciones no disponible" });
+    }
+    console.error("[notificaciones/pendientes] error consultando notificaciones");
+    return res.status(500).json({ error: "No se pudieron listar notificaciones pendientes" });
+  }
+});
+
+router.patch("/:id/leer", async (req, res) => {
+  const idRaw = String(req.params.id || "");
+  const id = Number(idRaw);
+  if (!/^[1-9][0-9]*$/.test(idRaw) || !Number.isSafeInteger(id)) {
+    return res.status(400).json({ error: "Identificador de notificación inválido" });
+  }
+  try {
+    const r = await query(
+      `UPDATE notificaciones_movil SET leida = TRUE
+       WHERE id = $1 AND usuario_id = $2 RETURNING id`,
+      [id, req.user.id]
+    );
+    if (!r.rows?.length) return res.status(404).json({ error: "Notificación no encontrada" });
+    return res.json({ ok: true });
+  } catch (error) {
+    if (error?.code === "42703" || error?.code === "42P01") {
+      return res.status(503).json({ error: "Esquema de notificaciones no disponible" });
+    }
+    console.error("[notificaciones/leer] error actualizando notificación");
+    return res.status(500).json({ error: "No se pudo actualizar la notificación" });
+  }
+});
+
 router.get("/mis-notificaciones", async (req, res) => {
   try {
     const r = await query(
