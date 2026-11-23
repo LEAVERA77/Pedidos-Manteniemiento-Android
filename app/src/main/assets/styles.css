@@ -1596,3 +1596,6 @@ body:not(.gn-sesion-activa) #gn-fab-community-btn {
   color: var(--tm, #64748b);
   margin: 0.2rem 0;
 }
+
+/* Pedidos internos: los datos de cliente no se muestran en este modo. */
+#pf.gn-mantenimiento-interno [data-gn-interno-campo] { display: none !important; }

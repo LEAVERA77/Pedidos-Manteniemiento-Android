@@ -202,6 +202,7 @@ import { installAdminSociosBusquedaPadron } from './modules/admin-socios-busqued
 import { installAdminSociosUsarEnPedido } from './modules/admin-socios-usar-en-pedido.js';
 import { GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-levenshtein.js';
 import { filtrarListaPanelPedidosRender, contarCerradosPanelPedidos } from './modules/pedido-panel-lista-tecnico.js';
+import { prepararAsignacionMasivaLista, agregarSelectorAsignacionMasiva } from './modules/admin-asignacion-masiva.js';
 import {
     validarPuedeCerrarPedido,
     validarPuedeRegistrarAvance,
@@ -568,7 +569,11 @@ function prepareOfflineQueueInWorker(rawQueue) {
     });
 }
 
+let sincronizacionOfflineEnCurso = false;
 async function sincronizarOffline() {
+    if (sincronizacionOfflineEnCurso) return;
+    sincronizacionOfflineEnCurso = true;
+    try {
     let q = offlineQueue();
     if (q.length === 0) { toast('No hay pedidos offline pendientes', 'info'); return; }
     if (!NEON_OK || !_sql) {
@@ -592,10 +597,15 @@ async function sincronizarOffline() {
         try {
             if (op.tipo === 'INSERT') {
                 await sqlSimple(op.query);
+            } else if (op.tipo === 'MANTENIMIENTO_INTERNO') {
+                if (!app.u || Number(app.u.id) !== op.usuario_id || tenantIdActual() !== op.tenant_id ||
+                    rubroMantenimientoInterno() !== op.payload.business_type)
+                    throw new Error('Iniciá sesión con el usuario, organización y rubro originales para sincronizar.');
+                await enviarMantenimientoInterno(op.payload);
             } else if (op.tipo === 'UPDATE') {
                 const resultado = await sqlSimple(op.query);
                 if (op.requiereFila && !resultado?.rows?.length) throw new Error('El pedido ya no está En ejecución; cierre pendiente de revisión.');
-            }
+            } else throw new Error('Operación offline no reconocida; se conserva para revisión.');
             ok++;
         } catch(e) {
             console.error('Sync fallo op:', op._offlineId, e.message);
@@ -604,7 +614,10 @@ async function sincronizarOffline() {
         }
     }
 
-    offlineSave(remaining);
+    // No sobrescribir operaciones agregadas mientras se sincronizaba este lote.
+    const procesadas = new Set(q.map(op => op._offlineId));
+    const agregadas = offlineQueue().filter(op => !procesadas.has(op._offlineId));
+    offlineSave([...remaining, ...agregadas]);
     actualizarBadgeOffline();
 
     if (ok > 0) {
@@ -613,6 +626,7 @@ async function sincronizarOffline() {
     } else {
         toast('No se pudo sincronizar. Reintentá más tarde.', 'error');
     }
+    } finally { sincronizacionOfflineEnCurso = false; }
 }
 
 
@@ -1592,6 +1606,12 @@ async function fetchMiConfiguracionYAplicarEnEmpresaCfg() {
             };
         }
         try {
+            const u = Number(app.u?.id), tid = Number(app.u?.tenant_id ?? app.u?.tenantId);
+            const bt = String(cli?.active_business_type || '').trim().toLowerCase();
+            if (u > 0 && tid > 0 && apiTid === tid && ['electricidad','agua','municipio'].includes(bt))
+                localStorage.setItem(`pmg_rubro_interno_u${u}_t${tid}`, bt);
+        } catch (_) {}
+        try {
             initCommunityBroadcastFab();
         } catch (_) {}
         try {
@@ -1687,6 +1707,7 @@ function poblarSelectTiposReclamo() {
     if (!st) return;
     const prev = st.value;
     const lista = tiposReclamoSeleccionables();
+    try { if (puedeCrearMantenimientoInterno()) lista.push('Mantenimiento interno'); } catch (_) {}
     st.innerHTML = '';
     lista.forEach(t => {
         const o = document.createElement('option');
@@ -2370,6 +2391,43 @@ function esAdminSesionWebPublica() {
     } catch (_) {
         return false;
     }
+}
+
+/** Administrador web o técnico/supervisor Android, sin habilitar paneles admin. */
+function puedeCrearMantenimientoInterno() {
+    return esAdminSesionWebPublica() || (esAndroidWebViewMapa() && esTecnicoOSupervisor());
+}
+function rubroMantenimientoInterno() {
+    if (modoOffline || !NEON_OK) {
+        try {
+            const uid = Number(app.u?.id), tid = Number(app.u?.tenant_id ?? app.u?.tenantId);
+            const cached = localStorage.getItem(`pmg_rubro_interno_u${uid}_t${tid}`);
+            if (['electricidad','agua','municipio'].includes(cached)) return cached;
+        } catch (_) {}
+    }
+    const cfg = window.EMPRESA_CFG || {};
+    const bt = String(cfg.active_business_type || '').trim().toLowerCase();
+    if (['electricidad','agua','municipio'].includes(bt)) return bt;
+    const tipo = normalizarRubroEmpresa(cfg.tipo);
+    return tipo === 'cooperativa_electrica' ? 'electricidad' : tipo === 'cooperativa_agua' ? 'agua' : tipo === 'municipio' ? 'municipio' : '';
+}
+function nuevoIdMantenimientoInterno() {
+    if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+    if (!globalThis.crypto?.getRandomValues) throw new Error('No se pudo crear un identificador seguro para guardar el pedido.');
+    const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+async function enviarMantenimientoInterno(payload) {
+    if (!['electricidad','agua','municipio'].includes(payload?.business_type)) throw new Error('No se pudo identificar el rubro. Actualizá la sesión antes de guardar.');
+    if (!puedeEnviarApiRestPedidos()) throw new Error('Iniciá sesión online para sincronizar el mantenimiento.');
+    const resp = await fetch(apiUrl('/api/pedidos/mantenimiento-interno'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getApiToken()}` },
+        body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'No se pudo confirmar el guardado; reintentá sin modificar los datos.');
+    return data;
 }
 
 /** Marca por defecto hasta que el admin complete el setup inicial en servidor (setup_wizard_completado). */
@@ -8117,6 +8175,7 @@ async function marcarNotificacionMovilLeida(usaApi, uid, id) {
 
 window.pollNotificacionesMovil = async function () {
     if (!app.u || modoOffline) return;
+    if (window.AndroidFcm) void registrarFcmTokenSiDisponible({ apiUrl, getApiToken });
     const usaApi = !!getApiBaseUrl();
     const tokenInicial = usaApi ? getApiToken() : null;
     if (usaApi && !tokenInicial) return;
@@ -8188,8 +8247,8 @@ window.pollNotificacionesMovil = async function () {
             }
             if (tienePuente) {
                 try {
-                    window.AndroidLocalNotify.show(String(row.id), t, b, pid);
-                    if (usaApi || _pollNotifMovilUsaColumnaLeida) {
+                    const presentada = window.AndroidLocalNotify.show(String(row.id), t, b, pid);
+                    if (presentada !== false && (usaApi || _pollNotifMovilUsaColumnaLeida)) {
                         await marcarNotificacionMovilLeida(usaApi, uid, row.id);
                     }
                     if (pid) {
@@ -9137,8 +9196,17 @@ function _bindPedidoFormSubmit() {
     
     try {
         
+        const tipoInternoActual = document.getElementById('tt')?.value === 'Mantenimiento interno' && puedeCrearMantenimientoInterno();
+        const internoTecnicoAndroid = tipoInternoActual && esAndroidWebViewMapa() && esTecnicoOSupervisor();
+        if (tipoInternoActual && !internoTecnicoAndroid && (modoOffline || !NEON_OK || !puedeEnviarApiRestPedidos())) {
+            toast('El mantenimiento interno administrativo requiere conexión y sesión.', 'error');
+            btn.disabled = false;
+            return;
+        }
         const anioActual = new Date().getFullYear();
         let numPedido;
+        if (tipoInternoActual) numPedido = '';
+        else
         if (modoOffline || !NEON_OK) {
             const tidOff = tenantIdActual();
             const keyContador = 'pmg_contador_tenant_' + tidOff + '_' + anioActual;
@@ -9164,16 +9232,22 @@ function _bindPedidoFormSubmit() {
         } catch (_) {}
 
         const tipoTr = document.getElementById('tt')?.value || '';
+        const interno = tipoTr === 'Mantenimiento interno' && puedeCrearMantenimientoInterno();
         const permitidos = tiposReclamoSeleccionables();
-        if (!permitidos.includes(tipoTr)) {
+        if (!permitidos.includes(tipoTr) && !interno) {
             toast('Elegí un tipo de reclamo válido para el rubro de tu organización.', 'error');
+            btn.disabled = false;
+            return;
+        }
+        if (interno && !String(document.getElementById('de')?.value || '').trim()) {
+            toast('Describí los trabajos de mantenimiento a realizar.', 'error');
             btn.disabled = false;
             return;
         }
         const reqNis = tipoReclamoRequiereNisYCliente(tipoTr);
         const reqNombreCli = tipoReclamoRequiereNombreClienteEnFormulario(tipoTr);
-        const nisVal = (document.getElementById('nis').value || '').trim();
-        const clVal = (document.getElementById('cl').value || '').trim();
+        const nisVal = interno ? '' : (document.getElementById('nis').value || '').trim();
+        const clVal = interno ? '' : (document.getElementById('cl').value || '').trim();
         if (reqNis && !nisVal) {
             toast('Para este tipo de reclamo el NIS / medidor es obligatorio', 'error');
             btn.disabled = false;
@@ -9185,15 +9259,15 @@ function _bindPedidoFormSubmit() {
             return;
         }
         const uidCre = app.u?.id || 1;
-        const telVal = (document.getElementById('ped-tel-contacto')?.value || '').trim();
-        const cliNomVal = (document.getElementById('cl').value || '').trim();
-        const calleVal = (document.getElementById('ped-cli-calle')?.value || '').trim();
-        const numVal = (document.getElementById('ped-cli-num')?.value || '').trim();
-        const locVal = (document.getElementById('ped-cli-loc')?.value || '').trim();
-        const refUbicVal = (document.getElementById('ped-cli-ref')?.value || '').trim();
-        let disVal = (document.getElementById('di2').value || '').trim();
+        const telVal = interno ? '' : (document.getElementById('ped-tel-contacto')?.value || '').trim();
+        const cliNomVal = interno ? '' : (document.getElementById('cl').value || '').trim();
+        const calleVal = interno ? '' : (document.getElementById('ped-cli-calle')?.value || '').trim();
+        const numVal = interno ? '' : (document.getElementById('ped-cli-num')?.value || '').trim();
+        const locVal = interno ? '' : (document.getElementById('ped-cli-loc')?.value || '').trim();
+        const refUbicVal = interno ? '' : (document.getElementById('ped-cli-ref')?.value || '').trim();
+        let disVal = interno ? '' : (document.getElementById('di2').value || '').trim();
         const trafoInp = document.getElementById('trafo-pedido');
-        let trafoVal = (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
+        let trafoVal = interno ? '' : (trafoInp && trafoInp.value ? trafoInp.value : '').trim();
         let barrioVal = null;
         const tieneNisMed = !!nisVal;
         const normTrafoDis = normalizarTrafoDistribuidorAlGuardarPedido({
@@ -9231,8 +9305,8 @@ function _bindPedidoFormSubmit() {
                 }
             }
         }
-        const sumConVal = (document.getElementById('ped-sum-conexion')?.value || '').trim();
-        const sumFasVal = (document.getElementById('ped-sum-fases')?.value || '').trim();
+        const sumConVal = interno ? '' : (document.getElementById('ped-sum-conexion')?.value || '').trim();
+        const sumFasVal = interno ? '' : (document.getElementById('ped-sum-fases')?.value || '').trim();
         if (
             esCooperativaElectricaRubro() &&
             tipoReclamoElectricoPideSuministroWhatsapp(tipoTr) &&
@@ -9252,12 +9326,12 @@ function _bindPedidoFormSubmit() {
             suministro_tipo_conexion, suministro_fases, barrio, provincia, codigo_postal
         ) VALUES(
             ${esc(numPedido)},
-            ${esc(disVal || null)},
+            ${esc(interno ? '' : (disVal || null))},
             ${esc(trafoVal || null)},
             ${esc(cliNomVal || null)},
             ${esc(document.getElementById('tt').value || null)},
             ${esc(document.getElementById('de').value)},
-            ${esc(document.getElementById('pr').value)},
+            ${esc(interno ? 'Media' : document.getElementById('pr').value)},
             ${esc(app.sel.lat)},
             ${esc(app.sel.lng)},
             ${esc(uidCre)},
@@ -9282,7 +9356,25 @@ function _bindPedidoFormSubmit() {
         )`;
 
         let derivacionAltaApiOk = false;
-        if (modoOffline || !NEON_OK) {
+        if (internoTecnicoAndroid) {
+            const uid = Number(app.u?.id), tid = Number(app.u?.tenant_id ?? app.u?.tenantId), business = rubroMantenimientoInterno();
+            if (!Number.isSafeInteger(uid) || uid < 1 || !Number.isSafeInteger(tid) || tid < 1 || !business)
+                throw new Error('Falta identificar usuario, organización o rubro. Conectate e iniciá sesión antes de cargar.');
+            const opId = nuevoIdMantenimientoInterno();
+            const payload = { descripcion: document.getElementById('de').value.trim(), lat: coordsInsert.lat,
+                lng: coordsInsert.lng, fotos: [...fotosTemporales], operacion_id: opId, business_type: business };
+            enqueueOffline({ tipo:'MANTENIMIENTO_INTERNO', usuario_id:uid, tenant_id:tid, payload });
+            if (!offlineQueue().some(op => op.tipo === 'MANTENIMIENTO_INTERNO' && op.payload?.operacion_id === opId))
+                throw new Error('No se pudo guardar en el dispositivo. Revisá el espacio disponible, especialmente si hay fotos.');
+            numPedido = 'Pendiente de sincronizar';
+            app.p.unshift({ id:'off_'+opId, np:numPedido, f:new Date().toISOString(), tt:'Mantenimiento interno',
+                de:payload.descripcion, pr:'Media', es:'Pendiente', av:0, la:payload.lat, ln:payload.lng,
+                ui:uid, tai:null, fotos:payload.fotos, _offline:true, _mantenimientoInterno:opId });
+            offlinePedidosSave(app.p);
+            toast(modoOffline || !NEON_OK ? 'Guardado en el dispositivo. Se sincronizará al volver la conexión; quedará sin asignar.' :
+                'Guardado en el dispositivo. Sincronizando como pendiente sin asignar…', 'success');
+            if (!modoOffline && NEON_OK) setTimeout(() => void sincronizarOffline(), 300);
+        } else if (modoOffline || !NEON_OK) {
             
             enqueueOffline({ tipo: 'INSERT', query: queryInsert });
             
@@ -9319,8 +9411,20 @@ function _bindPedidoFormSubmit() {
             app.p.unshift(pedidoLocal);
             offlinePedidosSave(app.p);
             toast('📴 Pedido guardado localmente — se sincronizará al conectarse', 'success');
+        } else if (interno) {
+            await asegurarJwtApiRest();
+            const form = document.getElementById('pf');
+            if (!form.dataset.gnOperacionInterna) form.dataset.gnOperacionInterna = nuevoIdMantenimientoInterno();
+            const data = await enviarMantenimientoInterno({ descripcion: document.getElementById('de').value.trim(),
+                lat: coordsInsert.lat, lng: coordsInsert.lng, fotos: [...fotosTemporales],
+                operacion_id: form.dataset.gnOperacionInterna, business_type: rubroMantenimientoInterno() });
+            numPedido = data.numero_pedido;
+            toast('Pedido guardado', 'success');
+            if (fotosString && data.id != null && typeof window.__gnSyncFotosReclamoCloudinary === 'function') {
+                try { await window.__gnSyncFotosReclamoCloudinary({ pedidoId: data.id, numPedido, fotoBase64Joined: fotosString }); }
+                catch (e) { console.warn('[fotos-mantenimiento]', e && e.message); }
+            }
         } else {
-            
             await ejecutarSQLConReintentos(queryInsert);
             toast('Pedido guardado', 'success');
             if (esMunicipioRubro() && nisVal) {
@@ -9344,7 +9448,7 @@ function _bindPedidoFormSubmit() {
                         }
                         const rol = String(app?.u?.rol || '').toLowerCase();
                         const esAdmin = rol === 'admin' || rol === 'administrador';
-                        if (esAdmin) {
+                        if (esAdmin && !interno) {
                             const terc = leerTerceroDerivacionNuevoPedidoSiActivo();
                             if (terc?.whatsappDigitos) {
                                 const intl = internacionalMasDesdeDigitosOTexto(String(terc.whatsappDigitos));
@@ -9378,7 +9482,7 @@ function _bindPedidoFormSubmit() {
             .filter(Boolean)
             .join(', ');
         try {
-            if (!derivacionAltaApiOk) {
+            if (!interno && !derivacionAltaApiOk) {
                 afterPedidoGuardadoIntentarWhatsappDerivacionTercero({
                     numPedido,
                     tipoTr,
@@ -9400,7 +9504,7 @@ function _bindPedidoFormSubmit() {
         app.sel = null;
         render();
         if (!modoOffline) cargarPedidos();
-        if (eraPedidoOficina && Number.isFinite(latPedidoGuardado) && Number.isFinite(lngPedidoGuardado)) {
+        if (!interno && eraPedidoOficina && Number.isFinite(latPedidoGuardado) && Number.isFinite(lngPedidoGuardado)) {
             void finalizarPedidoOficinaTrasGuardar(
                 {
                     ...depsUbicOficina,
@@ -9425,8 +9529,12 @@ function _bindPedidoFormSubmit() {
         logErrorWeb('guardar-pedido', e);
         const low = String(e && e.message ? e.message : e || '').toLowerCase();
         if (low.includes('fetch') || low.includes('network') || low.includes('failed')) {
-            setModoOffline(true);
-            toast('Sin conexión — reintentá guardar en modo offline', 'error');
+            if (document.getElementById('tt')?.value === 'Mantenimiento interno' && esAdminSesionWebPublica()) {
+                toast('No se pudo confirmar el guardado. Revisá la lista antes de reintentar.', 'error');
+            } else {
+                setModoOffline(true);
+                toast('Sin conexión — reintentá guardar en modo offline', 'error');
+            }
         } else {
             toast(mensajeErrorUsuario(e), 'error');
         }
@@ -11703,9 +11811,14 @@ function render() {
     }
     const c = document.getElementById('pl');
     c.innerHTML = '';
+    const depsAsigMasiva = {
+        esAdmin, esAndroid: esAndroidWebViewMapa, pedidos: () => app.p,
+        token: getApiToken, apiUrl, toast, recargar: cargarPedidos, render,
+    };
+    prepararAsignacionMasivaLista(depsAsigMasiva, c, fl);
     
     if (!fl.length) {
-        c.innerHTML = '<div class="ll2"><i class="fas fa-inbox"></i> Sin pedidos</div>';
+        c.insertAdjacentHTML('beforeend', '<div class="ll2"><i class="fas fa-inbox"></i> Sin pedidos</div>');
         try { llenarSelectsFiltroMapa(); } catch (_) {}
         renderMk();
         return;
@@ -11765,6 +11878,7 @@ function render() {
                 <div class="ab" style="width:${p.av}%"></div>
             </div>
         `;
+        agregarSelectorAsignacionMasiva(depsAsigMasiva, d, p);
         c.appendChild(d);
     });
     
@@ -11830,6 +11944,8 @@ function closeAll() {
         delete window.__gnDetallePedidoActivo;
     } catch (_) {}
     document.getElementById('pf').reset();
+    delete document.getElementById('pf').dataset.gnOperacionInterna;
+    try { syncFormularioMantenimientoInterno(); } catch (_) {}
     try {
         resetDerivacionTerceroNuevoPedidoUI();
     } catch (_) {}
@@ -12383,12 +12499,44 @@ function syncNisClienteReclamoConexionUI() {
         if (typeof window.syncTrafoPedidoNuevoEditable === 'function') window.syncTrafoPedidoNuevoEditable();
     } catch (_) {}
 }
+/** Opción solo en navegador de administrador; sin campos de cliente ni datos falsos. */
+function syncFormularioMantenimientoInterno() {
+    const sel = document.getElementById('tt');
+    const form = document.getElementById('pf');
+    if (!sel || !form) return;
+    const habilitado = puedeCrearMantenimientoInterno();
+    let option = [...sel.options].find(o => o.value === 'Mantenimiento interno');
+    if (habilitado && !option) {
+        option = new Option('Mantenimiento interno', 'Mantenimiento interno');
+        sel.add(option);
+    } else if (!habilitado && option) option.remove();
+    const interno = habilitado && sel.value === 'Mantenimiento interno';
+    const ids = ['di2','nis','ped-padron-busqueda-wrap','trafo-pedido','cl','ped-cli-calle','ped-cli-num','ped-cli-loc','ped-cli-ref','ped-tel-contacto','pr','ped-suministro-wrap','pf-deriv-tercero-wrap'];
+    const groups = new Set(ids.map(id => {
+        const el = document.getElementById(id);
+        return el?.classList.contains('fg') || id === 'ped-suministro-wrap' ? el : el?.closest('.fg');
+    }).filter(Boolean));
+    for (const el of groups) el.setAttribute('data-gn-interno-campo', '');
+    document.getElementById('btn-ia-sugerir-reclamo')?.setAttribute('data-gn-interno-campo', '');
+    form.classList.toggle('gn-mantenimiento-interno', interno);
+    const descLabel = form.querySelector('label[for="de"]');
+    if (descLabel) descLabel.textContent = interno ? 'Trabajos a realizar *' : 'Descripción *';
+    const desc = document.getElementById('de');
+    if (desc) desc.placeholder = interno ? 'Describí los trabajos a realizar...' : 'Describí el problema...';
+}
 const st = document.getElementById('tt');
 if (st) {
     st.addEventListener('change', () => {
         syncNisClienteReclamoConexionUI();
         syncSuministroElectricoUI();
+        syncFormularioMantenimientoInterno();
     });
+}
+for (const id of ['pm','pm-oficina']) {
+    const m = document.getElementById(id);
+    if (m) new MutationObserver(() => {
+        if (m.classList.contains('active')) syncFormularioMantenimientoInterno();
+    }).observe(m, { attributes:true, attributeFilter:['class'] });
 }
 syncNisClienteReclamoConexionUI();
 syncSuministroElectricoUI();

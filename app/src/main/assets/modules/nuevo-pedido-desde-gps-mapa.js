@@ -23,7 +23,9 @@ function _reverseTrasCoords(programarReverse, lat, lon) {
 export async function ejecutarNuevoPedidoDesdeUbicacionActual(d) {
     await d.ensureMapReady();
     const ul = d.getUltimaUbicacion && d.getUltimaUbicacion();
-    if (ul && Number.isFinite(ul.lat) && Number.isFinite(ul.lon)) {
+    const edadMs = ul && Number.isFinite(Number(ul.timestamp)) ? Date.now() - Number(ul.timestamp) : Infinity;
+    // No llamar «actual» a una ubicación manual, antigua o sin fecha.
+    if (ul && ul.fuente === 'gps' && edadMs >= 0 && edadMs <= 60000 && Number.isFinite(ul.lat) && Number.isFinite(ul.lon)) {
         await d.abrirNuevoPedidoEnCoordenadas(ul.lat, ul.lon, ul.acc);
         _reverseTrasCoords(d.programarReverseNominatimFormularioNuevoPedidoDesdeMapa, ul.lat, ul.lon);
         return;
@@ -53,6 +55,6 @@ export async function ejecutarNuevoPedidoDesdeUbicacionActual(d) {
         await d.abrirNuevoPedidoEnCoordenadas(latitude, longitude, accR);
         _reverseTrasCoords(d.programarReverseNominatimFormularioNuevoPedidoDesdeMapa, latitude, longitude);
     } catch (_) {
-        d.toast('No se pudo obtener la ubicación. Probá «Ir a mi ubicación» primero.', 'error');
+        d.toast('No se pudo obtener una ubicación GPS actual. Activá el GPS o marcá el punto en el mapa.', 'error');
     }
 }

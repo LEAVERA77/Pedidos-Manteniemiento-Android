@@ -28,3 +28,6 @@ local.properties
 # API Node.js
 /api/.env
 /api/node_modules
+
+# Configuración local Firebase (no publicar por accidente)
+/app/google-services.json

@@ -35,44 +35,31 @@ public class FcmTokenBridge {
                 .apply();
     }
 
-  @JavascriptInterface
+    @JavascriptInterface
     public void getToken(String jsCallback) {
         final String cb = jsCallback != null ? jsCallback.trim() : "";
         if (webView == null || cb.isEmpty() || !cb.matches("^[a-zA-Z0-9_.]+$")) return;
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                String token = task.isSuccessful() ? task.getResult() : null;
+                if (token != null && token.length() >= 20) saveToken(context, token);
+                responder(cb, token);
+            });
+        } catch (Exception e) {
+            responder(cb, null); // Firebase no configurado en este build.
+        }
+    }
+
+    private void responder(String cb, String token) {
         webView.post(() -> {
-            String token = null;
-            try {
-                token = tryFirebaseToken();
-            } catch (Exception ignored) {
-            }
-            if (token == null || token.isEmpty()) {
-                token = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TOKEN, null);
-            }
             try {
                 JSONObject o = new JSONObject();
                 if (token != null && token.length() >= 20) {
                     o.put("token", token);
                     o.put("plataforma", "android");
-                } else {
-                    o.put("error", "sin_token_fcm");
-                }
+                } else o.put("error", "sin_token_fcm");
                 webView.evaluateJavascript(cb + "(" + o.toString() + ")", null);
-            } catch (Exception e) {
-                Log.w(TAG, "getToken", e);
-            }
+            } catch (Exception e) { Log.w(TAG, "getToken", e); }
         });
-    }
-
-    private String tryFirebaseToken() {
-        try {
-            Class<?> fm = Class.forName("com.google.firebase.messaging.FirebaseMessaging");
-            Object inst = fm.getMethod("getInstance").invoke(null);
-            // async only — skip; token should be persisted by GestorNovaFirebaseMessagingService
-            return null;
-        } catch (ClassNotFoundException e) {
-            return null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 }

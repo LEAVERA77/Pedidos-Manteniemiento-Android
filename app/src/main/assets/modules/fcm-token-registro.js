@@ -3,6 +3,9 @@
  * made by leavera77
  */
 
+let ultimoEnvio = null;
+let secuencia = 0;
+
 export async function registrarFcmTokenSiDisponible({ apiUrl, getApiToken, fetchFn = fetch }) {
     const base = typeof apiUrl === 'function' ? apiUrl('/api/notificaciones/fcm-token') : '';
     if (!base || typeof getApiToken !== 'function') return;
@@ -10,9 +13,11 @@ export async function registrarFcmTokenSiDisponible({ apiUrl, getApiToken, fetch
     if (!tok) return;
 
     const enviar = async (fcmToken, plataforma = 'android') => {
-        if (!fcmToken || String(fcmToken).length < 20) return;
+        if (!fcmToken || String(fcmToken).length < 20 || getApiToken() !== tok) return;
+        const key = `${tok}:${fcmToken}`;
+        if (ultimoEnvio?.key === key && Date.now() - ultimoEnvio.at < 6 * 60 * 60 * 1000) return;
         try {
-            await fetchFn(base, {
+            const response = await fetchFn(base, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -20,6 +25,7 @@ export async function registrarFcmTokenSiDisponible({ apiUrl, getApiToken, fetch
                 },
                 body: JSON.stringify({ fcm_token: String(fcmToken), plataforma }),
             });
+            if (response.ok && getApiToken() === tok) ultimoEnvio = { key, at: Date.now() };
         } catch (e) {
             console.warn('[fcm-register]', e?.message || e);
         }
@@ -27,7 +33,8 @@ export async function registrarFcmTokenSiDisponible({ apiUrl, getApiToken, fetch
 
     try {
         if (window.AndroidFcm && typeof window.AndroidFcm.getToken === 'function') {
-            const cb = `__gnFcmCb_${Date.now()}`;
+            const cb = `__gnFcmCb_${Date.now()}_${++secuencia}`;
+            setTimeout(() => { try { delete window[cb]; } catch (_) {} }, 60000);
             window[cb] = (payload) => {
                 try {
                     delete window[cb];

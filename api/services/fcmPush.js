@@ -86,7 +86,15 @@ export async function sendFcmToUsuario(usuarioId, payload) {
   let sent = 0;
   for (const token of tokens) {
     try {
-      const body = {
+      // Para lotes enviamos solo datos y el mismo id de la cola: Android presenta y deduplica.
+      // Sin datos de cliente ni detalles del pedido en el transporte push.
+      const masiva = payload.tipo === "asignacion_masiva" && payload.notificacionId != null;
+      const body = masiva ? {
+        message: { token, android: { priority: "high" }, data: {
+          tipo: "asignacion_masiva", notificacion_id: String(payload.notificacionId),
+          usuario_id: String(usuarioId), cantidad: String(payload.cantidad),
+        } },
+      } : {
         message: {
           token,
           notification: {

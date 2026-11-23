@@ -33,20 +33,21 @@ export async function resetPedidoContadorPorTenant(tenantId) {
   }
 }
 
-export async function allocarSiguienteNumeroPedido(tenantId) {
+export async function allocarSiguienteNumeroPedido(tenantId, options = {}) {
+  const ejecutar = options.ejecutar || query;
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid < 1) {
     throw new Error("tenant_invalid");
   }
 
-  if (await pedidoContadorHasTenantId()) {
-    await query(
+  if (options.tieneTenant ?? (await pedidoContadorHasTenantId())) {
+    await ejecutar(
       `INSERT INTO pedido_contador(tenant_id, anio, ultimo_numero)
        VALUES ($1, EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
        ON CONFLICT (tenant_id, anio) DO NOTHING`,
       [tid]
     );
-    const rCont = await query(
+    const rCont = await ejecutar(
       `UPDATE pedido_contador
        SET ultimo_numero = ultimo_numero + 1
        WHERE tenant_id = $1 AND anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT
@@ -58,12 +59,12 @@ export async function allocarSiguienteNumeroPedido(tenantId) {
     return `${row.anio}-${String(row.ultimo_numero).padStart(5, "0")}`;
   }
 
-  await query(
+  await ejecutar(
     `INSERT INTO pedido_contador(anio, ultimo_numero)
      VALUES (EXTRACT(YEAR FROM CURRENT_DATE)::INT, 0)
      ON CONFLICT (anio) DO NOTHING`
   );
-  const rCont = await query(
+  const rCont = await ejecutar(
     `UPDATE pedido_contador
      SET ultimo_numero = ultimo_numero + 1
      WHERE anio = EXTRACT(YEAR FROM CURRENT_DATE)::INT

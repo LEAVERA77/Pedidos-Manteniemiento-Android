@@ -16,6 +16,7 @@ import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
 import com.gestornova.gestion.MainActivity;
+import com.gestornova.gestion.NotificacionMovilPresenter;
 import com.gestornova.gestion.R;
 
 import java.sql.Connection;
@@ -60,10 +61,9 @@ public class NotificacionesMovilPollWorker extends Worker {
                 return Result.success();
             }
             List<NeonJdbc.NotificacionMovilRow> rows = NeonJdbc.fetchUnreadNotificacionesMovil(conn, uid, 15);
-            ensureChannel(ctx);
             for (NeonJdbc.NotificacionMovilRow row : rows) {
-                mostrarNotificacion(ctx, row);
-                NeonJdbc.markNotificacionMovilLeida(conn, row.id);
+                if (NotificacionMovilPresenter.show(ctx, row.id, row.titulo, row.cuerpo, row.pedidoId))
+                    NeonJdbc.markNotificacionMovilLeida(conn, row.id);
             }
             if (!rows.isEmpty()) {
                 Log.i(TAG, "Procesadas " + rows.size() + " filas de notificaciones_movil");
@@ -83,47 +83,4 @@ public class NotificacionesMovilPollWorker extends Worker {
         }
     }
 
-    private static void ensureChannel(Context ctx) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel ch = new NotificationChannel(
-                CHANNEL_ID,
-                "Avisos de pedidos",
-                NotificationManager.IMPORTANCE_HIGH);
-        ch.setDescription("Cuando un administrador te envía un pedido al mapa");
-        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
-        if (nm != null) nm.createNotificationChannel(ch);
-    }
-
-    private static void mostrarNotificacion(Context ctx, NeonJdbc.NotificacionMovilRow row) {
-        String title = row.titulo.isEmpty() ? "GestorNova" : row.titulo;
-        String body = row.cuerpo;
-        String pedidoId = row.pedidoId != null ? row.pedidoId : "";
-
-        Intent open = new Intent(ctx, MainActivity.class);
-        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        open.putExtra("pedidoId", pedidoId);
-
-        int req = (int) (row.id % Integer.MAX_VALUE);
-        PendingIntent pi = PendingIntent.getActivity(
-                ctx,
-                req,
-                open,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        String shortBody = body.length() > 200 ? body.substring(0, 197) + "…" : body;
-        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle(title)
-                .setContentText(shortBody)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setContentIntent(pi);
-
-        try {
-            NotificationManagerCompat.from(ctx).notify(req, b.build());
-        } catch (SecurityException e) {
-            Log.w(TAG, "Notificación bloqueada: " + e.getMessage());
-        }
-    }
 }

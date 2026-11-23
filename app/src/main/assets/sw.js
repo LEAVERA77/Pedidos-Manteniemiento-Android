@@ -1,5 +1,5 @@
 // Service worker de Pedidos MG: los mapas usan la caché HTTP normal del navegador.
-const CACHE_SHELL = 'pmg-shell-v293';
+const CACHE_SHELL = 'pmg-shell-v294';
 const CACHE_API   = 'pmg-api-v1';
 const SW_VERSION  = '1.9.5';
 
@@ -92,6 +92,7 @@ function shellAssetUrls() {
     j('modules/pedido-detalle-render.js'),
     j('modules/pedido-detalle-puede-ejecutar.js'),
     j('modules/pedido-panel-lista-tecnico.js'),
+    j('modules/admin-asignacion-masiva.js'),
     j('modules/pedido-detalle-shell.js'),
     j('modules/pedido-detalle-infer-ubicacion-nominatim.js'),
     j('modules/pedido-detalle-hydrate.js'),

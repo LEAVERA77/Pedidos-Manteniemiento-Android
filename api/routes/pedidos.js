@@ -1,6 +1,8 @@
 import express from "express";
+import { createHash } from "node:crypto";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
-import { query } from "../db/neon.js";
+import { query, withTransaction } from "../db/neon.js";
+import { sendFcmToUsuario } from "../services/fcmPush.js";
 import { pedidosTableHasTenantIdColumn, tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
 import { pushPedidoBusinessFilter, rubroEfectivoParaTipos, pedidosHasBusinessTypeColumn } from "../utils/businessScope.js";
 import { parseFotosBase64, splitUrls, toJoinedUrls } from "../utils/helpers.js";
@@ -500,6 +502,62 @@ async function getPedidoInTenant(id, req) {
   const r = await query(`SELECT * FROM pedidos WHERE id = $1${bt} LIMIT 1`, params);
   return r.rows[0] || null;
 }
+
+/** Alta acotada de mantenimiento; el técnico no obtiene permisos de administración. */
+router.post("/mantenimiento-interno", async (req, res) => {
+  const rol = String(req.user?.rol || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!["admin", "administrador", "tecnico", "supervisor"].includes(rol))
+    return res.status(403).json({ error: "Requiere administrador o técnico." });
+  const descripcion = typeof req.body?.descripcion === "string" ? req.body.descripcion.trim() : "";
+  const { lat, lng, fotos = [], operacion_id, business_type } = req.body || {};
+  if (!descripcion || descripcion.length > 500 || typeof lat !== "number" || !Number.isFinite(lat) || lat < -90 || lat > 90 ||
+      typeof lng !== "number" || !Number.isFinite(lng) || lng < -180 || lng > 180 || !Array.isArray(fotos) ||
+      fotos.length > 10 || fotos.some(f => typeof f !== "string" || !/^data:image\/(jpeg|png|webp);base64,[a-z0-9+/]+={0,2}$/i.test(f)) ||
+      typeof operacion_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operacion_id) ||
+      !["electricidad", "agua", "municipio"].includes(business_type)) {
+    return res.status(400).json({ error: "Ingresá ubicación válida y trabajos a realizar; revisá las fotos." });
+  }
+  try {
+    if (!(await pedidosTableHasTenantIdColumn()) || !(await pedidosHasBusinessTypeColumn()) ||
+        !["electricidad", "agua", "municipio"].includes(req.activeBusinessType))
+      return res.status(503).json({ error: "No se pudo determinar la organización o rubro del pedido." });
+    if (business_type !== req.activeBusinessType)
+      return res.status(409).json({ error: "El rubro activo cambió. Volvé al rubro original para sincronizar." });
+    const hash = createHash("sha256").update(JSON.stringify({ descripcion, lat, lng, fotos, business_type })).digest("hex");
+    const contadorTieneTenant = await tableHasColumn("pedido_contador", "tenant_id");
+    const result = await withTransaction(async db => {
+      const reservation = await db.query(`INSERT INTO mantenimiento_interno_operaciones
+        (tenant_id, usuario_id, operacion_id, contenido_hash) VALUES ($1,$2,$3,$4)
+        ON CONFLICT (tenant_id, usuario_id, operacion_id) DO NOTHING RETURNING operacion_id`,
+        [req.tenantId, req.user.id, operacion_id, hash]);
+      if (!reservation.rows.length) {
+        const old = await db.query(`SELECT o.contenido_hash, p.id, p.numero_pedido FROM mantenimiento_interno_operaciones o
+          LEFT JOIN pedidos p ON p.id=o.pedido_id AND p.tenant_id=o.tenant_id
+          WHERE o.tenant_id=$1 AND o.usuario_id=$2 AND o.operacion_id=$3`, [req.tenantId, req.user.id, operacion_id]);
+        if (!old.rows[0]?.id || old.rows[0].contenido_hash !== hash) {
+          const error = new Error("La operación ya existe con otros datos o el pedido fue eliminado."); error.statusCode = 409; throw error;
+        }
+        return { id: old.rows[0].id, numero_pedido: old.rows[0].numero_pedido, repetida: true };
+      }
+      const numero = await allocarSiguienteNumeroPedido(req.tenantId, {
+        ejecutar: (sql, params = []) => db.query(sql, params), tieneTenant: contadorTieneTenant,
+      });
+      const r = await db.query(`INSERT INTO pedidos (numero_pedido, distribuidor, cliente, tipo_trabajo, descripcion,
+        prioridad, estado, avance, lat, lng, usuario_id, usuario_creador_id, fecha_creacion, foto_base64,
+        tenant_id, business_type) VALUES ($1, '', NULL, 'Mantenimiento interno', $2, 'Media', 'Pendiente', 0,
+        $3, $4, $5, $5, NOW(), $6, $7, $8) RETURNING id, numero_pedido`,
+        [numero, descripcion, lat, lng, req.user.id, fotos.join('||') || null, req.tenantId, req.activeBusinessType]);
+      await db.query(`UPDATE mantenimiento_interno_operaciones SET pedido_id=$4
+        WHERE tenant_id=$1 AND usuario_id=$2 AND operacion_id=$3`, [req.tenantId, req.user.id, operacion_id, r.rows[0].id]);
+      return { ...r.rows[0], repetida: false };
+    });
+    return res.status(result.repetida ? 200 : 201).json({ ok: true, ...result });
+  } catch (error) {
+    if (error.statusCode === 409) return res.status(409).json({ error: error.message });
+    console.error("[mantenimiento-interno]", error?.code || "error");
+    return res.status(500).json({ error: "No se pudo confirmar el guardado. Se puede reintentar sin duplicar." });
+  }
+});
 
 router.post("/", async (req, res) => {
   try {
@@ -2219,6 +2277,59 @@ router.post("/:id/opinion-descargo/notificar", adminOnly, async (req, res) => {
       error: "No se pudo notificar el descargo",
       detail: error.message,
     });
+  }
+});
+
+/** Una sola operación transaccional: todos pendientes del tenant o ninguno; un aviso resumen. */
+router.post("/asignacion-masiva", adminOnly, async (req, res) => {
+  const ids = req.body?.pedido_ids;
+  const tecnico = req.body?.tecnico_asignado_id;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 ||
+      ids.some(id => !Number.isSafeInteger(id) || id < 1 || id > 2147483647) ||
+      new Set(ids).size !== ids.length || !Number.isSafeInteger(tecnico) || tecnico < 1 || tecnico > 2147483647) {
+    return res.status(400).json({ error: "Seleccioná entre 1 y 100 pedidos válidos y un técnico activo." });
+  }
+  try {
+    const ucol = await usuariosTenantColumnName();
+    if (!(await pedidosTableHasTenantIdColumn()) || !["tenant_id", "cliente_id"].includes(ucol)) {
+      return res.status(503).json({ error: "La asignación masiva requiere aislamiento de tenant en pedidos y usuarios." });
+    }
+    const hasAsignadoPor = await tableHasColumn("pedidos", "asignado_por_id");
+    const params = [ids, req.tenantId];
+    const bt = await pushPedidoBusinessFilter(req, params);
+    const up = [ids, req.tenantId, tecnico];
+    if (hasAsignadoPor) up.push(req.user.id);
+    const btUp = await pushPedidoBusinessFilter(req, up);
+    const resultado = await withTransaction(async db => {
+      const u = await db.query(`SELECT id, rol, activo FROM usuarios WHERE id = $1 AND ${ucol} = $2 AND activo = TRUE FOR SHARE`, [tecnico, req.tenantId]);
+      const rol = String(u.rows[0]?.rol || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (!u.rows.length || !["tecnico", "supervisor"].includes(rol)) {
+        const error = new Error("El técnico no está activo o no pertenece a esta organización."); error.statusCode = 400; throw error;
+      }
+      const actual = await db.query(`SELECT id, numero_pedido FROM pedidos WHERE id = ANY($1::int[]) AND tenant_id = $2 AND estado = 'Pendiente' AND tecnico_asignado_id IS NULL${bt} ORDER BY id FOR UPDATE`, params);
+      if (actual.rows.length !== ids.length) {
+        const error = new Error("Algún pedido ya no está pendiente y libre, o dejó de estar disponible. Actualizá la lista."); error.statusCode = 409; throw error;
+      }
+      const changed = await db.query(`UPDATE pedidos SET tecnico_asignado_id = $3${hasAsignadoPor ? ", asignado_por_id = $4" : ""}, fecha_asignacion = NOW(), estado = 'Asignado' WHERE id = ANY($1::int[]) AND tenant_id = $2 AND estado = 'Pendiente' AND tecnico_asignado_id IS NULL${btUp} RETURNING id, numero_pedido`, up);
+      if (changed.rows.length !== ids.length) {
+        const error = new Error("Los pedidos cambiaron durante la asignación. Actualizá y volvé a intentar."); error.statusCode = 409; throw error;
+      }
+      const nombres = changed.rows.map(x => String(x.numero_pedido || `#${x.id}`).trim().slice(0, 40)).slice(0, 8);
+      const mas = changed.rows.length > nombres.length ? ` y ${changed.rows.length - nombres.length} más` : "";
+      const titulo = "Pedidos asignados";
+      const cuerpo = `Tenés ${changed.rows.length} pedido(s) asignado(s): ${nombres.join(", ")}${mas}. Revisá el mapa.`;
+      const notif = await db.query(`INSERT INTO notificaciones_movil (usuario_id, pedido_id, titulo, cuerpo, leida) VALUES ($1, NULL, $2, $3, FALSE) RETURNING id`, [tecnico, titulo, cuerpo]);
+      return { cantidad: changed.rows.length, pedidos: changed.rows, notifId: notif.rows[0].id };
+    });
+    // FCM es un intento posterior al commit; la cola durable sigue siendo la fuente de verdad.
+    void sendFcmToUsuario(tecnico, { tipo: "asignacion_masiva", notificacionId: resultado.notifId, cantidad: resultado.cantidad })
+      .catch(() => console.warn("[asignacion-masiva] no se pudo intentar FCM"));
+    const { notifId: _notifId, ...publico } = resultado;
+    return res.json({ ok: true, ...publico, notificacion: "encolada" });
+  } catch (error) {
+    if (error.statusCode === 400 || error.statusCode === 409) return res.status(error.statusCode).json({ error: error.message });
+    console.error("[asignacion-masiva]", error?.code || "error");
+    return res.status(500).json({ error: "No se pudo confirmar la asignación. Actualizá la lista antes de reintentar." });
   }
 });
 

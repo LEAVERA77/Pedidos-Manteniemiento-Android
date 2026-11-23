@@ -1389,10 +1389,16 @@ public class MainActivity extends AppCompatActivity {
      */
     private class LocalNotifyBridge {
         @JavascriptInterface
-        public void show(String rowId, String title, String body, String pedidoId) {
-            final String safeTitle = title != null ? title : "GestorNova";
-            final String safeBody = body != null ? body : "";
-            runOnUiThread(() -> mostrarNotificacionPedido(rowId, safeTitle, safeBody, pedidoId));
+        public boolean show(String rowId, String title, String body, String pedidoId) {
+            try {
+                long id = Long.parseLong(rowId);
+                return NotificacionMovilPresenter.show(MainActivity.this, id, title, body, pedidoId);
+            } catch (NumberFormatException e) {
+                final String safeTitle = title != null ? title : "GestorNova";
+                final String safeBody = body != null ? body : "";
+                runOnUiThread(() -> mostrarNotificacionPedido(rowId, safeTitle, safeBody, pedidoId));
+                return true;
+            }
         }
     }
 
