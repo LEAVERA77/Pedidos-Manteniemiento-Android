@@ -16,6 +16,8 @@
 - La confirmación necesita el identificador devuelto por la solicitud inicial; las versiones recientes del modal ya lo envían. Si el correo falla, se intenta invalidar el desafío correspondiente.
 - Se exige conexión y API. Ya no se genera ni muestra un código local en Android ni se modifica la contraseña por SQL desde el cliente. Si el servicio de correo no está configurado, el mecanismo falla cerrado y habrá que contactar al administrador o soporte autorizado.
 - Los técnicos solicitan una clave provisional a un administrador, conforme al flujo de usuarios. Este cambio no modifica su cola offline.
+- El módulo legado alternativo `recuperar-contrasena-mail.js`, que no se encontró conectado al flujo principal revisado, también queda limitado a la API: no genera códigos ni cambia contraseñas por SQL desde el cliente.
+- Tras confirmar un cambio de contraseña, las interfaces intentan borrar la credencial biométrica guardada en **ese dispositivo**. Esto no revoca credenciales en otros equipos ni corrige el almacenamiento local sin cifrado propio.
 
 ## Límites y comprobaciones antes de producción
 

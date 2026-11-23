@@ -22,13 +22,15 @@ function setup(api, responses = []) {
   };
   const fetch = vi.fn(async () => responses.shift());
   const sqlSimple = vi.fn(() => { throw new Error("No debe ejecutar SQL de recuperación"); });
+  const purge = vi.fn();
   const ctx = vm.createContext({
+    window: { __gnPurgarHuellaGuardadaExplicitamente: purge },
     document: { getElementById: (id) => elements[id] }, fetch, sqlSimple,
     getApiBaseUrl: () => api, apiUrl: (url) => url, tenantIdActual: () => 1,
     _normalizarCodigoResetPw: (s) => s, _errMsg: (e) => e.message,
   });
   vm.runInContext(`let _resetPaso = 1; let _resetTargetUserId = null; ${fn}`, ctx);
-  return { ctx, elements, fetch, sqlSimple };
+  return { ctx, elements, fetch, sqlSimple, purge };
 }
 
 describe("Recuperación en cliente", () => {
@@ -51,6 +53,7 @@ describe("Recuperación en cliente", () => {
     expect(sent.user_id).toBe(7);
     expect(sent.codigo).toBe("123456");
     expect(c.sqlSimple).not.toHaveBeenCalled();
+    expect(c.purge).toHaveBeenCalledTimes(1);
     expect(c.elements["reset-msg"].textContent).toContain("Contraseña actualizada");
   });
 });

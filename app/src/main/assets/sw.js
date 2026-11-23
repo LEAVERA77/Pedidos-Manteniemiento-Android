@@ -1,5 +1,5 @@
 // Service worker de Pedidos MG: los mapas usan la caché HTTP normal del navegador.
-const CACHE_SHELL = 'pmg-shell-v287';
+const CACHE_SHELL = 'pmg-shell-v289';
 const CACHE_API   = 'pmg-api-v1';
 const SW_VERSION  = '1.9.5';
 

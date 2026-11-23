@@ -26,7 +26,26 @@ function ctx() {
     return _deps || {};
 }
 
-export async function imprimirInformeConGraficos() {
+let _exportEnCurso = false;
+async function ejecutarExportacion(fn) {
+    if (_exportEnCurso) {
+        ctx().toast?.('Ya se está generando un informe. Esperá a que termine.', 'info');
+        return;
+    }
+    _exportEnCurso = true;
+    try {
+        return await fn();
+    } finally {
+        try { await prepararVistaCapturaEstadisticasPdf(false); }
+        finally { _exportEnCurso = false; }
+    }
+}
+
+export function imprimirInformeConGraficos() {
+    return ejecutarExportacion(imprimirInformeConGraficosInterno);
+}
+
+async function imprimirInformeConGraficosInterno() {
     if (!ctx().esAdmin?.()) { ctx().toast?.('Solo administrador', 'error'); return; }
     if (ctx().modoOffline?.() || !ctx().neonOk?.()) { ctx().toast?.('Requiere conexión', 'error'); return; }
     if (typeof html2canvas !== 'function') { ctx().toast?.('html2canvas no disponible', 'error'); return; }
@@ -211,12 +230,14 @@ export async function imprimirInformeConGraficos() {
     } catch (e) {
         liberarUrls();
         ctx().toastError?.('imprimir-stats-graficos', e);
-    } finally {
-        await prepararVistaCapturaEstadisticasPdf(false);
     }
 }
 
-export async function generarPdfEstadisticasMultipaginaENRE() {
+export function generarPdfEstadisticasMultipaginaENRE() {
+    return ejecutarExportacion(generarPdfEstadisticasMultipaginaENREInterno);
+}
+
+async function generarPdfEstadisticasMultipaginaENREInterno() {
     if (!ctx().esAdmin?.()) { ctx().toast?.('Solo administrador', 'error'); return; }
     if (ctx().modoOffline?.() || !ctx().neonOk?.()) { ctx().toast?.('Requiere conexión', 'error'); return; }
     if (typeof html2canvas !== 'function' || !window.jspdf?.jsPDF) { ctx().toast?.('Faltan librerías (html2canvas / jsPDF)', 'error'); return; }
@@ -253,117 +274,61 @@ export async function generarPdfEstadisticasMultipaginaENRE() {
                 pdf.text(String(chartTitle).slice(0, 72), margin, y0 + 2.5);
                 y0 += 5;
             }
-            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+            const imgData = canvas.toDataURL('image/png');
             const maxH = Math.max(40, pageH - y0 - margin - 2);
             const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, maxH);
             const x0 = margin + (maxW - iw) / 2;
-            pdf.addImage(imgData, 'JPEG', x0, y0 + 1, iw, ih, undefined, 'FAST');
+            pdf.addImage(imgData, 'PNG', x0, y0 + 1, iw, ih, undefined, 'FAST');
         };
-        const addChartsPageCombined = async (entries) => {
-            const list = (entries || []).filter((e) => e?.canvas?.width);
-            if (!list.length) return;
+        // Gráficos a todo el ancho, apilados de arriba hacia abajo; crear una
+        // nueva hoja solo cuando la siguiente sección ya no entra sin achicarse.
+        let chartY = null;
+        let chartPageStart = null;
+        const iniciarPaginaGraficos = async () => {
             if (nPag > 0) pdf.addPage();
             nPag++;
             pdf.setFillColor(252, 252, 253);
             pdf.rect(0, 0, pageW, pageH, 'F');
-            let y0 = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaPer);
-            y0 += 1.5;
-            const gap = 3;
-            const maxW = pageW - 2 * margin;
-            const maxH = pageH - y0 - margin - 2;
-            const titleH = 4.2;
-            const drawTitle = (title, x, y) => {
-                if (!title) return;
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(7);
-                pdf.setTextColor(71, 85, 105);
-                pdf.text(String(title).slice(0, 56), x, y);
-            };
-            const placeImg = (canvas, x, y, wBox, hBox) => {
-                const imgData = canvas.toDataURL('image/jpeg', 0.87);
-                const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, Math.max(20, wBox - 1), Math.max(24, hBox));
-                const xi = x + (wBox - iw) / 2;
-                const yi = y + (hBox - ih) / 2;
-                pdf.addImage(imgData, 'JPEG', xi, yi, iw, ih, undefined, 'FAST');
-            };
-            const n = list.length;
-            if (n === 1) {
-                const e = list[0];
-                drawTitle(e.title, margin, y0 + 2.8);
-                placeImg(e.canvas, margin, y0 + titleH, maxW, maxH - titleH - 1);
-                return;
-            }
-            if (n === 2) {
-                const cellW = (maxW - gap) / 2;
-                const imgH = maxH - titleH - 2;
-                list.forEach((e, i) => {
-                    const xCell = margin + i * (cellW + gap);
-                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
-                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH);
-                });
-                return;
-            }
-            if (n === 3) {
-                const row1H = maxH * 0.56;
-                const row2H = maxH - row1H - gap;
-                const cellW = (maxW - gap) / 2;
-                const imgH1 = Math.max(28, row1H - titleH - 1.5);
-                for (let i = 0; i < 2; i++) {
-                    const e = list[i];
-                    const xCell = margin + i * (cellW + gap);
-                    drawTitle(e.title, xCell + 0.5, y0 + 2.8);
-                    placeImg(e.canvas, xCell, y0 + titleH, cellW, imgH1);
-                }
-                const e = list[2];
-                const w3 = Math.min(maxW * 0.78, maxW);
-                const x3 = margin + (maxW - w3) / 2;
-                const y2 = y0 + row1H + gap;
-                drawTitle(e.title, x3 + 0.5, y2 + 2.5);
-                placeImg(e.canvas, x3, y2 + titleH, w3, row2H - titleH - 1);
-                return;
-            }
-            const cellW = (maxW - gap) / 2;
-            const cellH = (maxH - gap) / 2;
-            const imgMaxH = Math.max(28, cellH - titleH - 1.5);
-            list.forEach((e, i) => {
-                const row = Math.floor(i / 2);
-                const col = i % 2;
-                const xCell = margin + col * (cellW + gap);
-                const yCell = y0 + row * (cellH + gap);
-                drawTitle(e.title, xCell + 0.5, yCell + 2.8);
-                placeImg(e.canvas, xCell, yCell + titleH, cellW, imgMaxH);
-            });
+            chartY = await pdfEncabezadoEmpresaBloque(pdf, margin, pageW, margin, lineaPer);
+            chartPageStart = chartY;
         };
-        const chartQueue = [];
-        const flushChartRows = async () => {
-            while (chartQueue.length >= 2) {
-                await addChartsPageCombined(chartQueue.splice(0, 2));
+        const agregarGrafico = async (canvas, title) => {
+            const maxW = pageW - 2 * margin;
+            const bottom = pageH - margin - 5; // deja espacio para el pie de página
+            const titleH = 5;
+            const gap = 4;
+            if (chartY == null) await iniciarPaginaGraficos();
+            const naturalH = canvas.height * maxW / canvas.width;
+            if (chartY > chartPageStart && chartY + titleH + naturalH > bottom) {
+                await iniciarPaginaGraficos();
             }
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(8.4);
+            pdf.setTextColor(51, 65, 85);
+            pdf.text(String(title || 'Gráfico').slice(0, 72), margin, chartY + 2.5);
+            chartY += titleH;
+            const { iw, ih } = pdfMmAjustarImagen(canvas.width, canvas.height, maxW, bottom - chartY);
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin + (maxW - iw) / 2, chartY, iw, ih, undefined, 'FAST');
+            chartY += ih + gap;
         };
         for (const sec of secciones) {
             if (sec.type === 'resumen') {
-                await flushChartRows();
-                if (chartQueue.length) await addChartsPageCombined(chartQueue.splice(0, chartQueue.length));
-                await addCanvasPage(await capturaPdfBloqueResumenEstadisticas(), null);
+                const canvas = await capturaPdfBloqueResumenEstadisticas();
+                if (!canvas?.width || !canvas?.height) throw new Error('No se pudo capturar el resumen');
+                await addCanvasPage(canvas, null);
+                chartY = null;
             } else if (sec.type === 'chart') {
-                const c = await html2canvasCapturaElemento(sec.el, {
+                const canvas = await html2canvasCapturaElemento(sec.el, {
                     delayAfterResize: 160,
                     statsExport: true,
                     maxHeightPx: 3200,
                 });
-                if (c) {
-                    if (sec.fullPage) {
-                        await flushChartRows();
-                        if (chartQueue.length) await addChartsPageCombined(chartQueue.splice(0, chartQueue.length));
-                        await addCanvasPage(c, sec.title);
-                    } else {
-                        chartQueue.push({ canvas: c, title: sec.title });
-                        await flushChartRows();
-                    }
+                if (!canvas?.width || !canvas?.height) {
+                    throw new Error(`No se pudo capturar: ${sec.title || 'gráfico'}`);
                 }
+                await agregarGrafico(canvas, sec.title);
             }
         }
-        if (chartQueue.length) await addChartsPageCombined(chartQueue);
         if (nPag === 0) {
             ctx().toast?.('No se pudo generar ninguna página', 'error');
             return;
@@ -374,7 +339,5 @@ export async function generarPdfEstadisticasMultipaginaENRE() {
         ctx().toast?.('PDF listo', 'success');
     } catch (e) {
         ctx().toastError?.('pdf-estadisticas-enre', e, 'Error al generar el PDF.');
-    } finally {
-        await prepararVistaCapturaEstadisticasPdf(false);
     }
 }

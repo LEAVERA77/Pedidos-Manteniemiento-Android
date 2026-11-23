@@ -17436,6 +17436,7 @@ async function pasoResetPw() {
                     msg.textContent = data?.error || `Error (${resp.status})`;
                     return;
                 }
+                try { window.__gnPurgarHuellaGuardadaExplicitamente?.(); } catch (_) {}
                 msg.style.color = '#166534';
                 msg.textContent = '✓ Contraseña actualizada. Ya podés iniciar sesión.';
                 btn.style.display = 'none';

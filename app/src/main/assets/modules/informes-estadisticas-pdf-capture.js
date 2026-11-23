@@ -16,6 +16,35 @@ let _deps = null;
 /** @type {{ _noop?: boolean } | null} */
 let _chartDataSnapshotForPdf = null;
 
+// Durante la captura se dibuja el gráfico al ancho real del PDF, no se estira
+// posteriormente una imagen calculada para una columna estrecha del panel.
+const ANCHO_CAPTURA_PX = 760;
+const _wrapStylesPdf = new Map();
+
+function anchoRealSeccionesPdf(activar) {
+    if (!activar) {
+        for (const [el, style] of _wrapStylesPdf) {
+            if (style == null) el.removeAttribute('style');
+            else el.setAttribute('style', style);
+        }
+        _wrapStylesPdf.clear();
+        return;
+    }
+    document.querySelectorAll('#admin-estadisticas .chart-wrap').forEach((el) => {
+        if (window.getComputedStyle(el).display === 'none' || _wrapStylesPdf.has(el)) return;
+        _wrapStylesPdf.set(el, el.getAttribute('style'));
+        el.style.setProperty('width', `${ANCHO_CAPTURA_PX}px`, 'important');
+        el.style.setProperty('min-width', `${ANCHO_CAPTURA_PX}px`, 'important');
+        el.style.setProperty('max-width', `${ANCHO_CAPTURA_PX}px`, 'important');
+        el.style.setProperty('box-sizing', 'border-box', 'important');
+        el.style.setProperty('height', 'auto', 'important');
+        el.style.setProperty('min-height', '0', 'important');
+        el.style.setProperty('max-height', 'none', 'important');
+        el.style.setProperty('align-self', 'start', 'important');
+        el.style.setProperty('overflow', 'visible', 'important');
+    });
+}
+
 export function setInformesEstadisticasPdfCaptureDeps(d) {
     _deps = d && typeof d.getCharts === 'function' && typeof d.lineaPeriodoInformeEstadisticas === 'function' ? d : null;
 }
@@ -94,6 +123,7 @@ export function aplicarEstadisticasInkSaveCharts(activar) {
 
 export async function prepararVistaCapturaEstadisticasPdf(activar) {
     adminEstadisticasSetCaptureCompact(!!activar);
+    anchoRealSeccionesPdf(!!activar);
     aplicarEstadisticasInkSaveCharts(!!activar);
     try {
         aplicarChartsLayoutExportPdf(() => {
@@ -204,22 +234,29 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
         });
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         await new Promise((r) => setTimeout(r, delayAfterResize));
-        const wide = statsExport && chartWrapNecesitaPaginaCompleta(el);
-        const sw = Math.max(
-            wide ? 720 : 0,
-            el.offsetWidth,
-            el.clientWidth,
-            el.scrollWidth,
-            120
-        );
-        const rawSh =
-            opts.useFullScrollHeight || statsExport
-                ? Math.max(el.scrollHeight, el.offsetHeight, 40)
-                : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
+        const sw = Math.max(Math.ceil(el.getBoundingClientRect().width), 120);
+        const rawSh = opts.useFullScrollHeight
+            ? Math.max(el.scrollHeight, el.offsetHeight, 40)
+            : Math.max(alturaContenidoCaptura(el), el.offsetHeight, 40);
         const sh = Math.min(rawSh, statsExport ? opts.maxHeightPx || 4600 : opts.maxHeightPx || 3800);
-        const scale = statsExport
-            ? Math.min(wide ? 2.05 : 2.35, (wide ? 2200 : 2500) / Math.max(sw, 280))
-            : Math.min(1.2, 1850 / Math.max(sw, 380));
+        const scale = statsExport ? Math.min(2, 2200 / sw) : Math.min(1.2, 1850 / Math.max(sw, 380));
+        const charts = _deps?.getCharts?.() || {};
+        const emptyCharts = new Map();
+        if (statsExport) {
+            el.querySelectorAll('canvas[id]').forEach((canvas) => {
+                const ch = charts[canvas.id];
+                if (!ch) {
+                    emptyCharts.set(canvas.id, 'Gráfico no disponible para este período.');
+                    return;
+                }
+                const series = ch.data?.datasets || [];
+                if (ch.config?.type === 'doughnut' && series.length &&
+                    series.every((ds) => Array.isArray(ds.data) && ds.data.every((v) => Number(v) === 0))) {
+                    emptyCharts.set(canvas.id, canvas.id === 'chart-desest-motivos'
+                        ? 'No hay pedidos desestimados en el período.' : 'Sin datos para el período seleccionado.');
+                }
+            });
+        }
         return await html2canvas(el, {
             scale,
             useCORS: true,
@@ -227,8 +264,9 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
             backgroundColor: '#ffffff',
             width: sw,
             height: sh,
-            windowWidth: sw,
-            windowHeight: sh,
+            // Mantener el viewport original evita que el clon cambie la grilla y deforme el canvas.
+            windowWidth: Math.max(window.innerWidth, document.documentElement.clientWidth),
+            windowHeight: Math.max(window.innerHeight, document.documentElement.clientHeight),
             scrollX: 0,
             scrollY: 0,
             onclone: (_doc, node) => {
@@ -242,11 +280,19 @@ export async function html2canvasCapturaElemento(el, opts = {}) {
                     node.querySelectorAll('button').forEach((b) => {
                         b.style.visibility = 'hidden';
                     });
-                    if (wide) {
-                        node.style.width = `${sw}px`;
-                        node.style.maxWidth = 'none';
-                        node.style.overflow = 'visible';
-                    }
+                    node.querySelectorAll('canvas[id]').forEach((canvas) => {
+                        const message = emptyCharts.get(canvas.id);
+                        const container = canvas.closest('.chart-container');
+                        if (!message || !container) return;
+                        canvas.style.setProperty('display', 'none', 'important');
+                        container.style.setProperty('height', '90px', 'important');
+                        container.style.setProperty('min-height', '90px', 'important');
+                        container.style.setProperty('max-height', '90px', 'important');
+                        const note = node.ownerDocument.createElement('div');
+                        note.textContent = message;
+                        note.style.cssText = 'padding:30px 12px;text-align:center;color:#475569;font:600 14px system-ui,sans-serif';
+                        container.appendChild(note);
+                    });
                     node.querySelectorAll('.chart-legend-caption').forEach((cap) => {
                         cap.style.fontSize = '11px';
                         cap.style.lineHeight = '1.45';
