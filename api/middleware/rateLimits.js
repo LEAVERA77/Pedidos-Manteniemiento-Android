@@ -4,6 +4,8 @@
  * made by leavera77
  */
 import rateLimit from "express-rate-limit";
+import jwt from "jsonwebtoken";
+import { resolveJwtSecret } from "../utils/jwtSecret.js";
 
 const windowMsGeneral = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
 const maxGeneral = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
@@ -17,25 +19,69 @@ const maxAuth =
 const windowMsGeocode = Number(process.env.RATE_LIMIT_GEOCODE_WINDOW_MS) || 60 * 1000;
 const maxGeocode = Number(process.env.RATE_LIMIT_GEOCODE_MAX) || 30;
 
-/** Todas las rutas /api/* excepto webhooks (Meta/Evolution). */
-export const generalApiLimiter = rateLimit({
-  windowMs: windowMsGeneral,
-  max: maxGeneral,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    error: "Demasiadas solicitudes. Por favor, esperá unos minutos antes de intentar nuevamente.",
-  },
-  skip: (req) => {
-    const p = req.path || "";
-    if (p.startsWith("/api/webhooks")) return true;
-    if (p.startsWith("/api/sql")) return true;
-    // Listar/vincular tenant con X-GestorNova-Technician-Key: no bloquear por el limitador general (429).
-    if (p.startsWith("/api/setup/technician")) return true;
-    if (p.includes("/api/clientes/nuevo") && req.method === "POST") return true;
-    return false;
-  },
-});
+/** Las excepciones históricas mantienen sus propios controles. */
+function skipGeneral(req) {
+  const p = req.path || "";
+  return p.startsWith("/api/webhooks") || p.startsWith("/api/sql") ||
+    p.startsWith("/api/setup/technician") ||
+    (p.includes("/api/clientes/nuevo") && req.method === "POST");
+}
+
+// La identidad solo se usa para el límite, nunca reemplaza la autorización de la ruta.
+// Un JWT inválido, vencido o sin ID válido sigue sujeto al límite anónimo por IP.
+const LIMIT_USER = Symbol("rate-limit-user");
+function verifiedLimitUser(req) {
+  if (Object.hasOwn(req, LIMIT_USER)) return req[LIMIT_USER];
+  let id = null;
+  try {
+    const header = String(req.headers.authorization || "");
+    const match = /^Bearer\s+(\S+)$/i.exec(header);
+    if (match) {
+      const decoded = jwt.verify(match[1], resolveJwtSecret());
+      const candidate = decoded && (decoded.userId ?? decoded.sub);
+      if (/^[1-9]\d*$/.test(String(candidate ?? ""))) {
+        const number = Number(candidate);
+        if (Number.isSafeInteger(number) && number <= 2147483647) id = number;
+      }
+    }
+  } catch (_) { /* Se cuenta como anónimo. */ }
+  req[LIMIT_USER] = id;
+  return id;
+}
+
+/** Protege la IP en conjunto y reparte la cuota entre usuarios con JWT válido.
+ * El límite anónimo histórico y los límites específicos de login/SQL/geocodificación
+ * siguen vigentes. Los contadores continúan siendo por proceso, no distribuidos.
+ */
+export function createGeneralApiLimiter({
+  windowMs = windowMsGeneral,
+  anonymousMax = maxGeneral,
+  userMax = Number(process.env.RATE_LIMIT_USER_MAX) || 600,
+  ipMax = Number(process.env.RATE_LIMIT_IP_MAX) || 1800,
+} = {}) {
+  const shared = {
+    windowMs,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipGeneral,
+    message: { error: "Demasiadas solicitudes. Por favor, esperá unos minutos antes de intentar nuevamente." },
+  };
+  const ipLimiter = rateLimit({ ...shared, max: ipMax });
+  const identityLimiter = rateLimit({
+    ...shared,
+    max: (req) => verifiedLimitUser(req) == null ? anonymousMax : userMax,
+    keyGenerator: (req) => {
+      const uid = verifiedLimitUser(req);
+      return uid == null ? `ip:${req.ip}` : `user:${uid}`;
+    },
+  });
+  return (req, res, next) => ipLimiter(req, res, (err) => {
+    if (err) return next(err);
+    return identityLimiter(req, res, next);
+  });
+}
+
+export const generalApiLimiter = createGeneralApiLimiter();
 
 const windowMsSql = Number(process.env.RATE_LIMIT_SQL_WINDOW_MS) || 60 * 1000;
 const maxSql =

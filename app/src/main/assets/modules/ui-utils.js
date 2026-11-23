@@ -103,16 +103,17 @@ export function toast(msg, tipo = 'info', durationMs) {
     }
 
     el.className = 'show ' + tipo + (s.length > 100 ? ' toast-multiline' : '');
+    // También los mensajes cortos pueden ser más anchos que un celular.
     try {
-        el.style.whiteSpace = s.length > 100 ? 'normal' : 'nowrap';
-        el.style.maxWidth = s.length > 100 ? 'min(92vw, 32rem)' : '';
+        el.style.whiteSpace = 'normal';
+        el.style.maxWidth = 'min(92vw, 32rem)';
     } catch (_) {}
     if (tipo === 'error') el.setAttribute('role', 'alert');
     else el.removeAttribute('role');
     const dur =
         durationMs != null && Number.isFinite(Number(durationMs)) && Number(durationMs) > 0
             ? Number(durationMs)
-            : 5200;
+            : (tipo === 'error' || tipo === 'warning' ? 8000 : 5200);
     clearTimeout(window.toastTimer);
     window.toastTimer = setTimeout(() => {
         el.className = tipo;
