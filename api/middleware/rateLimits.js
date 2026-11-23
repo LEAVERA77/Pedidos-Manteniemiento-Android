@@ -64,6 +64,15 @@ export const authLoginLimiter = rateLimit({
   },
 });
 
+/** Recuperación: contar también solicitudes exitosas para limitar envíos repetidos. */
+export const authResetRequestLimiter = rateLimit({
+  windowMs: windowMsAuth,
+  max: maxAuth,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiadas solicitudes de recuperación. Esperá unos minutos." },
+});
+
 /** POST /api/auth/verify-password — cubierto aparte del login. */
 export const authVerifyPasswordLimiter = rateLimit({
   windowMs: windowMsAuth,

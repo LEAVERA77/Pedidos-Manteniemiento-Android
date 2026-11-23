@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db/neon.js";
+import { resolveJwtSecret } from "../utils/jwtSecret.js";
 import { authMiddleware, adminOnly, signToken } from "../middleware/auth.js";
 import { getUserTenantId } from "../utils/tenantUser.js";
 import { tableHasColumn, usuariosTenantColumnName } from "../utils/tenantScope.js";
@@ -12,7 +13,7 @@ import {
   crearDesafioOtpAdmin,
   verificarDesafioOtpAdmin,
 } from "../services/adminLoginOtp.js";
-import { enviarCorreoEmailjsServidor } from "../services/emailjsEnvioServidor.js";
+import { emailjsServidorConfigurado, enviarCorreoEmailjsServidor } from "../services/emailjsEnvioServidor.js";
 import { getUsuarioNotifPrefs, setUsuarioNotifPrefs } from "../services/usuarioNotifPrefs.js";
 import { syncWhatsappBotActiveTarget } from "../services/whatsappBotTargetStore.js";
 
@@ -570,6 +571,13 @@ router.put("/notif-prefs", authMiddleware, async (req, res) => {
   }
 });
 
+// Una clave derivada impide verificar los códigos de seis dígitos solo con un
+// volcado de la base; no se guardan códigos recuperables en texto plano.
+function passwordResetDigest(userId, code) {
+  return "hmac-v1:" + crypto.createHmac("sha256", resolveJwtSecret())
+    .update(`gestornova:password-reset:v1:${userId}:${code}`, "utf8").digest("hex");
+}
+
 function isSimpleValidEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
 }
@@ -594,13 +602,7 @@ async function resolveTenantContactEmail(tenantId) {
       if (isSimpleValidEmail(em)) return em;
     } catch (_) {}
   }
-  try {
-    const rE = await query(
-      `SELECT valor FROM empresa_config WHERE clave IN ('email', 'email_contacto', 'correo_contacto') ORDER BY clave ASC LIMIT 1`
-    );
-    const val = String(rE.rows?.[0]?.valor || "").trim();
-    if (isSimpleValidEmail(val)) return val;
-  } catch (_) {}
+  // No usar empresa_config global: podría pertenecer a otro tenant.
   return "";
 }
 
@@ -646,31 +648,32 @@ router.post("/password-reset/request", async (req, res) => {
       });
     }
 
-    const destManual = String(req.body?.email_destino || "").trim();
-    let toEmail = "";
-    if (destManual) {
-      if (!isSimpleValidEmail(destManual)) {
-        return res.status(400).json({ error: "El correo de destino no es válido." });
-      }
-      toEmail = destManual;
-    } else {
-      toEmail = await resolveTenantContactEmail(userRow.tid || hintTid || 1);
-      if (!toEmail && isSimpleValidEmail(userRow.email)) {
-        toEmail = String(userRow.email).trim();
-      }
+    // El cliente no puede elegir el destino del código. La identidad de tenant se
+    // obtiene del usuario en la BD, nunca del tenant_id enviado por el solicitante.
+    // getUserTenantId() usa 1 como fallback ante fallas; aquí debemos fallar cerrado.
+    const tenantId = Number(userRow.tid);
+    if (!Number.isSafeInteger(tenantId) || tenantId < 1) {
+      return res.status(503).json({ error: "La cuenta no tiene un tenant válido para recuperación" });
     }
-
+    let toEmail = await resolveTenantContactEmail(tenantId);
+    if (!toEmail && isSimpleValidEmail(userRow.email)) toEmail = String(userRow.email).trim();
     if (!isSimpleValidEmail(toEmail)) {
-      return res.status(400).json({
-        error:
-          "No hay correo de destino. Completá «Correo para el código» o cargá el correo de la empresa en Admin → Empresa.",
-      });
+      return res.status(400).json({ error: "No hay un correo de recuperación configurado. Contactá a un administrador." });
+    }
+    const destManual = String(req.body?.email_destino || "").trim();
+    if (destManual && destManual.toLowerCase() !== toEmail.toLowerCase()) {
+      return res.status(403).json({ error: "Solo se permite el correo de recuperación ya configurado." });
     }
 
-    const code = String(crypto.randomInt(100000, 999999));
+    const serverEmailConfig = { templateId: process.env.EMAILJS_TEMPLATE_ID_RESET || process.env.EMAILJS_TEMPLATE_ID };
+    if (!emailjsServidorConfigurado(serverEmailConfig)) {
+      return res.status(503).json({ error: "El correo de recuperación no está configurado en el servidor." });
+    }
+    const code = String(crypto.randomInt(100000, 1000000));
     const expiry = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const digest = passwordResetDigest(userRow.id, code);
     await query(`UPDATE usuarios SET reset_token = $1, reset_expiry = $2 WHERE id = $3`, [
-      code,
+      digest,
       expiry,
       userRow.id,
     ]);
@@ -692,23 +695,28 @@ router.post("/password-reset/request", async (req, res) => {
       `Equipo de ${appName}`,
     ].join("\n");
 
-    const ejsBody = req.body?.emailjs && typeof req.body.emailjs === "object" ? req.body.emailjs : {};
-    await enviarCorreoEmailjsServidor(
-      {
-        to_email: toEmail,
-        to_name: toName,
-        email_subject: `${appName} — código para restablecer contraseña`,
-        email_body: cuerpo,
-        token: code,
-        app_name: appName,
-        message: cuerpo,
-      },
-      {
-        publicKey: ejsBody.publicKey,
-        serviceId: ejsBody.serviceId,
-        templateId: ejsBody.templateIdReset || ejsBody.templateId || process.env.EMAILJS_TEMPLATE_ID,
-      }
-    );
+    // La plantilla y la cuenta de envío también deben ser del servidor: si el
+    // solicitante las controla, puede desviar el código pese al destino fijado.
+    try {
+      await enviarCorreoEmailjsServidor(
+        {
+          to_email: toEmail,
+          to_name: toName,
+          email_subject: `${appName} — código para restablecer contraseña`,
+          email_body: cuerpo,
+          token: code,
+          app_name: appName,
+          message: cuerpo,
+        },
+        serverEmailConfig
+      );
+    } catch (sendError) {
+      // No borrar un desafío más nuevo emitido por una solicitud concurrente.
+      try {
+        await query(`UPDATE usuarios SET reset_token = NULL, reset_expiry = NULL WHERE id = $1 AND reset_token = $2`, [userRow.id, digest]);
+      } catch (_) {}
+      throw sendError;
+    }
 
     return res.json({
       ok: true,
@@ -716,17 +724,13 @@ router.post("/password-reset/request", async (req, res) => {
       to_email: toEmail,
     });
   } catch (error) {
-    return res.status(500).json({
-      error: error?.message || "No se pudo enviar el código de recuperación",
-    });
+    console.error("[password-reset/request] No se pudo enviar el código");
+    return res.status(500).json({ error: "No se pudo enviar el código de recuperación" });
   }
 });
 
 router.post("/password-reset/confirm", async (req, res) => {
   try {
-    const emailLc = String(req.body?.usuario || req.body?.email || "")
-      .trim()
-      .toLowerCase();
     const targetId = Number(req.body?.user_id);
     const codigo = String(req.body?.codigo || "")
       .trim()
@@ -747,35 +751,26 @@ router.post("/password-reset/confirm", async (req, res) => {
       });
     }
 
-    let r = { rows: [] };
-    if (Number.isFinite(targetId) && targetId >= 1) {
-      r = await query(
-        `SELECT id FROM usuarios WHERE id = $1 AND TRIM(COALESCE(reset_token::text, '')) = $2 AND reset_expiry > NOW() LIMIT 1`,
-        [Math.trunc(targetId), codigo]
-      );
-    }
-    if (!r.rows?.length && emailLc) {
-      r = await query(
-        `SELECT id FROM usuarios WHERE LOWER(TRIM(COALESCE(email, ''))) = $1 AND TRIM(COALESCE(reset_token::text, '')) = $2 AND reset_expiry > NOW() LIMIT 1`,
-        [emailLc, codigo]
-      );
-    }
-    if (!r.rows?.length) {
+    // Exigir la cuenta devuelta por /request; no buscar otra cuenta por email
+    // si el identificador no coincide. Los códigos emitidos por versiones
+    // anteriores en texto plano dejan de ser válidos tras el despliegue.
+    if (!Number.isSafeInteger(targetId) || targetId < 1 || !/^\d{6}$/.test(codigo)) {
       return res.status(400).json({ error: "Código incorrecto o expirado" });
     }
-
+    const digest = passwordResetDigest(targetId, codigo);
     const nextHash = await bcrypt.hash(nuevaPw, 10);
     const hasMustCol = await tableHasColumn("usuarios", "must_change_password");
-    if (hasMustCol) {
-      await query(
-        `UPDATE usuarios SET password_hash = $1, reset_token = NULL, reset_expiry = NULL, must_change_password = FALSE WHERE id = $2`,
-        [nextHash, r.rows[0].id]
-      );
-    } else {
-      await query(
-        `UPDATE usuarios SET password_hash = $1, reset_token = NULL, reset_expiry = NULL WHERE id = $2`,
-        [nextHash, r.rows[0].id]
-      );
+    const setMust = hasMustCol ? ", must_change_password = FALSE" : "";
+    // Comprobar y consumir en una sola sentencia: solo una confirmación gana.
+    const updated = await query(
+      `UPDATE usuarios SET password_hash = $1, reset_token = NULL, reset_expiry = NULL${setMust}
+       WHERE id = $2 AND reset_token = $3 AND reset_expiry > NOW()
+         AND activo = TRUE AND LOWER(TRIM(COALESCE(rol, ''))) IN ('admin', 'administrador')
+       RETURNING id`,
+      [nextHash, targetId, digest]
+    );
+    if (!updated.rows?.length) {
+      return res.status(400).json({ error: "Código incorrecto o expirado" });
     }
 
     return res.json({ ok: true });

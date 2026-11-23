@@ -1,40 +1,25 @@
-# EmailJS — recuperación de contraseña (solo administrador)
+# Recuperación de contraseña administrativa por correo
 
-## 1. Dashboard EmailJS
+> Esta es una mitigación parcial de la recuperación existente, **no** el mecanismo futuro de recuperación supervisada ni MFA. El gateway SQL heredado y las demás vías alternativas deben migrarse o desactivarse para que no puedan eludir los controles de acceso. Los clientes o APK antiguos pueden conservar el flujo inseguro: planificar su actualización y la retirada de credenciales directas a la base.
 
-1. [EmailJS.com](https://www.emailjs.com/) → **Email Services** → vinculá **Gmail** (u otro). Anotá el **Service ID** (ej. `service_5cpzveh`).
-2. **Email Templates** → **Create new template**.
+## Configuración del servidor
 
-## 2. Plantilla unificada (recomendado)
+1. Configurar en Render (u otro servidor) `EMAILJS_PUBLIC_KEY`, `EMAILJS_SERVICE_ID` y `EMAILJS_TEMPLATE_ID_RESET` (o `EMAILJS_TEMPLATE_ID`); configurar `EMAILJS_PRIVATE_KEY` si el proveedor lo exige. No publicar ni compartir secretos. El servidor debe tener un `JWT_SECRET` aleatorio y seguro.
+2. Configurar previamente un correo de contacto confiable de la entidad en `clientes.configuracion`, o un correo válido de la cuenta administrativa. Verificar con una persona autorizada que ese correo es controlado por la entidad. No usar una casilla compartida sin controles.
+3. En EmailJS, la plantilla debe utilizar `{{email_subject}}`, `{{{email_body}}}` y como destinatario `{{to_email}}`. Verificar que la plantilla no reenvíe el código a terceros. Probar con una cuenta autorizada y un buzón de prueba.
+4. La web y Android deben tener configurada la URL de API. El correo y las plantillas suministrados por el cliente no se usan como configuración del servidor.
 
-Usá la misma plantilla para informes y recuperación de clave. Ver **`docs/EMAILJS_INFORME_PERIODICO.md`**:
+## Cómo funciona
 
-- **Subject:** `{{email_subject}}`
-- **Content:** `{{{email_body}}}`
-- **To email:** `{{to_email}}`
+- El solicitante indica el usuario. El servidor busca la cuenta activa, comprueba que sea administradora y obtiene su entidad de la base. El código se envía exclusivamente al correo de contacto configurado para esa entidad; si falta, al correo válido de esa cuenta. No se puede introducir un destino alternativo desde el modal.
+- El código de seis dígitos vence a los 30 minutos, se almacena como HMAC y se consume de forma atómica al cambiar la contraseña. Tras el despliegue o la rotación del secreto JWT, los códigos anteriores dejan de servir: hay que solicitar uno nuevo.
+- La confirmación necesita el identificador devuelto por la solicitud inicial; las versiones recientes del modal ya lo envían. Si el correo falla, se intenta invalidar el desafío correspondiente.
+- Se exige conexión y API. Ya no se genera ni muestra un código local en Android ni se modifica la contraseña por SQL desde el cliente. Si el servicio de correo no está configurado, el mecanismo falla cerrado y habrá que contactar al administrador o soporte autorizado.
+- Los técnicos solicitan una clave provisional a un administrador, conforme al flujo de usuarios. Este cambio no modifica su cola offline.
 
-El front envía `email_subject` y `email_body` (y `to_email`, `to_name`, `token` por compatibilidad).
+## Límites y comprobaciones antes de producción
 
-## 3. API Keys (Integration)
-
-- **Public Key**: va en `app/src/main/assets/config.json` → `emailjs.publicKey` (y en Pages, el mismo `config.json` publicado sin secretos de Neon).
-- **Private Key**: no hace falta para el flujo actual (envío desde el navegador con `@emailjs/browser`).
-
-## 4. `config.json` (ejemplo)
-
-```json
-"emailjs": {
-  "publicKey": "TU_PUBLIC_KEY",
-  "serviceId": "service_5cpzveh",
-  "templateId": "template_xxxxxxx"
-}
-```
-
-No commitear `config.json` con datos reales en repos públicos; usá `config.example.json` como referencia.
-
-## 5. Comportamiento en la app
-
-- Solo cuentas con rol **administrador** pueden usar «Olvidaste tu contraseña» con email.
-- El correo se envía a: **email opcional** del modal → si está vacío, **email de contacto de empresa** (`empresa_config` clave `email_contacto`) → si no hay, al **email del usuario** admin.
-- En **Android WebView** EmailJS suele fallar (403): se muestra el código en pantalla como respaldo.
-- **Técnicos**: no reciben recuperación por email; el **admin** genera **clave provisional** desde el panel; en Android el técnico debe **cambiar la clave** al ingresar.
+- Actualizar API y cliente de manera coordinada. Verificar el correo y EmailJS en el servidor **antes** de publicar, o la recuperación por correo quedará temporalmente inutilizable. No usar como prueba cuentas ni direcciones de terceros.
+- Los límites existentes son por IP y en memoria de cada instancia; no son protección distribuida ni reemplazan un límite por cuenta. Los usuarios y el correo pueden ser identificables por la respuesta de esta ruta. Las contraseñas aceptadas siguen la política anterior y las sesiones previas no se revocan automáticamente al cambiar la contraseña.
+- La recuperación por correo no equivale a TOTP, passkey, aprobación de equipos ni recuperación supervisada. Mientras el SQL genérico, un cliente viejo o acceso directo a la base sigan disponibles, no se garantiza que no haya formas de eludir esta ruta.
+- El código no demuestra que Render o EmailJS estén configurados en la instalación real. Verificar pruebas y restauración de respaldos antes de cualquier cambio de credenciales o esquema.

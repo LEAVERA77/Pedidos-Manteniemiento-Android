@@ -1477,9 +1477,8 @@
   <div class="mc" style="max-width:420px">
     <div class="mh"><h3><i class="fas fa-key"></i> Recuperar acceso (admin)</h3><button type="button" class="cm" onclick="document.getElementById('modal-reset-pw').classList.remove('active');if(typeof reiniciarModalResetPwUi==='function')reiniciarModalResetPwUi();"><i class="fas fa-times"></i></button></div>
     <div class="mb">
-      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo <strong>administradores</strong>. Identificá la cuenta con tu <strong>usuario</strong>; el código de 6 dígitos (válido ~30 min) se envía al <strong>correo</strong> que indiques abajo o al correo de contacto de la empresa (EmailJS).</p>
+      <p style="font-size:.88rem;color:var(--tm);margin-bottom:1rem">Solo <strong>administradores</strong>. Identificá la cuenta con tu <strong>usuario</strong>; el código de 6 dígitos (válido ~30 min) se envía al <strong>correo de recuperación ya configurado</strong>. Se necesita conexión y correo configurado en el servidor.</p>
       <div class="fg" style="padding:0"><label for="reset-email">Usuario del administrador</label><input id="reset-email" type="text" placeholder="Ej. administrador" autocomplete="username" autocapitalize="none"></div>
-      <div class="fg" style="padding:0;margin-top:.55rem"><label>Correo para el código (opcional)</label><input id="reset-email-destino" type="email" placeholder="Si está vacío: correo de la empresa en Admin → Empresa"></div>
       <div id="reset-codigo-wrap" style="display:none;margin-top:.75rem">
         <div class="fg" style="padding:0"><label>Código recibido por email</label><input id="reset-codigo" type="text" placeholder="000000"></div>
         <div class="fg" style="padding:0;margin-top:.5rem"><label>Nueva contraseña</label><input id="reset-nueva-pw" type="password"></div>

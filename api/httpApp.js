@@ -47,6 +47,7 @@ import padronPedidoRoutes from "./routes/padronPedido.js";
 import sqlRoutes from "./routes/sql.js";
 import {
   authLoginLimiter,
+  authResetRequestLimiter,
   authVerifyPasswordLimiter,
   generalApiLimiter,
   geocodeRouteLimiter,
@@ -239,6 +240,10 @@ export function createHttpApp() {
   app.use("/api/auth/verify-login-otp", (req, res, next) => {
     if (req.method !== "POST") return next();
     return authLoginLimiter(req, res, next);
+  });
+  app.use("/api/auth/password-reset/request", (req, res, next) => {
+    if (req.method !== "POST") return next();
+    return authResetRequestLimiter(req, res, next);
   });
   app.use("/api/auth/password-reset/confirm", (req, res, next) => {
     if (req.method !== "POST") return next();

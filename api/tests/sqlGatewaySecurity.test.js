@@ -3,6 +3,7 @@ import request from "supertest";
 
 const mockQuery = vi.fn();
 const mockEnviarCorreo = vi.fn(async () => "OK");
+let resetState;
 
 vi.mock("../db/neon.js", () => ({
   query: (...args) => mockQuery(...args),
@@ -21,11 +22,14 @@ vi.mock("../services/emailjsEnvioServidor.js", () => ({
 
 import { createHttpApp } from "../httpApp.js";
 import { signToken } from "../middleware/auth.js";
+import { emailjsServidorConfigurado } from "../services/emailjsEnvioServidor.js";
 
 describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de contraseña por API", () => {
   beforeEach(() => {
     mockQuery.mockReset();
-    mockEnviarCorreo.mockClear();
+    mockEnviarCorreo.mockReset();
+    mockEnviarCorreo.mockResolvedValue("OK");
+    resetState = { token: null, active: true, admin: true, expired: false };
 
     mockQuery.mockImplementation(async (sql, params = []) => {
       const s = String(sql || "");
@@ -83,11 +87,20 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
           ],
         };
       }
-      if (s.includes("SELECT id FROM usuarios WHERE id = $1 AND TRIM(COALESCE(reset_token")) {
-        if (params[1] === "654321") {
-          return { rows: [{ id: 1 }] };
-        }
+      if (s.startsWith("UPDATE usuarios SET reset_token = $1")) {
+        resetState.token = params[0];
+        return { rows: [], rowCount: 1 };
+      }
+      if (s.startsWith("UPDATE usuarios SET reset_token = NULL")) {
+        if (params[0] === 1 && resetState.token === params[1]) resetState.token = null;
         return { rows: [] };
+      }
+      if (s.startsWith("UPDATE usuarios SET password_hash = $1")) {
+        if (params[1] === 1 && params[2] === resetState.token && resetState.active && resetState.admin && !resetState.expired) {
+          resetState.token = null;
+          return { rows: [{ id: 1 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
       }
       if (s.startsWith("SELECT id, numero_pedido FROM pedidos")) {
         return { rows: [{ id: 101, numero_pedido: "2026-0101" }], rowCount: 1 };
@@ -202,6 +215,56 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
     expect(mockQuery.mock.calls.some(([sql]) => /^INSERT INTO usuarios/i.test(String(sql).trim()))).toBe(false);
   });
 
+  it("no permite al solicitante desviar el código de recuperación a otro correo", async () => {
+    const app = createHttpApp();
+    const res = await request(app).post("/api/auth/password-reset/request").send({
+      usuario: "admin_segui", tenant_id: 1, email_destino: "atacante@example.net",
+      emailjs: { publicKey: "ajena", serviceId: "ajena", templateId: "ajena" },
+    });
+    expect(res.status).toBe(403);
+    expect(mockEnviarCorreo).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE usuarios SET reset_token"))).toBe(false);
+  });
+
+  it("no usa el tenant 1 por defecto si el usuario no tiene tenant válido", async () => {
+    const original = mockQuery.getMockImplementation();
+    mockQuery.mockImplementation(async (sql, params) => {
+      if (String(sql).includes("FROM usuarios WHERE activo = TRUE") && String(sql).includes("LOWER(TRIM(COALESCE(email")) {
+        return { rows: [{ id: 1, email: "admin_segui", nombre: "Admin Segui", rol: "admin", tid: null }] };
+      }
+      return original(sql, params);
+    });
+    const res = await request(createHttpApp()).post("/api/auth/password-reset/request")
+      .send({ usuario: "admin_segui", tenant_id: 1 });
+    expect(res.status).toBe(503);
+    expect(mockEnviarCorreo).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE usuarios SET reset_token"))).toBe(false);
+  });
+
+  it("no modifica el código si EmailJS no está configurado en el servidor", async () => {
+    vi.mocked(emailjsServidorConfigurado).mockReturnValueOnce(false);
+    const res = await request(createHttpApp()).post("/api/auth/password-reset/request")
+      .send({ usuario: "admin_segui", tenant_id: 1 });
+    expect(res.status).toBe(503);
+    expect(mockEnviarCorreo).not.toHaveBeenCalled();
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE usuarios SET reset_token"))).toBe(false);
+  });
+
+  it("ignora la configuración de EmailJS aportada por el solicitante", async () => {
+    const app = createHttpApp();
+    const res = await request(app).post("/api/auth/password-reset/request").send({
+      usuario: "admin_segui", tenant_id: 1, email_destino: "contacto@coopsegui.com.ar",
+      emailjs: { publicKey: "ajena", serviceId: "ajena", templateId: "ajena" },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEnviarCorreo).toHaveBeenCalledTimes(1);
+    const [params, config] = mockEnviarCorreo.mock.calls[0];
+    expect(params.to_email).toBe("contacto@coopsegui.com.ar");
+    expect(config.publicKey).toBeUndefined();
+    expect(config.serviceId).toBeUndefined();
+    expect(config.templateId).not.toBe("ajena");
+  });
+
   it("recuperación de contraseña por /api/auth/password-reset/* no expone el token en HTTP y guarda hash bcrypt", async () => {
     const app = createHttpApp();
 
@@ -222,7 +285,7 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
     const confRes = await request(app).post("/api/auth/password-reset/confirm").send({
       usuario: "admin_segui",
       user_id: 1,
-      codigo: "654321",
+      codigo: mockEnviarCorreo.mock.calls[0][0].token,
       nueva_password: "NuevaPasswordSegura2026",
     });
     expect(confRes.status).toBe(200);
@@ -235,4 +298,52 @@ describe("Seguridad — Gateway SQL centralizado (/api/sql) y recuperación de c
     const savedHash = updatePwCall[1][0];
     expect(String(savedHash)).toMatch(/^\$2[aby]\$/);
   });
+  it("almacena solo HMAC y consume el código una sola vez en confirmaciones concurrentes", async () => {
+    const app = createHttpApp();
+    await request(app).post("/api/auth/password-reset/request").send({ usuario: "admin_segui", tenant_id: 1 }).expect(200);
+    const code = mockEnviarCorreo.mock.calls[0][0].token;
+    expect(resetState.token).toMatch(/^hmac-v1:[0-9a-f]{64}$/);
+    expect(resetState.token).not.toContain(code);
+    const body = { user_id: 1, codigo: code, nueva_password: "ClaveSegura2026" };
+    const results = await Promise.all([
+      request(app).post("/api/auth/password-reset/confirm").send(body),
+      request(app).post("/api/auth/password-reset/confirm").send(body),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    const sql = mockQuery.mock.calls.find(([q]) => String(q).includes("UPDATE usuarios SET password_hash = $1"))[0];
+    expect(sql).toMatch(/reset_token = \$3/);
+    expect(sql).toMatch(/reset_expiry > NOW\(\)/);
+    expect(sql).toMatch(/activo = TRUE/);
+    expect(sql).toMatch(/'admin', 'administrador'/);
+  });
+
+  it.each(["expired", "inactive", "not_admin"])("rechaza código con cuenta %s", async (state) => {
+    const app = createHttpApp();
+    await request(app).post("/api/auth/password-reset/request").send({ usuario: "admin_segui", tenant_id: 1 }).expect(200);
+    const code = mockEnviarCorreo.mock.calls[0][0].token;
+    if (state === "expired") resetState.expired = true;
+    if (state === "inactive") resetState.active = false;
+    if (state === "not_admin") resetState.admin = false;
+    await request(app).post("/api/auth/password-reset/confirm").send({ user_id: 1, codigo: code, nueva_password: "ClaveSegura2026" }).expect(400);
+  });
+
+  it("rechaza otra cuenta, código antiguo en texto plano y falta de identificador", async () => {
+    const app = createHttpApp();
+    await request(app).post("/api/auth/password-reset/request").send({ usuario: "admin_segui", tenant_id: 1 }).expect(200);
+    const code = mockEnviarCorreo.mock.calls[0][0].token;
+    const body = { user_id: 2, codigo: code, nueva_password: "ClaveSegura2026" };
+    await request(app).post("/api/auth/password-reset/confirm").send(body).expect(400);
+    await request(app).post("/api/auth/password-reset/confirm").send({ ...body, user_id: undefined, usuario: "admin_segui" }).expect(400);
+    resetState.token = code;
+    await request(app).post("/api/auth/password-reset/confirm").send({ ...body, user_id: 1 }).expect(400);
+  });
+
+  it("invalida el desafío si falla el envío sin exponer el error del proveedor", async () => {
+    mockEnviarCorreo.mockRejectedValueOnce(new Error("detalle sensible del proveedor"));
+    const res = await request(createHttpApp()).post("/api/auth/password-reset/request").send({ usuario: "admin_segui", tenant_id: 1 });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain("detalle sensible");
+    expect(resetState.token).toBeNull();
+  });
+
 });
