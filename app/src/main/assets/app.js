@@ -3506,8 +3506,8 @@ const gnLoginSubmitHandler = async e => {
     
     
     let gnOfflineAdminDenegado = false;
-    function intentarOffline() {
-        const u = verificarUsuarioOffline(em, pw);
+    async function intentarOffline() {
+        const u = await verificarUsuarioOffline(em, pw);
         if (u && normalizarRolStr(u.rol) === 'admin') {
             gnOfflineAdminDenegado = true;
             return false;
@@ -3542,13 +3542,13 @@ const gnLoginSubmitHandler = async e => {
                 } catch (_) {}
             }
             if (modoOffline || !NEON_OK || !_sql) {
-                if (!intentarOffline() && le) le.textContent = gnOfflineAdminDenegado
+                if (!(await intentarOffline()) && le) le.textContent = gnOfflineAdminDenegado
                     ? 'El administrador debe iniciar sesión con conexión a la API.'
                     : window.APP_CONFIG ? 'Sin conexión. Ingresá con internet al menos una vez para habilitar el modo offline.'
                     : 'No se pudo cargar la configuración. Revisá la conexión e intentá de nuevo.';
                 return;
             }
-        } else if (navigator.onLine === false && intentarOffline()) {
+        } else if (navigator.onLine === false && await intentarOffline()) {
             return;
         }
         // Si hay API configurada, el propio login es la prueba autoritativa de conectividad.
@@ -3582,7 +3582,7 @@ const gnLoginSubmitHandler = async e => {
         } catch (_) {}
 
         if (apiLoginBase && loginApiFallo?.network) {
-            if (!intentarOffline() && le) {
+            if (!(await intentarOffline()) && le) {
                 le.textContent = gnOfflineAdminDenegado
                     ? 'El administrador debe iniciar sesión con conexión a la API.'
                     : 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
@@ -3628,7 +3628,7 @@ const gnLoginSubmitHandler = async e => {
             } catch (netErr) {
                 console.warn('Login: red caída, usando cache:', netErr.message);
                 setModoOffline(true);
-                if (!intentarOffline()) {
+                if (!(await intentarOffline())) {
                     if (le) le.textContent = gnOfflineAdminDenegado
                         ? 'El administrador debe iniciar sesión con conexión a la API.'
                         : 'Se perdió la conexión. Si ingresaste antes, ya podés entrar sin internet.';
@@ -3680,7 +3680,9 @@ const gnLoginSubmitHandler = async e => {
             };
             // No conservar la contraseña administrativa en la caché de acceso offline.
             if (u.rol === 'admin') eliminarUsuarioOfflinePorEmail(u.email);
-            else guardarUsuarioOffline(u, pw);
+            else if (!(await guardarUsuarioOffline(u, pw))) {
+                toast('No se pudo actualizar el acceso offline en este dispositivo. Probalo antes de trabajar sin conexión.', 'info');
+            }
             if (!loginJwtPayload) {
                 const jwt2 = await loginApiJwt(em, pw);
                 if (jwt2?._loginFailed) loginApiFallo = jwt2;
@@ -3753,7 +3755,7 @@ const gnLoginSubmitHandler = async e => {
                         'Falta api.baseUrl en config.json. Las contraseñas seguras solo validan por la API.';
                 }
             } else if (loginApiFallo?.network) {
-                if (!intentarOffline() && le) {
+                if (!(await intentarOffline()) && le) {
                     le.textContent = gnOfflineAdminDenegado
                     ? 'El administrador debe iniciar sesión con conexión a la API.'
                     : 'No se pudo conectar con el servidor (API). Revisá la red o probá en unos minutos.';
@@ -3769,7 +3771,7 @@ const gnLoginSubmitHandler = async e => {
         }
     } catch (error) {
         console.error('Error inesperado en login:', error);
-        if (!intentarOffline()) {
+        if (!(await intentarOffline())) {
             if (le) le.textContent = gnOfflineAdminDenegado
                 ? 'El administrador debe iniciar sesión con conexión a la API.'
                 : 'Error inesperado. Intentá de nuevo.';

@@ -197,3 +197,38 @@ test('sesión de técnico guardada sigue disponible sin red', async ({page}) => 
     await boot(page, {offline:true, netError:true, savedSession:'tecnico'});
     await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:7000});
 });
+
+test('login técnico online guarda verificador y luego permite ingreso offline sin contraseña en texto plano', async ({page}) => {
+    await boot(page, {loginRole:'tecnico'});
+    await login(page);
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:10000});
+    const cache = await page.evaluate(()=>localStorage.getItem('pmg_offline_user'));
+    expect(cache).not.toContain('clave');
+    expect(JSON.parse(cache)[0]._offlineVerifier.version).toBe(1);
+    const valid = await page.evaluate(async()=>{
+        const m=await import('./offline.js');
+        return {bad:await m.verificarUsuarioOffline('usuario@test.local','incorrecta'),good:await m.verificarUsuarioOffline('usuario@test.local','clave')};
+    });
+    expect(valid.bad).toBeNull();
+    expect(valid.good.email).toBe('usuario@test.local');
+    expect(valid.good._offlineVerifier).toBeUndefined();
+    expect(valid.good._pw).toBeUndefined();
+    await page.evaluate(()=>{localStorage.removeItem('pmg');localStorage.removeItem('pmg_api_token');});
+    await page.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));
+    await page.route('https://api.login-test.invalid/**', route=>route.abort('failed'));
+    await page.reload({waitUntil:'domcontentloaded'});
+    await page.waitForFunction(()=>typeof window.__gnEjecutarLogin==='function',null,{timeout:20000});
+    await login(page);
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:10000});
+});
+
+test('credencial antigua se migra durante login offline sin perder la cola pendiente', async ({page}) => {
+    await boot(page, {offline:true,cache:true,netError:true});
+    await page.evaluate(()=>localStorage.setItem('pmg_offline_queue',JSON.stringify([{_offlineId:'pendiente'}])));
+    await login(page);
+    await expect(page.locator('#ms')).toHaveClass(/active/, {timeout:10000});
+    const data=await page.evaluate(()=>({cache:localStorage.getItem('pmg_offline_user'),cola:localStorage.getItem('pmg_offline_queue')}));
+    expect(data.cache).not.toContain('clave');
+    expect(JSON.parse(data.cache)[0]._offlineVerifier.version).toBe(1);
+    expect(JSON.parse(data.cola)[0]._offlineId).toBe('pendiente');
+});
