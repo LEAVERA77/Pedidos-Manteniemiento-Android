@@ -55,6 +55,30 @@ public final class AndroidBiometricBridge {
     private final MainActivity activity;
     private final WebView webView;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean promptActive;
+
+    @JavascriptInterface
+    public boolean supportsAutomaticBiometric() { return true; }
+
+    @JavascriptInterface
+    public boolean isResumeBiometricLocked() { return activity.gnIsResumeBiometricLocked(); }
+
+    @JavascriptInterface
+    public void notifyAutoBiometricReady() { activity.gnWebBiometricReady(); }
+
+    boolean isPromptActive() { return promptActive; }
+
+    /** Solo se invoca desde MainActivity para desbloquear una sesión ya existente. */
+    void authenticateResume(Runnable onSuccess, Runnable onError) {
+        if (promptActive) { onError.run(); return; }
+        if (!hasSavedLogin() || biometricStatusMessage() != null) {
+            toastBiometricUnavailable();
+            onError.run();
+            return;
+        }
+        promptActive = true;
+        showReadLoginPrompt("Volver a GestorNova", "Confirmá con huella o rostro para continuar.", onSuccess, onError);
+    }
 
     public AndroidBiometricBridge(MainActivity activity, WebView webView) {
         this.activity = activity;
@@ -215,6 +239,7 @@ public final class AndroidBiometricBridge {
 
     private void waitForJsLoginHandlerThen(Runnable onReady, int attempt) {
         if (attempt >= JS_LOGIN_HANDLER_MAX_ATTEMPTS) {
+            promptActive = false;
             postRefreshLoginBiometricJs();
             activity.runOnUiThread(
                     () ->
@@ -415,6 +440,7 @@ public final class AndroidBiometricBridge {
                 new BiometricPrompt.AuthenticationCallback() {
                     @Override
                     public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                        promptActive = false;
                         try {
                             persistCredentialsAfterBiometricOk(em, pw, tenantId, businessType);
                         } catch (Throwable t) {
@@ -433,6 +459,7 @@ public final class AndroidBiometricBridge {
 
                     @Override
                     public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        promptActive = false;
                         if (errorCode == BiometricPrompt.ERROR_USER_CANCELED
                                 || errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
                             showRetryOrDeclineSaveDialog(em, pw, tenantId, businessType);
@@ -458,7 +485,13 @@ public final class AndroidBiometricBridge {
                         .setSubtitle("Confirmá con huella o rostro para guardar en este dispositivo.")
                         .setNegativeButtonText("Cancelar");
         applyAllowedAuthenticators(b);
-        prompt.authenticate(b.build());
+        try {
+            promptActive = true;
+            prompt.authenticate(b.build());
+        } catch (Throwable t) {
+            promptActive = false;
+            toastBiometricUnavailable();
+        }
     }
 
     private void applyAllowedAuthenticators(BiometricPrompt.PromptInfo.Builder b) {
@@ -544,6 +577,7 @@ public final class AndroidBiometricBridge {
         }
         activity.runOnUiThread(
                 () -> {
+                    promptActive = true;
                     prepareLoginScreenInWebView();
                     waitForJsLoginHandlerThen(
                             () ->
@@ -583,14 +617,23 @@ public final class AndroidBiometricBridge {
     }
 
     private void showReadLoginPrompt(String title, String subtitle, Runnable onSuccess) {
+        showReadLoginPrompt(title, subtitle, onSuccess, () -> {});
+    }
+
+    private void showReadLoginPrompt(String title, String subtitle, Runnable onSuccess, Runnable onError) {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            promptActive = false;
+            return;
+        }
         if (!canShowBiometricPromptNow()) {
-            mainHandler.postDelayed(() -> showReadLoginPrompt(title, subtitle, onSuccess), SAVE_PROMPT_DELAY_MS);
+            mainHandler.postDelayed(() -> showReadLoginPrompt(title, subtitle, onSuccess, onError), SAVE_PROMPT_DELAY_MS);
             return;
         }
         BiometricPrompt.AuthenticationCallback cb =
                 new BiometricPrompt.AuthenticationCallback() {
                     @Override
                     public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                        promptActive = false;
                         try {
                             onSuccess.run();
                         } catch (Throwable t) {
@@ -609,6 +652,8 @@ public final class AndroidBiometricBridge {
 
                     @Override
                     public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        promptActive = false;
+                        onError.run();
                         postRefreshLoginBiometricJs();
                         if (errorCode != BiometricPrompt.ERROR_USER_CANCELED
                                 && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON
@@ -629,6 +674,14 @@ public final class AndroidBiometricBridge {
                         .setSubtitle(subtitle)
                         .setNegativeButtonText("Cancelar");
         applyAllowedAuthenticators(b);
-        prompt.authenticate(b.build());
+        try {
+            promptActive = true;
+            prompt.authenticate(b.build());
+        } catch (Throwable t) {
+            promptActive = false;
+            onError.run();
+            postRefreshLoginBiometricJs();
+            toastBiometricUnavailable();
+        }
     }
 }

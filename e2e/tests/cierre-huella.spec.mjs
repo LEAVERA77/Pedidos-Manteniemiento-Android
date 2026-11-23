@@ -1,16 +1,17 @@
 import { test, expect } from '@playwright/test';
 
-async function iniciar(page, {guardada = false, sesion = false, sqlActualiza = true} = {}) {
-  await page.addInitScript(({guardada,sesion}) => {
+async function iniciar(page, {guardada = false, sesion = false, sqlActualiza = true, auto = false, cancelar = false, disponible = true} = {}) {
+  await page.addInitScript(({guardada,sesion,auto,cancelar,disponible}) => {
     Object.defineProperty(navigator, 'userAgent', {configurable:true,get:()=> 'Mozilla/5.0 Android GestorNova/1.0.42'});
     window.AndroidConfig = {getConfigJson:()=>JSON.stringify({api:{baseUrl:'https://api.cierre-test.invalid'}}),getVersionCode:()=>42};
     window.__bioLlamadas = 0;
     window.__bioPurgas = 0;
     window.AndroidBiometric = {
-      hasSavedLogin:()=>guardada, isAvailable:()=>true, clearSavedLogin:()=>{window.__bioPurgas++},
+      hasSavedLogin:()=>guardada, isAvailable:()=>disponible, supportsAutomaticBiometric:()=>auto,
+      isResumeBiometricLocked:()=>false, clearSavedLogin:()=>{window.__bioPurgas++},
       getSavedLoginScopeJson:()=>'{"tenantId":1,"businessType":""}',
       syncBiometricLoginScope:()=>{}, hasUserDeclinedBiometricSave:()=>false,
-      loginWithBiometric:()=>{window.__bioLlamadas++;void window.__gnLoginConHuella('tecnico@test.local','contraseña-prueba');},
+      loginWithBiometric:()=>{window.__bioLlamadas++;if(cancelar){window.__gnBiometricLoginFlow=false;window.__gnRefreshLoginBiometricUi?.();} else void window.__gnLoginConHuella('tecnico@test.local','contraseña-prueba');},
       savedLoginMatches:()=>true,
     };
     if (sesion) {
@@ -19,7 +20,7 @@ async function iniciar(page, {guardada = false, sesion = false, sqlActualiza = t
       localStorage.setItem('pmg_offline_queue','[{"_offlineId":"pendiente"}]');
       localStorage.setItem('gestornova_ls_pulse','2');
     }
-  },{guardada,sesion});
+  },{guardada,sesion,auto,cancelar,disponible});
   const updates=[];
   const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,OPTIONS','Access-Control-Allow-Headers':'content-type,authorization,x-gestornova-technician-key'};
   await page.route('https://api.cierre-test.invalid/**', async route=>{
@@ -185,4 +186,72 @@ test('cancelación biométrica simulada deja ingreso manual y permite reintentar
   expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(2);
   expect(await page.locator('#em').inputValue()).toBe('');
   expect(await page.locator('#pw').inputValue()).toBe('');
+});
+
+
+test('huella automática al iniciar sin tocar botón, y sin volcar credenciales a los campos',async({page})=>{
+  await iniciar(page,{guardada:true,sesion:true,auto:true});
+  await expect.poll(()=>page.evaluate(()=>window.__bioLlamadas),{timeout:20000}).toBe(1);
+  await expect(page.locator('#ms')).toHaveClass(/active/,{timeout:15000});
+  expect(await page.locator('#em').inputValue()).toBe('');
+  expect(await page.locator('#pw').inputValue()).toBe('');
+  expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_offline_queue')))[0]._offlineId).toBe('pendiente');
+});
+
+test('cancelar huella automática no genera bucles y permite reabrir o login manual',async({page})=>{
+  await iniciar(page,{guardada:true,auto:true,cancelar:true});
+  await expect.poll(()=>page.evaluate(()=>window.__bioLlamadas),{timeout:20000}).toBe(1);
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(1);
+  await expect(page.locator('#em')).toBeVisible();
+  await expect(page.locator('#gn-bio-login-btn')).toBeVisible();
+  await page.evaluate(()=>window.__gnHuellaAlReabrir());
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(2);
+});
+
+test('sin acceso guardado o sin sensor disponible no inicia huella automática',async({page})=>{
+  await iniciar(page,{auto:true,guardada:true,disponible:false});
+  await page.waitForFunction(()=>window.__GESTORNOVA_APP_READY__===1,{timeout:20000});
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(0);
+  await expect(page.locator('#em')).toBeVisible();
+});
+
+test('contrato nativo protege retorno sin reiniciar la vista y ofrece fallback',async()=>{
+  const fs=await import('node:fs/promises');
+  const java=await fs.readFile(new URL('../../app/src/main/java/com/gestornova/gestion/MainActivity.java',import.meta.url),'utf8');
+  expect(java).toContain('protected void onStop()');
+  expect(java).toContain('protected void onPostResume()');
+  expect(java).toContain('biometricBridge.authenticateResume(');
+  expect(java).toContain('gnResumeLockOverlay.setVisibility(View.GONE)');
+  expect(java).toContain('__gnLoginManualTrasBloqueo');
+});
+
+test('primer ingreso sin huella guardada no dispara huella automáticamente',async({page})=>{
+  await iniciar(page,{guardada:false,auto:true});
+  await page.waitForFunction(()=>window.__GESTORNOVA_APP_READY__===1,{timeout:20000});
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(0);
+  await expect(page.locator('#em')).toBeVisible();
+});
+
+test('cancelación automática permite ingresar manualmente',async({page})=>{
+  await iniciar(page,{guardada:true,auto:true,cancelar:true});
+  await expect.poll(()=>page.evaluate(()=>window.__bioLlamadas),{timeout:20000}).toBe(1);
+  await page.locator('#em').click();
+  await page.locator('#em').fill('tecnico@test.local');
+  await page.locator('#pw').click();
+  await page.locator('#pw').fill('contraseña-prueba');
+  await page.locator('#lb').click();
+  await expect(page.locator('#ms')).toHaveClass(/active/,{timeout:15000});
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(1);
+});
+
+
+test('web actualizada no dispara automáticamente en puente Android anterior',async({page})=>{
+  await iniciar(page,{guardada:true,auto:false,cancelar:true});
+  await page.waitForFunction(()=>window.__GESTORNOVA_APP_READY__===1,{timeout:20000});
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(()=>window.__bioLlamadas)).toBe(0);
+  await expect(page.locator('#gn-bio-login-btn')).toBeVisible();
 });

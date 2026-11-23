@@ -1,7 +1,7 @@
 /**
  * Login con huella en Android WebView (puente nativo AndroidBiometric).
  * Engancha {@code window.__gnEjecutarLogin} sin tocar app.js: tras login OK ofrece guardar con biométrica.
- * El acceso guardado queda ligado a tenant + línea de negocio; se purga en instalación/APK distinta.
+ * El acceso guardado queda ligado a tenant + línea de negocio; se conserva al actualizar la APK.
  * made by leavera77
  */
 
@@ -160,6 +160,48 @@ function _gnSetBiometricFlowActive(on) {
     } catch (_) {}
 }
 
+let _gnInicioAutomaticoIntentado = false;
+
+/** Mismo flujo para botón y solicitud automática: nunca rellenar los campos. */
+function _gnIniciarLoginBiometrico() {
+    const B = window.AndroidBiometric;
+    if (!B || window.__gnBiometricLoginFlow || window.__gnLoginEnCurso) return false;
+    const { tid, bt } = gnBioScopeParaAccionBiometrica();
+    _gnSetBiometricFlowActive(true);
+    try {
+        sessionStorage.removeItem('gn_login_draft_em');
+        sessionStorage.removeItem('gn_login_draft_pw');
+        const em = document.getElementById('em');
+        const pw = document.getElementById('pw');
+        if (em) em.value = '';
+        if (pw) pw.value = '';
+        if (typeof B.loginWithBiometric !== 'function') {
+            _gnSetBiometricFlowActive(false);
+            return false;
+        }
+        B.loginWithBiometric(tid, bt);
+        return true;
+    } catch (_) {
+        _gnSetBiometricFlowActive(false);
+        return false;
+    }
+}
+
+/** Una sola solicitud por apertura; una cancelación no provoca bucles de prompts. */
+function _gnIntentarHuellaAutomatica() {
+    if (_gnInicioAutomaticoIntentado || !_gnIsAndroidGestorNovaShell()) return false;
+    const B = window.AndroidBiometric;
+    try {
+        // Evita que versiones anteriores del APK reciban un comportamiento incompatible.
+        if (!B?.supportsAutomaticBiometric?.() || !B.hasSavedLogin?.() || !B.isAvailable?.()) return false;
+        if (B.isResumeBiometricLocked?.()) return false;
+        if (!window.__GESTORNOVA_APP_READY__ || !document.getElementById('ls')?.classList.contains('active')) return false;
+        if (document.body?.classList.contains('gn-sesion-activa') || window.__gnLoginEnCurso || window.__gnBiometricLoginFlow) return false;
+        _gnInicioAutomaticoIntentado = true;
+        return _gnIniciarLoginBiometrico();
+    } catch (_) { return false; }
+}
+
 function _gnBioUiClick(ev) {
     const t = ev.target;
     if (!t || !t.id) return;
@@ -175,21 +217,8 @@ function _gnBioUiClick(ev) {
             } catch (_) {}
             return;
         }
-        const { tid, bt } = gnBioScopeParaAccionBiometrica();
-        _gnSetBiometricFlowActive(true);
-        try {
-            sessionStorage.removeItem('gn_login_draft_em');
-            sessionStorage.removeItem('gn_login_draft_pw');
-            const em = document.getElementById('em');
-            const pw = document.getElementById('pw');
-            if (em) em.value = '';
-            if (pw) pw.value = '';
-            if (typeof B.loginWithBiometric === 'function') B.loginWithBiometric(tid, bt);
-            else _gnSetBiometricFlowActive(false);
-        } catch (e) {
-            _gnSetBiometricFlowActive(false);
-            console.warn('[bio-login]', e);
-        }
+        _gnInicioAutomaticoIntentado = true;
+        _gnIniciarLoginBiometrico();
         return;
     }
     if (t.id === 'gn-bio-save-btn') {
@@ -288,10 +317,19 @@ function _gnPurgarHuellaGuardadaExplicitamente() {
 
 if (typeof window !== 'undefined') {
     window.__gnRefreshLoginBiometricUi = _gnMountLoginBiometricUi;
+    window.__gnIntentarHuellaAutomatica = _gnIntentarHuellaAutomatica;
+    window.__gnHuellaAlReabrir = () => {
+        _gnInicioAutomaticoIntentado = false;
+        return _gnIntentarHuellaAutomatica();
+    };
     window.__gnPurgarHuellaGuardadaExplicitamente = _gnPurgarHuellaGuardadaExplicitamente;
     window.__gnPurgarHuellaAlCerrarSesion = _gnPurgarHuellaGuardadaExplicitamente;
     try {
-        window.addEventListener('gestornova-app-ready', () => gnSyncBiometricScopeSiSesionActiva());
+        window.addEventListener('gestornova-app-ready', () => {
+            gnSyncBiometricScopeSiSesionActiva();
+            try { window.AndroidBiometric?.notifyAutoBiometricReady?.(); } catch (_) {}
+            setTimeout(_gnIntentarHuellaAutomatica, 250);
+        });
     } catch (_) {}
     _gnInstallLoginHandlerTrap();
     _gnScheduleWrapPoll();

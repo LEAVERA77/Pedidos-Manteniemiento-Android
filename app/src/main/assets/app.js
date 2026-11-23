@@ -12067,6 +12067,12 @@ function ejecutarCerrarSesion() {
     cerrarUserMenuPop();
 }
 
+// El bloqueo nativo de segundo plano solo usa esto al elegir expresamente ingreso manual.
+window.__gnLoginManualTrasBloqueo = () => {
+    ejecutarCerrarSesion();
+    return true;
+};
+
 /** Tras primer ingreso bootstrap: vuelve al login con usuario prefilled (sin confirm). */
 window.__gnCerrarSesionTrasPrimerIngreso = function __gnCerrarSesionTrasPrimerIngreso(prefillUsuario) {
     ejecutarCerrarSesion();

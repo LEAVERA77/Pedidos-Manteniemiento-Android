@@ -55,6 +55,11 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.view.View;
+import android.view.Gravity;
+import android.graphics.Color;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
@@ -70,6 +75,8 @@ import androidx.work.WorkManager;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
+import androidx.lifecycle.Lifecycle;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
@@ -104,6 +111,14 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_UBI_JSON = "cached_json";
 
     private WebView webView;
+    private AndroidBiometricBridge biometricBridge;
+    private LinearLayout gnResumeLockOverlay;
+    private volatile boolean gnResumeLocked;
+    private boolean gnResumeCheckRunning;
+    private boolean gnResumePromptRunning;
+    /** No bloquear con una versión web antigua que no tenga la salida manual nueva. */
+    private boolean gnBiometricWebCompatible;
+
     private ConnectivityManager.NetworkCallback mapNetworkCallback;
     /** Capa nativa encima del WebView hasta el primer {@code onPageFinished} del documento; sin temporizador fijo. */
     private LinearLayout splashOverlay;
@@ -347,7 +362,8 @@ public class MainActivity extends AppCompatActivity {
         webView.addJavascriptInterface(new AndroidMapLocationBridge(), "AndroidInterface");
         webView.addJavascriptInterface(new AndroidSessionBridge(), "AndroidSession");
         webView.addJavascriptInterface(new AndroidDeviceBridge(), "AndroidDevice");
-        webView.addJavascriptInterface(new AndroidBiometricBridge(this, webView), "AndroidBiometric");
+        biometricBridge = new AndroidBiometricBridge(this, webView);
+        webView.addJavascriptInterface(biometricBridge, "AndroidBiometric");
         webView.addJavascriptInterface(new FcmTokenBridge(webView, this), "AndroidFcm");
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -465,10 +481,17 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                gnBiometricWebCompatible = false;
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 gnWebMainDocumentReady = true;
                 dismissNativeSplashOnce();
+                if (gnResumeLocked) gnResolverBloqueoAlVolver();
                 dispatchPendingPedidoIdToWeb();
                 maybeInjectUbicacionCentralJs(url);
                 try {
@@ -627,6 +650,114 @@ public class MainActivity extends AppCompatActivity {
             permissionLauncher.launch(faltantes.toArray(new String[0]));
     }
 
+    /** Cubre el WebView mientras se autentica al volver, sin recargar ni perder formularios. */
+    private void gnMostrarBloqueoReingreso() {
+        if (gnResumeLockOverlay == null) {
+            FrameLayout root = findViewById(android.R.id.content);
+            if (root == null) return;
+            LinearLayout layer = new LinearLayout(this);
+            layer.setOrientation(LinearLayout.VERTICAL);
+            layer.setGravity(Gravity.CENTER);
+            layer.setPadding(36, 36, 36, 36);
+            layer.setBackgroundColor(Color.rgb(15, 23, 42));
+            layer.setClickable(true);
+            layer.setFocusable(true);
+            TextView label = new TextView(this);
+            label.setText("Confirmá tu identidad para continuar en GestorNova.");
+            label.setTextColor(Color.WHITE);
+            label.setTextSize(18);
+            label.setGravity(Gravity.CENTER);
+            layer.addView(label);
+            Button retry = new Button(this);
+            retry.setText("Reintentar huella");
+            retry.setOnClickListener(v -> gnResolverBloqueoAlVolver());
+            layer.addView(retry);
+            Button manual = new Button(this);
+            manual.setText("Ingresar con usuario y contraseña");
+            manual.setOnClickListener(v -> new AlertDialog.Builder(this)
+                    .setTitle("Ingresar manualmente")
+                    .setMessage("Para ingresar manualmente se cerrará la sesión actual. Podrías perder cambios que no hayas guardado. La cola offline se conserva.")
+                    .setPositiveButton("Continuar", (d, w) -> gnIrALoginManual())
+                    .setNegativeButton("Cancelar", null).show());
+            layer.addView(manual);
+            root.addView(layer, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+            gnResumeLockOverlay = layer;
+        }
+        gnResumeLocked = true;
+        gnResumeLockOverlay.setVisibility(View.VISIBLE);
+        gnResumeLockOverlay.bringToFront();
+    }
+
+    boolean gnIsResumeBiometricLocked() { return gnResumeLocked; }
+
+    void gnWebBiometricReady() {
+        runOnUiThread(() -> gnBiometricWebCompatible = true);
+    }
+
+    private void gnQuitarBloqueoReingreso() {
+        gnResumeLocked = false;
+        gnResumeCheckRunning = false;
+        gnResumePromptRunning = false;
+        if (gnResumeLockOverlay != null) gnResumeLockOverlay.setVisibility(View.GONE);
+    }
+
+    private void gnIrALoginManual() {
+        if (webView == null) return;
+        webView.evaluateJavascript(
+                "(function(){try{return typeof window.__gnLoginManualTrasBloqueo==='function' && window.__gnLoginManualTrasBloqueo()===true;}catch(e){return false;}})()",
+                result -> {
+                    if ("true".equals(result)) gnQuitarBloqueoReingreso();
+                    else Toast.makeText(this, "La aplicación aún está cargando. Intentá de nuevo.", Toast.LENGTH_LONG).show();
+                });
+    }
+
+    private void gnResolverBloqueoAlVolver() {
+        if (!gnResumeLocked || gnResumeCheckRunning || gnResumePromptRunning || webView == null
+                || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) return;
+        gnResumeCheckRunning = true;
+        gnEsperarDocumentoParaBloqueo(0);
+    }
+
+    private void gnEsperarDocumentoParaBloqueo(int attempt) {
+        if (!gnResumeLocked || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) {
+            gnResumeCheckRunning = false;
+            return;
+        }
+        webView.evaluateJavascript(
+                "(function(){try{if(!window.__GESTORNOVA_APP_READY__)return 0;return window.app && window.app.u && document.body.classList.contains('gn-sesion-activa') ? 2 : 1;}catch(e){return 0;}})()",
+                result -> {
+                    if (!gnResumeLocked) { gnResumeCheckRunning = false; return; }
+                    if ("0".equals(result) || result == null || "null".equals(result)) {
+                        if (attempt < 100) webView.postDelayed(() -> gnEsperarDocumentoParaBloqueo(attempt + 1), 300);
+                        else { gnResumeCheckRunning = false; Toast.makeText(this, "La aplicación aún está cargando. Reintentá o ingresá manualmente.", Toast.LENGTH_LONG).show(); }
+                        return;
+                    }
+                    gnResumeCheckRunning = false;
+                    if ("1".equals(result)) {
+                        // No hay sesión: mostrar login y pedir la huella una vez en este regreso.
+                        gnQuitarBloqueoReingreso();
+                        webView.evaluateJavascript("window.__gnHuellaAlReabrir && window.__gnHuellaAlReabrir()", null);
+                        return;
+                    }
+                    if (!"2".equals(result)) return;
+                    gnResumePromptRunning = true;
+                    biometricBridge.authenticateResume(
+                            this::gnQuitarBloqueoReingreso,
+                            () -> gnResumePromptRunning = false);
+                });
+    }
+
+    @Override
+    protected void onStop() {
+        // El propio diálogo biométrico no debe causar otro bloqueo ni un ciclo de prompts.
+        if (!isChangingConfigurations() && gnWebMainDocumentReady && gnBiometricWebCompatible && biometricBridge != null
+                && biometricBridge.hasSavedLogin() && !biometricBridge.isPromptActive()) {
+            gnMostrarBloqueoReingreso();
+        }
+        super.onStop();
+    }
+
     @Override
     protected void onPause() {
         gnLastPauseMillis = System.currentTimeMillis();
@@ -720,7 +851,14 @@ public class MainActivity extends AppCompatActivity {
                         null);
             }
             dispatchPendingPedidoIdToWeb();
+            if (gnResumeLocked) gnResolverBloqueoAlVolver();
         }
+    }
+
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        if (gnResumeLocked && webView != null) webView.post(this::gnResolverBloqueoAlVolver);
     }
 
     @Override
@@ -1078,6 +1216,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (gnResumeLocked) {
+            moveTaskToBack(true);
+            return;
+        }
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
