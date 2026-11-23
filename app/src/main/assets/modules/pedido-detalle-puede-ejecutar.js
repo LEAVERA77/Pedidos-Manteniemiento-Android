@@ -74,12 +74,24 @@ export function puedePonerPedidoEnEjecucionEnDetalle(p, ctx = {}) {
  * @param {{ esAdmin?: () => boolean, esTecnicoOSupervisor?: () => boolean }} [ctx]
  * @returns {{ ok: boolean, message?: string }}
  */
+/** Restricción operativa de Android; no constituye una frontera de seguridad del servidor. */
+export function androidRequiereEjecucionParaCerrar(ctx = {}) {
+    try {
+        const android = typeof ctx.esAndroid === 'function' ? ctx.esAndroid() :
+            (typeof window !== 'undefined' && !!window.AndroidConfig) ||
+            (typeof navigator !== 'undefined' && /(?:GestorNova|Nexxo)\//i.test(navigator.userAgent || ''));
+        return !!android && !(typeof ctx.esAdmin === 'function' && ctx.esAdmin()) &&
+            typeof ctx.esTecnicoOSupervisor === 'function' && ctx.esTecnicoOSupervisor();
+    } catch (_) { return false; }
+}
+
 /** Cerrar / avance: admin o técnico asignado (no por ser creador del pedido). */
 export function puedeCerrarPedidoEnDetalle(p, ctx = {}) {
     if (!p) return false;
     const es = String(p.es || '').trim();
     if (es === 'Cerrado' || es === 'Derivado externo' || es === 'Desestimado') return false;
     if (typeof ctx.esAdmin === 'function' && ctx.esAdmin()) return true;
+    if (!ctx.esAvance && androidRequiereEjecucionParaCerrar(ctx) && es !== 'En ejecución') return false;
     if (typeof ctx.esTecnicoOSupervisor === 'function' && !ctx.esTecnicoOSupervisor()) return false;
     const uid = usuarioIdSesionOperadorPedidos();
     const tid = tecnicoAsignadoIdDesdePedido(p);
@@ -93,6 +105,9 @@ export function puedeCerrarPedidoEnDetalle(p, ctx = {}) {
  * @returns {{ ok: boolean, message?: string }}
  */
 export function validarPuedeCerrarPedido(p, ctx = {}) {
+    if (!ctx.esAvance && androidRequiereEjecucionParaCerrar(ctx) && String(p?.es || '').trim() !== 'En ejecución') {
+        return { ok: false, message: 'Para cerrar el pedido primero debe estar En ejecución.' };
+    }
     if (puedeCerrarPedidoEnDetalle(p, ctx)) return { ok: true };
     if (typeof ctx.esAdmin === 'function' && ctx.esAdmin()) return { ok: true };
     const tid = tecnicoAsignadoIdDesdePedido(p);
@@ -107,6 +122,11 @@ export function validarPuedeCerrarPedido(p, ctx = {}) {
         ok: false,
         message: 'Este reclamo está asignado a otro técnico. Solo podés cerrar pedidos asignados a vos.',
     };
+}
+
+/** Avance conserva los permisos anteriores; la condición nueva solo afecta al cierre. */
+export function validarPuedeRegistrarAvance(p, ctx = {}) {
+    return validarPuedeCerrarPedido(p, { ...ctx, esAvance: true });
 }
 
 export function validarPuedePonerPedidoEnEjecucion(p, ctx = {}) {

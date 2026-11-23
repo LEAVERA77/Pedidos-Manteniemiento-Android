@@ -178,13 +178,17 @@ function _gnBioUiClick(ev) {
         const { tid, bt } = gnBioScopeParaAccionBiometrica();
         _gnSetBiometricFlowActive(true);
         try {
-            if (typeof B.loginWithBiometric === 'function') {
-                B.loginWithBiometric(tid, bt);
-            }
+            sessionStorage.removeItem('gn_login_draft_em');
+            sessionStorage.removeItem('gn_login_draft_pw');
+            const em = document.getElementById('em');
+            const pw = document.getElementById('pw');
+            if (em) em.value = '';
+            if (pw) pw.value = '';
+            if (typeof B.loginWithBiometric === 'function') B.loginWithBiometric(tid, bt);
+            else _gnSetBiometricFlowActive(false);
         } catch (e) {
+            _gnSetBiometricFlowActive(false);
             console.warn('[bio-login]', e);
-        } finally {
-            setTimeout(() => _gnSetBiometricFlowActive(false), 8000);
         }
         return;
     }
@@ -226,7 +230,11 @@ function _gnBioUiClick(ev) {
 function _gnMountLoginBiometricUi() {
     const wrap = document.getElementById('gn-login-bio-android');
     const B = typeof window !== 'undefined' ? window.AndroidBiometric : null;
-    if (!wrap || !B || typeof B.isAvailable !== 'function' || !B.isAvailable()) {
+    let tieneAcceso = false, disponible = false;
+    try { tieneAcceso = !!B?.hasSavedLogin?.(); } catch (_) {}
+    try { disponible = !!B?.isAvailable?.(); } catch (_) {}
+    // Con acceso guardado, conservar la opción aun si el sensor está temporalmente indisponible.
+    if (!wrap || !B || (!disponible && !tieneAcceso)) {
         if (wrap) wrap.style.display = 'none';
         return;
     }
@@ -243,7 +251,7 @@ function _gnMountLoginBiometricUi() {
     }
     const hint = document.getElementById('gn-bio-hint');
     if (hint) {
-        hint.textContent = declined
+        hint.textContent = tieneAcceso ? 'Ingresá con huella o usá tu usuario y contraseña.' : declined
             ? 'Podés guardar el acceso con huella cuando quieras con el botón de abajo, o seguir sin guardar.'
             : 'Tras un ingreso correcto te pedimos huella o rostro para guardar el acceso. Si falla o cancelás, podés reintentar hasta lograrlo o elegir «No quiero guardar».';
     }

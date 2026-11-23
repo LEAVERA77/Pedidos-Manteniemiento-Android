@@ -237,9 +237,17 @@ function puedeSeleccionarPedidoParaIncidencias(p) {
  * Cierre masivo desde vista incidencia: técnico solo pedidos Asignado/En ejecución a su nombre (fila GET /api/incidencias/:id).
  * Separado de `puedeSeleccionarPedidoParaIncidencias` para leer bien columnas crudas del servidor.
  */
-function pedidoPermiteCierreMasivoIncidenciaParaUsuarioActual(row) {
+function androidRestringeCierreMasivo() {
+    try {
+        return !esAdminIncModule() && esTecnicoOSupervisorIncModule() &&
+            (!!window.AndroidConfig || /(?:GestorNova|Nexxo)\//i.test(navigator.userAgent || ''));
+    } catch (_) { return false; }
+}
+
+export function pedidoPermiteCierreMasivoIncidenciaParaUsuarioActual(row) {
     if (!row || row.id == null || !puedeGestionarIncidencias()) return false;
     const es = normalizarEstadoOperativoInc(row.estado);
+    if (androidRestringeCierreMasivo() && es !== 'En ejecución') return false;
     if (es === 'Cerrado' || es === 'Derivado externo' || es === 'Pendiente') return false;
     if (es !== 'Asignado' && es !== 'En ejecución') return false;
     if (esAdminIncModule()) return true;
@@ -503,7 +511,7 @@ function ensureModalCierreMasivo() {
  * @param {{ incId: number, incNombre: string, pedidosAbiertos: Array<Record<string, unknown>>, tok: string, dismissVistaIncidencia?: () => void }} args
  */
 function openModalCierreMasivoIncidencia(args) {
-    const { incId, incNombre, pedidosAbiertos, tok, dismissVistaIncidencia } = args;
+    const { incId, incNombre, pedidosAbiertos, tok, dismissVistaIncidencia, hayOtrosAbiertos = false } = args;
     const putFn = typeof window.pedidoPutApi === 'function' ? window.pedidoPutApi : null;
     if (!putFn) {
         toast('No se pudo usar el guardado de pedidos (pedidoPutApi). Recargá la app.', 'error');
@@ -648,12 +656,22 @@ function openModalCierreMasivoIncidencia(args) {
                         trabajo_realizado: trabajo,
                         incidencia_id: incId,
                     };
+                    if (androidRestringeCierreMasivo()) body.cierre_requiere_ejecucion = true;
                     if (fotoDataUrl) body.foto_cierre_base64 = fotoDataUrl;
                     if (!tipoPedidoExcluyeMaterialesModule(tt) && matsAll.length) body.materiales = matsAll;
                     if (totalACerrar > 10) setSubProgresoCierre(sub, okCount, totalACerrar);
                     const row = await putFn(pid, body);
                     if (!row) throw new Error(`No se pudo cerrar el pedido ${pid}`);
                     okCount += 1;
+                }
+                if (androidRestringeCierreMasivo() && hayOtrosAbiertos) {
+                    toast(`Se cerraron ${okCount} pedido(s) en ejecución. La incidencia sigue abierta porque quedan otros pedidos.`, 'info', 9000);
+                    _gnDismissVistaIncidencia = null;
+                    mc.classList.remove('active');
+                    invalidatePedidosIncidenciasCache();
+                    recargarPedidosYMapa();
+                    void openVistaIncidencia(incId);
+                    return;
                 }
                 const rr = await fetch(apiUrl(`/api/incidencias/${encodeURIComponent(String(incId))}`), {
                     method: 'PUT',
@@ -1516,6 +1534,7 @@ async function openVistaIncidencia(incId) {
                         incId,
                         incNombre: nombreInc,
                         pedidosAbiertos: abiertos,
+                        hayOtrosAbiertos: abiertos.length < abiertosAll.length,
                         tok,
                         dismissVistaIncidencia: () => {
                             try {

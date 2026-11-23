@@ -1796,6 +1796,13 @@ router.put("/:id", async (req, res) => {
       return res.status(403).json({ error: "Solo administradores pueden usar este estado operativo" });
     }
 
+    // La app Android pide control optimista: evita cerrar si el estado cambió
+    // desde que el cliente consultó. El gateway SQL legado sigue siendo otra vía.
+    const cierreCondicionalAndroid = !esAdminApiPut && estadoParam === "Cerrado" && req.body?.cierre_requiere_ejecucion === true;
+    if (cierreCondicionalAndroid && estadoAntesNorm !== "En ejecución") {
+      return res.status(409).json({ error: "El pedido debe estar En ejecución para cerrarlo", code: "cierre_requiere_ejecucion" });
+    }
+
     const estadoPedidoNorm = estadoAntesNorm;
     const fotosB64 = parseFotosBase64(req.body);
     if (estadoPedidoNorm === "Desestimado" && fotosB64.length) {
@@ -1906,11 +1913,14 @@ router.put("/:id", async (req, res) => {
          telefono_contacto = COALESCE($16, telefono_contacto),
          cliente_calle = COALESCE($18, cliente_calle),
          cliente_localidad = COALESCE($19, cliente_localidad)${derivacionRevertSql}
-       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}${btUp}
+       WHERE id = $1${hasTUp ? " AND tenant_id = $20" : ""}${btUp}${cierreCondicionalAndroid ? " AND estado IS NOT DISTINCT FROM $17::text" : ""}
        RETURNING *`,
       upParams
     );
     const updated = r.rows[0];
+    if (!updated && cierreCondicionalAndroid) {
+      return res.status(409).json({ error: "El estado del pedido cambió. Actualizá antes de cerrar.", code: "cierre_estado_cambio" });
+    }
     let rowOut = updated;
     if (becameDesestimado) {
       const exCol = (await tableHasColumn("pedidos", "foto_base64")) ? ", foto_base64 = NULL" : "";

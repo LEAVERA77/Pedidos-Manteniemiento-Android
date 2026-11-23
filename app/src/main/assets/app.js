@@ -204,6 +204,8 @@ import { GN_MAX_HISTORICOS_EN_PANEL_PEDIDOS } from './modules/gn-fuzzy-texto-lev
 import { filtrarListaPanelPedidosRender, contarCerradosPanelPedidos } from './modules/pedido-panel-lista-tecnico.js';
 import {
     validarPuedeCerrarPedido,
+    validarPuedeRegistrarAvance,
+    androidRequiereEjecucionParaCerrar,
     validarPuedePonerPedidoEnEjecucion,
 } from './modules/pedido-detalle-puede-ejecutar.js';
 import { installPedidoVolverPendiente, syncPedidoVolverPendienteButton } from './modules/pedido-volver-pendiente.js';
@@ -591,7 +593,8 @@ async function sincronizarOffline() {
             if (op.tipo === 'INSERT') {
                 await sqlSimple(op.query);
             } else if (op.tipo === 'UPDATE') {
-                await sqlSimple(op.query);
+                const resultado = await sqlSimple(op.query);
+                if (op.requiereFila && !resultado?.rows?.length) throw new Error('El pedido ya no está En ejecución; cierre pendiente de revisión.');
             }
             ok++;
         } catch(e) {
@@ -3362,7 +3365,7 @@ function initWebCoordsConverterBar() {
 }
 
 const lfLogin = document.getElementById('lf');
-const gnLoginSubmitHandler = async e => {
+const gnLoginSubmitHandler = async (e, biometricCredentials = null) => {
     try {
         e.preventDefault();
     } catch (_) {}
@@ -3377,8 +3380,8 @@ const gnLoginSubmitHandler = async e => {
         console.log('[GN] login');
     } catch (_) {}
 
-    const em = emEl.value.trim();
-    const pw = pwEl.value;
+    const em = biometricCredentials ? String(biometricCredentials.em || '').trim() : emEl.value.trim();
+    const pw = biometricCredentials ? String(biometricCredentials.pw || '') : pwEl.value;
 
     lb.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Verificando...';
     lb.disabled = true;
@@ -3787,6 +3790,11 @@ const gnLoginSubmitHandler = async e => {
 };
 /** Expuesto para index.html (#lb) y login biométrico; el trap en login-biometric-android.js lo envuelve. */
 window.__gnEjecutarLogin = gnLoginSubmitHandler;
+// Puente nativo: nunca copia las credenciales a los campos visibles del formulario.
+window.__gnLoginConHuella = async (em, pw) => {
+    try { return await gnLoginSubmitHandler(null, { em, pw }); }
+    finally { window.__gnBiometricLoginFlow = false; }
+};
 if (lfLogin) {
     const _gnDispatchLogin = (e) => {
         const fn = window.__gnEjecutarLogin;
@@ -9055,7 +9063,7 @@ function actualizarVistaPreviaFotos() {
 
 function abrirAvance(id) {
     const p = app.p.find((x) => String(x.id) === String(id));
-    const gate = validarPuedeCerrarPedido(p, { esAdmin, esTecnicoOSupervisor });
+    const gate = validarPuedeRegistrarAvance(p, { esAdmin, esTecnicoOSupervisor });
     if (!gate.ok) {
         toast(gate.message || 'No podés cargar avance en este pedido.', 'warning');
         return;
@@ -9482,6 +9490,13 @@ async function updPedido(id, campos, usuarioId) {
     const idxPre = app.p.findIndex(p => String(p.id) === String(id));
     const prevRow = idxPre !== -1 ? app.p[idxPre] : null;
     const estadoAntesUpd = prevRow ? String(prevRow.es || '') : '';
+    const cierreAndroid = campos.estado === 'Cerrado' && androidRequiereEjecucionParaCerrar({esAdmin, esTecnicoOSupervisor});
+    if (cierreAndroid) {
+        const gate = validarPuedeCerrarPedido(prevRow, {esAdmin, esTecnicoOSupervisor});
+        if (!gate.ok) throw new Error(gate.message || 'Solo se pueden cerrar pedidos En ejecución.');
+        // El sistema heredado no puede relacionar un cierre local con el INSERT off_ de forma fiable.
+        if (String(id).startsWith('off_')) throw new Error('Sincronizá primero este pedido antes de cerrarlo.');
+    }
     const taiAsignado = prevRow != null && prevRow.tai != null ? prevRow.tai : null;
 
     if (prevRow && campos.avance !== undefined) aplicarMinimoAvanceEnCamposPedido(campos, prevRow);
@@ -9500,16 +9515,17 @@ async function updPedido(id, campos, usuarioId) {
     
     const s = [];
     for (const [k, val] of Object.entries(cv)) s.push(`${k}=${esc(val)}`);
-    const queryUpdate = `UPDATE pedidos SET ${s.join(',')} WHERE id=${esc(parseInt(id))}`;
+    const queryUpdate = `UPDATE pedidos SET ${s.join(',')} WHERE id=${esc(parseInt(id))}${cierreAndroid ? " AND estado = 'En ejecución' RETURNING id" : ''}`;
 
     if (modoOffline || !NEON_OK || String(id).startsWith('off_')) {
         
         if (!String(id).startsWith('off_')) {
-            enqueueOffline({ tipo: 'UPDATE', query: queryUpdate });
+            enqueueOffline({ tipo: 'UPDATE', query: queryUpdate, ...(cierreAndroid ? { requiereFila: true } : {}) });
         }
         
     } else {
-        await ejecutarSQLConReintentos(queryUpdate);
+        const resultadoUpdate = await ejecutarSQLConReintentos(queryUpdate);
+        if (cierreAndroid && !resultadoUpdate?.rows?.length) throw new Error('El pedido ya no está En ejecución. Actualizá e intentá nuevamente.');
         const cierreCentral =
             cv.estado === 'Cerrado' &&
             estadoAntesUpd !== 'Cerrado' &&
@@ -10732,6 +10748,8 @@ document.getElementById('cc2').addEventListener('click', async () => {
         return;
     }
     const pCierre = app.p.find(x => String(x.id) === String(app.cid));
+    const gateCierreActual = validarPuedeCerrarPedido(pCierre, { esAdmin, esTecnicoOSupervisor });
+    if (!gateCierreActual.ok) { toast(gateCierreActual.message || 'No podés cerrar este pedido.', 'warning'); return; }
     const firmaObligatoria = pedidoTieneClienteCargado(pCierre);
     const firmaVacia = firmaCierreCanvasVacio();
     if (firmaObligatoria && firmaVacia) {
@@ -12540,6 +12558,17 @@ window.detenerTracking = detenerTracking;
         }
     } catch (_) {}
 })();
+
+// Si existe acceso biométrico Android, presentar la opción al abrir la app en vez
+// de restaurar silenciosamente la sesión. Nunca borrar pedidos ni cola offline.
+try {
+    if (window.AndroidBiometric?.hasSavedLogin?.()) {
+        localStorage.removeItem('pmg');
+        localStorage.removeItem('pmg_api_token');
+        app.apiToken = null;
+        try { window.AndroidSession?.clearUser?.(); } catch (_) {}
+    }
+} catch (_) {}
 
 // Una sesión administrativa persistida no se reanuda sin una nueva autenticación online.
 // No borrar pedidos ni operaciones offline del equipo.

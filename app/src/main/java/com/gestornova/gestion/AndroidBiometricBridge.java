@@ -24,7 +24,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Opcional: guardar usuario/contraseña tras BiometricPrompt y rellenar el login en WebView.
+ * Opcional: guardar usuario/contraseña tras BiometricPrompt y autenticarse sin rellenar campos visibles.
  * Los datos quedan en prefs privadas de la app (no cifrado en disco; mitigado por confirmación biométrica al leer/escribir).
  * Tras un ingreso correcto, si el guardado biométrico falla o se cancela, se ofrece reintentar hasta lograrlo o
  * indicar explícitamente que no se desea guardar.
@@ -46,7 +46,7 @@ public final class AndroidBiometricBridge {
     private static final int JS_LOGIN_HANDLER_MAX_ATTEMPTS = 100;
     private static final String JS_PREPARE_LOGIN_SCREEN =
             "(function(){try{var gw=document.getElementById('gw');var ls=document.getElementById('ls');"
-                    + "var ms=document.getElementById('ms');if(gw)gw.classList.remove('active');"
+                    + "var ms=document.getElementById('ms');var em=document.getElementById('em');var pw=document.getElementById('pw');if(em)em.value='';if(pw)pw.value='';if(gw)gw.classList.remove('active');"
                     + "if(ms)ms.classList.remove('active');if(ls)ls.classList.add('active');"
                     + "document.body.classList.remove('gn-sesion-activa');"
                     + "if(typeof window.__gnRefreshLoginBiometricUi==='function')"
@@ -111,7 +111,8 @@ public final class AndroidBiometricBridge {
             boolean firstRun = installId == null || installId.isEmpty();
             boolean vcChanged = prevVc >= 0 && prevVc != vc;
             if (firstRun || vcChanged) {
-                wipeBiometricCredentialsInternal(false);
+                // Conservar acceso al actualizar APK; una instalación/restauración sin meta sí lo purga.
+                if (firstRun) wipeBiometricCredentialsInternal(false);
                 if (firstRun) {
                     installId = UUID.randomUUID().toString();
                 }
@@ -214,11 +215,12 @@ public final class AndroidBiometricBridge {
 
     private void waitForJsLoginHandlerThen(Runnable onReady, int attempt) {
         if (attempt >= JS_LOGIN_HANDLER_MAX_ATTEMPTS) {
+            postRefreshLoginBiometricJs();
             activity.runOnUiThread(
                     () ->
                             Toast.makeText(
                                             activity,
-                                            "La app aún está cargando. Esperá unos segundos e intentá de nuevo.",
+                                            "La interfaz de huella aún no está disponible. Actualizá la app y la página o ingresá manualmente.",
                                             Toast.LENGTH_LONG)
                                     .show());
             return;
@@ -226,7 +228,7 @@ public final class AndroidBiometricBridge {
         webView.post(
                 () ->
                         webView.evaluateJavascript(
-                                "(function(){return typeof window.__gnEjecutarLogin==='function';})()",
+                                "(function(){return typeof window.__gnLoginConHuella==='function';})()",
                                 value -> {
                                     if ("true".equals(value)) {
                                         activity.runOnUiThread(onReady);
@@ -520,6 +522,7 @@ public final class AndroidBiometricBridge {
                                             "Primero ingresá con usuario y contraseña y guardá el acceso con huella.",
                                             Toast.LENGTH_LONG)
                                     .show());
+            postRefreshLoginBiometricJs();
             return;
         }
         if (!storedScopeMatches(tid, bt)) {
@@ -531,10 +534,12 @@ public final class AndroidBiometricBridge {
                                                     + "Ingresá y guardalo de nuevo.",
                                             Toast.LENGTH_LONG)
                                     .show());
+            postRefreshLoginBiometricJs();
             return;
         }
         if (biometricStatusMessage() != null) {
             activity.runOnUiThread(this::toastBiometricUnavailable);
+            postRefreshLoginBiometricJs();
             return;
         }
         activity.runOnUiThread(
@@ -544,7 +549,7 @@ public final class AndroidBiometricBridge {
                             () ->
                                     showReadLoginPrompt(
                                             "Ingresar",
-                                            "Confirmá con huella o rostro para completar usuario y contraseña.",
+                                            "Confirmá con huella o rostro para ingresar.",
                                             this::applySavedLoginAfterBiometricOk));
                 });
     }
@@ -563,13 +568,13 @@ public final class AndroidBiometricBridge {
             String b64 =
                     Base64.encodeToString(o.toString().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
             String js =
-                    "(function(){try{window.__gnBiometricLoginFlow=false;var o=JSON.parse(atob('"
+                    "(function(){try{if(typeof window.__gnLoginConHuella!=='function')return;"
+                            + "window.__gnBiometricLoginFlow=true;var b=atob('"
                             + b64
-                            + "'));var e=document.getElementById('em');var p=document.getElementById('pw');"
-                            + "if(e)e.value=o.em||'';if(p)p.value=o.pw||'';"
-                            + "if(typeof window.__gnEjecutarLogin==='function')window.__gnEjecutarLogin();"
-                            + "else{console.warn('[GN] huella: login aún no cargó');}"
-                            + "}catch(x){console.warn('[GN] huella apply',x);}})()";
+                            + "');var v=Uint8Array.from(b,function(c){return c.charCodeAt(0)});"
+                            + "var o=JSON.parse(new TextDecoder().decode(v));b=null;v=null;"
+                            + "window.__gnLoginConHuella(o.em||'',o.pw||'');o=null;"
+                            + "}catch(x){console.warn('[GN] huella: no se pudo iniciar');}})()";
             prepareLoginScreenInWebView();
             waitForJsLoginHandlerThen(() -> webView.post(() -> webView.evaluateJavascript(js, null)));
         } catch (Throwable t) {
@@ -604,6 +609,7 @@ public final class AndroidBiometricBridge {
 
                     @Override
                     public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        postRefreshLoginBiometricJs();
                         if (errorCode != BiometricPrompt.ERROR_USER_CANCELED
                                 && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON
                                 && errorCode != BiometricPrompt.ERROR_CANCELED) {

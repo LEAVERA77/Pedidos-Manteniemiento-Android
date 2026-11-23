@@ -228,6 +228,7 @@ function guardarBorradorLogin() {
 }
 
 function restaurarBorradorLoginSiVacio() {
+    if (window.__gnBiometricLoginFlow) return;
     const ls = document.getElementById('ls');
     if (!ls?.classList.contains('active')) return;
     const em = document.getElementById('em');
@@ -310,20 +311,17 @@ function instalarPreservacionCamposLogin() {
     } catch (_) {}
 }
 
-/** Nueva APK / reinstalación: el puente nativo ya purga; esto refuerza tras actualizar WebView. */
-function purgarHuellaSiCambioVersionApk() {
+/** La actualización de APK conserva huella; el puente nativo controla instalación y ámbito. */
+function registrarVersionBiometricaApk() {
     if (!esShellAndroidGestorNova()) return;
-    const B = window.AndroidBiometric;
-    if (!B || typeof B.clearSavedLogin !== 'function') return;
     try {
-        if (typeof window.AndroidConfig?.getVersionCode !== 'function') return;
-        const vc = String(window.AndroidConfig.getVersionCode());
-        const key = 'pmg_bio_bound_vc';
-        const prev = localStorage.getItem(key);
-        if (prev != null && prev !== '' && prev !== vc) {
-            B.clearSavedLogin();
+        if (typeof window.AndroidConfig?.getVersionCode === 'function') {
+            localStorage.setItem('pmg_bio_bound_vc', String(window.AndroidConfig.getVersionCode()));
         }
-        localStorage.setItem(key, vc);
+        if (window.AndroidBiometric?.hasSavedLogin?.()) {
+            sessionStorage.removeItem(DRAFT_EM);
+            sessionStorage.removeItem(DRAFT_PW);
+        }
     } catch (_) {}
 }
 
@@ -342,7 +340,7 @@ function suprimirToastInactividadArranque() {
 }
 
 prepararStorageSesionObsoletaArranqueAndroid();
-purgarHuellaSiCambioVersionApk();
+registrarVersionBiometricaApk();
 suprimirToastInactividadArranque();
 instalarHooksSesionAndroid();
 
