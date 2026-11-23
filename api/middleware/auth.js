@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { resolveJwtSecret } from "../utils/jwtSecret.js";
 import { query } from "../db/neon.js";
-import { getUserTenantId } from "../utils/tenantUser.js";
+import { getUserTenantId, getUserTenantIdStrict } from "../utils/tenantUser.js";
 import { tenantHostMiddleware } from "./tenantHost.js";
 import { businessContextMiddleware } from "./businessContext.js";
 import { technicianTenantKeyOk } from "./technicianTenantKey.js";
@@ -27,14 +27,33 @@ export async function authMiddleware(req, res, next) {
     const uid = decoded.userId ?? decoded.sub;
     if (!uid) return res.status(401).json({ error: "Token inválido" });
 
-    const r = await query("SELECT id, email, nombre, rol, activo FROM usuarios WHERE id = $1 LIMIT 1", [uid]);
+    // La autorización no debe depender de caché L1/L2, ni del TTL o de
+    // invalidaciones emitidas por otras instancias o por cambios externos.
+    const r = await query("SELECT id, email, nombre, rol, activo FROM usuarios WHERE id = $1 LIMIT 1", [uid], { bypassCache: true });
 
     if (!r.rows.length || !r.rows[0].activo) {
       return res.status(401).json({ error: "Usuario inválido o inactivo" });
     }
     req.user = r.rows[0];
 
-    const dbTenantId = await getUserTenantId(req.user.id);
+    const strictTenant = ["1", "true", "yes"].includes(String(process.env.AUTH_STRICT_TENANT || "").trim().toLowerCase());
+    let dbTenantId;
+    if (strictTenant) {
+      try {
+        dbTenantId = await getUserTenantIdStrict(req.user.id);
+      } catch (_) {
+        return res.status(503).json({ error: "No se pudo verificar la entidad de la cuenta" });
+      }
+      if (dbTenantId == null) {
+        return res.status(403).json({ error: "La cuenta no tiene una entidad válida" });
+      }
+      const tokenTenant = Number(decoded.tenant_id);
+      if (!Number.isSafeInteger(tokenTenant) || tokenTenant < 1 || tokenTenant !== dbTenantId) {
+        return res.status(401).json({ error: "La entidad de la sesión cambió; iniciá sesión nuevamente" });
+      }
+    } else {
+      dbTenantId = await getUserTenantId(req.user.id);
+    }
     if (decoded.tenant_id != null && Number.isFinite(Number(decoded.tenant_id))) {
       if (Number(decoded.tenant_id) !== Number(dbTenantId)) {
         /* JWT con tenant viejo: el operativo es el de la BD (p. ej. attach-tenant desde la web admin). */
