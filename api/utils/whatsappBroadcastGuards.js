@@ -4,14 +4,23 @@
  * made by leavera77
  */
 import { query } from "../db/neon.js";
+import { getWhatsappProviderRaw } from "./whatsappBroadcastPacing.js";
+
+function envName(name) {
+  return getWhatsappProviderRaw() === "baileys" ? name.replace(/^WHAPI_/, "BAILEYS_") : name;
+}
+function env(name) { return process.env[envName(name)]; }
+function guardReadFailure() {
+  return getWhatsappProviderRaw() === "baileys" ? { ok: false, error: "No se pudieron verificar las protecciones del envío masivo Baileys." } : { ok: true };
+}
 
 function parseIntEnv(name, fallback) {
-  const n = Number(process.env[name]);
+  const n = Number(env(name));
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
 }
 
 function parseFloatEnv(name, fallback) {
-  const n = Number(process.env[name]);
+  const n = Number(env(name));
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
@@ -50,15 +59,19 @@ function parseHHMM(s) {
  * @returns {{ ok: boolean, error?: string }}
  */
 export function assertBroadcastLocalTimeWindow() {
-  const win = String(process.env.WHAPI_BROADCAST_LOCAL_WINDOW || "").trim();
+  const win = String(env("WHAPI_BROADCAST_LOCAL_WINDOW") || "").trim();
   if (!win) return { ok: true };
-  const tz = String(process.env.WHAPI_BROADCAST_LOCAL_TZ || "America/Argentina/Buenos_Aires").trim();
+  const tz = String(env("WHAPI_BROADCAST_LOCAL_TZ") || "America/Argentina/Buenos_Aires").trim();
   const [a, b] = win.split("-").map((x) => x.trim());
   const start = parseHHMM(a);
   const end = parseHHMM(b);
   if (start == null || end == null) {
-    console.warn("[broadcast-guards] WHAPI_BROADCAST_LOCAL_WINDOW inválido, se ignora:", win);
-    return { ok: true };
+    console.warn("[broadcast-guards] ventana inválida:", win);
+    return getWhatsappProviderRaw() === "baileys" ? { ok: false, error: "Ventana horaria Baileys inválida." } : { ok: true };
+  }
+  if (getWhatsappProviderRaw() === "baileys") {
+    try { new Intl.DateTimeFormat("en-GB", { timeZone: tz }); }
+    catch (_) { return { ok: false, error: "Zona horaria Baileys inválida." }; }
   }
   const now = getLocalMinutesNow(tz);
   let ok;
@@ -100,7 +113,7 @@ export async function assertMinHoursBetweenBroadcasts(tenantId) {
     };
   } catch (e) {
     console.warn("[broadcast-guards] min hours", e?.message || e);
-    return { ok: true };
+    return guardReadFailure();
   }
 }
 
@@ -129,7 +142,7 @@ export async function assertWeeklyRecipientCap(tenantId, additionalRecipients) {
     };
   } catch (e) {
     console.warn("[broadcast-guards] weekly cap", e?.message || e);
-    return { ok: true };
+    return guardReadFailure();
   }
 }
 
@@ -174,7 +187,7 @@ export async function assertBroadcastCircuitBreaker(tenantId) {
     };
   } catch (e) {
     console.warn("[broadcast-guards] circuit", e?.message || e);
-    return { ok: true };
+    return guardReadFailure();
   }
 }
 
@@ -201,7 +214,7 @@ export function assertBroadcastBodyCapsRatio(bodyText) {
  * N = WHAPI_BROADCAST_BLOCK_SUBSTRING_MAX (default 4). Vacío = off.
  */
 export function assertBroadcastBodyBlockedSubstrings(bodyText) {
-  const raw = String(process.env.WHAPI_BROADCAST_BLOCK_SUBSTRINGS || "").trim();
+  const raw = String(env("WHAPI_BROADCAST_BLOCK_SUBSTRINGS") || "").trim();
   if (!raw) return { ok: true };
   const maxHits = parseIntEnv("WHAPI_BROADCAST_BLOCK_SUBSTRING_MAX", 4);
   const s = String(bodyText || "").toLowerCase();
@@ -230,7 +243,7 @@ export function assertBroadcastBodyBlockedSubstrings(bodyText) {
  * Si WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO=1 y métricas en alerta → bloquea nuevos masivos.
  */
 export async function assertBroadcastNotBlockedByLowMetrics(tenantId) {
-  const on = ["1", "true", "yes"].includes(String(process.env.WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO || "").toLowerCase());
+  const on = ["1", "true", "yes"].includes(String(env("WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO") || "").toLowerCase());
   if (!on) return { ok: true };
   const tid = Number(tenantId);
   if (!Number.isFinite(tid) || tid <= 0) return { ok: true };
@@ -245,7 +258,7 @@ export async function assertBroadcastNotBlockedByLowMetrics(tenantId) {
     };
   } catch (e) {
     console.warn("[broadcast-guards] low ratio block", e?.message || e);
-    return { ok: true };
+    return guardReadFailure();
   }
 }
 
@@ -261,15 +274,15 @@ export async function assertAllBroadcastAntiBanGuards(tenantId, additionalRecipi
     await assertBroadcastNotBlockedByLowMetrics(tenantId),
   ];
   for (const r of chain) {
-    if (r && r.ok === false) return r;
+    if (r && r.ok === false) return { ...r, error: getWhatsappProviderRaw() === "baileys" ? String(r.error || "").replaceAll("WHAPI_", "BAILEYS_").replaceAll("Whapi", "Baileys") : r.error };
   }
   return { ok: true };
 }
 
 /** Resumen para GET /metrics (solo lectura). */
 export async function getBroadcastGuardsSummary(tenantId) {
-  const tz = String(process.env.WHAPI_BROADCAST_LOCAL_TZ || "America/Argentina/Buenos_Aires").trim();
-  const window = String(process.env.WHAPI_BROADCAST_LOCAL_WINDOW || "").trim();
+  const tz = String(env("WHAPI_BROADCAST_LOCAL_TZ") || "America/Argentina/Buenos_Aires").trim();
+  const window = String(env("WHAPI_BROADCAST_LOCAL_WINDOW") || "").trim();
   const mins = getLocalMinutesNow(tz);
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -290,7 +303,7 @@ export async function getBroadcastGuardsSummary(tenantId) {
     blocklist_threshold: parseIntEnv("WHAPI_BROADCAST_BLOCKLIST_FAIL_THRESHOLD", 3),
     reject_caps_pct: parseIntEnv("WHAPI_BROADCAST_REJECT_CAPS_PCT", 0),
     block_on_low_ratio: ["1", "true", "yes"].includes(
-      String(process.env.WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO || "").toLowerCase()
+      String(env("WHAPI_BROADCAST_BLOCK_ON_LOW_RATIO") || "").toLowerCase()
     ),
   };
 }

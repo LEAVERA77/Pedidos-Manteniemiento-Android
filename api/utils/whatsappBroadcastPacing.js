@@ -29,7 +29,23 @@ export function getWhatsappProviderRaw() {
  * }}
  */
 export function getBroadcastPacingConfig() {
-  const isWhapi = getWhatsappProviderRaw() === "whapi";
+  const provider = getWhatsappProviderRaw();
+  const isWhapi = provider === "whapi";
+  if (provider === "baileys") {
+    const min = parseIntEnv("BAILEYS_BROADCAST_DELAY_MIN_MS", 30_000);
+    const batchMin = parseIntEnv("BAILEYS_BROADCAST_BATCH_PAUSE_MIN_MS", 120_000);
+    return {
+      delayMinMs: min,
+      delayMaxMs: Math.max(min, parseIntEnv("BAILEYS_BROADCAST_DELAY_MAX_MS", 90_000)),
+      batchEvery: parseIntEnv("BAILEYS_BROADCAST_BATCH_EVERY", 15),
+      batchPauseMinMs: batchMin,
+      batchPauseMaxMs: Math.max(batchMin, parseIntEnv("BAILEYS_BROADCAST_BATCH_PAUSE_MAX_MS", 300_000)),
+      maxPerJob: parseIntEnv("BAILEYS_BROADCAST_MAX_PER_JOB", 25),
+      maxPerDay: parseIntEnv("BAILEYS_BROADCAST_MAX_PER_DAY", 100),
+      isWhapi: false,
+      isBaileys: true,
+    };
+  }
   if (isWhapi) {
     return {
       delayMinMs: parseIntEnv("WHAPI_BROADCAST_DELAY_MIN_MS", 30_000),

@@ -3,9 +3,10 @@
  * made by leavera77
  */
 import { query } from "../db/neon.js";
+import { getWhatsappProviderRaw } from "../utils/whatsappBroadcastPacing.js";
 
 function parseThreshold() {
-  const n = Number(process.env.WHAPI_BROADCAST_BLOCKLIST_FAIL_THRESHOLD || 3);
+  const n = Number((getWhatsappProviderRaw() === "baileys" ? process.env.BAILEYS_BROADCAST_BLOCKLIST_FAIL_THRESHOLD : process.env.WHAPI_BROADCAST_BLOCKLIST_FAIL_THRESHOLD) || 3);
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
 }
 
@@ -36,6 +37,7 @@ export async function filterPhonesNotBlocklisted(tenantId, phones) {
     }
     return out;
   } catch (e) {
+    if (getWhatsappProviderRaw() === "baileys") throw new Error("No se pudo comprobar la lista de fallos de Baileys; revisá la migración broadcast_antiban_phone_failures.");
     if (String(e?.code || "") === "42P01") return list;
     console.warn("[broadcast-phone-failures] filter", e?.message || e);
     return list;

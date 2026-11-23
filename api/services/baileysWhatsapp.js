@@ -21,6 +21,7 @@ import {
 import { normalizeWhatsAppRecipientForMeta } from "./metaWhatsapp.js";
 import { handleInboundMetaWhatsAppPayload } from "./whatsappBotMeta.js";
 import { logWhatsappMensajeRecibido } from "./whatsappNotificacionesLog.js";
+import { isBaileysBroadcastStop, recordBaileysBroadcastStop, pauseBaileysBroadcastForUnresolvedStop, tripLocalBaileysBroadcastStop } from "./baileysBroadcastSafety.js";
 
 const SESSION_ID = String(process.env.BAILEYS_SESSION_ID || "default").trim();
 const AR_MOB = "54" + "9";
@@ -449,6 +450,23 @@ export async function startBaileys() {
               } catch (e) {
                 console.error("[baileys] log recibido DB:", e.message);
               }
+            }
+
+            if (text && isBaileysBroadcastStop(text)) {
+              try {
+                if (!sender.pnJid) {
+                  await pauseBaileysBroadcastForUnresolvedStop();
+                  await sendText(waId, 'Pausamos los avisos. Contactá a la entidad para confirmar tu número y completar la baja.');
+                  continue;
+                }
+                await recordBaileysBroadcastStop(waId);
+                await sendText(waId, 'Confirmamos tu baja de los avisos masivos por WhatsApp.');
+              } catch (e) {
+                tripLocalBaileysBroadcastStop();
+                console.error('[baileys] No se pudo registrar la baja de avisos:', e?.message || e);
+                await sendText(waId, 'No pudimos registrar tu baja en este momento. Contactá a la entidad para solicitarla.');
+              }
+              continue;
             }
 
             const payload = buildMetaShapedPayload(

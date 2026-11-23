@@ -1,6 +1,7 @@
 import express from "express";
 import { authWithTenantHost, adminOnly } from "../middleware/auth.js";
-import { query } from "../db/neon.js";
+import { query, rawQuery } from "../db/neon.js";
+import { assertBaileysBroadcastTenant, filterBaileysBroadcastOptOut, withBaileysBroadcastLease } from "../services/baileysBroadcastSafety.js";
 import { tableHasColumn } from "../utils/tenantScope.js";
 import { sendTenantWhatsAppText } from "../services/whatsappService.js";
 import { normalizeBusinessTypeInput } from "../services/businessType.js";
@@ -19,6 +20,7 @@ import { filterPhonesNotBlocklisted, applyBroadcastSendResultsToFailures } from 
 import { evaluateWarmupForBroadcast, getWarmupStatusPayload } from "../utils/whatsappBroadcastWarmup.js";
 import {
   assertAllBroadcastAntiBanGuards,
+  assertBroadcastLocalTimeWindow,
   getBroadcastGuardsSummary,
 } from "../utils/whatsappBroadcastGuards.js";
 
@@ -103,14 +105,47 @@ async function telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessTy
   return [...out];
 }
 
+// Baileys no infiere consentimiento desde teléfonos de reclamos: solo catálogo habilitado.
+async function telefonosBaileysCatalogo(tenantId, businessType) {
+  const hasTenant = await tableHasColumn('socios_catalogo', 'tenant_id');
+  const hasConsent = await tableHasColumn('socios_catalogo', 'acepta_avisos');
+  if (!hasTenant || !hasConsent) throw new Error('Falta migración de preferencias de avisos en socios_catalogo.');
+  const hasBt = await tableHasColumn('socios_catalogo', 'business_type');
+  const hasLoc = await tableHasColumn('socios_catalogo', 'localidad');
+  const cfg = await getTenantConfiguracionForWhatsappAreas(tenantId);
+  const r = await rawQuery(
+    `SELECT telefono, acepta_avisos, COALESCE(activo, TRUE) AS activo,
+      ${hasLoc ? "NULLIF(TRIM(COALESCE(localidad::text, '')), '')" : 'NULL::text'} AS loc,
+      ${hasBt ? 'business_type::text' : 'NULL::text'} AS bt
+     FROM socios_catalogo WHERE tenant_id = $1 AND telefono IS NOT NULL AND TRIM(telefono::text) <> ''`,
+    [tenantId]
+  );
+  const accepted = new Set();
+  const refused = new Set();
+  for (const row of r.rows || []) {
+    const phone = normalizeArgentinaMobileWithTenantAreaConfig(row.telefono, cfg, row.loc);
+    if (!phone || phone.length < 12) continue;
+    if (row.acepta_avisos === false) refused.add(phone);
+    else if (row.acepta_avisos === true && row.activo === true && (!row.bt || !businessType || row.bt === businessType)) accepted.add(phone);
+  }
+  return [...accepted].filter((p) => !refused.has(p));
+}
+
 async function resolveBroadcastPhones(tenantId, businessType) {
-  const rawTels = await telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType);
+  const isBaileys = getBroadcastPacingConfig().isBaileys;
+  if (isBaileys) await assertBaileysBroadcastTenant(tenantId);
+  const rawTels = isBaileys
+    ? await telefonosBaileysCatalogo(tenantId, businessType)
+    : await telefonosMovilesPedidosYSociosTenantBusiness(tenantId, businessType);
   const warm = await evaluateWarmupForBroadcast(tenantId, rawTels.length);
   if (!warm.allowed) {
     return { ok: false, error: warm.error, telefonos: [], warmup: warm, requested: rawTels.length };
   }
   let telefonos = rawTels.slice(0, warm.cap);
   telefonos = await filterPhonesNotBlocklisted(tenantId, telefonos);
+  if (getBroadcastPacingConfig().isBaileys) {
+    telefonos = await filterBaileysBroadcastOptOut(telefonos);
+  }
   return {
     ok: true,
     telefonos,
@@ -121,16 +156,19 @@ async function resolveBroadcastPhones(tenantId, businessType) {
 
 async function sumDestinatariosBroadcastHoy(tenantId) {
   try {
-    const r = await query(
+    const isBaileys = getBroadcastPacingConfig().isBaileys;
+    const runQuery = isBaileys ? rawQuery : query;
+    const r = await runQuery(
       `SELECT COALESCE(SUM(destinatarios_total), 0)::int AS s
        FROM comunicaciones_envios
-       WHERE tenant_id = $1
+       WHERE ($1::int IS NULL OR tenant_id = $1)
          AND created_at >= date_trunc('day', NOW())
          AND (meta->>'kind') IN ('community', 'corte_programado')`,
-      [tenantId]
+      [isBaileys ? null : tenantId]
     );
     return Number(r.rows?.[0]?.s) || 0;
-  } catch (_) {
+  } catch (e) {
+    if (getBroadcastPacingConfig().isBaileys) throw new Error('No se pudo comprobar el límite diario de Baileys.');
     return 0;
   }
 }
@@ -139,13 +177,13 @@ function assertBroadcastLimits(cfg, tenantId, total, sumHoy) {
   if (cfg.maxPerJob > 0 && total > cfg.maxPerJob) {
     return {
       ok: false,
-      error: `La campaña supera el máximo por envío (${cfg.maxPerJob} destinatarios). Ajustá WHAPI_BROADCAST_MAX_PER_JOB / BROADCAST_MAX_PER_JOB o segmentá la audiencia.`,
+      error: `La campaña supera el máximo por envío (${cfg.maxPerJob} destinatarios). Segmentá la audiencia o revisá los límites configurados.`,
     };
   }
   if (cfg.maxPerDay > 0 && sumHoy + total > cfg.maxPerDay) {
     return {
       ok: false,
-      error: `Límite diario de destinatarios (${cfg.maxPerDay}) superado (hoy acumulado: ${sumHoy}). Reintentá mañana o subí WHAPI_BROADCAST_MAX_PER_DAY / BROADCAST_MAX_PER_DAY.`,
+      error: `Límite diario de destinatarios (${cfg.maxPerDay}) superado (hoy acumulado: ${sumHoy}). Reintentá mañana o revisá el límite configurado.`,
     };
   }
   return { ok: true };
@@ -192,11 +230,12 @@ async function insertComunicacionEnvio({
   }
 }
 
-async function finalizeComunicacionBroadcast(id, { ok, err, erroresDetalle, duracionMs, status, abortReason }) {
+async function finalizeComunicacionBroadcast(id, { ok, err, erroresDetalle, duracionMs, status, abortReason, skipped }) {
   const metaPatch = {
     broadcast_status: status,
     broadcast_finished_at: new Date().toISOString(),
   };
+  if (Number.isFinite(skipped)) metaPatch.broadcast_skipped = skipped;
   if (abortReason) metaPatch.broadcast_abort_reason = abortReason;
   try {
     await query(
@@ -215,46 +254,71 @@ async function finalizeComunicacionBroadcast(id, { ok, err, erroresDetalle, dura
   }
 }
 
-async function executeBroadcastSendLoop({ tenantId, telefonos, bodyText, logContext, comunicacionId }) {
+// En una excepción inesperada conservar los contadores ya persistidos, no reemplazarlos por cero.
+async function marcarBroadcastError(id, error) {
+  try {
+    const patch = { broadcast_status: 'error', broadcast_finished_at: new Date().toISOString(), broadcast_abort_reason: String(error?.message || error) };
+    await query(`UPDATE comunicaciones_envios SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb WHERE id = $1`, [id, JSON.stringify(patch)]);
+  } catch (e) { console.error('[whatsappBroadcast] no se pudo registrar error del envío', e?.message || e); }
+}
+
+export async function executeBroadcastSendLoop({ tenantId, businessType, telefonos, bodyText, logContext, comunicacionId }) {
   const cfg = getBroadcastPacingConfig();
-  const start = Date.now();
-  let ok = 0;
-  let err = 0;
-  const erroresDetalle = [];
-  const list = Array.isArray(telefonos) ? telefonos : [];
-  for (let i = 0; i < list.length; i++) {
-    const to = list[i];
-    const rSend = await sendTenantWhatsAppText({
-      tenantId,
-      toDigits: to,
-      bodyText,
-      pedidoId: null,
-      logContext,
-    });
-    if (rSend.ok) ok += 1;
-    else {
-      err += 1;
-      erroresDetalle.push({ telefono: to, error: String(rSend.error || rSend.graph?.error?.message || "send_failed") });
+  const execute = async (checkLease = async () => {}) => {
+    const start = Date.now();
+    let ok = 0;
+    let err = 0;
+    let skipped = 0;
+    let abortReason = null;
+    const erroresDetalle = [];
+    const attemptedPhones = [];
+    const list = Array.isArray(telefonos) ? telefonos : [];
+    if (cfg.isBaileys) {
+      await checkLease();
+      // La fila queued/running ya reserva destinatarios en el total diario compartido.
+      const used = await sumDestinatariosBroadcastHoy(tenantId);
+      const lim = assertBroadcastLimits(cfg, tenantId, list.length, used - list.length);
+      if (!lim.ok) throw new Error(lim.error);
     }
-    if (comunicacionId && ((i + 1) % 10 === 0 || i === list.length - 1)) {
+    for (let i = 0; i < list.length; i++) {
+      const to = list[i];
+      if (cfg.isBaileys) {
+        try {
+          await checkLease();
+          await assertBaileysBroadcastTenant(tenantId);
+          const windowCheck = assertBroadcastLocalTimeWindow();
+          if (!windowCheck.ok) throw new Error(windowCheck.error);
+          if (!(await filterBaileysBroadcastOptOut([to])).length) { skipped += 1; continue; }
+          if (!(await telefonosBaileysCatalogo(tenantId, businessType)).includes(to)) { skipped += 1; continue; }
+        } catch (e) {
+          abortReason = `No se pudo verificar la protección Baileys: ${String(e?.message || e)}`;
+          break;
+        }
+      }
+      let rSend;
       try {
-        await query(`UPDATE comunicaciones_envios SET enviados_ok = $2, enviados_error = $3 WHERE id = $1`, [
-          comunicacionId,
-          ok,
-          err,
-        ]);
-      } catch (_) {}
+        rSend = await sendTenantWhatsAppText({ tenantId, toDigits: to, bodyText, pedidoId: null, logContext });
+      } catch (e) {
+        rSend = { ok: false, error: String(e?.message || e) };
+      }
+      attemptedPhones.push(to);
+      if (rSend.ok) ok += 1;
+      else {
+        err += 1;
+        erroresDetalle.push({ telefono: to, error: String(rSend.error || rSend.graph?.error?.message || "send_failed") });
+        if (cfg.isBaileys) abortReason = "Envío detenido tras un error de Baileys. Revisá la conexión y el estado de la cuenta antes de reintentar.";
+      }
+      if (comunicacionId && (cfg.isBaileys || (i + 1) % 10 === 0 || i === list.length - 1)) {
+        try {
+          await query(`UPDATE comunicaciones_envios SET enviados_ok = $2, enviados_error = $3 WHERE id = $1`, [comunicacionId, ok, err]);
+        } catch (_) {}
+      }
+      if (abortReason) break;
+      if (i < list.length - 1) await sleepAfterOutgoingMessage(cfg, i);
     }
-    if (i < list.length - 1) {
-      await sleepAfterOutgoingMessage(cfg, i);
-    }
-  }
-  return {
-    ok,
-    err,
-    erroresDetalle,
-    duracionMs: Date.now() - start,
+    return { ok, err, skipped, erroresDetalle, attemptedPhones, abortReason, duracionMs: Date.now() - start };
   };
+  return cfg.isBaileys ? withBaileysBroadcastLease(execute) : execute();
 }
 
 async function runCommunityBroadcastJob(comunicacionId) {
@@ -266,7 +330,7 @@ async function runCommunityBroadcastJob(comunicacionId) {
        SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
        WHERE id = $1
          AND (meta->>'broadcast_status') = 'queued'
-       RETURNING id, tenant_id, business_type, cuerpo, titulo`,
+       RETURNING id, tenant_id, business_type, cuerpo, titulo, destinatarios_total`,
       [
         comunicacionId,
         JSON.stringify({
@@ -296,7 +360,9 @@ async function runCommunityBroadcastJob(comunicacionId) {
     });
     return;
   }
-  const telefonos = resolved.telefonos;
+  const telefonos = getBroadcastPacingConfig().isBaileys
+    ? resolved.telefonos.slice(0, Math.max(0, Number(row.destinatarios_total) || 0))
+    : resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
   const guardJob = await assertAllBroadcastAntiBanGuards(row.tenant_id, telefonos.length, bodyText);
   if (!guardJob.ok) {
@@ -312,6 +378,7 @@ async function runCommunityBroadcastJob(comunicacionId) {
   }
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
+    businessType: row.business_type,
     telefonos,
     bodyText,
     logContext: "broadcast_comunidad",
@@ -320,9 +387,9 @@ async function runCommunityBroadcastJob(comunicacionId) {
 
   await finalizeComunicacionBroadcast(comunicacionId, {
     ...result,
-    status: "done",
+    status: result.abortReason ? "error" : "done",
   });
-  await applyBroadcastSendResultsToFailures(row.tenant_id, telefonos, result.erroresDetalle).catch((e) =>
+  await applyBroadcastSendResultsToFailures(row.tenant_id, result.attemptedPhones, result.erroresDetalle).catch((e) =>
     console.warn("[whatsappBroadcast] phone-failures community", e?.message || e)
   );
   await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
@@ -344,7 +411,7 @@ async function runCorteBroadcastJob(comunicacionId) {
        SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
        WHERE id = $1
          AND (meta->>'broadcast_status') = 'queued'
-       RETURNING id, tenant_id, business_type, cuerpo, meta`,
+       RETURNING id, tenant_id, business_type, cuerpo, meta, destinatarios_total`,
       [
         comunicacionId,
         JSON.stringify({
@@ -378,7 +445,9 @@ async function runCorteBroadcastJob(comunicacionId) {
     });
     return;
   }
-  const telefonos = resolved.telefonos;
+  const telefonos = getBroadcastPacingConfig().isBaileys
+    ? resolved.telefonos.slice(0, Math.max(0, Number(row.destinatarios_total) || 0))
+    : resolved.telefonos;
   const bodyText = String(row.cuerpo || "");
   const guardJob = await assertAllBroadcastAntiBanGuards(row.tenant_id, telefonos.length, bodyText);
   if (!guardJob.ok) {
@@ -394,6 +463,7 @@ async function runCorteBroadcastJob(comunicacionId) {
   }
   const result = await executeBroadcastSendLoop({
     tenantId: row.tenant_id,
+    businessType: row.business_type,
     telefonos,
     bodyText,
     logContext: "broadcast_corte_programado",
@@ -402,16 +472,16 @@ async function runCorteBroadcastJob(comunicacionId) {
 
   await finalizeComunicacionBroadcast(comunicacionId, {
     ...result,
-    status: "done",
+    status: result.abortReason ? "error" : "done",
   });
 
-  await applyBroadcastSendResultsToFailures(row.tenant_id, telefonos, result.erroresDetalle).catch((e) =>
+  await applyBroadcastSendResultsToFailures(row.tenant_id, result.attemptedPhones, result.erroresDetalle).catch((e) =>
     console.warn("[whatsappBroadcast] phone-failures corte", e?.message || e)
   );
 
   await bumpBroadcastMessagesSent(row.tenant_id, result.ok);
 
-  try {
+  if (!result.abortReason) try {
     await query(
       `INSERT INTO cortes_programados(
           tenant_id, business_type, zona_afectada, fecha_inicio, fecha_fin, motivo, mensaje_enviado, mensaje_texto
@@ -457,6 +527,8 @@ router.get("/status/:id", async (req, res) => {
       enviados_error: row.enviados_error,
       duracion_ms: row.duracion_ms,
       broadcast_status: meta.broadcast_status || null,
+      broadcast_abort_reason: meta.broadcast_abort_reason || null,
+      broadcast_skipped: Number(meta.broadcast_skipped) || 0,
       kind: meta.kind || null,
       created_at: row.created_at,
     });
@@ -526,7 +598,7 @@ router.post("/community", async (req, res) => {
       if (resolved.requested > 0) {
         return res.status(400).json({
           error:
-            "No quedan destinatarios para este masivo: los números pueden estar en pausa por fallos repetidos de envío (Whapi) o excluidos por STOP. Revisá el padrón o la tabla broadcast_phone_failures tras migrar.",
+            "No quedan destinatarios para este masivo: pueden estar en pausa por fallos repetidos o excluidos por STOP. Revisá el padrón y las bajas.",
         });
       }
       return res.status(400).json({
@@ -542,7 +614,7 @@ router.post("/community", async (req, res) => {
     }
 
     const syncMax = getBroadcastSyncMaxRecipients();
-    const useAsync = tels.length > syncMax;
+    const useAsync = cfg.isBaileys || tels.length > syncMax;
 
     if (useAsync) {
       const comunicacionId = await insertComunicacionEnvio({
@@ -567,14 +639,7 @@ router.post("/community", async (req, res) => {
       setImmediate(() => {
         runCommunityBroadcastJob(comunicacionId).catch((e) => {
           console.error("[whatsappBroadcast] community async job", e);
-          finalizeComunicacionBroadcast(comunicacionId, {
-            ok: 0,
-            err: 0,
-            erroresDetalle: [{ error: String(e?.message || e) }],
-            duracionMs: 0,
-            status: "error",
-            abortReason: String(e?.message || e),
-          });
+          void marcarBroadcastError(comunicacionId, e);
         });
       });
       return res.status(202).json({
@@ -698,7 +763,7 @@ router.post("/corte-programado", async (req, res) => {
     }
 
     const syncMax = getBroadcastSyncMaxRecipients();
-    const useAsync = tels.length > syncMax;
+    const useAsync = cfg.isBaileys || tels.length > syncMax;
 
     if (useAsync) {
       const comunicacionId = await insertComunicacionEnvio({
@@ -727,14 +792,7 @@ router.post("/corte-programado", async (req, res) => {
       setImmediate(() => {
         runCorteBroadcastJob(comunicacionId).catch((e) => {
           console.error("[whatsappBroadcast] corte async job", e);
-          finalizeComunicacionBroadcast(comunicacionId, {
-            ok: 0,
-            err: 0,
-            erroresDetalle: [{ error: String(e?.message || e) }],
-            duracionMs: 0,
-            status: "error",
-            abortReason: String(e?.message || e),
-          });
+          void marcarBroadcastError(comunicacionId, e);
         });
       });
       return res.status(202).json({
