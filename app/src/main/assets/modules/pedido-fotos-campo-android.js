@@ -134,6 +134,8 @@ export function solicitarFotosCampoOpcional(_pedidoId, titulo) {
     });
 }
 
+export function mirarFotosAvanceTemp() { return _fotosAvanceSesion.slice(); }
+
 /** Fotos elegidas en el modal de avance (se consumen al guardar). */
 export function tomarFotosAvanceTemp() {
     const f = _fotosAvanceSesion.slice();

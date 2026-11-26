@@ -1,5 +1,5 @@
 // Service worker de Pedidos MG: los mapas usan la caché HTTP normal del navegador.
-const CACHE_SHELL = 'pmg-shell-v295';
+const CACHE_SHELL = 'pmg-shell-v296';
 const CACHE_API   = 'pmg-api-v1';
 const SW_VERSION  = '1.9.5';
 
@@ -245,6 +245,9 @@ function shellAssetUrls() {
     j('vendor/leaflet-1.9.4/images/marker-shadow.png'),
     j('vendor/leaflet-1.9.4/images/layers.png'),
     j('vendor/leaflet-1.9.4/images/layers-2x.png'),
+    j('modules/offline-trabajo-campo-core.js'),
+    j('modules/offline-trabajo-campo-cola.js'),
+    j('modules/offline-trabajo-campo-runtime.js'),
     j('offline.js'),
     j('sync-worker.js'),
     j('gestornova-logo.png')

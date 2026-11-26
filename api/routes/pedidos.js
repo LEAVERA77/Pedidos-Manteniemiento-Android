@@ -39,6 +39,7 @@ import {
 import { buildClientesAfectadosPayload, insertClientesAfectadosLog } from "../services/clientesAfectadosLog.js";
 import { registerPedidoOperativaRoutes } from "./pedidoOperativa.js";
 import { allocarSiguienteNumeroPedido } from "../services/pedidoContador.js";
+import { validarDiarioCampo, aplicarDiarioCampo } from "../services/trabajoCampoOffline.js";
 import { logOperacionAudit } from "../services/operacionAuditLog.js";
 import { ejecutarBuscarPedidosGlobal } from "../services/pedidosBuscarGlobal.js";
 import {
@@ -2277,6 +2278,29 @@ router.post("/:id/opinion-descargo/notificar", adminOnly, async (req, res) => {
       error: "No se pudo notificar el descargo",
       detail: error.message,
     });
+  }
+});
+
+/** Sincroniza como una sola transacción el diario offline, sin SQL enviado por el dispositivo. */
+router.post("/:id/trabajo-offline", async (req, res) => {
+  const rol=String(req.user?.rol || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!["tecnico","supervisor"].includes(rol)) return res.status(403).json({ error:"Solo técnico o supervisor" });
+  const usuarioId=Number(req.user?.id), tenantId=Number(req.tenantId), businessType=req.activeBusinessType;
+  if (!Number.isSafeInteger(usuarioId) || usuarioId<1 || !Number.isSafeInteger(tenantId) || tenantId<1 ||
+      !req.businessTypeFilterEnabled || !["electricidad","agua","municipio"].includes(businessType))
+    return res.status(503).json({ error:"No se pudo verificar usuario, organización y rubro" });
+  if (!/^[1-9]\d*$/.test(req.params.id) || Number(req.params.id)!==req.body?.pedido_id)
+    return res.status(400).json({ error:"El pedido no coincide con la operación" });
+  try {
+    const contexto={usuarioId,tenantId,businessType};
+    const validado=validarDiarioCampo(req.body,contexto);
+    const resultado=await withTransaction(db=>aplicarDiarioCampo(db,req.body,contexto,validado));
+    return res.status(resultado.repetida ? 200 : 201).json({ ok:true, operacion_id:req.body.operacion_id, ...resultado });
+  } catch (e) {
+    if (e.statusCode===400 || e.statusCode===409) return res.status(e.statusCode).json({error:e.message,code:e.code});
+    if (e.code==='23503') return res.status(409).json({error:"El pedido ya no está disponible; se conserva el trabajo para revisión.",code:"conflicto_campo"});
+    console.error("[trabajo-offline]",e?.code || "error");
+    return res.status(500).json({error:"No se pudo confirmar la sincronización; el trabajo debe conservarse."});
   }
 });
 

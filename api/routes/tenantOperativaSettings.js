@@ -24,6 +24,32 @@ async function geocercaTableOk() {
   }
 }
 
+// Lectura acotada para preparar una copia local; no habilita la modificación de la geocerca.
+router.get("/geocerca-offline", async (req, res) => {
+  try {
+    const rol = String(req.user?.rol || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const tid = Number(req.tenantId), uid = Number(req.user?.id), bt = req.activeBusinessType;
+    if (!["tecnico", "supervisor"].includes(rol)) return res.status(403).json({ error:"Solo técnico o supervisor" });
+    if (!Number.isSafeInteger(tid) || tid < 1 || !Number.isSafeInteger(uid) || uid < 1 ||
+        !req.businessTypeFilterEnabled || !["electricidad", "agua", "municipio"].includes(bt))
+      return res.status(503).json({ error:"No se pudo comprobar la organización o el rubro" });
+    let habilitada = true, radio = 100;
+    const tabla = await query("SELECT to_regclass('public.tenant_geocerca_settings') AS nombre", [], { bypassCache: true });
+    if (tabla.rows?.[0]?.nombre) {
+      const r = await query(`SELECT habilitada, radio_metros FROM tenant_geocerca_settings WHERE tenant_id = $1 LIMIT 1`, [tid], { bypassCache: true });
+      const row = r.rows?.[0];
+      if (row) {
+        habilitada = row.habilitada !== false;
+        radio = Math.min(5000, Math.max(10, Number(row.radio_metros) || 100));
+      }
+    }
+    res.set("Cache-Control", "no-store");
+    return res.json({ usuario_id:uid, tenant_id:tid, business_type:bt, habilitada, radio_metros:radio });
+  } catch (_) {
+    return res.status(503).json({ error:"No se pudo preparar la geocerca offline" });
+  }
+});
+
 router.get("/geocerca-settings", adminOnly, async (req, res) => {
   try {
     const tid = Number(req.tenantId);

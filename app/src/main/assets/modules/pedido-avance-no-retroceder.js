@@ -150,7 +150,8 @@ export function initPedidoAvanceModalUI(ctx) {
             aplicarMinUiAvanceModal(min);
             return;
         }
-        await onGuardar(_pedidoIdAvance, val.valor);
+        const resultado = await onGuardar(_pedidoIdAvance, val.valor);
+        if (resultado === false) return;
         document.getElementById('avance-modal')?.classList.remove('active');
         _pedidoIdAvance = null;
     });

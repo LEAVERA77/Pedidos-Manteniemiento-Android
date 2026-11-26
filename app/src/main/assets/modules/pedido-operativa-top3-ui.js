@@ -187,26 +187,28 @@ async function obtenerUbicacionDispositivo() {
  * @returns {Promise<{ ok: boolean, message?: string }>}
  */
 export async function verificarGeocercaAntesIniciarPedido(pedidoId) {
-    if (typeof window.gnOperativaGeocercaVerificar !== 'function') {
-        return { ok: true };
-    }
+    // El administrador no necesita GPS ni geocerca para operar; las demás
+    // autorizaciones del pedido siguen vigentes.
+    if (typeof window.esAdmin === 'function' && window.esAdmin()) return { ok:true };
+    if (typeof window.gnOperativaGeocercaVerificar !== 'function')
+        return { ok:false, message:'No se pudo verificar la geocerca. Revisá la conexión.' };
+    let ubicacion;
+    try { ubicacion=await obtenerUbicacionDispositivo(); }
+    catch (e) { return {ok:false,message:e?.message || 'No se pudo obtener ubicación. Revisá GPS y permisos.'}; }
     try {
-        const { lat, lng } = await obtenerUbicacionDispositivo();
-        const r = await window.gnOperativaGeocercaVerificar(pedidoId, lat, lng);
-        if (r && r.permitido === false) {
-            const d = r.distancia_metros != null ? Math.round(r.distancia_metros) : '?';
-            const m = r.max_metros != null ? r.max_metros : 100;
-            return {
-                ok: false,
-                message: `Estás a ~${d} m del reclamo (máximo ${m} m). Acercate al lugar para iniciar.`,
-            };
+        const r=await window.gnOperativaGeocercaVerificar(pedidoId,ubicacion.lat,ubicacion.lng);
+        if (r?.permitido === false) {
+            const d=r.distancia_metros != null ? Math.round(r.distancia_metros) : '?';
+            const max=r.max_metros != null ? r.max_metros : 100;
+            return {ok:false,message:`Estás a ~${d} m del reclamo (máximo ${max} m). Acercate al lugar para iniciar.`};
         }
-        return { ok: true };
+        if (!r || r.permitido !== true) return {ok:false,message:'La verificación de geocerca no pudo confirmarse.'};
+        return {ok:true};
     } catch (e) {
-        return {
-            ok: false,
-            message: (e && e.message) || 'No se pudo verificar la geocerca. Revisá GPS y permisos.',
-        };
+        // Solo un fallo de transporte activa la alternativa offline. Una respuesta
+        // HTTP 401/403/409/429 o un rechazo de geocerca nunca se esquivan.
+        const sinConexion=e instanceof TypeError;
+        return {ok:false,sinConexion,message:sinConexion?'No hay conexión con el servidor.':(e?.message || 'No se pudo verificar la geocerca.')};
     }
 }
 

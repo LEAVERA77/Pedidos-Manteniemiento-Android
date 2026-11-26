@@ -361,6 +361,7 @@ import {
     initPedidoFotosCampoAndroid,
     solicitarFotosCampoOpcional,
     tomarFotosAvanceTemp,
+    mirarFotosAvanceTemp,
     resetFotosAvanceSesion,
 } from './modules/pedido-fotos-campo-android.js';
 import {
@@ -370,6 +371,8 @@ import {
     materialesDetalleFinCarga,
 } from './modules/pedido-materiales-detalle-guard.js';
 import { pollBannerOpinionClienteMejorado, setOpinionBannerWatermarkIso } from './modules/admin-opinion-banner-realtime.js';
+import { actualizarConfigCampo, pedirGpsCampo, diarioParaPedido, agregarTrabajoCampo, mezclarTrabajosCampo, sincronizarTrabajosCampo } from './modules/offline-trabajo-campo-runtime.js';
+import { leerColaCampo } from './modules/offline-trabajo-campo-cola.js';
 import { registrarFcmTokenSiDisponible } from './modules/fcm-token-registro.js';
 import { initGnFeaturesAdminMounts, refrescarRankingSlaEstadisticas } from './modules/gn-features-bootstrap.js';
 import {
@@ -575,8 +578,9 @@ async function sincronizarOffline() {
     sincronizacionOfflineEnCurso = true;
     try {
     let q = offlineQueue();
-    if (q.length === 0) { toast('No hay pedidos offline pendientes', 'info'); return; }
-    if (!NEON_OK || !_sql) {
+    const hayCampo=esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin() && leerColaCampo().length > 0;
+    if (!q.length && !hayCampo) { toast('No hay pedidos offline pendientes', 'info'); return; }
+    if (!NEON_OK || !_sql || modoOffline) {
         
         toast('Intentando conectar...', 'info');
         const ok = await initNeon();
@@ -585,6 +589,8 @@ async function sincronizarOffline() {
         setModoOffline(false);
     }
 
+    await syncTrabajoCampo();
+    if (!q.length) return;
     q = await prepareOfflineQueueInWorker(q);
 
     toast('Sincronizando ' + q.length + ' pedido(s)...', 'info');
@@ -2418,6 +2424,63 @@ function nuevoIdMantenimientoInterno() {
     const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
     return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
 }
+// Diario experimental de campo: nunca usa la cola SQL heredada para pedidos Android.
+function contextoTrabajoCampo() {
+    const usuario_id=Number(app.u?.id), tenant_id=Number(app.u?.tenant_id ?? app.u?.tenantId);
+    const business_type=rubroMantenimientoInterno();
+    if (!Number.isSafeInteger(usuario_id) || usuario_id<1 || !Number.isSafeInteger(tenant_id) || tenant_id<1 ||
+        !['electricidad','agua','municipio'].includes(business_type)) throw new Error('Falta identificar usuario, organización o rubro.');
+    return {usuario_id,tenant_id,business_type};
+}
+function usarDiarioCampo(p) {
+    if (!esAndroidWebViewMapa() || !esTecnicoOSupervisor() || esAdmin()) return false;
+    if (modoOffline || !NEON_OK || navigator.onLine === false) return true;
+    if (!leerColaCampo().length) return false;
+    return !!diarioParaPedido(contextoTrabajoCampo(),p?.id);
+}
+function mostrarTrabajoCampo(p) {
+    const idx=app.p.findIndex(x=>String(x.id)===String(p.id));
+    if (idx>=0) app.p[idx]=p; else app.p.unshift(p);
+    render();
+}
+async function prepararTrabajoCampo() {
+    if (!esAndroidWebViewMapa() || !esTecnicoOSupervisor() || esAdmin() || modoOffline || !NEON_OK || !getApiToken()) return;
+    try { await actualizarConfigCampo(contextoTrabajoCampo(),{apiUrl,token:getApiToken()}); }
+    catch(e) { console.warn('[campo-offline] configuración no disponible',e?.message); }
+}
+let _gnSyncCampoActivo=false;
+let _gnAvisoCampoSinSesion=0;
+async function syncTrabajoCampo() {
+    if (_gnSyncCampoActivo || !app.u || !esAndroidWebViewMapa() || !esTecnicoOSupervisor() || esAdmin() || modoOffline || !NEON_OK) return;
+    _gnSyncCampoActivo=true;
+    try {
+        const context=contextoTrabajoCampo();
+        const pendientes=leerColaCampo().filter(x=>x.usuario_id===context.usuario_id && x.tenant_id===context.tenant_id && x.business_type===context.business_type);
+        if (!pendientes.length) return;
+        if (!getApiToken()) {
+            if (Date.now()-_gnAvisoCampoSinSesion>60000) {
+                _gnAvisoCampoSinSesion=Date.now();
+                toast('Trabajos pendientes: iniciá sesión con conexión para sincronizarlos.', 'warning');
+            }
+            return;
+        }
+        const r=await sincronizarTrabajosCampo(context,{apiUrl,token:getApiToken()});
+        if (r.confirmados) toast(`${r.confirmados} trabajo(s) de campo sincronizado(s)`, 'success');
+        if (r.errores.length) toast(`Trabajo pendiente #${r.errores[0].pedido_id}: ${r.errores[0].error}`, 'warning');
+        await cargarPedidos({silent:true, omitirSyncCampo:true});
+    } catch(e) { toast(`Trabajo de campo pendiente: ${e.message}`, 'warning'); }
+    finally { _gnSyncCampoActivo=false; }
+}
+function pintarMaterialesLocales(p,body,esCierre) {
+    const pid=Number(p.id), d=diarioParaPedido(contextoTrabajoCampo(),pid);
+    const materiales=(d?.eventos || []).filter(x=>x.tipo==='material');
+    const items=materiales.map(m=>`<li>${escHtmlPrint(m.descripcion)} · ${escHtmlPrint(String(m.cantidad))} ${escHtmlPrint(m.unidad || '')}</li>`).join('');
+    const prefix=esCierre?'cierre-mat':'mat';
+    const fn=esCierre?'agregarMaterialPedidoDesdeCierreModal':'agregarMaterialPedidoDesdeDetalle';
+    const agregar=puedeEditarMaterialesEnPedido(p) && !d?.congelado && !tipoPedidoExcluyeMateriales(p.tt);
+    body.innerHTML=`<p style="font-size:.8rem">Materiales nuevos pendientes de sincronización. Los anteriores requieren conexión.</p><ul>${items}</ul>`+
+      (agregar?`<div style="display:flex;flex-wrap:wrap;gap:.4rem"><input type="text" id="${prefix}-desc-${pid}" placeholder="Descripción"><select id="${prefix}-un-${pid}">${htmlOptsUnidadMaterial('PZA')}</select><input type="number" id="${prefix}-cant-${pid}" placeholder="Cant." step="any"><button type="button" class="btn-sm primary" onclick="${fn}(${pid})">+ Agregar</button></div>`:'');
+}
 async function enviarMantenimientoInterno(payload) {
     if (!['electricidad','agua','municipio'].includes(payload?.business_type)) throw new Error('No se pudo identificar el rubro. Actualizá la sesión antes de guardar.');
     if (!puedeEnviarApiRestPedidos()) throw new Error('Iniciá sesión online para sincronizar el mantenimiento.');
@@ -3554,11 +3617,9 @@ const gnLoginSubmitHandler = async (e, biometricCredentials = null) => {
                 await cargarPedidos();
                 if (esAdmin()) iniciarPollBannerReclamoCliente();
                 
-                offlinePedidosSave(app.p);
+                // cargarPedidos ya guarda la copia del servidor antes de aplicar diarios locales.
             } else {
-                
-                app.p = offlinePedidos();
-                render();
+                await cargarPedidos();
                 toast('📴 Modo offline — mostrando pedidos en caché', 'info');
             }
             await consumirPedidoPendienteDesdeNotif();
@@ -6975,6 +7036,9 @@ async function cargarPedidos(opts) {
     if (modoOffline) {
         
         app.p = offlinePedidos();
+        if (esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin()) {
+            try { app.p=mezclarTrabajosCampo(app.p,contextoTrabajoCampo()); } catch(e) { toast(e.message,'warning'); }
+        }
         render();
         return;
     }
@@ -7025,10 +7089,18 @@ async function cargarPedidos(opts) {
         }
         
         offlinePedidosSave(app.p);
+        if (esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin()) {
+            try { app.p=mezclarTrabajosCampo(app.p,contextoTrabajoCampo()); } catch(e) { toast(e.message,'warning'); }
+            void prepararTrabajoCampo();
+            if (!opts?.omitirSyncCampo) void syncTrabajoCampo();
+        }
     } catch(e) {
         console.warn('cargarPedidos: error, usando cache', e.message);
         setModoOffline(true);
         app.p = offlinePedidos();
+        if (esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin()) {
+            try { app.p=mezclarTrabajosCampo(app.p,contextoTrabajoCampo()); } catch(err) { toast(err.message,'warning'); }
+        }
         toast('Sin conexión — mostrando pedidos en caché', 'info');
     }
     render();
@@ -7803,17 +7875,7 @@ window._moverUbicMapa = function (pedidoId) {
 };
 
 window._a = (a, id) => {
-    if (a === 'i') {
-        void (async () => {
-            const geo = await verificarGeocercaAntesIniciarPedido(id);
-            if (!geo.ok) {
-                toast(geo.message || 'Geocerca: no podés iniciar lejos del reclamo', 'warning');
-                return;
-            }
-            await iniciar(id);
-        })();
-        return;
-    }
+    if (a === 'i') { void iniciar(id); return; }
     const dm = document.getElementById('dm');
     if (dm?.classList.contains('active')) {
         cerrarModalesMoSalvo(['dm']);
@@ -9134,6 +9196,15 @@ function abrirAvance(id) {
 initPedidoAvanceModalUI({
     findPedido: (id) => app.p.find((p) => String(p.id) === String(id)),
     onGuardar: async (id, avance) => {
+        const pedido=app.p.find(p=>String(p.id)===String(id));
+        if (usarDiarioCampo(pedido)) {
+            try {
+                const local=agregarTrabajoCampo(contextoTrabajoCampo(),pedido,{tipo:'avance',fecha:new Date().toISOString(),avance,fotos:mirarFotosAvanceTemp()});
+                mostrarTrabajoCampo(local);tomarFotosAvanceTemp();
+                toast('Avance guardado en el teléfono; pendiente de sincronización.', 'warning');
+                return true;
+            } catch(e) { toast(e.message,'error'); return false; }
+        }
         await actualizarAvance(id, avance);
         const fotosAv = tomarFotosAvanceTemp();
         if (fotosAv.length) await mergeFotosBase64EnPedido(id, fotosAv);
@@ -9750,9 +9821,22 @@ async function iniciar(id) {
             toast(gate.message || 'No podés ejecutar este pedido.', 'warning');
             return;
         }
-        const geo = await verificarGeocercaAntesIniciarPedido(id);
-        if (!geo.ok) {
-            toast(geo.message || 'Geocerca: acercate al reclamo para iniciar', 'warning');
+        let localCampo=usarDiarioCampo(prevGate);
+        if (!localCampo) {
+            const geo = await verificarGeocercaAntesIniciarPedido(id);
+            if (!geo.ok) {
+                if (geo.sinConexion && esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin()) {
+                    setModoOffline(true); localCampo=true;
+                } else { toast(geo.message || 'Geocerca: acercate al reclamo para iniciar', 'warning'); return; }
+            }
+        }
+        if (localCampo) {
+            const fotos=await solicitarFotosCampoOpcional(id, 'Al poner en ejecución');
+            const gps=await pedirGpsCampo();
+            const local=agregarTrabajoCampo(contextoTrabajoCampo(),prevGate,{tipo:'inicio',fecha:new Date().toISOString(),gps,fotos});
+            mostrarTrabajoCampo(local);
+            toast('Inicio guardado en el teléfono; pendiente de sincronización.', 'warning');
+            _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(id);
             return;
         }
         const fotosCampo = await solicitarFotosCampoOpcional(id, 'Al poner en ejecución');
@@ -9776,6 +9860,9 @@ async function iniciar(id) {
             );
             _gnCerrarDetalleORefrescarTrasPonerEnEjecucion(id);
             return;
+        }
+        if (esAndroidWebViewMapa() && esTecnicoOSupervisor() && !esAdmin()) {
+            throw new Error('No se pudo confirmar el inicio en el servidor. Actualizá el pedido antes de reintentar.');
         }
         const camposIni = { estado: 'En ejecución', fecha_avance: now };
         if (!prevIni || (parseInt(prevIni.av, 10) || 0) === 0) camposIni.avance = 0;
@@ -9975,9 +10062,10 @@ async function refrescarMaterialesEnDetalle(p) {
     if (materialesDetalleDebeOmitirRecarga(p, body)) return;
     if (!materialesDetalleIniciarCarga(pid)) return;
     
+    if (usarDiarioCampo(p)) { try { pintarMaterialesLocales(p,body,false); } catch(e) { body.textContent=e.message; } materialesDetalleFinCarga(pid); return; }
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
-        return;
+        materialesDetalleFinCarga(pid);return;
     }
     const excluyeMat = tipoPedidoExcluyeMateriales(p.tt);
     if (excluyeMat) {
@@ -10084,6 +10172,7 @@ async function refrescarMaterialesEnModalCierre(p) {
         return;
     }
     const pid = parseInt(p.id, 10);
+    if (usarDiarioCampo(p)) { try { pintarMaterialesLocales(p,body,true); } catch(e) { body.textContent=e.message; } return; }
     if (String(p.id).startsWith('off_') || modoOffline || !NEON_OK) {
         body.innerHTML = '<p style="font-size:.8rem;color:var(--tl)">Materiales: requiere conexión a Neon.</p>';
         return;
@@ -10198,6 +10287,11 @@ window.agregarMaterialPedidoDesdeDetalle = async function (pid) {
         return;
     }
     try {
+        if (usarDiarioCampo(p0)) {
+            const local=agregarTrabajoCampo(contextoTrabajoCampo(),p0,{tipo:'material',fecha:new Date().toISOString(),descripcion:d,cantidad:cant,unidad:un});
+            mostrarTrabajoCampo(local);toast('Material guardado en el teléfono; pendiente de sincronización.','warning');
+            await sincronizarVistaMaterialesPedido(local);return;
+        }
         await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
         toast('Material registrado', 'success');
         const p = app.p.find(x => String(x.id) === String(pid));
@@ -10225,6 +10319,11 @@ window.agregarMaterialPedidoDesdeCierreModal = async function (pid) {
         return;
     }
     try {
+        if (usarDiarioCampo(p0)) {
+            const local=agregarTrabajoCampo(contextoTrabajoCampo(),p0,{tipo:'material',fecha:new Date().toISOString(),descripcion:d,cantidad:cant,unidad:un});
+            mostrarTrabajoCampo(local);toast('Material guardado en el teléfono; pendiente de sincronización.','warning');
+            await sincronizarVistaMaterialesPedido(local);return;
+        }
         await sqlSimple(`INSERT INTO pedido_materiales(pedido_id, descripcion, cantidad, unidad) VALUES (${esc(pid)}, ${esc(d)}, ${esc(cant)}, ${esc(un || null)})`);
         toast('Material registrado', 'success');
         const p = app.p.find(x => String(x.id) === String(pid));
@@ -10887,6 +10986,11 @@ document.getElementById('cc2').addEventListener('click', async () => {
             checklist_seguridad: checklistJson
         };
         if (telCierre) camposCierre.telefono_contacto = telCierre;
+        if (usarDiarioCampo(pCierre)) {
+            const local=agregarTrabajoCampo(contextoTrabajoCampo(),pCierre,{tipo:'cierre',fecha:camposCierre.fecha_cierre,campos:camposCierre});
+            mostrarTrabajoCampo(local);fotoCierreTemp=null;closeAll();
+            toast('Cierre guardado en el teléfono; pendiente de sincronización.','warning');return;
+        }
         await updPedido(app.cid, camposCierre, app.u?.id);
         if (puedeEnviarApiRestPedidos() && !String(app.cid).startsWith('off_')) {
             const pidNum = parseInt(app.cid, 10);
@@ -11862,7 +11966,7 @@ function render() {
         
         d.innerHTML = `
             <div class="ph2">
-                <span class="pn">#${p.np}${p._offline ? '<span class="offline-tag">LOCAL</span>' : ''}</span>
+                <span class="pn">#${p.np}${p._campoPendiente ? '<span class="offline-tag">PENDIENTE DE SINCRONIZAR</span>' : p._offline ? '<span class="offline-tag">LOCAL</span>' : ''}</span>
                 <span class="ph2-actions">
                     ${esAdmin() && p.es === 'Pendiente' ? `<button type="button" class="gn-pi-desest" data-gn-desestimar-pid="${String(p.id).replace(/"/g, '')}" title="Desestimar reclamo" aria-label="Desestimar">🚫</button>` : ''}
                     <span class="pe ${eC[p.es] || ''}">${p.es}</span>

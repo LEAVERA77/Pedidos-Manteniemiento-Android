@@ -1622,6 +1622,71 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
+        /** GPS de campo: solo proveedor GPS con precisión y antigüedad comprobadas. */
+        @JavascriptInterface
+        public void getFreshGpsForOfflineWork(String jsCallback) {
+            final String cb = jsCallback != null ? jsCallback.trim() : "";
+            if (!cb.matches("^[a-zA-Z0-9_.]+$")) return;
+            runOnUiThread(() -> {
+                if (webView == null) return;
+                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"sin_permiso_ubicacion\"})", null);
+                    return;
+                }
+                final LocationManager manager = (LocationManager) getSystemService(LOCATION_SERVICE);
+                if (manager == null || !manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"gps_desactivado\"})", null);
+                    return;
+                }
+                final Handler handler = new Handler(Looper.getMainLooper());
+                final boolean[] finished = {false};
+                final Runnable[] timeout = new Runnable[1];
+                final android.location.LocationListener listener = new android.location.LocationListener() {
+                    @Override public void onLocationChanged(Location loc) {
+                        if (finished[0] || loc == null || !loc.hasAccuracy() || loc.getAccuracy() > 100f) return;
+                        long elapsed = android.os.SystemClock.elapsedRealtimeNanos() - loc.getElapsedRealtimeNanos();
+                        long ageMs = elapsed / 1000000L;
+                        if (elapsed < 0 || ageMs > 60000L) return;
+                        finished[0] = true;
+                        if (timeout[0] != null) handler.removeCallbacks(timeout[0]);
+                        try { manager.removeUpdates(this); } catch (SecurityException ignored) { }
+                        try {
+                            JSONObject o = new JSONObject();
+                            o.put("ok", true);
+                            o.put("lat", loc.getLatitude());
+                            o.put("lng", loc.getLongitude());
+                            o.put("accuracy", loc.getAccuracy());
+                            o.put("timestamp", System.currentTimeMillis() - ageMs);
+                            o.put("fuente", "gps");
+                            if (webView != null) webView.evaluateJavascript(cb + "(" + o.toString() + ")", null);
+                        } catch (Exception ignored) { }
+                    }
+                    @Override public void onProviderEnabled(String provider) { }
+                    @Override public void onProviderDisabled(String provider) { }
+                    @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+                };
+                timeout[0] = () -> {
+                    if (finished[0]) return;
+                    finished[0] = true;
+                    try { manager.removeUpdates(listener); } catch (SecurityException ignored) { }
+                    if (webView != null) webView.evaluateJavascript(cb + "({\"ok\":false,\"error\":\"sin_gps_reciente\"})", null);
+                };
+                try {
+                    Location last = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                    if (last != null) listener.onLocationChanged(last);
+                    if (!finished[0]) {
+                        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, listener, Looper.getMainLooper());
+                        handler.postDelayed(timeout[0], 25000L);
+                    }
+                } catch (SecurityException e) {
+                    timeout[0].run();
+                } catch (IllegalArgumentException e) {
+                    timeout[0].run();
+                }
+            });
+        }
+
         /** Abre la carpeta Descargas/GestorNova en el gestor de archivos del sistema (API 24+). */
         @JavascriptInterface
         public void openExportsFolder() {

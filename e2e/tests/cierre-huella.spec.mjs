@@ -129,24 +129,27 @@ test('si el estado cambió en servidor no informa cierre exitoso', async({page})
   expect(await page.evaluate(()=>window.app.p[0]?.es)).toBe('En ejecución');
 });
 
-test('sin conexión conserva cierre condicionado pendiente si servidor ya no está en ejecución', async({page})=>{
-  const updates=await iniciar(page,{sqlActualiza:false});
-  await page.evaluate(()=>void window.__gnLoginConHuella('tecnico@test.local','contraseña-prueba'));
-  await expect(page.locator('#ms')).toHaveClass(/active/,{timeout:10000});
-  await page.waitForTimeout(1500);
+test('sin conexión conserva el cierre en diario y no lo pierde si hay conflicto', async({page})=>{
+  await iniciar(page,{sqlActualiza:false});
   await page.evaluate(()=>{
+    window.app.u={id:7,rol:'tecnico',nombre:'T',tenant_id:1};
+    localStorage.setItem('pmg',JSON.stringify(window.app.u));
+    localStorage.setItem('pmg_rubro_interno_u7_t1','electricidad');
     window.dispatchEvent(new Event('offline'));
-    window.app.p=[{id:42,np:'42',es:'En ejecución',tai:7,tt:'Servicio',de:'Prueba'}];window._a('c',42);
+    window.app.p=[{id:42,np:'42',es:'En ejecución',av:20,tai:7,tt:'Servicio',de:'Prueba',la:-31,ln:-60,fasi:null,fa:null,cl:'',fotos:[]}];window._a('c',42);
   });
   await page.locator('#tr').fill('Trabajo offline');
   await page.locator('#cc2').click();
-  await expect.poll(async()=>JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_offline_queue')||'[]')).length).toBe(1);
-  let queue=JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_offline_queue')));
-  expect(queue[0].requiereFila).toBe(true);
-  expect(queue[0].query).toContain("AND estado = 'En ejecución' RETURNING id");
-  await page.evaluate(()=>window.sincronizarOffline());
-  await expect.poll(()=>updates.length,{timeout:10000}).toBeGreaterThan(0);
-  await expect.poll(async()=>JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_offline_queue')||'[]')).length,{timeout:10000}).toBe(1);
+  await expect.poll(async()=>JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_trabajo_campo_queue_v1')||'[]')).length).toBe(1);
+  const result=await page.evaluate(async()=>{
+    const m=await import('./modules/offline-trabajo-campo-runtime.js');
+    return m.sincronizarTrabajosCampo({usuario_id:7,tenant_id:1,business_type:'electricidad'},
+      {apiUrl:p=>p,token:'test',fetchFn:async()=>new Response(JSON.stringify({error:'Pedido cambiado'}),{status:409})});
+  });
+  expect(result.errores).toHaveLength(1);
+  const queue=await page.evaluate(()=>JSON.parse(localStorage.getItem('pmg_trabajo_campo_queue_v1')));
+  expect(queue[0].eventos[0].tipo).toBe('cierre');expect(queue[0].congelado).toBe(true);
+  expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('pmg_offline_queue')||'[]')).filter(x=>x.tipo==='UPDATE')).toHaveLength(0);
 });
 
 test('cierre masivo Android excluye asignados y pedidos de otro técnico',async({page})=>{
