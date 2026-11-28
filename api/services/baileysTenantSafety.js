@@ -31,20 +31,21 @@ export function createBaileysTenantSafety({keyBase64=process.env.BAILEYS_GUARD_H
   validTenant(tenantId);if(!['unresolved_stop','stop_unverified'].includes(reason))throw Error('Motivo de pausa inválido');
   return transaction(async db=>{
    await lock(db,tenantId);
-   await db.query(`INSERT INTO baileys_tenant_safety(tenant_id,paused,reason) VALUES($1,TRUE,$2)
-    ON CONFLICT(tenant_id) DO UPDATE SET paused=TRUE,reason=EXCLUDED.reason,updated_at=clock_timestamp()`,[tenantId,reason]);
+   await db.query(`INSERT INTO baileys_tenant_safety(tenant_id,paused,reason,revision) VALUES($1,TRUE,$2,1)
+    ON CONFLICT(tenant_id) DO UPDATE SET paused=TRUE,reason=EXCLUDED.reason,
+     revision=baileys_tenant_safety.revision+1,updated_at=clock_timestamp()`,[tenantId,reason]);
   });
  }
  // El controlador debe revalidar rol y tenant DENTRO de la misma transacción.
- async function resumeTenant({tenantId,actorUserId,expectedReason,transaction:runTransaction=transaction}){
+ async function resumeTenant({tenantId,actorUserId,expectedReason,expectedRevision,transaction:runTransaction=transaction}){
   validTenant(tenantId);
-  if(!Number.isSafeInteger(actorUserId)||actorUserId<1||!['unresolved_stop','stop_unverified'].includes(expectedReason))
+  if(!Number.isSafeInteger(actorUserId)||actorUserId<1||!['unresolved_stop','stop_unverified'].includes(expectedReason)||typeof expectedRevision!=='string'||! /^(0|[1-9]\d{0,18})$/.test(expectedRevision))
    throw Error('Confirmación de revisión inválida');
   return runTransaction(async db=>{
    await lock(db,tenantId);
-   const row=(await db.query('SELECT paused,reason FROM baileys_tenant_safety WHERE tenant_id=$1 FOR UPDATE',[tenantId])).rows[0];
+   const row=(await db.query('SELECT paused,reason,revision::text AS revision FROM baileys_tenant_safety WHERE tenant_id=$1 FOR UPDATE',[tenantId])).rows[0];
    if(!row?.paused)throw Object.assign(Error('No hay pausa de seguridad'),{code:'SAFETY_NOT_PAUSED'});
-   if(row.reason!==expectedReason)throw Object.assign(Error('La causa de la pausa cambió'),{code:'SAFETY_REASON_CHANGED'});
+   if(row.reason!==expectedReason || row.revision!==expectedRevision)throw Object.assign(Error('La causa de la pausa cambió'),{code:'SAFETY_REASON_CHANGED'});
    await db.query('UPDATE baileys_tenant_safety SET paused=FALSE,reason=NULL,updated_at=clock_timestamp() WHERE tenant_id=$1',[tenantId]);
    await db.query("INSERT INTO baileys_tenant_safety_audit(tenant_id,usuario_id,action,previous_reason) VALUES($1,$2,'resume',$3)",[tenantId,actorUserId,expectedReason]);
    return {paused:false};
@@ -65,8 +66,8 @@ export function createBaileysTenantSafety({keyBase64=process.env.BAILEYS_GUARD_H
  }
  async function status(tenantId,{query:runQuery=query}={}){
   validTenant(tenantId);
-  const r=await runQuery('SELECT paused,reason,updated_at FROM baileys_tenant_safety WHERE tenant_id=$1',[tenantId]);
-  return r.rows[0]||{paused:false,reason:null,updated_at:null};
+  const r=await runQuery('SELECT paused,reason,revision::text AS revision,updated_at FROM baileys_tenant_safety WHERE tenant_id=$1',[tenantId]);
+  return r.rows[0]||{paused:false,reason:null,revision:null,updated_at:null};
  }
  return {recordStop,pauseTenant,resumeTenant,checkForSend,status};
 }

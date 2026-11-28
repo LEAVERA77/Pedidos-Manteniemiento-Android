@@ -58,6 +58,18 @@ describe.skipIf(!dsn)('política Baileys: cuotas y warm-up en transacción',()=>
   expect((await warmup.changeWarmupState(1,'status')).daily_sent).toBe(0);
  });
 
+ it('la separación durable y warm-up se confirman juntas o se revierten',async()=>{
+  const {createBaileysGuardPostgres}=await import('../services/baileysGuardPostgres.js');
+  const {createBaileysPolicy}=await import('../services/baileysPolicy.js');
+  const spaced=createBaileysGuardPostgres({keyBase64:Buffer.alloc(32,7).toString('base64'),enforceSpacing:true,nextGapMs:()=>5500});
+  const combined=createBaileysPolicy({guard:spaced,safety,resolveTrusted:async()=>trusted});
+  trusted=false;expect((await combined.checkAndReserve({tenantId:1,jid})).error).toBe('trusted_contacts_only');
+  expect((await db.query('SELECT next_attempt_at FROM baileys_guard_limits WHERE tenant_id=1')).rows[0].next_attempt_at).toBeNull();
+  expect((await db.query('SELECT count(*)::int n FROM baileys_guard_attempts')).rows[0].n).toBe(0);
+  trusted=true;expect((await combined.checkAndReserve({tenantId:1,jid})).allowed).toBe(true);
+  expect((await combined.checkAndReserve({tenantId:1,jid})).error).toBe('spacing_wait');
+  expect((await warmup.changeWarmupState(1,'status')).daily_sent).toBe(1);
+ });
  it('una baja evita la reserva sin consumir cuota de minuto ni warm-up',async()=>{
   await safety.recordStop({tenantId:1,jid});
   expect((await policy.checkAndReserve({tenantId:1,jid})).error).toBe('contact_opted_out');

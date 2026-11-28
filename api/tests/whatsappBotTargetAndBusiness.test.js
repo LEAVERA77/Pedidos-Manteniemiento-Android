@@ -647,3 +647,26 @@ describe("WhatsApp bot — selector de tenant_id en Baileys QR y persistencia re
     expect(scParams).toContain("electricidad");
   });
 });
+
+
+describe("consola Baileys global durante corte multitenant", () => {
+  it("bloquea lectura, selección y reset antes de ejecutar efectos", async () => {
+    const before = process.env.BAILEYS_MULTITENANT_ENABLED;
+    process.env.BAILEYS_MULTITENANT_ENABLED = "true";
+    mockStartBaileys.mockClear(); mockResetBaileys.mockClear(); mockQuery.mockClear();
+    try {
+      const app = createTestWebhookApp();
+      for (const [method, path] of [["get","status"],["get","qr"],["post","select-tenant"],["post","reset-session"]]) {
+        const r = await request(app)[method](`/api/webhooks/whatsapp/baileys/${path}`).send({});
+        expect(r.status).toBe(503);
+        expect(r.body.error).toBe("baileys_legacy_disabled_in_multitenant_mode");
+        expect(r.headers["cache-control"]).toBe("no-store");
+      }
+      expect(mockStartBaileys).not.toHaveBeenCalled();
+      expect(mockResetBaileys).not.toHaveBeenCalled();
+    } finally {
+      if (before === undefined) delete process.env.BAILEYS_MULTITENANT_ENABLED;
+      else process.env.BAILEYS_MULTITENANT_ENABLED = before;
+    }
+  });
+});

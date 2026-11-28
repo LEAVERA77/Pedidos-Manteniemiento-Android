@@ -1,6 +1,7 @@
 import { downloadWhatsAppMediaById } from "./metaWhatsapp.js";
 import { downloadWhapiMediaBuffer } from "./whapiWhatsapp.js";
 import { consumeBaileysMediaBuffer } from "./baileysMediaStore.js";
+import { currentBaileysTenantContext } from "./baileysTenantContext.js";
 import {
   destroyCloudinaryImageBySecureUrl,
   uploadPedidoImageBufferWithFallback,
@@ -34,6 +35,11 @@ export async function whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, 
   }
 
   const prov = whatsappProviderEnv();
+  const tenantContext=currentBaileysTenantContext();
+  // La entrada interna tenant nunca puede bajar URLs externas, reutilizar
+  // imágenes legacy ni escoger otra entidad para consumir un medio.
+  if (tenantContext && (directUrl || !mid.startsWith("baileys-media:v2:") || opts.tenantId!==tenantContext.tenantId))
+    throw new Error("baileys_tenant_media_context_mismatch");
   if (mid.startsWith("baileys-media:v2:") && directUrl) throw new Error("baileys_media_direct_url_not_allowed");
   let buffer;
 

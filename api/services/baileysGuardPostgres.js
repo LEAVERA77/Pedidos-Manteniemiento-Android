@@ -1,11 +1,12 @@
 /** Estado durable de la ventana de respuesta y cuotas, aún sin integrar al flujo. */
-import {createHmac} from 'node:crypto';
+import {createHmac,randomInt} from 'node:crypto';
 import {rawQuery,withTransaction} from '../db/neon.js';
 function validTenant(t){if(!Number.isSafeInteger(t)||t<1||t>2147483647)throw Error('Tenant inválido');}
 function validJid(j){if(typeof j!=='string'||!/^\d{8,22}@(s\.whatsapp\.net|lid)$/.test(j))throw Error('JID privado inválido');}
-export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_HASH_KEY,query=rawQuery,transaction=withTransaction,perMinute=12,perHour=120}={}){
+export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_HASH_KEY,query=rawQuery,transaction=withTransaction,perMinute=12,perHour=120,enforceSpacing=false,nextGapMs=()=>randomInt(2500,5501)}={}){
  if(typeof keyBase64!=='string'||!/^[A-Za-z0-9+/]{43}=$/.test(keyBase64)||Buffer.from(keyBase64,'base64').toString('base64')!==keyBase64)throw Error('BAILEYS_GUARD_HASH_KEY debe ser base64 de 32 bytes');
  if(!Number.isSafeInteger(perMinute)||perMinute<1||perMinute>12||!Number.isSafeInteger(perHour)||perHour<1||perHour>720)throw Error('Cuotas Baileys inválidas');
+ if(typeof enforceSpacing!=='boolean'||typeof nextGapMs!=='function')throw Error('Espaciado Baileys inválido');
  const key=Buffer.from(keyBase64,'base64');
  const mac=(purpose,tenant,val)=>createHmac('sha256',key).update(JSON.stringify([purpose,tenant,val])).digest();
  const contact=(t,j)=>{validTenant(t);validJid(j);return mac('contact',t,j)};
@@ -53,6 +54,16 @@ export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_
   return runTransaction(async db=>{
    await db.query('INSERT INTO baileys_guard_limits(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
    await db.query('SELECT tenant_id FROM baileys_guard_limits WHERE tenant_id=$1 FOR UPDATE',[tenantId]);
+   // Reserva durable de la separación entre intentos: coordinada por el mismo
+   // candado de cuotas, también después de un reinicio de proceso.
+   if(enforceSpacing){
+    const remaining=await db.query(`SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM
+     (next_attempt_at-clock_timestamp()))*1000))::bigint::text AS ms
+     FROM baileys_guard_limits WHERE tenant_id=$1`,[tenantId]);
+    const ms=Number(remaining.rows[0]?.ms||0);
+    if(!Number.isSafeInteger(ms)||ms<0)throw Error('Espaciado no verificable');
+    if(ms>0)return {allowed:false,error:'spacing_wait',retry_after_ms:ms};
+   }
    const check=await db.query(`SELECT 1 FROM baileys_guard_contacts WHERE tenant_id=$1 AND contact_hmac=$2
     AND last_message_at>=clock_timestamp()-INTERVAL '24 hours' AND (muted_until IS NULL OR muted_until<=clock_timestamp()) FOR SHARE`,[tenantId,c]);
    if(!check.rows.length)return {allowed:false,error:'outside_reply_window_or_muted'};
@@ -60,8 +71,37 @@ export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_
     count(*)::int AS hour FROM baileys_guard_attempts WHERE tenant_id=$1 AND attempted_at>=clock_timestamp()-INTERVAL '1 hour'`,[tenantId]);
    if(r.rows[0].minute>=perMinute||r.rows[0].hour>=perHour)return {allowed:false,error:'rate_limit'};
    await db.query('INSERT INTO baileys_guard_attempts(tenant_id,attempted_at) VALUES($1,clock_timestamp())',[tenantId]);
+   if(enforceSpacing){
+    const gap=nextGapMs();
+    if(!Number.isSafeInteger(gap)||gap<2500||gap>5500)throw Error('Jitter Baileys inválido');
+    await db.query(`UPDATE baileys_guard_limits SET next_attempt_at=clock_timestamp()+$2*INTERVAL '1 millisecond'
+     WHERE tenant_id=$1`,[tenantId,gap]);
+   }
    return {allowed:true};
   });
  }
- return {recordInbound,isReplyWindowOpen,checkAndReserve};
+ /** Retención acotada por entidad. Nunca borra bajas, pausas, confianza ni cuotas actuales. */
+ async function cleanupTenant({tenantId,batchSize=500}={}){
+  validTenant(tenantId);
+  if(!Number.isSafeInteger(batchSize)||batchSize<1||batchSize>1000)throw Error('Lote inválido');
+  return transaction(async db=>{
+   await db.query('INSERT INTO baileys_guard_limits(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
+   await db.query('SELECT tenant_id FROM baileys_guard_limits WHERE tenant_id=$1 FOR UPDATE',[tenantId]);
+   const contacts=await db.query(`DELETE FROM baileys_guard_contacts WHERE ctid IN (
+    SELECT ctid FROM baileys_guard_contacts WHERE tenant_id=$1
+     AND last_message_at < clock_timestamp()-INTERVAL '25 hours'
+     AND (muted_until IS NULL OR muted_until < clock_timestamp())
+     ORDER BY last_message_at LIMIT $2 FOR UPDATE SKIP LOCKED)`,[tenantId,batchSize]);
+   const messages=await db.query(`DELETE FROM baileys_guard_inbound_ids WHERE ctid IN (
+    SELECT ctid FROM baileys_guard_inbound_ids WHERE tenant_id=$1
+     AND created_at < clock_timestamp()-INTERVAL '2 days'
+     ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)`,[tenantId,batchSize]);
+   const attempts=await db.query(`DELETE FROM baileys_guard_attempts WHERE ctid IN (
+    SELECT ctid FROM baileys_guard_attempts WHERE tenant_id=$1
+     AND attempted_at < clock_timestamp()-INTERVAL '2 hours'
+     ORDER BY attempted_at LIMIT $2 FOR UPDATE SKIP LOCKED)`,[tenantId,batchSize]);
+   return {contacts:contacts.rowCount,messages:messages.rowCount,attempts:attempts.rowCount};
+  });
+ }
+ return {recordInbound,isReplyWindowOpen,checkAndReserve,cleanupTenant};
 }

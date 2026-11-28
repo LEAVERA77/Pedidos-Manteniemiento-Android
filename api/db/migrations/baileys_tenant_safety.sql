@@ -3,10 +3,13 @@
 CREATE TABLE IF NOT EXISTS baileys_tenant_safety (
  tenant_id INTEGER PRIMARY KEY REFERENCES clientes(id) ON DELETE RESTRICT,
  paused BOOLEAN NOT NULL DEFAULT FALSE,
+ revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
  reason TEXT CHECK (reason IS NULL OR reason IN ('unresolved_stop','stop_unverified')),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
  CHECK (paused OR reason IS NULL)
 );
+-- En una instalación experimental anterior, agregar la generación sin perder pausas.
+ALTER TABLE baileys_tenant_safety ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0;
 -- HMAC de teléfono normalizado, no almacena texto del mensaje ni teléfono claro.
 CREATE TABLE IF NOT EXISTS baileys_tenant_optout (
  tenant_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE RESTRICT,

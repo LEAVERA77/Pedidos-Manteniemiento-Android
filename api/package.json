@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "node --watch server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "emulator": "node run-emulator.js",
@@ -53,11 +53,11 @@
     "pino": "^10.4.0",
     "qrcode": "^1.5.4",
     "redis": "^4.7.1",
+    "sharp": "0.35.5",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@whatsapp-cloudapi/emulator": "^4.2.0",
-    "nodemon": "^3.1.10",
     "supertest": "^7.0.0",
     "vitest": "^4.1.12"
   },

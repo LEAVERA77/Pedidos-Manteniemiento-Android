@@ -12,8 +12,11 @@ CREATE TABLE IF NOT EXISTS baileys_guard_inbound_ids (
 );
 CREATE INDEX IF NOT EXISTS baileys_guard_inbound_age ON baileys_guard_inbound_ids(created_at);
 CREATE TABLE IF NOT EXISTS baileys_guard_limits (
- tenant_id INTEGER PRIMARY KEY REFERENCES clientes(id) ON DELETE RESTRICT
+ tenant_id INTEGER PRIMARY KEY REFERENCES clientes(id) ON DELETE RESTRICT,
+ next_attempt_at TIMESTAMPTZ
 );
+-- Si la tabla se creó en un ensayo anterior, conservar datos y agregar el campo.
+ALTER TABLE baileys_guard_limits ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS baileys_guard_attempts (
  tenant_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE RESTRICT,
  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()

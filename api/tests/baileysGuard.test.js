@@ -22,6 +22,17 @@ describe('cola Baileys aislada, aún sin integración',()=>{
   deps.isReplyWindowOpen.mockResolvedValue(true);deps.checkAndReserve.mockRejectedValue(Error('DB caída'));
   expect((await guard.enqueue(job())).error).toBe('guard_unavailable');expect(sock.sendMessage).not.toHaveBeenCalled();
  });
+ it('espera espaciado durable solo antes de reservar, revalida lease y no reintenta el envío',async()=>{
+  const {guard,job,sock,deps}=fixture();
+  deps.checkAndReserve.mockResolvedValueOnce({allowed:false,error:'spacing_wait',retry_after_ms:5000}).mockResolvedValueOnce({allowed:true});
+  expect((await guard.enqueue(job())).ok).toBe(true);
+  expect(deps.sleep).toHaveBeenCalledWith(5000);expect(deps.checkAndReserve).toHaveBeenCalledTimes(2);
+  expect(deps.assertLease.mock.calls.length).toBeGreaterThanOrEqual(4);expect(sock.sendMessage).toHaveBeenCalledTimes(1);
+ });
+ it('falla cerrado con tiempos de espaciado sospechosos y sin enviar',async()=>{
+  const {guard,job,sock,deps}=fixture();deps.checkAndReserve.mockResolvedValue({allowed:false,error:'spacing_wait',retry_after_ms:6001});
+  expect((await guard.enqueue(job())).error).toBe('spacing_unavailable');expect(sock.sendMessage).not.toHaveBeenCalled();
+ });
  it('un fallo durante sendMessage produce resultado incierto, no reintenta',async()=>{
   const {guard,job,sock}=fixture();sock.sendMessage.mockRejectedValue(Error('red'));
   expect(await guard.enqueue(job())).toMatchObject({ok:false,deliveryUnknown:true});expect(sock.sendMessage).toHaveBeenCalledTimes(1);

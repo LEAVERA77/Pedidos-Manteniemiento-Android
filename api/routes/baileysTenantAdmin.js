@@ -73,8 +73,13 @@ router.post('/connection/:action',async(req,res)=>{
   // Auditoría de la SOLICITUD antes de actuar: no certifica que el socket conectó.
   await verifiedTransaction(req,null)(db=>db.query('INSERT INTO baileys_session_admin_audit(tenant_id,usuario_id,action) VALUES($1,$2,$3)',
    [tenant,Number(req.user.id),`${action}_request`]));
-  const state=await runtime[action](tenant);
-  if(!state || state.tenant_id!==tenant || typeof state.status!=='string')throw Error('Estado inválido');
+  // Mantener bloqueadas las filas autorizantes durante el efecto. La auditoría
+  // de solicitud ya fue confirmada antes, incluso si este paso falla.
+  const state=await verifiedTransaction(req,null)(async()=>{
+   const result=await runtime[action](tenant);
+   if(!result || result.tenant_id!==tenant || typeof result.status!=='string')throw Error('Estado inválido');
+   return result;
+  });
   return res.json({ok:true,tenant_id:tenant,connection:{status:state.status}});
  }catch(e){
   if(e.status===403)return res.status(403).json({error:e.message});
@@ -96,11 +101,12 @@ router.get('/safety',async(req,res)=>{
 router.post('/safety/resume',async(req,res)=>{
  try{
   const keys=Object.keys(req.body||{});
-  if(Object.keys(req.query||{}).length||keys.some(k=>!['confirmar_revision','motivo_actual'].includes(k))||
-     req.body?.confirmar_revision!==true||!['unresolved_stop','stop_unverified'].includes(req.body?.motivo_actual))
+  if(Object.keys(req.query||{}).length||keys.some(k=>!['confirmar_revision','motivo_actual','revision_actual'].includes(k))||
+     req.body?.confirmar_revision!==true||!['unresolved_stop','stop_unverified'].includes(req.body?.motivo_actual)||
+     typeof req.body?.revision_actual!=='string'||! /^(0|[1-9]\d{0,18})$/.test(req.body.revision_actual))
    return res.status(400).json({error:'Confirmá la revisión e indicá el motivo actual.'});
   const tenantId=Number(req.tenantId),safety=createBaileysTenantSafety();
-  const state=await safety.resumeTenant({tenantId,actorUserId:Number(req.user?.id),expectedReason:req.body.motivo_actual,
+  const state=await safety.resumeTenant({tenantId,actorUserId:Number(req.user?.id),expectedReason:req.body.motivo_actual,expectedRevision:req.body.revision_actual,
    transaction:verifiedTransaction(req,null)});
   return res.json({ok:true,tenant_id:tenantId,safety:state});
  }catch(e){

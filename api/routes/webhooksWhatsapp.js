@@ -392,6 +392,15 @@ const baileysLinkLimiter = rateLimit({
   skipSuccessfulRequests: true,
   message: { ok: false, error: "Demasiados intentos. Esperá antes de volver a intentar." },
 });
+// Bloquear TODA la consola global al preparar un corte multitenant, antes de
+// selección, limpieza de conversaciones, reset o exposición del QR.
+router.use("/baileys", (req, res, next) => {
+  if (String(process.env.BAILEYS_MULTITENANT_ENABLED || "").trim().toLowerCase() === "true") {
+    res.set("Cache-Control", "no-store");
+    return res.status(503).json({ok:false,error:"baileys_legacy_disabled_in_multitenant_mode"});
+  }
+  return next();
+});
 router.use("/baileys", (req, res, next) => req.path === "/status" ? next() : baileysLinkLimiter(req, res, next));
 
 // Nunca enviar Referer a otro origen. Con no-referrer Chrome manda Origin: null al

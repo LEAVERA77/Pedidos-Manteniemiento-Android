@@ -14,6 +14,10 @@ import {
   extractMessageText,
   extractMessageLocation,
   resolveInboundSender,
+  startBaileys,
+  sendText,
+  getBaileysQrDataUrl,
+  resetBaileysSessionAndReconnect,
 } from "../services/baileysWhatsapp.js";
 import { normalizePgConnectionString } from "../db/pgSslUrl.js";
 import {
@@ -110,6 +114,22 @@ describe("baileysWhatsapp helpers", () => {
     expect(first?.buffer.equals(buf)).toBe(true);
     expect(first?.mimeType).toBe("image/png");
     expect(consumeBaileysMediaBuffer("baileys-media:test1")).toBeNull();
+  });
+});
+
+describe("corte experimental multitenant: sesión global desactivada", () => {
+  it("bloquea inicio, envío, QR y reset sin tocar la sesión global", async () => {
+    const before = process.env.BAILEYS_MULTITENANT_ENABLED;
+    process.env.BAILEYS_MULTITENANT_ENABLED = "true";
+    try {
+      await expect(startBaileys()).rejects.toThrow("baileys_legacy_disabled_in_multitenant_mode");
+      await expect(resetBaileysSessionAndReconnect()).rejects.toThrow("baileys_legacy_disabled_in_multitenant_mode");
+      expect(await sendText("5493436980000", "hola")).toMatchObject({ok:false,error:"baileys_legacy_disabled_in_multitenant_mode"});
+      expect(getBaileysQrDataUrl()).toBeNull();
+    } finally {
+      if (before === undefined) delete process.env.BAILEYS_MULTITENANT_ENABLED;
+      else process.env.BAILEYS_MULTITENANT_ENABLED = before;
+    }
   });
 });
 

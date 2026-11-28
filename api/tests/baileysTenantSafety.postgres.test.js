@@ -40,16 +40,25 @@ describe.skipIf(!dsn)('bajas y pausa durable de Baileys por tenant',()=>{
  });
  it('reanudar requiere motivo vigente y audita sin quitar bajas individuales',async()=>{
   await safety.recordStop({tenantId:1,jid});await safety.pauseTenant({tenantId:1,reason:'unresolved_stop'});
-  await expect(safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:'stop_unverified'})).rejects.toThrow(/cambió/);
+  await expect(safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:'stop_unverified',expectedRevision:'1'})).rejects.toThrow(/cambió/);
   expect((await safety.status(1)).paused).toBe(true);
-  expect(await safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:'unresolved_stop'})).toEqual({paused:false});
+  expect(await safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:'unresolved_stop',expectedRevision:'1'})).toEqual({paused:false});
   expect((await safety.checkForSend({tenantId:1,jid})).error).toBe('contact_opted_out');
   expect((await db.query('SELECT tenant_id,usuario_id,action,previous_reason FROM baileys_tenant_safety_audit')).rows).toEqual([
    {tenant_id:1,usuario_id:1,action:'resume',previous_reason:'unresolved_stop'}]);
  });
+ it('una pausa posterior con el mismo motivo invalida una revisión anterior',async()=>{
+  await safety.pauseTenant({tenantId:1,reason:'unresolved_stop'});
+  const first=await safety.status(1);expect(first.revision).toBe('1');
+  await safety.pauseTenant({tenantId:1,reason:'unresolved_stop'});
+  const second=await safety.status(1);expect(second.revision).toBe('2');
+  await expect(safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:first.reason,expectedRevision:first.revision})).rejects.toThrow(/cambió/);
+  expect((await safety.status(1)).paused).toBe(true);
+  await expect(safety.resumeTenant({tenantId:1,actorUserId:1,expectedReason:second.reason,expectedRevision:second.revision})).resolves.toEqual({paused:false});
+ });
  it('si falla la auditoría revierte el desbloqueo',async()=>{
   await safety.pauseTenant({tenantId:1,reason:'stop_unverified'});
-  await expect(safety.resumeTenant({tenantId:1,actorUserId:999,expectedReason:'stop_unverified'})).rejects.toThrow();
+  await expect(safety.resumeTenant({tenantId:1,actorUserId:999,expectedReason:'stop_unverified',expectedRevision:'1'})).rejects.toThrow();
   expect((await safety.status(1)).paused).toBe(true);
  });
 

@@ -51,4 +51,26 @@ describe.skipIf(!dsn)('motor Baileys compuesto con PostgreSQL local y sockets si
    expect((await db.query('SELECT tenant_id,warmup_daily_sent FROM baileys_warmup_state ORDER BY tenant_id')).rows).toEqual([{tenant_id:1,warmup_daily_sent:1},{tenant_id:2,warmup_daily_sent:1}]);
   }finally{await Promise.all([runtime.stop(1),runtime.stop(2)])}
  });
+ it('STOP recibido con fallo de lease llega al puente y persiste cuarentena',async()=>{
+  let failLease=false,lost;
+  const runtime=createRuntime({guardStore:guard,safety,resolveTrusted:contacts.isTrusted,
+   managerDependencies:{
+    acquireLease:async(_tenant,onLost)=>{lost=onLost;return {assertHeld:async()=>{if(failLease){lost();throw Error('lease perdido')}},release:async()=>{}}},
+    loadAuth:async()=>({state:{creds:{},keys:{get:async()=>({}),set:async()=>{}}},saveCreds:async()=>{},flush:async()=>{}}),
+    makeSocket:async({tenantId})=>{const s={ev:new EventEmitter(),ws:{close:vi.fn()},readMessages:vi.fn(),sendPresenceUpdate:vi.fn(),sendMessage:vi.fn()};sockets[tenantId]=s;return s;},
+    makeQr:async q=>q,
+   },
+   extractText:m=>m.message.conversation||'',isStop:text=>text==='STOP',buildPayload:vi.fn(),handleBot:vi.fn(),
+  });
+  try{
+   await runtime.start(1);sockets[1].ev.emit('connection.update',{connection:'open'});
+   await vi.waitFor(()=>expect(runtime.status(1).status).toBe('connected'));
+   failLease=true;
+   sockets[1].ev.emit('messages.upsert',{type:'notify',messages:[{key:{remoteJid:'5493436980000@s.whatsapp.net'},message:{conversation:'STOP'}}]});
+   await vi.waitFor(async()=>expect((await safety.status(1)).reason).toBe('stop_unverified'),{timeout:3000});
+   expect((await safety.status(1)).paused).toBe(true);expect(sockets[1].sendMessage).not.toHaveBeenCalled();
+   expect(sockets[1].ws.close).toHaveBeenCalled();
+  }finally{await runtime.stop(1)}
+ });
+
 });

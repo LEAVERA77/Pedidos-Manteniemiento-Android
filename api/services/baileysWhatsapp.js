@@ -28,7 +28,7 @@ const AR_MOB = "54" + "9";
 const silentLogger = pino({ level: "silent" });
 
 let sock = null;
-let connectionStatus = "disconnected"; // disconnected | connecting | qr_ready | connected
+let connectionStatus = "disconnected"; // disconnected | connecting | qr_ready | connected | needs_relink
 let lastQrRaw = null;
 let lastQrDataUrl = null;
 let lastError = null;
@@ -246,7 +246,17 @@ function registerShutdownHooksOnce() {
   process.once("SIGINT", cleanExit);
 }
 
+// En un corte futuro a multitenant, ninguna vía puede iniciar la sesión global.
+// No cambiar este flag en caliente: detener los procesos legacy antes del corte.
+function legacyBaileysBlocked() {
+  return String(process.env.BAILEYS_MULTITENANT_ENABLED || "").trim().toLowerCase() === "true";
+}
+function assertLegacyBaileysAllowed() {
+  if (legacyBaileysBlocked()) throw new Error("baileys_legacy_disabled_in_multitenant_mode");
+}
 export async function startBaileys() {
+  assertLegacyBaileysAllowed();
+  if (connectionStatus === "needs_relink") throw new Error("baileys_legacy_relink_requires_review");
   if (startingPromise) return startingPromise;
   registerShutdownHooksOnce();
 
@@ -268,6 +278,7 @@ export async function startBaileys() {
         console.warn("[baileys] No se pudo consultar última versión WA Web, usando default:", e?.message || e);
       }
 
+      assertLegacyBaileysAllowed();
       const currentSock = makeWASocket({
         ...(version ? { version } : {}),
         auth: state,
@@ -281,6 +292,7 @@ export async function startBaileys() {
       currentSock.ev.on("creds.update", saveCreds);
 
       currentSock.ev.on("connection.update", async (update) => {
+        if (legacyBaileysBlocked() || sock !== currentSock) return;
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
@@ -309,6 +321,7 @@ export async function startBaileys() {
             lastDisconnect?.error?.output?.statusCode ||
             lastDisconnect?.error?.statusCode;
           const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+          const isBadSession = statusCode === DisconnectReason.badSession;
           const isReplaced = statusCode === DisconnectReason.connectionReplaced;
           lastError =
             lastDisconnect?.error?.message || `closed_${statusCode || "unknown"}`;
@@ -330,13 +343,14 @@ export async function startBaileys() {
             return;
           }
 
-          if (isLoggedOut) {
-            console.warn(
-              "[baileys] Sesión cerrada (loggedOut). Limpiando credenciales en DB..."
-            );
-            await clearPostgresAuthState(SESSION_ID).catch((e) =>
-              console.error("[baileys] Error limpiando credenciales:", e.message)
-            );
+          if (isLoggedOut || isBadSession) {
+            // No borrar ni reintentar automáticamente una sesión Signal inválida.
+            // La recuperación/reset requiere decisión explícita y respaldo.
+            connectionStatus = "needs_relink";
+            lastQrRaw = null;
+            lastQrDataUrl = null;
+            console.warn("[baileys] Sesión requiere revisión; se conservan las credenciales.");
+            return;
           }
 
           if (!reconnectTimer) {
@@ -353,7 +367,7 @@ export async function startBaileys() {
       });
 
       currentSock.ev.on("messages.upsert", async ({ messages, type }) => {
-        if (type !== "notify") return;
+        if (legacyBaileysBlocked() || type !== "notify") return;
         for (const msg of messages || []) {
           try {
             if (!msg || msg.key?.fromMe) continue;
@@ -496,7 +510,7 @@ export function initBaileysIfConfigured() {
   const provider = String(process.env.WHATSAPP_PROVIDER || "")
     .trim()
     .toLowerCase();
-  if (provider === "baileys") {
+  if (provider === "baileys" && !legacyBaileysBlocked()) {
     console.log(
       "[baileys] WHATSAPP_PROVIDER=baileys detectado — iniciando conexión..."
     );
@@ -516,10 +530,12 @@ export function getBaileysStatus() {
 }
 
 export function getBaileysQrDataUrl() {
+  if (legacyBaileysBlocked()) return null;
   return lastQrDataUrl;
 }
 
 export async function resetBaileysSessionAndReconnect() {
+  assertLegacyBaileysAllowed();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -593,6 +609,7 @@ async function resolveOutboundJid(toDigits, currentSock) {
 }
 
 export async function sendText(to, body) {
+  if (legacyBaileysBlocked()) return {ok:false,error:"baileys_legacy_disabled_in_multitenant_mode"};
   if (!sock || connectionStatus !== "connected") {
     return {
       ok: false,
@@ -607,6 +624,7 @@ export async function sendText(to, body) {
   if (!jid) {
     return { ok: false, error: "invalid_recipient" };
   }
+  if (legacyBaileysBlocked()) return {ok:false,error:"baileys_legacy_disabled_in_multitenant_mode"};
   try {
     const res = await sock.sendMessage(jid, { text });
     console.log("[baileys] mensaje enviado:", {

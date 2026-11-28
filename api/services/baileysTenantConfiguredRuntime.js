@@ -20,7 +20,7 @@ export function createBaileysTenantConfiguredRuntime(){
  if(String(process.env.WHATSAPP_PROVIDER||'').trim().toLowerCase()!=='baileys' ||
     process.env.BAILEYS_MULTITENANT_ENABLED!=='true' || process.env.SQL_GATEWAY_DISABLED!=='true')
   throw Error('La configuración experimental de Baileys no está habilitada');
- const guardStore=createBaileysGuardPostgres(),safety=createBaileysTenantSafety(),trusted=createBaileysTrustedContacts();
+ const guardStore=createBaileysGuardPostgres({enforceSpacing:true}),safety=createBaileysTenantSafety(),trusted=createBaileysTrustedContacts();
  const logger=pino({level:'silent'});
  return createBaileysTenantRuntime({guardStore,safety,resolveTrusted:trusted.isTrusted,
   buildPayload:buildTenantBotPayload,extractText:tenantInboundText,isStop:isBaileysBroadcastStop,

@@ -80,7 +80,10 @@ export function createBaileysTenantManager({acquireLease,loadAuth,makeSocket,mak
    for(const message of event.messages||[]){
     const jid=String(message?.key?.remoteJid||'');
     if(!jid||message?.key?.fromMe||jid.endsWith('@g.us')||jid.endsWith('@newsletter')||jid.endsWith('@broadcast'))continue;
-    Promise.resolve().then(async()=>{if(active()){await s.lease.assertHeld();if(active())await onInbound({tenantId:id,socket:sock,message});}}).catch(()=>{});
+    // El puente debe verificar el lease. No comprobarlo aquí primero: ante un
+    // STOP y fallo de lease, el puente necesita intentar cuarentena durable.
+    // Todos los adaptadores onInbound deben fallar cerrado por sí mismos.
+    Promise.resolve().then(async()=>{if(active())await onInbound({tenantId:id,socket:sock,message});}).catch(()=>{});
    }
   });
   sock.ev.on('call',calls=>{

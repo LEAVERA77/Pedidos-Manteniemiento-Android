@@ -36,7 +36,19 @@ export function createBaileysGuard({checkAndReserve,isReplyWindowOpen,assertLeas
       if(sock!==getSocket())return {ok:false,error:'socket_changed'};
       if(!await isReplyWindowOpen({tenantId,jid,automatic}))return {ok:false,error:'outside_reply_window_or_muted'};
       await assertLease(tenantId);
-      const allowed=await checkAndReserve({tenantId,jid,automatic});
+      let allowed;
+      // Solo reintentar una reserva explícitamente no realizada. Nunca reintentar
+      // un envío de red; acotar espera y revalidar socket/lease cada vez.
+      for(let i=0;i<8;i++){
+        if(sock!==getSocket())return {ok:false,error:'socket_changed'};
+        await assertLease(tenantId);
+        allowed=await checkAndReserve({tenantId,jid,automatic});
+        if(allowed?.error!=='spacing_wait')break;
+        const ms=allowed.retry_after_ms;
+        if(!Number.isSafeInteger(ms)||ms<1||ms>6000)return {ok:false,error:'spacing_unavailable'};
+        if(i===7)return {ok:false,error:'spacing_busy'};
+        await wait(ms);
+      }
       // Cuotas agotadas fallan cerrado: quien llama decide si informa al usuario.
       if(!allowed?.allowed)return {ok:false,error:allowed?.error||'rate_limit'};
       if(sock!==getSocket())return {ok:false,error:'socket_changed'};

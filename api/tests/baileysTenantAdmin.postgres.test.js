@@ -59,7 +59,7 @@ describe.skipIf(!dsn)('administración warm-up con JWT real y PostgreSQL local',
  });
  it('solo admin del tenant reanuda una pausa revisada, con auditoría',async()=>{
   await db.query("INSERT INTO baileys_tenant_safety(tenant_id,paused,reason) VALUES(1,true,'unresolved_stop'),(2,true,'stop_unverified')");
-  const url='/baileys/safety/resume',good={confirmar_revision:true,motivo_actual:'unresolved_stop'};
+  const url='/baileys/safety/resume',good={confirmar_revision:true,motivo_actual:'unresolved_stop',revision_actual:'0'};
   await request(app).post(url).send(good).expect(401);
   await request(app).post(url).set('Authorization',`Bearer ${token(3,1)}`).send(good).expect(403);
   await request(app).post(url).set('Authorization',`Bearer ${token(1,2)}`).send(good).expect(403);
@@ -102,6 +102,22 @@ describe.skipIf(!dsn)('administración warm-up con JWT real y PostgreSQL local',
   expect(runtime.start).toHaveBeenCalledWith(1);expect(runtime.stop).toHaveBeenCalledWith(2);
   expect((await db.query('SELECT tenant_id,usuario_id,action FROM baileys_session_admin_audit ORDER BY id')).rows).toEqual([
    {tenant_id:1,usuario_id:1,action:'start_request'},{tenant_id:2,usuario_id:2,action:'stop_request'}]);
+ });
+ it('mantiene la autorización bloqueada mientras se inicia el socket',async()=>{
+  let enter,release;const entered=new Promise(r=>{enter=r}),hold=new Promise(r=>{release=r});
+  runtime.start.mockImplementationOnce(async id=>{enter();await hold;return {tenant_id:id,status:'connecting'}});
+  const pending=request(app).post('/session/connection/start').set('Authorization',`Bearer ${token(1,1)}`).send({}).then(r=>r);
+  try{
+   await entered;
+   await db.query('BEGIN');
+   try{
+    await db.query("SET LOCAL lock_timeout = '150ms'");
+    await expect(db.query('UPDATE usuarios SET activo=false WHERE id=1')).rejects.toMatchObject({code:'55P03'});
+   }finally{await db.query('ROLLBACK');}
+  }finally{release();}
+  const response=await pending;expect(response.status).toBe(200);
+  await db.query('UPDATE usuarios SET activo=false WHERE id=1');
+  expect((await db.query("SELECT count(*)::int AS n FROM baileys_session_admin_audit WHERE tenant_id=1 AND action='start_request'")).rows[0].n).toBe(1);
  });
  it('estado discordante jamás devuelve el QR y el router montado sigue bloqueado',async()=>{
   runtime.status.mockReturnValueOnce({tenant_id:2,status:'qr_ready',qr:'data:image/png;base64,QUJD'});
