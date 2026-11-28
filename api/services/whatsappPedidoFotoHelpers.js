@@ -34,6 +34,7 @@ export async function whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, 
   }
 
   const prov = whatsappProviderEnv();
+  if (mid.startsWith("baileys-media:v2:") && directUrl) throw new Error("baileys_media_direct_url_not_allowed");
   let buffer;
 
   if (directUrl && /^https:\/\//i.test(directUrl)) {
@@ -41,7 +42,7 @@ export async function whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, 
     if (!r.ok) throw new Error(`foto_direct_url_${r.status}`);
     buffer = Buffer.from(await r.arrayBuffer());
   } else if (mid.startsWith("baileys-media:") || prov === "baileys") {
-    const entry = consumeBaileysMediaBuffer(mid);
+    const entry = consumeBaileysMediaBuffer(mid, { tenantId: opts.tenantId ?? null });
     if (!entry?.buffer) throw new Error("missing_baileys_media_buffer");
     buffer = entry.buffer;
   } else if (prov === "whapi" || looksLikeWhapiMediaId(mid)) {

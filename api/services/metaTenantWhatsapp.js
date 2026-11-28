@@ -1,4 +1,4 @@
-import { query } from "../db/neon.js";
+import { query, rawQuery } from "../db/neon.js";
 import { getWhatsappBotActiveTarget } from "./whatsappBotTargetStore.js";
 import { loadTenantBusinessContext } from "../utils/businessScope.js";
 import {
@@ -79,6 +79,32 @@ async function queryMetaOrWhapiChannelTenant(pid) {
   } catch (_) {}
 
   return null;
+}
+
+/** Destino explícito para una entrada proveniente de un socket tenant de confianza.
+ * No consulta el selector global ni utiliza tenant por defecto. */
+export async function resolveWhatsappBotTargetForTenant(tenantId, {
+  queryTenant = rawQuery, resolveBusiness = loadTenantBusinessContext,
+} = {}) {
+  if (!Number.isSafeInteger(tenantId) || tenantId < 1 || tenantId > 2147483647) {
+    throw new Error("Tenant de entrada inválido");
+  }
+  const r = await queryTenant(
+    `SELECT id, nombre, tipo, activo FROM clientes WHERE id = $1 AND COALESCE(activo, TRUE) = TRUE LIMIT 1`,
+    [tenantId]
+  );
+  const row = r.rows?.[0];
+  if (!row || Number(row.id) !== tenantId || row.activo === false) {
+    throw new Error("Tenant de entrada inexistente o inactivo");
+  }
+  const tipo = normalizarRubroCliente(row.tipo);
+  // loadTenantBusinessContext usa electricidad como fallback; no aceptarlo para un tipo desconocido.
+  if (!tipo) throw new Error("Rubro del tenant no verificable");
+  const business = await resolveBusiness(tenantId);
+  const bt = normalizeBusinessTypeInput(business?.activeBusinessType) || rubroNormToBusinessType(tipo);
+  if (!bt) throw new Error("Rubro del tenant no verificable");
+  return { tenantId, businessType: bt, rubro: businessTypeToRubroParaTipos(bt),
+    tenantNombre: row.nombre ? String(row.nombre).trim() : null, source: "baileys_tenant_socket" };
 }
 
 /**

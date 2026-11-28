@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import { currentBaileysTenantContext, runBaileysTenantContext } from "./baileysTenantContext.js";
 import { query } from "../db/neon.js";
 import {
   sendWhatsAppInteractiveListWithCredentials,
@@ -76,6 +77,7 @@ import { upsertTelefonoSociosCatalogoDesdeWhatsappInbound } from "../utils/socio
 import {
   resolveTenantIdByMetaPhoneNumberId,
   resolveWhatsappBotTarget,
+  resolveWhatsappBotTargetForTenant,
 } from "./metaTenantWhatsapp.js";
 import {
   getWhatsappBotActiveTarget,
@@ -1095,16 +1097,21 @@ async function tenantIdForWebhook(phoneNumberId) {
 
 async function reply(phoneDigits, text, tenantId, webhookPhoneNumberId = null) {
   const digitsCanon = String(phoneDigits || "").replace(/\D/g, "");
-  console.log("[BOT_RESPUESTA] toDigits del remitente (inbound, debe coincidir con [WEBHOOK] from procesado)", {
-    ...maskWaDigitsForLog(digitsCanon),
-    tenantId: tenantId != null && Number.isFinite(Number(tenantId)) ? Number(tenantId) : botTenantId(),
-  });
+  const tenantContext = currentBaileysTenantContext();
   const tid =
     tenantId != null && Number.isFinite(Number(tenantId)) && Number(tenantId) >= 1
       ? Number(tenantId)
-      : botTenantId();
+      : tenantContext ? null : botTenantId();
+  console.log("[BOT_RESPUESTA] toDigits del remitente (inbound, debe coincidir con [WEBHOOK] from procesado)", {
+    ...maskWaDigitsForLog(digitsCanon), tenantId: tid,
+  });
   const wpid = webhookPhoneNumberId != null ? String(webhookPhoneNumberId).trim() : "";
-  const r = wpid
+  // Mientras se procesa una entrada tenant no se puede volver a la sesión global.
+  const r = tenantContext
+    ? (tid === tenantContext.tenantId
+      ? await tenantContext.sendReply({tenantId: tid, toDigits: phoneDigits, bodyText: text})
+      : {ok: false, error: "baileys_tenant_context_mismatch"})
+    : wpid
     ? await sendBotWhatsAppText({
         tenantId: tid,
         webhookPhoneNumberId: wpid,
@@ -2204,7 +2211,7 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
       return;
     }
     const { secureUrl, usedFallback } = await whatsappPedidoSubirFotoDesdeMediaId(mediaId, accessToken, {
-      directUrl: directMediaUrl,
+      directUrl: directMediaUrl, tenantId: sess.tenantId,
     });
     if (!secureUrl) {
       await reply(
@@ -2259,7 +2266,7 @@ async function aplicarImagenRecibidaFlujoPedidoWa(
   }
 }
 
-async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId, contactName }) {
+async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId, contactName, trustedTarget }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
@@ -2267,7 +2274,7 @@ async function processInboundWhatsappImageMessage({ fromRaw, msg, phoneNumberId,
   const directMediaUrl = msg?.image?.link ? String(msg.image.link).trim() : "";
   if (!mediaId && !directMediaUrl) return;
 
-  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const botTarget = trustedTarget || await resolveWhatsappBotTarget(phoneNumberId);
   const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
@@ -2385,6 +2392,34 @@ async function _responderEstadoAutomaticoWa(phone, tid, phoneNumberId, ctx) {
 }
 
 export async function handleInboundMetaWhatsAppPayload(body) {
+  return handleInboundWhatsAppPayload(body, null);
+}
+
+/** Solo para llamadas internas desde un socket vinculado a un tenant verificado. */
+export async function handleInboundBaileysTenantPayload(body, tenantId, {sendReply, senderDigits} = {}) {
+  if (String(process.env.WHATSAPP_PROVIDER || "").trim().toLowerCase() !== "baileys" || typeof sendReply !== "function") {
+    throw new Error("El adaptador de respuesta Baileys no está disponible");
+  }
+  // El llamador interno debe obtener senderDigits del socket, no de un request HTTP.
+  // Una sola entrada impide confundir remitentes bajo el mismo cierre de respuesta.
+  const entries = body?.entry, changes = entries?.[0]?.changes, messages = changes?.[0]?.value?.messages;
+  if (!Array.isArray(entries) || entries.length !== 1 || !Array.isArray(changes) || changes.length !== 1 ||
+      !Array.isArray(messages) || messages.length !== 1 || !/^\d{8,22}$/.test(String(senderDigits || "")) ||
+      !/^\d{8,22}$/.test(String(messages[0]?.from || ""))) throw new Error("Remitente de entrada inválido");
+  const sender = normalizeWhatsAppRecipientForMeta(senderDigits);
+  if (!sender || normalizeWhatsAppRecipientForMeta(messages[0].from) !== sender) throw new Error("Remitente de entrada no coincide");
+  const target = await resolveWhatsappBotTargetForTenant(tenantId);
+  if (!target || target.tenantId !== tenantId) throw new Error("Tenant de entrada no verificable");
+  const boundReply = args => {
+    if (args.tenantId !== tenantId || !/^\d{8,22}$/.test(String(args.toDigits || "")) ||
+        normalizeWhatsAppRecipientForMeta(args.toDigits) !== sender)
+      return Promise.resolve({ok:false,error:"baileys_recipient_context_mismatch"});
+    return sendReply(args);
+  };
+  return runBaileysTenantContext({tenantId, sendReply:boundReply}, () => handleInboundWhatsAppPayload(body, target));
+}
+
+async function handleInboundWhatsAppPayload(body, trustedTarget) {
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
     const changes = Array.isArray(entry?.changes) ? entry.changes : [];
@@ -2396,7 +2431,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
       for (const msg of messages) {
         const from = String(msg?.from || "");
         if (!from) continue;
-        console.log("[WEBHOOK_BOT] msg.from (fromRaw hacia processInboundText):", from);
+        console.log("[WEBHOOK_BOT] msg.from (fromRaw hacia processInboundText):", trustedTarget ? maskWaDigitsForLog(from) : from);
         const fromNorm = normalizeWhatsAppRecipientForMeta(from.replace(/\D/g, ""));
         const cMatch = contacts.find(
           (c) =>
@@ -2414,13 +2449,14 @@ export async function handleInboundMetaWhatsAppPayload(body) {
                 listRowId: rowId,
                 phoneNumberId,
                 contactName,
+                trustedTarget,
               });
             } catch (e) {
               console.error("[whatsapp-bot-meta] list_reply error", e);
               await reply(
                 fromNorm,
                 "No pudimos leer tu elección. Escribí *menú* para empezar de nuevo.",
-                await tenantIdForWebhook(phoneNumberId),
+                (trustedTarget ? trustedTarget.tenantId : await tenantIdForWebhook(phoneNumberId)),
                 phoneNumberId
               );
             }
@@ -2433,6 +2469,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
                 text: title || "menú",
                 phoneNumberId,
                 contactName,
+                trustedTarget,
                 buttonReplyId,
               });
             } catch (e) {
@@ -2452,12 +2489,13 @@ export async function handleInboundMetaWhatsAppPayload(body) {
                 lng: coords.lng,
                 phoneNumberId,
                 contactName,
+                trustedTarget,
               });
             } else {
               await reply(
                 fromNorm,
                 "No pudimos leer las coordenadas. Enviá de nuevo con *Adjuntar* → *Ubicación*, o escribí una dirección.",
-                await tenantIdForWebhook(phoneNumberId),
+                (trustedTarget ? trustedTarget.tenantId : await tenantIdForWebhook(phoneNumberId)),
                 phoneNumberId
               );
             }
@@ -2466,7 +2504,7 @@ export async function handleInboundMetaWhatsAppPayload(body) {
             await reply(
               fromNorm,
               "Error al procesar la ubicación. Intentá de nuevo o escribí *menú*.",
-              await tenantIdForWebhook(phoneNumberId),
+              (trustedTarget ? trustedTarget.tenantId : await tenantIdForWebhook(phoneNumberId)),
               phoneNumberId
             );
           }
@@ -2480,13 +2518,14 @@ export async function handleInboundMetaWhatsAppPayload(body) {
               msg,
               phoneNumberId,
               contactName,
+              trustedTarget,
             });
           } catch (e) {
             console.error("[whatsapp-bot-meta] image inbound error", e);
             await reply(
               fromNorm,
               "No pudimos procesar la imagen. Si estabas cargando un reclamo, escribí *menú* o intentá de nuevo.",
-              await tenantIdForWebhook(phoneNumberId),
+              (trustedTarget ? trustedTarget.tenantId : await tenantIdForWebhook(phoneNumberId)),
               phoneNumberId
             );
           }
@@ -2502,13 +2541,14 @@ export async function handleInboundMetaWhatsAppPayload(body) {
             text,
             phoneNumberId,
             contactName,
+            trustedTarget,
           });
         } catch (e) {
           console.error("[whatsapp-bot-meta] process error", e);
           await reply(
             fromNorm,
             "Ocurrió un error. Intentá más tarde o contactá a la oficina.",
-            await tenantIdForWebhook(phoneNumberId),
+            (trustedTarget ? trustedTarget.tenantId : await tenantIdForWebhook(phoneNumberId)),
             phoneNumberId
           );
         }
@@ -2517,11 +2557,11 @@ export async function handleInboundMetaWhatsAppPayload(body) {
   }
 }
 
-async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contactName }) {
+async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contactName, trustedTarget }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
-  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const botTarget = trustedTarget || await resolveWhatsappBotTarget(phoneNumberId);
   const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const sess = sessions.get(sk);
@@ -2722,11 +2762,11 @@ async function processInboundLocation({ fromRaw, lat, lng, phoneNumberId, contac
   );
 }
 
-async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName }) {
+async function processListReplySelection({ fromRaw, listRowId, phoneNumberId, contactName, trustedTarget }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
   if (await isWhatsAppAutomatedBotDisabled()) return;
 
-  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const botTarget = trustedTarget || await resolveWhatsappBotTarget(phoneNumberId);
   const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
   const ctx = await loadTenantBotContext(tid, botTarget?.businessType);
@@ -2875,14 +2915,19 @@ async function processInboundHumanChatMessageOnly({ phone, text, tid, sk, phoneN
   return true;
 }
 
-async function processInboundText({ fromRaw, text, phoneNumberId, contactName, buttonReplyId = "" }) {
+async function processInboundText({ fromRaw, text, phoneNumberId, contactName, buttonReplyId = "", trustedTarget }) {
   const phone = normalizeWhatsAppRecipientForMeta(String(fromRaw || "").replace(/\D/g, ""));
 
-  const botTarget = await resolveWhatsappBotTarget(phoneNumberId);
+  const botTarget = trustedTarget || await resolveWhatsappBotTarget(phoneNumberId);
   const tid = botTarget?.tenantId ?? botTenantId();
   const sk = sessionKey(phone, tid);
 
   const comandoMaster = parseActivarDesactivarComando(text);
+  // Los comandos legados modifican un estado global, no el tenant del socket.
+  if (comandoMaster && trustedTarget) {
+    await reply(phone, "Para administrar el bot, contactá al administrador de la entidad.", tid, phoneNumberId);
+    return;
+  }
   if (comandoMaster) {
     const okMaster = await isPhoneWhatsappBotMasterAsync(phone, tid);
     if (!okMaster) {
