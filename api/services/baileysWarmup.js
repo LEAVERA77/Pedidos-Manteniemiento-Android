@@ -13,10 +13,10 @@ export function warmupStatus(row,at){
  const elapsed=started?current.number-localDay(started).number:0;
  if(elapsed<0)throw Error('El inicio de warm-up está en el futuro');
  const days=started?elapsed+1:null;
- const ready=!!row?.warmup_forced_ready || (enabled && days>14);
+ const ready=!!row?.warmup_forced_ready || (enabled && !row.warmup_paused && days>14);
  const state=ready?'READY':enabled?(row.warmup_paused?'PAUSED':'WARMING'):'NOT_CONFIGURED';
  const sent=String(row?.warmup_count_date||'').slice(0,10)===current.iso?Number(row?.warmup_daily_sent||0):0;
- return {state,day:days && !ready?days:null,daily_limit:state==='WARMING'||state==='PAUSED'?WARMUP_DAILY_CAPS[days-1]:null,
+ return {state,day:days && !ready?days:null,daily_limit:(state==='WARMING'||state==='PAUSED') && days<=14?WARMUP_DAILY_CAPS[days-1]:null,
   daily_sent:sent,local_date:current.iso};
 }
 function validId(id){if(!Number.isSafeInteger(id)||id<1||id>2147483647)throw Error('Tenant inválido');}

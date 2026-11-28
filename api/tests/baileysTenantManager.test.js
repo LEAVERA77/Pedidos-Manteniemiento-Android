@@ -6,7 +6,7 @@ function fixture(){
  const sockets=[],timers=[],leases=[],onInbound=vi.fn(async()=>{}),auths=[];
  const manager=createBaileysTenantManager({
   acquireLease:vi.fn(async(tenant,onLost)=>{const lease={tenant,onLost,assertHeld:vi.fn(async()=>{}),release:vi.fn(async()=>{})};leases.push(lease);return lease}),
-  loadAuth:vi.fn(async()=>{const auth={state:{creds:{},keys:{}},saveCreds:vi.fn(async()=>{}),flush:vi.fn(async()=>{})};auths.push(auth);return auth}),
+  loadAuth:vi.fn(async()=>{const auth={state:{creds:{},keys:{get:vi.fn(async()=>({})),set:vi.fn(async()=>{})}},saveCreds:vi.fn(async()=>{}),flush:vi.fn(async()=>{})};auths.push(auth);return auth}),
   makeSocket:vi.fn(async(opts)=>{const sock={opts,ev:new EventEmitter(),ws:{close:vi.fn()},rejectCall:vi.fn(async()=>{})};sockets.push(sock);return sock}),
   makeQr:vi.fn(async qr=>`data:${qr}`),onInbound,disconnectReasons:{loggedOut:401,badSession:500,connectionReplaced:440},random:()=>0,
   setTimer:(f,ms)=>{const t={f,ms};timers.push(t);return t},clearTimer:t=>{t.cancelled=true},
@@ -59,4 +59,21 @@ describe('gestor de sesiones Baileys multi-tenant',()=>{
   const {manager,sockets,leases,timers}=fixture();await manager.start(1);leases[0].onLost();await tick();
   expect(manager.status(1).status).toBe('lease_lost');expect(sockets[0].ws.close).toHaveBeenCalled();expect(timers).toHaveLength(0);
  });
+ it('falla cerrada ante error de llaves Signal y no reconecta ni borra',async()=>{
+  const {manager,sockets,leases,auths,timers}=fixture();await manager.start(1);
+  sockets[0].ev.emit('connection.update',{connection:'open'});await tick();
+  auths[0].state.keys.set.mockRejectedValue(Error('DB caída'));
+  await expect(sockets[0].opts.auth.keys.set({session:{x:{}}})).rejects.toThrow('DB caída');
+  await tick();expect(manager.status(1).status).toBe('persistence_error');
+  expect(sockets[0].ws.close).toHaveBeenCalled();expect(leases[0].release).toHaveBeenCalled();expect(timers).toHaveLength(0);
+ });
+ it('llaves fallidas de un socket antiguo no detienen el socket nuevo',async()=>{
+  const {manager,sockets,auths,timers}=fixture();await manager.start(1);const old=sockets[0];
+  old.ev.emit('connection.update',{connection:'close',lastDisconnect:{error:{output:{statusCode:408}}}});await tick();
+  timers[0].f();await tick();sockets[1].ev.emit('connection.update',{connection:'open'});await tick();
+  auths[0].state.keys.get.mockRejectedValue(Error('tardío'));
+  await expect(old.opts.auth.keys.get('session',['x'])).rejects.toThrow('tardío');
+  expect(manager.status(1).status).toBe('connected');expect(sockets[1].ws.close).not.toHaveBeenCalled();
+ });
+
 });

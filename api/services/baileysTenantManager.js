@@ -23,7 +23,19 @@ export function createBaileysTenantManager({acquireLease,loadAuth,makeSocket,mak
   await lease.assertHeld();
   if(s.generation!==prior||s.lease!==lease)return;
   const generation=++s.generation;
-  const sock=await makeSocket({tenantId:id,auth:auth.state,browser:['GestorNova Web','Chrome','124.0.0'],syncFullHistory:false});
+  // Baileys escribe llaves Signal por state.keys, además de creds.update.
+  // Una falla de lectura/escritura impide seguir con un estado criptográfico dudoso.
+  const failPersistence=()=>{
+   if(s.generation!==generation)return;
+   invalidate(s);s.status='persistence_error';void release(s);
+  };
+  const keys=auth.state?.keys;
+  if(!keys||typeof keys.get!=='function'||typeof keys.set!=='function')throw Error('Estado de llaves inválido');
+  const checkedKeys={...keys,
+   get:async (...args)=>{try{return await keys.get(...args)}catch(e){failPersistence();throw e;}},
+   set:async (...args)=>{try{return await keys.set(...args)}catch(e){failPersistence();throw e;}},
+  };
+  const sock=await makeSocket({tenantId:id,auth:{...auth.state,keys:checkedKeys},browser:['GestorNova Web','Chrome','124.0.0'],syncFullHistory:false});
   if(generation!==s.generation || !s.lease){try{sock.ws?.close?.()}catch(_){};return;}
   s.auth=auth;s.socket=sock;s.status='connecting';s.qr=null;
   const active=()=>s.generation===generation&&s.socket===sock;
@@ -32,7 +44,7 @@ export function createBaileysTenantManager({acquireLease,loadAuth,makeSocket,mak
    // Registrar el snapshot en cuanto llega el evento; el adaptador serializa el commit.
    let result;try{result=auth.saveCreds()}catch(e){result=Promise.reject(e)}
    Promise.resolve(result).catch(()=>{
-    if(active()){invalidate(s);s.status='persistence_error';void release(s);}
+    if(active())failPersistence();
    });
   });
   sock.ev.on('connection.update',update=>serial(s,async()=>{
@@ -86,7 +98,7 @@ export function createBaileysTenantManager({acquireLease,loadAuth,makeSocket,mak
     if(s.generation!==generation){if(lease)await lease.release();return status(id);}
     if(!lease){s.status='owned_elsewhere';return status(id);}
     s.lease=lease;await openSocket(id,s);
-   }catch(_){if(s.status!=='stopped'&&s.status!=='stopping'&&s.status!=='lease_lost'){invalidate(s);s.status='unavailable';await release(s);}}
+   }catch(_){if(s.status!=='stopped'&&s.status!=='stopping'&&s.status!=='lease_lost'&&s.status!=='persistence_error'){invalidate(s);s.status='unavailable';await release(s);}}
    return status(id);
   })();
   try{return await s.starting}finally{s.starting=null;}

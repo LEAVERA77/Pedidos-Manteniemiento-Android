@@ -14,14 +14,19 @@ export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_
   if(typeof messageId!=='string'||!messageId||messageId.length>512||typeof text!=='string'||text.length>10000)throw Error('Mensaje inválido');
   const ms=Number(messageTimestamp);if(!Number.isFinite(ms)||ms<=0)throw Error('Fecha de mensaje inválida');
   return transaction(async db=>{
+   // El mismo candado serializa entradas y reservas por tenant, también entre réplicas.
+   await db.query('INSERT INTO baileys_guard_limits(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
+   await db.query('SELECT tenant_id FROM baileys_guard_limits WHERE tenant_id=$1 FOR UPDATE',[tenantId]);
    let time=(await db.query('SELECT clock_timestamp() AS now')).rows[0].now;
    const delta=new Date(time).getTime()-ms;
    // No convertir mensajes históricos o de reloj sospechoso en permiso para envío.
    if(delta>5*60000||delta< -60000)return {accepted:false,reason:'stale_message'};
    const inserted=await db.query('INSERT INTO baileys_guard_inbound_ids(tenant_id,message_hmac) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING 1',[tenantId,mac('msg',tenantId,[jid,messageId])]);
    if(!inserted.rows.length)return {accepted:false,reason:'duplicate_event'};
+   // Nunca extender la ventana usando la hora de recepción si el evento venía retrasado.
+   const inboundAt=new Date(Math.min(ms,new Date(time).getTime()));
    await db.query(`INSERT INTO baileys_guard_contacts(tenant_id,contact_hmac,last_message_at) VALUES($1,$2,$3)
-     ON CONFLICT DO NOTHING`,[tenantId,c,time]);
+     ON CONFLICT DO NOTHING`,[tenantId,c,inboundAt]);
    const old=(await db.query('SELECT *,clock_timestamp() AS guard_now FROM baileys_guard_contacts WHERE tenant_id=$1 AND contact_hmac=$2 FOR UPDATE',[tenantId,c])).rows[0];
    time=old.guard_now;
    if(new Date(time).getTime()-ms>5*60000)return {accepted:false,reason:'stale_message'};
@@ -31,8 +36,8 @@ export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_
    const first=same?old.repeat_started_at:(th?time:null);
    const muted=old.muted_until && new Date(old.muted_until)>new Date(time);
    const muteUntil=count>=3 && !muted?new Date(new Date(time).getTime()+900000):old.muted_until;
-   await db.query(`UPDATE baileys_guard_contacts SET last_message_at=$3,repeat_hmac=$4,repeat_started_at=$5,
-     repeat_count=$6,muted_until=$7 WHERE tenant_id=$1 AND contact_hmac=$2`,[tenantId,c,time,th,first,count,muteUntil]);
+   await db.query(`UPDATE baileys_guard_contacts SET last_message_at=GREATEST(last_message_at,$3),repeat_hmac=$4,repeat_started_at=$5,
+     repeat_count=$6,muted_until=$7 WHERE tenant_id=$1 AND contact_hmac=$2`,[tenantId,c,inboundAt,th,first,count,muteUntil]);
    const n=(await db.query("SELECT count(*)::int AS n FROM baileys_guard_contacts WHERE tenant_id=$1 AND last_message_at>=$2::timestamptz-INTERVAL '1 minute'",[tenantId,time])).rows[0].n;
    return {accepted:true,respond:!muted&&count<2,muted:!!muted||count>=3,storm:n>25};
   });
@@ -40,16 +45,16 @@ export function createBaileysGuardPostgres({keyBase64=process.env.BAILEYS_GUARD_
  async function isReplyWindowOpen({tenantId,jid,automatic=true}){
   const c=contact(tenantId,jid);
   const r=await query(`SELECT 1 FROM baileys_guard_contacts WHERE tenant_id=$1 AND contact_hmac=$2
-   AND last_message_at>=clock_timestamp()-INTERVAL '24 hours' AND ($3::boolean=FALSE OR muted_until IS NULL OR muted_until<=clock_timestamp())`,[tenantId,c,automatic]);
+   AND last_message_at>=clock_timestamp()-INTERVAL '24 hours' AND (muted_until IS NULL OR muted_until<=clock_timestamp())`,[tenantId,c]);
   return !!r.rows.length;
  }
- async function checkAndReserve({tenantId,jid,automatic=true}){
+ async function checkAndReserve({tenantId,jid,automatic=true,transaction:runTransaction=transaction}){
   const c=contact(tenantId,jid);
-  return transaction(async db=>{
+  return runTransaction(async db=>{
    await db.query('INSERT INTO baileys_guard_limits(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
    await db.query('SELECT tenant_id FROM baileys_guard_limits WHERE tenant_id=$1 FOR UPDATE',[tenantId]);
    const check=await db.query(`SELECT 1 FROM baileys_guard_contacts WHERE tenant_id=$1 AND contact_hmac=$2
-    AND last_message_at>=clock_timestamp()-INTERVAL '24 hours' AND ($3::boolean=FALSE OR muted_until IS NULL OR muted_until<=clock_timestamp()) FOR SHARE`,[tenantId,c,automatic]);
+    AND last_message_at>=clock_timestamp()-INTERVAL '24 hours' AND (muted_until IS NULL OR muted_until<=clock_timestamp()) FOR SHARE`,[tenantId,c]);
    if(!check.rows.length)return {allowed:false,error:'outside_reply_window_or_muted'};
    const r=await db.query(`SELECT count(*) FILTER(WHERE attempted_at>=clock_timestamp()-INTERVAL '1 minute')::int AS minute,
     count(*)::int AS hour FROM baileys_guard_attempts WHERE tenant_id=$1 AND attempted_at>=clock_timestamp()-INTERVAL '1 hour'`,[tenantId]);

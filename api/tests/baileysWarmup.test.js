@@ -20,3 +20,11 @@ describe('curva warm-up por fecha local Argentina',()=>{
   expect(()=>warmupStatus({warmup_enabled:true,warmup_started_at:'2026-05-10T15:00:00Z'},'2026-05-01T15:00:00Z')).toThrow(/futuro/);
  });
 });
+
+describe('pausa durante cambio de día',()=>{
+ it('no desbloquea automáticamente una sesión pausada al día 15',()=>{
+  const row={warmup_enabled:true,warmup_paused:true,warmup_started_at:'2026-05-01T15:00:00Z'};
+  expect(warmupStatus(row,'2026-05-15T15:00:00Z')).toMatchObject({state:'PAUSED',day:15,daily_limit:null});
+  expect(warmupStatus({...row,warmup_paused:false},'2026-05-15T15:00:00Z').state).toBe('READY');
+ });
+});

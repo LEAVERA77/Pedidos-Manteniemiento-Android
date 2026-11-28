@@ -28,7 +28,8 @@ describe.skipIf(!dsn)('ventana y cuotas Baileys en PostgreSQL descartable',()=>{
   expect((await incoming('1')).respond).toBe(true);expect((await incoming('2')).respond).toBe(false);
   expect(await incoming('3')).toMatchObject({respond:false,muted:true});
   expect(await guard.isReplyWindowOpen({tenantId:1,jid})).toBe(false);
-  expect(await guard.isReplyWindowOpen({tenantId:1,jid,automatic:false})).toBe(true);
+  expect(await guard.isReplyWindowOpen({tenantId:1,jid,automatic:false})).toBe(false);
+  expect((await guard.checkAndReserve({tenantId:1,jid,automatic:false})).allowed).toBe(false);
  });
  it('reserva la cuota de forma transaccional entre procesos y conserva aislamiento',async()=>{
   await incoming('1');await incoming('2','hola',2);
@@ -47,4 +48,20 @@ describe.skipIf(!dsn)('ventana y cuotas Baileys en PostgreSQL descartable',()=>{
   let last;for(let i=0;i<26;i++)last=await incoming('m'+i,'hola',1,`54934369${String(i).padStart(4,'0')}@s.whatsapp.net`);
   expect(last.storm).toBe(true);
  });
+ it('ventana usa fecha real y no retrocede ante un evento anterior',async()=>{
+  const old=Date.now()-240000;
+  await guard.recordInbound({tenantId:1,jid,messageId:'old-recent',text:'uno',messageTimestamp:old});
+  const first=(await db.query('SELECT last_message_at FROM baileys_guard_contacts WHERE tenant_id=1')).rows[0].last_message_at.getTime();
+  expect(first).toBe(old);
+  await incoming('new','dos');
+  const latest=(await db.query('SELECT last_message_at FROM baileys_guard_contacts WHERE tenant_id=1')).rows[0].last_message_at.getTime();
+  await guard.recordInbound({tenantId:1,jid,messageId:'out-of-order',text:'tres',messageTimestamp:old});
+  const after=(await db.query('SELECT last_message_at FROM baileys_guard_contacts WHERE tenant_id=1')).rows[0].last_message_at.getTime();
+  expect(after).toBe(latest);
+ });
+ it('detecta tormenta con remitentes simultáneos del mismo tenant',async()=>{
+  const results=await Promise.all(Array.from({length:26},(_,i)=>incoming('p'+i,'hola',1,`54934369${String(i).padStart(4,'0')}@s.whatsapp.net`)));
+  expect(results.filter(x=>x.storm)).toHaveLength(1);
+ });
+
 });

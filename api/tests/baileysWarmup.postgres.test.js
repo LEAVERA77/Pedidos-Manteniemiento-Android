@@ -35,4 +35,13 @@ describe.skipIf(!dsn)('warm-up Baileys en PostgreSQL descartable',()=>{
   expect((await service.changeWarmupState(1,'status')).state).toBe('READY');
   const r=await db.query('SELECT warmup_enabled FROM baileys_warmup_state WHERE tenant_id=1');expect(r.rows[0].warmup_enabled).toBe(false);
  });
+ it('una pausa sigue bloqueando después del día 14 hasta reanudar',async()=>{
+  await service.changeWarmupState(1,'activate');await service.changeWarmupState(1,'pause');
+  await db.query("UPDATE baileys_warmup_state SET warmup_started_at=NOW()-INTERVAL '15 days' WHERE tenant_id=1");
+  expect((await service.changeWarmupState(1,'status')).state).toBe('PAUSED');
+  expect((await service.reserveWarmupAttempt(1,{isTrusted:true})).allowed).toBe(false);
+  expect((await service.changeWarmupState(1,'resume')).state).toBe('READY');
+  expect((await service.reserveWarmupAttempt(1)).allowed).toBe(true);
+ });
+
 });
