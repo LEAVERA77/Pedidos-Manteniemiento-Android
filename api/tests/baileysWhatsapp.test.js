@@ -144,6 +144,7 @@ describe("whatsappService con WHATSAPP_PROVIDER=baileys", () => {
   });
 
   it("sendBotWhatsAppText y sendTenantWhatsAppText pasan bodyText y registran log sin ReferenceError", async () => {
+    vi.doMock("../services/baileysBroadcastSafety.js", () => ({ assertBaileysBroadcastTenant: vi.fn(async()=>{}) }));
     vi.doMock("../services/baileysWhatsapp.js", () => ({
       sendText: sendTextBaileysMock,
     }));

@@ -18,6 +18,7 @@ import {
   startSession as startWahaSession,
 } from "./wahaWhatsapp.js";
 import { sendText as sendTextBaileys } from "./baileysWhatsapp.js";
+import { assertBaileysBroadcastTenant } from "./baileysBroadcastSafety.js";
 import { sendText as sendTextWhapi } from "./whapiWhatsapp.js";
 import { logWhatsappMensajeEnviado } from "./whatsappNotificacionesLog.js";
 import {
@@ -107,6 +108,10 @@ export async function sendBotWhatsAppText({
 
   if (whatsappProvider() === "baileys") {
     console.log("[whatsapp-service] usando Baileys (bot)", { tenantId, logContext });
+    // Sesión Baileys heredada es global: no permitir que otro tenant la use.
+    // Esto no convierte la sesión en multi-tenant ni sustituye el control de ventana.
+    try { await assertBaileysBroadcastTenant(tenantId); }
+    catch (_) { return {ok:false,status:403,error:"baileys_tenant_not_verified",skipped:false,provider:"baileys"}; }
     const r = await sendTextBaileys(to, body);
     try {
       await logWhatsappMensajeEnviado(to, body, r.ok, null);
@@ -307,6 +312,10 @@ export async function sendTenantWhatsAppText({
 
   if (whatsappProvider() === "baileys") {
     console.log("[whatsapp-service] usando Baileys (tenant)", { tenantId, logContext });
+    // Sesión Baileys heredada es global: no permitir que otro tenant la use.
+    // Esto no convierte la sesión en multi-tenant ni sustituye el control de ventana.
+    try { await assertBaileysBroadcastTenant(tenantId); }
+    catch (_) { return {ok:false,status:403,error:"baileys_tenant_not_verified",skipped:false,provider:"baileys"}; }
     const r = await sendTextBaileys(to, body);
     if (!skipLog) {
       try {

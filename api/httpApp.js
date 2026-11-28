@@ -14,6 +14,7 @@ import distribuidoresRoutes from "./routes/distribuidores.js";
 import estadisticasRoutes from "./routes/estadisticas.js";
 import notificacionesRoutes from "./routes/notificaciones.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import baileysTenantAdminRoutes from "./routes/baileysTenantAdmin.js";
 import whatsappBroadcastRoutes from "./routes/whatsappBroadcast.js";
 import tenantSwitchRoutes from "./routes/tenantSwitch.js";
 import setupTechnicianTenantsPublic from "./routes/setupTechnicianTenantsPublic.js";
@@ -277,6 +278,7 @@ export function createHttpApp() {
   app.use("/api/distribuidores", distribuidoresRoutes);
   app.use("/api/estadisticas", estadisticasRoutes);
   app.use("/api/notificaciones", notificacionesRoutes);
+  app.use("/api/whatsapp/baileys-v2", baileysTenantAdminRoutes);
   app.use("/api/whatsapp", whatsappRoutes);
   app.use("/api/whatsapp/human-chat", whatsappHumanChatRoutes);
   app.use("/api/webhooks/whatsapp", webhooksWhatsappRoutes);
